@@ -74,6 +74,12 @@ export function RlModelWindow({ m }: { m: RlModel }) {
     netFields, advFields, encoder, entry, offeredEncoders, usesHeads, usesStructure, applyEntry, chooseList, flush, queueSave, editNet, chooseEncoder,
     settingDifferences, differs, originLabel, budget, starved, loads, noMode, label, savedModel, savedNet, archDiffers, suggested, usingPoint, useSavePoint,
     chooseMode } = m;
+  // A saved model chosen closes this window (user request 2026-10-09: "after selecting one target task, model or run, close
+  // the pop up window"); a save point that cannot be read leaves it open, with the reason below.
+  const chooseModel = (run_dir: string, checkpoint_id: string) => {
+    const shown = networkWindow.popup;
+    void useSavePoint(run_dir, checkpoint_id).then(ok => { if (ok && shown && !shown.closed) shown.close(); });
+  };
   return <section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
       {/* No close button of its own (user, 2026-10-03: "delete the cross button in RL network window"): the window's own close
           does it, and the settings are kept either way. Record 7.265: the RL model window - the Mode at the top, then that
@@ -143,10 +149,10 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         {/* No model is filled in by itself (record 7.265): the newest one under the RL model label is offered. */}
         {!source.run_dir && suggested?.run_dir && <p className="note model-suggested">Newest model named <b>{label}</b>: {folderName(String(suggested.run_dir))}
           {suggested.description?.checkpoint_id ? `, save point ${suggested.description.checkpoint_id}` : ''}. <button className="model-suggested-use" disabled={usingPoint}
-            onClick={() => useSavePoint(suggested.run_dir, suggested.description?.checkpoint_id ?? 'latest')}>Use</button></p>}
-        {!source.run_dir && <p className="warn model-none-chosen">No saved model is chosen yet: {MODE_NAME[run.mode]} needs one. Use a save point below.</p>}
+            onClick={() => chooseModel(suggested.run_dir, suggested.description?.checkpoint_id ?? 'latest')}>Use</button></p>}
+        {!source.run_dir && <p className="warn model-none-chosen">No saved model is chosen yet: {MODE_NAME[run.mode]} needs one. Use a save point below; this window then closes.</p>}
         <SavedModels source={source} usable={LOADS.includes(run.mode) ? run.mode : null} runs={runs} outputRoot={config.output?.output_root}
-          config={config} popup={networkWindow.popup} onUse={useSavePoint} />
+          config={config} popup={networkWindow.popup} onUse={chooseModel} />
         {source.run_dir && <><h3>The model in use</h3>
         {modelLoading && <p className="hint" role="status">Checking model compatibility...</p>}
         {error && <p className="error">{error}</p>}
@@ -187,6 +193,6 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         <AdvancedFields m={m} />
       </>)}
       {run.mode === 'scratch' && <LookFold summary={<summary>Saved models, to look at <span className="hint">- Fine-tune or Evaluate only above uses one</span></summary>}>
-        {() => <SavedModels source={source} usable={null} runs={runs} outputRoot={config.output?.output_root} config={config} popup={networkWindow.popup} onUse={useSavePoint} />}</LookFold>}
+        {() => <SavedModels source={source} usable={null} runs={runs} outputRoot={config.output?.output_root} config={config} popup={networkWindow.popup} onUse={chooseModel} />}</LookFold>}
     </section>;
 }

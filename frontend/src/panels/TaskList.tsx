@@ -17,7 +17,9 @@ import { OPEN_TASKS, openRunsAt, TasksAt } from '../openAt';
  *  run window - with every registered task as a table: what it is, which cell it runs in, its saved revision and baseline,
  *  how many sizes and results it has, and its newest run. A double click on a row makes the page follow that task (exactly
  *  what choosing it in the old list did: its rows come into the editors, edits are asked about first); "Details" adds the
- *  rest, the task's rows included.
+ *  rest, the task's rows included. Once the page follows the chosen task the window closes (user request 2026-10-09: "after
+ *  selecting one target task, model or run, close the pop up window"); Cancel at the edits question, or a task that cannot
+ *  be read, leaves it open.
  *
  *  Nothing here updates on a timer: the task list is read when the button is pressed and by "Refresh list" (which reads
  *  the run list again too; otherwise the run columns show the page's own run list, read when the page opened and after
@@ -92,7 +94,8 @@ function TaskDetails({ task, runs, rows, error }: { task: Json; runs: Json[]; ro
 
 export function TaskListButton({ tasks, runs, current, currentText, currentMark, ngspiceOffered, loading, onChoose, onRefresh, onRefreshRuns,
   onDelete, deleting, deleteDisabled, deleteTitle, deleteNotice }: { tasks: Json[]; runs: Json[];
-  current: string | null; currentText: string; currentMark?: string; ngspiceOffered: boolean; loading: string | null; onChoose: (taskKey: string) => void;
+  current: string | null; currentText: string; currentMark?: string; ngspiceOffered: boolean; loading: string | null;
+  onChoose: (taskKey: string) => Promise<{ loaded: boolean }> | void;
   onRefresh: () => Promise<Json[]>; onRefreshRuns?: () => Promise<Json[]>;
   onDelete?: (owner: Window) => void; deleting?: boolean; deleteDisabled?: boolean; deleteTitle?: string; deleteNotice?: ReactNode }) {
   // While `popup` is set, the task window is open (one pop-up window for the whole page: `popupWindow.ts`).
@@ -147,7 +150,9 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   const chooseRow = (e: MouseEvent<HTMLTableRowElement>, key: string) => {
     if (deleting || (e.target as HTMLElement).closest('button, input, select, label')) return;
     (popup ?? window).getSelection()?.removeAllRanges();
-    onChoose(key);
+    // The window closes once the page follows the task (user request 2026-10-09); a task not loaded leaves it open.
+    const shown = popup;
+    void Promise.resolve(onChoose(key)).then(r => { if (r?.loaded !== false && shown && !shown.closed) shown.close(); });
   };
 
   const text = (t: Json) => [t.task_key, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
@@ -172,7 +177,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
           <Icon name="delete-task" label={deleting ? 'Deleting...' : 'Delete task'} /></button>
       </div>}
       {deleteNotice}
-      <p className="hint"><b>Double click</b> a task to make the workbench follow it: its Parameters, Probes and Specs come into the editors (edits you made are asked about first) and the bottom tabs show its newest run. The task the page follows is marked. <b>Details</b> shows the rest, the task's rows included. This window stays open until you close it.</p>
+      <p className="hint"><b>Double click</b> a task to make the workbench follow it: its Parameters, Probes and Specs come into the editors (edits you made are asked about first) and the bottom tabs show its newest run. Then the window closes; it stays open when you answer Cancel to the edits question or the task cannot be read. The task the page follows is marked. <b>Details</b> shows the rest, the task's rows included.</p>
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
           <li>All times are the local time of this computer. Press a column title to sort by it.</li></ul></details>
@@ -217,7 +222,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   return (<>
     <button className={`task-list-button${popup ? ' open' : ''}`} onClick={() => openPopup()}
       aria-label={current ? `Open Tasks: ${taskName(current)}` : 'Open Tasks'}
-      title={popup ? 'The task window is open: press to bring it to the front and read the lists again.' : 'Opens the task window: every registered task with its cell, revision, baseline, sizes and results, and its newest run. Double click one there to make the workbench follow it.'}>
+      title={popup ? 'The task window is open: press to bring it to the front and read the lists again.' : 'Opens the task window: every registered task with its cell, revision, baseline, sizes and results, and its newest run. Double click one there to make the workbench follow it; the window then closes.'}>
       <span className="task-list-current" title={taskName(current ?? currentText)}>{current ? <code className="task-list-key" data-task-key={current}>{taskName(current)}</code> : <span className="task-list-key">{taskName(currentText)}</span>}
         {currentMark && <span className="task-list-mark hint"> {currentMark}</span>}</span>
     </button>

@@ -33,7 +33,12 @@ import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
  *  double click - brings its task into the editors and its model into the next run, and shows its results; **Show results**
  *  only shows them in the bottom tabs; **Continue...** goes on with the run in its own folder (Run status's form); **New run
  *  like this** makes the next run repeat it. Load run and New run like this need the run's task registered now; the
- *  reason stands beside them when it is not, and a double click then shows the results. The draft changes are App.tsx's. */
+ *  reason stands beside them when it is not, and a double click then shows the results. The draft changes are App.tsx's.
+ *
+ *  The window closes once a run is chosen (user request 2026-10-09: "after selecting one target task, model or run, close
+ *  the pop up window"): after Show results and Continue..., and after Load run and New run like this once they went through -
+ *  Cancel at the edits question or a model that cannot be read leaves it open, with the reason on the page. Clear, Details,
+ *  the folders and the links inside the window keep it open. */
 
 const pairs = (values: Json) => Object.entries(values ?? {}).map(([k, v]) => `${k}=${short(v)}`).join('  ');
 // A best design lists its variables as [{ variable_id, value, unit }].
@@ -169,7 +174,7 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
 
 function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRefresh, onLoad, onNewLike, onContinue }: { runs: Json[]; runsError: string | null; runDir: string | null;
   shownState: string | null; onChoose: (runDir: string | null) => void; onRefresh: (fresh?: boolean) => Promise<Json[]>;
-  onLoad?: (row: Json) => void; onNewLike?: (row: Json) => void; onContinue?: (row: Json) => void }) {
+  onLoad?: (row: Json) => Promise<boolean> | void; onNewLike?: (row: Json) => Promise<boolean> | void; onContinue?: (row: Json) => void }) {
   // While `popup` is set, the run window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-runs',
     { title: RUNS_WINDOW, features: 'popup,width=1500,height=860', rootId: 'runs-root' });
@@ -202,22 +207,27 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   // Whoever had the list read - this window, or the page when a run was started - the window says when that was.
   useEffect(() => setReadAt(clock()), [runs]);
   const toggle = (dir: string) => { if (open === dir) { setOpen(null); return; } setOpen(dir); readDetails(dir); };
+  // A run chosen closes the window (user request 2026-10-09): at once, or once Load run / New run like this answer true.
+  const chosen = (done?: Promise<boolean> | void) => {
+    const shown = popup;
+    void Promise.resolve(done).then(ok => { if (ok !== false && shown && !shown.closed) shown.close(); });
+  };
   // A double click on a run's row loads the run (record 7.267, plan "Load run"; it only showed the run until then, user
   // request 2026-09-21: no "Show" column) - or shows it, where Load run is not offered. Not when it lands on the row's
   // "Details" button: that only opens and closes the details. The word the double click selected is let go.
   const showRun = (e: MouseEvent<HTMLTableRowElement>, row: Json) => {
     if ((e.target as HTMLElement).closest('button, input, select, label')) return;
     (popup ?? window).getSelection()?.removeAllRanges();
-    if (onLoad && !loadBlocked(row, tasks)) onLoad(row); else onChoose(row.run_dir);
+    if (onLoad && !loadBlocked(row, tasks)) chosen(onLoad(row)); else { onChoose(row.run_dir); chosen(); }
   };
   const actions = (r: Json) => {
     if (!onLoad) return null;
     const why = loadBlocked(r, tasks), continuable = !isLive(r) && !!onContinue && r.resumability !== 'none' && r.resumability != null;
     return <div className="row run-actions">
-      <button className="run-load" disabled={!!why} onClick={() => onLoad(r)} title={why ?? 'Load run (also a double click on the run): its task comes into the editors - edits are asked about first -, its model becomes the next run\'s model, pinned, and the bottom tabs show its results. One Undo step takes the task and the model back. Nothing starts.'}>Load run</button>
-      <button className="run-show" onClick={() => onChoose(r.run_dir)} title="Show results: the bottom tabs show this run (Run status, Logs, Data tables...). Nothing else changes.">Show results</button>
-      {continuable && <button className="run-continue" onClick={() => onContinue!(r)} title="Continue...: the run goes on in its own folder, from its newest save point, with its own settings - Run status shows it, with the budget form.">Continue...</button>}
-      {onNewLike && <button className="run-like" disabled={!!why} onClick={() => onNewLike(r)} title={why ?? 'New run like this: the next run repeats this one - its task (edits are asked about first), Mode, the model it started from, network, training values, reward, conditions, budget, seed and limits. One Undo step. Nothing starts.'}>New run like this</button>}
+      <button className="run-load" disabled={!!why} onClick={() => chosen(onLoad(r))} title={why ?? 'Load run (also a double click on the run): its task comes into the editors - edits are asked about first -, its model becomes the next run\'s model, pinned, and the bottom tabs show its results. One Undo step takes the task and the model back. Nothing starts.'}>Load run</button>
+      <button className="run-show" onClick={() => { onChoose(r.run_dir); chosen(); }} title="Show results: the bottom tabs show this run (Run status, Logs, Data tables...). Nothing else changes.">Show results</button>
+      {continuable && <button className="run-continue" onClick={() => { onContinue!(r); chosen(); }} title="Continue...: the run goes on in its own folder, from its newest save point, with its own settings - Run status shows it, with the budget form.">Continue...</button>}
+      {onNewLike && <button className="run-like" disabled={!!why} onClick={() => chosen(onNewLike(r))} title={why ?? 'New run like this: the next run repeats this one - its task (edits are asked about first), Mode, the model it started from, network, training values, reward, conditions, budget, seed and limits. One Undo step. Nothing starts.'}>New run like this</button>}
       {why && <span className="hint run-load-why">{why}</span>}
     </div>;
   };
@@ -269,8 +279,8 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
       </div>
       {runsError && !loading && <p className="error run-list-error">The run list could not be read: {runsError}</p>}
       {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
-      {onLoad ? <p className="hint"><b>Double click</b> a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results (one Undo step takes the task and the model back; nothing starts). A run's <b>Details</b> also offer <b>Show results</b> alone, <b>Continue...</b> and <b>New run like this</b>. The run that is shown is marked; <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. This window stays open until you close it.</p>
-        : <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. This window stays open until you close it.</p>}
+      {onLoad ? <p className="hint"><b>Double click</b> a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results (one Undo step takes the task and the model back; nothing starts). A run's <b>Details</b> also offer <b>Show results</b> alone, <b>Continue...</b> and <b>New run like this</b>. The run that is shown is marked; <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. The window closes once a run is loaded, shown, continued or repeated - it stays open when that does not go through (Cancel at the edits question, a model that cannot be read), and for <b>Clear</b> and <b>Details</b>.</p>
+        : <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked, and the window then closes. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none.</p>}
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
           <li>All times are the local time of this computer. Press a column title to sort by it. "Details" shows everything else the run recorded.</li></ul></details>
@@ -319,7 +329,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
     {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}
     <span className="run-list-current" title={runDir ?? undefined}>{current ? label(current, shownState) : runDir ? folderName(runDir) : 'No run selected'}</span>
     <button className={`run-list-button${popup ? ' open' : ''}`} onClick={() => openWindow()}
-      title={popup ? 'The run window is open: press to bring it to the front and read the list again.' : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show.'}>Runs...</button>
+      title={popup ? 'The run window is open: press to bring it to the front and read the list again.' : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show; the window then closes.'}>Runs...</button>
     <PopupPortal popup={popup} root={root}>{view}</PopupPortal>
   </>);
 }

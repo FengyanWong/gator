@@ -403,7 +403,8 @@ await runChecks(browser, async () => {
       const row = [...document.querySelectorAll('.run-window table.run-table tbody > tr')].find(r => r.title === ${JSON.stringify(dir)});
       if (row) { row.children[4].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); done(true); } else if (++tries > 50) done(false); else setTimeout(tick, 100); }; tick(); })`);
     far.close();
-    await send('Target.closeTarget', { targetId: target.id });
+    // A run chosen closes the window by itself (record 7.291); it is closed here only when it is still open.
+    try { await browser.window(RUNS_WINDOW, { present: false, ms: 5000 }); } catch { await send('Target.closeTarget', { targetId: target.id }).catch(() => undefined); }
     if (!ok) throw new Error(`the run ${dir} was not in the run window`);
   };
   otherListed = true; log.length = 0;

@@ -358,7 +358,10 @@ await runChecks(browser, async () => {
   await wChoose('Cell', 'ota5_v1'); await quiet();
   await choose('Task', 'real:ota5_v1'); await quiet();
   check('the saved task is opened in the Task list', (await value('Task')) === 'real:ota5_v1', await value('Task'));
-  // Delete is in the Tasks window, beside the current task's name. Its confirmation belongs to that window too.
+  // Delete is in the Tasks window, beside the current task's name. Its confirmation belongs to that window too. Choosing the task
+  // closed the window (record 7.291): it is opened again for Delete.
+  check('choosing the task closed the Tasks window (record 7.291)', await tw.closedAfterChoice());
+  await tw.open();
   await tw.window.send('Page.enable');
   onDialog(tw.window);
   const DELETE = `document.querySelector('.task-window-actions button')`;

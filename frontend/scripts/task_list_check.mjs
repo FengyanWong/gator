@@ -182,12 +182,17 @@ await runChecks(browser, async () => {
   await page.saved();
   check('the configuration follows: task, labels, rows, run label', (await page.stored()).circuit.task_id === 'real:fixture_ota' && (await page.stored()).project.task_name === 'fixture_ota'
     && (await page.stored()).parameters.length === 2 && (await page.stored()).targets[0].metric_id === 'gain_db', JSON.stringify((await page.stored()).circuit));
-  check('the marked row moves to it; the window stays open', (await far.evaluate(`${ROWS}.filter(tr => tr.classList.contains('current')).map(tr => tr.dataset.taskKey)`)).join() === 'real:fixture_ota' && !far.closed);
+  // Record 7.291 (user request 2026-10-09: "after selecting one target task, model or run, close the pop up window").
+  check('the window closes once the page follows the task', await tw.closedAfterChoice());
+  far = await tw.open();
+  check('opened again, the marked row is the chosen task', (await far.evaluate(`${ROWS}.filter(tr => tr.classList.contains('current')).map(tr => tr.dataset.taskKey)`)).join() === 'real:fixture_ota');
   check('the Project column says the rows are this task\'s', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '').includes('now show this task')`, 50));
   check('no question was asked: the rows were untouched', dialogs.length === 0, JSON.stringify(dialogs));
   check('one Undo takes the choice back, and the Task row says so', (await evaluate(`[...${EDITORS}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Undo').click()`), await until(`${ROW}.querySelector('.task-list-key')?.textContent === 'synthetic:gpdk045_ota5'`, 50)));
   check('... and the window marks the MOCK task again', await far.until(`${ROWS}.filter(tr => tr.classList.contains('current')).map(tr => tr.dataset.taskKey).join() === 'synthetic:gpdk045_ota5'`, 30));
   await tw.choose('real:fixture_ota');
+  await tw.closedAfterChoice();
+  far = await tw.open();
 
   // ---- 5. Details: the facts and the task's rows -----------------------------------------------------------------------------------
   await far.evaluate(`[...${ROWS}.find(tr => tr.dataset.taskKey === 'real:fixture_ota').querySelectorAll('button')].find(b => b.textContent.trim() === 'Details').click()`, true);
@@ -257,6 +262,8 @@ await runChecks(browser, async () => {
   check('a bulk move uses canonical task IDs and filters the folder', JSON.stringify(lastMove.task_keys) === JSON.stringify([OTA.task_key, LDO.task_key])
     && (await tw.keys()).length === 2 && (await page.stored()).circuit.task_id === OTA.task_key);
   check('moving tasks preserves run counts and row selection', (await cell(OTA.task_key, 8)) === '2' && await tw.choose(OTA.task_key));
+  check('... and the window closes once the page follows it, here too', await tw.closedAfterChoice());
+  far = await tw.open(); await far.send('Page.enable'); attachFolderDialogs(); await settled(); await nav(gt);
   await far.shot(path.join(out, 'task-list-4-folders.png'));
   replies.push({ accept: true, promptText: 'GT models' }); await press('Rename'); await settled();
   check('renaming keeps membership and the active folder', folderData.folders[gt] === 'GT models' && Object.values(folderData.assignments).every(id => id === gt) && (await tw.keys()).length === 2);

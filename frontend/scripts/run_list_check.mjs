@@ -137,6 +137,10 @@ await runChecks(browser, async () => {
     farPage = far.target;
     await sleep(500);
   };
+  // Record 7.291 (user request 2026-10-09: "after selecting one target task, model or run, close the pop up window"): a run
+  // chosen - a double click, Show results, Load run and New run like this once they went through, Continue... - closes the window.
+  const windowOpen = async () => (await pages()).some(t => t.title === RUNS_WINDOW);
+  const closedByChoice = async () => { try { await windowTarget(false); far.close(); return true; } catch { return false; } };
   // The table as a user reads it: one object per run row, keyed by the column titles.
   const table = () => far.evaluate(`(() => { const t = ${WINDOW}.querySelector('table.run-table'); if (!t) return null; const heads = [...t.tHead.rows[0].cells].map(h => h.textContent.replace(/[\\u25B2\\u25BC]/g, '').trim());
     return [...t.tBodies[0].rows].filter(tr => !tr.classList.contains('run-details-row')).map(tr => { const cells = [...tr.children]; const row = { current: tr.getAttribute('aria-current') === 'true', folder: tr.title, buttons: [...tr.querySelectorAll('button')].map(b => b.textContent.trim()).join() };
@@ -218,15 +222,16 @@ await runChecks(browser, async () => {
   check('the workbench\'s Run status tab now shows that run', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(RESUMED.run_dir)})`));
   s = await strip();
   check('the text left of the strip button names the run: start time, task, mode, seed, state; the caption stays "Runs..."', s.current === `${stamp(RESUMED.created_utc)} | fixture_task | fine_tune seed2 | completed [MOCK]` && s.currentIsLeft && s.text === 'Runs...' && !s.overflowX, JSON.stringify(s));
+  check('the run window closes once a run is chosen (record 7.291)', await closedByChoice());
+  check('choosing a run did not read the list again', lists() === 2, `${lists()} list request(s)`);
+  await openWindow();
   rows = await table();
-  check('in the window that row, and only that row, is marked as shown; the window stayed open', rowOf(rows, RESUMED).current && rows.filter(x => x.current).length === 1);
-  check('the double click leaves no selected word behind in the row', (await far.evaluate(`String(getSelection())`)) === '');
+  check('opened again, that row, and only that row, is marked as shown', rowOf(rows, RESUMED).current && rows.filter(x => x.current).length === 1);
   await doubleClick(DONE, true); await sleep(500);
   rows = await table();
-  check('a double click on a row\'s "Details" does NOT choose that run', rowOf(rows, RESUMED).current && !rowOf(rows, DONE).current && rows.filter(x => x.current).length === 1
-    && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(RESUMED.run_dir)})`));
+  check('a double click on a row\'s "Details" does NOT choose that run, and the window stays open', rowOf(rows, RESUMED).current && !rowOf(rows, DONE).current && rows.filter(x => x.current).length === 1
+    && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(RESUMED.run_dir)})`) && await windowOpen());
   await pressIn(DONE, 'Hide details');                                          // however the two presses left that run's details: closed for what follows
-  check('choosing a run did not read the list again', lists() === 2, `${lists()} list request(s)`);
 
   // ---- 4. "Details": everything else the run recorded ----------------------------------------------------------------------
   const before = statusFor(PAUSED);
@@ -346,6 +351,10 @@ await runChecks(browser, async () => {
   check('the folder shows its runs only', (await table()).map(x => x.folder).sort().join() === [DONE.run_dir, PAUSED.run_dir].sort().join());
   check('a double click there still shows a run in the bottom tabs', await doubleClick(PAUSED)
     && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`));
+  check('... and closes the window; opened again, the folders are as they were', await closedByChoice());
+  await openWindow(); await far.send('Page.enable');
+  far.on('Page.javascriptDialogOpening', () => far.send('Page.handleJavaScriptDialog', replies.shift() ?? { accept: false }));
+  await nav(pilot); await sleep(200);
   replies.push({ accept: true, promptText: 'Pilot runs' }); await pressFolderButton('Rename'); await settled();
   check('Rename renames the folder', runFolders.folders[pilot] === 'Pilot runs' && (await folderText(pilot)) === 'Pilot runs2');
   replies.push({ accept: true }); await pressFolderButton('Delete folder'); await settled();
@@ -388,6 +397,8 @@ await runChecks(browser, async () => {
   check('pressing the button again opens the window again, with the current list', (await table())?.length === 6);
   await doubleClick(DONE);
   check('a run chosen there is shown in the workbench', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`));
+  check('... and the window closed', await closedByChoice());
+  await openWindow();
   await evaluate(`${BUTTON}.click()`, true); await sleep(800);
   check('pressing the button while the window is open opens no second window', (await pages()).filter(t => t.title === RUNS_WINDOW).length === 1);
   await shot('main', 'footer', 'runs-4-footer-with-run.png');
@@ -412,12 +423,14 @@ await runChecks(browser, async () => {
   check('... and one more to New model, no saved model', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir, JSON.stringify(draft));
   listed = [EVALUATED, PAUSED, RESUMED, DONE, LOST, NEVER, FAILED, GONE];
   await openWindow();
-  const openDetails = async rr => { await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(rr.run_dir)});
+  const openDetails = async rr => { if (!(await windowOpen())) await openWindow(); await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(rr.run_dir)});
     const b = [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === 'Details'); if (b) b.click(); })()`, true);
     return far.until(`[...${WINDOW}.querySelectorAll('tr.run-details-row')].some(row => row.previousElementSibling?.title === ${JSON.stringify(rr.run_dir)} && !!row.querySelector('.run-actions'))`, 40); };
   const ACTIONS = `${WINDOW}.querySelector('tr.run-details-row .run-actions')`;
   const actions = () => far.evaluate(`[...${ACTIONS}.querySelectorAll('button')].map(b => b.textContent.trim() + (b.disabled ? ' (off)' : ''))`);
   const act = label => far.evaluate(`[...${ACTIONS}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}).click()`, true);
+  /** Press an action that goes through: true once the window closed after it. */
+  const actAndClose = async label => { await act(label); return closedByChoice(); };
   check('(set-up) the window lists the eight runs', (await table())?.length === 8);
   check('a run\'s Details offer Load run, Show results, Continue... and New run like this', await openDetails(DONE)
     && JSON.stringify(await actions()) === JSON.stringify(['Load run', 'Show results', 'Continue...', 'New run like this']), JSON.stringify(await actions()));
@@ -428,10 +441,12 @@ await runChecks(browser, async () => {
     && /Not offered: its task real:fixture_gone is no longer registered/.test(await far.evaluate(`${ACTIONS}.querySelector('.run-load-why')?.textContent ?? ''`)), JSON.stringify(await actions()));
   check('... its double click shows it, and changes nothing in the draft', await doubleClick(GONE) && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(GONE.run_dir)})`, 40)
     && modeOf(await runWhen(x => !!x, 5)) === 'scratch');
+  check('... and closes the window', await closedByChoice());
   await openDetails(FAILED);
   check('a run that names no registered task: the same, with its own reason', /Not offered: the run names no registered task/.test(await far.evaluate(`${ACTIONS}.querySelector('.run-load-why')?.textContent ?? ''`)));
   // Load run: the model the run ended with, pinned, with its network; one Undo step; the run's results shown
-  await openDetails(DONE); await act('Load run');
+  await openDetails(DONE);
+  check('Load run closes the window once the run is loaded', await actAndClose('Load run'));
   draft = await runWhen(x => x?.model_source?.run_dir === DONE.run_dir);
   check('Load run of a trained run: its newest save point, pinned (a concrete id, never "latest"), in Fine-tune', draft?.mode === 'fine_tune' && draft.model_source.checkpoint_id === 'ckpt-000060-final', JSON.stringify(draft?.model_source));
   check('... with the model\'s network in the same step', sameNet(draft?.network, RGCN), JSON.stringify(draft?.network));
@@ -440,18 +455,19 @@ await runChecks(browser, async () => {
   await undo();
   draft = await runWhen(x => !x?.model_source?.run_dir);
   check('one Undo takes the model and the Mode back together', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir && !sameNet(draft.network, RGCN), JSON.stringify({ mode: draft?.mode, source: draft?.model_source, net: draft?.network }));
-  await openDetails(EVALUATED); await act('Load run');
+  await openDetails(EVALUATED); await actAndClose('Load run');
   draft = await runWhen(x => x?.model_source?.run_dir === DONE.run_dir);
   check('Load run of an Evaluate-only run: the save point it evaluated (its weights never changed), in Fine-tune', draft?.mode === 'fine_tune' && draft.model_source.checkpoint_id === 'ckpt-000040-final'
     && /Fine-tune from fixture @ 40\./.test(await banner()), `${JSON.stringify(draft?.model_source)} | ${await banner()}`);
-  await openDetails(PAUSED); await act('Load run');
+  await openDetails(PAUSED); await actAndClose('Load run');
   check('Load run of a run without a save point (and none it started from): the model stays as it was, and the message says so', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`, 40)
     && /the model as it was: this run has no save point and loaded none\./.test(await banner()) && (await storedRun())?.model_source?.checkpoint_id === 'ckpt-000040-final', await banner());
   await undo();
   draft = await runWhen(x => !x?.model_source?.run_dir);
   check('(set-up) one Undo takes the Evaluate-only run\'s model back', modeOf(draft) === 'scratch', JSON.stringify(draft?.model_source));
   // New run like this: the run's settings, its source from its lineage - never the "latest" its configuration recorded
-  await openDetails(RESUMED); await act('New run like this');
+  await openDetails(RESUMED);
+  check('New run like this closes the window once taken', await actAndClose('New run like this'));
   draft = await runWhen(x => x?.model_source?.run_dir === DONE.run_dir);
   check('New run like this repeats the run: its Mode, budget, seed, limits, name, training values and network', draft?.mode === 'fine_tune' && draft.max_evaluations === 40 && draft.seed === 2 && draft.max_retries === 1
     && draft.model_label === 'fixture (2)' && draft.advanced?.batch_size === 16 && sameNet(draft.network, RGCN), JSON.stringify(draft));
@@ -470,10 +486,12 @@ await runChecks(browser, async () => {
   draft = await runWhen(x => !!x, 10);
   check('... nothing changed: no model chosen - not its parent\'s - and the bottom tabs still show the run they showed', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir
     && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`), JSON.stringify(draft?.model_source));
+  check('... and the window stays open: no run was loaded (record 7.291)', await windowOpen());
   failModel = null; holdModel = true;
   await openDetails(EVALUATED); await act('Load run');                            // the save point it evaluated is held back
   check('(set-up) an Evaluate-only run\'s Load run waits for its model', await (async () => { for (let i = 0; i < 40 && !heldModel.length; i++) await sleep(100); return heldModel.length === 1; })());
-  await openDetails(DONE); await act('Load run');
+  check('... the window stays open while it waits', await windowOpen());
+  await openDetails(DONE); await actAndClose('Load run');
   draft = await runWhen(x => x?.model_source?.checkpoint_id === 'ckpt-000060-final');
   check('meanwhile a newer Load run lands: DONE, its newest save point', draft?.model_source?.checkpoint_id === 'ckpt-000060-final'
     && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`, 40), JSON.stringify(draft?.model_source));
@@ -487,12 +505,12 @@ await runChecks(browser, async () => {
   draft = await runWhen(x => !x?.model_source?.run_dir);
   check('(set-up) one Undo takes DONE\'s model back', modeOf(draft) === 'scratch', JSON.stringify(draft?.model_source));
   // Continue...: Run status shows the run with its budget form open; nothing is continued by the press
-  await openDetails(PAUSED); await act('Continue...');
+  await openDetails(PAUSED);
+  await shot('far', '.run-window', 'runs-5-actions.png');
+  check('Continue... closes the window', await actAndClose('Continue...'));
   check('Continue... shows the run under Run status with its budget form open', await until(`!!document.querySelector('footer form.continue-form')`, 40)
     && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`));
   check('... and continues nothing by itself', !seen.includes('/api/runs/continue'));
-  await shot('far', '.run-window', 'runs-5-actions.png');
-  await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close();
 
   reportRefused(refused);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 400));

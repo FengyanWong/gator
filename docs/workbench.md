@@ -407,7 +407,9 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 * **A double click on a row** makes the page follow that task: exactly what choosing it in the old list did - its
   Parameters, Probes and Specs come into the editors (edits you made are asked about first, Cancel keeps them), the run
   label follows, the bottom tabs show its newest run, one Undo takes the whole choice back. The row of the task the page
-  follows is marked; the window stays open.
+  follows is marked. Then the window closes (record 7.291, user request 2026-10-09: "after selecting one target task,
+  model or run, close the pop up window"); it stays open when the edits question is answered Cancel or the task cannot
+  be read.
 * **Details** opens everything else under the row: what the task is, the cell it runs in and the cell it was saved from,
   its netlist of record, how it is measured, created / saved / baseline times, its state, the run label, its runs - and
   its rows: the Parameters it varies (searched rows with their ranges, follower rows), its Probes and its Specs with
@@ -1264,7 +1266,10 @@ it). The window lists every run under the output folder, newest first, one row p
 * **A double click on a row** is **Load run** (record 7.267; plan [frontend run workflow](plan-frontend-run-workflow.md),
   "Load run"): the run's task comes into the editors, the model it ended with becomes the next run's model, and the
   bottom tabs show the run - below. Where Load run is not offered, the double click only shows the run. The shown run's
-  row is marked (blue, with a bar at its left edge) and the window stays open. **Clear** empties the tabs again. Nothing
+  row is marked (blue, with a bar at its left edge), and the window closes once the run is chosen (record 7.291): after
+  Show results and Continue... at once, after Load run and New run like this once they went through - Cancel at the edits
+  question or a model that cannot be read leaves it open, with the reason on the page. **Clear**, **Details**, the
+  folders and the links inside the window keep it open. **Clear** empties the tabs again. Nothing
   here stops, starts or deletes anything: the header's Start / Pause / Abort keep acting on their own run.
 * **The actions**, at the top of a run's Details (record 7.267):
   - **Load run** (also the double click) sets three things together, as ONE Undo step for the draft:
@@ -2248,8 +2253,10 @@ Runs without a save point are not listed.
 
 **Using one is a press.** **Use this save point** makes exactly that save point the next run's model - a concrete id,
 never "latest" - with the model's network and component list, as ONE Undo step, and says so ("The next run fine-tunes
-... (one Undo step takes it back)"). A double click on a row uses its newest save point the same way. The row is then
-marked **in use**, and the model line beside the button names it. When the run of the model in use has saved a newer
+... (one Undo step takes it back)"). A double click on a row uses its newest save point the same way. The RL model window
+then closes (record 7.291; as do "Use the newer one" and the suggested model's Use) - a save point that cannot be read
+leaves it open, with the reason. Opened again, the row is marked **in use**, and the model line beside the button names
+it. When the run of the model in use has saved a newer
 save point, "The model in use has a newer save point: ... Use the newer one" offers it; nothing follows by itself. A
 model in use that is no longer listed (outside the output folder, or without a complete save point) is said, with its
 folder. Nothing is filled in by itself either: until a save point is used, the window says "No saved model is chosen

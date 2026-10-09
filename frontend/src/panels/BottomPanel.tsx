@@ -71,7 +71,10 @@ export function useBottomPanel(runDir: string | null) {
 }
 export type BottomPanelState = ReturnType<typeof useBottomPanel>;
 /** The Runs window's presses, as the page hands them to the Runs button (App.tsx: functions that stay the same). */
-export type RunWindowActions = { choose: (dir: string | null) => void; load: (row: Json) => void; newLike: (row: Json) => void; continueFrom: (row: Json) => void };
+/** `load` and `newLike` answer whether they went through: the Runs window closes once a run is chosen (user request
+ *  2026-10-09), and stays open when nothing changed. */
+export type RunWindowActions = { choose: (dir: string | null) => void; load: (row: Json) => Promise<boolean>; newLike: (row: Json) => Promise<boolean>;
+  continueFrom: (row: Json) => void };
 
 /** The bottom panel: the splitter, the tab line (Agent..., the tabs, the run shown and Runs...) and the tab shown. */
 export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConfig, runs, runsError, runDir, status, statusError, runWindow, refreshRuns,

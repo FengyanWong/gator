@@ -189,10 +189,12 @@ await runChecks(browser, async () => {
   await until(`!${PANEL}.querySelector('[role="status"]')`);
   check('Cancel keeps the old task selected and its edited rows', (await value('Task')) === 'real:gpdk045_ota5'
     && (await column('lower')).includes('26') && dialogs.at(-1)?.message.includes('unsaved'));
+  check('... and the task window stays open: no task was chosen (record 7.291)', !(await tw.closedAfterChoice(1500)) && !!tw.window);
   answers.push(true);
   await choose('Task', 'synthetic:gpdk045_ota5');
   check('Discard switches task and all rows without a Load press', await until(`${TASK_KEY} === 'synthetic:gpdk045_ota5'`)
     && JSON.stringify(await column('metric_id')) === '["score"]', await note());
+  check('... and then the task window closes (record 7.291)', await tw.closedAfterChoice());
 
   // ---- a model label the user typed stays (it was the project name until record 7.159) -----------------------------------
   await setInput(MODEL_LABEL, 'my-amplifier');

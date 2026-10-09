@@ -235,15 +235,18 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   const pointSerial = useNewest();
   // A saved model's name, as the saved models table lists it: from its run's row (the folder's name when the run is not listed).
   const nameOf = (dir: string) => modelNameAt(runs, String(dir));
-  const useSavePoint = (run_dir: string, checkpoint_id: string) => {
+  // True once the save point is the draft's (the RL model window then closes, user request 2026-10-09), false when it
+  // could not be read or a newer choice came first.
+  const useSavePoint = (run_dir: string, checkpoint_id: string): Promise<boolean> => {
     const mine = pointSerial.next(), stale = () => !mine();
     setUsingPoint(true); setNetMessage(null);
-    readSavePoint(run_dir, checkpoint_id, netFields).then(point => {        // savePoint.ts: Load run and New run like this take one the same way
-      if (stale()) return;
+    return readSavePoint(run_dir, checkpoint_id, netFields).then(point => {   // savePoint.ts: Load run and New run like this take one the same way
+      if (stale()) return false;
       setConfig(c => ({ ...c, run: withSavePoint(c.run, point) }));
       setNetMessage({ level: 'ok', text: `The next run ${run.mode === 'frozen' ? 'evaluates' : 'fine-tunes'} ${nameOf(run_dir)} from its save point ${point.checkpoint_id}, with its network (one Undo step takes it back).`,
         about: JSON.stringify([run.mode, run_dir, point.checkpoint_id]) });
-    }).catch((e: any) => { if (!stale()) setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}` }); })
+      return true;
+    }).catch((e: any) => { if (!stale()) setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}` }); return false; })
       .finally(() => { if (!stale()) setUsingPoint(false); });
   };
   // A Mode is one Undo step. New model clears the saved model chosen: scratch never loads one (a source left there is a

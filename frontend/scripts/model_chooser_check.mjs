@@ -76,6 +76,7 @@ await runChecks(browser, async () => {
   const { send, evaluate, fulfil, consoleErrors } = page;
   const refused = []; const asked = []; const renames = []; let lists = 0, canned = true, served = MODELS;
   let holdModel = false; const heldModel = [];                                     // record 7.278: a "Use" read held back, answered late
+  let failModel = null;                                                            // record 7.291: a "Use" whose save point cannot be read
   const modelFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
@@ -87,6 +88,7 @@ await runChecks(browser, async () => {
       if (!canned) return send('Fetch.continueRequest', { requestId });
       const body = JSON.parse(request.postData ?? '{}'); asked.push({ run_dir: body.run_dir, checkpoint_id: body.checkpoint_id, network: body.config?.run?.network ?? null, withConfig: !!body.config });
       if (holdModel && !body.config) { heldModel.push({ requestId, body }); return; }
+      if (failModel && failModel === body.run_dir && !body.config) return fulfil(requestId, 503, { detail: 'FIXTURE: the server is busy' });
       const found = describe(body.run_dir, body.checkpoint_id);
       if (found && body.run_dir === C.run_dir && body.config) { delete found.compatibility; found.compatibility_unchecked = { title: 'FIXTURE: Not compared with your configuration yet: the configuration on this page is incomplete.',
         what: 'FIXTURE: Parameter row "mp1_w" is set to be optimized but has no lower and no upper bound. Fill in both bounds in the Parameters table.',
@@ -130,11 +132,20 @@ await runChecks(browser, async () => {
   const sameNet = (a, b) => !!a && ['encoder_type', 'hidden_dim', 'heads', 'layers'].every(f => a[f] === b[f]);
   const shot = name => networkPage.shot(path.join(out, name), RIGHT, { scale: 1.2, maxHeight: 1400 });
   const undo = () => evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
+  // Record 7.291 (user request 2026-10-09: "after selecting one target task, model or run, close the pop up window"): a saved
+  // model chosen closes the RL model window. What the choice did is looked at in the window opened again: the note, "in use"
+  // and a newer save point offered are the page's own state, drawn again.
+  const closedByChoice = async () => !!(await until(`!window.__checkRLWindow || window.__checkRLWindow.closed`, 50));
+  const reopen = async () => {
+    networkPage = await openNetworks(page, browser); await networkPage.viewport(1180, 920);
+    return until(`${ROWS}.length === ${MODELS.length} || !${RIGHT}.querySelector('.saved-models')`, 60);
+  };
+  const chosenAndReopened = async () => { const closed = await closedByChoice(); await reopen(); return closed; };
 
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG, when: 'once' });
   await send('Page.navigate', { url: APP });
-  const networkPage = await openNetworks(page, browser);
+  let networkPage = await openNetworks(page, browser);
   await networkPage.viewport(1180, 920);
   if (!(await until(`!!${NETWORK_DOCUMENT}.querySelector('.rl-modes')`, 150))) throw new Error('the RL model window has no Mode buttons: the served frontend is older than record 7.265 (build it, then reload)');
 
@@ -201,6 +212,7 @@ await runChecks(browser, async () => {
   await usePoint(early);
   let run = await storedWhen(s => s?.model_source?.checkpoint_id === early);
   check('"Use this save point" pins exactly that save point - a concrete id, never "latest"', run?.model_source?.run_dir === A.run_dir && run.model_source.checkpoint_id === early, JSON.stringify(run?.model_source));
+  check('... and closes the RL model window (record 7.291)', await chosenAndReopened());
   check('... and says so, with the one Undo step', /^The next run fine-tunes FIXTURE_opamp_gt from its save point ckpt-00000006-a1, with its network \(one Undo step takes it back\)\.$/.test(await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? ''`)),
     await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no note'`));
   check('... with the model\'s network, in the same step', sameNet(run?.network, NET), JSON.stringify(run?.network));
@@ -218,13 +230,15 @@ await runChecks(browser, async () => {
   check('... and Redo brings it again', run?.model_source?.checkpoint_id === early);
   await evaluate(`${RIGHT}.querySelector('button.model-use-newer').click()`);
   run = await storedWhen(s => s?.model_source?.checkpoint_id === A.latest);
-  check('"Use the newer one" pins the newer save point', run?.model_source?.checkpoint_id === A.latest && !(await evaluate(`!!${RIGHT}.querySelector('.model-newer')`)), JSON.stringify(run?.model_source));
+  check('"Use the newer one" pins the newer save point, and closes the window', run?.model_source?.checkpoint_id === A.latest && await chosenAndReopened()
+    && !(await evaluate(`!!${RIGHT}.querySelector('.model-newer')`)), JSON.stringify(run?.model_source));
 
   // ---- a double click uses a row's newest save point; another network comes in the same step -----------------------------------
   await evaluate(`(${row(B)}).querySelector('td:nth-child(4)').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
   run = await storedWhen(s => s?.model_source?.run_dir === B.run_dir);
   check('a double click on a row uses its newest save point, pinned', run?.model_source?.run_dir === B.run_dir && run.model_source.checkpoint_id === B.latest, JSON.stringify(run?.model_source));
   check('... and its network (gatv2) is the run\'s at once - nothing follows later by itself', sameNet(run?.network, GATV2), JSON.stringify(run?.network));
+  check('... and the double click closes the window too', await chosenAndReopened());
   check('the model in use is described under the table: its network, and that the run uses it as it is', await until(`/^Network\\s+gatv2, hidden 16, heads 2, layers 1 - this run uses it as it is/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40),
     await evaluate(`${RIGHT}.querySelector('tr.model-network')?.innerText ?? 'no row'`));
   await sleep(1100);
@@ -243,9 +257,19 @@ await runChecks(browser, async () => {
     await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no message'`));
   check('... the configuration holds the model\'s network again', sameNet((await storedWhen(s => sameNet(s?.network, GATV2)))?.network, GATV2));
 
+  // ---- a save point that cannot be read: said in the window, which stays open (record 7.291) ------------------------------------
+  failModel = A.run_dir;
+  await details(A); await until(`!!(${pointRow(early)})`, 30); await usePoint(early);
+  check('a save point that cannot be read is said, and the RL model window stays open: nothing was chosen',
+    await until(`/That save point could not be read/.test(${RIGHT}.querySelector('.net-message.error')?.textContent ?? '')`, 40)
+    && !(await evaluate(`window.__checkRLWindow.closed`)) && (await stored())?.model_source?.run_dir === B.run_dir,
+    await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no note'`));
+  failModel = null;
+
   // ---- an incomplete configuration never hides the saved model -------------------------------------------------------------
   await details(C); await until(`!!(${pointRow(C.latest)})`, 30); await usePoint(C.latest);
   await storedWhen(s => s?.model_source?.run_dir === C.run_dir);
+  await chosenAndReopened();
   check('an incomplete configuration is said in plain words, as a calm note - not as a red error', await until(`!!${RIGHT}.querySelector('.compat-unchecked')`, 40)
     && /Parameter row "mp1_w" is set to be optimized but has no lower and no upper bound/.test(await evaluate(`${RIGHT}.querySelector('.compat-unchecked').innerText`))
     && !(await evaluate(`[...${RIGHT}.querySelectorAll('p.error')].some(p => /CompileError|bounds are required/.test(p.textContent))`)));
@@ -304,6 +328,7 @@ await runChecks(browser, async () => {
 
   // ---- back to New model ------------------------------------------------------------------------------------------------------------
   await details(D); await until(`!!(${pointRow(D.latest)})`, 30); await usePoint(D.latest); await storedWhen(s => s?.model_source?.run_dir === D.run_dir);
+  await chosenAndReopened();
   const beforeScratch = lists;
   await setMode(networkPage, 'scratch'); await sleep(500);
   run = await storedWhen(s => s?.mode === 'scratch');
@@ -323,6 +348,7 @@ await runChecks(browser, async () => {
   await evaluate(`(${row(B)}).querySelector('td:nth-child(4)').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
   run = await storedWhen(s => s?.model_source?.run_dir === B.run_dir);
   check('a second choice meanwhile lands: B, its newest save point, with its network', run?.model_source?.run_dir === B.run_dir && run.model_source.checkpoint_id === B.latest && sameNet(run.network, GATV2), JSON.stringify(run?.model_source));
+  check('... and it closes the window', await chosenAndReopened());
   let late = heldModel.shift(); await fulfil(late.requestId, 200, describe(late.body.run_dir, late.body.checkpoint_id)); await sleep(800);
   run = await stored();
   check('... and the first, answered late, changes nothing: B and its network stay, the note names B', run?.model_source?.run_dir === B.run_dir && run.model_source.checkpoint_id === B.latest && sameNet(run.network, GATV2)
@@ -337,6 +363,7 @@ await runChecks(browser, async () => {
   run = await stored();
   check('New model while a Use is on its way lets it go: New model, no saved model, the network as it was, no note', run?.mode === 'scratch' && !run.model_source?.run_dir && sameNet(run.network, GATV2)
     && !(await evaluate(`/The next run fine-tunes/.test(${RIGHT}.innerText)`)), `${JSON.stringify(run?.model_source)} ${JSON.stringify(run?.network)}`);
+  check('... and the window stays open: no model was chosen', !(await evaluate(`window.__checkRLWindow.closed`)));
 
   // ---- the REAL route of this backend ---------------------------------------------------------------------------------------------------
   const real = await fetch(new URL('api/runs/models' + (ROOT ? `?output_root=${encodeURIComponent(ROOT)}` : ''), APP));

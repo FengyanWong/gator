@@ -569,7 +569,8 @@ await runChecks(browser, async () => {
   await showRun(RUNS.live);
   await until(`/288 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 60);
   const RUNS_BUTTON = `document.querySelector('footer .tabs button.run-list-button')`;
-  /** The run window (Runs...): a double click on the run's row shows it in the bottom tabs; the window is closed again. */
+  /** The run window (Runs...): a double click on the run's row shows it in the bottom tabs, and the window closes by itself
+   *  (record 7.291); it is closed here only when no row was found. */
   const pickRun = async run => {
     await evaluate(`${RUNS_BUTTON}.click()`, true);
     const target = await browser.window(RUNS_WINDOW, { present: true, except: page.target.id });
@@ -582,7 +583,8 @@ await runChecks(browser, async () => {
       if (!at) await sleep(100);
     }
     if (at) await far.clickAt(at, { count: 2 });
-    await send('Target.closeTarget', { targetId: target.id }); await browser.window(RUNS_WINDOW, { present: false, except: page.target.id }); far.close();
+    else await send('Target.closeTarget', { targetId: target.id });
+    await browser.window(RUNS_WINDOW, { present: false, except: page.target.id }); far.close();
     await press('Training');
     return !!at;
   };

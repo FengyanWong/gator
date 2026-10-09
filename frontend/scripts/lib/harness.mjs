@@ -228,10 +228,15 @@ async function connect(target, { errors = [], prefix = '', consoleApi = true } =
     },
     viewport: (width, height) => send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }),
     /** A real mouse click at `at` ({ x, y } in this page), for what needs the user's gesture (a download) or a real double
-     *  click: `count` 2 presses twice, the second with clickCount 2, as a person's double click arrives (record 7.276). */
+     *  click: `count` 2 presses twice, the second with clickCount 2, as a person's double click arrives (record 7.276). A
+     *  click that closes its own window - a run chosen in the Runs window (record 7.291) - was delivered: its last release
+     *  may go unanswered when the window goes away, and that is no failure. */
     async clickAt(at, { count = 1 } = {}) {
       for (let clickCount = 1; clickCount <= count; clickCount++)
-        for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount });
+        for (const type of ['mousePressed', 'mouseReleased']) {
+          try { await send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount }); }
+          catch (e) { if (closed && clickCount === count && type === 'mouseReleased') return; throw e; }
+        }
     },
 
     // ---- Fetch interception (one per session: a second Fetch.enable replaces the first) ----------------------------------
@@ -458,15 +463,25 @@ export const TASK_PANEL = `[...document.querySelectorAll('.left .panel')].find(p
  *  "Tasks..." that opens the task window (TaskList.tsx), where a DOUBLE CLICK on a row chooses a task - what the old
  *  drop-down's choice did. `taskWindow(page, browser)` drives it for the checks: `current()` = the canonical key or placeholder text
  *  behind the displayed name, `keys()` = the tasks the window lists, `choose(key)` = open the window (once per page load: a reload
- *  closes it), double click the row, and wait until the column follows that key. The window reads /api/tasks and /api/runs
- *  (GET) when it opens: a hermetic check lets both through or answers them. `window` = the attached pop-up session. */
+ *  closes it), double click the row, and wait until the column follows that key. Once the page follows the task the window
+ *  closes by itself (user request 2026-10-09): the next call waits for that and opens it anew, and `closedAfterChoice()` says
+ *  whether it closed - a choice that did not go through (Cancel at the edits question) leaves it open, and it is used again.
+ *  The window reads /api/tasks and /api/runs (GET) when it opens: a hermetic check lets both through or answers them.
+ *  `window` = the attached pop-up session. */
 export function taskWindow(page, browser, { width = 1500, height = 760 } = {}) {
   const PANEL = TASK_PANEL;
   const ROW = `${PANEL}.querySelector('.task-row')`;
   const TABLE = `document.querySelector('.task-window table.task-table')`;
   let far = null;
+  let closing = false;            // a row was double clicked: the window closes by itself once the page follows that task
   const alive = () => far && !far.closed;
+  /** Whether the window closed after the last choice (waiting up to `ms`); false when it is still open. */
+  const closedAfterChoice = async (ms = 5000) => {
+    closing = false;
+    try { await browser.window(TASKS_WINDOW, { present: false, ms, except: page.target.id }); far = null; return true; } catch { return false; }
+  };
   const open = async () => {
+    if (closing) await closedAfterChoice();
     if (alive()) { try { await far.evaluate('1'); return far; } catch { far = null; } }
     if (far) { far = null; try { await browser.window(TASKS_WINDOW, { present: false, ms: 3000, except: page.target.id }); } catch { /* the old window lingers: attach by title below */ } }
     await page.evaluate(`${ROW}.querySelector('button.task-list-button').click()`, true);
@@ -486,8 +501,9 @@ export function taskWindow(page, browser, { width = 1500, height = 760 } = {}) {
       const el = tr.querySelector('code'); el.scrollIntoView({ block: 'center' }); const b = el.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
     if (!at) throw new Error(`the task window lists no ${key}`);
     await far.clickAt(at, { count: 2 });
+    closing = true;
     return page.until(`${ROW}?.querySelector('.task-list-key')?.dataset.taskKey === ${JSON.stringify(key)} && !${PANEL}.querySelector('[role="status"]')`, tries);
   };
-  const close = async () => { if (alive()) { try { await far.send('Runtime.evaluate', { expression: 'window.close()', userGesture: true }); } catch { /* gone */ } } far = null; await sleep(200); };
-  return { open, choose, keys, rows, current, close, get window() { return far; }, PANEL, ROW, TABLE };
+  const close = async () => { closing = false; if (alive()) { try { await far.send('Runtime.evaluate', { expression: 'window.close()', userGesture: true }); } catch { /* gone */ } } far = null; await sleep(200); };
+  return { open, choose, closedAfterChoice, keys, rows, current, close, get window() { return far; }, PANEL, ROW, TABLE };
 }

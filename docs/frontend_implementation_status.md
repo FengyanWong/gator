@@ -24,22 +24,23 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.101-7.118.md`](workbench-log/7.101-7.118.md) | entries 7.101-7.118 |
 | [`7.119-7.265.md`](workbench-log/7.119-7.265.md) | entries 7.119-7.265 (7.262, written later, is in the next file) |
 | [`7.266-7.278.md`](workbench-log/7.266-7.278.md) | entries 7.266-7.278 (and 7.262, written later) |
-| [`7.279-and-later.md`](workbench-log/7.279-and-later.md) | entries 7.279 onwards: the OPEN file |
+| [`7.279-7.290.md`](workbench-log/7.279-7.290.md) | entries 7.279-7.290 |
+| [`7.291-and-later.md`](workbench-log/7.291-and-later.md) | entries 7.291 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md` and `7.266-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md` and `7.279-and-later.md` are pointers kept for old links.
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.299 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.279-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
-the old name as a pointer (like the five above), change the file table above, and then update `CLAUDE.md` and
+**Rolling the open file over:** when the open file passes entry 7.319 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.291-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+the old name as a pointer (like the six above), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
-and 75 kB, 2026-10-08, record 7.279.) One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
+and 75 kB, 2026-10-08, record 7.279; `7.279-and-later.md` at entry 7.290 and 70 kB, 2026-10-09, record 7.291.) One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
 (7.64).
 
 ## Entries
@@ -339,3 +340,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.288 | Encoder comparison, stage D complete: on the two held-out cascodes every encoder repeats GT's pattern (no general-model gain on the folded cascode: C1 fails for all three, C2 fails for the cross-attention encoder; a clear gain on the telescopic: C1, C2 and C4 pass for all three); the encoders differ most from scratch (GraphGPS scratch 48 % in its last third on the folded cascode against GT's 93 %, the study's first clear GT advantage; both new encoders' scratch arms 100 % on the telescopic against GT's 89 %); stage E's two `_a` LDO tasks saved with their baselines and the GT reference runs started (session "Encoder run plan revision"); docs only |
 | 7.289 | Encoder comparison closed: GT's LDO references at the relaxed targets pass 0 on LDO1 (GraphGPS's 3 stand alone) and 9 on LDO2 (the new encoders 0) - single digits both ways, the rgcn LDOs' HF PSRR row learned by no encoder; the verdict over stages A-E: no encoder beats GT across the board, GraphGPS an equal with circuit-dependent swings both ways, the cross-attention encoder best from scratch on the folded cascode and slowest on OTA7t width; 36,804 launches in 31.9 h; open to the user: the 725-launch VCO run and seeds (the `_a` tasks and their four MScR cells were deleted on the user's word, 11:13) (session "Encoder run plan revision"); docs only |
 | 7.290 | The refactoring done in a clean copy (`~/gator-refactor/work`, session "Refactoring plan"): plan 7.287's groups A-D, one commit per package, each proved to change nothing (move identity, routes/OpenAPI, MOCK runs, validation, calibrations, HTTP answers, the same 1,826 tests, DOM identity 216/216); group E and C11 not done; landed on the user's word (merge, commit, page rebuild, 8765 restart) |
+| 7.291 | The Tasks, Runs and RL model windows close once a task, run or saved model is chosen (user); a choice that does not go through (Cancel, an unreadable model) leaves the window open; the record file rolled over (`7.279-7.290.md`) |

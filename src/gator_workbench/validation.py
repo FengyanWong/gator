@@ -224,30 +224,47 @@ def _check_parameters(config, report, graph, record):
                               'Components in the RL model window to vary it.' if knowing else ''))
         if p.binding_group == p.variable_id:
             report.add('error', 'self_binding', path + '.binding_group', 'A variable cannot be bound to itself')
-        leader_like = not p.binding_group
-        lower, upper, step = p.lower, p.upper, p.step
-        if p.optimized and leader_like:
-            if lower is None or upper is None:
-                report.add('error', 'missing_bounds', path, 'An optimized independent variable needs both bounds')
-            elif not lower < upper:
-                report.add('error', 'invalid_bounds', path, f'lower ({lower}) must be below upper ({upper})')
-            else:
-                if p.scale == 'log' and lower <= 0:
-                    report.add('error', 'log_scale_nonpositive', path + '.scale', 'log scale needs lower > 0')
-                if step is not None and step > upper - lower:
-                    report.add('error', 'step_exceeds_range', path + '.step', 'step is larger than the range')
-                if p.initial_value is not None:
-                    if not lower <= p.initial_value <= upper:
-                        report.add('error', 'initial_out_of_bounds', path + '.initial_value',
-                                   f'{p.initial_value} is outside [{lower}, {upper}]')
-                    elif step and not _integral((p.initial_value - lower) / step):
-                        report.add('error', 'initial_off_grid', path + '.initial_value',
-                                   'Initial value is not on lower + k*step; the optimizer requires a legal start')
-        if p.value_type == 'integer':
-            for name, value in (('lower', lower), ('upper', upper), ('initial_value', p.initial_value),
-                                ('step', step)):
-                if value is not None and not _integral(value):
-                    report.add('error', 'integer_constraint', f'{path}.{name}', f'{name} must be an integer')
+        _check_row_bounds(report, path, p)
+    _check_bindings(report, parameters, count_columns)
+    report.facts['independent_action_variables'] = independent_action_count(parameters)
+    report.facts['parameter_rows'] = len(parameters)
+    if not any(p.optimized for p in parameters):
+        report.add('error', 'nothing_to_optimize', 'parameters', 'At least one optimized variable is required')
+    if graph is not None:
+        _check_parameters_against_circuit(config, report, graph, record)
+
+
+def _check_row_bounds(report, path, p):
+    """One parameter row's bounds, step, scale, initial value and integer constraint (an optimized independent row)."""
+    leader_like = not p.binding_group
+    lower, upper, step = p.lower, p.upper, p.step
+    if p.optimized and leader_like:
+        if lower is None or upper is None:
+            report.add('error', 'missing_bounds', path, 'An optimized independent variable needs both bounds')
+        elif not lower < upper:
+            report.add('error', 'invalid_bounds', path, f'lower ({lower}) must be below upper ({upper})')
+        else:
+            if p.scale == 'log' and lower <= 0:
+                report.add('error', 'log_scale_nonpositive', path + '.scale', 'log scale needs lower > 0')
+            if step is not None and step > upper - lower:
+                report.add('error', 'step_exceeds_range', path + '.step', 'step is larger than the range')
+            if p.initial_value is not None:
+                if not lower <= p.initial_value <= upper:
+                    report.add('error', 'initial_out_of_bounds', path + '.initial_value',
+                               f'{p.initial_value} is outside [{lower}, {upper}]')
+                elif step and not _integral((p.initial_value - lower) / step):
+                    report.add('error', 'initial_off_grid', path + '.initial_value',
+                               'Initial value is not on lower + k*step; the optimizer requires a legal start')
+    if p.value_type == 'integer':
+        for name, value in (('lower', lower), ('upper', upper), ('initial_value', p.initial_value),
+                            ('step', step)):
+            if value is not None and not _integral(value):
+                report.add('error', 'integer_constraint', f'{path}.{name}', f'{name} must be an integer')
+
+
+def _check_bindings(report, parameters, count_columns):
+    """The bindings between parameter rows: a resolvable binding graph, and each follower's unit, parameter kind,
+    bounds and initial value against its leader times its ratio."""
     try:
         leaders = resolve_leaders(parameters)
     except ValueError as exc:
@@ -292,12 +309,6 @@ def _check_parameters(config, report, graph, record):
                                f'Initial value {_in(actual, p.unit)} is not ratio x leader '
                                f'({_in(expected, p.unit)}); the optimizer '
                                'requires current values to satisfy declared bindings')
-    report.facts['independent_action_variables'] = independent_action_count(parameters)
-    report.facts['parameter_rows'] = len(parameters)
-    if not any(p.optimized for p in parameters):
-        report.add('error', 'nothing_to_optimize', 'parameters', 'At least one optimized variable is required')
-    if graph is not None:
-        _check_parameters_against_circuit(config, report, graph, record)
 
 
 def _check_bindings_against_circuit(config, report, graph):
@@ -440,25 +451,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
             report.add('error', 'spec_name_is_a_result', path + '.metric_id',
                        f'{t.metric_id!r} is the name of a result the simulation returns, but this spec computes {equation!r}. '
                        f'Give the spec its own name, or make its equation the Probe that reads {t.metric_id}.')
-        given = dict(lower=t.lower is not None, upper=t.upper is not None)
-        need = {'>=': ('lower',), '<=': ('upper',), 'interval': ('lower', 'upper')}[t.constraint]
-        for name in need:
-            if not given[name]:
-                report.add('error', 'missing_threshold', f'{path}.{name}', f'constraint {t.constraint} needs {name}')
-        for name, present in given.items():
-            if present and name not in need:
-                report.add('error', 'unexpected_threshold', f'{path}.{name}',
-                           f'{name} is not used by constraint {t.constraint}; remove it to avoid ambiguity')
-        if t.constraint == 'interval' and given['lower'] and given['upper'] and t.lower > t.upper:
-            report.add('error', 'invalid_interval', path, 'lower must not exceed upper')
-        # An empty scale measures a miss against the size of the limit. A limit of 0 has no size, and the miss was
-        # silently counted against 1 of the row's unit - 1 V, 1 Hz or 1 A, whatever the circuit (plan of 2026-10-05, S3).
-        limits = [getattr(t, name) for name in need if given[name]]
-        if t.active and t.normalization_scale is None and limits and not any(limits):
-            report.add('blocker', 'scale_needed_for_zero_limit', path + '.normalization_scale',
-                       f'{t.metric_id}: the limit is 0, so a miss cannot be measured as a fraction of the limit (it would be '
-                       f'counted against 1 {t.unit}). Type a Scale for this row (Specs, More columns): the distance outside '
-                       'the limit that should cost half of the row\'s penalty.')
+        _check_limits(report, path, t)
         if t.direction_after_feasible != 'none' and t.active:
             preference.append(t.metric_id)
             needed = 'upper' if t.direction_after_feasible == 'minimize' else 'lower'
@@ -474,20 +467,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
                        'just leaves it out of the reward. Tick "hard", or clear "Missing value = failed".')
         if units.known(t.unit) and units.is_affine(t.unit):
             report.add('error', 'affine_unit', path + '.unit', 'Offset units are not supported for targets')
-        if registry is not None and units.known(t.unit) and not units.is_affine(t.unit):
-            entry = registry.get(t.metric_id)
-            if entry is None and extensible:
-                report.add('info', 'spec_adds_registry_entry', path + '.metric_id',
-                           f'{t.metric_id!r} is new to the result registry the network reads, so this run adds it there. '
-                           'Saved models made without this spec cannot be loaded into such a run, nor its models into one '
-                           'without it.')
-            elif entry is None:
-                report.add('blocker', 'metric_not_in_registry', path + '.metric_id',
-                           f'{t.metric_id!r} is not in the RL specification registry {sorted(registry)}. Add it '
-                           'under Run > Advanced > spec_registry (this changes checkpoint compatibility).')
-            elif units.canonical_unit(t.unit) != units.canonical_unit(entry) if units.known(entry) else True:
-                report.add('error', 'registry_unit_mismatch', path + '.unit',
-                           f'Registry expects {entry!r} for {t.metric_id}')
+        _check_registry_entry(report, path, t, registry, extensible)
         if not t.basis.strip():
             report.add('info', 'basis_not_stated', path + '.basis', 'The source of this requirement is not recorded')
     if len(preference) > 1:
@@ -496,13 +476,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
     if active_hard == 0:
         report.add('error', 'no_hard_constraint', 'targets',
                    'At least one active hard constraint is required to define feasibility')
-    used = set()
-    for t in config.targets:
-        equation = t.equation.strip()
-        used |= {equation} if equation in measurement_ids else set(_expression_symbols(equation)[0] or ())
-    for i, m in enumerate(config.measurements):
-        if m.measurement_id not in used:
-            report.add('warning', 'unused_measurement', f'measurements[{i}]', 'No spec equation uses this probe')
+    _warn_unused_probes(config, report, measurement_ids)
 
 
 # A from-scratch soft actor-critic run below this many evaluations is told that it has hardly had time to learn. Record
@@ -539,6 +513,76 @@ def _check_run(config, report, record):
         report.add('warning', 'budget_within_warmup', 'run.advanced.warmup_transitions',
                    'The whole budget is random warm-up exploration; the policy never chooses an action. Published '
                    'settings assume thousands of simulations: lower the warm-up or raise the budget')
+    _warn_learning_values(report, run, adv)
+    _check_vocabulary(report, run, record)
+    if run.mode == 'frozen':
+        report.add('info', 'frozen_no_updates', 'run.mode',
+                   'frozen: no weight, temperature or normalization updates; no learner_updates rows are written')
+    if adv.spec_registry is not None:
+        names = [e.metric_id for e in adv.spec_registry]
+        if len(set(names)) != len(names) or not names:
+            report.add('error', 'invalid_spec_registry', 'run.advanced.spec_registry', 'IDs must be unique, nonempty')
+        for j, entry in enumerate(adv.spec_registry):
+            if not units.known(entry.unit):
+                report.add('error', 'unknown_unit', f'run.advanced.spec_registry[{j}].unit', entry.unit)
+    _warn_output_settings(report, config.output)
+
+
+def _check_limits(report, path, t):
+    """One spec's limits: those its constraint needs and only those, an interval in order, and a Scale where a limit of
+    0 would leave a miss without a size."""
+    given = dict(lower=t.lower is not None, upper=t.upper is not None)
+    need = {'>=': ('lower',), '<=': ('upper',), 'interval': ('lower', 'upper')}[t.constraint]
+    for name in need:
+        if not given[name]:
+            report.add('error', 'missing_threshold', f'{path}.{name}', f'constraint {t.constraint} needs {name}')
+    for name, present in given.items():
+        if present and name not in need:
+            report.add('error', 'unexpected_threshold', f'{path}.{name}',
+                       f'{name} is not used by constraint {t.constraint}; remove it to avoid ambiguity')
+    if t.constraint == 'interval' and given['lower'] and given['upper'] and t.lower > t.upper:
+        report.add('error', 'invalid_interval', path, 'lower must not exceed upper')
+    # An empty scale measures a miss against the size of the limit. A limit of 0 has no size, and the miss was
+    # silently counted against 1 of the row's unit - 1 V, 1 Hz or 1 A, whatever the circuit (plan of 2026-10-05, S3).
+    limits = [getattr(t, name) for name in need if given[name]]
+    if t.active and t.normalization_scale is None and limits and not any(limits):
+        report.add('blocker', 'scale_needed_for_zero_limit', path + '.normalization_scale',
+                   f'{t.metric_id}: the limit is 0, so a miss cannot be measured as a fraction of the limit (it would be '
+                   f'counted against 1 {t.unit}). Type a Scale for this row (Specs, More columns): the distance outside '
+                   'the limit that should cost half of the row\'s penalty.')
+
+
+def _check_registry_entry(report, path, t, registry, extensible):
+    """One spec against the result registry the network reads: new to it (added by this run, or refused), or in it with
+    the same unit."""
+    if registry is not None and units.known(t.unit) and not units.is_affine(t.unit):
+        entry = registry.get(t.metric_id)
+        if entry is None and extensible:
+            report.add('info', 'spec_adds_registry_entry', path + '.metric_id',
+                       f'{t.metric_id!r} is new to the result registry the network reads, so this run adds it there. '
+                       'Saved models made without this spec cannot be loaded into such a run, nor its models into one '
+                       'without it.')
+        elif entry is None:
+            report.add('blocker', 'metric_not_in_registry', path + '.metric_id',
+                       f'{t.metric_id!r} is not in the RL specification registry {sorted(registry)}. Add it '
+                       'under Run > Advanced > spec_registry (this changes checkpoint compatibility).')
+        elif units.canonical_unit(t.unit) != units.canonical_unit(entry) if units.known(entry) else True:
+            report.add('error', 'registry_unit_mismatch', path + '.unit',
+                       f'Registry expects {entry!r} for {t.metric_id}')
+
+
+def _warn_unused_probes(config, report, measurement_ids):
+    """A warning for each Probes row that no spec equation uses."""
+    used = set()
+    for t in config.targets:
+        equation = t.equation.strip()
+        used |= {equation} if equation in measurement_ids else set(_expression_symbols(equation)[0] or ())
+    for i, m in enumerate(config.measurements):
+        if m.measurement_id not in used:
+            report.add('warning', 'unused_measurement', f'measurements[{i}]', 'No spec equation uses this probe')
+
+def _warn_learning_values(report, run, adv):
+    """Warnings for a run that would train with values that learned late or not at all in the tests of 2026-10-05."""
     # Measured on 2026-10-05 (record 7.183, artifacts/local/reviews/defaults-study-2026-10-05): the values a configuration
     # without an Advanced block still gets - starting temperature 0.2, one update per evaluation - leave soft actor-critic
     # a uniform random search under every reward setting. The schema defaults stay (old configurations and checkpoints
@@ -561,6 +605,10 @@ def _check_run(config, report, record):
                    f'starting presets in GATOR\'s tests of 2026-10-05 (after 250 to 600 with the values tested before them). '
                    f'With {run.max_evaluations} evaluations this run has little or no time to learn: raise the budget to '
                    'several hundred.')
+
+
+def _check_vocabulary(report, run, record):
+    """The component list the network is built with: a PDK's needs that PDK loaded."""
     vocabulary = getattr(run.network, 'vocabulary', 'standard') or 'standard'
     if vocabulary != 'standard':                  # the schema admits 'pdk:<name>' only: `record` is _pdk_record's load of <name>
         if record is None:
@@ -572,17 +620,11 @@ def _check_run(config, report, record):
             report.add('info', 'pdk_vocabulary', 'run.network.vocabulary',
                        f"The network is built with the component list of {label(record['vocabulary'])}. A model trained "
                        'with it loads only with this list, and models trained with the standard list do not load with it.')
-    if run.mode == 'frozen':
-        report.add('info', 'frozen_no_updates', 'run.mode',
-                   'frozen: no weight, temperature or normalization updates; no learner_updates rows are written')
-    if adv.spec_registry is not None:
-        names = [e.metric_id for e in adv.spec_registry]
-        if len(set(names)) != len(names) or not names:
-            report.add('error', 'invalid_spec_registry', 'run.advanced.spec_registry', 'IDs must be unique, nonempty')
-        for j, entry in enumerate(adv.spec_registry):
-            if not units.known(entry.unit):
-                report.add('error', 'unknown_unit', f'run.advanced.spec_registry[{j}].unit', entry.unit)
-    out = config.output
+
+
+def _warn_output_settings(report, out):
+    """What the output settings make impossible later (a full resume, a transfer source, a complete history), and a
+    save-point interval given twice."""
     if not out.save_replay_snapshots:
         report.add('warning', 'no_full_resume', 'output.save_replay_snapshots',
                    'Replay snapshots are off: checkpoints will be weights_only and a FULL training-state resume '
@@ -601,7 +643,6 @@ def _check_run(config, report, record):
         report.add('warning', 'no_transition_archive', 'output.save_transition_archive',
                    'The complete experience archive is off. A replay snapshot is NOT a complete history once the '
                    'circular buffer evicts samples.')
-
 
 def _check_research(config, report, *, for_generalization=False):
     r = config.research

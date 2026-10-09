@@ -41,7 +41,6 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     by_section = {}
     for issue in blocking:
         by_section.setdefault(_section(issue.get('path')), []).append(issue)
-    say = lambda found: '; '.join(str(i.get('message'))[:200] for i in found[:3]) + (f' (+{len(found) - 3} more)' if len(found) > 3 else '')  # noqa: E731
     run, items = config.get('run') or {}, []
     mock = None if task is None else bool(task.mock)
 
@@ -54,6 +53,56 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
                            'Choose the circuit under "Circuit source" (left) and load it.'))
 
     # 2-4. the three tables
+    items += _table_items(config, by_section, profile)
+
+    # 5. blocking issues outside the tables
+    other = [i for section, found in by_section.items() if section not in TABLES for i in found]
+    if other:
+        items.append(_item('validation', 'Other blocking issues', 'missing', 'you', _say(other),
+                           'Open the blocking-issues list in the header; each entry names its field.'))
+
+    # 6. run configuration
+    mode, budget = run.get('mode', 'scratch'), run.get('max_evaluations')
+    starving = [i for i in issues if i.get('code') in LEARNING_WARNINGS]
+    detail = f"Mode {mode}, budget {budget} evaluation{'' if budget == 1 else 's'}, concurrency {run.get('concurrency', 1)}."
+    if starving:
+        items.append(_item('run', 'Run configuration', 'warning', 'you', detail + ' ' + _say(starving),
+                           'Raise "Max evaluations" or lower batch size / warm-up under Advanced in the RL model window: as set, '
+                           'the run would not learn.'))
+    else:
+        items.append(_item('run', 'Run configuration', 'done', 'you', detail))
+
+    reachability = [i for i in issues if i.get('code') == 'corner_reachability']
+    if reachability:
+        items.append(_item('corner_reachability', 'Corner targets', 'warning', 'you',
+                           ' '.join(i['message'] for i in reachability), 'Open Corner check.'))
+
+    # 7. output folder
+    items += _output_items(output)
+
+    # 8-9. real circuits only
+    items += _connection_items(mock, run, connection, budget)
+
+    missing = [i for i in items if i['status'] == 'missing']
+    ready = not missing and not validation.get('blocks_run')
+    items.append(_item('start', 'Start', 'done' if ready else 'missing', 'you',
+                       'Nothing blocks a start.' if ready else f"{len(missing)} item(s) above still block a start.",
+                       'Press "Calibration" (64 random designs '
+                       'to propose reward settings) or "Start".' if ready else ''))
+    return dict(ready=ready, next=missing[0] if missing else items[-1], items=items,
+                note='Computed by the backend from the live configuration. No model was called, nothing was probed: '
+                     'the connection line is the LAST test result, not a new one.')
+
+
+def _say(found) -> str:
+    """The first three issues' messages, each cut at 200 characters, and how many more there are."""
+    return '; '.join(str(i.get('message'))[:200] for i in found[:3]) + (f' (+{len(found) - 3} more)' if len(found) > 3 else '')
+
+
+def _table_items(config, by_section, profile) -> list:
+    """The Parameters, Specs and Probes items: each table filled, empty, differing from the saved task, or not the rows a
+    verified circuit fixes."""
+    items = []
     rows = {name: len(config.get(name) or []) for name in TABLES}
     hard = [t for t in (config.get('targets') or []) if t.get('hard') and t.get('active', True)]
     registered = (config.get('circuit') or {}).get('source') == 'registered_task'
@@ -81,7 +130,7 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
             continue
         empty = dict(parameters=not rows['parameters'], targets=not hard, measurements=not rows['measurements'])[name]
         if found or empty:
-            detail = say(found) if found else dict(
+            detail = _say(found) if found else dict(
                 parameters='No optimized variable yet.', targets='No active hard constraint yet, so nothing defines "feasible".',
                 measurements='No probe is defined; every spec is an equation over probes.')[name]
             action = ('Write each requirement in the "Specs" tab, with where it comes from.' if name == 'targets'
@@ -94,30 +143,12 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
             count = len(hard) if name == 'targets' else rows[name]
             items.append(_item(name, TITLES[name], 'done', 'agent',
                                f"{count} {'active hard constraint' if name == 'targets' else 'row'}{'' if count == 1 else 's'}."))
+    return items
 
-    # 5. blocking issues outside the tables
-    other = [i for section, found in by_section.items() if section not in TABLES for i in found]
-    if other:
-        items.append(_item('validation', 'Other blocking issues', 'missing', 'you', say(other),
-                           'Open the blocking-issues list in the header; each entry names its field.'))
 
-    # 6. run configuration
-    mode, budget = run.get('mode', 'scratch'), run.get('max_evaluations')
-    starving = [i for i in issues if i.get('code') in LEARNING_WARNINGS]
-    detail = f"Mode {mode}, budget {budget} evaluation{'' if budget == 1 else 's'}, concurrency {run.get('concurrency', 1)}."
-    if starving:
-        items.append(_item('run', 'Run configuration', 'warning', 'you', detail + ' ' + say(starving),
-                           'Raise "Max evaluations" or lower batch size / warm-up under Advanced in the RL model window: as set, '
-                           'the run would not learn.'))
-    else:
-        items.append(_item('run', 'Run configuration', 'done', 'you', detail))
-
-    reachability = [i for i in issues if i.get('code') == 'corner_reachability']
-    if reachability:
-        items.append(_item('corner_reachability', 'Corner targets', 'warning', 'you',
-                           ' '.join(i['message'] for i in reachability), 'Open Corner check.'))
-
-    # 7. output folder
+def _output_items(output) -> list:
+    """The output folder's item, from the output-root check (None: not checked)."""
+    items = []
     if output is None:
         items.append(_item('output', 'Output folder', 'unknown', 'you', 'Not checked.'))
     elif not output.get('allowed') or output.get('error'):
@@ -129,8 +160,12 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     else:
         items.append(_item('output', 'Output folder', 'done', 'you',
                            'Writable.' if output.get('exists') else 'Allowed; it is created when the run starts.'))
+    return items
 
-    # 8-9. real circuits only
+
+def _connection_items(mock, run, connection, budget) -> list:
+    """A real circuit's connection and budget items; a MOCK circuit's note that it needs no connection."""
+    items = []
     if mock is False:
         if not run.get('connection_profile_id'):
             items.append(_item('connection', 'Connection', 'missing', 'you', 'No connection is selected.',
@@ -148,13 +183,4 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
                            f'Pressing Start asks you to authorize {budget} real evaluation(s). Only you can.'))
     elif mock is True:
         items.append(_item('connection', 'Connection', 'not_applicable', 'you', 'A synthetic (MOCK) circuit needs no connection.'))
-
-    missing = [i for i in items if i['status'] == 'missing']
-    ready = not missing and not validation.get('blocks_run')
-    items.append(_item('start', 'Start', 'done' if ready else 'missing', 'you',
-                       'Nothing blocks a start.' if ready else f"{len(missing)} item(s) above still block a start.",
-                       'Press "Calibration" (64 random designs '
-                       'to propose reward settings) or "Start".' if ready else ''))
-    return dict(ready=ready, next=missing[0] if missing else items[-1], items=items,
-                note='Computed by the backend from the live configuration. No model was called, nothing was probed: '
-                     'the connection line is the LAST test result, not a new one.')
+    return items

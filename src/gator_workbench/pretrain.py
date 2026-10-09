@@ -75,7 +75,6 @@ class Pool:
 def prepare_pool(request, *, progress=None):
     """Read and validate every eligible transition, then split whole run-scoped episodes."""
     from analog_optimizer.graph.pyg_converter import FeatureSchema
-    from analog_optimizer.models.inputs import context_features
     origin = request['origin']
     if origin not in ('real', 'synthetic'):
         raise ValueError('Pool origin must be real or synthetic')
@@ -141,17 +140,7 @@ def prepare_pool(request, *, progress=None):
                 raise ValueError('Episode identity required for leakage-free holdout')
             groups[task][episode].append((transition, False))
             if task in relabel:
-                changes = relabel[task]
-                known = {s.metric_id for s in first.specs}
-                if set(changes) - known:
-                    raise ValueError(f'Relabel metric absent in {task}')
-                specs = tuple(replace(s, upper=changes[s.metric_id]) if s.metric_id in changes else s
-                              for s in first.specs)
-                if any(s.comparator != 'max' for s in first.specs if s.metric_id in changes):
-                    raise ValueError('Upper-limit relabelling requires max-comparator rows')
-                a, b = replace(first, specs=specs), replace(last, specs=specs)
-                derived = replace(transition, observation=a, next_observation=b, reward=b.evaluation.reward)
-                derived.validate()
+                derived = _relabeled(transition, first, last, relabel[task], task)
                 groups[task][episode].append((derived, True))
                 counts['relabeled'] += 1
         # Detect source mutation during reconstruction, too.
@@ -166,33 +155,8 @@ def prepare_pool(request, *, progress=None):
             progress(dict(event='source_loaded', **sources[-1]))
     if set(relabel) - groups.keys():
         raise ValueError('Relabel task absent from pool')
-    schema = shared_registry(registries, request.get('reference_overrides', {}))
-    if request.get('spec_registry') is not None:
-        from analog_optimizer.models.inputs import SpecSchema
-        explicit = SpecSchema(version='spec-input-custom-v1', metrics=tuple(
-            (entry['metric_id'], entry['unit'], float(entry['reference'])) for entry in request['spec_registry']))
-        units = {name: unit for name, unit, _ in explicit.metrics}
-        if any(units.get(name) != unit for name, unit, _ in schema.metrics):
-            raise ValueError('Explicit registry must cover every source metric with its recorded unit')
-        schema = explicit
-    training, validation, split = {}, {}, []
-    for task, episodes in sorted(groups.items()):
-        keys = sorted(episodes)
-        if len(keys) < 2:
-            raise ValueError(f'At least two episodes required for {task}')
-        random.Random(f'{seed}:{task}').shuffle(keys)
-        n = min(len(keys) - 1, max(1, math.ceil(len(keys) * fraction)))
-        training[task], validation[task] = [], []
-        for i, key in enumerate(keys):
-            subset = 'validation' if i < n else 'training'
-            target = validation if i < n else training
-            for transition, derived in episodes[key]:
-                # Validate the shared registry on both endpoints without constructing an encoder.
-                for observation in (transition.observation, transition.next_observation):
-                    context_features(observation, schema)
-                target[task].append(transition)
-                split.append(dict(task=task, run_id=key[0], worker_id=key[1], episode_id=key[2],
-                                  candidate_id=transition.candidate_id, relabeled=derived, subset=subset))
+    schema = _pool_registry(registries, request)
+    training, validation, split = _split_episodes(groups, schema, seed, fraction)
     audit = dict(format='gator-offline-pool-v1', origin=origin, seed=seed, holdout_fraction=fraction,
                  request_sha256=identity(request), sources=sources, spec_schema=asdict(schema),
                  feature_schema=asdict(FeatureSchema()), reward_settings=asdict(settings),
@@ -222,6 +186,61 @@ class BalancedSampler:
             self.counts[task] += 1
         return result
 
+
+def _relabeled(transition, first, last, changes, task):
+    """A copy of an archived transition with the upper limits of some specs changed (`changes`: metric -> new upper),
+    re-scored and validated."""
+    known = {s.metric_id for s in first.specs}
+    if set(changes) - known:
+        raise ValueError(f'Relabel metric absent in {task}')
+    specs = tuple(replace(s, upper=changes[s.metric_id]) if s.metric_id in changes else s
+                  for s in first.specs)
+    if any(s.comparator != 'max' for s in first.specs if s.metric_id in changes):
+        raise ValueError('Upper-limit relabelling requires max-comparator rows')
+    a, b = replace(first, specs=specs), replace(last, specs=specs)
+    derived = replace(transition, observation=a, next_observation=b, reward=b.evaluation.reward)
+    derived.validate()
+    return derived
+
+
+def _pool_registry(registries, request):
+    """The result registry the pool is read with: the one the sources share, or the request's explicit one when it covers
+    every source metric with its recorded unit."""
+    schema = shared_registry(registries, request.get('reference_overrides', {}))
+    if request.get('spec_registry') is not None:
+        from analog_optimizer.models.inputs import SpecSchema
+        explicit = SpecSchema(version='spec-input-custom-v1', metrics=tuple(
+            (entry['metric_id'], entry['unit'], float(entry['reference'])) for entry in request['spec_registry']))
+        units = {name: unit for name, unit, _ in explicit.metrics}
+        if any(units.get(name) != unit for name, unit, _ in schema.metrics):
+            raise ValueError('Explicit registry must cover every source metric with its recorded unit')
+        schema = explicit
+    return schema
+
+
+def _split_episodes(groups, schema, seed, fraction):
+    """Whole run-scoped episodes split into training and validation per task, reproducibly from the seed; every
+    observation checked against the registry on the way. Returns (training, validation, the split's rows)."""
+    from analog_optimizer.models.inputs import context_features
+    training, validation, split = {}, {}, []
+    for task, episodes in sorted(groups.items()):
+        keys = sorted(episodes)
+        if len(keys) < 2:
+            raise ValueError(f'At least two episodes required for {task}')
+        random.Random(f'{seed}:{task}').shuffle(keys)
+        n = min(len(keys) - 1, max(1, math.ceil(len(keys) * fraction)))
+        training[task], validation[task] = [], []
+        for i, key in enumerate(keys):
+            subset = 'validation' if i < n else 'training'
+            target = validation if i < n else training
+            for transition, derived in episodes[key]:
+                # Validate the shared registry on both endpoints without constructing an encoder.
+                for observation in (transition.observation, transition.next_observation):
+                    context_features(observation, schema)
+                target[task].append(transition)
+                split.append(dict(task=task, run_id=key[0], worker_id=key[1], episode_id=key[2],
+                                  candidate_id=transition.candidate_id, relabeled=derived, subset=subset))
+    return training, validation, split
 
 def evaluate(learner, pool, batch_size=32):
     """Held-out Q MSE versus a constant fitted on TRAINING rewards only."""

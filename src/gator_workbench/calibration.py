@@ -144,76 +144,99 @@ def calibrate(config, evaluations, metric_rows) -> dict:
     for target in config.targets:
         if not target.active:
             continue
-        spec, factor = specs[target.metric_id], units.scale_to_canonical(1.0, target.unit)
-        measured = [values[e['evaluation_id']][target.metric_id] for e in designs if target.metric_id in values.get(e['evaluation_id'], {})]
-        misses = [miss for miss in (max(0.0, 0.0 if spec.lower is None else spec.lower - value,
-                                        0.0 if spec.upper is None else value - spec.upper) for value in measured) if miss > 0]
-        stated = target.normalization_scale or None
-        empty_box = compiler.normalization_scale(target.model_copy(update=dict(normalization_scale=None)))
-        from_limit = any(v not in (None, 0) for v in (target.lower, target.upper))       # else the empty box means 1, a placeholder
-        # A window: a lower and an upper limit. Half its width, in the row's unit, is the most room a design can have in it.
-        window = _finite(target.lower) and _finite(target.upper) and target.upper > target.lower
-        half = float(f'{(target.upper - target.lower) / 2:.12g}') if window else None
-        row = dict(metric_id=target.metric_id, unit=target.unit, lower=target.lower, upper=target.upper, scale_stated=stated,
-                   scale_used=compiler.normalization_scale(target), measured=len(measured), misses=len(misses),
-                   median_miss=None, proposed_scale=None, limited=None, note=None, half_window=half)
-        if misses:
-            row['median_miss'] = statistics.median(misses) / factor
-        few = len(misses) < MIN_MISSES or len(misses) < MIN_MISS_SHARE * len(measured)
-        inside = 2 * len(misses) <= len(measured)            # at least half of the random designs are within this row's limits
-        too_few = (f'{len(misses)} of {len(measured)} random designs miss this row: too few to name a typical miss.')
-        if not compressed:
-            pass
-        elif few and not window:
-            row['note'] = f'{too_few} Its Scale stays as it is.'
-        elif target.direction_after_feasible != 'none':
-            # One number, two jobs: on this row the Scale also measures how far the objective is past its limit (the objective
-            # bonus), so a proposal from the misses would change what the bonus means. A judgment: in the test it made no
-            # measurable difference whether this row was calibrated too (docs/decisions.md).
-            row['note'] = 'This row carries the objective: its Scale also measures the objective bonus, so it stays as it is.'
-        elif few and (row['scale_used'] <= half or not inside):
-            row['note'] = f'{too_few} Its Scale stays as it is.'
-        elif few:
-            # A window few designs miss, with a Scale wider than half of it. The Scale then decides nothing about finding the
-            # window, but the room inside it counts as at most half / Scale - and the margin bonus follows the row with the
-            # least room, so it cannot pay for more than that on any row of the task.
-            row['proposed_scale'] = proposed[target.metric_id] = half
-            row['limited'] = 'window'
-            row['note'] = (f'{too_few} Half the window is proposed: with the Scale in use ({_text(row["scale_used"], target.unit)}) the middle of '
-                           f'the window counts as {half / row["scale_used"]:.2g} of a Scale away from its limits, and the margin bonus of the '
-                           'whole task cannot pay for more room than that.')
-        else:
-            scale = row['median_miss']
-            if from_limit:
-                low, high = (bound * empty_box for bound in SCALE_WITHIN)
-                if scale < low:
-                    scale, row['limited'] = low, 'low'
-                elif scale > high:
-                    scale, row['limited'] = high, 'high'
-                if row['limited']:
-                    row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}; the proposal is kept within '
-                                   f'{SCALE_WITHIN[0]:g} to {SCALE_WITHIN[1]:g} times the size of the limit.')
-            scale = _round(scale)
-            if window and scale > half and inside:
-                # Most designs are inside the window already: what its Scale still decides is the margin bonus.
-                scale, row['limited'] = half, 'window'
-                row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}, more than half the window, and '
-                               f'{len(measured) - len(misses)} of {len(measured)} random designs are inside it. The proposal is half the '
-                               'window: a design inside it has at most that much room, and with a larger Scale the margin bonus of the '
-                               'whole task could not pay for more.')
-            elif window and scale > half:
-                # Most designs miss the window: it has to be found first, and the typical miss as its Scale is what tells a
-                # near design from a far one. Half the window - many times smaller - would make nearly all of them count the same.
-                wider = (f'{len(misses)} of {len(measured)} random designs miss this window, so its Scale is their typical miss: the '
-                         f'search has to find the window first. While that is wider than half the window ({_text(half, target.unit)}), a '
-                         f'design inside counts as at most {half / scale:.2g} of a Scale clear, and the margin bonus of the whole task stays '
-                         'that small.')
-                row['note'] = f'{row["note"]} {wider}' if row['note'] else wider
-            row['proposed_scale'] = proposed[target.metric_id] = scale
+        row = _propose_scale(target, specs[target.metric_id], designs, values, compressed, proposed)
         result['rows'].append(row)
 
     # The starting temperature belongs to the reward the next run will have: the proposed scales, the same reward settings.
     # The reward code must first reproduce what the run recorded with the scales it had; otherwise nothing is proposed.
+    alpha = _propose_alpha(config, designs, values, recorded, proposed, result)
+    if proposed or alpha['proposed'] is not None:
+        result['status'] = 'calibrated'
+    elif alpha['estimate'] is not None:
+        result['reason'] = ('The random designs give nothing to change: no Scale is proposed for a Specs row, and the Initial alpha in use '
+                            f'({alpha["used"]:g}) is close to the estimate ({alpha["estimate"]:g}).')
+    else:
+        result['reason'] = 'The random designs give no proposal: no row is missed often enough, and the reward spread could not be named.'
+    return result
+
+
+
+def _propose_scale(target, spec, designs, values, compressed, proposed):
+    """One active Specs row: what the random designs measured and missed, and the Scale proposed for it (also put into
+    `proposed`), or why none is. Returns the row of the result."""
+    factor = units.scale_to_canonical(1.0, target.unit)
+    measured = [values[e['evaluation_id']][target.metric_id] for e in designs if target.metric_id in values.get(e['evaluation_id'], {})]
+    misses = [miss for miss in (max(0.0, 0.0 if spec.lower is None else spec.lower - value,
+                                    0.0 if spec.upper is None else value - spec.upper) for value in measured) if miss > 0]
+    stated = target.normalization_scale or None
+    empty_box = compiler.normalization_scale(target.model_copy(update=dict(normalization_scale=None)))
+    from_limit = any(v not in (None, 0) for v in (target.lower, target.upper))       # else the empty box means 1, a placeholder
+    # A window: a lower and an upper limit. Half its width, in the row's unit, is the most room a design can have in it.
+    window = _finite(target.lower) and _finite(target.upper) and target.upper > target.lower
+    half = float(f'{(target.upper - target.lower) / 2:.12g}') if window else None
+    row = dict(metric_id=target.metric_id, unit=target.unit, lower=target.lower, upper=target.upper, scale_stated=stated,
+               scale_used=compiler.normalization_scale(target), measured=len(measured), misses=len(misses),
+               median_miss=None, proposed_scale=None, limited=None, note=None, half_window=half)
+    if misses:
+        row['median_miss'] = statistics.median(misses) / factor
+    few = len(misses) < MIN_MISSES or len(misses) < MIN_MISS_SHARE * len(measured)
+    inside = 2 * len(misses) <= len(measured)            # at least half of the random designs are within this row's limits
+    too_few = (f'{len(misses)} of {len(measured)} random designs miss this row: too few to name a typical miss.')
+    if not compressed:
+        pass
+    elif few and not window:
+        row['note'] = f'{too_few} Its Scale stays as it is.'
+    elif target.direction_after_feasible != 'none':
+        # One number, two jobs: on this row the Scale also measures how far the objective is past its limit (the objective
+        # bonus), so a proposal from the misses would change what the bonus means. A judgment: in the test it made no
+        # measurable difference whether this row was calibrated too (docs/decisions.md).
+        row['note'] = 'This row carries the objective: its Scale also measures the objective bonus, so it stays as it is.'
+    elif few and (row['scale_used'] <= half or not inside):
+        row['note'] = f'{too_few} Its Scale stays as it is.'
+    elif few:
+        # A window few designs miss, with a Scale wider than half of it. The Scale then decides nothing about finding the
+        # window, but the room inside it counts as at most half / Scale - and the margin bonus follows the row with the
+        # least room, so it cannot pay for more than that on any row of the task.
+        row['proposed_scale'] = proposed[target.metric_id] = half
+        row['limited'] = 'window'
+        row['note'] = (f'{too_few} Half the window is proposed: with the Scale in use ({_text(row["scale_used"], target.unit)}) the middle of '
+                       f'the window counts as {half / row["scale_used"]:.2g} of a Scale away from its limits, and the margin bonus of the '
+                       'whole task cannot pay for more room than that.')
+    else:
+        scale = row['median_miss']
+        if from_limit:
+            low, high = (bound * empty_box for bound in SCALE_WITHIN)
+            if scale < low:
+                scale, row['limited'] = low, 'low'
+            elif scale > high:
+                scale, row['limited'] = high, 'high'
+            if row['limited']:
+                row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}; the proposal is kept within '
+                               f'{SCALE_WITHIN[0]:g} to {SCALE_WITHIN[1]:g} times the size of the limit.')
+        scale = _round(scale)
+        if window and scale > half and inside:
+            # Most designs are inside the window already: what its Scale still decides is the margin bonus.
+            scale, row['limited'] = half, 'window'
+            row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}, more than half the window, and '
+                           f'{len(measured) - len(misses)} of {len(measured)} random designs are inside it. The proposal is half the '
+                           'window: a design inside it has at most that much room, and with a larger Scale the margin bonus of the '
+                           'whole task could not pay for more.')
+        elif window and scale > half:
+            # Most designs miss the window: it has to be found first, and the typical miss as its Scale is what tells a
+            # near design from a far one. Half the window - many times smaller - would make nearly all of them count the same.
+            wider = (f'{len(misses)} of {len(measured)} random designs miss this window, so its Scale is their typical miss: the '
+                     f'search has to find the window first. While that is wider than half the window ({_text(half, target.unit)}), a '
+                     f'design inside counts as at most {half / scale:.2g} of a Scale clear, and the margin bonus of the whole task stays '
+                     'that small.')
+            row['note'] = f'{row["note"]} {wider}' if row['note'] else wider
+        row['proposed_scale'] = proposed[target.metric_id] = scale
+    return row
+
+
+def _propose_alpha(config, designs, values, recorded, proposed, result):
+    """The starting temperature for the reward the next run will have (the proposed Scales, the same reward settings),
+    once the reward code reproduces what the run recorded; written into result['initial_alpha'] and
+    result['reward_check']. Returns result['initial_alpha']."""
     alpha = result['initial_alpha']
     again = _rewards(config, designs, values)
     reproduced = sum((a is None and b is None) or (a is not None and b is not None and abs(a - b) <= SAME_REWARD) for a, b in zip(recorded, again))
@@ -246,15 +269,7 @@ def calibrate(config, evaluations, metric_rows) -> dict:
                 if value != ALPHA_PER_SD * spread:
                     alpha['note'] = (f'{ALPHA_PER_SD:g} x the reward spread is {ALPHA_PER_SD * spread:.2g}; the proposal is kept within '
                                      f'{ALPHA_WITHIN[0]:g} to {ALPHA_WITHIN[1]:g}.')
-    if proposed or alpha['proposed'] is not None:
-        result['status'] = 'calibrated'
-    elif alpha['estimate'] is not None:
-        result['reason'] = ('The random designs give nothing to change: no Scale is proposed for a Specs row, and the Initial alpha in use '
-                            f'({alpha["used"]:g}) is close to the estimate ({alpha["estimate"]:g}).')
-    else:
-        result['reason'] = 'The random designs give no proposal: no row is missed often enough, and the reward spread could not be named.'
-    return result
-
+    return alpha
 
 def sentence(result) -> str:
     """One line for the run's notes and its event log."""

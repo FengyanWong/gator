@@ -1,7 +1,7 @@
 // The Runs window's actions (record 7.267; plan "Load run" and "Existing runs: continued in place"): Load run, New run like
 // this, Continue... and Show results, as functions that stay the same for the memoised window. Out of App.tsx's Page
 // (plan-refactoring C5).
-import { MutableRefObject, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, plainError } from '../api';
 import { dateTime, folderName, runTitle } from '../format';
 import type { Newest } from '../newest';
@@ -19,11 +19,11 @@ import { migrateConfig } from '../store';
 const RUN_SETTINGS = ['model_label', 'max_evaluations', 'max_spectre_launches', 'max_wall_seconds', 'max_retries', 'max_consecutive_failures',
   'max_consecutive_infrastructure_failures', 'stop_at_first_feasible', 'seed', 'frozen_action', 'network', 'reward', 'conditions', 'advanced', 'rehearsal', 'continual_learning'];
 
-/** `followedTask` and `loadSerial`: the task-run link's (App.tsx): a Load run gives way to a task chosen elsewhere, and its
+/** `followTask` and `loadSerial`: the task-run link's (taskRunFollow.ts): a Load run gives way to a task chosen elsewhere, and its
  *  own task change silences the link. Returns the task load the Project column fills in, Continue...'s ask, and the window's presses. */
-export function useRunWindowActions({ config, setConfig, runs, taskKey, followedTask, loadSerial, setMessage, setRunDir, setTab, unfold }: {
+export function useRunWindowActions({ config, setConfig, runs, taskKey, followTask, loadSerial, setMessage, setRunDir, setTab, unfold }: {
   config: Json; setConfig: (next: Json | ((c: Json) => Json), record?: boolean) => void; runs: Json[]; taskKey: string | null;
-  followedTask: MutableRefObject<string | null>; loadSerial: Newest; setMessage: (message: Json) => void; setRunDir: (dir: string | null) => void;
+  followTask: (key: string) => (loaded: boolean) => void; loadSerial: Newest; setMessage: (message: Json) => void; setRunDir: (dir: string | null) => void;
   setTab: (tab: BottomTab) => void; unfold: () => void }) {
   const taskLoad = useRef<TaskLoad | null>(null);
   /** The model a run ended with, pinned: a trained run's newest save point; an Evaluate-only run's the one it evaluated - its
@@ -50,10 +50,9 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followed
   const withRunTask = async (row: Json, change: (c: Json) => Json, changes: boolean, stale: () => boolean): Promise<TaskLoaded> => {
     if (stale()) return { loaded: false, why: 'another choice came first' };
     if (taskKey === row.task_key) { if (changes) setConfig(change); return { loaded: true }; }
-    const before = followedTask.current;
-    followedTask.current = row.task_key;
+    const settle = followTask(row.task_key);
     const result = await (taskLoad.current?.(row.task_key, change, stale) ?? Promise.resolve<TaskLoaded>({ loaded: false, why: 'the task panel is not ready yet' }));
-    if (!result.loaded && followedTask.current === row.task_key) followedTask.current = before;
+    settle(result.loaded);
     return result;
   };
   const nameOf = (point: SavePoint) => modelNameAt(runs, point.run_dir);

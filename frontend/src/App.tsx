@@ -26,7 +26,7 @@ import { useCalibrationOffer } from './page/calibrationOffer';
 import { useRunWindowActions } from './page/runWindowActions';
 import { shownRun, useRunList, useShownRun } from './page/shownRun';
 import { useLiveRunAdoption } from './page/liveRunAdoption';
-import { useNewest } from './newest';
+import { useTaskRunFollow } from './page/taskRunFollow';
 import { oncePerBrowser } from './kept';
 
 /** A configuration the backend cannot even read (HTTP 422): one blocking issue per field it names, in its plain words
@@ -131,33 +131,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     lastPhase.current = control.phase;
   }, [control.phase]);
   useLiveRunAdoption({ control, outputRoot: config.output.output_root, refreshRuns, setRunDir, setMessage, setLooked });
-  // The bottom tabs follow the registered task (record 7.212, user: "after selecting specific task, it automatically load the
-  // most recent corresponding run of the registered task. If there is no recent run, then leave run selection and run status
-  // default blank unless you choose other runs"). When the page's task changes - chosen under Task, saved for the first time,
-  // a choice taken back with Undo - the run list is read again and the task's newest run is shown (a Baseline simulation is
-  // one of its runs), or no run. Not when the page opens: the run it showed is kept. A run chosen in the run window or
-  // started while the list is read stays, and so does the run shown when the read fails or the page leaves its tasks for a
-  // Virtuoso cell. The header's Start / Pause / Abort keep their own run. A server older than this page lists runs without
-  // their task: the run shown stays then, instead of every choice showing none.
-  const taskKey: string | null = config.circuit?.source === 'registered_task' ? config.circuit.task_id ?? null : null;
-  const followedTask = useRef(taskKey);
-  // The generation of the Runs window's Load run / New run like this (record 7.270, Astra's review of 2026-10-07): each one
-  // takes the next number and goes on only while it is still the newest - a task chosen elsewhere lets it go too.
-  const loadSerial = useNewest();
-  const shownNow = useRef(runDir);
-  shownNow.current = runDir;
-  useEffect(() => {
-    if (taskKey === followedTask.current) return;
-    followedTask.current = taskKey;
-    loadSerial.drop();                                   // a task chosen elsewhere: a Load run still on its way is let go
-    if (!taskKey) return;
-    const before = shownNow.current;
-    readRuns().then(({ list, error }) => {
-      if (error || followedTask.current !== taskKey || shownNow.current !== before) return;
-      if (list.length && !list.some(r => 'task_key' in r)) return;
-      setRunDir(list.find(r => r.task_key === taskKey)?.run_dir ?? null);
-    });
-  }, [taskKey]);
+  // The bottom tabs follow the registered task (record 7.212): page/taskRunFollow.ts.
+  const { taskKey, loadSerial, followTask } = useTaskRunFollow({ config, runDir, readRuns, setRunDir });
 
   const showRun = (started: Json, as: 'start' | 'resume', note = '') => {
     setRunDir(started.run_dir); setTab('status'); unfold(); refreshRuns();
@@ -197,7 +172,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     isReal: !!isReal, launchedRun, setMessage });
 
   // ---- the Runs window's actions (record 7.267; plan "Load run" and "Existing runs: continued in place"): page/runWindowActions.ts
-  const { taskLoad, askContinue, runWindow } = useRunWindowActions({ config, setConfig, runs, taskKey, followedTask, loadSerial, setMessage, setRunDir, setTab, unfold });
+  const { taskLoad, askContinue, runWindow } = useRunWindowActions({ config, setConfig, runs, taskKey, followTask, loadSerial, setMessage, setRunDir, setTab, unfold });
 
   if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
   if (!schema) return <p>Loading schema...</p>;

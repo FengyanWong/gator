@@ -15,7 +15,7 @@
 // so the same frames can be timed on the old and the new code (about 8 minutes for the old code, 2 for the new).
 // --verify <another trainingData.ts> also feeds twin stores of that module the same answers and compares every frame's
 // catalog, key numbers and charts with it, exactly (numbers by Object.is); a difference ends the run with exit code 1.
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -25,11 +25,13 @@ const args = process.argv.slice(2);
 const option = (name, fallback = null) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
 const modulePath = option('--module');
 /** Another trainingData.ts, imported from a folder of its own (node reads the package.json beside a .ts file), which goes
- *  again once the module is loaded. */
+ *  again once the module is loaded. The training/ folder beside it comes along: its parts, since plan-refactoring C12. */
 async function load(file) {
   const dir = mkdtempSync(path.join(tmpdir(), 'gator-chart-profile-'));
   try {
     copyFileSync(file, path.join(dir, 'trainingData.ts'));
+    const parts = path.join(path.dirname(file), 'training');
+    if (existsSync(parts)) cpSync(parts, path.join(dir, 'training'), { recursive: true });
     writeFileSync(path.join(dir, 'package.json'), '{ "type": "module" }\n');
     return await import(pathToFileURL(path.join(dir, 'trainingData.ts')).href);
   } finally { rmSync(dir, { recursive: true, force: true }); }

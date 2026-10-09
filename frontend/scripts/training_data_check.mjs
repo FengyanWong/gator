@@ -19,7 +19,8 @@
 // Run: "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_data_check.mjs)"   (a few seconds)
 //   [--seeds N] (random runs, default 12)   [--reference <trainingData.ts before 7.221>] or TRAINING_DATA_REFERENCE=<it>:
 //   e.g. git show c170802:frontend/src/panels/trainingData.ts > <file>.ts - each step of each random run also against it
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+//   (a trainingData.ts split into parts - plan-refactoring C12 - is given with its training/ folder beside it)
+import { copyFileSync, cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -418,6 +419,8 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
     const referenceDir = mkdtempSync(path.join(tmpdir(), 'gator-training-reference-'));
     try {
       copyFileSync(referencePath, path.join(referenceDir, 'trainingData.ts'));
+      const parts = path.join(path.dirname(referencePath), 'training');      // its parts, since plan-refactoring C12
+      if (existsSync(parts)) cpSync(parts, path.join(referenceDir, 'training'), { recursive: true });
       writeFileSync(path.join(referenceDir, 'package.json'), '{ "type": "module" }\n');
       reference = await import(pathToFileURL(path.join(referenceDir, 'trainingData.ts')).href);
     } finally { rmSync(referenceDir, { recursive: true, force: true }); }

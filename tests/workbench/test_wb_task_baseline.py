@@ -6,7 +6,8 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-from gator_workbench import profiles, runs, task_baseline, tasks
+from gator_workbench import profiles, runs, tasks
+from gator_workbench.api import task_baseline
 from gator_workbench.api import create_app
 from gator_workbench.storage.atomic import read_json
 from helpers import make_config

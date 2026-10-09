@@ -7,16 +7,16 @@ from types import SimpleNamespace
 from pathlib import Path
 from threading import Lock
 
-from . import schema, tasks, units
-from .security import redact
-from .storage.atomic import read_json, write_json
+from .. import schema, tasks, units
+from ..security import redact
+from ..storage.atomic import read_json, write_json
 
 _LOCK = Lock()
 FILE = 'baseline_launch.json'
 
 
 def _directory(task_key):
-    from . import profiles, ngspice_tasks
+    from .. import profiles, ngspice_tasks
     kind, _, name = task_key.partition(':')
     entry = profiles.profile_entry(name) if kind == 'real' else (ngspice_tasks.list_tasks() if kind == 'ngspice' else {}).get(name)
     if entry is None:
@@ -25,7 +25,7 @@ def _directory(task_key):
 
 
 def status(task_key):
-    from . import runs
+    from .. import runs
     try:
         result = read_json(_directory(task_key) / FILE, default=None)
     except ValueError:
@@ -83,7 +83,7 @@ def _start(context, task_key, *, profile_id, output_root):
         previous = status(task_key)
         if previous and previous.get('worker_alive'):
             return previous
-        from .api.run_routes import start_run
+        from .run_routes import start_run
         config = configuration(task_key, profile_id=profile_id, output_root=output_root)
         # Creation authorizes one bounded attempt. A probe's unknown result may be
         # resolved by that attempt; known connection/readiness failures still block.

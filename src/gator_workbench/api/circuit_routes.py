@@ -4,7 +4,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import ValidationError
 from .. import bridge_read, runs, schema, tasks
-from .. import consistency, ngspice_tasks, profiles, structures, task_baseline, task_files, task_saving, virtuoso_setup, working_copy
+from .. import consistency, ngspice_tasks, profiles, structures, task_files, task_saving, virtuoso_setup, working_copy
+from . import task_baseline
 from ..circuit_summary import circuit_summary
 from ..native_cells import load_import as load_cell_import
 from ..paths import PathNotAllowed, refuse_nul

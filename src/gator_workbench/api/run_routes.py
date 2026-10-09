@@ -109,6 +109,16 @@ def once(request_id, kind, work):
 
 
 def register(app: FastAPI, context: ApiContext):
+    """The run routes, registered in this order: the order of registration is the order of matching."""
+    _run_list_and_model_routes(app, context)
+    _launch_and_control_routes(app, context)
+    _corner_check_routes(app, context)
+    _run_data_routes(app, context)
+    _export_routes(app, context)
+
+
+def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
+    """The run list and the saved models: describe, default, rename, list, structure, graph view."""
     @app.get('/api/runs')
     def get_runs(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
         """`fresh`: every run folder read again, past the run list's cache (the page's Refresh list; record 7.274)."""
@@ -240,6 +250,9 @@ def register(app: FastAPI, context: ApiContext):
         except ValueError as exc:                  # GraphViewUnavailable included: said in plain words
             fail(409, exc)
 
+
+def _launch_and_control_routes(app: FastAPI, context: ApiContext):
+    """Start, continue, the launch requests, the run commands and the run status."""
     @app.post('/api/runs/start')
     def start(body: StartBody):
         removed = schema.removed_search_method(body.config)
@@ -318,6 +331,9 @@ def register(app: FastAPI, context: ApiContext):
             request=manifest['calibration'], result=calibration.current(path, manifest))
         return result
 
+
+def _corner_check_routes(app: FastAPI, context: ApiContext):
+    """The corner check of a run: plan, start, status, stop."""
     @app.get('/api/runs/corner-check/plan')
     def corner_check_plan(run_dir: str, designs: int = Query(corner_check.MAX_DESIGNS, ge=1, le=corner_check.MAX_DESIGNS)):
         """Which designs a check would simulate at which corners, and how many simulations that is. Free: local files."""
@@ -356,6 +372,9 @@ def register(app: FastAPI, context: ApiContext):
         except FileNotFoundError:
             fail(404, 'This run has no corner check with that identifier.')
 
+
+def _run_data_routes(app: FastAPI, context: ApiContext):
+    """A run's files, data tables, log, training series and file downloads."""
     @app.get('/api/runs/files')
     def files(run_dir: str):
         path = context.run_path(run_dir)
@@ -418,6 +437,9 @@ def register(app: FastAPI, context: ApiContext):
         return StreamingResponse(chunks, media_type=mimetypes.guess_type(target.name)[0] or 'application/octet-stream',
                                  headers={'Content-Length': str(size), **attachment(target.name)})
 
+
+def _export_routes(app: FastAPI, context: ApiContext):
+    """Data-only exports: a run's CSV tables and package, the research aggregates."""
     @app.post('/api/runs/export-csv')
     def export_csv(body: ExportBody):
         if body.table not in TABLES:

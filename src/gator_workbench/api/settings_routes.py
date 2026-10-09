@@ -14,6 +14,15 @@ from .context import ApiContext
 
 
 def register(app: FastAPI, context: ApiContext):
+    """The settings routes, registered in this order: the order of registration is the order of matching."""
+    _meta_and_network_routes(app, context)
+    _pdk_routes(app, context)
+    _output_routes(app, context)
+    _connection_routes(app, context)
+
+
+def _meta_and_network_routes(app: FastAPI, context: ApiContext):
+    """The backend's facts, the configuration schema and the network settings."""
     @app.get('/api/meta')
     def meta():
         settings, settings_problem = runs.read_settings()      # a hand-edited file with a typo: said, not an HTTP 500
@@ -50,6 +59,9 @@ def register(app: FastAPI, context: ApiContext):
         except network_presets.InvalidNetworkSettings as exc:
             fail(422, exc)
 
+
+def _pdk_routes(app: FastAPI, context: ApiContext):
+    """Loaded PDKs: the list, one record, loading one."""
     @app.get('/api/pdks')
     def loaded_pdks():
         """The PDKs loaded so far (local files only). Each one can be the network's component list."""
@@ -74,6 +86,9 @@ def register(app: FastAPI, context: ApiContext):
         return _bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, 'pdk', library=body.technology_library or None,
                                                      model_file=body.model_file or None))          # a PdkError is a ValueError: 422
 
+
+def _output_routes(app: FastAPI, context: ApiContext):
+    """The output folder: browse and check writability."""
     @app.get('/api/output/browse')
     def output_browse(path: str | None = None):
         try:
@@ -89,6 +104,9 @@ def register(app: FastAPI, context: ApiContext):
             result['bytes_used'] = (directory_bytes(result['resolved']) if Path(result['resolved']).is_dir() else 0) if body.usage else None
         return result
 
+
+def _connection_routes(app: FastAPI, context: ApiContext):
+    """Connection profiles: status, checks, setup, a new profile, the folders, Connect SSH."""
     @app.get('/api/connection/profiles')
     def connection_profiles():
         return connection.public_profiles()

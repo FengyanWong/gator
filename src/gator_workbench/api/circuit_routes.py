@@ -19,6 +19,16 @@ COPY_REFUSED = ((working_copy.CopyError, virtuoso_setup.SetupError), 'refused')
 
 
 def register(app: FastAPI, context: ApiContext):
+    """The task and circuit routes, registered in this order: the order of registration is the order of matching."""
+    _task_routes(app, context)
+    _virtuoso_cell_routes(app, context)
+    _ngspice_routes(app, context)
+    _virtuoso_task_routes(app, context)
+    _configuration_routes(app, context)
+
+
+def _task_routes(app: FastAPI, context: ApiContext):
+    """The task list, a task's starter configuration, Save task progress, the baseline, loading a circuit."""
     @app.get('/api/tasks')
     def get_tasks():
         return dict(tasks=tasks.list_tasks(), real_interface_contract=tasks.REAL_INTERFACE_CONTRACT)
@@ -99,6 +109,13 @@ def register(app: FastAPI, context: ApiContext):
                     native_draft=bool(runtime.circuit.get('native_draft')), generated_profile=bool(runtime.circuit.get('generated_profile')),
                     baseline_recorded=runtime.circuit.get('baseline_recorded'), baseline_attempt=runtime.circuit.get('baseline_attempt'), **native)
 
+
+def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
+    """Browsing and reading Virtuoso cells, importing one, its reference and its deletion."""
+    def _native(body, op):
+        return _bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, op, library=body.library, cell=body.cell,
+                                                     testbench=body.testbench if op == 'import_cell' else None))
+
     @app.post('/api/virtuoso/libraries')
     def native_libraries(body: NativeReadBody):
         return _native(body, 'libraries')
@@ -158,6 +175,9 @@ def register(app: FastAPI, context: ApiContext):
         except profiles.ProfileError as exc:
             fail(409, exc, code='delete_refused')
 
+
+def _ngspice_routes(app: FastAPI, context: ApiContext):
+    """ngspice decks: read, check, save as a task, read the task, delete it."""
     def _ngspice_kinds(body):
         try:
             return (ngspice_tasks.parse_kinds_text(body.device_kinds) if isinstance(body.device_kinds, str)
@@ -221,6 +241,9 @@ def register(app: FastAPI, context: ApiContext):
         except ngspice_tasks.NgspiceTaskError as exc:
             fail(409, exc, code='delete_refused')
 
+
+def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
+    """A task's Virtuoso side: the copy refusal, the setup read, Save task, the task file, Check now."""
     @app.post('/api/virtuoso/copy')
     def virtuoso_copy(body: CopyBody):
         """Refused since 2026-09-23 (user request): the workbench makes no copy of a cell any more. The user copies the
@@ -319,10 +342,9 @@ def register(app: FastAPI, context: ApiContext):
         rows, extras, problems = task_files.parse(body.text)
         return dict(rows=rows, extras=extras, problems=problems, ok=not problems)
 
-    def _native(body, op):
-        return _bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, op, library=body.library, cell=body.cell,
-                                                     testbench=body.testbench if op == 'import_cell' else None))
 
+def _configuration_routes(app: FastAPI, context: ApiContext):
+    """Validating and comparing a configuration, and Matched devices."""
     @app.post('/api/config/validate')
     def config_validate(body: ValidateBody):
         config, runtime, blocked = context.load_config(body.config)

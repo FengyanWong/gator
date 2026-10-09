@@ -393,3 +393,5 @@ One row per commit, newest last.
 | `72f0145` | 10-08 17:49 | - | record only: the Live line of record 7.283 (8765 restarted at 16:48) (session "Concurrent cache and stale selection bugs") |
 | `d4091ab` | 10-08 17:51 | - | record only: the table rows for 5356b3f and 72f0145 |
 | `bba4486` | 10-08 23:08 | 7.284 | save points written compressed, losslessly (each zip entry byte-identical, read by torch.load as before), and `compress-save-points` for the older ones (628 compressed, 26.56 -> 8.89 GB); with the third audit's findings (session "Frontend workbench layout design") |
+| `aa132c1` | 10-08 23:15 | - | record only: names the commit of record 7.284 and its Live line, and the table rows for d4091ab and bba4486 (session "Frontend workbench layout design") |
+| `ff2a13f` | 10-09 04:00 | 7.285 | encoder comparison stage C complete: the three general models transfer alike; docs only (session "Encoder run plan revision") |

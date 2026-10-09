@@ -30,6 +30,8 @@ import traceback
 from typing import NamedTuple
 from uuid import uuid4
 
+from analog_optimizer.training.collect import random_proposal
+
 from . import best_design, checkpoints as ckpt, modes
 from .budget import BudgetLedger
 from .compile import compile_task, hard_constraints
@@ -583,7 +585,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         policy_version = None
         if self.calibration_only:
             op, source, phase = 'calibration', 'random_warmup', 'warmup'
-            proposal = {g: self.rng.uniform(-1, 1) for g in lane.info['group_ids']}
+            proposal = random_proposal(self.rng, lane.info['group_ids'])
             self.counters['episodes'] += 1
             state['episode_id'] = f'{lane.lane_id}-{self.counters["episodes"]:06d}'
         elif state['needs_reset']:
@@ -602,7 +604,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             else:
                 pending = sum(1 for s in self.lane_state.values() if s['busy'] and s['busy']['op'] not in ('reset', 'reset_reused'))
                 if self.replay.insertions + pending < self.config.run.advanced.warmup_transitions:
-                    proposal = {g: self.rng.uniform(-1, 1) for g in group_ids}
+                    proposal = random_proposal(self.rng, group_ids)
                     source, phase = 'random_warmup', 'warmup'
                 else:
                     proposal = self.learner.act([state['observation']])[0]

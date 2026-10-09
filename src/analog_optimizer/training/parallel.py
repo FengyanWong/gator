@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from time import perf_counter
 
+from .collect import random_proposal, timed_update
 from .replay import Transition
 from .workers import OwnedWorker, WorkerLimits, append_history
 from .recovery import parallel_state
@@ -230,8 +231,7 @@ def collect_parallel_episodes(factory, learner, replay, rng, *, max_workers,
                     next_episode = episodes
                     break
                 random_count = min(len(lanes), max(0, warmup - replay.insertions))
-                proposals = {lane: {group: rng.uniform(-1, 1) for group in opened[lane]['group_ids']}
-                             for lane in lanes[:random_count]}
+                proposals = {lane: random_proposal(rng, opened[lane]['group_ids']) for lane in lanes[:random_count]}
                 policy_lanes = lanes[random_count:]
                 policy_version = learner.updates
                 inference_started = perf_counter()
@@ -275,9 +275,7 @@ def collect_parallel_episodes(factory, learner, replay, rng, *, max_workers,
                             transition = Transition.from_step(observations[lane], proposals[lane], step)
                             replay.add(transition)
                             if len(replay) >= batch_size:
-                                update_started = perf_counter()
-                                stage['update'] = learner.update(replay.sample(batch_size))
-                                stage['update_seconds'] = perf_counter() - update_started
+                                stage['update'], stage['update_seconds'] = timed_update(learner, replay, batch_size)
                                 if update_recorder is not None:
                                     update_recorder.add(stage['update'])
                         except BaseException as exc:

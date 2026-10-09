@@ -14,6 +14,7 @@ import torch
 from analog_optimizer.envs.sizing import graph_contract, write_record
 from analog_optimizer.models import ENCODER_TYPES, REMOVED_ENCODERS, ModelConfig
 from analog_optimizer.models.inputs import SpecSchema
+from analog_optimizer.training.collect import random_proposal
 from analog_optimizer.training.replay import ReplayBuffer, Transition
 from analog_optimizer.training.sac import SACLearner, source_digest
 from analog_optimizer.training.runtime import write_report_preserving_error
@@ -211,7 +212,7 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
                 for _ in range(env.max_steps):
                     start = perf_counter()
                     if method == 'random' or (phase in ('pretrain', 'scratch') and replay.insertions < warmup):
-                        proposal = {g: rng.uniform(-1, 1) for g in env.mapper.group_ids}
+                        proposal = random_proposal(rng, env.mapper.group_ids)
                         action_source = 'random'
                     elif method == 'pattern_search':
                         proposal, action_source = search.propose(), 'coordinate_poll'

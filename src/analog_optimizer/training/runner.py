@@ -1,6 +1,7 @@
 """Single-worker collector. Checkpoint/resume boundaries are completed episodes."""
 from time import perf_counter
 
+from .collect import random_proposal, timed_update
 from .replay import Transition
 
 
@@ -88,7 +89,7 @@ def collect_episode(env, learner, replay, rng, *, warmup=8, batch_size=8,
             break
         start = perf_counter()
         if replay.insertions < warmup:
-            proposal = {group: rng.uniform(-1, 1) for group in env.mapper.group_ids}
+            proposal = random_proposal(rng, env.mapper.group_ids)
             source = 'random_warmup'
         else:
             proposal = learner.act([observation])[0]
@@ -104,9 +105,7 @@ def collect_episode(env, learner, replay, rng, *, warmup=8, batch_size=8,
         replay.add(transition)
         update, update_seconds = None, 0.0
         if len(replay) >= batch_size:
-            start = perf_counter()
-            update = learner.update(replay.sample(batch_size))
-            update_seconds = perf_counter() - start
+            update, update_seconds = timed_update(learner, replay, batch_size)
             if update_recorder is not None:
                 update_recorder.add(update)
         if checkpoints is not None:

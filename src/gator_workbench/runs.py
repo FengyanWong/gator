@@ -16,7 +16,6 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
-import time
 from uuid import uuid4
 
 from . import (CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, checkpoints as ckpt, connection, consistency, modes, pdk,
@@ -30,7 +29,7 @@ from .run_definitions import learner_experiment
 from .run_lock import RunLock
 from .schema import REMOVED_SEARCH_METHODS, WorkbenchConfig, canonical_json, config_hash, task_definition_hash
 from .storage.atomic import read_json, write_json
-from .storage.dataset import utcnow, write_data_dictionary
+from .storage.dataset import utcnow
 from .task_registry import NATIVE_DRAFT_NOT_EXECUTABLE, REAL_AUTHORIZATION_REQUIRED
 from .tasks import TaskBlocked, load_task, load_task_view
 from .validation import validate
@@ -42,6 +41,10 @@ from .run_index import (SEGMENT_FACTS, run_timing, lineage, _RunRow, _code_of, s
                         save_point, _resumability, READ_THREADS, LIVE_STATES, _fingerprint, _run_facts,
                         checkpoint_listing, _read_pool, read_many, checkpoint_listings, list_runs, model_label_rows,
                         output_root_of)
+# re-exported: moved to run_definitions.py by the refactoring (docs/plan-refactoring.md)
+from .run_definitions import RunRejected
+# re-exported: moved to experiments.py by the refactoring (docs/plan-refactoring.md)
+from .experiments import _register_in_experiment, _update_split_manifest
 
 # Settings a resume may change. Everything that defines the task or the learner contract is fixed.
 RESUMABLE_RUN_FIELDS = ('max_evaluations', 'max_spectre_launches', 'max_wall_seconds', 'max_retries',
@@ -54,12 +57,6 @@ _HELD_LOCKS: dict = {}          # run_dir -> RunLock taken during preparation, h
 def take_lock(run_dir):
     """The lock acquired while preparing a resume (None for a brand-new, unique run directory)."""
     return _HELD_LOCKS.pop(str(run_dir), None)
-
-
-class RunRejected(ValueError):
-    def __init__(self, message, *, report=None, code='rejected'):
-        super().__init__(message)
-        self.report, self.code = report, code
 
 
 # ---------------------------------------------------------------------------- preparation
@@ -311,29 +308,7 @@ def _started(work) -> Future:
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
                 monitor=None, acknowledge_unknown=False, remember_concurrency=True):
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report."""
-    if config.run.rehearsal is not None:
-        roots.resolve(config.run.rehearsal.pool_manifest)
-    try:
-        task = load_task(config.circuit, allow_real=allow_real, profile_id=config.run.connection_profile_id)
-    except TaskBlocked as exc:
-        raise RunRejected(str(exc), report=dict(blocker=str(exc), interface_contract=exc.contract), code='task_blocked')
-    if task.circuit.get('native_draft'):                  # read from Virtuoso, no profile: not even an authorization question
-        raise RunRejected(NATIVE_DRAFT_NOT_EXECUTABLE, report=dict(blocker=NATIVE_DRAFT_NOT_EXECUTABLE), code='task_blocked')
-    if not task.mock and not allow_real:                  # before anything is created, reserved or gated
-        raise RunRejected(REAL_AUTHORIZATION_REQUIRED, code='real_authorization_required',
-                          report=dict(blocker=REAL_AUTHORIZATION_REQUIRED, task_key=task.task_key,
-                                      requested_max_evaluations=config.run.max_evaluations))
-    config = with_circuit_content(config, task)
-    report = validate(config, graph=task.base_graph, provided_metrics=set(task.provided_metrics))
-    if report.blocks_run:
-        raise RunRejected('The configuration has blocking issues', report=report.as_dict(), code='validation')
-    try:
-        compiled = compile_task(config, task.base_graph)
-    except CompileError as exc:
-        raise RunRejected(str(exc), code='compile')
-    if config.run.concurrency > task.max_concurrency:
-        raise RunRejected(f'This task supports at most {task.max_concurrency} concurrent simulation jobs',
-                          code='concurrency')
+    config, task, compiled = _checked_task(config, roots, allow_real)
     task_hash = task_definition_hash(config)
     # The manifest's code facts - git rev-parse and status on the 9p mount and the optimizer digest, 1.5-2 s - are read
     # while the connection is checked (record 7.279); the manifest takes them below. A resume writes none.
@@ -356,44 +331,8 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         raise RunRejected(f"Output root is not usable: {check['error'] or 'not writable'}", report=check, code='output')
     data_root = roots.data_root(output_root, mock=task.mock)      # mock data is confined to <root>/mock
     data_root.mkdir(parents=True, exist_ok=True)
-    source_manifest = source_meta = source_dir = None
-    source_model = dict(cost_status='not_applicable', cost_evaluations=None, provenance_chain=[])
-    parent = None
-    vocabulary = _vocabulary_for(config) if config.run.mode not in ('fine_tune', 'frozen') else None
-    if config.run.mode in ('fine_tune', 'frozen'):
-        source_run = Path(roots.resolve(config.run.model_source.run_dir))
-        vocabulary = _vocabulary_for(config, source_run)
-        if is_mock_path(source_run) != task.mock:
-            raise RunRejected('A mock-trained model cannot be loaded for a real task (or vice versa)', code='mock_isolation')
-        source_dir = ckpt.resolve_checkpoint(source_run, config.run.model_source.checkpoint_id)
-        source_meta, source_manifest = ckpt.read_metadata(source_dir), read_json(source_run / 'run_manifest.json', default={})
-        different = source_meta['task_definition_hash'] != task_hash
-        if config.run.mode == 'fine_tune' and different and not confirm_transfer:
-            raise RunRejected('Loading a model trained on a different task needs explicit confirmation',
-                              report=suggest_mode(config, source_run), code='confirm_transfer')
-        source_is_test_adaptation = (source_manifest.get('mode') == 'fine_tune'
-                                     and (source_manifest.get('research') or {}).get('split') == 'test')
-        if source_is_test_adaptation and not config.run.continual_learning:
-            raise RunRejected('The selected source was itself fine-tuned on a test task. Each test task starts from the '
-                              'fixed source checkpoint by default; enable run.continual_learning to label this '
-                              'explicitly as continual learning.', code='continual_learning')
-        contract = learner_contract(config, task, task_hash, compiled.spec_schema, vocabulary)
-        compatibility = ckpt.check_compatibility(source_meta, mode=config.run.mode, task_definition_hash=task_hash,
-                                                 contract=contract)
-        if not compatibility['compatible']:
-            raise RunRejected('The selected checkpoint is not compatible. No fallback to scratch is performed.',
-                              report=compatibility, code='incompatible_checkpoint')
-        cost = modes.source_cost(source_run)
-        declared = config.run.model_source.source_pretraining_cost_evaluations
-        if cost['status'] == 'unknown' and declared is not None:
-            cost = dict(status='declared_by_user', evaluations_charged=declared, chain=cost['chain'])
-        source_model = dict(run_id=source_meta['run_id'], run_dir=str(source_run),
-                            checkpoint_id=source_meta['checkpoint_id'], weight_sha256=source_meta['weight_sha256'],
-                            task_id=source_meta['task_id'], cost_status=cost['status'],
-                            cost_evaluations=cost['evaluations_charged'], provenance_chain=cost['chain'],
-                            compatibility=compatibility)
-        parent = dict(run_id=source_meta['run_id'], run_dir=str(source_run), checkpoint_id=source_meta['checkpoint_id'],
-                      relation=config.run.mode)
+    vocabulary, source_manifest, source_model, parent = _source_model(config, roots, task, task_hash, compiled,
+                                                                      confirm_transfer)
     experiment_dir, experiment_id, created = new_experiment_dir(data_root, config.output.experiment_name,
                                                                  config.output.experiment_id)
     layout, run_id = new_run_dir(experiment_dir, config.project.task_name, config.run.mode, config.run.seed)
@@ -457,13 +396,96 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     _register_in_experiment(experiment_dir, manifest, compiled, task, created)
     # The newest run that saves an RL model is remembered under the model's label (record 7.159): Resume, fine_tune and
     # frozen start from it. A run that saves no model (a Baseline simulation) leaves the label alone.
+    _remember_run(config, layout, remember_concurrency)
+    return layout, manifest
+
+
+def _checked_task(config, roots, allow_real):
+    """The refusals of prepare_run before anything is created, reserved or gated: a task that cannot load here, a cell
+    without a profile, a real task without the authorization, blocking validation issues, a task that does not compile,
+    more concurrent jobs than the task supports. Returns (the configuration with the circuit's content, the task, the
+    compiled task)."""
+    if config.run.rehearsal is not None:
+        roots.resolve(config.run.rehearsal.pool_manifest)
+    try:
+        task = load_task(config.circuit, allow_real=allow_real, profile_id=config.run.connection_profile_id)
+    except TaskBlocked as exc:
+        raise RunRejected(str(exc), report=dict(blocker=str(exc), interface_contract=exc.contract), code='task_blocked')
+    if task.circuit.get('native_draft'):                  # read from Virtuoso, no profile: not even an authorization question
+        raise RunRejected(NATIVE_DRAFT_NOT_EXECUTABLE, report=dict(blocker=NATIVE_DRAFT_NOT_EXECUTABLE), code='task_blocked')
+    if not task.mock and not allow_real:                  # before anything is created, reserved or gated
+        raise RunRejected(REAL_AUTHORIZATION_REQUIRED, code='real_authorization_required',
+                          report=dict(blocker=REAL_AUTHORIZATION_REQUIRED, task_key=task.task_key,
+                                      requested_max_evaluations=config.run.max_evaluations))
+    config = with_circuit_content(config, task)
+    report = validate(config, graph=task.base_graph, provided_metrics=set(task.provided_metrics))
+    if report.blocks_run:
+        raise RunRejected('The configuration has blocking issues', report=report.as_dict(), code='validation')
+    try:
+        compiled = compile_task(config, task.base_graph)
+    except CompileError as exc:
+        raise RunRejected(str(exc), code='compile')
+    if config.run.concurrency > task.max_concurrency:
+        raise RunRejected(f'This task supports at most {task.max_concurrency} concurrent simulation jobs',
+                          code='concurrency')
+    return config, task, compiled
+
+
+def _source_model(config, roots, task, task_hash, compiled, confirm_transfer):
+    """The model a fine-tune or evaluate-only run starts from, checked: never across MOCK and real, a different task only
+    with the confirmation, a test task's adaptation only as continual learning, a compatible save point only (no fallback
+    to scratch). Returns (the component list the run uses, the source run's manifest, the source_model block of the new
+    manifest, its parent)."""
+    source_manifest = source_meta = source_dir = None
+    source_model = dict(cost_status='not_applicable', cost_evaluations=None, provenance_chain=[])
+    parent = None
+    vocabulary = _vocabulary_for(config) if config.run.mode not in ('fine_tune', 'frozen') else None
+    if config.run.mode in ('fine_tune', 'frozen'):
+        source_run = Path(roots.resolve(config.run.model_source.run_dir))
+        vocabulary = _vocabulary_for(config, source_run)
+        if is_mock_path(source_run) != task.mock:
+            raise RunRejected('A mock-trained model cannot be loaded for a real task (or vice versa)', code='mock_isolation')
+        source_dir = ckpt.resolve_checkpoint(source_run, config.run.model_source.checkpoint_id)
+        source_meta, source_manifest = ckpt.read_metadata(source_dir), read_json(source_run / 'run_manifest.json', default={})
+        different = source_meta['task_definition_hash'] != task_hash
+        if config.run.mode == 'fine_tune' and different and not confirm_transfer:
+            raise RunRejected('Loading a model trained on a different task needs explicit confirmation',
+                              report=suggest_mode(config, source_run), code='confirm_transfer')
+        source_is_test_adaptation = (source_manifest.get('mode') == 'fine_tune'
+                                     and (source_manifest.get('research') or {}).get('split') == 'test')
+        if source_is_test_adaptation and not config.run.continual_learning:
+            raise RunRejected('The selected source was itself fine-tuned on a test task. Each test task starts from the '
+                              'fixed source checkpoint by default; enable run.continual_learning to label this '
+                              'explicitly as continual learning.', code='continual_learning')
+        contract = learner_contract(config, task, task_hash, compiled.spec_schema, vocabulary)
+        compatibility = ckpt.check_compatibility(source_meta, mode=config.run.mode, task_definition_hash=task_hash,
+                                                 contract=contract)
+        if not compatibility['compatible']:
+            raise RunRejected('The selected checkpoint is not compatible. No fallback to scratch is performed.',
+                              report=compatibility, code='incompatible_checkpoint')
+        cost = modes.source_cost(source_run)
+        declared = config.run.model_source.source_pretraining_cost_evaluations
+        if cost['status'] == 'unknown' and declared is not None:
+            cost = dict(status='declared_by_user', evaluations_charged=declared, chain=cost['chain'])
+        source_model = dict(run_id=source_meta['run_id'], run_dir=str(source_run),
+                            checkpoint_id=source_meta['checkpoint_id'], weight_sha256=source_meta['weight_sha256'],
+                            task_id=source_meta['task_id'], cost_status=cost['status'],
+                            cost_evaluations=cost['evaluations_charged'], provenance_chain=cost['chain'],
+                            compatibility=compatibility)
+        parent = dict(run_id=source_meta['run_id'], run_dir=str(source_run), checkpoint_id=source_meta['checkpoint_id'],
+                      relation=config.run.mode)
+    return vocabulary, source_manifest, source_model, parent
+
+
+def _remember_run(config, layout, remember_concurrency):
+    """The output root and, for a run that saves an RL model, the run under its model's label (Resume, fine_tune and
+    frozen start from it), remembered in the settings; the concurrency too unless the start says not to."""
     with _SETTINGS_LOCK:             # the last_run merge reads and writes under the lock every other save takes
         remembered = load_settings().get('last_run', {})
         if saves_rl_model(config):
             remembered = {**remembered, model_label(config): str(layout.run_dir)}
         save_settings(output_root=config.output.output_root, last_run=remembered,
                       **(dict(concurrency=config.run.concurrency) if remember_concurrency else {}))
-    return layout, manifest
 
 
 def _prepare_resume(config, roots, task, task_hash, gate):
@@ -634,81 +656,6 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
     except CompileError as exc:
         return refused('compile', str(exc))
     return dict(answer, eligible=True)
-
-
-def _register_in_experiment(experiment_dir, manifest, compiled, task, created):
-    experiment_dir = Path(experiment_dir)
-    lock = RunLock(experiment_dir / '.experiment.lock')
-    import time
-    for _ in range(200):
-        try:
-            lock.acquire(patience=0)            # this loop is its own patience (10 s)
-            break
-        except RuntimeError:
-            time.sleep(0.05)
-    else:
-        # It used to fall through and do the read-modify-write anyway: two starts within the same seconds then lost one
-        # run from experiment.json and split_manifest.json, silently (review of 2026-09-23). Refusing a start is the
-        # lesser harm - nothing has been created yet, and the user can simply press Start again.
-        raise RunRejected(f'Another run is being registered in {experiment_dir} right now (10 s). Nothing was created; '
-                          'start it again in a moment.', code='experiment_busy')
-    try:
-        if created or not (experiment_dir / 'data_dictionary.json').exists():
-            write_data_dictionary(experiment_dir / 'data_dictionary.json')
-        experiment = read_json(experiment_dir / 'experiment.json', default=None) or dict(
-            layout_version=OUTPUT_LAYOUT_VERSION, experiment_id=manifest['experiment_id'],
-            experiment_name=manifest['experiment_name'], created_utc=manifest['created_utc'], mock=manifest['mock'],
-            mock_notice=manifest['mock_notice'], runs=[])
-        experiment['runs'].append(dict(run_id=manifest['run_id'], task_id=manifest['task_id'], mode=manifest['mode'],
-                                       seed=manifest['seeds']['target_seed'],
-                                       relative_run_dir=manifest['output']['relative_run_dir'],
-                                       created_utc=manifest['created_utc']))
-        write_json(experiment_dir / 'experiment.json', experiment)
-        _update_split_manifest(experiment_dir, manifest, compiled, task)
-    finally:
-        lock.release()
-
-
-def _update_split_manifest(experiment_dir, manifest, compiled, task):
-    path = Path(experiment_dir) / 'split_manifest.json'
-    split = read_json(path, default=None) or dict(layout_version=OUTPUT_LAYOUT_VERSION, tasks=[], overlap_warnings=[])
-    entry = dict(task_id=manifest['task_id'], task_name=manifest['task_name'], role=manifest['split'],
-                 generalization_level=manifest['generalization_level'], circuit_class=task.circuit.get('circuit_class'),
-                 topology_id=task.circuit.get('topology_id'), netlist_sha256=task.circuit.get('netlist_sha256'),
-                 specification=[dict(metric_id=t['metric_id'], lower=t['lower'], upper=t['upper'], hard=t['hard'])
-                                for t in compiled.targets if t['active']],
-                 variable_ranges=[dict(variable_id=v['variable_id'], lower=v['lower'], upper=v['upper'], unit=v['unit'])
-                                  for v in compiled.variables if v['optimized']],
-                 initial_values=manifest['initial_dimensions'], training_sources=manifest['research']['training_sources'],
-                 runs=[manifest['run_id']])
-    existing = next((t for t in split['tasks'] if t['task_id'] == entry['task_id'] and t['role'] == entry['role']), None)
-    if existing:
-        existing['runs'].append(manifest['run_id'])
-    else:
-        split['tasks'].append(entry)
-    warnings = []
-    tasks = split['tasks']
-    for i, first in enumerate(tasks):
-        for second in tasks[i + 1:]:
-            if first['role'] == second['role'] or 'unspecified' in (first['role'], second['role']):
-                continue
-            same_netlist = first['netlist_sha256'] and first['netlist_sha256'] == second['netlist_sha256']
-            same_spec = first['specification'] == second['specification']
-            if same_netlist and same_spec:
-                warnings.append(f"{first['task_id']} ({first['role']}) and {second['task_id']} ({second['role']}) share the "
-                                'same netlist AND specification: identical task across partitions.')
-            elif same_netlist and 'unseen_topology' in (first['generalization_level'], second['generalization_level']):
-                warnings.append(f"{first['task_id']} and {second['task_id']} share a netlist but one is labelled unseen_topology.")
-            if (second['generalization_level'] == 'unseen_circuit_class'
-                    and second['circuit_class'] in (second['training_sources'] or [])):
-                warnings.append(f"{second['task_id']}: unseen_circuit_class but its class is listed in training_sources.")
-    split['overlap_warnings'] = sorted(set(warnings))
-    split['counts'] = {role: sum(1 for t in tasks if t['role'] == role)
-                       for role in ('train', 'validation', 'test', 'unspecified')}
-    split['limitations'] = ('Overlap checks compare netlist hashes and specifications. A differing hash does NOT prove '
-                            'the absence of leakage: renamed or reordered copies of one topology hash differently. Use '
-                            'analog_optimizer.evaluation.transfer.same_topology for an exact isomorphism check.')
-    write_json(path, split)
 
 
 # ---------------------------------------------------------------------------- worker process

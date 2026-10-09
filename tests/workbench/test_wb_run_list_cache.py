@@ -156,8 +156,8 @@ def test_an_entry_is_kept_however_old_until_its_folder_changes(tmp_path, monkeyp
         stream.truncate(0)
         stream.write(json.dumps(dict(state='failed')))
     a_day_later = time.monotonic() + 86400
-    monkeypatch.setattr(runs.time, 'monotonic', lambda: a_day_later)
-    assert rows_of(tmp_path)['r1']['state'] == 'completed' and not hasattr(runs, 'RUN_CACHE_MAX_AGE')
+    monkeypatch.setattr(time, 'monotonic', lambda: a_day_later)
+    assert rows_of(tmp_path)['r1']['state'] == 'completed' and not hasattr(run_index, 'RUN_CACHE_MAX_AGE')
     assert rows_of(tmp_path, fresh=True)['r1']['state'] == 'failed'
 
 

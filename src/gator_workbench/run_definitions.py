@@ -41,3 +41,9 @@ def learner_experiment(config: WorkbenchConfig, task, task_hash):
     if config.run.rehearsal is not None:
         result['rehearsal'] = config.run.rehearsal.model_dump(mode='json')
     return result
+
+
+class RunRejected(ValueError):
+    def __init__(self, message, *, report=None, code='rejected'):
+        super().__init__(message)
+        self.report, self.code = report, code

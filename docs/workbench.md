@@ -3037,12 +3037,32 @@ line load it from the files (7.131).
 The legacy copy route still refuses copying; Save-as remains a supported backend request.
 
 The frontend keeps the Agent window and its "Agent..." button in `panels/Agent.tsx` and the run tabs in `panels/RunTabs.tsx`.
-`CircuitBrowser.tsx` owns the Virtuoso browsing chain and circuit details; `Left.tsx` coordinates task selection.
-Shared async actions and stale-response handling live in `store.ts`. Ordinary advanced numeric fields use
+`CircuitBrowser.tsx` owns the Virtuoso browsing chain and circuit details; `Left.tsx` coordinates task selection, with
+its jobs in `taskChoice.ts` (choosing a registered task), `taskActions.ts` (Check now, Delete task), `testbenchProbes.ts`
+and `taskRows.ts`, and the Virtuoso window in `VirtuosoWindow.tsx`. Shared async actions and stale-response handling live
+in `requests.ts` (`useRequest`, `usePolling`, `useAsyncAction`); `store.ts` is the module the page and the browser
+checks' source fixtures import, and passes on what `requests.ts`, `history.ts` (the configuration and its Undo),
+`migrations.ts` and `windows.ts` (the pop-up windows' typing and visibility) hold. Ordinary advanced numeric fields use
 one descriptor list and defaults from the backend schema; byte units and checkpoint intervals retain their
 specialized controls. The save point interval's default is 200 evaluations and the data tables are written every 64
 (record 7.280; 50 and 16 before): once per browser, a draft that still holds an old default exactly gets the new one,
 as one Undo step, and says so. The Training tab stays mounted when another tab is selected (its charts survive a look at another tab).
+
+The frontend by file since the refactoring of 2026-10-09 (`docs/plan-refactoring.md` Group C; the page, its requests and
+its storage unchanged): `App.tsx` keeps `App` and `Page`, and Page's state lives in hooks of its own, called where Page
+held it - in `page/` (`useCalibrationOffer`, `useRunWindowActions`, `useRunList` and `useShownRun`, `useLiveRunAdoption`,
+`useTaskRunFollow`) and in `launch.ts` (`useLaunchActions` beside `useLauncher`); the bottom strip is
+`panels/BottomPanel.tsx`. The right column is `Right.tsx` with its form pieces in `fields.tsx`, `OutputPanel.tsx`,
+`ResearchPanel.tsx`, and the RL model window: `useRlModel.ts` (its state, which stays while the window is closed),
+`RunConfiguration.tsx`, `RewardConditions.tsx`, `RlModelWindow.tsx` and `rlModelText.ts` (its words). The editors are
+`Editors.tsx` with `editorRules.ts`, `cells.tsx`, `FormulaBar.tsx` and `DiffView.tsx`. The Training tab's numbers are
+`trainingData.ts`, which passes on its parts in `panels/training/` (store, series, prep, catalog, build, compare, keys,
+imported with their `.ts` suffix so that Node runs them as they are); its two read loops are one `useTrainingReads`. The
+run states and their rules are in `runState.ts`; the names the page and the browser checks share (storage keys, window
+titles, element ids) in `contract.ts`, which `scripts/lib/harness.mjs` loads; the formatters in `format.ts` and the SI
+prefixes in `units.ts` (both import-free, so checks load them too); the shared cached reads in `shared.ts`; a value
+held outside React in `signal.ts`; the guarded browser storage in `kept.ts`; the newest-answer guard in `newest.ts`; a
+pop-up's "blocked" line and its portal in `panels/popupParts.tsx`.
 
 Reads managed by `useRequest` and direct JSON GETs have a 30-second deadline. Changing a selection, disabling a read
 or leaving its view cancels the hook's owned transport; shared cached reads keep their own bounded lifetime.
@@ -3056,6 +3076,10 @@ their inputs are unchanged, and validation issues are grouped once by row rather
 
 Tests share isolated HTTP servers and the MOCK helpers in `tests/workbench/helpers.py`, plus controlled
 browser input, passing validation replies, and optional connection fixtures in `frontend/scripts/lib/harness.mjs`.
+`run_checks.mjs` keeps each check's measured duration in the OS temp folder (`gator-checks-durations.json`) and orders
+and limits the next run by it. `frontend/scripts/dom_identity_check.mjs` shows that a refactoring leaves the page as it
+was: `#root` and each open pop-up per step, in both looks, with the page's requests and storage - recorded once, then
+replayed without a backend (`--replay`) against another build (`--build`) and compared byte for byte (`--compare`).
 `frontend/scripts/request_lifecycle_check.mjs` runs against a Vite source preview with controlled in-memory replies
 and React StrictMode; it checks slow polls, reversed replies, cancellation, deadlines, hung-read replacement, retries,
 run/table changes and export identity. `reliability_check.mjs` covers failed browser persistence and recovery, unsaved

@@ -400,7 +400,7 @@ def _expression_symbols(expression):
     return parse(expression)
 
 
-def _check_equation(t, path, report, measurement_ids):
+def check_equation(t, path, report, measurement_ids):
     """A spec judges the value of its equation over the probes (spec_equations). Returns the probe when the equation
     is exactly one Probe ID - the simplest equation, whose unit can be checked."""
     equation = t.equation.strip()
@@ -439,7 +439,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
         seen.add(t.metric_id)
         if not units.known(t.unit):
             report.add('error', 'unknown_unit', path + '.unit', f'Unknown unit {t.unit!r}')
-        probe = _check_equation(t, path, report, measurement_ids)
+        probe = check_equation(t, path, report, measurement_ids)
         equation = t.equation.strip()
         # A spec's name is where its value lives - in the simulation result, the network's registry and the tables -
         # so it may only be the name of a probe or of a simulator result when the spec IS that probe / that result.
@@ -741,3 +741,7 @@ def _check_saved_task(config, report, rows_from=None):
         fix = saved_rows.FIX_NEWER.format(**undone) if section in older else saved_rows.FIX_ROWS
         report.add('error', 'task_not_saved', section,
                    saved_rows.describe_rows(section, lines, name=name, revision=saved.get('revision')) + ' ' + fix)
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_check_equation = check_equation

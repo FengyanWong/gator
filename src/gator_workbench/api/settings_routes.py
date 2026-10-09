@@ -10,7 +10,7 @@ from ..storage.tables import TABLES, data_dictionary
 from .context import ApiContext
 from .models import (ConnectBody, ConnectionBody, CreateConnectionBody, DirectoriesBody, NetworkSettingsBody,
                      PROFILE_ID, PathBody, PdkLoadBody)
-from .support import _bridge_call, fail
+from .support import bridge_call, fail
 
 
 def register(app: FastAPI, context: ApiContext):
@@ -40,7 +40,7 @@ def _meta_and_network_routes(app: FastAPI, context: ApiContext):
     def get_schema():
         return dict(schema_version=schema.CONFIG_SCHEMA_VERSION, json_schema=schema.json_schema(),
                     editors={name: schema.editor_columns(name) for name in schema.SECTIONS},
-                    section_keys=schema.SECTION_KEYS, units=sorted(units._LOOKUP), unit_forms=units.written_forms(),
+                    section_keys=schema.SECTION_KEYS, units=sorted(units.LOOKUP), unit_forms=units.written_forms(),
                     run_modes=schema.RUN_MODES,
                     encoder_types=schema.ENCODER_TYPES, tables=list(TABLES), data_dictionary=data_dictionary())
 
@@ -81,7 +81,7 @@ def _pdk_routes(app: FastAPI, context: ApiContext):
     def load_pdk(body: PdkLoadBody):
         """Explicit click: read one technology library's own description and its Spectre model files through the
         connection (read-only, no simulation), and store what the network needs. PDK files are not kept."""
-        return _bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, 'pdk', library=body.technology_library or None,
+        return bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, 'pdk', library=body.technology_library or None,
                                                      model_file=body.model_file or None))          # a PdkError is a ValueError: 422
 
 

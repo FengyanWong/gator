@@ -35,7 +35,7 @@ from .task_registry import NATIVE_DRAFT_NOT_EXECUTABLE, REAL_AUTHORIZATION_REQUI
 from .tasks import TaskBlocked, load_task, load_task_view
 from .validation import validate
 # re-exported: moved to settings_store.py by the refactoring (docs/plan-refactoring.md)
-from .settings_store import _SETTINGS_LOCK, read_settings, load_settings, save_settings, remembered_output_root
+from .settings_store import SETTINGS_LOCK, _SETTINGS_LOCK, read_settings, load_settings, save_settings, remembered_output_root
 # (not current_source_digest and the caches' own state: they are read and patched as run_index.<name>)
 # re-exported: moved to run_index.py by the refactoring (docs/plan-refactoring.md)
 from .run_index import (SEGMENT_FACTS, run_timing, lineage, _RunRow, _code_of, save_point_code, save_point_facts,
@@ -45,7 +45,7 @@ from .run_index import (SEGMENT_FACTS, run_timing, lineage, _RunRow, _code_of, s
 # re-exported: moved to run_definitions.py by the refactoring (docs/plan-refactoring.md)
 from .run_definitions import RunRejected
 # re-exported: moved to experiments.py by the refactoring (docs/plan-refactoring.md)
-from .experiments import _register_in_experiment, _update_split_manifest
+from .experiments import _register_in_experiment, _update_split_manifest, register_in_experiment
 
 # Settings a resume may change. Everything that defines the task or the learner contract is fixed.
 RESUMABLE_RUN_FIELDS = ('max_evaluations', 'max_spectre_launches', 'max_wall_seconds', 'max_retries',
@@ -394,7 +394,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     write_json(layout.manifest, manifest)
     write_json(layout.status, dict(state='created', run_id=run_id, mode=config.run.mode, mock=task.mock,
                                    paths=layout.subpaths(), heartbeat_utc=now))
-    _register_in_experiment(experiment_dir, manifest, compiled, task, created)
+    register_in_experiment(experiment_dir, manifest, compiled, task, created)
     # The newest run that saves an RL model is remembered under the model's label (record 7.159): Resume, fine_tune and
     # frozen start from it. A run that saves no model (a Baseline simulation) leaves the label alone.
     _remember_run(config, layout, remember_concurrency)
@@ -481,7 +481,7 @@ def _source_model(config, roots, task, task_hash, compiled, confirm_transfer):
 def _remember_run(config, layout, remember_concurrency):
     """The output root and, for a run that saves an RL model, the run under its model's label (Resume, fine_tune and
     frozen start from it), remembered in the settings; the concurrency too unless the start says not to."""
-    with _SETTINGS_LOCK:             # the last_run merge reads and writes under the lock every other save takes
+    with SETTINGS_LOCK:             # the last_run merge reads and writes under the lock every other save takes
         remembered = load_settings().get('last_run', {})
         if saves_rl_model(config):
             remembered = {**remembered, model_label(config): str(layout.run_dir)}
@@ -739,7 +739,7 @@ def run_status(run_dir) -> dict:
     layout = RunLayout(Path(run_dir))
     status = read_dict(layout.status)
     alive = RunLock.held(layout.run_lock)
-    if status.get('state') in ('starting', 'running', 'pausing', 'stopping') and not alive:
+    if status.get('state') in LIVE_STATES and not alive:
         status = dict(status, state='interrupted', note='The worker process is gone without a clean shutdown. Data '
                       'acknowledged before the interruption is preserved; resume to recover and continue.')
     return dict(status, worker_alive=alive, run_dir=str(layout.run_dir))

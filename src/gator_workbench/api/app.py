@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .. import __version__, bridge_connect, connection, launch_requests, runs
+from ..names import LOOPBACK_HOSTS
 from ..paths import OutputRoots, repo_root
 from ..preload import preload
 from ..security import redact
@@ -15,7 +16,6 @@ from .context import ApiContext
 from . import agent_routes, circuit_routes, run_routes, settings_routes, task_folder_routes
 from .support import attachment, file_snapshot  # compatibility exports
 
-LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
 WILDCARD_HOSTS = ('0.0.0.0', '::', '')
 ACTIVE_RUN_REUSE_SECONDS = 3.0                   # how long one look for a run that works on a connection serves (7.279)
 

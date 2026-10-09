@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import working_copy
+from .names import TRASH_STAMP
 from .storage.dataset import utcnow
 from .task_registry import REAL_PROFILES
 # re-exported: moved to profile_store.py by the refactoring (docs/plan-refactoring.md)
@@ -51,7 +52,7 @@ def delete_profile(name, *, run_rows=()) -> dict:
     if working is not None:
         raise ProfileError(f'Run {working.get("run_id") or working["run_dir"]} of real:{name} is working right now: abort it or let it finish first')
     directory = Path(entry['directory'])
-    kept = directory.parent / TRASH / f'{name}.{utcnow().strftime("%Y%m%dT%H%M%S%fZ")}'
+    kept = directory.parent / TRASH / f'{name}.{utcnow().strftime(TRASH_STAMP)}'
     kept.parent.mkdir(parents=True, exist_ok=True)
     directory.rename(kept)
     original = entry.get('original') or {}

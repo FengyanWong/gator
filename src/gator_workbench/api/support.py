@@ -130,7 +130,7 @@ def fail(status, message, **extra):
     raise HTTPException(status, detail=dict(message=redact(str(message), 2000), **extra))
 
 
-def _bridge_call(action, *refusals):
+def bridge_call(action, *refusals):
     """A request that goes through the connection gate to Virtuoso. A blocked gate is a 409 carrying the gate; each
     (exception classes, code) of `refusals`, in order, a 409 with that code; a wrong name or value a 422; anything
     else a 502."""
@@ -175,3 +175,7 @@ def validate_loaded(config, runtime, *, roots=None, reachability=True, rows_from
         if evidence and evidence['warning']:
             report.add('warning', 'corner_reachability', 'run.conditions', evidence['warning'])
     return report
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_bridge_call = bridge_call

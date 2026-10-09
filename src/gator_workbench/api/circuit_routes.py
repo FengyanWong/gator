@@ -16,7 +16,7 @@ from .context import ApiContext
 from .models import (CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, NativeReadBody, NgspiceCheckBody,
                      NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody,
                      TaskBaselineBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody, ValidateBody)
-from .support import _bridge_call, fail, load_runtime, validate_loaded
+from .support import bridge_call, fail, load_runtime, validate_loaded
 
 COPY_REFUSED = ((working_copy.CopyError, virtuoso_setup.SetupError), 'refused')
 
@@ -103,7 +103,7 @@ def _task_routes(app: FastAPI, context: ApiContext):
 def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
     """Browsing and reading Virtuoso cells, importing one, its reference and its deletion."""
     def _native(body, op):
-        return _bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, op, library=body.library, cell=body.cell,
+        return bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, op, library=body.library, cell=body.cell,
                                                      testbench=body.testbench if op == 'import_cell' else None))
 
     @app.post('/api/virtuoso/libraries')
@@ -171,7 +171,7 @@ def _ngspice_routes(app: FastAPI, context: ApiContext):
     def _ngspice_kinds(body):
         try:
             return (ngspice_tasks.parse_kinds_text(body.device_kinds) if isinstance(body.device_kinds, str)
-                    else ngspice_tasks._clean_kinds(body.device_kinds or {}))
+                    else ngspice_tasks.clean_kinds(body.device_kinds or {}))
         except ngspice_tasks.NgspiceTaskError as exc:
             fail(422, exc)
 
@@ -261,7 +261,7 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
                                                 initial_conditions=found.get('initial_conditions'))
                 found['editor_differences'] = virtuoso_setup.differences(ours, found)
             return found
-        return _bridge_call(read, COPY_REFUSED)
+        return bridge_call(read, COPY_REFUSED)
 
     @app.post('/api/virtuoso/task/save')
     def virtuoso_task_save(body: TaskSaveBody):
@@ -277,7 +277,7 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
         config = context.parse_config(body.config)
         try:
             with task_saving.running(f'real:{body.name}') as save:
-                save.answer = _bridge_call(
+                save.answer = bridge_call(
                     lambda: profiles.save_task(context.monitor, body.profile_id, body.name, config, library=body.library, cell=body.cell,
                                                task=body.task, as_new=body.as_new, extras=body.extras,
                                                run_rows=runs.list_runs(context.roots, include_mock=False), progress=save.mark,

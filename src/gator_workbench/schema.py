@@ -18,6 +18,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import CONFIG_SCHEMA_VERSION
+from .names import PROFILE_ID
 
 ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention')
 GLOBAL_ENCODERS = ('graph_gps', 'group_cross_attention')
@@ -469,7 +470,7 @@ class RunSettings(_Model):
                     'counted in completion order across workers: stop dispatching, record a connection check and '
                     'pause safely instead of spending the budget against a dead link. Continuing needs the '
                     'connection gate to pass again.')
-    connection_profile_id: Optional[str] = Field(None, max_length=64, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$',
+    connection_profile_id: Optional[str] = Field(None, max_length=64, pattern=PROFILE_ID,
         description='Identifier of a configured bridge connection profile (real tasks only). Only an identifier: '
                     'hosts, ports, paths and commands are never taken from a configuration or a request.')
     seed: int = Field(0, ge=0, lt=2**32, description='Target-task seed (collector, replay sampling, torch).')

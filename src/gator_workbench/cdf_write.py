@@ -41,12 +41,13 @@ from analog_optimizer.backends.gpdk045 import GEOMETRY, Gpdk045OtaProfile, equal
 from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend
 
 from .cdf_rules import RULES_FORMAT
-from .generic_profile import GenericMosWidthProfile, RulesError, _same
+from .generic_profile import GenericMosWidthProfile, RulesError, same_value
+from .names import CADENCE_NAME
 from .recipes import GenericMaestroProfile, GenericRingOscillatorProfile, MAESTRO, RING
 from .security import skill_string as _skill_string
 from .storage.atomic import read_json_quiet
 
-NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')       # library / cell / instance, as everywhere in the workbench
+NAME = re.compile(CADENCE_NAME)       # library / cell / instance, as everywhere in the workbench
 FIELD = re.compile(r'^[A-Za-z_]\w{0,63}$')                        # a CDF parameter (form field)
 PROC = re.compile(r'^[A-Za-z_]\w{0,127}$')                        # a form procedure
 KINDS = ('string', 'int', 'float', 'choice')                      # how a number is held in the CDF
@@ -390,7 +391,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
         """The fields of instance `name` that differ between two readbacks. The form's own bookkeeping (fields it never
         shows) is left out where the form ran; an instance that is never opened is compared field for field."""
         keys = (set(a) | set(b)) if keys is None else set(keys)
-        return sorted(k for k in keys - (self._internal(name) if skip_internal else set()) if not _same(a.get(k), b.get(k)))
+        return sorted(k for k in keys - (self._internal(name) if skip_internal else set()) if not same_value(a.get(k), b.get(k)))
 
     def validate_readback(self, snapshot):
         actual, reference = self.instances(snapshot), self.instances(self.reference)
@@ -444,7 +445,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
             a, b = old[name]['params'], new[name]['params']
             if {'w', 'fw', 'fingers'} <= set(a) and not equal(_num(a['w']), _num(b['w'])):
                 for key in STALE:
-                    if key in a and key in b and _same(a[key], b[key]):
+                    if key in a and key in b and same_value(a[key], b[key]):
                         raise ValueError(f'Stale derived geometry {name}.{key}')
 
     def compare_written(self, snapshot, reference):
@@ -470,7 +471,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
                     continue
                 if (device, key) in self.derived:          # computed by a callback: what the form holds now
                     instance, cdf = self.derived[device, key]
-                    if not _same(param.raw, actual[instance]['params'].get(cdf)):
+                    if not same_value(param.raw, actual[instance]['params'].get(cdf)):
                         raise ValueError(f'Exported {device}.{key} = {param.raw} is not what the form computed '
                                          f'({instance}.{cdf} = {actual[instance]["params"].get(cdf)!r})')
                     continue

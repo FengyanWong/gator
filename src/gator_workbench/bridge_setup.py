@@ -28,10 +28,11 @@ from pathlib import Path
 
 from . import directories, virtuoso_setup
 from .connection import RealBridge, child_error, resolve_profile_id, run_child
+from .names import CADENCE_NAME
 from .paths import bridge_session_lock
 from .security import skill_string as _q
 
-NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+NAME = re.compile(CADENCE_NAME)
 COPIED_VIEWS = ('schematic', 'symbol')
 SUFFIX = '_GATOR'
 

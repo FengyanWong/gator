@@ -56,7 +56,7 @@ def _to_grid_top(group):
     return replace(group, upper=top, members=members)
 
 
-def _same(a, b) -> bool:
+def same_value(a, b) -> bool:
     """Numbers compare as numbers ('50f' == '5e-14'); CDF expressions and flags compare as text."""
     try:
         return equal(number(a), number(b))
@@ -210,7 +210,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
                     raise ValueError(f'Unexpected {name} {key}')
             params = inst['params']
             if name in self.fixed_instances:               # not a transistor: nothing about it may change
-                if params.keys() != ref['params'].keys() or any(not _same(params[k], ref['params'][k]) for k in params):
+                if params.keys() != ref['params'].keys() or any(not same_value(params[k], ref['params'][k]) for k in params):
                     raise ValueError(f'Fixed instance {name} changed')
                 continue
             for key in MOS_FIXED + (() if name in writable else MOS_SIZE):
@@ -278,3 +278,7 @@ def check_writable_record(reference, names):
             if key not in params or not equal(number(params[key]), 1.0):
                 raise RulesError(f'{name} has {key}={params.get(key)!r}: the write path sets {key}=1, so only single-finger, '
                                  'm=1 transistors can be sized')
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_same = same_value

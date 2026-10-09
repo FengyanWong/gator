@@ -38,11 +38,11 @@ class GraphViewUnavailable(ValueError):
 
 def _actor(meta, weights):
     try:
-        actor = model_structure._rebuild(meta['contract'])['actor']
+        actor = model_structure.rebuild_network(meta['contract'])['actor']
     except Exception as exc:
         raise GraphViewUnavailable('The network of this save point could not be rebuilt from its recorded settings '
                                    f'({type(exc).__name__}), so it cannot be run here.') from exc
-    if not model_structure._same_tensors(actor, weights['actor']):
+    if not model_structure.same_tensors(actor, weights['actor']):
         raise GraphViewUnavailable('The network rebuilt from the recorded settings does not hold the same tensors as '
                                    'the saved file, so it is not run here.')
     actor.load_state_dict(weights['actor'])

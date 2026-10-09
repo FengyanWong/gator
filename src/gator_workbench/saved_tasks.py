@@ -11,6 +11,9 @@ from pathlib import Path
 
 from . import cdf_write, recipes
 from .connection import load_profiles
+from .names import WORKING_STATES
+# re-exported: profiles and task_save take it from here
+from .names import TRASH
 from .paths import repo_root
 from .profile_store import FILES, ProfileError, list_profiles, profile_entry
 from .storage.atomic import UNREADABLE, read_json_quiet
@@ -78,8 +81,6 @@ def _refuse_recorded_group_values(name, mapping_file):
 
 
 # ---------------------------------------------------------------------------------- starting over
-TRASH = '.deleted'                                  # under the profile store; `list_profiles` never looks inside
-WORKING_STATES = ('starting', 'running', 'pausing', 'stopping')     # a worker holds the run (`runs.run_status`)
 
 
 def working_run_of(name, run_rows):

@@ -11,11 +11,12 @@ import os
 from pathlib import Path
 import re
 
+from .names import TASK_NAME
 from .paths import local_settings_dir
 from .storage.atomic import UNREADABLE, read_json_quiet
 
 
-NAME = re.compile(r'^[a-z][a-z0-9_]{1,39}$')
+NAME = re.compile(TASK_NAME)
 FORMAT = 'gator-generated-profile-1'
 FILES = dict(design='design.json', mapping='mapping.json', structure='structure.scs', readback='readback.cdf.json',
              rules='rules.json', receipt='creation.json', entry='profile.json', reference='reference_measurements.json',

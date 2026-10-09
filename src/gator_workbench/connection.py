@@ -55,6 +55,7 @@ import threading
 import time
 from types import SimpleNamespace
 
+from . import names
 from .paths import append_local_log, repo_root
 from .security import redact
 from .storage.atomic import read_json
@@ -223,7 +224,7 @@ def public_profiles() -> dict:
                 profiles=[public(key, value) for key, value in loaded['profiles'].items()])
 
 
-PROFILE_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$')
+PROFILE_ID = re.compile(names.PROFILE_ID)
 
 
 def resolve_profile_id(profile_id):

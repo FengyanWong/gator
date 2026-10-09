@@ -47,14 +47,14 @@ def width_rows(graph, devices, lower=0.1, upper=100.0):
 # ------------------------------------------------------------------------------ recognition
 @pytest.mark.parametrize('name', ['gpdk045_ota5'])        # the OTA7 and LDO left with their files (7.128)
 def test_the_amplifiers_of_record_have_their_pair_tail_and_mirror_load_and_no_rail_pairs(name):
-    graph = tasks._verified_profile(name).optimization_graph()
+    graph = tasks.verified_profile(name).optimization_graph()
     assert found(graph) == [('differential_pair', ('XU1/M1', 'XU1/M2')), ('tail_source', ('XU1/M5',)),
                             ('active_load', ('XU1/M3', 'XU1/M4'))]
     # netlist-crawler reported M6 / MP with M3 and with M4 as differential pairs: they only share VDD.
 
 
 def test_the_ring_oscillator_has_no_matched_structure():
-    assert found(tasks._verified_profile('gpdk045_vco').optimization_graph()) == []
+    assert found(tasks.verified_profile('gpdk045_vco').optimization_graph()) == []
 
 
 def test_the_ngspice_example_also_has_its_bias_mirror():
@@ -123,7 +123,7 @@ I1 (s 0) isource dc=10u
 
 
 def test_the_agent_summary_lists_the_structures():
-    summary = circuit_summary(tasks._verified_profile('gpdk045_ota5').optimization_graph())
+    summary = circuit_summary(tasks.verified_profile('gpdk045_ota5').optimization_graph())
     assert summary['structures'] == [
         'XU1/M1 and XU1/M2 are a differential pair (gates VINP / VINN, shared source XU1/NTAIL).',
         'XU1/M5 is the tail current source of the pair XU1/M1 / XU1/M2.',

@@ -105,7 +105,7 @@ def test_a_row_outside_the_pdks_own_range_is_refused_when_the_task_is_saved(tmp_
     cells = pdk.parse_cdf_text(text)['cells']
     assert cells['nmos1v']['parameters']['w']['range'] == [1e-07, 1e-05]       # read from the PDK
     assert cells['nmos1v']['parameters']['l']['range'] is None                 # the PDK declares none: unchanged
-    source = pdk._write_source(cells, 'nmos1v', 'w')
+    source = pdk.write_source(cells, 'nmos1v', 'w')
     assert source['range'] == [1e-07, 1e-05]                                   # and it reaches the rules
     assert pdk.numeric_range('(2 1)') is None and pdk.numeric_range(['1u', '5u']) is None      # only a plain pair counts
     assert cdf_rules is not None

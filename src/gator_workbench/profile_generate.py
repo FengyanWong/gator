@@ -33,8 +33,8 @@ from pathlib import Path
 import shutil
 
 from . import cdf_facts, cdf_rules, native_cells, recipes, units
-from .circuit_types import (MAESTRO, NEEDS_FREQUENCY, NeedsFrequency, OPAMP_NETS, RECIPES, _core_instance, _opamp_fit,
-                            _ring, _supply)
+from .circuit_types import (MAESTRO, NEEDS_FREQUENCY, NeedsFrequency, OPAMP_NETS, RECIPES, core_instance, opamp_fit,
+                            ring_stages, supply_of)
 from .compile import CompileError, build_graph
 from .generic_profile import RULES_FORMAT, VERIFIED_WIDTH_STEP, check_writable_record
 from .paths import repo_root
@@ -146,7 +146,7 @@ def _nominal_supply() -> float:
     return float(json.loads((repo_root() / 'configs' / 'gpdk045_conditions.json').read_text())['nominal']['supply_v'])
 
 
-def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=None, entry_extra=None) -> dict:
+def write_profile_files(name, config, *, recipe, imported, staging, expected_frequency_hz=None, entry_extra=None) -> dict:
     """Write the profile files of `imported` (the import of the cell a task runs on - its working copy - or, on the
     older route, the original) into the new folder `staging`: device mapping, netlist, CDF readback, design, rules,
     receipt and registry entry. Refuses, in plain words, whatever the verified real backend cannot do."""
@@ -156,7 +156,7 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
     write_json(staging / FILES['mapping'], mapping)
     (staging / FILES['structure']).write_text(text)
     graph = SpectreParser(ParserConfig.from_file(staging / FILES['mapping'])).parse_file(staging / FILES['structure'])
-    core = _core_instance(imported, graph)
+    core = core_instance(imported, graph)
     facts, specs = _form_facts(imported), None
     try:                                              # the verified width writer, when it can do what the rows ask
         rows, optimized, leaders = _adjust_rows(config, graph, core)
@@ -190,25 +190,25 @@ def _generate(name, config, *, recipe, imported, staging, expected_frequency_hz=
     if recipe == 'ring_oscillator':
         if expected_frequency_hz is None:
             raise NeedsFrequency(NEEDS_FREQUENCY)
-        source, supply_net, dc = _supply(graph)
+        source, supply_net, dc = supply_of(graph)
         try:
             timing = recipes.ring_timing(expected_frequency_hz)
         except ValueError as exc:
             raise ProfileError(str(exc))
         design.update(supply_v=format(dc.value, '.12g'), supply_source=source, supply_net=supply_net,
                       expected_frequency_hz=float(expected_frequency_hz), **timing,
-                      **recipes.CONTRACT, **_ring(graph, core, format(dc.value, '.12g')))
+                      **recipes.CONTRACT, **ring_stages(graph, core, format(dc.value, '.12g')))
         net_roles = {supply_net: ['supply'], design['stage_nets'][0]: ['output']}
     elif recipe == MAESTRO:
         try:
-            source, supply_net, dc = _supply(graph)
+            source, supply_net, dc = supply_of(graph)
             design.update(supply_v=format(dc.value, '.12g'), supply_source=source, supply_net=supply_net)
             net_roles = {supply_net: ['supply']}
         except ProfileError:                           # more than one source: the verified nominal supply, no role guessed
             design.update(supply_v=format(_nominal_supply(), '.12g'))
             net_roles = {}
     else:
-        _opamp_fit(graph, core)
+        opamp_fit(graph, core)
         design.update(supply_v=format(graph.parameters['VDD']['dc'].value, '.12g'))
         net_roles = {net: [role] for net, role in OPAMP_NETS.items()}
     available = recipes.provided_metrics(recipe)
@@ -274,7 +274,7 @@ def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)
     try:
-        result = _generate(name, config, recipe=recipe, imported=imported, staging=staging, expected_frequency_hz=expected_frequency_hz)
+        result = write_profile_files(name, config, recipe=recipe, imported=imported, staging=staging, expected_frequency_hz=expected_frequency_hz)
         staging.rename(directory)
         try:
             load_profile(name)                                    # every check of the verified classes, against the recorded files
@@ -285,3 +285,7 @@ def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
         shutil.rmtree(directory, ignore_errors=True)
         raise
     return dict(result['entry'], directory=str(directory), parameters=[row.model_dump(mode='json') for row in result['rows']])
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_generate = write_profile_files

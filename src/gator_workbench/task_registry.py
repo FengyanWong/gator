@@ -188,7 +188,7 @@ NATIVE_DRAFT_NOT_EXECUTABLE = ('This cell was read from Virtuoso, but it has no 
                                'which testbench runs, and how results are measured.')
 
 
-def _verified_profile(name):
+def verified_profile(name):
     """The profile object of a verified circuit, from its files in the repository: no connection, no bridge."""
     import importlib
     info, root = REAL_PROFILES[name], repo_root()
@@ -220,3 +220,7 @@ def fixed_by_verified_profile(runtime) -> bool:
     those): real:<name> of REAL_PROFILES, not a profile generated from a cell."""
     name = runtime.task_key.partition(':')[2]
     return runtime.task_key.startswith('real:') and name in REAL_PROFILES and not runtime.circuit.get('generated_profile')
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_verified_profile = verified_profile

@@ -34,7 +34,7 @@ def build_run_summary(engine, final_state, checkpoint, persistence_ok):
     ledger, counters, manifest = engine.ledger, engine.counters, engine.manifest
     snapshot = ledger.snapshot()
     first = snapshot['first_feasible']
-    active, paused = durations(manifest, current_active=engine._clock() - engine._segment_started)
+    active, paused = durations(manifest, current_active=engine.segment_seconds())
     feasible, infeasible = engine.tracker.feasible, engine.tracker.infeasible
     complete = final_state == 'completed'
     if first is not None:

@@ -24,6 +24,7 @@ import shutil
 
 from .analoggym import AnalogGymFactory, export_best_decks, physical_graph
 from .connection import named_or_active
+from .names import TASK_NAME, TRASH, TRASH_STAMP, WORKING_STATES
 from .ngspice_backend import LOCAL_CONCURRENCY, NgspiceEnvFactory, NgspiceLink, NgspiceLinkError
 from .ngspice_netlist import KINDS, NetlistError, Parsed, parse_text, rewrite
 from .paths import inside, local_settings_dir
@@ -33,8 +34,7 @@ from .task_registry import REAL_AUTHORIZATION_REQUIRED, TaskBlocked, TaskRuntime
 
 PREFIX = 'ngspice'
 FILES = dict(netlist='netlist.cir', entry='task.json')
-TRASH = '.deleted'
-NAME = re.compile(r'^[a-z][a-z0-9_]{1,39}$')
+NAME = re.compile(TASK_NAME)
 MAX_NETLIST_BYTES = 8 * 1024 * 1024
 OPTIMIZED_BY_DEFAULT = ('w', 'r', 'c', 'ind')          # lengths, counts and sources start fixed
 ROW_UNITS = {'w': ('um', 1e6), 'l': ('um', 1e6), 'm': ('count', 1.0), 'nf': ('count', 1.0), 'r': ('ohm', 1.0),
@@ -144,7 +144,7 @@ def save(name, text, *, device_kinds=None, source_path=None, circuit_class='unsp
         raise NgspiceTaskError('The netlist is empty.')
     if len(text.encode('utf8', errors='replace')) > MAX_NETLIST_BYTES:
         raise NgspiceTaskError(f'The netlist is larger than {MAX_NETLIST_BYTES // (1024 * 1024)} MB.')
-    kinds = _clean_kinds(device_kinds)
+    kinds = clean_kinds(device_kinds)
     root = str(Path(source_path).parent) if source_path else None
     try:
         parsed = parse_text(text, source=str(directory / FILES['netlist']), circuit_id=name, device_kinds=kinds, include_root=root)
@@ -176,7 +176,7 @@ def save(name, text, *, device_kinds=None, source_path=None, circuit_class='unsp
     return dict(entry, directory=str(directory), created=existing is None)
 
 
-def _clean_kinds(device_kinds) -> dict:
+def clean_kinds(device_kinds) -> dict:
     cleaned = {}
     for key, value in (device_kinds or {}).items():
         key, value = str(key).strip().lower(), str(value).strip().lower()
@@ -198,7 +198,7 @@ def parse_kinds_text(text) -> dict:
         if not equals or not key or not value:
             raise NgspiceTaskError(f'{word!r}: write model kinds as name=kind, e.g. sky130_fd_pr__nfet_01v8=nmos')
         kinds[key] = value
-    return _clean_kinds(kinds)
+    return clean_kinds(kinds)
 
 
 def delete(name, *, run_rows=()) -> dict:
@@ -208,7 +208,7 @@ def delete(name, *, run_rows=()) -> dict:
         raise NgspiceTaskError(f'Unknown ngspice task {name!r}')
     task_key = entry['task_key']
     for row in run_rows:                                # the run list's rows: only a live run's manifest is read
-        if row.get('state') not in ('starting', 'running', 'pausing', 'stopping') or not row.get('run_dir'):
+        if row.get('state') not in WORKING_STATES or not row.get('run_dir'):
             continue
         manifest = read_json_quiet(Path(row['run_dir']) / 'run_manifest.json', UNREADABLE)
         if manifest is UNREADABLE:
@@ -216,7 +216,7 @@ def delete(name, *, run_rows=()) -> dict:
         if (manifest.get('circuit') or {}).get('task_key') == task_key:
             raise NgspiceTaskError(f'Run {row.get("run_id") or row["run_dir"]} of {task_key} is working right now: abort it or let it finish first')
     directory = Path(entry['directory'])
-    kept = directory.parent / TRASH / f'{name}.{utcnow().strftime("%Y%m%dT%H%M%S%fZ")}'
+    kept = directory.parent / TRASH / f'{name}.{utcnow().strftime(TRASH_STAMP)}'
     kept.parent.mkdir(parents=True, exist_ok=True)
     directory.rename(kept)
     return dict(deleted=task_key, name=name, kept_copy=str(kept))
@@ -435,3 +435,7 @@ def task_entries() -> list:
                             description=f"ngspice netlist ({entry.get('devices')} elements, {len(entry.get('measurements') or [])} results), "
                                         f"revision {entry.get('revision')}. Runs on an ngspice connection; no license."))
     return entries
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_clean_kinds = clean_kinds

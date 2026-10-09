@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import re
 
-from .pdk import CDF_UNITS, _fields, _number, _write_source, parse_cdf_text, skill_value
+from .cdf_text import cdf_number, query_fields, write_source
+from .names import CADENCE_NAME
+from .pdk import CDF_UNITS, parse_cdf_text, skill_value
 
 FORMAT = 'gator-cdf-facts-1'
 FILE = 'core_cdf.json'
-NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+NAME = re.compile(CADENCE_NAME)
 MODE_TYPES = ('cyclic', 'boolean', 'radio')           # a parameter that selects a mode: never changed by a write
 
 FACTS_SKILL = r'''
@@ -104,7 +106,7 @@ def parse_facts(text, *, library, cell) -> dict:
     """The query's lines -> {format, library, cell, instances, masters, cells, leaves, rules, modified, conflicts}."""
     instances, masters, rules, conflicts, opened, after = {}, {}, {}, [], None, None
     for raw in (text or '').splitlines():
-        parts = _fields(raw.rstrip('\r'))
+        parts = query_fields(raw.rstrip('\r'))
         tag = parts[0] if parts else ''
         if tag == 'INST' and len(parts) >= 4:
             instances[parts[1]] = dict(library=parts[2], cell=parts[3])
@@ -166,7 +168,7 @@ def sources(facts, core, device) -> dict:
         cdf_name = prop.get(name, name)
         if cdf_name not in cell['parameters'] and name in cell['parameters']:
             cdf_name = name
-        found[name] = _write_source(facts['cells'], netlisted, cdf_name, parent)
+        found[name] = write_source(facts['cells'], netlisted, cdf_name, parent)
     return found
 
 
@@ -199,14 +201,14 @@ def value_kind(source, current):
     kind = source['type']
     if kind == 'cyclic':
         choices = source.get('choices')
-        if not isinstance(choices, list) or not choices or any(_number(c) is None for c in choices):
+        if not isinstance(choices, list) or not choices or any(cdf_number(c) is None for c in choices):
             raise NotWritable('it is a choice between words (a mode), not a number')
         return 'choice', [str(c) for c in choices]
     if kind in MODE_TYPES:
         raise NotWritable(f'it is a {kind} setting, not a number')
     if kind not in ('string', 'int', 'float'):
         raise NotWritable(f'its CDF type is {kind!r}')
-    if kind == 'string' and _number(current) is None:
+    if kind == 'string' and cdf_number(current) is None:
         raise NotWritable(f'its present value {current!r} is not a number')
     return kind, None
 

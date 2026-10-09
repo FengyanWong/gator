@@ -30,12 +30,13 @@ from pathlib import Path
 import re
 import shutil
 
+from .names import CADENCE_NAME
 from .paths import local_settings_dir, repo_root
 from .storage.atomic import read_json_quiet, sha256_file as _sha256, write_json
 from .storage.dataset import utcnow
 from .vocabulary import parse_models
 
-NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')          # a plain Cadence name; the same rule as bridge_read.NAME
+NAME = re.compile(CADENCE_NAME)          # a plain Cadence name; the same rule as bridge_read.NAME
 FILES = dict(netlist='netlist.scs', mapping='mapping.json', core_readback='core_readback.json',
              testbench_readback='testbench_readback.json', meta='meta.json', form_rules='core_cdf.json')
 FORMAT = 'gator-native-cell-1'

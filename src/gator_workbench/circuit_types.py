@@ -20,7 +20,7 @@ RECIPES = {'ring_oscillator': dict(label='Ring oscillator (free-running)', circu
 OPAMP_NETS = dict(VDD='supply', VINP='input', VINN='input', VOUT='output', VBIAS='bias')
 
 
-def _core_instance(imported, graph) -> str:
+def core_instance(imported, graph) -> str:
     try:
         testbench = json.loads((Path(imported['directory']) / native_cells.FILES['testbench_readback']).read_text())
     except (OSError, ValueError):
@@ -33,7 +33,7 @@ def _core_instance(imported, graph) -> str:
     return names[0]
 
 
-def _supply(graph):
+def supply_of(graph):
     """(source name, supply net, dc text) of THE supply: the only DC voltage source of the testbench level."""
     roles = {}
     for c in graph.connections:
@@ -48,7 +48,7 @@ def _supply(graph):
     return name, roles[name]['positive'], dc
 
 
-def _ring(graph, core, supply_text) -> dict:
+def ring_stages(graph, core, supply_text) -> dict:
     """Stage nets in ring order (output first) and alternating start voltages, read off the inverter chain."""
     gate, drain = {}, {}
     for c in graph.connections:
@@ -72,7 +72,7 @@ def _ring(graph, core, supply_text) -> dict:
     return dict(stage_nets=spectre, initial_conditions={name: ('0' if index % 2 == 0 else supply_text) for index, name in enumerate(spectre)})
 
 
-def _opamp_fit(graph, core):
+def opamp_fit(graph, core):
     """Raises unless the testbench is wired like the verified OTA's: the op-amp recipe reads exactly these nets and source."""
     nets = {net.id for net in graph.nets}
     missing = sorted(({*OPAMP_NETS, f'{core}/NTAIL', f'{core}/NLOAD'} - nets) | ({'source VDD'} - {f'source {d.id}' for d in graph.devices if d.kind == 'vsource'}))
@@ -113,10 +113,10 @@ def _type_signals(recipe, graph, core) -> dict:
     """{output, stages?, source} of a testbench for one circuit type; raises ProfileError when the testbench does not fit it.
     The same reading of the netlist Create profile makes."""
     if recipe == recipes.RING:
-        source, _, dc = _supply(graph)
-        stages = _ring(graph, core, format(dc.value, '.12g'))['stage_nets']
+        source, _, dc = supply_of(graph)
+        stages = ring_stages(graph, core, format(dc.value, '.12g'))['stage_nets']
         return dict(output=stages[0], stages=stages, source=source)
-    _opamp_fit(graph, core)
+    opamp_fit(graph, core)
     return dict(output='VOUT', source='VDD')
 
 
@@ -165,7 +165,7 @@ def testbench_probes(imported, graph=None) -> dict:
         return answer
     graph = native_cells.draft_graph(imported) if graph is None else graph
     try:
-        core = _core_instance(imported, graph)
+        core = core_instance(imported, graph)
     except ProfileError as exc:
         answer['reason'] = str(exc)
         return answer
@@ -194,3 +194,10 @@ NEEDS_FREQUENCY = ('The ring-oscillator measurement needs a rough expected oscil
 
 class NeedsFrequency(ProfileError):
     """Save task needs the expected frequency of the ring-oscillator measurement (the page asks for it once)."""
+
+
+# The names these had before refactoring package B9 (2026-10-09), kept for code that still uses them.
+_core_instance = core_instance
+_opamp_fit = opamp_fit
+_ring = ring_stages
+_supply = supply_of

@@ -14,7 +14,7 @@ NUMERIC_CDF_TYPES = ('string', 'int', 'float')
 
 
 # ------------------------------------------------------------------------------------------ SKILL output
-def _fields(line):
+def query_fields(line):
     """Split a query line at `|`, but never inside a quoted string."""
     out, current, quoted, i = [], [], False, 0
     while i < len(line):
@@ -136,7 +136,7 @@ def numeric_range(value):
 def parse_cdf_text(text):
     """The query's lines -> {cells: {name: {...}}, leaves: {cell: [{instance, library, cell, model}]}, layout_only: [..]}."""
     cells, leaves, layout_only = {}, {}, []
-    lines = [_fields(raw.rstrip('\r')) for raw in (text or '').splitlines()]
+    lines = [query_fields(raw.rstrip('\r')) for raw in (text or '').splitlines()]
     # Cells first, then what belongs to them: the order of a library's cells (and of the lines) is not guaranteed.
     for parts in sorted(lines, key=lambda parts: parts[0] != 'CELL'):
         tag = parts[0]
@@ -169,7 +169,7 @@ def parse_cdf_text(text):
 
 
 # ------------------------------------------------------------------------------------------ building the record
-def _number(value):
+def cdf_number(value):
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
@@ -187,7 +187,7 @@ def _number(value):
 _REFERENCE = re.compile(r'^\s*([ip])Par\(\s*"([A-Za-z_]\w*)"\s*\)\s*$')
 
 
-def _cdf_entry(cells, cell, name, parent=None, depth=0):
+def cdf_entry(cells, cell, name, parent=None, depth=0):
     """(CDF parameter entry, default value resolved through iPar/pPar references) of `name` on `cell`."""
     entry = (cells.get(cell) or {}).get('parameters', {}).get(name)
     if entry is None:
@@ -197,14 +197,14 @@ def _cdf_entry(cells, cell, name, parent=None, depth=0):
     if found and depth < 6:
         target_cell = cell if found.group(1) == 'i' else parent
         if target_cell:
-            inner, value = _cdf_entry(cells, target_cell, found.group(2), None, depth + 1)
+            inner, value = cdf_entry(cells, target_cell, found.group(2), None, depth + 1)
             if inner is not None:
                 return dict(entry, units=units or inner.get('units')), value
         return entry, None
-    return entry, _number(default)
+    return entry, cdf_number(default)
 
 
-def _write_source(cells, cell, name, parent=None, depth=0):
+def write_source(cells, cell, name, parent=None, depth=0):
     """Which CDF parameter a user edits to set CDF parameter `name` of `cell`: `name` itself, or - when its default ties it
     to another one - that one: `iPar("x")` = x of the same instance (GPDK045's `simW` = `w`, an inductor's `width` = its
     choice list `width_cyclic`), `pPar("x")` = x of the cell that places this primitive (a resistor's `segL`). None when
@@ -216,15 +216,15 @@ def _write_source(cells, cell, name, parent=None, depth=0):
     found = _REFERENCE.match(entry['default']) if isinstance(entry.get('default'), str) else None
     if found:
         if found.group(1) == 'i':
-            return _write_source(cells, cell, found.group(2), parent, depth + 1)
-        inner = _write_source(cells, parent, found.group(2), None, depth + 1) if parent else None
+            return write_source(cells, cell, found.group(2), parent, depth + 1)
+        inner = write_source(cells, parent, found.group(2), None, depth + 1) if parent else None
         return None if inner is None else dict(inner, on='parent')
     return dict(cdf=name, on='self', cell=cell, type=entry.get('type'), editable=entry.get('editable'),
                 display=entry.get('display'), callback=entry.get('callback'), choices=entry.get('choices'),
                 range=entry.get('range'))          # what the form itself accepts, when the PDK declares it
 
 
-def _writable(source, numeric):
+def writability(source, numeric):
     """'yes' / 'no' / 'depends' (on the instance's current mode, decided in Virtuoso) / 'unknown' (no form read)."""
     if source is None or not numeric:
         return 'no'
@@ -233,12 +233,21 @@ def _writable(source, numeric):
     if source['editable'] is False or source['display'] is False or source['type'] not in NUMERIC_CDF_TYPES + ('cyclic',):
         return 'no'
     if source['type'] == 'cyclic' and not (isinstance(source['choices'], list)
-                                           and all(_number(c) is not None for c in source['choices'])):
+                                           and all(cdf_number(c) is not None for c in source['choices'])):
         return 'no'                                       # a choice list of words (a mode), not of numbers
     return 'yes' if source['editable'] is True and source['display'] is True else 'depends'
 
 
-def _leaf_of(cells, leaves, name):
+def leaf_of(cells, leaves, name):
     """A cell without a Spectre entry of its own: the one primitive its schematic places that has one."""
     found = [leaf for leaf in leaves.get(name, []) if (cells.get(leaf['cell']) or {}).get('spectre') and leaf.get('model')]
     return found[0] if len(found) == 1 else None
+
+
+# The names these had before refactoring package B9 (2026-10-09), kept for code that still uses them.
+_cdf_entry = cdf_entry
+_leaf_of = leaf_of
+_writable = writability
+_write_source = write_source
+_fields = query_fields
+_number = cdf_number

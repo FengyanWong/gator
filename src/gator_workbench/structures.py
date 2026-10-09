@@ -22,7 +22,7 @@ import math
 import re
 from dataclasses import dataclass
 from .schema import OptimizationParameter
-from .tasks import _member_variable_id
+from .tasks import member_variable_id
 from .validation import resolve_leaders
 
 MOS = ('nmos', 'pmos')
@@ -310,7 +310,7 @@ def _make(out, suggestion) -> list:
                    if row.get('lower') is not None and row.get('upper') is not None else '')
             row.update(follow, notes=_note(row.get('notes') or '', said + was))
             continue
-        base = _member_variable_id(change['leader'], change['device'])
+        base = member_variable_id(change['leader'], change['device'])
         variable_id, n = base, 2
         while variable_id in used:
             variable_id, n = f'{base}_{n}', n + 1

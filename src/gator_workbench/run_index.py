@@ -15,6 +15,7 @@ import threading
 import time
 
 from . import checkpoints as ckpt
+from .names import WORKING_STATES
 from .run_lock import RunLock
 from .layout import RunLayout, find_runs
 from .paths import OutputRoots
@@ -162,7 +163,7 @@ _RUN_CACHE_LOCK = threading.Lock()
 READ_THREADS = 16
 _READ_POOL: list = []
 _READ_POOL_LOCK = threading.Lock()
-LIVE_STATES = ('starting', 'running', 'pausing', 'stopping')
+LIVE_STATES = WORKING_STATES
 
 
 def _fingerprint(run_dir):
@@ -175,7 +176,7 @@ def _fingerprint(run_dir):
     return own.st_ino, own.st_mtime_ns, own.st_ctime_ns, points
 
 
-def _run_facts(run_dir, *, fresh=False) -> dict | None:
+def run_facts(run_dir, *, fresh=False) -> dict | None:
     """What list_runs and model_label_rows read from one run folder, from the cache while the folder is unchanged; None
     for a folder without a manifest (or one that is gone)."""
     try:
@@ -238,7 +239,7 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True, fresh=
         if mock and not include_mock:
             continue
         found = find_runs(data_root, manifest=False)
-        for run_dir, facts in zip(found, read_many(lambda run_dir: _run_facts(run_dir, fresh=fresh), found)):
+        for run_dir, facts in zip(found, read_many(lambda run_dir: run_facts(run_dir, fresh=fresh), found)):
             if facts is None:
                 continue
             seen.add(str(run_dir))
@@ -286,7 +287,7 @@ def model_label_rows(output_root) -> list[dict]:
     rows = []
     for data_root in (Path(output_root), Path(output_root) / 'mock'):
         found = find_runs(data_root, manifest=False)
-        for run_dir, facts in zip(found, read_many(_run_facts, found)):
+        for run_dir, facts in zip(found, read_many(run_facts, found)):
             if facts is not None:
                 rows.append(dict(run_dir=str(run_dir), created_utc=facts['manifest'].get('created_utc'), **facts['label']))
     return rows
@@ -296,3 +297,7 @@ def output_root_of(run_dir) -> Path:
     """The output root a run folder lies under: <root>[/mock]/<experiment>/runs/<task>/<run>."""
     data_root = Path(run_dir).parents[3]
     return data_root.parent if data_root.name == 'mock' else data_root
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_run_facts = run_facts

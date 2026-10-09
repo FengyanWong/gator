@@ -12,8 +12,8 @@ import math
 import re
 from pathlib import Path
 
-from .cdf_text import NUMERIC_CDF_TYPES, _cdf_entry, _leaf_of, _writable, _write_source, parse_cdf_text
-from .model_scan import CDF_UNITS, _where, classify_model, merge_scans, pin_roles
+from .cdf_text import NUMERIC_CDF_TYPES, cdf_entry, leaf_of, writability, write_source, parse_cdf_text
+from .model_scan import CDF_UNITS, file_line, classify_model, merge_scans, pin_roles
 from .paths import local_settings_dir
 from .storage.atomic import read_json, write_json
 from .storage.dataset import utcnow
@@ -80,7 +80,7 @@ def build_record(pdk_id, cdf, scans, *, sources=None, technology_library=None):
         spectre, parent, via = cell.get('spectre'), None, None
         model = cell.get('model') or (spectre or {}).get('component_name')
         if spectre is None:
-            leaf = _leaf_of(cells, leaves, name)
+            leaf = leaf_of(cells, leaves, name)
             if leaf is None:
                 not_netlisted.append(dict(cell=name, reason='no Spectre entry and no netlisted primitive in its schematic'
                                           if 'schematic' in cell.get('views', []) else 'no Spectre entry (not netlisted)'))
@@ -133,17 +133,17 @@ def build_record(pdk_id, cdf, scans, *, sources=None, technology_library=None):
         prop = {str(k): str(v) for k, v in lead['spectre'].get('prop_mapping', {}).items()}
         for netlist in [str(p) for p in lead['spectre'].get('inst_parameters') or []]:
             cdf_name = prop.get(netlist, netlist)
-            entry, default = _cdf_entry(cells, leaf_cell, cdf_name, parent)
+            entry, default = cdf_entry(cells, leaf_cell, cdf_name, parent)
             if entry is None:
-                entry, default = _cdf_entry(cells, leaf_cell, netlist, parent)
+                entry, default = cdf_entry(cells, leaf_cell, netlist, parent)
             kind = (entry or {}).get('type')
             unit = CDF_UNITS.get((entry or {}).get('units'))
             numeric = kind in NUMERIC_CDF_TYPES and (default is not None or unit is not None or netlist in STANDARD_UNITS)
-            source = _write_source(cells, leaf_cell, cdf_name if entry is not None and cdf_name in cells[leaf_cell]['parameters']
+            source = write_source(cells, leaf_cell, cdf_name if entry is not None and cdf_name in cells[leaf_cell]['parameters']
                                    else netlist, parent)
             parameters.append(dict(name=netlist, cdf=cdf_name, type=kind, unit=unit, unit_declared=unit is not None,
                                    default=default, prompt=(entry or {}).get('prompt'), numeric=bool(numeric),
-                                   write=source, writable=_writable(source, numeric)))
+                                   write=source, writable=writability(source, numeric)))
         standard = dict(mos={'n': 'nmos', 'p': 'pmos'}.get(found.get('polarity')), resistor='resistor',
                         capacitor='capacitor', inductor='inductor').get(found['family']) or 'unknown'
         known = {p['role'] for p in pins}
@@ -156,7 +156,7 @@ def build_record(pdk_id, cdf, scans, *, sources=None, technology_library=None):
             family=found['family'], family_label=FAMILY_LABEL[found['family']], polarity=found.get('polarity'),
             family_basis=found['family_basis'], pins=pins, parameters=parameters,
             standard_kind=standard, standard_roles=_standard_roles(standard, pins),
-            source=_where(subckt) if subckt else _where(scan['models'][model]) if model in scan['models'] else None,
+            source=file_line(subckt) if subckt else file_line(scan['models'][model]) if model in scan['models'] else None,
             problems=problems)
     used = set(devices)
     unused = sorted((set(scan['subckts']) | set(scan['models'])) - used)
@@ -360,7 +360,7 @@ def build_ideal_parts(library, cdf) -> dict:
                              without_pins=sorted(c['component'] for c in components.values() if not c['pin_orders'])))
 
 
-def _ideal_parts_of(read, previous):
+def ideal_parts_of(read, previous):
     """The ideal parts for a record that is being stored: what this read brought, else what an earlier read of the same
     PDK brought (kept, with the reason this read brought nothing), else only the reason."""
     read = read or {}
@@ -481,3 +481,7 @@ def label(vocabulary) -> str:
         return 'standard (8 generic kinds)'
     count = len(vocabulary['devices'])
     return f"PDK {vocabulary['pdk_id']} ({count} components, version {vocabulary['sha256'][:8]})"
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_ideal_parts_of = ideal_parts_of

@@ -50,8 +50,8 @@ def test_a_follower_id_takes_no_character_an_id_cannot_hold():
         'input_pair_width', 'input_pair_width__XU1_M2', 'mirror_pair_width', 'mirror_pair_width__XU1_M4', 'tail_width']
     follower = raw['parameters'][1]
     assert (follower['instance_path'], follower['binding_group']) == ('XU1/M2', 'input_pair_width')        # the device stays exact
-    assert tasks._member_variable_id('stage_a_width', 'stage_a/pull_up') == 'stage_a_width__stage_a_pull_up'  # the 7.56 report
-    assert tasks._member_variable_id('g', 'I0/M<0> x') == 'g__I0_M_0__x'
+    assert tasks.member_variable_id('stage_a_width', 'stage_a/pull_up') == 'stage_a_width__stage_a_pull_up'  # the 7.56 report
+    assert tasks.member_variable_id('g', 'I0/M<0> x') == 'g__I0_M_0__x'
 
 
 def test_the_rejected_ids_are_named_row_by_row_in_plain_words():

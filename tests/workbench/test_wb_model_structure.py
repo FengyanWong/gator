@@ -96,7 +96,7 @@ def test_types_are_never_guessed_and_a_changed_file_is_refused(saved, tmp_path, 
     _, layout = saved
     source = ckpt.resolve_checkpoint(layout.run_dir, 'latest')
     # The recorded settings no longer describe the file: every tensor is still listed, without types or flags.
-    monkeypatch.setattr(model_structure, '_rebuild', lambda contract: (_ for _ in ()).throw(KeyError('feature_schema')))
+    monkeypatch.setattr(model_structure, 'rebuild_network', lambda contract: (_ for _ in ()).throw(KeyError('feature_schema')))
     table = model_structure.structure(source)
     assert table['types_verified'] is False and 'could not be rebuilt' in table['types_problem']
     actor = table['parts'][0]
@@ -106,8 +106,8 @@ def test_types_are_never_guessed_and_a_changed_file_is_refused(saved, tmp_path, 
     monkeypatch.undo()
     # A rebuilt network of ANOTHER size is not "verified" either.
     other = dict(ckpt.read_metadata(source)['contract'], model_config=dict(ckpt.read_metadata(source)['contract']['model_config'], hidden_dim=32))
-    built = model_structure._rebuild(other)
-    assert not model_structure._same_tensors(built['actor'], ckpt.load_weights(source)['actor'])
+    built = model_structure.rebuild_network(other)
+    assert not model_structure.same_tensors(built['actor'], ckpt.load_weights(source)['actor'])
     # A weights file that does not match its recorded checksum is not read at all.
     copy = tmp_path / 'tampered'
     shutil.copytree(source, copy)

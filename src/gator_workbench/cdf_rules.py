@@ -25,7 +25,7 @@ from . import cdf_facts, units
 from .cdf_facts import NotWritable
 from .compile import group_unit
 from .generic_profile import VERIFIED_WIDTH_STEP
-from .pdk import _number
+from .cdf_text import cdf_number
 from .validation import resolve_leaders
 
 RULES_FORMAT = 'gator-profile-rules-2'
@@ -71,7 +71,7 @@ def spec_for(facts, core, device, parameter, reference, graph) -> dict:
     except NotWritable as exc:
         raise NotWritable(f'{device}.{parameter} (form field {source["cdf"]}): {exc}')
     netlisted = (graph.parameters.get(device) or {}).get(parameter)
-    value = _number(current)
+    value = cdf_number(current)
     if netlisted is None or not netlisted.valid:
         raise NotWritable(f'{device}.{parameter}: the exported netlist gives it no number')
     if value is None or not math.isclose(value, netlisted.value, rel_tol=1e-8, abs_tol=1e-24):
@@ -100,7 +100,7 @@ def held_for(facts, core, device, written, reference, graph) -> list:
         current = params.get(source['cdf'])
         try:
             kind, choices = cdf_facts.value_kind(source, current)
-            value = _number(current)
+            value = cdf_number(current)
         except NotWritable:
             if source['type'] == 'cyclic':
                 continue                                    # a word choice: a mode, compared with the modes
@@ -134,7 +134,7 @@ def member_grid(spec, facts, reference, written) -> tuple:
     """(grid, integer) of one written value: the step every value of it must be a whole multiple of. `written` = every
     write of the task, because a grid can depend on another written value of the same instance."""
     if spec['kind'] == 'choice':
-        values = sorted(_number(c) for c in spec['choices'])
+        values = sorted(cdf_number(c) for c in spec['choices'])
         if len(values) < 2 or any(not math.isclose(b - a, values[1] - values[0], rel_tol=1e-9, abs_tol=1e-18)
                                   for a, b in zip(values, values[1:])):
             raise RowError(f'{spec["device"]}.{spec["parameter"]}: its choices {spec["choices"]} are not evenly spaced')
@@ -147,7 +147,7 @@ def member_grid(spec, facts, reference, written) -> tuple:
             if any(other['instance'] == spec['instance'] and other['cdf'] == 'fingers' for other in written):
                 raise RowError(f'{spec["device"]}: vary its total width or its finger count, not both - the finger width '
                                'must stay on the 5 nm grid')
-            fingers = _number(params['fingers'])
+            fingers = cdf_number(params['fingers'])
             if fingers is None or fingers < 1 or fingers != int(fingers):
                 raise RowError(f'{spec["device"]}: its finger count {params["fingers"]!r} is not a whole number')
             return LENGTH_GRID * fingers, False
@@ -250,7 +250,7 @@ def adjust(config, graph, core, facts, reference):
             if integer and step is not None and step != int(step):
                 raise RowError(f'{row.variable_id}: a count moves in whole steps')
             if choice:                                                    # snapped INWARD onto the choices
-                inside = [a for a in sorted(_number(c) for c in spec['choices'])
+                inside = [a for a in sorted(cdf_number(c) for c in spec['choices'])
                           if lower - 1e-12 * abs(lower) <= a <= upper + 1e-12 * abs(upper)]
                 if len(inside) < 2:
                     raise RowError(f'{row.variable_id}: the range holds fewer than two of the choices {spec["choices"]}')
@@ -269,7 +269,7 @@ def adjust(config, graph, core, facts, reference):
             for ratio, member in members:                  # a finger count must keep the finger width on the grid
                 params = _instance_params(reference, member['instance'])
                 if member['cdf'] == 'fingers' and {'w', 'fw'} <= set(params) and step:
-                    total = _number(params['w'])
+                    total = cdf_number(params['w'])
                     counts = [(lower + k * step) * ratio for k in range(int(round((upper - lower) / step)) + 1)]
                     off = [round(c) for c in counts if total is None or not _multiple(total / c, LENGTH_GRID)]
                     if off:
@@ -278,7 +278,7 @@ def adjust(config, graph, core, facts, reference):
                                        f'finger width off the 5 nm grid at {", ".join(map(str, off[:6]))} fingers; the counts of '
                                        f'the range that fit: {", ".join(map(str, fits)) or "none"}')
             if choice:
-                allowed = [_number(c) for c in spec['choices']]
+                allowed = [cdf_number(c) for c in spec['choices']]
                 grid_points = [lower + k * step for k in range(int(round((upper - lower) / step)) + 1)]
                 if any(not any(math.isclose(p, a, rel_tol=1e-9, abs_tol=1e-18) for a in allowed) for p in grid_points):
                     raise RowError(f'{row.variable_id}: every value of the range must be one of the choices {spec["choices"]}')

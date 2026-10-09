@@ -110,7 +110,7 @@ def _real_profile(task_key):
         raise CheckRefused('Corner checks simulate through the Virtuoso profiles: an ngspice netlist task has none yet.',
                            code='unsupported_task')
     if name in tasks.offered_real_profiles():
-        return tasks._verified_profile(name)
+        return tasks.verified_profile(name)
     if profiles.profile_entry(name) is None:
         raise CheckRefused(f'{task_key} is no longer registered, so its designs cannot be simulated again.',
                            code='task_blocked')
@@ -133,7 +133,7 @@ def checkable_real_tasks() -> tuple:
     found = []
     for name in tasks.offered_real_profiles():
         try:
-            profile = tasks._verified_profile(name)
+            profile = tasks.verified_profile(name)
             if _corner_problem(profile, screening_corners(profile)[0]) is None:
                 found.append(f'real:{name}')
         except Exception:
@@ -639,7 +639,7 @@ class Worker:
         tasks.generated_bridge_config)."""
         name = self.context.task_key.partition(':')[2]
         if name in tasks.REAL_PROFILES:
-            connection = tasks.real_bindings(tasks._profile_settings(self.context.config.run.connection_profile_id)[1], name)
+            connection = tasks.real_bindings(tasks.profile_settings(self.context.config.run.connection_profile_id)[1], name)
             return tasks.bridge_config_of(connection), self.context.profile
         config, profile, _ = tasks.generated_bridge_config(name, self.context.config.run.connection_profile_id)
         return config, profile

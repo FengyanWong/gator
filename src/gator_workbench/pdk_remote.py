@@ -17,7 +17,7 @@ from .cdf_text import parse_cdf_text
 from .model_scan import includes_of, scan_model_text
 from .paths import local_settings_dir
 from .pdk_record import (IDEAL_LIBRARY, MAX_MODEL_BYTES, MAX_MODEL_FILES, NAME, PdkError, REMOTE_PATH,
-                         _ideal_parts_of, build_record, load_record, save_record)
+                         ideal_parts_of, build_record, load_record, save_record)
 from .security import redact
 from .storage.atomic import read_json, write_json
 
@@ -262,5 +262,5 @@ def finish_load(raw) -> dict:
     record = build_record(library, cdf, raw['scans'], sources=raw.get('sources'), technology_library=library)
     if not record['devices']:
         raise PdkError(f'No cell of {library} names a Spectre model that the model files define.')
-    record['ideal_parts'] = _ideal_parts_of(raw.get('ideal'), load_record(library))
+    record['ideal_parts'] = ideal_parts_of(raw.get('ideal'), load_record(library))
     return save_record(record)

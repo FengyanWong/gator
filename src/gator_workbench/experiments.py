@@ -14,7 +14,7 @@ from .storage.atomic import read_json, write_json
 from .storage.dataset import write_data_dictionary
 
 
-def _register_in_experiment(experiment_dir, manifest, compiled, task, created):
+def register_in_experiment(experiment_dir, manifest, compiled, task, created):
     experiment_dir = Path(experiment_dir)
     lock = RunLock(experiment_dir / '.experiment.lock')
     import time
@@ -87,3 +87,7 @@ def _update_split_manifest(experiment_dir, manifest, compiled, task):
                             'the absence of leakage: renamed or reordered copies of one topology hash differently. Use '
                             'analog_optimizer.evaluation.transfer.same_topology for an exact isomorphism check.')
     write_json(path, split)
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_register_in_experiment = register_in_experiment

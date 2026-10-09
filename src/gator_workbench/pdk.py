@@ -49,10 +49,14 @@ from __future__ import annotations
 # re-exported: moved to cdf_text.py by the refactoring (docs/plan-refactoring.md)
 from .cdf_text import (NUMERIC_CDF_TYPES, _fields, skill_value, _plist, _form_rule, numeric_range, parse_cdf_text,
                        _number, _REFERENCE, _cdf_entry, _write_source, _writable, _leaf_of)
+# re-exported: the public names of six of them (refactoring package B9)
+from .cdf_text import cdf_entry, cdf_number, leaf_of, query_fields, writability, write_source
 # re-exported: moved to model_scan.py by the refactoring (docs/plan-refactoring.md)
 from .model_scan import (CDF_UNITS, PASSIVE, PRIMITIVE_FAMILY, TERMINAL_ROLES, _ASSIGNMENT, _INCLUDE, _strip_comment,
                          _logical_lines, _assignments, includes_of, _define, scan_model_text, _spice_statement,
                          merge_scans, _where, _element_family, _paths, classify_model, pin_roles)
+# re-exported: the public name of _where (refactoring package B9)
+from .model_scan import file_line
 # re-exported: moved to pdk_record.py by the refactoring (docs/plan-refactoring.md)
 from .pdk_record import (FORMAT, VOCABULARY_FORMAT, STANDARD, NAME, REMOTE_PATH, MAX_MODEL_FILES, MAX_MODEL_BYTES,
                          PRIMITIVE_PINS, FAMILY_LABEL, UNIT_REFERENCE, ACTION_CLASS, SCALE_TOLERANCE_DECADES,

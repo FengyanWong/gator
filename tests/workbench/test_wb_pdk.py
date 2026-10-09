@@ -155,7 +155,7 @@ def test_the_skill_output_parser_reads_the_bridge_form():
     assert pdk.skill_value(r'(nil D \\:d G \\:g)') == [None, 'D', ':d', 'G', ':g']
     assert pdk.skill_value(r'"iPar(\\"w\\")"') == 'iPar("w")'
     assert pdk.skill_value('(1 2.5 t nil "x y")') == [1, 2.5, True, None, 'x y']
-    assert pdk._fields('PARAM|c|p|"a | b"|nil') == ['PARAM', 'c', 'p', '"a | b"', 'nil']
+    assert pdk.query_fields('PARAM|c|p|"a | b"|nil') == ['PARAM', 'c', 'p', '"a | b"', 'nil']
 
 
 def test_reading_downloads_into_a_temporary_folder_and_follows_includes(tmp_path):

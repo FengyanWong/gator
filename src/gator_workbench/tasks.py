@@ -33,7 +33,7 @@ import sys
 
 from . import model_library, native_cells, task_registry
 from .connection import KINDS, family_of, named_or_active, profile_kind
-from .paths import bridge_state_dir, local_settings_dir, repo_root
+from .paths import bridge_state_dir, connection_file, repo_root
 from .spec_equations import EquationNativeFactory
 from .storage.atomic import sha256_file as _sha256
 # re-exported: moved to task_registry.py by the refactoring (docs/plan-refactoring.md)
@@ -42,7 +42,7 @@ from .task_registry import (ENV_SYNTHETIC_FIXTURES, REAL_LANES, _registered_fixt
                             REAL_TARGETS_OF_RECORD, REAL_REGISTRY_OF_RECORD, RESULT_ANALYSIS, REAL_INTERFACE_CONTRACT,
                             REAL_AUTHORIZATION_REQUIRED, TaskBlocked, TaskRuntime, starter_project,
                             offered_real_profiles, real_task_removed, CORNER_TASKS, training_capabilities,
-                            NETLIST_SOURCE_REMOVED, NATIVE_DRAFT_NOT_EXECUTABLE, _verified_profile,
+                            NETLIST_SOURCE_REMOVED, NATIVE_DRAFT_NOT_EXECUTABLE, _verified_profile, verified_profile,
                             verified_spec_registry)
 
 # Normalized toy optimum per parameter kind for the analytic mock objective. Arbitrary by
@@ -161,7 +161,7 @@ def bridge_importable() -> bool:
     return importlib.util.find_spec('virtuoso_bridge') is not None
 
 
-def _profile_settings(profile_id=None):
+def profile_settings(profile_id=None):
     loaded, _, settings = named_or_active(profile_id)
     return loaded, settings
 
@@ -228,7 +228,7 @@ def _binding_problem(name, bound):
 def _link_problem(profile_id, not_importable):
     """(why the connection profile cannot reach a real bridge here, or None; the profiles file; the profile's settings).
     `not_importable`: what to do when the bridge package is missing, completed with where to set it."""
-    loaded, settings = _profile_settings(profile_id)
+    loaded, settings = profile_settings(profile_id)
     if not loaded['exists'] or not loaded['profiles']:
         return (f"No bridge connection profile is configured ({loaded['file']}). The backend never guesses hosts, "
                 'libraries, accounts or model paths.'), loaded, settings
@@ -337,7 +337,7 @@ def _view_stamp(name):
                 if entry.is_file():
                     stat = entry.stat()
                     parts.append((entry.name, stat.st_size, stat.st_mtime_ns))
-        for path in (local_settings_dir() / 'bridge_connection.json', repo_root() / 'configs' / 'gpdk045_conditions.json'):
+        for path in (connection_file(), repo_root() / 'configs' / 'gpdk045_conditions.json'):
             stat = path.stat()
             parts.append((str(path), stat.st_size, stat.st_mtime_ns))
         return tuple(sorted(parts))
@@ -417,7 +417,7 @@ def generated_bridge_config(name, profile_id=None):
     entry = profiles.profile_entry(name)
     if entry is None:
         raise TaskBlocked(f'Unknown generated profile {name!r}')
-    connection = _profile_settings(profile_id)[1]
+    connection = profile_settings(profile_id)[1]
     if connection.get('bridge_site_packages'):
         site.addsitedir(str(Path(connection['bridge_site_packages']).resolve()))
     from analog_optimizer.backends.virtuoso_bridge import BridgeConfig
@@ -492,10 +492,10 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
     when `authorized` - the explicit user action with a budget."""
     import site
     info, root = REAL_PROFILES[name], repo_root()
-    connection = real_bindings(_profile_settings(profile_id)[1], name)
+    connection = real_bindings(profile_settings(profile_id)[1], name)
     if connection.get('bridge_site_packages'):
         site.addsitedir(str(Path(connection['bridge_site_packages']).resolve()))
-    profile = _verified_profile(name)
+    profile = verified_profile(name)
     config = bridge_config_of(connection)
     reference = json.loads(Path(connection['reference_measurements']).read_text())
     if reference.get('origin') != 'real':
@@ -544,7 +544,7 @@ def profile_parameter_rows(runtime) -> list:
 _NOT_IN_AN_ID = re.compile(r'[^A-Za-z0-9_.\-]')
 
 
-def _member_variable_id(group_id, device_id) -> str:
+def member_variable_id(group_id, device_id) -> str:
     """The Parameters-row ID of a group member that follows the group's leader: `<group>__<device>`, with every character
     an ID may not hold (schema: letters, digits, _ . -) written as _ - the / of a hierarchical path such as XU1/M1 or
     stage_a/pull_up, the <> of a bus. The ID is only a label; the exact device stays in `instance_path`. The MOCK
@@ -558,7 +558,7 @@ def _graph_parameter_rows(graph) -> list:
     for group in getattr(graph, 'parameter_groups', ()) or ():
         record, leader = asdict(group), None
         for member in record['members']:
-            variable_id = record['id'] if leader is None else _member_variable_id(record['id'], member['device_id'])
+            variable_id = record['id'] if leader is None else member_variable_id(record['id'], member['device_id'])
             row = dict(variable_id=variable_id, instance_path=member['device_id'], parameter_name=member['parameter'],
                        unit=record['unit'], scale=record.get('scale') or 'linear',
                        value_type='integer' if record.get('domain') == 'integer' else 'continuous')
@@ -584,7 +584,7 @@ def real_starter_config(task_key: str) -> dict:
     name = task_key.partition(':')[2]
     if name in REAL_PROFILES:
         circuit_class, pdk_id = REAL_PROFILES[name]['circuit_class'], 'gpdk045'
-        graph, oscillator = _verified_profile(name).optimization_graph(), circuit_class == 'vco'
+        graph, oscillator = verified_profile(name).optimization_graph(), circuit_class == 'vco'
         file, *keys = REAL_TARGETS_OF_RECORD[name]
         specs = json.loads((repo_root() / file).read_text())
         for key in keys:
@@ -649,7 +649,7 @@ def starter_config(task_key: str) -> dict:
     for group in parser_config.parameter_groups:
         leader = None
         for member in group['members']:
-            variable_id = f"{group['id']}" if leader is None else _member_variable_id(group['id'], member['device_id'])
+            variable_id = f"{group['id']}" if leader is None else member_variable_id(group['id'], member['device_id'])
             row = dict(variable_id=variable_id, instance_path=member['device_id'], parameter_name=member['parameter'],
                        unit=group['unit'], scale=group.get('scale', 'linear'),
                        value_type='integer' if group.get('domain') == 'integer' else 'continuous')
@@ -671,3 +671,8 @@ def starter_config(task_key: str) -> dict:
         targets=[dict(metric_id='score', equation='m_score', unit='fixture', constraint='>=', lower=0.95,
                       normalization_scale=1.0, basis='Mock acceptance threshold for plumbing tests only.')],
         run=dict(max_evaluations=60, seed=17))
+
+
+# The names these had before refactoring package B9 (2026-10-09), kept for code that still uses them.
+_member_variable_id = member_variable_id
+_profile_settings = profile_settings

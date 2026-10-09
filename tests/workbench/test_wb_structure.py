@@ -6,7 +6,8 @@
   above (`# lazy: ...`) - except in the process entry points, which import at use on purpose;
 - no module outside api/ imports the API, except the command line that serves it;
 - every name a test patches on a workbench module exists at the top of that module: a patch of a name that moved
-  elsewhere fails here, statically, instead of patching nothing.
+  elsewhere fails here, statically, instead of patching nothing; and it is not a plain alias (`_old = new`, the names
+  kept by package B9): the module's own code calls the new name, so patching the alias would change nothing.
 
 Imports of the optimizer package (analog_optimizer) stay inside functions without a comment: a process that does not
 use the optimizer then never imports torch. Pure AST: nothing is imported.
@@ -186,6 +187,17 @@ def top_level_names(module):
     return names
 
 
+def aliases_of(module):
+    """{alias: name} for the module's top-level `alias = name` statements where `name` is a function or class of it."""
+    tree = MODULES[module]['tree']
+    defined = {s.name for s in tree.body if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+    defined |= {t.id for s in tree.body if isinstance(s, (ast.Assign, ast.AnnAssign)) and not (isinstance(s, ast.Assign) and isinstance(s.value, ast.Name))
+                for t in (s.targets if isinstance(s, ast.Assign) else [s.target]) if isinstance(t, ast.Name)}
+    return {s.targets[0].id: s.value.id for s in tree.body
+            if isinstance(s, ast.Assign) and len(s.targets) == 1 and isinstance(s.targets[0], ast.Name)
+            and isinstance(s.value, ast.Name) and s.value.id in defined}
+
+
 def test_every_name_a_test_patches_exists_where_it_is_patched():
     stale = []
     for path in sorted((ROOT / 'tests').rglob('*.py')):
@@ -219,4 +231,7 @@ def test_every_name_a_test_patches_exists_where_it_is_patched():
                 continue
             if module in MODULES and name not in top_level_names(module):
                 stale.append(f'{path.relative_to(ROOT)}:{node.lineno} patches {module}.{name}, which that module does not define')
+            elif module in MODULES and name in aliases_of(module):
+                stale.append(f'{path.relative_to(ROOT)}:{node.lineno} patches {module}.{name}, an alias of '
+                             f'{aliases_of(module)[name]}: patch that name instead')
     assert not stale, 'stale patch targets (the name moved elsewhere?):\n' + '\n'.join(stale)

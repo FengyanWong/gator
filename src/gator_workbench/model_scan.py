@@ -221,7 +221,7 @@ def merge_scans(scans):
 
 
 # ------------------------------------------------------------------------------------------ classifying one model
-def _where(entry):
+def file_line(entry):
     return f"{Path(entry['file']).name}:{entry['line']}"
 
 
@@ -231,7 +231,7 @@ def _element_family(element, subckt, scan, depth=0):
     local = subckt['models'].get(master) or scan['models'].get(master)
     if local is not None:
         family = PRIMITIVE_FAMILY.get(local['primitive'])
-        return family, local.get('type'), f"model {master} = {local['primitive']}{', type=' + local['type'] if local.get('type') else ''} ({_where(local)})"
+        return family, local.get('type'), f"model {master} = {local['primitive']}{', type=' + local['type'] if local.get('type') else ''} ({file_line(local)})"
     if master.lower() in PRIMITIVE_FAMILY:
         return PRIMITIVE_FAMILY[master.lower()], None, f'Spectre primitive {master}'
     if master.lower() == 'bsource':
@@ -242,7 +242,7 @@ def _element_family(element, subckt, scan, depth=0):
     inner = scan['subckts'].get(master)
     if inner is not None and depth < 4:
         found = classify_model(master, scan, depth=depth + 1)
-        return found['family'], found.get('polarity'), f"subcircuit {master} ({_where(inner)}): {found['family_basis']}"
+        return found['family'], found.get('polarity'), f"subcircuit {master} ({file_line(inner)}): {found['family_basis']}"
     return None, None, f'{master}: not defined in the model files read'
 
 
@@ -274,8 +274,8 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
     if model is not None:
         family = PRIMITIVE_FAMILY.get(model['primitive'])
         return dict(family=family or 'other', polarity=model.get('type'), core=None,
-                    family_basis=f"model {name} = {model['primitive']}{', type=' + model['type'] if model.get('type') else ''} ({_where(model)})"
-                    if family else f"model {name} uses primitive {model['primitive']}, which is not classified here ({_where(model)})")
+                    family_basis=f"model {name} = {model['primitive']}{', type=' + model['type'] if model.get('type') else ''} ({file_line(model)})"
+                    if family else f"model {name} uses primitive {model['primitive']}, which is not classified here ({file_line(model)})")
     subckt = scan['subckts'].get(name)
     if subckt is None:
         return dict(family='other', polarity=None, core=None, family_basis=f'{name} is not defined in the model files read')
@@ -285,17 +285,17 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
             family, polarity, basis = _element_family(main, subckt, scan, depth)
             if family:
                 return dict(family=family, polarity=polarity, core=main,
-                            family_basis=f'inline subcircuit {name} ({_where(subckt)}): its own element uses {basis}')
+                            family_basis=f'inline subcircuit {name} ({file_line(subckt)}): its own element uses {basis}')
     active = [(e, *_element_family(e, subckt, scan, depth)) for e in subckt['elements']]
     for wanted in ('mos', 'bjt'):
         cores = [item for item in active if item[1] == wanted and len(item[0]['nodes']) >= (4 if wanted == 'mos' else 3)]
         if len(cores) == 1:
             element, family, polarity, basis = cores[0]
             return dict(family=family, polarity=polarity, core=element,
-                        family_basis=f"subcircuit {name} ({_where(subckt)}): element {element['name']} uses {basis}")
+                        family_basis=f"subcircuit {name} ({file_line(subckt)}): element {element['name']} uses {basis}")
         if len(cores) > 1:
             return dict(family='other', polarity=None, core=None,
-                        family_basis=f'subcircuit {name} ({_where(subckt)}) holds {len(cores)} {wanted} elements')
+                        family_basis=f'subcircuit {name} ({file_line(subckt)}) holds {len(cores)} {wanted} elements')
     if len(subckt['pins']) < 2:
         return dict(family='other', polarity=None, core=None, family_basis=f'subcircuit {name} has fewer than two pins')
     paths = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]))
@@ -303,7 +303,7 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
     candidates = on_path & set(PASSIVE)
     declared = {CDF_UNITS.get(u) for u in cdf_units}
     by_unit = {'ohm': 'resistor', 'F': 'capacitor', 'H': 'inductor'}
-    where = f'subcircuit {name} ({_where(subckt)})'
+    where = f'subcircuit {name} ({file_line(subckt)})'
     if not paths:
         return dict(family='other', polarity=None, core=None, family_basis=f'{where}: its first two pins are not connected')
     # A diode wrapped with its series resistance (`r1 (1 3) resistor` + `d1 (3 2) <diode model>`): every path between the
@@ -364,3 +364,7 @@ def pin_roles(name, found, scan):
                     break
         out.append(dict(model_pin=pin, role=role, basis=basis))
     return out
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_where = file_line

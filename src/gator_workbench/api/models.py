@@ -7,9 +7,7 @@ from ..calibration import MAX_DESIGNS
 from ..launch_requests import ID_PATTERN as LAUNCH_REQUEST_ID
 
 
-PROFILE_ID = r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$'        # a connection profile: an identifier, never a host, port or command
-CADENCE_NAME = r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$'      # a Virtuoso library or cell
-TASK_NAME = r'^[a-z][a-z0-9_]{1,39}$'                  # a saved task: real:<name>
+from ..names import CADENCE_NAME, PROFILE_ID, TASK_NAME   # the patterns of a Virtuoso name, a connection, a task
 
 
 class Body(BaseModel):

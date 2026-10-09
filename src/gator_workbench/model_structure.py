@@ -77,7 +77,7 @@ def schemas(contract):
             SpecSchema(**{k: tuples(v) for k, v in contract['spec_schema'].items()}))
 
 
-def _rebuild(contract):
+def rebuild_network(contract):
     """The network described by the checkpoint's own contract: {part: module}. Raises when it cannot be built."""
     from analog_optimizer.models.encoders import ModelConfig
     from analog_optimizer.models.graph_transformer import GraphCritic, GroupActor
@@ -123,7 +123,7 @@ def _rows(part, state, module):
     return rows
 
 
-def _same_tensors(module, state):
+def same_tensors(module, state):
     built = module.state_dict()
     return list(built) == list(state) and all(tuple(built[k].shape) == tuple(state[k].shape) for k in state)
 
@@ -148,8 +148,8 @@ def structure(directory) -> dict:
     states = dict(actor=weights['actor'], critic=first)
     problem, built = None, {}
     try:
-        built = _rebuild(meta['contract'])
-        if not all(_same_tensors(built[part], states[part]) for part in states):
+        built = rebuild_network(meta['contract'])
+        if not all(same_tensors(built[part], states[part]) for part in states):
             problem, built = 'The network rebuilt from the recorded settings does not hold the same tensors as the file.', {}
     except Exception as exc:          # an older contract, another source version: the tensors are still listed
         problem, built = f'The network could not be rebuilt from the recorded settings ({type(exc).__name__}).', {}
@@ -180,3 +180,8 @@ def structure(directory) -> dict:
                     never_used_in_targets=2 * critic['unused_parameters']),
         explanation='trained = actor + 2 critics + the entropy temperature (1 number). The 2 target copies are saved '
                     'too; they are not trained by gradients but follow the critics slowly.')
+
+
+# The names these had before refactoring package B9 (2026-10-09), kept for code that still uses them.
+_rebuild = rebuild_network
+_same_tensors = same_tensors

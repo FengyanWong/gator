@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import signal
 import sys
+from .names import CLEAN_EXIT_STATES
 
 
 def main(argv=None):
@@ -73,7 +74,7 @@ def main(argv=None):
     signal.signal(signal.SIGINT, request_stop)
     state = engine.run()
     print(f'RUN {manifest["run_id"]} ended: {state}', flush=True)
-    return 0 if state in ('completed', 'paused', 'stopped') else 1
+    return 0 if state in CLEAN_EXIT_STATES else 1
 
 
 RESUMABLE = ('paused', 'stopped', 'interrupted')      # the states Run status offers Continue for (RunTabs.tsx)

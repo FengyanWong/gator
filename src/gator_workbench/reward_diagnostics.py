@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from .layout import RunLayout
-from .spec_equations import _finite
+from .spec_equations import is_finite_number
 
 VERDICT = ('The network is still choosing close to random: the reward differences are smaller '
            'than its exploration bonus.')
@@ -13,7 +13,7 @@ def steering(evaluations, updates):
     """Linear-interpolated empirical p90-p10; a missing latest diagnostic stays unknown."""
     ordered = sorted(evaluations, key=lambda r: (r.get('completion_index') or 0, r.get('dispatch_index') or 0))
     rewards = [
-        r['reward'] for r in ordered if _finite(r.get('reward'))][-50:]
+        r['reward'] for r in ordered if is_finite_number(r.get('reward'))][-50:]
     rewards.sort()
     def quantile(p):
         position = (len(rewards) - 1) * p
@@ -22,7 +22,7 @@ def steering(evaluations, updates):
     spread = quantile(.9) - quantile(.1) if len(rewards) >= 2 else None
     latest = updates[-1] if updates else {}
     alpha, log_prob = latest.get('alpha'), latest.get('mean_log_prob')
-    bonus = alpha * -log_prob if _finite(alpha) and _finite(log_prob) else None
+    bonus = alpha * -log_prob if is_finite_number(alpha) and is_finite_number(log_prob) else None
     return dict(scored_designs=len(rewards), reward_spread=spread, exploration_bonus=bonus,
                 verdict=VERDICT if spread is not None and bonus is not None and spread < bonus else None)
 
@@ -45,7 +45,7 @@ def _load(data):
     limit = min(64, total)
     while True:
         rows = reader.tail('evaluations', limit, ['completion_index', 'dispatch_index', 'reward']).to_pylist()
-        if sum(_finite(r.get('reward')) for r in rows) >= 50 or limit >= total:
+        if sum(is_finite_number(r.get('reward')) for r in rows) >= 50 or limit >= total:
             break
         limit = min(total, max(1, limit * 2))
     return steering(rows, reader.tail('learner_updates', 1, ['alpha', 'mean_log_prob']).to_pylist())

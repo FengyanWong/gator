@@ -45,13 +45,13 @@ _LINEAR = {
 _AFFINE = {'degC': ('degC', 1.0, 0.0), '°C': ('degC', 1.0, 0.0), 'C': ('degC', 1.0, 0.0),
            'K': ('degC', 1.0, -273.15)}
 
-_LOOKUP: dict[str, tuple[str, float, float]] = {}
+LOOKUP: dict[str, tuple[str, float, float]] = {}
 for _canonical, _spellings in _LINEAR.items():
     for _spelling, _factor in _spellings.items():
-        if _spelling in _LOOKUP and _LOOKUP[_spelling][0] != _canonical:
+        if _spelling in LOOKUP and LOOKUP[_spelling][0] != _canonical:
             raise RuntimeError(f'Ambiguous unit spelling in registry: {_spelling!r}')
-        _LOOKUP[_spelling] = (_canonical, _factor, 0.0)
-_LOOKUP.update(_AFFINE)
+        LOOKUP[_spelling] = (_canonical, _factor, 0.0)
+LOOKUP.update(_AFFINE)
 
 # Canonical unit expected for each feature-schema parameter kind used by the optimizer
 # (analog_optimizer.graph.pyg_converter.FeatureSchema.parameters). "m"/"nf" are counts.
@@ -64,22 +64,22 @@ class UnitError(ValueError):
 
 
 def known(unit: str) -> bool:
-    return unit in _LOOKUP
+    return unit in LOOKUP
 
 
 def canonical_unit(unit: str) -> str:
-    if unit not in _LOOKUP:
-        raise UnitError(f'Unknown unit {unit!r}; accepted units: {", ".join(sorted(_LOOKUP))}')
-    return _LOOKUP[unit][0]
+    if unit not in LOOKUP:
+        raise UnitError(f'Unknown unit {unit!r}; accepted units: {", ".join(sorted(LOOKUP))}')
+    return LOOKUP[unit][0]
 
 
 def to_canonical(value: float, unit: str) -> float:
     """Convert a finite value to its canonical unit. Non-finite input is an error, not NaN."""
-    if unit not in _LOOKUP:
+    if unit not in LOOKUP:
         raise UnitError(f'Unknown unit {unit!r}')
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise UnitError('Only finite numbers can be converted')
-    _, scale, offset = _LOOKUP[unit]
+    _, scale, offset = LOOKUP[unit]
     return float(value) * scale + offset
 
 
@@ -93,11 +93,11 @@ def is_affine(unit: str) -> bool:
 
 def scale_to_canonical(value: float, unit: str) -> float:
     """Convert a *difference* (tolerance, step, normalization scale): no affine offset."""
-    if unit not in _LOOKUP:
+    if unit not in LOOKUP:
         raise UnitError(f'Unknown unit {unit!r}')
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise UnitError('Only finite numbers can be converted')
-    return float(value) * _LOOKUP[unit][1]
+    return float(value) * LOOKUP[unit][1]
 
 
 # ---------------------------------------------------------------------- the written form of a quantity (record 7.208)
@@ -123,7 +123,7 @@ def written_forms() -> dict:
     """The table the page writes and reads quantities with: every accepted spelling -> [canonical, factor, offset], the
     canonical units that take an SI prefix, how a unit is written (Ω as ohm), what quantity it is, and the unit of each
     parameter kind."""
-    return dict(spellings={spelling: list(rule) for spelling, rule in sorted(_LOOKUP.items())}, prefixable=sorted(PREFIXABLE),
+    return dict(spellings={spelling: list(rule) for spelling, rule in sorted(LOOKUP.items())}, prefixable=sorted(PREFIXABLE),
                 symbols=SYMBOLS, quantities=QUANTITIES,
                 # the unit a parameter of these names is sized in (w and l lengths, m and nf counts...): the editors have no
                 # Unit column for Parameters since record 7.208, so this decides what a value typed in such a row must be
@@ -151,7 +151,7 @@ def text(value, unit: str | None) -> str:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return '' if value is None else str(value)
     unit = unit or ''
-    rule = _LOOKUP.get(unit)
+    rule = LOOKUP.get(unit)
     if rule is None or rule[0] not in PREFIXABLE or rule[2] != 0.0:
         return _join(_shortest(value), symbol(unit) if rule is None or rule[1] == 1.0 else unit)
     canonical, factor, _offset = rule
@@ -175,3 +175,7 @@ def text(value, unit: str | None) -> str:
         point = len(digits) + moved
         number = f'{digits[:point]}.{digits[point:]}' if point > 0 else f'0.{"0" * -point}{digits}'
     return _join(f'{"-" if value < 0 else ""}{number}', f'{_PREFIXES[prefix]}{symbol(canonical)}')
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_LOOKUP = LOOKUP

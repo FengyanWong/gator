@@ -168,7 +168,7 @@ def test_a_task_load_finds_its_newest_baseline_through_the_run_cache(tmp_path, m
     monkeypatch.setattr(baseline_reference, 'adopt_baseline_run', adopt)
     assert profiles.adopt_latest_baseline('ring_a', tmp_path) == dict(recorded=True, name='ring_a')
     assert [run for run, _ in given] == [newest]
-    assert runs._run_facts(newest)['manifest']['state'] == 'completed'
+    assert run_index.run_facts(newest)['manifest']['state'] == 'completed'
     assert profiles.adopt_latest_baseline('ring_none', tmp_path) is None
 
 

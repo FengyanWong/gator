@@ -162,7 +162,7 @@ def adopt_latest_baseline(name, data_root) -> dict | None:
     import copy
     newest = None
     found = find_runs(data_root, manifest=False)
-    for run_dir, facts in zip(found, run_index.read_many(run_index._run_facts, found)):
+    for run_dir, facts in zip(found, run_index.read_many(run_index.run_facts, found)):
         if facts is None:                          # no readable manifest
             continue
         manifest = facts['manifest']

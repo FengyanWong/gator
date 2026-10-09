@@ -14,6 +14,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+from .names import CLEAN_EXIT_STATES, LOOPBACK_HOSTS
 
 # Stopping the backend (Ctrl+C, or `kill`) waits this long for open requests, then cancels them: a request that hangs
 # cannot hold the stop.
@@ -69,7 +70,7 @@ def _parser():
 def _serve(args):
     import uvicorn
     from .api import create_app
-    if args.host not in ('127.0.0.1', 'localhost', '::1'):
+    if args.host not in LOOPBACK_HOSTS:
         print(f'WARNING: listening on {args.host} exposes run control beyond this machine. There is no '
               'authentication layer; use only on a trusted network.', file=sys.stderr)
     app = create_app(extra_output_roots=args.allow_root, extra_input_roots=args.allow_input_root,
@@ -118,7 +119,7 @@ def _run(args):
     task = load_task(config.circuit, allow_real=args.authorize_real, profile_id=config.run.connection_profile_id)
     state = RunEngine(layout.run_dir, task=task, lock=runs.take_lock(layout.run_dir)).run()
     print(f'STATE: {state}', flush=True)
-    return 0 if state in ('completed', 'paused', 'stopped') else 1
+    return 0 if state in CLEAN_EXIT_STATES else 1
 
 
 def _aggregates(args):

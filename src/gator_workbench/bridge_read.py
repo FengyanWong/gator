@@ -25,10 +25,11 @@ import sys
 
 from . import native_cells, pdk
 from .connection import RealBridge, child_error, require_gate, resolve_profile_id, run_child
+from .names import CADENCE_NAME
 from .pdk import REMOTE_PATH
 from .security import redact
 
-NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]{0,127}$')
+NAME = re.compile(CADENCE_NAME)
 MAX_CELLS = 5000
 # The SKILL of virtuoso-bridge-lite/examples/01_virtuoso/basic/04_list_library_cells.py, unchanged. `library` has
 # passed NAME, so it cannot close the string literal.

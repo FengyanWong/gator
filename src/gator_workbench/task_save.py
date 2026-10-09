@@ -14,14 +14,15 @@ import shutil
 from . import bridge_read, native_cells, recipes, task_files, units, virtuoso_setup, working_copy
 from .circuit_types import MAESTRO, RECIPES
 from .compile import normalization_scale
-from .profile_generate import _generate
+from .names import TRASH_STAMP
+from .profile_generate import write_profile_files
 from .profile_store import FILES, HISTORY, ProfileError, TASK_FILE, profile_dir, profile_entry, task_file
 from .saved_rows import describe_undone, undone_by_saving
 from .saved_tasks import TRASH, load_profile, tasks_for_cell, working_run_of
 from .storage.atomic import write_json
 from .storage.dataset import utcnow
 from .task_registry import REAL_PROFILES, REMOVED_REAL_TASKS
-from .validation import Report, _check_equation
+from .validation import Report, check_equation
 
 
 class NewerSaved(ProfileError):
@@ -138,7 +139,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
             extra['maestro_deck_sha256'] = deck['sha256']
             # The network's result registry: exactly the task's outputs, each with the scale its spec normalizes by.
             extra['spec_registry'] = _spec_registry(config, deck, probes)
-        result = _generate(name, config, recipe=kind, imported=imported, staging=staging, expected_frequency_hz=frequency, entry_extra=extra)
+        result = write_profile_files(name, config, recipe=kind, imported=imported, staging=staging, expected_frequency_hz=frequency, entry_extra=extra)
         if kind == MAESTRO:
             write_json(staging / FILES['maestro_deck'], {k: v for k, v in deck.items() if k != 'circuit'})
         data = task_files.build(
@@ -200,7 +201,7 @@ def _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision
     # a spec must judge Probes the task has (the editors' check)
     probes, refused = {m.measurement_id: m for m in config.measurements}, []
     for spec in config.targets:
-        _check_equation(spec, spec.metric_id, report := Report(), probes)
+        check_equation(spec, spec.metric_id, report := Report(), probes)
         refused += [f'Spec {spec.metric_id}: {issue.message}' for issue in report.issues if issue.level == 'error']
     if refused:
         raise ProfileError(' '.join(refused))
@@ -280,7 +281,7 @@ def _replace_revision(name, current, saved, data, staging):
         entry = json.loads((staging / FILES['entry']).read_text())
         write_json(staging / FILES['entry'], dict(entry, status=current.get('status', entry['status']),
                                                   baseline_recorded_utc=current.get('baseline_recorded_utc')))
-    aside = old.parent / TRASH / f'{name}.r{saved.get("revision", 0) if saved else 0}.{utcnow().strftime("%Y%m%dT%H%M%S%fZ")}'
+    aside = old.parent / TRASH / f'{name}.r{saved.get("revision", 0) if saved else 0}.{utcnow().strftime(TRASH_STAMP)}'
     aside.parent.mkdir(parents=True, exist_ok=True)
     old.rename(aside)
     return changed, baseline_kept

@@ -512,8 +512,12 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         except Exception as exc:
             self._event('connection_check', status='unavailable', error=redact(str(exc), 300))
 
+    def segment_seconds(self):
+        """Active seconds of this segment: since this worker started or resumed the run."""
+        return self._clock() - self._segment_started
+
     def _active_seconds(self):
-        return self.counters['active_seconds_before'] + (self._clock() - self._segment_started)
+        return self.counters['active_seconds_before'] + self.segment_seconds()
 
     # ------------------------------------------------------------------ dispatch
     # Every 5th reset of a lane simulates the starting design; the others start from the lane's last valid reset (user
@@ -1143,7 +1147,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         ended = utcnow()
         segment = self.manifest['segments'][-1]
         segment.update(ended_utc=iso(ended), end_state=final_state, stop_reason=self.stop_reason,
-                       active_seconds=self._clock() - self._segment_started)
+                       active_seconds=self.segment_seconds())
         self.manifest['state'] = final_state
         self._adopt_baseline()
         self._calibrate()

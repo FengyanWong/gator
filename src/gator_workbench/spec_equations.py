@@ -94,7 +94,7 @@ def evaluate(text, lookup):
     return value if math.isfinite(value) else None
 
 
-def _finite(value):
+def is_finite_number(value):
     return value is not None and not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
@@ -137,7 +137,7 @@ class SpecPlan:
         values = {}
         for probe_id, source in self.probes:
             value = raw.get(source) if source is not None else None   # no result named: never a number
-            values[probe_id] = value if _finite(value) else None
+            values[probe_id] = value if is_finite_number(value) else None
         return values
 
     def spec_values(self, raw=None, *, probes=None) -> dict:
@@ -146,7 +146,7 @@ class SpecPlan:
         values = {}
         for spec in self.specs:
             value = probes.get(spec.probe) if spec.probe is not None else evaluate(spec.equation, probes.get)
-            values[spec.spec_id] = value if _finite(value) else None
+            values[spec.spec_id] = value if is_finite_number(value) else None
         return values
 
     # ------------------------------------------------------------------ what a spec reads
@@ -174,7 +174,7 @@ class SpecPlan:
         if clash:                                                  # validation refuses this; never overwrite a measurement
             raise ValueError(f'Spec(s) {clash} carry the name of a simulator result but are computed by an equation: rename them')
         usable = {name: value for name, value in result.metrics.items()
-                  if result.metric_validity.get(name) is True and _finite(value)}
+                  if result.metric_validity.get(name) is True and is_finite_number(value)}
         values = self.spec_values(usable)
         # A completed simulation with a missing probe (measurement_error) blanks only the specs that read that probe; the
         # others keep their measured values, which a spec's "Missing value = failed" relies on (record 7.112).
@@ -273,7 +273,11 @@ def registry_entries(config, base) -> tuple:
         if spec.spec_id in known:
             continue
         value = size(spec.probe) if spec.probe is not None else evaluate(spec.equation, size)
-        reference = abs(value) if _finite(value) and value != 0 else magnitude(spec.unit)
+        reference = abs(value) if is_finite_number(value) and value != 0 else magnitude(spec.unit)
         added.append((spec.spec_id, spec.unit, float(reference)))
         known[spec.spec_id] = reference
     return tuple(added)
+
+
+# The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.
+_finite = is_finite_number

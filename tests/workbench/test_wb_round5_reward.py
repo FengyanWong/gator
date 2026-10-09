@@ -68,7 +68,7 @@ def steering_as_before(run_dir):
     limit = min(64, total)
     while True:
         rows = reader.tail('evaluations', limit, ['completion_index', 'dispatch_index', 'reward']).to_pylist()
-        if sum(reward_diagnostics._finite(r.get('reward')) for r in rows) >= 50 or limit >= total:
+        if sum(reward_diagnostics.is_finite_number(r.get('reward')) for r in rows) >= 50 or limit >= total:
             break
         limit = min(total, max(1, limit * 2))
     return reward_diagnostics.steering(rows, reader.tail('learner_updates', 1, ['alpha', 'mean_log_prob']).to_pylist())
@@ -155,4 +155,4 @@ def test_a_missing_flagged_value_at_a_corner_still_writes_the_summary(tmp_path, 
 
 # ------------------------------------------------------------------------------------------------ D
 def test_one_finite_rule():
-    assert reward_diagnostics._finite is spec_equations._finite
+    assert reward_diagnostics.is_finite_number is spec_equations.is_finite_number

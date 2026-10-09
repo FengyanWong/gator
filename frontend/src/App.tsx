@@ -23,7 +23,7 @@ import { OutputPanel } from './panels/OutputPanel';
 import { ResearchPanel } from './panels/ResearchPanel';
 import { modelNameAt } from './panels/ModelChooser';
 import { LOADS, readSavePoint, SavePoint, withSavePoint } from './savePoint';
-import { folderName, two } from './format';
+import { dateTime, folderName, runTitle } from './format';
 import { AgentWindowTab } from './panels/Agent';
 import { DataTab, FilesTab, LogsTab, StatusTab } from './panels/RunTabs';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './panels/calibrationPlan';
@@ -47,9 +47,6 @@ function rejected(e: any): Json {
   return { blocks_run: true, issues, facts: {} };
 }
 const NO_RUNS: Json[] = [];                          // one empty list: a failed read does not make the model list read again
-/** A run as a message names it: its task and when it was created, "ota7t 10-06 14:02" (the folder's name without a date). */
-const runTitle = (row: Json) => { const d = row.created_utc ? new Date(row.created_utc) : null;
-  return d && !Number.isNaN(d.getTime()) ? `${row.task_name ?? folderName(row.run_dir)} ${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}` : folderName(row.run_dir); };
 /** The run settings New run like this copies (record 7.267; plan "Existing runs: continued in place"): the Mode, the name of the
  *  model it saves, the budget and limits, the seed, the network, the training values, reward and conditions. Not the
  *  connection, the concurrency or the source (that is the save point the run loaded, read from its lineage). */
@@ -439,7 +436,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   };
   const nameOf = (point: SavePoint) => modelNameAt(runs, point.run_dir);
   const sinceText = (since: string | null, what: string) => since
-    ? ` The task was saved again after ${what} began (${new Date(since).toLocaleString()}): the RL model window's check says whether the model still fits.` : '';
+    ? ` The task was saved again after ${what} began (${dateTime(since)}): the RL model window's check says whether the model still fits.` : '';
   /** Load run: its task, the model it ended with (in a Mode that loads one) and its results - one Undo step for the task and
    *  the model, all or nothing. The header's run is never touched. */
   const loadRun = async (row: Json) => {

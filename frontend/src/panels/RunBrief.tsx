@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, num } from '../api';
-import { clock, folderName, two } from '../format';
+import { clock, durationWhole as span, folderName } from '../format';
 import { startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { BLOCKED, usePopupWindow } from './popupWindow';
@@ -16,11 +16,6 @@ import { cardLive, isLive, type RunControl } from '../runState';
  *  only run controls. No timer of its own: the header's card follows the header's status poll, and the other cards are read
  *  when the window opens and by Refresh, with the time they were read. */
 
-const span = (seconds?: number | null) => {
-  if (seconds == null || !Number.isFinite(seconds)) return null;
-  const t = Math.round(seconds), h = Math.floor(t / 3600);
-  return h ? `${h} h ${two(Math.floor(t % 3600 / 60))} min` : t >= 60 ? `${Math.floor(t / 60)} min ${two(t % 60)} s` : `${t} s`;
-};
 const ago = (utc?: string | null) => {
   const at = utc ? Date.parse(utc) : NaN;
   return Number.isNaN(at) ? null : `${span(Math.max(0, (Date.now() - at) / 1000))} ago`;

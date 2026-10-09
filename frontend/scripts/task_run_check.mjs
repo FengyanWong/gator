@@ -23,7 +23,7 @@ const out = outDir();
 const browser = await launchEdge('taskrun');
 
 // The page prints local time; Edge and this script run on the same Windows clock, so the expected text is built the same way.
-const two = n => String(n).padStart(2, '0');
+import { two } from '../src/format.ts';                         // the page's own; this check's stamp() differs (no date: NaN)
 const stamp = utc => { const d = new Date(utc); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
 
 // ---- three saved tasks (FIXTURE); gamma has no run ----------------------------------------------------------------------

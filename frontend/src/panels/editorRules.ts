@@ -1,7 +1,7 @@
 // The editors' rules (plan-refactoring C6, out of Editors.tsx): the scale a Specs row is offered, the Specs' limit list, typed
 // numbers, the tooltip of a cell that differs from the saved task, and the fields that follow a change of a row. No React.
 import type { Json } from '../api';
-import { kindUnit, sameQuantity } from '../units';
+import { kindUnit, PREFIX_POWERS as SUFFIX, sameQuantity } from '../units';
 
 export type Section = 'parameters' | 'targets' | 'measurements';
 
@@ -54,7 +54,6 @@ export const withSaved = (saved: string | null | undefined, title: Json): Json =
 /** The numbers that carry their row's unit (record 7.208): written as every quantity is (units.ts - 450 nm, 400 uA), typed in
  *  any form. Record 7.181 wrote only very small and very large numbers of an unprefixed unit this way, without the unit. */
 export const QUANTITY: Record<string, string[]> = { parameters: ['lower', 'upper', 'step', 'initial_value'], targets: ['lower', 'upper', 'normalization_scale'] };
-const SUFFIX: Record<string, number> = { f: -15, p: -12, n: -9, u: -6, 'µ': -6, 'μ': -6, m: -3, k: 3, K: 3, M: 6, G: 9, T: 12 };
 /** A typed number: plain, with an exponent (2.5e-6), or with an SI letter (2.5u, 400µ, 10k). */
 export function readNumber(text: string): number | undefined {
   const s = text.trim(), letter = /^([-+]?(?:\d+\.?\d*|\.\d+))([fpnuµμmkKMGT])$/.exec(s);

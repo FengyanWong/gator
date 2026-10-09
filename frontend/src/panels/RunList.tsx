@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { RUNS_WINDOW } from '../contract';
 import { api, bytes, Json, short, tasksShared } from '../api';
-import { clock, folderName, stamp, two } from '../format';
+import { clock, durationTenths as span, folderName, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, stamp } from '../format';
 import { isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
@@ -34,20 +34,11 @@ import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
  *  like this** makes the next run repeat it. Load run and New run like this need the run's task registered now; the
  *  reason stands beside them when it is not, and a double click then shows the results. The draft changes are App.tsx's. */
 
-const span = (seconds?: number | null) => {
-  if (seconds == null) return null;
-  if (seconds < 59.95) return `${seconds.toFixed(1)} s`;
-  const t = Math.round(seconds), h = Math.floor(t / 3600);
-  return h ? `${h} h ${two(Math.floor(t % 3600 / 60))} min` : `${Math.floor(t / 60)} min ${two(t % 60)} s`;
-};
 const pairs = (values: Json) => Object.entries(values ?? {}).map(([k, v]) => `${k}=${short(v)}`).join('  ');
 // A best design lists its variables as [{ variable_id, value, unit }].
 const variables = (list: Json) => Array.isArray(list) ? list.map((v: Json) => `${v.variable_id}=${short(v.value)}${v.unit ? ` ${v.unit}` : ''}`).join('  ') : pairs(list);
-const taskOf = (r: Json) => r.task_name ?? String(r.task_id ?? 'unknown task').split(':')[0];
 // `state`: what the page's own status poll says now - the list row keeps the state of its last read ("starting").
 const label = (r: Json, state?: string | null) => `${stamp(r.created_utc) ?? 'unknown time'} | ${taskOf(r)} | ${r.mode} seed${r.seed} | ${state ?? r.state ?? 'not started'}${r.mock ? ' [MOCK]' : ''}`;
-const STATE_CSS: Record<string, string> = { completed: 'ok', running: 'busy', starting: 'busy', pausing: 'busy', stopping: 'busy', paused: 'not_ready',
-  interrupted: 'not_ready', failed: 'failed', cancelled: 'unknown', stopped: 'unknown' };
 const RESUME: Record<string, string> = { full_state: 'yes', weights_only: 'model only', none: 'no' };
 
 /** The "Finished" cell. A run at rest has the end of its last segment; a run that is working has none; a worker that

@@ -6,6 +6,7 @@ import { CONNECTION_WINDOW } from '../contract';
 import { api, connectionProfilesChanged, connectionProfilesShared, Json } from '../api';
 import { ConnectionFolders } from './ConnectionFolders';
 import { Icon } from './Icons';
+import { timeOrDateTime as testedAt } from '../format';
 
 const STATE_LABEL: Record<string, string> = {
   ok: 'OK', failed: 'FAILED', not_ready: 'NOT READY', not_applicable: 'n/a', not_checked: 'not checked', busy: 'BUSY', unknown: 'UNKNOWN',
@@ -13,11 +14,6 @@ const STATE_LABEL: Record<string, string> = {
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$/;
 const SUGGESTED_NAME: Record<string, string> = { virtuoso_ssh: 'lab', virtuoso_local: 'virtuoso-local', ngspice_local: 'ngspice-local', ngspice_ssh: 'ngspice-ssh' };
 
-/** A fixed clock time instead of a running "N s ago": nothing re-renders this on a timer, so an age would freeze. */
-const testedAt = (iso: string) => {
-  const at = new Date(iso);
-  return at.toDateString() === new Date().toDateString() ? at.toLocaleTimeString() : at.toLocaleString();
-};
 
 /** The connection block of the left column: ONE button (user request 2026-09-21). Pressing it opens the connection
  *  window - a browser window of its own, drawn through a portal, so the state below lives here and nothing has to be

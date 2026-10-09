@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED, usePopupWindow } from './popupWindow';
 import { signal } from '../signal';
+import { dateTimeOrText as loadedAt } from '../format';
 import { PDK_WINDOW } from '../contract';
 import { api, gateText, Json, problemText } from '../api';
 
@@ -25,7 +26,6 @@ const FAMILY_ORDER = ['mos:n', 'mos:p', 'mos', 'bjt:npn', 'bjt:pnp', 'bjt', 'dio
 const byFamily = (summary: Json): string => FAMILY_ORDER.filter(k => summary?.by_family?.[k])
   .map(k => `${summary.by_family[k]} ${FAMILY_NAME[k]}${summary.by_family[k] > 1 && !k.startsWith('mos') && !k.startsWith('bjt') ? 's' : ''}`).join(', ');
 const familyOf = (d: Json) => (d.family === 'mos' || d.family === 'bjt') && d.polarity ? `${d.family}:${d.polarity}` : d.family;
-const loadedAt = (iso: string) => { const at = new Date(iso); return isNaN(+at) ? iso : at.toLocaleString(); };
 const USABLE_PDK_ID = (id?: string | null) => !!id && /^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$/.test(id) && !['unspecified', 'synthetic-fixture'].includes(id);
 
 // "The loaded PDKs changed" (a cell read in the Virtuoso window brought one, a Load in the PDK window): every Components

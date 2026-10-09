@@ -38,6 +38,12 @@ export const sameQuantity = (a: string | null | undefined, b: string | null | un
 
 const PREFIX: Record<number, string> = { [-18]: 'a', [-15]: 'f', [-12]: 'p', [-9]: 'n', [-6]: 'u', [-3]: 'm', 0: '', 3: 'k', 6: 'M', 9: 'G', 12: 'T' };
 const LETTER: Record<string, number> = { a: -18, f: -15, p: -12, n: -9, u: -6, 'µ': -6, 'μ': -6, m: -3, k: 3, K: 3, M: 6, G: 9, T: 12 };
+/** The SI prefix letters of typed numbers and their powers of ten (plan-refactoring C8: the editors' typed numbers read them from
+ *  here - editorRules.ts readNumber, whose letters f p n u µ μ m k K M G T all have these powers). */
+export { LETTER as PREFIX_POWERS };
+/** Maestro's unit prefixes as factors, for telling a unit from its base (WorkingCopy.tsx prefixFactor). Not LETTER's set: the
+ *  micro sign µ only (no Greek μ) and no K - so a unit written that way is not taken for a multiple of its base. */
+export const PREFIX_FACTOR: Record<string, number> = { T: 1e12, G: 1e9, M: 1e6, k: 1e3, m: 1e-3, u: 1e-6, 'µ': 1e-6, n: 1e-9, p: 1e-12, f: 1e-15, a: 1e-18 };
 
 /** How a unit is written next to a number, in English letters: Ω as ohm, ° as deg; a plain number or a count without one. */
 export const unitSymbol = (unit: string | null | undefined) => { const u = unit ?? ''; return u in symbols ? symbols[u] : english(u); };

@@ -1,6 +1,8 @@
 import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
 import { api, gateText, Json, problemText } from '../api';
+import { dateTimeOrNull as declaredAt } from '../format';
+import { PREFIX_FACTOR as PREFIX } from '../units';
 
 /** The Virtuoso side of a cell read into the workbench: the cell the task flow WORKS IN and the Maestro setup of that
  *  cell (outputs = Probes, specs = the starting Specs rows). Since 2026-09-23 (user request) the workbench makes no copy
@@ -10,8 +12,6 @@ import { api, gateText, Json, problemText } from '../api';
  *  writes the cell and reads it back (until 2026-10-06 approving the Agent tab's setup did too). This panel only reads: "Read setup" takes
  *  what the cell's Maestro test says into Probes and Specs (for changes someone made in Maestro). Nothing happens on load,
  *  nothing syncs by itself. */
-
-const PREFIX: Record<string, number> = { T: 1e12, G: 1e9, M: 1e6, k: 1e3, m: 1e-3, u: 1e-6, 'µ': 1e-6, n: 1e-9, p: 1e-12, f: 1e-15, a: 1e-18 };
 
 /** How many base units one `unit` is, when `unit` is `base` with an SI prefix ('GHz' of 'Hz' -> 1e9); null otherwise. */
 function prefixFactor(unit: string, base: string): number | null {
@@ -55,8 +55,6 @@ function withSetupRows(config: Json, rows: Json): Json {
   return { ...config, measurements, targets: [...kept, ...fromCopy] };
 }
 
-/** A fixed clock time of the declaration, in the viewer's local time. */
-const declaredAt = (iso?: string | null) => { const d = iso ? new Date(iso) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleString() : null; };
 
 export function WorkingCopy({ profileId, library, cell, record, config, setConfig }: {
   profileId: string | null; library: string; cell: string; record: Json;

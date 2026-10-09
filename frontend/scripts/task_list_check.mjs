@@ -16,7 +16,7 @@ const APP = await workbenchUrl();
 const out = outDir();
 const browser = await launchEdge('tasklist');
 
-const two = n => String(n).padStart(2, '0');
+import { two } from '../src/format.ts';                         // the page's own; this check's stamp() differs (no date: NaN)
 const stamp = utc => { const d = new Date(utc); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
 
 // ---- the tasks (FIXTURE): a saved task with everything, one without a baseline that is blocked, an ngspice task, the MOCK stand-in ----

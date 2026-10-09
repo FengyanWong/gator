@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline, si } from '../api';
-import { runName } from '../format';
+import { createdAt as created, runName, runTaskOrBlank as taskOf, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
 import { useLook } from '../theme';
 import { unitLabel } from '../units';
 import { Icon } from './Icons';
@@ -64,15 +64,6 @@ function storedCompare(): string[] {
   catch { return []; }
 }
 const readError = (e: any) => (e instanceof ApiError && (e.status === 405 || (e.status === 404 && e.detail === 'Not Found')) ? OLDER_BACKEND : plainError(e));
-const taskOf = (r: Json) => r?.task_name ?? String(r?.task_id ?? '').split(':')[0];
-// One formatter for every date (record 7.279): toLocaleString built a new one per call, and the Compare list formatted
-// every run's date at every status update - 85 % of the page's work per update, even with the tab hidden.
-const CREATED = new Intl.DateTimeFormat([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-const created = (utc?: string | null) => {
-  if (!utc) return 'unknown time';
-  const d = new Date(utc);
-  return Number.isNaN(d.getTime()) ? 'Invalid Date' : CREATED.format(d);         // what toLocaleString said for it
-};
 /** A run in the Compare list, as the run window names it: when, task, mode and seed, state, evaluations. Worked out once
  *  per row: a row stays the same object until the run list changes (App.tsx keeps an unchanged list, record 7.275). */
 const CHOICES = new WeakMap<object, string>();
@@ -87,13 +78,10 @@ const runChoice = (r: Json) => {
 
 const POLL_MS = 2000, RETRY_MS = 5000, FRAME_MS = 1000;
 const NONE: View = { mode: 'all' };
-const clock = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 // a unit that is a quantity gets its SI prefix (si in api.ts); a count, a share or a normalized number is a plain number
 const PLAIN = new Set(['', 'share', 'normalized', 'nats']);
 const formatFor = (unit: string) => (v: number) => (PLAIN.has(unit) ? String(+v.toPrecision(4)) : si(v, unit));
 const plain = (v: number) => String(+v.toPrecision(3));
-const STATE_CLASS: Record<string, string> = { completed: 'state-ok', failed: 'state-failed', cancelled: 'state-failed', interrupted: 'state-failed',
-  running: 'state-busy', starting: 'state-busy', pausing: 'state-busy', stopping: 'state-busy' };
 
 /** Whether the browser tab itself is in the background: then nothing is read and nothing drawn either. */
 function usePageHidden() {

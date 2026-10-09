@@ -25,7 +25,8 @@ def test_objective_and_learner_helpers_answer_as_before(tmp_path):
     config['targets'][0].update(direction_after_feasible='minimize', upper=10.0)
     for text in (None, 'null', '[]', '[1]', '{}', '{"run": ', json.dumps(config),
                  json.dumps(dict(output=dict(save_learner_updates=False, learner_update_log_every=3)))):
-        for manifest in (None, '{}', '{"mode": "frozen"}', '[1]'):
+        for manifest in (None, '{}', '{"mode": "frozen"}', '[1]', '{"run_kind": "baseline_preflight"}',
+                         '{"run_kind": "calibration", "mode": "frozen"}', '{"run_kind": "optimization"}'):
             for name, value in (('effective_config.json', text), ('run_manifest.json', manifest)):
                 (run_dir / name).unlink(missing_ok=True)
                 if value is not None:
@@ -35,6 +36,16 @@ def test_objective_and_learner_helpers_answer_as_before(tmp_path):
     assert training_series.run_objective(run_dir) is None
     (run_dir / 'effective_config.json').write_text(json.dumps(config), encoding='utf8')
     assert training_series.run_objective(run_dir) == dict(metric='score', direction='min')
+
+
+def test_a_baseline_or_calibration_run_says_it_trains_no_model(tmp_path):
+    """Record 7.292: a Baseline simulation or a Calibration run never makes a learner update - the Training tab says why
+    instead of waiting for updates that cannot come."""
+    for kind, start in (('baseline_preflight', 'A Baseline simulation measures'), ('calibration', 'A Calibration run simulates')):
+        record = training_series._learner(dict(output=dict(learner_update_log_every=2)), dict(run_kind=kind))
+        assert record == dict(recorded=False, every=2, reason=training_series.NO_LEARNER[kind])
+        assert record['reason'].startswith(start) and record['reason'].endswith('so no losses, temperature or entropy.')
+    assert training_series._learner({}, dict(run_kind='optimization')) == dict(recorded=True, every=1, reason=None)
 
 
 def test_torn_and_corrupt_flush_records_answer_as_read_jsonl_reads_them(tmp_path, liveness):

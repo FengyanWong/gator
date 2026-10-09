@@ -33,6 +33,8 @@ def reference_learner_record(run_dir):
     output, run = config.get('output') or {}, config.get('run') or {}
     method = (run.get('search') or {}).get('method', 'sac')
     every = output.get('learner_update_log_every') or 1
+    if manifest.get('run_kind') in training_series.NO_LEARNER:          # 7.292: the runs that train no model
+        return dict(recorded=False, every=every, reason=training_series.NO_LEARNER[manifest['run_kind']])
     if manifest.get('mode') == 'frozen' or run.get('mode') == 'frozen':
         return dict(recorded=False, every=every, reason='A frozen run evaluates a saved policy without training it: '
                     'there are no learner updates, so no losses, temperature or entropy.')

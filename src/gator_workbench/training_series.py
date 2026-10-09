@@ -603,6 +603,16 @@ def run_objective(run_dir):
     return _objective(read_json(RunLayout(run_dir).effective_config, default=None))
 
 
+# The runs that train no model, by run_kind: their learner_updates table stays empty by design, which the Training tab
+# would otherwise call "No learner update yet: they begin once the warm-up designs fill a training batch."
+NO_LEARNER = {
+    'baseline_preflight': 'A Baseline simulation measures the starting design (and, with calibration, random designs) '
+                          'without training a model: there are no learner updates, so no losses, temperature or entropy.',
+    'calibration': "A Calibration run simulates random designs to suggest each Specs row's scale and a starting "
+                   'temperature, without training a model: there are no learner updates, so no losses, temperature or entropy.',
+}
+
+
 def learner_record(run_dir):
     """Whether this run records learner updates, and in plain words why not (engine._prepare decides the same way)."""
     layout = RunLayout(run_dir)
@@ -619,6 +629,8 @@ def _learner(config, manifest):
     if manifest.get('run_kind') == 'offline_pretraining':
         return dict(recorded=False, every=every, reason='Offline training records its validation curve in validation.json; '
                     'it has no simulator evaluations or online learner-update rows.')
+    if manifest.get('run_kind') in NO_LEARNER:
+        return dict(recorded=False, every=every, reason=NO_LEARNER[manifest['run_kind']])
     if manifest.get('mode') == 'frozen' or run.get('mode') == 'frozen':
         return dict(recorded=False, every=every, reason='A frozen run evaluates a saved policy without training it: '
                     'there are no learner updates, so no losses, temperature or entropy.')

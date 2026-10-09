@@ -20,22 +20,23 @@ from __future__ import annotations
 from concurrent.futures import FIRST_COMPLETED, Future, wait as wait_for_futures
 from datetime import datetime
 import json
-import math
 import os
 from pathlib import Path
 import random
-import re
-import shlex
 import shutil
 import socket
 import time
 import traceback
+from typing import NamedTuple
 from uuid import uuid4
 
 from . import best_design, checkpoints as ckpt, modes
 from .budget import BudgetLedger
 from .compile import compile_task, hard_constraints
 from .connection import classify_infrastructure_failure
+from .engine_host import HostMaintenance
+from .engine_retention import Retention
+from .engine_rows import CommitRows
 from .lanes import ScratchLinked, open_lanes, unlink_scratch
 from .layout import RunLayout, build_artifact_manifest, local_scratch, run_bytes
 from .pdk import run_vocabulary
@@ -49,21 +50,35 @@ from .trajectory import StateEncoder, TrajectoryLoader
 from .run_lock import iso, RunLock
 # re-exported: moved to run_definitions.py by the refactoring (docs/plan-refactoring.md)
 from .run_definitions import INFRASTRUCTURE_FAILURES, decode_action, learner_experiment
+# re-exported: moved to engine_host.py by the refactoring (docs/plan-refactoring.md)
+from .engine_host import HOST_JOB_FOLDER, HOST_CLEANUP_CHUNK
+# re-exported: moved to engine_rows.py by the refactoring (docs/plan-refactoring.md)
+from .engine_rows import PROBE_AGGREGATION
 
 TERMINAL_STATES = ('completed', 'paused', 'stopped', 'cancelled', 'failed')
 TIMING_BATCH = 16                                   # evaluations per append to logs/timings.jsonl (record 7.280)
-# A Spectre job's folder on the simulator host, as the bridge names it (record 7.282): nothing else is ever deleted there.
-HOST_JOB_FOLDER = re.compile(r'^/tmp/virtuoso_bridge_[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/virtuoso_bridge_spectre/[0-9a-f]{6,64}$')
-HOST_CLEANUP_CHUNK = 200                            # folders per rm command
 # What the environment raises when the run's stop file reached a candidate before its first launch (analog_optimizer.envs.
 # sizing): nothing was simulated, the run itself stopped it.
 STOPPED_BEFORE_LAUNCH = 'Candidate stopped before nominal evaluation'
-# `aggregation` of a probe's aggregate metrics row: what the Probes' aggregation column (retired 2026-09-29, record
-# 7.105) held in every run - a run refused any other value - so results tables read as before.
-PROBE_AGGREGATION = 'nominal_only'
 
 
-class RunEngine:
+class Outcome(NamedTuple):
+    """What one evaluation measured, judged against the Specs (RunEngine._outcome)."""
+    status: str
+    raw_metrics: dict
+    raw_validity: dict
+    raw_units: dict
+    derived: dict
+    spec_values: dict
+    metric_values: dict
+    constraint_rows: list
+    valid: bool
+    feasible: bool
+    nominal_feasible: bool
+    violation: object
+
+
+class RunEngine(HostMaintenance, CommitRows, Retention):
     def __init__(self, run_dir, *, task, use_processes=None, lane_factory=None, clock=time.monotonic, lock=None):
         self.layout = RunLayout(Path(run_dir))
         self.manifest = read_json(self.layout.manifest)
@@ -433,70 +448,6 @@ class RunEngine:
         except OSError as exc:
             self._log_error('timings_not_written', exc)
 
-    # ------------------------------------------------------------------ the simulator host (record 7.282)
-    def _host_runner(self):
-        """run(script) on the simulator host through the bridge's own SSH runner (model_library.host_runner), or None: a
-        MOCK or ngspice run, output.keep_simulator_host_folders, or a host that cannot be reached (said in errors.jsonl)."""
-        if self._host_run is not False:
-            return self._host_run
-        self._host_run = None
-        key = str(getattr(self.task, 'task_key', '') or '')
-        if self.task.mock or not key.startswith('real:') or self.config.output.keep_simulator_host_folders:
-            return None
-        try:
-            from .model_library import host_runner
-            from .tasks import generated_bridge_config
-            self._host_run = host_runner(generated_bridge_config(key[len('real:'):], self.config.run.connection_profile_id)[0])
-        except Exception as exc:
-            self._log_error('simulator_host_unreachable', exc)
-        return self._host_run
-
-    def _remember_host_folder(self, job_dir):
-        """The host folder of a design whose raw output this run drops: its measurements.json names the result folder
-        (results_on_host, written by the Maestro measurement). Only a folder of the bridge's own form is kept for removal."""
-        if self.task.mock or self.config.output.keep_simulator_host_folders:
-            return
-        raw = (read_json(Path(job_dir) / 'measurements.json', default=None) or {}).get('results_on_host')
-        folder = os.path.dirname(raw) if isinstance(raw, str) else ''
-        if HOST_JOB_FOLDER.match(folder) and '/../' not in folder and folder not in self._host_folders:
-            self._host_folders.append(folder)
-
-    def _clean_host(self):
-        """Remove the remembered folders from the simulator host, HOST_CLEANUP_CHUNK per command: the host kept every job's
-        folder (58,000 by the morning of 2026-10-08, when its Virtuoso had grown to 10.5 GB and the queue stopped). Never
-        a pattern: each folder is named, and each one was named by this run's own measurement. A failure is said and the
-        folders are tried again at the next save point."""
-        folders = list(self._host_folders)
-        if not folders or self._host_runner() is None:
-            return
-        removed = 0
-        try:
-            for start in range(0, len(folders), HOST_CLEANUP_CHUNK):
-                chunk = folders[start:start + HOST_CLEANUP_CHUNK]
-                self._host_run('rm -rf -- ' + ' '.join(shlex.quote(folder) for folder in chunk) + '\n')
-                removed += len(chunk)
-                self._host_folders = [f for f in self._host_folders if f not in set(chunk)]
-        except Exception as exc:
-            self._log_error('simulator_host_cleanup_failed', exc)
-        if removed:
-            self._event('simulator_host_folders_removed', count=removed, left=len(self._host_folders))
-
-    def _log_virtuoso_memory(self, when):
-        """Virtuoso's memory on the simulator host at the run's start and end (record 7.282): it had grown to 10.5 GB over
-        a night of runs. Said in events.jsonl as `virtuoso_memory`; nothing is changed on the host."""
-        if self._host_runner() is None:
-            return
-        try:
-            listing = self._host_run('ps -u "$(id -un)" -o pid,rss,comm\n')      # its header line is no process
-            processes = []
-            for line in (listing or '').splitlines():
-                fields = line.split(None, 2)
-                if len(fields) == 3 and 'virtuoso' in fields[2].lower() and fields[0].isdigit() and fields[1].isdigit():
-                    processes.append(dict(pid=int(fields[0]), rss_mb=round(int(fields[1]) / 1024, 1), name=fields[2].strip()))
-            self._event('virtuoso_memory', when=when, processes=processes, total_mb=round(sum(p['rss_mb'] for p in processes), 1))
-        except Exception as exc:
-            self._log_error('virtuoso_memory_unread', exc)
-
     def _poll_control(self):
         command = read_json(self.layout.control / 'command.json', default={})
         if not command or command.get('id') == getattr(self, '_last_command', None):
@@ -750,47 +701,9 @@ class RunEngine:
         reward = step[1] if step else None
         terminated, truncated = (bool(step[2]), bool(step[3])) if step else (False, True)
         info = step[4] if step else {}
-        # The lane's record also carries the computed specs (spec_equations: added to the simulation result so that the
-        # reward sees them). The simulator's own results are everything else; they alone feed the probes and raw rows.
-        plan, computed = self.compiled.plan, set(self.compiled.plan.injected)
-        raw_metrics = {k: v for k, v in (record.get('metrics') or {}).items() if k not in computed}
-        raw_validity = {k: v for k, v in (record.get('metric_validity') or {}).items() if k not in computed}
-        raw_units = {k: v for k, v in (record.get('metric_units') or {}).items() if k not in computed}
-        status = record.get('status') or ('cancelled' if result.get('cancelled') else 'execution_error')
-        if not result['ok'] and not result.get('cancelled'):
-            status = 'execution_error'
-        usable = {k: v for k, v in raw_metrics.items() if raw_validity.get(k) is True and v is not None}
-        derived = plan.probe_values(usable)
-        spec_values = plan.spec_values(probes=derived)
-        metric_values, metric_valid = {}, {}
-        for target in self.compiled.targets:
-            value = spec_values.get(target['metric_id'])
-            ok = value is not None and status in ('ok', 'measurement_error')
-            metric_values[target['metric_id']], metric_valid[target['metric_id']] = (value if ok else None), ok
-        valid, feasible, constraint_rows, violation = hard_constraints(self.compiled.targets, metric_values, metric_valid)
-        nominal_feasible = feasible
-        if observation is not None and observation.condition_results:
-            evaluation = observation.evaluation
-            checks = []
-            for index, row in enumerate(observation.condition_results):
-                targets = tuple(t for t in self.compiled.targets if index == 0 or not t['nominal_only'])
-                validity = {t['metric_id']: row.metric_validity.get(t['metric_id']) is True
-                            and row.metric_units.get(t['metric_id']) == t['unit'] and row.status in ('ok', 'measurement_error')
-                            and row.candidate_evaluated for t in targets}
-                checks.append(hard_constraints(targets, row.metrics, validity))
-            valid = all(check[0] for check in checks) and not truncated
-            feasible = valid and evaluation.complete and all(check[1] for check in checks)
-            nominal_feasible = checks[0][1]
-            violation = max((check[3] or 0 for check in checks), default=0) if valid else None
-            metric_values = evaluation.worst_values
-            spec_values = metric_values
-            by_metric = {}
-            for _, _, checked, _ in checks:
-                for row in checked:
-                    old = by_metric.get(row['metric_id'])
-                    if old is None or (row.get('normalized_violation') or 0) > (old.get('normalized_violation') or 0):
-                        by_metric[row['metric_id']] = row
-            constraint_rows = list(by_metric.values())
+        outcome = self._outcome(record, result, observation, truncated)
+        (status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows, valid, feasible,
+         nominal_feasible, violation) = outcome
         if op_is_step := busy['op'] != 'reset':
             self.counters['global_env_step'] += 1
         if not self._baseline_checked and busy['phase'] == 'baseline':
@@ -848,41 +761,8 @@ class RunEngine:
             elif admitted:
                 update_rows = self._maybe_update(commit_seq)
         # ---- first feasibility: decided when the scheduler receives the result
-        in_flight_before = set(self.ledger.first_feasible['in_flight_evaluation_ids']) if self.ledger.first_feasible else set()
-        after_first = self.ledger.first_feasible is not None
-        if nominal_feasible and self.ledger.first_nominal_feasible is None:
-            first = self.ledger.mark_first_feasible(evaluation_id, dispatch_index=busy['dispatch_index'],
-                commit_seq=commit_seq, active_seconds=self._active_seconds(),
-                wall_seconds=(utcnow() - self._run_created()).total_seconds(), nominal=True)
-            self._event('first_nominal_feasible', **first)
-        if feasible and not after_first:
-            first = self.ledger.mark_first_feasible(evaluation_id, dispatch_index=busy['dispatch_index'],
-                                                    commit_seq=commit_seq, active_seconds=self._active_seconds(),
-                                                    wall_seconds=(utcnow() - self._run_created()).total_seconds())
-            self._event('first_feasible', **first)
-            if self.config.run.stop_at_first_feasible and self.stop_reason is None:
-                self.stop_reason = 'first_feasible'
-        candidate = self._candidate(busy, record, metric_values, raw_units, constraint_rows, valid, feasible,
-                                    violation, reward, commit_seq)
-        candidate.update(nominal_feasible=nominal_feasible, nominal_metrics=record.get('metrics'),
-                         robust_feasible=feasible if self.config.run.conditions.policy != 'off' else None,
-                         worst_metrics=metric_values, conditions_complete=info.get('conditions_complete'),
-                         conditions_evaluated=info.get('conditions_evaluated'), conditions_planned=info.get('conditions_planned'),
-                         clearance_margin=info.get('clearance_margin'), tightest_clearance_spec=info.get('tightest_clearance_spec'),
-                         clearance_rule=record.get('clearance_rule'),
-                         conditions=[row['condition']['corner']['id'] if row['condition'] else 'nominal'
-                                     for row in record.get('condition_results', [])] or ['nominal'])
-        if candidate['robust_feasible'] and self.compiled.preference and observation is not None:
-            preference = self.compiled.preference
-            spec = next(s for s in observation.specs if s.metric_id == preference['metric'])
-            applicable = observation.condition_results[:1] if spec.nominal_only else observation.condition_results
-            values = [row.metrics.get(spec.metric_id) for row in applicable
-                      if row.metric_validity.get(spec.metric_id) is True]
-            candidate['worst_metrics'] = dict(metric_values)
-            candidate['worst_metrics'][spec.metric_id] = ((max(values) if preference['direction'] == 'min' else min(values))
-                                                         if len(values) == len(applicable) else None)
-        role = self.tracker.offer(candidate)
-        best = self.tracker.best
+        in_flight_before, after_first = self._first_feasibility(busy, evaluation_id, commit_seq, nominal_feasible, feasible)
+        role, best = self._offer(busy, record, info, observation, reward, commit_seq, outcome)
         job_rows, retention_plan = self._job_rows(busy, lane, role, failed)
         if infrastructure and job_rows:
             job_rows[-1]['exit_status'] = f"{job_rows[-1]['exit_status']}:{infrastructure}"   # distinguishable in simulator_jobs
@@ -966,6 +846,99 @@ class RunEngine:
             self.checkpoint_due = True
         self._write_status('running', throttle=0.5)
 
+    def _outcome(self, record, result, observation, truncated):
+        """What the evaluation measured, judged against the Specs: its status, the simulator's own results, the probes and
+        specs worked out from them, and whether the design is valid and feasible (at every condition it ran at)."""
+        # The lane's record also carries the computed specs (spec_equations: added to the simulation result so that the
+        # reward sees them). The simulator's own results are everything else; they alone feed the probes and raw rows.
+        plan, computed = self.compiled.plan, set(self.compiled.plan.injected)
+        raw_metrics = {k: v for k, v in (record.get('metrics') or {}).items() if k not in computed}
+        raw_validity = {k: v for k, v in (record.get('metric_validity') or {}).items() if k not in computed}
+        raw_units = {k: v for k, v in (record.get('metric_units') or {}).items() if k not in computed}
+        status = record.get('status') or ('cancelled' if result.get('cancelled') else 'execution_error')
+        if not result['ok'] and not result.get('cancelled'):
+            status = 'execution_error'
+        usable = {k: v for k, v in raw_metrics.items() if raw_validity.get(k) is True and v is not None}
+        derived = plan.probe_values(usable)
+        spec_values = plan.spec_values(probes=derived)
+        metric_values, metric_valid = {}, {}
+        for target in self.compiled.targets:
+            value = spec_values.get(target['metric_id'])
+            ok = value is not None and status in ('ok', 'measurement_error')
+            metric_values[target['metric_id']], metric_valid[target['metric_id']] = (value if ok else None), ok
+        valid, feasible, constraint_rows, violation = hard_constraints(self.compiled.targets, metric_values, metric_valid)
+        nominal_feasible = feasible
+        if observation is not None and observation.condition_results:
+            evaluation = observation.evaluation
+            checks = []
+            for index, row in enumerate(observation.condition_results):
+                targets = tuple(t for t in self.compiled.targets if index == 0 or not t['nominal_only'])
+                validity = {t['metric_id']: row.metric_validity.get(t['metric_id']) is True
+                            and row.metric_units.get(t['metric_id']) == t['unit'] and row.status in ('ok', 'measurement_error')
+                            and row.candidate_evaluated for t in targets}
+                checks.append(hard_constraints(targets, row.metrics, validity))
+            valid = all(check[0] for check in checks) and not truncated
+            feasible = valid and evaluation.complete and all(check[1] for check in checks)
+            nominal_feasible = checks[0][1]
+            violation = max((check[3] or 0 for check in checks), default=0) if valid else None
+            metric_values = evaluation.worst_values
+            spec_values = metric_values
+            by_metric = {}
+            for _, _, checked, _ in checks:
+                for row in checked:
+                    old = by_metric.get(row['metric_id'])
+                    if old is None or (row.get('normalized_violation') or 0) > (old.get('normalized_violation') or 0):
+                        by_metric[row['metric_id']] = row
+            constraint_rows = list(by_metric.values())
+        return Outcome(status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows,
+                       valid, feasible, nominal_feasible, violation)
+
+    def _first_feasibility(self, busy, evaluation_id, commit_seq, nominal_feasible, feasible):
+        """The run's first (nominally) feasible design, decided when the scheduler receives the result; the stop at the first
+        feasible design. Returns (the evaluations in flight at the first feasible one, whether it came before)."""
+        in_flight_before = set(self.ledger.first_feasible['in_flight_evaluation_ids']) if self.ledger.first_feasible else set()
+        after_first = self.ledger.first_feasible is not None
+        if nominal_feasible and self.ledger.first_nominal_feasible is None:
+            first = self.ledger.mark_first_feasible(evaluation_id, dispatch_index=busy['dispatch_index'],
+                commit_seq=commit_seq, active_seconds=self._active_seconds(),
+                wall_seconds=(utcnow() - self._run_created()).total_seconds(), nominal=True)
+            self._event('first_nominal_feasible', **first)
+        if feasible and not after_first:
+            first = self.ledger.mark_first_feasible(evaluation_id, dispatch_index=busy['dispatch_index'],
+                                                    commit_seq=commit_seq, active_seconds=self._active_seconds(),
+                                                    wall_seconds=(utcnow() - self._run_created()).total_seconds())
+            self._event('first_feasible', **first)
+            if self.config.run.stop_at_first_feasible and self.stop_reason is None:
+                self.stop_reason = 'first_feasible'
+        return in_flight_before, after_first
+
+    def _offer(self, busy, record, info, observation, reward, commit_seq, outcome):
+        """The evaluation as a candidate of the best-design tracker. Returns (its role there, the tracker's best)."""
+        (status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows, valid, feasible,
+         nominal_feasible, violation) = outcome
+        candidate = self._candidate(busy, record, metric_values, raw_units, constraint_rows, valid, feasible,
+                                    violation, reward, commit_seq)
+        candidate.update(nominal_feasible=nominal_feasible, nominal_metrics=record.get('metrics'),
+                         robust_feasible=feasible if self.config.run.conditions.policy != 'off' else None,
+                         worst_metrics=metric_values, conditions_complete=info.get('conditions_complete'),
+                         conditions_evaluated=info.get('conditions_evaluated'), conditions_planned=info.get('conditions_planned'),
+                         clearance_margin=info.get('clearance_margin'), tightest_clearance_spec=info.get('tightest_clearance_spec'),
+                         clearance_rule=record.get('clearance_rule'),
+                         conditions=[row['condition']['corner']['id'] if row['condition'] else 'nominal'
+                                     for row in record.get('condition_results', [])] or ['nominal'])
+        if candidate['robust_feasible'] and self.compiled.preference and observation is not None:
+            preference = self.compiled.preference
+            spec = next(s for s in observation.specs if s.metric_id == preference['metric'])
+            applicable = observation.condition_results[:1] if spec.nominal_only else observation.condition_results
+            values = [row.metrics.get(spec.metric_id) for row in applicable
+                      if row.metric_validity.get(spec.metric_id) is True]
+            candidate['worst_metrics'] = dict(metric_values)
+            candidate['worst_metrics'][spec.metric_id] = ((max(values) if preference['direction'] == 'min' else min(values))
+                                                         if len(values) == len(applicable) else None)
+        role = self.tracker.offer(candidate)
+        best = self.tracker.best
+        return role, best
+
     def _run_created(self):
         return datetime.fromisoformat(self.manifest['created_utc'])
 
@@ -1026,303 +999,6 @@ class RunEngine:
                                  batch_size=adv.batch_size, cumulative_updates=update['updates'],
                                  policy_version=update['updates'], update_seconds=self._clock() - started))
         return rows
-
-    # ------------------------------------------------------------------ row builders
-    def _candidate(self, busy, record, metrics, units_map, constraints, valid, feasible, violation, reward, seq):
-        applied = {(r['device'], r['parameter']): r['value'] for r in (record.get('applied_parameters') or [])}
-        # A fixed group (optimized = false) is never sent to the simulator, so no candidate reports it: its members keep the
-        # circuit's values. Read as missing, every candidate of a task with one fixed row was "incomplete" - never valid,
-        # never feasible, no best design (review of 2026-10-03).
-        fixed = {group.id: group.value for group in self.compiled.graph.parameter_groups if not group.mutable}
-        variables, members = [], []
-        for variable in self.compiled.variables:
-            group_value = None
-            for member in variable['members']:
-                value = applied.get((member['instance_path'], self._source_name(member)))
-                if value is None and variable['variable_id'] in fixed:
-                    value = fixed[variable['variable_id']] * member['ratio']
-                if value is not None and group_value is None:
-                    group_value = value / member['ratio']
-                members.append(dict(variable_id=variable['variable_id'], member_variable_id=member['variable_id'],
-                                    role='independent' if member['variable_id'] == variable['variable_id'] else 'bound_member',
-                                    instance_path=member['instance_path'], parameter_name=member['parameter_name'],
-                                    value=value, unit=variable['unit'], ratio=member['ratio']))
-            variables.append(dict(variable_id=variable['variable_id'], value=group_value, unit=variable['unit'],
-                                  optimized=variable['optimized']))
-        complete = all(m['value'] is not None for m in members)
-        return dict(evaluation_id=busy['evaluation_id'], commit_seq=seq, valid=valid and complete, feasible=feasible and complete,
-                    violation=violation, reward=reward, metrics=metrics,
-                    metric_units={t['metric_id']: t['unit'] for t in self.compiled.targets},
-                    variables=variables, members=members, constraints=constraints, conditions=['nominal'],
-                    provenance=self.provenance)
-
-    def _source_name(self, member):
-        value = self.compiled.graph.parameters[member['instance_path']][member['parameter_name']]
-        return value.source_name or member['parameter_name']
-
-    def _parameter_rows(self, busy, record, evaluation_id):
-        applied = {(r['device'], r['parameter']): r['value'] for r in (record.get('applied_parameters') or [])}
-        before = {}
-        if busy['previous'] is not None:
-            graph = busy['previous'].graph
-            for group in graph.parameter_groups:
-                for m in group.members:
-                    before[(m.device_id, m.parameter)] = graph.parameters[m.device_id][m.parameter].value
-        projected = set(record.get('projected_groups') or [])
-        rows = []
-        for variable in self.compiled.variables:
-            z = None if busy['proposal'] is None else busy['proposal'].get(variable['variable_id'])
-            decoded = None if z is None else decode_action(z, variable['lower'], variable['upper'], variable['scale'])
-            for member in variable['members']:
-                executed = applied.get((member['instance_path'], self._source_name(member)))
-                rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, variable_id=variable['variable_id'],
-                                 member_variable_id=member['variable_id'],
-                                 role='independent' if member['variable_id'] == variable['variable_id'] else 'bound_member',
-                                 instance_path=member['instance_path'], parameter_name=member['parameter_name'],
-                                 unit=variable['unit'],
-                                 value_before=before.get((member['instance_path'], member['parameter_name'])),
-                                 raw_policy_action=z, decoded_value=decoded, executed_value=executed,
-                                 projected=variable['variable_id'] in projected, ratio=member['ratio'],
-                                 lower=variable['lower'], upper=variable['upper'], step=variable['step']))
-        return rows
-
-    def _metric_rows(self, evaluation_id, raw, validity, units_map, derived, spec_values, constraints, status, conditions=None):
-        """Raw simulator results (condition rows), then one aggregate row per spec - the value of its equation, with its
-        thresholds - and one per probe that no spec shows whole. A spec whose equation is one probe is that probe's row
-        (measurement_id = the probe), exactly as before specs had equations; a formula's row has no single probe."""
-        rows, by_metric = [], {c['metric_id']: c for c in constraints}
-        measurements = {m.measurement_id: m for m in self.config.measurements}
-
-        def reason(value, ok):
-            if ok:
-                return None
-            if status != 'ok':
-                return f'evaluation_status_{status}'
-            return 'missing_or_nonfinite' if value is None else 'invalid_measurement'
-        for name in sorted(set(raw) | set(validity)):
-            value, ok = raw.get(name), validity.get(name) is True and status in ('ok', 'measurement_error')
-            finite = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
-            rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=None, metric_name=name,
-                             analysis=None, condition='nominal', raw_value=value if finite and ok else None,
-                             unit=units_map.get(name), valid=bool(ok and finite),
-                             failure_reason=reason(value if finite else None, ok and finite), threshold_lower=None,
-                             threshold_upper=None, hard=None, satisfied=None, violation=None,
-                             aggregation_level='condition', aggregation=None))
-        whole = set()
-        for target in self.compiled.targets:
-            value, probe = spec_values.get(target['metric_id']), target['probe']
-            definition = measurements.get(probe) if probe is not None else None
-            whole.add(probe)
-            constraint = by_metric.get(target['metric_id'])
-            ok = value is not None and status in ('ok', 'measurement_error')
-            rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=probe,
-                             metric_name=target['metric_id'], analysis=definition.analysis if definition else None,
-                             condition='aggregate', raw_value=value if ok else None, unit=target['unit'], valid=ok,
-                             failure_reason=reason(value, ok), threshold_lower=target['lower'],
-                             threshold_upper=target['upper'], hard=target['hard'],
-                             satisfied=constraint['satisfied'] if constraint else None,
-                             violation=constraint['normalized_violation'] if constraint else None,
-                             aggregation_level='aggregate', aggregation=PROBE_AGGREGATION if definition else 'equation'))
-        for measurement_id, value in derived.items():
-            if measurement_id in whole:
-                continue
-            definition = measurements[measurement_id]
-            ok = value is not None and status in ('ok', 'measurement_error')
-            rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=measurement_id,
-                             metric_name=measurement_id, analysis=definition.analysis, condition='aggregate',
-                             raw_value=value if ok else None, unit=definition.unit, valid=ok,
-                             failure_reason=reason(value, ok), threshold_lower=None, threshold_upper=None, hard=None,
-                             satisfied=None, violation=None, aggregation_level='aggregate', aggregation=PROBE_AGGREGATION))
-        # A training corner's result also carries the specs the lane computed from it (spec_equations): recorded here as that
-        # corner's value of the formula, marked aggregation = equation, so it never passes for a simulator result.
-        computed = set(self.compiled.plan.injected)
-        for condition in (conditions or [])[1:]:
-            label = condition['condition']['corner']['id']
-            for name in sorted(set(condition['metrics']) | set(condition['metric_validity'])):
-                value = condition['metrics'].get(name)
-                ok = (condition['status'] in ('ok', 'measurement_error') and condition['metric_validity'].get(name) is True
-                      and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value))
-                target = next((t for t in self.compiled.targets if t['metric_id'] == name and not t['nominal_only']), None)
-                checked = hard_constraints((target,), {name: value}, {name: ok})[2][0] if target and target['active'] else None
-                rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=None, metric_name=name,
-                                 analysis=None, condition=label, raw_value=value if ok else None,
-                                 unit=condition['metric_units'].get(name), valid=ok,
-                                 failure_reason=None if ok else condition['reason_code'],
-                                 threshold_lower=target['lower'] if target else None, threshold_upper=target['upper'] if target else None,
-                                 hard=target['hard'] if target else None, satisfied=checked['satisfied'] if checked else None,
-                                 violation=checked['normalized_violation'] if checked else None,
-                                 aggregation_level='condition', aggregation='equation' if name in computed else None))
-        return rows
-
-    def _job_rows(self, busy, lane, role, failed):
-        policy = self.config.output.waveform_retention
-        rows, plan = [], []
-        attempts = []
-        for retry, attempt in enumerate(busy['attempts'], start=1):
-            record = attempt.get('record') or {}
-            if record.get('jobs'):
-                for job in record['jobs']:
-                    launches = job.get('confirmed_calls', 0) + job.get('uncertain_calls', 0)
-                    if self.task.mock and job.get('state') == 'completed':
-                        launches = 1                # one counted call of the toy backend, never a simulator launch
-                    attempts.append(dict(attempt, record=dict(record, **job), launches=launches,
-                                         launch_unknown=bool(job.get('uncertain_calls')),
-                                         started_at=job.get('started_at', attempt['started_at']),
-                                         ended_at=job.get('ended_at', attempt['ended_at']), retry=retry))
-            else:
-                if attempt.get('launch_unknown'):
-                    lease_path = self.layout.data / '_journal' / 'unresolved-launch-leases.json'
-                    leases = read_json(lease_path, default={})
-                    leases[busy['evaluation_id']] = dict(allowance=attempt['launches'],
-                        worker_directory=lane.info['directory'], state='unresolved')
-                    write_json(lease_path, leases)
-                elif attempt['launches']:
-                    attempts.append(dict(attempt, retry=retry))
-        for number, attempt in enumerate(attempts, start=1):
-            record = attempt.get('record') or {}
-            launched = int(attempt['launches']) > 0
-            if not launched:
-                continue
-            started, ended = attempt['started_at'], attempt['ended_at']
-            runtime = (datetime.fromisoformat(ended) - datetime.fromisoformat(started)).total_seconds()
-            self.counters['sum_job_runtime_seconds'] += runtime
-            directory = record.get('artifact_directory')
-            has_output = bool(directory) and Path(directory).is_dir() and any(Path(directory).rglob('*'))
-            if not has_output:
-                decision = 'not_produced'
-            elif policy == 'all':
-                decision = 'retained_all'
-            elif policy == 'none':
-                decision = 'deleted_by_policy'
-            elif failed:
-                decision = 'retained_failure'
-            elif role is not None:
-                decision = 'retained_best'
-            else:
-                decision = 'deleted_by_policy'
-            job_id = record.get('job_id') or record.get('export_job_id') or record.get('candidate_id') or f"{busy['evaluation_id']}-a{number}"
-            relative = (f"waveforms/{busy['evaluation_id']}/attempt-{number}"
-                        if decision.startswith('retained') else None)
-            status = record.get('status') or ('cancelled' if attempt.get('cancelled') else 'execution_error')
-            analysis = 'task_profile_default'
-            if self.task.connection_family == 'ngspice' and directory:
-                counts = read_json(Path(directory) / 'analysis-counts.json', default=None)
-                if counts is not None:
-                    analysis = 'ngspice:' + json.dumps(counts, sort_keys=True, separators=(',', ':'))
-            rows.append(dict(run_id=self.run_id, job_id=f'{job_id}', evaluation_id=busy['evaluation_id'],
-                             worker_id=lane.lane_id, host=socket.gethostname(), analysis=analysis,
-                             condition=(record.get('condition') or {}).get('corner', {}).get('id', 'nominal'),
-                             attempt=attempt['retry'], dispatched_at=attempt['dispatched_at'],
-                             started_at=started, ended_at=ended, exit_status=status, timed_out=status == 'timeout',
-                             retry_reason=None if attempt['retry'] == 1 else busy.get('retry_reason'),
-                             runtime_seconds=runtime, launch_counted=launched,
-                             invocation_confirmed=(None if attempt.get('launch_unknown') or not launched else
-                                                   True) if not self.task.mock else launched,
-                             simulator_version=record.get('simulator_version'), output_path=relative, retention_status=decision,
-                             sync_status='local' if has_output else 'not_applicable', provenance=self.provenance))
-            journal = None
-            if record.get('candidate_id'):
-                journal = str(Path(lane.info['directory']) / 'candidates' / f"{record['candidate_id']}.json")
-            plan.append(dict(decision=decision, source=directory, target=relative, record=record,
-                             evaluation_id=busy['evaluation_id'], job_id=job_id, journal=journal))
-        return rows, plan
-
-    def _transition_rows(self, busy, step, lane, commit_seq, admitted, record):
-        observation, reward, terminated, truncated, info = step
-        rows, states = [], []
-        state_id, row = self.encoder.encode(busy['previous'], run_id=self.run_id)
-        if row:
-            states.append(row)
-        next_id, row = self.encoder.encode(observation, run_id=self.run_id)
-        if row:
-            states.append(row)
-        applied = [dict(instance_path=r['device'], parameter=r['parameter'], value=r['value'])
-                   for r in (record.get('applied_parameters') or [])]
-        rows.append(dict(run_id=self.run_id, transition_id=busy['evaluation_id'], task_id=self.task_id,
-                         episode_id=busy['episode_id'], worker_id=lane.lane_id, evaluation_id=busy['evaluation_id'],
-                         state_ref=state_id, action=busy['proposal'], reward=reward, next_state_ref=next_id,
-                         terminated=bool(terminated), truncated=bool(truncated), bootstrap=bool(info.get('bootstrap')),
-                         policy_version=busy['policy_version'], step=int(record.get('step') or 0),
-                         global_env_step=self.counters['global_env_step'], recorded_at=iso(),
-                         action_version='absolute-group-v1', candidate_id=info.get('candidate_id') or busy['evaluation_id'],
-                         reward_version=record.get('reward_version'),
-                         record_path=str(info.get('record_path') or ''), applied_parameters=applied,
-                         replay_admitted=admitted, commit_seq=commit_seq))
-        return rows, states
-
-    # ------------------------------------------------------------------ raw-output retention
-    def _inside_work(self, path):
-        try:
-            resolved = Path(path).resolve()
-            if self._work_resolved is None:              # work/, and the run's local scratch when it has one
-                self._work_resolved = [self.layout.work.resolve()] + ([self._scratch.resolve()] if self._scratch else [])
-            return any(root in resolved.parents for root in self._work_resolved) and not Path(path).is_symlink()
-        except OSError:
-            return False
-
-    def _apply_retention(self, plan, role):
-        """Acts only AFTER the result is durable, and only on registered paths inside work/."""
-        index_path = self.layout.waveforms / 'index.json'
-        if self._waveform_index is None:
-            self._waveform_index = read_json(index_path, default=dict(entries={}))
-        index = self._waveform_index                      # every change below is written at once, as before
-        changed = False
-        for item in plan:
-            source, record = item['source'], item['record']
-            try:
-                if source and self._inside_work(source) and Path(source).exists():
-                    if item['decision'].startswith('retained'):
-                        target = self.layout.run_dir / item['target']
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.move(source, target)
-                        index['entries'][item['job_id']] = dict(path=item['target'], status=item['decision'],
-                                                                       evaluation_id=item['evaluation_id'],
-                                                                       updated_utc=iso())
-                        changed = True
-                    else:
-                        self._remember_host_folder(Path(source))
-                        shutil.rmtree(source, ignore_errors=True)
-                if self.config.output.waveform_retention != 'all':
-                    # Registered temporaries only: the export package and the per-candidate journal are
-                    # redundant once the result is durable in the raw tables.
-                    export = record.get('netlist_path')
-                    if export and self._inside_work(Path(export).parent):
-                        shutil.rmtree(Path(export).parent, ignore_errors=True)
-                    if item.get('journal') and self._inside_work(item['journal']):
-                        Path(item['journal']).unlink(missing_ok=True)
-            except OSError as exc:
-                self._log_error('retention_failed', exc, evaluation_id=item['evaluation_id'])
-        if role is not None and self.config.output.waveform_retention == 'best_and_failures':
-            previous = self.previous_best_waveform
-            current = plan[-1]['evaluation_id'] if plan else None
-            if previous and previous != current:
-                for key, entry in index['entries'].items():
-                    if entry.get('evaluation_id', key) == previous and entry['status'] == 'retained_best':
-                        self._remember_host_folder(self.layout.run_dir / entry['path'])
-                        shutil.rmtree(self.layout.run_dir / entry['path'], ignore_errors=True)
-                        entry.update(status='deleted_by_policy', updated_utc=iso(), reason='superseded by a better design')
-                        changed = True
-                self._event('waveform_retention_changed', evaluation_id=previous, status='deleted_by_policy')
-            self.previous_best_waveform = current
-        limit = self.config.output.waveform_storage_limit_bytes
-        if limit is not None and changed:
-            from .paths import directory_bytes
-            failures = sorted((v['updated_utc'], k) for k, v in index['entries'].items() if v['status'] == 'retained_failure')
-            # Only failures may be deleted for space, so measure only while one is left: the folder walk grows with every
-            # retained job and cost seconds per evaluation on the 9p mount (review of 2026-09-30).
-            while failures and directory_bytes(self.layout.waveforms) > limit:
-                _, key = failures.pop(0)
-                self._remember_host_folder(self.layout.run_dir / index['entries'][key]['path'])   # before the copy goes (7.283)
-                shutil.rmtree(self.layout.run_dir / index['entries'][key]['path'], ignore_errors=True)
-                index['entries'][key].update(status='deleted_storage_limit', updated_utc=iso())
-                self._event('waveform_retention_changed', evaluation_id=key, status='deleted_storage_limit')
-        if changed:
-            index['policy'] = dict(retention=self.config.output.waveform_retention, storage_limit_bytes=limit,
-                                   cleanup='oldest retained failures first; the best design and all models/primary '
-                                           'data are never removed automatically',
-                                   note='simulator_jobs.retention_status is the decision at commit time; this index '
-                                        'is the current state')
-            write_json(index_path, index)
 
     # ------------------------------------------------------------------ checkpoint
     def _collector_state(self):

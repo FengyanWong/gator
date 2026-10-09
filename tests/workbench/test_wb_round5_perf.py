@@ -15,7 +15,8 @@ from analog_optimizer.graph.circuit_graph import ParameterBinding, ParameterGrou
 from analog_optimizer.netlist.config import DeviceMapping, ParserConfig
 from analog_optimizer.netlist.spectre_parser import SpectreParser
 from analog_optimizer.parameters.actions import ActionMapper
-from gator_workbench import compile as comp, engine as engine_module, graph_view, pdk, schema, structures, task_registry, tasks, units, validation
+from gator_workbench import (compile as comp, engine as engine_module, engine_retention, graph_view, pdk, schema, structures,
+                             task_registry, tasks, units, validation)
 from gator_workbench.generic_profile import RULES_FORMAT, GenericMosWidthProfile
 from helpers import bridge_is_importable, execute, make_config, rows  # noqa: F401 - autouse here: the bridge counts as installed
 
@@ -324,7 +325,7 @@ def test_a_mock_run_resolves_its_work_folder_and_reads_the_waveform_index_once(t
     def counting_read(path, *args, **kwargs):
         reads.append(Path(path).name)
         return read_json(path, *args, **kwargs)
-    monkeypatch.setattr(engine_module, 'read_json', counting_read)
+    monkeypatch.setattr(engine_retention, 'read_json', counting_read)         # the retention reads waveforms/index.json
 
     def counting_resolve(self, *args, **kwargs):
         if self.name == 'work':

@@ -14,7 +14,23 @@ mkdir -p "$tmp/settings-a" "$tmp/settings-b" "$tmp/out-a" "$tmp/out-b"
 pids=()
 cleanup() { for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done; wait 2>/dev/null || true; rm -rf "$tmp"; }
 trap cleanup EXIT
-free_port() { "$python" -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+# Windows reserves TCP port ranges (Hyper-V, WinNAT: `netsh int ipv4 show excludedportrange protocol=tcp`), and Windows
+# cannot reach a WSL port inside one: such a batch stopped before any check, "Windows cannot reach the scratch backend"
+# (one batch in ten, record 7.292). A port from the WSL side is chosen outside them.
+reserved="$(cd /mnt/c && cmd.exe /c 'netsh int ipv4 show excludedportrange protocol=tcp' 2>/dev/null | tr -d '\r' \
+  | awk '$1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ { print $1 "-" $2 }' | tr '\n' ' ' || true)"
+free_port() { RESERVED="$reserved" "$python" -c '
+import os, socket
+spans = [tuple(map(int, span.split("-"))) for span in os.environ["RESERVED"].split()]
+for _ in range(100):
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    if not any(low <= port <= high for low, high in spans):
+        print(port)
+        break
+else:
+    raise SystemExit("no free port outside the ranges Windows reserves")'; }
 serve() {   # <settings folder> <default output folder> <port> <log> [serve options...]
   local settings="$1" outputs="$2" port="$3" log="$4"; shift 4
   # The workbench has no MOCK task since 2026-09-30 (record 7.128): the checks' backends register the tests' stand-in. They

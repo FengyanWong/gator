@@ -454,3 +454,27 @@ One row per commit, newest last.
 | `7614718` | 10-09 11:48 | - | record only: record 7.290's Commit and Live lines, and the table rows for 564928e and the landing commits 7410f6f..ef1cc42 (session "Refactoring plan") |
 | `088584d` | 10-09 16:02 | 7.289 | record only: 7.289 amended - the two `_a` LDO tasks and their four MScR cells deleted on the user's word; and the table row for 7614718 |
 | `0be5b18` | 10-09 18:56 | 7.291 | the Tasks, Runs and RL model windows close once a task, run or saved model is chosen (a choice that does not go through leaves them open); the record file rolled over to `7.291-and-later.md` (session "Frontend workbench layout design") |
+| `1f5382d` | 10-09 18:57 | - | record only: names the commit of record 7.291 (0be5b18) and its Live line, and the table rows for 088584d and 0be5b18 (session "Frontend workbench layout design") |
+| `28202f7` | 10-09 18:59 | 7.292 | Tests: the two-lane learner-switch test compares the runs through their transitions (the first of the refactoring follow-up's 23 commits, session "Refactoring plan") |
+| `5307a3b` | 10-09 18:59 | 7.292 | Workbench: the Training tab says why a Baseline simulation or a Calibration run has no learner charts |
+| `dd5f3b2` | 10-09 18:59 | 7.292 | Docs: the reference's Run engine row names the update functions that exist |
+| `ce1cd8e` | 10-09 18:59 | 7.292 | Tests: the OTA measurement reader opamp.analyze gets its first test |
+| `cd64e2e` | 10-09 18:59 | 7.292 | Checks: run_checks.sh chooses its scratch backends' ports outside the ranges Windows reserves |
+| `4089688` | 10-09 18:59 | 7.292 | Checks: run_checks.mjs keeps Vite's cache in the temp folder, one per checkout |
+| `8c6d2d7` | 10-09 18:59 | 7.292 | Checks: run_checks makes the two saved MOCK models encoder_models_check reads, so it runs in every batch |
+| `2025d91` | 10-09 18:59 | 7.292 | Optimizer E9: the three measurement readers share one reading of a Spectre job folder |
+| `5becc4d` | 10-09 18:59 | 7.292 | Optimizer E6: the bridge adapter's generic helpers in modules of their own, still exported by virtuoso_bridge |
+| `eadf02f` | 10-09 18:59 | 7.292 | Optimizer E7: one bridge-binding check for the adapter and its lane backend; one preparation session for both owners |
+| `13dd913` | 10-09 18:59 | 7.292 | Optimizer E8: the local backends share their connection and held parameters; each digest says what it hashes |
+| `c316f82` | 10-09 18:59 | 7.292 | Optimizer E10: SpectreParser.parse_text along its three phases |
+| `dd6f554` | 10-09 18:59 | 7.292 | Optimizer E10: SpecificationEvaluator.evaluate_conditions along its five phases |
+| `1d436d8` | 10-09 18:59 | 7.292 | Optimizer E10: RunReader.overview and export along their steps |
+| `7d90954` | 10-09 18:59 | 7.292 | Optimizer E10: summarize_corners along its three steps |
+| `b9b2b63` | 10-09 18:59 | 7.292 | Optimizer E5: the recording store by concern |
+| `c3965e4` | 10-09 18:59 | 7.292 | Optimizer E3: one random proposal and one timed update for every collector of training data |
+| `237522d` | 10-09 18:59 | 7.292 | Optimizer E4: the long orchestration functions name their phases |
+| `6a91673` | 10-09 18:59 | 7.292 | Optimizer E1: CircuitSizingEnv._evaluate as the sequence it is |
+| `980d86b` | 10-09 18:59 | 7.292 | Optimizer E2: public environment operations for the workbench's continue, calibration and retry |
+| `7317923` | 10-09 18:59 | 7.292 | C11: proof tools for regrouping styles.css (css_order_proof.mjs, dom_identity_check --styles) |
+| `ad47d17` | 10-09 18:59 | 7.292 | C11: styles.css regrouped where the cascade allows, restated selectors merged |
+| `4d2eff0` | 10-09 18:59 | 7.292 | Docs: record 7.292 - the refactoring's follow-up: the small fixes, the optimizer's clean-up (group E) and styles.css (C11) |

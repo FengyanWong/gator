@@ -3061,6 +3061,18 @@ a name its module does not define or only keeps as an alias). Constants several 
 quiet JSON reads in `storage/atomic.py` (`read_json_quiet`, `read_dict`); every cache a process keeps for its lifetime
 registers in `caches.py`, whose `clear_all()` empties them all (`tests/workbench/test_wb_caches.py`).
 
+The optimizer package by module since its clean-up of 2026-10-09 (`docs/plan-refactoring.md` section 6, record 7.292; every
+public name still where it was, every message kept): `backends/virtuoso_bridge.py` keeps the adapter and passes on its
+generic helpers (`backends/common.py`: a file's digest, `write_json`, `parameter_rows`; `backends/delegation.py`;
+`backends/spectre_deck.py`); the MOCK, synthetic and the workbench's ngspice backends share `LocalConnection` and
+`HeldParameters` (`backends/backend.py`); `recording/store.py`'s `ExperimentStore` is made of `store_evaluations.py`,
+`store_states.py`, `store_summary.py` and `store_workspaces.py`; `training/collect.py` holds the warm-up's random
+proposal and a timed update for every collector, the workbench's engine included; `measurements/spectre_job.py` the
+measurement readers' reading of a job folder. `CircuitSizingEnv._evaluate` reads as `_begin_candidate`,
+`_candidate_output`, `_export_candidate`, `_run_conditions` and `_outcome`, and the workbench's lanes continue an
+episode, start a calibration design and retry through the environment's `continue_from`, `independent_episode` and
+`retry` instead of writing its private attributes.
+
 The frontend keeps the Agent window and its "Agent..." button in `panels/Agent.tsx` and the run tabs in `panels/RunTabs.tsx`.
 `CircuitBrowser.tsx` owns the Virtuoso browsing chain and circuit details; `Left.tsx` coordinates task selection, with
 its jobs in `taskChoice.ts` (choosing a registered task), `taskActions.ts` (Check now, Delete task), `testbenchProbes.ts`
@@ -3107,7 +3119,10 @@ imports another: the fakes and helpers several share are in `tests/workbench/hel
 `training_series_support.py`, and for the research tests in `tests/research_support.py` (an autouse fixture there acts
 only in a module that imports it). `xdist_group` marks only the tests that share a module-scoped fixture.
 `run_checks.mjs` keeps each check's measured duration in the OS temp folder (`gator-checks-durations.json`) and orders
-and limits the next run by it. `frontend/scripts/dom_identity_check.mjs` shows that a refactoring leaves the page as it
+and limits the next run by it. `run_checks.sh` makes the two saved MOCK models `encoder_models_check` reads
+(`frontend/scripts/fixtures/encoder_models.py`) and picks its scratch backends' ports outside the TCP ranges Windows
+reserves; `run_checks.mjs` keeps Vite's cache in `%TEMP%\gator-checks-vite\`, never in a checkout's `node_modules`
+(7.292). `frontend/scripts/dom_identity_check.mjs` shows that a refactoring leaves the page as it
 was: `#root` and each open pop-up per step, in both looks, with the page's requests and storage - recorded once, then
 replayed without a backend (`--replay`) against another build (`--build`) and compared byte for byte (`--compare`).
 `frontend/scripts/request_lifecycle_check.mjs` runs against a Vite source preview with controlled in-memory replies

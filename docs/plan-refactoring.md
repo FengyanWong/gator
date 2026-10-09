@@ -9,7 +9,9 @@ scratchpad and are reproduced in section 7 so that the executing session can reb
 **State (2026-10-09, record 7.290):** groups A, B, C (C11 left out: its proof cannot see hover, focus or other widths) and D
 are done in a clean copy, one commit per package, each proved to change nothing; group E is not done (a source-digest
 change is the user's decision). Landed in the live tree the same day; record 7.290 lists what each package did, what was
-left out and why.
+left out and why. **Follow-up (record 7.292, the same day; user: "fix them following up", then "Yes, include E"):** group E
+(section 6, all ten items; the source digest `0b0808bc...` becomes `ad4ddcbe...`) and C11 (with a static cascade-order
+proof and computed styles compared) are done the same way, with the seven small fixes 7.290 found.
 
 ## 0. In plain words
 

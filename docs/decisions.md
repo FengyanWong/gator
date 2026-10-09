@@ -1,4 +1,4 @@
-# Current state (2026-10-07)
+# Current state (2026-10-09)
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
@@ -53,7 +53,11 @@ A summary for new sessions; everything below is the chronological record, oldest
   pass; source model/pool/runtime are unchanged, and a verified original-G-800 snapshot preserves historical evidence.
   Follow-up cost is 1,388; total new cost is 15,944. Both original frozen-protocol verdicts remain unchanged.
 
-- **Optimizer source digest:** `0b0808bcbf8a7d22254292b1ef60476743b043ecd8ad59cc9f0320954a7dbac8`, set by `40d1249`
+- **Optimizer source digest:** `ad4ddcbe99abccbad4000ada2270e4b7de6b7aecf8a503326efca80a3106649d`, set by the optimizer
+  clean-up of record 7.292 (2026-10-09, plan-refactoring group E, chosen by the user knowing that runs saved before it
+  can no longer be continued with Continue: thirteen commits, each proved to leave behaviour unchanged - the seeded MOCK
+  runs byte-identical - but the synthetic backend's `generate_netlist` taking the contract's `condition` keyword). Before
+  it: `0b0808bcbf8a7d22254292b1ef60476743b043ecd8ad59cc9f0320954a7dbac8`, set by `40d1249`
   (record 7.228, 2026-10-06: GraphGPS and parameter-group cross-attention added, authorized by the user; see
   [implementation](global-encoders.md); no real-simulator comparison or transfer-advantage claim; 7.228 alone on `5560c01`
   would hash `061768e0...`, a tree never committed). Before it:
@@ -88,7 +92,9 @@ A summary for new sessions; everything below is the chronological record, oldest
   `clipped`. New workbench configurations start with the set compared in training on 2026-10-05 (record 7.183):
   compressed violations, share 0.5, objective and margin bonus weights 1, objective shape compressed. Corner training
   (`always`, `after_nominal`) was offered for `real:gpdk045_ota7` only; no task has it since 2026-09-30 (7.128).
-- **Older checkpoints** resume exactly only under their own source: digest `4aebbfab...` (record 7.221) from `510ba0e` up to
+- **Older checkpoints** resume exactly only under their own source: digest `0b0808bc...` (records 7.228-7.290, every run
+  of the encoder comparison and everything saved from 2026-10-06 08:32 to the landing of 7.292) from `40d1249` up to the
+  commit before 7.292's first optimizer commit; digest `4aebbfab...` (record 7.221) from `510ba0e` up to
   `5560c01`, the commit before 7.226's `71f95c3` - the fine-tune comparison's runs (record 7.227, started 2026-10-06 06:58
   from a copy of `5560c01`) are saved under it; digest `f83342bc...` (record 7.149; every save
   point written before record 7.221, the eight viewing copies of 2026-10-05's Spectre runs in `outputs/` included) from

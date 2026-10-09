@@ -395,3 +395,5 @@ One row per commit, newest last.
 | `bba4486` | 10-08 23:08 | 7.284 | save points written compressed, losslessly (each zip entry byte-identical, read by torch.load as before), and `compress-save-points` for the older ones (628 compressed, 26.56 -> 8.89 GB); with the third audit's findings (session "Frontend workbench layout design") |
 | `aa132c1` | 10-08 23:15 | - | record only: names the commit of record 7.284 and its Live line, and the table rows for d4091ab and bba4486 (session "Frontend workbench layout design") |
 | `ff2a13f` | 10-09 04:00 | 7.285 | encoder comparison stage C complete: the three general models transfer alike; docs only (session "Encoder run plan revision") |
+| `4323753` | 10-09 04:00 | - | record only: names the commit of record 7.285, and the table rows for aa132c1 and ff2a13f |
+| `ae20306` | 10-09 05:32 | 7.288 | encoder comparison stage D complete: the two held-out cascodes; docs only (session "Encoder run plan revision") |

@@ -197,7 +197,7 @@ def write_skill(library, cell, plan) -> str | None:
         if not targets:
             continue
         name, form = item['instance'], item.get('form') or {}
-        init, done = form.get('init'), form.get('done')
+        init, done = form.get('init') or None, form.get('done') or None      # '' = the form has no such procedure (a second foundry PDK's CDF, 2026-10-09)
         for proc in (init, done):
             if proc is not None and not PROC.match(proc):
                 raise ValueError(f'{name}: invalid form procedure {proc!r}')
@@ -213,8 +213,9 @@ def write_skill(library, cell, plan) -> str | None:
             steps += [f'unless(cdfgData~>formInitProc == {_skill_string(init)} '
                       f'error("%s" {_skill_string(f"{name}: its form no longer starts with {init}")}))',
                       f'funcall(stringToSymbol({_skill_string(init)}) cdfgData)']
-        else:
-            steps.append(f'when(cdfgData~>formInitProc error("%s" {_skill_string(f"{name}: its form has an init procedure now")}))')
+        else:      # none: nil, or the empty string a PDK may state (a second foundry PDK: formInitProc = "", which SKILL takes as true)
+            steps.append(f'when(and(cdfgData~>formInitProc cdfgData~>formInitProc != "") '
+                         f'error("%s" {_skill_string(f"{name}: its form has an init procedure now")}))')
         # ... and its width typed again, at its own value, in a round that typed the length: only the width, finger width
         # and finger count callbacks recompute those values, so a task that writes lengths and holds the widths (the MScR
         # OTA7T, the LDO pass device) ran every candidate with the build's values (MScR session, 2026-09-30).
@@ -242,8 +243,9 @@ def write_skill(library, cell, plan) -> str | None:
             steps += [f'unless(cdfgData~>doneProc == {_skill_string(done)} '
                       f'error("%s" {_skill_string(f"{name}: its form no longer ends with {done}")}))',
                       f'funcall(stringToSymbol({_skill_string(done)}) inst)']
-        else:
-            steps.append(f'when(cdfgData~>doneProc error("%s" {_skill_string(f"{name}: its form has a done procedure now")}))')
+        else:      # none: nil or "" (as for the init procedure above)
+            steps.append(f'when(and(cdfgData~>doneProc cdfgData~>doneProc != "") '
+                         f'error("%s" {_skill_string(f"{name}: its form has a done procedure now")}))')
         steps.append('changed = t')
         pending = ' '.join(f'!{field.holds(value)}' for field, value in targets)
         lines.append(f'when(or({pending})\n      ' + '\n      '.join(steps) + ')')
@@ -323,6 +325,14 @@ class CdfWritableProfile(GenericMosWidthProfile):
                                    reference_structure=reference_structure, reference_readback=reference_readback,
                                    width_bounds=CONTRACT_BOUNDS, width_step=CONTRACT_STEP, conditions_file=conditions_file)
         self._check_group_contract()
+        self.pdk_quirks = pdk_quirks(self.design.get('pdk_library'))
+        if self.pdk_quirks.get('netlist_from_readback') is False:
+            # No netlist built from the readback for a cell of a PDK whose local quirks say so (2026-10-10, a second foundry
+            # PDK): its netlister re-spells typed transistor and MIM values (47.8050u for the form's 47.805u) and prints a
+            # changed poly resistor's length in a form this code does not reproduce (375.535000000u for 375.535u), so the
+            # comparison of record 7.142 stopped every run at its first candidate. Without render_export every candidate is
+            # exported natively, unchecked by text (the native export is the netlist simulated) - whoever starts the run.
+            self.render_export = None
 
     # ------------------------------------------------------------------ rules <-> mapping
     def _write(self, key):
@@ -481,6 +491,21 @@ class CdfWritableProfile(GenericMosWidthProfile):
                     raise ValueError(f'Exported parameter mismatch: {device}.{key}')
         return read
 
+    def netlister_spelling(self, instance, cdf, text):
+        """What the netlister prints for the form's text of a DERIVED (callback-computed) value. GPDK045's netlister prints
+        the text as it is. Another netlister (a second foundry PDK's; its local quirks state `derived_value_spelling:
+        "significant_digits"`) re-spells an SI-suffixed number with as many decimals
+        as the text has significant digits minus one, which appends a zero for every integer digit beyond the first:
+        ps=10.960u for the form's 10.96u, 20.74420u for 20.7442u; one-digit mantissas, exponent forms and typed values come
+        out as written. Read off the exports of the four agenticsizing cells on 2026-10-09 (114 derived values, every one)."""
+        if self.pdk_quirks.get('derived_value_spelling') != 'significant_digits' or (instance, cdf) not in self._derived_slots:
+            return text
+        return significant_digit_spelling(text)
+
+    @property
+    def _derived_slots(self):
+        return {(instance, cdf) for (_, _), (instance, cdf) in self.derived.items()}
+
     def render_export(self, template, snapshot):
         """The export `snapshot` would give, built without Virtuoso from `template`, an export of this cell (record 7.140).
         The values a run changes - the written parameters and those the PDK callbacks derive - are the form's own text in
@@ -508,11 +533,44 @@ class CdfWritableProfile(GenericMosWidthProfile):
                     text = actual[name]['params'].get(cdf) if cdf else None
                     if text is None:
                         return match.group(0)
+                    text = self.netlister_spelling(name, cdf, text)
                     return f'{key}=({text})' if value.startswith('(') else f'{key}={text}'
                 line = re.sub(r'\b(\w+)=(\([^)]*\)|[^\s\\()]+)', put, line)
             continued = line.rstrip().endswith('\\')
             out.append(line)
         return ''.join(out)
+
+
+_SI_TEXT = re.compile(r'^([-+]?)(\d+)(?:\.(\d+))?([TGMKkmunpfa])$')
+
+
+PDK_QUIRKS_FILE = 'quirks.json'
+
+
+def pdk_quirks(technology_library) -> dict:
+    """What a run has to know about one PDK that neither its CDF nor its loaded record says, from the PDK's own folder in
+    the local settings (`pdks/<technology library>/quirks.json`: git-ignored, never in the repository); {} when the PDK has
+    none. `netlist_from_readback: false` - no netlist is built from the readback, every candidate is exported natively;
+    `derived_value_spelling: "significant_digits"` - how its netlister prints a callback-computed value. Without the file
+    a cell of such a PDK stops at its first candidate on the netlist comparison: loudly, never with a wrong netlist."""
+    from .pdk_record import PdkError, pdk_dir                # the PDK store knows nothing of the writer
+    try:
+        data = read_json_quiet(pdk_dir(technology_library) / PDK_QUIRKS_FILE, None)
+    except PdkError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def significant_digit_spelling(text) -> str:
+    """One netlister's spelling of a derived value's SI-suffixed text (see CdfWritableProfile.netlister_spelling):
+    decimals = significant digits - 1. Anything else (exponent forms, plain decimals, expressions) is returned as it is."""
+    match = _SI_TEXT.match(str(text).strip())
+    if not match:
+        return text
+    sign, whole, frac, suffix = match.groups()
+    digits = (whole + (frac or '')).lstrip('0').rstrip('0')
+    decimals = max(len(digits) - 1, 0)
+    return f'{sign}{float(whole + "." + (frac or "0")):.{decimals}f}{suffix}'
 
 
 class CdfRingOscillatorProfile(GenericRingOscillatorProfile, CdfWritableProfile):

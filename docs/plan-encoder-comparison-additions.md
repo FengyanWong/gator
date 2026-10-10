@@ -6,7 +6,7 @@ Three additions to [plan-encoder-comparison.md](plan-encoder-comparison.md) (rec
 | Part | What | Status |
 |---|---|---|
 | 1 | ~~The GCN arm~~ - **not part of the plan** (user, 18:5x: "dont add rgcns to the plan"); the arm was prepared and stopped before its first run (18:36); its library, six tasks, configurations and chain script stay as tooling, unused |
-| 1b | The four AgenticSizing circuits (arXiv 2609.25873) as new tasks, the paper's specs unchanged, then the previous stages' runs on them | **proposed; blocked on source material and two decisions** (section 1b) |
+| 1b | The four AgenticSizing circuits (arXiv 2609.25873) as new tasks, the paper's specs unchanged, then the previous stages' runs on them | **built on the VM in a second foundry's 0.18 um PDK (22:00 on 2026-10-09); three tasks registering, the reference waits for a backend restart; 12 stage-A runs queued** (section 1b) |
 | 2 | Stage R: reward steering by the Objective row, under each trained network | **proposed**; starts only on the user's word |
 | 3 | Browse folders for the Tasks, Runs and RL-model windows, by stage | **done** (`categorize.py`) |
 
@@ -52,10 +52,78 @@ study's reading becomes "attention is not what these circuits reward".
 **Cost.** 22 runs = 17,600 launches + 6 baselines. Time at the VM's restored P-core speed: A about 2.7 h (12 + 30 + 15 + 43 + 12 +
 47 min), offline training about 1 h, C about 5.3 h, D about 1.2 h: about 10 h, so done around 05:00 on 2026-10-10 if nothing waits.
 
-## 1b. The AgenticSizing circuits (proposed)
+## 1b. The AgenticSizing circuits (built 2026-10-09; registration and runs under way)
 
 **User (18:5x on 2026-10-09):** "add the four agentic sizing circuits and queue the runs of the previous stages without spec change
-... add to the tasks and give a folder called agenticsizing".
+... add to the tasks and give a folder called agenticsizing"; then (20:xx) "install gf180 on the vm and build the circuits from the
+cited papers. we are going to use spectre not the ngspice" -> the VM already holds a Cadence-native 0.18 um PDK of a second foundry (its name is kept out of the repository;
+3.3 V and 1.8 V devices, Spectre models), GF180MCU has neither Spectre models nor a Virtuoso device library: the user chose it;
+"put these new circuits in agentic sizing library on vm" -> library `agenticsizing` (/home/minlei/agenticsizing). At 21:2x the user
+set the rule for this work: "the spec should only be run by the RL loop" - a build is a functional start point with the paper's spec
+table unchanged; sizes are not iterated toward the rows (the amplifier's tuning to 11/11 and the reference's TC variants, done before
+that word, went beyond it and are recorded as such).
+
+### What was built (the decisions of section 1b below are taken; the original proposal follows for the record)
+
+| Cell / bench | From | Transistors, variables | Start point (one Spectre check per bench: converges, loops stable, probes compute) | Rows the start passes |
+|---|---|---|---|---|
+| `asz_fc` / `tb_fc` | Budak 2022 test case 1 (fully differential two-stage folded cascode, bias block, CMFB) | 28, 32 | 103.1 dB, UGB 51.5 MHz, PM 63 deg, CMPM 43.7 deg (Spectre's own stb margin, closed loop), PSRR 134 dB, CMRR 148 dB, swing 2.37 V, 0.90 mW, 289 uV, 8.1 ns, 0.0014 % | 9 of 11 (CMPM 43.7 < 50 deg, swing 2.37 < 2.4 V) |
+| `asz_ldo` / `tb_ldo` | Leung and Mok 2003 (capacitor-free LDO, damping-factor control), 1.8 V devices | 13, 25 | Vout 1.201 V, load reg 0.8 mV/A, 80.5 uW, line reg 1.3e-4, PSRR 77.6 dB; loop PM 27 deg | 5 of 5 |
+| `asz_bgr` / `tb_bgr` | Ueno 2009 (subthreshold voltage reference), 3.3 V devices | 20, 19 | Vref 0.883 V, TC 27.3 ppm/C, PSR -66.8 dB at 100 Hz, 0.91 uW | 3 of 4 (TC 27 > 25) |
+| `asz_sys` / `tb_sys` | the paper's "LDO + bandgap + amplifier": the two cells above flattened (A_*, R_*) + an NMOS source-follower pass device, divider, CF, CN1 | 49, 57 | Vout 1.214 V, TC 27.4 ppm/C, 480 uW, line reg 5e-4, PSRR 49.3 dB, load reg 0.115 V/A (40 mA step), loop PM 77 deg | 5 of 6 (PSRR 49.3 < 50 dB) |
+
+**Deviations from the cited designs, all recorded in the cells' module (`~/mscr_circuits/agentic.py`):** the amplifier has 28
+transistors (the paper counts 29) with a PMOS-pair / NMOS-diode CMFB and nulling resistors in the Miller paths; its "Slew (V) <= -0.3"
+row is Budak's "static error <= 0.1 %"; its bench holds ONE copy in the unity-gain inverting loop (the workbench takes one instance
+of the cell per testbench), so the open-loop gain is measured between the amplifier's own terminals, PSRR/CMRR come from an xf
+analysis, and the CM phase margin is that of the closed-loop configuration (43.7 deg by Spectre's own stb margin). The LDO has 13
+transistors (not 20) and its Cm1 sits across the pass stage: from the first-stage output, as first drawn, the loop had 3 deg of phase
+margin. The reference has 20 transistors (not 25), a 1 MOhm poly resistor instead of the paper's MOS resistor (a second, high-current
+equilibrium), a permanent diode-chain start-up, a nodeset model file (`models/bgr_nodeset.scs`) and a temperature sweep run downwards
+from 80 C (started cold it sat in a latched state); its TC row is a plain number in ppm/C (the workbench has no ppm unit). The system
+has 49 transistors (not 55) and an NMOS source follower as pass device: with a PMOS common-source pass device the loop had three
+inverting stages, 132 dB of loop gain and the 100 pF output pole below its unity-gain frequency (PM -19 deg, oscillating); the
+follower adds neither gain nor inversion. Its load regulation comes from a 40 mA load step in the transient (Maestro runs one dc
+analysis per test, and the system's is the temperature sweep).
+
+**Workbench facts that surfaced, and what was done about them:**
+
+1. A test takes ONE model include with ONE section; the PDK splits MOS, MIM and resistor models into sections. A wrapper
+   a wrapper model file in the library's own folder on the VM (`models/`) gathers them per corner (tt, ss, ff, fs, sf, mc), as the PDK's own model file nests
+   includes in sections.
+2. A real run includes the CONNECTION's model file. A second connection profile `asz` (same bridge, same Virtuoso session as `lab`,
+   model file = the wrapper, library agenticsizing) was added to `bridge_connection.json` (backup `.before-20261009T195804Z-asz`;
+   `lab` stays the active connection). The agentic tasks are saved and run through `asz`; on the page, choose connection `asz`
+   for them. The PDK was loaded through it: 78 components, no problems (the import's own PDK read through `lab` had
+   overwritten the record with gpdk045's model files).
+3. The nominal PVT condition is the gpdk045 file's 1.0 V and must equal the testbench supply; benches with several DC sources were
+   recording supply_v 1 through a fallback (so do today's MScR OTA/LDO tasks, whose benches run at 1.8 V). The single-source
+   reference bench at 3.3 V was refused. Change in `src/gator_workbench` (profile_generate, saved_tasks, profile_store; 74 tests
+   pass, 3 new in `test_wb_pdk_conditions.py`): a PDK may ship a RELATIVE conditions template (the PDK's `conditions_template.json` in its folder of the git-ignored local settings,
+   supplies as multiples of the testbench supply); Save task then writes the task's own `conditions.json` scaled to its supply and
+   names the largest ground-referenced DC source as the supply; `load_profile` uses that file when present, else the gpdk045 file
+   as before. Live since 8765's restart at 22:09 (done by the session of record 7.294).
+4. The Probes schema knows no `xf` analysis: the PSRR and CMRR probes are declared `ac` and name the xf result in their expression
+   (`getData("/VDD_SRC" ?result "xf")`); the Maestro test runs the xf analysis.
+5. A source whose value is a bare design variable is a Maestro binding and must be declared in the task (`bindings`: VDS.vdc = vd
+   in tb_fc, IL.idc = il in tb_ldo and tb_sys); the optimizer binds ONE parameter name per group, so the square capacitors vary in
+   width only (no `:l` followers; the lengths stay at their start values).
+6. This PDK's CDF has no form init/done procedures; the form writer recorded them as empty strings and refused them ("invalid form
+   procedure ''") on the first baseline: `cdf_write.write_skill` now reads an empty procedure as none (one line; the per-parameter
+   callbacks `<library>_<cell>_CB('w)` are the PDK's own text and run as before).
+7. This PDK's netlister appends a zero to two-digit mantissas of the derived perimeters (`ps=10.960u` for the form's `10.96u`), which
+   the built-netlist comparison of record 7.142 read as a difference. The rule (decimals = significant digits - 1, read off all
+   114 derived values of the four exports) is reproduced for this PDK's cells by `cdf_write.significant_digit_spelling`; the agentic
+   runs also export every candidate natively (`GATOR_NETLIST_BUILD=native` in `stage_asz.sh`).
+
+**Runs ("the runs of the previous stages"):** `stage_asz.sh` in the review folder, two phases: once `agentic_fc`, `agentic_ldo`
+and `agentic_sys` have baselines, `make_configs_asz.py` writes their 9 configurations (GT, GraphGPS and cross-attention from
+scratch, the study's A-run settings: page starting reward, 800 launches, 4 lanes, seed 0, the encoder's starting preset, connection
+`asz`, the paper's specs) and `queue_cd.sh` runs them on the live tree; the reference's 3 follow once it is registered. The
+general-model arms (C, D) do not apply: the general models read goals through the pinned 41-slot spec registry, and each agentic task has specs outside it (fc 5 of 11, ldo 2 of 5, sys 3 of 6, bgr 3 of 4), so the spec input layer differs and the checkpoint check refuses the load; the paper's spec table stays unchanged. Both use the standard component list. On the user's decision of 2026-10-10 GT + GraphGPS only: 8 stage-A runs, not
+the 24 estimated below. Runs `agentic-<circuit>-<gt|gps|xat>` land in the `agenticsizing` folder (`categorize.py`).
+
+### The proposal as written at 18:40 (kept for the record)
 
 **The circuits** (AgenticSizing, arXiv 2609.25873, Hao et al., Edinburgh; counts from its Table III, specs from Tables V-VIII, the
 paper's units):
@@ -69,7 +137,7 @@ paper's units):
 
 **What exists, and what does not.** Nothing of these circuits exists in this project (no cell, netlist or task). The paper's code
 repository (github.com/aprilaihub/agentic-analog-sizing, Apache 2.0) holds the agent framework and one 5T-OTA case; it names no
-PDK, distributes no technology data, and has no netlist, schematic or spec file for the four circuits. The paper names Cadence Spectre
+PDK, distributes no technology data, and has no netlist, schematic or spec file for the four circuits [WRONG, found 2026-10-10: `input/tagging/` holds their netlists and `input/kb/*_settings.json` the size ranges; record 7.299's correction]. The paper names Cadence Spectre
 but neither the technology node nor the supply. So "add to the tasks" means building four circuits (one of 55 transistors) in
 Virtuoso by hand from the cited papers, with testbenches, probes and the paper's spec rows, as the MScR library was built - days
 of work, not a queue action - unless the netlists can be obtained from the authors (the same university).

@@ -20,7 +20,7 @@ NAME = re.compile(TASK_NAME)
 FORMAT = 'gator-generated-profile-1'
 FILES = dict(design='design.json', mapping='mapping.json', structure='structure.scs', readback='readback.cdf.json',
              rules='rules.json', receipt='creation.json', entry='profile.json', reference='reference_measurements.json',
-             maestro_deck='maestro_deck.json')
+             maestro_deck='maestro_deck.json', conditions='conditions.json')      # conditions: only tasks of a PDK with a relative template (2026-10-09)
 
 
 class ProfileError(ValueError):

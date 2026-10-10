@@ -30,9 +30,10 @@ from dataclasses import asdict
 import json
 import math
 from pathlib import Path
+import re
 import shutil
 
-from . import cdf_facts, cdf_rules, native_cells, recipes, units
+from . import cdf_facts, cdf_rules, native_cells, pdk_record, recipes, units
 from .circuit_types import (MAESTRO, NEEDS_FREQUENCY, NeedsFrequency, OPAMP_NETS, RECIPES, core_instance, opamp_fit,
                             ring_stages, supply_of)
 from .compile import CompileError, build_graph
@@ -142,8 +143,71 @@ def _form_facts(imported):
     return facts
 
 
+CONDITIONS_TEMPLATE_FILE = 'conditions_template.json'      # in a PDK's folder of the local settings
+
+
 def _nominal_supply() -> float:
     return float(json.loads((repo_root() / 'configs' / 'gpdk045_conditions.json').read_text())['nominal']['supply_v'])
+
+
+def conditions_template(technology_library):
+    """The PVT conditions template of a PDK whose supplies are stated RELATIVE to the testbench supply ("supply_scale":
+    true): the PDK's own `conditions_template.json` in the local settings (pdks/<technology library>/: git-ignored, never
+    in the repository), else configs/<technology library>_conditions.json; or None: gpdk045 keeps its verified absolute
+    file and nothing changes for its tasks (2026-10-09, circuits at 3.3 V and 1.8 V on one second foundry PDK)."""
+    if not technology_library or not re.fullmatch(r'[A-Za-z0-9_]+', str(technology_library)):
+        return None
+    try:
+        local = pdk_record.pdk_dir(str(technology_library)) / CONDITIONS_TEMPLATE_FILE
+    except pdk_record.PdkError:
+        return None
+    for path in (local, repo_root() / 'configs' / f'{technology_library}_conditions.json'):
+        if path.is_file():
+            data = json.loads(path.read_text())
+            return data if data.get('supply_scale') is True else None
+    return None
+
+
+def scaled_conditions_for(technology_library, supply_v):
+    """A task's own conditions: the PDK template with every supply multiplied by the testbench supply (nominal = the
+    testbench's), or None when the PDK has no relative template."""
+    template = conditions_template(technology_library)
+    if template is None:
+        return None
+    supply = float(supply_v)
+    if not math.isfinite(supply) or supply <= 0:
+        raise ProfileError(f'The testbench supply must be a positive number to scale the {technology_library} conditions; got {supply_v!r}')
+
+    def scaled(corner):
+        return dict(corner, supply_v=round(float(corner['supply_v']) * supply, 9))
+    policy = dict(template['model_policy'],
+                  screening_supply_v_bounds=[round(float(b) * supply, 9) for b in template['model_policy']['screening_supply_v_bounds']])
+    out = {k: v for k, v in template.items() if k not in ('supply_scale', 'note')}
+    out.update(nominal=scaled(template['nominal']), screening_corners=[scaled(c) for c in template['screening_corners']], model_policy=policy,
+               scaled_from=dict(template=f'configs/{technology_library}_conditions.json', testbench_supply_v=supply))
+    return out
+
+
+def largest_supply(graph):
+    """(source name, supply net, dc) of the testbench's supply when the bench has several DC voltage sources: the one with
+    the largest dc value, its minus terminal on ground; refused in words when none, or when two share the largest value."""
+    roles = {}
+    for c in graph.connections:
+        roles.setdefault(c.device_id, {})[c.role] = c.net_id
+    found = []
+    for d in graph.devices:
+        if d.kind != 'vsource' or '/' in d.id:
+            continue
+        dc = graph.parameters[d.id].get('dc')
+        if dc is not None and dc.valid and roles.get(d.id, {}).get('negative') == '0' and dc.value > 0:
+            found.append((dc.value, d.id, roles[d.id]['positive'], dc))
+    if not found:
+        raise ProfileError('No DC voltage source with its minus terminal on ground: the testbench needs its supply as one')
+    found.sort(key=lambda item: -item[0])
+    if len(found) > 1 and math.isclose(found[0][0], found[1][0], rel_tol=1e-9):
+        raise ProfileError(f'Two DC voltage sources share the largest value ({found[0][1]}, {found[1][1]}): which one is the supply?')
+    _, name, net, dc = found[0]
+    return name, net, dc
 
 
 def write_profile_files(name, config, *, recipe, imported, staging, expected_frequency_hz=None, entry_extra=None) -> dict:
@@ -204,9 +268,14 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
             source, supply_net, dc = supply_of(graph)
             design.update(supply_v=format(dc.value, '.12g'), supply_source=source, supply_net=supply_net)
             net_roles = {supply_net: ['supply']}
-        except ProfileError:                           # more than one source: the verified nominal supply, no role guessed
-            design.update(supply_v=format(_nominal_supply(), '.12g'))
-            net_roles = {}
+        except ProfileError:                           # more than one source: the verified nominal supply, no role guessed...
+            if conditions_template(imported.get('technology_library')) is not None:     # ...unless the PDK scales its conditions to the supply
+                source, supply_net, dc = largest_supply(graph)
+                design.update(supply_v=format(dc.value, '.12g'), supply_source=source, supply_net=supply_net)
+                net_roles = {supply_net: ['supply']}
+            else:
+                design.update(supply_v=format(_nominal_supply(), '.12g'))
+                net_roles = {}
     else:
         opamp_fit(graph, core)
         design.update(supply_v=format(graph.parameters['VDD']['dc'].value, '.12g'))
@@ -225,6 +294,9 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
     write_json(staging / FILES['mapping'], mapping)
     write_json(staging / FILES['design'], design)
     write_json(staging / FILES['readback'], reference)
+    conditions = scaled_conditions_for(imported.get('technology_library'), design['supply_v'])
+    if conditions is not None:                        # the task's own PVT conditions: a PDK with a relative template
+        write_json(staging / FILES['conditions'], conditions)
     if specs is None:
         write_json(staging / FILES['rules'], dict(
             format=RULES_FORMAT, recipe=recipe, core_instance=core, width_step=VERIFIED_WIDTH_STEP, mos_instances=mos,

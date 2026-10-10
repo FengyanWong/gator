@@ -286,9 +286,15 @@ def test_the_form_must_still_have_the_procedures_the_task_recorded():
     field = cdf_write.Field('C1', 'w', 'string', True, None)
     skill = cdf_write.write_skill('LIB', 'cell', [dict(instance='C1', form=dict(init='PasCdfFormInit', done=None),
                                                        targets=[(field, 3e-6)])])
-    assert 'when(cdfgData~>doneProc error("%s" "C1: its form has a done procedure now"))' in skill
+    assert ('when(and(cdfgData~>doneProc cdfgData~>doneProc != "") '
+            'error("%s" "C1: its form has a done procedure now"))') in skill
     bare = cdf_write.write_skill('LIB', 'cell', [dict(instance='C1', form={}, targets=[(field, 3e-6)])])
-    assert 'when(cdfgData~>formInitProc error("%s" "C1: its form has an init procedure now"))' in bare
+    assert ('when(and(cdfgData~>formInitProc cdfgData~>formInitProc != "") '
+            'error("%s" "C1: its form has an init procedure now"))') in bare
+    # A PDK that states its procedures as empty strings (a second foundry PDK, 2026-10-09: formInitProc = "", which SKILL takes as
+    # true) has none: the form facts record '', the script is the bare one, and its guard lets "" through.
+    empty = cdf_write.write_skill('LIB', 'cell', [dict(instance='C1', form=dict(init='', done=''), targets=[(field, 3e-6)])])
+    assert empty == bare
 
 
 def test_a_rules_file_whose_step_left_the_pdk_grid_does_not_load(tmp_path):
@@ -425,3 +431,25 @@ def test_a_form_writer_task_saved_before_keeps_matching_its_rows_and_its_top_val
     top = ActionMapper(graph).legalize({g.id: 1.0 for g in graph.parameter_groups if g.mutable}).assignments
     profile.validate_assignment(top)
     assert {v for (device, name), v in top.items() if device.startswith('XU1/C') and name == 'w'} == {5.600000000000001e-06}
+
+
+def test_a_cell_of_a_pdk_whose_quirks_say_so_gets_no_netlist_built_from_its_readback(tmp_path):
+    """2026-10-10: one netlister re-spells typed values and prints changed poly-resistor lengths in a form the renderer does
+    not reproduce. Such a PDK says so in its own folder of the local settings (quirks.json, never in the repository), and a
+    profile on it offers no render_export: every candidate is exported natively. The PDK here is invented."""
+    from gator_workbench import pdk_record
+    made = make(tmp_path)
+    assert callable(profiles.load_profile('ring_cdf').render_export) and profiles.load_profile('ring_cdf').pdk_quirks == {}
+    design = Path(made['directory']) / 'design.json'
+    data = json.loads(design.read_text())
+    design.write_text(json.dumps(dict(data, pdk_library='foundry180')))
+    assert callable(profiles.load_profile('ring_cdf').render_export)          # the name alone decides nothing
+    folder = pdk_record.pdk_dir('foundry180')
+    folder.mkdir(parents=True)
+    (folder / cdf_write.PDK_QUIRKS_FILE).write_text(json.dumps(dict(derived_value_spelling='significant_digits')))
+    spelled = profiles.load_profile('ring_cdf')
+    assert callable(spelled.render_export) and spelled.pdk_quirks == dict(derived_value_spelling='significant_digits')
+    (folder / cdf_write.PDK_QUIRKS_FILE).write_text(json.dumps(dict(netlist_from_readback=False)))
+    assert profiles.load_profile('ring_cdf').render_export is None
+    (folder / cdf_write.PDK_QUIRKS_FILE).write_text('not json')
+    assert callable(profiles.load_profile('ring_cdf').render_export)          # unreadable = none: the comparison then speaks

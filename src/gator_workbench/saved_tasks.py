@@ -62,7 +62,15 @@ def load_profile(name):
     return classes[entry['recipe']](
         rules_file=directory / FILES['rules'], design_file=directory / FILES['design'], mapping_file=directory / FILES['mapping'],
         reference_structure=directory / FILES['structure'], reference_readback=directory / FILES['readback'],
-        conditions_file=repo_root() / 'configs' / 'gpdk045_conditions.json')
+        conditions_file=conditions_file_for(directory))
+
+
+def conditions_file_for(directory) -> Path:
+    """The PVT conditions a saved task runs under: its own conditions.json when Save task wrote one (a task of a PDK whose
+    template states supplies relative to the testbench supply, 2026-10-09: circuits at 3.3 V and 1.8 V on one PDK), else the
+    verified gpdk045 file, as for every task before."""
+    own = Path(directory) / FILES['conditions']
+    return own if own.is_file() else repo_root() / 'configs' / 'gpdk045_conditions.json'
 
 
 def _refuse_recorded_group_values(name, mapping_file):

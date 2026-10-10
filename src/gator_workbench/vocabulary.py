@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from . import families
 from .pdk_record import PdkError, STANDARD, VOCABULARY_FORMAT, label, load_record, standard_schema
 from .storage.atomic import read_json, write_json
 
@@ -121,10 +122,13 @@ def requested(config) -> str:
     return getattr(getattr(config.run, 'network', None), 'vocabulary', STANDARD) or STANDARD
 
 
-def current_vocabulary(name) -> Vocabulary | None:
-    """`standard` -> None; `pdk:<id>` -> the currently loaded version of that PDK (PdkError when it is not loaded)."""
+def current_vocabulary(name, pdk_id=None) -> Vocabulary | None:
+    """`standard` -> None; `pdk:<id>` -> the currently loaded version of that PDK (PdkError when it is not loaded);
+    `families` -> the device-family list, mapped from the loaded record of `pdk_id` (the task's PDK) when there is one."""
     if name in (None, '', STANDARD):
         return None
+    if name == families.NAME:
+        return families.FamilyList(families.block_for(pdk_id))
     if not name.startswith('pdk:'):
         raise PdkError(f'Unknown component list {name!r}')
     record = load_record(name[4:])
@@ -138,6 +142,8 @@ def run_vocabulary(run_dir) -> Vocabulary | None:
     block = read_json(Path(run_dir) / RUN_FILE, default=None)
     if block is None:
         return None
+    if isinstance(block, dict) and block.get('format') == families.FORMAT:      # the family list (record 7.298)
+        return families.FamilyList(block)
     return Vocabulary(block)
 
 
@@ -147,12 +153,17 @@ def write_run_vocabulary(run_dir, vocabulary):
 
 
 def schema_label(feature_schema) -> str:
-    """A saved model's component list in words, from the feature schema its contract records."""
-    version = (feature_schema or {}).get('version', '')
+    """A saved model's component list in words, from the feature schema its contract records, with the transferable
+    inputs of record 7.298 its version names after a "+" (sizes relative to the PDK, device model features)."""
+    version, _, inputs = (feature_schema or {}).get('version', '').partition('+')
+    extra = ''.join(f', {words}' for words in (('sizes relative to the PDK',) if 'pdk-relative-sizes' in inputs else ())
+                    + (('device model features',) if 'device-model-features' in inputs else ()))
+    if version == families.VERSION:
+        return f'device families ({len(families.KINDS) - 1} kinds)' + extra
     if version.startswith('pdk-'):
         kinds = len((feature_schema or {}).get('device_kinds') or ()) - len(standard_schema().device_kinds)
-        return f"PDK {version[4:].rsplit('-', 1)[0]} ({kinds} components, version {version.rsplit('-', 1)[-1][:8]})"
-    return 'standard (8 generic kinds)'
+        return f"PDK {version[4:].rsplit('-', 1)[0]} ({kinds} components, version {version.rsplit('-', 1)[-1][:8]}){extra}"
+    return 'standard (8 generic kinds)' + extra
 
 
 def run_vocabulary_facts(run_dir) -> dict:
@@ -161,4 +172,4 @@ def run_vocabulary_facts(run_dir) -> dict:
     own = run_vocabulary(run_dir)
     return dict(name=own.name if own else STANDARD, label=own.label if own else label(None),
                 pdk_id=own.pdk_id if own else None, sha256=own.sha256 if own else None,
-                loaded=bool(own is None or load_record(own.pdk_id) is not None))
+                loaded=bool(own is None or own.name == families.NAME or load_record(own.pdk_id) is not None))

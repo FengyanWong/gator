@@ -2134,6 +2134,9 @@ they were.
 
 ### Run configuration and the RL model window (2026-10-02, record 7.150; renewed 2026-10-07, record 7.265)
 
+Record 7.298 added one choice above "Nominal device operating points" (the Advanced fold stays directly below that box): **Network inputs** Standard / Transferable (the
+section "Transferable network inputs" below).
+
 Since record 7.228, the templates also offer **GraphGPS — port-aware** and
 **Parameter-group attention — experimental**. Both have per-encoder structural
 input settings (`none` / random-walk returns at 2, 4, 8, 16 steps), preserved in
@@ -2495,6 +2498,137 @@ them too (since 2026-09-22): pins as the PDK itself states them.
 
 Tests: `tests/workbench/test_wb_pdk.py` (invented `demo045` PDK in `tests/workbench/fixtures/pdk_demo/`). Browser check:
 `frontend/scripts/pdk_check.mjs` (hermetic, fixtures only, safe against the live backend).
+
+### Transferable network inputs: any spec list, any PDK (added 2026-10-10, record 7.298)
+
+**In plain words.** Until now the network read the specs through a fixed registry - one place per spec name, so a model
+loaded only on a task with the same names - and transistor sizes in micrometres, so what it learned about sizes belonged
+to one PDK. **Network inputs: Transferable** (RL model window, New model, above "Nominal device operating points") changes
+three things together (`run.network.spec_input` = `set`, `size_features` = `pdk_relative`, `device_model_features` =
+true; a configuration file may set them one by one, and the window then shows "Custom"):
+
+1. **Specs as a set.** Every active spec is one item, described by what it measures - its unit; its analysis; the
+   signals its probe reads (node voltages, a source's current, the stb loop gain, an xf transfer, noise); how the probe
+   reduces them (a value at a point, a crossing, a phase margin, an extreme, a window, an integral, a waveform measure; a
+   magnitude, decibels, a root); whether it is a ratio, a difference of two nodes, negated, scaled or offset; WHERE it is
+   read - the point (`value(x f)`) or the window (`clip`, `integ`) in frequency or time, as its position (log10 of the point
+   or of the window's centre) and its span (log10 of the window's stop over its start), so PSRR read up to 10 kHz and
+   above 1 MHz, two noise bands, or the members of a series (the first probe an equation names sets its place) differ;
+   whether it comes from the supply or from another source - and by where it stands: its distance to its
+   limits in its own scale (the reward's own measure, so a pass and a miss lie clearly apart), the reward's violation,
+   pass flags at nominal and at the worst corner, its weight, and its value and limits against a reference per unit. No
+   item carries the spec's name. One shared network reads every item and the run's own numbers attend over them, so a
+   model reads any spec list and loads on any task built with the same inputs.
+2. **Sizes relative to the PDK.** Each MOS width and length is divided by its model's minimum - the smallest bin of the
+   PDK's nominal model section (`lmin` / `wmin`), else the cell's CDF default size - so a minimum-length transistor
+   reads the same in gpdk045 and in a second foundry's 0.18 um PDK. Other devices keep micrometres.
+3. **Device model features.** Four numbers more per MOS device: threshold voltage `vth0`, mobility `u0`, saturation
+   velocity `vsat` and oxide thickness `toxe` / `tox` of its model at that smallest bin. They teach the network something
+   only once it trains on more than one PDK.
+
+Operating points keep their own switch; a Maestro task now reads them for such a run (last paragraph).
+
+**What does not change.** The reward, the actions, the environment, the replay and every recorded table: everything happens
+at the network's input (`network_inputs.NetworkView`, applied in the learner's `batch`, as the PDK component list's view
+is), and a viewed state is kept by the replay's own digest, so a learner step views each distinct state once. A
+configuration without these settings is what it was: the three are dropped from its hash at their defaults, and its
+learner, contract and model are the same.
+
+**Where the descriptions and numbers come from - by rule, nothing guessed from a name.**
+- The probes a spec's equation uses; each probe's OCEAN expression parsed into a small tree (`spec_descriptors.py`). An
+  expression it cannot read leaves its columns at 0; a built-in analyzer's probe is described by its analysis only.
+- The testbench netlist the task was saved with (`structure.scs`): the supply is the source `design.json` declares, else
+  the largest ground-referenced DC voltage source (Save task's rule); the AC stimulus is wherever `mag=` is set.
+- The PDK's Spectre model library, read from the copy "Load PDK" keeps (`pdk-model-files/`), never from the simulator
+  host (`device_models.py`): `library` / `section` / `include ... section=` / `parameters` (also "+" lines) / `model` cards
+  and brace bins / `inline subckt` wrappers, in the nominal section `tt`; expressions evaluated with the section's
+  parameters, Spectre's `temp` (27 C) and a subckt's implicit `m` (1) by a small arithmetic evaluator - no code is run.
+  The numbers are kept beside the record (`pdks/<id>/device_models.json`) and read again when the PDK is loaded again;
+  no route returns them and no message shows them (CLAUDE.md: PDK models are never shown).
+- Read on 2026-10-10 (counts only): gpdk045 14 of 14 MOS models, all four numbers for its 10 transistor models (its 4 MOS
+  capacitors: sizes only); a second foundry's 0.18 um PDK (its name is kept out of the repository) 13 of 25 (its 12 RF models lie outside the nominal section the task's wrapper
+  includes). Every model a saved task uses - GPDK045's `g45n1svt`, `g45p1svt`, `g45n2svt`, `g45p2svt` and the second PDK's four transistor models - has
+  all four numbers and its minimum size from its bins.
+
+**Checks.** With the spec set, each Specs row's Issues cell says what the network reads ("The network reads cmrr_db as:
+dB; ac analysis; reads node voltages, an xf transfer; from another source; a difference of two nodes; a ratio; offset by a
+constant; as value at a point, in decibels; at 10 Hz"), and a line under the table says how the set works. Blocked:
+sizes or device features with the task's PDK not loaded (`pdk_numbers_unavailable`), relative sizes when a MOS model of
+the circuit has no minimum size (`pdk_sizes_missing`), device features when none of its MOS models has the numbers (a
+warning under Parameters when only some lack them: those inputs are then missing on those devices), and rehearsal with
+these inputs (`rehearsal_with_transfer_inputs`: its pools hold other tasks' states, which would need their own view).
+An exact resume refuses a change of these settings, and a run whose task descriptions or PDK numbers changed since it
+started (`network_inputs_changed`): Fine-tune from its model.
+
+**A run's own record**, `network_inputs.json` in its folder: the settings, the spec descriptions, the PDK and its record's
+checksum and the view's key - never the device numbers.
+
+**Saved models.** The contract records the spec set (`spec_schema.layout` = `spec-set-v1`, its description columns and
+unit table), and the feature schema's version names the inputs (`+pdk-relative-sizes-v1`, `+device-model-features-v1`):
+such a model loads on any task and any PDK with the same inputs, and nowhere else (the compatibility list says which
+part differs). The RL model window's model facts gain a "Network inputs" row; Fine-tune and Evaluate only take the inputs
+with the saved model. The circuit graph view shows the network its view and draws the circuit as recorded: its sizes as
+simulated, never a PDK number.
+
+**Operating points of Maestro tasks.** A Maestro-measured task gave none until now. For a run whose network reads them,
+every evaluation reads them from the run's own downloaded results, without Virtuoso: Spectre's binary PSF info result
+`dcOpInfo.info` (the DC equilibrium), else `finalTimeOP.info` (the end of the transient), with a reader of the binary
+format (`psf_binary.py`; results without a sweep only, anything else refused). None of the saved tasks' Maestro tests
+saves the DC one (six save only the end-of-transient point, six none at all), so for such a run GATOR adds it to the
+deck (`deck_ops.with_dc_operating_point`: Maestro's own `dcOp dc` + `dcOpInfo info what=oppoint where=rawfile`, the info
+right after its solve): one short DC solve more per evaluation, every other analysis and output as the test has it; the
+run's analysis settings say so, and validation tells it on the Parameters tab (`dc_operating_point_added`).
+
+**Offline pretraining** takes `inputs` in its request (`spec_input`, `size_features`, `device_model_features`; no
+operating points - no archive holds them): every source archive is read through its own view, its own specs described
+and its own PDK's numbers, and the model trains with those inputs. The qualification's specialist comparison is not
+offered for such a pool yet (it would need the pool as the specialists saw it).
+
+**The optimizer package changed for this** (user: "build all this"): `models/inputs.py` gained the spec set input
+(`SpecSetSchema`, `spec_set_features`, `GraphBatch.spec_items` / `spec_batch`) and `models/encoders.py` its reader
+(`SpecSetReader`: one shared network per item, attention with the run's row as the query, then the run row, that
+attention and the items' mean into the context every encoder already took). The slot input is unchanged in behaviour;
+the source digest moved from `ad4ddcbe...` to `94e7dd4f...` (with record 7.299's change of the same day; this one alone gives `8f100145...`), so every model saved before still fine-tunes and
+evaluates, and an exact resume of one needs its own commit (`docs/decisions.md`).
+
+**Not shown yet:** that these inputs make a general model help on a new PDK or with new spec kinds. That is an
+experiment of its own (record 7.298: set against slots from scratch, a held-out spec kind, the AgenticSizing circuits).
+
+### Device families: the component list of a new model (added 2026-10-10, record 7.298)
+
+**In plain words.** The network has to know which kind of part each node of the circuit is. The standard list knew eight
+kinds (MOS, R, C, L, sources: bipolars and diodes were "unknown"); a PDK's own list knows every part of ONE PDK, under
+names no other PDK has. The **device-family list** is one fixed list that every PDK maps into: unknown, nMOS, pMOS, npn,
+pnp, diode, varactor, resistor, capacitor, inductor, voltage and current source; pin roles drain, gate, source, bulk,
+collector, base, emitter, anode, cathode, positive, negative; parameters w, l, m, nf, r, c, ind, dc and a junction
+device's area. A second foundry's nMOS model and GPDK045's `g45n1svt` are both an nMOS, so a model trained with the family list loads with
+any PDK, and loading a new PDK never changes the list (the network's first layer holds one entry per kind: a growing
+list would break every saved model). What tells variants apart (threshold flavour, 1.8 V or 3.3 V device) is numbers,
+not names: the device model features above.
+
+**The list of a new model (user, 2026-10-10: "replace the standard list ... new models only").** In the RL model window,
+Components offers the device families first, then each loaded PDK's list; New model (and a template used in it) takes the
+families. The standard list is no longer offered to a new model: it is kept to continue the models trained with it -
+every model saved before - which Fine-tune and Evaluate only load with their own list, as before. A configuration file
+that still starts a new model on the standard list runs, and validation says so (`standard_list_new_model`). The
+schema's default stays `standard`, so every configuration and queue written before means what it meant.
+
+**How a component gets its family - by rule, nothing guessed from a name.** From its PDK record (`model_scan.classify_model`,
+when the PDK was loaded): the Spectre primitive of its model (bsim -> MOS with its type, bjt -> npn/pnp, diode, resistor,
+capacitor, inductor), a wrapping subcircuit's own element, or what lies between its first two pins. Two rules were added
+with the list: Spectre's own `resistor` / `capacitor` / `inductor` used without a model take that family, and a subcircuit
+whose first two pins are joined only by resistive behavioural sources (`bsource ... r=`, the second PDK's diffusion resistors) is a
+resistor (a chain of other behavioural sources counts only when the cell's CDF declares exactly one passive quantity).
+The added rules apply when the PDK is loaded again. A part of no PDK keeps its own kind when that is a family (an ideal
+source, an analogLib resistor); what no rule can classify is "unknown", and validation names it under Parameters
+(`family_list_unknown_parts`). Counted on 2026-10-10: GPDK045 all 54 components (its 10 diodes and 6 bipolars were
+"unknown" in the standard list); the second foundry's 0.18 um PDK 67 of 78 as loaded, 74 of 78 once loaded again - the four left are well and
+substrate contact cells, connections rather than devices.
+
+**Where it lives.** `families.py` (`FamilyList`: the same contract as a PDK list - name, label, schema `families-v1`,
+view); a run keeps its own copy of the mapping its PDK gave at its start (`network_vocabulary.json`); offline pretraining
+takes `inputs.vocabulary = "families"` and maps every source archive through its own PDK. Like every list, it changes only
+what the network sees: the graph, the actions and the recorded data stay as simulated.
 
 ### The ideal parts, read with the PDK (2026-10-05, record 7.190, user request)
 
@@ -2907,6 +3041,9 @@ transitions = TrajectoryLoader('<run>').transitions()             # optimizer Tr
 
 ### Offline archive pretraining (2026-10-06, record 7.233)
 
+Since record 7.298 a request may train with the transferable network inputs (`inputs`), each source read through
+its own view: see "Transferable network inputs".
+
 `python -m gator_workbench.cli pretrain REQUEST.json --output NEW_DIRECTORY` audits an explicitly pinned set of
 archives and trains the existing SAC learner without a simulator. `--audit-only` writes the pool inventory, shared
 registry and deterministic episode split without updating a network. The JSON request contains `origin`, `runs`
@@ -3077,9 +3214,11 @@ baseline (`baseline_reference.py`) and Save task (`task_save.py`); `pdk.py` the 
 Virtuoso (`pdk_remote.py`); `api/task_baseline.py` is the automatic baseline (it calls `start_run`). A module imports
 others at its top; an import inside a function says why in a comment, only three small import cycles remain, and only
 `api/` and the command line import the API (`tests/workbench/test_wb_structure.py`, which also refuses a test patching
-a name its module does not define or only keeps as an alias). Constants several modules share are in `names.py`; the
-quiet JSON reads in `storage/atomic.py` (`read_json_quiet`, `read_dict`); every cache a process keeps for its lifetime
-registers in `caches.py`, whose `clear_all()` empties them all (`tests/workbench/test_wb_caches.py`).
+a name its module does not define or only keeps as an alias, and a test importing a `conftest`: pytest names every
+`conftest.py` `conftest`, so the import reaches whichever was loaded last, record 7.297). Constants several modules
+share are in `names.py`; the quiet JSON reads in `storage/atomic.py` (`read_json_quiet`, `read_dict`); every cache a
+process keeps for its lifetime registers in `caches.py`, whose `clear_all()` empties them all
+(`tests/workbench/test_wb_caches.py`).
 
 The optimizer package by module since its clean-up of 2026-10-09 (`docs/plan-refactoring.md` section 6, record 7.292; every
 public name still where it was, every message kept): `backends/virtuoso_bridge.py` keeps the adapter and passes on its

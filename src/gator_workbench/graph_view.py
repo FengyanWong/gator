@@ -20,9 +20,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import checkpoints as ckpt, model_structure
+from . import checkpoints as ckpt, model_structure, network_inputs
 from .pdk import run_vocabulary
 from .run_definitions import decode_action
+from .schema import WorkbenchConfig
+from .storage.atomic import read_json
 from .storage.dataset import map_to_dict
 from .trajectory import TrajectoryLoader
 
@@ -156,6 +158,29 @@ def _family(device, vocabulary):
     return family or 'unknown'
 
 
+def _network_of(run_dir):
+    """The network block of a run's own configuration (effective_config.json), or {}."""
+    config = read_json(Path(run_dir) / 'effective_config.json', default={}) or {}
+    return ((config.get('run') or {}).get('network') or {}) if isinstance(config, dict) else {}
+
+
+def _network_view(run_dir, vocabulary):
+    """The NetworkView the run's model was trained with, or None (no transferable inputs)."""
+    recorded = network_inputs.read_run_record(run_dir)
+    if recorded is None:
+        return None
+    try:
+        config = WorkbenchConfig.model_validate(read_json(Path(run_dir) / 'effective_config.json'))
+        view = network_inputs.view_for(config, vocabulary)
+    except Exception as exc:
+        raise GraphViewUnavailable('What this run showed its network (its spec descriptions or its PDK\'s device '
+                                   f'numbers) cannot be rebuilt here ({type(exc).__name__}).') from exc
+    if view is None or view.key != recorded.get('view_key'):
+        raise GraphViewUnavailable('What this run showed its network has changed since it ran (its task\'s spec '
+                                   "descriptions or its PDK's device numbers), so the circuit cannot be shown to it the same way.")
+    return view
+
+
 def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
     from analog_optimizer.models.inputs import batch_observations
     run_dir = Path(run_dir)
@@ -170,11 +195,15 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
     # draw what the network saw (the PDK kinds and pin roles). The run's own copy of the list is used, never a newer load.
     vocabulary = run_vocabulary(run_dir)
     if vocabulary is not None:
-        if vocabulary.schema != features:
+        if network_inputs.feature_schema(vocabulary.schema, _network_of(run_dir)) != features:
             raise GraphViewUnavailable('The component list kept in this run folder is not the one this save point was '
                                        'trained with, so the circuit cannot be shown to it the same way.')
-        observation = vocabulary.view(observation)
-    batch = batch_observations([observation], features, spec)
+    # The transferable inputs (record 7.298) are shown to the network only: the page draws the circuit as recorded (its
+    # sizes as simulated, never a PDK's device numbers), with the PDK kinds and pin roles of the list when there is one.
+    seen = _network_view(run_dir, vocabulary)
+    shown = vocabulary.view(observation) if vocabulary is not None else observation
+    batch = batch_observations([seen.view(observation) if seen is not None else shown], features, spec)
+    observation = shown
     (sample, layers), dense_layers = capture_dense_attention(actor,
         lambda: capture_attention(actor, lambda: actor.sample(batch, deterministic=True)))
     policy = batch.proposals(sample.actions)[0]

@@ -23,12 +23,17 @@ export async function readSavePoint(run_dir: string, checkpoint_id: string, fiel
 }
 
 /** The network a saved model fixes, from its description (`POST /api/runs/model`): its encoder, `fields`, its structural
- *  input and whether it takes operating points; null when the description names no encoder. */
+ *  input, whether it takes operating points and its network inputs (record 7.298: a spec set, sizes relative to the PDK,
+ *  device model features - read from the input schemas its contract records); null when the description names no encoder. */
 export function networkOf(description: Json, fields: string[]): Json | null {
   const saved = description?.contract?.model_config;
+  const version: string = description?.contract?.feature_schema?.version ?? '';
   return saved?.encoder_type ? { encoder_type: saved.encoder_type, ...pick(saved, fields),
     structural_encoding: saved.structural_encoding ?? (saved.encoder_type === 'graph_gps' ? 'rwse' : 'none'),
-    operating_points: !!description.contract?.feature_schema?.op_columns?.length } : null;
+    operating_points: !!description.contract?.feature_schema?.op_columns?.length,
+    spec_input: description.contract?.spec_schema?.layout === 'spec-set-v1' ? 'set' : 'slots',
+    size_features: version.includes('+pdk-relative-sizes') ? 'pdk_relative' : 'absolute',
+    device_model_features: version.includes('+device-model-features') } : null;
 }
 
 /** The run settings with that save point as the source, its network and its component list: one change of the draft. */

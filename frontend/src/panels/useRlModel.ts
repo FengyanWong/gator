@@ -88,9 +88,12 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   const remember = (e: Json) => setNetSettings((s: Json) => s && ({ ...s, settings: { ...s.settings, [e.encoder_type]: e } }));
   // The component list is not a per-encoder setting: another encoder keeps the list that was chosen.
   const keepList = (network: Json) => ({ operating_points: network?.operating_points ?? false,
+    ...pick(network, ['spec_input', 'size_features', 'device_model_features']),      // the network inputs (record 7.298)
     ...(network?.vocabulary && network.vocabulary !== 'standard' ? { vocabulary: network.vocabulary } : {}) });
+  // A new model is built with the device families (record 7.298): a template used in New model brings them when the list is still the standard one.
+  const newModelList = (c: Json) => c.run.mode === 'scratch' && (c.run.network?.vocabulary ?? 'standard') === 'standard' ? { vocabulary: 'families' } : {};
   const applyEntry = (e: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run,
-    network: { ...keepList(c.run.network), encoder_type: e.encoder_type, ...e.network }, advanced: { ...(c.run.advanced ?? {}), ...e.advanced } } }), record);
+    network: { ...keepList(c.run.network), ...newModelList(c), encoder_type: e.encoder_type, ...e.network }, advanced: { ...(c.run.advanced ?? {}), ...e.advanced } } }), record);
   // The standard list is written as no field at all: that is what every configuration had before, and a server that was
   // not restarted yet still accepts it.
   const chooseList = (value: string, record = true) => setConfig(c => {
@@ -254,7 +257,8 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   const chooseMode = (mode: string) => {
     if (mode === 'scratch') { pointSerial.drop(); setUsingPoint(false); }
     setConfig(c => ({ ...c, run: { ...c.run, mode,
-      ...(mode === 'scratch' && c.run.model_source?.run_dir ? { model_source: { ...c.run.model_source, run_dir: null, checkpoint_id: 'latest' } } : {}) } }));
+      ...(mode === 'scratch' && c.run.model_source?.run_dir ? { model_source: { ...c.run.model_source, run_dir: null, checkpoint_id: 'latest' } } : {}),
+      ...(mode === 'scratch' ? { network: { ...(c.run.network ?? {}), ...newModelList({ ...c, run: { ...c.run, mode } }) } } : {}) } }));
   };
   // The network in use, in short, beside the RL model button, and the next run's model in one line (rlModelText.ts). In a Mode
   // that loads a model the configuration's network is that model's (above).

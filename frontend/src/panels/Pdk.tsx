@@ -55,19 +55,22 @@ export function ComponentList({ value, onChoose }: { value: string; onChoose: (v
   const { list, error } = usePdkList(true);
   const pdks: Json[] = list?.pdks ?? [];
   const chosen: Json = pdks.find(p => p.vocabulary === value) ?? null;
-  const missing = value !== 'standard' && list && !chosen;
+  const missing = value.startsWith('pdk:') && list && !chosen;
   return (
     <div className="component-list">
       <div className="row component-row">
         <label title="Which components the RL network is built to know. A model trained with one list loads only with the same list, and a parameter outside the eight standard ones can be varied only with a PDK list.">Components
           <select value={value} onChange={e => onChoose(e.target.value)}>
-            <option value="standard">{list?.standard?.label ?? 'standard (8 generic kinds)'}</option>
+            <option value="families">Device families (any PDK)</option>
             {pdks.map(p => <option key={p.vocabulary} value={p.vocabulary}>{p.label}</option>)}
+            {value === 'standard' && <option value="standard">Standard (8 generic kinds) - kept for older models</option>}
             {missing && <option value={value}>{`PDK ${value.slice(4)} (not loaded)`}</option>}
           </select></label>
       </div>
-      <p className="hint component-what">{value === 'standard'
-        ? <>Knows MOS, R, C, L and sources; other parts (bipolar, diodes, S-parameter blocks, ports) are "unknown" and stay fixed. Every model saved before PDK lists existed uses this list. A PDK's list appears here once the PDK was read: reading a cell in the Virtuoso window reads its PDK too.</>
+      <p className="hint component-what">{value === 'families'
+        ? <>Knows the device families of any PDK: nMOS, pMOS, npn, pnp, diode, varactor, resistor, capacitor, inductor and sources. Each part of the task's PDK takes its family by rule (its bipolars, diodes and varactors once the PDK is loaded); a model trained with this list loads with any PDK. The list of a new model since record 7.298. A PDK's own list appears here once the PDK was read: reading a cell in the Virtuoso window reads its PDK too.</>
+        : value === 'standard'
+        ? <>Knows MOS, R, C, L and sources; other parts are "unknown". Kept to continue the models trained with it: a new model uses the device families. A PDK's own list appears here once the PDK was read: reading a cell in the Virtuoso window reads its PDK too.</>
         : chosen ? <>Knows all {chosen.summary.devices} components of {chosen.pdk_id}: {byFamily(chosen.summary)}. Other parts keep their standard kinds. A model trained with this list loads only with it.</>
         : null}</p>
       {missing && <p className="warn">PDK {value.slice(4)} is not loaded here. Read it in the Virtuoso window (reading a cell reads its PDK; "PDK window..." reads one by name), or choose another list.</p>}

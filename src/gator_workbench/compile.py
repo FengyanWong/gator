@@ -13,7 +13,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 import math
 
-from . import spec_equations, units
+from . import spec_descriptors, spec_equations, units
 from .profile_store import task_spec_registry
 from .schema import WorkbenchConfig
 from .task_registry import CORNER_TASKS, verified_profile, verified_spec_registry
@@ -179,8 +179,11 @@ def build_specs(config: WorkbenchConfig):
 
 def build_spec_schema(config: WorkbenchConfig):
     """The result registry the network is built with: the task's own (or the configured one), plus one entry per spec
-    whose name it does not know yet (``spec_equations.registry_entries``). A configured registry is taken as given."""
+    whose name it does not know yet (``spec_equations.registry_entries``). A configured registry is taken as given.
+    With the spec set input (record 7.298) there is no registry: the optimizer's SpecSetSchema reads any spec list."""
     from analog_optimizer.models.inputs import SpecSchema
+    if config.run.network.spec_input == 'set':
+        return spec_descriptors.spec_set_schema()
     base = _task_spec_schema(config)
     if config.run.advanced.spec_registry is not None:
         return base
@@ -229,8 +232,8 @@ def compile_task(config: WorkbenchConfig, graph) -> CompiledTask:
     compiled_graph, variables = build_graph(config, graph)
     specs, targets, preference = build_specs(config)
     schema = build_spec_schema(config)
-    registry = {name: unit for name, unit, _ in schema.metrics}
-    for spec in specs:
+    registry = {name: unit for name, unit, _ in getattr(schema, 'metrics', ())}
+    for spec in specs if config.run.network.spec_input != 'set' else ():       # a spec set has no registry (record 7.298)
         if registry.get(spec.metric_id) != spec.unit:
             raise CompileError(f'{spec.metric_id} ({spec.unit}) is absent from the RL specification registry')
     plan = spec_equations.SpecPlan.from_config(config)

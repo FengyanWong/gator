@@ -14,10 +14,28 @@ from torch_geometric.data import Batch
 from analog_optimizer.envs.sizing import ConditionResult, Observation
 from analog_optimizer.graph.pyg_converter import CircuitHeteroData, FeatureSchema, TopologyTensorCache, to_pyg
 from analog_optimizer.graph.neural import port_edge_tensors
-from analog_optimizer.measurements.specs import SpecificationEvaluator
+from analog_optimizer.measurements.specs import SpecificationEvaluator, spec_margin
 
 
 SPEC_INPUT_LAYOUT = 'spec-input-v2'   # 21 columns per registry slot + 11: what this code computes, whatever the registry is called
+
+# The spec set input (record 7.298): every active spec is one item, read by one shared network, whatever its name and
+# however many a task has. An item is the columns below, computed here from the observation and free of units (the
+# distance to the limits is in the spec's own scale, exactly as the reward measures it), then a one-hot of the spec's
+# unit, then the caller's description of what the spec measures (graph metadata SPEC_DESCRIPTOR_KEY, one number per
+# SpecSetSchema.descriptor_columns). No item carries the spec's name.
+SPEC_SET_LAYOUT = 'spec-set-v1'
+SPEC_DESCRIPTOR_KEY = 'spec_descriptors'
+SPEC_SET_STATE_COLUMNS = (
+    'hard', 'compare_min', 'compare_max', 'compare_range', 'has_lower', 'has_upper', 'objective_min', 'objective_max',
+    'nominal_only', 'margin_lower_only', 'margin_upper_only', 'relative_weight',
+    'valid', 'margin', 'violation', 'satisfied', 'worst_valid', 'worst_margin', 'worst_satisfied',
+    'magnitude_known', 'value_magnitude', 'lower_magnitude', 'upper_magnitude')
+# The run's own numbers, one row per observation (the slot input's 11 without the absolute supply voltage, which on a
+# nominal-only input only named the bench, plus how many specs are active).
+SPEC_SET_RUN_COLUMNS = ('remaining_steps', 'status_ok', 'status_invalid_design', 'status_nonconverged', 'has_condition',
+                        'temperature', 'planned_conditions', 'measured_fraction', 'nominal_success', 'success',
+                        'active_specs')
 
 
 @dataclass(frozen=True)
@@ -50,6 +68,54 @@ class SpecSchema:
     @property
     def width(self):
         return len(self.metrics) * 21 + 11
+
+
+@dataclass(frozen=True)
+class SpecSetSchema:
+    """The spec set input (record 7.298): no registry, so a model built with it reads any spec list.
+
+    `descriptor_version` / `descriptor_columns` name what the caller's description of a spec holds (the caller computes
+    it; this package only checks its length and that it is finite); `unit_references` is the unit list of the one-hot
+    and the reference each unit's magnitudes are divided by (a unit outside it is "other", without magnitudes). All of it
+    is part of the checkpoint contract, so a model loads only where items are built the same way, and on every task."""
+    descriptor_version: str
+    descriptor_columns: tuple[str, ...]
+    unit_references: tuple[tuple[str, float], ...]
+    layout: str = SPEC_SET_LAYOUT
+
+    def __post_init__(self):
+        if self.layout != SPEC_SET_LAYOUT:
+            raise ValueError(f'Unsupported spec set layout {self.layout!r}: this code computes {SPEC_SET_LAYOUT}')
+        if not isinstance(self.descriptor_version, str) or not self.descriptor_version:
+            raise ValueError('A spec set input needs a descriptor version')
+        columns = self.descriptor_columns
+        if (not isinstance(columns, tuple) or any(not isinstance(c, str) or not c for c in columns)
+                or len(set(columns)) != len(columns)):
+            raise ValueError('Descriptor columns must be unique non-empty names')
+        units = [u for u, _ in self.unit_references]
+        if (not units or len(set(units)) != len(units)
+                or any(not isinstance(u, str) or not u or isinstance(r, bool) or not isinstance(r, (int, float))
+                       or not math.isfinite(r) or r <= 0 for u, r in self.unit_references)):
+            raise ValueError('Unit references must be unique units with positive finite references')
+
+    @property
+    def version(self):
+        return f'{self.layout}/{self.descriptor_version}'
+
+    @property
+    def token_width(self):
+        return len(SPEC_SET_STATE_COLUMNS) + len(self.unit_references) + 1 + len(self.descriptor_columns)
+
+    @property
+    def run_width(self):
+        return len(SPEC_SET_RUN_COLUMNS)
+
+
+def spec_schema_from_dict(values):
+    """The spec input schema recorded in a checkpoint contract (``asdict`` of either kind), rebuilt."""
+    tuples = lambda v: tuple(tuples(x) for x in v) if isinstance(v, (list, tuple)) else v
+    values = {key: tuples(value) for key, value in values.items()}
+    return SpecSetSchema(**values) if values.get('layout') == SPEC_SET_LAYOUT else SpecSchema(**values)
 
 
 def signed_log(value, reference):
@@ -155,6 +221,68 @@ def context_features(observation, schema):
     return result
 
 
+def _squashed(value):
+    """Signed log1p: keeps the sign and order of a distance, compresses its size (finite for every finite input)."""
+    return math.copysign(math.log1p(abs(value)), value)
+
+
+def _finite_number(value):
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def spec_set_features(observation, schema):
+    """(run row [run_width], items [active specs, token_width]) of the spec set input (SpecSetSchema)."""
+    validate_observation(observation)
+    descriptors = observation.graph.metadata.get(SPEC_DESCRIPTOR_KEY)
+    if not isinstance(descriptors, dict):
+        raise ValueError('The spec set input needs each spec described in the graph metadata '
+                         f'({SPEC_DESCRIPTOR_KEY}); this observation has no descriptions')
+    evaluation = observation.evaluation
+    active = [spec for spec in observation.specs if spec.active]   # inactive specs cannot affect any output
+    top = max((spec.weight for spec in active), default=1.0)
+    units = {unit: (i, reference) for i, (unit, reference) in enumerate(schema.unit_references)}
+    rows = []
+    for spec in active:
+        described = descriptors.get(spec.metric_id)
+        if (not isinstance(described, (tuple, list)) or len(described) != len(schema.descriptor_columns)
+                or not all(_finite_number(x) for x in described)):
+            raise ValueError(f'{spec.metric_id}: its description must hold {len(schema.descriptor_columns)} finite numbers '
+                             f'({schema.descriptor_version})')
+        value = observation.metrics.get(spec.metric_id)
+        valid = observation.metric_validity.get(spec.metric_id) is True
+        if valid and (not _finite_number(value) or observation.metric_units.get(spec.metric_id) != spec.unit):
+            raise ValueError('Valid measurement must be finite and have the spec unit')
+        margin = spec_margin(spec.lower, spec.upper, spec.scale, value) if valid else None
+        violation = evaluation.violations.get(spec.metric_id)
+        worst_valid = evaluation.worst_valid.get(spec.metric_id) is True and _finite_number(
+            evaluation.worst_values.get(spec.metric_id))
+        worst = spec_margin(spec.lower, spec.upper, spec.scale, evaluation.worst_values[spec.metric_id]) if worst_valid else None
+        index, reference = units.get(spec.unit, (len(units), None))
+        magnitude = lambda x: signed_log(x, reference) if reference is not None and x is not None else 0.0
+        state = [spec.required, spec.comparator == 'min', spec.comparator == 'max', spec.comparator == 'range',
+                 spec.lower is not None, spec.upper is not None, spec.objective == 'min', spec.objective == 'max',
+                 spec.nominal_only, spec.margin_sides == 'lower', spec.margin_sides == 'upper', spec.weight / top,
+                 valid, _squashed(margin) if valid else 0.0, violation if _finite_number(violation) else 0.0,
+                 valid and margin >= 0, worst_valid, _squashed(worst) if worst_valid else 0.0, worst_valid and worst >= 0,
+                 reference is not None, magnitude(value if valid else None), magnitude(spec.lower), magnitude(spec.upper)]
+        unit = [0.0] * (len(units) + 1)
+        unit[index] = 1.0
+        rows.append([float(x) for x in state] + unit + [float(x) for x in described])
+    condition = observation.condition
+    planned = len(observation.planned_conditions) or 1
+    measured = len(observation.condition_results) or 1
+    run = [math.log1p(observation.remaining_steps)]
+    run += [float(observation.status == s) for s in ('ok', 'invalid_design', 'nonconverged')]
+    run += [1.0, condition.corner.temperature_c / 100] if condition else [0.0, 0.0]
+    run += [math.log1p(planned - 1), measured / planned, float(evaluation.nominal_success), float(evaluation.success),
+            math.log1p(len(active))]
+    items = torch.tensor(rows, dtype=torch.float32).reshape(len(rows), schema.token_width)
+    run = torch.tensor(run, dtype=torch.float32)
+    if not torch.isfinite(items).all() or not torch.isfinite(run).all():
+        raise ValueError('Non-finite spec set features')
+    return run, items
+
+
 @dataclass
 class GraphBatch:
     graph: Batch
@@ -170,6 +298,10 @@ class GraphBatch:
     action_counts: torch.Tensor
     action_columns: torch.Tensor
     group_ids: tuple[tuple[str, ...], ...]
+    # The spec set input (SpecSetSchema): every active spec's item and the observation it belongs to. With it,
+    # `context` holds each observation's run row; with the slot input both stay None and `context` is the slot vector.
+    spec_items: torch.Tensor | None = None
+    spec_batch: torch.Tensor | None = None
 
     @property
     def size(self):
@@ -201,10 +333,15 @@ class _PreparedObservation:
     context: torch.Tensor
     group_features: torch.Tensor
     group_ids: tuple[str, ...]
+    spec_items: torch.Tensor | None = None
 
 
 def _prepare_observation(observation, feature_schema, spec_schema, topology_cache=None):
-    context = context_features(observation, spec_schema)
+    items = None
+    if isinstance(spec_schema, SpecSetSchema):
+        context, items = spec_set_features(observation, spec_schema)
+    else:
+        context = context_features(observation, spec_schema)
     graph = to_pyg(observation.graph, feature_schema, topology_cache=topology_cache,
                    operating_points=observation.operating_points)
     group_ids = tuple(g.id for g in observation.graph.parameter_groups if g.mutable)
@@ -225,7 +362,7 @@ def _prepare_observation(observation, feature_schema, spec_schema, topology_cach
     group_features = torch.tensor(features, dtype=torch.float32)
     if not torch.isfinite(group_features).all():
         raise ValueError('Non-finite group features')
-    return _PreparedObservation(graph, context, group_features, group_ids)
+    return _PreparedObservation(graph, context, group_features, group_ids, items)
 
 
 def observation_digest(observation):
@@ -237,7 +374,7 @@ def observation_digest(observation):
 
 def _tensor_bytes(prepared):
     """Bytes of the tensors one cached entry holds (each entry owns its tensors: the topology cache hands out copies)."""
-    tensors = [prepared.context, prepared.group_features]
+    tensors = [prepared.context, prepared.group_features] + ([] if prepared.spec_items is None else [prepared.spec_items])
     tensors += [value for store in prepared.graph.stores for value in store.values() if isinstance(value, torch.Tensor)]
     return sum(t.element_size() * t.nelement() for t in tensors)
 
@@ -343,6 +480,11 @@ def batch_observations(observations, feature_schema=None, spec_schema=None, *, c
     action_batch = group_batch[active]
     columns = torch.cat([torch.arange(count) for count in action_counts.tolist()])
     group_features = torch.cat([p.group_features for p in prepared])
+    items = item_batch = None
+    if isinstance(spec_schema, SpecSetSchema):
+        counts = torch.tensor([len(p.spec_items) for p in prepared])
+        items = torch.cat([p.spec_items for p in prepared])
+        item_batch = torch.repeat_interleave(torch.arange(len(prepared)), counts)
     return GraphBatch(graph, contexts, node_batch, edge_index, roles,
                       ordinals, group_batch, group_features, active,
-                      action_batch, action_counts, columns, group_ids)
+                      action_batch, action_counts, columns, group_ids, items, item_batch)

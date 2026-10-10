@@ -156,7 +156,9 @@ def test_the_tested_values_build_a_learner_and_a_bare_configuration_keeps_the_sc
     bare = schema.WorkbenchConfig.model_validate(raw)             # old configurations keep their meaning
     # (the component list, added later, defaults to the standard one every old configuration was built with)
     assert bare.run.network.model_dump() == dict(encoder_type='graph_transformer', **legacy['network'], vocabulary='standard',
-                                                 operating_points=False)          # added 2026-09-26 (reward v2), off = as before
+                                                 operating_points=False,          # added 2026-09-26 (reward v2), off = as before
+                                                 spec_input='slots', size_features='absolute',
+                                                 device_model_features=False)     # added 2026-10-10 (7.298), off = as before
     assert {k: v for k, v in bare.run.advanced.model_dump().items() if k in legacy['advanced']} == legacy['advanced']
     modes.sac_config_from(schema.AdvancedRL(**{**legacy['advanced'], **presets.TESTED}))   # the tested values build a learner
 

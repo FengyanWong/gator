@@ -32,7 +32,7 @@ from uuid import uuid4
 
 from analog_optimizer.training.collect import random_proposal
 
-from . import best_design, checkpoints as ckpt, modes
+from . import best_design, checkpoints as ckpt, modes, network_inputs
 from .budget import BudgetLedger
 from .compile import compile_task, hard_constraints
 from .connection import classify_infrastructure_failure
@@ -186,7 +186,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
                             sac_config=modes.sac_config_from(adv), spec_schema=self.compiled.spec_schema,
                             advanced=adv, seed=cfg.run.seed, origin=self.task.origin, source_dir=source_dir,
                             source_metadata=source_meta, task_definition_hash=self.task_hash, vocabulary=self.vocabulary,
-                            runtime=input_options)
+                            runtime=input_options, view=network_inputs.view_for(cfg, self.vocabulary))
         self.learner, self.replay, self.freeze = built['learner'], built['replay'], built['freeze']
         self.load_policy = built['policy']
         self.rehearsal = None

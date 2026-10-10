@@ -8,7 +8,8 @@ import { SavedModels } from './ModelChooser';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Check, LookFold, Num } from './fields';
-import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN } from './rlModelText';
+import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, STANDARD_INPUTS, TRANSFERABLE, TRANSFER_TITLE, inputsChoice,
+  inputsText } from './rlModelText';
 import { NoModeNote } from './RunConfiguration';
 import type { RlModel } from './useRlModel';
 
@@ -107,6 +108,10 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         onChange={e => editNet({ structural_encoding: e.target.value })}>
         <option value="none">None</option><option value="rwse">Random-walk returns (2, 4, 8, 16 steps)</option></select></label>}
       {entry?.experimental && <p className="hint encoder-experimental">Experimental encoder. Transfer performance and these starting settings have not been validated.</p>}
+      <label title={TRANSFER_TITLE}>Network inputs<select className="network-inputs" value={inputsChoice(net)}
+        onChange={e => setNet(e.target.value === 'transferable' ? TRANSFERABLE : STANDARD_INPUTS)}>
+        <option value="standard">Standard</option><option value="transferable">Transferable (any spec list, any PDK)</option>
+        {inputsChoice(net) === 'custom' && <option value="custom" disabled>Custom (set in the configuration file)</option>}</select></label>
       <Check label="Nominal device operating points" value={net.operating_points ?? false} onChange={v => setNet({ operating_points: v })}
         title="Measured nominal device values and validity masks. Corner operating points are recorded but never replace the nominal network input. Changing this changes the model input schema." />
       <AdvancedFields m={m} />
@@ -173,6 +178,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           <tr><td>Conditions</td><td>{model.description.contract?.condition_policy ?? 'off'}; {model.description.contract?.planned_conditions?.length ?? 'unknown'} planned</td></tr>
           {model.description.contract?.planned_conditions?.length > 0 && <tr><td>Saved condition plan</td><td>{model.description.contract.planned_conditions.map((c: Json) => c.corner.id).join(', ')}</td></tr>}
           <tr><td>Operating points</td><td>{savedNet?.operating_points ? 'enabled' : 'off'}</td></tr>
+          <tr className="model-inputs"><td>Network inputs</td><td>{inputsText(savedNet)}</td></tr>
           <tr><td>Training</td><td>{model.description.counters.evaluations_committed} evaluations, {model.description.counters.learner_updates} updates, replay {model.description.counters.replay_size}</td></tr>
           <tr><td>Restorable</td><td><b>{model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}</td></tr>
           <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>

@@ -8,6 +8,7 @@ import torch
 from torch import nn
 from torch_geometric.nn import TransformerConv, RGCNConv, GATv2Conv
 from .global_attention import CircuitAttention, RWSE_STEPS, structural_features
+from .inputs import SpecSetSchema
 
 
 ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention')
@@ -171,6 +172,33 @@ class GroupAttentionReadout(nn.Module):
         return groups + self.ff(self.norm_ff(groups))
 
 
+class SpecSetReader(nn.Module):
+    """The spec set input (inputs.SpecSetSchema, record 7.298) read into the same [B,H] context the slot input gives.
+
+    One shared network turns every spec item into a vector, whatever the spec's name and however many a task has. The
+    run's own row becomes a query that attends over its own specs (and over itself, so an observation without an active
+    spec still reads); the context is formed from the run row, that attention and the mean of the spec vectors. Spec
+    order changes nothing."""
+    def __init__(self, spec_schema, config):
+        super().__init__()
+        h = config.hidden_dim
+        self.item = mlp(spec_schema.token_width, h, h)
+        self.run = mlp(spec_schema.run_width, h, h)
+        self.norm_query = nn.LayerNorm(h)
+        self.norm_keys = nn.LayerNorm(h)
+        self.attention = CircuitAttention(h, config.heads if h % config.heads == 0 else 1, 'spec')
+        self.output = mlp(3 * h, h, h)
+
+    def forward(self, batch):
+        count = len(batch.context)
+        run = self.run(batch.context)
+        items = self.item(batch.spec_items)
+        graphs = torch.arange(count, device=run.device)
+        keys, key_batch = torch.cat((items, run)), torch.cat((batch.spec_batch, graphs))
+        attended = self.attention(self.norm_query(run), self.norm_keys(keys), graphs, key_batch, count)
+        return self.output(torch.cat((run, attended, segment_mean(items, batch.spec_batch, count)), dim=-1))
+
+
 def build_block(config, num_relations):
     """Architecture selection is confined to the representation layer."""
     if config.encoder_type == 'rgcn':
@@ -197,7 +225,11 @@ class CircuitEncoder(nn.Module):
             self.operating_points = nn.Linear(2 * len(feature_schema.op_columns), h)
         self.device_kind = nn.Embedding(len(feature_schema.device_kinds), h)
         self.net_values = nn.Linear(len(feature_schema.net_roles), h)
-        self.context = mlp(spec_schema.width, h, h)
+        self.spec_set = isinstance(spec_schema, SpecSetSchema)
+        if self.spec_set:
+            self.spec_reader = SpecSetReader(spec_schema, config)
+        else:
+            self.context = mlp(spec_schema.width, h, h)
         self.uses_edge_features = config.encoder_type != 'rgcn'
         if self.uses_edge_features:
             self.port_role = nn.Embedding(2 * len(feature_schema.terminal_roles), h)
@@ -225,7 +257,7 @@ class CircuitEncoder(nn.Module):
         if hasattr(self, 'operating_points'):
             device_nodes = device_nodes + self.operating_points(torch.cat((device.op, device.op_mask.float()), dim=-1))
         nodes = torch.cat((device_nodes, self.net_values(graph['net'].x)))
-        context = self.context(batch.context)
+        context = self.spec_reader(batch) if self.spec_set else self.context(batch.context)
         nodes = nodes + context[batch.node_batch]
         if hasattr(self, 'structural_projection'):
             nodes = nodes + self.structural_projection(structural_features(batch))

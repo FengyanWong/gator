@@ -26,6 +26,7 @@ TERMINAL_ROLES = {'mos': ('drain', 'gate', 'source', 'bulk'), 'bjt': ('collector
 
 
 PASSIVE = ('resistor', 'capacitor', 'varactor', 'inductor')
+SPECTRE_PASSIVES = ('resistor', 'capacitor', 'inductor')       # Spectre's own primitives a cell may netlist to directly
 
 
 # CDF `units` names -> the workbench's canonical units (units.py), and the reference scale of each canonical unit: the
@@ -246,13 +247,18 @@ def _element_family(element, subckt, scan, depth=0):
     return None, None, f'{master}: not defined in the model files read'
 
 
-def _paths(subckt, scan, start, end, blocked):
-    """Families of the elements on every simple path from pin `start` to pin `end` through internal nodes only."""
+def _paths(subckt, scan, start, end, blocked, *, behavioural=False):
+    """Families of the elements on every simple path from pin `start` to pin `end` through internal nodes only.
+    `behavioural`: also a behavioural source with controlling nodes (`bsource` with more than two), through the first two
+    nodes its current flows between - labelled by what it sets, else 'behavioural' (record 7.298)."""
     edges = []
     for element in subckt['elements']:
         if len(element['nodes']) == 2:
             family = _element_family(element, subckt, scan)[0]
             edges.append((element['nodes'][0], element['nodes'][1], family or 'other'))
+        elif behavioural and element['master'].lower() == 'bsource' and len(element['nodes']) > 2:
+            family = _element_family(element, subckt, scan)[0]
+            edges.append((element['nodes'][0], element['nodes'][1], 'behavioural' if family in (None, 'other') else family))
     found, stack = [], [(start, (), frozenset([start]))]
     while stack and len(found) < 64:
         node, families, seen = stack.pop()
@@ -277,6 +283,9 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
                     family_basis=f"model {name} = {model['primitive']}{', type=' + model['type'] if model.get('type') else ''} ({file_line(model)})"
                     if family else f"model {name} uses primitive {model['primitive']}, which is not classified here ({file_line(model)})")
     subckt = scan['subckts'].get(name)
+    if subckt is None and name.lower() in SPECTRE_PASSIVES:            # Spectre's own primitive, used without a model
+        return dict(family=name.lower(), polarity=None, core=None,
+                    family_basis=f"{name} is Spectre's own {name.lower()} primitive (record 7.298)")
     if subckt is None:
         return dict(family='other', polarity=None, core=None, family_basis=f'{name} is not defined in the model files read')
     if subckt['inline']:
@@ -305,6 +314,20 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
     by_unit = {'ohm': 'resistor', 'F': 'capacitor', 'H': 'inductor'}
     where = f'subcircuit {name} ({file_line(subckt)})'
     if not paths:
+        # Only behavioural sources may join them (a diffusion resistor modelled as a chain of `bsource` segments): that
+        # names a family only when the cell's own CDF declares exactly one passive quantity (record 7.298).
+        through = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]), behavioural=True)
+        on_path = {family for path in through for family in path}
+        if through and on_path == {'resistor'}:            # every segment sets a resistance (`bsource ... r=`)
+            return dict(family='resistor', polarity=None, core=None,
+                        family_basis=f'{where}: only resistive behavioural sources (r=) between its first two pins')
+        declared_passive = sorted({by_unit[u] for u in declared if u in by_unit})
+        if through and on_path <= {'behavioural'} | set(PASSIVE) and len(declared_passive) == 1 \
+                and on_path & set(PASSIVE) <= set(declared_passive):
+            family = declared_passive[0]
+            return dict(family=family, polarity=None, core=None,
+                        family_basis=f"{where}: behavioural sources between its first two pins, and the cell declares a "
+                                     f"{ {v: k for k, v in by_unit.items()}[family] } parameter")
         return dict(family='other', polarity=None, core=None, family_basis=f'{where}: its first two pins are not connected')
     # A diode wrapped with its series resistance (`r1 (1 3) resistor` + `d1 (3 2) <diode model>`): every path between the
     # first two pins crosses the one diode that can lie on such a path, and nothing but resistors besides it. A diode to
@@ -337,7 +360,7 @@ def pin_roles(name, found, scan):
     family = found['family']
     subckt = scan['subckts'].get(name)
     if subckt is None:                                   # a primitive model used directly: Spectre's terminal order
-        roles = TERMINAL_ROLES.get(family)
+        roles = TERMINAL_ROLES.get(family) or (('positive', 'negative') if family in PASSIVE else None)
         return None if roles is None else [dict(model_pin=f'{i + 1}', role=role, basis=f'{family} terminal {i + 1}')
                                            for i, role in enumerate(roles)]
     pins = subckt['pins']

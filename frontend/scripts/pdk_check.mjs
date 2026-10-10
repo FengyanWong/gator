@@ -126,10 +126,14 @@ await runChecks(browser, async () => {
       sameRow: !!b && b.parentElement === r, what: l.querySelector('.component-what')?.textContent ?? '', helpFolded: !l.querySelector('details.component-help').open,
       afterEncoder: !!(${ENCODER}) && (${ENCODER}.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING) > 0 }; })()`);
   check('the template\'s settings have a "Components" list after the templates table', line.label === 'Components' && line.afterEncoder, JSON.stringify(line.label));
-  check('standard is chosen and listed first, the loaded PDK after it', line.value === 'standard' && line.options[0][0] === 'standard'
-    && line.options[1]?.[0] === 'pdk:fixpdk' && line.options[1][1] === FIXPDK.label, JSON.stringify(line.options));
+  // Record 7.298: the device families are the list of a new model and come first; the standard list is offered only to a
+  // configuration that still holds it (this seeded one does), last.
+  check('standard is chosen, as this configuration holds it; the device families are listed first, the loaded PDK after them, standard last',
+    line.value === 'standard' && line.options[0][0] === 'families' && line.options[1]?.[0] === 'pdk:fixpdk' && line.options[1][1] === FIXPDK.label
+    && line.options.at(-1)[0] === 'standard' && line.options.length === 3, JSON.stringify(line.options));
   check('no load button in the block any more: the PDK comes with the cell, from the Virtuoso window', !line.button, String(line.button));
-  check('the plain line says what the standard list knows, what it does not, and where a PDK list comes from', /MOS, R, C, L and sources/.test(line.what) && /"unknown"/.test(line.what)
+  check('the plain line says what the standard list knows, what it does not, what a new model uses and where a PDK list comes from',
+    /MOS, R, C, L and sources/.test(line.what) && /"unknown"/.test(line.what) && /a new model uses the device families/.test(line.what)
     && /reading a cell in the Virtuoso window reads its PDK too/.test(line.what), line.what);
   check('the longer explanation is folded (closed <details>)', line.helpFolded);
   check('page load read the list of loaded PDKs (local files) and started no load', listReads >= 1 && loadBodies.length === 0);
@@ -151,9 +155,13 @@ await runChecks(browser, async () => {
   check('another encoder keeps the chosen list', network?.encoder_type === other && network?.vocabulary === 'pdk:fixpdk', JSON.stringify(network));
   await useTemplate(net.encoder_type);
   await storedWhen(n => n?.encoder_type === net.encoder_type);
-  await choose(SELECT, 'standard');
-  network = await storedWhen(n => n && !('vocabulary' in n));
-  check('the standard list is written as no field at all', network && !('vocabulary' in network), JSON.stringify(network));
+  const offered = await evaluate(`[...${SELECT}.options].map(o => o.value)`);
+  check('once another list is chosen the standard list is no longer offered', !offered.includes('standard') && offered[0] === 'families', JSON.stringify(offered));
+  await choose(SELECT, 'families');
+  network = await storedWhen(n => n?.vocabulary === 'families');
+  const families = await evaluate(`${LIST}.querySelector('.component-what').textContent`);
+  check('choosing the device families writes them by name, and the line says they fit any PDK', network?.vocabulary === 'families'
+    && /device families of any PDK/.test(families) && /loads with any PDK/.test(families), JSON.stringify(network) + ' / ' + families);
 
   // ---- the window ---------------------------------------------------------------------------------------------------------
   // Since 2026-09-27 the PDK window opens from the Virtuoso window: its "PDK window..." button beside Refresh (the PDK is

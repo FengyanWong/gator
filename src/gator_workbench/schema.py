@@ -311,11 +311,29 @@ class NetworkConfig(_Model):
         description='Topology-only random-walk return probabilities at 2, 4, 8, 16 steps. GraphGPS defaults to rwse; '
                     'parameter-group cross-attention defaults to none. Supported by these two encoders only.')
     operating_points: bool = Field(False, description='Include measured nominal device operating points and missing-value masks.')
-    vocabulary: str = Field(STANDARD_VOCABULARY, max_length=80, pattern=r'^(standard|pdk:[A-Za-z_][A-Za-z0-9_.\-]{0,63})$',
-        description='Which components the network knows. standard: the 8 generic kinds (MOS, R, C, L, sources) every '
-                    'model saved before 2026-09-21 was trained with; other parts are "unknown". pdk:<technology '
-                    'library>: every component of that PDK, read with a cell or with "PDK window..." (gator_workbench.pdk). A model '
-                    'trained with one list loads only with the same list.')
+    # The transferable inputs of record 7.298 (the page sets the three together: "Network inputs: Transferable").
+    spec_input: Literal['slots', 'set'] = Field('slots', description=(
+        'How the network reads the specs. slots: one fixed place per spec name in the result registry, as every model '
+        'saved before 2026-10-10 was trained; a model loads only with the same registry. set: every active spec is one '
+        'item described by what it measures (unit, analysis, how its probe reads it) and how far it is from its limits '
+        'in its own scale, read by one shared network; a model then reads any spec list and loads on any task built '
+        'with the same inputs.'))
+    size_features: Literal['absolute', 'pdk_relative'] = Field('absolute', description=(
+        "Transistor widths and lengths as the network sees them. absolute: in micrometres. pdk_relative: divided by the "
+        "PDK's minimum width and length of that device (the lower end of its CDF range, read with the PDK), so a "
+        "minimum-length device reads the same in every PDK. Needs the task's PDK loaded."))
+    device_model_features: bool = Field(False, description=(
+        "Add four technology numbers to every MOS device the network sees: threshold voltage, mobility, saturation "
+        "velocity and oxide thickness of its model in the PDK's nominal section, at the smallest size the model covers. "
+        "Needs the task's PDK loaded; the numbers stay in the local PDK folder and are never shown."))
+    vocabulary: str = Field(STANDARD_VOCABULARY, max_length=80, pattern=r'^(standard|families|pdk:[A-Za-z_][A-Za-z0-9_.\-]{0,63})$',
+        description='Which components the network knows. families: the device families every PDK maps into (nMOS, pMOS, '
+                    'npn, pnp, diode, varactor, resistor, capacitor, inductor, sources), the list of a new model since '
+                    '2026-10-10 (record 7.298); a model trained with it loads with any PDK. standard: the 8 generic kinds '
+                    '(MOS, R, C, L, sources) every model saved before then was trained with, kept to continue those '
+                    'models; other parts are "unknown". pdk:<technology library>: every component of that PDK, read with a '
+                    'cell or with "PDK window..." (gator_workbench.pdk). A model trained with one list loads only with the '
+                    'same list.')
 
     @model_validator(mode='after')
     def _structural_encoding(self):
@@ -721,6 +739,9 @@ def _hashed(data):
             network.pop('vocabulary')
         if network.get('operating_points') is False:
             network.pop('operating_points')
+        for key, default in (('spec_input', 'slots'), ('size_features', 'absolute'), ('device_model_features', False)):
+            if network.get(key) == default and type(network.get(key)) is type(default):      # record 7.298
+                network.pop(key)
         if network.get('structural_encoding') in (None, 'none') and network.get('encoder_type') not in GLOBAL_ENCODERS:
             network.pop('structural_encoding', None)
         data['run'] = dict(run, network=network)

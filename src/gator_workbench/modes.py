@@ -17,9 +17,8 @@ from __future__ import annotations
 
 import random
 
-from . import checkpoints as ckpt
+from . import checkpoints as ckpt, network_inputs
 from .compile import reward_settings, training_conditions
-from .pdk import learner_class
 from .storage.atomic import read_json
 from .validation import native_count_columns
 
@@ -61,17 +60,19 @@ def runtime_options(config, vocabulary=None):
                              references=schema.references + (1.,) * len(counts))
     if config.run.network.operating_points:
         schema = replace(schema, op_columns=OPERATING_POINT_COLUMNS, op_references=OPERATING_POINT_REFERENCES)
+    schema = network_inputs.feature_schema(schema, config.run.network)          # record 7.298 (unchanged without them)
     return dict(feature_schema=schema, reward_settings=reward_settings(config),
                 condition_policy=config.run.conditions.policy, planned_conditions=training_conditions(config))
 
 
-def _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary=None, runtime=None):
+def _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary=None, runtime=None, view=None):
     """`vocabulary`: None = the optimizer's standard component list; a loaded PDK's list (pdk.Vocabulary) otherwise.
-    Either way the learner is the package's own SACLearner (pdk.learner_class only adds the PDK view at its input)."""
+    `view`: the transferable inputs' NetworkView (record 7.298), which then includes the PDK list's view. Either way the
+    learner is the package's own SACLearner (network_inputs.learner_class only adds a view at its input)."""
     options = dict(feature_schema=None if vocabulary is None else vocabulary.schema)
     options.update(runtime or {})
-    return learner_class(vocabulary)(experiment=experiment, model_config=model_config, config=sac_config, spec_schema=spec_schema,
-                                     **options)
+    return network_inputs.learner_class(vocabulary, view)(experiment=experiment, model_config=model_config, config=sac_config,
+                                                          spec_schema=spec_schema, **options)
 
 
 def _encoder_state(state, *, only_encoder):
@@ -102,15 +103,16 @@ def current_contract(experiment, model_config, sac_config, spec_schema, vocabula
 
 
 def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, seed, origin,
-          source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None, runtime=None):
-    """Returns dict(learner, replay, run_state, policy, freeze). `vocabulary`: the run's component list (None = standard)."""
+          source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None, runtime=None, view=None):
+    """Returns dict(learner, replay, run_state, policy, freeze). `vocabulary`: the run's component list (None = standard);
+    `view`: its transferable inputs' NetworkView (record 7.298), or None."""
     from analog_optimizer.training.replay import ReplayBuffer
     import torch
     seed_everything(seed)
     policy = dict(mode=mode, source_checkpoint=None, loaded=[], reset=[], frozen_modules=[], notes=[])
     freeze = None
     if mode == 'scratch':
-        learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime)
+        learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime, view)
         replay = ReplayBuffer(advanced.replay_capacity, origin=origin, seed=seed)
         policy['reset'] = ['actor', 'critics', 'target_networks', 'temperature', 'optimizers', 'replay_buffer',
                            'task_counters']
@@ -137,7 +139,7 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
     if mode == 'resume':
         options = dict(feature_schema=None if vocabulary is None else vocabulary.schema)
         options.update(runtime or {})
-        learner, replay, run_state = learner_class(vocabulary).load(
+        learner, replay, run_state = network_inputs.learner_class(vocabulary, view).load(
             source_dir / 'training_state.pt', experiment=experiment, model_config=model_config,
             config=sac_config, spec_schema=spec_schema, **options)
         policy['loaded'] = list(ckpt.FULL_COMPONENTS)
@@ -145,7 +147,7 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
         return dict(learner=learner, replay=replay, run_state=run_state, policy=policy, freeze=None)
 
     weights = ckpt.load_weights(source_dir)
-    learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime)
+    learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime, view)
     if mode == 'fine_tune':
         only_encoder = advanced.encoder_only_transfer
         learner.actor.load_state_dict(_encoder_state(weights['actor'], only_encoder=only_encoder),

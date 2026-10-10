@@ -69,12 +69,12 @@ def _describe(part, path):
 def schemas(contract):
     """(FeatureSchema, SpecSchema) of a checkpoint's own contract: its JSON lists back as the tuples the schemas hold."""
     from analog_optimizer.graph.pyg_converter import FeatureSchema
-    from analog_optimizer.models.inputs import SpecSchema
+    from analog_optimizer.models.inputs import spec_schema_from_dict
 
     def tuples(value):
         return tuple(tuples(v) for v in value) if isinstance(value, (list, tuple)) else value
     return (FeatureSchema(**{k: tuples(v) for k, v in contract['feature_schema'].items()}),
-            SpecSchema(**{k: tuples(v) for k, v in contract['spec_schema'].items()}))
+            spec_schema_from_dict(contract['spec_schema']))           # a registry or a spec set (record 7.298)
 
 
 def rebuild_network(contract):

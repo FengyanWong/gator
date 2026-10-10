@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, asdict
 
-from . import saved_rows, units
+from . import families, network_inputs, pdk_record, saved_rows, spec_descriptors, units
 from .pdk import label, parameter_facts
 from .profile_store import task_spec_registry
 from .schema import WorkbenchConfig
@@ -610,7 +610,7 @@ def _warn_learning_values(report, run, adv):
 def _check_vocabulary(report, run, record):
     """The component list the network is built with: a PDK's needs that PDK loaded."""
     vocabulary = getattr(run.network, 'vocabulary', 'standard') or 'standard'
-    if vocabulary != 'standard':                  # the schema admits 'pdk:<name>' only: `record` is _pdk_record's load of <name>
+    if vocabulary.startswith('pdk:'):             # `record` is _pdk_record's load of <name>; the family list: _check_network_inputs
         if record is None:
             report.add('blocker', 'pdk_not_loaded', 'run.network.vocabulary',
                        f'The network is to know the components of PDK {vocabulary[4:]}, but that PDK is not loaded. Read it '
@@ -620,6 +620,72 @@ def _check_vocabulary(report, run, record):
             report.add('info', 'pdk_vocabulary', 'run.network.vocabulary',
                        f"The network is built with the component list of {label(record['vocabulary'])}. A model trained "
                        'with it loads only with this list, and models trained with the standard list do not load with it.')
+
+
+def _check_network_inputs(config, report, graph):
+    """The transferable inputs of record 7.298: what the network reads of each spec (on its Specs row), and whether the
+    task's PDK gives every MOS model of the circuit the numbers the size and device-model inputs need (names and counts
+    only - the numbers are never shown)."""
+    network = config.run.network
+    settings = network_inputs.transfer_settings(network)
+    if settings['spec_input'] == 'set':
+        described = spec_descriptors.describe_specs(config)
+        report.add('info', 'spec_input_set', 'targets',
+                   'The network reads these specs as a set: any names and any number of them, each described by what it '
+                   'measures (its row says how) and by how far it is from its limits. A model trained so loads on any task '
+                   'with the same network inputs.')
+        for i, target in enumerate(config.targets):
+            if target.active:
+                report.add('info', 'spec_input_set_item', f'targets[{i}]',
+                           f'The network reads {target.metric_id} as: '
+                           + spec_descriptors.words(described[target.metric_id], units.canonical_unit(target.unit)
+                                                    if units.known(target.unit) else target.unit))
+    relative, numbers = settings['size_features'] == 'pdk_relative', settings['device_model_features']
+    if relative or numbers:
+        path = 'run.network.size_features' if relative else 'run.network.device_model_features'
+        try:
+            document = network_inputs.numbers_for(config, required=True)
+        except network_inputs.InputsUnavailable as exc:
+            report.add('blocker', 'pdk_numbers_unavailable', path, str(exc))
+            document = None
+        if document is not None and graph is not None:
+            found = network_inputs.coverage(graph, document)
+            if relative and found['missing_sizes']:
+                report.add('blocker', 'pdk_sizes_missing', 'run.network.size_features',
+                           f"Sizes relative to the PDK need each MOS model's minimum size, which PDK {document['pdk_id']} does "
+                           f"not give for {', '.join(found['missing_sizes'])}. Choose absolute sizes, or load the PDK again.")
+            if numbers and found['missing_numbers']:
+                level = 'blocker' if len(found['missing_numbers']) == len(found['models']) else 'warning'
+                report.add(level, 'device_numbers_missing', 'parameters' if level == 'warning' else 'run.network.device_model_features',
+                           f"Device model features: the nominal model section of PDK {document['pdk_id']} does not give all "
+                           f"four technology numbers of {', '.join(found['missing_numbers'])}"
+                           + ('; the network sees those inputs as missing on these devices.' if level == 'warning' else
+                              '; none of this circuit\'s MOS models has them. Switch the device model features off.'))
+    vocabulary = getattr(network, 'vocabulary', 'standard') or 'standard'
+    if vocabulary == 'standard' and config.run.mode == 'scratch':
+        report.add('warning', 'standard_list_new_model', 'run.network.vocabulary',
+                   'A new model is built with the device-family list (RL model window, Components): the standard list is kept '
+                   'to continue the models trained with it. This configuration still asks for it.')
+    if vocabulary == families.NAME and graph is not None:
+        pdk_id = getattr(config.circuit, 'pdk_id', None)
+        unknown = families.coverage(graph, families.FamilyList(families.block_for(pdk_id)))['unknown']
+        if unknown:
+            loaded = bool(pdk_id) and pdk_record.load_record(pdk_id) is not None
+            report.add('info', 'family_list_unknown_parts', 'parameters',
+                       f"Device families: {', '.join(sorted(set(unknown)))} read as unknown parts - "
+                       + (f'PDK {pdk_id} is not loaded; loading it (PDK window) gives its bipolars, diodes and varactors their '
+                          'families.' if not loaded else 'the rules of the family list could not classify them (their model '
+                          'facts are in the PDK window).'))
+    if network_inputs.any_transfer(network) and config.run.rehearsal is not None:
+        report.add('blocker', 'rehearsal_with_transfer_inputs', 'run.rehearsal',
+                   'Rehearsal mixes in recorded transitions of other tasks, and those would need the view of their own task '
+                   '(their spec descriptions, their PDK): not built yet for the transferable network inputs. Switch '
+                   'rehearsal off, or use the standard inputs.')
+    if network.operating_points and network_inputs.maestro_dc_operating_point(config) == 'added':
+        report.add('info', 'dc_operating_point_added', 'parameters',
+                   "Operating-point inputs: this task's Maestro test does not save the DC operating point, so this run adds it "
+                   'to the deck - one short DC solve more per evaluation; every other analysis and output stays as the test '
+                   'has it.')
 
 
 def _warn_output_settings(report, out):
@@ -690,9 +756,11 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
     record = _pdk_record(config)                  # one read of the PDK record for every check below (it was four)
     _check_parameters(config, report, graph, record)
     measurement_ids = _check_measurements(config, report, provided_metrics=provided_metrics)
-    _check_targets(config, report, measurement_ids, registry=registry_for(config),
+    registry = None if config.run.network.spec_input == 'set' else registry_for(config)      # a set has none (7.298)
+    _check_targets(config, report, measurement_ids, registry=registry,
                    extensible=config.run.advanced.spec_registry is None, provided_metrics=provided_metrics)
     _check_run(config, report, record)
+    _check_network_inputs(config, report, graph)
     _check_research(config, report, for_generalization=for_generalization)
     if record is not None and graph is not None and not any(d.model_ref in record['devices'] for d in graph.devices):
         report.add('warning', 'pdk_not_in_circuit', 'run.network.vocabulary',

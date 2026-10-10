@@ -27,6 +27,28 @@ export const ADVANCED_ROWS: NumberField[][] = [
   ],
 ];
 
+/** The transferable network inputs of record 7.298, set together by the RL model window's one "Network inputs" choice:
+ *  the specs read as a set (any names, any number), sizes relative to the PDK and its device model numbers. */
+export const TRANSFERABLE = { spec_input: 'set', size_features: 'pdk_relative', device_model_features: true };
+export const STANDARD_INPUTS = { spec_input: 'slots', size_features: 'absolute', device_model_features: false };
+export const TRANSFER_TITLE = 'Standard: the specs in the fixed places of the result registry, sizes in micrometres - every model saved before '
+  + '2026-10-10. Transferable: every spec described by what it measures and read as a set (any names, any number), transistor sizes '
+  + "relative to the PDK's minimum, and four technology numbers of each transistor's model; a model trained so loads on any task and "
+  + 'any PDK with the same inputs. Needs the task\'s PDK loaded. Changing this changes the model input schema.';
+/** Which of the two choices a network block is; "custom" when its three settings were set apart in a configuration file. */
+export function inputsChoice(net: Json): 'standard' | 'transferable' | 'custom' {
+  const values = [net?.spec_input ?? 'slots', net?.size_features ?? 'absolute', !!net?.device_model_features];
+  if (values[0] === 'slots' && values[1] === 'absolute' && !values[2]) return 'standard';
+  return values[0] === 'set' && values[1] === 'pdk_relative' && values[2] ? 'transferable' : 'custom';
+}
+/** A saved model's network inputs in words (the RL model window's model facts). */
+export function inputsText(net: Json): string {
+  if (!net) return 'unknown';
+  const parts = [net.spec_input === 'set' ? 'specs read as a set' : null, net.size_features === 'pdk_relative' ? 'sizes relative to the PDK' : null,
+    net.device_model_features ? 'device model features' : null].filter(Boolean);
+  return parts.length ? `transferable: ${parts.join(', ')}` : 'standard';
+}
+
 export const NETWORK_SETTING_LABELS: Record<string, string> = {
   hidden_dim: 'Hidden width', heads: 'Heads', layers: 'Layers', structural_encoding: 'Structural encoding',
   ...Object.fromEntries(ADVANCED_ROWS.flat().map(([name, label]) => [name, label])),
@@ -66,7 +88,7 @@ export type NetworkSizes = ReturnType<typeof networkSizes>;
 /** The network in short, beside the RL model button. */
 export const networkShort = (encoder: string, { hidden, heads, layers, components }: NetworkSizes, usesHeads: boolean, net: Json) =>
   [`${ENCODER_SHORT[encoder] ?? encoder} ${hidden}/${usesHeads ? heads : '–'}/${layers}`, net.operating_points ? 'op. points' : null,
-      components ? `${components} parts` : null].filter(Boolean).join(' · ');
+      inputsChoice(net) !== 'standard' ? 'transferable' : null, components === 'families' ? 'families' : components ? `${components} parts` : null].filter(Boolean).join(' · ');
 /** The next run's model in one line, beside the button (record 7.265; plan "RL model window": "New model · Graph Transformer
  *  template · GT 48/4/4", "Fine-tune ota7t (2) · save point 420 evaluations", "Evaluate ... · deterministic actions"). */
 export const modelLineText = ({ run, noMode, source, entry, encoder, netShort, sourceName, pointAt }: { run: Json; noMode: boolean; source: Json;
@@ -88,6 +110,7 @@ export const networkTitle = ({ loads, source, run, encoder, hidden, heads, layer
   encoder: string; usesHeads: boolean; net: Json } & NetworkSizes) =>
   loads && !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} loads a saved model: choose one in RL model...; the run then uses its network.`
     : `The network in use: ${encoder}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
+      + `inputs ${inputsText(net)}; `
       + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}, save point ${source.checkpoint_id}).` : '.'} RL model... changes it.`;
 /** The limits a run seldom changes that are set, for the line of the Limits fold. */
 export const limitsText = (run: Json) =>
@@ -97,4 +120,4 @@ export const limitsText = (run: Json) =>
 export const foldedText = (run: Json, budget: number, encoder: string, net: Json) =>
   [MODE_NAME[run.mode] ?? run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${budget} evaluations` : null,
     `${encoder} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,
-    net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');
+    net.vocabulary === 'families' ? 'device families' : net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');

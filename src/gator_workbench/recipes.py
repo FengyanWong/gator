@@ -22,6 +22,8 @@ from statistics import mean
 from analog_optimizer.backends.gpdk045 import number
 
 from . import model_library, ocean, units
+from .deck_ops import has_dc_operating_point, with_dc_operating_point
+from .psf_binary import PsfError, read_file
 from .generic_profile import GenericMosWidthProfile, RulesError
 from .virtuoso_setup import DECK_FORMAT
 
@@ -224,6 +226,7 @@ class GenericMaestroProfile(GenericMosWidthProfile):
         self._deck_file, self._deck = Path(kwargs['design_file']).parent / 'maestro_deck.json', None
         self.deck_name = 'input.scs'
         self.bridge = {}                          # how OCEAN reaches Virtuoso (tasks.generated_bridge_config sets it)
+        self.read_operating_points = False        # set for a run whose network reads them (record 7.298)
 
     @property
     def maestro(self) -> dict:
@@ -244,8 +247,11 @@ class GenericMaestroProfile(GenericMosWidthProfile):
     @property
     def analysis_settings(self):
         deck = self.maestro
-        return dict(version=1, recipe=MAESTRO, deck_sha256=deck['sha256'], analyses=list(deck['analyses']),
-                    outputs=[dict(name=o['name'], expression=o['spectre_expression'], analysis=o['analysis']) for o in deck['outputs']])
+        settings = dict(version=1, recipe=MAESTRO, deck_sha256=deck['sha256'], analyses=list(deck['analyses']),
+                        outputs=[dict(name=o['name'], expression=o['spectre_expression'], analysis=o['analysis']) for o in deck['outputs']])
+        if self.read_operating_points:            # the deck then also solves and saves the DC operating point (7.298)
+            settings['operating_points'] = 'dcOpInfo' if has_dc_operating_point(deck['tail']) else 'added dcOp + dcOpInfo'
+        return settings
 
     def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
         """Maestro's head (header, design variables, its model include) + the exported circuit + Maestro's tail (options,
@@ -257,12 +263,16 @@ class GenericMaestroProfile(GenericMosWidthProfile):
             raise RulesError(f'The Maestro test includes {deck["model_file"]} (section {deck["section"]}); the connection names '
                              f'{model_file} (section {section}): make them the same, then save the task again')
         head = model_library.apply(deck['head'], str(model_file), section, getattr(self, 'model_library', None))
-        return head + str(structure).strip('\n') + '\n' + without_unread_info(deck['tail'], deck['outputs'])
+        tail = without_unread_info(deck['tail'], deck['outputs'])
+        if self.read_operating_points:
+            tail = with_dc_operating_point(tail)
+        return head + str(structure).strip('\n') + '\n' + tail
 
     def analyze(self, job, *, result_name='bridge_result.json', mos_names=()):
         """The outputs of one finished run, measured with OCEAN on the run's own results on the simulator host (the
         bridge keeps them). Values in the canonical unit of each probe - what OCEAN returns, and what the compiled
-        specs compare with. No operating points: only the recorder would read them, and it can do without."""
+        specs compare with. Operating points only for a run whose network reads them (`read_operating_points`, record
+        7.298): read from the run's own downloaded results, without Virtuoso (`maestro_operating_points`)."""
         from analog_optimizer.backends.spectre_validation import validate_completion
         job, deck, settings = Path(job), self.maestro, self.analysis_settings
         result = json.loads((job / result_name).read_text())
@@ -276,13 +286,50 @@ class GenericMaestroProfile(GenericMosWidthProfile):
         values = ocean.measure(self.bridge, raw, deck['outputs'])
         metrics = {o['name']: values.get(o['name']) for o in deck['outputs']}
         metric_units = {o['name']: units.canonical_unit(o['unit']) if units.known(o['unit']) else o['unit'] for o in deck['outputs']}
+        notes = ['Measured with OCEAN in Virtuoso on this run\'s own results: the output expressions of the copy\'s '
+                 'Maestro test, their signal names translated by Maestro\'s name maps.']
+        operating_points = {}
+        if self.read_operating_points:
+            operating_points, note = maestro_operating_points(result['metadata'].get('output_dir'), self.core_instance, mos_names)
+            notes.append(note)
         summary = dict(origin='real', job_id=result['job_id'], condition=condition, metrics=metrics, metric_units=metric_units,
-                       metric_validity={k: v is not None and math.isfinite(v) for k, v in metrics.items()}, operating_points={},
-                       execution_evidence=evidence, analysis_settings=settings, results_on_host=raw,
-                       notes=['Measured with OCEAN in Virtuoso on this run\'s own results: the output expressions of the copy\'s '
-                              'Maestro test, their signal names translated by Maestro\'s name maps.'])
+                       metric_validity={k: v is not None and math.isfinite(v) for k, v in metrics.items()},
+                       operating_points=operating_points, execution_evidence=evidence, analysis_settings=settings,
+                       results_on_host=raw, notes=notes)
         (job / 'measurements.json').write_text(json.dumps(summary, indent=2, allow_nan=False) + '\n')
         return summary
+
+
+# The operating-point outputs a Maestro deck may hold, in the order they are preferred: the DC equilibrium, else the point
+# at the end of the transient (record 7.298). Both are Spectre `info what=oppoint` results without a sweep. A run whose
+# network reads operating points gets the DC one added to its deck when the test saves none (`with_dc_operating_point`):
+# one DC solve more per evaluation, every other analysis and output unchanged.
+OPERATING_POINT_FILES = ('dcOpInfo.info', 'finalTimeOP.info')
+OPERATING_POINT_KEYS = ('ids', 'gm', 'gds', 'vgs', 'vds', 'vth', 'vdsat', 'region')
+
+
+def maestro_operating_points(results_dir, core_instance, mos_names):
+    """({'<core>.<mos>': {key: number}}, a note) from a Maestro run's downloaded results (binary PSF, `psf_binary`).
+    Missing files, devices or keys are left out (the network masks them); a file that does not parse gives none."""
+    folder = Path(results_dir) if results_dir else None
+    found = next((folder / name for name in OPERATING_POINT_FILES if folder is not None and (folder / name).is_file()), None)
+    if found is None:
+        return {}, 'No operating points: the Maestro deck saves neither dcOpInfo nor finalTimeOP for this run.'
+    try:
+        _, values = read_file(found)
+    except (OSError, PsfError) as exc:
+        return {}, f'No operating points: {found.name} could not be read ({exc}).'
+    points = {}
+    for name in mos_names:
+        key = f'{core_instance}.{name}'
+        record = values.get(key)
+        if not isinstance(record, dict):
+            continue
+        kept = {k: record[k] for k in OPERATING_POINT_KEYS
+                if isinstance(record.get(k), (int, float)) and not isinstance(record.get(k), bool) and math.isfinite(record[k])}
+        if kept:
+            points[key] = kept
+    return points, f'Operating points from {found.name}: {len(points)} of {len(mos_names)} transistors.'
 
 
 PROFILE_CLASSES = {'opamp_ac': GenericMosWidthProfile, RING: GenericRingOscillatorProfile, MAESTRO: GenericMaestroProfile}

@@ -19,7 +19,7 @@ import threading
 from uuid import uuid4
 
 from . import (CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, caches, calibration, checkpoints as ckpt, connection,
-               consistency, modes, pdk, run_index)
+               consistency, families, modes, network_inputs, pdk, run_index)
 from .compile import CompileError, compile_task
 from .connection import worker_environment
 from .layout import RunLayout, code_provenance, environment_versions, new_experiment_dir, new_run_dir, read_run
@@ -152,12 +152,12 @@ def _vocabulary_for(config, source_run=None):
     takes that model's own list when it names the same PDK - the network follows the model, as its sizes do - even if
     the PDK was loaded again since; the model's list is copied from its run folder."""
     wanted = pdk.requested(config)
-    if source_run is not None:
+    if source_run is not None and wanted != families.NAME:     # the family list maps THIS task's PDK, whatever the model's
         own = pdk.run_vocabulary(source_run)
         if own is not None and own.name == wanted:
             return own
     try:
-        return pdk.current_vocabulary(wanted)
+        return pdk.current_vocabulary(wanted, getattr(config.circuit, 'pdk_id', None))
     except pdk.PdkError as exc:
         raise RunRejected(str(exc), code='pdk_not_loaded')
 
@@ -339,6 +339,9 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     layout, run_id = new_run_dir(experiment_dir, config.project.task_name, config.run.mode, config.run.seed)
     layout.create()
     write_run_vocabulary(layout.run_dir, vocabulary)          # the run's own copy: resume and later loads use it
+    inputs_record = network_inputs.prepared(config, vocabulary)[1]       # record 7.298: what the network is shown
+    if inputs_record is not None:
+        write_json(layout.run_dir / network_inputs.RUN_FILE, inputs_record)
     config = config.model_copy(deep=True)
     config.output.output_root, config.output.experiment_id = str(roots.resolve(output_root)), experiment_id
     research, pretrain_seed, pretrain_origin = _research_block(config, source_manifest)
@@ -369,8 +372,10 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                          feasibility='all active hard constraints, decided from raw values independently of reward',
                          action='absolute-group-v1: normalized proposal -> legalized physical assignment'),
         architecture=dict(network=config.run.network.model_dump(), sac=config.run.advanced.model_dump(mode='json'),
-                          spec_schema=dict(version=compiled.spec_schema.version,
-                                           metrics=[list(m) for m in compiled.spec_schema.metrics]),
+                          spec_schema=(dict(version=compiled.spec_schema.version,
+                                            metrics=[list(m) for m in compiled.spec_schema.metrics])
+                                       if hasattr(compiled.spec_schema, 'metrics') else
+                                       dict(asdict(compiled.spec_schema), version=compiled.spec_schema.version)),
                           vocabulary=vocabulary_record(vocabulary)),
         source_model=source_model, parent=parent,
         research=research, split=research['split'], generalization_level=research['generalization_level'],
@@ -558,9 +563,16 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
         raise RunRejected(f'Nothing to resume: {exc}', code='no_checkpoint')
     previous = WorkbenchConfig.model_validate(read_json(layout.effective_config))
     if (config.run.reward != previous.run.reward or config.run.conditions != previous.run.conditions
-            or config.run.network.operating_points != previous.run.network.operating_points):
-        raise RunRejected('Reward settings, condition plan and operating-point inputs cannot change on exact resume. '
-                          'Use fine_tune with a compatible actor and fresh critics/replay.', code='reward_contract_changed')
+            or config.run.network.operating_points != previous.run.network.operating_points
+            or network_inputs.transfer_settings(config.run.network) != network_inputs.transfer_settings(previous.run.network)):
+        raise RunRejected('Reward settings, condition plan and the network inputs (operating points, spec input, sizes, '
+                          'device model features) cannot change on exact resume. Use fine_tune with a compatible actor and '
+                          'fresh critics/replay.', code='reward_contract_changed')
+    recorded = network_inputs.read_run_record(run_dir)
+    if recorded is not None and recorded.get('view_key') != getattr(network_inputs.view_for(previous), 'key', None):
+        raise RunRejected('What this run showed its network has changed since it started: the spec descriptions of its task, '
+                          'or the device numbers of its PDK (the PDK was loaded again). Start a new run - Fine-tune from '
+                          "this run's model keeps what it learned.", code='network_inputs_changed')
     merged = previous.model_copy(deep=True)
     for name in RESUMABLE_RUN_FIELDS:
         setattr(merged.run, name, getattr(config.run, name))

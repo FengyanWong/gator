@@ -16,6 +16,7 @@ from pathlib import Path
 import random
 import time
 
+from . import families, network_inputs, spec_descriptors
 from .checkpoints import CheckpointStore
 from .modes import seed_everything
 from .storage.atomic import read_json, write_json
@@ -70,6 +71,38 @@ class Pool:
     schema: object
     reward_settings: object
     audit: dict
+    feature_schema: object = None          # None: the standard list (every pool before record 7.298)
+
+
+INPUT_KEYS = dict(spec_input=('slots', 'set'), size_features=('absolute', 'pdk_relative'), device_model_features=(False, True),
+                  vocabulary=('standard', 'families'))
+
+
+def request_inputs(request) -> dict:
+    """The network inputs a request trains with (record 7.298): request['inputs'], every key optional, defaults = as
+    before. Operating points are not offered: no archive of a Maestro task holds them."""
+    inputs = dict(request.get('inputs') or {})
+    if set(inputs) - INPUT_KEYS.keys():
+        raise ValueError(f'Unknown network inputs {sorted(set(inputs) - INPUT_KEYS.keys())}; known: {sorted(INPUT_KEYS)}')
+    for key, allowed in INPUT_KEYS.items():
+        if key in inputs and inputs[key] not in allowed:
+            raise ValueError(f'inputs.{key} must be one of {allowed}')
+    return dict(network_inputs.transfer_settings(inputs), vocabulary=inputs.get('vocabulary', 'standard'))
+
+
+def source_view(config, inputs):
+    """The NetworkView of one source archive under the request's inputs: its own specs described, its PDK's numbers, and
+    with the family list its own PDK's components mapped into the families."""
+    from .schema import WorkbenchConfig          # lazy: the schema module is only needed for a pool with these inputs
+    try:
+        recorded = WorkbenchConfig.model_validate(config)
+    except Exception as exc:
+        raise ValueError(f'The recorded configuration of a source cannot be read for the network inputs: {exc}') from exc
+    recorded.run.network = recorded.run.network.model_copy(update={k: v for k, v in inputs.items() if k != 'vocabulary'})
+    vocabulary = (families.FamilyList(families.block_for(getattr(recorded.circuit, 'pdk_id', None)))
+                  if inputs['vocabulary'] == families.NAME else None)
+    view = network_inputs.view_for(recorded, vocabulary)
+    return view if view is not None or vocabulary is None else network_inputs.NetworkView(vocabulary=vocabulary)
 
 
 def prepare_pool(request, *, progress=None):
@@ -82,6 +115,8 @@ def prepare_pool(request, *, progress=None):
     if not 0 < fraction < 1 or not request.get('runs'):
         raise ValueError('Nonempty sources and a holdout_fraction between 0 and 1 are required')
     seed = request.get('seed', 0)
+    inputs = request_inputs(request)
+    transfer = network_inputs.any_transfer(inputs) or inputs['vocabulary'] == families.NAME
     groups, registries, sources = defaultdict(lambda: defaultdict(list)), [], []
     run_ids, candidates, settings = set(), set(), None
     relabel = request.get('relabel_upper', {})
@@ -103,9 +138,14 @@ def prepare_pool(request, *, progress=None):
                 'mock' if origin == 'synthetic' else 'real'):
             raise ValueError(f'Origin mismatch for {run_id}')
         network = manifest['architecture']['network']
-        if network.get('operating_points') or network.get('vocabulary', 'standard') != 'standard':
-            raise ValueError('Offline pool currently requires the standard feature schema without operating points')
-        registries.append(manifest['architecture']['spec_schema']['metrics'])
+        if network.get('operating_points') or network.get('vocabulary', 'standard') not in ('standard', families.NAME):
+            raise ValueError('Offline pool currently requires the standard or family component list without operating points')
+        if inputs['spec_input'] == 'slots':
+            metrics = manifest['architecture']['spec_schema'].get('metrics')
+            if metrics is None:
+                raise ValueError(f'{run_id} read its specs as a set and has no result registry: pool it with inputs.spec_input "set"')
+            registries.append(metrics)
+        view = source_view(config, inputs) if transfer else None
         loader = TrajectoryLoader(directory)
         problems = loader.reader.verify()
         if problems:
@@ -138,6 +178,9 @@ def prepare_pool(request, *, progress=None):
             episode = (run_id, row['worker_id'], row['episode_id'])
             if not row['episode_id']:
                 raise ValueError('Episode identity required for leakage-free holdout')
+            if view is not None:          # what the network is shown of this archive (network_inputs, record 7.298)
+                first, last = view.view(first), view.view(last)
+                transition = replace(transition, observation=first, next_observation=last)
             groups[task][episode].append((transition, False))
             if task in relabel:
                 derived = _relabeled(transition, first, last, relabel[task], task)
@@ -155,18 +198,19 @@ def prepare_pool(request, *, progress=None):
             progress(dict(event='source_loaded', **sources[-1]))
     if set(relabel) - groups.keys():
         raise ValueError('Relabel task absent from pool')
-    schema = _pool_registry(registries, request)
+    schema = spec_descriptors.spec_set_schema() if inputs['spec_input'] == 'set' else _pool_registry(registries, request)
+    features = network_inputs.feature_schema(families.schema() if inputs['vocabulary'] == families.NAME else FeatureSchema(), inputs)
     training, validation, split = _split_episodes(groups, schema, seed, fraction)
     audit = dict(format='gator-offline-pool-v1', origin=origin, seed=seed, holdout_fraction=fraction,
                  request_sha256=identity(request), sources=sources, spec_schema=asdict(schema),
-                 feature_schema=asdict(FeatureSchema()), reward_settings=asdict(settings),
+                 feature_schema=asdict(features), inputs=inputs, reward_settings=asdict(settings),
                  source_evaluations=sum(s['evaluations'] for s in sources), new_simulator_launches=0,
                  eligible=sum(s['eligible'] for s in sources), excluded=sum(s['excluded'] for s in sources),
                  relabeled=sum(s['relabeled'] for s in sources),
                  per_task={t: dict(training=len(training[t]), validation=len(validation[t])) for t in training},
                  split=split, split_sha256=identity(split), unchanged_reward_gate='exact_match',
                  diagnostic_scope='within-source episode holdout; not an unseen-circuit transfer result')
-    return Pool(training, validation, schema, settings, audit)
+    return Pool(training, validation, schema, settings, audit, features)
 
 
 class BalancedSampler:
@@ -221,7 +265,8 @@ def _pool_registry(registries, request):
 def _split_episodes(groups, schema, seed, fraction):
     """Whole run-scoped episodes split into training and validation per task, reproducibly from the seed; every
     observation checked against the registry on the way. Returns (training, validation, the split's rows)."""
-    from analog_optimizer.models.inputs import context_features
+    from analog_optimizer.models.inputs import SpecSetSchema, context_features, spec_set_features
+    read = spec_set_features if isinstance(schema, SpecSetSchema) else context_features
     training, validation, split = {}, {}, []
     for task, episodes in sorted(groups.items()):
         keys = sorted(episodes)
@@ -236,7 +281,7 @@ def _split_episodes(groups, schema, seed, fraction):
             for transition, derived in episodes[key]:
                 # Validate the shared registry on both endpoints without constructing an encoder.
                 for observation in (transition.observation, transition.next_observation):
-                    context_features(observation, schema)
+                    read(observation, schema)
                 target[task].append(transition)
                 split.append(dict(task=task, run_id=key[0], worker_id=key[1], episode_id=key[2],
                                   candidate_id=transition.candidate_id, relabeled=derived, subset=subset))
@@ -294,7 +339,8 @@ def execute(request, output, *, audit_only=False, progress=None):
         status('loading')
         pool = prepare_pool(request, progress=progress)
         write_json(output / 'pool.json', pool.audit)
-        write_json(output / 'spec_registry.json', [dict(metric_id=n, unit=u, reference=r) for n, u, r in pool.schema.metrics])
+        write_json(output / 'spec_registry.json', [dict(metric_id=n, unit=u, reference=r)       # a spec set has none
+                                                   for n, u, r in getattr(pool.schema, 'metrics', ())])
         if audit_only:
             status('audited', source_evaluations=pool.audit['source_evaluations'], eligible=pool.audit['eligible'])
             return pool.audit
@@ -307,7 +353,7 @@ def execute(request, output, *, audit_only=False, progress=None):
         if sac.gamma != 0:
             raise ValueError('Phase-0 reward-regression diagnostics require gamma=0')
         learner = SACLearner(experiment=experiment, spec_schema=pool.schema, model_config=model,
-                             config=sac, reward_settings=pool.reward_settings)
+                             config=sac, reward_settings=pool.reward_settings, feature_schema=pool.feature_schema)
         sampler = BalancedSampler(pool.training, request.get('seed', 0))
         replay = ReplayBuffer(1, origin=request['origin'])
         # This path has no online collector or replay. Do not advertise RunEngine resume.

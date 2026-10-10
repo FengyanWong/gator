@@ -1,7 +1,20 @@
-# Current state (2026-10-09)
+# Current state (2026-10-10)
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
+- **Transferable network inputs (7.298, 2026-10-10; user: "build all this"):** the optimizer package changed on purpose -
+  `models/inputs.py` (the spec set input: every active spec one described item, any name, any number) and
+  `models/encoders.py` (its reader) - so the source digest moved `ad4ddcbe...` -> `94e7dd4f...` (together with 7.299 below; this change alone gives
+  `8f100145...`, 7.299 alone `f8bad49d...`). Saved models still
+  fine-tune and evaluate; an exact resume of one made before needs its own commit. The workbench adds sizes relative
+  to the PDK, device model features from the PDK's cached model library and operating points of Maestro tasks; all of
+  it at the network's input only, off by default (hashes unchanged). No transfer advantage is claimed: the
+  experiments that would show one (set vs slots, a held-out spec kind, the AgenticSizing circuits) are not run.
+- **Device families replace the standard list for new models (7.298, user 2026-10-10: "new models only"):** one fixed
+  list (11 kinds + unknown) every PDK maps into by rule; New model takes it, the standard list stays only to continue
+  the models trained with it (all saved before). The schema default stays `standard` (old configurations unchanged); a
+  new model still asking for it is warned. Maestro tests that save no DC operating point get one added for runs with
+  operating-point inputs.
 - **Six-circuit encoder baseline (7.244, plan only):** [A/B/C runbook](plan-encoder-baseline-abc.md)
   fixes OTA5t, OTA7t-width, LDO1, LDO2, RING3 and VCO_linear_c as the reusable suite. New A/B/C
   runs use the relaxed LDO HF PSRR targets (-3/-2.3 dB), fixed existing starting vectors, the common
@@ -1382,3 +1395,29 @@ and the button only run the calibration steps”. Implemented in workbench code 
   pooled error amplifier is itself a folded cascode. The typed-graph audit (no whole-graph isomorphism, no pooled core
   embedded) goes with both results. (5) OTA8m's cells are renamed `mscr_ota7t_rz` / `tb_ota7t_rz` and its task is deleted
   (backup kept): it was the pooled OTA7t with a nulling resistor, not a held-out circuit.
+
+## Transferable network inputs: specs as a described set, sizes relative to the PDK, device model features, Maestro operating points (2026-10-10, record 7.298)
+
+- **Why:** a model that reads specs through registry slots loads only on tasks with the same spec names, and sizes in
+  micrometres tie what it learned to one PDK. The user asked to build every part of the remedy ("build all this and add
+  frontend entries if needed (frontend entries as few as possible)").
+- **The optimizer package changed (a new source digest: `8f100145...` for this change alone, `94e7dd4f...` once landed
+  beside record 7.299's change of the same day):** `SpecSetSchema` and `spec_set_features` in
+  `models/inputs.py` (per active spec: hard/comparator/limits/objective flags, the distance to the limits in the spec's
+  own scale, the reward's violation, pass flags at nominal and worst corner, relative weight, magnitudes against a
+  reference per unit, a unit one-hot, and the caller's description; the run's row without the absolute supply), and
+  `SpecSetReader` in `models/encoders.py` (a shared MLP per item, attention with the run's row as query, then the same
+  [B,H] context as before). The slot input's code paths are unchanged and keep their state-dict keys.
+- **Off by default, at the input only:** the three settings (`spec_input`, `size_features`, `device_model_features`) are
+  dropped from the hash at their defaults; the environment, reward, actions, replay and recorded tables never see the
+  view. The device numbers stay in the local PDK folder and are never shown or recorded in a run.
+- **Limits stated:** rehearsal is blocked with these inputs; the offline qualification's specialist comparison is not
+  offered for such a pool; the descriptions read OCEAN expressions by rule and leave what they cannot read at 0; the second
+  foundry PDK's RF MOS models are outside the nominal section the AgenticSizing wrapper includes; the device features need training on
+  more than one PDK before they can mean anything. Nothing here is evidence of transfer.
+- **Added the same day (user: "for 3 can we train them with description", then "build" the three proposals):** the spec
+  description says WHERE a spec is read (position + span of its point or window; descriptor v2), the deck of a run with
+  operating-point inputs gets the DC operating point when its Maestro test saves none (`deck_ops.py`), and the
+  device-family list (`families.py`) with two more classification rules (Spectre's own passive primitives; resistive
+  behavioural chains) - the family list replacing the standard one for NEW models only, by the user's choice: every
+  model saved before was trained with the standard list and keeps loading with it.

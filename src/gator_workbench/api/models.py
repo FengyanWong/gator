@@ -216,6 +216,12 @@ class ModelStructureBody(Body):
     checkpoint_id: str = Field('latest', max_length=120)
 
 
+class RenameTaskBody(Body):
+    """The name a task is shown under from now on (record 7.302). Its key stays."""
+    task_key: str = Field(min_length=3, max_length=200)
+    name: str = Field(max_length=200)               # the route says the real rule in plain words
+
+
 class RenameModelBody(Body):
     """A saved model's new name (record 7.225)."""
     run_dir: str

@@ -31,7 +31,7 @@ from pathlib import Path
 import re
 import sys
 
-from . import caches, model_library, native_cells, task_registry
+from . import caches, model_library, native_cells, task_names, task_registry
 from .connection import KINDS, family_of, named_or_active, profile_kind
 from .paths import bridge_state_dir, connection_file, repo_root
 from .spec_equations import EquationNativeFactory
@@ -151,8 +151,11 @@ def list_tasks():
                                       + ('' if reference else 'No real baseline recorded yet.')))
     from . import ngspice_tasks  # lazy: ngspice_tasks imports the optimizer (torch)
     tasks.extend(ngspice_tasks.task_entries())                 # SPICE decks saved in the ngspice window
+    given, keys = task_names.names(), [task['task_key'] for task in tasks]
     for task in tasks:
-        task['starter_project'] = starter_project(task['task_key'])
+        # The name the windows show (record 7.302): the task's own unless it was renamed. Its key never changes.
+        task['name'] = task_names.shown(task['task_key'], given, keys)
+        task['starter_project'] = starter_project(task['task_key'], task['name'])
         task['training_capabilities'] = training_capabilities(task['task_key'])
     return tasks
 

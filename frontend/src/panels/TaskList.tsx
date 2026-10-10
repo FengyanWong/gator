@@ -27,6 +27,12 @@ import { OPEN_TASKS, openRunsAt, TasksAt } from '../openAt';
 
 /** Display only: saved task keys keep their namespace for selection and run/model links. */
 const taskName = (key: string) => key.replace(/^real:/, '');
+/** The name in a task's key: what its files, its cell and its runs carry. */
+const ownName = (key: string) => key.replace(/^[^:]+:/, '');
+/** The name a task is shown under (record 7.302): the one it was renamed to, else its own. A rename never changes the
+ *  key - the task window's Details hold the Name box. A server older than the rename lists no `name`. */
+export const shownName = (t: Json | null | undefined, key = t?.task_key ?? '') => typeof t?.name === 'string' && t.name !== ownName(key) ? t.name : taskName(key);
+const renamed = (t: Json) => typeof t.name === 'string' && t.name !== ownName(t.task_key);
 /** The mark the old list put after a task's name: what keeps it from running right now. */
 export const taskMark = (t: Json, ngspiceOffered: boolean) => t.kind === 'mock' ? '[MOCK]'
   : t.kind === 'ngspice' ? (t.available && ngspiceOffered ? '[ngspice]' : '[ngspice: choose its connection]') : t.available ? '' : '[blocked]';
@@ -41,7 +47,7 @@ const newestText = (r: Json | null) => !r ? 'none' : `${stamp(r.created_utc) ?? 
 
 type Column = { key: string; title: string; help: string; value: (t: Json, runs: Json[]) => string | number | null };
 const COLUMNS: Column[] = [
-  { key: 'task', title: 'Task', help: 'The registered task name. A mark says what keeps it from running now; synthetic tasks carry a MOCK badge.', value: t => taskName(t.task_key) },
+  { key: 'task', title: 'Task', help: 'The name the task is shown under. A renamed task says its internal name below it: the name its files, its cell and its runs keep (Details holds the Name box). A mark says what keeps it from running now; synthetic tasks carry a MOCK badge.', value: t => shownName(t) },
   { key: 'class', title: 'Class', help: 'The circuit class label the task carries (opamp, ldo, oscillator, ...).', value: t => t.circuit_class ?? '' },
   { key: 'cell', title: 'Cell', help: 'The Virtuoso library and cell the task runs in (the copy you declared), with its testbench cell.', value: t => cellOf(t) },
   { key: 'revision', title: 'Rev', help: 'The saved revision of the task. Save as creates a new task at revision 1.', value: t => t.revision ?? null },
@@ -53,10 +59,26 @@ const COLUMNS: Column[] = [
 ];
 
 /** Everything else about one task, and its rows (read from the starter route when the details open). */
-function TaskDetails({ task, runs, rows, error }: { task: Json; runs: Json[]; rows: Json; error?: string }) {
+function TaskDetails({ task, runs, rows, error, followed, onRenamed }: { task: Json; runs: Json[]; rows: Json; error?: string; followed: boolean; onRenamed: () => void }) {
   const of = runsOf(runs, task.task_key);
+  // Rename (record 7.302; user: "add rename functionality to tasks"): the name the task is SHOWN under. Its key, its
+  // files, its cell and every run and model that names it stay as they are; typing its own name takes a rename back.
+  const [name, setName] = useState(shownName(task));
+  const [renaming, setRenaming] = useState(false);
+  const [renameNote, setRenameNote] = useState<{ level: 'hint' | 'warn'; text: string } | null>(null);
+  useEffect(() => setName(shownName(task)), [task.task_key, task.name]);
+  const typed = name.trim();
+  const canRename = !renaming && !!typed && typed !== shownName(task) && 'name' in task;
+  const rename = () => {
+    if (!canRename) return;
+    setRenaming(true); setRenameNote(null);
+    api.renameTask(task.task_key, typed).then(r => { setRenameNote({ level: 'hint', text: `Renamed to "${r.name}". New runs of the task are filed under this name`
+        + (followed ? ' once the page follows it again: double click its row.' : '.') }); onRenamed(); })
+      .catch(e => setRenameNote({ level: 'warn', text: e.message })).finally(() => setRenaming(false));
+  };
   const facts: [string, string | null | undefined][] = [
-    ['Registered task', taskName(task.task_key)], ['Blocked by', task.blocker], ['What it is', task.description],
+    ['Registered task', shownName(task)], ['Internal name', renamed(task) ? `${taskName(task.task_key)} - its files, its cell and its runs keep this name` : null],
+    ['Blocked by', task.blocker], ['What it is', task.description],
     ['Title', task.title ?? rows?.project?.notes], ['Circuit class · PDK', `${task.circuit_class ?? 'unspecified'} · ${task.pdk_id ?? 'unspecified'}`],
     ['Runs in', task.library && task.cell ? `${task.library}/${task.cell}${task.testbench ? ` with testbench ${task.testbench}` : ''}` : null],
     ['Saved from', task.original?.cell ? `${task.original.library}/${task.original.cell}${task.original.testbench ? ` (testbench ${task.original.testbench})` : ''}` : null],
@@ -71,6 +93,13 @@ function TaskDetails({ task, runs, rows, error }: { task: Json; runs: Json[]; ro
   const limits = (s: Json) => s.constraint === 'interval' ? `${unit(s.lower, s.unit)} to ${unit(s.upper, s.unit)}`
     : s.constraint === '>=' ? `>= ${unit(s.lower, s.unit)}` : s.constraint === '<=' ? `<= ${unit(s.upper, s.unit)}` : `${s.constraint ?? ''} ${unit(s.lower ?? s.upper, s.unit)}`.trim();
   return (<div className="run-details task-details">
+    <div className="row model-rename-row task-rename-row">
+      <label title="The name this task is shown under: a lower-case letter first, then lower-case letters, digits and underscores (2-40 characters). Only the shown name changes: the task's files, its Virtuoso cell and the runs and models made on it keep the internal name. A name another task has is refused. Type the internal name to take a rename back.">Name
+        <input className="model-rename task-rename" value={name} maxLength={40} disabled={renaming || !('name' in task)} onChange={e => setName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); rename(); } }} /></label>
+      <button className="model-rename-apply task-rename-apply" disabled={!canRename} onClick={rename}
+        title={'name' in task ? 'Show this task under the name in the box.' : 'The workbench server that is running is older than this page and cannot rename a task: restart it.'}>{renaming ? 'Renaming...' : 'Rename'}</button></div>
+    {renameNote && <p className={`${renameNote.level === 'warn' ? 'warn' : 'hint'} model-rename-note task-rename-note`}>{renameNote.text}</p>}
     {error && <p className="error">The task's rows could not be read: {error}</p>}
     {!rows && !error && <p className="hint">Reading the task's rows...</p>}
     <table className="grid small run-facts"><tbody>
@@ -111,6 +140,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   const [rows, setRows] = useState<{ key: string; value?: Json; error?: string } | null>(null);
   const folders = useFolders('tasks');
   const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
+  const nameOf = (key: string) => shownName(tasks.find(t => t.task_key === key), key);          // a task not listed: its own name
 
   const readRows = (key: string) => { setRows({ key }); api.starter(key).then(value => setRows(r => (r?.key === key ? { key, value } : r)), e => setRows(r => (r?.key === key ? { key, error: e.message } : r))); };
   // The tasks are read through the column (so it shows the same list); "Refresh list" reads the page's run list again too.
@@ -155,7 +185,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
     void Promise.resolve(onChoose(key)).then(r => { if (r?.loaded !== false && shown && !shown.closed) shown.close(); });
   };
 
-  const text = (t: Json) => [t.task_key, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
+  const text = (t: Json) => [t.task_key, t.name, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
   // Only while the window is open.
   const shown = !popup ? [] : table.arrange(tasks, t => folders.holds(t.task_key), text, t => column.value(t, runs));
@@ -172,7 +202,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       {tasksError && !reading && <p className="error task-list-error">The task list could not be read: {tasksError}</p>}
       {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
       {current && onDelete && <div className="row task-window-actions">
-        <span className="hint">Current task: <code>{taskName(current)}</code></span>
+        <span className="hint">Current task: <code>{nameOf(current)}</code></span>
         <button disabled={deleteDisabled} onClick={() => onDelete(popup)} title={deleteTitle}>
           <Icon name="delete-task" label={deleting ? 'Deleting...' : 'Delete task'} /></button>
       </div>}
@@ -191,10 +221,11 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       {tasks.length > 0 && <div className="scroll"><table className="grid run-table task-table">
         <TableHead view={table} columns={COLUMNS} shown={shown} id={t => t.task_key} what="tasks" disabled={folders.busy || !folders.ready} />
         <tbody>{shown.map(t => { const active = t.task_key === current, mark = taskMark(t, ngspiceOffered), of = runsOf(runs, t.task_key); return (<Fragment key={t.task_key}>
-          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} data-task-key={t.task_key} title={taskName(t.task_key)} onDoubleClick={e => chooseRow(e, t.task_key)}>
-            <td className="task-select"><input type="checkbox" aria-label={`Select ${taskName(t.task_key)}`} checked={selected.includes(t.task_key)}
+          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} data-task-key={t.task_key} title={renamed(t) ? `${shownName(t)} (internal name ${taskName(t.task_key)})` : taskName(t.task_key)} onDoubleClick={e => chooseRow(e, t.task_key)}>
+            <td className="task-select"><input type="checkbox" aria-label={`Select ${shownName(t)}`} checked={selected.includes(t.task_key)}
               disabled={folders.busy || !folders.ready} onChange={e => table.select(t.task_key, e.target.checked)} /></td>
-            <td><code>{taskName(t.task_key)}</code>{loading === t.task_key && <span className="hint"> loading...</span>}
+            <td><code>{shownName(t)}</code>{loading === t.task_key && <span className="hint"> loading...</span>}
+              {renamed(t) && <div className="hint task-internal-name">internal name {taskName(t.task_key)}</div>}
               {folders.folder === 'all' && folders.data.folders[folders.of(t.task_key)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(t.task_key)]}</div>}
               {mark && <div className="task-mark">{t.kind === 'mock' ? <span className="badge model-tag mock-tag">MOCK</span> : <span className={`hint${t.available ? '' : ' warn'}`}>{mark}</span>}</div>}</td>
             <td>{t.circuit_class ?? ''}</td>
@@ -212,7 +243,8 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
             <td><button className="notes-link" aria-expanded={open === t.task_key} onClick={() => toggle(t.task_key)}>{open === t.task_key ? 'Hide details' : 'Details'}</button></td>
           </tr>
           {open === t.task_key && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
-            <TaskDetails task={t} runs={runs} rows={rows?.key === t.task_key ? rows?.value : null} error={rows?.key === t.task_key ? rows?.error : undefined} /></td></tr>}
+            <TaskDetails task={t} runs={runs} rows={rows?.key === t.task_key ? rows?.value : null} error={rows?.key === t.task_key ? rows?.error : undefined}
+              followed={active} onRenamed={() => refresh(false)} /></td></tr>}
         </Fragment>); })}</tbody></table></div>}
       {shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No task matches the filter in this folder.' : 'This folder is empty. Select tasks in All tasks, then use Move to…'}</p>}
       </div></div>
@@ -221,9 +253,9 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
 
   return (<>
     <button className={`task-list-button${popup ? ' open' : ''}`} onClick={() => openPopup()}
-      aria-label={current ? `Open Tasks: ${taskName(current)}` : 'Open Tasks'}
+      aria-label={current ? `Open Tasks: ${nameOf(current)}` : 'Open Tasks'}
       title={popup ? 'The task window is open: press to bring it to the front and read the lists again.' : 'Opens the task window: every registered task with its cell, revision, baseline, sizes and results, and its newest run. Double click one there to make the workbench follow it; the window then closes.'}>
-      <span className="task-list-current" title={taskName(current ?? currentText)}>{current ? <code className="task-list-key" data-task-key={current}>{taskName(current)}</code> : <span className="task-list-key">{taskName(currentText)}</span>}
+      <span className="task-list-current" title={current ? nameOf(current) : taskName(currentText)}>{current ? <code className="task-list-key" data-task-key={current}>{nameOf(current)}</code> : <span className="task-list-key">{taskName(currentText)}</span>}
         {currentMark && <span className="task-list-mark hint"> {currentMark}</span>}</span>
     </button>
     {blocked && <Blocked as="span" className="error task-list-blocked" />}

@@ -92,7 +92,7 @@ function Relationships({ row, info, runs, byDir, tasks, from, onFocus }: { row: 
   const stepText = (s: Json) => `${s?.task_key ?? (s ? taskOf(s) : '?')} · ${s?.mode ?? '?'} · ${s?.evaluations ?? '?'} evaluations${s?.model_label ? ` · ${s.model_label}` : ''}`;
   return (<table className="grid small run-relations"><tbody>
     <tr><td>Task</td><td>{row.task_key ? <button className="item-link" onClick={() => openTasksAt({ task_key: row.task_key, from })}
-        title="Open the Tasks window at this task.">{row.task_key}</button> : taskOf(row)}
+        title="Open the Tasks window at this task.">{task && typeof task.name === 'string' && task.name !== row.task_key.replace(/^[^:]+:/, '') ? `${task.name} (${row.task_key})` : row.task_key}</button> : taskOf(row)}
       {row.task_definition_hash && <span className="hint"> · definition {String(row.task_definition_hash).slice(0, 12)}</span>}
       {task?.revision != null && <span className="hint"> · revision {task.revision} now</span>}
       {savedSince && <span className="warn"> · saved again since this run ({stamp(task.saved_utc)})</span>}

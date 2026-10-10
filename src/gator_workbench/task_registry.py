@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 
+from . import task_names
 from .paths import repo_root
 
 
@@ -151,10 +152,14 @@ class TaskRuntime:
         return self.origin == 'synthetic'
 
 
-def starter_project(task_key) -> dict:
+def starter_project(task_key, shown=None) -> dict:
     """The project / task name a task's starter gives: what a run is filed under (runs/<task_name>/) until the user names
-    it. Listed with every task, so the page can tell a name nobody typed from one the user chose."""
+    it. Listed with every task, so the page can tell a name nobody typed from one the user chose. A renamed task (record
+    7.302, task_names) gives the name it is shown under; `shown`: that name when the caller read it already."""
     kind, _, name = task_key.partition(':')
+    shown = task_names.shown(task_key) if shown is None else shown
+    if shown != name:
+        return dict(name=shown.replace('_', '-'), task_name=shown)
     return (dict(name=f"mock-{name.replace('_', '-')}", task_name=f'mock_{name}') if kind == 'synthetic'
             else dict(name=name.replace('_', '-'), task_name=name))
 

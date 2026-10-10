@@ -394,7 +394,7 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 
 | Column | What it says |
 |---|---|
-| Task | The task name, without the `real:` prefix for saved Virtuoso tasks; ngspice names retain `ngspice:`. Availability marks and the MOCK badge appear beside the name. There is no Kind column or Kind detail (7.249). |
+| Task | The name the task is shown under: its own name, without the `real:` prefix for saved Virtuoso tasks (ngspice names retain `ngspice:`), or the name it was renamed to, with "internal name ..." under it (record 7.302, **Rename** below). Availability marks and the MOCK badge appear beside the name. There is no Kind column or Kind detail (7.249). |
 | Class | The circuit class label. |
 | Cell | The library and cell the task runs in (the copy you declared), and its testbench cell. |
 | Rev | The saved revision. |
@@ -414,6 +414,17 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   its netlist of record, how it is measured, created / saved / baseline times, its state, the run label, its runs - and
   its rows: the Parameters it varies (searched rows with their ranges, follower rows), its Probes and its Specs with
   their limits, read from the starter route when the details open.
+* **Rename** (record 7.302, user request 2026-10-10: "add rename functionality to tasks"): the first line of a task's
+  Details is a **Name** box with a **Rename** button, as a saved model has. It changes the name the task is SHOWN under -
+  in this window, on the Project column's task button, in the Runs window's task link ("ldo1_relaxed
+  (real:graphgps_ldo1)") - and the label new runs of the task are filed under (the run label, once the page follows the
+  task again). Nothing else changes: the task's key, its files, its Virtuoso cell and every run and saved model made on
+  it keep the internal name, so each run still belongs to its task and a model still loads on it; a configuration file
+  and the command line name the task by its key as before. A name is a task name (a lower-case letter first, then
+  lower-case letters, digits and underscores, 2 to 40 characters); a name another task has, or is shown under, is
+  refused. Typing the internal name takes a rename back. The names are kept in the settings folder
+  (`task_names.json`); deleting a task forgets its shown name. A server older than this page lists no shown names: the
+  Name box is off and the button says so.
 * A press on a column title sorts by it (again: the other way; rows without a value stay last). The filter box narrows
   the list by any word of a row: name, class, cell, a date. Task names sort as displayed; canonical task IDs stay unchanged for selection, saved configurations, runs and models (7.249).
 * **Nothing in the window updates by itself.** The task list is read when the button is pressed and by **Refresh list**

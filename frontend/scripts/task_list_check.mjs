@@ -21,7 +21,8 @@ const stamp = utc => { const d = new Date(utc); return `${d.getFullYear()}-${two
 
 // ---- the tasks (FIXTURE): a saved task with everything, one without a baseline that is blocked, an ngspice task, the MOCK stand-in ----
 const base = (key, kind, more) => ({ task_key: key, kind, circuit_class: 'opamp', pdk_id: 'gpdk045', available: true, blocker: null, description: `FIXTURE ${key}`,
-  starter_project: { name: key.split(':')[1].replace(/_/g, '-'), task_name: key.split(':')[1] }, training_capabilities: { corners: false, policies: ['off'] }, ...more });
+  starter_project: { name: key.split(':')[1].replace(/_/g, '-'), task_name: key.split(':')[1] }, training_capabilities: { corners: false, policies: ['off'] },
+  name: key.split(':')[1], ...more });             // `name`: the name the task is shown under (record 7.302)
 const OTA = base('real:fixture_ota', 'real', { generated: true, library: 'FIXTURE_LIB', cell: 'fixture_ota', testbench: 'tb_fixture_ota', revision: 3, measurement: 'maestro',
   original: { library: 'FIXTURE_LIB', cell: 'fixture_ota', testbench: 'tb_fixture_ota', netlist_sha256: 'f211eca4f62f6f6afcf21890e0a12bd3f14c8a2a6ba556013f766bac351b843c' }, verified: true,
   saved_utc: '2026-10-05T13:57:46+00:00', created_utc: '2026-10-05T13:00:00+00:00', baseline_recorded_utc: '2026-10-05T21:57:39+00:00',
@@ -32,7 +33,7 @@ const LDO = base('real:fixture_ldo', 'real', { generated: true, circuit_class: '
   variables: 12, results: 10 });
 const NG = base('ngspice:fixture_div', 'ngspice', { circuit_class: 'unspecified', pdk_id: 'unspecified', available: false, blocker: 'FIXTURE: needs an ngspice connection', revision: 2,
   title: 'a resistive divider', simulator: 'ngspice', description: 'ngspice netlist (2 elements, 1 results), revision 2. Runs on an ngspice connection; no license.' });
-const MOCK = base('synthetic:gpdk045_ota5', 'mock', { description: 'FIXTURE MOCK: the synthetic stand-in' });
+const MOCK = base('synthetic:gpdk045_ota5', 'mock', { description: 'FIXTURE MOCK: the synthetic stand-in', name: undefined });   // as a server before 7.302 lists a task
 const TASKS = [OTA, LDO, NG, MOCK];
 // ---- the runs (FIXTURE): two of the OTA (a Baseline simulation, then a run that found a feasible design), none of the others ----
 const ROOT = '/fixture/outputs/fixture_exp__0001/runs';
@@ -62,6 +63,7 @@ await runChecks(browser, async () => {
   let runsMode = 'normal';
   const folderData = { version: 1, folders: {}, assignments: {} };
   let folderSerial = 0, refuseMove = false, refuseFolders = false, lastMove = null;
+  const renames = []; let refuseRename = false;
   page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: true }); });
   const answer = params => {
     const { requestId, request } = params, url = new URL(request.url), name = url.pathname;
@@ -83,6 +85,14 @@ await runChecks(browser, async () => {
         Object.keys(folderData.assignments).forEach(key => { if (folderData.assignments[key] === id) delete folderData.assignments[key]; });
       }
       return fulfil(requestId, 200, folderData);
+    }
+    if (name === '/api/tasks/rename' && request.method === 'POST') {          // record 7.302: only the shown name changes
+      const body = JSON.parse(request.postData ?? '{}'), task = TASKS.find(t => t.task_key === body.task_key);
+      renames.push(body);
+      if (refuseRename) return fulfil(requestId, 409, { detail: { message: 'FIXTURE: another task is named like that', code: 'name_taken' } });
+      const previous = task.name, own = body.task_key.split(':')[1];
+      task.name = body.name; task.starter_project = { name: body.name.replace(/_/g, '-'), task_name: body.name };
+      return fulfil(requestId, 200, { task_key: body.task_key, name: body.name, previous, internal_name: own });
     }
     if (['/api/tasks', '/api/runs', '/api/tasks/starter'].includes(name)) seen.push(name === '/api/tasks/starter' ? `starter ${url.searchParams.get('task_key')}` : name);
     if (name === '/api/tasks') return fulfil(requestId, 200, { tasks: TASKS, real_interface_contract: {} });
@@ -237,6 +247,55 @@ await runChecks(browser, async () => {
   before = { tasks: count('/api/tasks'), runs: count('/api/runs') };
   await sleep(2500);
   check('nothing in the window updates by itself', count('/api/tasks') === before.tasks && count('/api/runs') === before.runs, JSON.stringify(seen));
+
+  // ---- 8b. rename (record 7.302): the name a task is SHOWN under; its key, and with it every link, stays ---------------------
+  const DETAILS_OF = key => `${ROWS}.find(tr => tr.dataset.taskKey === ${JSON.stringify(key)}).nextElementSibling.querySelector('.task-details')`;
+  const openDetails = key => far.evaluate(`[...${ROWS}.find(tr => tr.dataset.taskKey === ${JSON.stringify(key)}).querySelectorAll('button')].find(b => b.textContent.trim() === 'Details').click()`, true);
+  const typeName = async (key, text) => { await far.evaluate(`(() => { const i = ${DETAILS_OF(key)}.querySelector('input.task-rename'); i.focus(); i.select(); })()`); await far.send('Input.insertText', { text }); };
+  const renameButton = key => `${DETAILS_OF(key)}.querySelector('button.task-rename-apply')`;
+  await openDetails(OTA.task_key);
+  check('Details holds a Name box with the task\'s name, and Rename waits for another name', await far.until(`!!${DETAILS_OF(OTA.task_key)}?.querySelector('input.task-rename')`, 50)
+    && (await far.evaluate(`${DETAILS_OF(OTA.task_key)}.querySelector('input.task-rename').value`)) === 'fixture_ota' && await far.evaluate(`${renameButton(OTA.task_key)}.disabled`));
+  await typeName(OTA.task_key, 'ota_relaxed');
+  check('typing another name offers Rename', await far.until(`!${renameButton(OTA.task_key)}.disabled`, 30));
+  before = { tasks: count('/api/tasks') };
+  await far.evaluate(`${renameButton(OTA.task_key)}.click()`, true);
+  check('Rename sends the task\'s key and the new name, then reads the task list again', await far.until(`(${DETAILS_OF(OTA.task_key)}?.querySelector('.task-rename-note')?.textContent ?? '').includes('Renamed to "ota_relaxed"')`, 60)
+    && JSON.stringify(renames.at(-1)) === JSON.stringify({ task_key: 'real:fixture_ota', name: 'ota_relaxed' }) && count('/api/tasks') === before.tasks + 1, JSON.stringify(renames));
+  check('the row shows the new name with the internal name under it, under the same key', (await cell(OTA.task_key, 0)) === 'ota_relaxedinternal name fixture_ota'
+    && (await tw.keys()).includes('real:fixture_ota'), await cell(OTA.task_key, 0));
+  const renamedFacts = await far.evaluate(`${DETAILS_OF(OTA.task_key)}.textContent`);
+  check('the facts name both: the shown name and the internal name its files, cell and runs keep', renamedFacts.includes('Registered taskota_relaxed') && renamedFacts.includes('Internal namefixture_ota - its files, its cell and its runs keep this name'), renamedFacts.slice(0, 260));
+  check('the page follows this task: the note says new runs take the name once it is chosen again', renamedFacts.includes('once the page follows it again'));
+  check('its runs are still its runs (the links go by the key)', (await cell(OTA.task_key, 8)) === '2');
+  check('the Project column\'s button shows the new name, for the same task', await until(`${ROW}.querySelector('.task-list-key')?.textContent === 'ota_relaxed' && ${ROW}.querySelector('.task-list-key')?.dataset.taskKey === 'real:fixture_ota'`, 50),
+    await evaluate(`${ROW}.querySelector('.task-list-key')?.textContent`));
+  await far.evaluate(`(() => { const i = ${WINDOW}.querySelector('input.task-filter'); i.focus(); i.select(); })()`);
+  await far.send('Input.insertText', { text: 'ota_relaxed' });
+  check('the filter finds the task by its new name', await far.until(`${ROWS}.length === 1`, 30) && (await tw.keys()).join() === 'real:fixture_ota', (await tw.keys()).join());
+  await far.evaluate(`(() => { const i = ${WINDOW}.querySelector('input.task-filter'); i.focus(); i.select(); })()`);
+  await far.send('Input.insertText', { text: 'fixture_ota' });
+  check('... and still by its internal name', await far.until(`${ROWS}.length === 1`, 30) && (await tw.keys()).join() === 'real:fixture_ota', (await tw.keys()).join());
+  await far.evaluate(`(() => { const i = ${WINDOW}.querySelector('input.task-filter'); i.focus(); i.select(); })()`);
+  await far.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 }); await far.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+  await far.until(`${ROWS}.length === 4`, 30);
+  refuseRename = true;
+  await typeName(OTA.task_key, 'fixture_ldo'); await far.until(`!${renameButton(OTA.task_key)}.disabled`, 30);
+  await far.evaluate(`${renameButton(OTA.task_key)}.click()`, true);
+  check('a refused name is said in the server\'s words and changes nothing', await far.until(`(${DETAILS_OF(OTA.task_key)}?.querySelector('.task-rename-note.warn')?.textContent ?? '').includes('another task is named like that')`, 60)
+    && (await cell(OTA.task_key, 0)) === 'ota_relaxedinternal name fixture_ota', await cell(OTA.task_key, 0));
+  refuseRename = false;
+  await typeName(OTA.task_key, 'fixture_ota'); await far.until(`!${renameButton(OTA.task_key)}.disabled`, 30);
+  await far.evaluate(`${renameButton(OTA.task_key)}.click()`, true);
+  check('typing the internal name takes the rename back: one name again, no second line', await far.until(`${ROWS}.find(tr => tr.dataset.taskKey === 'real:fixture_ota').children[1].textContent.trim() === 'fixture_ota'`, 60)
+    && !(await far.evaluate(`${DETAILS_OF(OTA.task_key)}.textContent`)).includes('Internal name') && await until(`${ROW}.querySelector('.task-list-key')?.textContent === 'fixture_ota'`, 50), await cell(OTA.task_key, 0));
+  await far.shot(path.join(out, 'task-list-3b-rename.png'));
+  await press('Hide details');
+  await openDetails(MOCK.task_key);
+  check('a task listed without a shown name (an older server): the Name box is off and Rename says why', await far.until(`!!${DETAILS_OF(MOCK.task_key)}?.querySelector('input.task-rename')`, 50)
+    && await far.evaluate(`${DETAILS_OF(MOCK.task_key)}.querySelector('input.task-rename').disabled && ${renameButton(MOCK.task_key)}.disabled && ${renameButton(MOCK.task_key)}.title.includes('older than this page')`));
+  await press('Hide details');
+  check('the details are closed again', await far.until(`!${WINDOW}.querySelector('.task-details')`, 20));
 
   // ---- 9. folders: shared persistence, bulk moves, failure recovery and keeping task identity -------------------------------
   await far.send('Page.enable');

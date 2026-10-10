@@ -161,7 +161,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
     let listed: Json;
     try { listed = await api.tasks(); } catch (e) { if (stillHere()) throw e; return; }
     if (!stillHere()) return;
-    const used = new Set<string>((listed.tasks ?? []).map((t: Json) => String(t.task_key).replace(/^[^:]+:/, '')));
+    const used = new Set<string>((listed.tasks ?? []).flatMap((t: Json) => [String(t.task_key).replace(/^[^:]+:/, ''), ...(typeof t.name === 'string' ? [t.name] : [])]));   // a shown name (record 7.302) is taken too
     if (task) used.add(task);
     let proposed = numberedName(suggested, used);
     let problem = '';

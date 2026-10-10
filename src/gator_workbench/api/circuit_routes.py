@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from pydantic import ValidationError
 from . import task_baseline
 from .. import (bridge_read, consistency, ngspice_tasks, profiles, runs, schema, structures, task_files,
-                task_registry, task_saving, tasks, virtuoso_setup, working_copy)
+                task_names, task_registry, task_saving, tasks, virtuoso_setup, working_copy)
 from ..circuit_summary import loaded_circuit
 from ..diffs import structured_diff
 from ..native_cells import load_import as load_cell_import
@@ -14,7 +14,7 @@ from ..security import redact
 from ..validation import independent_action_count
 from .context import ApiContext
 from .models import (CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, NativeReadBody, NgspiceCheckBody,
-                     NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, SetupBody,
+                     NgspiceNameBody, NgspiceReadBody, NgspiceSaveBody, ProfileActionBody, RenameTaskBody, SetupBody,
                      TaskBaselineBody, TaskCheckBody, TaskFileBody, TaskFileTextBody, TaskSaveBody, ValidateBody)
 from .support import bridge_call, fail, load_runtime, validate_loaded
 
@@ -50,6 +50,22 @@ def _task_routes(app: FastAPI, context: ApiContext):
             fail(404, 'No starter configuration for this task')
         except Exception as exc:                           # a generated profile whose files no longer pass their own checks
             fail(409, redact(f'The starting rows of {task_key} cannot be built: {type(exc).__name__}: {exc}', 600))
+
+    @app.post('/api/tasks/rename')
+    def rename_task(body: RenameTaskBody):
+        """Shows a registered task under another name (record 7.302; user: "add rename functionality to tasks"). Kept
+        in the settings folder's task_names.json: the task's key, files and cell, and every run and model that names
+        it, stay as they are; the windows show the new name and new runs of the task are filed under it. Refused: a
+        task that is not registered (404), a name another task has or is shown under (409 name_taken), a name that is
+        not a task name (422). Typing the task's own name takes the rename back."""
+        try:
+            return task_names.rename(body.task_key, body.name, known=[task['task_key'] for task in tasks.list_tasks()])
+        except task_names.TaskNameMissing as exc:
+            fail(404, exc)
+        except task_names.TaskNameTaken as exc:
+            fail(409, exc, code='name_taken')
+        except task_names.TaskNameError as exc:
+            fail(422, exc)
 
     @app.get('/api/tasks/saving')
     def tasks_saving():
@@ -161,9 +177,11 @@ def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
         if task_saving.running_task() == f'real:{body.name}':
             fail(409, f'real:{body.name} is being saved right now: delete it once the save has ended.', code='delete_refused')
         try:
-            return profiles.delete_profile(body.name, run_rows=runs.list_runs(context.roots, include_mock=False))
+            answer = profiles.delete_profile(body.name, run_rows=runs.list_runs(context.roots, include_mock=False))
         except profiles.ProfileError as exc:
             fail(409, exc, code='delete_refused')
+        task_names.forget(f'real:{body.name}')             # a task saved later under this key starts with its own name
+        return answer
 
 
 def _ngspice_routes(app: FastAPI, context: ApiContext):
@@ -227,9 +245,11 @@ def _ngspice_routes(app: FastAPI, context: ApiContext):
         """Explicit click (the page asks once more): the task leaves the list; its folder is kept aside. Refused while a
         run of it is working."""
         try:
-            return ngspice_tasks.delete(body.name, run_rows=runs.list_runs(context.roots, include_mock=False))
+            answer = ngspice_tasks.delete(body.name, run_rows=runs.list_runs(context.roots, include_mock=False))
         except ngspice_tasks.NgspiceTaskError as exc:
             fail(409, exc, code='delete_refused')
+        task_names.forget(f'ngspice:{body.name}')
+        return answer
 
 
 def _virtuoso_task_routes(app: FastAPI, context: ApiContext):

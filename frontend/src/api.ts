@@ -74,6 +74,8 @@ export const api = {
   moveToFolder: (kind: FolderKind, keys: string[], folder_id: string | null) =>
     call('PUT', `${FOLDER_ROUTE[kind]}/assign`, kind === 'tasks' ? { task_keys: keys, folder_id } : { run_dirs: keys, folder_id }),
   starter: (taskKey: string) => call('GET', '/api/tasks/starter' + q({ task_key: taskKey })),
+  // The name a task is shown under (record 7.302): its key, files, cell, runs and models stay as they are.
+  renameTask: (task_key: string, name: string) => call('POST', '/api/tasks/rename', { task_key, name }),
   loadCircuit: (circuit: Json) => call('POST', '/api/circuit/load', { circuit }),
   nativeLibraries: (profile_id: string) => call('POST', '/api/virtuoso/libraries', { profile_id }),
   nativeCells: (profile_id: string, library: string) => call('POST', '/api/virtuoso/cells', { profile_id, library }),

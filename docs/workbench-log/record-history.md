@@ -484,3 +484,9 @@ One row per commit, newest last.
 | `44881d8` | 10-09 22:03 | 7.294 | audit of 2026-10-09: OCEAN's results let go after each measurement (`ocnResetResults()`), the learn-while-simulating switch on by default after its check, a plan for a cheaper check before each write (session "Frontend workbench layout design") |
 | `9e7cbf3` | 10-09 22:11 | - | record only: names the commit of record 7.294 (44881d8) and its Live line, corrects "every run recorded before" (runs recorded before 7.281 never stated the switch), table rows for 5d34318 and 44881d8 (session "Frontend workbench layout design") |
 | `e7e6907` | 10-09 23:50 | 7.296 | the whole-cell read built once instead of line by line (`schematic_read.read_cell`): the same answer, 434 -> 6 ms inside Virtuoso on mscr_vco_lin_c; landed before the encoder queue's nine runs (session "Frontend workbench layout design") |
+| `0803c7f` | 10-10 16:38 | - | docs: three lines of record 7.296 say "the 180 nm process cells" |
+| `f538535` | 10-10 17:01 | 7.295 | the AgenticSizing circuits on a second 0.18 um PDK; PDK quirks and conditions from local settings (session "Encoder run plan revision") |
+| `19e909a` | 10-10 17:01 | 7.297 | tests/test_parser.py fixture path; no test module imports a conftest (session "Refactoring plan") |
+| `7695b7e` | 10-10 17:01 | 7.298 | transferable network inputs: specs as a set, device families; digest 8f100145 (session "Agentic sizing agent circuit runs") |
+| `b231eb3` | 10-10 17:01 | 7.299 | a missing value of a hard spec is a failed row; digest 94e7dd4f (session "Encoder run plan revision") |
+| `70bed2d` | 10-10 17:01 | 7.300 | the AgenticSizing circuits rebuilt from published netlists; a computed field written through its typed twin (session "Agenticsizing encoder restart and LDO comparison") |

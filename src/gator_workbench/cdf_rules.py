@@ -64,7 +64,13 @@ def spec_for(facts, core, device, parameter, reference, graph) -> dict:
                           f'places, not on {instance}, so the form of {instance} cannot type it')
     why = cdf_facts.editable(facts, instance, source)
     if why:
-        raise NotWritable(f'{device}.{parameter} (form field {source["cdf"]}): {why}')
+        # A field the form computes, with a typed field of the netlist parameter's own name beside it (the second foundry
+        # PDK's transistor multiplier: netlist m <- simM = fingers x m, typed in `m`): the user sets it there. The comparison
+        # below admits it only while that field holds the netlisted number (one finger).
+        twin = cdf_facts.typed_twin(facts, core, device, name, source)
+        if twin is None:
+            raise NotWritable(f'{device}.{parameter} (form field {source["cdf"]}): {why}')
+        source = twin
     current = _instance_params(reference, instance).get(source['cdf'])
     try:
         kind, choices = cdf_facts.value_kind(source, current)

@@ -172,6 +172,23 @@ def sources(facts, core, device) -> dict:
     return found
 
 
+def typed_twin(facts, core, device, name, source):
+    """The field a user types when the netlister takes netlist parameter `name` from a field the form only COMPUTES and
+    the PDK states no link between the two: the field called `name` itself, when the form has one and lets a user type
+    it on this instance. None otherwise. The second foundry PDK's transistors (record 7.300, 2026-10-10): Spectre's `m` comes from
+    `simM`, which a callback sets to fingers x m, while a user types the field `m`; GPDK045 links its `simM` by
+    `iPar("m")`, which `write_source` already follows. Whether typing the twin sets the netlist value one to one is
+    the caller's check: `cdf_rules.spec_for` admits it only while the two hold the same number, and every candidate's
+    export must carry the typed value (`cdf_write.validate_export`)."""
+    instance, _master, netlisted, parent = _device(facts, core, device)
+    if source['editable'] is not False or source['on'] != 'self' or source['cdf'] == name:
+        return None
+    twin = write_source(facts['cells'], netlisted, name, parent)
+    if twin is None or twin['cdf'] != name or twin['on'] != 'self' or editable(facts, instance, twin) is not None:
+        return None
+    return twin
+
+
 def _rule_state(facts, instance, cdf_name, which):
     return ((facts.get('rules') or {}).get(instance) or {}).get(cdf_name, {}).get(which)
 

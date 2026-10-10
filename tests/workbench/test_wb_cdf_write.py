@@ -453,3 +453,52 @@ def test_a_cell_of_a_pdk_whose_quirks_say_so_gets_no_netlist_built_from_its_read
     assert profiles.load_profile('ring_cdf').render_export is None
     (folder / cdf_write.PDK_QUIRKS_FILE).write_text('not json')
     assert callable(profiles.load_profile('ring_cdf').render_export)          # unreadable = none: the comparison then speaks
+
+
+# ------------------------------------------------------------------------------------------ a computed field with a typed twin
+def _computed_multiplier(tmp_path, *, typed=True, field_m=None):
+    """The recorded cell with its transistors' multiplier as the second foundry's PDK has it (2026-10-10): the netlister takes m
+    from `simM`, which the form computes (never typed, no iPar link to another field), while a user types the field `m`."""
+    meta = read_cell(tmp_path)
+    directory = Path(meta['directory'])
+    facts = json.loads((directory / cdf_facts.FILE).read_text())
+    for cell in ('nmos1v', 'pmos1v'):
+        parameters = facts['cells'][cell]['parameters']
+        parameters['simM'] = dict(parameters['simM'], default='1', editable=False)
+        if not typed:
+            del parameters['m']
+    (directory / cdf_facts.FILE).write_text(json.dumps(facts))
+    readback = json.loads((directory / 'core_readback.json').read_text())
+    for inst in readback['instances']:
+        if inst['name'].startswith('M'):
+            inst['params']['simM'] = '1'
+            if field_m is not None and inst['name'] == 'MN1':
+                inst['params']['m'] = field_m
+    (directory / 'core_readback.json').write_text(json.dumps(readback))
+
+
+COUNT = [row('mn', 'XU1/MN1', 'm', 'count', 1, 4, value_type='integer')]
+
+
+def test_a_value_the_form_computes_is_written_through_the_typed_field_of_its_own_name(tmp_path):
+    _computed_multiplier(tmp_path)
+    made = profiles.create_profile('ring_m', config(COUNT), recipe='ring_oscillator', expected_frequency_hz=1.2e9)
+    assert made['writer'] == 'form'
+    rules = json.loads((Path(made['directory']) / 'rules.json').read_text())
+    assert [(w['instance'], w['cdf'], w['lower'], w['upper'], w['integer']) for w in rules['writes']] == [('MN1', 'm', 1.0, 4.0, True)]
+    assert ('MN1', 'simM') not in {(h['instance'], h['cdf']) for h in rules['held']}       # computed: never typed, never held
+    plan = profiles.load_profile('ring_m').cdf_plan({('XU1/MN1', 'm'): 3.0})
+    assert 'cdfgData~>m~>value' in cdf_write.write_skill('GPDK045_RINGOSC', 'ring_osc_3stage', plan)
+    assert 'cdfgData~>simM~>value' not in cdf_write.write_skill('GPDK045_RINGOSC', 'ring_osc_3stage', plan)
+
+
+def test_the_typed_twin_is_refused_while_it_does_not_hold_the_netlisted_number(tmp_path):
+    _computed_multiplier(tmp_path, field_m='2')              # as two fingers would leave it: the form's m is not the netlist's
+    with pytest.raises(profiles.ProfileError, match=r'MN1\.m = .+ in the netlist, but its form field m holds .2.: the PDK computes'):
+        profiles.create_profile('ring_m', config(COUNT), recipe='ring_oscillator', expected_frequency_hz=1.2e9)
+
+
+def test_a_computed_value_without_a_typed_field_of_its_name_stays_refused(tmp_path):
+    _computed_multiplier(tmp_path, typed=False)
+    with pytest.raises(profiles.ProfileError, match=r'MN1\.m \(form field simM\): the form never lets a user type it'):
+        profiles.create_profile('ring_m', config(COUNT), recipe='ring_oscillator', expected_frequency_hz=1.2e9)

@@ -2700,7 +2700,10 @@ the 5 nm grid the GPDK045 readbacks confirmed (a transistor's total width on fin
 it), counts in whole numbers from 1 (a finger count only where the finger width stays on the grid: 1 um allows 1, 2, 4, 5
 ... fingers, not 3), a choice list on its own evenly spaced values; the range must contain the present value. A transistor
 varies its total width or its finger count, not both. The rows come back adjusted (snapped inward, the step filled in),
-as for widths.
+as for widths. Where the netlister takes a value from a field the form only computes and the form has a typed field of the
+netlist parameter's own name - the second foundry PDK's transistors: Spectre's `m` comes from `simM` (fingers x m), a user types
+`m` - the row types that field, and only while the two hold the same number, that is with one finger; with two fingers Save
+task says "the PDK computes one from the other" (record 7.300).
 
 **What a run does with each candidate** (`cdf_write.write_skill`, one SKILL transaction, one save): for every instance with
 a value to change - and only those - the form's init procedure, then per field: its rule, the value, its callback; repeated

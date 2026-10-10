@@ -490,3 +490,5 @@ One row per commit, newest last.
 | `7695b7e` | 10-10 17:01 | 7.298 | transferable network inputs: specs as a set, device families; digest 8f100145 (session "Agentic sizing agent circuit runs") |
 | `b231eb3` | 10-10 17:01 | 7.299 | a missing value of a hard spec is a failed row; digest 94e7dd4f (session "Encoder run plan revision") |
 | `70bed2d` | 10-10 17:01 | 7.300 | the AgenticSizing circuits rebuilt from published netlists; a computed field written through its typed twin (session "Agenticsizing encoder restart and LDO comparison") |
+| `fe3028a` | 10-10 19:43 | 7.301 | plan only: the transfer experiment (networks with the new inputs, SAC against Bayesian optimization, new targets, a second PDK, one general model on unseen circuits); the record file rolled over to `7.301-and-later.md` (session "Encoder experiment plan setup") |
+| `29ce8ad` | 10-10 19:43 | 7.302 | a task can be renamed: the name it is shown under; its key, files, cell, runs and models unchanged (session "Encoder experiment plan setup") |

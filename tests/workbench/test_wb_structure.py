@@ -235,3 +235,24 @@ def test_every_name_a_test_patches_exists_where_it_is_patched():
                 stale.append(f'{path.relative_to(ROOT)}:{node.lineno} patches {module}.{name}, an alias of '
                              f'{aliases_of(module)[name]}: patch that name instead')
     assert not stale, 'stale patch targets (the name moved elsewhere?):\n' + '\n'.join(stale)
+
+
+def test_no_test_module_imports_a_conftest():
+    """pytest loads every conftest.py as the module `conftest`, and the one it loaded last keeps that name: a module that
+    imports from `conftest` gets whichever directory's conftest came last (record 7.297: tests/test_parser.py failed to
+    import - and stopped the whole run - when tests/workbench was collected before it). Shared names go in a module of
+    their own (`helpers.py`, `*_support.py`) or into a fixture."""
+    found = []
+    for path in sorted((ROOT / 'tests').rglob('*.py')):
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.level == 0:
+                names = [node.module or '']
+            elif isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            else:
+                continue
+            if any(name.split('.')[0] == 'conftest' for name in names):
+                found.append(f'{path.relative_to(ROOT)}:{node.lineno}')
+    assert not found, 'imports of a conftest module:\n' + '\n'.join(found)
+

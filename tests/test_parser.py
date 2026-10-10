@@ -1,11 +1,15 @@
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from analog_optimizer.netlist.config import DeviceMapping
 from analog_optimizer.netlist.expressions import UnresolvedExpression, evaluate
 from analog_optimizer.netlist.spectre_parser import ParseError, SpectreParser
-from conftest import FIXTURES
+
+# Not imported from conftest: pytest loads every conftest.py as the module `conftest`, and the last one loaded keeps the
+# name - collected after tests/workbench, this module got the workbench's conftest and failed to import (record 7.297).
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "synthetic"
 
 
 @pytest.mark.parametrize("name,count", [("opamp", 7), ("ldo", 6), ("vco", 10)])

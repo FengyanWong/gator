@@ -56,7 +56,7 @@ What the read's time actually is: inside Virtuoso (SKILL `measureTime`), against
 - Checked live, read-only: equal to `client.schematic.read` on both cells, with and without positions (12 of 12).
 
 Expected per evaluation on `mscr_vco_lin_c`: two reads at about 0.07 s instead of about 0.5 s, so about 0.85 s less
-preparation in the one Virtuoso session. At 6 lanes this session had started to bind (queue wait 0.46 s). The foundry cells
+preparation in the one Virtuoso session. At 6 lanes this session had started to bind (queue wait 0.46 s). The 180 nm process cells
 of record 7.295 gain most: `asz_sys`, a ~100 kB answer, is estimated at 4-5 s per read before.
 
 ## P2 and P3 (done)

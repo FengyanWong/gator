@@ -1954,7 +1954,7 @@ the workbench runs the same program with each line appended to a list and the li
 (`schematic_read.read_cell`): the same text, parsed by the bridge's own parser, in 5.7 ms inside Virtuoso and 70 ms at
 the client instead of 498 ms. Most of what is left is the answer's transfer. Every candidate's read before and after its
 write uses it (`CdfBridgeBackend._read_snapshot`), as do Save task's fingerprints of the original cells and the cell
-import. A small cell gains nothing (`mscr_ota5t`, a 6 kB answer: about 16 ms either way). The foundry cells of record 7.295
+import. A small cell gains nothing (`mscr_ota5t`, a 6 kB answer: about 16 ms either way). The 180 nm process cells of record 7.295
 gain most: `asz_sys` answers about 100 kB, an estimated 4-5 s per read before. If the bridge's read program is ever not
 the one measured, the workbench reads with the bridge's own call. On Spectre (`mscr_vco_lin_c`, 6 lanes, 200
 evaluations, record 7.296), a candidate's preparation fell from 2.26 to 0.47 s and stopped queueing; the run, bound by

@@ -15,6 +15,14 @@ A summary for new sessions; everything below is the chronological record, oldest
   the models trained with it (all saved before). The schema default stays `standard` (old configurations unchanged); a
   new model still asking for it is warned. Maestro tests that save no DC operating point get one added for runs with
   operating-point inputs.
+- **The transfer experiment (7.301, plan only; user 2026-10-10: "yes save the plan now"):**
+  [plan-transfer-experiment.md](plan-transfer-experiment.md) follows the encoder comparison with six steps: GT and
+  GraphGPS from scratch with the transferable inputs (four core circuits, the four published AgenticSizing circuits),
+  SAC against Bayesian optimization on the published LDO, new targets and a second PDK on OTA5t / RING3 / LDO1, and one
+  GraphGPS general model on the unseen telescopic cascode, then on AgenticSizing. The user's choices: GT and GraphGPS
+  only; LDO1 and the VCO kept, no new runs on OTA7t width, LDO2 and the folded cascode; no random-search arm; GT in
+  step 2, GraphGPS in steps 3 to 6; a starting design further from the target for the published amplifier. It replaces
+  the 24-run AgenticSizing restart (stages A and B) that 7.299 / 7.300 left open. Nothing built, no run.
 - **Six-circuit encoder baseline (7.244, plan only):** [A/B/C runbook](plan-encoder-baseline-abc.md)
   fixes OTA5t, OTA7t-width, LDO1, LDO2, RING3 and VCO_linear_c as the reusable suite. New A/B/C
   runs use the relaxed LDO HF PSRR targets (-3/-2.3 dB), fixed existing starting vectors, the common

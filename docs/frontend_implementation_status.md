@@ -25,22 +25,23 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.119-7.265.md`](workbench-log/7.119-7.265.md) | entries 7.119-7.265 (7.262, written later, is in the next file) |
 | [`7.266-7.278.md`](workbench-log/7.266-7.278.md) | entries 7.266-7.278 (and 7.262, written later) |
 | [`7.279-7.290.md`](workbench-log/7.279-7.290.md) | entries 7.279-7.290 |
-| [`7.291-and-later.md`](workbench-log/7.291-and-later.md) | entries 7.291 onwards: the OPEN file |
+| [`7.291-7.300.md`](workbench-log/7.291-7.300.md) | entries 7.291-7.300 |
+| [`7.301-and-later.md`](workbench-log/7.301-and-later.md) | entries 7.301 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md` and `7.279-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md` and `7.291-and-later.md` are pointers kept for old links.
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.319 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.291-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
-the old name as a pointer (like the six above), change the file table above, and then update `CLAUDE.md` and
+**Rolling the open file over:** when the open file passes entry 7.329 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.301-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+the old name as a pointer (like the seven above), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
-and 75 kB, 2026-10-08, record 7.279; `7.279-and-later.md` at entry 7.290 and 70 kB, 2026-10-09, record 7.291.) One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
+and 75 kB, 2026-10-08, record 7.279; `7.279-and-later.md` at entry 7.290 and 70 kB, 2026-10-09, record 7.291; `7.291-and-later.md` at entry 7.300 and 96 kB, 2026-10-10, record 7.301.) One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
 (7.64).
 
 ## Entries
@@ -350,3 +351,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.298 | Transferable network inputs, built in a clean clone and landed in the working tree 2026-10-10 15:15 on top of 7.299 (not committed; live since the 15:48 restart of 8765): the specs read as a set of described items (any names, any number; optimizer package changed, tree digest 94e7dd4f... with 7.299, 8f100145... alone), sizes relative to the PDK's minimum, four device-model numbers from the PDK's cached model library, operating points of Maestro tasks (binary PSF reader, a DC operating point added to the deck for such runs); spec windows/bands in the description; the device-family component list replacing the standard list for new models; one "Network inputs" choice |
 | 7.299 | A missing value of a hard spec is a failed row in every task: `MetricSpec.missing_is_failure` True by default (optimizer digest ad4ddcbe... -> f8bad49d...), the workbench passes no row value and hides the Specs column (rows and hashes unchanged); reverses 7.183's "stays off" on the AgenticSizing amplifier's evidence (1,834 of 3,200 designs had no gain and were dropped, each with seven measured rows; 0 of 8,412 on the other three circuits); 1,859 tests pass, 5 browser checks; the AgenticSizing queue stopped for a full restart (2026-10-10, uncommitted, not live on 8765) |
 | 7.300 | The four AgenticSizing circuits rebuilt from their PUBLISHED netlists and size ranges (github.com/aprilaihub/agentic-analog-sizing; records 7.293 / 7.295 said none existed): cells `asz_*_pub`, tasks `real:agentic_{ldo,bgr,fc,sys}_pub` with the published design variables and bounds, baselines recorded, benches calibrated on the repository's own recorded designs (LDO output within -3 .. +5 mV at VREF 0.675 V; amplifier power within 2 %); a task row may vary a transistor's multiplier in the second foundry's PDK (`cdf_facts.typed_twin`, 3 tests); four 12-launch smoke runs passed (2026-10-10, uncommitted, live since the 15:48 restart) |
+| 7.301 | Plan only: the transfer experiment (`docs/plan-transfer-experiment.md`) - GT and GraphGPS from scratch with the new inputs on four core circuits and the four published AgenticSizing circuits, SAC against Bayesian optimization on the published LDO, new targets and a second PDK on OTA5t / RING3 / LDO1, one GraphGPS general model on the unseen telescopic cascode and on AgenticSizing; round 1 = 53 runs + 11 probes, about 46,200 designs, about 16.5 h; replaces the 24-run AgenticSizing restart; nothing built or run; the record file rolled over (`7.291-7.300.md`, open file `7.301-and-later.md`) (2026-10-10, uncommitted) |

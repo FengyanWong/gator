@@ -344,6 +344,7 @@ Old configurations that name a removed function still load with their hashes unc
 | SKY130 benchmark | Section 4 | Parked by the user (2026-09-30) |
 | Report of the Graph Transformer experiments, with charts | `docs/report-gt-experiments-2026-10-07.md`; 7.272 | Written 2026-10-07 from the recorded runs; the charts on a private page. |
 | The general model over several starts and seeds, against scratch | `docs/plan-general-seeds-starts.md`; 7.266 | Plan only, compact form: starts C + D, seeds 2-4, scratch recipe both arms, 400 launches, 60 runs + 6 baselines (24,390 launches, about 11 h) in approvable blocks; criteria P1-P4. Nothing started. |
+| The transfer experiment: networks with the new inputs, SAC against Bayesian optimization, new targets, a second PDK, a general model on unseen circuits | `docs/plan-transfer-experiment.md`; 7.301 | Plan only: six steps on four core circuits, the telescopic cascode and the four published AgenticSizing circuits; round 1 = 53 runs + 11 probes (about 46,200 designs, about 16.5 h), round 2 repeats only what showed an effect; needs a Bayesian optimizer, re-scoring under new limits, three ports and offline models first. Nothing built or run. |
 | Refactoring: the same behaviour, a structure that is easier to change | `docs/plan-refactoring.md`; 7.287, executed 7.290 | Done in a clean copy (2026-10-09, record 7.290): groups A, B, C (C11 left out) and D, one commit per package, each proved to change nothing (move identity, routes and OpenAPI, MOCK runs, validation, calibrations, HTTP answers, the same 1,826 tests, DOM identity, the browser checks against the refactored backend); landed on 2026-10-09; the follow-up (record 7.292) did the seven small fixes, group E (the optimizer: a new source digest, the user's choice) and C11 |
 
 ## 10. Where things are recorded
@@ -354,7 +355,7 @@ Old configurations that name a removed function still load with their hashes unc
 | `docs/workbench.md` | What every workbench function does now (maintained in place) |
 | `docs/functionality-reference.md` | This file: every function and where it is (maintained in place) |
 | `docs/frontend_implementation_status.md` | The index of the development record: one row per entry |
-| `docs/workbench-log/` | The entries themselves (open file: `7.291-and-later.md`), and `record-history.md` (the record's history and the commit table) |
+| `docs/workbench-log/` | The entries themselves (open file: `7.301-and-later.md`), and `record-history.md` (the record's history and the commit table) |
 | `gator_claude_code_fable51_frontend_data_outputs_en.md` | The workbench specification (untracked on purpose) |
 | `CLAUDE.md` | Rules for sessions: digest, evidence pinning, real-simulation authorization, data-only outputs |
 | `.agents/skills/analog-optimizer/` | The research-side rules for M1-M6 (a Codex-style skill; read it as documentation) |

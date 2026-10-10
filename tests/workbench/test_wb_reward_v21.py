@@ -65,12 +65,19 @@ def test_new_fields_change_contracts_and_compile():
     c.targets[0].missing_is_failure = True
     c.targets[0].margin_sides = 'lower'
     specs, targets, _ = build_specs(c)
-    assert specs[0].missing_is_failure and specs[0].margin_sides == targets[0]['margin_sides'] == 'lower'
+    assert specs[0].margin_sides == targets[0]['margin_sides'] == 'lower'
+    # Since 2026-10-10 the optimizer counts a missing value as failed on EVERY hard spec (its own default): a row's stored
+    # switch is not passed on - the same specs whatever it says - and it stays in the rows and their hashes.
+    assert all(s.missing_is_failure for s in specs)
+    c.targets[0].missing_is_failure = False
+    assert build_specs(c)[0] == specs and all(s.missing_is_failure for s in build_specs(ota())[0])
+    c.targets[0].missing_is_failure = True
     assert training_conditions(c) == ()                                          # no task trains at corners (7.128)
     assert sac_config_from(c.run.advanced).alpha_learning_rate == .003
     assert config_hash(c) != config_hash(ota()) and task_definition_hash(c) != task_definition_hash(ota())
-    hidden = {row['name'] for row in editor_columns('targets') if row['advanced']}
-    assert {'missing_is_failure', 'margin_sides'} <= hidden
+    columns = {row['name']: row for row in editor_columns('targets')}
+    assert columns['margin_sides']['advanced'] and not columns['margin_sides']['hidden']
+    assert columns['missing_is_failure']['hidden'] and not columns['missing_is_failure']['advanced']    # no row switch any more
 
 
 def test_saved_empty_scale_retains_threshold_rule():

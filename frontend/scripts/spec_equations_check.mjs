@@ -112,16 +112,15 @@ await runChecks(browser, async () => {
   const sized = await saved1();
   check('typing the lower limit proposes a scale from it (0.5)', sized?.normalization_scale === 0.5, JSON.stringify(sized));
   await shot('spec_equation_formula.png');
-  // "Missing value = failed" does nothing on a soft spec (the optimizer honours it only on a hard one): the row says so (7.114)
+  // "Missing value = failed" is no row switch since 2026-10-10: the optimizer counts a missing value of every hard spec as
+  // failed, so "More columns" does not offer it (the rows keep the value they stored), and a soft spec is named for nothing
   await evaluate(`[...${EDITORS}.querySelectorAll('button')].find(b => b.textContent.startsWith('More columns')).click()`);
-  await until(`!!${EDITORS}.querySelector('th[data-field="missing_is_failure"]')`);
-  await evaluate(`${CELL(1, 'hard')}.click()`);
-  await evaluate(`${CELL(1, 'missing_is_failure')}.click()`);
-  [ok, found] = await issuesUntil(1, ['warning: missing_is_failure_on_soft_spec']);
-  check('"Missing value = failed" ticked on a soft spec is named on its row', ok, JSON.stringify(found));
+  await until(`!!${EDITORS}.querySelector('th[data-field="margin_sides"]')`);
+  check('"More columns" does not offer "Missing value = failed"', !(await evaluate(`!!${EDITORS}.querySelector('th[data-field="missing_is_failure"]')`)));
   await evaluate(`${CELL(1, 'hard')}.click()`);
   [ok, found] = await issuesUntil(1, [], ['missing_is_failure_on_soft_spec']);
-  check('...and no longer once that spec is hard again', ok, JSON.stringify(found));
+  check('a soft spec is named for no missing-value switch', ok, JSON.stringify(found));
+  await evaluate(`${CELL(1, 'hard')}.click()`);
   await type(1, 'equation', 'm_nope * 2');
   [ok, found] = await issuesUntil(1, ['error: equation_unknown_probe']);
   check('a probe that does not exist is named as an error', ok, JSON.stringify(found));

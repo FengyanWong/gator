@@ -461,10 +461,6 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
                            'bonus measures how far inside that limit the design is')
         if t.active and t.hard:
             active_hard += 1
-        if t.active and t.missing_is_failure and not t.hard:        # the optimizer counts a missing value as failed only on a hard spec
-            report.add('warning', 'missing_is_failure_on_soft_spec', path + '.missing_is_failure',
-                       f'{t.metric_id}: "Missing value = failed" acts only on a hard spec. On this soft spec a missing value '
-                       'just leaves it out of the reward. Tick "hard", or clear "Missing value = failed".')
         if units.known(t.unit) and units.is_affine(t.unit):
             report.add('error', 'affine_unit', path + '.unit', 'Offset units are not supported for targets')
         _check_registry_entry(report, path, t, registry, extensible)

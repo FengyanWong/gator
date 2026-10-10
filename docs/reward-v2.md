@@ -265,6 +265,9 @@ The [section 10 report](../artifacts/local/reviews/astra-reward-v2.1.md) gives t
 A completed simulation may count a missing required value as violation 1 only when that spec opts into
 `missing_is_failure`. Other measured specs retain their values. Unit errors, unflagged missing values and
 infrastructure faults remain unavailable. The row keeps its honest status, reason and affected metric IDs.
+**Since 2026-10-10 (record 7.299)** `missing_is_failure` is True by default and the workbench passes no row value: on a
+completed simulation the missing value of EVERY required spec is violation 1, in every task; a spec opts out only in code
+(`MetricSpec(..., missing_is_failure=False)`). `docs/decisions.md` has the reason and what the earlier test had said.
 Attributed design failures now continue the episode in every policy. The user explicitly retained normal termination
 without bootstrap at the final allowed step and existing configured success termination.
 

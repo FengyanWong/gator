@@ -182,7 +182,7 @@ class PerformanceTarget(_Model):
         description='Preference among feasible designs. At most one target may set it; it selects the best design '
                     'and defines the optional objective bonus when its reward weight is nonzero.')
     nominal_only: bool = Field(False, description='Judge this spec at nominal only; otherwise use every planned condition.')
-    missing_is_failure: bool = Field(False, description='Missing value = failed: a completed simulation with this required value missing scores a failure. Wrong units and infrastructure errors remain errors.')
+    missing_is_failure: bool = Field(False, description='No longer read (2026-10-10): the optimizer counts a missing value of EVERY hard spec as failed - a completed simulation with the value missing scores that row a failure and the design is learned from. A row keeps what it stored. Wrong units and infrastructure errors remain errors.')
     margin_sides: Literal['both', 'lower', 'upper'] = Field('both', description='Margin sides: which limits contribute to the clearance bonus and Corner check ranking. Feasibility still checks every limit.')
     soft_weight: float = Field(1.0, gt=0, description='Relative weight of this target in the reward.')
     normalization_scale: Optional[float] = Field(None, gt=0,
@@ -789,7 +789,7 @@ def json_schema(section: str | None = None) -> dict:
 # from the PDK, ratio must equal what the circuit shows, and nobody chose a log scale. Specs' `hard` and
 # `normalization_scale` joined on 2026-10-05 (record 7.183): none of the 51 saved Specs rows has a soft row or a typed
 # scale, and an empty scale - the size of the limit - was the best single rule on the recorded designs.
-ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_failure', 'margin_sides', 'hard', 'normalization_scale'),
+ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'margin_sides', 'hard', 'normalization_scale'),
                     'parameters': ('value_type', 'step', 'scale', 'ratio')}
 # Columns the editors do not show at all: the value follows from elsewhere, and the rows keep it (task files, both hashes,
 # the agent, the parked AnalogGym import). initial_value was never filled in a saved task - Save task empties it - and
@@ -797,7 +797,10 @@ ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'missing_is_fa
 # Since record 7.208 also the Unit of Parameters and Specs (user: "can you delete the unit column but keep the rules for
 # value"): every value there is written with its unit, a Parameters row's quantity follows its parameter (w, l: a length)
 # and a Spec's its Probe; the rows keep their unit, and Probes keep the column (they have no values).
-HIDDEN_COLUMNS = {'parameters': ('initial_value', 'unit'), 'measurements': ('result_source',), 'targets': ('unit',)}
+# Since 2026-10-10 also Specs' missing_is_failure ("Missing value = failed"): the optimizer does it for every hard spec of
+# every task (user: "change in the optimizer"), so the row switch chooses nothing. The rows keep the value they stored -
+# 48 rows of the oscillator tasks say true, 267 say false - so no saved task changes its hash; nothing reads it.
+HIDDEN_COLUMNS = {'parameters': ('initial_value', 'unit'), 'measurements': ('result_source',), 'targets': ('unit', 'missing_is_failure')}
 
 
 def editor_columns(section: str) -> list[dict]:

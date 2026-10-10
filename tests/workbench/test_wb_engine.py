@@ -118,6 +118,12 @@ def test_without_retries_a_failure_is_charged_recorded_and_never_feasible(tmp_pa
     assert all(e['failure_type'] for e in failed) and len(failed) == 3
     timeout = next(e for e in failed if e['status'] == 'timeout')
     assert timeout['reward'] is None and timeout['truncated'] and not timeout['replay_eligible']
+    # The design whose simulation ran but gave no usable value is, since 2026-10-10, treated as the design the backend blames
+    # always was: the full penalty, replayed and learned from, the episode going on (the optimizer's default for a hard
+    # spec) - and, in the workbench's own books above, not valid, never feasible and a counted failure.
+    scored = [e for e in failed if e['status'] != 'timeout']
+    assert all(e['reward'] == -1 and e['replay_eligible'] and not e['truncated'] for e in scored) and len(scored) == 2
+    assert {e['evaluation_id'] for e in scored} <= {t['evaluation_id'] for t in rows(layout, 'transitions') if t['replay_admitted']}
     bad_metrics = [m for m in rows(layout, 'metrics') if not m['valid']]
     assert bad_metrics and all(m['raw_value'] is None and m['failure_reason'] for m in bad_metrics)
     s = summary(layout)

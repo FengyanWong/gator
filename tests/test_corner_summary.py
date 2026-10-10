@@ -85,10 +85,21 @@ def test_unknown_results_never_imply_robust_pass_or_penalty(mode):
         results[-1] = replace(results[-1], metric_units={'gain': 'V'})
     else:
         results[-1] = replace(results[-1], candidate_evaluated=False)
-    summary = summarize_corners(candidate, CORNERS, tuple(results), SPECS)
+    # An OK corner whose values are not numbers is an unknown corner only for specs that opt out of "missing value =
+    # failed"; by the default since 2026-10-10 it is a failed corner (the test below). The other five never depend on it.
+    specs = [replace(s, missing_is_failure=False) for s in SPECS] if mode == 'nan' else SPECS
+    summary = summarize_corners(candidate, CORNERS, tuple(results), specs)
     assert not summary.complete and summary.disposition == 'inconclusive'
     assert summary.robust_score is None and summary.pass_rate is None
     assert summary.failed_corners == 0 and summary.unknown_corners == (CORNERS[-1].id,)
+
+
+def test_an_ok_corner_without_its_values_is_a_failed_corner_by_default():
+    candidate = design()
+    results = [result(candidate, c) for c in CORNERS]
+    results[-1] = replace(results[-1], metrics={'gain': float('nan')})
+    summary = summarize_corners(candidate, CORNERS, tuple(results), SPECS)
+    assert summary.failed_corners == 1 and summary.unknown_corners == () and summary.disposition == 'rejected'
 
 
 def test_attributed_nonconvergence_counts_as_failed_corner():

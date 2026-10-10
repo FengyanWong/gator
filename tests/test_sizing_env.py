@@ -96,8 +96,34 @@ def test_bad_measurement_cannot_become_success(fixture_backend, tmp_path, mode):
         else:
             fixture_backend.status = SimulationStatus.MEASUREMENT_ERROR
         obs, reward, terminated, truncated, info = env.step({'input_pair_width': 1})
-        assert reward is None and not terminated and truncated and not info['success']
-        assert not info['replay_eligible']
+        assert not terminated and not info['success']
+        if mode in ('validity', 'nan'):
+            # A completed simulation without a usable value for the required spec: a FAILED row since 2026-10-10 (the
+            # default of MetricSpec.missing_is_failure) - the full penalty, replayed, and the episode goes on.
+            assert reward == -1 and not truncated and info['replay_eligible'] and info['bootstrap'] and info['evaluation_valid']
+            assert info['missing_counted_as_failure'] == {'nominal': ('score',)} and info['status'] == 'ok'
+            assert obs.metrics['score'] is None and not obs.metric_validity['score']
+        else:
+            # A wrong unit, a simulation that never judged the candidate, and a measurement error that lacks no required
+            # value (nothing explains it) stay errors: no reward, never replayed, the episode cut.
+            assert reward is None and truncated and not info['replay_eligible'] and not info['evaluation_valid']
+            assert info['missing_counted_as_failure'] == {}
+            if mode != 'measurement_error':
+                assert obs.metrics['score'] is None and not obs.metric_validity['score']
+
+
+@pytest.mark.parametrize('mode', ['validity', 'nan'])
+def test_a_spec_that_opts_out_keeps_a_missing_value_an_error(fixture_backend, tmp_path, mode):
+    """missing_is_failure=False: the rule of every spec before 2026-10-10."""
+    spec = MetricSpec('score', 'fixture', 'min', 1, lower=3, missing_is_failure=False)
+    with CircuitSizingEnv(fixture_backend, fixture_backend.graph, [spec], tmp_path, expected_origin='synthetic') as env:
+        env.reset()
+        if mode == 'validity':
+            fixture_backend.valid = False
+        else:
+            fixture_backend.value_override = float('nan')
+        obs, reward, terminated, truncated, info = env.step({'input_pair_width': 1})
+        assert reward is None and not terminated and truncated and not info['success'] and not info['replay_eligible']
         assert obs.metrics['score'] is None and not obs.metric_validity['score']
 
 

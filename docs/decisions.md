@@ -1421,3 +1421,30 @@ and the button only run the calibration steps”. Implemented in workbench code 
   device-family list (`families.py`) with two more classification rules (Spectre's own passive primitives; resistive
   behavioural chains) - the family list replacing the standard one for NEW models only, by the user's choice: every
   model saved before was trained with the standard list and keeps loading with it.
+
+## A missing value of a hard spec is a failed row in every task; the row switch is gone (2026-10-10, record 7.299)
+
+- **What it reverses.** "Missing value = failed stays off" (record 7.183, above). That was tested on one ngspice OTA where
+  about 1 % of the random designs lose a value: switched on, the runs learned later (621 against 462 evaluations; 326
+  against 278 with discount 0) and never earlier, so the switch stayed off, meant for a row whose missing value is the
+  failure itself.
+- **What was seen since.** The AgenticSizing folded-cascode amplifier (`real:agentic_fc`, record 7.295): 413 to 572 of the
+  800 designs of each finished run had no gain, hence no unity-gain frequency, no phase margins and no rise time. Each of
+  63 such designs read back still had seven measured rows (gain, PSRR, CMRR, swing, power, noise, static error; a gain of
+  -43 dB says how far from an amplifier the design is). Under the old rule such a design got no reward, was never
+  replayed and cut its episode, and the start design was simulated again. None of the four finished amplifier runs, nor the
+  fifth, stopped at 599, found a passing design. The other three circuits lost none: 8,412 of 8,412 designs of their 14
+  runs measured every row.
+- **Decision (user, 2026-10-10: "change in the optimizer").** `MetricSpec.missing_is_failure` is True by default. On a
+  completed simulation the missing value of a required spec scores that row the full capped miss; the measured rows keep
+  their values; the design is replayed and the episode goes on - what a design that did not converge always got. The
+  workbench passes no row value any more, so the rule holds for every task. The Specs column is hidden; the rows keep the
+  value they stored (48 say true, 267 false) and no saved task changes its hash. Wrong units, a simulation that never
+  judged the candidate and infrastructure faults remain errors.
+- **Not decided by a test.** The reversal rests on the amplifier's lost budget, not on a paired run; the amplifier's runs
+  under the new rule are that test. The ngspice result stands as recorded: where few designs lose a value, the rule may
+  cost learning speed, and it now applies there too.
+- **Unchanged.** The workbench's own books: such a design is still not valid, never feasible, and counted by "stop after N
+  failed evaluations in a row" (default 5), exactly as a design that did not converge is. A task whose random designs
+  often lose a value needs that limit raised for its runs (the AgenticSizing configurations use 100). The reward version
+  and the saved models' contract are unchanged: a model saved before still fine-tunes with its critics.

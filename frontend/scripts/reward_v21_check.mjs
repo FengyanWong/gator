@@ -45,11 +45,12 @@ try {
  check('new columns initially hidden, and since record 7.183 hard and the scale too',await page.evaluate("!document.querySelector('th[data-field=missing_is_failure]') && !document.querySelector('th[data-field=margin_sides]') && !document.querySelector('th[data-field=hard]') && !document.querySelector('th[data-field=normalization_scale]')"));
  check('zero-floor margin hint',await page.evaluate("document.querySelector('.zero-floor-hint').textContent==='The margin also measures the distance to 0. If 0 is only a physical floor, choose Margin sides: upper.'"));
  await page.evaluate("Array.from(document.querySelectorAll('.editors button')).find(b=>b.textContent.startsWith('More columns')).click()",true);
- check('new optional labels',await page.evaluate("document.querySelector('th[data-field=missing_is_failure]').textContent==='Missing value = failed' && document.querySelector('th[data-field=margin_sides]').textContent==='Margin sides' && document.querySelector('th[data-field=normalization_scale]').textContent==='Scale'"));
+ // "Missing value = failed" is the optimizer's rule for every hard spec since 2026-10-10: no column, the rows keep their value
+ check('new optional labels, and no missing-value switch',await page.evaluate("!document.querySelector('th[data-field=missing_is_failure]') && document.querySelector('th[data-field=margin_sides]').textContent==='Margin sides' && document.querySelector('th[data-field=normalization_scale]').textContent==='Scale'"));
  check('saved empty scale remains empty on load',await page.evaluate(`${cell(0,'normalization_scale')}.value===''`));
- await page.evaluate(`${cell(0,'missing_is_failure')}.click()`,true);await page.setValue(cell(0,'margin_sides'),'upper');
+ await page.setValue(cell(0,'margin_sides'),'upper');
  await page.setValue(cell(0,'lower'),'54');await sleep(950);
- let saved=await page.stored();check('flags persist and editing dB limit proposes 6 (3 until record 7.183)',saved.targets[0].missing_is_failure===true && saved.targets[0].margin_sides==='upper' && saved.targets[0].normalization_scale===6);
+ let saved=await page.stored();check('margin sides persist and editing dB limit proposes 6 (3 until record 7.183)',saved.targets[0].margin_sides==='upper' && saved.targets[0].normalization_scale===6);
  // A suggestion runs only on an explicit edit, while the scale is empty or still the untouched suggestion. Since record
  // 7.183 it is the size of the limit for every unit but dB (10 degrees and half an interval acted as hidden weights); the
  // "target" constraint and its tolerance column were retired in record 7.172.
@@ -84,7 +85,7 @@ try {
   check(`${name} steering values and verdict`,await page.until("document.querySelector('footer .steering-check')?.textContent.includes('0.0392') && document.querySelector('footer .steering-check')?.textContent.includes('0.3') && document.querySelector('footer .steering-check')?.textContent.includes('The network is still choosing close to random:')",150));
  }
  await page.shot(path.join(output,'reward-v21.png'));
- await page.evaluate("document.querySelector('.reward-costs').scrollIntoView({block:'center'});document.querySelector('th[data-field=missing_is_failure]').scrollIntoView({block:'nearest',inline:'center'})",true);
+ await page.evaluate("document.querySelector('.reward-costs').scrollIntoView({block:'center'});document.querySelector('th[data-field=margin_sides]').scrollIntoView({block:'nearest',inline:'center'})",true);
  await page.shot(path.join(output,'reward-v21-controls.png'));
  canCorners=false;await page.send('Page.reload',{ignoreCache:true});
  // Since record 7.182 a circuit without corners offers no Training conditions choice at all (it was Nominal only, the others greyed)

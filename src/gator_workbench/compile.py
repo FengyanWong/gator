@@ -164,7 +164,9 @@ def build_specs(config: WorkbenchConfig):
                                 scale=units.scale_to_canonical(normalization_scale(t), t.unit),
                                 lower=lower, upper=upper, weight=t.soft_weight, required=t.hard, active=t.active,
                                 objective={'none': 'none', 'minimize': 'min', 'maximize': 'max'}[t.direction_after_feasible],
-                                nominal_only=t.nominal_only, missing_is_failure=t.missing_is_failure, margin_sides=t.margin_sides))
+                                # A missing value of a hard spec counts as failed in EVERY task: the optimizer's own
+                                # default since 2026-10-10. A row's stored missing_is_failure is not passed on.
+                                nominal_only=t.nominal_only, margin_sides=t.margin_sides))
         equation = t.equation.strip()
         targets.append(dict(metric_id=t.metric_id, equation=equation,
                             probe=equation if equation in {m.measurement_id for m in config.measurements} else None,

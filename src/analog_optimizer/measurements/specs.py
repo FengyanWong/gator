@@ -87,7 +87,14 @@ class MetricSpec:
     active: bool = True
     objective: str = 'none'
     nominal_only: bool = False
-    missing_is_failure: bool = False
+    # A completed simulation whose value for this required spec is missing or invalid makes the spec a FAILED row - the
+    # full capped miss - and the design stays scored, replayed and learned from, its other specs on their measured
+    # values. The default since 2026-10-10 (user: "change in the optimizer"). Before, the default was False and such a
+    # design was an error: no reward, never replayed, the episode cut - a two-stage amplifier whose random designs
+    # have no gain in half the cases (no unity-gain frequency, no phase margin) lost half of its budget that way,
+    # each lost design with seven good measurements. False keeps the old rule for one spec. A wrong unit and an
+    # infrastructure error remain errors either way.
+    missing_is_failure: bool = True
     margin_sides: str = 'both'
 
     def __post_init__(self):
@@ -142,7 +149,9 @@ class SpecificationEvaluator:
 
     Condition rows expose condition, status, candidate_evaluated, metrics,
     metric_units and metric_validity. Explicit plans distinguish partial evidence
-    from robust feasibility. No missing measurement is replaced with a number.
+    from robust feasibility. No missing measurement is replaced with a number: on a
+    completed simulation the missing value of a required spec is a failed row (the
+    full capped miss; MetricSpec.missing_is_failure, the default since 2026-10-10).
     """
 
     def __init__(self, specs, settings: RewardSettings | None = None):
@@ -182,8 +191,9 @@ class SpecificationEvaluator:
         if row.status not in ('ok', 'measurement_error'):
             return False
         missing = self.missing_failures(row, nominal=nominal)
-        # A measurement-error status needs explicit opted-in failure evidence;
-        # an unexplained error cannot become scorable by vacuous truth.
+        # A measurement-error status needs failure evidence - a required value counted as
+        # failed (missing_is_failure, the default); an unexplained error cannot become
+        # scorable by vacuous truth.
         if row.status == 'measurement_error' and not missing:
             return False
         return all(_measurement_error(s, row) is None or s.metric_id in missing

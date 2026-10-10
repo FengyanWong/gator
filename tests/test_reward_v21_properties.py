@@ -37,7 +37,8 @@ def test_fuzz_legacy_defaults_against_pre_edit_snapshot():
                     status=rng.choice(['ok', 'ok', 'measurement_error', 'nonconverged', 'timeout']),
                     evaluated=rng.random() > .1) for c in PLAN[:rng.randrange(1, 4)]]
         a = old.SpecificationEvaluator([old.MetricSpec(**s) for s in goals], old.RewardSettings(**settings)).evaluate_conditions(rows, planned_conditions=PLAN)
-        b = SpecificationEvaluator([MetricSpec(**s) for s in goals], RewardSettings(**settings)).evaluate_conditions(rows, planned_conditions=PLAN)
+        # the snapshot's one rule is today's opt-out: missing_is_failure was False by default until 2026-10-10
+        b = SpecificationEvaluator([MetricSpec(**s, missing_is_failure=False) for s in goals], RewardSettings(**settings)).evaluate_conditions(rows, planned_conditions=PLAN)
         actual = asdict(b)
         assert actual.pop('missing_counted_as_failure') == {}
         assert actual == asdict(a), case

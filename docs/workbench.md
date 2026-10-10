@@ -502,7 +502,8 @@ Probes lost `function`, `window`, `at_frequency_hz`, `integration_band_hz`, `bra
 `crossover` (no backend extracts anything from them; a filled `function` blocked the run), `on_failure` (one allowed value)
 and `validity` (checked for form only; run-time validity comes from the simulator's own flags). Specs kept every column.
 
-What stays but steps back: `soft_weight`, `active`, `basis`, **Missing value = failed** and **Margin sides** of Specs,
+What stays but steps back: `soft_weight`, `active`, `basis` and **Margin sides** of Specs (**Missing value = failed** was
+among them until record 7.299: the optimizer does it for every hard spec now, and the column is not shown),
 (since record 7.172) `value_type`, `step`, `scale` and `ratio` of Parameters, and (since record 7.183) `hard` and the
 scale of Specs, headed **Scale**, are shown after **More columns** at the right of the toolbar (the choice is kept in the
 browser). They keep their values either way: Add fills them, the agent may set them, a task file stores them. The scale
@@ -1635,8 +1636,13 @@ Training conditions offers Nominal only, Corners after nominal passes, and Every
 whether the task supports corners (none since 2026-09-30). For after_nominal, a nominal failure costs one launch, a
 pass costs 1 + K, and a reset costs one; the full step plan must fit the launch ceiling before preparation.
 
-Under Specs → More columns, **Missing value = failed** opts a required spec into treating its absence after a completed
-simulation as failure; wrong units and infrastructure faults stay errors. A spec computed by an equation is missing only
+A hard spec whose value is missing after a completed simulation is a FAILED row, in every task (record 7.299, 2026-10-10):
+the full miss on that row, the measured rows on their own values, the design replayed and learned from, the episode going
+on - what a design that did not converge always got. Until then **Missing value = failed** under More columns switched
+this on per row; the column is gone, the rows keep the value they stored and nothing reads it. In the workbench's own
+books such a design stays not valid, never feasible and counted by "stop after N failed evaluations in a row": a task
+whose random designs often lose a value needs that limit raised. Wrong units, a simulation that never judged the
+candidate and infrastructure faults stay errors. A spec computed by an equation is missing only
 when a probe it reads is missing; the other equation specs keep their values (record 7.112). **Margin sides** selects
 the limits counted by clearance and Corner check ranking; feasibility still checks all limits. The zero-floor hint
 explains the upper-only choice. A new row, and an edit of its unit, limits or constraint, suggests a scale:

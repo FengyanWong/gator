@@ -103,12 +103,13 @@ def test_editor_columns_say_what_is_shown_on_request_and_what_is_hidden():
     The Specs' target and tolerance and the Probes' expression were retired."""
     by = {section: {c['name']: c for c in schema.editor_columns(section)} for section in schema.SECTIONS}
     # hard and normalization_scale joined on 2026-10-05 (record 7.183): no saved Specs row is soft or has a typed scale
-    assert [n for n, c in by['targets'].items() if c['advanced']] == ['hard', 'missing_is_failure', 'margin_sides', 'soft_weight',
-                                                                       'normalization_scale', 'active', 'basis']
+    assert [n for n, c in by['targets'].items() if c['advanced']] == ['hard', 'margin_sides', 'soft_weight', 'normalization_scale',
+                                                                       'active', 'basis']
     assert [n for n, c in by['parameters'].items() if c['advanced']] == ['value_type', 'step', 'scale', 'ratio']
     # the Unit of Parameters and Specs since record 7.208: every value carries its unit; Probes keep theirs (they have no values)
-    assert {s: [n for n, c in by[s].items() if c['hidden']] for s in by} == dict(parameters=['initial_value', 'unit'],
-                                                                          targets=['unit'], measurements=['result_source'])
+    # and since 2026-10-10 the Specs' "Missing value = failed": the optimizer does it for every hard spec, the rows keep theirs
+    assert {s: [n for n, c in by[s].items() if c['hidden']] for s in by} == dict(
+        parameters=['initial_value', 'unit'], targets=['unit', 'missing_is_failure'], measurements=['result_source'])
     assert not any(c['advanced'] for c in by['measurements'].values())
     assert list(by['parameters']) == ['variable_id', 'instance_path', 'parameter_name', 'initial_value', 'unit', 'optimized',
                                       'value_type', 'lower', 'upper', 'step', 'scale', 'binding_group', 'ratio', 'notes']

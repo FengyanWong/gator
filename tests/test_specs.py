@@ -18,13 +18,36 @@ def test_min_max_range_and_weighted_reward():
     assert result.success and result.reward == 0
 
 
-@pytest.mark.parametrize('value,unit,valid', [(None, 'dB', True), (float('nan'), 'dB', True),
-    (float('inf'), 'dB', True), (True, 'dB', True), (30, 'V', True), (30, 'dB', False)])
+UNUSABLE = [(None, 'dB', True), (float('nan'), 'dB', True), (float('inf'), 'dB', True), (True, 'dB', True), (30, 'V', True),
+            (30, 'dB', False)]
+
+
+@pytest.mark.parametrize('value,unit,valid', UNUSABLE)
 def test_invalid_required_metric_never_succeeds(value, unit, valid):
-    evaluator = SpecificationEvaluator([MetricSpec('gain', 'dB', 'min', 10, lower=20)])
+    """A spec that opts out of "missing value = failed" - the rule of every spec before 2026-10-10: no reward at all."""
+    evaluator = SpecificationEvaluator([MetricSpec('gain', 'dB', 'min', 10, lower=20, missing_is_failure=False)])
     result = evaluator.evaluate({'gain': value}, {'gain': unit}, {'gain': valid})
     assert not result.success and not result.valid and result.reward is None
     assert result.violations['gain'] is None
+
+
+@pytest.mark.parametrize('value,unit,valid', UNUSABLE)
+def test_a_missing_required_value_is_a_failed_row_by_default(value, unit, valid):
+    """The default since 2026-10-10: a completed simulation without a usable value for a required spec fails that row -
+    the full capped miss, a reward to learn from - and the specs it did measure keep their own values. Never a success;
+    a value reported in the wrong unit stays an error (a configuration fault, not the design's)."""
+    assert MetricSpec('gain', 'dB', 'min', 10, lower=20).missing_is_failure is True
+    evaluator = SpecificationEvaluator([MetricSpec('gain', 'dB', 'min', 10, lower=20), MetricSpec('power', 'W', 'max', 1, upper=3)])
+    result = evaluator.evaluate({'gain': value, 'power': 3.5}, {'gain': unit, 'power': 'W'}, {'gain': valid, 'power': True})
+    assert not result.success
+    if unit == 'V':
+        assert not result.valid and result.reward is None and result.errors == {'gain': 'unit_mismatch'}
+        return
+    assert result.valid and result.errors == {'gain': 'missing_counted_as_failure'}
+    assert result.violations == {'gain': 1.0, 'power': 0.5} and result.missing_counted_as_failure == {'nominal': ('gain',)}
+    assert result.worst_values == {'gain': None, 'power': 3.5} and result.reward == pytest.approx(-0.75)       # the mean of the two rows' misses
+    passing_power = evaluator.evaluate({'gain': value, 'power': 2.0}, {'gain': unit, 'power': 'W'}, {'gain': valid, 'power': True})
+    assert passing_power.valid and not passing_power.success and passing_power.reward > result.reward    # the measured row still steers
 
 
 def test_optional_inactive_and_tiny_weight_cannot_hide_required_failure():

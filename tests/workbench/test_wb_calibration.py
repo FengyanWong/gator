@@ -188,9 +188,12 @@ def test_what_cannot_be_named_is_not_proposed(tmp_path):
     odd = calibration.calibrate(config, *recorded(config, table, rewards=[-0.5] * 24))
     assert odd['rows'][0]['proposed_scale'] == 0.2 and odd['initial_alpha']['proposed'] is None
     assert odd['reward_check']['reproduced'] < 24 and 'could not be worked out again' in odd['initial_alpha']['note']
-    # designs that measured nothing are counted, not guessed
+    # designs that measured nothing: scored as the reward code scores them since 2026-10-10 - a failed row, which is part of
+    # the reward spread - and never guessed a value: the row's Scale comes from the 20 that measured it
     holes = calibration.calibrate(config, *recorded(config, dict(score=[0.85] * 10 + [0.65] * 10 + [None] * 6)))
-    assert holes['designs'] == dict(simulated=26, scored=20, passing=0) and holes['rows'][0]['measured'] == 20
+    assert holes['designs'] == dict(simulated=26, scored=26, passing=0) and holes['rows'][0]['measured'] == 20
+    whole = calibration.calibrate(config, *recorded(config, dict(score=[0.85] * 10 + [0.65] * 10)))
+    assert all(holes['rows'][0][k] == whole['rows'][0][k] for k in ('misses', 'median_miss', 'proposed_scale'))
 
 
 def test_the_baseline_run_is_prepared_for_random_designs_only(tmp_path):

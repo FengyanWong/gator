@@ -129,9 +129,12 @@ class CircuitSizingEnv:
     """reset() -> (observation, info); step() -> (obs, reward, terminated, truncated, info).
 
     The step budget is part of the finite-horizon task and of each observation;
-    exhaustion terminates with bootstrap=False. Infrastructure/measurement errors
-    truncate, reward=None and replay_eligible=False. Attributed circuit failures
-    continue from a masked state, subject to the normal finite episode limit.
+    exhaustion terminates with bootstrap=False. Infrastructure errors and unexplained
+    measurement errors truncate, reward=None and replay_eligible=False. Attributed
+    circuit failures - a design that did not converge and, by MetricSpec's default
+    since 2026-10-10, a completed simulation with a required value missing - are
+    scored as failed rows and continue from a masked state, subject to the normal
+    finite episode limit.
     No automatic retries or result cache: duplicates are logged and simulated.
     This is a plain Python environment, not a Gymnasium Env implementation.
     Use as a context manager; it owns and restores its backend connection.

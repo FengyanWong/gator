@@ -119,7 +119,8 @@ await runChecks(browser, async () => {
   await blur(CELL(0, 'lower'));
   await shot('typing-1-numbers.png', `document.querySelector('section.editors')`);
 
-  // ---- (a) "More columns": seven on Specs (hard and the scale joined in record 7.183), none on Probes since its conditions
+  // ---- (a) "More columns": six on Specs (hard and the scale joined in record 7.183; "Missing value = failed" is the
+  //      optimizer's rule for every hard spec since 2026-10-10 and no column), none on Probes since its conditions
   //      and aggregation went (record 7.105) ----------------------------------------------------------------------------
   const MORE = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => /^More columns/.test(b.textContent.trim()))`;
   await openTab('Probes');
@@ -127,8 +128,8 @@ await runChecks(browser, async () => {
     (await evaluate(`${MORE} ?? null`)) === null && (await evaluate(`${CELL(0, 'conditions')} ?? null`)) === null
     && (await evaluate(`${CELL(0, 'aggregation')} ?? null`)) === null);
   await openTab('Specs');
-  check('(set-up) the Specs tab offers "More columns (7)" and shows no soft_weight, hard or scale column before it is pressed',
-    (await evaluate(`${MORE}?.textContent.trim()`)) === 'More columns (7)' && (await evaluate(`${CELL(0, 'soft_weight')} ?? null`)) === null
+  check('(set-up) the Specs tab offers "More columns (6)" and shows no soft_weight, hard or scale column before it is pressed',
+    (await evaluate(`${MORE}?.textContent.trim()`)) === 'More columns (6)' && (await evaluate(`${CELL(0, 'soft_weight')} ?? null`)) === null
     && (await evaluate(`${CELL(0, 'hard')} ?? null`)) === null && (await evaluate(`${CELL(0, 'normalization_scale')} ?? null`)) === null);
   await evaluate(`${MORE}.click()`);
   check('(set-up) after "More columns" the soft_weight column is there and the button reads "Fewer columns"',

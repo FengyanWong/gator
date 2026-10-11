@@ -65,6 +65,26 @@ def test_the_reader_builds_the_graph_the_optimizer_expects():
     assert graph.metadata['simulator'] == 'ngspice' and graph.metadata['analysis_context'][0]['text'] == '.op'
 
 
+def test_a_node_written_in_two_spellings_is_one_net():
+    """Record 7.322: ngspice reads node names without regard to case, so `IN` and `in` are one wire. The reader made
+    a net of each spelling - the same divider in mixed capitals had five nets instead of three, and its resistors no
+    longer met. One net per name now, under the spelling the deck gives first; a deck of one spelling reads as before."""
+    lower = 'divider\nv1 in 0 dc 1\nr1 in mid 1k\nr2 mid 0 1k\n.op\n.end\n'
+    mixed = 'divider\nV1 IN 0 dc 1\nr1 in MID 1k\nR2 mid 0 1k\n.op\n.end\n'
+    one, two = ng.parse_text(lower).graph, ng.parse_text(mixed).graph
+    one.validate(), two.validate()
+    assert [n.id for n in one.nets] == ['in', '0', 'mid'] and [n.id for n in two.nets] == ['IN', '0', 'MID']
+    wiring = lambda graph: [(c.device_id.lower(), c.net_id.lower(), c.ordinal) for c in graph.connections]      # noqa: E731
+    assert wiring(one) == wiring(two)                                    # the same circuit
+    # inside a subcircuit, through its ports and for a global node too
+    nested = ('nested\n.subckt half a B\nr1 a x 1k\nr2 X B 1k\n.ends\n.global VDD\nx1 IN out half\nX2 OUT 0 HALF\n'
+              'v1 in 0 dc 1\nv2 vdd 0 dc 1\nr9 Vdd in 1\n.op\n.end\n')
+    graph = ng.parse_text(nested).graph
+    graph.validate()
+    assert sorted(n.id for n in graph.nets) == ['0', 'IN', 'X2/x', 'out', 'vdd', 'x1/x']
+    assert {c.net_id for c in graph.connections if c.device_id in ('x1/r1', 'x1/r2')} == {'IN', 'x1/x', 'out'}
+
+
 def test_a_subcircuit_used_twice_is_shown_but_not_sized():
     twice = DECK.replace('x1 out 0 load\n', 'x1 out 0 load\nx2 out 0 load\n')
     parsed = ng.parse_text(twice)

@@ -14,7 +14,7 @@ from analog_optimizer.models.inputs import context_features, observation_digest
 from analog_optimizer.recording import codec
 from analog_optimizer.training.replay import Transition
 
-from .pretrain import BalancedSampler, archive_identity, identity, retargeted_specs
+from .pretrain import BalancedSampler, archive_identity, identity, retargeted_specs, stated_scales
 from .storage.atomic import publish, read_json, sha256_file as file_sha, temporary_path, write_json
 from .trajectory import TrajectoryLoader
 
@@ -49,11 +49,12 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
                 raise ValueError('Source archive changed before rehearsal snapshot')
             transitions = {t.candidate_id: t for t in TrajectoryLoader(path).transitions(
                 candidate_ids={r['candidate_id'] for r in chosen})}
+            stated = stated_scales(read_json(path / 'effective_config.json'))
             for row in chosen:
                 transition = transitions[row['candidate_id']]
                 if row['relabeled']:
                     if row.get('target_set'):                      # one of the task's target sets (pretrain.relabel_targets)
-                        specs = retargeted_specs(transition.observation.specs, request['relabel_targets'][row['task']][row['target_set'] - 1], row['task'])
+                        specs = retargeted_specs(transition.observation.specs, request['relabel_targets'][row['task']][row['target_set'] - 1], row['task'], stated)
                     else:
                         changes = request['relabel_upper'][row['task']]
                         specs = tuple(replace(s, upper=changes[s.metric_id]) if s.metric_id in changes else s

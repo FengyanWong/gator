@@ -92,6 +92,49 @@ def test_a_task_pooled_under_several_target_sets_is_re_scored_under_each_and_a_r
             pretrain.prepare_pool(dict(request_for(sources), relabel_targets=bad))
 
 
+def test_a_scale_the_task_states_stays_when_its_limit_is_moved_even_when_it_equals_that_limit(tmp_path):
+    """Record 7.322: the rule told a stated scale from an empty Scale box by its number alone, so a scale typed in and
+    equal to the size of its limit was taken for an empty box and moved with the limit - the relabelled copies were
+    scored on another scale than the same task saved with the new limit (the online run of that configuration)."""
+    from dataclasses import replace
+    from gator_workbench.compile import build_specs
+    task = 'synthetic:gpdk045_ota5'
+
+    def stated(raw, upper=0.95):
+        raw['targets'][0].update(constraint='<=', lower=None, upper=upper, normalization_scale=0.95)
+    recorded = make_config(tmp_path, run=dict(max_evaluations=24), mutate=stated,
+                           advanced=dict(gamma=0., batch_size=4, warmup_transitions=4, episode_length=3))
+    source, state = execute(recorded, tmp_path)
+    assert state == 'completed'
+    request = request_for([source])
+    request['relabel_targets'] = {task: [{'score': {'upper': 0.5}}]}
+    pool = pretrain.prepare_pool(request)
+    moved = [t for t in pool.training[task] + pool.validation[task] if t.observation.specs[0].upper == 0.5]
+    assert moved and {t.observation.specs[0].scale for t in moved} == {0.95}                  # it had become 0.5
+    # the same designs under the task saved with the new limit - what an online run of that configuration scores
+    online = build_specs(make_config(tmp_path, mutate=lambda raw: stated(raw, upper=0.5)))[0]
+    assert moved[0].observation.specs == online
+    assert all(t.reward == replace(t.next_observation, specs=online).evaluation.reward for t in moved)
+    assert any(t.reward != replace(t.next_observation, specs=(replace(online[0], scale=0.5),)).evaluation.reward for t in moved)
+    assert pretrain.stated_scales(read_json(source.effective_config)) == {'score'}
+    # an empty Scale box still follows the limit, and the rule without the configuration is the one it was
+    from analog_optimizer.measurements.specs import MetricSpec
+    spec = (MetricSpec(metric_id='p', unit='V', comparator='max', scale=0.5, upper=0.5),)
+    assert pretrain.retargeted_specs(spec, dict(p=dict(upper=0.3)), 'a task')[0].scale == 0.3
+    assert pretrain.retargeted_specs(spec, dict(p=dict(upper=0.3)), 'a task', stated={'p'})[0].scale == 0.5
+    # the rehearsal snapshot of the pool re-scores its copies the same way
+    from gator_workbench.rehearsal import build_snapshot
+    import gzip
+    import json
+    pretrain.execute(request, tmp_path / 'mock' / 'offline')
+    build_snapshot(tmp_path / 'mock' / 'offline', tmp_path / 'mock' / 'rehearsal', capacity=64)
+    from analog_optimizer.recording import codec
+    from analog_optimizer.training.replay import Transition
+    kept = [json.loads(line) for line in gzip.open(tmp_path / 'mock' / 'rehearsal' / 'transitions.jsonl.gz', 'rt')]
+    copies = [Transition(**codec.untree(row['transition'])) for row in kept if row['selection'].get('target_set') == 1]
+    assert copies and all(copy.observation.specs == online for copy in copies)
+
+
 def test_split_is_reproducible_and_keeps_episodes_and_relabels_together(sources):
     request = request_for(sources)
     request['relabel_upper'] = {'synthetic:gpdk045_ota5': {'score': 0.8}}

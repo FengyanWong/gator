@@ -15,9 +15,16 @@ import { migrateConfig } from '../store';
 
 /** The run settings New run like this copies (record 7.267; plan "Existing runs: continued in place"): the Mode, the name of the
  *  model it saves, the budget and limits, the seed, the network, the training values, reward and conditions. Not the
- *  connection, the concurrency or the source (that is the save point the run loaded, read from its lineage). */
+ *  connection, the concurrency or the source (that is the save point the run loaded, read from its lineage). The optimizer
+ *  is the run's own too, but not one of these (`searchOf`): a configuration names it only when it is not SAC. */
 const RUN_SETTINGS = ['model_label', 'max_evaluations', 'max_spectre_launches', 'max_wall_seconds', 'max_retries', 'max_consecutive_failures',
   'max_consecutive_infrastructure_failures', 'stop_at_first_feasible', 'seed', 'frozen_action', 'network', 'reward', 'conditions', 'advanced', 'rehearsal', 'continual_learning'];
+
+/** The optimizer of a run's configuration as a draft holds it (record 7.322): the field when the run was not searched by SAC,
+ *  no field for a SAC run - every configuration before record 7.304 was a SAC run and never said so. New run like this left
+ *  the draft's own choice standing, so a Bayesian-optimization run repeated from a SAC draft started as a SAC run, without
+ *  a word, and a SAC run repeated from a Bayesian draft as a Bayesian one. */
+export const searchOf = (settings: Json): Json => (settings?.optimizer && settings.optimizer !== 'sac' ? { optimizer: settings.optimizer } : {});
 
 /** `followTask` and `loadSerial`: the task-run link's (taskRunFollow.ts): a Load run gives way to a task chosen elsewhere, and its
  *  own task change silences the link. Returns the task load the Project column fills in, Continue...'s ask, and the window's presses. */
@@ -98,14 +105,17 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
     const [point, since] = await Promise.all([from?.run_dir && from?.checkpoint_id ? readSavePoint(from.run_dir, from.checkpoint_id).catch(() => null) : Promise.resolve(null), savedSince(row)]);
     if (stale()) return false;
     const copied = Object.fromEntries(RUN_SETTINGS.filter(k => k in settings).map(k => [k, settings[k]]));
+    const search = searchOf(settings);
     const result = await withRunTask(row, c => {
-      const run = { ...c.run, ...copied, mode };
+      const { optimizer: _draft, ...kept } = c.run;                  // the run's optimizer, never the draft's (searchOf)
+      const run = { ...kept, ...copied, ...search, mode };
       return { ...c, run: point ? withSavePoint(run, point) : { ...run, model_source: { ...(c.run.model_source ?? {}),
         run_dir: from?.run_dir ?? null, checkpoint_id: from?.run_dir ? from.checkpoint_id ?? 'latest' : 'latest' } } };
     }, true, stale);
     if (stale()) return false;
     if (!result.loaded) { setMessage({ level: 'info', text: `New run like ${runTitle(row)}: not taken, ${result.why}. Nothing changed.` }); return false; }
     setMessage({ level: 'info', text: `The next run repeats ${runTitle(row)}: task ${row.task_key}, ${MODE_NAME[mode] ?? mode}`
+      + (search.optimizer === 'bayes' ? ' searched by Bayesian optimization (the network is neither asked nor trained)' : search.optimizer ? ` searched by ${search.optimizer}` : '')
       + (from ? ` from ${point ? `${nameOf(point)} @ ${point.evaluations ?? point.checkpoint_id}` : `${folderName(from.run_dir)}'s save point ${from.checkpoint_id} (it could not be read now)`}` : '')
       + `, ${settings.max_evaluations} evaluations, seed ${settings.seed}, with its network, training values, reward, conditions and limits.`
       + `${sinceText(since, 'that run')} A model name already taken gets a number at the start. Undo takes it back.` });

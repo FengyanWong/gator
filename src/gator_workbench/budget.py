@@ -188,6 +188,17 @@ class BudgetLedger:
             setattr(self, field, first)
             return deepcopy(first)
 
+    def restore_first_feasible(self, first, *, nominal=False) -> bool:
+        """After a crash: the first (nominally) feasible design was found after the last save point, so the restored
+        ledger does not know it. `first`: its record as `mark_first_feasible` made it (the run's log), or as the
+        evaluations table gives it. Never replaces one the ledger holds. True when taken."""
+        with self._lock:
+            field = 'first_nominal_feasible' if nominal else 'first_feasible'
+            if getattr(self, field) is not None:
+                return False
+            setattr(self, field, deepcopy(first))
+            return True
+
     # ------------------------------------------------------------------ views / persistence
     def in_flight_ids(self):
         with self._lock:

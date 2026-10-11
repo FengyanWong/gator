@@ -793,7 +793,9 @@ What the deck must contain, and what the workbench makes of it (`src/gator_workb
 * SPICE syntax as ngspice reads it: the title line first, elements `R C L M X D Q J V I E G F H B S`, `+`
   continuation lines, `*` / `$` / `;` comments, `.subckt`/`.ends` with `params:`, `.param` (also inside a
   subcircuit), `.global`, `.include` / `.lib`, SPICE numbers (`4u`, `1Meg`, `1M` = milli, `10uF`), `{expressions}`
-  over parameters (a whitelist evaluator with ngspice's arithmetic functions, never `eval`), and `.end`.
+  over parameters (a whitelist evaluator with ngspice's arithmetic functions, never `eval`), and `.end`. A
+  node's name is read without regard to case, as ngspice reads it: `IN` and `in` are one net, under the spelling
+  the deck gives first (record 7.322; each spelling used to be a net of its own).
 * **Results**: `.meas` statements, or in a `.control` block `meas ...`, `let x = ...` + `print x`. Their names are the
   Probes rows (`source_name`); a run reads the `name = value` lines ngspice prints (`.meas` names come back in
   lowercase; a failed measurement is missing, never a number). ngspice has no `.meas op`: read operating-point
@@ -940,7 +942,9 @@ to say.
   (Save as); another task gets its own copy through that save, or from another copy made in Virtuoso and read in
   the window. A built-in circuit gets no second task.
   **Delete task** (in the Tasks window beside the current task name since 7.260; asks once more; was: Delete profile):
-  the task leaves the list, its name is free again and the cell is free for the next Save task.
+  the task leaves the list, its name is free again and the cell is free for the next Save task. The page then
+  follows the task's cell - unless something else was chosen while the deletion ran: then the page stays as it
+  is and a line says the task was deleted (record 7.322).
   Nothing is erased: the folder moves to `configs/local/workbench/profiles/.deleted/<name>.<time>/`,
   its recorded baseline included (a new task needs a new real baseline). Runs already made keep their
   data, but a paused one can no longer be resumed. Refused while a run of the task is working, and for
@@ -1275,6 +1279,12 @@ Mapping to the recommended layout of the specification:
 * When a writer reopens a journal after a crash, it truncates only the incomplete final line before appending.
   Complete corrupt records stop recovery with a persistence error; they never silently hide later records.
   A healthy journal needs only its final byte checked (record 7.174).
+* A run continued after a crash starts from its last save point, and what it committed after that save point is
+  in its tables: the budget is brought up to it, and (record 7.322) so are the run's own counts - failures in a
+  row, valid and passing designs, the first passing design with the numbers of that moment, the episode numbers.
+  Until then the save point's older counts stood: a row of failures that a success had ended still counted, so
+  one more failure stopped the run; a first passing design found after the save point was forgotten. The
+  `resumed` event says what was counted (`counters_after_checkpoint`).
 
 Three things that are deliberately not the same:
 `latest` (most recently safely saved state) / `best_policy` (only by an explicit validation-set
@@ -1341,7 +1351,9 @@ it). The window lists every run under the output folder, newest first, one row p
     point it started from (from its lineage, pinned: never the "latest" its configuration may have recorded), its
     network, training values, reward, conditions, budget, seed, limits and the name of the model it saves (numbered at
     the start when that name is taken). Read from the run's own `effective_config.json`; one Undo step; the shown run
-    stays.
+    stays. The optimizer is the run's own as well (record 7.322): a run searched by Bayesian optimization repeats as
+    one and the message says so, a SAC run as a SAC run - whatever the draft was. The page has no control for the
+    optimizer: a Bayesian draft stays one until Undo or until a SAC run is repeated.
   - Load run and New run like this need the run's task registered now: for a run of a deleted task, or one that names
     none, they are off and the reason stands beside them. Show results still works, and its model can still be used
     from the RL model window.
@@ -3278,7 +3290,9 @@ archives and trains the existing SAC learner without a simulator. `--audit-only`
 registry and deterministic episode split without updating a network. The JSON request contains `origin`, `runs`
 (`run_dir`, `archive_sha256`), `reference_overrides`, optional `relabel_upper` by task/metric (one more copy of each design of
 the task under other upper limits) or `relabel_targets` by task (record 7.312: a list of target sets, each
-`{metric: {"lower": x, "upper": y}}`; one more copy per set, re-scored under its limits - the multi-target models), `seed`,
+`{metric: {"lower": x, "upper": y}}`; one more copy per set, re-scored under its limits - the multi-target models; a
+row whose Scale box is empty gets the size of its new limit, a scale the task states stays, read from the source's own
+configuration since record 7.322), `seed`,
 `holdout_fraction`, `model`, `sac` (gamma 0), `updates`, `batch_size` and `checkpoint_every`.
 
 Sources remain read-only. Mixed origins, reward settings, conflicting units, duplicate runs/candidates, changed

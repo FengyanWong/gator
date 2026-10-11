@@ -174,6 +174,7 @@ def prepare_pool(request, *, progress=None):
                 raise ValueError(f'{run_id} read its specs as a set and has no result registry: pool it with inputs.spec_input "set"')
             registries.append(metrics)
         view = source_view(config, inputs) if transfer else None
+        stated = stated_scales(config)                 # the Scale boxes this task filled: a moved limit leaves them alone
         # What the designs of this source are shown is read from the PDK and the task's files as they stand now, which
         # neither the request nor the archive's checksum covers (record 7.319): the audit says which view it was, and
         # a request that pinned one (`inputs_sha256`, from `inputs_identity`) is refused when it is another now.
@@ -223,7 +224,7 @@ def prepare_pool(request, *, progress=None):
                 groups[task][episode].append((shown(derived), True))
                 counts['relabeled'] += 1
             for number, changes in enumerate(target_sets.get(task, ()), 1):       # one more copy per target set (record 7.312)
-                groups[task][episode].append((shown(_retargeted(transition, first, last, changes, task)), ('set', number)))
+                groups[task][episode].append((shown(_retargeted(transition, first, last, changes, task, stated)), ('set', number)))
                 counts['relabeled'] += 1
         # Detect source mutation during reconstruction, too.
         if archive_identity(directory) != source['archive_sha256']:
@@ -327,12 +328,21 @@ def relabel_targets(request) -> dict:
     return target_sets
 
 
-def retargeted_specs(specs, changes, task):
+def stated_scales(config) -> frozenset:
+    """The specs of a recorded configuration whose Scale box was filled (`normalization_scale`): their scale is the
+    user's, whatever the limits are."""
+    rows = (config or {}).get('targets') or ()
+    return frozenset(row['metric_id'] for row in rows if isinstance(row, dict) and row.get('normalization_scale'))
+
+
+def retargeted_specs(specs, changes, task, stated=()):
     """`specs` with the limits of some rows moved (`changes`: metric -> {"lower": x, "upper": y}). A row keeps its kind:
     only a limit it has may be moved (an "at most" row its upper limit, an "at least" row its lower one, a range
     both), and a range stays a range. A row whose scale was the size of its limit - the rule of an empty Scale box,
     `compile.normalization_scale` - gets the size of its new limit, as the task saved with that limit would; a stated
-    scale stays."""
+    scale stays. `stated`: the rows whose scale the task states (`stated_scales` of the source's configuration). A
+    stated scale that happens to equal the size of its limit is still stated: until record 7.322 it was taken for an
+    empty box and moved with the limit, so the copy was scored on another scale than the task saved with that limit."""
     known = {s.metric_id: s for s in specs}
     if set(changes) - known.keys():
         raise ValueError(f'Relabel metric absent in {task}')
@@ -348,14 +358,15 @@ def retargeted_specs(specs, changes, task):
         lower, upper = limits.get('lower', spec.lower), limits.get('upper', spec.upper)
         if lower is not None and upper is not None and not lower < upper:
             raise ValueError(f'The new limits of {spec.metric_id} in {task} are not a range')
-        scale = size(lower, upper) if math.isclose(spec.scale, size(spec.lower, spec.upper), rel_tol=1e-12) else spec.scale
+        follows = spec.metric_id not in stated and math.isclose(spec.scale, size(spec.lower, spec.upper), rel_tol=1e-12)
+        scale = size(lower, upper) if follows else spec.scale
         result.append(replace(spec, lower=lower, upper=upper, scale=scale))
     return tuple(result)
 
 
-def _retargeted(transition, first, last, changes, task):
+def _retargeted(transition, first, last, changes, task, stated=()):
     """A copy of an archived transition under another target set (`retargeted_specs`), re-scored and validated."""
-    specs = retargeted_specs(first.specs, changes, task)
+    specs = retargeted_specs(first.specs, changes, task, stated)
     a, b = replace(first, specs=specs), replace(last, specs=specs)
     derived = replace(transition, observation=a, next_observation=b, reward=b.evaluation.reward)
     derived.validate()

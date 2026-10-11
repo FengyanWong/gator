@@ -49,11 +49,16 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
       + 'with it keep their data, but a paused one can no longer be resumed. A copy of the task\'s files is kept on the backend machine; the '
       + 'cell in Virtuoso stays as it is, its Maestro test included.'
       + (circuit?.baseline_recorded ? '\n\nIts recorded baseline goes with it: a new task needs a new real baseline simulation.' : ''))) return;
+    const task = ref.task_id;
+    // The page follows the deleted task's cell only while it still shows that task (record 7.322). A task loaded while the
+    // deletion ran keeps its circuit: the answer used to put the deleted task's cell under the new task's rows.
+    const shows = (c: Json) => c.circuit?.source === 'registered_task' && c.circuit?.task_id === task;
     profileAction('delete', async () => {
       const gone = await api.deleteProfile(deletableName!);
       setDeleted(gone);
       refreshTasks();
-      setConfig(c => ({ ...c, circuit: { ...c.circuit, source: 'virtuoso', task_id: null, library: gone.library, cell: gone.cell, view: 'schematic', testbench_cell: gone.testbench_cell ?? null } }));
+      if (!shows(latest.current)) setProfileMessage({ level: 'ok', what: 'delete', text: `Task ${task} deleted. The page stays on what was chosen meanwhile.` });
+      setConfig(c => (shows(c) ? { ...c, circuit: { ...c.circuit, source: 'virtuoso', task_id: null, library: gone.library, cell: gone.cell, view: 'schematic', testbench_cell: gone.testbench_cell ?? null } } : c));
     });
   };
   const deletedHere = deleted && virtuosoOn && deleted.library === ref.library && deleted.cell === ref.cell ? deleted : null;
@@ -72,12 +77,15 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
   const deleteNgspice = (owner: Window) => {
     if (!owner.confirm(`Delete the task ngspice:${ngspiceTask}?\n\nIt leaves the Registered task list. Runs already made with it keep their data, `
       + 'but a paused one can no longer be resumed. Its deck and task file are kept aside on the backend machine.')) return;
+    const task = ref.task_id;
     profileAction('delete', async () => {
       const gone = await api.ngspiceDelete(ngspiceTask!);
       const left = await tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; }).catch(() => [] as Json[]);
       setProfileMessage({ level: 'ok', what: 'delete', text: `Task ${gone.deleted} deleted; its files are kept in ${gone.kept_copy}.` });
+      // The first task left is taken only while the page still shows the deleted one (record 7.322): a task chosen while
+      // the deletion ran stays.
       const next = left.find((t: Json) => t.task_key !== gone.deleted);
-      if (next) chooseTask(next.task_key);
+      if (next && latest.current.circuit?.task_id === task) chooseTask(next.task_key);
     });
   };
   return { taskCheck, profileMessage, generatedName, deletableName, profileBusy, checkTask, setDeleted, deleteProfile, deletedHere, showVirtuoso,

@@ -309,6 +309,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             self.tracker = best_design.BestDesignTracker(self.compiled.preference, later)
             report['best_design_after_checkpoint'] = later['last_commit_seq']
         self.dataset.flush()
+        if self.dataset.last_seq > cursor['commit_seq']:
+            report['counters_after_checkpoint'] = self._count_since(cursor['commit_seq'])
         interrupted = self._record_interrupted()
         post = self.dataset.last_seq - cursor['commit_seq']
         if post or interrupted:
@@ -345,6 +347,55 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         # (review of 2026-10-01).
         self.counters['consecutive_infrastructure_failures'] = 0
         self._pending_events = [('resumed', report)]
+
+    def _count_since(self, checkpoint_seq):
+        """The run's own counts, brought up to the evaluations it committed after the save point (record 7.322). The
+        tables hold them, but the save point's older numbers were restored as they stood: a row of failures that a
+        success had since ended was still counted, so one more failure stopped the run; failures made after the save
+        point were forgotten; and a first passing design found after it was lost - the summary said none was found, and
+        a run told to stop at its first passing design went on to a second one. Each evaluation is counted as `_commit`
+        counted it. The row of an evaluation an earlier crash interrupted is none: it never came back. Returns what
+        the resume event says of it."""
+        columns = ['evaluation_id', 'commit_seq', 'status', 'valid', 'all_hard_constraints_satisfied', 'nominal_feasible',
+                   'global_env_step', 'episode_id', 'completed_at', 'dispatch_index', 'cumulative_evaluations_charged',
+                   'cumulative_completed', 'cumulative_launches', 'in_flight_at_commit']
+        later = sorted((row for row in DatasetReader(self.layout.data).rows('evaluations', columns)
+                        if row['commit_seq'] > checkpoint_seq and row['status'] != 'interrupted'), key=lambda row: row['commit_seq'])
+        try:        # the record made at the event (its seconds, what was in flight); the table's own numbers without it
+            logged = {(e.get('event'), e.get('evaluation_id')): e for e in read_jsonl(self.layout.logs / 'events.jsonl')}
+        except (OSError, ValueError):
+            logged = {}
+        found = None
+        for row in later:
+            failed = not row['valid']
+            self.counters['failures'] += int(failed)
+            self.counters['valid_evaluations'] += int(not failed)
+            self.counters['feasible_evaluations'] += int(bool(row['all_hard_constraints_satisfied']))
+            self.counters['consecutive_failures'] = self.counters['consecutive_failures'] + 1 if failed else 0
+            self.counters['global_env_step'] = max(self.counters['global_env_step'], row['global_env_step'] or 0)
+            if not failed and row['completed_at'] is not None:
+                self.counters['last_successful_evaluation_utc'] = iso(row['completed_at'])
+            # an episode begun after the save point keeps its number: the next one must not take it again
+            number = (row['episode_id'] or '').rpartition('-')[2]
+            if number.isdigit():
+                self.counters['episodes'] = max(self.counters['episodes'], int(number))
+            for field, column in (('first_nominal_feasible', 'nominal_feasible'), ('first_feasible', 'all_hard_constraints_satisfied')):
+                if not row[column] or getattr(self.ledger, field) is not None:
+                    continue
+                event = logged.get((field, row['evaluation_id']))
+                first = {k: v for k, v in event.items() if k not in ('time_utc', 'event', 'run_id')} if event else dict(
+                    evaluation_id=row['evaluation_id'], first_feasible_eval_count=row['cumulative_evaluations_charged'],
+                    dispatch_index=row['dispatch_index'], completed_count=row['cumulative_completed'],
+                    in_flight_count=row['in_flight_at_commit'], in_flight_evaluation_ids=[],
+                    spectre_launches=row['cumulative_launches'], commit_seq=row['commit_seq'], active_seconds=None,
+                    wall_seconds=None, convention='from the evaluations table after a crash: evaluations charged when '
+                                                  'this design was committed; the seconds at the event are not known')
+                self.ledger.restore_first_feasible(first, nominal=field == 'first_nominal_feasible')
+                if field == 'first_feasible':
+                    found = row['evaluation_id']
+        if found and self.config.run.stop_at_first_feasible:        # the stop it asked for was cut off by the crash
+            self.stop_reason = 'first_feasible'
+        return dict(evaluations=len(later), consecutive_failures=self.counters['consecutive_failures'], first_feasible=found)
 
     def _record_interrupted(self):
         """Evaluations that STARTED (budget charged) but were never committed because the process died."""

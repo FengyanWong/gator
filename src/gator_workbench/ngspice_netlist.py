@@ -557,11 +557,15 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
         'globals': sorted(globals_), 'measurements': [m.name for m in measurements],
         'scope_parameters': {name or '<root>': dict(s.params) for name, s in [(None, root), *scopes.items()]}})
     nets, sizables, unknown_models, subckt_uses = {}, {}, [], {name: 0 for name in scopes}
+    # ngspice reads a node's name without regard to case (IN and in are one wire): one net per name, under the spelling
+    # the deck gives first - a deck of one spelling reads as it always did. Until record 7.322 each spelling was a net.
+    spelled = {}
 
     def net(name, path, port_map):
         key = port_map.get(name.lower())
         if key is None:
             key = name if name.lower() in {g.lower() for g in globals_} or not path else f'{path}/{name}'
+            key = spelled.setdefault(key.lower(), key)
         if key not in nets:
             nets[key] = Net(key, ('ground',) if key.lower() in GROUND else ('normal',), 'default')
         return key

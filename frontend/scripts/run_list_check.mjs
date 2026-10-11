@@ -90,7 +90,9 @@ await runChecks(browser, async () => {
   // RESUMED's own configuration as it started (record 7.267, New run like this): a fine-tune of DONE, its recorded source still "latest".
   let failModel = null, holdModel = false; const heldModel = [];               // record 7.270: see the /api/runs/model answer
   const recorded = { [RESUMED.run_dir]: { ...CONFIG, run: { ...CONFIG.run, mode: 'fine_tune', model_label: 'fixture (2)', max_evaluations: 40, seed: 2, max_retries: 1,
-    network: RGCN, advanced: { ...(CONFIG.run.advanced ?? {}), batch_size: 16 }, model_source: { run_dir: DONE.run_dir, checkpoint_id: 'latest' } } } };
+    network: RGCN, advanced: { ...(CONFIG.run.advanced ?? {}), batch_size: 16 }, model_source: { run_dir: DONE.run_dir, checkpoint_id: 'latest' } } },
+    // Record 7.322: PAUSED as a run searched by Bayesian optimization (its configuration names the optimizer; a SAC run's never does)
+    [PAUSED.run_dir]: { ...CONFIG, run: { ...CONFIG.run, mode: 'scratch', optimizer: 'bayes', max_evaluations: 60, seed: 3 } } };
   const answer = ({ requestId, request }) => {
     const url = new URL(request.url), name = url.pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, validReport);
@@ -477,6 +479,21 @@ await runChecks(browser, async () => {
   await undo();
   draft = await runWhen(x => !x?.model_source?.run_dir);
   check('one Undo takes all of it back', modeOf(draft) === 'scratch' && draft.seed !== 2, JSON.stringify(draft));
+  // Record 7.322 (review of 2026-10-11): the optimizer is the repeated run's own. It used to stay the draft's, so a run
+  // searched by Bayesian optimization repeated as a SAC run without a word, and a SAC run from a Bayesian draft as a Bayesian one.
+  await openDetails(PAUSED); await actAndClose('New run like this');
+  draft = await runWhen(x => x?.optimizer === 'bayes');
+  check('New run like this of a run searched by Bayesian optimization repeats it as one, and the message says so', draft?.optimizer === 'bayes' && modeOf(draft) === 'scratch'
+    && draft.seed === 3 && /New model searched by Bayesian optimization/.test(await banner()), `${JSON.stringify(draft)} | ${await banner()}`);
+  await openDetails(RESUMED); await actAndClose('New run like this');
+  draft = await runWhen(x => x?.model_source?.run_dir === DONE.run_dir && x?.seed === 2);
+  check('... and a SAC run repeated from that Bayesian draft is a SAC run again: the draft names no optimizer', !!draft && !('optimizer' in draft) && draft.mode === 'fine_tune'
+    && !/Bayesian/.test(await banner()), `${JSON.stringify(draft)} | ${await banner()}`);
+  await undo();
+  draft = await runWhen(x => x?.optimizer === 'bayes');
+  await undo();
+  draft = await runWhen(x => !x?.optimizer && !x?.model_source?.run_dir);
+  check('(set-up) two Undo steps take both repeats back', modeOf(draft) === 'scratch' && !draft.optimizer && draft.seed !== 2 && draft.seed !== 3, JSON.stringify(draft));
   // Record 7.270 (Astra's review of 2026-10-07): a model read that FAILS - not a missing save point - stops Load run; it used to
   // load the run's parent model instead and say it had worked. And an older Load run answered late never overwrites a newer one.
   failModel = RESUMED.run_dir;

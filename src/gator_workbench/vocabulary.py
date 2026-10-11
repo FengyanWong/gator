@@ -169,10 +169,14 @@ def schema_label(feature_schema) -> str:
     return 'standard (8 generic kinds)' + extra
 
 
-def run_vocabulary_facts(run_dir) -> dict:
+def run_vocabulary_facts(run_dir, feature_schema=None) -> dict:
     """The component list a run's model was made with, as the RL model window shows it: its name, label, PDK and
-    checksum, and whether that PDK is loaded here (a model of a PDK's list loads only with that list)."""
+    checksum, and whether that PDK is loaded here (a model of a PDK's list loads only with that list).
+    `feature_schema`: the one the chosen save point's contract records. A folder that keeps no list of its own - an
+    offline model published before record 7.319 - is the family list when that schema says so, not the standard one."""
     own = run_vocabulary(run_dir)
+    if own is None and (feature_schema or {}).get('version', '').partition('+')[0] == families.VERSION:
+        own = families.FamilyList(families.block_for(None))            # the list itself: each task's PDK is mapped at its start
     return dict(name=own.name if own else STANDARD, label=own.label if own else label(None),
                 pdk_id=own.pdk_id if own else None, sha256=own.sha256 if own else None,
                 loaded=bool(own is None or own.name == families.NAME or load_record(own.pdk_id) is not None))

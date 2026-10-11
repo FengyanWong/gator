@@ -125,7 +125,7 @@ def test_the_view_shows_sources_net_tags_and_ratios_and_leaves_the_recorded_grap
     from analog_optimizer.graph.pyg_converter import FeatureSchema, OPERATING_POINT_COLUMNS, to_pyg
     graph = bench_graph()
     view = network_inputs.NetworkView(bench_features=True, net_rule=True, op_ratios=True, measured_nets=('VOUT',),
-                                      variables=dict(IL=1e-3))
+                                      variables=dict(il=1e-3))               # as the netlist writes it (record 7.319)
     seen = view.view_graph(graph, POINTS)
     seen.validate()
     assert view.view_graph(seen, POINTS) is seen                                  # never viewed twice

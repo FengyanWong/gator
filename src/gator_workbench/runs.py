@@ -570,7 +570,10 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
                           'device model features, bench sources, net tags, operating-point ratios) cannot change on exact resume. Use fine_tune with a compatible actor and '
                           'fresh critics/replay.', code='reward_contract_changed')
     recorded = network_inputs.read_run_record(run_dir)
-    if recorded is not None and recorded.get('view_key') != getattr(network_inputs.view_for(previous), 'key', None):
+    # The view is asked for as the start asked (prepare_run): with the run's own component list, which its key holds.
+    # Without it (until record 7.319) every run with a PDK's list or the family list was refused here, unchanged.
+    own_list = run_vocabulary(run_dir)
+    if recorded is not None and recorded.get('view_key') != getattr(network_inputs.view_for(previous, own_list), 'key', None):
         raise RunRejected('What this run showed its network has changed since it started: the spec descriptions of its task, '
                           'or the device numbers of its PDK (the PDK was loaded again). Start a new run - Fine-tune from '
                           "this run's model keeps what it learned.", code='network_inputs_changed')
@@ -581,7 +584,7 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
         raise RunRejected(f"max_evaluations ({merged.run.max_evaluations}) is below the {meta['ledger']['charged']} "
                           'evaluations this run already consumed; resume keeps existing counters', code='budget')
     compiled = compile_task(merged, task.base_graph)
-    contract = learner_contract(merged, task, task_hash, compiled.spec_schema, run_vocabulary(run_dir))
+    contract = learner_contract(merged, task, task_hash, compiled.spec_schema, own_list)
     compatibility = ckpt.check_compatibility(meta, mode='resume', task_definition_hash=task_hash, contract=contract)
     if not compatibility['compatible']:
         raise RunRejected('The latest checkpoint cannot be fully resumed. No fallback to scratch is performed.',

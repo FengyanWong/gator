@@ -138,7 +138,8 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         except FileNotFoundError as exc:
             fail(404, exc)
         result = dict(description=description)
-        result['vocabulary'] = run_vocabulary_facts(run_dir)    # the model's component list: the page's list follows it
+        # the model's component list: the page's list follows it
+        result['vocabulary'] = run_vocabulary_facts(run_dir, (description.get('contract') or {}).get('feature_schema'))
         if body.config:
             config, runtime, blocked = context.load_config(body.config)
             if runtime is not None:

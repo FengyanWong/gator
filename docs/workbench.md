@@ -2666,7 +2666,9 @@ the circuit has no minimum size (`pdk_sizes_missing`), device features when none
 warning under Parameters when only some lack them: those inputs are then missing on those devices), and rehearsal with
 these inputs (`rehearsal_with_transfer_inputs`: its pools hold other tasks' states, which would need their own view).
 An exact resume refuses a change of these settings, and a run whose task descriptions or PDK numbers changed since it
-started (`network_inputs_changed`): Fine-tune from its model.
+started (`network_inputs_changed`): Fine-tune from its model. The check rebuilds the run's view as its start made
+it, with the run's own component list (record 7.319: until then it left the list out, and so refused every
+unchanged run that had the family list or a PDK's list).
 
 **A run's own record**, `network_inputs.json` in its folder: the settings, the spec descriptions, the PDK and its record's
 checksum and the view's key - never the device numbers.
@@ -2717,7 +2719,8 @@ one, and the window then shows "Custom"):
    (`idc`); a voltage source's DC value is also given as a share of the supply (`vrel`: the supply reads 1, a 0.9 V
    common-mode level under a 1.8 V supply 0.5); a source's AC magnitude (`ac`) and the two levels of a step (`ilow`,
    `ihigh` in microamperes; `vlow`, `vhigh` as shares of the supply) are columns; and a DC value the netlist gives as
-   a design variable of the test (`dc=il`) is read from the test's variables, unless an analysis sweeps it.
+   a design variable of the test (`dc=il`) is read from the test's variables, unless an analysis sweeps it - by
+   its name as written, as Spectre reads it (`BIAS` and `bias` are two variables; record 7.319).
 2. **Net tags by one rule.** A task tags its nets when it is saved: ground on every task, the supply on a third of
    them, nothing else - so the same supply net is marked on one task and plain on the next. With `rule` every net is
    tagged from the graph alone, the same way on every task:
@@ -3256,6 +3259,19 @@ Since record 7.298 a request may train with the transferable network inputs (`in
 its own view: see "Transferable network inputs". Since record 7.317 `inputs` also takes the second build's three
 settings, and a source that read operating points is accepted (for the operating-point ratios every source must have
 read them, or the request says `"missing_operating_points": "mask"`): see "The second build of the network inputs".
+
+Since record 7.319 a pool with these inputs pins what each source was shown. A source is read through a view made
+from what is loaded when the pool is built - its PDK's device numbers and family mapping, its task's spec
+descriptions and test variables - which the request's archive checksums do not cover. Every source's entry in
+`pool.json` now carries `inputs_sha256`, the key of that view, so two builds that showed different inputs have
+different audits. A request may pin it per source, beside `archive_sha256` (`pretrain.inputs_identity(run_dir,
+inputs)` gives it, as does an `--audit-only` run), and is then refused once the view is another: "Network inputs
+changed after selection" (the PDK was loaded again, or the task was saved again). `offline_diagnostics.qualify`
+compares the frozen audit with the pool it rebuilds. A pool without these inputs has no such field. A published
+model keeps the component list it was built with, as a run does (`network_vocabulary.json`, and
+`architecture.vocabulary` in its manifest): the model window then names a family-list model as one, where it had
+said "standard" and the compatibility check then refused the model. A folder published before is read from its
+save point's own contract.
 
 `python -m gator_workbench.cli pretrain REQUEST.json --output NEW_DIRECTORY` audits an explicitly pinned set of
 archives and trains the existing SAC learner without a simulator. `--audit-only` writes the pool inventory, shared

@@ -3,11 +3,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 
-from . import OUTPUT_LAYOUT_VERSION, checkpoints
+from . import OUTPUT_LAYOUT_VERSION, checkpoints, families
 from .layout import RunLayout
 from .pretrain import identity
+from .runs import vocabulary_record
 from .storage.atomic import read_json, write_json
 from .storage.dataset import RawDataset
+from .vocabulary import write_run_vocabulary
 
 
 def publish(training_dir, output_root, *, label, review):
@@ -46,6 +48,12 @@ def publish(training_dir, output_root, *, label, review):
     if (source / 'qualification.json').exists():
         shutil.copyfile(source / 'qualification.json', directory / 'qualification.json')
     write_json(directory / 'diagnostic_review.json', review)
+    # The component list the weights were built with, kept as a run keeps it (record 7.319): without it the model
+    # chooser read a family-list model as one of the standard list and refused it. The family list is kept without a
+    # PDK's mapping - a pool may hold several PDKs, and a run that loads the model maps its own task's.
+    built_with = (meta['contract'].get('feature_schema') or {}).get('version', '').partition('+')[0]
+    listed = families.FamilyList(families.block_for(None)) if built_with == families.VERSION else None
+    write_run_vocabulary(directory, listed)
     mock = pool['origin'] == 'synthetic'
     manifest = dict(layout_version=OUTPUT_LAYOUT_VERSION, run_id=run_id, task_id=meta['task_id'],
         task_name=label, model_label=label, task_definition_hash=meta['task_definition_hash'],
@@ -56,7 +64,7 @@ def publish(training_dir, output_root, *, label, review):
         pretraining=dict(sources=pool['sources'], source_evaluations=pool['source_evaluations'],
                          split_sha256=pool['split_sha256'], review=review),
         architecture=dict(network=meta['contract']['model_config'], sac=meta['contract']['sac_config'],
-                          spec_schema=pool['spec_schema']),
+                          spec_schema=pool['spec_schema'], vocabulary=vocabulary_record(listed)),
         budgets=dict(max_evaluations=0, max_spectre_launches=0), parent=None,
         segments=[dict(segment=1, entry='offline', ended_utc=now, end_state='completed',
                        active_seconds=status['elapsed_seconds'])],

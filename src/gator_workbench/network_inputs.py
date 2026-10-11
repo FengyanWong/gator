@@ -183,13 +183,14 @@ class GraphBench:
 
 
 def _number(values, key, variables=None):
-    """A source parameter as a number: its value, else the test variable its text names; None when neither is known."""
+    """A source parameter as a number: its value, else the test variable its text names - by the name as written, as
+    Spectre reads it (BIAS and bias are two variables); None when neither is known."""
     found = values.get(key)
     if found is None:
         return None
     if found.valid:
         return float(found.value)
-    named = (variables or {}).get((found.raw or '').strip().lower())
+    named = (variables or {}).get((found.raw or '').strip())
     return float(named) if isinstance(named, (int, float)) and not isinstance(named, bool) and math.isfinite(named) else None
 
 
@@ -267,7 +268,8 @@ _ASSIGNMENT = re.compile(r'([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^\s=]+)')
 
 def variables_of_deck(deck) -> dict:
     """{name: number} of a Maestro deck's design variables (the `parameters` lines of its head), without the ones an
-    analysis sweeps (`param=<name>` in its tail): a swept variable has no one value."""
+    analysis sweeps (`param=<name>` in its tail): a swept variable has no one value. Names are kept as written:
+    Spectre tells BIAS from bias (until record 7.319 they were put in lower case, and two such variables read as one)."""
     if not isinstance(deck, dict) or not isinstance(deck.get('head'), str):
         return {}
     tail, found = deck.get('tail') if isinstance(deck.get('tail'), str) else '', {}
@@ -280,7 +282,7 @@ def variables_of_deck(deck) -> dict:
             except (ValueError, IndexError):
                 continue
             if math.isfinite(value) and not re.search(r'\bparam\s*=\s*' + re.escape(name) + r'\b', tail):
-                found[name.lower()] = value
+                found[name] = value
     return found
 
 
@@ -293,6 +295,14 @@ def bench_variables(config) -> dict:
     if entry is None:
         return {}
     return variables_of_deck(read_json(Path(entry['directory']) / 'maestro_deck.json', default=None))
+
+
+def _keyed(variables) -> dict:
+    """The test variables as a view's key holds them: in lower case, as every key made before record 7.319 held them,
+    while that still tells them apart - the view then shows what it showed, and the runs made before keep their key -
+    and as written when two differ only in case (such a view read both as one before, so its key rightly moves)."""
+    lowered = {name.lower(): value for name, value in variables.items()}
+    return lowered if len(lowered) == len(variables) else dict(variables)
 
 
 # ------------------------------------------------------------------------------------------ the view
@@ -313,13 +323,13 @@ class NetworkView:
         self.relative_sizes, self.model_features, self.vocabulary = bool(relative_sizes), bool(model_features), vocabulary
         self.bench_features, self.net_rule, self.op_ratios = bool(bench_features), bool(net_rule), bool(op_ratios)
         self.measured_nets = tuple(sorted(set(measured_nets))) if self.net_rule else ()
-        self.variables = {str(k).lower(): float(v) for k, v in (variables or {}).items()} if (self.bench_features or self.net_rule) else {}
+        self.variables = {str(k): float(v) for k, v in (variables or {}).items()} if (self.bench_features or self.net_rule) else {}
         identity = dict(descriptors=self.descriptors, numbers=self.numbers if (relative_sizes or model_features) else None,
                         relative_sizes=self.relative_sizes, model_features=self.model_features,
                         vocabulary=None if vocabulary is None else vocabulary.sha256)
         if self.bench_features or self.net_rule or self.op_ratios:      # only then: a view without them keeps its key
             identity['second_build'] = dict(bench_features=self.bench_features, net_rule=self.net_rule, op_ratios=self.op_ratios,
-                                            measured_nets=list(self.measured_nets), variables=self.variables)
+                                            measured_nets=list(self.measured_nets), variables=_keyed(self.variables))
         self.key = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode()).hexdigest()
         self._seen, self._lock = OrderedDict(), threading.Lock()
 

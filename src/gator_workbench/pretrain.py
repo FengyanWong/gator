@@ -97,7 +97,8 @@ def request_inputs(request) -> dict:
 
 def source_view(config, inputs):
     """The NetworkView of one source archive under the request's inputs: its own specs described, its PDK's numbers, and
-    with the family list its own PDK's components mapped into the families."""
+    with the family list its own PDK's components mapped into the families. All of it is read as it stands NOW - the
+    loaded PDK, the task's saved files - so the pool pins what it read (`inputs_identity`, record 7.319)."""
     from .schema import WorkbenchConfig          # lazy: the schema module is only needed for a pool with these inputs
     try:
         recorded = WorkbenchConfig.model_validate(config)
@@ -108,6 +109,17 @@ def source_view(config, inputs):
                   if inputs['vocabulary'] == families.NAME else None)
     view = network_inputs.view_for(recorded, vocabulary)
     return view if view is not None or vocabulary is None else network_inputs.NetworkView(vocabulary=vocabulary)
+
+
+def inputs_identity(run_dir, inputs) -> str | None:
+    """What a source archive's designs are shown under these inputs, as one checksum - beside `archive_identity` for the
+    source's entry of a request (`inputs_sha256`): the pool then refuses to be built once it changed. It is the view's
+    key: the spec descriptions, the PDK's device numbers and family mapping, the second build's nets and test
+    variables. `inputs`: the request's `inputs` block; None for inputs that show every design as recorded."""
+    inputs = request_inputs(dict(inputs=inputs))
+    if not (network_inputs.any_transfer(inputs) or inputs['vocabulary'] == families.NAME):
+        return None
+    return source_view(read_json(Path(run_dir) / 'effective_config.json'), inputs).key
 
 
 def prepare_pool(request, *, progress=None):
@@ -162,6 +174,14 @@ def prepare_pool(request, *, progress=None):
                 raise ValueError(f'{run_id} read its specs as a set and has no result registry: pool it with inputs.spec_input "set"')
             registries.append(metrics)
         view = source_view(config, inputs) if transfer else None
+        # What the designs of this source are shown is read from the PDK and the task's files as they stand now, which
+        # neither the request nor the archive's checksum covers (record 7.319): the audit says which view it was, and
+        # a request that pinned one (`inputs_sha256`, from `inputs_identity`) is refused when it is another now.
+        shown_as = None if view is None else view.key
+        if source.get('inputs_sha256') not in (None, shown_as):
+            raise ValueError(f'Network inputs changed after selection: {run_id} would be shown to the network another way '
+                             'than the request pinned (its PDK was loaded again, or its task\'s spec descriptions or test '
+                             'variables changed)')
         loader = TrajectoryLoader(directory)
         problems = loader.reader.verify()
         if problems:
@@ -210,6 +230,7 @@ def prepare_pool(request, *, progress=None):
             raise ValueError(f'Archive changed while loading: {directory}')
         sources.append(dict(run_dir=str(directory), run_id=run_id, task=task,
                             archive_sha256=source['archive_sha256'], **({'operating_points': True} if read_points else {}),
+                            **({} if shown_as is None else {'inputs_sha256': shown_as}),
                             evaluations=summary['totals']['candidate_evaluations_charged'],
                             eligible=len(transitions), excluded=len(raw) - len(transitions),
                             relabeled=counts['relabeled']))

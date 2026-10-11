@@ -70,6 +70,10 @@ def qualify(training_dir, *, progress=None):
     recorded = read_json(directory / 'pool.json')
     if recorded['request_sha256'] != pool.audit['request_sha256'] or recorded['split_sha256'] != pool.audit['split_sha256']:
         raise ValueError('Qualification must use exactly the training pool and split')
+    was, now = ({s['run_id']: s.get('inputs_sha256') for s in audit['sources']} for audit in (recorded, pool.audit))
+    if any(was[run] is not None and was[run] != now.get(run) for run in was):         # record 7.319; older pools pinned none
+        raise ValueError('Qualification must show the pool as the training saw it: the network inputs of a source changed '
+                         '(its PDK was loaded again, or its task\'s spec descriptions or test variables changed)')
     learner, meta = load_model(checkpoints.resolve_checkpoint(directory, 'latest'))
     if identity(asdict(learner.spec_schema)) != identity(recorded['spec_schema']):
         raise ValueError('Model registry differs from the pool')

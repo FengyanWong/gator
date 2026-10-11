@@ -47,6 +47,51 @@ def test_registry_conflicts_and_custom_schema_compatibility(sources, tmp_path):
     assert build_spec_schema(type(config).model_validate(raw)) == schema
 
 
+def test_a_task_pooled_under_several_target_sets_is_re_scored_under_each_and_a_row_keeps_its_kind(sources):
+    """Record 7.312 (the transfer experiment's multi-target models): `relabel_targets` pools every archived design of a
+    task once as recorded and once more under each target set, each copy re-scored under its own limits - the limits a
+    network that reads its specs as inputs is shown."""
+    from analog_optimizer.measurements.specs import MetricSpec
+    task = 'synthetic:gpdk045_ota5'
+    plain = pretrain.prepare_pool(request_for(sources))
+    request = request_for(sources)
+    request['relabel_targets'] = {task: [{'score': {'upper': 0.8}}, {'score': {'upper': 0.5}}]}
+    pool = pretrain.prepare_pool(request)
+    recorded = len(plain.training[task]) + len(plain.validation[task])
+    assert len(pool.training[task]) + len(pool.validation[task]) == 3 * recorded and pool.audit['relabeled'] == 2 * recorded
+    assert pool.audit['relabel_target_sets'] == {task: 2} and 'relabel_target_sets' not in plain.audit
+    rows = [r for r in pool.audit['split'] if r['task'] == task]
+    assert Counter(r.get('target_set') for r in rows) == {None: recorded, 1: recorded, 2: recorded}
+    assert all(r['relabeled'] == ('target_set' in r) for r in rows)
+    by_candidate = defaultdict(set)
+    for r in rows:
+        by_candidate[r['candidate_id']].add(r['subset'])
+    assert all(len(subsets) == 1 for subsets in by_candidate.values())            # a design and its copies stay on one side
+    uppers = Counter(next(s.upper for s in t.observation.specs if s.metric_id == 'score') for t in pool.training[task] + pool.validation[task])
+    assert uppers == {0.95: recorded, 0.8: recorded, 0.5: recorded}
+    assert all(t.reward == t.next_observation.evaluation.reward for t in pool.training[task])      # each under its own limits
+    assert len({t.reward for t in pool.training[task]}) > len({t.reward for t in plain.training[task]})
+    # the other task of the pool is as it was, and the old one-target relabelling is unchanged beside it
+    assert [t.reward for t in pool.training['synthetic:toy_ldo']] == [t.reward for t in plain.training['synthetic:toy_ldo']]
+    # a row keeps its kind, and a scale that was the size of the limit follows the limit
+    row = lambda **k: MetricSpec(**dict(dict(metric_id='x', unit='V', comparator='max', scale=1.0), **k))
+    specs = (row(metric_id='p', upper=0.5, scale=0.5), row(metric_id='g', comparator='min', lower=30.0, scale=30.0),
+             row(metric_id='f', comparator='range', lower=0.95, upper=1.05, scale=1.05), row(metric_id='s', upper=0.5, scale=0.2))
+    moved = {s.metric_id: s for s in pretrain.retargeted_specs(specs, dict(p=dict(upper=0.29), g=dict(lower=31.0), f=dict(lower=1.14, upper=1.26),
+                                                                           s=dict(upper=0.3)), 'a task')}
+    assert (moved['p'].upper, moved['p'].scale) == (0.29, 0.29) and (moved['g'].lower, moved['g'].scale) == (31.0, 31.0)
+    assert (moved['f'].lower, moved['f'].upper, moved['f'].scale) == (1.14, 1.26, 1.26) and moved['f'].comparator == 'range'
+    assert (moved['s'].upper, moved['s'].scale) == (0.3, 0.2)                      # a stated scale stays
+    for changes, words in ((dict(p=dict(lower=0.1)), 'has no lower limit to move'), (dict(g=dict(upper=40.0)), 'has no upper limit to move'),
+                           (dict(f=dict(lower=1.2)), 'are not a range'), (dict(nobody=dict(upper=1.0)), 'Relabel metric absent')):
+        with pytest.raises(ValueError, match=words):
+            pretrain.retargeted_specs(specs, changes, 'a task')
+    for bad, words in (({task: []}, 'must be a list of target sets'), ({task: [{}]}, 'must be a list of target sets'),
+                       ({task: [{'score': {'at_most': 1.0}}]}, 'names "lower", "upper" or both'), ({'synthetic:nobody': [{'score': {'upper': 1.0}}]}, 'absent from pool')):
+        with pytest.raises(ValueError, match=words):
+            pretrain.prepare_pool(dict(request_for(sources), relabel_targets=bad))
+
+
 def test_split_is_reproducible_and_keeps_episodes_and_relabels_together(sources):
     request = request_for(sources)
     request['relabel_upper'] = {'synthetic:gpdk045_ota5': {'score': 0.8}}

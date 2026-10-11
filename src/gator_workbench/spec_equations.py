@@ -25,7 +25,9 @@ from __future__ import annotations
 import ast
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+import fnmatch
 import math
+import re
 from . import units
 
 MAX_LENGTH = 512                                                      # schema.PerformanceTarget.equation
@@ -98,6 +100,151 @@ def is_finite_number(value):
     return value is not None and not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
+# ---------------------------------------------------------------------------------- a probe that measures the sizes
+# Record 7.308. A Probes row with result_source "size_estimate" is not measured by the simulator: its `signal` is a
+# formula over the widths the task varies, worked out in the lane from the candidate's own parameters and added to the
+# simulation result under the probe's source name - a result of its own, so the reward, the independent pass/fail check
+# and the tables read it as they read any other result. First use: a standard cell's width before layout (the number
+# of gate columns), plan-transfer-experiment.md section 6.2.1.
+#
+#   fingers("pattern", limit)   sum over the matching instances of ceil(width / limit): the fingers they fold into
+#   width("pattern")            sum of the matching instances' widths
+#   count("pattern")            how many instances match
+#   larger(a, b), smaller(a, b)
+#
+# with numbers (SI suffixes), + - * / ** and brackets. A pattern is a shell-style pattern ("mn*") on the instance's
+# path as the Parameters rows write it ("DUT/mn20") or on its last part ("mn20"). Only instances whose width
+# (parameter `w`) the task varies are seen: a fixed transistor adds a constant, which the formula can state itself.
+SIZE_SOURCE = 'size_estimate'
+SIZE_FUNCTIONS = {'fingers': 2, 'width': 1, 'count': 1, 'larger': 2, 'smaller': 2}
+_SIZE_ALLOWED = _ALLOWED + (ast.Call,)
+_STRING = re.compile(r'"([^"\\]*)"')
+
+
+def _size_tree(text):
+    """(syntax tree, patterns, None) of a size formula, or (None, None, why)."""
+    from analog_optimizer.netlist.expressions import NUMBER, SCALES
+    source = (text or '').strip() if isinstance(text, str) else ''
+    if not source:
+        return None, None, 'the formula is empty'
+    if len(source) > 300:                                              # schema.MeasurementDefinition.signal
+        return None, None, 'longer than 300 characters'
+    patterns = []
+
+    def keep(match):                                                   # a pattern holds digits and letters: keep the
+        patterns.append(match[1])                                      # number reader away from it
+        return f'"{len(patterns) - 1}"'
+
+    def number(match):
+        suffix = match[2]
+        if suffix and suffix not in SCALES:
+            raise ValueError(f'unsupported number suffix {suffix!r}')
+        value = float(match[1]) * SCALES.get(suffix, 1.0)
+        if not math.isfinite(value):
+            raise ValueError('a number is too large')
+        return repr(value)
+    try:
+        pieces = _STRING.split(_STRING.sub(keep, source))              # text, index, text, index, ...
+        tree = ast.parse(''.join(NUMBER.sub(number, piece) if i % 2 == 0 else f'"{piece}"' for i, piece in enumerate(pieces)),
+                         mode='eval')
+    except SyntaxError:
+        return None, None, 'not a formula (check the brackets, quotes and operators)'
+    except (ValueError, RecursionError) as exc:
+        return None, None, str(exc)
+    nodes = list(ast.walk(tree))
+    if len(nodes) > 128:
+        return None, None, 'too complex'
+    used = []
+    for node in nodes:
+        if isinstance(node, ast.Call):
+            name = node.func.id if isinstance(node.func, ast.Name) else None
+            if name not in SIZE_FUNCTIONS or node.keywords or len(node.args) != SIZE_FUNCTIONS[name]:
+                return None, None, (f'{name}() takes {SIZE_FUNCTIONS[name]} value(s)' if name in SIZE_FUNCTIONS else
+                                    f'only {", ".join(sorted(SIZE_FUNCTIONS))} may be called')
+            if name in ('fingers', 'width', 'count'):
+                first = node.args[0]
+                if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+                    return None, None, f'{name}() needs an instance pattern in double quotes first, e.g. {name}("mn*"...)'
+                used.append(patterns[int(first.value)])
+    calls = {id(n.func) for n in nodes if isinstance(n, ast.Call)}
+    firsts = {id(n.args[0]) for n in nodes if isinstance(n, ast.Call) and n.func.id in ('fingers', 'width', 'count')}
+    for node in nodes:
+        if id(node) in calls or id(node) in firsts:
+            continue
+        if isinstance(node, ast.Name):
+            return None, None, f'{node.id!r}: a size formula reads sizes only, no Probe and no other name'
+        if not isinstance(node, _SIZE_ALLOWED) or (isinstance(node, ast.Constant) and type(node.value) not in (int, float)):
+            what = {ast.Attribute: 'a dotted name', ast.Compare: 'a comparison', ast.Constant: 'a text outside a pattern'}.get(type(node), type(node).__name__)
+            return None, None, f'{what} is not allowed'
+    if not used:
+        return None, None, 'the formula reads no size: use fingers("..." ...), width("...") or count("...")'
+    return (tree, tuple(patterns)), tuple(dict.fromkeys(used)), None
+
+
+def parse_size_formula(text):
+    """(instance patterns the formula reads, None) when `text` is a size formula, else (None, why)."""
+    _, used, why = _size_tree(text)
+    return used, why
+
+
+def size_matches(pattern, instance):
+    """Does `pattern` name the instance written `instance` ("DUT/mn20")? On the whole path or on its last part."""
+    path = str(instance).replace('.', '/')
+    return fnmatch.fnmatchcase(path, pattern) or fnmatch.fnmatchcase(path.rsplit('/', 1)[-1], pattern)
+
+
+def instance_widths(parameters):
+    """{instance: width in m} from a candidate's parameters {(instance, parameter name): value}."""
+    return {instance: value for (instance, name), value in (parameters or {}).items() if name == 'w' and is_finite_number(value)}
+
+
+def size_value(text, widths):
+    """The value of a size formula for `widths` = {instance: width in m}, or None: a formula that does not parse, a
+    pattern that matches no varied width, a limit that is not positive, arithmetic that fails."""
+    parsed, _, why = _size_tree(text)
+    if why is not None:
+        return None
+    tree, patterns = parsed
+
+    def matching(node):
+        found = [w for instance, w in widths.items() if size_matches(patterns[int(node.value)], instance)]
+        if not found:
+            raise _Missing()
+        return found
+
+    def value(node):
+        if isinstance(node, ast.Expression):
+            return value(node.body)
+        if isinstance(node, ast.Constant):
+            return float(node.value)
+        if isinstance(node, ast.UnaryOp):
+            return -value(node.operand) if isinstance(node.op, ast.USub) else value(node.operand)
+        if isinstance(node, ast.BinOp):
+            a, b = value(node.left), value(node.right)
+            if isinstance(node.op, ast.Add): return a + b
+            if isinstance(node.op, ast.Sub): return a - b
+            if isinstance(node.op, ast.Mult): return a * b
+            if isinstance(node.op, ast.Div): return a / b
+            return a ** b
+        name = node.func.id
+        if name == 'fingers':
+            limit = value(node.args[1])
+            if not limit > 0:
+                raise _Missing()
+            return float(sum(math.ceil(w / limit - 1e-9) for w in matching(node.args[0])))
+        if name == 'width':
+            return float(sum(matching(node.args[0])))
+        if name == 'count':
+            return float(len(matching(node.args[0])))
+        a, b = value(node.args[0]), value(node.args[1])
+        return max(a, b) if name == 'larger' else min(a, b)
+    try:
+        result = value(tree)
+    except (_Missing, ArithmeticError, ValueError, OverflowError, RecursionError):
+        return None
+    return result if isinstance(result, float) and math.isfinite(result) else None
+
+
 @dataclass(frozen=True)
 class SpecEntry:
     spec_id: str
@@ -113,10 +260,13 @@ class SpecPlan:
     """Picklable: goes to every lane with the environment factory."""
     probes: tuple             # (probe_id, source_name | None), in table order
     specs: tuple              # SpecEntry, in table order
+    sizes: tuple = ()         # (source_name, formula, canonical unit) of the probes that measure the sizes (record 7.308)
 
     @classmethod
     def from_config(cls, config) -> 'SpecPlan':
         probes = tuple((m.measurement_id, m.source_name) for m in config.measurements)
+        sizes = tuple((m.source_name, m.signal or '', units.canonical_unit(m.unit) if units.known(m.unit) else m.unit)
+                      for m in config.measurements if m.result_source == SIZE_SOURCE and m.source_name)
         table = {p[0]: p for p in probes}
         specs = []
         for t in config.targets:
@@ -124,7 +274,7 @@ class SpecPlan:
             probe = text if text in table else None
             specs.append(SpecEntry(t.metric_id, text, units.canonical_unit(t.unit) if units.known(t.unit) else t.unit,
                                    bool(t.active and t.hard), probe, probe is not None and table[probe][1] == t.metric_id))
-        return cls(probes, tuple(specs))
+        return cls(probes, tuple(specs), sizes)
 
     @property
     def injected(self) -> tuple:
@@ -162,11 +312,29 @@ class SpecPlan:
         names = []
         for name in required:
             names.extend(self.raw_inputs(computed[name]) if name in computed else (name,))
-        return tuple(dict.fromkeys(names))
+        sized = {source for source, _, _ in self.sizes}                # worked out here, never asked of the simulator
+        return tuple(name for name in dict.fromkeys(names) if name not in sized)
+
+    def size_results(self, parameters) -> dict:
+        """{source name: value | None} of the probes that measure the sizes, for a candidate's parameters
+        {(instance, parameter name): value}."""
+        widths = instance_widths(parameters)
+        return {source: size_value(formula, widths) for source, formula, _ in self.sizes}
 
     # ------------------------------------------------------------------ inside a lane
-    def extend(self, result):
-        """`result` plus the value of every computed spec under its own name (unit: the spec's canonical unit)."""
+    def extend(self, result, parameters=None):
+        """`result` plus the value of every computed spec under its own name (unit: the spec's canonical unit), and
+        before that the value of every probe that measures the sizes under its source name - a result of its own, which
+        a spec may then read through that probe. `parameters` is the candidate's {(instance, parameter name): value}."""
+        if self.sizes:
+            taken = [source for source, _, _ in self.sizes if source in result.metrics]
+            if taken:                                              # validation refuses this; never overwrite a measurement
+                raise ValueError(f'Size probe(s) {taken} carry the name of a simulator result: rename their source')
+            values = self.size_results(parameters)
+            metrics, sized_units, validity = dict(result.metrics), dict(result.metric_units), dict(result.metric_validity)
+            for source, _, unit in self.sizes:
+                metrics[source], sized_units[source], validity[source] = values[source], unit, values[source] is not None
+            result = replace(result, metrics=metrics, metric_units=sized_units, metric_validity=validity)
         injected = [s for s in self.specs if not s.result_backed]
         if not injected:
             return result
@@ -186,13 +354,15 @@ class SpecPlan:
         return replace(result, metrics=metrics, metric_units=units, metric_validity=validity)
 
     def wrap(self, backend):
-        """Make `backend` answer every simulation with the computed specs added. A no-op when every spec is result-backed."""
-        if not self.injected:
+        """Make `backend` answer every simulation with the computed specs and the size results added. A no-op when every
+        spec is result-backed and no probe measures the sizes."""
+        if not self.injected and not self.sizes:
             return backend
         simulate, plan = backend.run_simulation, self
 
         def run_simulation(request):
-            return plan.extend(simulate(replace(request, required_metrics=plan.request_names(request.required_metrics))))
+            return plan.extend(simulate(replace(request, required_metrics=plan.request_names(request.required_metrics))),
+                               getattr(request, 'parameters', None))
         backend.run_simulation = run_simulation
         return backend
 

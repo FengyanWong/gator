@@ -40,8 +40,9 @@ class Folder:
 FIELDS = {
     'adapter_state': Folder(
         LOCAL, 'Adapter state', '~/.local/state/gator/bridge-state',
-        'The session lock that runs, corner checks and Save task take, so that two never work on a cell at once, and the '
-        'crash journal of every write to a cell. Every GATOR process of this machine must use the same folder. Keep it on '
+        'The locks that runs, corner checks and Save task take - one per Virtuoso session and one per cell, so that two '
+        'never work in a session or on a cell at once - and the crash journal of every write to a cell. Every GATOR '
+        'process of this machine must use the same folder. Keep it on '
         'the local disk (on D: from WSL a candidate\'s journal writes took 16 ms instead of 1) and out of /tmp, which a '
         'restart empties.',
         'the next run, corner check or Save task', env='GATOR_BRIDGE_STATE_DIR', writable=True),

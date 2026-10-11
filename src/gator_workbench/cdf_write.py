@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import fcntl
 import json
 import math
 from pathlib import Path
@@ -43,6 +44,7 @@ from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend
 from .cdf_rules import RULES_FORMAT
 from .generic_profile import GenericMosWidthProfile, RulesError, same_value
 from .names import CADENCE_NAME
+from .paths import bridge_cell_lock, bridge_state_root_of
 from .recipes import GenericMaestroProfile, GenericRingOscillatorProfile, MAESTRO, RING
 from .schematic_read import read_cell
 from .security import skill_string as _skill_string
@@ -327,11 +329,13 @@ class CdfWritableProfile(GenericMosWidthProfile):
         self._check_group_contract()
         self.pdk_quirks = pdk_quirks(self.design.get('pdk_library'))
         if self.pdk_quirks.get('netlist_from_readback') is False:
-            # No netlist built from the readback for a cell of a PDK whose local quirks say so (2026-10-10, a second foundry
-            # PDK): its netlister re-spells typed transistor and MIM values (47.8050u for the form's 47.805u) and prints a
-            # changed poly resistor's length in a form this code does not reproduce (375.535000000u for 375.535u), so the
-            # comparison of record 7.142 stopped every run at its first candidate. Without render_export every candidate is
-            # exported natively, unchecked by text (the native export is the netlist simulated) - whoever starts the run.
+            # No netlist built from the readback for a cell of a PDK whose local quirks say so: without render_export every
+            # candidate is exported natively, unchecked by text (the native export is the netlist simulated) - whoever
+            # starts the run. A second foundry PDK needed this from 2026-10-10 until record 7.309: its netlister re-spells
+            # typed transistor and MIM values (47.8050u for the form's 47.805u) and a changed poly resistor's length
+            # (375.535000000u for 375.535u), and the comparison of record 7.142 took other characters for another netlist.
+            # Since 7.309 that comparison reads a parameter's number as a number, so spelling is no reason for the switch
+            # any more; it stays for a netlister that changes more than the spelling.
             self.render_export = None
 
     # ------------------------------------------------------------------ rules <-> mapping
@@ -551,8 +555,10 @@ def pdk_quirks(technology_library) -> dict:
     """What a run has to know about one PDK that neither its CDF nor its loaded record says, from the PDK's own folder in
     the local settings (`pdks/<technology library>/quirks.json`: git-ignored, never in the repository); {} when the PDK has
     none. `netlist_from_readback: false` - no netlist is built from the readback, every candidate is exported natively;
-    `derived_value_spelling: "significant_digits"` - how its netlister prints a callback-computed value. Without the file
-    a cell of such a PDK stops at its first candidate on the netlist comparison: loudly, never with a wrong netlist."""
+    `derived_value_spelling: "significant_digits"` - how its netlister prints a callback-computed value. Since record 7.309
+    the run's netlist comparison takes a number spelled in two ways as one value, so a netlister that only re-spells numbers
+    needs neither entry; where one changes more than that, a cell stops at its first candidate on the comparison: loudly,
+    never with a wrong netlist."""
     from .pdk_record import PdkError, pdk_dir                # the PDK store knows nothing of the writer
     try:
         data = read_json_quiet(pdk_dir(technology_library) / PDK_QUIRKS_FILE, None)
@@ -589,9 +595,39 @@ def rules_format(rules_file):
 
 
 # ------------------------------------------------------------------------------------------ the backend and the factory
-class CdfBridgeBackend(VirtuosoBridgeBackend):
+class CellLocked:
+    """The cell's own lock around an adapter's connect and close (record 7.311): with a lock per Virtuoso session, two
+    sessions carry a run each, and this lock keeps them off one cell (`cell_lock`). A mix-in for the verified adapter
+    and for the form writer's; it changes nothing else of either."""
+    _cell_lock = None
+
+    def connect(self):
+        """The adapter's own connect, holding the cell's lock from before it to after `close`."""
+        config, circuit = getattr(self, 'config', None), getattr(self, 'circuit', None)
+        if getattr(self, 'client', None) is None and self._cell_lock is None and config is not None and circuit is not None:
+            self._cell_lock = cell_lock(config.library, circuit.design['core_cell'], bridge_state_root_of(config.state_root))
+        try:
+            super().connect()
+        except BaseException:
+            if getattr(self, 'client', None) is None:     # not connected: whatever stopped it, the cell is let go
+                self._release_cell()
+            raise
+
+    def close(self):
+        try:
+            super().close()                               # restores the cell first, under both locks
+        finally:
+            self._release_cell()
+
+    def _release_cell(self):
+        lock, self._cell_lock = self._cell_lock, None
+        if lock is not None:
+            lock.close()
+
+
+class CdfBridgeBackend(CellLocked, VirtuosoBridgeBackend):
     """The verified run adapter with the form writer in place of its transistor-width writer, and the cell read built once
-    instead of line by line (record 7.296)."""
+    instead of line by line (record 7.296); it holds its cell's lock while connected (`CellLocked`)."""
 
     def _read_snapshot(self):
         # The verified read (include_positions=True, param_filters=None), the same answer: 6 instead of 434 ms inside
@@ -611,12 +647,44 @@ class CdfBridgeBackend(VirtuosoBridgeBackend):
         self.circuit.compare_written(snapshot, reference)
 
 
+class CellBusy(RuntimeError):
+    """Another process works on the cell, through this Virtuoso session or another."""
+
+
+def cell_lock(library, cell, root=None):
+    """The open, locked lock file of one cell (`paths.bridge_cell_lock`); closing it lets the cell go. CellBusy, in words,
+    when another process holds it: two Virtuoso sessions each keep their own copy of an open cell in memory, and the
+    second to save would write over the first, so a cell is worked on by one process at a time whatever the session."""
+    path = bridge_cell_lock(library, cell, root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open('a+')
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise CellBusy(f'The cell {library}/{cell} is in use by another run, check or Save task - through this Virtuoso session '
+                       f'or another one ({path}). Try again when it has finished.') from None
+    return handle
+
+
 def backend_class(profile):
-    """The adapter class for a profile; the verified one looked up where it lives, at call time, as its callers did."""
+    """The adapter class for a profile, holding its cell's lock while connected: the form writer's, or - for a task
+    that varies only single-finger widths - the verified adapter itself under the lock (looked up where it lives, at
+    call time, as its callers did)."""
     if isinstance(profile, CdfWritableProfile):
         return CdfBridgeBackend
     import analog_optimizer.backends.virtuoso_bridge as verified
-    return verified.VirtuosoBridgeBackend
+    return _locked(verified.VirtuosoBridgeBackend)
+
+
+_LOCKED = {}
+
+
+def _locked(adapter):
+    """`adapter` with the cell's lock around its connect and close, and nothing else changed."""
+    if adapter not in _LOCKED:
+        _LOCKED[adapter] = type('Locked' + adapter.__name__, (CellLocked, adapter), dict(__doc__=adapter.__doc__, __module__=__name__))
+    return _LOCKED[adapter]
 
 
 @dataclass(frozen=True)
@@ -625,7 +693,7 @@ class CdfPreparationFactory:
     circuit: object
 
     def __call__(self):
-        return CdfBridgeBackend(self.config, self.circuit)
+        return backend_class(self.circuit)(self.config, self.circuit)      # the form writer's, or the verified one under the cell's lock
 
 
 @contextmanager
@@ -638,12 +706,11 @@ def preparation_session(config, circuit, limits, report):
 
 
 def factory_class(profile):
-    if isinstance(profile, CdfWritableProfile):
-        # lazy: cdf_factory imports torch: only a run needs it (see its docstring)
-        from .cdf_factory import CdfNativeEnvironmentFactory
-        return CdfNativeEnvironmentFactory
-    import analog_optimizer.training.parallel as verified
-    return verified.NativeEnvironmentFactory
+    """The run's environment factory: the verified one with a preparation service whose adapter is `backend_class`'s -
+    for every task since record 7.311, so that a width-only task holds its cell's lock like a form-written one."""
+    # lazy: cdf_factory imports torch: only a run needs it (see its docstring)
+    from .cdf_factory import CdfNativeEnvironmentFactory
+    return CdfNativeEnvironmentFactory
 
 
 def __getattr__(name):

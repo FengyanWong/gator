@@ -17,8 +17,11 @@ the bridge's own waveform export does); ADE and Maestro windows keep their own. 
 ``ocnResetResults()`` as its last step (record 7.294): each result folder opened stayed in Virtuoso's memory, about 260 KB
 per evaluation (+76.5 MB over 300 folders, nothing given back by ``gc()``; Virtuoso had reached 10.2 GB after a day of
 runs), and with the reset the same 300 grew it by nothing - and measured faster (35 ms against 50 ms), the values
-identical. ``closeResults(dir)`` released it too, at 630 ms a call. OCEAN's ``simulator()`` is never called
-(it would reset the OCEAN session).
+identical. That reset frees the waveforms, not the folder: OCEAN kept every result folder it had opened, and a run
+opens a new one per design - 284 KB per design on the flip-flop's one transient, 475 KB on a folded-cascode amplifier's six
+analyses (steady over 300 new folders each; 0 for a folder opened again), which took a Virtuoso from 0.5 to 12.8 GB in a
+day of runs. So the program then closes the folder, ``closeResults(dir)`` (record 7.316): 1 and 6 KB per design, every
+value identical, 1 to 15 ms a design. OCEAN's ``simulator()`` is never called (it would reset the OCEAN session).
 """
 from __future__ import annotations
 
@@ -160,7 +163,9 @@ def program(raw_dir, outputs) -> str:
         lines += [f"  errset(selectResult('{output['analysis']}) nil)",
                   f"  v = car(errset({output['spectre_expression']} nil))",
                   f'  out = strcat(out "{output["name"]}=" if(numberp(v) sprintf(nil "%.17g" float(v)) "nil") "\\n")']
-    lines += ['  ocnResetResults()', '  out)']             # let the folder's results go (record 7.294): the memory they held
+    # Let the folder's results go (record 7.294: the waveforms), then the folder itself (record 7.316: OCEAN keeps every
+    # folder it opened, 0.3 to 0.5 MB each for good). The values are in `out` by then, so a close that fails fails nothing.
+    lines += ['  ocnResetResults()', f'  errset(closeResults("{raw_dir}") nil)', '  out)']
     return '\n'.join(lines)
 
 

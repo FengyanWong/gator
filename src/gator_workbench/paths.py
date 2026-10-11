@@ -70,15 +70,87 @@ def inside(path, roots) -> bool:
     return any(path == root or root in path.parents for root in roots)
 
 
-def bridge_session_lock() -> Path:
-    """The run adapter's session lock (record 7.167): every process that works on the Virtuoso cell takes it - a run, a
-    corner check, Save task."""
-    return bridge_state_dir() / 'session.lock'
+SESSIONS_DIR, CELLS_DIR = 'sessions', 'cells'           # in the adapter's state root: a folder per further session, a lock per cell
+
+
+def _plain(name) -> str:
+    """A name as a file name: letters, digits, `_`, `-` and `.` kept, anything else `_`."""
+    import re
+    return re.sub(r'[^A-Za-z0-9_.-]', '_', str(name)).lstrip('.') or '_'
+
+
+def bridge_session_key(env_file, profile) -> str | None:
+    """Which Virtuoso session a connection reaches when it is NOT the first one (record 7.311), else None.
+
+    A connection names the bridge's settings file and, in it, a bridge profile: the keys `VB_REMOTE_HOST_<profile>` and
+    `VB_REMOTE_PORT_<profile>` say where that session's daemon listens; the keys without a suffix are the first session,
+    the one every connection reached until a second Virtuoso was opened. The answer is the name of the first profile, in
+    alphabetical order, whose keys name the same host and port - two profiles that reach one daemon are one session.
+    Whatever cannot be told apart from the first session IS the first session: no profile, a file that cannot be read, a
+    missing host or port on either side, or the first session's own host and port."""
+    if not profile:
+        return None
+    values = {}
+    try:
+        for line in Path(env_file).read_text(encoding='utf-8', errors='replace').splitlines():
+            key, found, value = line.strip().removeprefix('export ').partition('=')
+            if found and not key.startswith('#'):
+                values[key.strip()] = value.split(' #')[0].strip().strip('"\'')
+    except OSError:
+        return None
+
+    def target(suffix):
+        host, port = values.get('VB_REMOTE_HOST' + suffix), values.get('VB_REMOTE_PORT' + suffix)
+        return (host, port) if host and port else None
+    mine, first = target(f'_{profile}'), target('')
+    if mine is None or first is None or mine == first:
+        return None
+    names = [key[len('VB_REMOTE_HOST_'):] for key in values if key.startswith('VB_REMOTE_HOST_')]
+    return _plain(min(name for name in names if target(f'_{name}') == mine))
+
+
+def bridge_session_dir(env_file=None, profile=None) -> Path:
+    """The adapter's state folder of ONE Virtuoso session (record 7.311): its session lock and a folder per adapter
+    session with the crash journal of each write. The first session keeps the state root itself, as before; a further
+    session (`bridge_session_key`) has `sessions/<name>` in it. One process at a time drives a Virtuoso session, and with
+    a lock each, two sessions carry a run each."""
+    key = bridge_session_key(env_file, profile) if env_file is not None else None
+    return bridge_state_dir() if key is None else bridge_state_dir() / SESSIONS_DIR / key
+
+
+def bridge_session_lock(env_file=None, profile=None) -> Path:
+    """The run adapter's session lock (record 7.167): every process that works in a Virtuoso session takes it - a run, a
+    corner check, Save task. Without arguments the first session's; with a connection's settings file and bridge profile,
+    the lock of the session that connection reaches (record 7.311)."""
+    return bridge_session_dir(env_file, profile) / 'session.lock'
+
+
+def bridge_cell_lock(library, cell, root=None) -> Path:
+    """The lock of one cell (record 7.311): whoever works on a cell holds it beside its session's lock, so that two
+    Virtuoso sessions never work on the same cell - each has its own copy of an open cell in memory, and the second to
+    save would write over the first. In `cells/` of the adapter's state root (`root`: that root when the caller holds it,
+    as the adapter does)."""
+    return (Path(root) if root is not None else bridge_state_dir()) / CELLS_DIR / _plain(library) / f'{_plain(cell)}.lock'
+
+
+def bridge_state_root_of(state_dir) -> Path:
+    """The adapter's state root, from the state folder of one session (`bridge_session_dir`)."""
+    state_dir = Path(state_dir)
+    return state_dir.parent.parent if state_dir.parent.name == SESSIONS_DIR else state_dir
+
+
+def bridge_locks(root=None) -> list:
+    """Every lock file there is in an adapter state root: the first session's, the further sessions', the cells'."""
+    root = Path(root) if root is not None else bridge_state_dir()
+    return [p for p in (root / 'session.lock', *sorted(root.glob(f'{SESSIONS_DIR}/*/session.lock')),
+                        *sorted(root.glob(f'{CELLS_DIR}/*/*.lock'))) if p.is_file()]
 
 
 def bridge_state_dir() -> Path:
     """The run adapter's state root: its session lock (`session.lock`, taken by every process that works on the Virtuoso
     cell, so that two never do at once) and a folder per session with the crash journal of each write (record 7.167).
+    Since record 7.311 also `sessions/<name>` - the same two things for each further Virtuoso session - and `cells/`, a
+    lock per cell (`bridge_session_dir`, `bridge_cell_lock`).
     On the WSL disk by default, kept across restarts (`/tmp` is not): under artifacts/ on D:, a 9p mount, a candidate's
     two journal writes took 16 ms, there 1.3 ms. The folder "Adapter state" of the connection module since record 7.168
     (`directories`); GATOR_BRIDGE_STATE_DIR overrides it (the tests). Every GATOR process must name the same folder: one
@@ -87,6 +159,46 @@ def bridge_state_dir() -> Path:
     # lazy: directories imports this module
     from .directories import local_path
     return local_path('adapter_state')
+
+
+def bridge_env_snapshot(env_file) -> Path:
+    """A private copy of the bridge's settings file that never changes, for one run to bind (record 7.306).
+
+    The run adapter binds the settings FILE when it attaches and checks it at every call, so that a run cannot go on
+    against a link somebody re-pointed: any later change of the file ends the run in the middle of a write ("Bridge
+    configuration changed during an active worker") and leaves its cell half-written. On 2026-10-10 another session
+    added the keys of a second Virtuoso session to the shared file and a run of a queue ended that way. A run now binds
+    a copy named by the file's own checksum, in the adapter's state folder: the settings it started with stay what
+    they were whatever is written to the shared file, a run started afterwards takes the file as it is then, and the
+    adapter's check is as strict as before on the copy it holds. The file may hold a secret: the copies sit in a folder
+    of the adapter's state root that only its owner may enter, each readable by its owner only, and a copy older than
+    30 days is removed when a new one is written. A settings file that cannot be read is returned as it was named (the
+    attach then fails in its own words, as before)."""
+    import hashlib
+    import re
+    import time
+    source = Path(env_file).resolve()
+    try:
+        data = source.read_bytes()
+    except OSError:
+        return source
+    folder = bridge_state_dir() / 'env-snapshots'
+    folder.mkdir(parents=True, exist_ok=True)
+    os.chmod(folder, 0o700)
+    target = folder / f'{hashlib.sha256(data).hexdigest()}.env'
+    try:
+        same = target.read_bytes() == data
+    except OSError:
+        same = False
+    if not same:
+        temporary = folder / f'{TEMP_MARKER}{uuid4().hex}'
+        temporary.write_bytes(data)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, target)
+        for other in folder.iterdir():                  # copies no run can still hold: a month old, another settings file
+            if other != target and re.fullmatch(r'[0-9a-f]{64}\.env', other.name) and time.time() - other.stat().st_mtime > 30 * 86400:
+                other.unlink(missing_ok=True)
+    return target.resolve()
 
 
 def append_local_log(name, record) -> None:

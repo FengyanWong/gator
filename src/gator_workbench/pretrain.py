@@ -7,7 +7,7 @@ Source archives are read-only; episode splits happen before optional relabelling
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -120,6 +120,7 @@ def prepare_pool(request, *, progress=None):
     groups, registries, sources = defaultdict(lambda: defaultdict(list)), [], []
     run_ids, candidates, settings = set(), set(), None
     relabel = request.get('relabel_upper', {})
+    target_sets = relabel_targets(request)
     for source in request['runs']:
         directory = Path(source['run_dir']).resolve()
         if archive_identity(directory) != source['archive_sha256']:
@@ -178,13 +179,16 @@ def prepare_pool(request, *, progress=None):
             episode = (run_id, row['worker_id'], row['episode_id'])
             if not row['episode_id']:
                 raise ValueError('Episode identity required for leakage-free holdout')
-            if view is not None:          # what the network is shown of this archive (network_inputs, record 7.298)
-                first, last = view.view(first), view.view(last)
-                transition = replace(transition, observation=first, next_observation=last)
-            groups[task][episode].append((transition, False))
+            # What the network is shown of this archive (network_inputs, record 7.298) - applied last: a copy under other
+            # limits is re-scored and validated as recorded first (a shown observation no longer holds the recorded sizes).
+            shown = (lambda t: t) if view is None else (lambda t: _shown(t, view))
+            groups[task][episode].append((shown(transition), False))
             if task in relabel:
                 derived = _relabeled(transition, first, last, relabel[task], task)
-                groups[task][episode].append((derived, True))
+                groups[task][episode].append((shown(derived), True))
+                counts['relabeled'] += 1
+            for number, changes in enumerate(target_sets.get(task, ()), 1):       # one more copy per target set (record 7.312)
+                groups[task][episode].append((shown(_retargeted(transition, first, last, changes, task)), ('set', number)))
                 counts['relabeled'] += 1
         # Detect source mutation during reconstruction, too.
         if archive_identity(directory) != source['archive_sha256']:
@@ -196,7 +200,7 @@ def prepare_pool(request, *, progress=None):
                             relabeled=counts['relabeled']))
         if progress:
             progress(dict(event='source_loaded', **sources[-1]))
-    if set(relabel) - groups.keys():
+    if (set(relabel) | set(target_sets)) - groups.keys():
         raise ValueError('Relabel task absent from pool')
     schema = spec_descriptors.spec_set_schema() if inputs['spec_input'] == 'set' else _pool_registry(registries, request)
     features = network_inputs.feature_schema(families.schema() if inputs['vocabulary'] == families.NAME else FeatureSchema(), inputs)
@@ -210,7 +214,31 @@ def prepare_pool(request, *, progress=None):
                  per_task={t: dict(training=len(training[t]), validation=len(validation[t])) for t in training},
                  split=split, split_sha256=identity(split), unchanged_reward_gate='exact_match',
                  diagnostic_scope='within-source episode holdout; not an unseen-circuit transfer result')
+    if target_sets:
+        audit['relabel_target_sets'] = {task: len(sets) for task, sets in sorted(target_sets.items())}
     return Pool(training, validation, schema, settings, audit, features)
+
+
+_SHOWN = []
+
+
+def _shown(transition, view):
+    """A pool transition as the network is shown it (`view`: its archive's NetworkView). With sizes relative to the PDK
+    the shown graphs no longer hold the recorded sizes, so the learner's own re-validation of every sampled transition
+    ("Proposed, executed and next-state parameters differ") cannot hold for it: the transition was validated as
+    recorded when it was read - and again after a re-scoring - and its shown form skips that check (record 7.312; until
+    then no offline pool with PDK-relative sizes could be trained)."""
+    if not _SHOWN:
+        from analog_optimizer.training.replay import Transition
+
+        @dataclass(frozen=True)
+        class ShownTransition(Transition):
+            def validate(self):
+                return None
+        _SHOWN.append(ShownTransition)
+    values = {f.name: getattr(transition, f.name) for f in fields(transition)}
+    values.update(observation=view.view(transition.observation), next_observation=view.view(transition.next_observation))
+    return _SHOWN[0](**values)
 
 
 class BalancedSampler:
@@ -241,6 +269,57 @@ def _relabeled(transition, first, last, changes, task):
                   for s in first.specs)
     if any(s.comparator != 'max' for s in first.specs if s.metric_id in changes):
         raise ValueError('Upper-limit relabelling requires max-comparator rows')
+    a, b = replace(first, specs=specs), replace(last, specs=specs)
+    derived = replace(transition, observation=a, next_observation=b, reward=b.evaluation.reward)
+    derived.validate()
+    return derived
+
+
+def relabel_targets(request) -> dict:
+    """request['relabel_targets'] (record 7.312; the transfer experiment's multi-target models): task -> a list of target
+    sets, each `{metric: {"lower": x, "upper": y}}` with one or both limits. Every archived transition of the task is
+    pooled once as recorded and once more under each target set, re-scored - so one network sees the same designs
+    judged by several targets, each target among its inputs. {} when the request has none."""
+    target_sets = request.get('relabel_targets') or {}
+    for task, sets in target_sets.items():
+        if not isinstance(sets, list) or not sets or not all(isinstance(changes, dict) and changes for changes in sets):
+            raise ValueError(f'relabel_targets of {task} must be a list of target sets, each naming at least one metric')
+        for changes in sets:
+            for metric, limits in changes.items():
+                if not isinstance(limits, dict) or not limits or set(limits) - {'lower', 'upper'}:
+                    raise ValueError(f'A target of {metric} in {task} names "lower", "upper" or both')
+    return target_sets
+
+
+def retargeted_specs(specs, changes, task):
+    """`specs` with the limits of some rows moved (`changes`: metric -> {"lower": x, "upper": y}). A row keeps its kind:
+    only a limit it has may be moved (an "at most" row its upper limit, an "at least" row its lower one, a range
+    both), and a range stays a range. A row whose scale was the size of its limit - the rule of an empty Scale box,
+    `compile.normalization_scale` - gets the size of its new limit, as the task saved with that limit would; a stated
+    scale stays."""
+    known = {s.metric_id: s for s in specs}
+    if set(changes) - known.keys():
+        raise ValueError(f'Relabel metric absent in {task}')
+    size = lambda lower, upper: max([abs(v) for v in (lower, upper) if v is not None] or [0.0]) or 1.0
+    result = []
+    for spec in specs:
+        limits = changes.get(spec.metric_id)
+        if limits is None:
+            result.append(spec)
+            continue
+        if any(getattr(spec, side) is None for side in limits):
+            raise ValueError(f'{spec.metric_id} in {task} has no {"/".join(side for side in limits if getattr(spec, side) is None)} limit to move')
+        lower, upper = limits.get('lower', spec.lower), limits.get('upper', spec.upper)
+        if lower is not None and upper is not None and not lower < upper:
+            raise ValueError(f'The new limits of {spec.metric_id} in {task} are not a range')
+        scale = size(lower, upper) if math.isclose(spec.scale, size(spec.lower, spec.upper), rel_tol=1e-12) else spec.scale
+        result.append(replace(spec, lower=lower, upper=upper, scale=scale))
+    return tuple(result)
+
+
+def _retargeted(transition, first, last, changes, task):
+    """A copy of an archived transition under another target set (`retargeted_specs`), re-scored and validated."""
+    specs = retargeted_specs(first.specs, changes, task)
     a, b = replace(first, specs=specs), replace(last, specs=specs)
     derived = replace(transition, observation=a, next_observation=b, reward=b.evaluation.reward)
     derived.validate()
@@ -283,8 +362,11 @@ def _split_episodes(groups, schema, seed, fraction):
                 for observation in (transition.observation, transition.next_observation):
                     read(observation, schema)
                 target[task].append(transition)
-                split.append(dict(task=task, run_id=key[0], worker_id=key[1], episode_id=key[2],
-                                  candidate_id=transition.candidate_id, relabeled=derived, subset=subset))
+                row = dict(task=task, run_id=key[0], worker_id=key[1], episode_id=key[2],
+                           candidate_id=transition.candidate_id, relabeled=bool(derived), subset=subset)
+                if isinstance(derived, tuple):                     # which of the task's target sets (relabel_targets), from 1
+                    row['target_set'] = derived[1]
+                split.append(row)
     return training, validation, split
 
 def evaluate(learner, pool, batch_size=32):

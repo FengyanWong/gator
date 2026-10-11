@@ -41,7 +41,10 @@ def measurement_kind(config) -> str:
     measured = list(config.measurements)
     if not measured:
         raise ProfileError('Probes is empty: say what the simulation measures (Probes tab) before saving the task')
+    measured = [m for m in measured if m.result_source != 'size_estimate'] or measured   # not simulated: beside either way
     sources = {m.result_source for m in measured}
+    if sources == {'size_estimate'}:
+        raise ProfileError('Probes holds only size estimates: add what the simulation measures before saving the task')
     if sources == {'ade_output'}:
         return MAESTRO
     if sources == {'backend_profile'}:

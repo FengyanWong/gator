@@ -6,7 +6,8 @@ Virtuoso's working directory, bound to the same technology library), and the cop
 copied cells. And the MAESTRO SETUP of the copy's testbench (`virtuoso_setup.py`): one test, its model file, analyses,
 outputs, specs and design variables (``maeOpenSetup`` in a background session, ``maeCreateTest``, ``maeSetEnvOption``,
 ``maeSetAnalysis``, ``maeDeleteOutput`` / ``maeAddOutput``, ``maeSetSpec``, ``maeSetVar`` / ``maeDeleteVar``,
-``maeSaveSetup``, always closed with ``maeCloseSession ?forceClose t``), read back with ``maeGetSetup``,
+``maeSaveSetup``, always closed with ``maeCloseSession ?forceClose t`` and a look at the helper process the session
+started, record 7.315), read back with ``maeGetSetup``,
 ``maeGetEnabledAnalysis``, ``maeGetAnalysis``, ``maeGetTestOutputs``, ``maeGetVar``, ``maeGetEnvOption`` and
 ``axlGetSpecData``. Only functions whose syntax was read from the Cadence documentation of the installation itself
 (``client.find_skill``) are used: ``dbOpenCellViewByType``, ``dbCopyCellView``, ``dbSetInstHeaderMasterName``,
@@ -19,17 +20,19 @@ write never interleaves with a simulation's own edits. Every name has passed ``N
 """
 from __future__ import annotations
 
+from contextlib import ExitStack
 import fcntl
 import hashlib
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 from . import directories, virtuoso_setup
 from .connection import RealBridge, child_error, resolve_profile_id, run_child
 from .names import CADENCE_NAME
-from .paths import bridge_session_lock
+from .paths import bridge_cell_lock, bridge_session_lock
 from .schematic_read import read_cell
 from .security import skill_string as _q
 
@@ -225,6 +228,73 @@ def _read_model_files(client, test, s):
 
 def _session_close(client, session):
     client.execute_skill(f'maeCloseSession(?session {_q(session)} ?forceClose t)', timeout=60)
+    _reap_helpers(client)
+
+
+# A Maestro session opened in the background starts a process of its own on Virtuoso's host: a headless
+# `virtuoso -beanhost ... -beanLogFile <logs>/amps_Service<N>.log ... -mpssession virtuoso<pid of the Virtuoso>` of 0.3 to
+# 0.5 GB. Closing the session should end it, and mostly does within a second - but some helpers are never told and stay
+# for good (record 7.315: of 204 helpers one Virtuoso started in a day, 12 were still there the next day; with a second
+# session's they were 14 processes and 4.7 GB of a 24 GB machine that ran out of memory twice that day). So every close
+# is followed by a look at the helpers. One is removed only when all of this holds: Virtuoso says no Maestro session is
+# open and shows no ADE window (so no helper can be in use); the process is named virtuoso, belongs to Virtuoso's user and
+# was started as a helper (`-beanhost`, that log option) of THIS Virtuoso or of one that no longer runs; it was there at
+# the first look after the close and is still there HELPER_WAIT_SECONDS later (one that is ending is left to end).
+HELPER_WAIT_SECONDS = 3.0
+_HELPER_SWEEP = (
+    # the Virtuoso that runs this: the parent of the shell, or the parent's parent when a shell stands between
+    r'''v=$PPID; [ "$(cat /proc/$v/comm 2>/dev/null)" = virtuoso ] || v=$(ps -o ppid= -p $v 2>/dev/null | tr -d ' '); '''
+    r'''[ -n "$v" ] && [ "$(cat /proc/$v/comm 2>/dev/null)" = virtuoso ] || exit 0; '''
+    r'''for d in /proc/[0-9]*; do [ -O $d ] || continue; [ "$(cat $d/comm 2>/dev/null)" = virtuoso ] || continue; '''
+    r'''a=$(tr '\0' '\n' < $d/cmdline 2>/dev/null); echo "$a" | grep -q -x -e -beanhost || continue; '''
+    r'''log=$(echo "$a" | grep -A1 -x -e -beanLogFile | tail -1); case "$log" in */amps_Service*.log) ;; *) continue ;; esac; '''
+    r'''m=$(echo "$a" | grep -A1 -x -e -mpssession | tail -1); case "$m" in virtuoso[0-9]*) ;; *) continue ;; esac; '''
+    r'''o=${m#virtuoso}; [ "$o" = "$v" ] || [ "$(cat /proc/$o/comm 2>/dev/null)" != virtuoso ] || continue; '''
+    r'''pid=${d#/proc/}; rss=$(awk '/^VmRSS:/ {print $2}' $d/status 2>/dev/null); age=$(ps -o etimes= -p $pid 2>/dev/null | tr -d ' '); '''
+    r'''case " REMOVE " in *" $pid "*) kill -9 $pid 2>/dev/null && echo "removed $pid ${log##*/amps_} ${rss:-0} ${age:-0}" ;; '''
+    r'''*) echo "found $pid ${log##*/amps_} ${rss:-0} ${age:-0}" ;; esac; done''')
+
+
+def _helper_sweep(client, remove=()):
+    """One look at the Maestro helpers on Virtuoso's host, made by Virtuoso itself (``sh``): the right host and the right
+    user whatever the connection. Answers [{state, pid, log, kb, age}]: `found`, or `removed` for the process ids in
+    `remove`. Empty while Virtuoso has a Maestro session or an ADE window open - then nothing is looked at, and nothing
+    is ever removed. Never raises: a clean-up that cannot be made must not fail the read or write it follows."""
+    script = '{ ' + _HELPER_SWEEP.replace('REMOVE', ' '.join(str(int(pid)) for pid in remove)) + '; } > '
+    try:
+        result = client.execute_skill(
+            'let((out p line all windows) all = "" '
+            # a window that has a Maestro session (the bridge's own inventory reads these two), or is titled as one
+            'windows = errset(exists(w hiGetWindowList() or(car(errset(axlGetWindowSession(w))) car(errset(w~>davSession)) '
+            'let((n) n = car(errset(hiGetWindowName(w))) '
+            'and(stringp(n) or(rexMatchp("ADE Assembler" n) rexMatchp("ADE Explorer" n))))))) '
+            'if(or(maeGetSessions() null(windows) car(windows)) then all = "maestro in use" else '
+            'out = makeTempFileName("/tmp/gator_maestro_helpers") '
+            f'sh(strcat({_q(script)} out " 2>/dev/null")) '
+            'p = infile(out) when(p while(gets(line p) all = strcat(all line)) close(p)) '
+            'when(isFile(out) deleteFile(out))) all)', timeout=60)
+        raw = str(getattr(result, 'output', '') or '')
+    except Exception:
+        return []
+    return [dict(state=state, pid=int(pid), log=log, kb=int(kb), age=int(age))    # lines end in a written-out \n
+            for state, pid, log, kb, age in re.findall(r'(found|removed) (\d+) (Service\w*\.log) (\d+) (\d+)', raw)]
+
+
+def _reap_helpers(client, wait=HELPER_WAIT_SECONDS):
+    """Remove the Maestro helpers no session needs any more: those there at the first look and still there `wait`
+    seconds later (one that was told to end is gone within a second, and then this is one or two calls). Returns what
+    was removed and says it in the process's log."""
+    first = left = _helper_sweep(client)
+    deadline = time.monotonic() + wait
+    while left and time.monotonic() < deadline:
+        time.sleep(0.5)
+        left = _helper_sweep(client)
+    stay = sorted({helper['pid'] for helper in first} & {helper['pid'] for helper in left})
+    removed = [helper for helper in _helper_sweep(client, remove=stay) if helper['state'] == 'removed'] if stay else []
+    for helper in removed:
+        print(f"Maestro helper process {helper['pid']} ({helper['log']}, started {helper['age']} s ago) outlived its session: "
+              f"removed, {helper['kb'] / 1e6:.2f} GB of the simulator host's memory freed", flush=True)
+    return removed
 
 
 def _list(decoded):
@@ -497,14 +567,22 @@ def _main(argv=None):
         if not NAME.match(value):
             raise SystemExit('library and cell names must be plain Cadence names')
     out = Path(args.output)
-    lock_path = bridge_session_lock()                          # the run adapter's lock (record 7.167)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open('a+') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise SystemExit('A real run or a check is using Virtuoso right now: try again when it has finished')
-        settings = resolve_profile_id(args.profile_id)
+    settings = resolve_profile_id(args.profile_id)
+    # The run adapter's locks (records 7.167 and 7.311): the lock of the Virtuoso session this connection reaches, and
+    # the lock of every cell the write may touch in the copy's library - another session may be running on one of them.
+    lock_path = bridge_session_lock(settings.get('env_file'), settings.get('profile')) if settings.get('env_file') else bridge_session_lock()
+    cells = sorted({args.cell, args.testbench, *json.loads(args.rename).values()})
+    with ExitStack() as held:
+        for path in (lock_path, *(bridge_cell_lock(args.copy_library, cell) for cell in cells)):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            lock = held.enter_context(path.open('a+'))
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise SystemExit('A real run or a check is using Virtuoso right now: try again when it has finished'
+                                 if path == lock_path else
+                                 f'A real run or a check is working on {args.copy_library}/{path.stem} through another Virtuoso '
+                                 'session: try again when it has finished')
         bridge = RealBridge(settings)
         bridge.version()
         bridge.bind_env(settings['env_file'])

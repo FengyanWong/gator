@@ -20,6 +20,7 @@ NOT_CACHES = {
     'paths.repo_root': 'the repository folder never changes',
     'units.LOOKUP': 'the unit table, filled once when the module is imported',
     'caches._CLEARS': 'the registry itself',
+    'cdf_write._LOCKED': "the verified adapter's class under the cell's lock, made once per adapter class (record 7.311)",
 }
 EMPTY = ('{}', 'dict()', 'OrderedDict()', 'collections.OrderedDict()')
 

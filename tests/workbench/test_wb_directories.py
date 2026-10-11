@@ -144,6 +144,12 @@ def test_the_adapter_state_folder_does_not_move_under_a_held_lock_or_an_environm
         refused = http.put('/api/connection/directories', json=dict(values=dict(adapter_state=str(tmp_path / 'state-new'))))
         assert refused.status_code == 409 and refused.json()['detail']['code'] == 'folder_busy'
         assert http.put('/api/connection/directories', json=dict(values=dict(simulator_ic='~/ic3'))).json()['saved']
+    for held in ('sessions/s2/session.lock', 'cells/LIB/cell.lock'):          # a second Virtuoso session's run, a cell's (record 7.311)
+        (current / held).parent.mkdir(parents=True)
+        with (current / held).open('a+') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            refused = http.put('/api/connection/directories', json=dict(values=dict(adapter_state=str(tmp_path / 'state-new'))))
+            assert refused.status_code == 409 and refused.json()['detail']['code'] == 'folder_busy', held
     assert http.put('/api/connection/directories', json=dict(values=dict(adapter_state=str(tmp_path / 'state-new')))).json()['saved']
     monkeypatch.setenv('GATOR_BRIDGE_STATE_DIR', str(tmp_path / 'from-env'))
     field = {f['key']: f for f in http.get('/api/connection/directories').json()['fields']}['adapter_state']

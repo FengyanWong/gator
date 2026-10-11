@@ -33,7 +33,7 @@ import sys
 
 from . import caches, model_library, native_cells, task_names, task_registry
 from .connection import KINDS, family_of, named_or_active, profile_kind
-from .paths import bridge_state_dir, connection_file, repo_root
+from .paths import bridge_env_snapshot, bridge_session_dir, bridge_state_dir, connection_file, repo_root
 from .spec_equations import EquationNativeFactory
 from .storage.atomic import sha256_file as _sha256
 # re-exported: moved to task_registry.py by the refactoring (docs/plan-refactoring.md)
@@ -99,7 +99,7 @@ def _synthetic_builder(compiled, work_root, run_settings):
 def _with_computed_specs(factory, compiled):
     """The verified real factory, unchanged when every spec is a simulator result itself; otherwise wrapped so that the
     specs computed from the probes reach the reward (spec_equations.EquationNativeFactory)."""
-    if not compiled.plan.injected:
+    if not compiled.plan.injected and not compiled.plan.sizes:        # sizes: probes worked out from the sizes (record 7.308)
         return factory
     return EquationNativeFactory(factory, compiled.plan)
 
@@ -182,12 +182,23 @@ def _not_a_virtuoso_connection(profile_id, settings):
 
 def bridge_config_of(connection):
     """The BridgeConfig of a real task's bindings (`real_bindings` of its connection): the env file, library, creation
-    receipt and model file it names, and the adapter's state folder."""
+    receipt and model file it names, and the adapter's state folder. These older, built-in tasks run with the verified
+    adapter and factory as they are, which take no lock of their cell (record 7.311): they stay in the first Virtuoso
+    session. (A task saved from a cell runs in any session: its adapter locks its cell, `cdf_write.backend_class`.)"""
     from analog_optimizer.backends.virtuoso_bridge import BridgeConfig
-    return BridgeConfig(Path(connection['env_file']).resolve(), connection['library'],
-                        Path(connection['creation_receipt']).resolve(),
+    env_file = bridge_env_snapshot(connection['env_file'])                                    # its own copy: record 7.306
+    _first_session_only(env_file, connection, 'This task')
+    return BridgeConfig(env_file, connection['library'], Path(connection['creation_receipt']).resolve(),
                         bridge_state_dir().resolve(), connection['model_file'],
                         profile=connection.get('profile'))
+
+
+def _first_session_only(env_file, connection, what):
+    """Refuse a further Virtuoso session for a task whose adapter does not lock its cell (record 7.311)."""
+    if bridge_session_dir(env_file, connection.get('profile')) != bridge_state_dir():
+        raise TaskBlocked(f'{what} is written by the older adapter, which does not lock its cell: it runs in the first Virtuoso '
+                          f'session only, and this connection reaches another (bridge profile {connection.get("profile")!r}). '
+                          'Choose a connection of the first session.')
 
 
 CIRCUIT_KEYS = ('creation_receipt', 'reference_measurements')     # these two belong to ONE circuit, not to the link
@@ -429,8 +440,13 @@ def generated_bridge_config(name, profile_id=None):
         profile = profiles.load_profile(name)
     except Exception as exc:
         raise TaskBlocked(f'The generated profile real:{name} no longer passes its own checks: {exc}')
-    config = BridgeConfig(Path(connection['env_file']).resolve(), entry['library'], (directory / profiles.FILES['receipt']).resolve(),
-                          bridge_state_dir().resolve(), connection['model_file'],
+    # The settings file as it is NOW, in a copy of its own (record 7.306): what is written to the shared file later -
+    # a second Virtuoso session's keys, say - cannot end the run that binds this one.
+    env_file = bridge_env_snapshot(connection['env_file'])
+    # The state folder of the Virtuoso session this connection reaches (record 7.311): a lock per session, so a second
+    # session carries a second run; the task's adapter locks its cell beside it (cdf_write.backend_class).
+    config = BridgeConfig(env_file, entry['library'], (directory / profiles.FILES['receipt']).resolve(),
+                          bridge_session_dir(env_file, connection.get('profile')).resolve(), connection['model_file'],
                           profile=connection.get('profile'))
     if entry.get('recipe') == profiles.MAESTRO:                   # its OCEAN measurement reaches Virtuoso the way the run does
         profile.bridge = dict(env_file=str(config.env_file), profile=connection.get('profile'), site=connection.get('bridge_site_packages'))

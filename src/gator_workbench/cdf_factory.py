@@ -18,7 +18,8 @@ from .cdf_write import preparation_session
 
 @dataclass(frozen=True)
 class CdfNativeEnvironmentFactory(NativeEnvironmentFactory):
-    """`NativeEnvironmentFactory` whose preparation service writes with the CDF backend; the lanes are unchanged."""
+    """`NativeEnvironmentFactory` whose preparation service writes with the workbench's adapter for the task
+    (`cdf_write.backend_class`: the form writer's, or the verified one under the cell's lock); the lanes are unchanged."""
 
     @contextmanager
     def preparation_context(self, limits, report):

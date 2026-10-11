@@ -14,7 +14,8 @@ from .. import TABLE_SCHEMA_VERSION
 # them read and are described as before (the data dictionary is unchanged); no run writes them any more.
 PHASES = ('baseline', 'episode_reset', 'warmup', 'adapt', 'search', 'validation', 'frozen_eval', 'preflight',
           'llm_warmup', 'llm_search', 'llm_rescue')
-ACTION_SOURCES = ('reset', 'random_warmup', 'sac_policy', 'mean_policy', 'sampled_policy', 'llm_proposal', 'seeded_warmup')
+ACTION_SOURCES = ('reset', 'random_warmup', 'sac_policy', 'mean_policy', 'sampled_policy', 'llm_proposal', 'seeded_warmup',
+                  'bayes_opt')       # bayes_opt: a design proposed by Bayesian optimization (run.optimizer, record 7.304)
 RETENTION = ('pending', 'retained_best', 'retained_failure', 'retained_all', 'deleted_by_policy',
              'deleted_storage_limit', 'not_produced')
 

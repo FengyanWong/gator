@@ -326,6 +326,57 @@ def test_check_only_mode_compares_a_netlist_built_from_each_readback_with_its_na
         service.close()
 
 
+def test_a_number_spelled_in_two_ways_is_one_value_and_nothing_else_is_forgiven():
+    """Record 7.309 (user decision of 2026-10-11: "14.05 is the same as 14.050"): one netlister prints the form's 14.05u
+    as 14.050u, so a netlist built from the form's text has other characters and the same numbers. The comparison takes a
+    parameter's number as a number - exactly - and everything else stays text."""
+    same, differs = native_preparation.same_statement, native_preparation.first_difference
+    deck = lambda *devices: 'subckt cell a b\n' + ''.join(f'    {d}\n' for d in devices) + 'ends cell\n'
+    native = 'M1 (d g s b) nch w=(14.050u) l=180.0n as=6.7440p ps=10.960u nf=2 m=(1)'
+    built = 'M1 (d g s b) nch w=(14.05u) l=180n as=6.744p ps=10.96u nf=2 m=(1)'
+    assert same(built, native) and differs(deck(built, 'C1 (a b) cap c=1e-12'), deck(native, 'C1 (a b) cap c=1.0E-12')) is None
+    for other, why in ((built.replace('w=(14.05u)', 'w=(14.06u)'), 'another number'),
+                       (built.replace('w=(14.05u)', 'w=(14.0500000000000000000001u)'), 'another number, far below a float\'s digits'),
+                       (built.replace('w=(14.05u)', 'w=(14050n)'), 'another scale letter'),
+                       (built.replace('w=(14.05u)', 'w=14.05u'), 'other brackets'),
+                       (built.replace('l=180n', 'lr=180n'), 'another parameter'),
+                       (built.replace('(d g s b)', '(d g s 0b)'), 'another net'),
+                       (built.replace('nch', 'pch'), 'another device'),
+                       (built + ' region=sat', 'a parameter more')):
+        assert not same(other, native), why
+        assert 'statement 2: built' in differs(deck(other), deck(native)), why
+    assert not same('M1 (d g s b) nch region=sat', 'M1 (d g s b) nch region=triode')       # no number: text
+    assert not same('I1 (a b) isource dc=iref*2.0', 'I1 (a b) isource dc=iref*2')            # an expression: text
+    assert same('R1 (a b) res r=437.2K', 'R1 (a b) res r=437.20K') and not same('R1 (a b) res r=437.2K', 'R1 (a b) res r=437.2k')
+    assert same('V1 (a 0) vsource dc=-0.50 mag=.5', 'V1 (a 0) vsource dc=-0.5 mag=0.5')
+    assert differs(deck(built), deck(native, native)) == '3 statements built, 4 exported'
+
+
+def test_a_candidate_whose_netlister_spells_its_numbers_another_way_is_prepared_and_one_with_another_number_stops(adapter, monkeypatch, tmp_path):
+    """Through the preparation service (record 7.309): the build is the fixture's export with every width given a zero
+    more - accepted, and the native export is the netlist of record; a build with another width stops the service."""
+    monkeypatch.setenv('GATOR_NETLIST_BUILD', 'check')
+    writer, _ = changing_writer(adapter)
+    monkeypatch.setattr(bridge, 'set_gpdk_mos', writer)
+    adapter.test_client.schematic.export_netlist = lambda lib, cell, output, timeout: fixture_export(
+        adapter.test_state, adapter.circuit, output)
+    respelled = lambda text: re.sub(r'\bw=\(?([\d.]+)u\)?', lambda m: m.group(0).replace(m.group(1), m.group(1) + ('0' if '.' in m.group(1) else '.0')), text)
+    monkeypatch.setattr(adapter.circuit, 'render_export', lambda template, snapshot: respelled(fixture_text(snapshot, adapter.circuit)), raising=False)
+    service = PreparationService(lambda: adapter, timeout_seconds=10)
+    service.baseline()
+    try:
+        _, _, metadata = service.prepare(adapter.circuit.assignments(4.1e-6), tmp_path, adapter.nominal_condition(), 'spelled')
+        native = Path(metadata['original_structure_path']).read_text()
+        assert metadata['built_export'] == 'matches the native export' and native == fixture_text(adapter.test_state, adapter.circuit)
+        assert respelled(native) != native                                   # the build did differ, in characters only
+        wider = lambda template, snapshot: re.sub(r'\bw=(\(?)[\d.]+u', r'w=\g<1>9.999u', fixture_text(snapshot, adapter.circuit), count=1)
+        monkeypatch.setattr(adapter.circuit, 'render_export', wider, raising=False)
+        with pytest.raises(ValueError, match='differs from the native export: statement'):
+            service.prepare(adapter.circuit.assignments(3.6e-6), tmp_path, adapter.nominal_condition(), 'wrong')
+    finally:
+        service.close()
+
+
 def started(adapter, monkeypatch, mode):
     """A preparation service around the fake adapter, its exports counted, its netlists built as the fixture exports."""
     if mode is None:

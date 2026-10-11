@@ -310,9 +310,15 @@ def plan(run_dir, *, designs=MAX_DESIGNS) -> dict:
 
 
 # ================================================================================ starting one
-def bridge_busy() -> bool:
-    """A real run or real check holds the adapter's session lock (the same file every real task uses)."""
-    return RunLock.held(bridge_session_lock())
+def bridge_busy(profile_id=None, task_key=None) -> bool:
+    """A real run or real check holds the lock of the Virtuoso session this run's connection reaches, or the lock of
+    its cell (record 7.311; the same files every real task takes). Without arguments: the first session's lock."""
+    if profile_id is None and task_key is None:
+        return RunLock.held(bridge_session_lock())
+    from .consistency import task_locks  # lazy: consistency imports the saved-task readers, which a mock check never needs
+    from .profile_store import profile_entry  # lazy: as above
+    entry = profile_entry(task_key.partition(':')[2]) if task_key else None
+    return any(lock is not None and RunLock.held(lock) for lock in task_locks(profile_id, entry))
 
 
 def live_checks(run_dir) -> list:
@@ -380,10 +386,10 @@ def _prepared(run_dir, proposal, chosen, *, allow_real, acknowledge_unknown, mon
         if not allow_real:
             raise CheckRefused(REAL_AUTHORIZATION, code='real_authorization_required',
                                report=dict(simulations=proposal['simulations'], task_key=proposal['task_key']))
-        if bridge_busy():
+        context = Context(layout, manifest, allow_real=True)
+        if bridge_busy(context.config.run.connection_profile_id, proposal['task_key']):
             raise CheckRefused('Virtuoso is in use by a real run or another corner check. Try again when it has '
                                'finished.', code='virtuoso_busy')
-        context = Context(layout, manifest, allow_real=True)
         gate = connection_gate(context.task, context.config, monitor, acknowledge_unknown=acknowledge_unknown)
     check_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid4().hex[:8]}"
     directory = layout.run_dir / CHECK_DIR / check_id

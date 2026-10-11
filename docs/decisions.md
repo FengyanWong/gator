@@ -2,6 +2,13 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
+- **A netlist comparison that reads numbers (7.309, 2026-10-11; user: "but 14.05 is the same as 14.050", then "B"):** the
+  optimizer package changed on purpose - `backends/native_preparation.py`: `first_difference` takes a parameter's number
+  spelled in two ways as one value (`same_statement`: exact decimals, everything else text) - so the source digest moved
+  `94e7dd4f...` -> `6724e52b9ce8bcbb...` (uncommitted; this change alone on `714b6a1`). Step 1 of the transfer
+  experiment (record 7.303) ran on `94e7dd4f...`, from `~/gator-runtime-7301`; later steps run on the new digest. No
+  network, reward or learning code changed: saved models fine-tune and evaluate; an exact resume needs the first copy.
+  The offer had been a workbench-only spelling rule (no digest step); the user chose the comparison.
 - **Transferable network inputs (7.298, 2026-10-10; user: "build all this"):** the optimizer package changed on purpose -
   `models/inputs.py` (the spec set input: every active spec one described item, any name, any number) and
   `models/encoders.py` (its reader) - so the source digest moved `ad4ddcbe...` -> `94e7dd4f...` (together with 7.299 below; this change alone gives
@@ -23,6 +30,14 @@ A summary for new sessions; everything below is the chronological record, oldest
   only; LDO1 and the VCO kept, no new runs on OTA7t width, LDO2 and the folded cascode; no random-search arm; GT in
   step 2, GraphGPS in steps 3 to 6; a starting design further from the target for the published amplifier. It replaces
   the 24-run AgenticSizing restart (stages A and B) that 7.299 / 7.300 left open. Nothing built, no run.
+  **Revised the same day (7.305, user: "make the stdcell plan first part of the step 3(the spec change) and exchange
+  current plan step 2 with step 3 so after step 1 it runs stdcells first"):** the two steps changed places, so the new
+  targets are step 2 and SAC against Bayesian optimization is step 3 (GT in step 3, GraphGPS in steps 2 and 4 to 6 -
+  the sentence above keeps the old numbers), and step 2 begins with a logic cell, the flip-flop DFFRX1 copied from the
+  gsclib045 standard cells, with an area estimated from the sizes and two goals on one set of limits (maximize speed,
+  minimize power; each from scratch, then each from one model trained offline on both scratch runs; and the power goal at
+  a speed halfway between the library X2's and X4's, from scratch and from that model, three seeds each); round 1 =
+  63 runs + 11 probes. The cell and its bench are built (7.307); no task saved, no simulation.
 - **Six-circuit encoder baseline (7.244, plan only):** [A/B/C runbook](plan-encoder-baseline-abc.md)
   fixes OTA5t, OTA7t-width, LDO1, LDO2, RING3 and VCO_linear_c as the reusable suite. New A/B/C
   runs use the relaxed LDO HF PSRR targets (-3/-2.3 dB), fixed existing starting vectors, the common

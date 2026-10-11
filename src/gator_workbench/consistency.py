@@ -20,7 +20,8 @@ is not taken over.
 from __future__ import annotations
 
 
-from .paths import bridge_session_lock
+from .connection import named_or_active
+from .paths import bridge_cell_lock, bridge_session_lock
 from .security import redact
 from .storage.dataset import utcnow
 from .virtuoso_setup import differences
@@ -112,12 +113,29 @@ def lock_holder(path) -> str | None:
     return redact(f'{kind} (process {pid}, started {started}: {command}', 300) + ')'
 
 
-def _busy_step(reason=None) -> dict:
-    """Another real run or check holds the adapter's session lock: only one process drives the Virtuoso cell at a time."""
-    lock = bridge_session_lock()
-    holder = lock_holder(lock) or f'another process ({reason or "it did not say which"})'
-    return _step('busy', False, fix=FIX_BUSY, detail=f'The run adapter\'s session lock ({lock}) is held by {holder}. Only one real '
-                 'run or check works on Virtuoso at a time; nothing was read from it.')
+def _busy_step(reason=None, locks=None) -> dict:
+    """Another real run or check holds the lock of the task's Virtuoso session, or of its cell: one process at a time
+    drives a Virtuoso session, and one works on a cell whatever the session (record 7.311)."""
+    session, cell = locks or (bridge_session_lock(), None)
+    if cell is not None and not lock_holder(session) and (lock_holder(cell) or 'is in use by another run' in (reason or '')):
+        holder = lock_holder(cell) or f'another process ({reason})'
+        return _step('busy', False, fix=FIX_BUSY, detail=f'The cell\'s lock ({cell}) is held by {holder}, working on this cell through '
+                     'another Virtuoso session. Only one real run or check works on a cell at a time; nothing was read from it.')
+    holder = lock_holder(session) or f'another process ({reason or "it did not say which"})'
+    return _step('busy', False, fix=FIX_BUSY, detail=f'The run adapter\'s session lock ({session}) is held by {holder}. Only one real '
+                 'run or check works in a Virtuoso session at a time; nothing was read from it.')
+
+
+def task_locks(profile_id, entry) -> tuple:
+    """(session lock, cell lock) a real run or check of this task takes: the lock of the Virtuoso session its connection
+    reaches and the lock of its cell (record 7.311). The first session's lock when the connection cannot be read."""
+    try:
+        settings = named_or_active(profile_id)[2] or {}
+    except Exception:
+        settings = {}
+    session = bridge_session_lock(settings.get('env_file'), settings.get('profile')) if settings.get('env_file') else bridge_session_lock()
+    cell = bridge_cell_lock(entry['library'], entry['core_cell']) if entry and entry.get('library') and entry.get('core_cell') else None
+    return session, cell
 
 
 def _connect_fix(detail) -> str:
@@ -135,8 +153,9 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
     """Parts 2 and 3: the saved task against its working copy in Virtuoso. Read-only; each step says what it found."""
     from . import profile_preflight, profiles, working_copy  # lazy: profiles imports the optimizer (torch)
     commands = commands or {}
-    if lock_holder(bridge_session_lock()):           # record 7.207: the adapter could not take the lock
-        return [_busy_step()]
+    locks = task_locks(profile_id, entry)
+    if any(lock is not None and lock_holder(lock) for lock in locks):     # record 7.207: the adapter could not take a lock
+        return [_busy_step(locks=locks)]
     try:
         result = profile_preflight.preflight(monitor, name, profile_id, acknowledge_unknown=acknowledge_unknown,
                                              command=commands.get('preflight'))
@@ -148,8 +167,8 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
     steps = []
     for item in result['steps']:
         step = item['step'] if item['step'] in TITLES else 'connect'
-        if step == 'connect' and not item['ok'] and (item.get('detail') or '').startswith('BlockingIOError'):
-            steps.append(_busy_step(item.get('detail')))           # taken between the look above and the connect
+        if step == 'connect' and not item['ok'] and (item.get('detail') or '').startswith(('BlockingIOError', 'CellBusy')):
+            steps.append(_busy_step(item.get('detail'), locks))    # taken between the look above and the connect
         elif item['ok']:
             steps.append(_step(step, True, detail=item.get('detail'), **({'skipped': True} if item.get('skipped') else {})))
         else:

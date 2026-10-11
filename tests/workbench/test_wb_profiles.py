@@ -62,7 +62,9 @@ def test_the_ring_oscillator_becomes_a_registered_real_task(tmp_path):
     runnable = tasks.load_task(reference, allow_real=True, profile_id='lab')
     compiled = compile_task(registered, runnable.base_graph)
     factory = runnable.env_factory_builder(compiled, tmp_path, registered.run)
-    assert type(factory).__name__ == 'NativeEnvironmentFactory' and factory.reference_metrics is None     # no baseline yet
+    # the verified factory, with the workbench's preparation - whose adapter holds the cell's lock (record 7.311)
+    assert [c.__name__ for c in type(factory).__mro__[:2]] == ['CdfNativeEnvironmentFactory', 'NativeEnvironmentFactory']
+    assert factory.reference_metrics is None                                                              # no baseline yet
     assert factory.config.library == 'GPDK045_RINGOSC' and factory.config.creation_receipt == (directory / 'creation.json').resolve()
     widened = [dict(r, upper=4.0) if r['variable_id'] == 'wp' else r for r in made['parameters']]
     with pytest.raises(tasks.TaskBlocked, match='differ from what was saved'):

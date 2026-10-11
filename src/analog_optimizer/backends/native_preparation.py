@@ -5,11 +5,14 @@ netlist transaction on one owning thread; simulator workers never attach
 to Virtuoso. There is no parameter enumeration or candidate cache. A netlist is
 Virtuoso's own export, or built from the write's readback with an export to
 compare every NATIVE_EVERY-th candidate (GATOR_NETLIST_BUILD, record 7.142).
+The comparison takes a parameter's number as a number: 14.05u and 14.050u are
+one value (record 7.309).
 """
 from concurrent.futures import Future
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from decimal import Decimal
 import importlib.metadata
 import math
 import multiprocessing
@@ -17,6 +20,7 @@ from multiprocessing.managers import BaseManager
 import os
 from pathlib import Path
 import queue
+import re
 import tempfile
 import threading
 from time import perf_counter
@@ -59,14 +63,41 @@ def netlist_statements(text):
     return statements
 
 
+# One parameter of a statement whose value is a single number: its name with the opening bracket, the number, and the
+# scale letters with the closing bracket (w=(14.05u), l=180n, c=1.5e-12).
+_NUMBER_PARAMETER = re.compile(r'(\w+=\(?)([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)([A-Za-z%]*\)?)')
+
+
+def same_statement(built, native):
+    """Two statements that are the same but for how a parameter's number is spelled (record 7.309, user decision of
+    2026-10-11: "14.05 is the same as 14.050"): one netlister prints the form's 14.05u as 14.050u, another exponent as
+    1.0E-12 for 1e-12. The numbers are compared exactly, as decimals, never rounded; the parameter's name, its brackets
+    and its scale letters must be the same text, and so must every other word of the statement."""
+    if built == native:
+        return True
+    a, b = built.split(), native.split()
+    if len(a) != len(b):
+        return False
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        p, q = _NUMBER_PARAMETER.fullmatch(x), _NUMBER_PARAMETER.fullmatch(y)
+        if not (p and q and p.group(1) == q.group(1) and p.group(3) == q.group(3) and Decimal(p.group(2)) == Decimal(q.group(2))):
+            return False
+    return True
+
+
 def first_difference(built, native):
-    """None when two netlists have the same statements, else where they first differ, in words."""
+    """None when two netlists have the same statements - a number spelled in two ways is one value (same_statement) -
+    else where they first differ, in words."""
     a, b = netlist_statements(built), netlist_statements(native)
     if a == b:
         return None
     if len(a) != len(b):
         return f'{len(a)} statements built, {len(b)} exported'
-    index = next(i for i, (x, y) in enumerate(zip(a, b)) if x != y)
+    index = next((i for i, (x, y) in enumerate(zip(a, b)) if not same_statement(x, y)), None)
+    if index is None:
+        return None
     return f'statement {index + 1}: built {a[index][:200]!r}, exported {b[index][:200]!r}'
 
 

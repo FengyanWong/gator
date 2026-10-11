@@ -88,7 +88,11 @@ def test_single_finger_widths_keep_the_verified_width_writer(tmp_path):
     assert made['writer'] == 'widths'
     profile = profiles.load_profile('ring_cdf')
     assert isinstance(profile, GenericMosWidthProfile) and not isinstance(profile, cdf_write.CdfWritableProfile)
-    assert cdf_write.backend_class(profile) is VirtuosoBridgeBackend
+    adapter = cdf_write.backend_class(profile)             # the verified adapter itself, under its cell's lock (record 7.311)
+    assert adapter.__mro__[:3] == (adapter, cdf_write.CellLocked, VirtuosoBridgeBackend) and adapter is cdf_write.backend_class(profile)
+    assert {name for name in vars(adapter) if not name.startswith('_')} == set()      # nothing of the adapter is replaced
+    import analog_optimizer.training.parallel as verified
+    assert issubclass(cdf_write.factory_class(profile), verified.NativeEnvironmentFactory)
 
 
 @pytest.mark.parametrize('rows, reason', [
@@ -360,6 +364,28 @@ def test_a_netlist_built_from_the_readback_has_the_statements_of_the_cells_own_e
     backend.close()
 
 
+def test_a_netlister_that_spells_its_numbers_another_way_still_gives_the_built_netlist(tmp_path, monkeypatch):
+    """Record 7.309 (user, 2026-10-11: "14.05 is the same as 14.050"): one netlister prints an SI number with a zero per
+    integer digit beyond the first (168.00f for the form's 168f), typed values and derived ones alike. The netlist built
+    from the form's text then has other characters and the same numbers, and the run's comparison accepts it; another
+    number is still a difference."""
+    from analog_optimizer.backends.native_preparation import first_difference
+    made = make(tmp_path)
+    profile = profiles.load_profile('ring_cdf')
+    backend, client = backend_of(tmp_path, monkeypatch, profile, Path(made['directory']))
+    backend.connect()
+    exported = lambda artifact: Path(backend._exports[artifact.job_id][2]['original_structure_path']).read_text()
+    template = exported(backend.generate_netlist(tmp_path / 'first'))
+    backend.set_parameters(profile.assignments(dict(wn=1.25e-6, ln=6e-8, wc=3e-6, mc=3)))
+    native = exported(backend.generate_netlist(tmp_path / 'step', just_written=True))
+    spelled = re.sub(r'(?<==)(\(?)([^\s()\\]+)', lambda m: m.group(1) + cdf_write.significant_digit_spelling(m.group(2)), native)
+    built = profile.render_export(template, backend.written_snapshot())
+    assert spelled != native and first_difference(built, native) is None and first_difference(built, spelled) is None
+    other = spelled.replace('w=1.25e-06', 'w=1.26e-06', 1)                     # the fake cell exports a written width so
+    assert other != spelled and 'statement' in first_difference(built, other)
+    backend.close()
+
+
 def test_the_built_netlist_keeps_the_netlisters_brackets_line_breaks_and_fixed_values(tmp_path):
     """On the user's real ring export: a written value keeps its brackets, a derived one is the form's text, the line
     breaks stay, and every statement of an instance the change does not touch is left as it was."""
@@ -436,7 +462,9 @@ def test_a_form_writer_task_saved_before_keeps_matching_its_rows_and_its_top_val
 def test_a_cell_of_a_pdk_whose_quirks_say_so_gets_no_netlist_built_from_its_readback(tmp_path):
     """2026-10-10: one netlister re-spells typed values and prints changed poly-resistor lengths in a form the renderer does
     not reproduce. Such a PDK says so in its own folder of the local settings (quirks.json, never in the repository), and a
-    profile on it offers no render_export: every candidate is exported natively. The PDK here is invented."""
+    profile on it offers no render_export: every candidate is exported natively. The PDK here is invented. (Since record
+    7.309 the run's comparison takes two spellings of a number as one value; the switch stays for a netlister that changes
+    more than the spelling.)"""
     from gator_workbench import pdk_record
     made = make(tmp_path)
     assert callable(profiles.load_profile('ring_cdf').render_export) and profiles.load_profile('ring_cdf').pdk_quirks == {}

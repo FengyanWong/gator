@@ -58,7 +58,11 @@ def test_the_ocean_program_reads_one_result_folder_and_its_answer_is_parsed():
     text = ocean.program('/tmp/vb/15f61d39/input.raw', outputs)
     assert text.count('openResults("/tmp/vb/15f61d39/input.raw")') == 1 and "selectResult('tran)" in text and "selectResult('ac)" in text
     # Record 7.294: the results are let go after the last output - each folder held ~260 KB of Virtuoso's memory for good.
-    assert text.rstrip().endswith('ocnResetResults()\n  out)') and text.count('ocnResetResults()') == 1
+    # Record 7.316: then the folder itself is closed - OCEAN kept every folder it opened (284 to 475 KB per design); after
+    # the values are in `out`, and inside errset, so a close that fails fails no measurement.
+    assert text.rstrip().endswith('ocnResetResults()\n  errset(closeResults("/tmp/vb/15f61d39/input.raw") nil)\n  out)')
+    assert text.count('ocnResetResults()') == 1 and text.count('closeResults(') == 1
+    assert text.index('gain=') < text.index('ocnResetResults()') < text.index('closeResults(')
     assert 'car(errset(frequency(VT("OUT")) nil))' in text and 'simulator(' not in text and 'design(' not in text
     assert ocean.parse('freq=1209256473.1920419\ngain=nil\n', outputs) == dict(freq=1209256473.1920419, gain=None)
     with pytest.raises(ValueError):

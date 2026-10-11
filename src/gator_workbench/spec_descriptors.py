@@ -385,7 +385,7 @@ def describe_specs(config, bench=None):
         for name in names:                       # in the order the equation names them: the first one placed sets the place
             probe = probes[name]
             facts = probe_facts(probe.analysis, probe.signal, bench,
-                                measured_by_analyzer=probe.result_source == 'backend_profile')
+                                measured_by_analyzer=probe.result_source in ('backend_profile', 'size_estimate'))
             for key, value in facts.items():
                 if key in ('position', 'span'):
                     columns.setdefault(key, value)

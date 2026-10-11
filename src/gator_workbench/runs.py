@@ -376,7 +376,8 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                                             metrics=[list(m) for m in compiled.spec_schema.metrics])
                                        if hasattr(compiled.spec_schema, 'metrics') else
                                        dict(asdict(compiled.spec_schema), version=compiled.spec_schema.version)),
-                          vocabulary=vocabulary_record(vocabulary)),
+                          vocabulary=vocabulary_record(vocabulary),
+                          **({} if config.run.optimizer == 'sac' else dict(optimizer=config.run.optimizer))),   # record 7.304
         source_model=source_model, parent=parent,
         research=research, split=research['split'], generalization_level=research['generalization_level'],
         seeds=dict(target_seed=config.run.seed, pretrain_seed=pretrain_seed, pretrain_seed_origin=pretrain_origin,

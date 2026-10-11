@@ -42,7 +42,7 @@ import threading
 import time
 
 from . import connection, directories, ngspice_link
-from .paths import append_local_log, repo_root
+from .paths import append_local_log, bridge_locks, repo_root
 from .run_lock import RunLock
 from .security import redact, skill_string
 from .storage.atomic import read_json, write_json
@@ -388,7 +388,8 @@ def save_directories(values) -> dict:
         if 'adapter_state' in changed:
             default = directories.FIELDS['adapter_state'].default
             for folder in {current.get('adapter_state') or default, wanted.get('adapter_state') or default}:
-                if RunLock.held(Path(folder).expanduser() / 'session.lock'):
+                # every Virtuoso session's lock and every cell's (record 7.311), not the first session's alone
+                if any(RunLock.held(lock) for lock in bridge_locks(Path(folder).expanduser())):
                     raise FolderBusy(f'A run, a corner check or Save task holds the adapter\'s session lock in {folder}. '
                                      'Change the folder once it has finished.')
         backup = None

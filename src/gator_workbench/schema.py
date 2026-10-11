@@ -242,9 +242,11 @@ class MeasurementDefinition(_Model):
         description='Stable ID. Spec equations refer to it. A Maestro output\'s ID is m_ + its output name.')
     analysis: Literal['dc', 'ac', 'tran', 'noise', 'stb', 'pss', 'pnoise', 'other'] = Field(
         description='Analysis that produces the raw data.')
-    result_source: Literal['backend_profile', 'ade_output'] = Field('backend_profile',
+    result_source: Literal['backend_profile', 'ade_output', 'size_estimate'] = Field('backend_profile',
         description='backend_profile: a metric computed by the circuit-profile analyzer. ade_output: a Maestro output '
-                    '(needs the bridge). A task measures one way; a new row takes the way of the rows there.')
+                    '(needs the bridge). A task measures one way; a new row takes the way of the rows there. '
+                    'size_estimate: not simulated - worked out from the sizes the task varies by the formula in '
+                    '`signal`, e.g. fingers("mn*", 400n); it may stand beside either way (record 7.308).')
     source_name: Optional[str] = Field(None, max_length=200,
         description='Metric name in the backend profile, or the ADE output name.')
     signal: Optional[str] = Field(None, max_length=300,
@@ -497,6 +499,11 @@ class RunSettings(_Model):
         description='Stop dispatching once the scheduler confirms a design meeting all hard constraints.')
     frozen_action: Literal['deterministic', 'sampled'] = Field('deterministic',
         description='frozen mode only: mean action or a sample from the fixed policy.')
+    optimizer: Literal['sac', 'bayes'] = Field('sac',
+        description='Who proposes the designs after the random warm-up (record 7.304). sac: the network\'s policy, trained '
+                    'as the run goes. bayes: Bayesian optimization (a trust-region Gaussian process, gator_workbench.bayes) '
+                    'on the same task, reward, lanes and budget - a comparison method: from scratch only, the network is '
+                    'neither asked nor trained, and the run saves no model worth loading.')
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     reward: RewardConfig = Field(default_factory=RewardConfig)
     conditions: ConditionsConfig = Field(default_factory=ConditionsConfig)
@@ -715,6 +722,8 @@ def _hashed(data):
             run.pop('rehearsal', None)
         reward = run.get('reward')
         run.pop('search', None)              # retired on 2026-10-06 (REMOVED_SEARCH_METHODS); at its default it was absent
+        if run.get('optimizer') == 'sac':    # record 7.304: every configuration before it was a SAC run and never said so
+            run.pop('optimizer')
         if isinstance(reward, dict):
             reward = {k: v for k, v in reward.items() if not
                       (k == 'nominal_gate_band' and v == 0.5 or k == 'objective_shape' and v == 'clipped')}

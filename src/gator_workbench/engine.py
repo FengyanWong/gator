@@ -32,7 +32,7 @@ from uuid import uuid4
 
 from analog_optimizer.training.collect import random_proposal
 
-from . import best_design, checkpoints as ckpt, modes, network_inputs
+from . import bayes, best_design, checkpoints as ckpt, modes, network_inputs
 from .budget import BudgetLedger
 from .compile import compile_task, hard_constraints
 from .connection import classify_infrastructure_failure
@@ -207,6 +207,13 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         self.ledger = BudgetLedger(run.max_evaluations, max_launches=run.max_spectre_launches,
                                    max_retries=run.max_retries)
         self.rng = random.Random(run.seed)
+        # Bayesian optimization instead of the policy (run.optimizer, record 7.304): its proposer is made at the first
+        # design it is asked for, with the lanes' parameter groups. Its state lives in this process only, so such a run
+        # is a from-scratch run that is not continued.
+        self.proposer = None
+        if run.optimizer == 'bayes' and (self.mode != 'scratch' or self.entry == 'resume'):
+            raise ValueError('A Bayesian-optimization run (run.optimizer "bayes") is a from-scratch run and cannot be '
+                             'resumed or started from a saved model: its search state is not saved. Start a new run.')
         self.tracker = best_design.BestDesignTracker(self.compiled.preference)
         self.counters = dict(global_env_step=0, completion_index=0, episodes=0, baseline_done=False,
                              consecutive_failures=0, consecutive_infrastructure_failures=0,
@@ -606,6 +613,9 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
                 if self.replay.insertions + pending < self.config.run.advanced.warmup_transitions:
                     proposal = random_proposal(self.rng, group_ids)
                     source, phase = 'random_warmup', 'warmup'
+                elif self.config.run.optimizer == 'bayes':
+                    proposal = self._proposer(group_ids).propose()
+                    source, policy_version, phase = bayes.Proposer.SOURCE, self.proposer.observations, 'search'
                 else:
                     proposal = self.learner.act([state['observation']])[0]
                     source, policy_version = 'sac_policy', self.learner.updates
@@ -747,6 +757,12 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         if valid and env_success is not None and bool(env_success) != feasible:
             self._event('feasibility_disagreement', evaluation_id=evaluation_id, independent=feasible,
                         environment=bool(env_success), note='The independent threshold check is authoritative')
+        # ---- Bayesian optimization (record 7.304): every finished design and its reward, the random warm-up's included;
+        # a design without a reward (its simulation failed) counts as the worst seen
+        if self.config.run.optimizer == 'bayes' and not self.calibration_only and op_is_step and busy['proposal'] is not None:
+            asked = busy['action_source'] == bayes.Proposer.SOURCE
+            if self._proposer(lane.info['group_ids']).observe(busy['proposal'], reward, asked=asked):
+                self._event('bayes_region_restarted', evaluation_id=evaluation_id, **self.proposer.search.state())
         # ---- learner receipt: replay admission and the updates it triggers
         transition_rows, state_rows, update_rows, admitted = [], [], [], False
         eligible = bool(info.get('replay_eligible')) if step else False
@@ -951,7 +967,16 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
 
     def _updates_due(self):
         adv = self.config.run.advanced
+        if self.config.run.optimizer != 'sac':          # another method proposes: the network is neither asked nor trained
+            return False
         return len(self.replay) >= adv.batch_size and not self.replay.insertions % adv.update_every
+
+    def _proposer(self, group_ids):
+        if self.proposer is None:
+            self.proposer = bayes.Proposer(group_ids, seed=self.config.run.seed, warmup=self.config.run.advanced.warmup_transitions)
+            self._event('bayes_started', variables=len(self.proposer.group_ids), initial_designs=self.proposer.search.n_init,
+                        candidates=self.proposer.search.n_candidates, failure_tolerance=self.proposer.search.failure_tolerance)
+        return self.proposer
 
     def _maybe_update(self, commit_seq):
         return self._run_updates(commit_seq) if self._updates_due() else []

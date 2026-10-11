@@ -503,6 +503,35 @@ then read the unity-gain frequency while pass/fail read the bandwidth, and valid
 
 Code: `src/gator_workbench/spec_equations.py`; tests: `tests/workbench/test_wb_spec_equations.py`.
 
+### A Probe that measures the sizes (added 2026-10-11, record 7.308, user request)
+
+Some of what a design is judged by is not simulated at all: how much room it takes follows from its sizes. A Probes row
+with the source **`size_estimate`** holds such a value. Its `signal` is not a Maestro expression but a formula over the
+widths the task varies; the value is worked out for every design from that design's own sizes and stands in the result
+beside the simulated ones, under the row's source name. A Specs row reads it through the Probe like any other value,
+alone (`m_cell_width`) or inside an equation, and it is recorded, judged and shown as every Probe is.
+
+| In the formula | Value |
+|---|---|
+| `fingers("pattern", limit)` | the fingers the matching transistors fold into: the sum of ceil(width / limit) |
+| `width("pattern")` | the sum of the matching transistors' widths |
+| `count("pattern")` | how many transistors match |
+| `larger(a, b)`, `smaller(a, b)` | the larger and the smaller of two values |
+
+with numbers (SI suffixes), `+ - * / **` and brackets. A pattern is written in double quotes and uses `*`, `?` and
+`[...]` as file names do; it is tried on the instance as the Parameters rows write it (`DUT/mn20`) and on its last part
+(`mn20`). The first use is the width of a standard cell before layout: the row height is fixed, so the area follows the
+number of gate columns - `0.253u + 0.288u * larger(fingers("mn*", 400n), fingers("mp*", 630n))` for the gsclib045
+flip-flop of the transfer plan (a typical error of 9 % against the real outlines of 513 cells of that library).
+
+Limits: only widths (the parameter `w`) that the task varies are seen - a transistor of fixed size adds a constant,
+which the formula can state itself; a pattern that names no varied width is refused before a run; a value that cannot
+be worked out (a limit that is not positive, arithmetic that fails) is missing, never a number. Such a row may stand
+beside Maestro outputs or beside a circuit type's results; a task with nothing but size estimates cannot be saved. The
+row is not written into the Maestro test and costs no simulation. Tasks measured by ngspice do not hand it the sizes yet.
+The page shows it in the Probes table with the source it has; there is no button for it - the row is written in a task's
+file or its JSON.
+
 ### Fewer columns in Parameters, Probes and Specs (2026-09-26, user request)
 
 Fourteen columns went, because no run ever read them - and for several the only value besides the default was a run
@@ -1988,9 +2017,14 @@ Since 7.142 (user decision of 2026-10-02) a real run works like this:
   after the write.
 - Each candidate's manifest says which it got (`netlist_source`).
 
-The built netlist has the same statements as Virtuoso's export: same devices, connections and values, character for
-character. Only the line breaks and a date comment can differ, which Spectre ignores, so the simulation results are the
-same. The variable `GATOR_NETLIST_BUILD`, set in the environment the server or run starts from, chooses:
+The built netlist has the same statements as Virtuoso's export: same devices, connections and values. Only the line
+breaks and a date comment can differ, which Spectre ignores, so the simulation results are the same. Since record 7.309
+(2026-10-11; user: "14.05 is the same as 14.050") the comparison reads a parameter's number as a number: one netlister
+prints the form's `14.05u` as `14.050u`, another an exponent as `1.0E-12` for `1e-12`, and both spellings are one value.
+The numbers are compared exactly, as decimals, never rounded; the parameter's name, its brackets, its scale letter and
+every other word of a statement must still be the same text (`native_preparation.same_statement`). Before, a second
+foundry's PDK - whose netlister re-spells typed sizes - had every candidate exported natively, 0.36 s instead of 0.07 s
+per candidate in Virtuoso; now its tasks build their netlists like every other task. The variable `GATOR_NETLIST_BUILD`, set in the environment the server or run starts from, chooses:
 - `skip`, the default;
 - `check`: every candidate native, each compared (7.140);
 - `native`: every candidate native, nothing built.
@@ -2102,6 +2136,43 @@ in `~/.local/state/gator/bridge-state` (`paths.bridge_state_dir()`, `GATOR_BRIDG
 same folder holds the session lock that runs, checks and Save task take, so every GATOR process names it the same way,
 whatever its settings folder.
 
+**A run binds its own copy of the bridge's settings file** (2026-10-11, record 7.306; user: "can you fix this when
+opening two virtuosos?"). The run adapter binds the settings file (`~/.virtuoso-bridge/.env`) when it attaches and checks
+it at every call, so that a run cannot go on against a link somebody re-pointed; any change of the file therefore ended
+a run in the middle of a write ("Bridge configuration changed during an active worker"), with its cell left
+half-written. That happened on 2026-10-10 when the keys of a second Virtuoso session were added to the shared file.
+Since this record the bridge configuration of a real task names a copy of the file as it is when the run starts -
+`env-snapshots/<the file's checksum>.env` in the adapter's state folder, readable by its owner only
+(`paths.bridge_env_snapshot`). What is written to the shared file afterwards does not reach a running run; a run started
+later takes the file as it is then; the adapter's own check is unchanged and as strict as before on the copy. Copies
+older than 30 days are removed when a new one is written; a settings file that cannot be read is named as before, and
+the attach fails in its own words. So a second Virtuoso session can be added to the settings while a run works.
+
+**Two Virtuoso sessions carry a run each** (2026-10-11, record 7.311; user, of a second Virtuoso opened beside the
+first: "do you think second virtuoso can be used for sizing? to accelerate", then "build that once B has landed").
+Until this record ONE lock stood for "Virtuoso": while a run held it, a Save task, a Check now, a baseline or a second
+run was refused through any connection. Now there are two kinds of lock in the adapter's state folder:
+- **A lock per Virtuoso session.** A connection names the bridge's settings file and a bridge profile; the keys
+  `VB_REMOTE_HOST_<profile>` and `VB_REMOTE_PORT_<profile>` say where that session's daemon listens. A connection without
+  a profile, or one whose host and port are the first session's, or one that cannot be told apart from it (no port, an
+  unreadable file) is the FIRST session and keeps the lock it always had, `session.lock` in the folder itself. Any other
+  is a further session with `sessions/<name>/session.lock` and its crash journals beside it; two profiles that reach
+  one daemon are one session (`paths.bridge_session_key`, `bridge_session_dir`). One process at a time drives a
+  session.
+- **A lock per cell**, `cells/<library>/<cell>.lock`. Each Virtuoso session keeps its own copy of an open cell in
+  memory, and the second to save would write over the first, so a cell is worked on by one process at a time whatever
+  the session. The adapter of a form-written task holds it from before its connect to after its close
+  (`cdf_write.CdfBridgeBackend`, `cell_lock`); Save task's write process holds the locks of the cell, of its copy's
+  name and of the bench.
+So a run through a connection of the second session starts while the first session is running another circuit, and is
+refused - in words, before anything is read or written - when its own session or its own cell is in use: Check now's
+step "Another real run is using Virtuoso" names the lock that is held and the process holding it, the corner check
+and Save task say the same. A task written by the older adapter of the optimizer package (none is registered today),
+which takes no lock of its cell, runs in the first session only. The optimizer package is not touched: its adapter
+takes the lock of the state folder it is handed. What a second session needs besides: its own connection in the
+connection file (the same link and model file, the session's bridge profile), its daemon loaded in that Virtuoso with
+the nonce cache raised like the first, and for a queue the copy of the queue script that watches that session's lock.
+
 **The scheduler, 2026-10-08** (records 7.280-7.282; measured on the twelve 800-evaluation runs of the night before: at
 4 lanes the scheduler thread was busy 49-62 % of the time - the learner's 8 updates per result alone 34-48 % - and only
 1.2-2.1 of the 4 lanes simulated on average):
@@ -2148,6 +2219,25 @@ and both hashes are unchanged for SAC (the block was hashed as absent at its def
 still sends a removed method is refused at Start with "reload the page", and the page drops the block from the
 configuration it keeps when it loads (`store.ts` `migrateConfig`). See [LLM sizing](llm-sizing.md) for the methods as
 they were.
+
+**A comparison method: Bayesian optimization (2026-10-10, record 7.304).** SAC stays the search method of the page. For
+the transfer experiment's question "is SAC better than Bayesian optimization, from scratch" (user: "different opt on one
+circuit from scratch (sac bayesian)") a configuration file may say `run.optimizer: "bayes"`; the page has no box for it.
+Such a run is the same run in everything but who proposes the designs: the same task, environment, reward, lanes, budget
+and recorded tables, and the same random warm-up designs for the same seed. After the warm-up each design comes from
+`gator_workbench/bayes.py` instead of the policy, every finished design and its reward is told to it (a design whose
+simulation failed counts as the worst seen), and the network is neither asked nor trained - the run records no learner
+update and its saved model is the untrained start. The method is TuRBO-1 in its one-design-at-a-time form: a Gaussian
+process (Matern-5/2, one length scale per variable) fitted on the designs so far, a trust region around the best design
+that doubles after 3 improvements in a row and halves after max(4, variables) designs without one, a fresh start from
+random designs when it has shrunk to nothing (event `bayes_region_restarted`), and Thompson sampling inside it; its own
+first designs are 2 x the number of variables in all, the run's warm-up designs counted. Written with torch only: no
+package was added. In the tables its designs carry the action source `bayes_opt`; the run's manifest says
+`architecture.optimizer`. Limits, on purpose: from scratch only (`bayes_needs_scratch` otherwise), and the run cannot be
+resumed, because the search state lives in the run's process. A configuration that does not name an optimizer is a SAC
+run and keeps its hashes. Checked on functions whose optimum is known before any simulation (Hartmann-6: 3.20 to 3.32 of
+3.32 in 150 designs, random search 1.4 to 2.8; a 20-variable Ackley: -2.0 to -2.3 of 0 in 400 designs, random search
+about -10.5; 0.34 s per design at 27 variables and 800 designs).
 
 ### Run configuration and the RL model window (2026-10-02, record 7.150; renewed 2026-10-07, record 7.265)
 
@@ -2806,6 +2896,22 @@ writes the task's own again; change those in the task file. A spec over several 
 Until 2026-09-22 the block had three buttons, **Read setup**, **Use in editors** and **Write to Virtuoso**; the user
 asked for fewer, as the flow has it: Save task writes the copy anyway, and reading now takes over in the same press.
 
+**The helper process a Maestro session leaves behind** (record 7.315, user request 2026-10-11). Reading or writing
+the Maestro test, and netlisting it at Save task and before a run, opens the testbench's Maestro setup in a background
+session and closes it again. For every such session Virtuoso starts a helper process of its own on its host - a second,
+windowless `virtuoso` of 0.3 to 0.5 GB - and the close should end it. Mostly it does, within a second. But some helpers
+are never told to end and stay, with their memory, until somebody removes them by hand or Virtuoso exits: of 204 helpers
+one Virtuoso started in a day, 12 were still there the next day, and with a second session's they were 14 processes
+holding 4.7 GB on a 24 GB simulator machine that ran out of memory twice that day (2026-10-11). So every close is
+followed by a look at these helpers, made by Virtuoso itself on its own host. A helper is removed only when Virtuoso has
+**no Maestro session and no ADE window open** - then no helper can be in use - and the helper belongs to this Virtuoso
+(or to one that no longer runs), was there right after the close and is still there 3 seconds later; one that is ending
+by itself is left to end. While you keep a Maestro window open, nothing is looked at and nothing is removed. No other
+process is ever touched. What was removed, and how much memory it gave back, is one line in the step's `bridge.log`.
+The look cannot fail the read or write it follows: if it cannot be made, nothing is removed and the work goes on. It
+costs half a second after a close, three when a helper has to be removed, and it runs only when the workbench closes a
+Maestro session - a run started from an older copy of the code does not make it.
+
 **Starting a circuit that does not start by itself: initial conditions** (added 2026-09-22, user request). An
 oscillator has a symmetric DC operating point and stays in it for the whole simulation, so a ring oscillator measured
 through Maestro reported "eval err" for its frequency until now. A task can therefore carry **initial conditions**: a
@@ -2975,8 +3081,9 @@ close). A passed check is kept in the run's manifest (`consistency_check`, for a
 part 2 alone) runs all three parts on its own: free, read-only, no simulation. Its result goes as soon as a row changes.
 Without a connection it compares the rows and says the rest needs one.
 
-**When another real run holds Virtuoso** (record 7.207). Only one process works on Virtuoso at a time: every real run,
-Corner check and check takes the run adapter's session lock (`session.lock` in the folder "Adapter state"). When it is
+**When another real run holds Virtuoso** (record 7.207). Only one process works in a Virtuoso session at a time, and
+one on a cell: every real run, Corner check and check takes the run adapter's session lock (`session.lock` in the folder
+"Adapter state"; a second Virtuoso session has its own, and every cell has one - record 7.311). When one of them is
 taken, the check reads nothing from Virtuoso and says so in one step, "Another real run is using Virtuoso": who holds
 the lock (a run started from a workbench page, from a command line, a Corner check, or another check; its process
 number, start time and command line, read from `/proc/locks` without taking the lock) and that nothing in the task needs
@@ -3027,7 +3134,14 @@ callbacks - and differs only in the deck each evaluation simulates and in how it
   results go with `ocnResetResults()` (record 7.294): every folder opened stayed in Virtuoso's memory, about 260 KB per
   evaluation (76.5 MB over 300 folders, nothing given back by `gc()`; Virtuoso had reached 10.2 GB after a day of runs).
   With the reset the same test grew it by nothing and measured faster (35 ms against 50 ms), the values identical on
-  20 folders; `closeResults(dir)` released it as well, at 630 ms a call.
+  20 folders. That reset frees the waveforms, not the folder: OCEAN kept every result folder it had opened, and a run
+  opens a new one per design. Measured on 2026-10-11 on folders earlier runs had left (record 7.316): 284 KB per design
+  on the flip-flop's one transient and 475 KB on a folded-cascode amplifier's six analyses, steady over 300 new folders
+  each, nothing for a folder opened a second time - the growth that took a Virtuoso from 0.5 to 12.8 GB in a day of
+  runs. The measurement therefore closes the folder as its last step (`closeResults(dir)`, after the values are read and
+  inside `errset`): 1 and 6 KB per design, every value identical on 280 folders of three circuits, 1 to 15 ms a design.
+  Writing sizes (open, PDK callbacks, check, save), the whole-cell read and the netlisting were measured the same way
+  and do not grow Virtuoso.
 * **The simulator mode: plain Spectre.** The optimizer's runs use plain Spectre; Maestro's default is APS, a faster engine
   that takes other time steps (448 against 575 on the ring oscillator), so its numbers differ in the last digits and more
   in fast transients. Writing a task's Maestro test therefore also sets plain Spectre, reads it back and compares it;
@@ -3067,7 +3181,9 @@ its own view: see "Transferable network inputs".
 `python -m gator_workbench.cli pretrain REQUEST.json --output NEW_DIRECTORY` audits an explicitly pinned set of
 archives and trains the existing SAC learner without a simulator. `--audit-only` writes the pool inventory, shared
 registry and deterministic episode split without updating a network. The JSON request contains `origin`, `runs`
-(`run_dir`, `archive_sha256`), `reference_overrides`, optional `relabel_upper` by task/metric, `seed`,
+(`run_dir`, `archive_sha256`), `reference_overrides`, optional `relabel_upper` by task/metric (one more copy of each design of
+the task under other upper limits) or `relabel_targets` by task (record 7.312: a list of target sets, each
+`{metric: {"lower": x, "upper": y}}`; one more copy per set, re-scored under its limits - the multi-target models), `seed`,
 `holdout_fraction`, `model`, `sac` (gamma 0), `updates`, `batch_size` and `checkpoint_every`.
 
 Sources remain read-only. Mixed origins, reward settings, conflicting units, duplicate runs/candidates, changed

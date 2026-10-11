@@ -22,7 +22,7 @@ from . import families, network_inputs, pdk_record, saved_rows, spec_descriptors
 from .pdk import label, parameter_facts
 from .profile_store import task_spec_registry
 from .schema import WorkbenchConfig
-from .spec_equations import parse
+from .spec_equations import parse, parse_size_formula, size_matches
 from .task_registry import verified_spec_registry
 
 FEATURE_PARAMETER_KINDS = ('w', 'l', 'm', 'nf', 'r', 'c', 'ind', 'dc')
@@ -391,6 +391,23 @@ def _check_measurements(config, report, *, provided_metrics):
                 report.add('blocker', 'ade_outputs_not_wired', path + '.result_source',
                            f'The Maestro output {m.source_name!r} is measured only by a task saved with it (Save task): this '
                            'circuit does not measure it.')
+        elif m.result_source == 'size_estimate':                   # worked out from the sizes, never simulated (record 7.308)
+            if not m.source_name:
+                report.add('error', 'missing_source_name', path + '.source_name',
+                           'A probe that measures the sizes needs a name for its value (source name)')
+            elif provided_metrics is not None and m.source_name in provided_metrics:
+                report.add('error', 'size_probe_name_is_a_result', path + '.source_name',
+                           f'{m.source_name!r} is the name of a result the simulation returns: give the size probe its own name')
+            patterns, why = parse_size_formula(m.signal)
+            if why is not None:
+                report.add('error', 'size_formula_rejected', path + '.signal', f'{m.measurement_id}: the size formula - {why}')
+            else:
+                varied = [p.instance_path for p in config.parameters if p.parameter_name == 'w' and p.optimized]
+                for pattern in patterns:
+                    if not any(size_matches(pattern, instance) for instance in varied):
+                        report.add('error', 'size_pattern_matches_nothing', path + '.signal',
+                                   f'{m.measurement_id}: no width the task varies is on an instance named {pattern!r} '
+                                   '(a size formula sees only the widths in the Parameters rows)')
     return ids
 
 
@@ -446,7 +463,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
         if t.metric_id in measurement_ids and equation != t.metric_id:
             report.add('error', 'spec_name_is_a_probe', path + '.metric_id',
                        f'{t.metric_id!r} is the ID of a Probe, but this spec computes {equation!r}. Give the spec its own name.')
-        result_backed = probe is not None and probe.result_source in ('backend_profile', 'ade_output') and probe.source_name == t.metric_id
+        result_backed = probe is not None and probe.result_source in ('backend_profile', 'ade_output', 'size_estimate') and probe.source_name == t.metric_id
         if provided_metrics is not None and t.metric_id in provided_metrics and not result_backed:
             report.add('error', 'spec_name_is_a_result', path + '.metric_id',
                        f'{t.metric_id!r} is the name of a result the simulation returns, but this spec computes {equation!r}. '
@@ -672,6 +689,16 @@ def _check_network_inputs(config, report, graph):
                        + (f'PDK {pdk_id} is not loaded; loading it (PDK window) gives its bipolars, diodes and varactors their '
                           'families.' if not loaded else 'the rules of the family list could not classify them (their model '
                           'facts are in the PDK window).'))
+    if config.run.optimizer == 'bayes':                       # record 7.304
+        if config.run.mode != 'scratch':
+            report.add('blocker', 'bayes_needs_scratch', 'run.mode',
+                       'Bayesian optimization (run.optimizer "bayes") proposes the designs itself: it starts from scratch '
+                       'and loads no saved model. Choose New model, or the SAC optimizer.')
+        else:
+            report.add('info', 'bayes_run', 'run.optimizer',
+                       'This run is searched by Bayesian optimization, not by the network: the same task, reward, lanes and '
+                       'budget, the same random warm-up designs for the same seed. The network is neither asked nor trained, '
+                       'so the run saves no model worth loading, and it cannot be resumed.')
     if network_inputs.any_transfer(network) and config.run.rehearsal is not None:
         report.add('blocker', 'rehearsal_with_transfer_inputs', 'run.rehearsal',
                    'Rehearsal mixes in recorded transitions of other tasks, and those would need the view of their own task '

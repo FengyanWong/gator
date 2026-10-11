@@ -8,7 +8,7 @@ import { SavedModels } from './ModelChooser';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Check, LookFold, Num } from './fields';
-import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, STANDARD_INPUTS, TRANSFERABLE, TRANSFER_TITLE, inputsChoice,
+import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_CHOICES, STANDARD_INPUTS, TRANSFER_TITLE, inputsChoice,
   inputsText } from './rlModelText';
 import { NoModeNote } from './RunConfiguration';
 import type { RlModel } from './useRlModel';
@@ -109,8 +109,9 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         <option value="none">None</option><option value="rwse">Random-walk returns (2, 4, 8, 16 steps)</option></select></label>}
       {entry?.experimental && <p className="hint encoder-experimental">Experimental encoder. Transfer performance and these starting settings have not been validated.</p>}
       <label title={TRANSFER_TITLE}>Network inputs<select className="network-inputs" value={inputsChoice(net)}
-        onChange={e => setNet(e.target.value === 'transferable' ? TRANSFERABLE : STANDARD_INPUTS)}>
+        onChange={e => setNet(INPUT_CHOICES[e.target.value] ?? STANDARD_INPUTS)}>
         <option value="standard">Standard</option><option value="transferable">Transferable (any spec list, any PDK)</option>
+        <option value="transferable2">Transferable 2 (+ bench sources, net tags, operating-point ratios)</option>
         {inputsChoice(net) === 'custom' && <option value="custom" disabled>Custom (set in the configuration file)</option>}</select></label>
       <Check label="Nominal device operating points" value={net.operating_points ?? false} onChange={v => setNet({ operating_points: v })}
         title="Measured nominal device values and validity masks. Corner operating points are recorded but never replace the nominal network input. Changing this changes the model input schema." />

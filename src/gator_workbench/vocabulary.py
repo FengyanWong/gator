@@ -157,7 +157,10 @@ def schema_label(feature_schema) -> str:
     inputs of record 7.298 its version names after a "+" (sizes relative to the PDK, device model features)."""
     version, _, inputs = (feature_schema or {}).get('version', '').partition('+')
     extra = ''.join(f', {words}' for words in (('sizes relative to the PDK',) if 'pdk-relative-sizes' in inputs else ())
-                    + (('device model features',) if 'device-model-features' in inputs else ()))
+                    + (('device model features',) if 'device-model-features' in inputs else ())
+                    + (('bench sources on their own scales',) if 'bench-features' in inputs else ())       # record 7.317
+                    + (('net tags by rule',) if 'net-roles-by-rule' in inputs else ())
+                    + (('operating-point ratios',) if 'op-ratios' in inputs else ()))
     if version == families.VERSION:
         return f'device families ({len(families.KINDS) - 1} kinds)' + extra
     if version.startswith('pdk-'):

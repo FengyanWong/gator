@@ -88,7 +88,8 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   const remember = (e: Json) => setNetSettings((s: Json) => s && ({ ...s, settings: { ...s.settings, [e.encoder_type]: e } }));
   // The component list is not a per-encoder setting: another encoder keeps the list that was chosen.
   const keepList = (network: Json) => ({ operating_points: network?.operating_points ?? false,
-    ...pick(network, ['spec_input', 'size_features', 'device_model_features']),      // the network inputs (record 7.298)
+    ...pick(network, ['spec_input', 'size_features', 'device_model_features',         // the network inputs (record 7.298)
+      'bench_features', 'net_roles', 'operating_point_ratios']),                       // and their second build (record 7.317)
     ...(network?.vocabulary && network.vocabulary !== 'standard' ? { vocabulary: network.vocabulary } : {}) });
   // A new model is built with the device families (record 7.298): a template used in New model brings them when the list is still the standard one.
   const newModelList = (c: Json) => c.run.mode === 'scratch' && (c.run.network?.vocabulary ?? 'standard') === 'standard' ? { vocabulary: 'families' } : {};

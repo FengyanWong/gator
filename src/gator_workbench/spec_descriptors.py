@@ -398,6 +398,30 @@ def describe_specs(config, bench=None):
     return described
 
 
+def measured_nets(config) -> tuple:
+    """The nets whose voltage the probes of the ACTIVE specs read (record 7.317: the "output" tag of the net-role
+    rule), as graph net names: an OCEAN signal path "/VOUT" is the net VOUT, "/DUT/X" the net DUT/X. A probe without an
+    expression this module reads (a built-in analyzer's, an ngspice measure) names none."""
+    probes = {m.measurement_id: m for m in config.measurements}
+    found = set()
+    for target in config.targets:
+        if not target.active:
+            continue
+        equation = target.equation.strip()
+        names = [equation] if equation in probes else [n for n in (spec_equations.parse(equation)[0] or ()) if n in probes]
+        for name in names:
+            probe = probes[name]
+            if probe.result_source in ('backend_profile', 'size_estimate'):
+                continue
+            tree = parse_expression(probe.signal)
+            for node in (_walk(tree) if tree is not None else ()):
+                if node.kind == 'call' and node.value in _VOLTAGE:
+                    path = _first_string(node)
+                    if path:
+                        found.add(path.strip().lstrip('/'))
+    return tuple(sorted(found))
+
+
 def _first_at(text, name):
     match = re.search(r'(?<![\w.])' + re.escape(name) + r'(?![\w])', text)
     return match.start() if match else len(text)

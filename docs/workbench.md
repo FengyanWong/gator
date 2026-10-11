@@ -2242,7 +2242,8 @@ about -10.5; 0.34 s per design at 27 variables and 800 designs).
 ### Run configuration and the RL model window (2026-10-02, record 7.150; renewed 2026-10-07, record 7.265)
 
 Record 7.298 added one choice above "Nominal device operating points" (the Advanced fold stays directly below that box): **Network inputs** Standard / Transferable (the
-section "Transferable network inputs" below).
+section "Transferable network inputs" below). Record 7.317 added a third choice, **Transferable 2** (the section "The second
+build of the network inputs" below).
 
 Since record 7.228, the templates also offer **GraphGPS — port-aware** and
 **Parameter-group attention — experimental**. Both have per-encoder structural
@@ -2700,6 +2701,82 @@ evaluates, and an exact resume of one needs its own commit (`docs/decisions.md`)
 
 **Not shown yet:** that these inputs make a general model help on a new PDK or with new spec kinds. That is an
 experiment of its own (record 7.298: set against slots from scratch, a held-out spec kind, the AgenticSizing circuits).
+
+### The second build of the network inputs: bench sources, net tags by rule, operating-point ratios (added 2026-10-11, record 7.317)
+
+**In plain words.** The transferable inputs above made the specs and the sizes read the same on every task and PDK.
+Three things were still read in a way that did not carry over, and the third choice of **Network inputs**,
+**Transferable 2**, changes them together (`run.network.bench_features` = `relative`, `net_roles` = `rule`,
+`operating_point_ratios` = true, with the three settings of Transferable; a configuration file may set them one by
+one, and the window then shows "Custom"):
+
+1. **The testbench's sources, on scales of their own.** The network always saw the testbench: a task's graph is its
+   circuit AND its bench, so the supply, the bias and load sources and the load capacitor are nodes. But every DC value
+   went into one column divided by 1, so a 50 uA bias current read as 0.00005 and 10 uA as 0.00001 - invisible beside
+   a 1.8 V supply reading 1.03. Now a current source's DC value is read in microamperes in a column of its own
+   (`idc`); a voltage source's DC value is also given as a share of the supply (`vrel`: the supply reads 1, a 0.9 V
+   common-mode level under a 1.8 V supply 0.5); a source's AC magnitude (`ac`) and the two levels of a step (`ilow`,
+   `ihigh` in microamperes; `vlow`, `vhigh` as shares of the supply) are columns; and a DC value the netlist gives as
+   a design variable of the test (`dc=il`) is read from the test's variables, unless an analysis sweeps it.
+2. **Net tags by one rule.** A task tags its nets when it is saved: ground on every task, the supply on a third of
+   them, nothing else - so the same supply net is marked on one task and plain on the next. With `rule` every net is
+   tagged from the graph alone, the same way on every task:
+
+   | Tag | A net gets it when |
+   |---|---|
+   | ground | the task tags it as ground, or it is named `0` or `gnd!` |
+   | supply | the supply source drives it |
+   | input | a source that carries a signal drives it: an AC magnitude, a waveform (pulse, sine, ...), or two different step levels |
+   | output | the probe of an active spec reads its voltage |
+   | bias | a DC source other than the supply drives it: a reference, a common-mode level, a bias or load current. A voltage source of 0 V is a probe and tags nothing |
+
+   A net may carry several tags (a supply with the AC stimulus on it is supply and input); every other net is a
+   plain one. **The supply** is found by one rule too: among the voltage sources at the top level with one pin on
+   ground and a DC value other than 0, the one on a net the task itself tags as the supply; else the one with the
+   largest DC value; of equals the one whose net touches the most pins (a supply rail feeds many devices, a reference
+   one gate). Nothing is read from a name.
+3. **Operating-point ratios.** The four numbers of a transistor's model (threshold voltage, mobility, saturation
+   velocity, oxide thickness) are the same for every design of a PDK: with two PDKs they tell the network which PDK it
+   is on and little more. With the ratios every MOS device also gets four numbers of the DESIGN, read at its simulated
+   operating point: gm/Id, gm/gds, |Vgs| - |Vth| and |Vds|/|Vdsat|. They mean the same in every PDK, and they change
+   with every design. The simulator's region comes with them (the optimizer's own operating-point input, its five
+   region columns only; all twelve when "Nominal device operating points" is on as well). A run with the ratios reads
+   every design's operating point, as a run with the operating points box does: for a Maestro task whose test saves
+   none, one short DC solve more per design. A design without an operating point (a failed simulation, a simulator
+   that gives none) shows the ratios as missing.
+
+**Where it happens.** At the network's input only, as the first build: `network_inputs.NetworkView` shows the network
+a view of each observation; the environment, the simulator, the replay and every recorded table keep the circuit as it
+was simulated. `bench_of_graph` reads the bench, `ruled_roles` the tags, `spec_descriptors.measured_nets` the nets the
+active specs' probes read, `bench_variables` the test's variables. The page's check says per task what the rule found
+("Bench sources on their own scales: ...", "Net tags by rule: ..."), with a warning when no supply or no output is
+found or a source's value cannot be read.
+
+**A model and its inputs.** The feature schema's version names each of the three (`+bench-features-v1`,
+`+net-roles-by-rule-v1`, `+op-ratios-v1`), so a model made with them loads only with them, and a model of the first
+build does not load with them; the saved-model facts and the next run's line say "transferable 2". All three are off
+by default and left out of a saved configuration while they are (its hashes are unchanged), and a view without them
+keeps the key it had, so every earlier run still resumes. Nothing under `src/analog_optimizer/` changed: the optimizer
+digest stays as it was.
+
+**Offline training** (`pretrain`): a request's `inputs` take the three settings. For the ratios every source must be a
+run that read operating points; one that did not is refused in words, unless the request says
+`"missing_operating_points": "mask"` - its designs then show the ratios as missing. A source that read operating
+points is no longer refused by a pool that does not use them (it was, until this record). The raw operating-point
+input is still not offered to a pool.
+
+**Not changed, on purpose.** What an action means: a position between a parameter row's own limits (CLAUDE.md: the
+action semantics are not changed to make a feature easier). Making an action mean the same size on two tasks is done
+where the tasks are made - a ported task keeps its ranges as the same multiples of the minimum size - not in the
+network. The parameter rows' own inputs (value, lower, upper, step) are unchanged; with sizes relative to the PDK they
+already read in multiples of the minimum.
+
+**Not built.** For ngspice tasks on another PDK: that PDK's minimum sizes and model numbers (its model library is not
+in Spectre's language, which the reader follows), and a description of a spec whose value comes from a benchmark's own
+evaluator. They belong to the parked SKY130 benchmark.
+
+**Not shown yet:** that the second build learns as well as the first from scratch, or carries over better. The
+transfer plan's step 3b measures both (`docs/plan-transfer-experiment.md`, section 6.3b).
 
 ### Device families: the component list of a new model (added 2026-10-10, record 7.298)
 
@@ -3176,7 +3253,9 @@ transitions = TrajectoryLoader('<run>').transitions()             # optimizer Tr
 ### Offline archive pretraining (2026-10-06, record 7.233)
 
 Since record 7.298 a request may train with the transferable network inputs (`inputs`), each source read through
-its own view: see "Transferable network inputs".
+its own view: see "Transferable network inputs". Since record 7.317 `inputs` also takes the second build's three
+settings, and a source that read operating points is accepted (for the operating-point ratios every source must have
+read them, or the request says `"missing_operating_points": "mask"`): see "The second build of the network inputs".
 
 `python -m gator_workbench.cli pretrain REQUEST.json --output NEW_DIRECTORY` audits an explicitly pinned set of
 archives and trains the existing SAC learner without a simulator. `--audit-only` writes the pool inventory, shared

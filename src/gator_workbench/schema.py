@@ -328,6 +328,22 @@ class NetworkConfig(_Model):
         "Add four technology numbers to every MOS device the network sees: threshold voltage, mobility, saturation "
         "velocity and oxide thickness of its model in the PDK's nominal section, at the smallest size the model covers. "
         "Needs the task's PDK loaded; the numbers stay in the local PDK folder and are never shown."))
+    # The second build of the network inputs (record 7.317; the page sets these three with the three above: "Network
+    # inputs: Transferable 2"). Each is off by default and left out of a saved configuration while it is.
+    bench_features: Literal['absolute', 'relative'] = Field('absolute', description=(
+        "What the network reads of the testbench's sources. absolute: every DC value in one column, divided by 1 - a "
+        'voltage in volts, and a current as if it were volts (50 uA reads as 0.00005). relative: a current source in '
+        "microamperes in a column of its own; a voltage source also as a share of the supply (the supply reads 1); a "
+        "source's AC magnitude and the two levels of a step as columns; a DC value the test gives as a design variable "
+        'read from the test. The supply is found by one rule on the circuit.'))
+    net_roles: Literal['task', 'rule'] = Field('task', description=(
+        'Which nets the network sees tagged. task: the tags the task was saved with (ground everywhere, the supply on '
+        'some tasks). rule: one rule for every task - ground, supply, input (a source carrying a signal drives it), '
+        "output (an active spec's probe reads it), bias (another DC source drives it)."))
+    operating_point_ratios: bool = Field(False, description=(
+        'Add four numbers of each transistor at the simulated operating point: gm/Id, gm/gds, |Vgs| - |Vth| and '
+        "|Vds|/|Vdsat|, with the simulator's region. They mean the same in every PDK. The run then reads every design's "
+        'operating point (a Maestro task: one short DC solve more per design when its test saves none).'))
     vocabulary: str = Field(STANDARD_VOCABULARY, max_length=80, pattern=r'^(standard|families|pdk:[A-Za-z_][A-Za-z0-9_.\-]{0,63})$',
         description='Which components the network knows. families: the device families every PDK maps into (nMOS, pMOS, '
                     'npn, pnp, diode, varactor, resistor, capacitor, inductor, sources), the list of a new model since '
@@ -748,8 +764,9 @@ def _hashed(data):
             network.pop('vocabulary')
         if network.get('operating_points') is False:
             network.pop('operating_points')
-        for key, default in (('spec_input', 'slots'), ('size_features', 'absolute'), ('device_model_features', False)):
-            if network.get(key) == default and type(network.get(key)) is type(default):      # record 7.298
+        for key, default in (('spec_input', 'slots'), ('size_features', 'absolute'), ('device_model_features', False),
+                             ('bench_features', 'absolute'), ('net_roles', 'task'), ('operating_point_ratios', False)):
+            if network.get(key) == default and type(network.get(key)) is type(default):      # records 7.298, 7.317
                 network.pop(key)
         if network.get('structural_encoding') in (None, 'none') and network.get('encoder_type') not in GLOBAL_ENCODERS:
             network.pop('structural_encoding', None)

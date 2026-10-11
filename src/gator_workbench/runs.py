@@ -567,7 +567,7 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
             or config.run.network.operating_points != previous.run.network.operating_points
             or network_inputs.transfer_settings(config.run.network) != network_inputs.transfer_settings(previous.run.network)):
         raise RunRejected('Reward settings, condition plan and the network inputs (operating points, spec input, sizes, '
-                          'device model features) cannot change on exact resume. Use fine_tune with a compatible actor and '
+                          'device model features, bench sources, net tags, operating-point ratios) cannot change on exact resume. Use fine_tune with a compatible actor and '
                           'fresh critics/replay.', code='reward_contract_changed')
     recorded = network_inputs.read_run_record(run_dir)
     if recorded is not None and recorded.get('view_key') != getattr(network_inputs.view_for(previous), 'key', None):

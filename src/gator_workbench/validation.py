@@ -635,6 +635,45 @@ def _check_vocabulary(report, run, record):
                        'with it loads only with this list, and models trained with the standard list do not load with it.')
 
 
+def _check_second_build(config, report, graph, settings):
+    """The second build of the network inputs (record 7.317), said per task: which source the rule takes as the supply,
+    what each tagged net is, and what a run with the operating-point ratios reads."""
+    bench, rule = settings['bench_features'] == 'relative', settings['net_roles'] == 'rule'
+    if (bench or rule) and graph is not None:
+        found = network_inputs.bench_of_graph(graph, network_inputs.bench_variables(config))
+        supply = (f'{found.supply_source} on {found.supply_net}, {units.text(found.supply_v, "V")}'
+                  if found.supply_source else None)
+        if bench:
+            currents = sum(1 for s in found.sources if s.kind == 'isource')
+            unread = sorted(s.id for s in found.sources if s.dc is None and not s.signal)
+            report.add('info', 'bench_features_relative', 'run.network.bench_features',
+                       f'Bench sources on their own scales: {len(found.sources)} at the top level, {currents} of them current '
+                       'sources read in microamperes; ' + (f'voltages are also given as a share of the supply ({supply}).'
+                                                           if supply else 'no supply was found.'))
+            if supply is None:
+                report.add('warning', 'bench_supply_unknown', 'run.network.bench_features',
+                           'No supply was found: the circuit has no voltage source at the top level with one pin on ground and '
+                           'a DC value. Voltages are then given in volts only, not as a share of the supply.')
+            if unread:
+                report.add('warning', 'bench_value_unread', 'run.network.bench_features',
+                           f"The DC value of {', '.join(unread)} is not a number in the netlist and not a variable of the "
+                           'test with one value: the network sees it as missing.')
+        if rule:
+            roles = network_inputs.ruled_roles(graph, found, spec_descriptors.measured_nets(config))
+            said = '; '.join(f"{net}: {' and '.join(tags)}" for net, tags in sorted(roles.items()))
+            report.add('info', 'net_roles_by_rule', 'run.network.net_roles',
+                       'Net tags by rule (every other net is a plain one): ' + (said or 'none found') + '.')
+            if not any('output' in tags for tags in roles.values()):
+                report.add('warning', 'net_roles_no_output', 'run.network.net_roles',
+                           "No net is tagged as an output: no active spec's probe reads a node voltage this workbench can "
+                           'follow (a built-in analyzer, an ngspice measure, or a current or loop-gain probe only).')
+    if settings['operating_point_ratios']:
+        report.add('info', 'operating_point_ratios', 'run.network.operating_point_ratios',
+                   "Operating-point ratios: each design's operating point is read after its simulation, and every transistor "
+                   'gets gm/Id, gm/gds, |Vgs| - |Vth| and |Vds|/|Vdsat| with its region. A design whose operating point is not '
+                   'there (a failed simulation, a simulator that gives none) shows them as missing.')
+
+
 def _check_network_inputs(config, report, graph):
     """The transferable inputs of record 7.298: what the network reads of each spec (on its Specs row), and whether the
     task's PDK gives every MOS model of the circuit the numbers the size and device-model inputs need (names and counts
@@ -674,6 +713,7 @@ def _check_network_inputs(config, report, graph):
                            f"four technology numbers of {', '.join(found['missing_numbers'])}"
                            + ('; the network sees those inputs as missing on these devices.' if level == 'warning' else
                               '; none of this circuit\'s MOS models has them. Switch the device model features off.'))
+    _check_second_build(config, report, graph, settings)
     vocabulary = getattr(network, 'vocabulary', 'standard') or 'standard'
     if vocabulary == 'standard' and config.run.mode == 'scratch':
         report.add('warning', 'standard_list_new_model', 'run.network.vocabulary',
@@ -704,7 +744,7 @@ def _check_network_inputs(config, report, graph):
                    'Rehearsal mixes in recorded transitions of other tasks, and those would need the view of their own task '
                    '(their spec descriptions, their PDK): not built yet for the transferable network inputs. Switch '
                    'rehearsal off, or use the standard inputs.')
-    if network.operating_points and network_inputs.maestro_dc_operating_point(config) == 'added':
+    if network_inputs.reads_operating_points(network) and network_inputs.maestro_dc_operating_point(config) == 'added':
         report.add('info', 'dc_operating_point_added', 'parameters',
                    "Operating-point inputs: this task's Maestro test does not save the DC operating point, so this run adds it "
                    'to the deck - one short DC solve more per evaluation; every other analysis and output stays as the test '

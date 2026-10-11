@@ -24,16 +24,22 @@ export async function readSavePoint(run_dir: string, checkpoint_id: string, fiel
 
 /** The network a saved model fixes, from its description (`POST /api/runs/model`): its encoder, `fields`, its structural
  *  input, whether it takes operating points and its network inputs (record 7.298: a spec set, sizes relative to the PDK,
- *  device model features - read from the input schemas its contract records); null when the description names no encoder. */
+ *  device model features; record 7.317: bench sources, net tags by rule, operating-point ratios - read from the input
+ *  schemas its contract records); null when the description names no encoder. */
 export function networkOf(description: Json, fields: string[]): Json | null {
   const saved = description?.contract?.model_config;
   const version: string = description?.contract?.feature_schema?.version ?? '';
   return saved?.encoder_type ? { encoder_type: saved.encoder_type, ...pick(saved, fields),
     structural_encoding: saved.structural_encoding ?? (saved.encoder_type === 'graph_gps' ? 'rwse' : 'none'),
-    operating_points: !!description.contract?.feature_schema?.op_columns?.length,
+    // The raw operating-point input holds the measured numbers (ids first); a model of the second build with the
+    // ratios alone holds only the region columns (record 7.317) and does not have the raw input.
+    operating_points: !!description.contract?.feature_schema?.op_columns?.includes('ids'),
     spec_input: description.contract?.spec_schema?.layout === 'spec-set-v1' ? 'set' : 'slots',
     size_features: version.includes('+pdk-relative-sizes') ? 'pdk_relative' : 'absolute',
-    device_model_features: version.includes('+device-model-features') } : null;
+    device_model_features: version.includes('+device-model-features'),
+    bench_features: version.includes('+bench-features') ? 'relative' : 'absolute',
+    net_roles: version.includes('+net-roles-by-rule') ? 'rule' : 'task',
+    operating_point_ratios: version.includes('+op-ratios') } : null;
 }
 
 /** The run settings with that save point as the source, its network and its component list: one change of the draft. */

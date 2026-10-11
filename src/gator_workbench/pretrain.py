@@ -75,12 +75,17 @@ class Pool:
 
 
 INPUT_KEYS = dict(spec_input=('slots', 'set'), size_features=('absolute', 'pdk_relative'), device_model_features=(False, True),
-                  vocabulary=('standard', 'families'))
+                  vocabulary=('standard', 'families'),
+                  # the second build (record 7.317)
+                  bench_features=('absolute', 'relative'), net_roles=('task', 'rule'), operating_point_ratios=(False, True))
+MISSING_OPERATING_POINTS = ('refuse', 'mask')
 
 
 def request_inputs(request) -> dict:
-    """The network inputs a request trains with (record 7.298): request['inputs'], every key optional, defaults = as
-    before. Operating points are not offered: no archive of a Maestro task holds them."""
+    """The network inputs a request trains with (records 7.298 and 7.317): request['inputs'], every key optional,
+    defaults = as before. The raw operating-point input is not offered. The operating-point ratios are, for sources whose
+    run read operating points (a run with `operating_points` or `operating_point_ratios`); a source that read none is
+    refused unless the request says `missing_operating_points: "mask"` - its designs then show the ratios as missing."""
     inputs = dict(request.get('inputs') or {})
     if set(inputs) - INPUT_KEYS.keys():
         raise ValueError(f'Unknown network inputs {sorted(set(inputs) - INPUT_KEYS.keys())}; known: {sorted(INPUT_KEYS)}')
@@ -116,6 +121,9 @@ def prepare_pool(request, *, progress=None):
         raise ValueError('Nonempty sources and a holdout_fraction between 0 and 1 are required')
     seed = request.get('seed', 0)
     inputs = request_inputs(request)
+    missing_points = request.get('missing_operating_points', 'refuse')
+    if missing_points not in MISSING_OPERATING_POINTS:
+        raise ValueError(f'missing_operating_points must be one of {MISSING_OPERATING_POINTS}')
     transfer = network_inputs.any_transfer(inputs) or inputs['vocabulary'] == families.NAME
     groups, registries, sources = defaultdict(lambda: defaultdict(list)), [], []
     run_ids, candidates, settings = set(), set(), None
@@ -139,8 +147,15 @@ def prepare_pool(request, *, progress=None):
                 'mock' if origin == 'synthetic' else 'real'):
             raise ValueError(f'Origin mismatch for {run_id}')
         network = manifest['architecture']['network']
-        if network.get('operating_points') or network.get('vocabulary', 'standard') not in ('standard', families.NAME):
-            raise ValueError('Offline pool currently requires the standard or family component list without operating points')
+        if network.get('vocabulary', 'standard') not in ('standard', families.NAME):
+            raise ValueError('Offline pool currently requires the standard or family component list')
+        # A source that read operating points keeps them in its recorded designs; the pool shows them only as the ratios
+        # of the second build (record 7.317), never as the raw input. Until then such a source was refused.
+        read_points = network_inputs.reads_operating_points(network)
+        if inputs['operating_point_ratios'] and not read_points and missing_points != 'mask':
+            raise ValueError(f'{run_id} read no operating points, and this request trains with the operating-point ratios: '
+                             'leave the run out, or say missing_operating_points "mask" (its designs then show the ratios '
+                             'as missing)')
         if inputs['spec_input'] == 'slots':
             metrics = manifest['architecture']['spec_schema'].get('metrics')
             if metrics is None:
@@ -194,7 +209,7 @@ def prepare_pool(request, *, progress=None):
         if archive_identity(directory) != source['archive_sha256']:
             raise ValueError(f'Archive changed while loading: {directory}')
         sources.append(dict(run_dir=str(directory), run_id=run_id, task=task,
-                            archive_sha256=source['archive_sha256'],
+                            archive_sha256=source['archive_sha256'], **({'operating_points': True} if read_points else {}),
                             evaluations=summary['totals']['candidate_evaluations_charged'],
                             eligible=len(transitions), excluded=len(raw) - len(transitions),
                             relabeled=counts['relabeled']))
@@ -207,7 +222,7 @@ def prepare_pool(request, *, progress=None):
     training, validation, split = _split_episodes(groups, schema, seed, fraction)
     audit = dict(format='gator-offline-pool-v1', origin=origin, seed=seed, holdout_fraction=fraction,
                  request_sha256=identity(request), sources=sources, spec_schema=asdict(schema),
-                 feature_schema=asdict(features), inputs=inputs, reward_settings=asdict(settings),
+                 feature_schema=asdict(features), inputs=network_inputs.as_recorded(inputs), reward_settings=asdict(settings),
                  source_evaluations=sum(s['evaluations'] for s in sources), new_simulator_launches=0,
                  eligible=sum(s['eligible'] for s in sources), excluded=sum(s['excluded'] for s in sources),
                  relabeled=sum(s['relabeled'] for s in sources),

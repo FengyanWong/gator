@@ -479,7 +479,8 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
         # its decks load only the parts of the model file it uses (7.154)
         model_library.attach(profile, config, reference=reference, structure=structure.read_text())
         # a Maestro task reads its operating points for a network that uses them (record 7.298)
-        profile.read_operating_points = bool(run_settings.network.operating_points)
+        # the raw input (record 7.298) or the ratios of the second build (record 7.317)
+        profile.read_operating_points = bool(run_settings.network.operating_points or run_settings.network.operating_point_ratios)
         return _with_computed_specs(factory_class(profile)(config, profile, compiled.specs, Path(work_root), adv.episode_length,
                                                            adv.simulation_timeout_seconds, reference,
                                                            reward_settings=RewardSettings(**run_settings.reward.model_dump())), compiled)

@@ -2,6 +2,18 @@
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
+- **A second build of the network inputs (7.317, 2026-10-11; user: "fix everything this chat mentioned for the encoder
+  networks input ... use the new encoder in the next coming experiment step"):** workbench only - the optimizer package
+  and its digest (`6724e52b9ce8bcbb...`) are unchanged. Three settings of `run.network`, off by default and hashed as
+  absent while off: `bench_features` relative (a current source in microamperes in its own column, where 50 uA read as
+  0.00005; a voltage source also as a share of the supply; AC magnitude and step levels), `net_roles` rule (ground,
+  supply, input, output, bias by one rule on every task) and `operating_point_ratios` (gm/Id, gm/gds, overdrive,
+  Vds/Vdsat of every transistor of the simulated design). The page's third choice "Transferable 2" sets them with the
+  first build's three; a model made with them loads only with them. Offline pools take them and take runs that read
+  operating points. NOT changed, on purpose: what an action means (CLAUDE.md's rule), so "one range for every task"
+  stays a rule for how ported tasks are made. Not built: the same for ngspice tasks of another PDK (the parked SKY130
+  benchmark). No advantage is claimed: the transfer plan's step 3b (24 runs, proposed) measures whether the second
+  build learns as well as the first and what the ratios add; from step 3b on new models use it (user).
 - **A netlist comparison that reads numbers (7.309, 2026-10-11; user: "but 14.05 is the same as 14.050", then "B"):** the
   optimizer package changed on purpose - `backends/native_preparation.py`: `first_difference` takes a parameter's number
   spelled in two ways as one value (`same_statement`: exact decimals, everything else text) - so the source digest moved

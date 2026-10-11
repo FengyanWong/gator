@@ -16,6 +16,13 @@ first"):** the old steps 2 and 3 changed places - the new targets are step 2, SA
 3 - and the new-target step begins with a logic cell, the flip-flop DFFRX1 (section 6.2.1). Records 7.301 to 7.304
 carry the old numbers; the windows' folders and the run names of section 13 were renamed the same evening.
 
+**Revised 2026-10-11 (record 7.317, session "Circuit training and SAC RL graph transformer"; user: "fix everything this
+chat mentioned for the encoder networks input. update the experiment plan, add a new section step for comparing new and
+old encoder input builds. use the new encoder in the next coming experiment step"):** a second build of the network
+inputs exists (section 4); a new step 3b compares it with the first build, before step 4 (section 6.3b); from step 3b
+on every new model is made with it. The step is numbered 3b so that steps 4 to 6, their run names and their folders
+keep their numbers.
+
 It follows [the encoder comparison](plan-encoder-comparison.md) and [its additions](plan-encoder-comparison-additions.md)
 (records 7.256, 7.273-7.289, 7.293, 7.295) and rests on the three changes landed on 2026-10-10: the transferable network
 inputs (7.298), a missing value counted as a failed row (7.299) and the four AgenticSizing circuits rebuilt from their
@@ -32,12 +39,15 @@ Six questions, one step each. Round 1 runs every comparison once; round 2 repeat
 | 1 | Do GT and GraphGPS differ with the new network inputs, and do the new inputs learn as well as the old ones? | 4 core + 4 AgenticSizing | GT and GraphGPS | 20 | about 7 h |
 | 2 | Does a trained model reach a new target faster than starting over? | logic cell DFFRX1 first, then OTA5t, RING3, LDO1 | GraphGPS | 19 + 3 probes | about 4.3 h |
 | 3 | Is SAC better than Bayesian optimization, from scratch? | AgenticSizing LDO | GT (SAC) | 9 | about 1.7 h |
-| 4 | Does a gpdk045 model help on the same circuit in a second PDK? | OTA5t, RING3, LDO1, ported | GraphGPS | 9 + 3 probes | about 2.5 h |
+| 3b | Does the second build of the network inputs learn as well as the first, and what do the operating-point ratios add? | OTA5t, RING3, LDO1 at an eased limit | GraphGPS | 24 | about 5.2 h |
+| 4 | Does a gpdk045 model help on the same circuit in a second PDK, and does the second input build carry over better than the first? | OTA5t, RING3, LDO1, ported | GraphGPS | 12 + 3 probes | about 3.2 h |
 | 5 | Does one general model beat starting over on an unseen circuit in the known PDK? | telescopic cascode | GraphGPS | 2 + 1 probe | about 0.75 h |
 | 6 | Does the same general model beat starting over on the AgenticSizing circuits? | 4 AgenticSizing | GraphGPS | 4 + 4 probes | about 2 h |
 
 Round 1: **63 runs and 11 probes, about 54,400 simulated designs, about 18.2 h** of simulation (section 9). The times of
 the published and the ported circuits and of the logic cell are estimates until their first runs.
+Added 2026-10-11 (record 7.317): step 3b's 24 runs and three more runs in step 4; section 9 holds the totals as they
+stand.
 
 ## 2. Words used
 
@@ -89,6 +99,16 @@ The published circuits as they stand (record 7.300):
   pdk_relative, `device_model_features` true) and the family component list. Steps 2 and 4 to 6 need them: a model with the old
   inputs loads only on a task with the same spec names and reads sizes in micrometres. One arm of step 4 differs on
   purpose (absolute sizes, no device numbers).
+  **Changed on 2026-10-11 (record 7.317, user: "use the new encoder in the next coming experiment step"): from step 3b
+  on every new model is made with Network inputs Transferable 2** - the three settings above and three more:
+  `bench_features` relative (a bias current is read in microamperes in a column of its own, where it read as 0.00005
+  in the column of volts; a voltage source also as a share of the supply; a source's AC magnitude and a step's two
+  levels), `net_roles` rule (ground, supply, input, output and bias tagged by one rule on every task, where the tasks
+  themselves tag ground everywhere and the supply on a third of them) and `operating_point_ratios` true (gm/Id,
+  gm/gds, overdrive and Vds/Vdsat of every transistor at the simulated operating point, with its region). Steps 1 to
+  3 ran with the first build and stay as recorded. Arms that differ on purpose: the first-build arms of step 3b and of
+  step 4 (the comparison), step 3b's arm without the ratios, step 4's absolute-sizes arm, and the general model of
+  steps 5 and 6 as section 6.5 says.
 - **A run:** 800 designs; the presets' training numbers (learning rate 1e-3, initial alpha 0.01, 8 updates per design,
   gamma 0, batch 8, warm-up 8, replay 10,000, episode 4); the page's reward; the lanes each task ran with before (4).
 - **A loaded run:** the same numbers, target-only replay, the loaded temperature carried (the recipe of record 7.262).
@@ -100,6 +120,10 @@ The published circuits as they stand (record 7.300):
   of a real run (a number spelled in two ways is one value): no network, reward or learning code, so the steps stay
   comparable; a model saved in step 1 fine-tunes and evaluates under the new digest, an exact resume of one needs the
   first copy.
+  **Step 3b and later (record 7.317):** a third frozen copy, made after that record has landed (it also holds
+  records 7.315 and 7.316, without which Virtuoso grows with every design). The second build is workbench code only:
+  the digest stays `6724e52b...`. A configuration written by the new code names the three new settings, and an older
+  copy refuses them - the new runs go from the new copy only.
 
 ## 5. How a run is judged
 
@@ -343,7 +367,71 @@ that was saved or run. Now, per circuit, three tasks - Save as copies of the sav
 - The Bayesian optimizer exists since record 7.304 (section 8, item 1): `run.optimizer: "bayes"` in the run's
   configuration file; its full regression and browser batch are owed before this step starts.
 
-### 6.4 Step 4: the same circuit in a second PDK (9 runs, 3 probes)
+### 6.3b Step 3b: the second build of the network inputs against the first (24 runs)
+
+User, 2026-10-11: "fix everything this chat mentioned for the encoder networks input. update the experiment plan, add a
+new section step for comparing new and old encoder input builds. use the new encoder in the next coming experiment
+step". Record 7.317. **Status: the inputs are built; no task is changed, no run is queued.**
+
+- **What changed in the inputs**, in plain words (the record has the detail):
+
+  | The first build reads | The second build reads |
+  |---|---|
+  | a bias current of 50 uA as 0.00005: currents share one column with voltages, divided by 1 | the current in microamperes, in a column of its own |
+  | a voltage source in volts | also its share of the supply; a source's AC magnitude and the two levels of a step |
+  | the net tags each task was saved with: ground on all 66 tasks, the supply on 22, nothing else | one rule on every task: ground, supply, input, output, bias |
+  | sizes, and four numbers of a transistor's model that are the same for every design of a PDK | also four numbers of each transistor at the simulated operating point (gm/Id, gm/gds, overdrive, Vds/Vdsat) and its region |
+
+  Not changed: how the specs and the sizes are read, and the action - a position between a row's own limits. The
+  repository's rule forbids changing what an action means, so "one range for every task" stays a rule for how a ported
+  task is made (section 6.4), not something built into the network.
+- **Question 1: does the second build learn as well from scratch?** It must, before a step is built on it.
+- **Question 2: what do the ratios add, and what do they cost?** They need every design's operating point - one DC
+  solve more where the test saves none, and one result file more to read - and no design recorded before this step
+  holds one (section 6.5).
+- **Tasks:** OTA5t `mscr_ota5t`, RING3 `mscr_ring3`, and LDO1 with the eased limit, `graphgps_ldo1_t2` - the LDO1 task
+  that passes from scratch (75 of 800 in step 2; at the saved limits no run passes and two builds could not be told
+  apart). They are step 4's three circuits.
+- **Arms: GraphGPS from scratch, 800 designs, the run settings of the recorded run of the task, seeds 0, 1 and 2:**
+
+  | Arm | Network inputs | Runs |
+  |---|---|---|
+  | `first` | Transferable, the first build | seed 0 is recorded (`tx1-ota5t-gps`, `tx1-ring3-gps`, `tx2-ldo1-psrr-scratch`); seeds 1 and 2 are run now, from the same code copy as the other two arms: 6 runs |
+  | `full` | Transferable 2 | 9 runs |
+  | `bench` | Transferable 2 without the operating-point ratios | 9 runs |
+
+  Three seeds, because one run does not separate two builds: two attempts of one seed on RING3 gave 94 and 161 passes
+  by design 635 (record 7.313).
+- **Before the runs (27 designs):** a nine-design run per task with Transferable 2 (`tx-prep-<circuit>-opcheck`: the
+  start and the eight random warm-up designs, so no proposal of a network is in it). It shows that the operating point
+  is read for every transistor of the circuit and what a design then costs in time; the check's "Net tags by rule"
+  line of each task is read once by a person and copied into the results.
+- **Judged by** (fixed before any result; section 5's measures):
+  - late passes, passes of 800 and the 50 % point of every run, and the median of each arm's three;
+  - an arm is **accepted** on a circuit when its median late passes are within 10 points of the first build's median
+    and its median 50 % point comes no more than 100 designs later (section 5's rule, on medians);
+  - two arms **differ** on a circuit only when all three runs of one lie above all three of the other, in late passes
+    or in passes of 800; anything less is written "no difference shown";
+  - the seconds per design of each arm: what reading the operating points costs.
+- **Where:** the review folder `artifacts/local/reviews/input-builds-2026-10-11/` - `make_configs_tx3b.py` (the 24
+  configurations and the three checks, each the recorded configuration of its task with the seed, the name and the
+  network settings changed), `jobs-tx3b.txt`, `check_opcheck.py`, `README.md` (how to start; nothing starts by itself).
+- **What follows** (proposed; the user confirms it with the result):
+  - `full` accepted on all three circuits: steps 4 to 6 use Transferable 2, as section 4 says;
+  - `full` not accepted on a circuit and `bench` accepted: steps 4 to 6 use Transferable 2 without the ratios;
+  - neither accepted: the first build stays, and the next step waits for the user.
+- **Second part, run with step 4 (3 runs, counted there):** a run from scratch on a known circuit says whether a build
+  learns, not whether it carries over. So step 4 has one more arm per ported circuit: fine-tune from a model of the
+  FIRST build, trained offline on the same recorded designs as the second build's model. The two fine-tune runs side
+  by side are this step's answer on another PDK.
+- **Produces:** the recorded designs with operating points that step 4's start models are trained on - arm `full`,
+  three runs per circuit.
+- **Limits:** three seeds; LDO1 on an eased limit and with a goal row; OTA5t ends near 95 % late passes with every
+  build, so it can show a loss and hardly a gain. The four numbers of a transistor's model are constants of a PDK:
+  with two PDKs they tell the network which PDK it is on and little more (section 6.4's limit). The ratios change with
+  every design and do not have that limit.
+
+### 6.4 Step 4: the same circuit in a second PDK (12 runs, 3 probes)
 
 - **Build:** OTA5t, RING3 and LDO1 with the second foundry's 1.8 V transistors: the same schematic and bench, the size
   ranges as the same multiples of the minimum size, one Spectre check per bench (it converges, the probes compute), no
@@ -357,10 +445,20 @@ that was saved or run. Now, per circuit, three tasks - Save as copies of the sav
   | Scratch | a fresh GraphGPS network |
   | Fine-tune, relative sizes | a gpdk045 model of the circuit that reads sizes relative to the PDK's minimum, with the device numbers |
   | Fine-tune, absolute sizes | the same model made with sizes in micrometres and no device numbers |
+  | Fine-tune, first build (added 2026-10-11, step 3b's second part) | the same designs, a model made with the first build of the network inputs |
   | Probe | the relative-sizes model, no training |
 
   Both start models are trained offline from the same recorded gpdk045 designs of the circuit, so the size input is the
   only difference between them: that difference is what the PDK-relative inputs are worth.
+  **Changed 2026-10-11 (record 7.317):** every arm reads Transferable 2 but the first-build arm; the absolute-sizes
+  arm differs from the relative-sizes arm in the sizes and the device numbers only, the first-build arm in the second
+  build's three settings only. The three start models are trained offline on step 3b's recorded runs of the circuit
+  (its arm `full`: three runs, 2,400 designs): the designs recorded in steps 1 and 2 hold no operating points.
+- **One range for an action:** a ported task's rows keep the gpdk045 task's ranges as multiples of the minimum size
+  and keep each row's scale (log or linear), so the same action is the same multiple of the minimum size in both PDKs.
+  A script checks this before a port is saved.
+- **Before the runs:** a nine-design check per ported task with Transferable 2, as in step 3b: the operating point of
+  the second PDK's transistors is read.
 - **Limit:** the simulator machine holds two PDKs, so the device numbers have four transistor models to learn from.
 
 ### 6.5 Step 5: the general model on an unseen circuit in the known PDK (2 runs, 1 probe)
@@ -373,6 +471,12 @@ that was saved or run. Now, per circuit, three tasks - Save as copies of the sav
   on this circuit, 100 % late passes both ways (GT: 73 % against 8 %).
 - **Why before step 6:** if the general model helps here and not on AgenticSizing, the model is sound and those circuits
   are too different; if it does not help here either, step 6 says nothing about AgenticSizing.
+- **The general model's inputs (record 7.317; open, the user's):** of the recorded designs in its pool only step 3b's
+  and step 4's hold operating points. Proposed: the general model reads Transferable 2 WITHOUT the ratios (step 3b's
+  arm `bench`), so every design of the pool is read the same way, and the runs of steps 5 and 6 use the same inputs.
+  The other way - the ratios, with the older designs showing them as missing (`missing_operating_points: "mask"` in
+  the request) - trains a network that mostly never saw them and then meets them on the new circuit; it is taken only
+  if step 3b shows that the ratios matter.
 
 ### 6.6 Step 6: the same general model on the AgenticSizing circuits (4 runs, 4 probes)
 
@@ -449,6 +553,12 @@ No simulation except where said.
    simulations of the bench's rule); after the two scratch runs the
    both-goals model, trained offline on their recorded designs (item 6's checks; CPU only). The cell, the bench and the
    area row exist; no task is saved and nothing is simulated yet.
+10. **The second build of the network inputs, for step 3b and later** (record 7.317): built on 2026-10-11 in the
+    workbench only - three settings of `run.network`, off by default, and the page's third choice "Transferable 2";
+    offline training takes them, and takes runs that read operating points. Before step 3b: the backend on 8765
+    restarted and the page built; a frozen copy of the code made after the landing; the three nine-design checks of
+    6.3b; the 24 configurations (the recorded GraphGPS configuration of each task with the seed and the three settings
+    changed, written as JSON and validated with the new copy).
 
 ## 9. Budget and time
 
@@ -457,10 +567,11 @@ No simulation except where said.
 | 1 | 20 | - | 65 (amplifier start) | 16,065 | about 7 h |
 | 2 | 40 | - | 777 | 32,777 | about 7.8 h |
 | 3 | 9 | - | - | 7,200 | about 1.7 h |
-| 4 | 9 | 3 | 195 | 8,295 | about 2.5 h |
+| 3b | 24 | - | 27 | 19,227 | about 5.2 h |
+| 4 | 12 | 3 | 195 | 10,695 | about 3.2 h |
 | 5 | 2 | 1 | - | 1,900 | about 0.75 h |
 | 6 | 4 | 4 | - | 4,400 | about 2 h |
-| **Round 1** | **84** | **8** | **1,037** | **70,637** | **about 21.7 h** |
+| **Round 1** | **111** | **8** | **1,064** | **92,264** | **about 27.6 h** |
 
 Step 2 as changed on 2026-10-11 (6.2.2): the logic cell's 10 runs and 192 Calibration designs, and the three analog
 circuits' 30 runs, 9 baselines and 576 Calibration designs (about 6 h of the first Virtuoso session; the logic cell runs
@@ -471,6 +582,11 @@ slowly); for the published circuits from the rebuilt cells of 7.295 (LDO and ref
 amplifier 37-55) - their own 12-design runs took 1.8 to 2.9 s per design on one lane, so these are upper figures. The logic cell is
 unmeasured: about 10 min per 800 designs is assumed, 1.8 h for its part of step 2 (10 runs, 192 designs; the library-cell
 simulations of its bench rule are single short simulations and are not counted as designs).
+
+Step 3b and step 4's added arm (record 7.317): 24 runs at the recorded minutes per 800 designs (OTA5t about 11, RING3
+about 15, LDO1 about 13: eight runs of each) and three more runs in step 4. Reading the operating points on 18 of step
+3b's runs and on step 4's is not in these times: it is measured by step 3b's first check. With a run in each of the
+two Virtuoso sessions step 3b takes about half its time on the clock. A cheaper form of step 3b is in section 12.
 
 ## 10. Order and gates
 
@@ -485,6 +601,9 @@ after record 7.294's fix), about 12 GB over round 1: it is restarted at three st
 step 2 and before step 4 - so no session takes more than about 4.5 GB of growth, with the bridge loaded again, the
 nonce-cache setting applied and Check now on the tasks after each restart. Each step's start is the user's word.
 
+**Changed 2026-10-11 (record 7.317): step 3b runs after step 3 and before step 4.** Step 4's start models are trained
+on step 3b's recorded designs, so step 3b cannot move behind it; step 4's ports can be prepared while step 3b runs.
+
 ## 11. What is expected, written before any result
 
 - **Step 1:** no network difference beyond what one seed can show; the new inputs within the rule on OTA5t and the VCO.
@@ -495,6 +614,9 @@ nonce-cache setting applied and Check now on the tasks after each restart. Each 
   fresh network, because the speed run has been in that fast region; whether a fresh network finds a pass there within
   800 designs at all is open.
 - **Step 3:** SAC ahead in passes of 800; which finds the first pass sooner is open.
+- **Step 3b:** the second build accepted on OTA5t; on RING3 and LDO1 a difference smaller than the spread between
+  seeds, so most likely "no difference shown" from scratch. The inputs were made for carrying over, not for learning one
+  circuit: if they gain anything, step 4's first-build arm is where it shows.
 - **Step 4:** most likely on OTA5t, which already runs at 1.8 V in gpdk045; least likely on RING3.
 - **Step 5:** the mark of 59 % against 23 % is reached or nearly.
 - **Step 6:** a gain over scratch is plausible on the LDO and the amplifier, unlikely on the reference (no similar
@@ -530,6 +652,18 @@ seeds each (2); the bench's load, setup time and hold time by a rule on the libr
 first (6). Not taken: a probe of the trained model on each goal (3), the margin bonus off for the cell (4); to state
 every result against the library's cells and as pre-layout (7) is done in any case.
 
+On 2026-10-11 (session "Circuit training and SAC RL graph transformer", record 7.317): "fix everything this chat
+mentioned for the encoder networks input. update the experiment plan, add a new section step for comparing new and old
+encoder input builds. use the new encoder in the next coming experiment step" - read as: the second build of the
+network inputs (section 4), step 3b before step 4 (6.3b), and Transferable 2 for every new model from step 3b on.
+Proposed with it and not yet confirmed: three seeds and three arms in step 3b (24 runs; a cheaper form is the arms
+`full` and `first` only, 15 runs and about 3.3 h, which leaves the general model's inputs undecided); the three "what
+follows" rules of 6.3b; the first-build arm added to step 4; the general model without the ratios (6.5).
+Confirmed the same evening: "Checks, then all 24" - step 3b in its full form, started 2026-10-11 22:24 in the first
+Virtuoso session. And for the page: "No box, after step 3b" - once step 3b's result is in, a new model always takes the
+build it accepts and the Network inputs box becomes one line of text; an old choice shows only while a configuration
+holds it.
+
 Open: three or five repeats on the amplifier and the system in round 2 (after round 1); the library name of the three
 ports; for the logic cell the library its copy goes into, the load, the input slope and the two fixed times of its
 bench, and the two bars of its judgement (proposed, 6.2.1).
@@ -547,13 +681,13 @@ part of this plan; folder names start with a digit because the windows list fold
 | Window | Folders |
 |---|---|
 | Tasks | 1 Core circuits (steps 1, 2, 4) / 2 AgenticSizing, published netlists (steps 1, 3, 6) / 3 New targets (step 2) / 4 Second PDK ports (step 4) / 5 Unseen circuit (step 5) / 9 Older (not used by the plan) |
-| Runs, RL models | 1 Networks with the new inputs (step 1) / 2 New targets (step 2) / 3 SAC against Bayesian (step 3) / 4 Second PDK (step 4) / 5 General model, unseen circuit (step 5) / 6 General model, AgenticSizing (step 6) / 7 Baselines, calibrations, offline models (plan) / 8 References: recorded runs the plan compares with / 9 Older (before the transfer experiment) |
+| Runs, RL models | 1 Networks with the new inputs (step 1) / 2 New targets (step 2) / 3 SAC against Bayesian (step 3) / 3b Input builds (step 3b) / 4 Second PDK (step 4) / 5 General model, unseen circuit (step 5) / 6 General model, AgenticSizing (step 6) / 7 Baselines, calibrations, offline models (plan) / 8 References: recorded runs the plan compares with / 9 Older (before the transfer experiment) |
 
 `artifacts/local/reviews/transfer-experiment-2026-10-10/categorize.py` files everything (idempotent; run again whenever
 runs appear). It files the plan's runs by their experiment names, which are therefore fixed here: `tx1-<circuit>-<gt|gps>`
 (with `-s<seed>`, `-control`, `-cont`, or `-r` for the rerun of a run a fault of the machine ended),
 `tx2-<circuit>-<target>-<scratch|old|multi|probe>` (the logic cell as `dffr`: `tx2-dffr-speed-scratch`, `tx2-dffr-power-scratch`, then `tx2-dffr-power-both` and `tx2-dffr-speed-both` from the offline model `tx-offline-dffr-both`),
-`tx3-asz-ldo-<sac|bo>-s<seed>`, `tx4-<circuit>-<scratch|rel|abs|probe>`, `tx5-otatc-<scratch|general|probe>`, `tx6-asz-<circuit>-<general|probe>`,
+`tx3-asz-ldo-<sac|bo>-s<seed>`, `tx3b-<circuit>-<first|full|bench>-s<seed>` (record 7.317), `tx4-<circuit>-<scratch|rel|abs|first|probe>`, `tx5-otatc-<scratch|general|probe>`, `tx6-asz-<circuit>-<general|probe>`,
 `tx-offline-*` and `tx-prep-*`. The recorded runs the general model trains on stay in "9 Older" until its request is
 frozen.
 

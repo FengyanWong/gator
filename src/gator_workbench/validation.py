@@ -23,6 +23,7 @@ from .pdk import label, parameter_facts
 from .profile_store import task_spec_registry
 from .schema import WorkbenchConfig
 from .spec_equations import parse, parse_size_formula, size_matches
+from .start_grid import row_start_issue
 from .task_registry import verified_spec_registry
 
 FEATURE_PARAMETER_KINDS = ('w', 'l', 'm', 'nf', 'r', 'c', 'ind', 'dc')
@@ -363,6 +364,12 @@ def _check_parameters_against_circuit(config, report, graph, record):
                 report.add('error', 'initial_differs_from_circuit', path + '.initial_value',
                            f'Configuration says {_in(actual, p.unit)} but the circuit has '
                            f'{_in(value.value, p.unit)}')
+        if value is not None and value.valid and p.optimized and not p.binding_group:
+            # The circuit's own value must be one the optimizer starts from: a size on an upper bound its grid ends one
+            # step under was refused by every run of the task, in the optimizer's words (start_grid).
+            words = row_start_issue(p, value.value)
+            if words:
+                report.add('error', 'start_off_grid', path, words)
 
 
 def _check_measurements(config, report, *, provided_metrics):

@@ -3213,6 +3213,20 @@ close). A passed check is kept in the run's manifest (`consistency_check`, for a
 part 2 alone) runs all three parts on its own: free, read-only, no simulation. Its result goes as soon as a row changes.
 Without a connection it compares the rows and says the rest needs one.
 
+**A size the optimizer's grid does not hold as a start** (record 7.333). A run starts from the circuit as it stands,
+and the optimizer first compares what the cell holds with what its own size grid makes of it. That grid is counted in
+steps from a row's lower bound, and for some bounds the count comes out one short: 13.75 to 137.5 um in 5 nm steps ends
+at 137.495 um, not at 137.5 um (34 of the 842 stepped rows of the tasks saved on 2026-10-12 are of this kind). The
+search loses one step at the top of such a row and nothing else - but a cell that sits exactly ON such a bound differs
+from its own start design, and every run of the task, its baseline first, was refused with "Initial backend parameters
+differ from the reference graph". The workbench now says it in words wherever the rows are compiled against the circuit
+- the validation marks the row (`start_off_grid`), Save task refuses before anything is written, Start and Check now
+say the same: "w_pass: the circuit has 137.5 um on DUT/MP.w, which is this row's upper bound, but the optimizer's grid
+for the row (5 nm steps from 13.75 um) ends at 137.495 um, one step under that bound. A run starts from the circuit as
+it stands and would be refused: set this size to 137.495 um in the cell, or move the bound." The count itself is the
+optimizer package's and is unchanged (its source digest); the check asks the package's own legalization, so it says
+exactly what a run would do.
+
 **When another real run holds Virtuoso** (record 7.207). Only one process works in a Virtuoso session at a time, and
 one on a cell: every real run, Corner check and check takes the run adapter's session lock (`session.lock` in the folder
 "Adapter state"; a second Virtuoso session has its own, and every cell has one - record 7.311). When one of them is

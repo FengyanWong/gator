@@ -17,6 +17,7 @@ from . import spec_descriptors, spec_equations, units
 from .profile_store import task_spec_registry
 from .schema import WorkbenchConfig
 from .task_registry import CORNER_TASKS, verified_profile, verified_spec_registry
+from .start_grid import start_off_grid, start_words
 from .validation import resolve_leaders
 
 
@@ -147,6 +148,12 @@ def build_graph(config: WorkbenchConfig, graph):
         graph.validate()
     except ValueError as exc:
         raise CompileError(f'Optimizer rejected the variable definition: {exc}') from exc
+    # A varied row whose circuit value the optimizer's grid moves could never start a run (start_off_grid): said here in
+    # words, where Save task, Check now and Start all pass, instead of by the run's first comparison.
+    for group in groups:
+        start = start_off_grid(group.lower, group.upper, group.step, group.value, group.domain == 'integer') if group.mutable else None
+        if start is not None:
+            raise CompileError(start_words(by_id[group.id], group.value, start))
     return graph, tuple(variables)
 
 

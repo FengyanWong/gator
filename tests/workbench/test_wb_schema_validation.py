@@ -1,11 +1,13 @@
 """Units, bindings, measurements, targets: one schema, semantic validation, compilation to the
 optimizer's existing ParameterGroup / MetricSpec objects."""
+import copy
+import dataclasses
 import json
 
 import pytest
 from pydantic import ValidationError
 
-from gator_workbench import compile as comp, engine as engine_module, schema, spec_equations, tasks, units, validation
+from gator_workbench import compile as comp, engine as engine_module, schema, spec_equations, start_grid, tasks, units, validation
 from gator_workbench.engine import decode_action
 from helpers import check, execute, issues, make_config, rows, TOP
 import math
@@ -388,6 +390,78 @@ def test_grid_top_is_the_top_that_project_reaches_on_thousands_of_typed_ranges()
         for value in (lower, (lower + upper) / 2, upper - step):
             assert snapped.project(value) == typed.project(value)
     assert 3000 < moved < 10000                                   # about a quarter of such ranges overshoot
+
+
+# ------------------------------------------------------------------------------ a start the optimizer's grid does not hold
+# 13.75 .. 137.5 um in 5 nm steps, the pass transistor of a ported LDO (record 7.320): the optimizer counts
+# 24749.999999999993 steps from the lower bound, so its grid ends at 137.495 um, one step UNDER the upper bound. A cell
+# that sits on the bound differs from its own start design, and every run was refused in the optimizer's words.
+SHORT = dict(unit='um', lower=13.75, upper=137.5, step=0.005)
+
+
+def short_range(raw):
+    next(r for r in raw['parameters'] if r['variable_id'] == 'input_pair_width').update(SHORT)
+
+
+def _with_pair_width(base, config, width):
+    """A copy of the task's circuit whose input pair - the row and whatever follows it - is `width` (m) wide."""
+    graph = copy.deepcopy(base)
+    for row in config.parameters:
+        if 'input_pair_width' in (row.variable_id, row.binding_group):
+            held = graph.parameters[row.instance_path][row.parameter_name]
+            graph.parameters[row.instance_path][row.parameter_name] = dataclasses.replace(held, value=width, raw=format(width, '.12g'))
+    return graph
+
+
+def test_the_start_the_grid_does_not_hold_is_the_optimizers_own_and_only_at_such_a_bound():
+    lower, upper, step = units.to_canonical(13.75, 'um'), units.to_canonical(137.5, 'um'), units.scale_to_canonical(0.005, 'um')
+    assert (upper - lower) / step < 24750 and math.floor((upper - lower) / step + 1e-12) == 24749      # the count that is one short
+    start = start_grid.start_off_grid(lower, upper, step, upper)
+    group = ParameterGroup('g', 'w', 'm', upper, lower, upper, (ParameterBinding('M', 'w'),), step=step)
+    assert start == group.project(upper) == pytest.approx(137.495e-6, rel=1e-12)          # what the package itself gives
+    assert start_grid.start_off_grid(lower, upper, step, start) is None                         # the grid's own top is a start
+    assert start_grid.start_off_grid(lower, upper, step, lower) is None and start_grid.start_off_grid(lower, upper, None, upper) is None
+    assert start_grid.start_off_grid(upper, lower, step, upper) is None                         # another fault: not this function's to name
+    # on thousands of typed ranges: a value on the upper bound is refused as a start exactly when project moves it
+    rng, short = random.Random(11), 0
+    for _ in range(20000):
+        step_um = rng.choice([0.005, 0.01, 0.02, 0.05, 0.1])
+        low_um = round(rng.randrange(1, 4000) * step_um, 6)
+        high_um = round(low_um + rng.randrange(1, 30000) * step_um, 6)
+        lower, upper, step = units.to_canonical(low_um, 'um'), units.to_canonical(high_um, 'um'), units.scale_to_canonical(step_um, 'um')
+        top = comp.grid_top(lower, upper, step)                    # as build_graph hands the bound to the optimizer
+        typed = ParameterGroup('g', 'w', 'm', upper, lower, top, (ParameterBinding('M', 'w'),), step=step)
+        moved = not math.isclose(typed.project(upper), upper, rel_tol=1e-8)
+        assert (start_grid.start_off_grid(lower, top, step, upper) is not None) == moved
+        assert (start_grid.start_off_grid(lower, upper, step, upper) is not None) == moved      # the same with the bound as typed
+        short += moved
+    assert 100 < short < 4000                                       # a few in a hundred such ranges end one step short
+
+
+@pytest.mark.usefixtures('bridge_installed')
+def test_a_size_on_a_bound_the_grid_does_not_reach_is_said_in_words_before_any_run(tmp_path):
+    config = make_config(tmp_path, mutate=short_range)
+    base = tasks.load_task(config.circuit).base_graph
+    bound, top = units.to_canonical(137.5, 'um'), 137.495e-6
+    on_bound = _with_pair_width(base, config, bound)
+    with pytest.raises(comp.CompileError) as refused:                # Save task, Check now and Start all compile the rows
+        comp.compile_task(config, on_bound)
+    words = str(refused.value)
+    assert words.startswith('input_pair_width: the circuit has 137.5 um on ') and 'which is this row\'s upper bound' in words
+    assert '(5 nm steps from 13.75 um) ends at 137.495 um, one step under that bound' in words
+    assert 'set this size to 137.495 um in the cell, or move the bound' in words and 'e-0' not in words
+    report = validation.validate(config, graph=on_bound, provided_metrics={'score'})
+    issue = next(i for i in report.issues if i.code == 'start_off_grid')
+    index = next(i for i, row in enumerate(config.parameters) if row.variable_id == 'input_pair_width')
+    assert (issue.level, issue.path, issue.message) == ('error', f'parameters[{index}]', words)      # the row is marked, the same words
+    # one grid step lower the circuit is a start: the rows compile, and the run's own first comparison would pass
+    legal = _with_pair_width(base, config, top)
+    compiled = comp.compile_task(config, legal)
+    group = next(g for g in compiled.graph.parameter_groups if g.id == 'input_pair_width')
+    assert group.project(group.value) == pytest.approx(group.value, rel=1e-12) and group.upper == bound
+    assert 'start_off_grid' not in issues(validation.validate(config, graph=legal, provided_metrics={'score'}))
+    # and the task as it stands, its ranges not of this kind, is untouched
+    assert 'start_off_grid' not in issues(validation.validate(make_config(tmp_path), graph=base, provided_metrics={'score'}))
 
 
 class _AlwaysTop(random.Random):

@@ -63,14 +63,17 @@ stand.
 
 | Group | Circuit, task | Why |
 |---|---|---|
-| Core, gpdk045 | OTA5t, `mscr_ota5t` | 9-13 min per 800 designs; 95 % late passes for every network; built on the PDK's 1.8 V transistors, so the cleanest port |
-| Core, gpdk045 | RING3, `mscr_ring3` | from scratch only 10-34 % late passes: room to show a gain |
-| Core, gpdk045 | LDO1 at HF PSRR <= -3 dB, `ldo1_relaxed` (key `graphgps_ldo1`) | 0 to 3 passes of 800 from scratch for every network; 34 to 55 with a general model |
-| Core, gpdk045 | VCO, `mscr_vco_lin_c` | kept on the user's word; 36-99 min a run; step 1 only |
+| Core, gpdk045 | OTA5t, `mscr_ota5t` | 8-9 min per 800 designs; 95-96 % late passes for both networks; built on the PDK's 1.8 V transistors, so the cleanest port |
+| Core, gpdk045 | RING3, `mscr_ring3` | from scratch only 15 % (GT) and 30 % (GraphGPS) late passes: room to show a gain |
+| Core, gpdk045 | LDO1 at HF PSRR <= -3 dB, `ldo1_relaxed` (key `graphgps_ldo1`) | no pass of 800 from scratch for either network (with the old inputs: 0 to 3, and 34 to 55 with a general model - no run with the new inputs stands for that one) |
+| Core, gpdk045 | VCO, `mscr_vco_lin_c` | kept on the user's word; 38-42 min a run; 92 % (GT) and 99 % (GraphGPS) late passes; step 1 only |
 | Logic cell, gpdk045 | flip-flop DFFRX1, a copy of `gsclib045/DFFRX1` (to build) | step 2, first: delay, energy and area trade over a wide range, so a new goal lies far from the old one (6.2.1) |
 | Unseen, gpdk045 | telescopic cascode, `mscr_otatc` | step 5; out of every training pool of this plan |
 | AgenticSizing, second foundry's 0.18 um PDK | `agentic_ldo_pub`, `agentic_bgr_pub`, `agentic_fc_pub`, `agentic_sys_pub` (7.300) | the paper's netlists, size ranges and limits; steps 1, 3 and 6 |
 | No new runs | OTA7t width, LDO2, folded cascode `mscr_otafc` | their recorded designs train the general model |
+
+The numbers of the four core rows are step 1's, with the new inputs (replaced on 2026-10-12, user: "replace old result
+with new results"; this table gave the old-input studies' numbers before - they are in record 7.313 beside the new).
 
 Why the three are dropped: OTA7t width gave the same verdicts as OTA5t in every table (single lane, 24-37 min a run);
 LDO2 tells LDO1's story at three times the time (the two differ in the error amplifier only: five transistors against a
@@ -150,14 +153,18 @@ Rules, the ones of the earlier studies, fixed here before any result:
 - **Runs:** GT and GraphGPS from scratch on the four core and the four AgenticSizing circuits, seed 0 (16 runs);
   GraphGPS four more times on the AgenticSizing LDO, seeds 1-4, so that circuit has five runs against five (GT's other
   four are step 3's SAC runs).
-- **New inputs against old:** each core run against the recorded old-input run of the same network (rule of section 5):
+- **New inputs against old:** each core run against the recorded old-input run of the same network (rule of section 5).
+  **The table was replaced on 2026-10-12** (user: "replace old result with new results"). It held the recorded
+  old-input runs step 1 was judged against; the full comparison accepted the new inputs on every circuit and both
+  networks (records 7.313 and 7.335, where old and new stand side by side), and what later results are read against is now step
+  1's own runs with the new inputs:
 
-  | Circuit | GT, old inputs (passes of 800, late, 50 % by) | GraphGPS, old inputs |
+  | Circuit | GT, new inputs (passes of 800, late, 50 % by) | GraphGPS, new inputs |
   |---|---|---|
-  | OTA5t | 629, 95 %, 191 | 646, 95 %, 176 |
-  | RING3 | 82, 15 %, never | 194, 29 %, never |
-  | LDO1 at -3 dB | 0 (stage E) | 3, 1 %, never |
-  | VCO | 540, 94 %, 291 | 603, 98 %, 222 |
+  | OTA5t | 617, 96 %, 205 | 636, 95 %, 185 |
+  | RING3 | 94, 15 %, never | 182, 30 %, never |
+  | LDO1 at -3 dB | 0 | 0 |
+  | VCO | 466, 92 %, 374 | 546, 99 %, 310 |
 
 - **GT against GraphGPS:** on the core circuits one run each, so only a large difference counts; on the AgenticSizing
   LDO five against five.
@@ -566,8 +573,10 @@ plan as it was run.
 - **Result (record 7.330, 2026-10-12; one seed, the general model of the smaller pool):** the amplifier from the
   far start - first pass at design 212 after 6.6 minutes, 267 passes of 800, where the from-scratch run found none in
   800 (904 with its continuation); the LDO - 80 passes of 800 against 31 at most in five from-scratch runs, the first
-  pass at design 320 (6.6 minutes), no sooner than from scratch; the reference and the system - no pass from any
-  start. The frozen model passes on none of the four.
+  pass at design 320 (6.6 minutes), no sooner than from scratch; the reference - no pass from any start; the system -
+  no pass with GraphGPS, from scratch, continued or from the general model. The frozen model passes on none of the
+  four. **Corrected on 2026-10-12 (record 7.334):** this paragraph said the system passes from no start; with GT it
+  does - step 1's from-scratch GT run, continued from its own network, passes 8 times from design 813 of its 1,600.
 
 ## 7. Round 2: repeats, only where round 1 shows an effect
 

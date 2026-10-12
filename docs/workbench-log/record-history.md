@@ -504,3 +504,5 @@ One row per commit, newest last.
 | `cfdffaa` | 10-12 17:05 | - | record only: names the commit of records 7.318, 7.320, 7.321 and 7.323-7.332 in their entries |
 | `7ae9e60` | 10-12 17:04 | - | record only: the table rows for 7c12d1b, 75f6dda and cfdffaa; five index rows name their commit |
 | `0b0778d` | 10-12 17:51 | 7.333 | a starting size the optimizer's grid does not hold is named before a task is saved or a run is tried; workbench only (session "Encoder experiment plan setup") |
+| `73c121a` | 10-12 17:52 | - | record only: names the commit of record 7.333, and the table rows for 7ae9e60 and 0b0778d |
+| `42eac2e` | 10-12 19:42 | 7.334, 7.335 | the published reference and system read by their reward, a correction in 7.330; the transfer experiment's full step 1 comparison, 7.313's tables and the plan's results replaced; docs only (session "Encoder experiment plan setup") |

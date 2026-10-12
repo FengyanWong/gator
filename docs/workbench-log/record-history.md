@@ -502,3 +502,5 @@ One row per commit, newest last.
 | `7c12d1b` | 10-12 00:05 | - | record only: names the commits of records 7.317, 7.319 and 7.322, and the table rows for da1504a and the three commits |
 | `75f6dda` | 10-12 17:03 | 7.318, 7.320, 7.321, 7.323-7.332 | the transfer experiment's steps 3 to 6 and the port history; audit fixes and a refactor (model-input contracts, engine phases, ngspice helpers); CircuitGPS in the optimizer package (digest 6724e52b -> e29b39e1) with its import guards; a new model's network inputs come with its encoder's template (sessions "Encoder experiment plan setup", "Circuit training and SAC RL graph transformer", Codex "Project audit" and "Build the new encoder") |
 | `cfdffaa` | 10-12 17:05 | - | record only: names the commit of records 7.318, 7.320, 7.321 and 7.323-7.332 in their entries |
+| `7ae9e60` | 10-12 17:04 | - | record only: the table rows for 7c12d1b, 75f6dda and cfdffaa; five index rows name their commit |
+| `0b0778d` | 10-12 17:51 | 7.333 | a starting size the optimizer's grid does not hold is named before a task is saved or a run is tried; workbench only (session "Encoder experiment plan setup") |

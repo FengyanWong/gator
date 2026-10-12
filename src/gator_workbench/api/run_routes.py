@@ -137,6 +137,8 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
             description = ckpt.describe(run_dir, body.checkpoint_id or 'latest')
         except FileNotFoundError as exc:
             fail(404, exc)
+        except runs.RunRejected as exc:
+            fail(409, exc, code=exc.code)
         result = dict(description=description)
         # the model's component list: the page's list follows it
         result['vocabulary'] = run_vocabulary_facts(run_dir, (description.get('contract') or {}).get('feature_schema'))

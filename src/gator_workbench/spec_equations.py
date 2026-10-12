@@ -145,8 +145,8 @@ def _size_tree(text):
         return repr(value)
     try:
         pieces = _STRING.split(_STRING.sub(keep, source))              # text, index, text, index, ...
-        tree = ast.parse(''.join(NUMBER.sub(number, piece) if i % 2 == 0 else f'"{piece}"' for i, piece in enumerate(pieces)),
-                         mode='eval')
+        expression = ''.join(NUMBER.sub(number, piece) if i % 2 == 0 else f'"{piece}"' for i, piece in enumerate(pieces))
+        tree = ast.parse(expression, mode='eval')
     except SyntaxError:
         return None, None, 'not a formula (check the brackets, quotes and operators)'
     except (ValueError, RecursionError) as exc:
@@ -154,6 +154,7 @@ def _size_tree(text):
     nodes = list(ast.walk(tree))
     if len(nodes) > 128:
         return None, None, 'too complex'
+    literals = {f'"{i}"': pattern for i, pattern in enumerate(patterns)}
     used = []
     for node in nodes:
         if isinstance(node, ast.Call):
@@ -163,9 +164,12 @@ def _size_tree(text):
                                     f'only {", ".join(sorted(SIZE_FUNCTIONS))} may be called')
             if name in ('fingers', 'width', 'count'):
                 first = node.args[0]
-                if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+                # Python also accepts single quotes, escapes and adjacent strings. Only a literal replaced by
+                # keep() is a pattern index; interpreting any other string as one crashed configuration validation.
+                literal = ast.get_source_segment(expression, first)
+                if not (isinstance(first, ast.Constant) and isinstance(first.value, str) and literal in literals):
                     return None, None, f'{name}() needs an instance pattern in double quotes first, e.g. {name}("mn*"...)'
-                used.append(patterns[int(first.value)])
+                used.append(literals[literal])
     calls = {id(n.func) for n in nodes if isinstance(n, ast.Call)}
     firsts = {id(n.args[0]) for n in nodes if isinstance(n, ast.Call) and n.func.id in ('fingers', 'width', 'count')}
     for node in nodes:

@@ -680,7 +680,23 @@ def _check_network_inputs(config, report, graph):
     only - the numbers are never shown)."""
     network = config.run.network
     settings = network_inputs.transfer_settings(network)
-    if settings['spec_input'] == 'set':
+    if (network.encoder_type == 'circuit_gps') != (settings['spec_input'] == 'structured'):
+        report.add('blocker', 'encoder_spec_input_mismatch', 'run.network.spec_input',
+                   'CircuitGPS needs Structured network inputs. Other encoders use Standard, Transferable or Transferable 2.')
+    if settings['spec_input'] == 'structured':
+        # lazy: only structured spec validation needs the measurement-program compiler.
+        from .spec_programs import describe_programs
+        programs = describe_programs(config)
+        def unknown_count(node):
+            return int(node['op'] == 'unknown') + sum(unknown_count(c) for c in node.get('children', ()))
+        for i, target in enumerate(config.targets):
+            if target.active:
+                unknown = unknown_count(programs[target.metric_id])
+                report.add('info', 'spec_measurement_program', f'targets[{i}]',
+                           'CircuitGPS preserves the measurement program, its circuit bindings and reward scale. '
+                           + (f'{unknown} part(s) have unknown semantics (including opaque analyzer results); '
+                              'they keep explicit unknown tokens.' if unknown else 'Every operation is recognized.'))
+    if settings['spec_input'] in ('set', 'structured'):
         described = spec_descriptors.describe_specs(config)
         report.add('info', 'spec_input_set', 'targets',
                    'The network reads these specs as a set: any names and any number of them, each described by what it '
@@ -819,7 +835,7 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
     record = _pdk_record(config)                  # one read of the PDK record for every check below (it was four)
     _check_parameters(config, report, graph, record)
     measurement_ids = _check_measurements(config, report, provided_metrics=provided_metrics)
-    registry = None if config.run.network.spec_input == 'set' else registry_for(config)      # a set has none (7.298)
+    registry = None if config.run.network.spec_input != 'slots' else registry_for(config)      # sets/programs have none
     _check_targets(config, report, measurement_ids, registry=registry,
                    extensible=config.run.advanced.spec_registry is None, provided_metrics=provided_metrics)
     _check_run(config, report, record)

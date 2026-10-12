@@ -2,6 +2,10 @@
 learner and replay buffer. The SAC algorithm is untouched; this module only decides
 when evaluations are dispatched, and records everything that happens.
 
+Preparation, recovery, evaluation commitment and finalization are explicit phase
+functions. This module owns dispatch, retry, learning and checkpoint ordering; the
+phase functions receive this same scheduler-owned state and never run concurrently.
+
 Single-writer rule: only this scheduler writes data tables, checkpoints and the budget
 ledger. Lanes (one isolated simulation job each) only return attempt results.
 
@@ -22,62 +26,41 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-import random
 import shutil
 import socket
 import time
 import traceback
-from typing import NamedTuple
 from uuid import uuid4
 
 from analog_optimizer.training.collect import random_proposal
 
-from . import bayes, best_design, checkpoints as ckpt, modes, network_inputs
-from .budget import BudgetLedger
-from .compile import compile_task, hard_constraints
-from .connection import classify_infrastructure_failure
+from . import bayes, checkpoints as ckpt
+from . import engine_commit, engine_finalization, engine_preparation, engine_recovery
+from .compile import compile_task
 from .engine_host import HostMaintenance
 from .engine_retention import Retention
 from .engine_rows import CommitRows
-from .lanes import ScratchLinked, open_lanes, unlink_scratch
-from .layout import RunLayout, build_artifact_manifest, local_scratch, run_bytes
-from .pdk import run_vocabulary
+from .layout import RunLayout, local_scratch, run_bytes
 from .schema import WorkbenchConfig, task_definition_hash
 from .security import redact
-from .storage.atomic import JsonlAppender, PersistenceError, read_json, read_jsonl, write_json
-from .storage.dataset import DatasetReader, RawDataset, utcnow
-from .summary import build_run_summary
-from .trajectory import StateEncoder, TrajectoryLoader
+from .storage.atomic import JsonlAppender, PersistenceError, read_json, write_json
+from .storage.dataset import utcnow
 # re-exported: moved to run_lock.py by the refactoring (docs/plan-refactoring.md)
 from .run_lock import iso, RunLock
 # re-exported: moved to run_definitions.py by the refactoring (docs/plan-refactoring.md)
-from .run_definitions import INFRASTRUCTURE_FAILURES, decode_action, learner_experiment
+from .run_definitions import INFRASTRUCTURE_FAILURES, decode_action, learner_experiment, saves_rl_model
 # re-exported: moved to engine_host.py by the refactoring (docs/plan-refactoring.md)
 from .engine_host import HOST_JOB_FOLDER, HOST_CLEANUP_CHUNK
 # re-exported: moved to engine_rows.py by the refactoring (docs/plan-refactoring.md)
 from .engine_rows import PROBE_AGGREGATION
+# re-exported: the evaluation value is now defined beside its commit operations.
+from .engine_commit import Outcome
 
 TERMINAL_STATES = ('completed', 'paused', 'stopped', 'cancelled', 'failed')
 TIMING_BATCH = 16                                   # evaluations per append to logs/timings.jsonl (record 7.280)
 # What the environment raises when the run's stop file reached a candidate before its first launch (analog_optimizer.envs.
 # sizing): nothing was simulated, the run itself stopped it.
 STOPPED_BEFORE_LAUNCH = 'Candidate stopped before nominal evaluation'
-
-
-class Outcome(NamedTuple):
-    """What one evaluation measured, judged against the Specs (RunEngine._outcome)."""
-    status: str
-    raw_metrics: dict
-    raw_validity: dict
-    raw_units: dict
-    derived: dict
-    spec_values: dict
-    metric_values: dict
-    constraint_rows: list
-    valid: bool
-    feasible: bool
-    nominal_feasible: bool
-    violation: object
 
 
 class RunEngine(HostMaintenance, CommitRows, Retention):
@@ -161,288 +144,19 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
 
     # ================================================================== preparation
     def _prepare(self):
-        cfg, out, adv = self.config, self.config.output, self.config.run.advanced
-        enabled = {'evaluations', 'parameters', 'metrics', 'simulator_jobs'}
-        if out.save_learner_updates and not self.frozen:
-            enabled.add('learner_updates')
-        if out.save_transition_archive:
-            enabled |= {'transitions', 'states'}
-        self.dataset = RawDataset(self.layout.data, enabled_tables=enabled, flush_every=out.flush_every_evaluations)
-        self.archive = out.save_transition_archive
-        experiment = learner_experiment(cfg, self.task, self.task_hash)
-        self.experiment = experiment
-        self.vocabulary = run_vocabulary(self.layout.run_dir)      # the run's own component list; None = standard
-        input_options = modes.runtime_options(cfg, self.vocabulary)
-        source_dir = source_meta = None
-        if self.entry == 'resume':
-            source_dir = ckpt.resolve_checkpoint(self.layout.run_dir, 'latest')
-            source_meta = ckpt.read_metadata(source_dir)
-        elif self.mode in ('fine_tune', 'frozen'):
-            parent = self.manifest['parent']
-            source_dir = ckpt.resolve_checkpoint(parent['run_dir'], parent['checkpoint_id'])
-            source_meta = ckpt.read_metadata(source_dir)
-        built = modes.build('resume' if self.entry == 'resume' else self.mode, experiment=experiment,
-                            model_config=modes.model_config_from(cfg.run.network),
-                            sac_config=modes.sac_config_from(adv), spec_schema=self.compiled.spec_schema,
-                            advanced=adv, seed=cfg.run.seed, origin=self.task.origin, source_dir=source_dir,
-                            source_metadata=source_meta, task_definition_hash=self.task_hash, vocabulary=self.vocabulary,
-                            runtime=input_options, view=network_inputs.view_for(cfg, self.vocabulary))
-        self.learner, self.replay, self.freeze = built['learner'], built['replay'], built['freeze']
-        self.load_policy = built['policy']
-        self.rehearsal = None
-        if cfg.run.rehearsal is not None:
-            from .rehearsal import Rehearsal  # lazy: rehearsal imports torch
-            self.rehearsal = Rehearsal(cfg.run.rehearsal, self.learner, origin=self.task.origin,
-                                       seed=cfg.run.seed, batch_size=adv.batch_size)
-        if self.frozen:
-            for module in (self.learner.actor, self.learner.critics, self.learner.targets):
-                module.requires_grad_(False).eval()
-            self.replay = None
-        if self.entry == 'start' and self.mode == 'fine_tune' and adv.freeze_encoder and self.freeze is None:
-            self.freeze = modes.EncoderFreeze(self.learner)
-        if self.entry == 'resume' and self.mode == 'fine_tune' and adv.freeze_encoder:
-            self.freeze = modes.EncoderFreeze(self.learner)
-        self.frozen_digest = ckpt.weight_digest(self.learner) if self.frozen else None
-        run = cfg.run
-        self.ledger = BudgetLedger(run.max_evaluations, max_launches=run.max_spectre_launches,
-                                   max_retries=run.max_retries)
-        self.rng = random.Random(run.seed)
-        # Bayesian optimization instead of the policy (run.optimizer, record 7.304): its proposer is made at the first
-        # design it is asked for, with the lanes' parameter groups. Its state lives in this process only, so such a run
-        # is a from-scratch run that is not continued.
-        self.proposer = None
-        if run.optimizer == 'bayes' and (self.mode != 'scratch' or self.entry == 'resume'):
-            raise ValueError('A Bayesian-optimization run (run.optimizer "bayes") is a from-scratch run and cannot be '
-                             'resumed or started from a saved model: its search state is not saved. Start a new run.')
-        self.tracker = best_design.BestDesignTracker(self.compiled.preference)
-        self.counters = dict(global_env_step=0, completion_index=0, episodes=0, baseline_done=False,
-                             consecutive_failures=0, consecutive_infrastructure_failures=0,
-                             infrastructure_failures=0, last_successful_evaluation_utc=None,
-                             active_seconds_before=0.0, sum_job_runtime_seconds=0.0,
-                             failures=0, retries=0, last_checkpoint_commit=0, launches_unconfirmed_after_crash=0,
-                             interrupted_evaluations=0, feasible_evaluations=0, valid_evaluations=0)
-        self.previous_best_waveform = None
-        # A baseline run asked to calibrate (record 7.197): until its baseline evaluation is committed and valid, no other
-        # lane starts and no random design is drawn (`_dispatch`, `_commit`). Any other run never waits.
-        self._baseline_checked = self.calibration_only or not self.manifest.get('calibration') or self.entry == 'resume'
-        self.encoder = None
-        if self.archive:
-            self.encoder = StateEncoder(self.layout.data / 'states' / 'static', task_id=self.task_id,
-                                        graph=self.compiled.graph, specs=self.compiled.specs,
-                                        feature_schema_version=input_options['feature_schema'].version,
-                                        spec_schema_version=self.compiled.spec_schema.version)
-        if self.entry == 'resume':
-            self._restore(built['run_state'])
-        if self.ledger.uncertain_launches:
-            write_json(self._condition_stop_file, dict(reason='unresolved_launch_intent'))
-            raise RuntimeError('Unresolved physical launch intents/leases must be reconciled before resume; no lanes opened')
-        self.checkpoints = ckpt.CheckpointStore(self.layout.run_dir, run_id=self.run_id, task_id=self.task_id,
-                                                task_definition_hash=self.task_hash,
-                                                save_replay=out.save_replay_snapshots, keep_last=out.keep_last_checkpoints)
-        self._record_load_policy()
-        count = min(run.concurrency, self.task.max_concurrency)
-        env_run = run.model_copy(deep=True)
-        factory = self._lane_factory or self.task.env_factory_builder(self.compiled, self.layout.work, env_run)
-        circuit = getattr(factory, 'profile', None) or getattr(getattr(factory, 'inner', None), 'profile', None)
-        if getattr(circuit, 'model_library_event', None) is not None:    # which parts of the model file the decks load
-            self._event('model_library', **circuit.model_library_event)
-        from analog_optimizer.training.workers import WorkerLimits
-        # A real (native) factory needs ONE owner of the Virtuoso session, alive from before the first lane opens until
-        # after the last one closed: the optimizer's preparation service. Entered here exactly as its own training loop
-        # does (training/parallel.py); without it a real lane cannot even connect. Closed in _finalize, after the lanes.
-        prepare_context = getattr(factory, 'preparation_context', None)
-        if callable(prepare_context):
-            from contextlib import ExitStack
-            self.preparation_report = {}
-            self._preparation = ExitStack()
-            factory = self._preparation.enter_context(prepare_context(WorkerLimits(), self.preparation_report))
-            self._event('preparation_service_started', session=(self.preparation_report.get('preparation') or {}).get('session_dir'))
-        limits = WorkerLimits(operation_seconds=max(300., (1 + len(run.conditions.corners)) * adv.simulation_timeout_seconds + 180.))
-        self._scratch = local_scratch(self.layout)
-        if self._scratch is not None:                    # wrapped last: it keeps the preparation service's factory as is
-            factory = ScratchLinked(factory, self._scratch)
-            self._event('simulator_scratch', path=str(self._scratch),
-                        note='export packages and per-job folders on the local disk; kept job folders move to the run folder')
-        self.lanes = open_lanes(factory, count, use_processes=self.use_processes, limits=limits)
-        self.lane_state = {lane.lane_id: dict(observation=None, needs_reset=True, busy=None, finished=False,
-                                              episode_id=None, reset_cache_valid=False, resets_since_check=0)
-                           for lane in self.lanes}
-        for lane in self.lanes:
-            if lane.info['origin'] != self.task.origin:
-                raise RuntimeError('Lane origin differs from the task origin')
-        self.last_checkpoint_time = self._clock()
-        self.checkpoint_due = False
-        # "Save now" (command `checkpoint`): the next due save is of kind `manual`, and the request is answered in
-        # status.json so that the page knows when ITS request has been written.
-        self.checkpoint_kind, self.manual_save = 'periodic', None
+        return engine_preparation.prepare(self, local_scratch=local_scratch)
 
     def _record_load_policy(self):
-        segment = self.manifest['segments'][-1]
-        segment.update(load_policy=self.load_policy, started_utc=iso(self._wall_started), pid=os.getpid(),
-                       host=socket.gethostname(), lanes='process' if self.use_processes else 'thread')
-        write_json(self.layout.manifest, self.manifest)
+        return engine_preparation.record_load_policy(self)
 
     def _restore(self, run_state):
-        """resume keeps counters. Durable tables are the source of truth for cost after a crash."""
-        if not run_state or run_state.get('version') != 'workbench-run-state-v1':
-            raise RuntimeError('The checkpoint carries no workbench run state; it cannot continue this run')
-        if run_state['run_id'] != self.run_id or run_state['task_definition_hash'] != self.task_hash:
-            raise RuntimeError('Checkpoint belongs to another run or task')
-        self.ledger.load_state(run_state['ledger'])
-        self.counters.update(run_state['counters'])
-        collector = run_state['collector']
-        self.rng.setstate(collector['rng_state'])
-        self.tracker = best_design.BestDesignTracker(self.compiled.preference, collector.get('best_design'))
-        self.previous_best_waveform = collector.get('previous_best_waveform')
-        if self.rehearsal is not None:
-            if 'rehearsal' not in collector:
-                raise RuntimeError('Checkpoint lacks rehearsal sampler state')
-            self.rehearsal.load_state_dict(collector['rehearsal'])
-        cursor = run_state['data_cursor']
-        report = dict(checkpoint_commit_seq=cursor['commit_seq'], recovery=self.dataset.recovery)
-        # The best design is also written on every improvement (best_design/tracker_state.json), which reaches further
-        # than the last checkpoint. Without it a crash after the only feasible evaluation resumed with an empty tracker,
-        # finalized as "no feasible design" and DELETED parameters.csv / optimized_dut.scs of a design its own
-        # evaluations table still held (review of 2026-09-23).
-        later = read_json(self.layout.best_design / 'tracker_state.json', default=None)
-        if later and (later.get('last_commit_seq') or 0) > cursor['commit_seq']:
-            self.tracker = best_design.BestDesignTracker(self.compiled.preference, later)
-            report['best_design_after_checkpoint'] = later['last_commit_seq']
-        self.dataset.flush()
-        if self.dataset.last_seq > cursor['commit_seq']:
-            report['counters_after_checkpoint'] = self._count_since(cursor['commit_seq'])
-        interrupted = self._record_interrupted()
-        post = self.dataset.last_seq - cursor['commit_seq']
-        if post or interrupted:
-            reader = DatasetReader(self.layout.data)
-            evaluations = reader.rows('evaluations', ['evaluation_id', 'status', 'cache_hit', 'attempts', 'valid'])
-            jobs = reader.rows('simulator_jobs', ['launch_counted', 'invocation_confirmed'])
-            unresolved = read_json(self.layout.data / '_journal' / 'unresolved-launch-leases.json', default={})
-            unknown = sum(item['allowance'] for item in unresolved.values())
-            report['reconciled'] = self.ledger.reconcile(
-                charged=len(evaluations), completed=len(evaluations),
-                failed=sum(1 for e in evaluations if not e['valid']),
-                launches=sum(1 for j in jobs if j['launch_counted']) + unknown,
-                uncertain=sum(1 for j in jobs if j['launch_counted'] and j['invocation_confirmed'] is None) + unknown,
-                retries=sum(max(0, e['attempts'] - 1) for e in evaluations),
-                cache_hits=sum(1 for e in evaluations if e['cache_hit']))
-            self.counters['completion_index'] = max(self.counters['completion_index'], len(evaluations))
-            report['post_checkpoint_evaluations'] = post
-            if post and not self.frozen and self.replay is not None and self.archive:
-                readmitted = 0
-                loader = TrajectoryLoader(self.layout.run_dir)
-                rows = {r['candidate_id']: r for r in loader.transition_rows()}
-                for transition in loader.transitions():
-                    row = rows[transition.candidate_id]
-                    if row['commit_seq'] > cursor['commit_seq'] and row['replay_admitted']:
-                        self.replay.add(transition)
-                        readmitted += 1
-                report['readmitted_transitions'] = readmitted
-                report['note'] = ('Learner weights are those of the checkpoint. Experience committed after it was '
-                                  're-admitted to replay; the learner updates made after it are not recoverable.')
-        if self.encoder is not None:
-            self.encoder.written = {r['state_id'] for r in DatasetReader(self.layout.data).rows('states', ['state_id'])}
-        # A pause for infrastructure failures asks for the connection gate to pass again, and a resume passes it: the count
-        # starts over. Restored as saved it was still at the limit, so every Resume paused again at once, nothing evaluated
-        # (review of 2026-10-01).
-        self.counters['consecutive_infrastructure_failures'] = 0
-        self._pending_events = [('resumed', report)]
+        return engine_recovery.restore(self, run_state)
 
     def _count_since(self, checkpoint_seq):
-        """The run's own counts, brought up to the evaluations it committed after the save point (record 7.322). The
-        tables hold them, but the save point's older numbers were restored as they stood: a row of failures that a
-        success had since ended was still counted, so one more failure stopped the run; failures made after the save
-        point were forgotten; and a first passing design found after it was lost - the summary said none was found, and
-        a run told to stop at its first passing design went on to a second one. Each evaluation is counted as `_commit`
-        counted it. The row of an evaluation an earlier crash interrupted is none: it never came back. Returns what
-        the resume event says of it."""
-        columns = ['evaluation_id', 'commit_seq', 'status', 'valid', 'all_hard_constraints_satisfied', 'nominal_feasible',
-                   'global_env_step', 'episode_id', 'completed_at', 'dispatch_index', 'cumulative_evaluations_charged',
-                   'cumulative_completed', 'cumulative_launches', 'in_flight_at_commit']
-        later = sorted((row for row in DatasetReader(self.layout.data).rows('evaluations', columns)
-                        if row['commit_seq'] > checkpoint_seq and row['status'] != 'interrupted'), key=lambda row: row['commit_seq'])
-        try:        # the record made at the event (its seconds, what was in flight); the table's own numbers without it
-            logged = {(e.get('event'), e.get('evaluation_id')): e for e in read_jsonl(self.layout.logs / 'events.jsonl')}
-        except (OSError, ValueError):
-            logged = {}
-        found = None
-        for row in later:
-            failed = not row['valid']
-            self.counters['failures'] += int(failed)
-            self.counters['valid_evaluations'] += int(not failed)
-            self.counters['feasible_evaluations'] += int(bool(row['all_hard_constraints_satisfied']))
-            self.counters['consecutive_failures'] = self.counters['consecutive_failures'] + 1 if failed else 0
-            self.counters['global_env_step'] = max(self.counters['global_env_step'], row['global_env_step'] or 0)
-            if not failed and row['completed_at'] is not None:
-                self.counters['last_successful_evaluation_utc'] = iso(row['completed_at'])
-            # an episode begun after the save point keeps its number: the next one must not take it again
-            number = (row['episode_id'] or '').rpartition('-')[2]
-            if number.isdigit():
-                self.counters['episodes'] = max(self.counters['episodes'], int(number))
-            for field, column in (('first_nominal_feasible', 'nominal_feasible'), ('first_feasible', 'all_hard_constraints_satisfied')):
-                if not row[column] or getattr(self.ledger, field) is not None:
-                    continue
-                event = logged.get((field, row['evaluation_id']))
-                first = {k: v for k, v in event.items() if k not in ('time_utc', 'event', 'run_id')} if event else dict(
-                    evaluation_id=row['evaluation_id'], first_feasible_eval_count=row['cumulative_evaluations_charged'],
-                    dispatch_index=row['dispatch_index'], completed_count=row['cumulative_completed'],
-                    in_flight_count=row['in_flight_at_commit'], in_flight_evaluation_ids=[],
-                    spectre_launches=row['cumulative_launches'], commit_seq=row['commit_seq'], active_seconds=None,
-                    wall_seconds=None, convention='from the evaluations table after a crash: evaluations charged when '
-                                                  'this design was committed; the seconds at the event are not known')
-                self.ledger.restore_first_feasible(first, nominal=field == 'first_nominal_feasible')
-                if field == 'first_feasible':
-                    found = row['evaluation_id']
-        if found and self.config.run.stop_at_first_feasible:        # the stop it asked for was cut off by the crash
-            self.stop_reason = 'first_feasible'
-        return dict(evaluations=len(later), consecutive_failures=self.counters['consecutive_failures'], first_feasible=found)
+        return engine_recovery.count_since(self, checkpoint_seq)
 
     def _record_interrupted(self):
-        """Evaluations that STARTED (budget charged) but were never committed because the process died."""
-        started = {r['evaluation_id']: r for r in read_jsonl(self.layout.data / '_journal' / 'dispatch.jsonl')}
-        lost = [r for key, r in started.items() if not self.dataset.has(key)]
-        lease_path = self.layout.data / '_journal' / 'unresolved-launch-leases.json'
-        leases = read_json(lease_path, default={})
-        for record in sorted(lost, key=lambda r: r['dispatch_index']):
-            if not self.task.mock:
-                # A real dispatch without a coordinator receipt cannot release its allocation: an unknown lease,
-                # not a fabricated simulator job or confirmed call. The toy backend launches nothing: no lease.
-                leases[record['evaluation_id']] = dict(allowance=record.get('launch_allowance', 1),
-                                                      dispatch=record, state='unresolved')
-                write_json(lease_path, leases)
-            seq, now = self.dataset.next_seq(), iso()
-            self.counters['completion_index'] += 1
-            row = dict(run_id=self.run_id, evaluation_id=record['evaluation_id'], task_id=self.task_id,
-                       proposal_id=record['proposal_id'], worker_id=record['worker_id'],
-                       episode_id=record.get('episode_id') or 'unknown', episode_step=record.get('episode_step', 0),
-                       global_env_step=self.counters['global_env_step'], dispatch_index=record['dispatch_index'],
-                       completion_index=self.counters['completion_index'], commit_seq=seq, phase=record['phase'],
-                       action_source=record['action_source'], policy_version=record.get('policy_version'),
-                       proposed_at=record['proposed_at'], started_at=record['started_at'], completed_at=now,
-                       committed_at=now, queue_seconds=0.0, execution_seconds=0.0, provenance=self.provenance,
-                       result_source='simulation', cache_hit=False, attempts=1,
-                       parameters_ref=record['evaluation_id'], metrics_ref=record['evaluation_id'], reward=None,
-                       reward_components=None, valid=False, all_hard_constraints_satisfied=False,
-                       normalized_constraint_violation=None, env_success=None,
-                       best_so_far_evaluation_id=(self.tracker.best or {}).get('evaluation_id'),
-                       best_so_far_feasible=bool(self.tracker.feasible),
-                       best_so_far_violation=(self.tracker.best or {}).get('violation'),
-                       best_so_far_metrics=(self.tracker.best or {}).get('metrics'),
-                       cumulative_evaluations_charged=max(self.ledger.charged, record['dispatch_index']),
-                       cumulative_completed=self.ledger.completed, cumulative_launches=self.ledger.launches,
-                       in_flight_at_commit=0, after_first_feasible=self.ledger.first_feasible is not None,
-                       in_flight_at_first_feasible=False, status='interrupted', failure_type='interrupted_by_crash',
-                       diagnostics='The worker process ended while this evaluation was running. It stays charged. ' + (
-                                   'Whether the toy backend was called is unknown; nothing physical happened.' if self.task.mock else
-                                   'Its full launch allowance remains charged as unresolved, separately from confirmed '
-                                   'jobs. Reconcile the worker launch journals before any resume.'),
-                       terminated=False, truncated=True, replay_eligible=False, duplicate_of=None)
-            self.dataset.commit(dict(evaluation_id=record['evaluation_id'], commit_seq=seq, rows=dict(evaluations=[row])))
-            self.counters['interrupted_evaluations'] += 1
-            self.counters['launches_unconfirmed_after_crash'] += record.get('launch_allowance', 1)
-        if lost:
-            self.dataset.flush()
-        return len(lost)
+        return engine_recovery.record_interrupted(self)
 
     # ================================================================== scheduler loop
     def _loop(self):
@@ -523,7 +237,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             self.requested, self.stop_reason, self.forced = 'cancel', 'user_cancel', True
             write_json(self._condition_stop_file, dict(reason=self.stop_reason))
             self._event('control', command='cancel', note='forced cancellation')
-        elif name == 'checkpoint' and self.stop_reason is None and self.config.output.save_checkpoints:
+        elif name == 'checkpoint' and self.stop_reason is None and saves_rl_model(self.config):
             # "Save now": taken like a periodic save, at the next boundary with nothing in flight (dispatch waits
             # for it), then the run goes on. A run that is already stopping saves by itself.
             self.checkpoint_due, self.checkpoint_kind = True, 'manual'
@@ -758,260 +472,16 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
 
     # ------------------------------------------------------------------ commit (learner receipt)
     def _commit(self, lane, busy, result):
-        state = self.lane_state[lane.lane_id]
-        completed_at = utcnow()
-        self.counters['completion_index'] += 1
-        commit_seq = self.dataset.next_seq()
-        evaluation_id = busy['evaluation_id']
-        record = result.get('record') or {}
-        step = result['step'] if result['ok'] else None
-        observation = step[0] if step else None
-        reward = step[1] if step else None
-        terminated, truncated = (bool(step[2]), bool(step[3])) if step else (False, True)
-        info = step[4] if step else {}
-        outcome = self._outcome(record, result, observation, truncated)
-        (status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows, valid, feasible,
-         nominal_feasible, violation) = outcome
-        if op_is_step := busy['op'] != 'reset':
-            self.counters['global_env_step'] += 1
-        if not self._baseline_checked and busy['phase'] == 'baseline':
-            # The calibration's random designs follow a valid baseline only: without one no lane can start an episode, and
-            # every further evaluation would be the same failing reset. The run ends here as a baseline run of one evaluation.
-            self._baseline_checked = True
-            if not valid and self.stop_reason is None:
-                self.stop_reason = 'baseline_invalid'
-                self._event('limit_reached', reason=self.stop_reason,
-                            note='the starting design gave no valid result: no calibration design is simulated')
-        failed = not valid
-        infrastructure = None if valid else classify_infrastructure_failure(
-            status, record.get('reason_code'), ' '.join(str(x) for x in (record.get('error'), (result.get('exception') or {}).get('message')) if x))
-        receipts = record.get('jobs') or [dict(status=status, reason_code=record.get('reason_code'))]
-        for receipt_index, job in enumerate(receipts):
-            job_failure = classify_infrastructure_failure(job.get('status'), job.get('reason_code'), '')
-            if job_failure and not result.get('cancelled'):
-                infrastructure = job_failure
-                self.counters['consecutive_infrastructure_failures'] += 1
-                self.counters['infrastructure_failures'] += 1
-            else:
-                self.counters['consecutive_infrastructure_failures'] = 0
-            self._event('condition_receipt', evaluation_id=evaluation_id, job_id=job.get('job_id'),
-                        candidate_receipt_index=self.counters['completion_index'], condition_receipt_index=receipt_index,
-                        status=job.get('status'), infrastructure_failure=job_failure)
-        if valid:
-            self.counters['last_successful_evaluation_utc'] = iso(completed_at)
-        self.ledger.complete(evaluation_id, failed=failed)
-        self.counters['failures'] += int(failed)
-        self.counters['valid_evaluations'] += int(valid)
-        self.counters['feasible_evaluations'] += int(feasible)
-        self.counters['consecutive_failures'] = self.counters['consecutive_failures'] + 1 if failed else 0
-        env_success = info.get('success') if step else None
-        if valid and env_success is not None and bool(env_success) != feasible:
-            self._event('feasibility_disagreement', evaluation_id=evaluation_id, independent=feasible,
-                        environment=bool(env_success), note='The independent threshold check is authoritative')
-        # ---- Bayesian optimization (record 7.304): every finished design and its reward, the random warm-up's included;
-        # a design without a reward (its simulation failed) counts as the worst seen
-        if self.config.run.optimizer == 'bayes' and not self.calibration_only and op_is_step and busy['proposal'] is not None:
-            asked = busy['action_source'] == bayes.Proposer.SOURCE
-            if self._proposer(lane.info['group_ids']).observe(busy['proposal'], reward, asked=asked):
-                self._event('bayes_region_restarted', evaluation_id=evaluation_id, **self.proposer.search.state())
-        # ---- learner receipt: replay admission and the updates it triggers
-        transition_rows, state_rows, update_rows, admitted = [], [], [], False
-        eligible = bool(info.get('replay_eligible')) if step else False
-        if not self.calibration_only and op_is_step and step is not None and observation is not None and reward is not None:
-            transition = None
-            if eligible:
-                from analog_optimizer.training.replay import Transition
-                transition = Transition.from_step(busy['previous'], busy['proposal'], step)
-                if not self.frozen:
-                    self.replay.add(transition)
-                    admitted = True
-            if self.archive:
-                transition_rows, state_rows = self._transition_rows(busy, step, lane, commit_seq, admitted, record)
-            if self._pending_updates and not self._defer_updates():
-                self._run_pending_updates()              # no later commit is sure to come: earlier results' updates now (7.281)
-            if admitted and self._defer_updates():
-                if self._updates_due():                  # decided now, run once the lane has its next design (7.281)
-                    self._pending_updates.append(commit_seq)
-            elif admitted:
-                update_rows = self._maybe_update(commit_seq)
-        # ---- first feasibility: decided when the scheduler receives the result
-        in_flight_before, after_first = self._first_feasibility(busy, evaluation_id, commit_seq, nominal_feasible, feasible)
-        role, best = self._offer(busy, record, info, observation, reward, commit_seq, outcome)
-        job_rows, retention_plan = self._job_rows(busy, lane, role, failed)
-        if infrastructure and job_rows:
-            job_rows[-1]['exit_status'] = f"{job_rows[-1]['exit_status']}:{infrastructure}"   # distinguishable in simulator_jobs
-        self.counters['retries'] = self.ledger.retries
-        committed_at = utcnow()
-        diagnostics = None
-        if result.get('exception'):
-            diagnostics = f"{result['exception']['type']}: {result['exception']['message']}"
-        elif record.get('error') or record.get('reason_code'):
-            diagnostics = f"{record.get('reason_code') or ''} {record.get('error') or ''}".strip()
-        evaluation = dict(
-            run_id=self.run_id, evaluation_id=evaluation_id, task_id=self.task_id, proposal_id=busy['proposal_id'],
-            worker_id=lane.lane_id, episode_id=busy['episode_id'], episode_step=int(result.get('episode_step') or 0),
-            global_env_step=self.counters['global_env_step'], dispatch_index=busy['dispatch_index'],
-            completion_index=self.counters['completion_index'], commit_seq=commit_seq, phase=busy['phase'],
-            action_source=busy['action_source'], policy_version=busy['policy_version'],
-            proposed_at=iso(busy['proposed_at']), started_at=iso(busy['started_at']), completed_at=iso(completed_at),
-            committed_at=iso(committed_at),
-            queue_seconds=(busy['started_at'] - busy['proposed_at']).total_seconds(),
-            execution_seconds=(completed_at - busy['started_at']).total_seconds(), provenance=self.provenance,
-            result_source='simulation', cache_hit=False, attempts=len(busy['attempts']),
-            parameters_ref=evaluation_id, metrics_ref=evaluation_id, reward=reward,
-            reward_components=None if reward is None else {k: v for k, v in (info.get('violations') or {}).items()
-                                                           if v is not None},
-            valid=valid, all_hard_constraints_satisfied=feasible, normalized_constraint_violation=violation,
-            env_success=None if env_success is None else bool(env_success),
-            reward_version=record.get('reward_version'), condition_policy=record.get('condition_policy'),
-            conditions_planned=info.get('conditions_planned'), conditions_evaluated=info.get('conditions_evaluated'),
-            conditions_complete=info.get('conditions_complete'), nominal_feasible=nominal_feasible,
-            robust_feasible=feasible if self.config.run.conditions.policy != 'off' else None,
-            clearance_margin=info.get('clearance_margin'), tightest_clearance_spec=info.get('tightest_clearance_spec'),
-            clearance_rule=record.get('clearance_rule'),
-            condition_results_json=json.dumps(record['condition_results']) if record.get('condition_results') else None,
-            best_so_far_evaluation_id=None if best is None else best['evaluation_id'],
-            best_so_far_feasible=bool(self.tracker.feasible),
-            best_so_far_violation=None if best is None else best['violation'],
-            best_so_far_metrics=None if best is None else {k: v for k, v in best['metrics'].items() if v is not None},
-            cumulative_evaluations_charged=self.ledger.charged, cumulative_completed=self.ledger.completed,
-            cumulative_launches=self.ledger.launches, in_flight_at_commit=len(self.ledger.in_flight_ids()),
-            after_first_feasible=after_first, in_flight_at_first_feasible=evaluation_id in in_flight_before,
-            status=status, failure_type=None if valid else (
-                infrastructure or ('invalid_measurement' if status == 'ok' else (record.get('reason_code') or status))),
-            diagnostics=redact(diagnostics, 2000), terminated=terminated, truncated=truncated,
-            replay_eligible=eligible, duplicate_of=record.get('duplicate_of'))
-        if self._update_rows_waiting:                    # updates learned since the last commit go with this one (7.281)
-            update_rows, self._update_rows_waiting = self._update_rows_waiting + update_rows, []
-        bundle = dict(evaluation_id=evaluation_id, commit_seq=commit_seq, rows=dict(
-            evaluations=[evaluation], parameters=self._parameter_rows(busy, record, evaluation_id),
-            metrics=self._metric_rows(evaluation_id, raw_metrics, raw_validity, raw_units, derived, spec_values,
-                                      constraint_rows, status, record.get('condition_results')),
-            simulator_jobs=job_rows, learner_updates=update_rows, states=state_rows, transitions=transition_rows))
-        self.dataset.commit(bundle)                              # <- durable acknowledgement
-        timings = record.get('timings')
-        if isinstance(timings, dict) and timings:
-            self._timings.append(dict(evaluation_id=evaluation_id, worker_id=lane.lane_id, phase=busy['phase'],
-                                      committed_at=iso(committed_at), seconds=timings))
-            if len(self._timings) >= TIMING_BATCH:
-                self._write_timings()
-        if role is not None:
-            write_json(self.layout.best_design / 'tracker_state.json',
-                       dict(last_commit_seq=commit_seq, **self.tracker.state_dict()))
-        self._apply_retention(retention_plan, role)
-        # ---- lane state for the next dispatch
-        if result.get('exception') and not result.get('cancelled'):
-            state['finished'] = True
-            if self.stop_reason is None:
-                self.stop_reason = 'evaluation_exception'
-                self.error = redact(diagnostics, 2000)
-                self._log_error('evaluation_exception', None, evaluation_id=evaluation_id, detail=diagnostics)
-        else:
-            state['observation'] = observation
-            state['needs_reset'] = terminated or truncated or observation is None
-            if busy['op'] == 'reset':                # the lane keeps a valid simulated reset for the next reused ones
-                state['reset_cache_valid'] = bool(result['ok'] and info.get('evaluation_valid') and observation is not None
-                                                  and not terminated and not truncated)
-                state['resets_since_check'] = 0
-        every, seconds = self.config.output.checkpoint_every_evaluations, self.config.output.checkpoint_every_seconds
-        if self.config.output.save_checkpoints and (
-                (every and commit_seq - self.counters['last_checkpoint_commit'] >= every)
-                or (seconds and self._clock() - self.last_checkpoint_time >= seconds)):
-            self.checkpoint_due = True
-        self._write_status('running', throttle=0.5)
+        return engine_commit.commit(self, lane, busy, result, timing_batch=TIMING_BATCH)
 
     def _outcome(self, record, result, observation, truncated):
-        """What the evaluation measured, judged against the Specs: its status, the simulator's own results, the probes and
-        specs worked out from them, and whether the design is valid and feasible (at every condition it ran at)."""
-        # The lane's record also carries the computed specs (spec_equations: added to the simulation result so that the
-        # reward sees them). The simulator's own results are everything else; they alone feed the probes and raw rows.
-        plan, computed = self.compiled.plan, set(self.compiled.plan.injected)
-        raw_metrics = {k: v for k, v in (record.get('metrics') or {}).items() if k not in computed}
-        raw_validity = {k: v for k, v in (record.get('metric_validity') or {}).items() if k not in computed}
-        raw_units = {k: v for k, v in (record.get('metric_units') or {}).items() if k not in computed}
-        status = record.get('status') or ('cancelled' if result.get('cancelled') else 'execution_error')
-        if not result['ok'] and not result.get('cancelled'):
-            status = 'execution_error'
-        usable = {k: v for k, v in raw_metrics.items() if raw_validity.get(k) is True and v is not None}
-        derived = plan.probe_values(usable)
-        spec_values = plan.spec_values(probes=derived)
-        metric_values, metric_valid = {}, {}
-        for target in self.compiled.targets:
-            value = spec_values.get(target['metric_id'])
-            ok = value is not None and status in ('ok', 'measurement_error')
-            metric_values[target['metric_id']], metric_valid[target['metric_id']] = (value if ok else None), ok
-        valid, feasible, constraint_rows, violation = hard_constraints(self.compiled.targets, metric_values, metric_valid)
-        nominal_feasible = feasible
-        if observation is not None and observation.condition_results:
-            evaluation = observation.evaluation
-            checks = []
-            for index, row in enumerate(observation.condition_results):
-                targets = tuple(t for t in self.compiled.targets if index == 0 or not t['nominal_only'])
-                validity = {t['metric_id']: row.metric_validity.get(t['metric_id']) is True
-                            and row.metric_units.get(t['metric_id']) == t['unit'] and row.status in ('ok', 'measurement_error')
-                            and row.candidate_evaluated for t in targets}
-                checks.append(hard_constraints(targets, row.metrics, validity))
-            valid = all(check[0] for check in checks) and not truncated
-            feasible = valid and evaluation.complete and all(check[1] for check in checks)
-            nominal_feasible = checks[0][1]
-            violation = max((check[3] or 0 for check in checks), default=0) if valid else None
-            metric_values = evaluation.worst_values
-            spec_values = metric_values
-            by_metric = {}
-            for _, _, checked, _ in checks:
-                for row in checked:
-                    old = by_metric.get(row['metric_id'])
-                    if old is None or (row.get('normalized_violation') or 0) > (old.get('normalized_violation') or 0):
-                        by_metric[row['metric_id']] = row
-            constraint_rows = list(by_metric.values())
-        return Outcome(status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows,
-                       valid, feasible, nominal_feasible, violation)
+        return engine_commit.outcome(self, record, result, observation, truncated)
 
     def _first_feasibility(self, busy, evaluation_id, commit_seq, nominal_feasible, feasible):
-        """The run's first (nominally) feasible design, decided when the scheduler receives the result; the stop at the first
-        feasible design. Returns (the evaluations in flight at the first feasible one, whether it came before)."""
-        in_flight_before = set(self.ledger.first_feasible['in_flight_evaluation_ids']) if self.ledger.first_feasible else set()
-        after_first = self.ledger.first_feasible is not None
-        if nominal_feasible and self.ledger.first_nominal_feasible is None:
-            first = self.ledger.mark_first_feasible(evaluation_id, dispatch_index=busy['dispatch_index'],
-                commit_seq=commit_seq, active_seconds=self._active_seconds(),
-                wall_seconds=(utcnow() - self._run_created()).total_seconds(), nominal=True)
-            self._event('first_nominal_feasible', **first)
-        if feasible and not after_first:
-            first = self.ledger.mark_first_feasible(evaluation_id, dispatch_index=busy['dispatch_index'],
-                                                    commit_seq=commit_seq, active_seconds=self._active_seconds(),
-                                                    wall_seconds=(utcnow() - self._run_created()).total_seconds())
-            self._event('first_feasible', **first)
-            if self.config.run.stop_at_first_feasible and self.stop_reason is None:
-                self.stop_reason = 'first_feasible'
-        return in_flight_before, after_first
+        return engine_commit.first_feasibility(self, busy, evaluation_id, commit_seq, nominal_feasible, feasible)
 
     def _offer(self, busy, record, info, observation, reward, commit_seq, outcome):
-        """The evaluation as a candidate of the best-design tracker. Returns (its role there, the tracker's best)."""
-        (status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows, valid, feasible,
-         nominal_feasible, violation) = outcome
-        candidate = self._candidate(busy, record, metric_values, raw_units, constraint_rows, valid, feasible,
-                                    violation, reward, commit_seq)
-        candidate.update(nominal_feasible=nominal_feasible, nominal_metrics=record.get('metrics'),
-                         robust_feasible=feasible if self.config.run.conditions.policy != 'off' else None,
-                         worst_metrics=metric_values, conditions_complete=info.get('conditions_complete'),
-                         conditions_evaluated=info.get('conditions_evaluated'), conditions_planned=info.get('conditions_planned'),
-                         clearance_margin=info.get('clearance_margin'), tightest_clearance_spec=info.get('tightest_clearance_spec'),
-                         clearance_rule=record.get('clearance_rule'),
-                         conditions=[row['condition']['corner']['id'] if row['condition'] else 'nominal'
-                                     for row in record.get('condition_results', [])] or ['nominal'])
-        if candidate['robust_feasible'] and self.compiled.preference and observation is not None:
-            preference = self.compiled.preference
-            spec = next(s for s in observation.specs if s.metric_id == preference['metric'])
-            applicable = observation.condition_results[:1] if spec.nominal_only else observation.condition_results
-            values = [row.metrics.get(spec.metric_id) for row in applicable
-                      if row.metric_validity.get(spec.metric_id) is True]
-            candidate['worst_metrics'] = dict(metric_values)
-            candidate['worst_metrics'][spec.metric_id] = ((max(values) if preference['direction'] == 'min' else min(values))
-                                                         if len(values) == len(applicable) else None)
-        role = self.tracker.offer(candidate)
-        best = self.tracker.best
-        return role, best
+        return engine_commit.offer(self, busy, record, info, observation, reward, commit_seq, outcome)
 
     def _run_created(self):
         return datetime.fromisoformat(self.manifest['created_utc'])
@@ -1095,7 +565,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         self._run_pending_updates()                      # the save point holds every update so far (7.281)
         self._persist_waiting_rows()                     # and its data cursor covers their rows (7.283)
         self._clean_host()                               # the lanes are idle: the host's dropped job folders go (7.282)
-        if not self.config.output.save_checkpoints:
+        if not saves_rl_model(self.config):
             self.checkpoint_due = False
             return None
         self.dataset.flush()
@@ -1130,7 +600,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         write the very same state a second time, replay buffer and all. That save becomes the final one instead. Only
         for 'final' and only when nothing moved since: the same commit, learner updates and replay insertions."""
         last = getattr(self, 'last_checkpoint', None)
-        if (kind != 'final' or last is None or last.get('kind') != 'periodic' or not self.config.output.save_checkpoints
+        if (kind != 'final' or last is None or last.get('kind') != 'periodic' or not saves_rl_model(self.config)
                 or (self.manual_save and self.manual_save['state'] == 'waiting')):
             return None
         counters = last['counters']
@@ -1146,165 +616,19 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
 
     # ------------------------------------------------------------------ finalize
     def _clear_scratch(self):
-        """Once the lanes and the preparation service are closed: the links in the lanes' folders, then the run's local
-        scratch itself (`layout.local_scratch`). Each kept job folder moved to the run folder when its result was
-        durable; the rest are temporaries, as in work/."""
-        if self._scratch is None:
-            return
-        for lane in self.lanes:
-            directory = (getattr(lane, 'info', None) or {}).get('directory')
-            if directory:
-                try:
-                    unlink_scratch(directory)
-                except OSError:
-                    pass
-        shutil.rmtree(self._scratch, ignore_errors=True)
-        try:
-            self._scratch.parent.rmdir()              # the experiment's folder, once none of its runs has scratch left
-        except OSError:
-            pass
+        return engine_finalization.clear_scratch(self)
 
     def _finalize(self, final_state):
-        self._write_timings()
-        try:
-            self._run_pending_updates()                  # before the last save point and its "unchanged" check (7.281)
-            self._persist_waiting_rows()                 # no commit comes after them: their rows go as their own record (7.283)
-        except Exception as exc:
-            self._log_error('pending_updates_failed', exc)
-        problems = []
-        for lane in self.lanes:
-            try:
-                outcome = lane.close()
-                if outcome.get('state') not in ('restored', 'not_connected', 'already_closed'):
-                    problems.append(f"lane {lane.lane_id}: environment restoration state {outcome.get('state')}")
-            except BaseException as exc:
-                problems.append(f'lane {lane.lane_id}: {type(exc).__name__}: {exc}')
-        if self._preparation is not None:                # after every lane: the owner restores the schematic and lets go
-            try:
-                self._preparation.close()
-                restoration = (self.preparation_report or {}).get('preparation_restoration') or {}
-                if restoration.get('state') != 'restored':
-                    problems.append(f"preparation service: restoration state {restoration.get('state')}")
-            except BaseException as exc:
-                problems.append(f'preparation service: {type(exc).__name__}: {exc}')
-            self._preparation = None
-        self._clear_scratch()
-        try:                                             # every lane is closed: the host's dropped job folders go (7.282)
-            self._clean_host()
-            self._log_virtuoso_memory('end')
-        except Exception as exc:
-            self._log_error('simulator_host_cleanup_failed', exc)
-        checkpoint = None
-        persistence_ok = self.dataset is not None and self.dataset.failed is None
-        if persistence_ok and hasattr(self, 'ledger'):
-            try:
-                self.dataset.flush()
-                if not self.ledger.in_flight_ids():
-                    kind = {'paused': 'pause', 'stopped': 'stop', 'completed': 'final'}.get(final_state, 'safety')
-                    checkpoint = self._relabel_unchanged(kind) or self._checkpoint(kind)
-            except BaseException as exc:
-                persistence_ok = False
-                problems.append(f'final save failed: {type(exc).__name__}: {exc}')
-                self._log_error('final_save_failed', exc)
-        if problems and final_state == 'completed':
-            final_state = 'failed'
-        if problems:
-            self.error = redact('; '.join(filter(None, [self.error, *problems])), 4000)
-        try:
-            if hasattr(self, 'ledger'):
-                self._write_outputs(final_state, checkpoint, persistence_ok)
-        except BaseException as exc:
-            self._log_error('summary_failed', exc)
-            final_state = 'failed'
-            self.error = redact(f'{self.error or ""} summary failed: {exc}', 4000)
-        if self.dataset is not None:
-            try:
-                self.dataset.close()
-            except BaseException:
-                pass
-        ended = utcnow()
-        segment = self.manifest['segments'][-1]
-        segment.update(ended_utc=iso(ended), end_state=final_state, stop_reason=self.stop_reason,
-                       active_seconds=self.segment_seconds())
-        self.manifest['state'] = final_state
-        self._adopt_baseline()
-        self._calibrate()
-        write_json(self.layout.manifest, self.manifest)
-        self._event('segment_ended', state=final_state, stop_reason=self.stop_reason, error=self.error)
-        self._write_status(final_state)
-        try:
-            build_artifact_manifest(self.layout, run_id=self.run_id, final=final_state in ('completed', 'stopped'),
-                                    dataset_status=None if self.dataset is None else self.dataset.status(),
-                                    notes=getattr(self, 'manifest_notes', []))
-        except BaseException as exc:
-            self._log_error('artifact_manifest_failed', exc)
-        for stream in (self.events, self.errors, self.dispatch_log):
-            stream.close()
-        return final_state
+        return engine_finalization.finalize(self, final_state)
 
     def _adopt_baseline(self):
-        """A finished "Baseline simulation" of a generated task becomes the task's reference by itself
-        (profiles.adopt_baseline_run, record 7.78) - only that run kind, after the tables are closed and the manifest
-        says how the run ended, before it is written. What it did or why not goes into the manifest's notes. Nothing
-        here may fail the run: a problem is logged and the run ends as it would have."""
-        if self.manifest.get('run_kind') != 'baseline_preflight':
-            return
-        try:
-            from . import profiles  # lazy: in the try: a failure of the import is handled with the rest
-            outcome = profiles.adopt_baseline_run(self.layout.run_dir, manifest=self.manifest)
-        except BaseException as exc:
-            self._log_error('baseline_reference_failed', exc)
-            return
-        if outcome:
-            self.manifest.setdefault('notes', []).append(outcome['note'])
-            self.manifest_notes = [*getattr(self, 'manifest_notes', []), outcome['note']]
-            self._event('baseline_reference', recorded=outcome['recorded'], task=f"real:{outcome['name']}", note=outcome['note'])
+        return engine_finalization.adopt_baseline(self)
 
     def _calibrate(self):
-        """A baseline run asked to calibrate (record 7.197) writes its proposals - a Scale per Specs row and the Initial
-        alpha, from its random designs - into calibration.json of the run folder, and says so in the manifest's notes.
-        Nothing is applied: the page offers them. As with the baseline's adoption, nothing here may fail the run."""
-        if not self.manifest.get('calibration') or self.dataset is None:
-            return
-        try:
-            from . import calibration  # lazy: in the try: a failure of the import is handled with the rest
-            result = calibration.from_run(self.layout.run_dir, manifest=self.manifest)
-            write_json(self.layout.run_dir / calibration.FILE, result)
-        except BaseException as exc:
-            self._log_error('calibration_failed', exc)
-            return
-        note = calibration.sentence(result)
-        self.manifest.setdefault('notes', []).append(note)
-        self.manifest_notes = [*getattr(self, 'manifest_notes', []), note]
-        self._event('calibration', status=result['status'], designs=result['designs'], note=note)
+        return engine_finalization.calibrate(self)
 
     def _write_outputs(self, final_state, checkpoint, persistence_ok):
-        task = self.task
-        reparse, exporter, netlist_name = None, None, 'optimized_dut.scs'
-        if task.netlist_path and task.parser_config_path:
-            def reparse(text):
-                from analog_optimizer.netlist.config import ParserConfig
-                from analog_optimizer.netlist.spectre_parser import SpectreParser
-                return SpectreParser(ParserConfig.from_file(task.parser_config_path)).parse_text(
-                    text, source=task.netlist_path, top=task.circuit.get('dut_hierarchy'))
-        elif task.circuit.get('simulator') == 'ngspice':          # a SPICE deck: its own writer, values also inside a once-used subcircuit
-            from .ngspice_tasks import export_deck  # lazy: ngspice_tasks imports the optimizer
-            exporter, netlist_name = export_deck(task), 'optimized_dut.cir'
-        notes = best_design.write_outputs(
-            self.layout.best_design, self.tracker,
-            task=dict(task_id=self.task_id, task_key=task.task_key, circuit=task.circuit, provenance=self.provenance),
-            config_summary=dict(targets=list(self.compiled.targets), variables=list(self.compiled.variables)),
-            netlist_text=task.netlist_text, graph=self.compiled.graph, reparse=reparse, exporter=exporter, netlist_name=netlist_name)
-        self.manifest_notes = [f'best_design/{k}: {v}' for k, v in notes.items()]
-        summary = build_run_summary(self, final_state, checkpoint, persistence_ok)
-        write_json(self.layout.summary, summary)
-        if self.config.output.export_summary_csv:
-            try:                                  # derived CSVs only; a failure here never loses raw data
-                # lazy: in the try: a failure of the import is handled with the rest
-                from .aggregates import export_aggregates
-                export_aggregates(self.layout.experiment_dir)
-            except BaseException as exc:
-                self._log_error('aggregate_export_failed', exc)
+        return engine_finalization.write_outputs(self, final_state, checkpoint, persistence_ok)
 
     # ------------------------------------------------------------------ status / logs
     def _event(self, name, **fields):

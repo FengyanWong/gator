@@ -139,6 +139,40 @@ def test_uncontrolled_pairs_are_not_presented_as_controlled():
     assert row['step_ratio'] is None                      # zero denominator => null, never a division error or inf
 
 
+def test_exports_separate_optimizers_even_when_every_research_label_matches(tmp_path):
+    sac, _ = execute(make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=6),
+                                research=dict(task_order=1, budget_checkpoints=[6])), tmp_path)
+    # SAC's unchanged manifest deliberately omits optimizer; historical manifests have the same meaning.
+    assert 'optimizer' not in read_json(sac.manifest)['architecture']
+    bo, _ = execute(make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=6, optimizer='bayes'),
+                               research=dict(task_order=2, budget_checkpoints=[6]),
+                               output=dict(experiment_id=read_json(sac.manifest)['experiment_id'])), tmp_path)
+    aggregates.export_aggregates(sac.experiment_dir)
+    for name in ('run_summary', 'budget_success', 'budget_success_grouped', 'transfer_summary', 'cumulative_cost'):
+        result = table(sac.experiment_dir, name)
+        assert len(result) == 2 and {r['optimizer'] for r in result} == {'sac', 'bayes'}
+        assert {r.get('method_label', 'unspecified') for r in result} == {'unspecified'}
+        assert meta(sac.experiment_dir, name)['exporter_version'] == 'gator-workbench-aggregates-v3'
+    for name in ('budget_success_grouped', 'transfer_summary'):
+        assert [r['runs'] for r in table(sac.experiment_dir, name)] == ['1', '1']
+    costs = table(sac.experiment_dir, 'cumulative_cost')
+    assert len({r['stream'] for r in costs}) == 2
+    assert [r['cumulative_target_cost'] for r in costs] == ['6', '6']
+    assert next(r for r in table(bo.experiment_dir, 'run_summary') if r['optimizer'] == 'bayes')['resumability'] == 'none'
+
+
+def test_a_pair_with_different_optimizers_is_not_a_controlled_transfer_comparison():
+    base = dict(run_id='bo', mode='scratch', optimizer='bayes', comparison_pair_id='p', target_seed=1,
+                success=True, first_feasible_eval_count=6, task_definition_hash='t', initial_dimensions_sha256='i',
+                max_evaluations=20, network=dict(layers=1), reward='r', concurrency=1,
+                method_label='unspecified', pretrain_seed=None, censoring_status='observed')
+    other = dict(base, run_id='sac', mode='fine_tune', optimizer='sac')
+    row, = aggregates._paired([base, other])
+    assert row['controlled'] is False and row['uncontrolled_differences'] == ['optimizer']
+    assert row['baseline_optimizer'] == 'bayes' and row['treatment_optimizer'] == 'sac'
+    assert 'optimizer' in row['pairing_criteria']
+
+
 def test_transfer_summary_keeps_links_to_every_run(workflow):
     _, experiment_dir, _ = workflow
     rows = table(experiment_dir, 'transfer_summary')
@@ -164,6 +198,44 @@ def test_cumulative_cost_counts_shared_pretraining_once(workflow):
     scratch = [r for r in rows if r['mode'] == 'scratch' and r['target_seed'] == '1']
     assert [r['cumulative_total_cost'] for r in scratch] == ['14', '28'] and scratch[0]['cumulative_source_cost_deduplicated'] == '0'
     assert len({r['stream'] for r in rows}) == 6                   # seeds/models are separate streams, never pooled
+
+
+def test_cumulative_cost_counts_a_fine_tuning_chain_once(tmp_path):
+    source, state = execute(make_config(tmp_path, run=dict(max_evaluations=6), project=dict(task_name='source')), tmp_path)
+    assert state == 'completed'
+    experiment_id = read_json(source.manifest)['experiment_id']
+    parent = source
+    for order in (1, 2):
+        config = make_config(tmp_path, run=dict(max_evaluations=6, mode='fine_tune'), output=dict(experiment_id=experiment_id),
+                             project=dict(task_name=f'target_{order}'), research=dict(method_label='CL', task_order=order))
+        config.run.model_source.run_dir = str(parent.run_dir)
+        parent, state = execute(config, tmp_path, confirm_transfer=True)
+        assert state == 'completed'
+    aggregates.export_aggregates(source.experiment_dir)
+    costs = table(source.experiment_dir, 'cumulative_cost')
+    assert [r['source_pretraining_cost'] for r in costs] == ['6', '12']
+    assert [r['cumulative_target_cost'] for r in costs] == ['6', '12']
+    assert [r['cumulative_source_cost_deduplicated'] for r in costs] == ['6', '6']
+    assert [r['cumulative_total_cost'] for r in costs] == ['12', '18']
+    assert all(r['counted_source_runs'] == read_json(source.manifest)['run_id'] for r in costs)
+
+
+@pytest.mark.parametrize('orders, totals, source_costs', [((1, 2), [12, 18], [6, 6]), ((2, 1), [18, 18], [12, 6])])
+def test_cumulative_cost_deduplicates_sources_and_targets_in_either_task_order(orders, totals, source_costs):
+    source = dict(run_id='source', evaluations_charged=6)
+    first = dict(run_id='first', evaluations_charged=6)
+    common = dict(mode='fine_tune', method_label='CL', pretrain_seed=11, target_seed=11, task_id='task',
+                  source_cost_status='known', source_checkpoint_id='checkpoint', total_evaluations_charged=6, success=True)
+    costs = aggregates._cumulative([
+        dict(common, run_id='first', task_order=orders[0], source_run_id='source', source_cost_evaluations=6,
+             provenance_chain=[source]),
+        dict(common, run_id='second', task_order=orders[1], source_run_id='first', source_cost_evaluations=12,
+             provenance_chain=[first, source]),
+    ])
+    assert [r['cumulative_target_cost'] for r in costs] == [6, 12]
+    assert [r['cumulative_source_cost_deduplicated'] for r in costs] == source_costs
+    assert [r['cumulative_total_cost'] for r in costs] == totals
+    assert costs[-1]['counted_source_runs'] == ['source']
 
 
 def test_unknown_source_cost_makes_totals_non_computable_never_zero():

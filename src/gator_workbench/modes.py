@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import random
 
-from . import checkpoints as ckpt, network_inputs
+from . import checkpoints as ckpt, model_inputs, network_inputs
 from .compile import reward_settings, training_conditions
 from .storage.atomic import read_json
 from .validation import native_count_columns
@@ -46,21 +46,12 @@ def seed_everything(seed):
 
 
 def runtime_options(config, vocabulary=None):
-    from dataclasses import replace
-    from analog_optimizer.graph.pyg_converter import FeatureSchema, OPERATING_POINT_COLUMNS, OPERATING_POINT_REFERENCES
-    schema = FeatureSchema() if vocabulary is None else vocabulary.schema
     # ngspice PDK subcircuits can expose additional multiplicity parameters.
     # The compiled action kind is already m/1; retain the native writeback names
     # as separate numeric columns. This does not add current/A action support.
-    if vocabulary is None:
-        counts = sorted(set(native_count_columns(config)) - set(schema.parameters))
-        if counts:
-            schema = replace(schema, version=schema.version + '-counts-' + '-'.join(counts),
-                             parameters=schema.parameters + tuple(counts),
-                             references=schema.references + (1.,) * len(counts))
-    if config.run.network.operating_points:
-        schema = replace(schema, op_columns=OPERATING_POINT_COLUMNS, op_references=OPERATING_POINT_REFERENCES)
-    schema = network_inputs.feature_schema(schema, config.run.network)          # record 7.298 (unchanged without them)
+    schema = model_inputs.feature_schema(config.run.network, None if vocabulary is None else vocabulary.schema,
+                                        native_counts=native_count_columns(config) if vocabulary is None else (),
+                                        operating_points=config.run.network.operating_points)
     return dict(feature_schema=schema, reward_settings=reward_settings(config),
                 condition_policy=config.run.conditions.policy, planned_conditions=training_conditions(config))
 
@@ -69,8 +60,7 @@ def _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary=N
     """`vocabulary`: None = the optimizer's standard component list; a loaded PDK's list (pdk.Vocabulary) otherwise.
     `view`: the transferable inputs' NetworkView (record 7.298), which then includes the PDK list's view. Either way the
     learner is the package's own SACLearner (network_inputs.learner_class only adds a view at its input)."""
-    options = dict(feature_schema=None if vocabulary is None else vocabulary.schema)
-    options.update(runtime or {})
+    options = model_inputs.learner_options(vocabulary, runtime)
     return network_inputs.learner_class(vocabulary, view)(experiment=experiment, model_config=model_config, config=sac_config,
                                                           spec_schema=spec_schema, **options)
 
@@ -137,8 +127,7 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
         raise ckpt.CheckpointIncompatible(report)
 
     if mode == 'resume':
-        options = dict(feature_schema=None if vocabulary is None else vocabulary.schema)
-        options.update(runtime or {})
+        options = model_inputs.learner_options(vocabulary, runtime)
         learner, replay, run_state = network_inputs.learner_class(vocabulary, view).load(
             source_dir / 'training_state.pt', experiment=experiment, model_config=model_config,
             config=sac_config, spec_schema=spec_schema, **options)

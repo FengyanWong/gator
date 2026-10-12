@@ -45,7 +45,8 @@ DEFAULT_ENCODER = 'graph_transformer'
 ATTENTION_ENCODERS = tuple(name for name in ENCODER_TYPES if name != 'rgcn')
 NETWORK_FIELDS = ('hidden_dim', 'heads', 'layers', 'structural_encoding')
 ENCODER_LABELS = dict(graph_transformer='Graph Transformer', rgcn='RGCN', gatv2='GATv2',
-                      graph_gps='GraphGPS — port-aware', group_cross_attention='Parameter-group attention — experimental')
+                      graph_gps='GraphGPS — port-aware', group_cross_attention='Parameter-group attention — experimental',
+                      circuit_gps='CircuitGPS — joint spec and parameter attention')
 ADVANCED_FIELDS = ('learning_rate', 'gamma', 'tau', 'initial_alpha', 'target_entropy_per_action', 'max_grad_norm',
                    'batch_size', 'warmup_transitions', 'update_every', 'updates_per_transition', 'replay_capacity',
                    'episode_length')
@@ -315,17 +316,21 @@ REFERENCES.update(
 def _experimental_preset(encoder):
     fields = _defaults()
     for name, value in dict(hidden_dim=48, heads=4, layers=4,
-                            structural_encoding='rwse' if encoder == 'graph_gps' else 'none').items():
+                            structural_encoding='rwse' if encoder in ('graph_gps', 'circuit_gps') else 'none').items():
         fields[name] = _field(value, 'experimental', note='Project starting value; not a published or measured optimum.')
     for name in ADVANCED_FIELDS:
         fields[name] = _field(fields[name]['value'], 'experimental',
             note='Inherited from the existing SAC starting settings; not validated for this encoder.')
-    source = 'rampasek2022gps' if encoder == 'graph_gps' else 'lee2019set'
+    source = 'rampasek2022gps' if encoder in ('graph_gps', 'circuit_gps') else 'lee2019set'
     summary = ('GPS-style port-aware local messages plus full within-circuit node attention in each block.'
                if encoder == 'graph_gps' else
                'Local port-aware Graph Transformer plus one cross-attention readout: each parameter group queries '
                'all nodes using its bound devices, parameter features and goals. A custom adaptation of query-based '
                'pooling, not a claim of novelty.')
+    if encoder == 'circuit_gps':
+        summary = ('Port-aware local and structurally biased global attention, ordered measurement programs bound to '
+                   'their circuit nodes, and repeated attention between specs, parameter groups and circuit motifs. '
+                   'Independent action-conditioned graph critics. Select Structured network inputs for the complete representation.')
     return dict(fields=fields, architecture_reference=source, summary=summary + ' Experimental: no measured transfer advantage. '
                 '48 / 4 / 4 matches the Graph Transformer starting size for an initial comparison. '
                 'Full global attention costs O(N²); group attention adds O(GN).')

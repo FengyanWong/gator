@@ -520,7 +520,8 @@ alone (`m_cell_width`) or inside an equation, and it is recorded, judged and sho
 
 with numbers (SI suffixes), `+ - * / **` and brackets. A pattern is written in double quotes and uses `*`, `?` and
 `[...]` as file names do; it is tried on the instance as the Parameters rows write it (`DUT/mn20`) and on its last part
-(`mn20`). The first use is the width of a standard cell before layout: the row height is fixed, so the area follows the
+(`mn20`). Unsupported quoting, including single quotes, is reported as `size_formula_rejected` before a run rather
+than crashing validation (record 7.323). The first use is the width of a standard cell before layout: the row height is fixed, so the area follows the
 number of gate columns - `0.253u + 0.288u * larger(fingers("mn*", 400n), fingers("mp*", 630n))` for the gsclib045
 flip-flop of the transfer plan (a typical error of 9 % against the real outlines of 513 cells of that library).
 
@@ -831,7 +832,10 @@ number of simulations that Start asks for (the same consent as for every real ru
 but every evaluation is counted as real). Each evaluation is one `ngspice -b` process on the written deck: on this
 machine in the job's own folder; over SSH through `ssh -o BatchMode=yes -- <host> '<fixed command>'` with the deck
 on stdin into a `mktemp -d` folder that the same command removes. Its output is kept as `ngspice.log` next to the
-deck. Outcomes: the results it prints are the evaluation; a solver failure (timestep too small, singular matrix,
+deck. Each attempt keeps its own copy of the exported deck in its result folder. On this machine, files written there
+by `write` or `wrdata` stay with its logs and follow the raw-output retention policy; a retry has a fresh folder.
+Previously those files landed in the export folder and the default cleanup deleted even the best design's raw files
+(record 7.323). Outcomes: the results it prints are the evaluation; a solver failure (timestep too small, singular matrix,
 no convergence) is a NONCONVERGED design that was evaluated (reward -1); a deck error, a missing program or a
 broken ssh link is an infrastructure failure that evaluated nothing; a timeout is retryable within
 `max_retries`. The nominal condition recorded with every evaluation is what the deck states: its temperature
@@ -1276,6 +1280,17 @@ Mapping to the recommended layout of the specification:
   and the total; a later pass repairs rows an earlier one left stale, and a manifest that is right is not
   rewritten.
 * A part file belongs to the dataset only if `data/_journal/flushes.jsonl` lists it.
+* The default `best_and_failures` raw-output policy follows the overall selected best design. An improvement only
+  within the infeasible or nominal-feasible class cannot replace the output of a better class; the class's design
+  record still updates. A new overall best replaces the preceding best's raw output (record 7.321).
+* `cumulative_cost.csv` counts a run once across target costs and source provenance chains. An earlier fine-tuning
+  target used as the next model's source stays in the target total; only additional source runs enter the source
+  total. The per-run `source_pretraining_cost` still describes that run's entire source chain. Exporter v2 records
+  this correction; unknown source costs remain non-computable (record 7.321).
+* Exporter v3 records the optimizer in every research table (record 7.325). Budget and transfer groups and
+  cumulative cost streams keep SAC and Bayesian runs separate even when their research labels match. Paired
+  rows name both optimizers; a mismatch is an uncontrolled difference. Historical manifests without
+  `architecture.optimizer` mean SAC. Re-export an experiment to rebuild its derived CSVs.
 * When a writer reopens a journal after a crash, it truncates only the incomplete final line before appending.
   Complete corrupt records stop recovery with a persistence error; they never silently hide later records.
   A healthy journal needs only its final byte checked (record 7.174).
@@ -2239,7 +2254,10 @@ Such a run is the same run in everything but who proposes the designs: the same 
 and recorded tables, and the same random warm-up designs for the same seed. After the warm-up each design comes from
 `gator_workbench/bayes.py` instead of the policy, every finished design and its reward is told to it (a design whose
 simulation failed counts as the worst seen), and the network is neither asked nor trained - the run records no learner
-update and its saved model is the untrained start. The method is TuRBO-1 in its one-design-at-a-time form: a Gaussian
+update and saves no RL model (record 7.325), regardless of the checkpoint setting. Older Bayesian save points
+held the untrained start: they stay on disk, but are excluded from the model chooser and label suggestions,
+report no resumability, and cannot be selected or loaded for resume, fine-tune or frozen evaluation.
+The method is TuRBO-1 in its one-design-at-a-time form: a Gaussian
 process (Matern-5/2, one length scale per variable) fitted on the designs so far, a trust region around the best design
 that doubles after 3 improvements in a row and halves after max(4, variables) designs without one, a fresh start from
 random designs when it has shrunk to nothing (event `bayes_region_restarted`), and Thompson sampling inside it; its own
@@ -2253,9 +2271,18 @@ about -10.5; 0.34 s per design at 27 variables and 800 designs).
 
 ### Run configuration and the RL model window (2026-10-02, record 7.150; renewed 2026-10-07, record 7.265)
 
+Record 7.327 adds **CircuitGPS — joint spec and parameter attention**, a sixth template.
+Selecting it chooses **Structured** measurement inputs while keeping the current physical inputs.
+**Structured + Transferable 2** combines the ordered measurement programs and circuit bindings with
+the existing PDK/bench/operating-point features. Both inputs are available for CircuitGPS; other encoders
+keep Standard/Transferable/Transferable 2. The saved-model chooser restores the structured contract,
+and the structure/graph inspectors support its repeated attention blocks. See [CircuitGPS](circuit-gps.md)
+for the computation, supported expression subset, missing-value rules and checkpoint boundary.
+
 Record 7.298 added one choice above "Nominal device operating points" (the Advanced fold stays directly below that box): **Network inputs** Standard / Transferable (the
 section "Transferable network inputs" below). Record 7.317 added a third choice, **Transferable 2** (the section "The second
-build of the network inputs" below).
+build of the network inputs" below). Since record 7.332 a new model's inputs come with its encoder's template and the window
+shows one line of text where the box was (same section, "Which inputs a new model gets").
 
 Since record 7.228, the templates also offer **GraphGPS — port-aware** and
 **Parameter-group attention — experimental**. Both have per-encoder structural
@@ -2378,7 +2405,8 @@ most recently saved first:
 
 Every column sorts; the filter finds any word of a row, its folder's name included; folders (All models, Unfiled and
 your own, with Move to...) work as in the Tasks and Runs windows and are stored in `model_folders.json` (record 7.263).
-Runs without a save point are not listed.
+Runs without a save point are not listed. Bayesian runs are excluded even when an older version wrote a
+save point: their learner was never trained. Selecting such a saved path returns a clear refusal (record 7.325).
 
 **A click only inspects.** **Details** opens under a row, with:
 - its **Save points**, newest first: evaluations, time and kind (automatic, Save now, pause, stop, end of the run,
@@ -2760,6 +2788,16 @@ one, and the window then shows "Custom"):
    none, one short DC solve more per design. A design without an operating point (a failed simulation, a simulator
    that gives none) shows the ratios as missing.
 
+**Which inputs a new model gets (record 7.332; user: "Yes, no box").** The transfer experiment's step 3b (record 7.328)
+accepted Transferable 2, so a new model no longer chooses: its encoder's template brings the inputs - Transferable 2 for
+the existing encoders, Structured + Transferable 2 for CircuitGPS - and so does choosing New model. The RL model window
+shows one line, "Network inputs: Transferable 2 (...)", where the box was. A box is drawn only while a configuration
+still holds another choice (a configuration made before, the first build loaded from a file, plain Structured on
+CircuitGPS, a custom set): it offers that choice and the encoder's own, nothing else. Standard and Transferable can no
+longer be chosen on the page; a configuration file can still name them, and Fine-tune and Evaluate take the inputs from
+the saved model as before. A new model on a task whose PDK is not loaded is refused by the check ("load that PDK in the
+PDK window"), where Standard used to be one choice away.
+
 **Where it happens.** At the network's input only, as the first build: `network_inputs.NetworkView` shows the network
 a view of each observation; the environment, the simulator, the replay and every recorded table keep the circuit as it
 was simulated. `bench_of_graph` reads the bench, `ruled_roles` the tags, `spec_descriptors.measured_nets` the nets the
@@ -3122,7 +3160,9 @@ declare or copy.
 **Saving again.** The main button always prompts for a new task. **Apply and save** and explicit API updates keep
 making the current task's next revision: previous revisions remain in `history/r<N>/`, with the previous folder
 under `profiles/.deleted/`. Those updates preserve a baseline only while parameters, probes, measurement, analyses,
-variables and bindings are unchanged; specs-only changes keep it. A new task from Save as starts its own baseline automatically.
+variables, bindings, initial conditions and model files (including their corner sections) are unchanged; specs-only
+and notes-only changes keep it. A model-file or corner change archives the old reference with its revision and
+invalidates the current baseline (record 7.321). A new task from Save as starts its own baseline automatically.
 This restores Save as to the page by the user's request, superseding its removal in 7.72.
 
 **The task file.** One readable JSON file: the cell, the copy, the measurement, the Maestro part, the Parameters /
@@ -3294,6 +3334,8 @@ the task under other upper limits) or `relabel_targets` by task (record 7.312: a
 row whose Scale box is empty gets the size of its new limit, a scale the task states stays, read from the source's own
 configuration since record 7.322), `seed`,
 `holdout_fraction`, `model`, `sac` (gamma 0), `updates`, `batch_size` and `checkpoint_every`.
+Training and publication share the omitted-field defaults: seed 0 and 20,000 updates (record 7.325).
+Publication resolves these defaults without rewriting the saved request or changing its identity hash.
 
 Sources remain read-only. Mixed origins, reward settings, conflicting units, duplicate runs/candidates, changed
 archives and non-reproducible rewards fail explicitly. The first version accepts standard features without OP and
@@ -3465,6 +3507,18 @@ share are in `names.py`; the quiet JSON reads in `storage/atomic.py` (`read_json
 process keeps for its lifetime registers in `caches.py`, whose `clear_all()` empties them all
 (`tests/workbench/test_wb_caches.py`).
 
+The follow-up refactor of 2026-10-12 (record 7.324) keeps the scheduler in `engine.py` and puts its lifecycle
+operations in `engine_preparation.py`, `engine_recovery.py`, `engine_commit.py` and `engine_finalization.py`.
+They receive the scheduler's context explicitly; existing method hooks still call them, and the scheduler keeps the
+order of dispatch, learning, saves and retention. `model_inputs.py` composes the shared feature schema and learner
+input keywords, chooses and records vocabulary metadata, and resolves offline request/source input views. Online
+runs, resume, offline pools and publication retain their distinct policies. `network_inputs.py` still implements the
+observation view. `ngspice_netlist.py` keeps graph construction and the existing import names; `ngspice_syntax.py`
+holds tokens and expressions, `ngspice_results.py` measurement/result reading, and `ngspice_writer.py` deck writing.
+`simulation_artifacts.py` names the verified export, attempt's result directory and working deck, and types the
+engine's retention decisions without changing their stored dictionaries. Dependency guards in `test_wb_structure.py`
+keep these helpers below their consumers. The optimizer source digest and pinned research files are unchanged.
+
 The optimizer package by module since its clean-up of 2026-10-09 (`docs/plan-refactoring.md` section 6, record 7.292; every
 public name still where it was, every message kept): `backends/virtuoso_bridge.py` keeps the adapter and passes on its
 generic helpers (`backends/common.py`: a file's digest, `write_json`, `parameter_rows`; `backends/delegation.py`;
@@ -3504,6 +3558,11 @@ titles, element ids) in `contract.ts`, which `scripts/lib/harness.mjs` loads; th
 prefixes in `units.ts` (both import-free, so checks load them too); the shared cached reads in `shared.ts`; a value
 held outside React in `signal.ts`; the guarded browser storage in `kept.ts`; the newest-answer guard in `newest.ts`; a
 pop-up's "blocked" line and its portal in `panels/popupParts.tsx`.
+
+`contracts.ts` types task/run configurations and saved-model metadata at the page's transfer boundaries (record 7.324).
+It is separate from `contract.ts`, which owns shared UI names. `newest.ts` also provides `inScope` and `sameScope` for
+entity/revision checks; task reads, task checks and network preset replies keep their existing invalidation rules,
+including edits made by Undo. These types add no runtime validation, serialization or storage format.
 
 Reads managed by `useRequest` and direct JSON GETs have a 30-second deadline. Changing a selection, disabling a read
 or leaving its view cancels the hook's owned transport; shared cached reads keep their own bounded lifetime.

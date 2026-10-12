@@ -67,8 +67,9 @@ def test_recorded_real_state_roundtrip_through_workbench_arrow(real_transition, 
 def test_live_commit_condition_json_dependency(real_transition):
     import inspect
     from gator_workbench.engine import RunEngine
-    # The live commit branch must resolve json in its own module, not in its caller.
-    serializer = inspect.getclosurevars(RunEngine._commit).globals['json']
+    # Follow the scheduler's delegate: the live commit branch must resolve json in its own module.
+    phase = inspect.getclosurevars(RunEngine._commit).globals['engine_commit']
+    serializer = inspect.getclosurevars(phase.commit).globals['json']
     rows = [asdict(row) for row in real_transition.next_observation.condition_results]
     serialized = serializer.dumps(rows)
     assert json.loads(serialized) == rows

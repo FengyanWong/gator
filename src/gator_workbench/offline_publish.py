@@ -3,10 +3,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 
-from . import OUTPUT_LAYOUT_VERSION, checkpoints, families
+from . import OUTPUT_LAYOUT_VERSION, checkpoints, pretrain
 from .layout import RunLayout
-from .pretrain import identity
-from .runs import vocabulary_record
+from .model_inputs import published_vocabulary, vocabulary_record
 from .storage.atomic import read_json, write_json
 from .storage.dataset import RawDataset
 from .vocabulary import write_run_vocabulary
@@ -16,11 +15,12 @@ def publish(training_dir, output_root, *, label, review):
     """A recorded human/experiment review is required; publication is never a transfer claim."""
     source, root = Path(training_dir), Path(output_root)
     request, pool, status = (read_json(source / f'{name}.json') for name in ('request', 'pool', 'status'))
-    if status['state'] != 'trained_unqualified' or status['updates'] != request['updates']:
+    seed = request.get('seed', pretrain.DEFAULT_SEED)
+    if status['state'] != 'trained_unqualified' or status['updates'] != request.get('updates', pretrain.DEFAULT_UPDATES):
         raise ValueError('Offline training has not finished')
     if not review or not review.get('allow_planned_probes') or not review.get('reason'):
         raise ValueError('Publication requires a recorded diagnostic review')
-    if identity(request) != pool['request_sha256']:
+    if pretrain.identity(request) != pool['request_sha256']:
         raise ValueError('Offline request changed')
     point = checkpoints.resolve_checkpoint(source, 'latest')
     problems = checkpoints.verify_files(point)
@@ -29,14 +29,14 @@ def publish(training_dir, output_root, *, label, review):
     meta = checkpoints.read_metadata(point)
     if (meta['task_definition_hash'] != pool['request_sha256'] or
             meta['counters']['learner_updates'] != status['updates'] or
-            identity(meta['contract']['spec_schema']) != identity(pool['spec_schema'])):
+            pretrain.identity(meta['contract']['spec_schema']) != pretrain.identity(pool['spec_schema'])):
         raise ValueError('Checkpoint does not match the completed offline request')
     if pool['origin'] == 'synthetic':
         root = root / 'mock'
     run_id, now = meta['run_id'], datetime.now(timezone.utc).isoformat()
     experiment_id = pool['request_sha256'][:12]
     experiment = root / f'offline-network__{experiment_id}'
-    directory = experiment / 'runs' / 'general' / f'offline__seed{request["seed"]}__{run_id[:12]}'
+    directory = experiment / 'runs' / 'general' / f'offline__seed{seed}__{run_id[:12]}'
     directory.mkdir(parents=True, exist_ok=False)
     layout = RunLayout(directory)
     layout.create()
@@ -51,8 +51,7 @@ def publish(training_dir, output_root, *, label, review):
     # The component list the weights were built with, kept as a run keeps it (record 7.319): without it the model
     # chooser read a family-list model as one of the standard list and refused it. The family list is kept without a
     # PDK's mapping - a pool may hold several PDKs, and a run that loads the model maps its own task's.
-    built_with = (meta['contract'].get('feature_schema') or {}).get('version', '').partition('+')[0]
-    listed = families.FamilyList(families.block_for(None)) if built_with == families.VERSION else None
+    listed = published_vocabulary(meta['contract'])
     write_run_vocabulary(directory, listed)
     mock = pool['origin'] == 'synthetic'
     manifest = dict(layout_version=OUTPUT_LAYOUT_VERSION, run_id=run_id, task_id=meta['task_id'],
@@ -60,7 +59,7 @@ def publish(training_dir, output_root, *, label, review):
         config_sha256=pool['request_sha256'], experiment_id=experiment_id, experiment_name='offline-network',
         run_kind='offline_pretraining', mode='scratch', provenance='mock' if mock else 'real', mock=mock,
         state='completed', created_utc=now, circuit=dict(task_key=meta['task_id'], circuit_class='multi_task'),
-        seeds=dict(target_seed=request['seed'], pretrain_seed=request['seed']), research=dict(split='train'),
+        seeds=dict(target_seed=seed, pretrain_seed=seed), research=dict(split='train'),
         pretraining=dict(sources=pool['sources'], source_evaluations=pool['source_evaluations'],
                          split_sha256=pool['split_sha256'], review=review),
         architecture=dict(network=meta['contract']['model_config'], sac=meta['contract']['sac_config'],

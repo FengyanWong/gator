@@ -32,7 +32,7 @@ export function RunConfiguration({ m }: { m: RlModel }) {
         ? <p className="hint mode-suggestion-run">This model's own run can be continued exactly: <button className="text-link mode-suggestion"
             title="Open the Runs window at that run: its Continue... goes on in its own folder." onClick={() => openRunsAt({ run_dir: source.run_dir })}>open it in Runs</button>. {model.suggestion.reason}</p>
         : <p className="warn">Suggested: <button className="text-link mode-suggestion" title={`Set Mode to ${MODE_NAME[model.suggestion.mode] ?? model.suggestion.mode}`}
-            onClick={() => set({ mode: model.suggestion.mode })}>{MODE_NAME[model.suggestion.mode] ?? model.suggestion.mode}</button> - {model.suggestion.reason}
+            onClick={() => set({ mode: model.suggestion!.mode })}>{MODE_NAME[model.suggestion.mode] ?? model.suggestion.mode}</button> - {model.suggestion.reason}
             {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>)}
       <Num label="Concurrent Spectre jobs" value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
       {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}

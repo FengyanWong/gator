@@ -19,14 +19,15 @@ import threading
 from uuid import uuid4
 
 from . import (CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, caches, calibration, checkpoints as ckpt, connection,
-               consistency, families, modes, network_inputs, pdk, run_index)
+               consistency, modes, network_inputs, run_index)
 from .compile import CompileError, compile_task
 from .connection import worker_environment
 from .layout import RunLayout, code_provenance, environment_versions, new_experiment_dir, new_run_dir, read_run
 from .paths import OutputRoots, is_mock_path, repo_root
-from .pdk import run_vocabulary, write_run_vocabulary
+from .vocabulary import run_vocabulary, write_run_vocabulary
+from .model_inputs import source_vocabulary as _vocabulary_for, vocabulary_record  # compatibility exports
 from .reward_diagnostics import load as steering_check
-from .run_definitions import learner_experiment
+from .run_definitions import learner_experiment, optimizer_of, require_rl_model, saves_rl_model
 from .run_lock import RunLock
 from .schema import REMOVED_SEARCH_METHODS, WorkbenchConfig, canonical_json, config_hash, task_definition_hash
 from .storage.atomic import read_dict, read_json, write_json
@@ -124,6 +125,9 @@ def suggest_mode(config: WorkbenchConfig, source_run_dir=None, task=None) -> dic
     check loaded it twice per edit)."""
     if not source_run_dir:
         return dict(mode='scratch', reason='No previous weights selected.', requires_confirmation=False)
+    if optimizer_of(read_dict(Path(source_run_dir) / 'run_manifest.json')) == 'bayes':
+        return dict(mode='scratch', reason='Bayesian optimization runs hold no trained RL model.',
+                    requires_confirmation=False)
     try:
         config = with_circuit_content(config, task or load_task(config.circuit))
     except TaskBlocked:
@@ -145,29 +149,6 @@ def suggest_mode(config: WorkbenchConfig, source_run_dir=None, task=None) -> dic
     return dict(mode='fine_tune', requires_confirmation=True,
                 reason='The model was trained on a different task. Loading it is a transfer: a new run is created and '
                        'the source recorded as its parent.')
-
-
-def _vocabulary_for(config, source_run=None):
-    """The component list a new run's network is built with (None = the standard list). A run that LOADS a saved model
-    takes that model's own list when it names the same PDK - the network follows the model, as its sizes do - even if
-    the PDK was loaded again since; the model's list is copied from its run folder."""
-    wanted = pdk.requested(config)
-    if source_run is not None and wanted != families.NAME:     # the family list maps THIS task's PDK, whatever the model's
-        own = pdk.run_vocabulary(source_run)
-        if own is not None and own.name == wanted:
-            return own
-    try:
-        return pdk.current_vocabulary(wanted, getattr(config.circuit, 'pdk_id', None))
-    except pdk.PdkError as exc:
-        raise RunRejected(str(exc), code='pdk_not_loaded')
-
-
-def vocabulary_record(vocabulary) -> dict:
-    """What the manifest says about the component list (the list itself is the run's network_vocabulary.json)."""
-    if vocabulary is None:
-        return dict(name=pdk.STANDARD, label=pdk.label(None))
-    return dict(name=vocabulary.name, label=vocabulary.label, pdk_id=vocabulary.pdk_id, version=vocabulary.version,
-                sha256=vocabulary.sha256, file=pdk.RUN_FILE)
 
 
 # ---- the contract a learner of the page's configuration would have (record 7.278) ---------------------------------
@@ -285,11 +266,6 @@ def model_label(config: WorkbenchConfig) -> str:
     """The name a run's RL model is filed under (record 7.159, the user's request of 2026-10-03: "Give the RL model its own
     label, independent of the project name"): the label typed in the RL model window, else the task's run label."""
     return (config.run.model_label or '').strip() or config.project.task_name
-
-
-def saves_rl_model(config: WorkbenchConfig) -> bool:
-    """Whether a run writes an RL model to disk: one with save points on. A Baseline simulation saves none."""
-    return bool(config.output.save_checkpoints)
 
 
 def _started(work) -> Future:
@@ -449,11 +425,13 @@ def _source_model(config, roots, task, task_hash, compiled, confirm_transfer):
     vocabulary = _vocabulary_for(config) if config.run.mode not in ('fine_tune', 'frozen') else None
     if config.run.mode in ('fine_tune', 'frozen'):
         source_run = Path(roots.resolve(config.run.model_source.run_dir))
+        source_manifest = read_dict(source_run / 'run_manifest.json')
+        require_rl_model(source_manifest)
         vocabulary = _vocabulary_for(config, source_run)
         if is_mock_path(source_run) != task.mock:
             raise RunRejected('A mock-trained model cannot be loaded for a real task (or vice versa)', code='mock_isolation')
         source_dir = ckpt.resolve_checkpoint(source_run, config.run.model_source.checkpoint_id)
-        source_meta, source_manifest = ckpt.read_metadata(source_dir), read_json(source_run / 'run_manifest.json', default={})
+        source_meta = ckpt.read_metadata(source_dir)
         different = source_meta['task_definition_hash'] != task_hash
         if config.run.mode == 'fine_tune' and different and not confirm_transfer:
             raise RunRejected('Loading a model trained on a different task needs explicit confirmation',
@@ -543,6 +521,7 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
     """Everything an exact resume checks before it writes anything - the refusals of Continue. Shared by the press
     (under the run lock, _prepare_resume_locked) and the continuation check (record 7.261, no lock, nothing written).
     Returns (previous configuration, merged configuration, save point metadata, compatibility report)."""
+    require_rl_model(manifest)
     if manifest['task_definition_hash'] != task_hash:
         raise RunRejected('The task definition changed (circuit, variables, targets or measurements). This cannot be '
                           'presented as a continuation of the same training run; use fine_tune.',
@@ -615,6 +594,9 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
     if not manifest:
         return dict(answer, code='not_a_run', reason=f'{run_dir} is not a run folder.')
     status = run_status(run_dir)
+    if optimizer_of(manifest) == 'bayes':
+        return dict(answer, state=status.get('state'), code='no_rl_model',
+                    reason='Bayesian optimization cannot be resumed and holds no trained RL model.')
     point = save_point(run_dir)
     meta = None
     if point:
@@ -720,6 +702,7 @@ def _check_save_now(layout):
     """`checkpoint` = "Save now": the RUNNING worker saves its model at the next safe boundary and goes on.
     It is refused, with the reason, whenever nothing would come of it - and it never replaces a pause, stop or
     cancel that is still in the one-slot control file (a run on its way down saves by itself, or was told not to)."""
+    require_rl_model(read_dict(layout.manifest))
     status = run_status(layout.run_dir)
     if not status['worker_alive']:
         ended = dict(paused='paused', stopped='stopped', completed='finished').get(status.get('state'), 'ended')
@@ -765,6 +748,7 @@ def model_compatibility(config, runtime, run_dir, checkpoint_path) -> dict:
     """A saved model against a configuration (with its circuit's content) and its loaded task: the compatibility check a
     run of that configuration would make before loading the model. Raises CompileError while the configuration does not
     compile, and RunRejected when the component list it names is not available."""
+    require_rl_model(read_dict(Path(run_dir) / 'run_manifest.json'))
     task_hash = task_definition_hash(config)
     compiled = compile_task(config, runtime.base_graph)
     vocabulary = _vocabulary_for(config, run_dir)      # what a run of this page would use
@@ -789,7 +773,8 @@ def default_model(roots, label=None, project=None) -> dict:
         names = ckpt.unique_model_labels(rows)
         carrying = [row for row in rows if names.get(row['run_dir']) == label.strip()]
         last = max(carrying, key=lambda row: row.get('created_utc') or '')['run_dir'] if carrying else None
-    if not last or not roots.is_allowed(last) or not (Path(last) / 'checkpoints' / 'latest.json').is_file():
+    if (not last or not roots.is_allowed(last) or not (Path(last) / 'checkpoints' / 'latest.json').is_file()
+            or optimizer_of(read_dict(Path(last) / 'run_manifest.json')) == 'bayes'):
         return dict(run_dir=None, checkpoint_id='latest', reason='No saved model under this label yet.')
     return dict(run_dir=last, checkpoint_id='latest', description=ckpt.describe(last, 'latest'))
 

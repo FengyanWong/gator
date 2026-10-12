@@ -204,6 +204,35 @@ def test_no_feasible_design_gives_null_and_right_censoring_not_the_budget(tmp_pa
 
 
 # ------------------------------------------------------------------------------- best design
+def test_waveform_retention_follows_the_overall_best_not_each_candidate_class(tmp_path, monkeypatch):
+    from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
+    simulate = SyntheticSizingBackend.run_simulation
+    scores = iter([0.6, 0.7, 0.9, 0.75])
+
+    def writing(self, request):
+        result = simulate(self, request)
+        result.metrics['score'] = next(scores)
+        (result.artifact_directory / 'result.txt').write_text('synthetic raw output')
+        return result
+    monkeypatch.setattr(SyntheticSizingBackend, 'run_simulation', writing)
+    layout, state = execute(make_config(tmp_path, threshold=0.8, run=dict(max_evaluations=4)), tmp_path)
+    assert state == 'completed'
+    evaluations = by_seq(layout)
+    assert [e['all_hard_constraints_satisfied'] for e in evaluations] == [False, False, True, False]
+    first, improved, feasible, later_infeasible = [e['evaluation_id'] for e in evaluations]
+    assert read_json(layout.best_design / 'best_feasible.json')['design']['evaluation_id'] == feasible
+    assert read_json(layout.best_design / 'best_infeasible.json')['design']['evaluation_id'] == later_infeasible
+    index = read_json(layout.waveforms / 'index.json')['entries'].values()
+    kept = [entry for entry in index if entry['status'] == 'retained_best']
+    assert [entry['evaluation_id'] for entry in kept] == [feasible]
+    assert (layout.run_dir / kept[0]['path'] / 'result.txt').read_text() == 'synthetic raw output'
+    assert {entry['evaluation_id'] for entry in index if entry['status'] == 'deleted_by_policy'} == {first, improved}
+    for evaluation in (first, improved, later_infeasible):
+        assert not list((layout.waveforms / evaluation).glob('attempt-*/result.txt'))
+    jobs = {job['evaluation_id']: job for job in rows(layout, 'simulator_jobs')}
+    assert jobs[later_infeasible]['retention_status'] == 'deleted_by_policy'
+
+
 def test_best_design_records_variables_bindings_and_metrics(tmp_path):
     layout, _ = execute(make_config(tmp_path, threshold=0.9, run=dict(max_evaluations=25)), tmp_path)
     best = read_json(layout.best_design / 'best_feasible.json')

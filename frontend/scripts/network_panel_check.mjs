@@ -77,13 +77,18 @@ await runChecks(browser, async () => {
     /^New model · .+ template · GT /.test(short?.text ?? '') && short.text.includes(`GT ${gt.hidden_dim}/${gt.heads}/${gt.layers}`) && short.left
     && short.title.startsWith('The network in use: graph_transformer'), JSON.stringify(short));
   const options = await evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('tr.template-row')].map(r => r.dataset.encoder)`);
-  check('the templates table offers all five backend encoders, one row each', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention']), JSON.stringify(options));
+  check('the templates table offers all six backend encoders, one row each', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps']), JSON.stringify(options));
   check('the mode is New model: the window\'s Mode buttons say so', await evaluate(`${NETWORK_DOCUMENT}.querySelector('.rl-modes button[aria-checked="true"]')?.dataset.mode`) === 'scratch');
-  for (const encoder of ['graph_gps', 'group_cross_attention']) {
+  for (const encoder of ['graph_gps', 'group_cross_attention', 'circuit_gps']) {
     await select(encoder);
     const STRUCTURE = `${NETWORK_PANEL}.querySelector('select.structural-encoding')`;
     check(`${encoder}: structural settings and experimental status are visible`, await page.until(`!!${STRUCTURE} && !!${NETWORK_PANEL}.querySelector('.encoder-experimental')`));
     check(`${encoder}: its own structural default is loaded`, await evaluate(`${STRUCTURE}.value`) === settings.settings[encoder].network.structural_encoding);
+    if (encoder === 'circuit_gps') {
+      // Since record 7.332 a template brings its encoder's whole input set and the window says it in one line (no box).
+      check('CircuitGPS brings Structured + Transferable 2 with its template', await page.until(`(${NETWORK_PANEL}.querySelector('.network-inputs-line')?.textContent ?? '').includes('Structured + Transferable 2')`),
+        await evaluate(`(${NETWORK_PANEL}.querySelector('.network-inputs-line')?.textContent ?? '') + ' / box: ' + (${NETWORK_PANEL}.querySelector('select.network-inputs')?.value ?? 'none')`));
+    }
     await page.setValue(STRUCTURE, encoder === 'graph_gps' ? 'none' : 'rwse');
     const changed = await nextWrite();
     const body = changed ? JSON.parse(changed.postData) : {};

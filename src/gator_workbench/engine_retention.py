@@ -11,6 +11,7 @@ import shutil
 
 from .paths import directory_bytes
 from .run_lock import iso
+from .simulation_artifacts import RetentionItem
 from .storage.atomic import read_json, write_json
 
 
@@ -27,7 +28,7 @@ class Retention:
             return any(root in resolved.parents for root in self._work_resolved) and not Path(path).is_symlink()
         except OSError:
             return False
-    def _apply_retention(self, plan, role):
+    def _apply_retention(self, plan: list[RetentionItem], role):
         """Acts only AFTER the result is durable, and only on registered paths inside work/."""
         index_path = self.layout.waveforms / 'index.json'
         if self._waveform_index is None:

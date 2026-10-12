@@ -1,6 +1,7 @@
 // Thin typed client for the local backend. Every request is same-origin JSON. What is not a request moved out (plan-refactoring
 // C10): the number formatters to format.ts (si to units.ts), the shared cached reads to shared.ts.
 // The browser never sends hosts, ports, commands or arbitrary paths: the backend has no such fields.
+import type { ModelReply, RunSummary, TaskStarter, TaskSummary, WorkbenchConfig } from './contracts';
 
 export type Json = any;
 /** What a folder holds (record 7.263): tasks (by task key), runs and saved models (both by run folder). */
@@ -38,7 +39,7 @@ export async function readWithDeadline<T>(read: (signal: AbortSignal) => Promise
   }
 }
 
-async function call(method: string, url: string, body?: Json, signal?: AbortSignal): Promise<Json> {
+async function call<T = Json>(method: string, url: string, body?: Json, signal?: AbortSignal): Promise<T> {
   const request = async (readSignal?: AbortSignal) => answer(await fetch(url, {
     method, signal: readSignal,
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
@@ -65,7 +66,7 @@ export const api = {
   schema: () => call('GET', '/api/schema'),
   networkSettings: () => call('GET', '/api/network-settings'),
   saveNetworkSettings: (encoder: string, body: Json) => call('PUT', '/api/network-settings/' + encodeURIComponent(encoder), body),
-  tasks: () => call('GET', '/api/tasks'),
+  tasks: () => call<{ tasks: TaskSummary[] }>('GET', '/api/tasks'),
   // Folders (tasks: record 7.250; runs and models: 7.263): one store per kind, the same five calls.
   folders: (kind: FolderKind) => call('GET', FOLDER_ROUTE[kind]),
   createFolder: (kind: FolderKind, name: string) => call('POST', FOLDER_ROUTE[kind], { name }),
@@ -73,7 +74,7 @@ export const api = {
   deleteFolder: (kind: FolderKind, id: string) => call('DELETE', `${FOLDER_ROUTE[kind]}/${encodeURIComponent(id)}`),
   moveToFolder: (kind: FolderKind, keys: string[], folder_id: string | null) =>
     call('PUT', `${FOLDER_ROUTE[kind]}/assign`, kind === 'tasks' ? { task_keys: keys, folder_id } : { run_dirs: keys, folder_id }),
-  starter: (taskKey: string) => call('GET', '/api/tasks/starter' + q({ task_key: taskKey })),
+  starter: (taskKey: string) => call<TaskStarter>('GET', '/api/tasks/starter' + q({ task_key: taskKey })),
   // The name a task is shown under (record 7.302): its key, files, cell, runs and models stay as they are.
   renameTask: (task_key: string, name: string) => call('POST', '/api/tasks/rename', { task_key, name }),
   loadCircuit: (circuit: Json) => call('POST', '/api/circuit/load', { circuit }),
@@ -119,8 +120,8 @@ export const api = {
   connectionDirectories: () => call('GET', '/api/connection/directories'),
   saveConnectionDirectories: (values: Record<string, string | null>) => call('PUT', '/api/connection/directories', { values }),
   // `fresh`: past the backend's run cache, every run folder read again - the page's Refresh list (record 7.274).
-  runs: (output_root?: string, fresh?: boolean) => call('GET', '/api/runs' + q({ output_root, fresh: fresh || undefined })),
-  model: (run_dir: string, checkpoint_id: string, config?: Json, signal?: AbortSignal) => call('POST', '/api/runs/model', { run_dir, checkpoint_id, config }, signal),
+  runs: (output_root?: string, fresh?: boolean) => call<{ runs: RunSummary[] }>('GET', '/api/runs' + q({ output_root, fresh: fresh || undefined })),
+  model: (run_dir: string, checkpoint_id: string, config?: Json, signal?: AbortSignal) => call<ModelReply>('POST', '/api/runs/model', { run_dir, checkpoint_id, config }, signal),
   defaultModel: (label: string, project?: string) => call('GET', '/api/runs/default-model' + q({ label, project })),
   savedModels: (output_root?: string, signal?: AbortSignal, fresh?: boolean) => call('GET', '/api/runs/models' + q({ output_root, fresh: fresh || undefined }), undefined, signal),
   renameModel: (run_dir: string, model_label: string) => call('POST', '/api/runs/model/rename', { run_dir, model_label }),
@@ -136,7 +137,7 @@ export const api = {
   command: (run_dir: string, command: string) => call('POST', '/api/runs/command', { run_dir, command }),
   status: (run_dir: string, signal?: AbortSignal) => call('GET', '/api/runs/status' + q({ run_dir }), undefined, signal),
   // A run's own configuration, as it started (its effective_config.json): New run like this copies its run settings (record 7.267).
-  runConfig: (run_dir: string) => call('GET', '/api/runs/download' + q({ run_dir, path: 'effective_config.json' })),
+  runConfig: (run_dir: string) => call<WorkbenchConfig>('GET', '/api/runs/download' + q({ run_dir, path: 'effective_config.json' })),
   files: (run_dir: string, signal?: AbortSignal) => call('GET', '/api/runs/files' + q({ run_dir }), undefined, signal),
   table: (run_dir: string, table: string, limit = 25, signal?: AbortSignal) => call('GET', '/api/runs/table' + q({ run_dir, table, limit }), undefined, signal),
   logs: (run_dir: string, kind: string, signal?: AbortSignal) => call('GET', '/api/runs/logs' + q({ run_dir, kind, limit: 200 }), undefined, signal),

@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 MOCK_TASK = 'synthetic:gpdk045_ota5'
-ENCODERS = ('graph_gps', 'group_cross_attention')
+ENCODERS = ('graph_gps', 'group_cross_attention', 'circuit_gps')
 
 
 def make(root: Path) -> list[Path]:

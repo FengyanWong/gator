@@ -252,8 +252,8 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
             on 2026-09-30, record 7.128): a plain note, not a red "Blocked". */}
         {removedMock && <div className="note"><p><code>{ref.task_id}</code> no longer exists: the workbench has no MOCK task since
           2026-09-30. Choose one of your saved tasks under Task; it brings its own rows.</p></div>}
-        {!taskLoading && taskRows?.task === ref.task_id && sameRows(config, taskRows.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
-              {taskRows.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>}
+        {!taskLoading && taskRows?.task === ref.task_id && sameRows(config, taskRows!.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
+              {taskRows!.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>}
       </>)}
       {taskLoading && <p className="hint task-rows" role="status">Loading <code>{taskLoading}</code>...</p>}
       {taskLoadError && <p className="error task-rows" role="alert">{taskLoadError}</p>}

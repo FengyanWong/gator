@@ -7,8 +7,9 @@ import { useNewest } from '../newest';
 import type { BottomTab } from '../panels/BottomPanel';
 import { changesByItself, useRunControl } from '../runState';
 import { usePolling } from '../store';
+import type { RunSummary } from '../contracts';
 
-const NO_RUNS: Json[] = [];                          // one empty list: a failed read does not make the model list read again
+const NO_RUNS: RunSummary[] = [];                          // one empty list: a failed read does not make the model list read again
 
 /** The run the bottom tabs show, kept in this browser (SHOWN_RUN_KEY) with the header's run of that moment (record 7.212): a page loaded
  *  again shows the run it showed - or none, after a task without runs was chosen. Unless the header holds another run by
@@ -22,7 +23,7 @@ export const shownRun = (): string | null => readKept(s => {
 /** The run list under the page's output root (`outputRootNow`), read by `readRuns` - only the newest read answers - and kept
  *  with its error. */
 export function useRunList(outputRootNow: string | null | undefined) {
-  const [runs, setRuns] = useState<Json[]>(NO_RUNS);
+  const [runs, setRuns] = useState<RunSummary[]>(NO_RUNS);
   const [runsError, setRunsError] = useState<string | null>(null);   // the run list could not be read: said, not shown as "no run yet"
   // Only the newest read of the run list may answer: while the output root is typed, a half-typed path outside the roots
   // (403) used to empty the list when its answer came last.
@@ -33,15 +34,15 @@ export function useRunList(outputRootNow: string | null | undefined) {
   // run folder anew (Refresh list; record 7.274).
   const outputRoot = useRef(outputRootNow);
   outputRoot.current = outputRootNow;
-  const readRuns = useCallback((fresh = false): Promise<{ list: Json[]; error: string | null }> => {
+  const readRuns = useCallback((fresh = false): Promise<{ list: RunSummary[]; error: string | null }> => {
     const mine = listing.next();
-    return api.runs(outputRoot.current ?? undefined, fresh).then(r => ({ list: r.runs as Json[], error: null }), e => ({ list: NO_RUNS, error: plainError(e) }))
+    return api.runs(outputRoot.current ?? undefined, fresh).then(r => ({ list: r.runs, error: null }), e => ({ list: NO_RUNS, error: plainError(e) }))
       .then(read => {
         if (mine()) { setRuns(held => (JSON.stringify(held) === JSON.stringify(read.list) ? held : read.list)); setRunsError(read.error); }
         return read;
       });
   }, []);
-  const refreshRuns = useCallback((fresh = false): Promise<Json[]> => readRuns(fresh).then(read => read.list), [readRuns]);
+  const refreshRuns = useCallback((fresh = false): Promise<RunSummary[]> => readRuns(fresh).then(read => read.list), [readRuns]);
   return { runs, runsError, readRuns, refreshRuns };
 }
 

@@ -23,6 +23,7 @@ from statistics import mean, median
 
 from . import EXPORTER_VERSION
 from .layout import RunLayout
+from .run_definitions import optimizer_of
 from .storage.atomic import publish, read_dict, read_json, temporary_path, write_json
 from .storage.dataset import DatasetReader, map_to_dict, utcnow
 from .storage.tables import TABLES
@@ -34,6 +35,7 @@ COLUMNS = {
         ('experiment_id', 'Experiment'), ('run_id', 'Run'), ('task_id', 'Task identity'), ('task_name', 'Task name'),
         ('circuit_class', 'Circuit class'), ('topology_id', 'Topology/netlist identifier'),
         ('provenance', 'real | mock'), ('mode', 'scratch | fine_tune | frozen (original mode of the run)'),
+        ('optimizer', 'sac | bayes; historical manifests without this field mean sac'),
         ('method_label', 'Research method label'), ('encoder_type', 'Encoder architecture'),
         ('ablation_labels', 'Ablation labels, ;-separated'), ('split', 'train | validation | test | unspecified'),
         ('generalization_level', 'Generalization level label'), ('training_sources', 'Source training set, ;-separated'),
@@ -68,19 +70,22 @@ COLUMNS = {
         ('resumability', 'full_state | weights_only | none'), ('summary_source', 'run_summary.json | reconstructed_from_raw_tables'),
         ('cutoff_commit_seq', 'Data snapshot used'), ('relative_run_dir', 'Run directory inside the experiment')],
     'budget_success': [
-        ('run_id', 'Run'), ('task_id', 'Task'), ('mode', 'Mode'), ('method_label', 'Method'), ('target_seed', 'Target seed'),
+        ('run_id', 'Run'), ('task_id', 'Task'), ('mode', 'Mode'), ('optimizer', 'Optimizer'),
+        ('method_label', 'Method'), ('target_seed', 'Target seed'),
         ('pretrain_seed', 'Pretraining seed'), ('provenance', 'real | mock'), ('budget', 'Evaluation-budget checkpoint B'),
         ('success_within_budget', 'true | false | empty when not known'),
         ('observation_status', 'observed | unknown (budget never reached B by design) | censored (ended early before B)'),
         ('cost_evaluations', 'first_feasible_eval_count when success within B'), ('cost_convention', 'Accounting convention'),
         ('observation_limit', 'Evaluations observed'), ('stop_reason', 'Why observation ended')],
     'budget_success_grouped': [
-        ('task_id', 'Task'), ('mode', 'Mode'), ('method_label', 'Method'), ('provenance', 'real | mock'), ('budget', 'B'),
+        ('task_id', 'Task'), ('mode', 'Mode'), ('optimizer', 'Optimizer'),
+        ('method_label', 'Method'), ('provenance', 'real | mock'), ('budget', 'B'),
         ('runs', 'Runs in the group'), ('successes', 'Known successes'), ('failures', 'Known failures'),
         ('unknown', 'Unknown'), ('censored', 'Censored'), ('run_ids', 'Contributing runs, ;-separated')],
     'paired_runs': [
         ('comparison_pair_id', 'Pair ID'), ('target_seed', 'Shared target seed'), ('baseline_run_id', 'Baseline (scratch) run'),
         ('treatment_run_id', 'Treatment run'), ('treatment_mode', 'Treatment mode'), ('treatment_method_label', 'Method'),
+        ('baseline_optimizer', 'Baseline optimizer'), ('treatment_optimizer', 'Treatment optimizer'),
         ('treatment_pretrain_seed', 'Source pretraining seed of the treatment'),
         ('pairing_criteria', 'Criteria checked'), ('controlled', 'All pairing criteria equal'),
         ('uncontrolled_differences', 'What differs, ;-separated'), ('baseline_success', 'Baseline success'),
@@ -92,19 +97,20 @@ COLUMNS = {
     'transfer_summary': [
         ('training_sources', 'Source training set'), ('target_circuit_class', 'Target class'),
         ('target_topology_id', 'Target topology'), ('generalization_level', 'Level'), ('mode', 'Mode'),
+        ('optimizer', 'Optimizer'),
         ('method_label', 'Method'), ('encoder_type', 'Encoder'), ('ablation_labels', 'Ablations'), ('budget', 'B'),
         ('runs', 'Sample count'), ('successes', 'Known successes'), ('failures', 'Known failures'),
         ('unknown', 'Unknown or censored'), ('mean_cost_of_successes', 'Mean cost of successes'),
         ('median_cost_of_successes', 'Median cost of successes'), ('costs_of_successes', 'Every cost, ;-separated'),
         ('run_ids', 'Links to the original runs, ;-separated')],
     'cumulative_cost': [
-        ('stream', 'Method stream: mode | method | source model | pretrain seed | target seed'), ('task_order', 'K'),
-        ('run_id', 'Run at position K'), ('task_id', 'Task'), ('mode', 'Mode'), ('method_label', 'Method'),
+        ('stream', 'Method stream: mode | optimizer | method | source model | pretrain seed | target seed'), ('task_order', 'K'),
+        ('run_id', 'Run at position K'), ('task_id', 'Task'), ('mode', 'Mode'), ('optimizer', 'Optimizer'), ('method_label', 'Method'),
         ('target_seed', 'Target seed'), ('pretrain_seed', 'Pretraining seed'), ('source_checkpoint', 'run_id/checkpoint_id'),
         ('source_pretraining_cost', 'Source cost of THIS run; empty = unknown'),
         ('target_task_cost', 'Evaluations charged by this run'), ('success', 'Success'),
         ('cumulative_target_cost', 'Sum of target costs up to K'),
-        ('cumulative_source_cost_deduplicated', 'Each distinct source run counted once; empty if any is unknown'),
+        ('cumulative_source_cost_deduplicated', 'Distinct source runs excluding targets already counted up to K; empty if any is unknown'),
         ('cumulative_total_cost', 'Target + de-duplicated source; empty when not computable'),
         ('total_cost_status', 'computable | non_computable_unknown_source_cost'),
         ('cumulative_success_count', 'Successes up to K'), ('counted_source_runs', 'Distinct source runs counted')],
@@ -212,6 +218,7 @@ def _flat(run):
         experiment_id=m.get('experiment_id'), run_id=m['run_id'], task_id=m.get('task_id'), task_name=m.get('task_name'),
         task_definition_hash=m.get('task_definition_hash'), circuit_class=(m.get('circuit') or {}).get('circuit_class'),
         topology_id=(m.get('circuit') or {}).get('topology_id'), provenance=m.get('provenance'), mode=m.get('mode'),
+        optimizer=optimizer_of(m),
         method_label=research.get('method_label'), encoder_type=((m.get('architecture') or {}).get('network') or {}).get('encoder_type'),
         ablation_labels=research.get('ablation_labels') or [], split=m.get('split'),
         generalization_level=m.get('generalization_level'), training_sources=research.get('training_sources') or [],
@@ -250,7 +257,8 @@ def _flat(run):
         best_evaluation_id=None if best is None else best.get('evaluation_id'),
         best_normalized_violation=None if best is None else best.get('normalized_constraint_violation'),
         best_metrics={} if best is None else (best.get('metrics') or {}),
-        completeness=(s.get('output') or {}).get('completeness'), resumability=(s.get('output') or {}).get('resumability'),
+        completeness=(s.get('output') or {}).get('completeness'),
+        resumability='none' if optimizer_of(m) == 'bayes' else (s.get('output') or {}).get('resumability'),
         summary_source=s.get('_source', 'run_summary.json'),
         cutoff_commit_seq=((s.get('output') or {}).get('data_cursor') or {}).get('commit_seq'),
         relative_run_dir=(m.get('output') or {}).get('relative_run_dir'),
@@ -306,8 +314,8 @@ def export_aggregates(experiment_dir, *, include_mock=None, budgets=None):
                                      explanation=empty or 'No budget checkpoints are defined for these runs.')
     grouped = {}
     for b in budget_rows:
-        grouped.setdefault((b['task_id'], b['mode'], b['method_label'], b['provenance'], b['budget']), []).append(b)
-    grouped_rows = [dict(task_id=k[0], mode=k[1], method_label=k[2], provenance=k[3], budget=k[4], runs=len(v),
+        grouped.setdefault((b['task_id'], b['mode'], b['optimizer'], b['method_label'], b['provenance'], b['budget']), []).append(b)
+    grouped_rows = [dict(task_id=k[0], mode=k[1], optimizer=k[2], method_label=k[3], provenance=k[4], budget=k[5], runs=len(v),
                          successes=sum(1 for x in v if x['success_within_budget'] is True),
                          failures=sum(1 for x in v if x['success_within_budget'] is False),
                          unknown=sum(1 for x in v if x['observation_status'] == 'unknown'),
@@ -334,6 +342,9 @@ def _paired(rows):
         for base in [m for m in members if m['mode'] == 'scratch']:
             for other in [m for m in members if m['mode'] != 'scratch']:
                 differences = [c for c in criteria + soft if base[c] != other[c]]
+                baseline_optimizer, treatment_optimizer = base.get('optimizer', 'sac'), other.get('optimizer', 'sac')
+                if baseline_optimizer != treatment_optimizer:
+                    differences.append('optimizer')
                 both = base['success'] and other['success']
                 ratio = None
                 if both and base['first_feasible_eval_count']:
@@ -343,8 +354,9 @@ def _paired(rows):
                 result.append(dict(
                     comparison_pair_id=pair_id, target_seed=seed, baseline_run_id=base['run_id'],
                     treatment_run_id=other['run_id'], treatment_mode=other['mode'],
+                    baseline_optimizer=baseline_optimizer, treatment_optimizer=treatment_optimizer,
                     treatment_method_label=other['method_label'], treatment_pretrain_seed=other['pretrain_seed'],
-                    pairing_criteria=criteria + soft, controlled=not differences, uncontrolled_differences=differences,
+                    pairing_criteria=criteria + soft + ['optimizer'], controlled=not differences, uncontrolled_differences=differences,
                     baseline_success=base['success'], treatment_success=other['success'],
                     baseline_first_feasible_eval_count=base['first_feasible_eval_count'],
                     treatment_first_feasible_eval_count=other['first_feasible_eval_count'], step_ratio=ratio,
@@ -357,14 +369,14 @@ def _transfer(budget_rows):
     groups = {}
     for b in budget_rows:
         key = (';'.join(b['training_sources']) or 'unspecified', b['circuit_class'], b['topology_id'],
-               b['generalization_level'], b['mode'], b['method_label'], b['encoder_type'],
+               b['generalization_level'], b['mode'], b['optimizer'], b['method_label'], b['encoder_type'],
                ';'.join(b['ablation_labels']), b['budget'])
         groups.setdefault(key, []).append(b)
     rows = []
     for key, members in sorted(groups.items(), key=lambda i: tuple(map(str, i[0]))):
         costs = [m['cost_evaluations'] for m in members if m['success_within_budget'] is True]
         rows.append(dict(zip(['training_sources', 'target_circuit_class', 'target_topology_id', 'generalization_level',
-                              'mode', 'method_label', 'encoder_type', 'ablation_labels', 'budget'], key),
+                              'mode', 'optimizer', 'method_label', 'encoder_type', 'ablation_labels', 'budget'], key),
                          runs=len(members), successes=len(costs),
                          failures=sum(1 for m in members if m['success_within_budget'] is False),
                          unknown=sum(1 for m in members if m['success_within_budget'] is None),
@@ -380,17 +392,23 @@ def _cumulative(rows):
         if r['task_order'] is None:
             continue
         root = r['provenance_chain'][-1]['run_id'] if r['provenance_chain'] else 'none'
-        key = f"{r['mode']}|{r['method_label']}|source={root}|pretrain_seed={r['pretrain_seed']}|target_seed={r['target_seed']}"
+        key = (f"{r['mode']}|{r.get('optimizer', 'sac')}|{r['method_label']}|source={root}"
+               f"|pretrain_seed={r['pretrain_seed']}|target_seed={r['target_seed']}")
         streams.setdefault(key, []).append(r)
     result = []
     for key, members in sorted(streams.items()):
         counted, source_total, target_total, successes, unknown = {}, 0, 0, 0, False
+        target_runs = set()
         for r in sorted(members, key=lambda m: (m['task_order'], m['run_id'])):
+            # Fine-tuning makes earlier targets part of later source chains. Charge each run in only one bucket,
+            # moving a source into the target bucket if the declared task order visits it later.
+            target_runs.add(r['run_id'])
+            source_total -= counted.pop(r['run_id'], 0) or 0
             if r['mode'] != 'scratch':
                 if r['source_cost_status'] not in ('known', 'declared_by_user'):
                     unknown = True          # an unknown source cost makes every later total non-computable
                 for link in r['provenance_chain']:
-                    if link['run_id'] not in counted:          # shared pretraining is counted exactly once
+                    if link['run_id'] not in counted and link['run_id'] not in target_runs:
                         counted[link['run_id']] = link.get('evaluations_charged')
                         if link.get('evaluations_charged') is None:
                             unknown = True
@@ -405,6 +423,7 @@ def _cumulative(rows):
             successes += int(bool(r['success']))
             result.append(dict(
                 stream=key, task_order=r['task_order'], run_id=r['run_id'], task_id=r['task_id'], mode=r['mode'],
+                optimizer=r.get('optimizer', 'sac'),
                 method_label=r['method_label'], target_seed=r['target_seed'], pretrain_seed=r['pretrain_seed'],
                 source_checkpoint=None if not r['source_run_id'] else f"{r['source_run_id']}/{r['source_checkpoint_id']}",
                 source_pretraining_cost=r['source_cost_evaluations'], target_task_cost=r['total_evaluations_charged'],

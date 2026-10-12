@@ -15,6 +15,7 @@ import socket
 from .compile import hard_constraints
 from .run_definitions import decode_action
 from .run_lock import iso
+from .simulation_artifacts import RetentionItem
 from .storage.atomic import read_json, write_json
 
 
@@ -152,7 +153,8 @@ class CommitRows:
         return rows
     def _job_rows(self, busy, lane, role, failed):
         policy = self.config.output.waveform_retention
-        rows, plan = [], []
+        rows = []
+        plan: list[RetentionItem] = []
         attempts = []
         for retry, attempt in enumerate(busy['attempts'], start=1):
             record = attempt.get('record') or {}

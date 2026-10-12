@@ -13,6 +13,23 @@ from .schema import WorkbenchConfig
 INFRASTRUCTURE_FAILURES = ('timeout', 'transport_error', 'license_error', 'backend_error')
 
 
+def optimizer_of(manifest):
+    """The recorded optimizer; manifests from before the choice are SAC runs."""
+    return (manifest.get('architecture') or {}).get('optimizer', 'sac')
+
+
+def saves_rl_model(config: WorkbenchConfig) -> bool:
+    """Bayesian search never trains the learner, even when checkpoints are enabled."""
+    return config.run.optimizer == 'sac' and bool(config.output.save_checkpoints)
+
+
+def require_rl_model(manifest):
+    """Reject historical Bayesian save points as well as runs that now save none."""
+    if optimizer_of(manifest) == 'bayes':
+        raise RunRejected('Bayesian optimization runs do not train an RL model. Their search cannot be resumed '
+                          'and their saved weights cannot be loaded for fine-tuning or evaluation.', code='no_rl_model')
+
+
 def decode_action(z, lower, upper, scale):
     """Physical value a normalized action decodes to BEFORE projection (mirrors ActionMapper;
     a test pins the two together)."""

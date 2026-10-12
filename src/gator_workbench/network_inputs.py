@@ -113,7 +113,7 @@ def reads_raw_operating_points(network) -> bool:
 
 def any_transfer(network) -> bool:
     settings = transfer_settings(network)
-    return (settings['spec_input'] == 'set' or settings['size_features'] == 'pdk_relative'
+    return (settings['spec_input'] in ('set', 'structured') or settings['size_features'] == 'pdk_relative'
             or settings['device_model_features'] or second_build(settings))
 
 
@@ -317,7 +317,8 @@ class NetworkView:
     CAPACITY = 8192                       # as many distinct states as the learner's own input cache (record 7.221)
 
     def __init__(self, *, descriptors=None, numbers=None, relative_sizes=False, model_features=False, vocabulary=None,
-                 bench_features=False, net_rule=False, op_ratios=False, measured_nets=(), variables=None):
+                 bench_features=False, net_rule=False, op_ratios=False, measured_nets=(), variables=None, programs=None):
+        self.programs = programs
         self.descriptors = None if descriptors is None else {k: tuple(float(x) for x in v) for k, v in descriptors.items()}
         self.numbers = dict(numbers or {})
         self.relative_sizes, self.model_features, self.vocabulary = bool(relative_sizes), bool(model_features), vocabulary
@@ -327,6 +328,8 @@ class NetworkView:
         identity = dict(descriptors=self.descriptors, numbers=self.numbers if (relative_sizes or model_features) else None,
                         relative_sizes=self.relative_sizes, model_features=self.model_features,
                         vocabulary=None if vocabulary is None else vocabulary.sha256)
+        if programs is not None:
+            identity['measurement_programs'] = programs
         if self.bench_features or self.net_rule or self.op_ratios:      # only then: a view without them keeps its key
             identity['second_build'] = dict(bench_features=self.bench_features, net_rule=self.net_rule, op_ratios=self.op_ratios,
                                             measured_nets=list(self.measured_nets), variables=_keyed(self.variables))
@@ -384,6 +387,9 @@ class NetworkView:
         metadata[VIEW_KEY] = self.key
         if self.descriptors is not None:
             metadata[SPEC_DESCRIPTOR_KEY] = self.descriptors
+        if self.programs is not None:
+            from analog_optimizer.models.measurement_program import PROGRAM_KEY
+            metadata[PROGRAM_KEY] = self.programs
         viewed = CircuitGraph(graph.circuit_id, list(graph.devices), nets, list(graph.connections), parameters,
                               groups, list(graph.diagnostics), metadata, graph.schema_version)
         return self.vocabulary.view_graph(viewed) if self.vocabulary is not None else viewed
@@ -503,11 +509,14 @@ def prepared(config, vocabulary=None):
     if not any_transfer(config.run.network):
         return None, None
     settings = transfer_settings(config.run.network)
-    descriptors = spec_descriptors.describe_specs(config) if settings['spec_input'] == 'set' else None
+    descriptors = spec_descriptors.describe_specs(config) if settings['spec_input'] in ('set', 'structured') else None
+    # lazy: load the measurement-program compiler when preparing transferable network inputs.
+    from .spec_programs import describe_programs
+    programs = describe_programs(config) if settings['spec_input'] == 'structured' else None
     needs_numbers = settings['size_features'] == 'pdk_relative' or settings['device_model_features']
     document = numbers_for(config, required=needs_numbers) if needs_numbers else None
     bench, rule = settings['bench_features'] == 'relative', settings['net_roles'] == 'rule'
-    view = NetworkView(descriptors=descriptors, numbers=(document or {}).get('devices'),
+    view = NetworkView(descriptors=descriptors, programs=programs, numbers=(document or {}).get('devices'),
                        relative_sizes=settings['size_features'] == 'pdk_relative',
                        model_features=settings['device_model_features'], vocabulary=vocabulary,
                        bench_features=bench, net_rule=rule, op_ratios=settings['operating_point_ratios'],
@@ -548,6 +557,9 @@ def run_record(config, view, document=None) -> dict:
                   pdk_record_sha256=(document or {}).get('record_sha256'), view_key=None if view is None else view.key)
     if view is not None and second_build(config.run.network):          # record 7.317: what the rule was given
         record['second_build'] = dict(measured_nets=list(view.measured_nets), test_variables=sorted(view.variables))
+    if view is not None and view.programs is not None:
+        from analog_optimizer.models.measurement_program import PROGRAM_VERSION
+        record['measurement_programs'] = dict(version=PROGRAM_VERSION, specs=view.programs)
     return record
 
 

@@ -63,6 +63,27 @@ def test_a_size_formula_is_read_off_its_form_and_never_executed():
         assert patterns is None and why, text
 
 
+@pytest.mark.parametrize('formula', ["width('*')", "count('mn*')", "fingers('mn*', 400n)", "width('0')",
+                                     'width("mn*" "mp*")', 'width(r"mn*")', 'width("""mn*""")', r'width("\x30")'])
+def test_size_patterns_with_unsupported_quoting_are_validation_errors(tmp_path, formula):
+    patterns, why = se.parse_size_formula(formula)
+    assert patterns is None and why
+    assert se.size_value(formula, flip_flop()) is None
+    config = mock(tmp_path, probes=[size_probe('m_bad', 'bad_m', formula)], specs=[spec('bad_spec', 'm_bad')])
+    assert 'size_formula_rejected' in codes(check(config), 'error')
+
+
+def test_a_single_quoted_size_pattern_gets_a_validation_report_from_the_api(tmp_path):
+    from fastapi.testclient import TestClient
+    from helpers import workbench_app
+    config = mock(tmp_path, probes=[size_probe('m_bad', 'bad_m', "width('*')")], specs=[spec('bad_spec', 'm_bad')])
+    with TestClient(workbench_app(tmp_path), raise_server_exceptions=False) as client:
+        answer = client.post('/api/config/validate', json=dict(config=config.model_dump(mode='json')))
+    assert answer.status_code == 200
+    assert answer.json()['blocks_run']
+    assert any(i['code'] == 'size_formula_rejected' for i in answer.json()['issues'])
+
+
 def test_the_flip_flops_cell_width_is_counted_in_gate_columns():
     x1 = se.instance_widths(flip_flop())
     assert len(x1) == 32                                                     # the lengths are not counted

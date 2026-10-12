@@ -42,6 +42,7 @@ from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 from analog_optimizer.measurements.specs import RewardSettings
 
 from . import ngspice_netlist
+from .simulation_artifacts import SimulationArtifacts
 from .ngspice_analysis import counts, instrument as instrument_analyses
 from .ngspice_link import PROGRAM, SSH_HOST, VERSION, scrub_host as _scrub, ssh_argv
 from .ngspice_operating_points import instrument, read as read_operating_points
@@ -224,9 +225,8 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         exported = self.exports[request.netlist.job_id][1]
         if request.parameters != exported:
             raise ValueError('ngspice request parameters differ from the export')
-        directory = request.work_root / uuid4().hex
-        directory.mkdir(parents=True)
-        deck = request.netlist.path
+        artifacts = SimulationArtifacts.copy_deck(request.netlist.path, request.work_root)
+        directory, deck = artifacts.result_directory, artifacts.deck_path
         wanted = list(dict.fromkeys([*self.parsed.result_names, *request.required_metrics]))
         self.calls += 1
         status, reason, retryable, evaluated, invocations = SimulationStatus.OK, 'ngspice_batch', False, True, 1

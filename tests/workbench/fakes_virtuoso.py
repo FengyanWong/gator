@@ -151,7 +151,7 @@ MAESTRO_TAIL = ('\nsimulatorOptions options psfversion="1.4.0" reltol=1e-3 temp=
                 'finalTimeOP info what=oppoint where=rawfile\nsaveOptions options save=allpub\n')
 
 
-def maestro_netlister(tmp_path, circuit=None):
+def maestro_netlister(tmp_path, circuit=None, *, head=MAESTRO_HEAD):
     """Stands in for `bridge_setup maestro_netlist`: Maestro's netlist folder of the copy's test - input.scs = a head, the
     circuit (the recorded export with the copy's names, as the copy reader gives it), a tail - plus name maps in the
     format the real netlister writes (amap/). `circuit` replaces the circuit part (a netlist that differs)."""
@@ -169,7 +169,7 @@ text = re.sub(r'(?<![A-Za-z0-9_])ring_osc_3stage(?![A-Za-z0-9_])', args['--cell'
 folder = Path(args['--output']) / 'maestro_netlist' / 'netlist'
 (folder / 'amap').mkdir(parents=True)
 (folder / 'netlist').write_text(text)
-(folder / 'input.scs').write_text({MAESTRO_HEAD!r} + text + {MAESTRO_TAIL!r})
+(folder / 'input.scs').write_text({head!r} + text + {MAESTRO_TAIL!r})
 maps = {{'top_level_map.inst': [('__NEXT_FILE__', args['--testbench'])],
         '__simulator_information__': [('__artInstanceTerminalDelimiter__', ':'), ('__artHierarchyDelimiter__', '.')],
         args['--testbench'] + '.inst': [('V0n', 'analogLib_vdc_spectre'), ('XU1n', args['--cell'])],

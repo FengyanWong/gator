@@ -169,8 +169,8 @@ def _without_row_notes(rows):
 
 
 def what_changed(old, new) -> set[str]:
-    """Which parts of a task differ between two task files: parameters, probes, measurement, analyses, variables,
-    bindings, specs, notes. A recorded baseline stays valid only when none of the first six changed. A Parameters or
+    """Which parts of a task differ between two task files. A recorded baseline stays valid only when none of
+    BASELINE_PARTS changed, including the model files and their sections (corners). A Parameters or
     Probes row whose notes alone changed is a change of notes: words for people, which the simulation never reads (review
     of 2026-10-03 - editing one note dropped the recorded baseline, a real simulation to record again)."""
     old, new = old or {}, new or {}
@@ -184,10 +184,10 @@ def what_changed(old, new) -> set[str]:
     if (om.get('kind'), om.get('expected_frequency_hz')) != (nm.get('kind'), nm.get('expected_frequency_hz')):
         changed.add('measurement')
     oa, na = old.get('maestro') or {}, new.get('maestro') or {}
-    for part in ('analyses', 'variables', 'bindings', 'initial_conditions'):
+    for part in ('analyses', 'variables', 'bindings', 'initial_conditions', 'model_files'):
         if json.dumps(oa.get(part) or None, sort_keys=True) != json.dumps(na.get(part) or None, sort_keys=True):
             changed.add(part)
     return changed
 
 
-BASELINE_PARTS = {'parameters', 'probes', 'measurement', 'analyses', 'variables', 'bindings', 'initial_conditions'}
+BASELINE_PARTS = {'parameters', 'probes', 'measurement', 'analyses', 'variables', 'bindings', 'initial_conditions', 'model_files'}

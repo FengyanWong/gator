@@ -14,7 +14,7 @@ await runChecks(browser, async () => {
   const page = await browser.open();
   const refused = [];
   await page.intercept(['*/api/*'], params => page.readOrRefuse(params, refused, { reads: true }));
-  for (const encoder of ['graph_gps', 'group_cross_attention']) {
+  for (const encoder of ['graph_gps', 'group_cross_attention', 'circuit_gps']) {
     const model = models.find(m => m.network?.encoder_type === encoder);
     if (!model) throw new Error(`Missing saved MOCK ${encoder} fixture`);
     check(`${encoder}: model chooser metadata carries the structural option and version`, model.mock
@@ -28,6 +28,7 @@ await runChecks(browser, async () => {
     const stored = `JSON.parse(localStorage.getItem('gator-workbench-config-v1')).run.network`;
     check(`${encoder}: selecting the saved model restores its complete architecture`, await page.until(`(() => { const n = ${stored};
       return n.encoder_type === '${encoder}' && n.hidden_dim === 16 && n.heads === 2 && n.layers === 1 && n.structural_encoding === 'rwse'; })()`, 120));
+    if (encoder === 'circuit_gps') check('saved CircuitGPS restores the structured spec contract', await page.until(`(${stored}).spec_input === 'structured'`));
     check(`${encoder}: loaded architecture is not editable as a new network`, await page.evaluate(`!${NETWORK_PANEL}.querySelector('select.structural-encoding')`));
     // Since record 7.265 the structure and the graph view are in the saved model's Details, in the RL model window's table.
     const ROW = `[...${NETWORK_PANEL}.querySelectorAll('tr.model-row')].find(r => r.title === ${JSON.stringify(model.run_dir)})`;

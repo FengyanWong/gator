@@ -18,9 +18,14 @@ import time
 
 from . import families, network_inputs, spec_descriptors
 from .checkpoints import CheckpointStore
+from .model_inputs import INPUT_KEYS, pool_feature_schema, request_inputs, source_view  # input helpers remain importable here
 from .modes import seed_everything
 from .storage.atomic import read_json, write_json
 from .trajectory import TrajectoryLoader
+
+
+DEFAULT_SEED = 0
+DEFAULT_UPDATES = 20_000
 
 
 def identity(value):
@@ -74,41 +79,7 @@ class Pool:
     feature_schema: object = None          # None: the standard list (every pool before record 7.298)
 
 
-INPUT_KEYS = dict(spec_input=('slots', 'set'), size_features=('absolute', 'pdk_relative'), device_model_features=(False, True),
-                  vocabulary=('standard', 'families'),
-                  # the second build (record 7.317)
-                  bench_features=('absolute', 'relative'), net_roles=('task', 'rule'), operating_point_ratios=(False, True))
 MISSING_OPERATING_POINTS = ('refuse', 'mask')
-
-
-def request_inputs(request) -> dict:
-    """The network inputs a request trains with (records 7.298 and 7.317): request['inputs'], every key optional,
-    defaults = as before. The raw operating-point input is not offered. The operating-point ratios are, for sources whose
-    run read operating points (a run with `operating_points` or `operating_point_ratios`); a source that read none is
-    refused unless the request says `missing_operating_points: "mask"` - its designs then show the ratios as missing."""
-    inputs = dict(request.get('inputs') or {})
-    if set(inputs) - INPUT_KEYS.keys():
-        raise ValueError(f'Unknown network inputs {sorted(set(inputs) - INPUT_KEYS.keys())}; known: {sorted(INPUT_KEYS)}')
-    for key, allowed in INPUT_KEYS.items():
-        if key in inputs and inputs[key] not in allowed:
-            raise ValueError(f'inputs.{key} must be one of {allowed}')
-    return dict(network_inputs.transfer_settings(inputs), vocabulary=inputs.get('vocabulary', 'standard'))
-
-
-def source_view(config, inputs):
-    """The NetworkView of one source archive under the request's inputs: its own specs described, its PDK's numbers, and
-    with the family list its own PDK's components mapped into the families. All of it is read as it stands NOW - the
-    loaded PDK, the task's saved files - so the pool pins what it read (`inputs_identity`, record 7.319)."""
-    from .schema import WorkbenchConfig          # lazy: the schema module is only needed for a pool with these inputs
-    try:
-        recorded = WorkbenchConfig.model_validate(config)
-    except Exception as exc:
-        raise ValueError(f'The recorded configuration of a source cannot be read for the network inputs: {exc}') from exc
-    recorded.run.network = recorded.run.network.model_copy(update={k: v for k, v in inputs.items() if k != 'vocabulary'})
-    vocabulary = (families.FamilyList(families.block_for(getattr(recorded.circuit, 'pdk_id', None)))
-                  if inputs['vocabulary'] == families.NAME else None)
-    view = network_inputs.view_for(recorded, vocabulary)
-    return view if view is not None or vocabulary is None else network_inputs.NetworkView(vocabulary=vocabulary)
 
 
 def inputs_identity(run_dir, inputs) -> str | None:
@@ -124,14 +95,13 @@ def inputs_identity(run_dir, inputs) -> str | None:
 
 def prepare_pool(request, *, progress=None):
     """Read and validate every eligible transition, then split whole run-scoped episodes."""
-    from analog_optimizer.graph.pyg_converter import FeatureSchema
     origin = request['origin']
     if origin not in ('real', 'synthetic'):
         raise ValueError('Pool origin must be real or synthetic')
     fraction = request.get('holdout_fraction', 0.1)
     if not 0 < fraction < 1 or not request.get('runs'):
         raise ValueError('Nonempty sources and a holdout_fraction between 0 and 1 are required')
-    seed = request.get('seed', 0)
+    seed = request.get('seed', DEFAULT_SEED)
     inputs = request_inputs(request)
     missing_points = request.get('missing_operating_points', 'refuse')
     if missing_points not in MISSING_OPERATING_POINTS:
@@ -239,8 +209,11 @@ def prepare_pool(request, *, progress=None):
             progress(dict(event='source_loaded', **sources[-1]))
     if (set(relabel) | set(target_sets)) - groups.keys():
         raise ValueError('Relabel task absent from pool')
-    schema = spec_descriptors.spec_set_schema() if inputs['spec_input'] == 'set' else _pool_registry(registries, request)
-    features = network_inputs.feature_schema(families.schema() if inputs['vocabulary'] == families.NAME else FeatureSchema(), inputs)
+    # lazy: program schemas are needed here only when reconstructing an archive pool.
+    from .spec_programs import spec_program_schema
+    schema = (spec_program_schema() if inputs['spec_input'] == 'structured' else
+              spec_descriptors.spec_set_schema() if inputs['spec_input'] == 'set' else _pool_registry(registries, request))
+    features = pool_feature_schema(inputs)
     training, validation, split = _split_episodes(groups, schema, seed, fraction)
     audit = dict(format='gator-offline-pool-v1', origin=origin, seed=seed, holdout_fraction=fraction,
                  request_sha256=identity(request), sources=sources, spec_schema=asdict(schema),
@@ -447,7 +420,7 @@ def execute(request, output, *, audit_only=False, progress=None):
     output = Path(output).resolve()
     if request['origin'] == 'synthetic' and 'mock' not in output.parts:
         raise ValueError('Synthetic offline artifacts must be under a mock/ directory')
-    updates, batch_size = request.get('updates', 20000), request.get('batch_size', 8)
+    updates, batch_size = request.get('updates', DEFAULT_UPDATES), request.get('batch_size', 8)
     interval = request.get('checkpoint_every', 1000)
     if any(type(x) is not int or x < 1 for x in (updates, batch_size, interval)):
         raise ValueError('updates, batch_size and checkpoint_every must be positive integers')
@@ -474,7 +447,7 @@ def execute(request, output, *, audit_only=False, progress=None):
             status('audited', source_evaluations=pool.audit['source_evaluations'], eligible=pool.audit['eligible'])
             return pool.audit
         torch.set_num_threads(1)
-        seed_everything(request.get('seed', 0))
+        seed_everything(request.get('seed', DEFAULT_SEED))
         experiment = dict(origin=request['origin'], split='offline_training',
                           designs=pool.audit['sources'], pool_sha256=pool.audit['request_sha256'])
         model = ModelConfig(**request.get('model', dict(hidden_dim=48, heads=4, layers=4)))
@@ -483,7 +456,7 @@ def execute(request, output, *, audit_only=False, progress=None):
             raise ValueError('Phase-0 reward-regression diagnostics require gamma=0')
         learner = SACLearner(experiment=experiment, spec_schema=pool.schema, model_config=model,
                              config=sac, reward_settings=pool.reward_settings, feature_schema=pool.feature_schema)
-        sampler = BalancedSampler(pool.training, request.get('seed', 0))
+        sampler = BalancedSampler(pool.training, request.get('seed', DEFAULT_SEED))
         replay = ReplayBuffer(1, origin=request['origin'])
         # This path has no online collector or replay. Do not advertise RunEngine resume.
         store = CheckpointStore(output, run_id=pool.audit['request_sha256'][:24], task_id='offline:general',

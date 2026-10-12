@@ -6,11 +6,13 @@ import { connectionProfilesShared, tasksShared } from '../shared';
 import { useAsyncAction, useRequest } from '../store';
 import { gateText } from './CircuitBrowser';
 import type { TaskLoaded } from './taskChoice';
+import type { CircuitReference, TaskRows, TaskSummary, WorkbenchConfig } from '../contracts';
+import { inScope } from '../newest';
 
 /** `ref` / `virtuosoOn`: the configuration's circuit and whether the page follows a Virtuoso cell (CircuitPanelBody's). */
 export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, profileId, tasks, setTasks, latest, refreshTasks, chooseTask }: {
-  ref: Json; virtuosoOn: boolean; config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; profileId: string | null;
-  tasks: Json[]; setTasks: (tasks: Json[]) => void; latest: MutableRefObject<Json>; refreshTasks: () => Promise<unknown>;
+  ref: CircuitReference; virtuosoOn: boolean; config: WorkbenchConfig; setConfig: (f: (c: WorkbenchConfig) => WorkbenchConfig, record?: boolean) => void; circuit: Json; profileId: string | null;
+  tasks: TaskSummary[]; setTasks: (tasks: TaskSummary[]) => void; latest: MutableRefObject<WorkbenchConfig>; refreshTasks: () => Promise<unknown>;
   chooseTask: (taskId: string) => Promise<TaskLoaded> }) {
   // A saved task: "Check now" runs the check Start runs by itself before every run (backend consistency.py - the editors,
   // the task file and the cell in Virtuoso must agree; the run adapter connects and exports without simulating). A
@@ -26,17 +28,18 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
   const deletableName = generatedName ?? (ref.source === 'registered_task' && tasks.find(t => t.task_key === ref.task_id)?.generated
     ? String(ref.task_id ?? '').replace(/^real:/, '') : null);
   useEffect(() => { setTaskCheck(null); setProfileMessage(null); }, [generatedName]);
-  const rowsKey = (c: Json) => JSON.stringify([c.parameters, c.measurements, c.targets]);
+  const rowsKey = (c: TaskRows) => JSON.stringify([c.parameters, c.measurements, c.targets]);
   useEffect(() => { setTaskCheck(null); }, [rowsKey(config)]);
   const { busy: profileBusy, run: profileAction } = useAsyncAction((e, what) =>
     setProfileMessage({ level: 'error', what, text: problemText(e, gateText) }), () => setProfileMessage(null));
   // The check takes seconds (it connects and exports): an answer about rows or a task that changed meanwhile is not
   // shown as the answer about the ones on the page now.
   const checkTask = () => {
-    const rows = rowsKey(config), task = ref.task_id;
+    const current = inScope({ entity: ref.task_id, revision: rowsKey(config) },
+      () => ({ entity: latest.current.circuit.task_id, revision: rowsKey(latest.current) }));
     profileAction('check', async () => {
       const answer = await api.taskCheck(profileId, config);
-      if (rowsKey(latest.current) === rows && latest.current.circuit.task_id === task) setTaskCheck(answer);
+      if (current()) setTaskCheck(answer);
       else setProfileMessage({ level: 'warn', what: 'check', text: 'The rows or the task changed while the check ran: press "Check now" again.' });
     });
   };
@@ -52,7 +55,7 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
     const task = ref.task_id;
     // The page follows the deleted task's cell only while it still shows that task (record 7.322). A task loaded while the
     // deletion ran keeps its circuit: the answer used to put the deleted task's cell under the new task's rows.
-    const shows = (c: Json) => c.circuit?.source === 'registered_task' && c.circuit?.task_id === task;
+    const shows = (c: WorkbenchConfig) => c.circuit?.source === 'registered_task' && c.circuit?.task_id === task;
     profileAction('delete', async () => {
       const gone = await api.deleteProfile(deletableName!);
       setDeleted(gone);
@@ -80,11 +83,11 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
     const task = ref.task_id;
     profileAction('delete', async () => {
       const gone = await api.ngspiceDelete(ngspiceTask!);
-      const left = await tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; }).catch(() => [] as Json[]);
+      const left = await tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; }).catch(() => [] as TaskSummary[]);
       setProfileMessage({ level: 'ok', what: 'delete', text: `Task ${gone.deleted} deleted; its files are kept in ${gone.kept_copy}.` });
       // The first task left is taken only while the page still shows the deleted one (record 7.322): a task chosen while
       // the deletion ran stays.
-      const next = left.find((t: Json) => t.task_key !== gone.deleted);
+      const next = left.find(t => t.task_key !== gone.deleted);
       if (next && latest.current.circuit?.task_id === task) chooseTask(next.task_key);
     });
   };

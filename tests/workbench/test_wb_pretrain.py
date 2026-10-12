@@ -398,6 +398,34 @@ def test_offline_publication_readers_and_cost(rehearsal_artifact):
         publish(output, root, label='general', review=dict(allow_planned_probes=True, reason='synthetic test'))
 
 
+@pytest.mark.parametrize('omit_updates', [False, True])
+def test_offline_publication_uses_training_defaults_without_changing_the_request(sources, tmp_path, monkeypatch,
+                                                                               omit_updates):
+    from gator_workbench.offline_publish import publish
+    request = request_for(sources)
+    request.pop('seed')
+    if omit_updates:
+        request.pop('updates')
+        assert pretrain.DEFAULT_UPDATES == 20_000
+        monkeypatch.setattr(pretrain, 'DEFAULT_UPDATES', 2)    # exercise both default consumers without 20,000 updates
+    else:
+        request['updates'] = 2
+    original_identity = pretrain.identity(request)
+    output = tmp_path / 'mock' / 'training'
+    pretrain.execute(request, output)
+    original_bytes = (output / 'request.json').read_bytes()
+    layout = publish(output, tmp_path / 'outputs', label='default seed',
+                     review=dict(allow_planned_probes=True, reason='synthetic test'))
+    manifest = read_json(layout.manifest)
+    assert manifest['seeds'] == dict(target_seed=0, pretrain_seed=0)
+    assert layout.run_dir.name.startswith('offline__seed0__')
+    assert manifest['config_sha256'] == original_identity == pretrain.identity(request)
+    assert (output / 'request.json').read_bytes() == (layout.run_dir / 'request.json').read_bytes() == original_bytes
+    assert read_json(layout.run_dir / 'request.json') == request
+    point = checkpoints.resolve_checkpoint(layout.run_dir, 'latest')
+    assert checkpoints.verify_files(point) == [] and checkpoints.load_weights(point)['updates'] == 2
+
+
 def test_rehearsal_settings_preserve_legacy_hashes(tmp_path):
     from gator_workbench.schema import WorkbenchConfig, config_hash
     config = make_config(tmp_path)

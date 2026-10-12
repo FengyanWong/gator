@@ -221,7 +221,7 @@ def test_encoder_topology_and_port_ablation(opamp, encoder):
 
 def test_encoder_configuration_roundtrip_and_legacy_aliases():
     assert ModelConfig().encoder_type == 'graph_transformer'
-    assert ENCODER_TYPES == ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention')
+    assert ENCODER_TYPES == ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps')
     with pytest.raises(ValueError, match=r'gat \(GATv1\) was replaced by gatv2'):
         ModelConfig(encoder_type='gat')
     for removed in ('mlp', 'gcn'):

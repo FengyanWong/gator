@@ -8,11 +8,11 @@ import torch
 from torch import nn
 from torch_geometric.nn import TransformerConv, RGCNConv, GATv2Conv
 from .global_attention import CircuitAttention, RWSE_STEPS, structural_features
-from .inputs import SpecSetSchema
+from .inputs import SpecSetSchema, SPEC_PROGRAM_LAYOUT
 
 
-ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention')
-GLOBAL_ENCODERS = ('graph_gps', 'group_cross_attention')
+ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps')
+GLOBAL_ENCODERS = ('graph_gps', 'group_cross_attention', 'circuit_gps')
 LEGACY_MODES = {'local_port_attention': 'graph_transformer'}
 # Encoders that existed and were removed. Naming one is refused in words: the models trained with it load only from
 # the last source commit that still has it (the checkpoint contract pins the source digest).
@@ -60,9 +60,9 @@ class ModelConfig:
             raise ValueError('encoder_type conflicts with legacy attention_mode')
         if encoder != 'rgcn' and self.hidden_dim % self.heads:
             raise ValueError('Attention hidden_dim must be divisible by heads')
-        structural = self.structural_encoding if self.structural_encoding is not None else ('rwse' if encoder == 'graph_gps' else 'none')
+        structural = self.structural_encoding if self.structural_encoding is not None else ('rwse' if encoder in ('graph_gps', 'circuit_gps') else 'none')
         if structural not in ('none', 'rwse') or (structural != 'none' and encoder not in GLOBAL_ENCODERS):
-            raise ValueError('structural_encoding must be none, or rwse for graph_gps/group_cross_attention')
+            raise ValueError('structural_encoding must be none, or rwse for graph_gps/group_cross_attention/circuit_gps')
         if type(self.architecture_version) is not int or self.architecture_version != 1:
             raise ValueError('Unsupported encoder architecture_version')
         object.__setattr__(self, 'structural_encoding', structural)
@@ -293,6 +293,11 @@ class CircuitEncoder(nn.Module):
 
 def build_encoder(feature_schema, spec_schema, config, *, action_conditioned=False):
     """Common factory used by both policy and Q networks."""
+    if config.encoder_type == 'circuit_gps':
+        from .circuit_gps import CircuitGPSEncoder
+        return CircuitGPSEncoder(feature_schema, spec_schema, config, action_conditioned=action_conditioned)
+    if getattr(spec_schema, 'layout', None) == SPEC_PROGRAM_LAYOUT:
+        raise ValueError('Structured measurement programs require circuit_gps; other encoders use slots or set')
     return CircuitEncoder(feature_schema, spec_schema, config, action_conditioned=action_conditioned)
 
 

@@ -2,8 +2,6 @@
 model its own label, independent of the project name"). A run that saves a model is remembered under the label, the
 default model to load follows it, the entries remembered under a project name before still answer, and a configuration
 without a label keeps the hashes it had. Everything MOCK."""
-from types import SimpleNamespace
-
 from fastapi.testclient import TestClient
 
 from gator_workbench import checkpoints as ckpt, runs, schema
@@ -30,9 +28,11 @@ def test_a_configuration_without_a_label_keeps_its_hashes():
 
 
 def test_only_a_run_that_saves_a_model_is_filed_under_a_label():
-    run = lambda save=True: SimpleNamespace(output=SimpleNamespace(save_checkpoints=save))
+    run = lambda save=True, optimizer='sac': make_config('/tmp', run=dict(optimizer=optimizer),
+                                                       output=dict(save_checkpoints=save))
     assert runs.saves_rl_model(run())
     assert not runs.saves_rl_model(run(save=False))             # a Baseline simulation
+    assert not runs.saves_rl_model(run(optimizer='bayes'))
 
 
 def test_a_run_is_remembered_under_its_label_not_the_project_name(tmp_path):

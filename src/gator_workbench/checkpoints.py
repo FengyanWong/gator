@@ -34,6 +34,7 @@ from uuid import uuid4
 from . import caches, CHECKPOINT_METADATA_VERSION
 from .checkpoint_codec import write_compressed
 from .pdk import schema_label
+from .run_definitions import optimizer_of, require_rl_model
 from .storage.atomic import PersistenceError, publish, read_dict, read_json, sha256_file, temporary_path, write_json
 from .storage.dataset import utcnow
 
@@ -425,6 +426,7 @@ def load_weights(directory) -> dict:
 def describe(run_dir, checkpoint_id='latest') -> dict:
     """What the UI shows for a selected model: source task, save time, schema, counters, actual path,
     restorable components and (separately computed) compatibility."""
+    require_rl_model(read_dict(Path(run_dir) / 'run_manifest.json'))
     directory = resolve_checkpoint(run_dir, checkpoint_id)
     meta = read_metadata(directory)
     return dict(checkpoint_id=meta['checkpoint_id'], path=str(directory), kind=meta['kind'],
@@ -481,15 +483,17 @@ def saved_models(run_entries, read_listing=None) -> list[dict]:
     reuses the run list's cache (record 7.274). Its answer is not changed here."""
     models = []
     for entry in run_entries:
+        manifest = getattr(entry, 'manifest', None)          # a list_runs row keeps the manifest it was built from
+        if manifest is None:
+            manifest = read_dict(Path(entry['run_dir']) / 'run_manifest.json')
+        if optimizer_of(manifest) == 'bayes':
+            continue
         listing = dict(read_listing(entry) if read_listing else list_checkpoints(entry['run_dir']))
         # An LLM-only run's saves (a search method removed on 2026-10-06) hold no RL model.
         listing['checkpoints'] = [p for p in listing['checkpoints'] if p['restoration_capability'] != 'search_state']
         if not listing['checkpoints']:
             continue
         newest = next((p for p in listing['checkpoints'] if p['is_latest']), listing['checkpoints'][-1])
-        manifest = getattr(entry, 'manifest', None)          # a list_runs row keeps the manifest it was built from
-        if manifest is None:
-            manifest = read_dict(Path(entry['run_dir']) / 'run_manifest.json')
         circuit = manifest.get('circuit') or {}
         models.append(dict(
             # The model's name: the run row carries it, unique under the output root (runs.list_runs, record 7.225); a row
@@ -519,13 +523,15 @@ class ModelNameTaken(ValueError):
 
 def model_label_of(run_dir, manifest=None) -> dict:
     """``{'model_label': name or None, 'renamed': bool}``: the name a run's model was renamed to, else the one its
-    manifest was given at the start; None for a run that saves no model (a baseline, LLM only)."""
+    manifest was given at the start; None for a run that saves no model (a baseline, Bayesian or LLM-only run)."""
+    if manifest is None:
+        manifest = read_dict(Path(run_dir) / 'run_manifest.json')
+    if optimizer_of(manifest) == 'bayes':
+        return dict(model_label=None, renamed=False)
     renamed = read_dict(Path(run_dir) / MODEL_LABEL_FILE)
     label = renamed.get('model_label') if isinstance(renamed, dict) else None
     if isinstance(label, str) and label.strip():
         return dict(model_label=label.strip(), renamed=True)
-    if manifest is None:
-        manifest = read_dict(Path(run_dir) / 'run_manifest.json')
     if 'model_label' not in manifest:
         # A run from before the label (record 7.159) was filed under its task name; it has a model only if it saved one.
         label = manifest.get('task_name') if (Path(run_dir) / 'checkpoints' / 'latest.json').is_file() else None

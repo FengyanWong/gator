@@ -286,6 +286,39 @@ def test_the_link_validates_the_connection_settings_and_the_remote_command_is_fi
     assert 'simhost' not in result.error_summary and '<ssh host>' in result.error_summary   # the destination never leaves
 
 
+@pytest.mark.parametrize('outcome', ['ok', 'nonconverged', 'timeout'])
+def test_each_local_attempt_keeps_its_own_deck_and_raw_output(tmp_path, outcome):
+    class RawRunner:
+        def __init__(self):
+            self.calls = 0
+
+        def local(self, program, deck, timeout):
+            self.calls += 1
+            (deck.parent / 'results.raw').write_text(f'fake raw output {self.calls}')
+            if outcome == 'timeout':
+                raise subprocess.TimeoutExpired(program, timeout)
+            return (0, 'vout_v = 0.6\n', '') if outcome == 'ok' else (1, 'Error: timestep too small\n', '')
+
+    deck = DECK.replace('print vout_v', 'print vout_v\nwrite results.raw all')
+    backend = NgspiceBackend(deck, sized_graph(deck, {'r1': ('r', 500.0, 4000.0)}), NgspiceLink('ngspice_local'),
+                             units={'vout_v': 'V'}, runner=RawRunner())
+    backend.connect()
+    try:
+        artifact = backend.generate_netlist(tmp_path / 'exports')
+        request = SimulationRequest(artifact, tmp_path / 'sims', ('vout_v',), 5.0, backend.read_parameters(),
+                                    condition=backend.condition)
+        first, second = backend.run_simulation(request), backend.run_simulation(request)
+        assert first.status.value == second.status.value == outcome
+        assert first.artifact_directory != second.artifact_directory
+        for number, result in enumerate((first, second), start=1):
+            assert (result.artifact_directory / 'results.raw').read_text() == f'fake raw output {number}'
+            assert (result.artifact_directory / 'deck.cir').read_bytes() == artifact.path.read_bytes()
+        assert not (artifact.path.parent / 'results.raw').exists()
+        backend.get_circuit_graph(artifact)                   # retrying never changes the verified export
+    finally:
+        backend.close()
+
+
 # ------------------------------------------------------------------------------- the task store
 def test_the_task_store_saves_lists_revises_and_deletes():
     entry = nt.save('divider', DECK, circuit_class='divider')
@@ -346,6 +379,40 @@ def prepared_config(tmp_path, task_key, *, profile='sim', evaluations=3):
                output=dict(output_root=str(tmp_path), experiment_name='ng', flush_every_evaluations=1, checkpoint_every_evaluations=None))
     raw['parameters'] = [r for r in raw['parameters'] if r['optimized']]
     return schema.WorkbenchConfig.model_validate(raw)
+
+
+@pytest.mark.parametrize('policy', ['best_and_failures', 'all', 'none'])
+def test_a_run_retains_local_ngspice_raw_files_by_its_policy(tmp_path, monkeypatch, policy):
+    """Full worker/retention path with a stand-in process; no ngspice program is run."""
+    from gator_workbench import worker
+
+    class RawRunner:
+        def local(self, program, deck, timeout):
+            (deck.parent / 'results.raw').write_text('fake raw waveform')
+            (deck.parent / 'values.dat').write_text('fake numerical output')
+            return 0, 'vout_v = 0.6\n', ''
+
+    monkeypatch.setattr(ngspice_backend, 'RealRunner', RawRunner)
+    nt.save('divider', DECK.replace('print vout_v', 'print vout_v\nwrite results.raw all\nwrdata values.dat v(out)'))
+    write_profiles(sim=dict(kind='ngspice_local'))
+    config = prepared_config(tmp_path, 'ngspice:divider', evaluations=1)
+    config.output.waveform_retention = policy
+    config.targets = [schema.PerformanceTarget(metric_id='vout_v', equation='m_vout_v', unit='V', constraint='>=',
+                                               lower=0.4, normalization_scale=0.1)]
+    layout, _ = runs.prepare_run(config, roots_for(tmp_path), allow_real=True, monitor=ngspice_probe(tmp_path))
+    assert worker.main(['--run-dir', str(layout.run_dir), '--allow-real', '--threads']) == 0
+    jobs = DatasetReader(layout.data).rows('simulator_jobs')
+    assert len(jobs) == 1
+    if policy == 'none':
+        assert jobs[0]['retention_status'] == 'deleted_by_policy'
+        assert not list(layout.run_dir.rglob('results.raw'))
+    else:
+        retained = layout.run_dir / jobs[0]['output_path']
+        assert (retained / 'results.raw').read_text() == 'fake raw waveform'
+        assert (retained / 'values.dat').read_text() == 'fake numerical output'
+        assert (retained / 'deck.cir').is_file() and (retained / 'ngspice.log').is_file()
+        entry = read_json(layout.waveforms / 'index.json')['entries'][jobs[0]['job_id']]
+        assert entry['status'] == ('retained_best' if policy == 'best_and_failures' else 'retained_all')
 
 
 def test_a_run_needs_an_authorization_and_a_connection_of_the_right_family(tmp_path):

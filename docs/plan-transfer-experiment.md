@@ -192,10 +192,10 @@ User: "i think in the same topology spec change part pure analog circuit wont [e
 optimization like for one logic cell to modify its ppa?", then "yes add DFFRX1 for step 3 as a task" (3 was this step's
 number then), then "make the stdcell plan first part of the step 3(the spec change) and exchange current plan step 2
 with step 3 so after step 1 it runs stdcells first". Session "Trained model spec change topology proof", record 7.305.
-**Status: run on 2026-10-11 (record 7.310), nine of the ten runs complete.** From scratch no run finds a passing design in 800 (five
+**Status: run on 2026-10-11 (record 7.310), all ten runs complete.** From scratch no run finds a passing design in 800 (five
 runs: speed, power, and the in-between speed with three seeds). From the both-goals model: speed 388 passes (first at design 16),
-power 309 (16), in-between speed 264 (40) and 409 (91) for seeds 0 and 1; the third seed's run from the model died at design 93 when
-the second Virtuoso session stopped answering (one pass, at design 85) and is not repeated yet. Results:
+power 309 (16), in-between speed 264 (40), 409 (91) and 300 (85) for seeds 0, 1 and 2 (the third seed's first try died at design 93
+when the simulator machine ran out of memory; it was run again the same evening as `tx2-dffr-powermid-both-s2-r`). Results:
 `artifacts/local/reviews/stdcell-dffrx1-2026-10-10/results-dffr.md`. What follows is the plan as it was run; the bench numbers the
 rule gave are 20 fF, 40 ps and 10 ps, and the energy row is the cell's own switching energy (the supply energy less the loads' share).
 
@@ -371,7 +371,11 @@ that was saved or run. Now, per circuit, three tasks - Save as copies of the sav
 
 User, 2026-10-11: "fix everything this chat mentioned for the encoder networks input. update the experiment plan, add a
 new section step for comparing new and old encoder input builds. use the new encoder in the next coming experiment
-step". Record 7.317. **Status: the inputs are built; no task is changed, no run is queued.**
+step". Record 7.317. **Status: run on 2026-10-11/12 (record 7.328), all 24 runs complete. By the rule below `full` is
+accepted on all three circuits - median late passes 95 % against 95 % on OTA5t, 32 % against 30 % on RING3, 0 % against
+0 % on LDO1, where almost no run passes - and no arm differs from another: no loss shown, no gain shown. Steps 4 to 6
+use Transferable 2. Results: `artifacts/local/reviews/input-builds-2026-10-11/results-step3b.md`.** What follows is the
+plan as it was run.
 
 - **What changed in the inputs**, in plain words (the record has the detail):
 
@@ -454,12 +458,67 @@ step". Record 7.317. **Status: the inputs are built; no task is changed, no run 
   arm differs from the relative-sizes arm in the sizes and the device numbers only, the first-build arm in the second
   build's three settings only. The three start models are trained offline on step 3b's recorded runs of the circuit
   (its arm `full`: three runs, 2,400 designs): the designs recorded in steps 1 and 2 hold no operating points.
+- **The ports as they will be built** (fixed 2026-10-11 22:20 by the queue session, before any ported cell exists; the
+  user was told the five choices and may change them): each transistor becomes the second PDK's 1.8 V transistor of its
+  polarity with ONE finger and its whole width in one number; each MIM capacitor becomes the second PDK's MIM
+  capacitor of the same side lengths and count (both PDKs' models give the same capacitance for them); ideal parts and
+  sources stay. Sizes are the same multiples of the minimum size the network's relative-size input divides by: OTA5t
+  and LDO1 (gpdk045's 1.8 V kind, minimum 0.32 um wide and 0.15 um long, against 0.22 and 0.18 um) widths x 0.6875 and
+  lengths x 1.2; RING3 (gpdk045's 1 V kind, 0.12 um and 40 nm) widths x 1.8333 and lengths x 4.5; on the 5 nm grid, a
+  lower bound rounded up and an upper bound down. OTA5t's and LDO1's benches are 1.8 V benches already and stay as they
+  are. RING3's is a 1.0 V bench: it runs at 1.8 V, the supply of its transistors, and what depends on the supply is
+  scaled by 1.8 - the start voltages, the level at which the duty cycle is read, the two swing limits, and the power
+  (supply voltage times the average current, which the 1 V bench left out). The cells go into the design library the
+  published circuits use.
+- **The rank rule for the ports** (the rule of record 7.262, `phase3_targets.select`: from the start design and 64
+  random designs the largest common rank k, at most 32 and at most half the least-measured row's count, at which every
+  ranked row is reached by at least three random designs and no design passes all rows; a row's limit is the k-th best
+  value measured in it; 6 dB as the scale of dB rows). It was written for six one-sided rows with positive limits, so it
+  is extended here, before any design of a ported task is simulated: (1) a limit in dB may be negative (LDO1's three PSRR
+  rows); every other limit must still be positive; (2) a row that asks for a value inside a band around a target (RING3's
+  frequency) is ranked as "the higher the better", its k-th best value becomes the band's centre and the band keeps its
+  relative width (5 % either side); (3) rows that say what a valid result is rather than how good it is - RING3's duty
+  cycle and its two swing limits - are not ranked: they keep their limits (the swing limits scaled by the supply) and
+  count in "no design passes all rows". If no rank qualifies, the task is reviewed and no run starts.
+  **Corrected 2026-10-11 22:50, when the first port was ranked:** the sentence above names record 7.262, and what that
+  record applied is the form with the phase margin held at 60 deg and the random designs' joint passes reported, not
+  forbidden (`goals_with_pm_floor`); the paragraph here had written out the older, stricter form of record 7.240. The
+  ports follow record 7.262, as the plan's own sentence says: ranked rows at the highest rank up to 32 that at least
+  three random designs reach in every row, a phase-margin row at 60 deg. On the ported OTA5t that is rank 32 (gain at
+  least 44.3 dB, bandwidth 35.2 MHz, power at most 0.190 mW, PSRR 43.4 dB, noise 35.3 uV; 6 of its 64 random designs
+  pass every row); the stricter form gives rank 27 with a phase-margin limit of 84.8 deg, which only weak designs reach -
+  the contradiction record 7.262 describes. Both were computed from the same 64 designs; the user was told.
+- **Two limits of the second PDK's MIM capacitor, found at the builds (2026-10-11):** its form takes no side shorter
+  than 4 um (RING3's two capacitor rows go from 1.0 to 5.6 um in gpdk045) and no count above 1,000 (LDO1's load
+  capacitor is 12,460 units, its row 480 to 14,600). Neither port's rows can stay as they are; the choice for each is
+  put to the user and the two tasks wait for it. OTA5t has no capacitor: built, checked on Spectre, saved as
+  `real:mscr18_ota5t` with its limits from the rule.
+  **Decided by the user 2026-10-11 23:0x and built (record 7.320):** RING3's two capacitor rows go from 4.0 to 5.6
+  um (the start 4.49 um unchanged; the low end of that action is lost); LDO1's load capacitor is a 23 um unit with the
+  count row 32 to 971 and the start 829, the same capacitance as 480 to 14,600 and 12,460 units of 5.6 um within one
+  unit; the limits come from the rank rule in record 7.262's form. RING3 is saved with them (frequency 557.2 to 615.9
+  MHz, power at most 0.697 mW; duty cycle and the two levels kept; 1 of 64 random designs passes every row). LDO1 is
+  built and saved with provisional limits; its Calibration, and with it its limits, wait for the user's go, as every
+  run of this step does.
+  **2026-10-12, after the user's go (record 7.326):** LDO1's Calibration ran - 44 of its 64 random designs measure
+  every row - and the rule gives rank 22 (half the least-measured row's count, the phase margin's): dropout at most
+  0.1964 V, quiescent current at most 18.59 uA, phase margin at least 60 deg, PSRR at most -9.97 / -1.41 / -0.0016 dB
+  at 10 kHz / 1 MHz / high frequency, load regulation at most 15.0 mV; no random design passes every row. The
+  nine-design checks passed on the three ported tasks: the operating point of every transistor is read. The whole
+  history of the ports, every row in both PDKs: `pdk-port-history.md`.
 - **One range for an action:** a ported task's rows keep the gpdk045 task's ranges as multiples of the minimum size
   and keep each row's scale (log or linear), so the same action is the same multiple of the minimum size in both PDKs.
   A script checks this before a port is saved.
 - **Before the runs:** a nine-design check per ported task with Transferable 2, as in step 3b: the operating point of
   the second PDK's transistors is read.
 - **Limit:** the simulator machine holds two PDKs, so the device numbers have four transistor models to learn from.
+- **Result (record 7.329, 2026-10-12; one seed per arm):** a gpdk045 model of the circuit helps on its port once
+  it is trained on - OTA5t's early passes 60 to 66 % against 3 % from scratch, RING3's 29 to 41 % against 2 %, the runs
+  ending as well - and passes nowhere without training (the three probes: 0 of 300). Relative against absolute sizes:
+  no difference on OTA5t; on RING3 the relative-sizes model is ahead on every measure (41 against 29 % early, 74
+  against 53 % late) and the absolute-sizes one misses the "helps" bar by three points, inside what seeds alone do on
+  that circuit. The second build against the first, carried over: no difference shown. LDO1's port is reached by no
+  arm in 800 designs (its rank-rule limits; 6.4 above) and says nothing.
 
 ### 6.5 Step 5: the general model on an unseen circuit in the known PDK (2 runs, 1 probe)
 
@@ -477,6 +536,12 @@ step". Record 7.317. **Status: the inputs are built; no task is changed, no run 
   The other way - the ratios, with the older designs showing them as missing (`missing_operating_points: "mask"` in
   the request) - trains a network that mostly never saw them and then meets them on the new circuit; it is taken only
   if step 3b shows that the ratios matter.
+- **Result (record 7.330, 2026-10-12; one seed):** 79 % early passes from the general model against 21 % from
+  scratch, 100 % late both ways, the 50 % point at design 100 against 162: it helps, ends as well and does not
+  deteriorate, and it passes the old-input mark of 59 %. The frozen model: 16 passes of 300. **The pool is not the one
+  written above:** the plan's 36 archives need about 12 GB of memory in offline training and the workstation had 3.9 GB
+  free, so the model was trained on one from-scratch run of 800 designs per circuit and PDK (ten archives, 7,555
+  designs; the record names them). The inputs are Transferable 2 without the ratios, as proposed.
 
 ### 6.6 Step 6: the same general model on the AgenticSizing circuits (4 runs, 4 probes)
 
@@ -498,6 +563,11 @@ step". Record 7.317. **Status: the inputs are built; no task is changed, no run 
 
   Both numbers are reported for our runs: simulations to the first pass and clock time to the first pass. The agent
   needs few simulations and a long time; a run of ours is the opposite.
+- **Result (record 7.330, 2026-10-12; one seed, the general model of the smaller pool):** the amplifier from the
+  far start - first pass at design 212 after 6.6 minutes, 267 passes of 800, where the from-scratch run found none in
+  800 (904 with its continuation); the LDO - 80 passes of 800 against 31 at most in five from-scratch runs, the first
+  pass at design 320 (6.6 minutes), no sooner than from scratch; the reference and the system - no pass from any
+  start. The frozen model passes on none of the four.
 
 ## 7. Round 2: repeats, only where round 1 shows an effect
 

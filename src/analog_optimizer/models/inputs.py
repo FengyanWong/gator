@@ -25,6 +25,7 @@ SPEC_INPUT_LAYOUT = 'spec-input-v2'   # 21 columns per registry slot + 11: what 
 # unit, then the caller's description of what the spec measures (graph metadata SPEC_DESCRIPTOR_KEY, one number per
 # SpecSetSchema.descriptor_columns). No item carries the spec's name.
 SPEC_SET_LAYOUT = 'spec-set-v1'
+SPEC_PROGRAM_LAYOUT = 'spec-program-v1'
 SPEC_DESCRIPTOR_KEY = 'spec_descriptors'
 SPEC_SET_STATE_COLUMNS = (
     'hard', 'compare_min', 'compare_max', 'compare_range', 'has_lower', 'has_upper', 'objective_min', 'objective_max',
@@ -84,7 +85,7 @@ class SpecSetSchema:
     layout: str = SPEC_SET_LAYOUT
 
     def __post_init__(self):
-        if self.layout != SPEC_SET_LAYOUT:
+        if self.layout not in (SPEC_SET_LAYOUT, SPEC_PROGRAM_LAYOUT):
             raise ValueError(f'Unsupported spec set layout {self.layout!r}: this code computes {SPEC_SET_LAYOUT}')
         if not isinstance(self.descriptor_version, str) or not self.descriptor_version:
             raise ValueError('A spec set input needs a descriptor version')
@@ -104,7 +105,8 @@ class SpecSetSchema:
 
     @property
     def token_width(self):
-        return len(SPEC_SET_STATE_COLUMNS) + len(self.unit_references) + 1 + len(self.descriptor_columns)
+        return (len(SPEC_SET_STATE_COLUMNS) + len(self.unit_references) + 1 + len(self.descriptor_columns)
+                + (4 if self.layout == SPEC_PROGRAM_LAYOUT else 0))
 
     @property
     def run_width(self):
@@ -115,7 +117,7 @@ def spec_schema_from_dict(values):
     """The spec input schema recorded in a checkpoint contract (``asdict`` of either kind), rebuilt."""
     tuples = lambda v: tuple(tuples(x) for x in v) if isinstance(v, (list, tuple)) else v
     values = {key: tuples(value) for key, value in values.items()}
-    return SpecSetSchema(**values) if values.get('layout') == SPEC_SET_LAYOUT else SpecSchema(**values)
+    return SpecSetSchema(**values) if values.get('layout') in (SPEC_SET_LAYOUT, SPEC_PROGRAM_LAYOUT) else SpecSchema(**values)
 
 
 def signed_log(value, reference):
@@ -267,7 +269,13 @@ def spec_set_features(observation, schema):
                  reference is not None, magnitude(value if valid else None), magnitude(spec.lower), magnitude(spec.upper)]
         unit = [0.0] * (len(units) + 1)
         unit[index] = 1.0
-        rows.append([float(x) for x in state] + unit + [float(x) for x in described])
+        extra = []
+        if schema.layout == SPEC_PROGRAM_LAYOUT:
+            # Scale is information even at zero margin. Keep each side of a range separately.
+            extra = [signed_log(spec.scale, reference or 1.0), math.log1p(spec.weight),
+                     _squashed((value - spec.lower) / spec.scale) if valid and spec.lower is not None else 0.,
+                     _squashed((spec.upper - value) / spec.scale) if valid and spec.upper is not None else 0.]
+        rows.append([float(x) for x in state] + unit + [float(x) for x in described] + extra)
     condition = observation.condition
     planned = len(observation.planned_conditions) or 1
     measured = len(observation.condition_results) or 1
@@ -302,6 +310,7 @@ class GraphBatch:
     # `context` holds each observation's run row; with the slot input both stay None and `context` is the slot vector.
     spec_items: torch.Tensor | None = None
     spec_batch: torch.Tensor | None = None
+    structured: dict[str, torch.Tensor] | None = None
 
     @property
     def size(self):
@@ -334,6 +343,7 @@ class _PreparedObservation:
     group_features: torch.Tensor
     group_ids: tuple[str, ...]
     spec_items: torch.Tensor | None = None
+    structured: dict[str, torch.Tensor] | None = None
 
 
 def _prepare_observation(observation, feature_schema, spec_schema, topology_cache=None):
@@ -362,7 +372,11 @@ def _prepare_observation(observation, feature_schema, spec_schema, topology_cach
     group_features = torch.tensor(features, dtype=torch.float32)
     if not torch.isfinite(group_features).all():
         raise ValueError('Non-finite group features')
-    return _PreparedObservation(graph, context, group_features, group_ids, items)
+    structured = None
+    if getattr(spec_schema, 'layout', None) == SPEC_PROGRAM_LAYOUT:
+        from .measurement_program import prepare_programs
+        structured = prepare_programs(observation, operating_points=bool(feature_schema.op_columns))
+    return _PreparedObservation(graph, context, group_features, group_ids, items, structured)
 
 
 def observation_digest(observation):
@@ -375,6 +389,7 @@ def observation_digest(observation):
 def _tensor_bytes(prepared):
     """Bytes of the tensors one cached entry holds (each entry owns its tensors: the topology cache hands out copies)."""
     tensors = [prepared.context, prepared.group_features] + ([] if prepared.spec_items is None else [prepared.spec_items])
+    tensors += list((prepared.structured or {}).values())
     tensors += [value for store in prepared.graph.stores for value in store.values() if isinstance(value, torch.Tensor)]
     return sum(t.element_size() * t.nelement() for t in tensors)
 
@@ -485,6 +500,10 @@ def batch_observations(observations, feature_schema=None, spec_schema=None, *, c
         counts = torch.tensor([len(p.spec_items) for p in prepared])
         items = torch.cat([p.spec_items for p in prepared])
         item_batch = torch.repeat_interleave(torch.arange(len(prepared)), counts)
+    structured = None
+    if getattr(spec_schema, 'layout', None) == SPEC_PROGRAM_LAYOUT:
+        from .measurement_program import batch_programs
+        structured = batch_programs(prepared)
     return GraphBatch(graph, contexts, node_batch, edge_index, roles,
                       ordinals, group_batch, group_features, active,
-                      action_batch, action_counts, columns, group_ids, items, item_batch)
+                      action_batch, action_counts, columns, group_ids, items, item_batch, structured)

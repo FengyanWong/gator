@@ -1,5 +1,9 @@
 # GraphGPS and parameter-group cross-attention
 
+**2026-10-12:** [CircuitGPS](circuit-gps.md) adds a separate `circuit_gps` option with
+joint circuit/spec/parameter attention and structured measurement programs. The
+two architectures described below retain their computations and saved weights.
+
 Added on 2026-10-06 at the user's request. Both are experimental alternatives to
 the existing port-aware Graph Transformer. Integration tests establish execution,
 batch isolation and checkpoint behavior; they do not establish better circuit

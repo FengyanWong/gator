@@ -20,8 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from . import CONFIG_SCHEMA_VERSION
 from .names import PROFILE_ID
 
-ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention')
-GLOBAL_ENCODERS = ('graph_gps', 'group_cross_attention')
+ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps')
+GLOBAL_ENCODERS = ('graph_gps', 'group_cross_attention', 'circuit_gps')
 REMOVED_ENCODERS = {'port_gnn': ('2026-09-24', 'bbdfe36'),
                     'mlp': ('2026-09-26', '9bc488f'), 'gcn': ('2026-09-26', '9bc488f')}
 RUN_MODES = ('scratch', 'resume', 'fine_tune', 'frozen')
@@ -305,21 +305,22 @@ STANDARD_VOCABULARY = 'standard'
 
 
 class NetworkConfig(_Model):
-    encoder_type: Literal['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention'] = 'graph_transformer'
+    encoder_type: Literal['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps'] = 'graph_transformer'
     hidden_dim: int = Field(32, ge=4, le=1024)
     heads: int = Field(4, ge=1, le=32)
     layers: int = Field(2, ge=1, le=16)
     structural_encoding: Literal['none', 'rwse'] | None = Field(None,
-        description='Topology-only random-walk return probabilities at 2, 4, 8, 16 steps. GraphGPS defaults to rwse; '
-                    'parameter-group cross-attention defaults to none. Supported by these two encoders only.')
+        description='Topology-only random-walk return probabilities at 2, 4, 8, 16 steps. GraphGPS and CircuitGPS default '
+                    'to rwse; parameter-group cross-attention defaults to none. Supported by these three encoders.')
     operating_points: bool = Field(False, description='Include measured nominal device operating points and missing-value masks.')
     # The transferable inputs of record 7.298 (the page sets the three together: "Network inputs: Transferable").
-    spec_input: Literal['slots', 'set'] = Field('slots', description=(
+    spec_input: Literal['slots', 'set', 'structured'] = Field('slots', description=(
         'How the network reads the specs. slots: one fixed place per spec name in the result registry, as every model '
         'saved before 2026-10-10 was trained; a model loads only with the same registry. set: every active spec is one '
         'item described by what it measures (unit, analysis, how its probe reads it) and how far it is from its limits '
         'in its own scale, read by one shared network; a model then reads any spec list and loads on any task built '
-        'with the same inputs.'))
+        'with the same inputs. structured: ordered measurement programs, circuit bindings, explicit scales and '
+        'separate margins, for CircuitGPS joint attention.'))
     size_features: Literal['absolute', 'pdk_relative'] = Field('absolute', description=(
         "Transistor widths and lengths as the network sees them. absolute: in micrometres. pdk_relative: divided by the "
         "PDK's minimum width and length of that device (the lower end of its CDF range, read with the PDK), so a "
@@ -353,12 +354,19 @@ class NetworkConfig(_Model):
                     'cell or with "PDK window..." (gator_workbench.pdk). A model trained with one list loads only with the '
                     'same list.')
 
+    @model_validator(mode='before')
+    @classmethod
+    def _circuit_gps_inputs(cls, values):
+        if isinstance(values, dict) and values.get('encoder_type') == 'circuit_gps' and 'spec_input' not in values:
+            return dict(values, spec_input='structured')
+        return values
+
     @model_validator(mode='after')
     def _structural_encoding(self):
         if self.structural_encoding is None:
-            object.__setattr__(self, 'structural_encoding', 'rwse' if self.encoder_type == 'graph_gps' else 'none')
+            object.__setattr__(self, 'structural_encoding', 'rwse' if self.encoder_type in ('graph_gps', 'circuit_gps') else 'none')
         if self.structural_encoding != 'none' and self.encoder_type not in GLOBAL_ENCODERS:
-            raise ValueError('rwse requires graph_gps or group_cross_attention')
+            raise ValueError('rwse requires graph_gps, group_cross_attention or circuit_gps')
         return self
 
     @field_validator('encoder_type', mode='before')

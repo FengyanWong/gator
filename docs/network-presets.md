@@ -7,6 +7,11 @@ The initial preset implementation did not change `src/analog_optimizer/`. Since 
 
 ## New experimental encoders (2026-10-06)
 
+On 2026-10-12, `circuit_gps` gained a separate experimental 48/4/4 preset with
+RWSE and the same inherited SAC values. Selecting its template also selects
+Structured spec inputs. See [CircuitGPS](circuit-gps.md); no published or measured
+optimum is claimed for these choices.
+
 `graph_gps` and `group_cross_attention` now each have a starting preset of
 48 hidden / 4 heads / 4 layers and the existing SAC starting values. Their
 provenance is **experimental** throughout: the measurements below concern the

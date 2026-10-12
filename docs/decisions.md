@@ -1,7 +1,25 @@
-# Current state (2026-10-10)
+# Current state (2026-10-12)
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
+- **The second build of the network inputs is the one a new model gets (7.328 and 7.332, 2026-10-12):** the transfer
+  experiment's step 3b - GraphGPS from scratch on OTA5t, RING3 and LDO1, three arms, three seeds, 24 runs - accepted
+  Transferable 2 on all three circuits by the rule fixed before the runs, and no arm differed from another (no loss
+  shown, no gain shown; LDO1 passes almost nowhere and says nothing). Steps 4 to 6 ran with it. On the user's word ("Yes,
+  no box") a new model's inputs now come with its encoder's template - Transferable 2, and Structured + Transferable 2
+  for CircuitGPS - and the page shows a line of text where the Network inputs box was. The page was built and the
+  backend on 8765 restarted on 2026-10-12 15:35: it runs the working tree with records 7.319 to 7.332 uncommitted in it,
+  and with it the optimizer digest of 7.327 below.
+- **CircuitGPS (7.327, 2026-10-12; user: "Build the new encoder"):** a sixth, explicitly versioned encoder,
+  `circuit_gps`, jointly updates device/net, spec, parameter and electrical-motif tokens. Structured measurement
+  programs preserve operations/operand order, constants, units and circuit bindings; scale and both margins are
+  explicit. Port attention, distance/terminal-biased global attention, Pre-LN gates, persistent parameter queries,
+  action-conditioned independent critics and attention/sum/count readout compose the new architecture. The workbench
+  template selects `spec_input: structured`; it can combine with all Transferable 2 physical inputs. Existing encoder
+  tensor layouts and legacy input calculations are retained; SAC, rewards and actions are unchanged. Optimizer digest
+  is now `e29b39e1650cbe93f271e28f9955f648504c4f84554b08196989b40c68421ebf` (uncommitted), after
+  `6724e52b9ce8bcbb...`. Exact resume of earlier checkpoints still needs their historical runtime. No real simulations
+  or ablation campaign were started; no performance advantage is claimed. See [implementation](circuit-gps.md).
 - **A second build of the network inputs (7.317, 2026-10-11; user: "fix everything this chat mentioned for the encoder
   networks input ... use the new encoder in the next coming experiment step"):** workbench only - the optimizer package
   and its digest (`6724e52b9ce8bcbb...`) are unchanged. Three settings of `run.network`, off by default and hashed as

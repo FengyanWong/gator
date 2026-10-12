@@ -57,7 +57,7 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
   const inUse = source.run_dir === model.run_dir;
   const [point, setPoint] = useState<string>(() => (inUse && source.checkpoint_id && source.checkpoint_id !== 'latest' ? source.checkpoint_id : points[0]?.checkpoint_id) ?? '');
   // The selected save point's compatibility with the draft's task - an inspection: nothing in the draft changes.
-  const { value: checked, error: checkError } = useRequest<Json>(signal => api.model(model.run_dir, point, config, signal),
+  const { value: checked, error: checkError } = useRequest(signal => api.model(model.run_dir, point, config, signal),
     [model.run_dir, point, JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, config.run?.mode])], { enabled: !!point, delay: 250 });
   const [name, setName] = useState(modelName(model));
   const [renaming, setRenaming] = useState(false);

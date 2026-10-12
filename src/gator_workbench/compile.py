@@ -184,6 +184,10 @@ def build_spec_schema(config: WorkbenchConfig):
     whose name it does not know yet (``spec_equations.registry_entries``). A configured registry is taken as given.
     With the spec set input (record 7.298) there is no registry: the optimizer's SpecSetSchema reads any spec list."""
     from analog_optimizer.models.inputs import SpecSchema
+    if config.run.network.spec_input == 'structured':
+        # lazy: the measurement-program compiler is needed only for structured spec schemas.
+        from .spec_programs import spec_program_schema
+        return spec_program_schema()
     if config.run.network.spec_input == 'set':
         return spec_descriptors.spec_set_schema()
     base = _task_spec_schema(config)
@@ -235,7 +239,7 @@ def compile_task(config: WorkbenchConfig, graph) -> CompiledTask:
     specs, targets, preference = build_specs(config)
     schema = build_spec_schema(config)
     registry = {name: unit for name, unit, _ in getattr(schema, 'metrics', ())}
-    for spec in specs if config.run.network.spec_input != 'set' else ():       # a spec set has no registry (record 7.298)
+    for spec in specs if config.run.network.spec_input == 'slots' else ():       # sets/programs have no registry
         if registry.get(spec.metric_id) != spec.unit:
             raise CompileError(f'{spec.metric_id} ({spec.unit}) is absent from the RL specification registry')
     plan = spec_equations.SpecPlan.from_config(config)

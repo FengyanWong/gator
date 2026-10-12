@@ -451,3 +451,21 @@ WSL restart; the folder above does not.
    that one import root replaces the two spellings (D6).
 5. **B10's lock hand-over** (`prepare_run` returning its lock instead of parking it in a module global): with B5, or
    not at all.
+
+
+## 9. Follow-up refactor, 2026-10-12 (record 7.324)
+
+The user approved a second pass after the audits and fixes in records 7.319–7.323. This is separate from the already
+completed groups above. The six phases are: snapshot the current working tree and capture compatibility evidence;
+centralize model-input contracts; split engine lifecycle operations; name simulation artifact ownership and separate
+ngspice syntax/results/writing from graph construction; type frontend transfer boundaries and share reply-scope
+comparisons; enforce dependency boundaries and update the module map and oversized log.
+
+Implementation uses an isolated snapshot that includes the existing uncommitted fixes. Existing public imports and
+engine hooks remain available. Scheduler ordering, offline/online input policies, saved formats, configuration hashes,
+UI names/DOM/storage, and the optimizer source digest are compatibility requirements. No optimizer source or pinned
+research file is changed. The live frontend build and running backend are left to the user's normal deployment flow.
+
+The module map is in `docs/workbench.md` under Code organization and `docs/functionality-reference.md`. Reproducible
+proof scripts, before/after outputs and browser records are retained locally in
+`artifacts/local/reviews/refactoring-2026-10-12/`; verification results are recorded in entry 7.324.

@@ -44,6 +44,7 @@ MODULES = (
     'analog_optimizer.models.encoders',               # structure table of a saved model (model_structure.py)
     'analog_optimizer.models.graph_transformer',      # structure table of a saved model (model_structure.py)
     'analog_optimizer.models.inputs',
+    'analog_optimizer.models.measurement_program',
     'analog_optimizer.netlist.config',
     'analog_optimizer.netlist.expressions',
     'analog_optimizer.netlist.spectre_parser',

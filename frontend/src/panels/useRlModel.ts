@@ -10,9 +10,10 @@ import { ENCODER_SHORT, pointEvaluations } from '../lineage';
 import { LOADS, NETWORK_FIELDS, networkOf, pick, readSavePoint, withSavePoint } from '../savePoint';
 import { usePopupWindow } from './popupWindow';
 import { PRESET_RATE_KEY, RL_MODEL_WINDOW } from '../contract';
-import { ADVANCED_ROWS, foldedText, limitsText, modelLineText, networkShort, networkSizes, networkTitle, NextModel, nextModelText, ORIGIN } from './rlModelText';
-import { useNewest } from '../newest';
+import { ADVANCED_ROWS, foldedText, limitsText, modelLineText, networkShort, networkSizes, networkTitle, NextModel, nextModelText, ORIGIN, newModelInputs, takesTemplateInputs } from './rlModelText';
+import { sameScope, useNewest } from '../newest';
 import { oncePerBrowser } from '../kept';
+import type { ModelReply, NetworkConfig } from '../contracts';
 
 export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json;
   onNext?: (next: NextModel) => void }) {
@@ -34,7 +35,7 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   // was compiled and checked after every edit there all the same (audit 2026-09-30).
   // A draft that still says resume (record 7.267) has no Mode chosen: it asks about no model either.
   const modelChecked = LOADS.includes(run.mode) && !!source.run_dir;
-  const { value: fresh, error, loading: modelLoading } = useRequest<Json>(signal => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config, signal),
+  const { value: fresh, error, loading: modelLoading } = useRequest(signal => api.model(source.run_dir, source.checkpoint_id ?? 'latest', config, signal),
     [JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, run.mode, source,
       run.connection_profile_id, run.seed, run.network, run.advanced, run.reward, run.conditions, config.research?.split])],
     { enabled: modelChecked, delay: 500 });     // 0.5 s after the last edit, as validation (record 7.275: at 0.25 s a check - a compile - went at almost every pause in typing)
@@ -43,9 +44,9 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   // (an old "compatible" is never shown while checking, record 7.96). The whole block used to vanish and come back after
   // every edit, an open compatibility list closed, and an open network structure read the saved tensors again.
   const modelKey = `${source.run_dir}|${source.checkpoint_id ?? 'latest'}`;
-  const lastModel = useRef<{ key: string; value: Json } | null>(null);
+  const lastModel = useRef<{ key: string; value: ModelReply } | null>(null);
   if (fresh?.description && lastModel.current?.value !== fresh) lastModel.current = { key: modelKey, value: fresh };
-  const model: Json = fresh ?? (!error && lastModel.current?.key === modelKey
+  const model: ModelReply | null = fresh ?? (!error && lastModel.current?.key === modelKey
     ? { ...lastModel.current.value, compatibility: null, compatibility_unchecked: null } : null);
   const cornerIds: string[] = schema.$defs.ConditionsConfig.properties.corners.items.enum;
   const robust = (run.conditions?.policy ?? 'off') !== 'off';
@@ -78,13 +79,14 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   const currentNetwork = useRef({ encoder, mode: run.mode, net, adv });
   currentNetwork.current = { encoder, mode: run.mode, net, adv };
   const networkKey = (mode: string, network: Json, advanced: Json) => JSON.stringify([mode, network, advanced]);
-  const currentReply = (revision: number, name: string, expected?: string) => netRevision.current === revision
-    && currentNetwork.current.encoder === name && currentNetwork.current.mode === run.mode
+  const currentReply = (revision: number, name: string, expected?: string) => sameScope(
+    { entity: name, revision }, { entity: currentNetwork.current.encoder, revision: netRevision.current })
+    && currentNetwork.current.mode === run.mode
     && (expected === undefined || expected === networkKey(currentNetwork.current.mode, currentNetwork.current.net, currentNetwork.current.adv));
   const entry: Json = netSettings?.settings?.[encoder] ?? null;
   const offeredEncoders: string[] = netSettings?.encoders ?? Object.keys(ENCODER_SHORT);
   const usesHeads: boolean = entry ? !!entry.uses_heads : encoder !== 'rgcn';
-  const usesStructure: boolean = entry ? !!entry.supports_structural_encoding : ['graph_gps', 'group_cross_attention'].includes(encoder);
+  const usesStructure: boolean = entry ? !!entry.supports_structural_encoding : ['graph_gps', 'group_cross_attention', 'circuit_gps'].includes(encoder);
   const remember = (e: Json) => setNetSettings((s: Json) => s && ({ ...s, settings: { ...s.settings, [e.encoder_type]: e } }));
   // The component list is not a per-encoder setting: another encoder keeps the list that was chosen.
   const keepList = (network: Json) => ({ operating_points: network?.operating_points ?? false,
@@ -93,8 +95,14 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     ...(network?.vocabulary && network.vocabulary !== 'standard' ? { vocabulary: network.vocabulary } : {}) });
   // A new model is built with the device families (record 7.298): a template used in New model brings them when the list is still the standard one.
   const newModelList = (c: Json) => c.run.mode === 'scratch' && (c.run.network?.vocabulary ?? 'standard') === 'standard' ? { vocabulary: 'families' } : {};
+  // What a template brings of the network inputs (record 7.332; user: "Yes, no box"). For a new model: its encoder's whole
+  // input set, unless the configuration holds another choice on purpose. Otherwise, as before: only what the encoder cannot
+  // do without - CircuitGPS reads structured specs, and no other encoder does.
+  const templateInputs = (name: string, network: Json, mode: string) => mode === 'scratch' && takesTemplateInputs(network, name) ? newModelInputs(name)
+    : name === 'circuit_gps' ? { spec_input: 'structured' } : network?.spec_input === 'structured' ? { spec_input: 'set' } : {};
   const applyEntry = (e: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run,
-    network: { ...keepList(c.run.network), ...newModelList(c), encoder_type: e.encoder_type, ...e.network }, advanced: { ...(c.run.advanced ?? {}), ...e.advanced } } }), record);
+    network: { ...keepList(c.run.network), ...newModelList(c), encoder_type: e.encoder_type, ...e.network,
+      ...templateInputs(e.encoder_type, c.run.network, c.run.mode) }, advanced: { ...(c.run.advanced ?? {}), ...e.advanced } } }), record);
   // The standard list is written as no field at all: that is what every configuration had before, and a server that was
   // not restarted yet still accepts it.
   const chooseList = (value: string, record = true) => setConfig(c => {
@@ -126,9 +134,10 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     setNetMessage(null);
     const cached = netSettings?.settings?.[name];
     // Undo or Import can change these values without going through editNet/editAdv.
-    const expected = networkKey(run.mode, cached ? { ...keepList(net), encoder_type: name, ...cached.network } : { ...net, encoder_type: name },
+    const expected = networkKey(run.mode, cached ? { ...keepList(net), ...newModelList({ run: { mode: run.mode, network: net } }),
+      encoder_type: name, ...cached.network, ...templateInputs(name, net, run.mode) } : { ...net, encoder_type: name, ...templateInputs(name, net, run.mode) },
       cached ? { ...adv, ...cached.advanced } : adv);
-    if (cached) applyEntry(cached); else setNet({ encoder_type: name });
+    if (cached) applyEntry(cached); else setNet({ encoder_type: name, ...templateInputs(name, net, run.mode) });
     // An unsaved edit still belongs to the previous encoder; then read the backend again (another tab may have changed it).
     flush().then(() => api.networkSettings()).then(s => {
       if (!currentReply(revision, name, expected)) return;
@@ -199,7 +208,7 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   // typed here, else the task's run label. A run that saves a model files it under this name.
   const label: string = (run.model_label ?? '').trim() || config.project.task_name;
   const savedModel: Json = loads ? model?.description?.contract?.model_config : null;
-  const savedNet: Json = loads ? networkOf(model?.description, netFields) : null;
+  const savedNet: NetworkConfig | null = loads ? networkOf(model?.description, netFields) : null;
   const archDiffers = !!savedNet && Object.keys(savedNet).some(f => savedNet[f] !== (f === 'encoder_type' ? encoder : net[f]));
   const followed = useRef<string | null>(null);
   useEffect(() => {
@@ -259,7 +268,8 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     if (mode === 'scratch') { pointSerial.drop(); setUsingPoint(false); }
     setConfig(c => ({ ...c, run: { ...c.run, mode,
       ...(mode === 'scratch' && c.run.model_source?.run_dir ? { model_source: { ...c.run.model_source, run_dir: null, checkpoint_id: 'latest' } } : {}),
-      ...(mode === 'scratch' ? { network: { ...(c.run.network ?? {}), ...newModelList({ ...c, run: { ...c.run, mode } }) } } : {}) } }));
+      ...(mode === 'scratch' ? { network: { ...(c.run.network ?? {}), ...newModelList({ ...c, run: { ...c.run, mode } }),
+        ...templateInputs(c.run.network?.encoder_type ?? 'graph_transformer', c.run.network, mode) } } : {}) } }));
   };
   // The network in use, in short, beside the RL model button, and the next run's model in one line (rlModelText.ts). In a Mode
   // that loads a model the configuration's network is that model's (above).

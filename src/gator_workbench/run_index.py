@@ -19,6 +19,7 @@ from .names import WORKING_STATES
 from .run_lock import RunLock
 from .layout import RunLayout, find_runs
 from .paths import OutputRoots
+from .run_definitions import optimizer_of
 from .storage.atomic import read_dict, read_json
 from .summary import durations
 from .settings_store import remembered_output_root
@@ -130,11 +131,15 @@ def save_point_code(run_dir) -> str | None:
     return save_point_facts(run_dir)[1]
 
 
-def _resumability(run_dir, summary, point=None):
+def _resumability(run_dir, summary, point=None, manifest=None):
     """The run window's "Can continue" (record 7.215): what the summary says the latest save point allows, while that
     save point is still in the run folder; 'none' once it is gone, whatever the summary wrote when the run came to rest.
     A full save point written by an older optimizer source reads 'weights_only' ("model only"): Continue needs that
     source, fine-tune and frozen still load the model (record 7.221). `point`: ckpt.latest_point(run_dir), when known."""
+    if manifest is None:
+        manifest = read_dict(Path(run_dir) / 'run_manifest.json')
+    if optimizer_of(manifest) == 'bayes':
+        return 'none'
     claimed = (summary.get('output') or {}).get('resumability')
     if claimed in (None, 'none'):
         return claimed
@@ -256,7 +261,7 @@ def list_runs(roots: OutputRoots, output_root=None, *, include_mock=True, fresh=
                           experiment=f"{manifest.get('experiment_name')}__{manifest.get('experiment_id')}",
                           evaluations=budget.get('charged', (summary.get('totals') or {}).get('candidate_evaluations_charged')),
                           first_feasible_eval_count=summary.get('first_feasible_eval_count'),
-                          resumability=_resumability(run_dir, summary, facts['point']),
+                          resumability=_resumability(run_dir, summary, facts['point'], manifest),
                           # The run window (frontend RunList.tsx): what a run was, how it ended and how long it took.
                           task_name=manifest.get('task_name'), stop_reason=status.get('stop_reason'), error=status.get('error'),
                           max_evaluations=(manifest.get('budgets') or {}).get('max_evaluations'),

@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gator_workbench import checkpoints as ckpt, modes, runs
-from gator_workbench.storage import read_json
+from gator_workbench.storage import read_json, write_json
 from helpers import execute, make_config, roots_for, SMALL_NET, workbench_app
 
 # Under --dist loadgroup one xdist worker runs this whole module, so its module-scoped fixture is built once.
@@ -24,6 +24,20 @@ def trained(tmp_path_factory):
     layout, state = execute(config, root)
     assert state == 'completed'
     return root, layout
+
+
+def test_selecting_a_historical_bayesian_save_point_returns_a_plain_refusal(trained, tmp_path):
+    _, source = trained
+    directory = tmp_path / 'mock' / 'bo' / 'runs' / 'task' / 'scratch'
+    shutil.copytree(source.run_dir, directory)
+    manifest = read_json(directory / 'run_manifest.json')
+    manifest['architecture']['optimizer'] = 'bayes'
+    write_json(directory / 'run_manifest.json', manifest)
+    client = TestClient(workbench_app(tmp_path))
+    response = client.post('/api/runs/model', json=dict(run_dir=str(directory), checkpoint_id='latest'))
+    assert response.status_code == 409
+    assert response.json()['detail']['code'] == 'no_rl_model'
+    assert 'do not train an RL model' in response.json()['detail']['message']
 
 
 def test_every_save_point_is_listed_oldest_first_without_hashing_a_file(trained, monkeypatch):

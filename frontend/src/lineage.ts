@@ -8,7 +8,7 @@ import { Json } from './api';
 import { folderName } from './format';
 
 /** The encoders' short names, as Run configuration writes them. */
-export const ENCODER_SHORT: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GPS', group_cross_attention: 'Group attention' };
+export const ENCODER_SHORT: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GPS', group_cross_attention: 'Group attention', circuit_gps: 'CircuitGPS' };
 
 /** The evaluations a save point was written at, read from its id (ckpt-000420-...), or null. */
 export const pointEvaluations = (id?: string | null): number | null => {

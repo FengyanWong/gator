@@ -36,20 +36,43 @@ export const TRANSFERABLE = { spec_input: 'set', size_features: 'pdk_relative', 
 export const TRANSFERABLE_2 = { spec_input: 'set', size_features: 'pdk_relative', device_model_features: true,
   bench_features: 'relative', net_roles: 'rule', operating_point_ratios: true };
 export const STANDARD_INPUTS = { spec_input: 'slots', size_features: 'absolute', device_model_features: false, ...FIRST_BUILD_ONLY };
-export const INPUT_CHOICES: Record<string, Json> = { standard: STANDARD_INPUTS, transferable: TRANSFERABLE, transferable2: TRANSFERABLE_2 };
+export const INPUT_CHOICES: Record<string, Json> = { standard: STANDARD_INPUTS, transferable: TRANSFERABLE, transferable2: TRANSFERABLE_2,
+  structured: { ...STANDARD_INPUTS, spec_input: 'structured' },
+  structured_transferable: { ...TRANSFERABLE_2, spec_input: 'structured' } };
+export const INPUT_NAMES: Record<string, string> = { standard: 'Standard', transferable: 'Transferable', transferable2: 'Transferable 2',
+  structured: 'Structured', structured_transferable: 'Structured + Transferable 2', custom: 'Custom (set in the configuration file)' };
+/** The inputs a NEW model is made with, by its encoder (record 7.332; user: "Yes, no box"): Transferable 2 - the build the
+ *  transfer experiment's step 3b accepted - and for CircuitGPS the same with its structured specs. New model and a template
+ *  bring them (useRlModel), and the RL model window then shows one line of text where the box was; another choice shows
+ *  in a box only while a configuration still holds it. */
+export const newModelChoice = (encoder: string): 'transferable2' | 'structured_transferable' =>
+  encoder === 'circuit_gps' ? 'structured_transferable' : 'transferable2';
+export const newModelInputs = (encoder: string): Json => INPUT_CHOICES[newModelChoice(encoder)];
+/** Whether a template may replace these inputs by its encoder's own: they are the standard ones (never chosen) or the
+ *  set another template brought. A choice a configuration holds on purpose - the first build, plain Structured on
+ *  CircuitGPS, a custom set - stays. */
+export const takesTemplateInputs = (net: Json, encoder: string) => {
+  const held = inputsChoice(net);
+  return held === 'standard' || held === 'transferable2' || held === 'structured_transferable' || (held === 'structured' && encoder !== 'circuit_gps');
+};
 export const TRANSFER_TITLE = 'Standard: the specs in the fixed places of the result registry, sizes in micrometres - every model saved before '
   + '2026-10-10. Transferable: every spec described by what it measures and read as a set (any names, any number), transistor sizes '
   + "relative to the PDK's minimum, and four technology numbers of each transistor's model; a model trained so loads on any task and "
   + 'any PDK with the same inputs. Transferable 2 adds: the bench\'s current sources in microamperes and its voltage sources as a share '
   + 'of the supply, net tags by one rule (ground, supply, input, output, bias), and four ratios of each transistor at the simulated '
   + 'operating point (gm/Id, gm/gds, overdrive, Vds/Vdsat) - the run then reads every design\'s operating point. '
-  + 'Needs the task\'s PDK loaded. Changing this changes the model input schema.';
-/** Which of the three choices a network block is; "custom" when its settings were set apart in a configuration file. */
-export function inputsChoice(net: Json): 'standard' | 'transferable' | 'transferable2' | 'custom' {
+  + 'Needs the task\'s PDK loaded. Structured inputs preserve measurement operations, constants, circuit bindings and reward scales '
+  + 'for CircuitGPS. Structured + Transferable 2 combines both. Changing this changes the model input schema.';
+/** Which of the named choices a network block is; "custom" when its settings were set apart in a configuration file. */
+export function inputsChoice(net: Json): 'standard' | 'transferable' | 'transferable2' | 'structured' | 'structured_transferable' | 'custom' {
   const values = [net?.spec_input ?? 'slots', net?.size_features ?? 'absolute', !!net?.device_model_features];
   const second = [net?.bench_features ?? 'absolute', net?.net_roles ?? 'task', !!net?.operating_point_ratios];
   const none = second[0] === 'absolute' && second[1] === 'task' && !second[2];
   const all = second[0] === 'relative' && second[1] === 'rule' && second[2];
+  if (values[0] === 'structured') {
+    if (values[1] === 'absolute' && !values[2] && none) return 'structured';
+    return values[1] === 'pdk_relative' && values[2] && all ? 'structured_transferable' : 'custom';
+  }
   if (values[0] === 'slots' && values[1] === 'absolute' && !values[2]) return none ? 'standard' : 'custom';
   if (!(values[0] === 'set' && values[1] === 'pdk_relative' && values[2])) return 'custom';
   return none ? 'transferable' : all ? 'transferable2' : 'custom';
@@ -57,10 +80,10 @@ export function inputsChoice(net: Json): 'standard' | 'transferable' | 'transfer
 /** A saved model's network inputs in words (the RL model window's model facts). */
 export function inputsText(net: Json): string {
   if (!net) return 'unknown';
-  const parts = [net.spec_input === 'set' ? 'specs read as a set' : null, net.size_features === 'pdk_relative' ? 'sizes relative to the PDK' : null,
+  const parts = [net.spec_input === 'structured' ? 'measurement programs and circuit bindings' : net.spec_input === 'set' ? 'specs read as a set' : null, net.size_features === 'pdk_relative' ? 'sizes relative to the PDK' : null,
     net.device_model_features ? 'device model features' : null, net.bench_features === 'relative' ? 'bench sources on their own scales' : null,
     net.net_roles === 'rule' ? 'net tags by rule' : null, net.operating_point_ratios ? 'operating-point ratios' : null].filter(Boolean);
-  return parts.length ? `${inputsChoice(net) === 'transferable2' ? 'transferable 2' : 'transferable'}: ${parts.join(', ')}` : 'standard';
+  return parts.length ? `${net.spec_input === 'structured' ? 'structured' : inputsChoice(net) === 'transferable2' ? 'transferable 2' : 'transferable'}: ${parts.join(', ')}` : 'standard';
 }
 
 export const NETWORK_SETTING_LABELS: Record<string, string> = {

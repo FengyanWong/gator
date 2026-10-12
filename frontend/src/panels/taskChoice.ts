@@ -2,7 +2,8 @@
 // replace the editors' rows - after the user agreed to drop edits -, as one Undo step, and the task load the Runs window uses.
 import { MutableRefObject, useEffect, useState } from 'react';
 import { api, Json } from '../api';
-import { type Newest, useNewest } from '../newest';
+import { inScope, type Newest, useNewest } from '../newest';
+import type { CircuitReference, TaskStarter, TaskSummary, WorkbenchConfig } from '../contracts';
 import { noteRowsFrom } from '../store';
 import { noRows, sameRows } from './taskRows';
 
@@ -11,17 +12,17 @@ import { noRows, sameRows } from './taskRows';
  *  ONE change of the draft - one Undo step. Not loaded - the edits question answered Cancel, the task could not be read -
  *  nothing changed, and `why` says so in a sentence. */
 export type TaskLoaded = { loaded: true } | { loaded: false; why: string };
-export type TaskLoad = (taskId: string, change?: (c: Json) => Json, stale?: () => boolean) => Promise<TaskLoaded>;
+export type TaskLoad = (taskId: string, change?: (c: WorkbenchConfig) => WorkbenchConfig, stale?: () => boolean) => Promise<TaskLoaded>;
 
 /** `request` (the circuit load's) and `followCount` (the testbench probes'): what a task choice lets go. `load`: the circuit
  *  load. `taskLoad`: filled with this task load for the Runs window, as the panel draws (a write during render, as before). */
-export function useTaskChoice({ ref, tasks, latest, setConfig, request, followCount, setCircuit, load, taskLoad }: { ref: Json; tasks: Json[];
-  latest: MutableRefObject<Json>; setConfig: (f: (c: Json) => Json, record?: boolean) => void; request: Newest; followCount: Newest;
-  setCircuit: (c: Json) => void; load: (reference: Json, follow?: 'choice' | 'press' | null) => Promise<void>;
+export function useTaskChoice({ ref, tasks, latest, setConfig, request, followCount, setCircuit, load, taskLoad }: { ref: CircuitReference; tasks: TaskSummary[];
+  latest: MutableRefObject<WorkbenchConfig>; setConfig: (f: (c: WorkbenchConfig) => WorkbenchConfig, record?: boolean) => void; request: Newest; followCount: Newest;
+  setCircuit: (c: Json) => void; load: (reference: CircuitReference, follow?: 'choice' | 'press' | null) => Promise<void>;
   taskLoad?: MutableRefObject<TaskLoad | null> }) {
   // Keep the current task and its rows together until the next task is ready. A switch is one Undo step, after any
   // edited rows have been explicitly discarded. Project identity stays; the run label follows the selected task.
-  const [taskRows, setTaskRows] = useState<Json>(null);
+  const [taskRows, setTaskRows] = useState<{ task: string; state: 'brought'; starter: TaskStarter } | null>(null);
   const [taskLoading, setTaskLoading] = useState<string | null>(null);
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
   const following = useNewest();
@@ -33,12 +34,14 @@ export function useTaskChoice({ ref, tasks, latest, setConfig, request, followCo
   // `labels`: the class and PDK id of a task just saved (the ngspice window) - not in the task list read before the save.
   // `change`: what else the same draft change brings (Load run: the run's model; record 7.267). True once loaded.
   const chooseTask = async (taskId: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }, reload = false,
-    change: (c: Json) => Json = c => c, stale: () => boolean = () => false): Promise<TaskLoaded> => {
+    change: (c: WorkbenchConfig) => WorkbenchConfig = c => c, stale: () => boolean = () => false): Promise<TaskLoaded> => {
     const before = latest.current, mine = following.next();
     const currentTask = before.circuit.source === 'registered_task' ? before.circuit.task_id : null;
     // `stale`: the caller's own choice was overtaken (record 7.270: a newer Load run), so this load must not land either.
-    const stillHere = () => mine() && latest.current.circuit === before.circuit && !stale();
-    const brought = taskRows?.task === currentTask ? taskRows.starter : null;
+    const sameTask = inScope({ entity: before.circuit.task_id, revision: before.circuit },
+      () => ({ entity: latest.current.circuit.task_id, revision: latest.current.circuit }));
+    const stillHere = () => mine() && sameTask() && !stale();
+    const brought = taskRows?.task === currentTask ? taskRows!.starter : null;
     setTaskLoadError(null);
     setTaskLoading(taskId);
     try {

@@ -22,7 +22,7 @@ from .transfer import aggregate_runs, freeze_protocol, validate_split
 
 
 ENCODER_LABELS = dict(graph_transformer='gt', rgcn='rgcn', gatv2='gatv2',
-                      graph_gps='gps', group_cross_attention='group_ca')
+                      graph_gps='gps', group_cross_attention='group_ca', circuit_gps='circuit_gps')
 
 
 def benchmark_models(settings):

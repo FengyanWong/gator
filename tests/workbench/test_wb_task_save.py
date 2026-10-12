@@ -137,6 +137,36 @@ def test_a_maestro_measured_task_writes_its_setup_and_netlists_its_test_once(tmp
     assert data                                                                                     # the readback fixture was there
 
 
+@pytest.mark.parametrize('model, corner, kept', [('/pdk/model.scs', 'ss', False), ('/pdk/other.scs', 'tt', False),
+                                               ('/pdk/model.scs', 'tt', True)])
+def test_a_saved_baseline_depends_on_the_model_file_and_corner(tmp_path, model, corner, kept):
+    ready(tmp_path)
+    rows = vs.to_rows(SETUP)
+    cfg = config(probes=rows['measurements'], specs=rows['targets'])
+    analyses = {'tran': {'stop': '50n', 'errpreset': 'conservative'}}
+
+    def saving(model_file, section, task=None):
+        answer = dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[[model_file, section]], analyses=analyses,
+                      variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={})
+        head = MAESTRO_HEAD.replace('/pdk/model.scs', model_file).replace('section=tt', f'section={section}')
+        return save(tmp_path, name='ring_models', task=task, cfg=cfg,
+                    extras=dict(analyses=analyses, model_files=answer['model_files']),
+                    commands=dict(setup=setup_writer(tmp_path, answer), deck=maestro_netlister(tmp_path, head=head)))
+
+    saving('/pdk/model.scs', 'tt')
+    folder = profiles.profile_dir('ring_models')
+    reference = dict(origin='real', metrics=dict(freq=1.2e9, vmax=1.0))
+    (folder / profiles.FILES['reference']).write_text(json.dumps(reference))
+    again = saving(model, corner, task='ring_models')
+    assert profiles.task_file('ring_models')['maestro']['model_files'] == [[model, corner]]
+    deck = json.loads((folder / profiles.FILES['maestro_deck']).read_text())
+    assert f'include "{model}" section={corner}' in deck['head']
+    assert again['changed'] == ([] if kept else ['model_files'])
+    assert again['baseline_kept'] is kept
+    assert profiles.reference_metrics('ring_models') == (reference['metrics'] if kept else None)
+    assert json.loads((folder / 'history' / 'r1' / profiles.FILES['reference']).read_text()) == reference
+
+
 def test_a_task_starts_its_oscillator_with_initial_conditions(tmp_path):
     """A circuit that does not start by itself gets a start voltage per net: they go into the copy with the rest of the
     setup, into the task file, and changing them drops the recorded baseline - what is simulated changed."""

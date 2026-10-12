@@ -8,7 +8,7 @@ import { SavedModels } from './ModelChooser';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Check, LookFold, Num } from './fields';
-import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_CHOICES, STANDARD_INPUTS, TRANSFER_TITLE, inputsChoice,
+import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_CHOICES, INPUT_NAMES, TRANSFER_TITLE, inputsChoice, newModelChoice, newModelInputs,
   inputsText } from './rlModelText';
 import { NoModeNote } from './RunConfiguration';
 import type { RlModel } from './useRlModel';
@@ -108,11 +108,15 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         onChange={e => editNet({ structural_encoding: e.target.value })}>
         <option value="none">None</option><option value="rwse">Random-walk returns (2, 4, 8, 16 steps)</option></select></label>}
       {entry?.experimental && <p className="hint encoder-experimental">Experimental encoder. Transfer performance and these starting settings have not been validated.</p>}
-      <label title={TRANSFER_TITLE}>Network inputs<select className="network-inputs" value={inputsChoice(net)}
-        onChange={e => setNet(INPUT_CHOICES[e.target.value] ?? STANDARD_INPUTS)}>
-        <option value="standard">Standard</option><option value="transferable">Transferable (any spec list, any PDK)</option>
-        <option value="transferable2">Transferable 2 (+ bench sources, net tags, operating-point ratios)</option>
-        {inputsChoice(net) === 'custom' && <option value="custom" disabled>Custom (set in the configuration file)</option>}</select></label>
+      {/* A new model's inputs come with its encoder's template (record 7.332; user: "Yes, no box"): one line of text. A box is
+          drawn only while the configuration still holds another choice - that choice, and the encoder's own to move to. */}
+      {inputsChoice(net) === newModelChoice(encoder)
+        ? <p className="hint network-inputs-line" title={TRANSFER_TITLE}>Network inputs: {INPUT_NAMES[newModelChoice(encoder)]} ({inputsText(net).replace(/^[^:]*: /, '')})</p>
+        : <label title={TRANSFER_TITLE}>Network inputs<select className="network-inputs" value={inputsChoice(net)}
+          onChange={e => setNet(INPUT_CHOICES[e.target.value] ?? newModelInputs(encoder))}>
+          <option value={newModelChoice(encoder)}>{INPUT_NAMES[newModelChoice(encoder)]} (a new model's inputs)</option>
+          {inputsChoice(net) === 'custom' ? <option value="custom" disabled>{INPUT_NAMES.custom}</option>
+            : <option value={inputsChoice(net)}>{INPUT_NAMES[inputsChoice(net)]} (this configuration's own)</option>}</select></label>}
       <Check label="Nominal device operating points" value={net.operating_points ?? false} onChange={v => setNet({ operating_points: v })}
         title="Measured nominal device values and validity masks. Corner operating points are recorded but never replace the nominal network input. Changing this changes the model input schema." />
       <AdvancedFields m={m} />
@@ -177,7 +181,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           <tr><td>Objective bonus weight</td><td>{num(model.description.contract?.reward_settings?.objective_weight ?? 0)}</td></tr>
           <tr><td>Margin bonus weight</td><td>{num(model.description.contract?.reward_settings?.margin_weight ?? 0)}</td></tr>
           <tr><td>Conditions</td><td>{model.description.contract?.condition_policy ?? 'off'}; {model.description.contract?.planned_conditions?.length ?? 'unknown'} planned</td></tr>
-          {model.description.contract?.planned_conditions?.length > 0 && <tr><td>Saved condition plan</td><td>{model.description.contract.planned_conditions.map((c: Json) => c.corner.id).join(', ')}</td></tr>}
+          {model.description.contract?.planned_conditions?.length! > 0 && <tr><td>Saved condition plan</td><td>{model.description.contract!.planned_conditions!.map(c => c.corner.id).join(', ')}</td></tr>}
           <tr><td>Operating points</td><td>{savedNet?.operating_points ? 'enabled' : 'off'}</td></tr>
           <tr className="model-inputs"><td>Network inputs</td><td>{inputsText(savedNet)}</td></tr>
           <tr><td>Training</td><td>{model.description.counters.evaluations_committed} evaluations, {model.description.counters.learner_updates} updates, replay {model.description.counters.replay_size}</td></tr>

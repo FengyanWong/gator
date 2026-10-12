@@ -256,3 +256,36 @@ def test_no_test_module_imports_a_conftest():
                 found.append(f'{path.relative_to(ROOT)}:{node.lineno}')
     assert not found, 'imports of a conftest module:\n' + '\n'.join(found)
 
+
+def assert_no_dependencies(module_names, forbidden_names):
+    """Check direct imports, including deferred imports and imports of API submodules."""
+    edges = graph()
+    forbidden = {f'{PACKAGE}.{name}' for name in forbidden_names}
+    found = []
+    for short_name in module_names:
+        name = f'{PACKAGE}.{short_name}'
+        assert name in MODULES, f'expected architectural module {name}'
+        for target in sorted(edges[name]):
+            if any(target == blocked or target.startswith(blocked + '.') for blocked in forbidden):
+                found.append(f'{name} -> {target}')
+    assert not found, 'dependency crosses an orchestration boundary:\n' + '\n'.join(found)
+
+
+def test_engine_phases_receive_context_without_importing_the_scheduler():
+    # Scheduler callbacks arrive through the context argument. A phase importing the engine or a peer phase would
+    # restore the hidden dependency knot that splitting the engine is meant to remove.
+    phases = {'engine_preparation', 'engine_recovery', 'engine_commit', 'engine_finalization'}
+    assert_no_dependencies(phases, phases | {'engine', 'runs', 'worker', 'cli', 'api'})
+
+
+def test_ngspice_reading_and_writing_stay_below_task_and_run_control():
+    assert_no_dependencies({'ngspice_syntax', 'ngspice_results', 'ngspice_writer'},
+                           {'api', 'tasks', 'engine', 'runs', 'worker', 'cli'})
+    # Syntax/data structures are shared by the graph parser, writer and result reader; they cannot import any of
+    # those consumers, even lazily. In particular, a convenience import via the netlist facade would undo the split.
+    assert_no_dependencies({'ngspice_syntax'}, {'ngspice_netlist', 'ngspice_results', 'ngspice_writer'})
+
+
+def test_model_input_contracts_stay_below_their_online_and_offline_consumers():
+    assert_no_dependencies({'model_inputs'}, {'modes', 'runs', 'engine', 'pretrain', 'offline_publish', 'api'})
+

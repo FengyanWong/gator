@@ -131,7 +131,7 @@ def test_new_encoders_are_experimental_and_keep_their_structural_settings(client
     assert entry['experimental'] and entry['supports_structural_encoding'] and entry['architecture_reference']
     assert all(field['basis'] == 'experimental' for field in entry['provenance'].values())
     assert entry['network'] == dict(hidden_dim=48, heads=4, layers=4,
-                                     structural_encoding='rwse' if encoder == 'graph_gps' else 'none')
+                                     structural_encoding='rwse' if encoder in ('graph_gps', 'circuit_gps') else 'none')
     response = client.put(f'/api/network-settings/{encoder}', json=dict(network=dict(structural_encoding='none', layers=3)))
     assert response.status_code == 200
     assert presets.entry(encoder)['network']['structural_encoding'] == 'none'
@@ -353,7 +353,7 @@ def test_gat_v1_is_rejected_without_migrating_saved_settings(client):
 def test_removed_encoders_are_gone_from_the_list_and_refused_in_words(client,encoder,date,commit):
     """Removed encoders are not offered or editable; imports explain the matching historical source."""
     data = client.get('/api/network-settings').json()
-    assert data['encoders'] == list(schema.ENCODER_TYPES) == ['graph_transformer','rgcn','gatv2', 'graph_gps', 'group_cross_attention']
+    assert data['encoders'] == list(schema.ENCODER_TYPES) == ['graph_transformer','rgcn','gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps']
     assert encoder not in data['settings'] and encoder not in presets.PRESETS
     assert client.put(f'/api/network-settings/{encoder}', json=dict(network=dict(hidden_dim=32))).status_code == 404
     with pytest.raises(KeyError):

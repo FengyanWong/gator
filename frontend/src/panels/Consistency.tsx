@@ -12,6 +12,7 @@ export function CheckSteps({ result, refused = false }: { result: Json; refused?
         ? `The editors, the saved task ${result.task} (revision ${result.revision}) and its working copy in Virtuoso agree. Nothing was simulated.`
         : `${refused ? 'Not started: ' : ''}${result.task} - ${failed.length === 1 ? 'one step does' : `${failed.length} steps do`} not agree${refused
           ? '' : ', so a run would not start'}. Nothing was simulated.`}</b></p>
+      {result.virtuoso_session?.said && <p className="hint">{result.virtuoso_session.said}</p>}
       <ul className="steps-list">{(result.steps ?? []).map((s: Json) => (
         <li key={s.step} className={s.ok ? (s.skipped ? 'hint' : 'ok') : 'error'}>
           <b>{s.ok ? (s.skipped ? 'left out' : 'passed') : 'FAILED'}:</b> {s.title}.{!s.ok && s.fix && <> <b>{s.fix}</b></>}

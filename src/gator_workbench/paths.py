@@ -109,20 +109,29 @@ def bridge_session_key(env_file, profile) -> str | None:
     return _plain(min(name for name in names if target(f'_{name}') == mine))
 
 
-def bridge_session_dir(env_file=None, profile=None) -> Path:
+def bridge_session_dir(env_file=None, profile=None, root=None) -> Path:
     """The adapter's state folder of ONE Virtuoso session (record 7.311): its session lock and a folder per adapter
     session with the crash journal of each write. The first session keeps the state root itself, as before; a further
     session (`bridge_session_key`) has `sessions/<name>` in it. One process at a time drives a Virtuoso session, and with
-    a lock each, two sessions carry a run each."""
+    a lock each, two sessions carry a run each. `root`: the state root when the caller holds it (`bridge_state_dir`
+    reads the connection file)."""
     key = bridge_session_key(env_file, profile) if env_file is not None else None
-    return bridge_state_dir() if key is None else bridge_state_dir() / SESSIONS_DIR / key
+    root = Path(root) if root is not None else bridge_state_dir()
+    return root if key is None else root / SESSIONS_DIR / key
 
 
-def bridge_session_lock(env_file=None, profile=None) -> Path:
+def bridge_session_lock(env_file=None, profile=None, root=None) -> Path:
     """The run adapter's session lock (record 7.167): every process that works in a Virtuoso session takes it - a run, a
     corner check, Save task. Without arguments the first session's; with a connection's settings file and bridge profile,
     the lock of the session that connection reaches (record 7.311)."""
-    return bridge_session_dir(env_file, profile) / 'session.lock'
+    return bridge_session_dir(env_file, profile, root) / 'session.lock'
+
+
+def bridge_queue_lock(env_file=None, profile=None, root=None) -> Path:
+    """The lock a queue holds for its whole life in the Virtuoso session it works in (record 7.351), beside the session
+    lock: between two of its runs the session lock is free for a moment, and the page, which sends its work to whichever
+    session is free (`session_routing`), must not take the session then - the queue's next run would find it taken."""
+    return bridge_session_dir(env_file, profile, root) / 'queue.lock'
 
 
 def bridge_cell_lock(library, cell, root=None) -> Path:

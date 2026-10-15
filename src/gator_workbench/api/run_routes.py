@@ -3,8 +3,8 @@ from __future__ import annotations
 import mimetypes
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
-from .. import (aggregates, calibration, checkpoints as ckpt, corner_check, graph_view, launch_requests,
-                model_structure, runs, schema, training_series)
+from .. import (aggregates, calibration, checkpoints as ckpt, connection, corner_check, graph_view, launch_requests,
+                model_structure, runs, schema, session_routing, training_series)
 from ..compile import CompileError
 from ..layout import RunLayout
 from ..paths import PathNotAllowed, safe_child
@@ -25,7 +25,9 @@ class ModelBody(ModelStructureBody):
 
 
 
-def start_run(context, config, body, *, baseline_only=False, record=None):
+def start_run(context, config, body, *, baseline_only=False, record=None, session=None):
+    """`session`: a Virtuoso session chosen for this run already (Save task hands its own to the baseline it starts,
+    record 7.351) - no second choice; this start lets it go, or hands it to its worker, as it would its own choice."""
     allow_real = bool(body.authorize_real_simulation)
     designs, calibrating = getattr(body, 'calibration_designs', 0), None
     random_only = getattr(body, 'calibration_only', False)
@@ -41,39 +43,69 @@ def start_run(context, config, body, *, baseline_only=False, record=None):
         config.run.rehearsal = None
         if designs:                                # ... and then the random designs of the calibration (record 7.197)
             calibrating = calibration.prepare(config, designs, random_only=random_only)
+    # A connection with two Virtuoso sessions: the run goes to whichever is free (record 7.351, session_routing). A busy
+    # session that holds the task's cell lets go of it once prepare_run's refusals have passed (`before_write`).
+    if session is not None:
+        config = session_routing.with_session(config, session)
+    elif allow_real:
+        try:
+            config, session = session_routing.route(config, context.monitor)
+        except session_routing.SessionsBusy as exc:
+            fail(409, exc, code=exc.code, report=exc.report)
     try:
         layout, manifest = runs.prepare_run(config, context.roots, allow_real=allow_real,
                                             confirm_transfer=getattr(body, 'confirm_transfer', False), monitor=context.monitor,
                                             acknowledge_unknown=body.acknowledge_unknown_connection,
-                                            remember_concurrency=not getattr(body, 'automatic_baseline', False))
+                                            remember_concurrency=not getattr(body, 'automatic_baseline', False),
+                                            before_write=lambda: session_routing.release_pending(session, context.monitor))
+    except session_routing.SessionsBusy as exc:
+        session_routing.finished(session)
+        fail(409, exc, code=exc.code, report=exc.report)
     except runs.RunRejected as exc:
+        session_routing.finished(session)
         fail(409, exc, code=exc.code, report=exc.report)
     except PathNotAllowed as exc:
+        session_routing.finished(session)
         fail(403, exc)
-    if baseline_only or random_only:
-        manifest['run_kind'] = 'calibration' if random_only else 'baseline_preflight'
-        manifest['notes'].append('Calibration: random designs only; no starting-design evaluation.' if random_only else
-                                 'Baseline simulation: a costed preflight evaluation, not a free check.')
-        if calibrating:
-            manifest['calibration'] = calibrating
-            manifest['notes'].append((f'Calibration: {calibrating["designs"]} random designs over the ' if random_only else
-                                      f'With calibration: after the baseline, {calibrating["designs"]} random designs over the ') +
-                                     'Parameters ranges (each of them a costed evaluation; nothing is learned from them).')
-        write_json(layout.manifest, manifest)
-    made = dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=None,
-                paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),
-                mock_notice=manifest['mock_notice'])
-    if record is not None:
-        try:
+    except BaseException:
+        session_routing.finished(session)
+        raise
+    try:
+        if session is not None:                    # which session, and why, in the run's record (its current segment)
+            manifest['segments'][-1]['virtuoso_session'] = session.record()
+            manifest['notes'].append(session.said)
+        if baseline_only or random_only:
+            manifest['run_kind'] = 'calibration' if random_only else 'baseline_preflight'
+            manifest['notes'].append('Calibration: random designs only; no starting-design evaluation.' if random_only else
+                                     'Baseline simulation: a costed preflight evaluation, not a free check.')
+            if calibrating:
+                manifest['calibration'] = calibrating
+                manifest['notes'].append((f'Calibration: {calibrating["designs"]} random designs over the ' if random_only else
+                                          f'With calibration: after the baseline, {calibrating["designs"]} random designs over the ') +
+                                         'Parameters ranges (each of them a costed evaluation; nothing is learned from them).')
+        if session is not None or baseline_only or random_only:
+            write_json(layout.manifest, manifest)  # one write for both (the manifest is on the D: drive)
+        made = dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=None,
+                    paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),
+                    mock_notice=manifest['mock_notice'], connection_profile_id=config.run.connection_profile_id,
+                    virtuoso_session=session.record() if session is not None else None)
+        if record is not None:
             record(made)                     # the request's answer is on disk BEFORE the worker exists (see `once`)
-        except BaseException:
-            # The lock prepare_run took for a continue's worker is let go of: held on, every later continue of this run
-            # was refused as already_running until the backend restarted (review of 2026-10-07, follow-up 1).
-            held = runs.take_lock(layout.run_dir)
-            if held is not None:
-                held.release()
-            raise
-    pid = runs.launch_worker(layout, allow_real=allow_real and not manifest['mock'])
+    except BaseException:
+        # Nothing runs: the session goes back, and so does the lock prepare_run took for a continue's worker - held on,
+        # every later continue of this run was refused as already_running until the backend restarted (review of
+        # 2026-10-07, follow-up 1; since record 7.351 a manifest write that fails here lets them go as well).
+        session_routing.finished(session)
+        held = runs.take_lock(layout.run_dir)
+        if held is not None:
+            held.release()
+        raise
+    try:
+        pid = runs.launch_worker(layout, allow_real=allow_real and not manifest['mock'])
+    except BaseException:
+        session_routing.finished(session)
+        raise
+    session_routing.started(session, pid)    # reserved until the worker holds the session's lock, or has ended
     return dict(made, worker_pid=pid)
 
 
@@ -245,6 +277,8 @@ def _launch_and_control_routes(app: FastAPI, context: ApiContext):
         def work(record):
             config = schema.WorkbenchConfig.model_validate(read_json(RunLayout(run_dir).effective_config))
             config.run.mode, config.run.model_source.run_dir = 'resume', str(run_dir)
+            if config.run.connection_profile_id:          # on whichever session of its connection is free (record 7.351)
+                config.run.connection_profile_id = connection.session_group(config.run.connection_profile_id)[0]
             if body.max_evaluations:
                 config.run.max_evaluations = body.max_evaluations
             return start_run(context, config, body, record=record)

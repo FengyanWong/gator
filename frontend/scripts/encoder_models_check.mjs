@@ -17,8 +17,9 @@ await runChecks(browser, async () => {
   for (const encoder of ['graph_gps', 'group_cross_attention', 'circuit_gps']) {
     const model = models.find(m => m.network?.encoder_type === encoder);
     if (!model) throw new Error(`Missing saved MOCK ${encoder} fixture`);
+    // A new CircuitGPS model is architecture version 2: the measurement tree normalized at every level (record 7.341).
     check(`${encoder}: model chooser metadata carries the structural option and version`, model.mock
-      && model.network.structural_encoding === 'rwse' && model.network.architecture_version === 1);
+      && model.network.structural_encoding === 'rwse' && model.network.architecture_version === (encoder === 'circuit_gps' ? 2 : 1));
     const config = { ...starter, output: { ...starter.output, output_root: ROOT }, run: { ...starter.run, mode: 'fine_tune',
       network: { encoder_type: 'graph_transformer', hidden_dim: 32, heads: 4, layers: 2, structural_encoding: 'none' },
       model_source: { run_dir: model.run_dir, checkpoint_id: 'latest' } } };

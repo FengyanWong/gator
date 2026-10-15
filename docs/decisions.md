@@ -1,7 +1,40 @@
-# Current state (2026-10-12)
+# Current state (2026-10-14)
 
 A summary for new sessions; everything below is the chronological record, oldest first, left as written.
 
+- **Two Virtuoso sessions: the work goes to whichever is free (7.351, 2026-10-15; user: "send it to whichever is
+  free"):** what the page starts on a connection with two sessions (`lab`, `asz`), that is runs, Continue, Check now and
+  Save task, goes to a free session, first the one holding the task's cell open for editing; a session named by its own name
+  (`lab2`, queues and command-line runs) stays that session. A run lets go of its cell's edit lock when it ends, so a
+  cell no longer belongs to the Virtuoso that wrote it. Offline-tool fixes of the same review: 7.352.
+- **CircuitGPS CPU acceleration (7.344, user: "optimize it"):** v2 computes only current-height parents and shares
+  raw tree schedules and graph packing layouts within each encoder forward. Tree normalization, trainable tensors,
+  SAC, rewards, sampling and model settings are retained. Median full-update time on matched saved batches falls
+  from 1.048 s to 0.741 s (29.2%; one CPU thread, batch 8, numerical guards enabled). All 226 targeted checks pass;
+  outputs over 65 task variants agree within 7.16e-7. Current optimizer digest is
+  `ba55157525260b8795a656eb7ac7a7e68f191144932d825e35cf9aeee5c480bc`.
+  The old runtime is preserved. The ongoing fresh-v2 run resumed from update 11,000 at 03:05 London through an explicit checkpoint migration, preserving full
+  learned/optimizer/random/sampler state; strict loading is unchanged. The execution boundary and actual handover
+  status are under `artifacts/local/reviews/circuitgps-acceleration-2026-10-14/`. This does not change architecture
+  version or turn the fresh run into a v1/v2 recovery. See [CircuitGPS](circuit-gps.md).
+- **Fresh CircuitGPS v2 retraining (7.342, 2026-10-13; user: "go on train it again"):** the mixed v1/v2 recovery
+  was stopped and preserved (last reported update 10,575). `circuitgps-v2-fresh/` under the Round 3 review folder
+  starts at update zero, seed 0, resetting all learned and optimizer state. It reuses the validated read-only pool,
+  reward settings, exact split and 20,000-update budget; a full metadata-only sampling replay matches GraphGPS.
+  Its initial runtime/digest is recorded below; record 7.344 adds an audited execution optimization. Numerical guards, 500-update checkpoints and full held-out/reload/
+  proposal checks remain. The existing 12-run RGCN queue now requires this exact fresh v2 run with zero legacy
+  updates. The original failed and stopped recovery runs are historical evidence, not the active training.
+- **CircuitGPS tree normalization and recovery (7.341, 2026-10-13; explicitly requested by the user):** new CircuitGPS
+  configurations select architecture v2. Non-affine LayerNorm bounds base states and every composed parent state;
+  the learned root normalization and all tensor names/shapes remain. Explicit v1 preserves historical computation;
+  other encoders retain architecture v1. The normalization-change optimizer digest was
+  `c4483a4545951d8d523d28a537f16a0c06496bd24d65a1a2c5a0e28d9462a749`. The failed Round 3 run is preserved, and
+  its 10,000-update checkpoint is explicitly migrated under a separate frozen runtime with optimizers, temperature,
+  RNG and the verified sampler position retained. No strict loader check is relaxed. This originally planned a
+  development recovery model with 10,000 v1 updates plus 10,000 v2 updates; record 7.342 supersedes it. The exact failing actor
+  and batch now have finite forward/backward values; the tree-root input falls from 7.1e20 to 2.82. Historical audit
+  and selected-checkpoint numerical checks are recorded under the Round 3 recovery artifacts. See
+  [CircuitGPS](circuit-gps.md) and [the experiment plan](plan-transfer-experiment.md#7a-round-3-graphgps-and-circuitgps-trained-on-the-saved-circuit-archive).
 - **The second build of the network inputs is the one a new model gets (7.328 and 7.332, 2026-10-12):** the transfer
   experiment's step 3b - GraphGPS from scratch on OTA5t, RING3 and LDO1, three arms, three seeds, 24 runs - accepted
   Transferable 2 on all three circuits by the rule fixed before the runs, and no arm differed from another (no loss

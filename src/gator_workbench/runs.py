@@ -283,8 +283,11 @@ def _started(work) -> Future:
 
 
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
-                monitor=None, acknowledge_unknown=False, remember_concurrency=True):
-    """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report."""
+                monitor=None, acknowledge_unknown=False, remember_concurrency=True, before_write=None):
+    """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report. `before_write()` is
+    called once every refusal has passed and before the run is created or written (record 7.351: a busy Virtuoso
+    session lets go of the task's cell then, so a refused start changes nothing in Virtuoso); what it raises refuses
+    the start, with nothing left behind."""
     config, task, compiled = _checked_task(config, roots, allow_real)
     task_hash = task_definition_hash(config)
     # The manifest's code facts - git rev-parse and status on the 9p mount and the optimizer digest, 1.5-2 s - are read
@@ -293,7 +296,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     gate = connection_gate(task, config, monitor, acknowledge_unknown=acknowledge_unknown)
     consistency = _check_consistency(config, task, monitor, acknowledge_unknown)
     if config.run.mode == 'resume':
-        layout, manifest = _prepare_resume(config, roots, task, task_hash, gate)
+        layout, manifest = _prepare_resume(config, roots, task, task_hash, gate, before_write)
         if consistency is not None:
             manifest['segments'][-1]['consistency_check'] = consistency
             try:
@@ -310,6 +313,8 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     data_root.mkdir(parents=True, exist_ok=True)
     vocabulary, source_manifest, source_model, parent = _source_model(config, roots, task, task_hash, compiled,
                                                                       confirm_transfer)
+    if before_write is not None:
+        before_write()
     experiment_dir, experiment_id, created = new_experiment_dir(data_root, config.output.experiment_name,
                                                                  config.output.experiment_id)
     layout, run_id = new_run_dir(experiment_dir, config.project.task_name, config.run.mode, config.run.seed)
@@ -473,7 +478,7 @@ def _remember_run(config, layout, remember_concurrency):
                       **(dict(concurrency=config.run.concurrency) if remember_concurrency else {}))
 
 
-def _prepare_resume(config, roots, task, task_hash, gate):
+def _prepare_resume(config, roots, task, task_hash, gate, before_write=None):
     run_dir = Path(roots.resolve(config.run.model_source.run_dir))
     layout = RunLayout(run_dir)
     manifest = read_json(layout.manifest, default=None)
@@ -487,7 +492,7 @@ def _prepare_resume(config, roots, task, task_hash, gate):
     except RuntimeError:
         raise RunRejected('This run already has an active worker; a duplicate is never started', code='already_running')
     try:
-        result = _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifest, run_dir)
+        result = _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifest, run_dir, before_write)
     except BaseException:
         lock.release()
         raise
@@ -495,8 +500,10 @@ def _prepare_resume(config, roots, task, task_hash, gate):
     return result
 
 
-def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifest, run_dir):
+def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifest, run_dir, before_write=None):
     previous, merged, meta, compatibility = _resume_checks(config, task, task_hash, layout, manifest, run_dir)
+    if before_write is not None:
+        before_write()
     history = layout.control / 'config_history'
     history.mkdir(parents=True, exist_ok=True)
     write_json(history / f"effective_config.segment{len(manifest['segments'])}.json", previous.model_dump(mode='json'))
@@ -504,7 +511,8 @@ def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifes
     manifest['segments'].append(dict(segment=len(manifest['segments']) + 1, entry='resume',
                                      requested_utc=utcnow().isoformat(), from_checkpoint=meta['checkpoint_id'],
                                      compatibility=compatibility, connection_gate=gate,
-                                     changed_run_settings={n: getattr(merged.run, n) for n in RESUMABLE_RUN_FIELDS
+                                     changed_run_settings={n: getattr(merged.run, n)
+                                                           for n in (*RESUMABLE_RUN_FIELDS, 'connection_profile_id')
                                                            if getattr(merged.run, n) != getattr(previous.run, n)}))
     manifest['budgets'].update(max_evaluations=merged.run.max_evaluations,
                                max_spectre_launches=merged.run.max_spectre_launches,
@@ -515,6 +523,13 @@ def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifes
     if command.exists():
         command.unlink()                       # a stale pause must not stop the continued run immediately
     return layout, manifest
+
+
+def resumed_session(asked, previous):
+    """The connection a continued run's next segment uses: the Virtuoso session may change from one segment to the next,
+    within the run's own connection - the page continues a run on whichever session of its connection is free (record
+    7.351) - and another connection never."""
+    return asked if asked != previous and asked in connection.session_group(previous or '') else previous
 
 
 def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
@@ -559,6 +574,7 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
     merged = previous.model_copy(deep=True)
     for name in RESUMABLE_RUN_FIELDS:
         setattr(merged.run, name, getattr(config.run, name))
+    merged.run.connection_profile_id = resumed_session(config.run.connection_profile_id, previous.run.connection_profile_id)
     if merged.run.max_evaluations < meta['ledger']['charged']:
         raise RunRejected(f"max_evaluations ({merged.run.max_evaluations}) is below the {meta['ledger']['charged']} "
                           'evaluations this run already consumed; resume keeps existing counters', code='budget')

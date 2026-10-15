@@ -20,6 +20,7 @@ from . import families, network_inputs, spec_descriptors
 from .checkpoints import CheckpointStore
 from .model_inputs import INPUT_KEYS, pool_feature_schema, request_inputs, source_view  # input helpers remain importable here
 from .modes import seed_everything
+from .offline_storage import DiskSequence, DiskTransitions, shown_type as _shown_type
 from .storage.atomic import read_json, write_json
 from .trajectory import TrajectoryLoader
 
@@ -77,6 +78,7 @@ class Pool:
     reward_settings: object
     audit: dict
     feature_schema: object = None          # None: the standard list (every pool before record 7.298)
+    storage: object = None
 
 
 MISSING_OPERATING_POINTS = ('refuse', 'mask')
@@ -93,7 +95,23 @@ def inputs_identity(run_dir, inputs) -> str | None:
     return source_view(read_json(Path(run_dir) / 'effective_config.json'), inputs).key
 
 
-def prepare_pool(request, *, progress=None):
+def prepare_pool(request, *, progress=None, storage_dir=None):
+    """Disk storage changes memory use, preserving validation and sampling semantics."""
+    storage_mode = request.get('pool_storage', 'memory')
+    if storage_mode not in ('memory', 'disk'):
+        raise ValueError('pool_storage must be memory or disk')
+    storage = None
+    if storage_mode == 'disk':
+        storage = DiskTransitions(None if storage_dir is None else Path(storage_dir) / 'transitions.sqlite')
+    try:
+        return _prepare_pool(request, progress=progress, storage=storage)
+    except BaseException:
+        if storage is not None:
+            storage.close()
+        raise
+
+
+def _prepare_pool(request, *, progress=None, storage=None):
     """Read and validate every eligible transition, then split whole run-scoped episodes."""
     origin = request['origin']
     if origin not in ('real', 'synthetic'):
@@ -107,6 +125,10 @@ def prepare_pool(request, *, progress=None):
     if missing_points not in MISSING_OPERATING_POINTS:
         raise ValueError(f'missing_operating_points must be one of {MISSING_OPERATING_POINTS}')
     transfer = network_inputs.any_transfer(inputs) or inputs['vocabulary'] == families.NAME
+    migrated_settings = None
+    if 'migrate_reward_settings' in request:
+        from analog_optimizer.measurements.specs import RewardSettings
+        migrated_settings = RewardSettings(**request['migrate_reward_settings'])
     groups, registries, sources = defaultdict(lambda: defaultdict(list)), [], []
     run_ids, candidates, settings = set(), set(), None
     relabel = request.get('relabel_upper', {})
@@ -163,7 +185,9 @@ def prepare_pool(request, *, progress=None):
         if not transitions:
             raise ValueError(f'No replay-eligible transitions: {run_id}')
         counts = Counter()
+        original_settings = {}
         for row, transition in zip(eligible, transitions, strict=True):
+            original_settings[identity(asdict(transition.reward_settings))] = asdict(transition.reward_settings)
             if transition.candidate_id in candidates:
                 raise ValueError(f'Duplicate archived candidate: {transition.candidate_id}')
             candidates.add(transition.candidate_id)
@@ -175,26 +199,33 @@ def prepare_pool(request, *, progress=None):
             if (first.condition_policy != 'off' or len(first.planned_conditions) > 1 or
                     any(c is not None and not c.nominal_only for c in first.planned_conditions)):
                 raise ValueError('Phase 0 currently supports nominal-only archives')
+            # Stronger than Transition.validate's numerical tolerance: the relabelling gate.
+            if last.evaluation.reward != transition.reward:
+                raise ValueError('Unchanged-goal re-scoring does not exactly reproduce the archived reward')
+            if migrated_settings is not None:
+                transition = migrated(transition, migrated_settings)
+                first, last = transition.observation, transition.next_observation
+                counts['reward_migrated'] += 1
             if settings is None:
                 settings = transition.reward_settings
             if transition.reward_settings != settings:
                 raise ValueError('Mixed reward settings need an explicit migration; cannot pool as recorded')
-            # Stronger than Transition.validate's numerical tolerance: the relabelling gate.
-            if last.evaluation.reward != transition.reward:
-                raise ValueError('Unchanged-goal re-scoring does not exactly reproduce the archived reward')
             episode = (run_id, row['worker_id'], row['episode_id'])
             if not row['episode_id']:
                 raise ValueError('Episode identity required for leakage-free holdout')
             # What the network is shown of this archive (network_inputs, record 7.298) - applied last: a copy under other
             # limits is re-scored and validated as recorded first (a shown observation no longer holds the recorded sizes).
             shown = (lambda t: t) if view is None else (lambda t: _shown(t, view))
-            groups[task][episode].append((shown(transition), False))
+            def keep(t):
+                viewed = shown(t)
+                return storage.append(viewed) if storage is not None else viewed
+            groups[task][episode].append((keep(transition), False))
             if task in relabel:
                 derived = _relabeled(transition, first, last, relabel[task], task)
-                groups[task][episode].append((shown(derived), True))
+                groups[task][episode].append((keep(derived), True))
                 counts['relabeled'] += 1
             for number, changes in enumerate(target_sets.get(task, ()), 1):       # one more copy per target set (record 7.312)
-                groups[task][episode].append((shown(_retargeted(transition, first, last, changes, task, stated)), ('set', number)))
+                groups[task][episode].append((keep(_retargeted(transition, first, last, changes, task, stated)), ('set', number)))
                 counts['relabeled'] += 1
         # Detect source mutation during reconstruction, too.
         if archive_identity(directory) != source['archive_sha256']:
@@ -204,7 +235,13 @@ def prepare_pool(request, *, progress=None):
                             **({} if shown_as is None else {'inputs_sha256': shown_as}),
                             evaluations=summary['totals']['candidate_evaluations_charged'],
                             eligible=len(transitions), excluded=len(raw) - len(transitions),
-                            relabeled=counts['relabeled']))
+                            relabeled=counts['relabeled'],
+                            **({'reward_migrated': counts['reward_migrated'],
+                                'original_reward_settings': list(original_settings.values())}
+                               if migrated_settings is not None else {})))
+        if storage is not None:
+            storage.commit()
+        del transitions, loader
         if progress:
             progress(dict(event='source_loaded', **sources[-1]))
     if (set(relabel) | set(target_sets)) - groups.keys():
@@ -214,7 +251,7 @@ def prepare_pool(request, *, progress=None):
     schema = (spec_program_schema() if inputs['spec_input'] == 'structured' else
               spec_descriptors.spec_set_schema() if inputs['spec_input'] == 'set' else _pool_registry(registries, request))
     features = pool_feature_schema(inputs)
-    training, validation, split = _split_episodes(groups, schema, seed, fraction)
+    training, validation, split = _split_episodes(groups, schema, seed, fraction, storage=storage, progress=progress)
     audit = dict(format='gator-offline-pool-v1', origin=origin, seed=seed, holdout_fraction=fraction,
                  request_sha256=identity(request), sources=sources, spec_schema=asdict(schema),
                  feature_schema=asdict(features), inputs=network_inputs.as_recorded(inputs), reward_settings=asdict(settings),
@@ -226,36 +263,27 @@ def prepare_pool(request, *, progress=None):
                  diagnostic_scope='within-source episode holdout; not an unseen-circuit transfer result')
     if target_sets:
         audit['relabel_target_sets'] = {task: len(sets) for task, sets in sorted(target_sets.items())}
-    return Pool(training, validation, schema, settings, audit, features)
-
-
-_SHOWN = []
+    if migrated_settings is not None:
+        audit['reward_migration'] = dict(settings=asdict(migrated_settings),
+                                       count=sum(s['reward_migrated'] for s in sources),
+                                       source_archives_unchanged=True)
+    return Pool(training, validation, schema, settings, audit, features, storage)
 
 
 def _shown(transition, view):
-    """A pool transition as the network is shown it (`view`: its archive's NetworkView). With sizes relative to the PDK
-    the shown graphs no longer hold the recorded sizes, so the learner's own re-validation of every sampled transition
-    ("Proposed, executed and next-state parameters differ") cannot hold for it: the transition was validated as
-    recorded when it was read - and again after a re-scoring - and its shown form skips that check (record 7.312; until
-    then no offline pool with PDK-relative sizes could be trained)."""
-    if not _SHOWN:
-        from analog_optimizer.training.replay import Transition
-
-        @dataclass(frozen=True)
-        class ShownTransition(Transition):
-            def validate(self):
-                return None
-        _SHOWN.append(ShownTransition)
+    """Validate physical transitions before viewing; relative sizes cannot be validated as physical actions."""
     values = {f.name: getattr(transition, f.name) for f in fields(transition)}
     values.update(observation=view.view(transition.observation), next_observation=view.view(transition.next_observation))
-    return _SHOWN[0](**values)
+    return _shown_type()(**values)
 
 
 class BalancedSampler:
     """Every task appears once in each shuffled cycle, even across batch boundaries."""
-    def __init__(self, training, seed):
+    def __init__(self, training, seed, *, track_candidates=False):
         self.training, self.rng, self.pending = training, random.Random(seed), []
         self.counts = Counter()
+        self.candidate_counts = Counter()
+        self.track_candidates = track_candidates
 
     def sample(self, size):
         result = []
@@ -264,9 +292,22 @@ class BalancedSampler:
                 self.pending = sorted(self.training)
                 self.rng.shuffle(self.pending)
             task = self.pending.pop()
-            result.append(self.rng.choice(self.training[task]))
+            transition = self.rng.choice(self.training[task])
+            result.append(transition)
             self.counts[task] += 1
+            if self.track_candidates:
+                self.candidate_counts[transition.candidate_id] += 1
         return result
+
+
+def migrated(transition, settings):
+    """An archived transition re-scored under the reward settings `settings` (`migrate_reward_settings`): both observations
+    and the transition carry them, and the reward is the next observation's under them; the recorded measurements stay as
+    they are. The pool and the rehearsal snapshot drawn from it (`rehearsal.build_snapshot`) both use it (record 7.352)."""
+    first, last = (replace(o, reward_settings=settings) for o in (transition.observation, transition.next_observation))
+    moved = replace(transition, observation=first, next_observation=last, reward_settings=settings, reward=last.evaluation.reward)
+    moved.validate()
+    return moved
 
 
 def _relabeled(transition, first, last, changes, task):
@@ -361,12 +402,16 @@ def _pool_registry(registries, request):
     return schema
 
 
-def _split_episodes(groups, schema, seed, fraction):
+def _split_episodes(groups, schema, seed, fraction, *, storage=None, progress=None):
     """Whole run-scoped episodes split into training and validation per task, reproducibly from the seed; every
     observation checked against the registry on the way. Returns (training, validation, the split's rows)."""
     from analog_optimizer.models.inputs import SpecSetSchema, context_features, spec_set_features
     read = spec_set_features if isinstance(schema, SpecSetSchema) else context_features
     training, validation, split = {}, {}, []
+    total = sum(len(rows) for episodes in groups.values() for rows in episodes.values())
+    last_report = time.monotonic()
+    if progress:
+        progress(dict(event='pool_validation', completed_transitions=0, total_transitions=total))
     for task, episodes in sorted(groups.items()):
         keys = sorted(episodes)
         if len(keys) < 2:
@@ -378,15 +423,27 @@ def _split_episodes(groups, schema, seed, fraction):
             subset = 'validation' if i < n else 'training'
             target = validation if i < n else training
             for transition, derived in episodes[key]:
+                reference = transition
+                if storage is not None:
+                    transition = storage.get(reference)
                 # Validate the shared registry on both endpoints without constructing an encoder.
                 for observation in (transition.observation, transition.next_observation):
                     read(observation, schema)
-                target[task].append(transition)
+                target[task].append(reference)
                 row = dict(task=task, run_id=key[0], worker_id=key[1], episode_id=key[2],
                            candidate_id=transition.candidate_id, relabeled=bool(derived), subset=subset)
                 if isinstance(derived, tuple):                     # which of the task's target sets (relabel_targets), from 1
                     row['target_set'] = derived[1]
                 split.append(row)
+                if progress:
+                    now = time.monotonic()
+                    if len(split) % 1000 == 0 or len(split) == total or now - last_report >= 30:
+                        progress(dict(event='pool_validation', completed_transitions=len(split),
+                                      total_transitions=total, task=task))
+                        last_report = now
+    if storage is not None:
+        training = {task: DiskSequence(storage, refs) for task, refs in training.items()}
+        validation = {task: DiskSequence(storage, refs) for task, refs in validation.items()}
     return training, validation, split
 
 def evaluate(learner, pool, batch_size=32):
@@ -395,7 +452,9 @@ def evaluate(learner, pool, batch_size=32):
     result = {}
     with torch.no_grad():
         for task, transitions in pool.validation.items():
-            constant = sum(t.reward for t in pool.training[task]) / len(pool.training[task])
+            training = pool.training[task]
+            constant = (training.reward_mean if hasattr(training, 'reward_mean') else
+                        sum(t.reward for t in training) / len(training))
             error, constant_error = [0., 0.], 0.
             for start in range(0, len(transitions), batch_size):
                 chunk = transitions[start:start + batch_size]
@@ -428,6 +487,8 @@ def execute(request, output, *, audit_only=False, progress=None):
     write_json(output / 'request.json', request)
     started = time.monotonic()
     learner = None
+    pool = None
+    loaded_sources = 0
 
     def status(state, **extra):
         record = dict(state=state, updates=0 if learner is None else learner.updates,
@@ -437,9 +498,22 @@ def execute(request, output, *, audit_only=False, progress=None):
         if progress:
             progress(record)
 
+    def pool_progress(event):
+        nonlocal loaded_sources
+        if event['event'] == 'pool_validation':
+            status('loading', phase='validating_pool', **{k: v for k, v in event.items() if k != 'event'})
+        elif event['event'] == 'source_loaded':
+            loaded_sources += 1
+            status('loading', phase='loading_sources', completed_sources=loaded_sources,
+                   total_sources=len(request['runs']))
+        if progress:
+            progress(event)
+
     try:
-        status('loading')
-        pool = prepare_pool(request, progress=progress)
+        status('loading', phase='loading_sources', completed_sources=0, total_sources=len(request.get('runs', ())))
+        pool = prepare_pool(request, progress=pool_progress, storage_dir=output)
+        status('loading', phase='saving_pool', completed_transitions=len(pool.audit['split']),
+               total_transitions=len(pool.audit['split']))
         write_json(output / 'pool.json', pool.audit)
         write_json(output / 'spec_registry.json', [dict(metric_id=n, unit=u, reference=r)       # a spec set has none
                                                    for n, u, r in getattr(pool.schema, 'metrics', ())])
@@ -456,16 +530,30 @@ def execute(request, output, *, audit_only=False, progress=None):
             raise ValueError('Phase-0 reward-regression diagnostics require gamma=0')
         learner = SACLearner(experiment=experiment, spec_schema=pool.schema, model_config=model,
                              config=sac, reward_settings=pool.reward_settings, feature_schema=pool.feature_schema)
-        sampler = BalancedSampler(pool.training, request.get('seed', DEFAULT_SEED))
+        sampler = BalancedSampler(pool.training, request.get('seed', DEFAULT_SEED), track_candidates=True)
         replay = ReplayBuffer(1, origin=request['origin'])
         # This path has no online collector or replay. Do not advertise RunEngine resume.
         store = CheckpointStore(output, run_id=pool.audit['request_sha256'][:24], task_id='offline:general',
                                 task_definition_hash=pool.audit['request_sha256'], save_replay=False, keep_last=2)
         history = []
+        candidate_runs = {r['candidate_id']: r['run_id'] for r in pool.audit['split'] if r['subset'] == 'training'}
         def checkpoint():
+            status('training', phase='evaluating_validation', validation_transitions=sum(map(len, pool.validation.values())))
             scores = evaluate(learner, pool)
             history.append(dict(updates=learner.updates, scores=scores))
             write_json(output / 'validation.json', history)
+            # The sampler's record of this save, written BEFORE the save point, with the update count it belongs to and the
+            # sampler's own state (record 7.352): written after it, a stop between the two left the newest save point with
+            # the record of the one before, and nothing in the record said so.
+            per_run = Counter()
+            for candidate, count in sampler.candidate_counts.items():
+                per_run[candidate_runs[candidate]] += count
+            write_json(output / 'sampling.json', dict(learner_updates=learner.updates, sampled_per_task=dict(sampler.counts),
+                       sampled_per_run=dict(per_run), unique_training_candidates=len(sampler.candidate_counts),
+                       available_training_candidates=len(candidate_runs),
+                       candidate_counts=dict(sampler.candidate_counts),
+                       candidate_note='a design and its relabelled copies share one candidate id',
+                       sampler_state=dict(random=sampler.rng.getstate(), pending=list(sampler.pending))))
             store.save(learner, replay, ledger_state={}, data_cursor=dict(commit_seq=0),
                        counters=dict(evaluations_committed=0, learner_updates=learner.updates, replay_size=0),
                        collector_state=None, mode='scratch', effective_experiment=experiment)
@@ -487,3 +575,6 @@ def execute(request, output, *, audit_only=False, progress=None):
     except BaseException as exc:
         status('interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed', error=str(exc))
         raise
+    finally:
+        if pool is not None and pool.storage is not None:
+            pool.storage.close()

@@ -4,8 +4,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import ValidationError
 from . import task_baseline
-from .. import (bridge_read, consistency, ngspice_tasks, profiles, runs, schema, structures, task_files,
-                task_names, task_registry, task_saving, tasks, virtuoso_setup, working_copy)
+from .. import (bridge_read, consistency, ngspice_tasks, profile_store, profiles, runs, schema, session_routing, structures,
+                task_files, task_names, task_registry, task_save, task_saving, tasks, virtuoso_setup, working_copy)
 from ..circuit_summary import loaded_circuit
 from ..diffs import structured_diff
 from ..native_cells import load_import as load_cell_import
@@ -19,6 +19,14 @@ from .models import (CircuitBody, ConfigBody, CopyBody, DiffBody, MatchedBody, N
 from .support import bridge_call, fail, load_runtime, validate_loaded
 
 COPY_REFUSED = ((working_copy.CopyError, virtuoso_setup.SetupError), 'refused')
+
+
+def _saved_cell(body):
+    """(library, cell) a Save task writes: the working copy of the open task, else the cell being saved; None unknown."""
+    entry = profile_store.profile_entry(body.task) if body.task else None
+    if entry and entry.get('library') and entry.get('core_cell'):
+        return entry['library'], entry['core_cell']
+    return (body.library, body.cell) if body.library and body.cell else None
 
 
 def register(app: FastAPI, context: ApiContext):
@@ -295,17 +303,40 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
         if not body.profile_id:
             fail(422, 'A connection profile is required')
         config = context.parse_config(body.config)
+        refusals = ((profiles.NeedsFrequency, 'needs_expected_frequency'), (profiles.NewerSaved, 'saved_task_newer'),
+                    ((profiles.ProfileError,), 'refused'), COPY_REFUSED)
         try:
             with task_saving.running(f'real:{body.name}') as save:
-                save.answer = bridge_call(
-                    lambda: profiles.save_task(context.monitor, body.profile_id, body.name, config, library=body.library, cell=body.cell,
-                                               task=body.task, as_new=body.as_new, extras=body.extras,
-                                               run_rows=runs.list_runs(context.roots, include_mock=False), progress=save.mark,
-                                               base_revision=body.base_revision, replace_newer=body.replace_newer),
-                    (profiles.NeedsFrequency, 'needs_expected_frequency'), (profiles.NewerSaved, 'saved_task_newer'),
-                    ((profiles.ProfileError,), 'refused'), COPY_REFUSED)
+                run_rows = runs.list_runs(context.roots, include_mock=False)
+                session = None
+                if session_routing.grouped(body.profile_id):
+                    # On whichever session of the connection is free, preferring the one that holds the cell open for
+                    # editing (record 7.351) - after the save's own refusals, which need no Virtuoso, so that a refused save
+                    # changes nothing there. The baseline it starts below gets the same session.
+                    bridge_call(lambda: task_save.check_saveable(body.name, config, task=body.task, as_new=body.as_new,
+                                                                 run_rows=run_rows, replace_newer=body.replace_newer,
+                                                                 base_revision=body.base_revision), *refusals)
+                    try:
+                        session = session_routing.choose(body.profile_id, cell=_saved_cell(body), monitor=context.monitor,
+                                                         purpose='save')
+                        session_routing.release_pending(session, context.monitor)
+                    except session_routing.SessionsBusy as exc:
+                        session_routing.finished(session)
+                        fail(409, exc, code=exc.code, report=exc.report)
+                profile_id = session.profile_id if session is not None else body.profile_id
+                try:
+                    save.answer = bridge_call(
+                        lambda: profiles.save_task(context.monitor, profile_id, body.name, config, library=body.library, cell=body.cell,
+                                                   task=body.task, as_new=body.as_new, extras=body.extras, run_rows=run_rows,
+                                                   progress=save.mark, base_revision=body.base_revision,
+                                                   replace_newer=body.replace_newer), *refusals)
+                except BaseException:
+                    session_routing.finished(session)
+                    raise
+                if session is not None and isinstance(save.answer, dict):
+                    save.answer['virtuoso_session'] = session.record()
                 task_baseline.after_save(context, save.answer, profile_id=body.profile_id,
-                                         output_root=config.output.output_root)
+                                         output_root=config.output.output_root, session=session)
         except task_saving.Busy as exc:
             fail(409, exc, code='save_running', running=task_saving.status()['running'])
         return save.answer
@@ -329,10 +360,22 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
         deck is written, nothing is simulated), and a Maestro-measured task's Maestro test. Read-only; every step says
         what it found, a blocked gate included."""
         config = context.parse_config(body.config)
+        # On whichever session of the connection is free (record 7.351). Reading needs no edit lock, so no cell is asked
+        # about; with every session busy the check runs as before and its "busy" step names who holds the lock.
         try:
-            return consistency.check(context.monitor, body.profile_id, config)
+            session = session_routing.choose(body.profile_id, first_session_only=session_routing.task_cell(config)[1],
+                                             monitor=context.monitor, purpose='check') if session_routing.grouped(body.profile_id) else None
+        except session_routing.SessionsBusy:
+            session = None
+        try:
+            result = consistency.check(context.monitor, session.profile_id if session else body.profile_id, config)
         except KeyError as exc:
             fail(409, exc.args[0] if exc.args else exc, code='not_a_saved_task')
+        finally:
+            session_routing.finished(session)
+        if session is not None:
+            result['virtuoso_session'] = session.record()
+        return result
 
     @app.post('/api/virtuoso/task/file/check')
     def virtuoso_task_file_check(body: TaskFileTextBody):

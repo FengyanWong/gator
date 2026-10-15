@@ -1,12 +1,53 @@
 """Global attention isolation, raw structural inputs and versioned architecture contracts."""
 from dataclasses import replace
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
 import torch
 
 from analog_optimizer.models.encoders import ModelConfig
-from analog_optimizer.models.global_attention import CircuitAttention, _return_probabilities, structural_features
+from analog_optimizer.models.global_attention import (CircuitAttention, GraphPacking, pack_by_graph,
+                                                      _return_probabilities, structural_features)
+
+
+def test_shared_packing_reuses_only_layout_and_preserves_gradients():
+    torch.manual_seed(82)
+    attention = CircuitAttention(8, 2, 'group')
+    reference = deepcopy(attention)
+    qb, kb = torch.tensor([1, 0, 1, 2]), torch.tensor([2, 0, 1, 0, 1, 2, 1])
+    packing = GraphPacking(3)
+    for shift in (0., 7.):
+        queries = (torch.randn(4, 8) + shift).requires_grad_()
+        keys = (torch.randn(7, 8) - shift).requires_grad_()
+        q, k = queries.detach().clone().requires_grad_(), keys.detach().clone().requires_grad_()
+        actual = attention(queries, keys, qb, kb, 3, packing=packing)
+        expected = reference(q, k, qb, kb, 3)
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+        weights = torch.randn_like(actual)
+        (actual * weights).sum().backward()
+        (expected * weights).sum().backward()
+        torch.testing.assert_close(queries.grad, q.grad, atol=0, rtol=0)
+        torch.testing.assert_close(keys.grad, k.grad, atol=0, rtol=0)
+        for a, b in zip(attention.parameters(), reference.parameters(), strict=True):
+            torch.testing.assert_close(a.grad, b.grad, atol=0, rtol=0)
+    assert packing.layout(qb)[0] is packing.layout(qb)[0]
+    assert packing.with_run(kb) is packing.with_run(kb)
+    empty = torch.empty(0, dtype=torch.long)
+    torch.testing.assert_close(packing.with_run(empty), torch.arange(3))
+    run = torch.randn(3, 8)
+    actual = attention(queries, run, qb, packing.with_run(empty), 3, packing=packing)
+    expected = reference(queries, run, qb, torch.arange(3), 3)
+    torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+    # An observation's membership can change between forwards; the scope is fresh.
+    qb[0] = 0
+    fresh = GraphPacking(3)
+    a = pack_by_graph(queries, qb, 3, packing=fresh)
+    b = pack_by_graph(queries, qb, 3)
+    for x, y in zip(a, b, strict=True):
+        torch.testing.assert_close(x, y, atol=0, rtol=0)
+    with pytest.raises(ValueError, match='count'):
+        pack_by_graph(queries, qb, 3, packing=GraphPacking(2))
 
 
 def test_interleaved_attention_masks_padding_and_other_circuits():

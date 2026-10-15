@@ -42,6 +42,40 @@ def test_a_profile_without_a_kind_is_virtuoso_over_ssh_and_the_browser_sees_kind
     assert by_id['far']['settings_present'] == ['kind', 'ngspice_bin', 'ssh_host']
 
 
+def test_session_groups_preserve_physical_bindings_and_private_values():
+    first = dict(env_file='/private/bridge.env', profile=None, library='PRIVATE_LIBRARY',
+                 model_file='/private/model.scs', circuits={'first_task': {'receipt': '/private/first.json'}})
+    second = dict(first, kind='virtuoso_ssh', profile='s2', session_group='lab',
+                  circuits={'second_task': {'receipt': '/private/second.json'}})
+    write_profiles(lab=first, lab2=second, sim=dict(kind='ngspice_local'))
+    shown = connection.public_profiles()
+    assert [(g['profile_id'], g['session_profile_ids']) for g in shown['groups']] == [
+        ('lab', ['lab', 'lab2']), ('sim', ['sim'])]
+    assert [p['profile_id'] for p in shown['profiles']] == ['lab', 'lab2', 'sim']
+    assert connection.resolve_profile_id('lab') == first
+    assert connection.resolve_profile_id('lab2') == second
+    assert '/private/' not in json.dumps(shown) and 'PRIVATE_LIBRARY' not in json.dumps(shown)
+
+
+@pytest.mark.parametrize('changes', [
+    {'session_group': 'missing'}, {'session_group': 'lab2'}, {'session_group': ['lab']},
+    {'kind': 'ngspice_ssh'}, {'env_file': '/different.env'}, {'profile': None},
+    {'library': 'another-library'}, {'model_file': '/different-model.scs'},
+])
+def test_invalid_or_incompatible_session_group_remains_visible(changes):
+    first = dict(env_file='/bridge.env', profile=None, library='LIB', model_file='/model.scs')
+    second = dict(first, profile='s2', session_group='lab')
+    second.update(changes)
+    write_profiles(lab=first, lab2=second)
+    assert [g['session_profile_ids'] for g in connection.public_profiles()['groups']] == [['lab'], ['lab2']]
+
+
+def test_session_group_cycles_do_not_hide_connections():
+    write_profiles(lab=dict(env_file='/bridge.env', profile=None, session_group='lab2'),
+                   lab2=dict(env_file='/bridge.env', profile='s2', session_group='lab'))
+    assert [g['session_profile_ids'] for g in connection.public_profiles()['groups']] == [['lab'], ['lab2']]
+
+
 @pytest.mark.parametrize('kind, local, reason', [
     ('virtuoso_ssh', False, None), ('virtuoso_local', True, None), (None, True, None), (None, False, None),
     ('virtuoso_local', False, 'kind_mismatch'), ('virtuoso_ssh', True, 'kind_mismatch'),

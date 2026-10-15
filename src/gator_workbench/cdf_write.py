@@ -41,6 +41,7 @@ import re
 from analog_optimizer.backends.gpdk045 import GEOMETRY, Gpdk045OtaProfile, equal, number
 from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend
 
+from . import cell_hold
 from .cdf_rules import RULES_FORMAT
 from .generic_profile import GenericMosWidthProfile, RulesError, same_value
 from .names import CADENCE_NAME
@@ -601,11 +602,26 @@ class CellLocked:
     and for the form writer's; it changes nothing else of either."""
     _cell_lock = None
 
+    # The adapter's own flag, set before every write and cleared by its restore; seen here, it also says whether this
+    # connection wrote the cell at all (record 7.351): only then does its close let go of the cell. A check that only
+    # reads - Check now, the check before a start - leaves Virtuoso as it found it.
+    @property
+    def _dirty(self):
+        return self.__dict__.get('_dirty_now', False)
+
+    @_dirty.setter
+    def _dirty(self, value):
+        self.__dict__['_dirty_now'] = value
+        if value:
+            self.__dict__['_wrote'] = True
+
     def connect(self):
         """The adapter's own connect, holding the cell's lock from before it to after `close`."""
         config, circuit = getattr(self, 'config', None), getattr(self, 'circuit', None)
         if getattr(self, 'client', None) is None and self._cell_lock is None and config is not None and circuit is not None:
             self._cell_lock = cell_lock(config.library, circuit.design['core_cell'], bridge_state_root_of(config.state_root))
+        if getattr(self, 'client', None) is None:
+            self.__dict__['_wrote'] = False
         try:
             super().connect()
         except BaseException:
@@ -614,10 +630,33 @@ class CellLocked:
             raise
 
     def close(self):
+        self._closing = True
         try:
-            super().close()                               # restores the cell first, under both locks
+            if getattr(self, 'client', None) is not None and self.__dict__.get('_wrote') and not self._dirty:
+                self._let_go_of_edit()                    # nothing to restore: the edit lock goes before the client closes
+            super().close()                               # restores the cell first (and lets go after it: `restore`), under both locks
         finally:
+            self._closing = False
             self._release_cell()
+
+    def restore(self):
+        super().restore()
+        if getattr(self, '_closing', False) and self.__dict__.get('_wrote') and not self._dirty:
+            self._let_go_of_edit()
+
+    def _let_go_of_edit(self):
+        """The cell back at its recorded sizes, this Virtuoso reopens it read-only (record 7.351): the form writer opened it
+        for editing and Virtuoso kept it so - the simulation setup holds one more reference - and a cell held open for
+        editing in one Virtuoso session cannot be written through another (`cell_hold`). Left as it is when it has unsaved
+        edits or is shown in a window. Never raises: what the run measured does not depend on it."""
+        config, circuit, client = getattr(self, 'config', None), getattr(self, 'circuit', None), getattr(self, 'client', None)
+        if client is None or config is None or circuit is None:
+            return
+        try:
+            result = client.execute_skill(cell_hold.let_go_skill(config.library, circuit.design['core_cell']), timeout=30)
+            self.edit_lock_released = bool(getattr(result, 'ok', False)) and 'released' in str(getattr(result, 'output', ''))
+        except Exception:
+            self.edit_lock_released = None
 
     def _release_cell(self):
         lock, self._cell_lock = self._cell_lock, None

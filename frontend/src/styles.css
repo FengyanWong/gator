@@ -249,6 +249,11 @@ button.item-link { border: none; background: none; padding: 0; color: var(--acce
    the numbered ones sit. */
 .connection-window .step-no.step-sign::before { content: '\200b'; }
 .connection-window .step-no.step-sign svg.icon { width: 11px; height: 11px; vertical-align: -1px; }
+.connection-window.connection-multi { max-width: 1120px; }
+.connection-sessions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.connection-sessions-grid > .connection-session { min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.connection-session h3 { margin: 10px 0 6px; font-size: 15px; }
+.connection-session h3 .hint { text-transform: none; letter-spacing: normal; }   /* the session's own name, as written: lab2 */
 .connection-window .row > label { flex: 1; } .connection-window .row > button, .virtuoso-window .row > button { flex: none; } .connection-window .connection-add { padding: 2px 12px; border-left: 3px solid var(--accent); }
 /* The two window launchers of the Project column: one grid, text left, the two buttons under each other in one right-hand
    column of equal width, each pair on one line (the text wraps inside its cell; the button stays beside it). */

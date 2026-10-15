@@ -8,10 +8,11 @@ import threading
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch_geometric.nn import TransformerConv
 
 from .encoders import mlp, segment_sum, segment_mean
-from .global_attention import CircuitAttention, RWSE_STEPS, structural_features, pack_by_graph
+from .global_attention import CircuitAttention, GraphPacking, RWSE_STEPS, structural_features, pack_by_graph
 from .inputs import SpecSetSchema, SPEC_PROGRAM_LAYOUT
 from .measurement_program import OPERATIONS, BINDING_ROLES, BLOCK_KINDS
 
@@ -62,14 +63,16 @@ class RelationAttention(nn.Module):
         self.fallback = fallback
         self.gate = nn.Parameter(torch.full((h,), -1.))
 
-    def forward(self, queries, keys, query_batch, key_batch, run):
+    def forward(self, queries, keys, query_batch, key_batch, run, *, packing=None):
         if not len(queries):
             return queries
         # Every circuit has a real run token even with no active/measured specs.
         if self.fallback:
             keys = torch.cat((keys, run))
-            key_batch = torch.cat((key_batch, torch.arange(len(run), device=key_batch.device)))
-        update = self.attention(self.query_norm(queries), self.key_norm(keys), query_batch, key_batch, len(run))
+            key_batch = (torch.cat((key_batch, torch.arange(len(run), device=key_batch.device)))
+                         if packing is None else packing.with_run(key_batch))
+        update = self.attention(self.query_norm(queries), self.key_norm(keys), query_batch, key_batch,
+                                len(run), packing=packing)
         return queries + self.gate.sigmoid() * update
 
 
@@ -93,8 +96,8 @@ class StructuralAttention(nn.Module):
         self.distance_bias = nn.Embedding(10, config.heads)
         self.terminal_bias = nn.Embedding(relations, config.heads)
 
-    def forward(self, nodes, batch):
-        dense, padding, position = pack_by_graph(nodes, batch.node_batch, batch.size)
+    def forward(self, nodes, batch, *, packing=None):
+        dense, padding, position = pack_by_graph(nodes, batch.node_batch, batch.size, packing=packing)
         width = dense.shape[1]
         bias = nodes.new_zeros((batch.size, self.heads, width, width))
         for circuit in range(batch.size):
@@ -113,10 +116,26 @@ class StructuralAttention(nn.Module):
         return out[batch.node_batch, position]
 
 
+def _program_levels(data):
+    """Raw execution schedule shared by the readers in one encoder forward."""
+    child, parent = data['children']
+    heights = data['height']
+    levels = []
+    for height in range(1, int(heights.max()) + 1 if len(heights) else 1):
+        rows = (heights == height).nonzero().flatten()
+        selected = heights[parent] == height
+        # rows is sorted. Preserve the original child order within each parent.
+        local_parent = torch.searchsorted(rows, parent[selected])
+        slots = torch.log1p(data['slot'][selected])[:, None]
+        levels.append((rows, child[selected], local_parent, slots))
+    return levels
+
+
 class ProgramReader(nn.Module):
     """Bottom-up ordered tree computation, with live graph embeddings at leaves."""
-    def __init__(self, h):
+    def __init__(self, h, *, normalize_tree=True):
         super().__init__()
+        self.normalize_tree = normalize_tree
         self.operation = nn.Embedding(len(OPERATIONS), h)
         self.values = mlp(6, h, h)
         self.binding_role = nn.Embedding(len(BINDING_ROLES), h)
@@ -126,12 +145,28 @@ class ProgramReader(nn.Module):
         self.combine = mlp(2 * h, h, h)
         self.norm = nn.LayerNorm(h)
 
-    def forward(self, nodes, data):
+    def forward(self, nodes, data, *, levels=None):
         base = self.operation(data['op']) + self.values(data['values'])
         tokens, ids = data['bindings']
         bound = self.binding(torch.cat((nodes[ids], self.binding_role(data['binding_role'])), dim=-1))
         base = base + segment_sum(bound, tokens, len(base))
+        # Bound the states reused at every tree height. Root-only normalization
+        # allows repeated learned amplification to overflow on deep programs.
+        # No affine parameters: saved weights retain their names and shapes.
+        if self.normalize_tree:
+            base = F.layer_norm(base, (base.shape[-1],))
         state = base
+        if self.normalize_tree:
+            levels = _program_levels(data) if levels is None else levels
+            for rows, children, parents, slots in levels:
+                messages = self.child(torch.cat((state[children], self.slot(slots)), dim=-1))
+                summed = segment_sum(messages, parents, len(rows))
+                updated = self.combine(torch.cat((base[rows], summed), dim=-1))
+                updated = F.layer_norm(updated, (updated.shape[-1],))
+                state = state.index_copy(0, rows, updated)
+            return self.norm(state[data['roots']])
+        # Version 1 retains its historical root-only computation, including the
+        # original full-row arithmetic; only normalized v2 uses the sparse rows.
         child, parent = data['children']
         # Heights are raw program topology; every subtree is evaluated completely.
         for height in range(1, int(data['height'].max()) + 1 if len(base) else 1):
@@ -165,7 +200,7 @@ class JointBlock(nn.Module):
         self.member_message = mlp(2 * h, h, h)
         self.member_gate = nn.Parameter(torch.full((h,), -1.))
         if structured:
-            self.program = ProgramReader(h)
+            self.program = ProgramReader(h, normalize_tree=config.architecture_version >= 2)
             self.program_gate = nn.Parameter(torch.full((h,), -1.))
             self.spec_binding = mlp(2 * h, h, h)
             self.block_from_nodes = RelationAttention(config, 'block_graph', fallback=False)
@@ -173,33 +208,35 @@ class JointBlock(nn.Module):
             self.block_ff = ResidualFF(h)
             self.block_members = mlp(2 * h, h, h)
 
-    def forward(self, nodes, specs, groups, blocks, run, spec_batch, batch, edge_features, member_features):
+    def forward(self, nodes, specs, groups, blocks, run, spec_batch, batch, edge_features, member_features,
+                *, packing=None, program_levels=None):
         local = self.attention(self.norm_local(nodes), batch.edge_index, edge_features)
-        global_nodes = self.global_attention(self.norm_global(nodes), batch)
+        global_nodes = self.global_attention(self.norm_global(nodes), batch, packing=packing)
         nodes = nodes + self.local_gate.sigmoid() * local + self.global_gate.sigmoid() * global_nodes
         if batch.structured is not None:
             data = batch.structured
-            specs = specs + self.program_gate.sigmoid() * self.program(nodes, data)
+            specs = specs + self.program_gate.sigmoid() * self.program(nodes, data, levels=program_levels)
             ti, ni = data['bindings']
             messages = self.spec_binding(torch.cat((specs[data['owner'][ti]],
                                                     self.program.binding_role(data['binding_role'])), dim=-1))
             nodes = nodes + self.program_gate.sigmoid() * segment_sum(messages, ni, len(nodes))
             bi, ni = data['block_members']
             blocks = blocks + segment_mean(nodes[ni], bi, len(blocks))
-            blocks = self.block_ff(self.block_from_nodes(blocks, nodes, data['block_batch'], batch.node_batch, run))
+            blocks = self.block_ff(self.block_from_nodes(blocks, nodes, data['block_batch'], batch.node_batch,
+                                                         run, packing=packing))
             messages = self.block_members(torch.cat((nodes[ni], blocks[bi]), dim=-1))
             nodes = nodes + self.program_gate.sigmoid() * segment_mean(messages, ni, len(nodes))
-            nodes = self.nodes_from_blocks(nodes, blocks, batch.node_batch, data['block_batch'], run)
+            nodes = self.nodes_from_blocks(nodes, blocks, batch.node_batch, data['block_batch'], run, packing=packing)
         gi, ni = batch.graph.group_member_index
         bound = self.member_message(torch.cat((nodes[ni], member_features), dim=-1))
         groups = groups + self.member_gate.sigmoid() * segment_sum(bound, gi, len(groups))
-        specs = self.spec_from_nodes(specs, nodes, spec_batch, batch.node_batch, run)
-        specs = self.spec_ff(self.spec_self(specs, specs, spec_batch, spec_batch, run))
-        nodes = self.nodes_from_specs(nodes, specs, batch.node_batch, spec_batch, run)
-        groups = self.groups_from_nodes(groups, nodes, batch.group_batch, batch.node_batch, run)
-        groups = self.groups_from_specs(groups, specs, batch.group_batch, spec_batch, run)
-        groups = self.group_ff(self.group_self(groups, groups, batch.group_batch, batch.group_batch, run))
-        nodes = self.node_ff(self.nodes_from_groups(nodes, groups, batch.node_batch, batch.group_batch, run))
+        specs = self.spec_from_nodes(specs, nodes, spec_batch, batch.node_batch, run, packing=packing)
+        specs = self.spec_ff(self.spec_self(specs, specs, spec_batch, spec_batch, run, packing=packing))
+        nodes = self.nodes_from_specs(nodes, specs, batch.node_batch, spec_batch, run, packing=packing)
+        groups = self.groups_from_nodes(groups, nodes, batch.group_batch, batch.node_batch, run, packing=packing)
+        groups = self.groups_from_specs(groups, specs, batch.group_batch, spec_batch, run, packing=packing)
+        groups = self.group_ff(self.group_self(groups, groups, batch.group_batch, batch.group_batch, run, packing=packing))
+        nodes = self.node_ff(self.nodes_from_groups(nodes, groups, batch.node_batch, batch.group_batch, run, packing=packing))
         return nodes, specs, groups, blocks
 
 
@@ -275,12 +312,17 @@ class CircuitGPSEncoder(nn.Module):
         elif actions is not None:
             raise ValueError('Actor encoder does not accept actions')
         edge_features = self.port_role(batch.edge_role) + self.port_ordinal(torch.log1p(batch.edge_ordinal.float())[:, None])
+        packing = GraphPacking(batch.size)
+        program_levels = (_program_levels(batch.structured)
+                          if self.structured and self.config.architecture_version >= 2 else None)
         for block in self.blocks:
-            nodes, specs, groups, blocks = block(nodes, specs, groups, blocks, run, spec_batch, batch, edge_features, member_features)
+            nodes, specs, groups, blocks = block(nodes, specs, groups, blocks, run, spec_batch, batch,
+                                                edge_features, member_features, packing=packing,
+                                                program_levels=program_levels)
         nodes, groups = self.output_norm(nodes), self.group_norm(groups)
         types = ((nodes, batch.node_batch), (groups, batch.group_batch), (specs, spec_batch), (blocks, block_batch))
         keys, key_batch = torch.cat([v for v, _ in types]), torch.cat([b for _, b in types])
-        attended = self.readout(run, keys, torch.arange(batch.size, device=nodes.device), key_batch, run)
+        attended = self.readout(run, keys, torch.arange(batch.size, device=nodes.device), key_batch, run, packing=packing)
         sums = [segment_sum(v, b, batch.size) for v, b in types]
         counts = torch.stack([torch.bincount(b, minlength=batch.size) for _, b in types], dim=-1).to(nodes).log1p()
         context = self.readout_output(torch.cat((attended, *sums, counts), dim=-1))

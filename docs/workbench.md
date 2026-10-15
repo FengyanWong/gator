@@ -1156,6 +1156,34 @@ creation and the sentences in `bridge_connect.py`; the button and the window in
 check `frontend/scripts/connection_panel_check.mjs` (fixtures; `GATOR_CONNECTION_LIVE=1` adds a live
 section for a scratch backend only).
 
+### Multiple Virtuoso sessions in one connection (2026-10-14, record 7.345)
+
+A connection can show several Virtuoso sessions together. Select **lab** once: **Virtuoso 1** and **Virtuoso 2**
+each have their own Connect SSH, CIW commands, Test connection, Spectre/license check, details and result. There is
+no session selector. The window widens for the two cards; smaller windows stack them. A slow or failed action on one
+card does not disable the other card or replace its result. Each Copy button copies only that session's commands,
+including `setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")` before its own setup file is loaded.
+
+The connection file associates an existing secondary entry with its main connection using `"session_group": "lab"`.
+The grouped entries must name the same kind, bridge env file, bridge package location, library and model file, and
+different bridge profiles. The public profile response adds `groups` with ordered `session_profile_ids`; its original
+`profiles` list is retained. Invalid, missing or cyclic group links remain individually visible. No host, credential,
+model contents or circuit bindings are included in the grouping response.
+
+The current `lab2` and `asz2` entries are grouped under `lab` and `asz`. Their identifiers remain valid for recorded
+configurations and queues. The page-open test still checks only the configured session once; sibling cards read cached
+status. Opening the panel starts no tunnel and performs no extra probe.
+
+**The work goes to whichever session is free** (2026-10-15, record 7.351; user: "send it to whichever is free"). The page
+names the connection (`lab`); a run (Start, Baseline simulation, Calibration, Continue), a Check now or a Save task goes
+to one of its sessions, chosen by the backend (`session_routing`) - see "Two Virtuoso sessions carry a run each" below.
+The run's message, the run's record and Check now say which session and why. A configuration that names one session by
+its own name (`lab2`, as queues do) keeps exactly that session: the list then shows it as its own entry, "lab2 - Virtuoso
+2 only", the button says "lab2 (Virtuoso 2 only)" and a warning offers "lab" instead. The button's badge counts the
+sessions whose last test passed ("1 of 2 OK"); with none, it shows the connection's own session's state. Each card names
+its session (`Virtuoso 2 (lab2)`). A cached read never makes a test or Connect still on its way stale, and never puts an
+older result back over a newer one (`checked_utc`); a failed Connect line goes once a later test passes.
+
 ### Folders: where the connection keeps its files (2026-10-03, record 7.168)
 
 User: "I realized the project might be used by others. Add directory settings for necessary files in the connection
@@ -2199,6 +2227,42 @@ which takes no lock of its cell, runs in the first session only. The optimizer p
 takes the lock of the state folder it is handed. What a second session needs besides: its own connection in the
 connection file (the same link and model file, the session's bridge profile), its daemon loaded in that Virtuoso with
 the nonce cache raised like the first, and for a queue the copy of the queue script that watches that session's lock.
+
+**Whichever session is free** (2026-10-15, record 7.351; user: "send it to whichever is free"). Since record 7.345 a
+connection's sessions sit under one name (`session_group`); what the page starts there goes to one of them
+(`session_routing.choose`, called by `start_run` and by the Check now and Save task routes):
+- **Free** = nobody holds the session's lock (`consistency.lock_holder`, read from `/proc/locks` without taking it), no
+  queue holds its queue lock, and no run this backend started a moment ago is still on its way to taking it: a choice
+  reserves its session until the run's worker holds the lock or has ended, or the start is refused (at most 10 minutes
+  for the start's own checks, then 5 for the worker; a reservation is let go only by its own choice).
+  With no session free the start is refused in words, naming who holds each one; Check now then runs as before and its
+  "busy" step says the same.
+- **A queue keeps its session** (`paths.bridge_queue_lock`, `<session folder>/queue.lock`): between two runs of a queue
+  the session lock is free for a moment, and work from the page sent there would make the queue's next run fail. A
+  queue holds its session's queue lock for its whole life (a shell queue: `exec 9>>"$QUEUE_LOCK"; flock -n 9`). Round 2's
+  queue of 2026-10-14 is older than this lock and holds none: until it ends, page work on `lab`/`asz` can still meet it.
+- **Virtuoso's own lock.** A cell one Virtuoso holds open for editing cannot be written through another (record 7.311;
+  record 7.350 met it on the published reference). Before choosing, the sessions whose answer can change the choice - a
+  busy one, and the free ones when more than one is free - are asked how they hold the task's cell (`cell_hold.look`,
+  read-only and without the connection gate's probe: open, open for editing, unsaved edits, shown in how many windows;
+  side by side, with the choice's lock let go meanwhile). A free session that holds it open for editing takes the work.
+  A busy one lets go of it - reopens it read-only, `dbReopen`, gated like a write - when nothing can be lost (saved, in
+  no window; `cell_hold.release`), and only once the work's own refusals have passed (`session_routing.release_pending`:
+  `prepare_run(before_write=)`, Save task's `task_save.check_saveable`), so a refused start changes nothing in
+  Virtuoso; otherwise the start is refused in words. A session that does not answer within 20 s, or whose last test
+  failed, is said in the record and left out of that question.
+- Otherwise the free session whose last connection test passed, the connection's own session first among equals.
+- **A run lets go of its cell when it ends** (`cdf_write.CellLocked.close`): once the cell is back at its recorded sizes,
+  under both locks and before the client closes, a connection that wrote the cell reopens it read-only - not when it has
+  unsaved edits or is in a window - so the next run can write it from either session. A check that only reads (Check now,
+  the check before a start) leaves it as it was. Never raised: a failure leaves the cell as before.
+- **Save task** goes to the chosen session after its own refusals, and the baseline it starts gets the same session.
+- **Continue** goes to whichever session of the run's own connection is free (`runs.resumed_session`; the segment's
+  `changed_run_settings` names a new session), never to another connection.
+- Nothing is chosen for a session named by its own name, for a connection of one session, for a built-in task of the
+  older adapter (first session only), or for a command-line run. The corner check stays on the run's own session.
+The choice and its reasons are in the run's manifest (`segments[-1].virtuoso_session`, one more line in `notes`) and in
+the start's answer (`virtuoso_session.said`), which the page's run message shows.
 
 **The scheduler, 2026-10-08** (records 7.280-7.282; measured on the twelve 800-evaluation runs of the night before: at
 4 lanes the scheduler thread was busy 49-62 % of the time - the learner's 8 updates per result alone 34-48 % - and only
@@ -3350,6 +3414,40 @@ configuration since record 7.322), `seed`,
 `holdout_fraction`, `model`, `sac` (gamma 0), `updates`, `batch_size` and `checkpoint_every`.
 Training and publication share the omitted-field defaults: seed 0 and 20,000 updates (record 7.325).
 Publication resolves these defaults without rewriting the saved request or changing its identity hash.
+
+Since record 7.336, `pool_storage: disk` stores validated transitions with the recording codec and checksums in
+SQLite, retaining only a bounded cache of reconstructed objects. Episode splits, task-balanced samples and SAC
+updates match the default in-memory pool. `migrate_reward_settings` explicitly supplies a common `RewardSettings`
+configuration for mixed historical sources: first validate the recorded reward, then rescore a derived copy of
+both observations and the transition. The audit records original settings and migrated counts; source archives
+remain unchanged. Omission retains the strict rejection of mixed reward settings.
+`sampling.json` records actual per-task/per-run draws, unique training-candidate coverage and candidate counts so
+matched archive trainings can verify that they consumed the same samples.
+
+Since record 7.340, preparation writes its current phase to `status.json`: `loading_sources` counts completed
+archives, `validating_pool` counts transitions whose two observations passed the shared-schema check, and
+`saving_pool` identifies audit publication. Validation reports at least every 1,000 completed transitions or after
+30 seconds at the next completed transition, plus its start and finish. These counters are persisted even without
+a CLI log callback. The initial and later checkpoint evaluations announce `evaluating_validation` with the current
+update count and held-out row count before evaluating; zero updates still means no weight update has occurred.
+Already running jobs using a frozen runtime retain their original logging until a separately authorized new run.
+
+Record 7.341 fixes CircuitGPS's recursive tree amplification as architecture version 2: normalize each base and
+combined parent state, retaining the existing learned root normalization. Version 1 remains explicit for historical
+inference. The authorized Round 3 recovery uses a separate frozen runtime and an audited migration from the saved
+10,000-update state; the generic pretrain CLI and strict checkpoint loader are unchanged. Saved weights, all optimizer
+states, temperature and RNG state are retained; the original sampler position is reconstructed and checked against
+its candidate ledger. The existing SQLite pool is read-only. Recovery checkpoints are saved every 500 updates, with
+full held-out evaluation at the final budget and numerical guards on actor/critic LayerNorm inputs. The planned recovered
+model is labelled 10,000 v1 updates plus 10,000 v2 updates. See `docs/circuit-gps.md` and the Round 3 plan record.
+
+Record 7.342 supersedes that continuation at the user's request. The separate `circuitgps-v2-fresh/` experiment
+starts at update zero with new seed-0 weights, empty optimizer states and reset temperature/sampler, using the same
+read-only validated data and fixed runtime. It preserves the failed run and stopped recovery, and retains the
+completed GraphGPS model. Initial/10,000/20,000 checkpoints support full held-out diagnostics; routine checkpoints
+every 500 updates preserve offline sampler state. The RGCN queue now requires the fresh run, v2 and zero legacy
+updates, in addition to completion, reload/proposal review and publication. These are experiment-local scripts;
+the generic CLI, strict loader and optimizer digest are unchanged by this restart.
 
 Sources remain read-only. Mixed origins, reward settings, conflicting units, duplicate runs/candidates, changed
 archives and non-reproducible rewards fail explicitly. The first version accepts standard features without OP and

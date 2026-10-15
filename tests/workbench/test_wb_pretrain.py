@@ -34,6 +34,79 @@ def request_for(sources):
                 sac=dict(gamma=0., learning_rate=1e-3, initial_alpha=0.01))
 
 
+def test_disk_pool_preserves_split_samples_and_losses(sources, tmp_path):
+    from analog_optimizer.recording import codec
+    request = request_for(sources)
+    memory = pretrain.prepare_pool(request)
+    progress = []
+    disk = pretrain.prepare_pool(dict(request, pool_storage='disk'), storage_dir=tmp_path, progress=progress.append)
+    try:
+        assert memory.audit['split'] == disk.audit['split']
+        validation = [row for row in progress if row['event'] == 'pool_validation']
+        assert validation[0]['completed_transitions'] == 0
+        assert validation[-1]['completed_transitions'] == validation[-1]['total_transitions'] == len(disk.audit['split'])
+        a = pretrain.BalancedSampler(memory.training, 12)
+        b = pretrain.BalancedSampler(disk.training, 12)
+        assert [codec.identity(vars(t)) for t in a.sample(80)] == [codec.identity(vars(t)) for t in b.sample(80)]
+        for task, values in memory.training.items():
+            assert disk.training[task].reward_mean == sum(t.reward for t in values) / len(values)
+        assert len(disk.storage.cache) <= disk.storage.cache_size
+    finally:
+        disk.storage.close()
+    pretrain.execute(request, tmp_path / 'mock' / 'memory')
+    pretrain.execute(dict(request, pool_storage='disk'), tmp_path / 'mock' / 'disk')
+    assert read_json(tmp_path / 'mock' / 'memory' / 'validation.json') == read_json(tmp_path / 'mock' / 'disk' / 'validation.json')
+    assert read_json(tmp_path / 'mock' / 'memory' / 'sampling.json') == read_json(tmp_path / 'mock' / 'disk' / 'sampling.json')
+    assert sum(read_json(tmp_path / 'mock' / 'disk' / 'sampling.json')['candidate_counts'].values()) == 9
+
+
+def test_reward_migration_is_explicit_and_source_archives_are_unchanged(sources):
+    from dataclasses import asdict
+    from analog_optimizer.measurements.specs import RewardSettings, SpecificationEvaluator
+    request = request_for(sources)
+    original = pretrain.prepare_pool(request)
+    settings = RewardSettings(violation_shape='compressed', worst_spec_share=.5, margin_weight=1., objective_weight=1.,
+                              objective_shape='compressed')
+    migrated = pretrain.prepare_pool(dict(request, migrate_reward_settings=asdict(settings)))
+    assert migrated.audit['split'] == original.audit['split']
+    assert migrated.audit['reward_migration']['count'] == original.audit['eligible']
+    changed = 0
+    for task in original.training:
+        for before, after in zip(original.training[task], migrated.training[task]):
+            changed += before.reward != after.reward
+            assert after.reward_settings == after.observation.reward_settings == after.next_observation.reward_settings == settings
+            next_state = before.next_observation
+            expected = SpecificationEvaluator(next_state.specs, settings).evaluate(
+                next_state.metrics, next_state.metric_units, next_state.metric_validity).reward
+            assert after.reward == expected
+            assert before.observation.graph == after.observation.graph
+            after.validate()
+    assert changed
+    assert all(pretrain.archive_identity(s['run_dir']) == s['archive_sha256'] for s in request['runs'])
+
+
+def test_disk_pool_detects_corruption_and_preserves_viewed_transition(sources, tmp_path):
+    from analog_optimizer.recording import codec
+    from gator_workbench.offline_storage import DiskTransitions
+    pool = pretrain.prepare_pool(request_for(sources))
+    original = next(iter(pool.training.values()))[0]
+    class IdentityView:
+        def view(self, observation):
+            return observation
+    viewed = pretrain._shown(original, IdentityView())
+    store = DiskTransitions(tmp_path / 'transitions.sqlite', cache_size=0)
+    try:
+        ref = store.append(viewed)
+        restored = store.get(ref)
+        assert type(restored) is type(viewed)
+        assert codec.identity(vars(restored)) == codec.identity(vars(viewed))
+        store.connection.execute('UPDATE transitions SET payload=? WHERE id=?', (b'corrupt', ref.index))
+        with pytest.raises(ValueError, match='checksum'):
+            store.get(ref)
+    finally:
+        store.close()
+
+
 def test_registry_conflicts_and_custom_schema_compatibility(sources, tmp_path):
     a, b = [('x', 'V', 1.)], [('x', 'V', 2.), ('y', 'A', 0.1)]
     with pytest.raises(ValueError, match='override required'):
@@ -237,6 +310,56 @@ def test_audit_only_and_output_origin(sources, tmp_path):
     assert not (output / 'checkpoints').exists()
 
 
+def test_preparation_counts_are_persisted_without_a_log_callback(sources, tmp_path, monkeypatch):
+    from itertools import count
+    from types import SimpleNamespace
+    ticks = count(0, 31)
+    monkeypatch.setattr(pretrain, 'time', SimpleNamespace(monotonic=lambda: next(ticks)))
+    output = tmp_path / 'mock' / 'progress'
+    split = pretrain._split_episodes
+    observed = []
+
+    def checked_split(*args, progress, **kwargs):
+        def check(event):
+            progress(event)
+            saved = read_json(output / 'status.json')
+            assert saved['state'] == 'loading' and saved['phase'] == 'validating_pool'
+            assert saved['updates'] == 0
+            assert saved['completed_transitions'] == event['completed_transitions']
+            observed.append(saved)
+        return split(*args, progress=check, **kwargs)
+
+    monkeypatch.setattr(pretrain, '_split_episodes', checked_split)
+    audit = pretrain.execute(dict(request_for(sources), pool_storage='disk'), output, audit_only=True)
+    counts = [row['completed_transitions'] for row in observed]
+    assert counts[0] == 0 and counts[-1] == len(audit['split'])
+    assert len(counts) > 2 and counts == sorted(set(counts))
+    assert read_json(output / 'status.json')['state'] == 'audited'
+
+
+def test_failed_pool_validation_never_reports_completion(sources, tmp_path, monkeypatch):
+    from analog_optimizer.models import inputs
+    original = inputs.context_features
+    calls = 0
+
+    def reject_second_transition(observation, schema):
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise ValueError('diagnostic invalid observation')
+        return original(observation, schema)
+
+    monkeypatch.setattr(inputs, 'context_features', reject_second_transition)
+    output = tmp_path / 'mock' / 'failed-progress'
+    events = []
+    with pytest.raises(ValueError, match='diagnostic invalid observation'):
+        pretrain.execute(request_for(sources), output, audit_only=True, progress=events.append)
+    progress = [row for row in events if row.get('event') == 'pool_validation']
+    assert progress and all(row['completed_transitions'] < row['total_transitions'] for row in progress)
+    assert read_json(output / 'status.json')['state'] == 'failed'
+    assert not (output / 'pool.json').exists()
+
+
 def test_own_model_can_use_the_general_registry(sources):
     request = request_for(sources[:1])
     pool = pretrain.prepare_pool(request)
@@ -435,3 +558,75 @@ def test_rehearsal_settings_preserve_legacy_hashes(tmp_path):
     raw['run']['rehearsal'] = dict(pool_manifest='/pool/manifest.json', pool_sha256='0' * 64)
     with pytest.raises(ValueError, match='fine_tune'):
         WorkbenchConfig.model_validate(raw)
+
+
+# Record 7.352: three faults a review found in what reads the pools of record 7.336 (disk storage, recomputed rewards).
+COMPRESSED = dict(violation_shape='compressed', worst_spec_share=.5, margin_weight=1., objective_weight=1.,
+                  objective_shape='compressed')
+
+
+def test_qualification_reads_a_disk_pool_and_refuses_a_migrated_or_transferable_one_before_rebuilding_it(sources, tmp_path, monkeypatch):
+    from gator_workbench import offline_diagnostics
+    output = tmp_path / 'mock' / 'disk'
+    pretrain.execute(dict(request_for(sources), pool_storage='disk'), output)
+    report = offline_diagnostics.qualify(output)              # a disk pool's transitions have no `+` (it raised TypeError)
+    memory = tmp_path / 'mock' / 'memory'
+    pretrain.execute(request_for(sources), memory)
+    assert {t: r['best_recorded_reward'] for t, r in report['tasks'].items()} == {
+        t: r['best_recorded_reward'] for t, r in offline_diagnostics.qualify(memory)['tasks'].items()}
+    rebuilt = []
+    monkeypatch.setattr(offline_diagnostics, 'prepare_pool', lambda *a, **k: rebuilt.append(True))
+    for name, extra, words in (('migrated', dict(migrate_reward_settings=COMPRESSED), 'rewards were recomputed'),
+                               ('transferable', dict(inputs=dict(spec_input='set')), 'transferable network inputs')):
+        pretrain.execute(dict(request_for(sources), **extra), tmp_path / 'mock' / name)
+        with pytest.raises(ValueError, match=words):
+            offline_diagnostics.qualify(tmp_path / 'mock' / name)
+    assert rebuilt == []                                      # said before the hours of rebuilding, not after
+
+
+def test_a_rehearsal_snapshot_of_a_migrated_pool_holds_the_rewards_it_was_trained_on(sources, tmp_path):
+    import gzip
+    import json
+    from analog_optimizer.measurements.specs import RewardSettings
+    from analog_optimizer.recording import codec
+    from analog_optimizer.training.replay import Transition
+    from gator_workbench.rehearsal import build_snapshot
+    request = dict(request_for(sources), migrate_reward_settings=COMPRESSED,
+                   relabel_upper={'synthetic:gpdk045_ota5': {'score': 0.8}})
+    pretrain.execute(request, tmp_path / 'mock' / 'migrated')
+    manifest = build_snapshot(tmp_path / 'mock' / 'migrated', tmp_path / 'mock' / 'rehearsal', capacity=64)
+    settings = RewardSettings(**COMPRESSED)
+    assert RewardSettings(**manifest['reward_settings']) == settings
+    with gzip.open(tmp_path / 'mock' / 'rehearsal' / 'transitions.jsonl.gz', 'rt') as stream:
+        kept = [Transition(**codec.untree(json.loads(line)['transition'])) for line in stream]
+    assert kept and any(json.loads(line)['selection']['relabeled'] for line in
+                        gzip.open(tmp_path / 'mock' / 'rehearsal' / 'transitions.jsonl.gz', 'rt'))
+    for transition in kept:                                    # all of them carried the original settings (24 of 24)
+        assert transition.reward_settings == transition.next_observation.reward_settings == settings
+        assert transition.reward == transition.next_observation.evaluation.reward
+
+
+def test_the_sampler_record_comes_before_its_save_point_and_says_which_update_it_belongs_to(sources, tmp_path, monkeypatch):
+    from gator_workbench.checkpoints import CheckpointStore
+    output = tmp_path / 'mock' / 'order'
+    seen, save = [], CheckpointStore.save
+
+    def recording(self, learner, *args, **kwargs):
+        seen.append((learner.updates, read_json(output / 'sampling.json')['learner_updates']))
+        return save(self, learner, *args, **kwargs)
+    monkeypatch.setattr(CheckpointStore, 'save', recording)
+    request = request_for(sources)
+    pretrain.execute(request, output)
+    assert seen == [(0, 0), (2, 2), (3, 3)]                    # every save point finds its own record already written
+    record = read_json(output / 'sampling.json')
+    assert record['learner_updates'] == 3 and sum(record['sampled_per_task'].values()) == 9
+    # the record's sampler state continues the draw exactly where training stopped
+    pool = pretrain.prepare_pool(request)
+    again = pretrain.BalancedSampler(pool.training, request['seed'])
+    again.sample(9)
+    state = record['sampler_state']
+    copy = pretrain.BalancedSampler(pool.training, 0)
+    version, internal, gauss = state['random']
+    copy.rng.setstate((version, tuple(internal), gauss))
+    copy.pending = list(state['pending'])
+    assert [t.candidate_id for t in copy.sample(5)] == [t.candidate_id for t in again.sample(5)]

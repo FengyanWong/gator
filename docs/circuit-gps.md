@@ -1,7 +1,10 @@
 # CircuitGPS: joint circuit, specification and parameter encoding
 
+For a step-by-step explanation with diagrams, equations and circuit examples, read
+[How GraphGPS and CircuitGPS size a circuit](graph-transformers-reading-guide.md).
+
 Built on 2026-10-12 at the user's request, after an architecture review. Encoder
-ID **`circuit_gps`**, architecture version **1**, spec layout **`spec-program-v1`**.
+ID **`circuit_gps`**, current architecture version **2**, spec layout **`spec-program-v1`**.
 This implements a representation intended for transfer; it is not evidence of
 better optimization or a mathematically optimal encoder. No ablation campaign or
 real simulation was started for this change.
@@ -100,6 +103,37 @@ messages back through their explicit bindings. Motifs exchange messages with
 their members and attend over their own circuit. Parameter membership messages
 are refreshed every block, not only at a final pooled readout.
 
+Version 2 (2026-10-13, record 7.341) applies non-affine LayerNorm to the tree's
+base representations and to each newly combined parent representation before
+another height consumes it. The learned root LayerNorm remains. This prevents
+the recursive amplification observed in the full-archive VCO training case;
+the actor, both critics and their targets use the same versioned rule. No new
+trainable tensors are introduced, and operation order, bindings and tree depth
+are preserved. Explicit `architecture_version: 1` retains the original
+root-only computation for historical inference. New CircuitGPS models default
+to version 2; all other encoders retain version 1. Full checkpoint resume still
+requires an identical source/architecture contract; migration is explicit.
+
+The CPU execution optimization of 2026-10-14 (record 7.344) evaluates the v2
+parent-combine MLP only for parents at the current height. A raw height/child/
+parent/operand-slot schedule is built once per encoder forward and shared by
+its blocks. The full tree, operand order, bindings and both normalization steps
+remain. Attention also reuses graph packing positions, padding masks and run-
+token membership within that forward. Each call still computes fresh learned
+representations and attention weights; layout scopes never survive a forward.
+Version 1 retains its original dense tree calculation.
+
+On the recorded Round 3 archive, the same 10,000-update model, mixed batches of
+8, one CPU thread and all 312 numerical guards gave median **1.048 → 0.741 s**
+per complete SAC update (p90 **1.514 → 1.012 s**). These are 48 measured updates
+per implementation across sequential A–B–B–A arms, after five warmups per arm.
+They include transition reads and input preparation, but exclude checkpoint
+writes and full validation. This is a 29.2% update-time reduction, not a measured
+29.2% reduction in total training wall time or evidence of better sizing.
+Float32 output differences over 65 task variants were at most 7.16e-7; matrix
+shape changes mean the optimized trajectory is not promised bitwise identical.
+Evidence: `artifacts/local/reviews/circuitgps-acceleration-2026-10-14/`.
+
 The shared actor head still returns μ and log-std per independent active group.
 Each critic injects its proposed action into its parameter token **and bound
 devices before processing**. Actor, Q1 and Q2 have separate weights. Context
@@ -144,3 +178,15 @@ batch isolation, action gradients, missing values, cache isolation and exact
 next-update restoration for a new checkpoint. A complete MOCK workbench run,
 saved structure/attention inspection, offline pool reconstruction and the two
 affected browser checks exercise the integration.
+
+The 2026-10-13 offline recovery preserves the original failed run and resumes
+its 10,000-update checkpoint in a separate frozen runtime, explicitly migrating
+weights, optimizers and RNG state to v2 and reconstructing the verified sampler
+position. Its planned final model had 10,000 v1 updates plus 10,000 v2 updates.
+The user subsequently requested fresh training (record 7.342), so the recovery
+was stopped and preserved at a last reported 10,575 updates. It remains
+development recovery evidence. The active `circuitgps-v2-fresh/` experiment
+resets weights, optimizers, temperature and sampler to seed 0/update 0 and
+trains for 20,000 updates entirely under v2, using the same validated archive.
+Artifacts and numerical checks are under
+`artifacts/local/reviews/round3-all-circuits-2026-10-13/tree-normalization-recovery/`.

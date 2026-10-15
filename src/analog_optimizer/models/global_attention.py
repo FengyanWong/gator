@@ -12,17 +12,50 @@ _RWSE_LOCK = threading.Lock()
 _RWSE_MAX_BYTES = 32 * 1024 * 1024
 
 
-def pack_by_graph(values, batch, count):
-    """Dense rows plus inverse positions; accepts interleaved device/net graph IDs."""
+def _packing_layout(batch, count):
     sizes = torch.bincount(batch, minlength=count)
     order = torch.argsort(batch, stable=True)
     starts = sizes.cumsum(0) - sizes
     positions = torch.empty_like(batch)
     positions[order] = torch.arange(len(batch), device=batch.device) - starts[batch[order]]
     width = int(sizes.max())
-    dense = values.new_zeros((count, width, values.shape[-1]))
-    dense[batch, positions] = values
     padding = torch.arange(width, device=batch.device)[None, :] >= sizes[:, None]
+    return padding, positions
+
+
+class GraphPacking:
+    """Raw layouts reused within one forward; never holds learned representations.
+
+    Membership tensors are immutable for this scope. Keeping their references
+    prevents identity reuse; a new scope on every forward avoids stale layouts
+    when a caller changes an observation between calls.
+    """
+    def __init__(self, count):
+        self.count = count
+        self._layouts = {}
+        self._fallback = {}
+
+    def layout(self, batch):
+        key = id(batch)
+        if key not in self._layouts:
+            self._layouts[key] = (batch, *_packing_layout(batch, self.count))
+        return self._layouts[key][1:]
+
+    def with_run(self, batch):
+        key = id(batch)
+        if key not in self._fallback:
+            extended = torch.cat((batch, torch.arange(self.count, device=batch.device)))
+            self._fallback[key] = (batch, extended)
+        return self._fallback[key][1]
+
+
+def pack_by_graph(values, batch, count, *, packing=None):
+    """Dense rows plus inverse positions; accepts interleaved device/net graph IDs."""
+    if packing is not None and packing.count != count:
+        raise ValueError('Graph packing circuit count differs')
+    padding, positions = _packing_layout(batch, count) if packing is None else packing.layout(batch)
+    dense = values.new_zeros((count, padding.shape[1], values.shape[-1]))
+    dense[batch, positions] = values
     return dense, padding, positions
 
 
@@ -33,9 +66,9 @@ class CircuitAttention(nn.Module):
         self.attention = nn.MultiheadAttention(hidden, heads, dropout=0, batch_first=True)
         self.attention.attention_kind = kind  # Read-only workbench inspection labels this scope.
 
-    def forward(self, queries, keys, query_batch, key_batch, count):
-        q, _, positions = pack_by_graph(queries, query_batch, count)
-        kv, padding, _ = pack_by_graph(keys, key_batch, count)
+    def forward(self, queries, keys, query_batch, key_batch, count, *, packing=None):
+        q, _, positions = pack_by_graph(queries, query_batch, count, packing=packing)
+        kv, padding, _ = pack_by_graph(keys, key_batch, count, packing=packing)
         output, _ = self.attention(q, kv, kv, key_padding_mask=padding, need_weights=False)
         return output[query_batch, positions]
 

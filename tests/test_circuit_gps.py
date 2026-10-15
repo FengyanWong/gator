@@ -11,12 +11,54 @@ from analog_optimizer.models import ModelConfig, GroupActor, GraphCritic
 from analog_optimizer.models.inputs import (SpecSetSchema, SPEC_PROGRAM_LAYOUT, batch_observations,
                                             spec_schema_from_dict, ObservationTensorCache)
 from analog_optimizer.models.measurement_program import PROGRAM_KEY, BLOCK_KINDS
-from analog_optimizer.models.circuit_gps import distances
+from analog_optimizer.models.circuit_gps import ProgramReader, distances
 from analog_optimizer.training.sac import SACLearner
 from research_support import observation, transitions, EXPERIMENT, deterministic_cpu  # noqa: F401
 
 SCHEMA = SpecSetSchema('measurement-program-v1', (), (('V', 1.), ('fixture', 1.)), layout=SPEC_PROGRAM_LAYOUT)
 MODEL = ModelConfig(encoder_type='circuit_gps', hidden_dim=16, heads=2, layers=2)
+
+
+def test_tree_normalization_is_versioned_without_new_weights():
+    assert MODEL.architecture_version == 2
+    legacy = replace(MODEL, architecture_version=1)
+    new = GroupActor(spec_schema=SCHEMA, config=MODEL)
+    old = GroupActor(spec_schema=SCHEMA, config=legacy)
+    new.load_state_dict(old.state_dict(), strict=True)
+    assert new.encoder.blocks[0].program.normalize_tree
+    assert not old.encoder.blocks[0].program.normalize_tree
+    assert ModelConfig(**legacy.to_dict()) == legacy
+    assert ModelConfig(**MODEL.to_dict()) == MODEL
+    with pytest.raises(ValueError, match='architecture_version'):
+        replace(MODEL, architecture_version=3)
+
+
+@pytest.mark.parametrize('depth', [16, 64])
+def test_deep_high_gain_program_has_finite_forward_and_gradients(opamp, depth):
+    original = described(opamp)
+    tree = original.graph.metadata[PROGRAM_KEY]['first']['children'][0]
+    for _ in range(depth):
+        tree = dict(op='add', children=[tree, dict(op='number', value=1.)])
+    original.graph.metadata[PROGRAM_KEY]['first'] = tree
+    packed = batch(original)
+    torch.manual_seed(621)
+    reader = ProgramReader(16)
+    # Learned transforms can amplify even though all weights and inputs are finite.
+    with torch.no_grad():
+        for module in reader.modules():
+            if isinstance(module, torch.nn.Linear):
+                module.weight.mul_(20.)
+    nodes = torch.randn(len(packed.node_batch), 16, requires_grad=True)
+    output = reader(nodes, packed.structured)
+    assert torch.isfinite(output).all()
+    output[:, 0].sum().backward()
+    assert torch.isfinite(nodes.grad).all()
+    assert nodes.grad.abs().max() > 0
+    assert all(torch.isfinite(p.grad).all() for p in reader.parameters() if p.grad is not None)
+    legacy = ProgramReader(16, normalize_tree=False)
+    legacy.load_state_dict(reader.state_dict())
+    with torch.no_grad():
+        assert not torch.isfinite(legacy(nodes.detach(), packed.structured)).all()
 
 
 def described(graph):
@@ -39,6 +81,62 @@ def batch(*observations, **kwargs):
 def models():
     torch.manual_seed(724)
     return GroupActor(spec_schema=SCHEMA, config=MODEL), GraphCritic(spec_schema=SCHEMA, config=MODEL)
+
+
+def _dense_normalized_program(reader, nodes, data):
+    """Pre-acceleration v2 calculation: update every row, then select this height."""
+    from analog_optimizer.models.encoders import segment_sum
+    from torch.nn import functional as F
+    base = reader.operation(data['op']) + reader.values(data['values'])
+    tokens, ids = data['bindings']
+    bound = reader.binding(torch.cat((nodes[ids], reader.binding_role(data['binding_role'])), -1))
+    base = F.layer_norm(base + segment_sum(bound, tokens, len(base)), (nodes.shape[-1],))
+    state = base
+    child, parent = data['children']
+    for height in range(1, int(data['height'].max()) + 1 if len(base) else 1):
+        selected = data['height'][parent] == height
+        slots = reader.slot(torch.log1p(data['slot'][selected])[:, None])
+        messages = reader.child(torch.cat((state[child[selected]], slots), -1))
+        summed = segment_sum(messages, parent[selected], len(base))
+        updated = F.layer_norm(reader.combine(torch.cat((base, summed), -1)), (nodes.shape[-1],))
+        state = torch.where((data['height'] == height)[:, None], updated, state)
+    return reader.norm(state[data['roots']])
+
+
+@pytest.mark.parametrize('depth', [0, 1, 17])
+@pytest.mark.parametrize('dtype', [torch.float32, torch.float64])
+def test_sparse_program_matches_dense_values_and_gradients(opamp, depth, dtype):
+    a, b = described(opamp), described(opamp)
+    tree = a.graph.metadata[PROGRAM_KEY]['first']['children'][0]
+    # Unequal depths, an ordered branch, a leaf root, and multiple graph bindings.
+    tree['bindings'].append(dict(tree['bindings'][0]))
+    for _ in range(depth):
+        tree = dict(op='sub', children=[dict(op='number', value=.25), tree])
+    a.graph.metadata[PROGRAM_KEY]['first'] = tree
+    a.graph.metadata[PROGRAM_KEY]['second'] = dict(op='number', value=.75)
+    packed = batch(a, b)
+    data = {k: v.to(dtype) if v.is_floating_point() else v for k, v in packed.structured.items()}
+    torch.manual_seed(822)
+    reader = ProgramReader(16).to(dtype)
+    reference = deepcopy(reader)
+    nodes = torch.randn(len(packed.node_batch), 16, dtype=dtype, requires_grad=True)
+    other = nodes.detach().clone().requires_grad_()
+    processed = []
+    hook = reader.combine.register_forward_pre_hook(lambda module, args: processed.append(len(args[0])))
+    actual = reader(nodes, data)
+    hook.remove()
+    expected = _dense_normalized_program(reference, other, data)
+    tol = dict(atol=2e-6, rtol=2e-5) if dtype == torch.float32 else dict(atol=1e-12, rtol=1e-11)
+    torch.testing.assert_close(actual, expected, **tol)
+    weights = torch.randn_like(actual)
+    (actual * weights).sum().backward()
+    (expected * weights).sum().backward()
+    torch.testing.assert_close(nodes.grad, other.grad, **tol)
+    for p, q in zip(reader.parameters(), reference.parameters(), strict=True):
+        assert (p.grad is None) == (q.grad is None)
+        if p.grad is not None:
+            torch.testing.assert_close(p.grad, q.grad, **tol)
+    assert sum(processed) == int((data['height'] > 0).sum())
 
 
 def test_binding_swap_breaks_the_old_spec_pooling_collision(opamp):

@@ -59,6 +59,14 @@ def measurement_kind(config) -> str:
     raise ProfileError('The probes mix Maestro outputs and results of a circuit type: a task measures one way')
 
 
+def check_saveable(name, config, *, task=None, as_new=False, run_rows=(), replace_newer=False, base_revision=None):
+    """The refusals of `save_task` that read nothing from Virtuoso, on their own: the Save route asks them before it
+    chooses the Virtuoso session the save goes to (record 7.351), so that a refused save contacts no Virtuoso.
+    `save_task` asks them again, unchanged."""
+    _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision)
+    measurement_kind(config)
+
+
 def save_task(monitor, profile_id, name, config, *, library=None, cell=None, task=None, as_new=False, extras=None,
               run_rows=(), commands=None, progress=None, base_revision=None, replace_newer=False) -> dict:
     """Explicit press - only a person can do it: store the editors' rows as the task real:<name>.

@@ -30,14 +30,24 @@ const SUGGESTED_NAME: Record<string, string> = { virtuoso_ssh: 'lab', virtuoso_l
 export function ConnectionButton({ profileId, setProfileId }: { profileId: string | null; setProfileId: (id: string | null, record?: boolean) => void }) {
   const [profiles, setProfiles] = useState<Json>(null);
   const [setup, setSetup] = useState<Json>(null);
-  const [status, setStatus] = useState<Json>(null);
-  const [connected, setConnected] = useState<Json>(null);
-  const [open, setOpen] = useState(false);
+  const [statuses, setStatuses] = useState<Record<string, Json>>({});
+  const [connections, setConnections] = useState<Record<string, Json>>({});
+  const [detailsOpen, setDetailsOpen] = useState<Record<string, boolean>>({});
+  const [sessionErrors, setSessionErrors] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copiedKey, setCopied] = useState<string | null>(null);
+  const groups: Json[] = profiles?.groups ?? profiles?.profiles.map((p: Json) => ({ ...p, session_profile_ids: [p.profile_id] })) ?? [];
+  const group: Json = groups.find((g: Json) => g.session_profile_ids.includes(profileId)) ?? null;
+  const sessions: Json[] = (group?.session_profile_ids ?? []).map((id: string) => profiles.profiles.find((p: Json) => p.profile_id === id)).filter(Boolean);
+  const multipleSessions = sessions.length > 1;
+  // The configuration names one session of the connection by its own name (`lab2`, as queues do): everything goes there.
+  // Naming the connection (`lab`) lets the backend send the work to whichever session is free (record 7.351).
+  const pinned = multipleSessions && profileId !== group?.profile_id;
+  const pinnedLabel = pinned ? `Virtuoso ${sessions.findIndex(s => s.profile_id === profileId) + 1}` : '';
+
   // While `popup` is set, the connection window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-connection',
-    { title: CONNECTION_WINDOW, features: 'popup,width=660,height=920', rootId: 'connection-root' });
+    { title: CONNECTION_WINDOW, features: `popup,width=${multipleSessions ? 1100 : 660},height=920`, rootId: 'connection-root' });
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Json>({ kind: 'virtuoso_ssh', name: '', ssh_host: '', bridge_profile: '' });
   const [created, setCreated] = useState<Json>(null);
@@ -51,45 +61,59 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   }).catch(e => setError(e.message));
   useEffect(() => { loadProfiles(); }, []);
 
-  // ---- actions: every one of them is a button press, but for the one test when the page opens (below) ---------------
+  // Each session keeps its own result and action state, including while its sibling is connecting.
   const { busy, run } = useAsyncAction(e => setError(e.message), () => setError(null));
-  // Which connection each action in progress belongs to: a test of A (it can take a minute) no longer shows B "testing..."
-  // and locks B's buttons once B is chosen (audit 2026-09-30), and a test of B pressed meanwhile no longer takes A's
-  // "Testing..." away and unlocks A's buttons while A's test goes on (review of 2026-10-01). Adding a connection belongs
-  // to none.
   const [busyFor, setBusyFor] = useState<Record<string, string>>({});
-  const runFor = (name: string, action: () => Promise<unknown>) => {
-    const id = profileId!;
+  const revisions = useRef<Record<string, number>>({});
+  const nextRevision = (id: string) => (revisions.current[id] = (revisions.current[id] ?? 0) + 1);
+  const runFor = async (id: string, name: string, action: (revision: number) => Promise<void>) => {
+    const revision = nextRevision(id);
     setBusyFor(b => ({ ...b, [id]: name }));
-    return run(name, action).finally(() => setBusyFor(b => { const rest = { ...b }; delete rest[id]; return rest; }));
+    setSessionErrors(e => ({ ...e, [id]: null }));
+    try { await action(revision); }
+    catch (e) { if (revisions.current[id] === revision) setSessionErrors(errors => ({ ...errors, [id]: (e as Error).message })); }
+    finally { setBusyFor(b => { const rest = { ...b }; delete rest[id]; return rest; }); }
   };
-  const mine = busy === 'profile' ? busy : profileId ? busyFor[profileId] ?? null : null;
-  // The connection list stays usable while a slow test runs: an answer - or a failure - for a connection that is no longer
-  // the chosen one is dropped (null), so it never shows under another connection.
-  const chosen = useRef(profileId);
-  chosen.current = profileId;
-  const forChosen = <T,>(asked: string, call: Promise<T>): Promise<T | null> =>
-    call.then(answer => (asked === chosen.current ? answer : null), e => { if (asked === chosen.current) throw e; return null; });
-  const connect = () => runFor('connect', async () => { const answer = await forChosen(profileId!, api.connectionConnect(profileId!)); if (answer) { setConnected(answer.connect); setStatus(answer.status); } });
-  const check = (scope: string) => runFor(scope, async () => { const answer = await forChosen(profileId!, api.connectionCheck(profileId!, scope)); if (answer) setStatus(answer); });
-  // The page opened: ONE test of the connection in use, as soon as the connection list is read and names it - the same as
-  // pressing "Test connection" (interactive scope: one read-only SKILL round trip, for ngspice the built-in test circuit;
-  // zero-cost, starts nothing; while a run is active the probe does not touch Virtuoso). User request 2026-09-24 (status
-  // record 7.80); from 2026-09-20 until then the page checked nothing on its own (7.9). Once per page: a connection chosen
-  // later shows the last result the backend remembers (a cache read, no probe), and nothing runs on a timer or when the
-  // window opens. While the test runs the button's badge reads "testing...".
+  // A status is shown only when it is not older than the one shown: a cached read that comes back after a test must not put
+  // the result from before that test back (record 7.351). `checked_utc` is the backend's own time of the test; an answer
+  // without one (never tested) is older than any test.
+  const showStatus = (id: string, answer: Json) => setStatuses(s => {
+    const shown = s[id];
+    const older = !!shown?.checked_utc && (!answer?.checked_utc || answer.checked_utc < shown.checked_utc);
+    return older ? s : { ...s, [id]: answer };
+  });
+  const connectSession = (id: string) => runFor(id, 'connect', async revision => {
+    const answer = await api.connectionConnect(id);
+    if (revisions.current[id] !== revision) return;
+    setConnections(c => ({ ...c, [id]: answer.connect }));
+    showStatus(id, answer.status);
+  });
+  const checkSession = (id: string, scope: string) => runFor(id, scope, async revision => {
+    const answer = await api.connectionCheck(id, scope);
+    if (revisions.current[id] !== revision) return;
+    showStatus(id, answer);
+    // A failed Connect line goes once a later test passes; a successful one keeps its CIW lines.
+    if (answer?.overall === 'ok') setConnections(c => (c[id] && !c[id].ok ? Object.fromEntries(Object.entries(c).filter(([k]) => k !== id)) : c));
+  });
+  // The existing page-open test belongs only to the configured session. Siblings get cached results; reading the
+  // group or opening this window never starts a tunnel or probes the other Virtuoso.
   const testedOnOpen = useRef(false);
   useEffect(() => {
-    setConnected(null);
-    if (!profileId) { setStatus(null); return; }
-    if (!profiles) return;                                   // the connection list is on its way: it says whether the profile exists
+    if (!profileId || !profiles) return;
     let live = true;
-    if (!testedOnOpen.current && profiles.profiles.some((p: Json) => p.profile_id === profileId)) {
-      testedOnOpen.current = true;
-      // Its answer - or its failure - counts only while that connection is still the chosen one.
-      runFor('interactive', async () => { const tested = await forChosen(profileId, api.connectionCheck(profileId, 'interactive')); if (live && tested) setStatus(tested); });
-    } else {
-      api.connectionStatus(profileId).then(s => { if (live) setStatus(s); }).catch(e => { if (live) setError(e.message); });
+    for (const session of sessions) {
+      const id = session.profile_id;
+      if (!testedOnOpen.current && id === profileId) {
+        testedOnOpen.current = true;
+        checkSession(id, 'interactive');
+      } else {
+        // A cached read never makes a test or Connect still on its way stale (it used to, record 7.351): it takes no
+        // revision of its own, and `showStatus` keeps whichever result is newer.
+        const revision = revisions.current[id] ?? 0;
+        api.connectionStatus(id).then(answer => {
+          if (live) showStatus(id, answer);
+        }).catch(e => { if (live && (revisions.current[id] ?? 0) === revision) setSessionErrors(errors => ({ ...errors, [id]: e.message })); });
+      }
     }
     return () => { live = false; };
   }, [profileId, profiles]);
@@ -99,14 +123,16 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     .then(() => { setCopied(key); setTimeout(() => setCopied(c => (c === key ? null : c)), 1500); }, () => undefined);
 
   const entry: Json = profiles?.profiles.find((p: Json) => p.profile_id === profileId) ?? null;
-  const family: string = entry?.family ?? 'virtuoso';
-  // What the last test found out beats the declared kind: a profile written before kinds existed may still be local.
-  const transport: string = (status?.profile_id === profileId && status?.transport) || entry?.transport || 'ssh';
-  const local = transport === 'local';
-  const overall = status?.overall ?? 'unknown';
-  const summary = status?.summary;
-  const ciw = connected?.details?.ciw ?? status?.ciw ?? null;
-  const linkUp = local ? !!ciw : status?.layers?.some((l: Json) => l.layer === 'tunnel' && l.state === 'ok');
+  const status = profileId ? statuses[profileId] : null;
+  const mine = sessions.some(s => ['interactive', 'full'].includes(busyFor[s.profile_id])) ? 'interactive' : null;
+  // What the work started here can use: the named session's own state; for a connection whose work goes to whichever
+  // session is free, how many sessions passed their last test - or, when none did, its own session's state (record 7.351).
+  const okSessions = sessions.filter(s => statuses[s.profile_id]?.overall === 'ok').length;
+  const overall = multipleSessions && !pinned
+    ? (okSessions > 0 ? 'ok' : statuses[group.profile_id]?.overall ?? 'unknown')
+    : status?.overall ?? 'unknown';
+  const overallText = multipleSessions && !pinned && okSessions > 0 && okSessions < sessions.length
+    ? `${okSessions} of ${sessions.length} OK` : STATE_LABEL[overall] ?? overall;
 
   // ---- add a connection --------------------------------------------------------------------------------------------
   const taken = (name: string) => !!profiles?.profiles.some((p: Json) => p.profile_id === name);
@@ -131,103 +157,138 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       <button className="connection-button" onClick={openWindow}
         title={popup ? 'The connection window is open: press to bring it to the front.' : 'Opens the connection window: choose or add a connection (Virtuoso or ngspice, on this machine or over SSH), connect and test it. Opening it checks nothing.'}>
         <span className="connection-button-name">Connection</span>
-        <span className="connection-button-what">{profileId ? `${profileId}${entry?.kind_label ? ` - ${entry.kind_label}` : ''}` : profiles && profiles.profiles.length === 0 ? 'none set up yet' : 'none selected'}{popup ? ' (window open)' : ''}</span>
-        {profileId && (mine === 'interactive' || mine === 'full'
+        <span className="connection-button-what">{profileId ? `${pinned ? `${profileId} (${pinnedLabel} only)` : group?.profile_id ?? profileId}${entry?.kind_label ? ` - ${entry.kind_label}` : ''}${multipleSessions && !pinned ? ` (${sessions.length} sessions)` : ''}` : profiles && profiles.profiles.length === 0 ? 'none set up yet' : 'none selected'}{popup ? ' (window open)' : ''}</span>
+        {profileId && (mine !== null
           ? <span className="badge state-not_checked" title="The connection is being tested">testing...</span>
-          : <span className={`badge state-${overall}`} title={status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{STATE_LABEL[overall] ?? overall}</span>)}
+          : <span className={`badge state-${overall}`} title={multipleSessions && !pinned ? 'Sessions that passed their last test: runs go to whichever session is free. Each session is in Connection.' : status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{overallText}</span>)}
       </button>
       {blocked && <Blocked />}
-      {error && !popup && <p className="error">{error}</p>}
+      {!popup && (error || (profileId && sessionErrors[profileId])) && <p className="error">{error ?? sessionErrors[profileId as string]}</p>}
     </section>
   );
 
-  const details = open && status && (
-    <table className="grid small">
-      <thead><tr><th>Layer</th><th>State</th><th>Reason</th></tr></thead>
-      <tbody>
-        {status.layers.map((l: Json) => (
-          <tr key={l.layer} title={l.diagnostic ?? ''}>
-            <td>{l.layer}</td><td><span className={`badge state-${l.state}`}>{STATE_LABEL[l.state] ?? l.state}</span></td>
-            <td>{l.reason_code ?? ''}{l.diagnostic && <div className="hint">{l.diagnostic}</div>}
-              {l.details?.next_step && <div className="hint">Next step: {l.details.next_step}</div>}
-              {l.details?.note && <div className="hint">{l.details.note}</div>}</td>
-          </tr>))}
-      </tbody>
-      <tfoot><tr><td colSpan={3} className="hint">Last test took {status.duration_seconds ?? '-'} s. {family === 'ngspice'
-        ? 'A test installs, starts and changes nothing. Its one simulation is the built-in three-element test circuit, never one of yours.'
-        : 'A test observes and never starts, restarts or stops the tunnel, the daemon or Virtuoso. It is not the costed baseline simulation.'}
-        {status.run_active && ` A run is active; last successful bridge interaction: ${status.last_successful_bridge_interaction_utc ?? 'none yet'}.`}</td></tr></tfoot>
-    </table>
-  );
-  const result = summary && <div className={`status-line level-${summary.level}`}>
-    <strong>{summary.headline}</strong>
-    {summary.next_step && <div className="hint">Next step: {summary.next_step}</div>}
-  </div>;
+  const renderSession = (entry: Json, index: number) => {
+    const id: string = entry.profile_id;
+    const profileId = id;
+    const status = statuses[id];
+    const connected = connections[id];
+    const mine = busyFor[id] ?? null;
+    const open = detailsOpen[id] ?? false;
+    const setOpen = (change: (open: boolean) => boolean) => setDetailsOpen(s => ({ ...s, [id]: change(s[id] ?? false) }));
+    const connect = () => connectSession(id);
+    const check = (scope: string) => checkSession(id, scope);
+    const copied = copiedKey?.startsWith(`${id}:`) ? copiedKey.slice(id.length + 1) : null;
+    const family: string = entry.family ?? 'virtuoso';
+    const transport: string = status?.transport || entry.transport || 'ssh';
+    const local = transport === 'local';
+    const overall = status?.overall ?? 'unknown';
+    const summary = status?.summary;
+    const ciw = connected?.details?.ciw ?? status?.ciw ?? null;
+    const loadCommand = ciw ? `setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")\n${ciw.load}` : '';
+    const replaceCommand = ciw ? `setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")\n${ciw.replace_running_daemon.join('\n')}` : '';
+    const linkUp = local ? !!ciw : status?.layers?.some((l: Json) => l.layer === 'tunnel' && l.state === 'ok');
+    const details = open && status && (
+      <table className="grid small">
+        <thead><tr><th>Layer</th><th>State</th><th>Reason</th></tr></thead>
+        <tbody>
+          {status.layers.map((l: Json) => (
+            <tr key={l.layer} title={l.diagnostic ?? ''}>
+              <td>{l.layer}</td><td><span className={`badge state-${l.state}`}>{STATE_LABEL[l.state] ?? l.state}</span></td>
+              <td>{l.reason_code ?? ''}{l.diagnostic && <div className="hint">{l.diagnostic}</div>}
+                {l.details?.next_step && <div className="hint">Next step: {l.details.next_step}</div>}
+                {l.details?.note && <div className="hint">{l.details.note}</div>}</td>
+            </tr>))}
+        </tbody>
+        <tfoot><tr><td colSpan={3} className="hint">Last test took {status.duration_seconds ?? '-'} s. {family === 'ngspice'
+          ? 'A test installs, starts and changes nothing. Its one simulation is the built-in three-element test circuit, never one of yours.'
+          : 'A test observes and never starts, restarts or stops the tunnel, the daemon or Virtuoso. It is not the costed baseline simulation.'}
+          {status.run_active && ` A run is active; last successful bridge interaction: ${status.last_successful_bridge_interaction_utc ?? 'none yet'}.`}</td></tr></tfoot>
+      </table>
+    );
+    const result = summary && <div className={`status-line level-${summary.level}`}>
+      <strong>{summary.headline}</strong>
+      {summary.next_step && <div className="hint">Next step: {summary.next_step}</div>}
+    </div>;
 
-  const virtuosoSteps = (<>
-    <div className="step">
-      <div className="step-head"><span className="step-no">1</span> {local ? 'Set up the bridge on this machine' : 'Connect to the target over SSH'}</div>
-      {local && <p className="hint">Virtuoso runs on the same machine as the workbench backend, so there is no SSH and no tunnel: this step only places the bridge setup file and tells you the line to load.</p>}
-      <div className="row">
-        <button disabled={!profileId || !!mine} onClick={connect}
-          title={local ? 'Does what `virtuoso-bridge start` does for a Virtuoso on this machine: places the bridge setup file and reports the line to load in the CIW. No SSH, no tunnel. It starts nothing if the bridge env file names another machine. Nothing is ever stopped or restarted.'
-            : 'Starts the SSH tunnel of this profile, exactly like `virtuoso-bridge start`. A tunnel that is already running is left untouched. Nothing is ever stopped or restarted.'}>
-          {local ? (mine === 'connect' ? 'Setting up...' : linkUp ? 'Set up local bridge (already done)' : 'Set up local bridge')
-            : (mine === 'connect' ? 'Connecting... (can take a minute)' : linkUp ? 'Connect SSH (already up)' : 'Connect SSH')}</button>
-      </div>
-      {connected && <p className={connected.ok ? 'ok' : 'error'}>
-        {connected.ok ? (local ? (connected.action === 'already_running' ? 'The local bridge was already set up - left untouched.' : `Local bridge set up (${connected.duration_seconds} s).`)
-          : (connected.action === 'already_running' ? 'SSH tunnel was already running - left untouched.' : `SSH tunnel started (${connected.duration_seconds} s).`))
-          : `${local ? 'Set-up' : 'Connect'} failed: ${connected.reason_code}${connected.diagnostic ? ` - ${connected.diagnostic}` : ''}`}
-        {connected.details?.next_step && <span className="hint"> Next step: {connected.details.next_step}</span>}</p>}
-    </div>
-
-    <div className="step">
-      <div className="step-head"><span className="step-no">2</span> Load the bridge in the Virtuoso CIW</div>
-      {ciw ? (
-        <div>
-          <p className="hint">Paste this line into the CIW input line of your running Virtuoso, press Enter, then test below.</p>
-          <div className="command"><code>{ciw.load}</code><button onClick={() => copyText('load', ciw.load)}>{copied === 'load' ? 'Copied' : 'Copy'}</button></div>
-          <details><summary className="hint">CIW says "already running", or other trouble</summary>
-            <p className="hint">Replace a running daemon (two lines):</p>
-            <div className="command"><code>{ciw.replace_running_daemon.join('\n')}</code>
-              <button onClick={() => copyText('replace', ciw.replace_running_daemon.join('\n'))}>{copied === 'replace' ? 'Copied' : 'Copy'}</button></div>
-            <ul className="steps-list">{ciw.notes.map((n: string) => <li key={n} className="hint">{n}</li>)}</ul>
-          </details>
+    const virtuosoSteps = (<>
+      <div className="step">
+        <div className="step-head"><span className="step-no">1</span> {local ? 'Set up the bridge on this machine' : 'Connect to the target over SSH'}</div>
+        {local && <p className="hint">Virtuoso runs on the same machine as the workbench backend, so there is no SSH and no tunnel: this step only places the bridge setup file and tells you the line to load.</p>}
+        <div className="row">
+          <button disabled={!profileId || !!mine} onClick={connect}
+            title={local ? 'Does what `virtuoso-bridge start` does for a Virtuoso on this machine: places the bridge setup file and reports the line to load in the CIW. No SSH, no tunnel. It starts nothing if the bridge env file names another machine. Nothing is ever stopped or restarted.'
+              : 'Starts the SSH tunnel of this profile, exactly like `virtuoso-bridge start`. A tunnel that is already running is left untouched. Nothing is ever stopped or restarted.'}>
+            {local ? (mine === 'connect' ? 'Setting up...' : linkUp ? 'Set up local bridge (already done)' : 'Set up local bridge')
+              : (mine === 'connect' ? 'Connecting... (can take a minute)' : linkUp ? 'Connect SSH (already up)' : 'Connect SSH')}</button>
         </div>
-      ) : <p className="hint">{local ? 'The command appears here once the bridge is set up (step 1): the bridge reports the setup file it placed on this machine.'
-        : 'The command appears here once the SSH tunnel is up (step 1): the bridge reports the setup file it placed on the Virtuoso host.'}</p>}
-    </div>
-
-    <div className="step">
-      <div className="step-head"><span className="step-no">3</span> Test the connection</div>
-      <div className="row">
-        <button disabled={!profileId || !!mine} onClick={() => check('interactive')} title="Read-only and zero-cost: one trivial SKILL round trip. No simulation, no budget, no data rows. It never starts anything.">
-          {mine === 'interactive' ? 'Testing...' : 'Test connection'}</button>
-        <button disabled={!profileId || !!mine} onClick={() => check('full')} title="Adds Spectre and a license SNAPSHOT (can be slow)">{mine === 'full' ? 'Testing...' : '+ Spectre / license'}</button>
-        <button onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Details'}</button>
+        {connected && <p className={connected.ok ? 'ok' : 'error'}>
+          {connected.ok ? (local ? (connected.action === 'already_running' ? 'The local bridge was already set up - left untouched.' : `Local bridge set up (${connected.duration_seconds} s).`)
+            : (connected.action === 'already_running' ? 'SSH tunnel was already running - left untouched.' : `SSH tunnel started (${connected.duration_seconds} s).`))
+            : `${local ? 'Set-up' : 'Connect'} failed: ${connected.reason_code}${connected.diagnostic ? ` - ${connected.diagnostic}` : ''}`}
+          {connected.details?.next_step && <span className="hint"> Next step: {connected.details.next_step}</span>}</p>}
       </div>
-      {result}
-    </div>
-  </>);
 
-  const ngspiceSteps = (<>
-    <div className="step">
-      <div className="step-head"><span className="step-no">1</span> {local ? 'Test ngspice on this machine' : 'Test ngspice over SSH'}</div>
-      <p className="hint">Finds the ngspice program, reads its version and solves one built-in three-element test circuit. None of your circuits, no budget, no license.
-        {!local && ' SSH runs in batch mode: it needs key-based login to the machine and cannot ask for a password.'} There is nothing to connect or to load first.</p>
-      <div className="row">
-        <button disabled={!profileId || !!mine} onClick={() => check('interactive')} title="Runs only when pressed. It installs, starts and changes nothing.">
-          {mine === 'interactive' ? 'Testing...' : 'Test connection'}</button>
-        <button onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Details'}</button>
+      <div className="step">
+        <div className="step-head"><span className="step-no">2</span> Load the bridge in the Virtuoso CIW</div>
+        {ciw ? (
+          <div>
+            <p className="hint">Paste these lines into {multipleSessions ? `Virtuoso ${index + 1}'s` : 'your Virtuoso’s'} CIW, in order, then test this session below.</p>
+            <div className="command"><code>{loadCommand}</code><button onClick={() => copyText(`${id}:load`, loadCommand)}>{copied === 'load' ? 'Copied' : 'Copy'}</button></div>
+            <details><summary className="hint">CIW says "already running", or other trouble</summary>
+              <p className="hint">Reload the bridge in this session:</p>
+              <div className="command"><code>{replaceCommand}</code>
+                <button onClick={() => copyText(`${id}:replace`, replaceCommand)}>{copied === 'replace' ? 'Copied' : 'Copy'}</button></div>
+              <ul className="steps-list">{ciw.notes.map((n: string) => <li key={n} className="hint">{n}</li>)}</ul>
+            </details>
+          </div>
+        ) : <p className="hint">{local ? 'The command appears here once the bridge is set up (step 1): the bridge reports the setup file it placed on this machine.'
+          : 'The command appears here once the SSH tunnel is up (step 1): the bridge reports the setup file it placed on the Virtuoso host.'}</p>}
       </div>
-      {result}
-    </div>
-    <div className="note"><p><b>What an ngspice connection runs: the ngspice netlist tasks</b> (Project column, "ngspice netlist..."). Every evaluation of such
-      a task is one <code>ngspice -b</code> run {local ? 'on this machine' : 'on that machine, through ssh (the deck goes in on stdin; paths in it are that machine\'s)'};
-      the test above is what a run checks first. Virtuoso cells and the verified GPDK045 tasks still need a Virtuoso connection; mock runs and
-      everything offline need no connection at all.</p></div>
-  </>);
+
+      <div className="step">
+        <div className="step-head"><span className="step-no">3</span> Test the connection</div>
+        <div className="row">
+          <button disabled={!profileId || !!mine} onClick={() => check('interactive')} title="Read-only and zero-cost: one trivial SKILL round trip. No simulation, no budget, no data rows. It never starts anything.">
+            {mine === 'interactive' ? 'Testing...' : 'Test connection'}</button>
+          <button disabled={!profileId || !!mine} onClick={() => check('full')} title="Adds Spectre and a license SNAPSHOT (can be slow)">{mine === 'full' ? 'Testing...' : '+ Spectre / license'}</button>
+          <button onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Details'}</button>
+        </div>
+        {result}
+      </div>
+    </>);
+
+    const ngspiceSteps = (<>
+      <div className="step">
+        <div className="step-head"><span className="step-no">1</span> {local ? 'Test ngspice on this machine' : 'Test ngspice over SSH'}</div>
+        <p className="hint">Finds the ngspice program, reads its version and solves one built-in three-element test circuit. None of your circuits, no budget, no license.
+          {!local && ' SSH runs in batch mode: it needs key-based login to the machine and cannot ask for a password.'} There is nothing to connect or to load first.</p>
+        <div className="row">
+          <button disabled={!profileId || !!mine} onClick={() => check('interactive')} title="Runs only when pressed. It installs, starts and changes nothing.">
+            {mine === 'interactive' ? 'Testing...' : 'Test connection'}</button>
+          <button onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Details'}</button>
+        </div>
+        {result}
+      </div>
+      <div className="note"><p><b>What an ngspice connection runs: the ngspice netlist tasks</b> (Project column, "ngspice netlist..."). Every evaluation of such
+        a task is one <code>ngspice -b</code> run {local ? 'on this machine' : 'on that machine, through ssh (the deck goes in on stdin; paths in it are that machine\'s)'};
+        the test above is what a run checks first. Virtuoso cells and the verified GPDK045 tasks still need a Virtuoso connection; mock runs and
+        everything offline need no connection at all.</p></div>
+    </>);
+
+    return <section className="connection-session" key={id} data-session-profile={id} aria-label={multipleSessions ? `Virtuoso ${index + 1}` : 'Connection session'}>
+      {multipleSessions && <h3>Virtuoso {index + 1} <span className="hint">({id})</span></h3>}
+      <div className="row">
+        <span className={`badge state-${overall}`} title="Overall state of the last test">{STATE_LABEL[overall] ?? overall}</span>
+        <span className="hint">{status?.checked_utc ? `tested at ${testedAt(status.checked_utc)}${status.stale ? ' - too old to trust, shown as unknown' : ''}` : 'never tested'}</span>
+      </div>
+      {entry.kind_label && <p className="hint connection-kind"><b>{entry.kind_label}.</b> {profiles?.kinds?.find((k: Json) => k.kind === entry.kind)?.summary
+        ?? 'Press "Test connection" to see what has to be corrected in the connection file.'}
+        {entry.kind && !entry.kind_declared && ' (This connection was written before kinds existed; it is treated as Virtuoso over SSH unless a test finds Virtuoso on this machine.)'}</p>}
+      {family === 'ngspice' ? ngspiceSteps : virtuosoSteps}
+      {sessionErrors[id] && <p className="error">{sessionErrors[id]}</p>}
+      {details}
+    </section>;
+  };
 
   const addForm = adding && (
     <div className="step connection-add">
@@ -265,7 +326,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   );
 
   const view = (
-    <div className="connection-window">
+    <div className={`connection-window${multipleSessions ? ' connection-multi' : ''}`}>
       <h2>Connection</h2>
       {profiles && profiles.profiles.length === 0
         ? <p className="hint">No connection is set up yet ({profiles.connection_file}). Manual editing, JSON import/export, data export and mock runs work without one.</p>
@@ -273,7 +334,8 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
           <label>Connection
             <select value={profileId ?? ''} onChange={e => setProfileId(e.target.value || null)}>
               <option value="">(none)</option>
-              {profiles?.profiles.map((p: Json) => <option key={p.profile_id} value={p.profile_id}>{p.profile_id}{p.kind_label ? ` - ${p.kind_label}` : ''}</option>)}
+              {groups.map((p: Json) => <option key={p.profile_id} value={p.profile_id}>{p.profile_id}{p.kind_label ? ` - ${p.kind_label}` : ''}{p.session_profile_ids.length > 1 ? ` (${p.session_profile_ids.length} sessions: whichever is free)` : ''}</option>)}
+              {pinned && <option value={profileId as string}>{profileId} - {pinnedLabel} only</option>}
             </select>
           </label>
           <button onClick={startAdding}>{adding ? 'Close "Add a connection"' : 'Add a connection...'}</button>
@@ -282,19 +344,14 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         this backend. Choose one of the connections above, or add one.</p>}
       {created && <p className="ok">Connection "{created.profile_id}" was added{created.backup ? ` (the previous file was kept as ${created.backup})` : ''}. {created.note}</p>}
       {addForm}
-      {entry && <>
-        <div className="row">
-          <span className={`badge state-${overall}`} title="Overall state of the last test">{STATE_LABEL[overall] ?? overall}</span>
-          <span className="hint">{status?.checked_utc ? `tested at ${testedAt(status.checked_utc)}${status.stale ? ' - too old to trust, shown as unknown' : ''}` : 'never tested'}</span>
-        </div>
-        {/* An older backend names no kinds: the line is left out and the steps read as Virtuoso over SSH, which is all it knows. */}
-        {entry.kind_label && <p className="hint connection-kind"><b>{entry.kind_label}.</b> {profiles?.kinds?.find((k: Json) => k.kind === entry.kind)?.summary
-          ?? 'Press "Test connection" to see what has to be corrected in the connection file.'}
-          {entry.kind && !entry.kind_declared && ' (This connection was written before kinds existed; it is treated as Virtuoso over SSH unless a test finds Virtuoso on this machine.)'}</p>}
-        {family === 'ngspice' ? ngspiceSteps : virtuosoSteps}
-      </>}
+      {multipleSessions && <p className="hint">Each Virtuoso window has its own bridge. Connect each session and load its commands in the matching CIW.</p>}
+      {multipleSessions && (pinned
+        ? <p className="warn">This configuration names {pinnedLabel} by its own name ({profileId}): runs, Check now and Save task go there, even
+          while it is busy. Choose "{group.profile_id}" above to send them to whichever session is free.</p>
+        : <p className="hint">Runs (Start, Baseline simulation, Calibration, Continue), Check now and Save task go to whichever session is free:
+          first the one that holds the task's cell open for editing, then the one whose last test passed. The run's message says which.</p>)}
+      <div className={multipleSessions ? 'connection-sessions-grid' : undefined}>{sessions.map(renderSession)}</div>
       {error && <p className="error">{error}</p>}
-      {details}
       {/* A section of its own, headed like the steps above (record 7.170, user: "separate the folders section with other section
           with similar style"): a folder sign where a step has its number - setting the folders is no step of connecting. It
           stays outside the chosen-connection part: "Add a connection" uses the bridge checkout folder. */}

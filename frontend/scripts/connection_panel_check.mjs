@@ -43,10 +43,14 @@ const KINDS = [
   { kind: 'ngspice_ssh', family: 'ngspice', transport: 'ssh', label: 'ngspice over SSH', summary: 'FIXTURE summary: ngspice on another machine.' }];
 const PROFILES = { lab: 'virtuoso_ssh', here: 'virtuoso_local', sim: 'ngspice_local', far: 'ngspice_ssh' };
 const kindOf = id => KINDS.find(k => k.kind === PROFILES[id]);
+let groupedSessions = false;
+let activeProfile = 'lab';                       // the connection file's own choice; a page with none adopts it
 const SETUP = '/fixture/virtuoso_setup.il';
 const layersOf = (id, state, reason, upTo = 99) => (kindOf(id).family === 'ngspice' ? NGSPICE : VIRTUOSO).map((layer, i) => ({ layer, state: i < upTo ? state : 'not_checked',
   reason_code: i < upTo ? reason : null, diagnostic: null, details: layer === 'tunnel' ? { setup_path: SETUP } : {} }));
 const ciw = { load: `load("${SETUP}")`, replace_running_daemon: ['RBStop()', `load("${SETUP}")`], setup_path: SETUP, notes: ['FIXTURE'] };
+const ciwFor = id => id === 'lab2' ? { ...ciw, load: 'load("/fixture/second/virtuoso_setup.il")',
+  setup_path: '/fixture/second/virtuoso_setup.il', replace_running_daemon: ['RBStop()', 'load("/fixture/second/virtuoso_setup.il")'] } : ciw;
 const utc = ms => new Date(ms).toISOString().replace('Z', '+00:00');             // the backend sends an explicit UTC offset
 const described = id => ({ kind: kindOf(id).kind, family: kindOf(id).family, transport: kindOf(id).transport, kind_label: kindOf(id).label });
 const publicProfile = (id, declared = true) => ({ profile_id: id, bridge_profile: null, kind: kindOf(id).kind, kind_declared: declared, family: kindOf(id).family,
@@ -64,13 +68,15 @@ const folderAnswer = (saved = {}, extra = {}) => ({ connection_file: '/fixture/b
       source: byEnv ? 'environment' : key in saved ? 'file' : 'default', environment_variable: env, set_by_environment: byEnv ? env : null, problem: null,
       used_for: `FIXTURE: what ${label} holds.`, takes_effect: 'FIXTURE: the next use' }; }) });
 const fixtures = {
-  profiles: () => ({ active: 'lab', connection_file: '/fixture/bridge_connection.json', connection_file_exists: true, kinds: KINDS,
-    profiles: Object.keys(PROFILES).map(id => publicProfile(id, id !== 'lab')) }),                  // `lab` was written before kinds existed
+  profiles: () => ({ active: activeProfile, connection_file: '/fixture/bridge_connection.json', connection_file_exists: true, kinds: KINDS,
+    profiles: Object.keys(PROFILES).map(id => publicProfile(id, id !== 'lab')),
+    ...(groupedSessions ? { groups: Object.keys(PROFILES).filter(id => id !== 'lab2').map(id => ({ ...publicProfile(id, id !== 'lab'),
+      session_profile_ids: id === 'lab' ? ['lab', 'lab2'] : [id] })) } : {}) }),                  // `lab` was written before kinds existed
   never: id => ({ profile_id: id, ...described(id), checked_utc: null, age_seconds: null, stale: true, overall: 'unknown', layers: layersOf(id, 'unknown', 'never_checked'),
     summary: { level: 'unknown', headline: 'Not tested yet.', broken_layer: null, next_step: null }, ciw: null }),
   tested: (id, scope) => ({ profile_id: id, ...described(id), scope, trigger: 'user', checked_utc: utc(Date.now()), duration_seconds: 0.4, age_seconds: 0, stale: false,
     overall: 'ok', run_active: false, layers: layersOf(id, 'ok', null, kindOf(id).family === 'ngspice' ? 4 : scope === 'full' ? 7 : scope === 'cheap' ? 3 : 5),
-    ciw: kindOf(id).family === 'ngspice' ? null : ciw,
+    ciw: kindOf(id).family === 'ngspice' ? null : ciwFor(id),
     summary: { level: 'ok', headline: `FIXTURE: ${id} connected (canned answer, nothing was probed).`, broken_layer: null, next_step: null } }),
   old: id => ({ profile_id: id, ...described(id), scope: 'interactive', trigger: 'user', checked_utc: utc(Date.now() - 600000), duration_seconds: 0.4, age_seconds: 600,
     stale: true, overall: 'unknown', run_active: false, layers: layersOf(id, 'unknown', 'stale_result'), ciw,
@@ -85,20 +91,24 @@ await runChecks(browser, async () => {
   const { send, evaluate, fulfil, consoleErrors } = page;
   const seen = []; let statusAnswer = fixtures.never; let live = false; const savedFolders = {};
   let holdNextCheck = false, heldCheck = null;                                    // one test answer kept back, to arrive late
+  let lateHeadline = null;                                                        // ... with a headline of its own, when set
   const answer = ({ requestId, request }) => {                                    // every connection request: log it, answer it here
     const url = new URL(request.url), name = url.pathname.replace('/api/connection/', '');
     const body = request.postData ? JSON.parse(request.postData) : null;
     seen.push({ method: request.method, name, body, at: Date.now() });
     if (live) return send('Fetch.continueRequest', { requestId });                // the last section only: a scratch backend answers
     if (request.method === 'POST' && name === 'check' && holdNextCheck) {
-      holdNextCheck = false; heldCheck = () => fulfil(requestId, 200, fixtures.tested(body.profile_id, body.scope)); return Promise.resolve();
+      holdNextCheck = false;
+      heldCheck = () => { const t = fixtures.tested(body.profile_id, body.scope);
+        return fulfil(requestId, 200, lateHeadline ? { ...t, summary: { ...t.summary, headline: lateHeadline } } : t); };
+      return Promise.resolve();
     }
     if (request.method === 'GET' && name === 'profiles') return fulfil(requestId, 200, fixtures.profiles());
     if (request.method === 'GET' && name === 'status') return fulfil(requestId, 200, statusAnswer(url.searchParams.get('profile_id')));
     if (request.method === 'GET' && name === 'setup') return fulfil(requestId, 200, fixtures.setup);
     if (request.method === 'POST' && name === 'check') return fulfil(requestId, 200, fixtures.tested(body.profile_id, body.scope));
     if (request.method === 'POST' && name === 'connect') return fulfil(requestId, 200, { connect: { ok: true, action: 'started', reason_code: null, diagnostic: null,
-      duration_seconds: 1.2, details: { mode: kindOf(body.profile_id).transport === 'local' ? 'local' : 'remote', ciw } }, status: fixtures.tested(body.profile_id, 'cheap') });
+      duration_seconds: 1.2, details: { mode: kindOf(body.profile_id).transport === 'local' ? 'local' : 'remote', ciw: ciwFor(body.profile_id) } }, status: fixtures.tested(body.profile_id, 'cheap') });
     if (request.method === 'GET' && name === 'directories') return fulfil(requestId, 200, folderAnswer(savedFolders));
     if (request.method === 'PUT' && name === 'directories') {
       if (body.values.simulator_ic === 'bad value') return fulfil(requestId, 422, { detail: { message: 'Initial-condition files: FIXTURE refused - not a folder on the simulator host.', code: 'invalid_folder', folder: 'simulator_ic' } });
@@ -118,8 +128,8 @@ await runChecks(browser, async () => {
   const BUTTON = `document.querySelector('header button.connection-button')`;
   const WINDOW = `document.querySelector('.connection-window')`;
   let far = null, farPage = null;
-  const openWindow = async () => {
-    far = await browser.popup(page, BUTTON, CONNECTION_WINDOW, { width: 660, height: 920, ready: WINDOW });
+  const openWindow = async (width = 660) => {
+    far = await browser.popup(page, BUTTON, CONNECTION_WINDOW, { width, height: 920, ready: WINDOW });
     farPage = far.target;
     await sleep(400);
   };
@@ -379,6 +389,87 @@ await runChecks(browser, async () => {
   await select('sim');                                                        // a connection chosen later: its cached result, here an old one
   check('an old cached result is labelled as too old', /^tested at .* - too old to trust, shown as unknown$/.test(await hint()) && (await badge()) === 'UNKNOWN', `${await badge()} | ${await hint()}`);
   await shot('window', '.connection-window', 'connection-7-window-old-result.png');
+
+  // ---- two Virtuoso sessions under one connection: both visible, actions and late replies stay separate ----------
+  await select('lab'); await sleep(1000);
+  groupedSessions = true; PROFILES.lab2 = 'virtuoso_ssh'; statusAnswer = fixtures.never;
+  mark = seen.length;
+  await send('Page.reload'); await sleep(300); await loaded('lab');
+  await windowTarget(false); far.close();
+  check('grouped page load tests only the configured session and reads the sibling cache',
+    JSON.stringify(names(mark).sort()) === JSON.stringify(['GET profiles', 'GET status', 'POST check'])
+    && seen.slice(mark).filter(s => s.method === 'POST').every(s => s.body.profile_id === 'lab'), names(mark).join(', '));
+  // Record 7.351: the work goes to whichever session is free, so the button counts the sessions that passed - not "UNKNOWN"
+  // because the second Virtuoso was never tested on this page.
+  const pageBadge = () => evaluate(`${BUTTON}.querySelector('.badge').textContent`);
+  check('the button counts the sessions whose last test passed', (await pageBadge()) === '1 of 2 OK'
+    && (await evaluate(`${BUTTON}.textContent`)).includes('lab - Virtuoso over SSH (2 sessions)'), await evaluate(`${BUTTON}.textContent`));
+  mark = seen.length; await openWindow(1100);
+  const sessionsSelector = `${WINDOW}.querySelectorAll('.connection-session')`;
+  const sessionNode = id => `${WINDOW}.querySelector('[data-session-profile="${id}"]')`;
+  const sessionText = id => far.evaluate(`${sessionNode(id)}.innerText`);
+  const sessionPress = (id, label) => far.evaluate(`(() => { const b = [...${sessionNode(id)}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}); if (!b || b.disabled) return false; b.click(); return true; })()`, true);
+  const selectorValues = await far.evaluate(`[...${WINDOW}.querySelector('select').options].map(o => o.value)`);
+  check('one lab connection, two simultaneously visible session cards, no session selector',
+    (await far.evaluate(`${sessionsSelector}.length`)) === 2 && selectorValues.includes('lab') && !selectorValues.includes('lab2')
+    && (await far.evaluate(`${WINDOW}.querySelectorAll('select').length`)) === 1
+    && JSON.stringify(await far.evaluate(`[...${sessionsSelector}].map(s => s.querySelector('h3')?.textContent)`)) === JSON.stringify(['Virtuoso 1 (lab)', 'Virtuoso 2 (lab2)']), selectorValues.join(', '));
+  check('the window says the work goes to whichever session is free', (await text()).includes('go to whichever session is free'));
+  check('opening both session cards performs no connect or probe', seen.length === mark, names(mark).join(', '));
+  const firstBefore = await sessionText('lab');
+  mark = seen.length;
+  await sessionPress('lab2', 'Connect SSH'); await settle(mark);
+  check('second Connect button addresses only the second configured session', seen.length === mark + 1
+    && seen[mark].name === 'connect' && seen[mark].body.profile_id === 'lab2', names(mark).join(', '));
+  check('second card has its own IL load path and the cache setup; first card is unchanged',
+    (await sessionText('lab2')).includes('/fixture/second/virtuoso_setup.il')
+    && (await sessionText('lab2')).includes('setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")')
+    && await sessionText('lab') === firstBefore);
+  holdNextCheck = true; mark = seen.length;
+  await sessionPress('lab2', 'Test connection'); await settle(mark);
+  check('a pending second-session test leaves first-session buttons enabled', !!heldCheck
+    && (await far.evaluate(`[...${sessionNode('lab')}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Test connection').disabled`)) === false
+    && (await sessionText('lab2')).includes('Testing...'));
+  await sessionPress('lab', 'Test connection'); await sleep(600);
+  check('the first session can finish its test while the second is still waiting', (await sessionText('lab')).includes('FIXTURE: lab connected')
+    && (await sessionText('lab2')).includes('Testing...')
+    && JSON.stringify(seen.slice(mark).map(s => s.body.profile_id)) === JSON.stringify(['lab2', 'lab']));
+  await heldCheck(); heldCheck = null; await sleep(500);
+  check('both session test results and load lines remain in their own cards',
+    (await sessionText('lab')).includes('FIXTURE: lab connected') && !(await sessionText('lab')).includes('/fixture/second/')
+    && (await sessionText('lab2')).includes('FIXTURE: lab2 connected') && (await sessionText('lab2')).includes('/fixture/second/'));
+  check('both sessions passed: the button says OK', (await pageBadge()) === 'OK', await pageBadge());
+  await shot('window', '.connection-window', 'connection-8-two-sessions.png');
+
+  // A test still on its way when the page reads the cached results again (another connection chosen and back) keeps its
+  // answer, and the older cached read does not put "never tested" back over it (record 7.351; it used to be dropped).
+  statusAnswer = fixtures.never; holdNextCheck = true; lateHeadline = 'FIXTURE: lab2 late answer'; mark = seen.length;
+  await sessionPress('lab2', 'Test connection'); await settle(mark);
+  await select('here'); await select('lab');
+  check('the cached reads came back while the second session\'s test was still waiting', !!heldCheck
+    && (await sessionText('lab2')).includes('Testing...'), await sessionText('lab2'));
+  await heldCheck(); heldCheck = null; lateHeadline = null; await sleep(600);
+  check('the late test answer is shown, not the cached "never tested" read before it',
+    (await sessionText('lab2')).includes('FIXTURE: lab2 late answer') && !(await sessionText('lab2')).includes('Not tested yet'), await sessionText('lab2'));
+
+  // A configuration that names the second session by its own name (as queues do) is shown as such - not as "lab" - and
+  // choosing "lab" in the list takes effect (it did nothing: "lab" was already the value shown).
+  await select(''); await sleep(1500);                     // the page keeps its configuration 800 ms after the last change
+  activeProfile = 'lab2';
+  await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close();
+  await send('Page.reload'); await sleep(300); await loaded('lab2');
+  check('a configuration naming the second session says so on the button', (await evaluate(`${BUTTON}.textContent`)).includes('lab2 (Virtuoso 2 only)'),
+    await evaluate(`${BUTTON}.textContent`));
+  await openWindow(1100);
+  check('the list shows the named session as the value, beside the connection',
+    (await far.evaluate(`${WINDOW}.querySelector('select').value`)) === 'lab2'
+    && JSON.stringify(await far.evaluate(`[...${WINDOW}.querySelector('select').options].map(o => o.value)`)).includes('"lab","here"')
+    && (await text()).includes('names Virtuoso 2 by its own name (lab2)'), await far.evaluate(`${WINDOW}.querySelector('select').value`));
+  await select('lab');
+  check('choosing the connection lets the work go to whichever session is free again', (await evaluate(`${BUTTON}.textContent`)).includes('lab - Virtuoso over SSH (2 sessions)')
+    && (await far.evaluate(`${WINDOW}.querySelector('select').value`)) === 'lab' && !(await text()).includes('by its own name'), await evaluate(`${BUTTON}.textContent`));
+  activeProfile = 'lab';
+  await shot('window', '.connection-window', 'connection-9-session-named.png');
 
   // ---- LIVE (scratch backend only): the real routes, the real probe process, the real ngspice or its real absence ------
   if (LIVE) {

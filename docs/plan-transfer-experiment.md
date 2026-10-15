@@ -8,7 +8,35 @@ circuit with different target), test pdk transfer on two/three circuits, and the
 agentic sizing for hopefully better performance."; settled in the conversation that followed (section 12 lists each
 decision in the user's words), then "yes save the plan now".
 
-Status: **plan only; nothing built, no task changed, no run queued.** Every simulation waits for the user's word.
+Status checked **2026-10-14** (records 7.347, 7.349, 7.350): **Round 1's planned arms are complete, including the 12 RGCN runs.
+Both Round 3 source models have completed 20,000 offline updates and passed their recorded numerical checks.
+Round 2's 24 development repeats were dispatched at 22:14 Europe/London; Round 3's online comparison and the journal experiments have not started.**
+Completion means the configured budget was reached, not that the circuit met its specifications.
+
+| Block | Verified status |
+|---|---|
+| Round 1, Step 1 | 32 scratch runs complete: 20 original and 12 RGCN; the additional four GT LDO seeds are reused from Step 3 |
+| Round 1, Steps 2 / 3 / 3b | 40 / 9 / 24 new runs complete; Step 3 also reuses Step 1's GT seed 0 |
+| Round 1, Steps 4 / 5 / 6 | 12 runs + 3 probes / 2 runs + 1 probe / 4 runs + 4 probes complete |
+| Round 2 | Dispatched 14 October at 22:14: 4 DFFRX1 repeats + 20 Step 6 repeats, at most 19,200 new evaluations, across two checked Virtuoso sessions (section 7) |
+| Round 3, offline | GraphGPS and fresh CircuitGPS v2 complete; published checkpoint identities and hashes below |
+| Round 3, online | 0 of the proposed 72 arms launched; 45,600 nominal evaluations remain a proposed budget |
+| Journal | J0 protocol/test split not frozen; J1 online comparison, J2-J5 and manuscript milestones remain outstanding |
+
+Evidence: `artifacts/local/reviews/transfer-experiment-2026-10-10/plan-status-audit-2026-10-14.json`, the RGCN
+`completed-comparison.json` and `dual-session-2026-10-14/completion-verification.json`, and Round 3's `pair-status.json`.
+Historical preparation, interrupted attempts and conditional continuations remain in their original ledgers.
+
+**Step 1 extension (2026-10-13, record 7.339):** the user requested the existing **RGCN + SAC** encoder
+("dont use plain gcn, use what my code have") and "queue it after the circuit gps training". Section 6.1.1 adds
+12 from-scratch runs after CircuitGPS training and checkpoint review. **All 12 finished on 14 October at 20:04
+Europe/London.** They are separate from Round 3's still-planned online comparison. No plain GCN implementation is added.
+
+**Journal extension (2026-10-13, record 7.338):** [section 14](#14-journal-experiments) adds the prospective
+experiments needed to assess a CircuitGPS paper; [section 15](#15-timeline-to-august-2027-publication) gives a dated
+schedule targeting submission by 31 January 2027 and online journal publication by 31 August 2027. These are
+planning targets, not a promise of acceptance. The user requested this plan addition; the new journal experiments
+are proposed, not launched. Earlier results, Round 2 rules and the authorized Round 3 offline jobs retain their scope.
 
 **Revised 2026-10-10 (record 7.305, session "Trained model spec change topology proof"; user: "make the stdcell plan
 first part of the step 3(the spec change) and exchange current plan step 2 with step 3 so after step 1 it runs stdcells
@@ -36,22 +64,24 @@ Six questions, one step each. Round 1 runs every comparison once; round 2 repeat
 
 | Step | Question | Circuits | Network | Runs | Time |
 |---|---|---|---|---|---|
-| 1 | Do GT and GraphGPS differ with the new network inputs, and do the new inputs learn as well as the old ones? | 4 core + 4 AgenticSizing | GT and GraphGPS | 20 | about 7 h |
-| 2 | Does a trained model reach a new target faster than starting over? | logic cell DFFRX1 first, then OTA5t, RING3, LDO1 | GraphGPS | 19 + 3 probes | about 4.3 h |
+| 1 | How do GT, GraphGPS and RGCN compare with matched inputs and SAC settings? | 4 core + 4 AgenticSizing | GT, GraphGPS, RGCN | 32 (20 original + 12 RGCN) | original estimate about 7 h; RGCN measured 3 h 59 min elapsed |
+| 2 | Does a trained model reach a new target faster than starting over? | logic cell DFFRX1 first, then OTA5t, RING3, LDO1 | GraphGPS | 40 | about 7.8 h |
 | 3 | Is SAC better than Bayesian optimization, from scratch? | AgenticSizing LDO | GT (SAC) | 9 | about 1.7 h |
 | 3b | Does the second build of the network inputs learn as well as the first, and what do the operating-point ratios add? | OTA5t, RING3, LDO1 at an eased limit | GraphGPS | 24 | about 5.2 h |
 | 4 | Does a gpdk045 model help on the same circuit in a second PDK, and does the second input build carry over better than the first? | OTA5t, RING3, LDO1, ported | GraphGPS | 12 + 3 probes | about 3.2 h |
 | 5 | Does one general model beat starting over on an unseen circuit in the known PDK? | telescopic cascode | GraphGPS | 2 + 1 probe | about 0.75 h |
 | 6 | Does the same general model beat starting over on the AgenticSizing circuits? | 4 AgenticSizing | GraphGPS | 4 + 4 probes | about 2 h |
 
-Round 1: **63 runs and 11 probes, about 54,400 simulated designs, about 18.2 h** of simulation (section 9). The times of
-the published and the ported circuits and of the logic cell are estimates until their first runs.
-Added 2026-10-11 (record 7.317): step 3b's 24 runs and three more runs in step 4; section 9 holds the totals as they
-stand.
+Round 1 including the RGCN extension: **123 runs and 8 probes, 101,864 planned charged design evaluations** (section 9).
+The previous planning estimate was about 27.6 h before the extra RGCN runs. The RGCN campaign took 3 h 59 min
+elapsed, with 5 h 35 min summed active run time across both sessions. These are cumulative plan totals, not counts
+of work still outstanding or a full actual-cost ledger. They include the revised step 2,
+step 3b and step 4 additions, and supersede the early 63-run summary.
 
 ## 2. Words used
 
-- **Design:** one set of sizes, simulated once. A run is 800 designs.
+- **Design budget:** normally 800 charged candidate evaluations per run. A preparation failure can consume a slot
+  without a simulator launch; record charged attempts and actual launches separately.
 - **Pass:** a design that meets every Specs row.
 - **From scratch:** a fresh network, trained on this one task only.
 - **Fine-tune:** start from a trained network and keep training on the new task.
@@ -67,7 +97,7 @@ stand.
 | Core, gpdk045 | RING3, `mscr_ring3` | from scratch only 15 % (GT) and 30 % (GraphGPS) late passes: room to show a gain |
 | Core, gpdk045 | LDO1 at HF PSRR <= -3 dB, `ldo1_relaxed` (key `graphgps_ldo1`) | no pass of 800 from scratch for either network (with the old inputs: 0 to 3, and 34 to 55 with a general model - no run with the new inputs stands for that one) |
 | Core, gpdk045 | VCO, `mscr_vco_lin_c` | kept on the user's word; 38-42 min a run; 92 % (GT) and 99 % (GraphGPS) late passes; step 1 only |
-| Logic cell, gpdk045 | flip-flop DFFRX1, a copy of `gsclib045/DFFRX1` (to build) | step 2, first: delay, energy and area trade over a wide range, so a new goal lies far from the old one (6.2.1) |
+| Logic cell, gpdk045 | flip-flop DFFRX1, a copy of `gsclib045/DFFRX1` (built; ten runs complete) | step 2, first: delay, energy and area trade over a wide range, so a new goal lies far from the old one (6.2.1) |
 | Unseen, gpdk045 | telescopic cascode, `mscr_otatc` | step 5; out of every training pool of this plan |
 | AgenticSizing, second foundry's 0.18 um PDK | `agentic_ldo_pub`, `agentic_bgr_pub`, `agentic_fc_pub`, `agentic_sys_pub` (7.300) | the paper's netlists, size ranges and limits; steps 1, 3 and 6 |
 | No new runs | OTA7t width, LDO2, folded cascode `mscr_otafc` | their recorded designs train the general model |
@@ -97,7 +127,8 @@ The published circuits as they stand (record 7.300):
 
 ## 4. Fixed settings
 
-- **Networks:** GT and GraphGPS only (user). Step 1 runs both; step 3 uses GT; steps 2 and 4 to 6 use GraphGPS.
+- **Networks:** Step 1 compares GT, GraphGPS and the existing RGCN, all with SAC. RGCN was added by the user on
+  2026-10-13 (6.1.1); the original GT/GraphGPS results remain recorded. Step 3 uses GT; steps 2 and 4 to 6 use GraphGPS.
 - **Network inputs:** every new model is made with Network inputs **Transferable** (`spec_input` set, `size_features`
   pdk_relative, `device_model_features` true) and the family component list. Steps 2 and 4 to 6 need them: a model with the old
   inputs loads only on a task with the same spec names and reads sizes in micrometres. One arm of step 4 differs on
@@ -132,7 +163,9 @@ The published circuits as they stand (record 7.300):
 
 Read from the recorded tables, with the script of the encoder comparison (`compare_runs.py`):
 
-- **Early passes:** the share of passes among the first 100 designs the network proposes itself (designs 9-108).
+- **Early passes:** the historical 100-record window, evaluations 9-108 in commit order. This preserves the existing
+  comparison script's definition; resets or failed attempts inside that window are included, so it is not exactly
+  the first 100 policy-only proposals.
 - **Late passes:** the share of passes in the last third (266 designs).
 - **Passes of 800**, and the design at which half / three quarters of a 100-design window pass.
 - **First pass:** the number of the first passing design, and the clock time to it (the paper's measure, section 6.6).
@@ -148,9 +181,9 @@ Rules, the ones of the earlier studies, fixed here before any result:
 
 ## 6. The steps
 
-### 6.1 Step 1: the two networks with the new inputs (20 runs)
+### 6.1 Step 1: GT, GraphGPS and RGCN with matched inputs (32 runs)
 
-- **Runs:** GT and GraphGPS from scratch on the four core and the four AgenticSizing circuits, seed 0 (16 runs);
+- **Original runs:** GT and GraphGPS from scratch on the four core and the four AgenticSizing circuits, seed 0 (16 runs);
   GraphGPS four more times on the AgenticSizing LDO, seeds 1-4, so that circuit has five runs against five (GT's other
   four are step 3's SAC runs).
 - **New inputs against old:** each core run against the recorded old-input run of the same network (rule of section 5).
@@ -159,20 +192,141 @@ Rules, the ones of the earlier studies, fixed here before any result:
   networks (records 7.313 and 7.335, where old and new stand side by side), and what later results are read against is now step
   1's own runs with the new inputs:
 
-  | Circuit | GT, new inputs (passes of 800, late, 50 % by) | GraphGPS, new inputs |
-  |---|---|---|
-  | OTA5t | 617, 96 %, 205 | 636, 95 %, 185 |
-  | RING3 | 94, 15 %, never | 182, 30 %, never |
-  | LDO1 at -3 dB | 0 | 0 |
-  | VCO | 466, 92 %, 374 | 546, 99 %, 310 |
+  | Circuit | GT, new inputs (passes of 800, late, 50 % by) | GraphGPS, new inputs | RGCN, same input build |
+  |---|---|---|---|
+  | OTA5t | 617, 96 %, 205 | 636, 95 %, 185 | 628, 95 %, 200 |
+  | RING3 | 94, 15 %, never | 182, 30 %, never | 183, 34 %, never |
+  | LDO1 at -3 dB | 0 | 0 | 0 |
+  | VCO | 466, 92 %, 374 | 546, 99 %, 310 | 539, 99.6 %, 254 |
 
-- **GT against GraphGPS:** on the core circuits one run each, so only a large difference counts; on the AgenticSizing
-  LDO five against five.
+- **Encoder comparison:** one seed per core circuit is exploratory; on the AgenticSizing LDO all three encoders
+  have five seeds. The RGCN completion and published-circuit tables are in 6.1.1.
 - **Conditional, one run each:** a control (GT, old inputs, today's code, LDO1) if the new LDO1 run differs from the
   recorded one - LDO1 is the only core circuit where designs had missing values (1-2 %), the rule 7.299 changed; and, on
   an AgenticSizing circuit where a from-scratch run finds no pass, one continuation of that run from its own network for
   another 800 designs (this stands in for stage B, which is not part of the plan).
 - **Produces:** the GraphGPS models of OTA5t, RING3 and LDO1 that step 2 starts from, and the from-scratch side of step 6.
+
+#### 6.1.1 RGCN + SAC extension (12 runs, completed 2026-10-14)
+
+Added 2026-10-13, record 7.339. Use `encoder_type: rgcn`, the existing port-relational encoder, with the common
+SAC learner. This is an internal encoder baseline, not a reproduction of GCN-RL or Li's optimizer.
+
+| Tasks | Seeds per task | New runs | Design budget |
+|---|---|---:|---:|
+| `mscr_ota5t`, `mscr_ring3`, `graphgps_ldo1` (shown as `ldo1_relaxed`), `mscr_vco_lin_c` | 0 | 4 | 3,200 |
+| `agentic_ldo_pub`, `agentic_bgr_pub`, `agentic_fc_pub_far`, `agentic_sys_pub` | 0 | 4 | 3,200 |
+| `agentic_ldo_pub`, additional repeats | 1, 2, 3, 4 | 4 | 3,200 |
+| **Extension total** | | **12** | **9,600** |
+
+- **Question:** does a port-relational message-passing encoder provide comparable sizing performance to GT or
+  GraphGPS under the same SAC recipe? Report quality, simulation efficiency and compute cost. RGCN uses terminal
+  role/direction relations without attention; an outcome does not isolate attention from every other architecture
+  difference, including GraphGPS's structural encoding and model capacity.
+- **Configuration:** scratch only, 800 designs, four simulator lanes, the recorded task/start/bench/parameter bounds,
+  reward and SAC settings of the corresponding Step 1 run. Explicitly use the **first Transferable input build**
+  (`spec_input: set`, `size_features: pdk_relative`, device-model features and family vocabulary; operating points,
+  second-build bench features and rule-based net roles off). This is a matched historical extension and an explicit
+  exception to the newer-model Transferable 2 default. No pretrained model or source replay is loaded.
+- **Network:** hidden width 48, four layers, `structural_encoding: none`; the serialized head count is unused by
+  RGCN. Width/depth match the recorded GT/GraphGPS configuration rather than RGCN's width-32 starting preset.
+  Record actual actor/critic parameter counts; equal width/depth does not mean equal parameter count.
+- **Runtime:** use the existing frozen Step 1 runtime and its implemented RGCN. Pin source/config hashes and verify
+  schema, task and backend compatibility before dispatch. Preserve the current offline training runtime and package
+  digest. If the historical runtime or physical task cannot be qualified, stop the queue with an explicit reason;
+  do not silently change inputs, start points or simulator settings to make a run launch.
+- **Dependency:** wait for the fresh CircuitGPS v2 run's 20,000 updates and the pair supervisor's successful checkpoint
+  review/completion. A failed or interrupted dependency does not count as completion. Do not run new simulations
+  while that training remains active. Dispatch sequentially within each assigned Virtuoso session through the existing
+  run machinery, respecting session and cell locks. On 2026-10-14 the user authorized using the second Virtuoso for
+  this queue; the allocation below replaces the original single-session order. No automatic bridge/backend restart
+  or schematic rebuilding is included.
+- **Comparison:** add RGCN columns beside the original Step 1 results. On published LDO compare five seeds per
+  encoder (GT's seeds 1-4 are in Step 3); elsewhere one seed is exploratory. Use the same section 5 pass measures,
+  first-feasible/censored failures, best feasible physical objective, runtime and failure counts. Preserve negative
+  results. An infeasible 800-design arm stays a failure; this extension does not automatically add continuations.
+- **Evidence:** labels `tx1-<circuit>-rgcn` and `tx1-asz-ldo-rgcn-s<seed>`; store new configs, dependency/queue status,
+  per-run identities and results in a separate RGCN subfolder of the transfer review directory. Existing Step 1
+  configs/results are inputs, not files to overwrite. The added data does not enter the frozen 304-run source pool.
+
+This adds **9,600** evaluations to Round 1, independently of the prospective journal matrix. RGCN's journal
+frozen/adapt/scratch arms remain separate experiments with their own inputs and source split.
+
+**Queue history, 2026-10-13 at 14:43 Europe/London:** the 12 configs passed frozen-runtime schema, saved-row and compilation
+checks. `artifacts/local/reviews/transfer-experiment-2026-10-10/rgcn-2026-10-13/manifest.json` pins them and 196
+runtime source files (`94e7dd4f23ed09f45c7a5b258c93c918c9a3e80d64da7d82c4047fe7dad076dc`). The detached
+`run_queue.py` process initially waited in `waiting_for_circuitgps`; its status, log and process record retain that
+history. It ran the ordinary CLI and read-only consistency/nonce-cache checks directly, so it did not
+require the workbench HTTP server. It makes a private settings snapshot only after the dependency completes.
+A failed dependency, changed input/runtime, failed physical check or incomplete run stops the queue for review;
+no costly retry is automatic. No RGCN simulation had started at that initial record. A WSL shutdown stops this local
+process; the manifest and run ledger remain available for deliberate recovery.
+
+**Two-session allocation, 2026-10-14 (record 7.346):** after both offline models completed and passed review, the
+user requested simulations on the second Virtuoso. The already completed OTA5t run and active RING3 run stay on
+Virtuoso 1. Its remaining sequence is LDO1, published BGR, published system, published folded-cascode amplifier,
+then VCO. Virtuoso 2 receives the published LDO, seeds 0–4, sequentially. These are the same **12 × 800 = 9,600**
+designs, four simulator lanes per active run, with disjoint schematic/testbench cells between sessions.
+
+The routing manifest, private settings snapshots, validation, process identities and live per-session status are in
+`artifacts/local/reviews/transfer-experiment-2026-10-10/rgcn-2026-10-13/dual-session-2026-10-14/`.
+Only the five second-session configurations change `run.connection_profile_id` from `asz` to `asz2` internally;
+the connection panel presents both sessions together. The original frozen configs, all 196 runtime sources,
+optimizer digest, inputs, reward, SAC settings and seeds remain unchanged. The historical runtime uses its existing
+`GATOR_BRIDGE_STATE_DIR` override to name the same session lock and crash-journal directory as the current workbench;
+the dispatcher holds the current cell locks around its child processes. Saved task files are separately pinned.
+The original supervisor is held at the next job boundary and retired only after its active child and post-check
+finish. The hold remains to prevent a duplicate dispatch. Incomplete runs or failed physical checks stop their
+session for review, without automatic costed retries. Shared CPU/simulator load must be recorded when interpreting
+wall time; this allocation is not a controlled hardware speed comparison.
+
+**Historical-runtime compatibility correction during dispatch:** the copied current PDK settings had enabled
+readback-built netlists, whereas Step 1's runtime predates the numeric-equivalence comparison of record 7.309.
+Published LDO seed 0 stopped on `120.9600u` versus `120.96000000u`: four charged preparation failures, **zero Spectre
+launches and zero learner updates**. Its failed segment is retained. The two private queue settings restore
+`netlist_from_readback: false` for this PDK, the original Step 1 native-export path; live settings are unchanged.
+Exact continuation keeps the same run identity and total budget of 800, with 796 attempts remaining. The old
+workbench's known family-vocabulary continuation bug (record 7.319) is corrected in a separate, pinned workbench
+copy used only for this continuation: pass the saved vocabulary when checking the network-input key. The recorded
+and rebuilt keys match, full checkpoint compatibility passes, and the optimizer code/digest is unchanged. Record
+the four infrastructure failures separately in the comparison; do not silently refill or discard them.
+
+**Completion and comparison, 2026-10-14 (record 7.347):** all 12 runs reached their 800-attempt cap and saved a final
+checkpoint: **9,600 charged attempts, 9,596 Spectre launches and 72,256 learner updates**. The four retained
+preparation failures are all in published LDO seed 0; no new infrastructure failure occurred after its reviewed
+recovery. Session 2 finished at 18:34 and session 1 at 20:04 Europe/London. The whole campaign, from the first OTA5t
+run through the last post-check, took 3 h 59 min; summed active run time was 5 h 35 min. Shared hardware load means
+these times are not a controlled encoder speed comparison. A summary-only monitor stopped on a temporary
+`budget: null` status; both independent queues continued to completion. The aggregate status was reconciled from
+the final records, preserving the stale snapshot and error log.
+
+`rgcn-2026-10-13/compare_completed.py` reads the 12 RGCN runs and 24 qualified historical reference runs without
+writing to any source archive. Its `completed-comparison.json` records the section 5 measures, first-pass/censored
+outcomes, failures, best-design physical metrics, timing, source paths and hashes. Every stored original Step 1
+reference measure was reproduced exactly. The core results above now include RGCN.
+
+Published circuits, seed 0 only; passing designs within the same 800-attempt horizon:
+
+| Circuit | GT | GraphGPS | RGCN |
+|---|---:|---:|---:|
+| Reference / BGR | 0 | 0 | 0 |
+| Folded-cascode amplifier, far start | 1 | 0 | 8 |
+| System | 0 | 0 | 2 |
+
+Published LDO, seeds 0-4 in order:
+
+| Encoder | Runs with any pass | Passing designs per run | Median passes | First-pass charged count per run |
+|---|---:|---|---:|---|
+| GT | 5/5 | 2, 2, 15, 65, 50 | 15 | 739, 483, 714, 63, 532 |
+| GraphGPS | 3/5 | 5, 0, 31, 13, 0 | 5 | 273, censored, 368, 408, censored |
+| RGCN | 5/5 | 50, 144, 122, 264, 34 | 122 | 545, 360, 221, 202, 508 |
+
+RGCN is a strong baseline on the published LDO in this experiment: all five runs find a pass and its median pass
+count is higher. This does not establish a universal architecture ranking. OTA5t and RING3 are close to GraphGPS;
+VCO reaches the 50% window earlier but has slightly fewer total passes than GraphGPS. No encoder passes relaxed
+LDO1 or the published reference. The amplifier and system gains are single-seed observations; the system's earlier
+GT continuation beyond 800 is not included in this 800-attempt comparison. Width/depth matching does not isolate
+attention or match parameter counts. These scratch results do not compare the two Round 3 pretrained models.
 
 ### 6.2 Step 2: new targets on a known circuit - a logic cell first, then three analog circuits (40 runs)
 
@@ -330,6 +484,9 @@ rule gave are 20 fF, 40 ps and 10 ps, and the energy row is the cell's own switc
 
 #### 6.2.2 Second part: OTA5t, RING3 and LDO1, built like the logic cell's part (30 runs)
 
+**Status checked 2026-10-14:** all 30 runs are complete. Recorded outcomes are in
+`artifacts/local/reviews/transfer-experiment-2026-10-10/results-step2-analog.json` and record 7.314.
+
 **Changed 2026-10-11 04:31 (user: "for the analog spec change. I want something similar to the stdcell. with changed
 spec to see if that spec converge faster in trained network"; record 7.312).** Until then: one new-target copy per
 circuit and the four arms at the top of 6.2 (scratch, the old-target model, a multi-target model, a probe); nothing of
@@ -363,6 +520,9 @@ that was saved or run. Now, per circuit, three tasks - Save as copies of the sav
 
 ### 6.3 Step 3: SAC against Bayesian optimization (9 new runs)
 
+**Status checked 2026-10-14:** all nine new runs are complete; the fifth GT-SAC run is Step 1's seed 0.
+The exact selection is retained in `jobs-tx3.txt`, with completion checked against each run's own `status.json`.
+
 - **Circuit:** the AgenticSizing LDO (27 variables, 5 rows): the one circuit where the paper gives numbers for a Bayesian
   optimizer that worked (4 of 5 runs, about 524 simulations).
 - **Runs:** SAC = GT from scratch, five repeats (seed 0 is step 1's run); Bayesian optimization, five repeats. No
@@ -372,7 +532,8 @@ that was saved or run. Now, per circuit, three tasks - Save as copies of the sav
 - **Judged by:** how many of five runs find a pass, the first passing design and the clock time to it, passes of 800,
   the best score against the number of designs.
 - The Bayesian optimizer exists since record 7.304 (section 8, item 1): `run.optimizer: "bayes"` in the run's
-  configuration file; its full regression and browser batch are owed before this step starts.
+  configuration file. The original plan required its full regression and browser batch before starting this step;
+  the run completion above is not a new claim about those separate acceptance checks.
 
 ### 6.3b Step 3b: the second build of the network inputs against the first (24 runs)
 
@@ -580,11 +741,251 @@ plan as it was run.
 
 ## 7. Round 2: repeats, only where round 1 shows an effect
 
-- **Step 2:** a second new target per circuit, in the other direction (9 runs, 3 probes, about 2.5 h for the three analog
-  circuits); for the logic cell its runs 1 to 4 again with a second seed.
+**Review before dispatch, 2026-10-14:** these were conditional development repeats, not a frozen journal matrix.
+The Step 2 proposal below predates the expanded goal-1/goal-2/changed-spec experiments and must be revised before
+dispatch. Selecting only promising outcomes for repeats cannot supply the journal's confirmatory evidence; use
+the balanced prospective matrix in section 14 for that purpose.
+
+- **Step 2:** the old proposal was a second new target per analog circuit (9 runs, 3 probes, about 2.5 h). Revised
+  Step 2 has already tested two goals and an intermediate changed specification, with three seeds on the changed
+  specification. Do not dispatch the old proposal unchanged or count its budget as still needed. A further target
+  or repeat matrix needs an explicit amendment naming the untested goal/seeds and matched arms. The original
+  proposal to repeat logic-cell runs 1-4 with a second seed remains conditional and unexecuted.
 - **Step 6:** repeats so the result reads "k of 5" as the paper's: five trials on the LDO and the reference, three or
   five on the amplifier and the system (20 or 28 runs, at most about 7 or 12 h; a repeat stops at its first passing
   design, `stop_at_first_feasible`). Three or five is decided when round 1 is in.
+
+**Execution amendment, 2026-10-14 (record 7.349):** user: "go on with round 2". The selected scope is the
+smaller Step 6 option plus the four logic-cell repeats. All 24 configurations passed offline validation against
+their historical task definitions, starting dimensions, source checkpoints and runtime digests before dispatch.
+Physical preflight passed on all six tasks. Both queues were dispatched at **22:14 Europe/London** on 14 October.
+The obsolete analog Step 2 proposal is retired; no extra target, calibration, frozen probe or source retraining is added.
+
+| Block | New runs | Seeds / arms | Maximum charged evaluations |
+|---|---:|---|---:|
+| Step 2 DFFRX1 | 4 | Seed 1: speed and power, each scratch and the original both-goals model | 3,200 |
+| Step 6 published LDO | 4 | General-model seeds 1-4; reuse the five original scratch seeds 0-4 | 3,200 |
+| Step 6 published reference | 8 | Scratch and general-model seeds 1-4; reuse seed 0 | 6,400 |
+| Step 6 published amplifier, far start | 4 | Scratch and general-model seeds 1-2; reuse seed 0 | 3,200 |
+| Step 6 published system | 4 | Scratch and general-model seeds 1-2; reuse seed 0 | 3,200 |
+| **Total** | **24** | Five total trials per arm on LDO/reference; three on amplifier/system | **19,200** |
+
+Step 6 stops proposing after its first feasible result and drains already dispatched evaluations, with an 800-attempt
+cap. Count all charged attempts, failures and actual simulator launches. Compare success within 800 and first-pass
+cost; do not compare full-budget pass counts with early-stopped repeats. Historical continuations beyond 800 are
+excluded. DFFRX1 retains its full 800-attempt budget so the goal's improvement after feasibility can still be compared.
+
+Session 1 takes DFFRX1 and the amplifier (8 runs); session 2 takes LDO, reference and system (16 runs). Expected
+duration, not run count, motivates the split. Each active run has four simulator lanes and one learner; the two
+sessions use disjoint core/testbench cells and canonical locks. Preserve the original optimizer/runtime per arm
+(`7309` DFFRX1, `7301` published scratch, `7317` general-model adaptation) and the exact original source checkpoint.
+Private settings for `7301` retain native netlist exports, as in Step 1; live PDK settings are unchanged.
+
+**Interpretation:** these are repeats of the original pipelines. Step 6's scratch inputs are Transferable; its
+general-model inputs are Transferable 2 without operating-point ratios. This existing difference prevents isolating
+pretraining alone as the cause of a gain. DFFRX1 scratch/adaptation retain matched input settings. Shared machine
+load also means these runs are not a controlled wall-clock speed comparison with the historical runs. The newer
+all-archive GraphGPS/CircuitGPS source pair belongs to Round 3 and is not substituted into these repeats.
+
+Evidence and current queue status: `artifacts/local/reviews/transfer-experiment-2026-10-10/round2-2026-10-14/`
+(`manifest.json`, `validation.json`, `initial-preflight.json`, `queue-status.json`). Stop a session's queue on a failed
+run or failed restoration check; retain its cost and artifacts, with no automatic costed restart.
+
+**Recovery, 2026-10-14, 23:21 Europe/London (record 7.350):** the user authorized fixing the DFF failure handling
+and restarting if needed, and fixing the parameter-write error. All four DFF configs already match Claude's
+original policy: missing setup measurements fail the candidate, with negative rewards retained for learning;
+the candidate failure limit is 800 and the separate infrastructure limit is 3. The active DFF run continues
+without restart, with unchanged measurements, rewards and model settings.
+
+The second queue completed its four LDO runs, then BGR scratch seed 1 stopped before any Spectre launch: the first
+Virtuoso held its saved schematic in edit mode. That view was verified to have no unsaved edits and reopened
+read-only. The exact failed assignment of 50 parameters then passed write, readback and full restoration in the
+second session, with zero simulations. The same saved-view conflict on the later system circuit was released.
+BGR restarts under `r2-s6-asz-bgr-scratch-s1-r1`, with identical seed and scientific settings; the original failed
+attempt remains recorded (4 charged attempts, 0 launches, 0 learner updates). A recovery dispatcher continues
+the 12 remaining second-session jobs and reports the untouched first queue. With the completed LDO costs, even
+full budgets for all remaining runs plus the failed attempt total at most 17,368 charged evaluations, within
+the original 19,200 ceiling. No further automatic retry is enabled. Evidence is in the Round 2 folder's
+`recovery/`; the original manifest, code, configs, runtimes and failed run are preserved.
+
+## 7a. Round 3: GraphGPS and CircuitGPS trained on the saved circuit archive
+
+Added 2026-10-13 at the user's request: "train 2 models with all the circuit runs currently saved: one based on
+graph gps one based on circuit GPS ... add round 3 ... to compare this two trained models". The user also chose
+"Recompute rewards to include all usable runs" when informed that the historical archives contain different reward
+configurations. This section adds a new comparison; it does not relabel any earlier GraphGPS or cross-attention run
+as a CircuitGPS result. Evidence: `artifacts/local/reviews/round3-all-circuits-2026-10-13/`.
+
+**Execution record (2026-10-13):** the initial inventory covers 408 folders and selects 304 real runs containing
+187,407 replay-eligible transition rows and 200,479 charged source evaluations, across 65 saved task variants
+(not 65 distinct topologies). Excluded: 83 folders without replay-eligible transitions, 18 model-only archives,
+two legacy ngspice archives containing nine transition rows, and one non-quiescent archive. The requests and
+`inventory.json` retain every path and reason. Full transition reconstruction/validation follows this inventory.
+The sequential offline job started at 03:51 Europe/London: GraphGPS first, CircuitGPS second. GraphGPS completed
+20,000 updates at 09:25 and passed checkpoint integrity/reload plus finite, physically legal proposal checks on
+all 65 task variants. These are offline checks, not evidence of circuit performance. CircuitGPS loaded all 304
+sources but had no training updates when its process was lost across a WSL restart (host boot 12:46). At 13:07
+it was restarted with the same request and frozen runtime; its interrupted directory and log were preserved in
+`interrupted-20261013T120737Z/`. Preparation finished at 16:56:57, but CircuitGPS failed at 20:54:55 after 10,491
+completed updates, while attempting update 10,492. Exact replay identified overflow in the third block's program
+root LayerNorm; deep VCO INL trees amplified finite internal values to 7.1e20. The 10,000-update checkpoint already
+had overflowing variances despite finite outputs. GraphGPS's completed checkpoint is retained.
+
+The user authorized normalization within the tree and resuming CircuitGPS. Record 7.341 introduces architecture
+v2, with non-affine normalization of base and each combined parent state. The original failed directory, checkpoint
+and runtime remain unchanged. `tree-normalization-recovery/` contains the separate pinned runtime, explicit full-state
+migration from update 10,000, exact-pool index, failing-batch regression and resumed training output. Actor, both
+critics and targets use v2; optimizer states, RNG, SAC hyperparameters, rewards, split and sample order are retained.
+That continuation was a development recovery with 10,000 legacy v1 updates, unsuitable as a clean v2 training
+comparison. It was stopped at the user's subsequent request for fresh training; its last progress report was 10,575
+updates, and its checkpoint and log remain available. It did not complete the planned 20,000 updates.
+
+**Fresh retraining (record 7.342, user: "go on train it again"):** `circuitgps-v2-fresh/` starts CircuitGPS v2 at
+update zero, seed 0, with newly initialized actor/critics/targets, empty optimizers and temperature 0.01. No failed
+or recovered weights enter this run. It reuses the checksummed, read-only 187,407-transition database, exact split,
+reward settings, batch size 8 and 20,000-update budget. The complete sampling schedule is checked against GraphGPS's
+recorded candidate counts before dispatch and again on completion. The completed GraphGPS model is retained.
+Full checkpoints are saved every 500 updates, with permanent initial/10,000/20,000 checkpoints. Held-out diagnostics
+cover those three update counts; the initial checkpoint is evaluated after training, with no effect on the fixed
+training budget or checkpoint selection. All actor/critic LayerNorm inputs retain numerical overflow guards.
+
+**Execution acceleration (record 7.344, 2026-10-14, user: "optimize it"):** active-parent tree evaluation and raw
+packing-layout reuse preserve the v2 mathematical model and fixed experiment settings. A matched CPU benchmark
+measures 1.048 → 0.741 seconds per SAC update; checkpoint and full-validation time are separate. An explicit
+full-state migration at update **11,000** (2026-10-14 03:05 London) retains the fresh run's weights, Adam states, temperature, RNG and
+verified sampler ledger. Both source runtimes and original checkpoints are kept, and the strict loader remains
+unchanged. `artifacts/local/reviews/circuitgps-acceleration-2026-10-14/` records the boundary, verification and
+process handover. Initial-checkpoint diagnostic weights also have a separately recorded execution migration;
+the original initial checkpoint remains intact. Report training cost by execution segment and retain the
+implementation digest on diagnostics: float32 arithmetic can differ slightly despite unchanged semantics.
+
+**Offline completion verified 2026-10-14 (record 7.347):** the pair supervisor completed at **06:13 Europe/London**.
+Both models finished 20,000 updates and passed checkpoint integrity/reload plus finite, physically legal proposal
+checks on all 65 saved task variants. The retained CircuitGPS model is **v2 initialized from scratch, with zero
+legacy v1 updates**. The split and sampled-candidate checks passed; no new simulation was used for either source
+training. These numerical/archive-fitting checks do not establish online success or transfer.
+
+| Model | Published model run | Final checkpoint | SHA-256 of `model_weights.pt` |
+|---|---|---|---|
+| GraphGPS | `offline__seed0__0c88320d35bd` | `ckpt-00000000-efdbeba0` | `8fdd0b6d64c51dca4bf518b604a0184c917192a86dffd93a646c6811fb1ca09b` |
+| CircuitGPS v2 | `offline__seed0__6bf93f84d1b6` | `ckpt-00000000-c81b34fb` | `1c33a7506cf29e2342008978132eddb32af8bd0050215fceef9197355186486d` |
+
+Published paths are pinned in `pair-status.json`; metadata is available for
+[GraphGPS](../outputs/offline-network__0c88320d35bd/runs/general/offline__seed0__0c88320d35bd/checkpoints/ckpt-00000000-efdbeba0/metadata.json)
+and [CircuitGPS v2](../outputs/offline-network__6bf93f84d1b6/runs/general/offline__seed0__6bf93f84d1b6/checkpoints/ckpt-00000000-c81b34fb/metadata.json).
+The model-file hashes above were recomputed during this plan check. Trainer-local `trained_unqualified` records
+precede the separate `round3-review.json` files and completed pair publication; the online comparison is still
+outstanding. No failed v1 or mixed-history recovery checkpoint is selected.
+
+`pair-status.json` identifies the completed training directories. The fresh CircuitGPS status/log are
+`circuitgps-v2-fresh/training-circuit_gps/status.json` and `circuitgps-v2-fresh/training.log`.
+The supervisor recorded final model paths after both models finished, reload/proposal checks passed and identical
+splits/sampled candidates were verified. These gates released the now-completed RGCN supplement. Offline retraining has no
+simulator entry point; new Round 3 and journal simulations remain planned. This archive-wide training is still a
+development comparison, not the prospective journal protocol's unseen-circuit source split.
+
+### 7a.1 Two independently trained models, one frozen source selection
+
+Inventory every currently saved real run in `outputs/`, including earlier experiments, different seeds, both PDKs,
+logic cells and recorded optimization failures when their committed transitions are usable. An offline model's
+weights are not additional circuit observations: count its underlying source runs once. Calibration/preflight runs
+with no replay-eligible transitions cannot train SAC. Record every exclusion, including absent/incompatible schemas,
+unavailable input metadata, non-nominal conditions, active archives, corrupt data and tasks with too few episodes
+to form a holdout. Never describe a selected subset as literally every saved run; the inventory gives coverage.
+
+Freeze the source paths and archive hashes, and each encoder's reconstructed-input hashes, before training. Both
+requests must contain exactly the same source runs and eligible candidate IDs. Split whole run-scoped episodes
+within each task, with 10% of episodes held out and seed 0; use the identical split for both models. This includes
+all eligible runs in the source pool while reserving validation episodes from gradient updates. A renamed task or
+different seed is not a new topology. No Round 3 rollout may enter either frozen source model.
+Repeated physical designs can occur in different historical episodes, so this holdout is an archive-fitting
+diagnostic, not independent evidence of performance on unseen physical designs.
+
+The original measurements, limits, target kinds, scales, parameter proposals and physical actions remain as
+recorded. In a separate training dataset, recompute rewards with the current experiment configuration:
+`violation_shape=compressed`, `worst_spec_share=0.5`, `objective_shape=compressed`, `objective_weight=1`,
+`margin_weight=1`, `nominal_gate_band=0.5`. First validate each transition under its recorded reward; then rescore
+both observations and the transition consistently, and record the original settings and the migration. No original
+archive is rewritten. Invalid/missing values retain their recorded masks and failure semantics.
+
+| Setting | GraphGPS | CircuitGPS |
+|---|---|---|
+| Encoder | `graph_gps` | `circuit_gps`, architecture version 2, normalized tree states |
+| Specification representation | Spec set | Structured measurement programs |
+| Common physical inputs | PDK-relative sizes, model features, family vocabulary, relative bench features, rule-based net roles and operating-point ratios | Same |
+| Missing historical operating points | Masked, never invented or newly simulated | Same |
+| Initial network | Fresh weights, pretraining seed 0 | Fresh weights, pretraining seed 0 |
+| Initial training recipe | 48 hidden channels, 4 layers, 4 heads, RWSE; 20,000 SAC updates, batch 8 | Same |
+| SAC | Gamma 0, learning rate 0.001, initial alpha 0.01, tau 0.005 | Same |
+| Sampling | Equal task sampling, same candidate order for the same sampler seed | Same |
+
+Store the reconstructed pool on disk rather than dropping source runs to fit RAM. The same update budget is the
+primary comparison; record actual parameters, sampled counts by task/run, training time, peak memory and CPU
+resources. Equal widths and updates do not imply equal parameter counts or equal compute. CircuitGPS's different
+spec representation and architecture are compared together; an advantage would not isolate either component.
+The fixed update budget does not guarantee every transition is sampled; report actual coverage.
+
+Before publication, check both checkpoint hashes, reload both models, check finite outputs and losses, and inspect
+held-out critic errors versus each task's training-reward mean. These errors diagnose offline fitting; they do not
+measure simulator success or prove transfer. Select the final configured update, without choosing a winner or an
+earlier checkpoint from Round 3 test results. The selected model IDs and checkpoint hashes are now recorded above.
+If training fails or the fixed budget is infeasible, record that status; do not publish a partial model as completed.
+
+### 7a.2 What the online comparison can establish
+
+With all saved circuits included, this is primarily a **comparison on previously seen circuits using fresh
+rollouts**. It cannot support an unseen-topology or unseen-PDK claim for any circuit/PDK present in the source pool.
+A genuine transfer extension must use a new topology or independently chosen specifications outside that pool,
+fixed before its first evaluation, and report that extension separately.
+
+Use four saved tasks for the initial comparison: RING3 (`real:mscr_ring3`), relaxed LDO1
+(`real:graphgps_ldo1`), the DFFRX1 power task (`real:dffrx1_t2`), and the published amplifier's far-start task
+(`real:agentic_fc_pub_far`). Together these cover an oscillator, regulator, logic cell and a larger amplifier in
+the second PDK. Before dispatch, pin each task's exact saved target list, netlist, bench, start, parameter ranges,
+grid and inputs. If a named task has changed or vanished, report it and resolve the selection before launching.
+
+For each encoder and each target seed, compare three independent arms:
+
+| Arm | Initial weights and learning | Budget per arm |
+|---|---|---|
+| Frozen pretrained | Copy the matching full-archive model; sampled actions, no updates | 300 nominal design evaluations |
+| Adapt pretrained | Copy that same model; fresh optimizer and empty target replay; ordinary online SAC | 800 nominal design evaluations |
+| Scratch | Fresh network of that encoder; same online SAC settings | 800 nominal design evaluations |
+
+Every task/seed starts from the fixed source checkpoint; no weights or replay carry from a preceding target.
+Keep both encoders' targets, starts, reward, action semantics, warmup, update ratio and four isolated simulator lanes
+identical. Count initial/reset designs, failed evaluations and retries. Record underlying Spectre launches separately
+and pin launch caps before dispatch. Use full budgets (`stop_at_first_feasible=false`) to retain quality and learning
+curves; a first pass is also recorded. Counterbalance encoder order across tasks and seeds. Run one training arm at
+a time on the shared host; follow `docs/performance-measurement.md` for time comparisons.
+
+**Staging and cost.** First run target seed 0 on all four tasks: 24 arms, at most 15,200 nominal design evaluations.
+After checking correctness, complete matched seeds 1 and 2 for the same matrix: 48 further arms, at most 30,400
+evaluations; the full three-seed comparison is 72 arms and 45,600 evaluations. Do not repeat only the apparent
+winner. If time allows only screening, keep the one-seed result exploratory. No wall-time estimate is asserted
+until CircuitGPS's measured update cost and the benches' throughput are available. These are proposed simulation
+budgets, not simulations authorized by the request to train offline and add this plan.
+
+Keep the existing random-search and Bayesian results as labelled historical references. A claim against these
+optimizers requires matched new controls under the same tasks/starts/reward/budgets; the optional matrix is four
+tasks × three seeds × two optimizers × 800 evaluations = 19,200 additional evaluations, separately authorized.
+
+### 7a.3 Reporting and decision
+
+Report per task and seed: whether any design passes; first-pass design/launch count and wall time; early and late
+pass rates; the full best-so-far reward curve; best feasible physical metrics and the task's objective; invalid and
+failed evaluations; target learning time; and source pretraining cost. Compare frozen arms over their common
+300-design horizon, and adapt/scratch arms over 800; also give all arms' first 300 designs. For each architecture,
+compare adaptation with its own scratch baseline before comparing the two pretrained models.
+
+Show the three paired seed outcomes and their median/range, including failures. Do not treat designs from one
+run as independent seed replicates. Both pretrained models have only one pretraining seed, so any conclusion is
+conditional on those two trained instances. A universal architecture-superiority claim requires independently
+retrained source models. Faster feasibility and better final quality are separate outcomes; call ties and tradeoffs
+explicitly. The Round 3 result table remains empty until actual new evaluations have completed.
+
+Round 3 supplies development evidence for the journal programme in section 14. Its full-archive models and seen
+tasks do not replace that programme's prospective test split, independent pretraining seeds or component ablations.
 
 ## 8. To prepare first
 
@@ -641,25 +1042,36 @@ No simulation except where said.
 
 ## 9. Budget and time
 
-| Step | Runs | Probes | Other designs | Designs | Time |
+These are the original planning ceilings and estimates, with the measured RGCN addition. They are not an actual
+simulator-launch ledger; failures, interruptions and separately authorized continuations remain recorded separately.
+
+| Step | Runs | Probes | Other evaluations | Planned evaluations | Time |
 |---|---|---|---|---|---|
-| 1 | 20 | - | 65 (amplifier start) | 16,065 | about 7 h |
+| 1 | 32 | - | 65 (amplifier start) | 25,665 | original estimate about 7 h; RGCN measured 3 h 59 min elapsed |
 | 2 | 40 | - | 777 | 32,777 | about 7.8 h |
 | 3 | 9 | - | - | 7,200 | about 1.7 h |
 | 3b | 24 | - | 27 | 19,227 | about 5.2 h |
 | 4 | 12 | 3 | 195 | 10,695 | about 3.2 h |
 | 5 | 2 | 1 | - | 1,900 | about 0.75 h |
 | 6 | 4 | 4 | - | 4,400 | about 2 h |
-| **Round 1** | **111** | **8** | **1,064** | **92,264** | **about 27.6 h** |
+| **Round 1** | **123** | **8** | **1,064** | **101,864** | **original estimate about 27.6 h; RGCN measured 3 h 59 min elapsed** |
+
+The RGCN extension consumed `12 × 800 = 9,600` charged attempts: **9,596 actual Spectre launches and four preparation
+failures**, with no extra calibration/probe budget. Its measured 3 h 59 min campaign duration includes overlapping
+sessions; 5 h 35 min is the sum of active run times. Neither is a controlled speed comparison with the older arms.
+Runtime qualification and any later proposed reruns need an explicit separate ledger.
 
 Step 2 as changed on 2026-10-11 (6.2.2): the logic cell's 10 runs and 192 Calibration designs, and the three analog
 circuits' 30 runs, 9 baselines and 576 Calibration designs (about 6 h of the first Virtuoso session; the logic cell runs
-beside them in the second). Not in the table: the conditional runs of step 1 (800 designs each), round 2 (step 2: 8,295, and 3,200 for the logic cell; step 6: at most 16,000 or
-22,400), offline training (CPU hours, no simulation). Times come from the recorded runs per 800 designs: OTA5t 9-13 min,
+beside them in the second). Not in the table: the conditional runs of step 1 (800 designs each), round 2 (the old
+analog Step 2 estimate of 8,295 is superseded; the authorized logic-cell repeat is 3,200 and the selected Step 6
+option is at most 16,000, for 19,200 in all), offline training (CPU hours, no simulation). The original time estimates used
+the recorded runs per 800 designs: OTA5t 9-13 min,
 RING3 10-24, LDO1 10-16, VCO 36-99, telescopic cascode 17-25 (the upper values are from days the simulator machine ran
 slowly); for the published circuits from the rebuilt cells of 7.295 (LDO and reference 10-13 min, system about 27,
-amplifier 37-55) - their own 12-design runs took 1.8 to 2.9 s per design on one lane, so these are upper figures. The logic cell is
-unmeasured: about 10 min per 800 designs is assumed, 1.8 h for its part of step 2 (10 runs, 192 designs; the library-cell
+amplifier 37-55) - their own 12-design runs took 1.8 to 2.9 s per design on one lane, so these were planning estimates.
+At initial planning the logic cell was unmeasured: about 10 min per 800 designs was assumed, 1.8 h for its part of step 2
+(10 runs, 192 designs; the library-cell
 simulations of its bench rule are single short simulations and are not counted as designs).
 
 Step 3b and step 4's added arm (record 7.317): 24 runs at the recorded minutes per 800 designs (OTA5t about 11, RING3
@@ -668,6 +1080,16 @@ about 15, LDO1 about 13: eight runs of each) and three more runs in step 4. Read
 two Virtuoso sessions step 3b takes about half its time on the clock. A cheaper form of step 3b is in section 12.
 
 ## 10. Order and gates
+
+**Status 2026-10-14:** the offline pair review/publication gate passed and all 12 RGCN supplement runs are complete.
+Round 2's 24 repeats (section 7) were dispatched on both checked sessions at 22:14 Europe/London.
+Round 3's online matrix remains separate: first freeze the four task
+snapshots, source checkpoint/runtime compatibility and paired arm settings, then run the seed-0 correctness stage
+only when its concrete simulation budget is authorized. Journal J0's independent test construction and literature
+work can proceed alongside that preparation. Round 2's old analog Step 2 proposal is retired; the selected repeats
+use new seeds and run identities without overwriting completed historical runs.
+
+The sequence and restart provisions below record the original Round 1 execution plan; they are not pending actions.
 
 Preparation -> step 1 -> step 2, the logic cell first and then the three analog circuits (user, 2026-10-10) -> step 3 ->
 step 4 -> the general model trained offline -> steps 5 and 6 -> round 2. Step 3 depends only on step 1's LDO run and
@@ -712,6 +1134,11 @@ starting point further away from target"; for LDO1 "rename the task and run both
 Stage B (the same circuit again from its own trained network) is left out on
 the advice given, with the continuation run of 6.1 in its place.
 
+On 2026-10-13 the user expanded Step 1 to the existing **RGCN + SAC**, clarifying "dont use plain gcn, use what my
+code have", then authorized "queue it after the circuit gps training". This supersedes the earlier two-encoder
+restriction for the 12 Step 1 additions only. The original GT/GraphGPS records, other steps and frozen offline
+training inputs retain their scope.
+
 Added later on 2026-10-10 (session "Trained model spec change topology proof", record 7.305): a logic cell in the
 new-target step ("Can you use it for standard cell optimization like for one logic cell to modify its ppa?", "yes add
 DFFRX1 for step 3 as a task"), then "make the stdcell plan first part of the step 3(the spec change) and exchange current
@@ -743,7 +1170,7 @@ Virtuoso session. And for the page: "No box, after step 3b" - once step 3b's res
 build it accepts and the Network inputs box becomes one line of text; an old choice shows only while a configuration
 holds it.
 
-Open: three or five repeats on the amplifier and the system in round 2 (after round 1); the library name of the three
+Decided 2026-10-14: three total trials per arm on the amplifier and system in Round 2 (section 7). Open: the library name of the three
 ports; for the logic cell the library its copy goes into, the load, the input slope and the two fixed times of its
 bench, and the two bars of its judgement (proposed, 6.2.1).
 
@@ -763,7 +1190,7 @@ part of this plan; folder names start with a digit because the windows list fold
 | Runs, RL models | 1 Networks with the new inputs (step 1) / 2 New targets (step 2) / 3 SAC against Bayesian (step 3) / 3b Input builds (step 3b) / 4 Second PDK (step 4) / 5 General model, unseen circuit (step 5) / 6 General model, AgenticSizing (step 6) / 7 Baselines, calibrations, offline models (plan) / 8 References: recorded runs the plan compares with / 9 Older (before the transfer experiment) |
 
 `artifacts/local/reviews/transfer-experiment-2026-10-10/categorize.py` files everything (idempotent; run again whenever
-runs appear). It files the plan's runs by their experiment names, which are therefore fixed here: `tx1-<circuit>-<gt|gps>`
+runs appear). It files the plan's runs by their experiment names, which are therefore fixed here: `tx1-<circuit>-<gt|gps|rgcn>`
 (with `-s<seed>`, `-control`, `-cont`, or `-r` for the rerun of a run a fault of the machine ended),
 `tx2-<circuit>-<target>-<scratch|old|multi|probe>` (the logic cell as `dffr`: `tx2-dffr-speed-scratch`, `tx2-dffr-power-scratch`, then `tx2-dffr-power-both` and `tx2-dffr-speed-both` from the offline model `tx-offline-dffr-both`),
 `tx3-asz-ldo-<sac|bo>-s<seed>`, `tx3b-<circuit>-<first|full|bench>-s<seed>` (record 7.317), `tx4-<circuit>-<scratch|rel|abs|first|probe>`, `tx5-otatc-<scratch|general|probe>`, `tx6-asz-<circuit>-<general|probe>`,
@@ -774,9 +1201,360 @@ frozen.
 record's request): the table and the run names above are the new ones. `categorize.py` carries them and was run - the
 folders of the old numbering held no run, model or new-target task yet, so nothing but names moved. It files the logic
 cell's first task (a name beginning `dffr`) beside the core circuits and its new-target copy (the same name with
-`_t<number>`) among the new targets. No run of step 2 or 3 exists yet.
+`_t<number>`) among the new targets. No run of step 2 or 3 existed at that renumbering; both steps are now complete.
 
 
 This plan; record 7.301; per step the configurations, compatibility proofs, queue log, `results-<step>.md` / `.json` and
 a record entry, in `artifacts/local/reviews/transfer-experiment-2026-10-10/`; the definitions of the new tasks in
 `~/mscr_circuits`; the offline models' `pretraining` blocks; the Bayesian optimizer's own record.
+
+## 14. Journal experiments
+
+Added 2026-10-13 (Europe/London), user: "add the experiments needed for a journal paper to my experiment plan
+and make a timeline to publish by next august". This section defines proposed research work. It does not dispatch
+simulations, alter the running models, change optimizer code, submit a manuscript or authorize publication fees.
+The journal campaign is separate from the historical steps' encoder restrictions and result-selection rules.
+
+### 14.1 Main question and boundaries of the contribution
+
+**Question:** does representing measurement expressions and their circuit bindings, jointly with devices and
+adjustable parameters, improve sample-efficient circuit sizing and transfer compared with a generic graph encoder?
+The candidate method is CircuitGPS, described in [circuit-gps.md](circuit-gps.md). Its benefit and novelty remain
+hypotheses until the literature comparison and experiments are complete. GraphGPS, graph-based RL sizing and
+technology transfer already have predecessors; none alone is the proposed novelty.
+
+The primary claim, if supported, concerns measured optimization efficiency on the specified tasks. Three distinct
+results must remain separate: new specifications on known topologies; new topologies within represented circuit
+families; and the optional transfer to a PDK excluded from training. A variable-sized input interface is not evidence
+of generalization. Keep the SAC algorithm fixed; explicitly explain gamma 0 and immediate reward fitting rather
+than implying that the experiment establishes long-horizon credit assignment.
+
+Round 1/2 results and Round 3 are development evidence. The current 304-run snapshot contains 187,407 eligible
+transition rows and 65 task variants, not 65 independent topologies. It contains both PDKs and circuits previously
+called unseen in older experiments. A source model trained on that snapshot cannot support those older unseen
+claims. Selecting repeats only after a promising result, as historical Round 2 does, is unsuitable for the new
+confirmatory comparisons: complete all preregistered arms and seeds, including negative results.
+
+### 14.2 J0: freeze the data, benchmarks and protocol
+
+Before new journal training, create a versioned journal manifest separate from Round 3. Record source archive and
+input-view hashes, canonical topology/family IDs, PDK, task/specification identity, measurement programs, start,
+legal parameter domains, bench/analysis settings, code and dependency versions, seeds, budgets and metrics.
+
+Group aliases, renamed devices, reordered netlists, alternate starts and near-duplicate physical designs by
+structural lineage. Deduplicate source candidates and report the source distribution by actual topology/family;
+task aliases must not silently multiply a family's sampling weight. Freeze a canonical task map and sampling policy
+on development data. Keep physical-design groups together in the source training/validation split; an episode-only
+holdout can repeat the same design and is only an archive-fitting diagnostic. Fit any learned normalization on
+source training data only. Target PDK documentation and a target netlist are permitted deployment inputs, not target
+simulation statistics. Use the existing explicit reward migration; preserve original archives and missing-data masks.
+
+Use the following **six primary test cases**. Each case has one fixed bench, goal vector and start. Exact task IDs,
+equations, limits and lineage hashes must be added to the manifest by 13 November, before competing policies are
+evaluated; the descriptions below are selection requirements, not six tasks already built.
+
+| Stratum | Cases | Selection and permitted claim |
+|---|---|---|
+| New goals on known circuits | One previously untrained goal each for OTA5t, RING3 and relaxed LDO1 | Same topology, new goal; remove the test goal from every original/relabeled training example and from tuning. Freeze goals using engineering requirements, not which model wins. |
+| New topologies | One amplifier, one regulator and one oscillator topology absent from all source/development archives | Different connection structure, not a renamed circuit or size/start variant. These test within-family topology transfer; no cross-family claim. |
+
+Existing `mscr_otatc`, `mscr_otafc` and the recorded AgenticSizing tasks remain useful development cases. Their
+observed results cannot be presented as prospectively hidden tests merely by removing their rows now. If new
+topologies cannot be prepared on time, a source-excluded retrospective study is possible, but must be labelled
+retrospective and the manuscript's claims and scope revised before testing. Do not silently substitute it.
+
+Keep a separate development suite for tuning, implementation debugging and ablation-width selection. Benchmark
+qualification checks measurement validity and physical feasibility against an engineering reference under the
+predeclared limits, with equal information given to every method. Charge that cost. It must not rank candidate
+methods or tune goals around their outcomes. Once the manifest is frozen, any change creates a new version and
+the affected evidence becomes development evidence. No test trajectories flow back into source models.
+
+### 14.3 J1/J2: primary baseline and transfer matrix
+
+J1 is the existing Round 3 comparison in section 7a, kept as a development pilot. J2 is the six-case prospective
+comparison. Use three source-model seeds `0, 1, 2` and three rollout seeds `101, 102, 103`, fully crossed for
+pretrained methods: **nine runs per method/case**, with three independent source models. Use the same seed mapping
+and sampling order across architectures. For scratch, BO and random search, map each `(source_seed, rollout_seed)`
+pair to a distinct seed (for example `1000 + 100 * source_seed + rollout_seed`); these are nine independent runs,
+not three duplicated controls. Record initialization, sampler and environment seeds separately.
+
+| Method | Modes per case | Source data | Nominal design budget per run |
+|---|---|---|---|
+| GraphGPS-SAC | Frozen, adapt, scratch | Same J0 source snapshot for frozen/adapt | 300 frozen; 800 adapt; 800 scratch |
+| CircuitGPS-SAC | Frozen, adapt, scratch | Same J0 source snapshot for frozen/adapt | 300 frozen; 800 adapt; 800 scratch |
+| Port-relational RGCN-SAC | Frozen, adapt, scratch | Same J0 source snapshot for frozen/adapt | 300 frozen; 800 adapt; 800 scratch |
+| Trust-region Bayesian optimization | From scratch | No source data | 800 |
+| Random search | From scratch | No source data | 800 |
+
+RGCN-SAC is a baseline within our common SAC system, not an exact reproduction of Li's method. BO uses the existing
+workbench implementation; random search must be verified against the same legality, measurement and cost contract
+before dispatch. Record each method's source-data advantage explicitly. J4 adds an external published comparator.
+
+Pretrain each architecture independently for 20,000 updates, batch 8, using the same source split, rewards and
+candidate sequence for a given seed. Nine full source models are required. Existing Round 3 seed-0 models may be
+reused only if source selection, split, sampler, configuration and code contracts match J0 exactly; assume fresh
+training in the budget. Select the final fixed-budget checkpoint, not the best checkpoint on test outcomes.
+
+Online SAC retains learning rate 0.001, gamma 0, initial alpha 0.01, warm-up 8, eight updates per design, batch 8,
+replay 10,000 and episode length 4. For this prospective campaign, adapt uses `reset_temperature=true`, fresh
+optimizers and empty target replay, isolating pretrained network weights from a carried temperature. This does not
+retroactively change historical steps or Round 3. Frozen uses sampled actions with fixed weights and no updates;
+its measurements still count as simulations. Reset each target run to its source checkpoint, never the previous
+target's adapted model. Source rehearsal and online reward changes are excluded from the primary comparison.
+
+All methods receive the same initial design, legal bounds/grids, target definitions, reward scales, warm-up protocol
+where applicable, failure handling and four isolated simulator lanes. Count resets, failed evaluations and retries.
+Run full budgets; record first feasibility without stopping there. Pin raw simulator-launch caps from each bench's
+analysis count before execution. Compare frozen methods at the common 300-design horizon; also truncate other
+arms to 300 for that comparison. Adapt/scratch/BO/random comparisons use 800.
+
+J2 contains `6 cases × 9 replicates × (3 encoders × 3 modes + 2 optimizers) = 594` arms and at most
+`6 × 9 × [3 × (300 + 800 + 800) + 2 × 800] = 394,200` nominal design evaluations.
+
+### 14.4 J3: test which CircuitGPS components matter
+
+Freeze a three-case subset of J2 before results: one amplifier, one regulator and one oscillator, including at least
+one new-topology case. Each variant has three fresh pretraining seeds and three rollout seeds per source model,
+with the same source data and 800-design adaptation budget. Reuse the full CircuitGPS and GraphGPS J2 arms as
+controls only when the complete configuration matches. Record actual parameter counts and compute for every arm.
+
+| Variant | Single intended change | Question |
+|---|---|---|
+| A1: no measurement programs | Retain scalar spec values, bounds, scales and masks; disable expression-tree information and its expression-dependent messages | Does the measurement-program pathway add information beyond numerical specs? |
+| A2: no circuit bindings | Retain the ordered expression tree but remove probe-to-net/device bindings and the messages using those bindings | Does grounding measurements in the circuit help? |
+| A3: no motif pathway | Disable motif tokens/messages; retain device, spec and parameter pathways | Do the conservative structural motifs help? |
+| A4: capacity control | Reduce CircuitGPS width on development data to the closest valid size within 10% of GraphGPS's actor-plus-critic parameter count, if achievable | Can any advantage survive comparable model capacity? |
+
+A1 and A2 are related pathway removals, not perfectly independent mathematical factors; describe their exact
+effects. Recompute parameter totals after removal. If the 10% capacity target cannot be met, report the closest
+configuration and mismatch rather than calling it matched. Retain the full-size model comparison as well.
+The selected width must never depend on test performance. Add a secondary comparison under one common wall-time
+cap fixed from development timings, using time-stamped prefixes of the same runs; do not select that cap after
+seeing the ranking. State explicitly whether source-training time is included.
+
+J3 adds `3 × 4 × 9 = 108` adaptation arms, **86,400** design evaluations and twelve source models. These toggles
+are planned work, not existing UI controls. Implement and validate them in a separately frozen research runtime;
+preserve the original optimizer/runtime used by current checkpoints. Retrain each variant, rather than removing
+components only at inference and attributing the resulting distribution shift to training-time utility.
+
+Offline correctness checks also cover permutation/renaming invariance, ordered subtraction/division, different
+probe bindings, equivalent unit conversions, missing values, variable action counts and candidate legality.
+Report unsupported measurement expressions and resolved-binding coverage by task. Attention plots or a changed
+output are not evidence of improved circuit performance; the controlled online comparisons provide that evidence.
+
+### 14.5 J4/J5: external comparison and circuit validation
+
+**J4, published comparator:** by 31 October, inspect the full papers and runnable implementations of DEGT,
+GCN-RL and the RGCN LDO work; choose one closest reproducible comparator and pin its version and justified
+adaptations. Reserve three fixed J2 cases × nine runs × 800 evaluations = **21,600** evaluations. Any required
+source training uses the same permitted data or is separately costed and labelled. Its independent training seeds
+must be reported. Do not silently replace its algorithm with ours and call it a reproduction. If no suitable
+implementation is obtainable, record the evidence gap, use the matched RGCN/GraphGPS controls, narrow comparative
+claims and review venue readiness; arbitrary numbers from different PDKs/benches are not a head-to-head baseline.
+
+**J5, nominal recheck:** for each J2 adaptation/BO/random arm (five methods), select up to three distinct physically
+legal candidates by a frozen rule: feasible first, then best task objective, then hard-spec violation for infeasible
+candidates. Rerun with the reference-accuracy bench. Maximum `6 × 5 × 9 × 3 = 810` evaluations. Preserve the
+selection even when a recheck fails; report both original and rechecked metrics. Frozen/scratch winners used for
+a headline physical-design claim also require the same recheck, charged to the contingency reserve.
+
+**PVT extension, conditional:** qualify appropriate process models, voltages and temperatures first. The current
+generated tasks do not automatically support the workbench's historical five-corner flow; do not reuse the old
+1.0 V OTA corner values for 1.8 V devices or another PDK. On two preselected eligible cases, check the same five
+methods, nine replicates and up to three nominees at five frozen conditions: at most **1,350 condition-design
+evaluations**, plus qualification cost. This is a separate budget unit from nominal evaluations. Corners are never
+used to reselect the nominal finalists or update training. Unsupported or incomplete conditions remain explicit.
+
+PVT is required if the manuscript claims robustness to those conditions; otherwise keep a nominal-only scope and
+state the limitation. Monte Carlo mismatch/yield and post-layout parasitics are optional extensions requiring their
+own implemented/qualified flow and budget. Neither exists merely because nominal optimization succeeds. A first
+algorithm paper need not wait for silicon, but must not imply silicon, yield or post-layout validation it lacks.
+
+### 14.6 Optional extensions, selected before their test results
+
+| Extension | Fixed comparison | Added ceiling and dependency |
+|---|---|---|
+| X1: excluded-PDK transfer | Three existing ports (OTA5t, RING3, LDO1), GraphGPS/CircuitGPS frozen/adapt/scratch plus BO/random; nine replicates each | 216 arms, 145,800 nominal evaluations; six new source models trained with **all** target-PDK runs excluded. Historical port results make this a retrospective benchmark unless new ports/goals are frozen prospectively. |
+| X2: missing operating points | Three preselected cases, both encoders with OP inputs consistently masked during training and evaluation, compared with full-input J2 arms | 54 adaptation arms, 43,200 evaluations; six source models. Physical bench measurements remain available for grading. |
+| X3: source-data scaling | Nested 25%, 50%, 100% source partitions stratified by topology/task, both encoders, three cases and nine replicates; fixed updates | 108 extra adaptation arms, 86,400 evaluations for the two smaller fractions; twelve source models. Full-data controls come from J2; report coverage/repeated sampling. |
+
+These extensions do not enter the core total. Prioritize X1 only if a cross-PDK claim is essential; otherwise
+complete the core first. Do not choose a subset of extensions after inspecting their test results. More circuits
+or seeds require a revised budget before dispatch. DFFRX1 and the large published system remain useful stress
+cases, but need not expand the first analog-sizing paper's central claim.
+
+### 14.7 Metrics, uncertainty and what would support a claim
+
+The primary comparison is **CircuitGPS adaptation versus GraphGPS adaptation**, separately for new goals and new
+topologies. Secondary comparisons are each encoder versus its own scratch, RGCN, BO/random and J4, followed by
+ablations. Use the identical raw physical pass criterion across methods, independent of the learned critic.
+
+For every case/method/seed, record all-spec success by 300/800 designs, evaluations and wall time to first feasible
+design, best-so-far reward/violation, best feasible physical objectives, invalid/failed designs, early/late pass
+rates, optimizer compute and end-to-end time. Show sample-efficiency and time-efficiency separately. Show all cases,
+including impossible or unsuccessful ones; average cases equally rather than weighting by their archive size.
+
+Runs without a pass are right-censored at their budget, not successes at the last design and not omitted. For
+a finite summary use the mean of `min(T_first_feasible, B)` with the censoring indicator and success fraction beside
+it; when all runs fail the success median is undefined. Report conditional-on-success times only alongside success
+rates. Final objective comparisons must retain unsuccessful runs as failures rather than comparing only survivors.
+
+Report source-seed and rollout-seed variation separately. Nine rollouts sharing three pretrained models are not
+nine independent pretraining replications. Use paired contrasts and 95% intervals with source-seed clusters and
+rollouts nested within them; three source seeds give limited precision, so show raw results as well. With three
+cases per stratum, restrict conclusions to that benchmark, not all circuit topologies. If significance tests are
+used, preregister them and correct the two primary stratum tests together; do not test every curve point for a win.
+
+A useful engineering target is at least a **20% reduction in capped evaluations to feasibility**, without more than
+a **5 percentage-point loss in success rate**, versus GraphGPS adaptation. These are proposed practical thresholds
+to freeze before results, not observed improvements or journal acceptance criteria. Inspect paired intervals and
+per-case consistency; an uncertain, tied or mixed result is reported that way. Failure of the broad hypothesis may
+support a narrower well-evidenced result, but does not justify selecting only favorable circuits or inventing a win.
+
+Report actor/critic parameter counts, training updates, peak memory, preprocessing/training/inference time, hardware,
+threads and simulator lanes. Report historical source simulation cost, new qualification/evaluation cost and all
+failed/retried work. Give both reuse-of-an-existing-model cost and total cost from building the source dataset;
+estimate the number of deployments needed to repay pretraining only when measured savings are positive.
+
+### 14.8 Budget, feasibility gate and evidence package
+
+| Core work | Runs or checks | Maximum new nominal design evaluations |
+|---|---|---:|
+| J1: complete existing Round 3 development matrix | 72 arms; counted once, not added twice | 45,600 |
+| J2: six-case primary matrix | 594 arms | 394,200 |
+| J3: four variants on three fixed cases | 108 arms | 86,400 |
+| J4: one published comparator on three cases | 27 arms | 21,600 |
+| J5: nominal finalist rechecks | Up to 810 | 810 |
+| Qualification, development pilots and tuning | Separate ledger, fixed allowance | 10,000 |
+| **Core planning ceiling** | **801 optimization arms plus checks/development** | **558,610** |
+| Infrastructure reruns and reviewer/check reserves | Separate ledger; no extra seeds selected for favorable results | 112,000 |
+| **Core plus reserve** | Optional X1-X3/PVT excluded | **670,610** |
+
+The 112,000 reserve is roughly 20% of the core. These are design-evaluation ceilings, not raw Spectre-launch caps:
+a candidate can require several analyses. Derive and freeze each block's raw-launch cap from the actual bench,
+and stop at whichever cap is reached first. No simulator work is authorized merely by this table. If J1 controls
+from section 7a are separately run, add their 19,200 evaluations explicitly; they are not required twice by J2.
+
+The separately authorized Step 1 RGCN supplement (6.1.1) adds 9,600 development evaluations outside this table.
+Budgeting it together with the journal core gives **568,210**, or **680,210** including the existing reserve,
+before optional extensions or separately selected J1 controls. It does not replace J2's prospective RGCN arms.
+
+Core source training comprises nine J2 models plus twelve J3 variants: **21 jobs / 420,000 updates**, before J4's
+method-specific training. Preparation/validation time, failed attempts and any development tuning also count.
+An identical existing job can reduce new work but never erase its historical cost. Do not translate update counts
+into an ETA from the small warm-batch microbenchmark.
+
+By 6 November, measure full-arm throughput on development tasks, including CircuitGPS updates, cold preparation,
+I/O and simulator latency under the shared-host protocol in [performance-measurement.md](performance-measurement.md).
+Record available hours/day and expected interruptions. For scale only, 558,610 designs at an effective 1 / 5 / 15
+seconds per design consume about **155 / 776 / 2,328 execution hours**, before source training and reserve. These are
+arithmetic scenarios, not throughput predictions; four lanes are already reflected if that effective rate was
+measured with four lanes. Do not divide by four again.
+
+Proceed with the full matrix only if measured availability supports completion by 15 January. Otherwise reduce
+scope **before viewing prospective test outcomes**: defer X1-X3/PVT first; then predeclare one three-case stratum
+and restrict the paper to that claim, or obtain additional resources. Do not hide an incomplete matrix, remove a
+failed seed or shorten only the slower method. Recalculate all ceilings in a dated amendment before launch.
+
+The future evidence folder is `artifacts/local/reviews/journal-circuitgps-2026-2027/` (to be created when execution
+is authorized). Save a manifest, configs, source/checkpoint hashes, the full run ledger including interruptions,
+raw physical outcomes, preprocessing/timing records, comparison tables and a reproducible analysis command.
+Prepare the manuscript's benchmark/split table, method/ablation table, success and best-so-far curves, cost table
+and failure cases from those records. A shareable reproduction subset should use an open PDK if available;
+commercial PDK files are not part of the public package. Keep publication analysis outside production run data.
+
+### 14.9 Literature and venue checks
+
+Starting reading list, checked 13 October 2026:
+
+| Work | Relevance to establish before writing a novelty claim |
+|---|---|
+| [AutoCkt, DATE 2020](https://arxiv.org/abs/2001.01808) | RL sizing, specification generalization and parasitic-aware evaluation already exist. |
+| [GCN-RL Circuit Designer, DAC 2020](https://arxiv.org/abs/2005.00406) | Graph-based RL with topology and technology transfer is a direct predecessor. |
+| [GraphGPS, 2022](https://arxiv.org/abs/2205.12454) | Credit the general graph-transformer architecture; circuit application alone is not the proposed novelty. |
+| [Li and Chan Carusone, ICCAD 2023](https://www.zonghaoli.com/docs/ICCAD2023.pdf) | Relational graph encoding and reproducible LDO sizing in SKY130. |
+| [DEGT, ISLPED 2025](https://csdl.postech.ac.kr/bbs/board.php?bo_table=sub5_1&wr_id=253) | Close graph-transformer/transfer predecessor; publication verified, full methodology still to inspect. |
+| [AnaCraft, TCAD, online 2025 / issue 2026](https://ieeexplore.ieee.org/document/11063353/) | SAC-based sizing, model-based efficiency and PVT robustness; distinct from our nominal model-free protocol. |
+| [AgenticSizing, September 2026 preprint](https://arxiv.org/abs/2609.25873) | Topology-aware LLM sizing and benchmark context; peer-reviewed acceptance not established by its arXiv record. |
+
+For each, record representation, spec semantics, action interface, source data, generalization split, seeds, actual
+simulation budget, code availability and experimental limitations. Refresh the search before submission; this is
+a starting comparison, not an exhaustive novelty clearance. Published numbers on different benches/PDKs remain
+context, never a numerical claim of superiority over the paper.
+
+**Provisional first venue: IEEE TCAD**, subject to a contribution/evidence review with the supervisor/coauthors.
+Its [submission instructions](https://ieee-ceda.org/publications/tcad/tcad-paper-submissions) require original
+design-automation contributions and adequate related-work/comparison evidence. They currently specify a 14-page
+regular-paper limit and a disclosure of generative-AI use. Plan those into the manuscript and recheck at submission.
+[TCAS-I](https://ieee-cas.org/publication/TCAS-I) is an alternative if the contribution is principally circuit
+methodology/insight. [IEEE Access](https://ieeeaccess.ieee.org/authors/stages-of-peer-review/) is a potential
+schedule-oriented alternative; its stated 4-6 week publication target is not a guaranteed decision or acceptance.
+Check the then-current fees and whether the venue satisfies the user's institutional requirement before selection.
+
+## 15. Timeline to August 2027 publication
+
+All dates use Europe/London. Since the user specified a month, use **31 August 2027** as the planning endpoint.
+Assume the desired outcome is an **accepted, publicly available online journal article** by then; a preprint,
+submitted manuscript, acceptance letter and assigned print issue are distinct milestones. Confirm which one the
+institution requires during October. This schedule manages the work we control; peer review, acceptance and
+publisher production remain external dependencies, and a rejection or multiple revision rounds can miss the date.
+
+### 15.1 Dated milestones and completion criteria
+
+**Progress on 14 October:** the existing Round 1 arms, the RGCN supplement and both archive-trained source models
+are complete. Their completion clears the existing-training part of the 13-23 October milestone only. The paper
+outline, claim-to-evidence map, coauthor/venue decisions, new test cases and J0 freeze remain outstanding. The next
+dated gates remain **31 October** for literature/comparator/test-case selection, **6 November** for measured
+feasibility, and **13 November** for the frozen protocol. The January submission and August publication targets
+are unchanged; current completion does not establish that the larger journal matrix fits the available compute.
+
+| Date/window | Work and dependency | Required output / decision |
+|---|---|---|
+| **13-23 October 2026** | Audit existing evidence, finish the already authorized source jobs, draft paper outline; identify coauthors and institutional deadline meaning | Claim-to-evidence map, source inventory, writing owner and proposed venue; current models labelled development evidence |
+| **By 31 October** | Read closest methods, select J4 comparator, choose six test-case candidates and an independent development suite | Related-work matrix, comparator feasibility, test construction list and nominal/PVT scope decision |
+| **By 6 November** | Qualify timing and estimate the full budget; implement missing research controls and validate them before freezing source models | Measured compute/simulator schedule, interruption/recovery check, revised scope if the full campaign will not fit |
+| **By 13 November** | Complete J0 after qualification; freeze topology/goal split, seeds, metric analysis and all J3 case selections | Versioned protocol and dispatch budget; no target-policy results used in freezing decisions |
+| **14-20 November** | Train and verify the nine J2 source models under J0; begin the twelve J3 source variants as resources permit | Pinned, reloadable checkpoints for all three source seeds; source cost and diagnostics recorded |
+| **21 November-18 December** | Execute all J2 arms, record daily completion and failure ledger; finish J3 source training and write methods/benchmarks in parallel | Complete primary matrix, including negative/failed runs; draft methods and benchmark description |
+| **19 December-8 January 2027** | Complete J3/J4 and finalist checks; run only the optional extensions chosen in advance if schedule allows | Component evidence, external comparison and physical rechecks; protected holiday/host-availability allowance |
+| **By 15 January** | Freeze experimental results and reproducible analysis; resolve integrity issues rather than chase a better score | All claimed comparisons complete, uncertainty/cost tables and limitations; new exploratory ideas deferred |
+| **16-24 January** | Full manuscript review by supervisor/coauthors; check claims against raw records and venue fit | Submission-ready draft, figures/tables, references and reproducibility material |
+| **Target 31 January; latest planned 15 February** | Submit after coauthor approval and current author-guideline check | Submission receipt; results version fixed. Slipping past 15 February increases August acceptance/publication risk |
+| **February-April** | External review window, not a predicted decision date; keep scripts and environments runnable | Respond to editorial queries; prepare an issue list without modifying the submitted evidence silently |
+| **Within 2-4 weeks of a revision request** | Address each comment, execute justified new checks and obtain coauthor review; obey the editor's actual deadline | Point-by-point response, tracked manuscript and supplementary evidence; budget any new simulations |
+| **30 April decision checkpoint** | Assess actual editorial state and deadline risk with coauthors | Continue a credible revision path, or after rejection/confirmed withdrawal choose a suitable alternative; no concurrent submission |
+| **May-June** | Finish further review/revisions; if changing venue, aim to resubmit by 31 May | Corrected manuscript or new submission; no assumption that a faster journal will accept it |
+| **Target by 30 June** | Desired acceptance milestone to leave production buffer | Acceptance letter if achieved; otherwise record the August target as at risk |
+| **July-15 August** | Final files, proofs and permitted supporting-material release after acceptance | Publisher-ready materials and online publication/DOI when available |
+| **By 31 August 2027** | Check against the institution's actual requirement | Record acceptance and online-publication dates separately; if not accepted, report the true status and revised schedule |
+
+The November/December tasks may overlap only where dependencies permit: paper writing and analysis tooling can
+proceed while experiments run, but no test-driven tuning is allowed. The experiment throughput gate must reserve
+time for December/January availability, host restarts and failed infrastructure. More compute is useful only when
+simulation and learner concurrency remain comparable across methods.
+
+### 15.2 Decisions that protect the deadline and the evidence
+
+- **Scope by 6 November:** favor the six-case nominal representation/transfer paper over a broad framework claiming
+  every circuit family, PDK, PVT, layout and LLM capability. Reduce scope prospectively if measured throughput requires it.
+- **Scientific review by 18 December:** judge the completed primary matrix as a whole. If CircuitGPS has no reliable
+  advantage, retain all results and consider a narrower supported mechanism/efficiency finding. A useful negative
+  result still needs a substantive contribution; changing the title does not guarantee publication. Any redesigned
+  method needs a fresh prospective test and an explicit schedule revision.
+- **Writing throughout:** draft related work and methods in October/November, benchmark definitions when frozen,
+  and results only from recorded evidence. Do not postpone the first complete draft until February.
+- **Venue review before submission:** confirm novelty, comparison quality, page limits, coauthor approval and the
+  institution's venue requirements. Have a suitable alternative in mind, without submitting to two venues at once.
+- **Reviewer allowance:** retain the 112,000-evaluation reserve and a working frozen runtime. A new experiment
+  requested by reviewers needs a concrete budget; the reserve is capacity planning, not an automatic launch.
+- **No automatic journal switch:** the April checkpoint prompts a decision using actual review progress; an active
+  promising revision should not be abandoned solely because a calendar date was reached. After a venue change,
+  allow for a fresh review and production cycle. A preprint is useful dissemination but does not fulfill a journal
+  acceptance/publication requirement by itself.
+
+Progress checklist: `[x] existing Round 1 arms complete (14 October)` · `[x] archive source pair complete (14 October)` ·
+`[ ] J0 frozen` · `[ ] J1 online development comparison complete` · `[ ] J2 all arms complete` ·
+`[ ] J3 ablations complete` · `[ ] J4 comparator or explicit gap reviewed` · `[ ] J5 rechecks complete` ·
+`[ ] results/analysis frozen` · `[ ] manuscript approved` · `[ ] submitted` · `[ ] accepted` · `[ ] online`.
+Update completion dates only when the corresponding evidence exists. This plan edit creates no scheduled reminder
+or background experiment launcher.

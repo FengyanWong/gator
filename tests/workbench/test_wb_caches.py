@@ -15,6 +15,7 @@ SRC = ROOT / 'src' / 'gator_workbench'
 NOT_CACHES = {
     'runs._HELD_LOCKS': 'a lock a start hands to its worker',
     'corner_check._STARTING': 'a lock a start hands to its worker',
+    'session_routing._RESERVED': 'a Virtuoso session promised to a start, until its worker holds the session lock',
     'ocean._CLIENTS': 'open OCEAN clients: emptying the dict would leave them open',
     'task_saving._took': "Save task's timing record",
     'paths.repo_root': 'the repository folder never changes',

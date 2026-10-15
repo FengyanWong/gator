@@ -1,5 +1,8 @@
 # GraphGPS and parameter-group cross-attention
 
+For a step-by-step explanation with diagrams, equations and circuit examples, read
+[How GraphGPS and CircuitGPS size a circuit](graph-transformers-reading-guide.md).
+
 **2026-10-12:** [CircuitGPS](circuit-gps.md) adds a separate `circuit_gps` option with
 joint circuit/spec/parameter attention and structured measurement programs. The
 two architectures described below retain their computations and saved weights.

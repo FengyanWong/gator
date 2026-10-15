@@ -219,9 +219,48 @@ def public_profiles() -> dict:
                     family=info.get('family'), transport=info.get('transport'),
                     kind_label=info.get('label') or f"unknown kind {str(value.get('kind'))[:40]!r}",
                     settings_present=sorted(k for k, v in value.items() if v))
+    public_entries = [public(key, value) for key, value in loaded['profiles'].items()]
+    # Group explicitly associated sessions for the panel. Keep every physical identifier available to old
+    # configs, queues and API callers; grouping never changes which daemon an operation reaches.
+    children = session_groups(loaded['profiles'])
+    grouped = {key for members in children.values() for key in members[1:]}
+    groups = [dict(entry, session_profile_ids=children.get(entry['profile_id'], [entry['profile_id']]))
+              for entry in public_entries if entry['profile_id'] not in grouped]
     return dict(active=loaded['active'], connection_file=loaded['file'], connection_file_exists=loaded['exists'],
                 kinds=[dict(kind=kind, **info) for kind, info in KINDS.items()],
-                profiles=[public(key, value) for key, value in loaded['profiles'].items()])
+                profiles=public_entries, groups=groups)
+
+
+SESSION_KINDS = ('virtuoso_ssh', 'virtuoso_local')
+SESSION_SHARED = ('env_file', 'bridge_site_packages', 'library', 'model_file')
+
+
+def session_groups(profiles) -> dict:
+    """{connection: [the connection names of its Virtuoso sessions, its own first]} for every connection with more than one
+    session (record 7.345). An entry naming `session_group: <connection>` joins it when it reaches the same Virtuoso set-up
+    (kind, bridge settings file, bridge package, library, model file) through a bridge profile that neither the connection
+    nor a session already in the group uses: one entry per Virtuoso session (record 7.351). Grouping never changes which
+    daemon a connection name reaches."""
+    groups = {}
+    for key, value in profiles.items():
+        if not isinstance(value, dict):
+            continue
+        parent = value.get('session_group')
+        base = profiles.get(parent) if isinstance(parent, str) else None
+        if (parent != key and isinstance(base, dict) and not base.get('session_group')
+                and profile_kind(value) in SESSION_KINDS and profile_kind(value) == profile_kind(base)
+                and value.get('env_file') and all(value.get(field) == base.get(field) for field in SESSION_SHARED)):
+            members = groups.setdefault(parent, [parent])
+            if all(value.get('profile') != profiles[member].get('profile') for member in members):
+                members.append(key)
+    return {head: members for head, members in groups.items() if len(members) > 1}
+
+
+def session_group(profile_id) -> list:
+    """The connection names of the Virtuoso sessions `profile_id` belongs to, its connection's own first (`session_groups`);
+    [profile_id] for a connection of one session, or a name that is not set up."""
+    groups = session_groups(load_profiles()['profiles'])
+    return next((members for members in groups.values() if profile_id in members), [profile_id])
 
 
 PROFILE_ID = re.compile(names.PROFILE_ID)

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from threading import Lock
 
-from .. import runs, schema, tasks, units
+from .. import runs, schema, session_routing, tasks, units
 from ..security import redact
 from ..storage.atomic import read_json, write_json
 
@@ -60,36 +60,40 @@ def configuration(task_key, *, profile_id=None, output_root=None):
                     save_transition_archive=False, save_learner_updates=False)))
 
 
-def after_save(context, made, *, profile_id=None, output_root=None):
+def after_save(context, made, *, profile_id=None, output_root=None, session=None):
     """Save is the authorization for one baseline. A blocked launch never undoes a saved task.
 
     Also replace an invalidated reference after an in-place circuit/setup update;
     a specs-only save retaining its reference does not launch anything.
+    `session`: the Virtuoso session the save chose (record 7.351), handed to its baseline - or let go when none starts.
     """
     if not made.get('created') and made.get('baseline_kept', True):
+        session_routing.finished(session)
         return
-    made['baseline'] = start(context, made['task_key'], profile_id=profile_id, output_root=output_root)
+    made['baseline'] = start(context, made['task_key'], profile_id=profile_id, output_root=output_root, session=session)
 
 
-def start(context, task_key, *, profile_id=None, output_root=None):
+def start(context, task_key, *, profile_id=None, output_root=None, session=None):
     """Fixed baseline, also used to retry a failed/blocked creation baseline. Concurrent presses reuse the live run."""
     with _LOCK:
-        return _start(context, task_key, profile_id=profile_id, output_root=output_root)
+        return _start(context, task_key, profile_id=profile_id, output_root=output_root, session=session)
 
 
-def _start(context, task_key, *, profile_id, output_root):
+def _start(context, task_key, *, profile_id, output_root, session=None):
     try:
         previous = status(task_key)
         if previous and previous.get('worker_alive'):
+            session_routing.finished(session)
             return previous
         from .run_routes import start_run  # lazy: in the try: a failure of the import is handled with the rest
         config = configuration(task_key, profile_id=profile_id, output_root=output_root)
         # Creation authorizes one bounded attempt. A probe's unknown result may be
         # resolved by that attempt; known connection/readiness failures still block.
         body = SimpleNamespace(authorize_real_simulation=True, acknowledge_unknown_connection=True, automatic_baseline=True)
-        started = start_run(context, config, body, baseline_only=True)
+        started = start_run(context, config, body, baseline_only=True, session=session)
         result = dict(state='started', **started)
     except Exception as exc:
+        session_routing.finished(session)                  # not handed to a worker: it goes back (again: no harm)
         detail = getattr(exc, 'detail', None)
         reason = detail.get('message') if isinstance(detail, dict) else str(exc)
         if isinstance(detail, dict):

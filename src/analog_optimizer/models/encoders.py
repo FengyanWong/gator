@@ -40,7 +40,7 @@ class ModelConfig:
     log_std_max: float = 2.0
     encoder_type: str | None = None  # Resolved to graph_transformer by default.
     structural_encoding: str | None = None  # GPS defaults to rwse; the group readout defaults to none.
-    architecture_version: int = 1
+    architecture_version: int | None = None
 
     def __post_init__(self):
         if any(type(v) is not int or v < 1 for v in (self.hidden_dim, self.heads, self.layers)):
@@ -63,8 +63,12 @@ class ModelConfig:
         structural = self.structural_encoding if self.structural_encoding is not None else ('rwse' if encoder in ('graph_gps', 'circuit_gps') else 'none')
         if structural not in ('none', 'rwse') or (structural != 'none' and encoder not in GLOBAL_ENCODERS):
             raise ValueError('structural_encoding must be none, or rwse for graph_gps/group_cross_attention/circuit_gps')
-        if type(self.architecture_version) is not int or self.architecture_version != 1:
+        version = self.architecture_version
+        if version is None:
+            version = 2 if encoder == 'circuit_gps' else 1
+        if type(version) is not int or version not in ((1, 2) if encoder == 'circuit_gps' else (1,)):
             raise ValueError('Unsupported encoder architecture_version')
+        object.__setattr__(self, 'architecture_version', version)
         object.__setattr__(self, 'structural_encoding', structural)
         object.__setattr__(self, 'encoder_type', encoder)
         object.__setattr__(self, 'attention_mode', next((k for k, v in LEGACY_MODES.items() if v == encoder), None))

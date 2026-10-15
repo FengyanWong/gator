@@ -14,7 +14,7 @@ from analog_optimizer.models.inputs import context_features, observation_digest
 from analog_optimizer.recording import codec
 from analog_optimizer.training.replay import Transition
 
-from .pretrain import BalancedSampler, archive_identity, identity, retargeted_specs, stated_scales
+from .pretrain import BalancedSampler, archive_identity, identity, migrated, retargeted_specs, stated_scales
 from .storage.atomic import publish, read_json, sha256_file as file_sha, temporary_path, write_json
 from .trajectory import TrajectoryLoader
 
@@ -32,6 +32,12 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
             rows[row['task']].append(row)
     if capacity < len(rows):
         raise ValueError('Rehearsal capacity must include every source task')
+    # A pool whose rewards were recomputed (`migrate_reward_settings`) is drawn as it was trained on: re-scored the same way,
+    # before any relabelling (record 7.352). The manifest says the migrated settings, and so do its transitions now.
+    migration = audit.get('reward_migration')
+    if migration is not None:
+        from analog_optimizer.measurements.specs import RewardSettings
+        migration = RewardSettings(**migration['settings'])
     rng, selected = random.Random(seed), []
     for i, task in enumerate(sorted(rows)):
         n = capacity // len(rows) + (i < capacity % len(rows))
@@ -52,6 +58,8 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
             stated = stated_scales(read_json(path / 'effective_config.json'))
             for row in chosen:
                 transition = transitions[row['candidate_id']]
+                if migration is not None:
+                    transition = migrated(transition, migration)
                 if row['relabeled']:
                     if row.get('target_set'):                      # one of the task's target sets (pretrain.relabel_targets)
                         specs = retargeted_specs(transition.observation.specs, request['relabel_targets'][row['task']][row['target_set'] - 1], row['task'], stated)

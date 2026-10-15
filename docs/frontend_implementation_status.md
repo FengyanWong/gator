@@ -27,7 +27,8 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.279-7.290.md`](workbench-log/7.279-7.290.md) | entries 7.279-7.290 |
 | [`7.291-7.300.md`](workbench-log/7.291-7.300.md) | entries 7.291-7.300 |
 | [`7.301-7.323.md`](workbench-log/7.301-7.323.md) | entries 7.301–7.323 |
-| [`7.324-and-later.md`](workbench-log/7.324-and-later.md) | entries 7.324 onwards: the OPEN file |
+| [`7.324-7.335.md`](workbench-log/7.324-7.335.md) | entries 7.324–7.335 |
+| [`7.336-and-later.md`](workbench-log/7.336-and-later.md) | entries 7.336 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
 `7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md` and `7.301-and-later.md` are pointers kept for old links.
@@ -37,7 +38,7 @@ free number (look at the table below AND at that file: sessions work in parallel
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.349 or 60 kB, whichever comes first, move its entries
+**Rolling the open file over:** when the open file passes entry 7.360 or 60 kB, whichever comes first, move its entries
 unchanged into `docs/workbench-log/7.324-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
@@ -387,3 +388,20 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.333 | A size the optimizer's grid does not hold as a start (user: "option 2" - a guard in the workbench only): for some bounds the optimizer's step count ends one step under the upper bound (13.75 to 137.5 um in 5 nm steps ends at 137.495 um), and a cell that sits on such a bound was refused by every run in the optimizer's words. Now said in plain words - the row, both values, what to set - by the validation (`start_off_grid`), by Save task before anything is written, and by Start and Check now (`start_grid.py`, asking the package's own legalization). 34 of 842 saved rows are of this kind, no saved task is refused; the optimizer package and its digest are unchanged; live after the next backend restart (2026-10-12, commit `0b0778d`) |
 | 7.334 | The published reference and system - is a run that never passes still improving? (user: "check the reward"): the reference's average reward rises while its best stands near -0.26 and the output-voltage and PSR rows are given up for the power row (no design meets more than 3 of 4 rows); the system with GraphGPS stands still at -0.559 on a design whose output sits at the supply, from scratch and from the general model; the system with GT keeps improving and its continuation passes 8 times from design 813 - a correction: "the system passes from no start" (record 7.330) holds for GraphGPS only (2026-10-12, commit `42eac2e`) |
 | 7.335 | The transfer experiment, step 1 - the full comparison owed since 7.313: by the plan's rule the new inputs are accepted on OTA5t, RING3, LDO1 and the VCO for both networks (late passes within 2 points everywhere; the 50 % point at most 14 designs later on OTA5t, 83 and 88 later on the VCO, the bar being 100; LDO1 passes nowhere and says nothing) Then, on the user's "replace old result with new results": the plan's reference table (6.1) and circuit notes now give the new-input results, record 7.313's light-reading tables are the full comparison, the workbench's reference folder holds step 1's eight new-input runs (the twelve old-input runs moved to Older), and the wrong "the system passes from no start" is corrected in record 7.330 and the plan (2026-10-12, commit `42eac2e`) |
+| 7.336 | Round 3: matched GraphGPS/CircuitGPS archive training; disk pools and explicit reward migration |
+| 7.337 | Round 3 status: GraphGPS trained; CircuitGPS preparation restarted after WSL interruption |
+| 7.338 | Journal experiment matrix, evidence gates and timeline targeting online publication by August 2027 |
+| 7.339 | Step 1: 12 existing RGCN-SAC scratch runs queued after CircuitGPS training and checkpoint review |
+| 7.340 | CircuitGPS preparation verified complete; future pretraining reports preparation counts and evaluation phase |
+| 7.341 | CircuitGPS v2 normalizes every tree state; explicit checkpoint migration and offline recovery; historical numerical audit |
+| 7.342 | CircuitGPS v2 restarted from scratch on the unchanged archive; original/recovery runs preserved; RGCN waits for the clean run |
+| 7.343 | Graph transformer reading guide: circuit-to-action diagrams, attention and RWSE, GraphGPS/CircuitGPS comparison, measurement trees, normalization and SAC; documentation only |
+| 7.344 | CircuitGPS CPU acceleration: active-parent tree computation and shared graph packing; 29.2% less update time, 226 targeted checks, explicit full-state checkpoint handover |
+| 7.345 | Connection: all Virtuoso sessions shown together under one profile; independent controls, CIW commands and status; existing run bindings retained |
+| 7.346 | RGCN queue split across the two connected Virtuosos: published LDO seeds 0–4 on session 2, other circuits on session 1; frozen runtime and 9,600-design budget retained |
+| 7.347 | Experiment plan reconciled with completed Round 1/RGCN runs and both offline models; RGCN comparisons added, stale Round 2 proposal flagged |
+| 7.348 | Current CircuitGPS acceleration reverified: 1.0873 to 0.8078 s per SAC update (25.7% less time, 1.346x throughput); repeated CPU comparison and numerical agreement on all 65 task variants |
+| 7.349 | Round 2 dispatched on both Virtuosos: 4 DFFRX1 second-seed runs + 20 Step 6 repeats, at most 19,200 evaluations; historical runtimes/models retained, all configs and physical tasks qualified |
+| 7.350 | Round 2 recovery: DFF already follows Claude's failure policy and continues; BGR's cross-session edit lock released after confirming no unsaved edits, exact 50-parameter write/readback/restoration passed, same-seed retry and second queue resumed; failed attempt retained and total budget unchanged |
+| 7.351 | Two Virtuoso sessions under one connection (user: "send it to whichever is free"): Start, Baseline simulation, Calibration, Continue, Check now and Save task go to a free session - first the one holding the task's cell open for editing, then the one whose last test passed; a busy holder lets go of a saved cell in no window, else a refusal in words; a run lets go of its cell when it ends; the Connection window's review findings fixed (true list value, late answers kept, "1 of 2 OK") |
+| 7.352 | Review fixes to record 7.336's offline tools: qualification reads a disk pool and refuses transferable/migrated pools before rebuilding; a rehearsal snapshot of a migrated pool is re-scored like the pool; the sampler record precedes its save point; the offline_storage/pretrain import cycle broken; 24 absolute doc links made relative |

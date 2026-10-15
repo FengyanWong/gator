@@ -203,8 +203,10 @@ def test_an_offline_pool_pins_what_each_source_was_shown(sources, tmp_path):
     assert shown_widths(moved) == pytest.approx([width / 2 for width in shown_widths(pool)], abs=1e-5)       # 33.3 -> 16.7
     assert moved.audit['request_sha256'] == pool.audit['request_sha256']               # the same request ...
     assert moved.audit['sources'][0]['inputs_sha256'] != pinned and moved.audit != pool.audit       # ... and the audit tells
-    with pytest.raises(ValueError, match='must show the pool as the training saw it'):
-        qualify(frozen)                                                # the frozen pool is not read another way later
+    # The frozen pool is not read another way later: qualification refuses a pool with these inputs before it reads it
+    # (record 7.352; it used to rebuild the pool first, then say that the inputs changed).
+    with pytest.raises(ValueError, match='transferable network inputs'):
+        qualify(frozen)
 
     request['runs'][0]['inputs_sha256'] = pinned                       # a request that pins what it selected
     with pytest.raises(ValueError, match='Network inputs changed after selection'):

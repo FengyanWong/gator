@@ -136,7 +136,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
 
   const showRun = (started: Json, as: 'start' | 'resume', note = '') => {
     setRunDir(started.run_dir); setTab('status'); unfold(); refreshRuns();
-    const said = note ? ` ${note}` : '';
+    // Which Virtuoso session the run went to, when its connection has more than one (record 7.351).
+    const said = [note, started.virtuoso_session?.said].filter(Boolean).map(text => ` ${text}`).join('');
     setMessage(as === 'resume' ? { level: 'info', text: `Continuing in the original run directory: ${started.run_dir}${said}` }
       : { level: started.mock ? 'mock' : 'info', text: `${started.mock ? started.mock_notice + ' ' : ''}Run directory: ${started.run_dir}${said}` });
   };

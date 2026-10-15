@@ -506,3 +506,5 @@ One row per commit, newest last.
 | `0b0778d` | 10-12 17:51 | 7.333 | a starting size the optimizer's grid does not hold is named before a task is saved or a run is tried; workbench only (session "Encoder experiment plan setup") |
 | `73c121a` | 10-12 17:52 | - | record only: names the commit of record 7.333, and the table rows for 7ae9e60 and 0b0778d |
 | `42eac2e` | 10-12 19:42 | 7.334, 7.335 | the published reference and system read by their reward, a correction in 7.330; the transfer experiment's full step 1 comparison, 7.313's tables and the plan's results replaced; docs only (session "Encoder experiment plan setup") |
+| `a01cca0` | 10-12 19:44 | - | record only: names the commit of records 7.334 and 7.335, corrects two statements of its message, and the table rows for 73c121a and 42eac2e |
+| `b80b08b` | 10-15 02:51 | 7.336-7.352 | Round 3 archive training (GraphGPS, CircuitGPS), CircuitGPS v2 and its CPU speed-up (optimizer digest e29b39e1 -> ba551575), two Virtuoso sessions under one connection and the work sent to whichever is free, Round 2 runs, the reading guide, review fixes (the user's Codex session; session "check codex work") |

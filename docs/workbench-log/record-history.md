@@ -515,3 +515,5 @@ One row per commit, newest last.
 | `dd6398a` | 10-17 02:38 | 7.360 | the Roadster look: dark only, red, white and black, Draft A built into the workbench (session "Frontend workbench layout design") |
 | `72f8a1d` | 10-17 02:38 | - | record only: names the commit of record 7.360, and the table rows for d0938bc, 342b77a and dd6398a |
 | `5edbd37` | 10-17 05:21 | 7.361 | the Roadster look made live (page published, 8765 restarted 02:35, bringing 7.351/7.352 live); the connection pill keeps its state word (session "Frontend workbench layout design") |
+| `ccd1d3f` | 10-17 05:21 | - | record only: names the commit of record 7.361, the table rows for 72f8a1d and 5edbd37, and d0938bc's time corrected |
+| `705d43d` | 10-17 13:46 | 7.362 | the task's card: the task across the left and the centre, the circuit on request - the user's Option D (session "Frontend workbench layout design") |

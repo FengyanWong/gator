@@ -94,6 +94,9 @@ await runChecks(browser, async () => {
   if (!(await until(`!!(${PANEL})`, 150))) throw new Error('the Output settings panel never appeared; the page reads: '
     + JSON.stringify(await evaluate(`document.body.innerText.slice(0, 300)`)) + ' | console: ' + consoleErrors.join(' | ').slice(0, 300));
   await evaluate(`navigator.clipboard.writeText = text => { window.__copied = text; return Promise.resolve(); }`);
+  // Record 7.360: Output settings starts folded. Unfolded once here, the choice is kept in this browser over the reloads below.
+  await evaluate(`(() => { const d = ${PANEL}.querySelector('details.module'); if (!d.open) d.querySelector('summary').click(); })()`);
+  if (!(await until(`${PANEL}.querySelector('details.module').open`, 20))) throw new Error('the Output settings module did not unfold');
 
   // ---- "Copy path": on the caption line of "Output root", at its right end, as text ---------------------------------
   check('"Copy path" exists once in the panel', (await evaluate(`[...${PANEL}.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Copy path').length`)) === 1);

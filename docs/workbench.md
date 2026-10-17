@@ -221,23 +221,41 @@ already saved everything), it is already pausing / stopping (that saves by itsel
 is never replaced), or it was started with "Model checkpoints" switched off. Browser check:
 `frontend/scripts/save_now_check.mjs` (fixtures only, safe next to a live run).
 
-## The page's looks and layout (2026-10-03, record 7.158)
+## The page's look and layout (record 7.158; one look since record 7.360)
 
-The user chose two looks for the page and five layout changes from a set of pictured ideas (answers "1 A+B, 2 yes, 3 yes,
-4 yes, 5 yes, 6 Windows"). Only colour, type, rules and borders differ between the looks: every panel, button and field
-stands where it stands in both, and the browser checks find the same page.
+On 2026-10-03 the user chose two looks for the page and five layout changes from a set of pictured ideas (answers "1 A+B,
+2 yes, 3 yes, 4 yes, 5 yes, 6 Windows"): *Whiteprint*, ink on drawing paper, and *Silicon Night*, dark like Virtuoso's
+canvas, with a switch in the header. On 2026-10-17 the user asked for new drafts - "dark mode only delete the day mode",
+"use red, white and black as main colour", "improve readability", after a Tesla Roadster's screen - and chose Draft A
+("go with draft A, build it into the workbench"; the drafts: private artifact "GATOR Roadster look"). Both looks and the
+switch are gone; every panel, button and field stands where it stood.
 
-**Two looks, one switch.** *Whiteprint*, the default, is ink on drawing paper: a faint grid, a sheet frame with zone
-letters A-H across and 1-4 down (a place on the page has a name: "the box at C2"), ruled table heads, and the three
-editors as numbered sheets 1, 2, 3. *Silicon Night* is dark like Virtuoso's canvas: the schematic's dot grid, a seal
-ring around the header, alignment marks in the corners, a hatched layer swatch on each editor tab (Parameters metal 1
-blue, Probes metal 2 magenta, Specs metal 3 teal), and Start glows while it can be pressed. The moon / sun icon at the
-left of the header switches them; nothing changes by itself. The choice is kept in this browser
-(`gator-workbench-look-v1`) and set before the page draws (`index.html`), so a dark choice never flashes light. Every
-pop-up window (Connection, Virtuoso, ngspice, PDK, Runs, RL model, Task file, What's missing?) takes the look
-when it opens and follows the switch while open (`theme.ts` `followLook`, called by `popupWindow.ts`). The circuit graph
-view takes its canvas, line and label colours from the look and changes them on a switch; its node fills stay the
-picture's own key.
+**One look: the Roadster look** (record 7.360). Black ground, white type, one red.
+- White is what is chosen, on or ready: Start, a ticked box, the chosen tab. Red marks where the eye goes - the short bar
+  under a chosen tab, keyboard focus, a chart's line - fills Abort (red, the user's request of 2026-09-21) and colours an
+  error, which always comes with its words. Amber is kept for rows not saved in the task and for warnings; a note's rule at
+  its left is grey.
+- Readability: text at 14 px (12.5 before), headings in sentence case instead of small capitals, roomier rows and fields
+  (the list tables of the Runs and RL model windows a step tighter, so that each still fits its window), and cards told
+  apart by their tone instead of boxes inside boxes. Every text colour reads at 4.5 : 1 or more on the surfaces it sits on.
+  The columns keep their widths, the narrow layouts under 1101 px theirs, and the editors' toolbar its one line at
+  1366 x 768.
+- The banner: the name GATOR as a chip - a package outline with five pins along each long edge and the red dot that marks
+  pin 1 (its tooltip holds the version) - then the task by the name the Task window gives it, with one grey line of its
+  facts; the connection as a pill; the run's state as four words, Ready, Running, Paused, Ended, the one that holds lit as a
+  gear selector shows its gear, beside the run chip (its press opens the run brief, record 7.264); then "Configuration
+  valid", Calibration, Save now, the "Next:" line and Start (white) and Abort (red), both round. From 1201 px the banner keeps
+  one line - the task's facts and the connection's description give way with "..." first - and a narrower window wraps it.
+- Tabs: the chosen tab of every strip is white with a short red bar under its name; the three editors' tabs are one
+  segmented control. An editor is told by its tab, not by a colour (the per-editor colours and layer swatches went).
+- Output settings starts folded (user: "by default make output settings collapsible and collapsed so I can see training
+  tab directly"), its line naming the experiment and the end of the output root; a fold or unfold is kept in this browser.
+- The Training tab shows one run's key numbers as six compact tiles (two runs or more: the table, a row each), and Run
+  status opens with the run at a glance: its state, the evaluations charged as a large number with a bar, and four numbers
+  (Spectre launches, learner updates, the first feasible design, the best design); the table below holds them all.
+- Every pop-up window takes these colours from the page's stylesheet, which it copies when it opens. The Training charts
+  draw the shown run in red, then white, blue and violet for compared runs (`--series-1` to `--series-4`); limits stay
+  amber. The browser draws its own parts dark too (`color-scheme: dark`): scroll bars and the open list of a drop-down.
 
 **Research experiments** (record 7.163; user: "Check the research experiments module and see which should be kept",
 then "Remove both" and "Fold them"). Since record 7.166 its heading looks like the other modules' headings, and its note
@@ -248,14 +266,9 @@ level, Training sources, Task order K, Pretrain seed, Ablation labels) into a cl
 group and Test tasks were removed: nothing read them (Output settings' experiment name groups a run's folder). A
 configuration saved with them still loads without them, and keeps its configuration hash (`RETIRED_RESEARCH_FIELDS`).
 
-**One tab style** (record 7.164, user: "day and night tab style different, change the day style to night one"): both
-looks draw every tab strip alike, the chosen tab raised with an underline, an editor tab in its editor's colour, and
-mark each editor tab with its hatched layer swatch. Whiteprint lost its numbered sheet tabs; only the colours differ.
-
-**The same page in both looks** (record 7.162, user: "the day and night mode banner size is a bit different fix it"):
-every size is shared - the page's margin, the header's border and padding, the tab borders, each editor tab's mark - and
-the looks set only colours and drawings (Silicon Night's seal ring is drawn inside the header's edge, as Whiteprint's
-double rule). Switching the look moves no box; `looks_check.mjs` measures fourteen of them in both looks.
+**One tab style** (record 7.164, user: "day and night tab style different, change the day style to night one"): every tab
+strip is drawn alike; since record 7.360 the chosen tab is white with a short red bar under its name. Records 7.162 and
+7.164 made both looks share every size and one tab style; with one look that holds by itself.
 
 **Room for the tables** (record 7.179, the user's "go on" after design advice 1-3). The bottom panel starts folded while no
 run is shown (see the splitter above). Run configuration reads as a property sheet: a number's label and its box share one
@@ -267,25 +280,25 @@ written. The folder's own size ("used here") is measured on its **Measure** butt
 files under the root took 0.7 to 2 s of disk work on D: at every page open, for this one number. Browser checks:
 `frontend/scripts/room_check.mjs`, `frontend/scripts/output_panel_check.mjs`.
 
-**Drop-down lists in the look's colours** (record 7.173, user: "fix the color issue of the drag down menu in night mode, it
+**Drop-down lists in the page's colours** (record 7.173, user: "fix the color issue of the drag down menu in night mode, it
 is hard to read"): the browser draws a select's open list from its options, and a select in an editor cell (Probes'
-analysis, for one) has no background of its own. Its list came out light under Silicon Night's light text. Every option
-now has the look's field colour and text colour (a disabled one the muted colour), so the list follows the look;
-`looks_check.mjs` measures every option of the page, Probes cells included, at 4.5 : 1 or more in both looks.
+analysis, for one) has no background of its own. Every option has the field colour and the text colour (a disabled one the
+muted colour); `looks_check.mjs` measures every option of the page, Probes cells included, at 4.5 : 1 or more.
 
-**Colours by name.** Every colour of the page is a named value: Whiteprint's in `styles.css` (`:root`), Silicon Night's
-in `themes.css`, which also holds what each look adds. Before the looks came, the 86 colour values written into 69 rules
-were replaced by names carrying exactly the old values; screenshots of six views of the live page were identical before
+**Colours by name.** Every colour of the page is a named value in `styles.css` (`:root`); `roadster.css`, loaded after it,
+holds what the look adds: shapes, sizes, the banner, the tabs (until record 7.360 `themes.css` held the two looks' values
+and drawings). Before the looks came, the 86 colour values written into 69 rules were replaced by names carrying exactly the old values; screenshots of six views of the live page were identical before
 and after, pixel for pixel (the seventh, the Runs window, differs only in its "read at" time, as two shots of one build
 do). The fonts are Windows' own, so nothing is downloaded: Bahnschrift for headings, tabs and table heads, Segoe UI for
 text, Consolas for numbers and ids. Another system shows its own fallbacks.
 
-**The title block.** The header names what the page works on: Rev (the saved task's revision), Class · PDK and the RL
-model's label (record 7.159; its first cell was the project name until the user removed that box). They are read-only;
-the fields stay in their panels, and the circuit panel puts them in the header. The version and environment line moved
-into the tooltip of the name GATOR. Since record 7.182 the **Connection** button is the block's last cell (user: "move the
-conection button to the header"), and the task name has left it (user: "remove the current task name on the header"):
-the Project column's Task list names the task.
+**The title block.** The header names what the page works on: since record 7.360 the task, by the name the Task window
+gives it, then one grey line of facts - Class · PDK, the saved task's revision and the RL model's label (record 7.159; its
+first cell was the project name until the user removed that box). They are read-only; the fields stay in their panels, and
+the circuit panel puts them in the header. The version and environment line is in the tooltip of the GATOR chip. Since
+record 7.182 the **Connection** button is the block's last cell (user: "move the conection button to the header"). Record
+7.182 also took the task name out (user: "remove the current task name on the header"); Draft A of the Roadster look,
+which the user chose on 2026-10-17, brings it back.
 
 **When the page cannot be drawn** (record 7.188, design advice). A failure while drawing the page used to leave it blank.
 Now a panel names the error and offers the ways out. **Undo the last change** draws the page again from the configuration
@@ -296,12 +309,13 @@ the saved one first and opens the page empty. "Details for a bug report" holds t
 everything catches a failure above that one, without an Undo. Browser check: `frontend/scripts/crash_panel_check.mjs`.
 
 **Callouts without frames** (record 7.218, user: "work on fewer boxes inside boxes"). Inside a panel, the header or a
-window, a callout has no frame of its own. A rule at its left sets it off: the accent colour for a note, a confirmation
-and a group (Add a connection, Matched devices), the status colour for a status. Only a status that must not be missed
+window, a callout has no frame of its own. A rule at its left sets it off: grey for a note, a confirmation and a group (Add
+a connection, Matched devices; the accent colour until record 7.360, red since, would have read as a warning), white for
+Calibration ready, the status colour for a status. Only a status that must not be missed
 keeps its faint fill: a blocking issue, a warning, MOCK / REAL, a connection test result, the settings problem. A callout
 inside another one, such as the review inside Matched devices, has no rule of its own; its heading sets it off. Fields,
 buttons, tables, chat areas, charts and the panels keep their frames, and the MOCK banner between the header and the
-columns keeps its frame too. The rules are shared by both looks (`styles.css`). Browser check:
+columns keeps its frame too. Browser check:
 `frontend/scripts/callouts_check.mjs`.
 
 **The splitter above the bottom panel.** Drag the top edge of the bottom panel to give it more or less room;

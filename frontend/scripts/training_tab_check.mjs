@@ -305,20 +305,22 @@ await runChecks(browser, async () => {
   // ---- key numbers (record 7.215): the recorded values of the run, one row; folded and kept so --------------------------------------
   const KEYS = `(${TRAINING}).querySelector('details.training-keys')`;
   const keyCells = (row = 0) => evaluate(`[...(${KEYS}).querySelectorAll('tbody tr')][${row}] ? [...[...(${KEYS}).querySelectorAll('tbody tr')][${row}].cells].map(c => c.textContent) : null`);
+  // one run: its key numbers as six tiles (record 7.360), the value of each with its words
+  const keyTiles = () => evaluate(`[...(${KEYS}).querySelectorAll('.key-tile .key-tile-value')].map(v => v.textContent)`);
   const isStart = e => e.phase === 'baseline' || e.phase === 'episode_reset';
   const judged288 = RUNS.live.data.evaluations.filter(e => !isStart(e) && e.status === 'ok');
   const firstLive = judged288.find(e => e.all_hard_constraints_satisfied)?.commit_seq;
   const last100 = judged288.filter(e => e.commit_seq > 188 && e.commit_seq <= 288), passed100 = last100.filter(e => e.all_hard_constraints_satisfied).length;
-  const wantKeys = ['288', `evaluation ${firstLive}`, `${passed100} of ${last100.length} (${Math.round(100 * passed100 / last100.length)} %)`, '0'];
-  check('key numbers: open, one row with the run\'s recorded first passing design, passing share of the last 100 and best design\'s miss',
-    await until(`(${KEYS})?.open && (${KEYS}).querySelectorAll('tbody tr').length === 1`, 40) && JSON.stringify((await keyCells()).slice(1, 5)) === JSON.stringify(wantKeys)
-    && / \u2192 /.test((await keyCells())[5]) && / \u2192 /.test((await keyCells())[6]), `${JSON.stringify(await keyCells())} | want ${JSON.stringify(wantKeys)}`);
+  const wantKeys = ['288', `evaluation ${firstLive}`, `${passed100} of ${last100.length} ${Math.round(100 * passed100 / last100.length)} %`, '0'];
+  check('key numbers: open, six tiles with the run\'s recorded first passing design, passing share of the last 100 and best design\'s miss',
+    await until(`(${KEYS})?.open && (${KEYS}).querySelectorAll('.key-tile').length === 6`, 40) && JSON.stringify((await keyTiles()).slice(0, 4)) === JSON.stringify(wantKeys)
+    && / \u2192 /.test((await keyTiles())[4]) && / \u2192 /.test((await keyTiles())[5]), `${JSON.stringify(await keyTiles())} | want ${JSON.stringify(wantKeys)}`);
   await evaluate(`(${KEYS}).querySelector('summary').click()`);
   const folded = await until(`!(${KEYS}).open`, 20);
   await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
   check('folded, the key numbers stay folded after a reload', folded && await until(`!!(${KEYS}) && !(${KEYS}).open`, 80));
   await evaluate(`(${KEYS}).querySelector('summary').click()`);
-  check('...and open again with a click', await until(`(${KEYS}).open && (${KEYS}).querySelectorAll('tbody tr').length === 1`, 40));
+  check('...and open again with a click', await until(`(${KEYS}).open && (${KEYS}).querySelectorAll('.key-tile').length === 6`, 40));
 
   // ---- listeners and charts left behind ------------------------------------------------------------------------------------------
   const listeners = async () => { const { result } = await send('Runtime.evaluate', { expression: 'window' }); const { listeners } = await send('DOMDebugger.getEventListeners', { objectId: result.objectId }); return listeners.length; };
@@ -617,13 +619,8 @@ await runChecks(browser, async () => {
     `${mb(alone)} -> ${mb(withCompared)} compared -> ${mb(afterRemoved)} taken off`);
   listRuns = false;
 
-  // ---- the look switch redraws in the other look's colours ---------------------------------------------------------------------
-  const strokeOf = () => evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`);
-  const before2 = await strokeOf();
-  await evaluate(`document.querySelector('header .look-switch').click()`);
-  check('the look switch: charts drawn again in the other look', await until(`document.querySelectorAll('.training .training-plot canvas').length >= 1`) && (await strokeOf()) !== before2);
-  await page.shot(path.join(out, 'training-night.png'), `(${TRAINING})`);
-  await evaluate(`document.querySelector('header .look-switch').click()`);
+  // (the look switch that redrew the charts here went with the day look, record 7.360)
+  await page.shot(path.join(out, 'training-roadster.png'), `(${TRAINING})`);
 
   check('no script error on the page', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);

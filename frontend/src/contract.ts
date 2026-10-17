@@ -2,7 +2,6 @@
 // browser, the titles of its pop-up windows and the ids the checks find elements by. Import-free and plain: the checks' harness
 // (frontend/scripts/lib/harness.mjs) imports this file as it is, under Node's type stripping, as unit_text_check.mjs imports
 // units.ts - so a name changed here reaches every check, and a name taken away fails them when they load instead of silently.
-// index.html reads the look's key before the page draws, so it writes LOOK_KEY out itself.
 
 // ---- kept in this browser: localStorage, unless said otherwise ----------------------------------------------------------------
 /** The page's configuration, kept 0.8 s after each change (store.ts). */
@@ -15,8 +14,6 @@ export const SHOWN_RUN_KEY = 'gator-workbench-shown-run-v1';
 export const LAUNCH_KEY = 'gator-workbench-launch-v1';
 /** The run whose "Calibration ready" line was answered (App.tsx, record 7.204). */
 export const CALIBRATION_ANSWERED_KEY = 'gator-workbench-calibration-answered-v1';
-/** The page's look, Whiteprint or Silicon Night (theme.ts; index.html reads it too). */
-export const LOOK_KEY = 'gator-workbench-look-v1';
 /** The bottom panel's height and fold (App.tsx, record 7.158). */
 export const BOTTOM_KEY = 'gator-workbench-bottom-v1';
 /** A right-column module folded or open: this prefix + the module's id (Right.tsx Module). */

@@ -5,7 +5,7 @@ import type { Built, Category, Series } from './trainingData';
 
 /** One chart of the Training tab (record 7.193), drawn with uPlot in the browser only - nothing drawn is written anywhere.
  *  The chart is made once and fed new data (setData) while its series stay the same; a new chart only when the series
- *  change (another chart chosen, smoothing on or off, a category appearing) or the look changes. It is destroyed when the
+ *  change (another chart chosen, smoothing on or off, a category appearing). It is destroyed when the
  *  tab goes away or the run changes. uPlot itself is loaded the first time a chart is drawn, like cytoscape for the graph
  *  view: a page that never opens the Training tab never loads it.
  *
@@ -22,14 +22,14 @@ const loadUPlot = () => {
 
 export type Format = (value: number) => string;
 export interface ChartProps {
-  built: Built | null; hidden: boolean; look: string; xLabel: string;
+  built: Built | null; hidden: boolean; xLabel: string;
   format: Format;                               // a y value with the chart's unit
   describe: (row: number) => string;            // the facts of a recorded row, for the readout
   onZoom: (min: number, max: number) => void; onReset: () => void;
   onWidth: (width: number) => void;             // the plot's width: the data is thinned to one point group per pixel column
 }
 
-/** A colour of the look by name, as canvas drawing needs it (themes.css / styles.css hold them). */
+/** A colour of the page by name, as canvas drawing needs it (styles.css holds them). */
 function token(element: HTMLElement, name: string, fallback: string) {
   return getComputedStyle(element).getPropertyValue(name).trim() || fallback;
 }
@@ -45,12 +45,14 @@ function alpha(color: string, a: number) {
 
 interface Palette { training: string; evaluation: string; start: string; other: string[]; runs: string[]; limit: string; superseded: string; text: string; muted: string; grid: string; line: string; bad: string; label: string; mono: string }
 function palette(element: HTMLElement): Palette {
-  return { training: token(element, '--accent', '#1d4f91'), evaluation: token(element, '--spec', '#0b6f7c'), start: token(element, '--muted', '#566c82'),
-    other: [token(element, '--accent', '#1d4f91'), token(element, '--probe', '#95357f')], limit: token(element, '--warn', '#8a5a00'),
-    // compared runs (record 7.200): the shown run in the accent, the others in the editors' colours and violet; amber stays the limits'
-    runs: [token(element, '--accent', '#1d4f91'), token(element, '--probe', '#95357f'), token(element, '--spec', '#0b6f7c'), token(element, '--unresolved', '#6a3fa0')],
-    superseded: token(element, '--muted', '#566c82'), text: token(element, '--text', '#13304f'), muted: token(element, '--muted', '#566c82'),
-    grid: token(element, '--grid-line', '#dde5ea'), line: token(element, '--line', '#c3cfda'), bad: token(element, '--bad', '#b3321f'),
+  // The series colours in order (record 7.360): red, white, blue, violet; amber stays the limits'.
+  const series = ['--series-1', '--series-2', '--series-3', '--series-4'].map((name, i) => token(element, name, ['#f5434f', '#e8e8ec', '#4fb3ff', '#c08cff'][i]));
+  return { training: series[0], evaluation: series[1], start: token(element, '--muted', '#a9a9b0'),
+    other: [series[0], series[2]], limit: token(element, '--warn', '#f2b53f'),
+    // compared runs (record 7.200): the shown run first, the others in the series' order
+    runs: series,
+    superseded: token(element, '--muted', '#a9a9b0'), text: token(element, '--text', '#f4f4f5'), muted: token(element, '--muted', '#a9a9b0'),
+    grid: token(element, '--grid-line', '#1c1c20'), line: token(element, '--line', '#2c2c31'), bad: token(element, '--bad', '#ff4f61'),
     label: token(element, '--f-label', 'sans-serif'), mono: token(element, '--f-mono', 'monospace') };
 }
 
@@ -67,11 +69,11 @@ function colourOf(series: Series, index: number, colours: Palette) {
 export const groupOf = (series: Series) => (series.role === 'limit' ? 'limits' : series.role === 'superseded' ? 'abandoned' : series.run != null ? `run${series.run}`
   : series.category ?? series.label.replace(/ \(recorded\)$|: mean of last \d+( evaluations)?$/, ''));
 
-export function TrainingChart({ built, hidden, look, xLabel, format, describe, onZoom, onReset, onWidth }: ChartProps) {
+export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom, onReset, onWidth }: ChartProps) {
   const box = useRef<HTMLDivElement>(null);
   const readout = useRef<HTMLDivElement>(null);
   const plot = useRef<UPlot | null>(null);
-  const layout = useRef('');                                       // series + look the chart was made for
+  const layout = useRef('');                                       // the series the chart was made for
   const latest = useRef({ built, format, describe, onZoom, onReset, onWidth });
   latest.current = { built, format, describe, onZoom, onReset, onWidth };
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -119,7 +121,7 @@ export function TrainingChart({ built, hidden, look, xLabel, format, describe, o
     element.title = element.textContent;
   };
 
-  const layoutKey = useMemo(() => (built ? `${look}|${built.axis}|${built.unit}|${built.series.map(s => `${s.role}:${s.label}:${s.category}`).join('|')}` : ''), [built, look]);
+  const layoutKey = useMemo(() => (built ? `${built.axis}|${built.unit}|${built.series.map(s => `${s.role}:${s.label}:${s.category}`).join('|')}` : ''), [built]);
 
   useEffect(() => {
     if (hidden || !built || !box.current || size.width < 60 || size.height < 60) return;
@@ -143,7 +145,7 @@ export function TrainingChart({ built, hidden, look, xLabel, format, describe, o
     return () => { cancelled = true; };
   }, [built, layoutKey, hidden, size.width, size.height]);
 
-  /** The chart's options: colours of the look, our zoom and reset, the markers drawn over the plot. */
+  /** The chart's options: the page's colours, our zoom and reset, the markers drawn over the plot. */
   function options(UPlotClass: UPlotClass, data: Built, element: HTMLElement, { width, height }: { width: number; height: number }, label: string): uPlotType.Options {
     const colours = palette(element);
     const font = `11px ${colours.label}`;
@@ -152,7 +154,7 @@ export function TrainingChart({ built, hidden, look, xLabel, format, describe, o
       ...(y ? { values: (_u: UPlot, splits: number[]) => splits.map(v => latest.current.format(v)) }
         : { label, labelSize: 14, incrs: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6, 2e6, 5e6],
           values: (_u: UPlot, splits: number[]) => splits.map(v => String(v)) }) });
-    const order = [...new Set(data.series.map(groupOf))];             // the learner's series take the look's colours in turn
+    const order = [...new Set(data.series.map(groupOf))];             // the learner's series take the series colours in turn
     const series: uPlotType.Series[] = [{ label }, ...data.series.map((s): uPlotType.Series => {
       const colour = colourOf(s, order.indexOf(groupOf(s)), colours);
       const dense = data.axis === 'update';

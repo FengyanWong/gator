@@ -61,9 +61,12 @@ export function ByteSize({ label, value, onChange, title, empty }: { label: stri
 // viewer's choice is kept in this browser. It is a <details>, so the content stays mounted while folded: nothing inside
 // stops working (the network still follows a chosen model, the output root is still looked at). Folded, the line says the
 // module's main values, and whether something inside asks for attention - an error or a warning is never just hidden.
-export function Module({ id, title, summary, children }: { id: string; title: string; summary: string; children: ReactNode }) {
+export function Module({ id, title, summary, children, defaultOpen = true }: { id: string; title: string; summary: string; children: ReactNode;
+  defaultOpen?: boolean }) {
   const key = `${MODULE_KEY_PREFIX}${id}`;
-  const [open, setOpen] = useState(() => readKept(s => s.getItem(key) !== 'closed', () => true));
+  // `defaultOpen`: open or folded until this browser keeps a choice (record 7.360: Output settings starts folded, user: "by
+  // default make output settings collapsible and collapsed so I can see training tab directly").
+  const [open, setOpen] = useState(() => readKept(s => { const kept = s.getItem(key); return kept ? kept !== 'closed' : defaultOpen; }, () => defaultOpen));
   const [inside, setInside] = useState<'error' | 'warn' | null>(null);
   const body = useRef<HTMLDivElement>(null);
   const toggle = (now: boolean) => { setOpen(now); keep(s => s.setItem(key, now ? 'open' : 'closed')); };   // private window: not remembered
@@ -87,6 +90,12 @@ export function Module({ id, title, summary, children }: { id: string; title: st
       </details>
     </section>);
 }
+
+/** One number with its label (record 7.360, the Roadster look's key numbers): the label in grey above, the number in the
+ *  label face, words before or after it (a unit, "of 200") in grey beside it. */
+export const KeyTile = ({ label, value, before, after, title }: { label: string; value: ReactNode; before?: string; after?: string; title?: string }) => (
+  <span className="key-tile" title={title}><span className="key-tile-label">{label}</span>
+    <span className="key-tile-value">{before && <span className="unit">{before} </span>}{value}{after && <span className="unit"> {after}</span>}</span></span>);
 
 export const Check = ({ label, value, onChange, title, disabled }: { label: string; value: boolean; onChange: (v: boolean) => void; title?: string; disabled?: boolean }) => (
   <label className="check" title={title}><input type="checkbox" checked={!!value} disabled={disabled} onChange={e => onChange(e.target.checked)} />{label}</label>);

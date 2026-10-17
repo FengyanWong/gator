@@ -3,7 +3,6 @@ import { api, Json } from '../api';
 import { si } from '../units';
 import { short } from '../format';
 import { hintedLayout } from './circuitLayout';
-import { useLook } from '../theme';
 import { useNewest } from '../newest';
 
 // The circuit graph view (user decision 2026-09-21: ONE on-screen diagnostic picture; nothing drawn is ever written to
@@ -27,7 +26,7 @@ const shortKind = (kind: string) => kind.includes(':') ? kind.split(':').slice(1
 const ROLE_COLOUR: Record<string, string> = { supply: '#fecaca', ground: '#d5d9e0', input: '#bbf7d0', output: '#fde68a', bias: '#e9d5ff', clock: '#e9d5ff', normal: '#ffffff' };
 const netRole = (net: Json) => (net.roles as string[]).find(r => r !== 'normal') ?? 'normal';
 
-/** The drawing's style. The node fills above are the picture's own key (one colour per kind, in both looks); the canvas, the
+/** The drawing's style. The node fills above are the picture's own key (one colour per kind); the canvas, the
  *  lines and their labels take the page's look (record 7.158), read from the canvas, which may stand in a pop-up window. */
 function graphStyle(canvas: HTMLElement): Json {
   const style = getComputedStyle(canvas), v = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
@@ -142,9 +141,6 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
     });
     return () => { cancelled = true; };
   }, [view]);
-  // Another look (the header's switch): the canvas, lines and labels take its colours; nothing moves (record 7.158).
-  const pageLook = useLook();
-  useEffect(() => { if (graph.current && canvas.current && view) { graph.current.style(graphStyle(canvas.current)); paint(graph.current, view, layer, head, direction, scope, query); } }, [pageLook]);
   // Another layer, head or direction: only the lines change, the picture stays where the user put it.
   useEffect(() => { if (graph.current && view) paint(graph.current, view, layer, head, direction, scope, query); }, [layer, head, direction, scope, query]);
   useEffect(() => { if (scope === 'global' && picked && picked.type !== 'connection') setQuery(`${picked.type === 'device' ? 'd' : 'n'}:${picked.id}`); }, [picked, scope]);

@@ -5,7 +5,7 @@
 // the fixture's saved rows field by field, as the backend does (consistency.unsaved_rows); other reads pass; every other
 // writing request is refused here: nothing is saved on the backend it runs against. What it pins:
 //   - a changed row is tinted and its changed cells more, a new row in the colour of an added row, both with a bar at their
-//     start; an error row keeps its own colour; in both looks, read from the page's own colour names;
+//     start; an error row keeps its own colour; in the page's one look (record 7.360), read from its own colour names;
 //   - the tick-box cell says what changed and what the task holds (a column not in view too); a changed cell's tooltip
 //     starts with the saved value, written as the cell writes it (1.5 um, 1 GHz, ≥ lower);
 //   - a tab holding such rows carries a dot, its tooltip counts them and names the saved rows deleted here; a tie toggle
@@ -136,8 +136,7 @@ await runChecks(browser, async () => {
     `${await title(TAB('parameters'))} / ${await title(TAB('targets'))}`);
   const dot = await evaluate(`(() => { const s = getComputedStyle(${TAB('parameters')}, '::after'); return [s.content, s.backgroundColor, s.borderRadius]; })()`);
   check('the dot is the mark colour, round', dot[0] !== 'none' && dot[1] === await colour('--unsaved-mark') && dot[2] === '50%', JSON.stringify(dot));
-  for (const look of ['whiteprint', 'silicon']) {
-    await evaluate(`document.documentElement.dataset.theme = '${look}'`); await sleep(200);
+  for (const look of ['roadster']) {              // one look since record 7.360 (two until then, each checked here)
     const want = { row: await colour('--unsaved-row'), cell: await colour('--unsaved-cell'), added: await colour('--added-bg'), mark: await colour('--unsaved-mark'), addedMark: await colour('--added-mark') };
     const got = { row: await bg(`${PROW('wn')}.querySelector('td[data-field="lower"]')`), id: await bg(`${PROW('wn')}.querySelector('td[data-field="variable_id"]')`),
       cell: await bg(`${PROW('wn')}.querySelector('td[data-field="upper"]')`), added: await bg(`${PROW('w_new')}.querySelector('td[data-field="upper"]')`),
@@ -148,7 +147,6 @@ await runChecks(browser, async () => {
       && got.bar.includes(want.mark) && got.addedBar.includes(want.addedMark) && new Set(Object.values(want)).size === 5, JSON.stringify({ want, got }));
     await page.shot(path.join(out, `unsaved-rows-parameters-${look}.png`), `document.querySelector('.editors')`);
   }
-  await evaluate(`document.documentElement.dataset.theme = 'whiteprint'`);
 
   // ---- Specs: the objective is the Limit cell's; a column not in view is said on the row -----------------------------
   await tab('targets');

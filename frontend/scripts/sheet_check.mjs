@@ -163,8 +163,10 @@ await runChecks(browser, async () => {
     check(`${name} scrolled sideways: the tick box stays at the left, the row's ID right beside it, neither covered`,
       seen.scrolled > 50 && Math.abs(seen.tickAt) < 1.5 && Math.abs(seen.idAt) < 1.5 && Math.abs(seen.cellAt) < 1.5 && seen.idOnTop && seen.tickOnTop, JSON.stringify(seen));
     // nothing passing under shows through the sticky heads: the tick-box head and its line with the ID, empty, have no text
-    // pixels (a collapsed table drew that line with the scrolled columns and let their text through its sliver)
+    // pixels (a collapsed table drew that line with the scrolled columns and let their text through its sliver). A text pixel
+    // stands out from the head's own colour, light on the dark look (record 7.360) as dark on a light one.
     let dark = 0;
+    const ground = await evaluate(`(() => { const m = getComputedStyle(document.querySelector('thead th.sel')).backgroundColor.match(/[\\d.]+/g).map(Number); return 0.3 * m[0] + 0.59 * m[1] + 0.11 * m[2]; })()`);
     for (const back of [0, 13, 29, 47]) {                  // at four places, so that some text is under the line whatever its widths
       await evaluate(`(() => { const box = document.querySelector('section.editors .scroll'); box.scrollLeft = box.scrollWidth - box.clientWidth - ${back}; })()`); await sleep(150);
       const clip = await evaluate(`(() => { const s = document.querySelector('thead th.sel').getBoundingClientRect(), i = document.querySelector('thead th[data-field="${id}"]').getBoundingClientRect();
@@ -172,7 +174,7 @@ await runChecks(browser, async () => {
       const { data } = await send('Page.captureScreenshot', { format: 'png', clip });
       dark += await evaluate(`(async () => { const img = new Image(); img.src = 'data:image/png;base64,${data}'; await img.decode();
         const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
-        const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (0.3 * d[k] + 0.59 * d[k + 1] + 0.11 * d[k + 2] < 110) n++; return n; })()`);
+        const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (Math.abs(0.3 * d[k] + 0.59 * d[k + 1] + 0.11 * d[k + 2] - ${ground}) > 60) n++; return n; })()`);
     }
     check(`...and nothing passing under shows through the tick-box head or its line with the ID (${name})`, dark === 0, `${dark} text pixels at four scroll places`);
     if (tab === 'parameters') await page.shot(path.join(out, 'sheet-2-scrolled.png'), `document.querySelector('.editors')`, { maxHeight: 600 });

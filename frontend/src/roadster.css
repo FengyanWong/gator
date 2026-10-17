@@ -1,0 +1,146 @@
+/* The page's look (record 7.360, the user's choice of 2026-10-17: "go with draft A, build it into the workbench"; the drafts:
+   private artifact "GATOR Roadster look"). Dark only - the day look and its switch are gone ("dark mode only delete the day
+   mode") - in red, white and black, with readability first: 14 px text, sentence-case headings, roomier rows and fields,
+   cards told apart by their tone instead of boxes inside boxes. The colours are the names in styles.css's :root; this file
+   holds what the look adds: shapes, sizes, the banner, the tabs. It is loaded after styles.css and wins where both say
+   something about the same element; nothing here moves an element, so the page's parts stand where they always stood. */
+
+/* ---- the page and its text ---------------------------------------------------------------------------------------------- */
+body { font-size: 14px; line-height: 1.45; }
+.layout { gap: 12px; padding: 12px 16px; }   /* the columns keep their widths and their narrow layouts (styles.css) */
+@media (max-width: 1100px) { .layout { padding: 8px; } }   /* one column of editors: as wide as the window lets them (reliability_check) */
+h3 { margin: 12px 0 6px; font: 600 15px/1.3 var(--f-label); text-transform: none; letter-spacing: 0; color: var(--text); }
+h4 { font-family: var(--f-label); font-weight: 600; }
+label { font-size: 13px; gap: 4px; }
+button.text-link { font-size: 13px; }   /* an action on a caption line, at the caption's size (Output root ... Copy path) */
+.hint { font-size: 13px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+a { color: var(--text); } a:hover { color: var(--bad); }
+details > summary::marker { color: var(--muted); }
+
+/* ---- fields and buttons ------------------------------------------------------------------------------------------------- */
+input, select, textarea { border-radius: 8px; padding: 6px 9px; }
+button { border-radius: 9px; padding: 6px 12px; }
+button:hover:not(:disabled) { border-color: #5a5a61; background: var(--hover); }
+button.primary:hover:not(:disabled) { background: #ffffff; border-color: #ffffff; }
+button:has(> svg.icon) { padding: 7px 9px; }
+button.dialog-close:hover:not(:disabled) { color: var(--on-bad); }
+
+/* ---- cards: tone instead of outlines ------------------------------------------------------------------------------------ */
+.panel { border: none; border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
+footer { border: none; border-radius: 16px; }   /* no overflow clip: the splitter stands above its top edge */
+.bottom-body { padding: 12px 16px; }
+.banner { border: none; border-radius: 12px; padding: 8px 14px; background: var(--surface-2); }
+.banner.error { background: var(--bad-bg); color: var(--text); box-shadow: inset 0 0 0 1px var(--bad-line); }
+/* a note's bar is neutral: red stays for what needs attention; Calibration ready is an offer, in white */
+.note, .confirm, .real, .matched-devices, .brief-card, .connection-window .connection-add { border-left-color: #5a5a61; }
+.calibration-ready { border-left-color: var(--text); }
+
+/* ---- the banner (header) ----------------------------------------------------------------------------------------------- */
+header { border: none; border-radius: 16px; padding: 7px 10px; gap: 8px 14px; }
+/* One line while no full-width line (blocking issues, a refusal, a settings problem, Calibration ready) is open: the task's
+   facts and the connection's name give way with "..." before anything wraps. From 1201 px: the banner's fixed parts take
+   about 1,100 px with a run in the header; a narrower window wraps it as before (reliability_check, 960 and 640 px). */
+@media (min-width: 1201px) {
+  header:not(:has(> .issue-list, > .settings-problem, > .calibration-ready, > .launch-refusal)) { flex-wrap: nowrap; }
+}
+header > button, header > .run-state, header > span.ok { flex-shrink: 0; }
+header .title-block { flex: 0 1 auto; min-width: 0; }
+header .connection-launcher { flex: 0 1 auto; min-width: 0; }
+header button.connection-button { max-width: 100%; min-width: 0; }
+header .title-block { align-items: center; align-self: center; gap: 16px; }
+.tb-brand { padding: 0; }
+.gator-chip { display: block; }
+.gator-chip-pins { fill: none; stroke: #5a5a61; stroke-width: 2; stroke-linecap: round; }
+.gator-chip-body { fill: var(--field); stroke: var(--line); }
+.gator-chip-pin1 { fill: var(--accent); }
+.gator-chip-name { font: 600 16px var(--f-label); letter-spacing: 2px; fill: var(--text); }
+/* the task, then its facts on one grey line: class and PDK, revision, the RL model's label */
+.tb-facts { flex: 0 1 auto; align-items: baseline; gap: 10px; min-width: 0; overflow: hidden; }
+.tb-task { font: 600 18px/1.2 var(--f-label); white-space: nowrap; }
+.tb-details { display: block; flex: 0 1 auto; min-width: 0; max-width: 40ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 13px; }
+.tb-details .tb-cell { display: inline; padding: 0; border: none; }
+.tb-details .tb-cell + .tb-cell::before { content: ' · '; white-space: pre; }
+.tb-details .tb-k { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.tb-details .tb-v { display: inline; font: 13px var(--f-body); color: var(--muted); max-width: none; }
+.tb-details .tb-rev .tb-v { font: 13px var(--f-body); } .tb-details .tb-rev .tb-v::before { content: 'revision '; }
+/* the connection as a pill: its name for screen readers, what it is, and its state in the state's colour */
+header button.connection-button { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border: none; border-radius: 999px; background: var(--field); white-space: nowrap; }
+header button.connection-button:hover:not(:disabled) { background: var(--hover); }
+header .connection-button-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+header .connection-button-what { font: 13.5px var(--f-body); min-width: 0; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; }
+header .connection-button .badge { border: none; background: none; padding: 0; font: 12.5px var(--f-body); letter-spacing: 0; text-transform: lowercase; }
+header .connection-button .badge.state-unknown, header .connection-button .badge.state-not_checked { color: var(--muted); }
+/* the run's state as a gear selector shows its gear, then the header's run chip */
+header .run-state { display: flex; align-items: center; gap: 10px; flex: none; }
+.run-state-strip { display: flex; gap: 3px; padding: 3px; border-radius: 11px; background: var(--field); }
+.run-state-strip > span { position: relative; padding: 5px 10px 7px; border-radius: 8px; color: #8e8e96; font: 13.5px/1.2 var(--f-label); }
+.run-state-strip > span.on { background: #2a2a2f; color: var(--text); }
+.run-state-strip > span.on::after { content: ''; position: absolute; left: 50%; bottom: 2px; width: 18px; height: 2px; margin-left: -9px; border-radius: 1px; background: var(--accent); }
+button.run-chip { font: 13px var(--f-mono); color: var(--text); }
+button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { color: var(--text); }
+/* "configuration valid" with a tick, capitalised by the look (the words stay as the checks read them) */
+header span.ok { display: inline-block; padding-left: 19px; font-size: 13px; color: var(--text);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='%23f4f4f5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat left center / 13px; }
+header span.ok::first-letter { text-transform: uppercase; }
+header span.next-run { flex: 0 1 200px; min-width: 120px; max-width: 220px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  font: 12.5px/1.3 var(--f-body); color: var(--muted); }
+header button.run-save { width: 36px; height: 36px; padding: 0; }
+/* Start (Pause, Resume) white, Abort red (the user's request of 2026-09-21): round, as a car's start button */
+header button.run-main, header button.run-abort { width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; }
+header button.run-main { background: var(--accent-fill); color: var(--on-accent); }
+header button.run-abort { background: var(--bad-fill); color: var(--on-bad); }
+header button.run-abort:hover:not(:disabled) { background: #e8213c; border: none; }
+header button.run-main svg.icon, header button.run-abort svg.icon { width: 17px; height: 17px; }
+
+/* ---- tabs ------------------------------------------------------------------------------------------------------------- */
+/* every tab strip: the chosen tab white with a short red bar under its name, the others grey */
+.tabs { border-bottom: 1px solid var(--grid-line); padding: 6px 10px 0; gap: 2px; }
+.tabs > button:not(.run-list-button) { position: relative; border: none; background: transparent; color: var(--muted); padding: 9px 14px 11px; border-radius: 10px 10px 0 0; font: 14px var(--f-label); letter-spacing: 0; }
+.tabs > button:not(.run-list-button):hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.tabs > button.active:not(.run-list-button) { margin-bottom: 0; border: none; background: transparent; color: var(--text); box-shadow: none; }
+.tabs > button.active:not(.run-list-button):not([data-editor])::after { content: ''; position: absolute; left: 50%; bottom: 3px; width: 28px; height: 3px; margin-left: -14px; border-radius: 2px; background: var(--accent); }
+.tabs button.run-list-button { margin-bottom: 6px; border: 1px solid var(--line); }
+/* the editors' three tabs as one segmented control (the editor is told by its tab, not by a colour) */
+.editors > .tabs { border-bottom: none; padding: 0 0 8px; gap: 0; }
+.editors > .tabs > button[data-editor] { background: var(--field); border-radius: 0; padding: 9px 18px 11px; color: var(--muted); box-shadow: inset 0 0 0 3px var(--field); }
+.editors > .tabs > button[data-editor="parameters"] { border-radius: 12px 0 0 12px; } .editors > .tabs > button[data-editor="targets"] { border-radius: 0 12px 12px 0; }
+.editors > .tabs > button[data-editor].active { background: #2a2a2f; color: var(--text); box-shadow: inset 0 0 0 3px var(--field); border-radius: 12px; }
+.editors > .tabs > button[data-editor]::before { content: none; }
+.editors > .tabs > button[data-editor].active::before { content: ''; position: absolute; left: 50%; bottom: 5px; width: 26px; height: 3px; margin: 0 0 0 -13px;
+  border: none; border-radius: 2px; background: var(--accent); }
+
+/* ---- tables ------------------------------------------------------------------------------------------------------------ */
+table.grid { font-size: 13.5px; line-height: 1.4; }
+table.grid th, table.grid td { border-color: var(--grid-line); padding: 6px 10px; }
+table.grid th { background: var(--head); font: 500 13px/1.4 var(--f-label); color: var(--muted); letter-spacing: 0; }
+table.grid td:has(> button > svg.icon) { padding-top: 2px; padding-bottom: 2px; }   /* an icon button keeps its row as low as text (files_tab_check) */
+table.editor td { padding: 0; }
+/* The list tables of the Runs and RL model windows stay a step tighter: each fits its window with no sideways scroll
+   (run_list_check, model_chooser_check); the saved models' table shares its window with the folder list. */
+table.grid.run-table { font-size: 13px; }
+table.grid.run-table th, table.grid.run-table td { padding: 5px 5px; }
+table.grid.model-table, table.grid.model-table th { font-size: 12.5px; }
+/* The Runs window keeps room for its scroll bar: a run's details opening under a short list would add one, narrow the
+   columns and move the row's Details button from under a double click (run_list_check). */
+.run-window .scroll { scrollbar-gutter: stable; }
+table.editor td input:not([type="checkbox"]), table.editor td select { min-height: 36px; padding: 6px 10px; border-radius: 0; font-size: 14px; }
+table.editor td.sel { padding: 0 8px; }
+table.editor td:has(> input[type="checkbox"]) { vertical-align: middle; }   /* a tick box (Optimized) level with the row's text */
+.toolbar { gap: 6px; padding: 8px 0; }
+.toolbar button:has(> svg.icon) { padding: 6px 8px; }   /* the editors' toolbar keeps one line at 1366 x 768 (find_fill_copy_check) */
+.formula-bar .formula-where { border: none; border-radius: 8px; background: var(--field); font-size: 13px; line-height: 20px; padding: 6px 10px; }
+.formula-bar textarea { font-size: 13px; line-height: 20px; }
+
+/* ---- the run's numbers at a glance: Run status's head and the Training tab's key numbers --------------------------------- */
+.status-hero { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: stretch; margin: 2px 0 14px; }
+.status-hero-count { flex: 0 1 260px; display: flex; flex-direction: column; gap: 4px; }
+.status-hero-state { font-size: 14px; }
+.status-hero-number { font: 300 46px/1 var(--f-label); } .status-hero-number .of { color: #8e8e96; }
+.status-hero-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.status-hero-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.key-tiles { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+.key-tile { display: flex; flex-direction: column; padding: 7px 12px; border-radius: 10px; background: var(--field); }
+.key-tile-label { font-size: 12px; line-height: 1.35; color: var(--muted); }
+.key-tile-value { font: 600 17px/1.3 var(--f-label); white-space: nowrap; } .key-tile-value .unit { font: 400 13px var(--f-body); color: #8e8e96; }
+details.training-keys .key-tiles { margin: 6px 0 2px; }

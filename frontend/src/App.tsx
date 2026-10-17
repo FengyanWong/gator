@@ -1,7 +1,5 @@
 import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, NO_ANSWER, saveJson } from './api';
-import { Look, LOOK_NAMES, setLook, useLook } from './theme';
-import { Icon } from './panels/Icons';
 import { setUnitForms } from './units';
 import { rowsFrom, useConfig, useRequest, useTaskSaves } from './store';
 import { CircuitPanel } from './panels/Left';
@@ -9,7 +7,7 @@ import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
-import { RunButtons } from './panels/RunControl';
+import { RunButtons, RunChip } from './panels/RunControl';
 import { RESUMABLE } from './runState';
 import { CALIBRATION_DESIGNS, useLaunchActions } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
@@ -42,13 +40,15 @@ function rejected(e: any): Json {
   return { blocks_run: true, issues, facts: {} };
 }
 
-/** The header's look switch (record 7.158): Whiteprint by day, Silicon Night by night. An icon, like the run buttons. */
-function LookSwitch() {
-  const look = useLook();
-  const other: Look = look === 'silicon' ? 'whiteprint' : 'silicon';
-  return <button className="look-switch" aria-pressed={look === 'silicon'} onClick={() => setLook(other)}
-    title={`Switch look: now ${LOOK_NAMES[look]}; press for ${LOOK_NAMES[other]}. Kept in this browser; the pop-up windows follow.`}>
-    <Icon name={look === 'silicon' ? 'sun' : 'moon'} label="Switch look" /></button>;
+/** The page's name as a chip (record 7.360, Draft A of the Roadster look; user: "the icon looks nice"): the name in a package
+ *  outline with five pins along each long edge, and the red dot that marks pin 1 on a real chip. */
+function GatorChip() {
+  return (<svg className="gator-chip" width="86" height="34" viewBox="0 0 116 46" role="img" aria-label="GATOR">
+    <path d="M26 2v5M42 2v5M58 2v5M74 2v5M90 2v5M26 39v5M42 39v5M58 39v5M74 39v5M90 39v5" className="gator-chip-pins" />
+    <rect x="8" y="7" width="100" height="32" rx="8" className="gator-chip-body" />
+    <circle cx="17" cy="15" r="2.5" className="gator-chip-pin1" />
+    <text x="58" y="28.5" textAnchor="middle" className="gator-chip-name">GATOR</text>
+  </svg>);
 }
 
 /** Layout (specification section 2): left = project, connection, circuit; center = three editors;
@@ -180,17 +180,18 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   return (
     <div className={`layout${folded ? ' bottom-folded' : ''}`} ref={layoutRef} style={bottom.height ? { '--foot': `${bottom.height}px` } as CSSProperties : undefined}>
       <header>
-        {/* The title block (record 7.158): the page names what it works on - the task's facts come from the circuit panel. The
-            version and the environment are one hover away, on the name. */}
+        {/* The title block (record 7.158; the banner of the Roadster look, record 7.360): the name as a chip, then what the page
+            works on - the task and its facts come from the circuit panel. The version and the environment are one hover away,
+            on the chip. One look since record 7.360: the look switch went with the day look. */}
         <div className="title-block">
           <span className="tb-brand" title={`GATOR workbench ${meta?.version ?? ''} | ${meta?.environment?.environment ?? ''} | data-only outputs (no plots)`}>
-            <b>GATOR</b><span className="tb-sub">workbench</span></span>
-          <LookSwitch />
+            <GatorChip /></span>
           <span className="tb-facts" ref={setTitleSlot} />
           {/* The Connection button in the title block (record 7.182, user: "move the conection button to the header"): its name
               over the connection and its state, as the cells beside it; it opens the connection window as before. */}
           <ConnectionButton profileId={profileId} setProfileId={(id, record) => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }), record)} />
         </div>
+        <RunChip control={control} onChip={brief.open} />
         {/* The hand-edited settings.json is not valid JSON: the backend works on defaults and leaves the file alone. Said on a
             line of its own under the header, as /api/meta said it when the page opened - never hidden, not dismissable. */}
         {meta?.settings_problem && <p className="settings-problem warn">{meta.settings_problem}</p>}
@@ -222,7 +223,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
             : `${CALIBRATION_DESIGNS} random designs over the Parameters ranges, each costed. No starting-design baseline. `
               + 'Proposes a Scale for each Specs row and the Initial alpha; Run status shows them with Apply, nothing changes by itself.'}>Calibration</button>
         <RunButtons control={control} startBlocked={startBlocked} resumeBlocked={resumeBlocked} onStart={() => start(false)} onResume={resumeHeld}
-          onMessage={setMessage} onChip={brief.open} next={nextLine} />
+          onMessage={setMessage} next={nextLine} />
         {brief.element}
       </header>
       {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>

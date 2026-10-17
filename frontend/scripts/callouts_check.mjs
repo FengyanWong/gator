@@ -1,6 +1,6 @@
 // Browser check of record 7.218 - fewer boxes inside boxes (user: "work on fewer boxes inside boxes"). Hermetic: reads pass to
 // the backend under test, every writing request is refused.
-// What it pins, in both looks: a callout inside a panel or a window has no frame of its own - a rule at its left sets it
+// What it pins (one look since record 7.360): a callout inside a panel or a window has no frame of its own - a rule at its left sets it
 // off - and only a status keeps its faint fill (blocker, warning, MOCK / REAL, a test result); a callout inside a callout has
 // no rule of its own; the MOCK banner between the header and the columns keeps its frame; the page's own MOCK note in the
 // Project column is drawn so.
@@ -52,9 +52,7 @@ await runChecks(browser, async () => {
     result.pageMock = mock ? read(mock) : null;
     box.remove();
     return result; })()`);
-  for (const look of ['whiteprint', 'silicon']) {
-    if ((await evaluate(`document.documentElement.dataset.theme`)) !== look) { await evaluate(`document.querySelector('header button.look-switch').click()`); await sleep(400); }
-    check(`(${look}) the page is in that look`, (await evaluate(`document.documentElement.dataset.theme`)) === look);
+  for (const look of ['roadster']) {              // one look since record 7.360 (two until then, each checked here)
     const seen = await measure();
     const framed = KINDS.filter(([name]) => { const b = seen[name]; return !b || b.top || b.right || b.bottom || b.left < 3; }).map(([name]) => name);
     check(`(${look}) every kind of callout has a rule at its left and no frame (${KINDS.length} kinds)`, framed.length === 0, JSON.stringify(framed.map(n => [n, seen[n]])));

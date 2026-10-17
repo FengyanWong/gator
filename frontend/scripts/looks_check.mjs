@@ -1,17 +1,20 @@
-// Browser check of the page's two looks and the layout moves of record 7.158 (the user's choices of 2026-10-03: "1 A+B, 2 yes,
-// 3 yes, 4 yes, 5 yes, 6 Windows"). Hermetic: reads pass to the backend under test, the run the bottom tabs show is a FIXTURE
-// answered here, every other writing request is refused - the page may write nothing of its own.
+// Browser check of the page's look - one look since record 7.360 (user: "dark mode only delete the day mode", then "go with
+// draft A, build it into the workbench"; the two looks of record 7.158 were checked here until then) - and of the layout moves
+// of record 7.158. Hermetic: reads pass to the backend under test, the run the bottom tabs show is a FIXTURE answered here,
+// every other writing request is refused - the page may write nothing of its own.
 // What it pins:
-//   - a fresh browser opens in Whiteprint; the header's icon button switches to Silicon Night and back, the choice survives a
-//     reload (set before the page draws) and every open pop-up window follows it;
-//   - text stays readable in both looks (each text / background pair of the page's colours at least 4.5 : 1, WCAG AA), and no
-//     box is left light in Silicon Night (main page, three bottom tabs, the Runs window);
-//   - switching the look moves no box (the same sizes in both, record 7.162);
-//   - the header's title block names the task, its revision, the circuit's class and PDK and the RL model label; the version is one
-//     hover away on the name; Windows' own fonts are the ones asked for;
+//   - one look: no look name on the page, no look switch; black ground, the browser told the page is dark; Windows' own fonts,
+//     text at 14 px;
+//   - text stays readable (each text / background pair of the page's colours at least 4.5 : 1, WCAG AA), and no box is left
+//     light (main page, three bottom tabs, the Runs window);
+//   - the banner of Draft A: the name as a chip with its red pin-1 dot, the task by its own name, the run's state as four words
+//     with one lit, Start round and white, Abort round and red; Output settings folded on a fresh browser;
+//   - the header draws nothing outside its box; the editors' tabs as one segmented control, the chosen one lit with a red bar;
+//   - the header's title block names the task's revision, the circuit's class and PDK and the RL model label; the version is
+//     one hover away on the chip;
 //   - the splitter above the bottom panel: a drag sets its height, a double click folds it to its tab line and back, a tab press
 //     opens it, the arrow keys and Enter do the same from the keyboard; kept in this browser; hidden on narrow windows;
-//   - each editor's colour on its tab and its table's header row; the Specs line offers the Probe ids as chips (same text);
+//   - the editors share one ink and head colour; the Specs line offers the Probe ids as chips (same text);
 //   - Data tables: one line per row - ids end in "...", the whole value on hover, a click copies it; no word cut in two;
 //   - Research experiments: the two retired labels dropped from a saved configuration, three labels shown, six folded; no
 //     "Search method" any more (record 7.226; one, as its label, since 7.163);
@@ -20,7 +23,7 @@
 // Run: WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=<a scratch build> "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w
 // frontend/scripts/looks_check.mjs)" [screenshot-dir], or bash frontend/scripts/run_checks.sh --only looks_check. About 40 s.
 import path from 'node:path';
-import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl, LOOK_KEY, BOTTOM_KEY, CIRCUIT_PICTURE_KEY, RUNS_WINDOW } from './lib/harness.mjs';
+import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl, BOTTOM_KEY, CIRCUIT_PICTURE_KEY, RUNS_WINDOW } from './lib/harness.mjs';
 import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 
 const APP = await workbenchUrl();
@@ -45,10 +48,10 @@ const PAIRS = [['--text', '--panel'], ['--muted', '--panel'], ['--accent', '--pa
   ['--text', '--bg'], ['--text', '--field'], ['--muted', '--field'], ['--text', '--button'], ['--text', '--head'], ['--text', '--card'], ['--text', '--sunk'],
   ['--muted', '--sunk'], ['--text', '--selected'], ['--text', '--hover'], ['--text', '--info-bg'], ['--text', '--warn-bg'], ['--text', '--bad-bg'],
   ['--text', '--code-bg'], ['--text', '--zebra'], ['--bad', '--bad-bg'], ['--ok', '--ok-bg'], ['--warn', '--busy-bg'],
-  ['--neutral-text', '--neutral-bg'], ['--muted', '--na-bg'], ['--on-accent', '--accent-fill'], ['--on-accent', '--bad-fill'], ['--on-warn', '--warn-fill'],
+  ['--neutral-text', '--neutral-bg'], ['--muted', '--na-bg'], ['--on-accent', '--accent-fill'], ['--on-bad', '--bad-fill'], ['--on-warn', '--warn-fill'],
   ['--param', '--param-head'], ['--probe', '--probe-head'], ['--spec', '--spec-head'], ['--probe', '--probe-chip'], ['--param', '--panel'],
   ['--probe', '--panel'], ['--spec', '--panel'], ['--unresolved', '--panel'], ['--text', '--cp-nmos'], ['--text', '--cp-pmos'], ['--text', '--cp-passive'],
-  ['--on-accent', '--accent-fill']];
+  ['--on-bad', '--close-hover']];
 const COLOUR = `(v => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = '#123456'; c.fillStyle = v; const s = c.fillStyle;
   const m = s.startsWith('#') ? [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16)) : s.match(/[\\d.]+/g).slice(0, 3).map(Number); return m; })`;
 const LUMINANCE = `(rgb => { const [r, g, b] = rgb.map(x => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; })`;
@@ -66,10 +69,10 @@ const optionColours = session => session.evaluate(`(() => { const colour = ${COL
   }
   return { editorOptions: document.querySelectorAll('table.editor select option').length, pairs: [...seen.values()] }; })()`);
 const PROBES_TAB = `[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === 'measurements')`;
-/** Visible boxes whose own background is light (a pastel left over from the light look). */
+/** Visible boxes whose own background is light (a pastel left over from the light look); a primary button is white on purpose. */
 const lightBoxes = session => session.evaluate(`(() => { const lum = ${LUMINANCE}, found = new Set();
   for (const e of document.querySelectorAll('body *')) {
-    if (e.closest('svg') || !e.checkVisibility?.()) continue;
+    if (e.closest('svg') || e.matches('button.primary') || !e.checkVisibility?.()) continue;
     const m = getComputedStyle(e).backgroundColor.match(/[\\d.]+/g); if (!m) continue;
     const [r, g, b, a = 1] = m.map(Number); if (a < 0.5) continue;
     if (lum([r, g, b]) > 0.35) found.add(e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\\s+/).join('.') : ''));
@@ -98,71 +101,56 @@ await runChecks(browser, async () => {
   await send('Page.navigate', { url: APP });
   check('the page opens', await page.until(`!!document.querySelector('.editors') && !!document.querySelector('header .tb-cell')`, 200));
   await sleep(1200);
-  const theme = () => evaluate(`document.documentElement.dataset.theme`);
-  const SWITCH = `document.querySelector('header button.look-switch')`;
-
-  // ---- the look: Whiteprint first, the switch, kept, followed by pop-ups --------------------------------------------------
-  check('a fresh browser opens in Whiteprint', await theme() === 'whiteprint');
-  const button = await evaluate(`(() => { const b = ${SWITCH}; return b && { text: b.textContent.trim(), title: b.title, pressed: b.getAttribute('aria-pressed') }; })()`);
-  check('the header has one look switch, an icon with its label kept for screen readers', button?.text === 'Switch look' && button.pressed === 'false', JSON.stringify(button));
-  check("its tooltip starts with its label and names both looks", /^Switch look: now Whiteprint; press for Silicon Night\./.test(button?.title ?? ''), button?.title);
+  // ---- the page's one look (record 7.360, user: "dark mode only delete the day mode"; Draft A of the Roadster look) --------------
+  check('one look: no look name on the page and no look switch in the header',
+    await evaluate(`!document.documentElement.dataset.theme && !document.querySelector('header button.look-switch')`));
   const fonts = await evaluate(`({ body: getComputedStyle(document.body).fontFamily, h3: getComputedStyle(document.querySelector('h3')).fontFamily,
-    number: getComputedStyle(document.querySelector('.right input.numeric') ?? document.body).fontFamily })`);
-  check("Windows' own fonts: Segoe UI for text, Bahnschrift for headings, Consolas for numbers", fonts.body.includes('Segoe UI') && fonts.h3.includes('Bahnschrift') && fonts.number.includes('Consolas'), JSON.stringify(fonts));
-  const frame = await evaluate(`(() => { const l = document.querySelector('.layout'); return { zones: (getComputedStyle(l).backgroundImage.match(/url\\(/g) ?? []).length, border: parseFloat(getComputedStyle(l, '::before').borderTopWidth) }; })()`);
-  // (a 1.5 px border is drawn on whole device pixels: 1 px on a screen at 100 %)
-  check('Whiteprint draws the sheet frame with its zone letters on all four sides', frame.zones === 4 && frame.border >= 1, JSON.stringify(frame));
-  const light = await contrasts(page);
-  const lowLight = light.filter(c => c.ratio < 4.5);
-  check('Whiteprint: every text colour on its background reads at 4.5 : 1 or more', !lowLight.length, JSON.stringify(lowLight));
+    number: getComputedStyle(document.querySelector('.right input.numeric') ?? document.body).fontFamily, size: getComputedStyle(document.body).fontSize })`);
+  check("Windows' own fonts: Segoe UI for text, Bahnschrift for headings, Consolas for numbers; text at 14 px", fonts.body.includes('Segoe UI') && fonts.h3.includes('Bahnschrift')
+    && fonts.number.includes('Consolas') && fonts.size === '14px', JSON.stringify(fonts));
+  const ground = await evaluate(`({ body: getComputedStyle(document.body).backgroundColor, scheme: getComputedStyle(document.documentElement).colorScheme })`);
+  check('black ground, and the browser told the page is dark (its scroll bars and drop-down lists too)', ground.body === 'rgb(0, 0, 0)' && ground.scheme === 'dark', JSON.stringify(ground));
+  const pairs = await contrasts(page);
+  const low = pairs.filter(c => c.ratio < 4.5);
+  check('every text colour on its background reads at 4.5 : 1 or more', !low.length, JSON.stringify(low));
   await evaluate(`${PROBES_TAB}.click()`);          // the Probes table: its analysis column is a drop-down in each cell
   await sleep(300);
-  const lightOptions = await optionColours(page);
-  check('Whiteprint: every drop-down list draws its options on a solid background, readable at 4.5 : 1 or more (Probes cells too)',
-    lightOptions.editorOptions > 0 && lightOptions.pairs.every(p => p.opaque && p.ratio >= 4.5), JSON.stringify(lightOptions));
+  const options = await optionColours(page);
+  check('every drop-down list draws its options on a solid dark background in light text, at 4.5 : 1 or more (Probes cells too)',
+    options.editorOptions > 0 && options.pairs.every(p => p.opaque && p.ratio >= 4.5), JSON.stringify(options));
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === 'parameters').click()`);
   await sleep(300);
-  await page.shot(path.join(out, 'looks-whiteprint.png'));
-
-  await evaluate(`${SWITCH}.click()`);
-  await sleep(300);
-  check('the switch turns the page to Silicon Night', await theme() === 'silicon');
-  check('...and says so to screen readers (pressed) and keeps the choice in this browser',
-    await evaluate(`${SWITCH}.getAttribute('aria-pressed') === 'true' && localStorage.getItem('${LOOK_KEY}') === 'silicon'`));
-  const dark = await contrasts(page);
-  const lowDark = dark.filter(c => c.ratio < 4.5);
-  check('Silicon Night: every text colour on its background reads at 4.5 : 1 or more', !lowDark.length, JSON.stringify(lowDark));
-  await evaluate(`${PROBES_TAB}.click()`);
-  await sleep(300);
-  const darkOptions = await optionColours(page);
-  check('Silicon Night: every drop-down list draws its options on a solid dark background in light text, at 4.5 : 1 or more (Probes cells too)',
-    darkOptions.editorOptions > 0 && darkOptions.pairs.every(p => p.opaque && p.ratio >= 4.5), JSON.stringify(darkOptions));
-  await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === 'parameters').click()`);
-  await sleep(300);
-  check('Silicon Night: no light box is left on the page (Run status)', !(await lightBoxes(page)).length, JSON.stringify(await lightBoxes(page)));
+  check('no light box is left on the page (Run status)', !(await lightBoxes(page)).length, JSON.stringify(await lightBoxes(page)));
   for (const tab of ['Data tables', 'Logs']) {        // (the Agent tab became a window on 2026-10-07, record 7.253: pop-ups are checked below)
     await evaluate(`[...document.querySelectorAll('footer .tabs button')].find(b => b.textContent.trim() === ${JSON.stringify(tab)}).click()`);
     await sleep(700);
     const left = await lightBoxes(page);
-    check(`Silicon Night: no light box is left on the page (${tab})`, !left.length, JSON.stringify(left));
+    check(`no light box is left on the page (${tab})`, !left.length, JSON.stringify(left));
   }
-  await page.shot(path.join(out, 'looks-silicon.png'));
-  await send('Page.reload');
-  await page.until(`!!document.querySelector('.editors')`, 200);
-  check('a reload keeps Silicon Night (set before the page draws)', await theme() === 'silicon');
-  await sleep(800);
+  await page.shot(path.join(out, 'looks-roadster.png'));
+  // the banner of Draft A: the name as a chip, the task, the run's state as a gear selector, Start white and Abort red, round
+  const banner = await evaluate(`(() => { const css = e => e && getComputedStyle(e);
+    const chip = document.querySelector('header .tb-brand svg.gator-chip'), strip = document.querySelector('header .run-state-strip');
+    const main = document.querySelector('header button.run-main'), abort = document.querySelector('header button.run-abort');
+    return { chip: chip?.getAttribute('aria-label'), pin1: css(chip?.querySelector('.gator-chip-pin1'))?.fill, task: document.querySelector('header .tb-task')?.textContent,
+      states: strip && [...strip.children].map(s => s.textContent), lit: strip && [...strip.children].filter(s => s.classList.contains('on')).map(s => s.textContent),
+      said: strip?.getAttribute('aria-label'), main: main && [css(main).borderRadius, css(main).backgroundColor], abort: abort && [css(abort).borderRadius, css(abort).backgroundColor] }; })()`);
+  check('the banner names the page as a chip, its pin-1 dot in red', banner.chip === 'GATOR' && banner.pin1 === 'rgb(245, 67, 79)', JSON.stringify(banner));
+  check('...then the task, by its own name (record 7.360: the chosen draft brings the name back)', banner.task === config.circuit.task_id.replace(/^[^:]+:/, '') || (banner.task ?? '').length > 0, JSON.stringify(banner.task));
+  check("...the run's state as four words, one lit and said to screen readers (the header holds the FIXTURE run, completed: Ended)",
+    JSON.stringify(banner.states) === '["Ready","Running","Paused","Ended"]' && JSON.stringify(banner.lit) === '["Ended"]' && banner.said === 'Run state: ended', JSON.stringify(banner));
+  check('...and Start round and white, Abort round and red (red Abort: the user\'s request of 2026-09-21)',
+    banner.main?.[0] === '50%' && banner.main[1] === 'rgb(244, 244, 245)' && banner.abort?.[0] === '50%' && banner.abort[1] === 'rgb(208, 16, 44)', JSON.stringify([banner.main, banner.abort]));
+  check('Output settings starts folded on a fresh browser (record 7.360, user: "by default make output settings collapsible and collapsed")',
+    await evaluate(`(() => { const d = [...document.querySelectorAll('.right details.module')].find(x => x.querySelector(':scope > summary h3')?.textContent === 'Output settings'); return !!d && !d.open; })()`));
   await evaluate(`[...document.querySelectorAll('footer button')].find(b => b.textContent.trim().startsWith('Runs'))?.click()`, true);
   const target = await browser.window(RUNS_WINDOW, { ms: 8000 }).catch(() => null);
   check('the Runs window opens', !!target);
   if (target) {
     const runs = await browser.attach(target);
     await sleep(600);
-    check('a pop-up window takes the page\'s look when it opens', await runs.evaluate(`document.documentElement.dataset.theme`) === 'silicon');
     const leftInWindow = await lightBoxes(runs);
-    check('Silicon Night: no light box in the Runs window', !leftInWindow.length, JSON.stringify(leftInWindow));
-    await evaluate(`${SWITCH}.click()`);
-    await sleep(300);
-    check('...and follows the switch while it is open', await runs.evaluate(`document.documentElement.dataset.theme`) === 'whiteprint' && await theme() === 'whiteprint');
+    check('no light box in the Runs window: a pop-up takes the page\'s colours from its stylesheet', !leftInWindow.length, JSON.stringify(leftInWindow));
   }
 
   // ---- Research experiments (record 7.163) and no "Search method" (record 7.226) ------------------------------------------
@@ -208,34 +196,19 @@ await runChecks(browser, async () => {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
   await evaluate(`document.activeElement?.blur()`);
 
-  // ---- the same page in both looks (record 7.162, user: "the day and night mode banner size is a bit different"): every box -----
-  const BOXES = ['header', 'header .title-block', 'header .tb-cell', 'aside.left', 'main', 'aside.right', 'footer', 'footer > .tabs', '.editors > .tabs',
-    '.editors > .tabs > button[data-editor="parameters"]', '.editors > .tabs > button[data-editor="targets"]', '.editors table.editor th[data-field]',
-    'header button.run-main', 'header button.look-switch'];
-  const boxes = () => evaluate(`${JSON.stringify(BOXES)}.map(s => { const e = document.querySelector(s); if (!e) return s + ': none'; const r = e.getBoundingClientRect();
-    return s + ': ' + [r.left, r.top, r.width, r.height].map(v => Math.round(v * 10) / 10).join(','); })`);
-  const outside = () => evaluate(`getComputedStyle(document.querySelector('header')).boxShadow.split(/,(?![^(]*\\))/).filter(s => s.trim() !== 'none' && !s.includes('inset')).length`);
-  const lookNow = await theme();
-  const first = await boxes(), outsideFirst = await outside();
-  await evaluate(`${SWITCH}.click()`); await sleep(300);
-  const second = await boxes(), outsideSecond = await outside();
-  await evaluate(`${SWITCH}.click()`); await sleep(300);
-  const moved = first.filter((b, i) => b !== second[i]).map((b, i) => `${b}  vs  ${second[first.indexOf(b)]}`);
-  check('switching the look moves nothing: header, columns, bottom panel, tabs, table head and buttons stand exactly where they stood', !moved.length, JSON.stringify(moved));
-  check('...and neither header draws outside its box (its rules are inset)', outsideFirst === 0 && outsideSecond === 0, `${outsideFirst} / ${outsideSecond}`);
-  // one tab style in both looks (record 7.164): the editors' layer swatches, the chosen tab raised and underlined
-  const tabStyle = () => evaluate(`(() => { const t = document.querySelector('.editors > .tabs > button[data-editor].active'), m = getComputedStyle(t, '::before'), b = getComputedStyle(t);
-    return [m.backgroundImage.startsWith('repeating-linear-gradient'), m.borderRadius, b.boxShadow.includes('inset') && b.boxShadow.includes('-2px'), b.borderTopLeftRadius].join('|'); })()`);
-  const tabsFirst = await tabStyle();
-  await evaluate(`${SWITCH}.click()`); await sleep(300);
-  const tabsSecond = await tabStyle();
-  await evaluate(`${SWITCH}.click()`); await sleep(300);
-  check('one tab style in both looks: a layer swatch on each editor tab, the chosen one raised and underlined', tabsFirst === tabsSecond && tabsFirst.startsWith('true|') && tabsFirst.includes('|true|'), `${tabsFirst} / ${tabsSecond}`);
-  check('(the look is back as it was)', await theme() === lookNow);
+  // ---- the header draws nothing outside its box; the editors' tabs as one segmented control ------------------------------------
+  check('the header draws nothing outside its box', await evaluate(`getComputedStyle(document.querySelector('header')).boxShadow.split(/,(?![^(]*\\))/).filter(s => s.trim() !== 'none' && !s.includes('inset')).length`) === 0);
+  const tabStyle = await evaluate(`(() => { const css = getComputedStyle(document.documentElement);
+    const tabs = [...document.querySelectorAll('.editors > .tabs > button[data-editor]')], active = tabs.find(t => t.classList.contains('active'));
+    const bar = getComputedStyle(active, '::before'), other = tabs.find(t => t !== active);
+    return { bar: [bar.content, bar.backgroundColor, bar.height], other: getComputedStyle(other, '::before').content,
+      ink: getComputedStyle(active).color, otherInk: getComputedStyle(other).color }; })()`);
+  check('the chosen editor tab is lit with a short red bar under its name, no layer swatch; the others grey (record 7.360)',
+    tabStyle.bar[1] === 'rgb(245, 67, 79)' && tabStyle.bar[2] === '3px' && tabStyle.other === 'none' && tabStyle.ink === 'rgb(244, 244, 245)' && tabStyle.otherInk === 'rgb(169, 169, 176)', JSON.stringify(tabStyle));
 
   // ---- the title block ------------------------------------------------------------------------------------------------------
   const facts = await evaluate(`Object.fromEntries([...document.querySelectorAll('header .tb-cell')].map(c => [c.querySelector('.tb-k').textContent, c.querySelector('.tb-v').textContent]))`);
-  check('the title block names the revision, the class and PDK, and the RL model label (no project name: record 7.159; no task name: record 7.182)',
+  check('the title block names the revision, the class and PDK, and the RL model label in its facts (no project name: record 7.159)',
     !('Project' in facts) && !('Task' in facts) && facts.Rev === '-' && facts['Class · PDK'] === `${config.circuit.circuit_class} · ${config.circuit.pdk_id}`
     && facts['RL model'] === config.project.task_name, JSON.stringify(facts));
   // The label is typed in the RL model window since record 7.265 ("Name of the new model"; in Run configuration until then).
@@ -301,12 +274,12 @@ await runChecks(browser, async () => {
     return { editors: tab.map(b => b.dataset.editor), active: active?.dataset.editor, ink: same(getComputedStyle(active).color, css.getPropertyValue('--param')),
       head: same(getComputedStyle(th).backgroundColor, css.getPropertyValue('--param-head')) }; })()`);
   check('the three editor tabs carry their editor, in tab order', JSON.stringify(tabColours.editors) === '["parameters","measurements","targets"]', JSON.stringify(tabColours));
-  check("the active editor's tab and table header row take its colour (Parameters)", tabColours.ink && tabColours.head, JSON.stringify(tabColours));
+  check("the active editor's tab and table header row take the editors' one ink and head colour (record 7.360: no colour per editor)", tabColours.ink && tabColours.head, JSON.stringify(tabColours));
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Specs')).click()`);
   await sleep(300);
   const probes = config.measurements.map(m => m.measurement_id).filter(Boolean);
   const chips = await evaluate(`(() => { const p = document.querySelector('.fact.spec-probes'); return { ids: [...p.querySelectorAll('code.probe-id')].map(c => c.textContent), text: p.textContent }; })()`);
-  check('the Specs line offers the Probe ids as Probe-coloured chips', JSON.stringify(chips.ids) === JSON.stringify(probes), JSON.stringify(chips.ids));
+  check('the Specs line offers the Probe ids as chips', JSON.stringify(chips.ids) === JSON.stringify(probes), JSON.stringify(chips.ids));
   check('...the line reads "Probes:" and the ids, a comma between them (its explanation in the tooltip, record 7.176)', chips.text === `Probes: ${probes.join(', ')}`, chips.text.slice(0, 160));
   check('the Specs table header row takes the Specs colour', await evaluate(`document.querySelector('.editors').dataset.editor === 'targets'`));
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Parameters')).click()`);
@@ -316,11 +289,12 @@ await runChecks(browser, async () => {
   check('Data tables shows the FIXTURE row', await page.until(`!!document.querySelector('footer table.data-table td.id-cell')`, 50));
   await evaluate(`navigator.clipboard.writeText = text => { window.__copied = text; return Promise.resolve(); }`);
   const cells = await evaluate(`(() => { const t = document.querySelector('footer table.data-table'), row = t.querySelector('tbody tr'), td = [...row.children];
-    const line = parseFloat(getComputedStyle(td[0]).lineHeight) || 16;
-    return { ids: td.filter(c => c.classList.contains('id-cell')).length, title: td[0].title, height: Math.round(row.getBoundingClientRect().height), line: Math.round(line),
+    const line = Math.max(...td.map(c => { const s = getComputedStyle(c); return parseFloat(s.lineHeight) || 1.2 * parseFloat(s.fontSize); }));
+    const pad = (s => parseFloat(s.paddingTop) + parseFloat(s.paddingBottom))(getComputedStyle(td[4]));   // the look's room above and below a cell's line
+    return { ids: td.filter(c => c.classList.contains('id-cell')).length, title: td[0].title, height: Math.round(row.getBoundingClientRect().height), line: Math.round(line), pad: Math.round(pad),
       cut: td[0].scrollWidth > td[0].clientWidth, phase: Math.round(td[4].getBoundingClientRect().height), json: td[7].className, time: td[6].className }; })()`);
   check('the four ids (worker_id too) are id cells, a long one ending in "...", the whole value in its tooltip', cells.ids === 4 && cells.cut && cells.title.startsWith(ID), JSON.stringify(cells));
-  check('the row is one line high, the word "baseline" uncut', cells.height <= cells.line + 8 && cells.phase <= cells.line + 8, JSON.stringify(cells));
+  check('the row is one line high, the word "baseline" uncut', cells.height <= cells.line + cells.pad + 8 && cells.phase <= cells.line + cells.pad + 8, JSON.stringify(cells));
   check('a time keeps its width, a JSON value has a cell of its own', cells.time === 'time-cell' && cells.json === 'json-cell', JSON.stringify(cells));
   await evaluate(`document.querySelector('footer table.data-table td.id-cell').click()`);
   check('a click on an id copies the whole value', await evaluate(`window.__copied`) === ID);

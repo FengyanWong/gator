@@ -1,37 +1,44 @@
-/* The page's stylesheet; themes.css adds each look's own colours and drawings. In order: the colour names, the plain elements,
+/* The page's stylesheet; roadster.css adds the page's look (record 7.360). In order: the colour names, the plain elements,
    the page's frame and header, then the parts of the page and the pop-up windows, mostly in the order they were built. A rule
    stands where the cascade needs it: moved past another rule that sets the same property with the same specificity, it can
    change which of the two wins. The regroup of 2026-10-09 (plan-refactoring C11) moved only rules that
    frontend/scripts/css_order_proof.mjs proves free to move, and merged a selector written twice only where it proves the
    same; a later move is checked the same way (the script's header says how). */
 :root {
-  /* The page's colours by name (record 7.158): every rule below uses these, so a look is one list of values. These are
-     Whiteprint's, the default look - ink on drawing paper; themes.css has Silicon Night's and what each look adds. */
-  --bg: #e9eef1; --panel: #fbfcfc; --line: #c3cfda; --text: #13304f; --muted: #566c82; --accent: #1d4f91; --bad: #b3321f; --warn: #8a5a00; --ok: #22704a;
-  --on-accent: #fff; --on-warn: #fff; --accent-fill: #13304f; --bad-fill: #b3321f; --warn-fill: #8a5a00;
-  --field: #fff; --field-disabled: #e9eef2; --button: #f4f7f9; --card: #fff; --canvas: #fff; --sunk: #f1f5f8; --surface-2: #f7f9fb;
-  --head: #e5ecf2; --code-bg: #e9eff4; --selected: #dfe9f5; --selected-hover: #d3e1f1; --selected-soft: #e9f0f8; --hover: #eef3f8;
-  --info-bg: #edf2f7; --info-line: #c3d3e4; --real-bg: #e7eef5;
-  --bad-bg: #fbeeeb; --bad-line: #e2aba1; --bad-row: #fcf2f0; --bad-strong: #8c2414; --close-hover: #e81123;
-  --warn-bg: #fbf3df; --warn-line: #dcc183; --mock-line: #c99a2e; --busy-bg: #fbf0d8;
-  --ok-bg: #e4f2ea; --ok-line: #a3cdb3; --added-bg: #e9f5ee;
+  /* The page's colours by name (record 7.158): every rule below uses these. Since record 7.360 (the user's choice of
+     2026-10-17: "dark mode only, delete the day mode", Draft A of the Roadster look) there is one look and these are its
+     values: black, white type, one red. White is what is chosen, on or ready (Start, a ticked box, the chosen tab); red marks
+     where the eye goes (the bar under the chosen tab, focus, a chart's line), fills Abort, and colours an error, which always
+     comes with its words. Amber is kept for rows not saved in the task and for warnings. Each text colour reads at least
+     4.5 : 1 on the surfaces it sits on (frontend/scripts/looks_check.mjs measures them). */
+  --bg: #000000; --panel: #0e0e10; --line: #2c2c31; --text: #f4f4f5; --muted: #a9a9b0; --accent: #f5434f; --bad: #ff4f61; --warn: #f2b53f; --ok: #f4f4f5;
+  --on-accent: #0a0a0b; --on-warn: #1a1406; --accent-fill: #f4f4f5; --bad-fill: #d0102c; --warn-fill: #f2b53f; --on-bad: #fff;
+  --field: #18181b; --field-disabled: #121214; --button: #18181b; --card: #18181b; --canvas: #0e0e10; --sunk: #0a0a0b; --surface-2: #141416;
+  --head: #141416; --code-bg: #18181b; --selected: #26262b; --selected-hover: #2e2e34; --selected-soft: #1d1d21; --hover: #232327;
+  --info-bg: #141416; --info-line: #2c2c31; --real-bg: #141416;
+  --bad-bg: #2a0d12; --bad-line: #7a2430; --bad-row: #1e0b0f; --bad-strong: #ff4f61; --close-hover: #d0102c;
+  --warn-bg: #241c0b; --warn-line: #6e5418; --mock-line: #7a5c16; --busy-bg: #241c0b;
+  --ok-bg: #18181b; --ok-line: #2c2c31; --added-bg: #1a1a1f;
   /* an editor row not saved in the task (record 7.222): a changed row, its changed cells, the bar of a changed / new row */
-  --unsaved-row: #fcf5e1; --unsaved-cell: #f5e0a3; --unsaved-mark: #c08510; --added-mark: #3f9a6b;
-  --neutral-bg: #e9eef2; --neutral-text: #4c5f73; --na-bg: #f1f4f6; --unresolved: #6a3fa0;
-  --log-line: #e3e9ee; --backdrop: rgba(19, 48, 79, .32);
-  /* the stronger rule of headers and table heads, alternate rows, the paper's grid */
-  --rule: #9db1c4; --zebra: #f5f8fa; --grid-line: #dde5ea;
-  /* each editor's own colour (its tab, its table's header row, its ids elsewhere) */
-  --param: #1d4f91; --probe: #95357f; --spec: #0b6f7c; --param-head: #e2eaf4; --probe-head: #f1e5ee; --spec-head: #ddedef;
-  --probe-chip: #f6eaf3; --probe-chip-line: #e2c6db;
+  --unsaved-row: #241c0b; --unsaved-cell: #3a2c0e; --unsaved-mark: #f2b53f; --added-mark: #f4f4f5;
+  --neutral-bg: #18181b; --neutral-text: #a9a9b0; --na-bg: #121214; --unresolved: #f2b53f;
+  --log-line: #1c1c20; --backdrop: rgba(0, 0, 0, .65);
+  /* the stronger rule of headers and table heads, alternate rows, faint grid lines */
+  --rule: #3a3a3f; --zebra: #121215; --grid-line: #1c1c20;
+  /* the three editors are told apart by their tabs (record 7.360): one ink for their ids and heads */
+  --param: #f4f4f5; --probe: #f4f4f5; --spec: #f4f4f5; --param-head: #141416; --probe-head: #141416; --spec-head: #141416;
+  --probe-chip: #18181b; --probe-chip-line: #2c2c31;
+  /* lines of a chart, in this order (record 7.360): the shown run in red, then white, blue and violet for compared runs */
+  --series-1: #f5434f; --series-2: #e8e8ec; --series-3: #4fb3ff; --series-4: #c08cff;
   /* the circuit picture (CircuitPicture.tsx) and the graph view's lines */
-  --cp-link: #a9b9c8; --cp-nmos: #dce7f4; --cp-pmos: #f3e0e8; --cp-passive: #e1efe6; --cp-source: #ebe4f4; --cp-net: #fff; --cp-net-line: #8ea3b7;
-  --cp-supply: #f6d9cf; --cp-ground: #d8e0e8; --graph-edge: #c9ced6;
+  --cp-link: #3a3a3f; --cp-nmos: #18181b; --cp-pmos: #232327; --cp-passive: #1d1d21; --cp-source: #1d1d21; --cp-net: #0e0e10; --cp-net-line: #5a5a61;
+  --cp-supply: #2a0d12; --cp-ground: #18181b; --graph-edge: #3a3a3f;
   /* Windows' own fonts (the user's choice: nothing is downloaded): labels, text, numbers */
   --f-label: Bahnschrift, 'DIN Alternate', 'Arial Narrow', 'Segoe UI', sans-serif;
   --f-body: 'Segoe UI', system-ui, sans-serif;
   --f-mono: Consolas, 'Cascadia Mono', ui-monospace, monospace;
-  accent-color: var(--accent);
+  color-scheme: dark;                          /* the browser's own parts (scroll bars, the open list of a drop-down) dark too */
+  accent-color: var(--text);                   /* a ticked box is white */
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
@@ -44,7 +51,7 @@ table { font: inherit; }  /* a pop-up window starts as about:blank = quirks mode
 input, select, textarea { border: 1px solid var(--line); padding: 3px 5px; background: var(--field); min-width: 0; width: 100%; }
 /* A drop-down's open list in the look's own colours (record 7.173, user: "fix the color issue of the drag down menu in night
    mode, it is hard to read"): the browser draws the list from its options. A select in an editor cell is transparent, and its
-   list came out light under Silicon Night's light text. */
+   list came out light under the night look's light text. */
 select option { background-color: var(--field); color: var(--text); } select option:disabled { color: var(--muted); }
 label.check input, td input[type=checkbox] { width: auto; }
 input.numeric { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--f-mono); }
@@ -58,7 +65,7 @@ button:hover:not(:disabled) { border-color: var(--accent); } button:disabled { o
 button.primary { background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill); } button.active { background: var(--selected); border-color: var(--accent); }
 .layout { display: grid; height: 100%; grid-template: 'head head head' auto 'msg msg msg' auto 'left main right' minmax(0, 1fr) 'foot foot foot' min(var(--foot, 34vh), calc(100vh - 280px)) / 300px minmax(0, 1fr) 340px; gap: 6px; padding: 6px; }
 header { grid-area: head; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--line); padding: 6px 10px;
-  border-width: 1.5px; padding: 7px 12px; }   /* the last two win: the size both looks share (record 7.162, with the tabs' below) */
+  border-width: 1.5px; padding: 7px 12px; }   /* the last two win: the size of record 7.162 (with the tabs' below) */
 /* The list of blocking issues is a second, full-width line of the header: it pushes the page down instead of covering the editors it is used with. */
 .issue-list { order: 1; flex: 0 0 100%; min-width: 0; border-top: 1px solid var(--line); padding-top: 6px; } .issue-list-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
 .issue-list-body { max-height: 30vh; overflow: auto; } .issue-list code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
@@ -297,7 +304,7 @@ dialog.graph-dialog { width: 96vw; height: 92vh; max-width: none; max-height: no
 .graph-tools label.check { min-height: 26px; } .graph-tools label.check input { height: auto; }
 /* The close cross of a dialog, as a browser window has it: top right, no frame, red when pointed at. */
 button.dialog-close { border: none; background: none; width: 36px; height: 26px; padding: 0; font-size: 20px; line-height: 1; color: var(--muted); border-radius: 3px; }
-button.dialog-close:hover:not(:disabled) { background: var(--close-hover); color: var(--on-accent); border: none; }
+button.dialog-close:hover:not(:disabled) { background: var(--close-hover); color: var(--on-bad); border: none; }
 .graph-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; height: calc(92vh - 118px); } .graph-canvas { border: 1px solid var(--line); background: var(--canvas); min-height: 0; }
 .graph-side { overflow: auto; min-height: 0; } .graph-side h4 { margin: 10px 0 4px; } .graph-side table.grid th { position: static; cursor: default; } .graph-side td.numeric { white-space: nowrap !important; }
 /* Header run buttons: one main button (Start -> Pause -> Resume) and Abort. Icon-only, so the header does not shift when the label changes. */
@@ -309,7 +316,7 @@ button:has(> svg.icon) { display: inline-flex; align-items: center; justify-cont
 table.grid td > button:has(> svg.icon) { padding: 1px 6px; vertical-align: middle; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* Abort is RED (user request 2026-09-21): solid, like the main button is solid blue; faded while there is nothing to abort. */
-button.run-abort { background: var(--bad-fill); color: var(--on-accent); border-color: var(--bad-fill); font-weight: 600; } button.run-abort:hover:not(:disabled) { background: var(--bad-strong); border-color: var(--bad-strong); }
+button.run-abort { background: var(--bad-fill); color: var(--on-bad); border-color: var(--bad-fill); font-weight: 600; } button.run-abort:hover:not(:disabled) { background: var(--bad-strong); border-color: var(--bad-strong); }
 header span.next-run { flex: 1000 1 0; min-width: 14ch; max-width: max-content; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 12px var(--f-mono); }   /* record 7.269: what Start would start */
 button.run-chip { border: none; background: none; padding: 0 2px; color: var(--muted); font-variant-numeric: tabular-nums; font-family: var(--f-mono); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
 button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { color: var(--ok); } button.run-chip.pausing, button.run-chip.paused, button.run-chip.aborting { color: var(--warn); }
@@ -344,7 +351,7 @@ details.section.module { margin-top: 0; } details.module > summary { cursor: poi
    over the rest of the line - a press opens or closes the fold (record 7.169, user: "make the mouse icon as click not with the questionmar[k]") */
 .research-module > summary { cursor: pointer; } .research-module[open] > summary { margin-bottom: 4px; } .research-module > summary > h3 { display: inline; margin: 0; cursor: pointer; }
 .module-summary { display: block; margin: 2px 0 0 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.module-attention { margin-left: 8px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; font-weight: 600; color: var(--on-warn); background: var(--warn-fill); } .module-attention.error { color: var(--on-accent); background: var(--bad-fill); }
+.module-attention { margin-left: 8px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; font-weight: 600; color: var(--on-warn); background: var(--warn-fill); } .module-attention.error { color: var(--on-bad); background: var(--bad-fill); }
 /* Load PDK (Pdk.tsx): the "Components" line of the RL model window, and the PDK window (a pop-up like the connection
    window; about:blank = quirks mode, so its tables are told to inherit the font). */
 /* a labelled list beside a bare button: bottom-aligned, one height for both (a centred row would put the button between the
@@ -408,9 +415,9 @@ table.grid.small.data-table td.json-cell { word-break: break-all; min-width: 24c
 .editors > .confirm, .editors > .matched-devices { flex: none; max-height: 45vh; overflow: auto; }
 .persistence-problem { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .persistence-problem > span { flex: 1 1 300px; }
-/* ---- record 7.158: the header's title block, the look switch, the splitter, each editor's colour, the circuit picture (its
-   one-line ids and alternate rows stand with the Data tables tab and the tables). Both looks use these; themes.css adds what makes
-   each look itself. ---------------------------------------------------------------------------------------------------------- */
+/* ---- record 7.158: the header's title block, the splitter, each editor's colour, the circuit picture (its one-line ids
+   and alternate rows stand with the Data tables tab and the tables). roadster.css adds the look's sizes and drawings (record
+   7.360). ------------------------------------------------------------------------------------------------------------------- */
 header .title-block { display: flex; align-items: stretch; min-width: 0; flex: 0 1 auto; align-self: stretch; }
 @media (max-width: 1100px) { header .title-block { flex-wrap: wrap; } }
 .tb-brand { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding-right: 10px; cursor: default; }
@@ -457,20 +464,19 @@ button.look-switch { align-self: center; margin-right: 6px; }
 .cp-dev .halo { fill: var(--accent); opacity: .18; }
 .cp-dev.on .body { fill: var(--accent-fill); stroke: var(--accent); stroke-width: 1.6; }
 .cp-dev.on text { fill: var(--on-accent); }
-/* Both looks share every size (record 7.162, user: "the day and night mode banner size is a bit different fix it"): the
-   page's margin, the header's border and padding (in the header's own rule, near the top), the tab borders and each editor tab's mark.
-   themes.css sets colours and drawings only, so switching the look never moves anything; looks_check.mjs measures it. */
+/* The tab borders and each editor tab's mark (record 7.162, when two looks had to share every size; roadster.css draws the
+   editor tabs as one segmented control and hides the mark, record 7.360). */
 .tabs { border-bottom-width: 1.5px; }
 .tabs > button:not(.run-list-button) { border-width: 1.5px; }
 .tabs > button.active:not(.run-list-button) { margin-bottom: -1.5px; border-bottom: 1.5px solid transparent; }
 .editors > .tabs > button[data-editor]::before { content: ''; display: inline-block; box-sizing: border-box; width: 15px; height: 15px;
   margin-right: 6px; vertical-align: middle; border: 1px solid var(--editor); background: repeating-linear-gradient(45deg, var(--editor) 0 1.4px, transparent 1.4px 3.6px); }
-/* One tab style in both looks (record 7.164, user: "day and night tab style different, change the day style to night one"):
+/* One tab style (record 7.164, user: "day and night tab style different, change the day style to night one"):
    the editors' layer swatches above, and every tab strip drawn alike - the chosen tab raised with an underline (the
-   editor's colour on an editor tab), the others plain. :root[data-theme] keeps these at the weight the look rules had: over
+   editor's colour on an editor tab), the others plain. :root:root keeps these at the weight the look rules had: over
    a plain button, under an editor's colour and an error row. */
-:root[data-theme] :where(.tabs > button:not(.run-list-button)) { background: transparent; border-color: transparent; color: var(--muted); border-radius: 3px 3px 0 0; }
-:root[data-theme] :where(.tabs > button.active:not(.run-list-button)) { background: var(--button); color: var(--text); border-color: var(--line); box-shadow: inset 0 -2px 0 var(--accent); }
+:root:root :where(.tabs > button:not(.run-list-button)) { background: transparent; border-color: transparent; color: var(--muted); border-radius: 3px 3px 0 0; }
+:root:root :where(.tabs > button.active:not(.run-list-button)) { background: var(--button); color: var(--text); border-color: var(--line); box-shadow: inset 0 -2px 0 var(--accent); }
 @media (min-width: 1101px) { .layout { padding: 19px; } }
 /* The Training tab (record 7.193): one or two charts side by side filling the bottom panel; uPlot's own box is pinned inside
    the measured plot box, so the chart never makes its box grow (and the box never grows the chart). */

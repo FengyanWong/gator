@@ -73,12 +73,32 @@ const ICONS: Record<Phase, IconName> = { idle: 'play', checking: 'play', startin
 const LABELS: Record<Phase, string> = { idle: 'Start', checking: 'Start', starting: 'Starting...', running: 'Pause', pausing: 'Pausing...', paused: 'Resume',
   resuming: 'Resuming...', aborting: 'Aborting...', finishing: 'Finishing...' };
 
+/** The run's state at a glance (record 7.360, the Roadster look): Ready, Running, Paused or Ended, the one that holds lit,
+ *  as a gear selector shows its gear; then the header's run chip (record 7.264), whose press opens the run brief. */
+const STATES = ['Ready', 'Running', 'Paused', 'Ended'] as const;
+function stateOf(phase: Phase, status: Json): typeof STATES[number] {
+  if (phase === 'paused') return 'Paused';
+  if (['starting', 'resuming', 'running', 'pausing', 'aborting', 'finishing'].includes(phase)) return 'Running';
+  return phase === 'idle' && status && ENDED.includes(status.state) ? 'Ended' : 'Ready';
+}
+export function RunChip({ control, onChip }: { control: RunControl; onChip: () => void }) {
+  const { dir, status, phase, forced } = control;
+  const now = stateOf(phase, dir ? status : null);
+  const note = describe(status, phase, forced);
+  return (<div className="run-state">
+    <span className="run-state-strip" role="img" aria-label={`Run state: ${now.toLowerCase()}`}>
+      {STATES.map(s => <span key={s} aria-hidden="true" className={s === now ? 'on' : undefined}>{s}</span>)}</span>
+    {dir && note && <button className={`run-chip ${phase}`} onClick={onChip}
+      title={`The current run: ${dir}\nPress for the run brief: this run and every other live run, each with Show results and Open in Runs (record 7.264).`}>{note}</button>}
+  </div>);
+}
+
 /** `startBlocked` / `resumeBlocked`: why the main button cannot start or resume now (launch.ts readiness), or null - said
  *  as the button's tooltip. Resume itself is the launcher's (`onResume`). `next`: what Start would start, "Next: ..." (record
  *  7.269) - beside the button while it reads Start, and the first sentence of its tooltip. */
-export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onResume, onMessage, onChip, next = null }: {
+export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onResume, onMessage, next = null }: {
   control: RunControl; startBlocked: string | null; resumeBlocked: string | null; onStart: () => void; onResume: () => void;
-  onMessage: (m: Json) => void; onChip: () => void; next?: string | null }) {
+  onMessage: (m: Json) => void; next?: string | null }) {
   const { dir, status, phase, forced } = control;
   const fail = (e: any) => onMessage({ level: 'error', text: plainError(e), detail: e?.detail });
   const command = (name: string, waitFor: Pending, text: string) => {
@@ -141,10 +161,7 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
   const main = phase === 'idle' ? onStart : phase === 'running' ? pause : phase === 'paused' ? onResume : undefined;
   const why = phase === 'idle' ? startBlocked : phase === 'paused' ? resumeBlocked : null;
   const startable = phase === 'idle' || phase === 'checking';           // the main button reads Start
-  const note = describe(status, phase, forced);
   return (<>
-    {dir && note && <button className={`run-chip ${phase}`} onClick={onChip}
-      title={`The current run: ${dir}\nPress for the run brief: this run and every other live run, each with Show results and Open in Runs (record 7.264).`}>{note}</button>}
     <button className="run-save" disabled={phase !== 'running' || !!saving} onClick={saveNow}
       title={phase === 'running' ? 'Save now: The model is saved now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
         + 'and the run goes on by itself. The save point appears in the saved model\'s Details in the RL model window, where it can be used.'

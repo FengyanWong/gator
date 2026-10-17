@@ -80,12 +80,14 @@ await runChecks(browser, async () => {
   if (!(await evaluate(`!!${fold(RUN)}`))) throw new Error('the panels do not fold: the served frontend is older than this change (npm run build, then reload)');
   await sleep(600);
 
-  // ---- at first: open, under their own headings ------------------------------------------------------------------------
+  // ---- at first: Run configuration open, Output settings folded (record 7.360, user: "by default make output settings collapsible
+  // and collapsed so I can see training tab directly"), each under its own heading ---------------------------------------------
   let run = await state(RUN), output = await state(OUTPUT);
-  check('both modules start OPEN', run.open && output.open, JSON.stringify([run.open, output.open]));
+  check('Run configuration starts OPEN, Output settings FOLDED', run.open && !output.open, JSON.stringify([run.open, output.open]));
   check('the heading of each module is its fold line, with unchanged text', run.heading === 'Run configuration' && output.heading === 'Output settings');
-  check('open, a module shows no summary line and no mark', run.line === null && run.attention === null && output.line === null && output.attention === null, JSON.stringify([run, output]));
-  check('their controls are in view (RL model..., output root)', await evaluate(`${MODE}.checkVisibility() && ${OUTPUT}.querySelector('#output-root').checkVisibility()`));
+  check('open, a module shows no summary line and no mark; folded, Output settings says the experiment and the END of the output root',
+    run.line === null && run.attention === null && output.line === 'fixture - .../the/output-root' && output.attention === null, JSON.stringify([run, output]));
+  check("Run configuration's controls are in view (RL model...), Output settings' are not (folded)", await evaluate(`${MODE}.checkVisibility() && !${OUTPUT}.querySelector('#output-root').checkVisibility()`));
   check('the third panel (Research) is not a fold: only the two asked for changed', await evaluate(`!!(${RESEARCH}) && !${RESEARCH}.querySelector('details.module')`));
   check('nothing was remembered before a fold line was used ... or only "open"', [null, 'open'].includes(await remembered('run')) && [null, 'open'].includes(await remembered('output')));
   const openHeight = run.height;
@@ -95,7 +97,7 @@ await runChecks(browser, async () => {
   await clickHeading(RUN);
   run = await state(RUN); output = await state(OUTPUT);
   check('a click on the heading folds "Run configuration" into one line', !run.open && run.height < 70 && run.height < openHeight / 4, `${openHeight} px -> ${run.height} px`);
-  check('... and leaves "Output settings" as it was', output.open);
+  check('... and leaves "Output settings" as it was (folded)', !output.open);
   check('the folded line says the main values: Mode, budget, network', run.line === LINE, run.line);
   check('nothing inside is in view any more, but it all still exists (the module stays mounted)', await evaluate(`!${MODE}.checkVisibility() && !!(${BUDGET_BOX}) && !!${RUN}.querySelector('.module-body')`));
   check('no mark on the line: nothing inside asks for attention', run.attention === null, String(run.attention));
@@ -114,7 +116,7 @@ await runChecks(browser, async () => {
   await sleep(1000);
   await send('Page.reload'); await until(`!!(${RUN}) && !!(${OUTPUT}) && !!${fold(RUN)}`, 150); await sleep(600);
   run = await state(RUN); output = await state(OUTPUT);
-  check('after a reload "Run configuration" is still folded and "Output settings" still open', !run.open && output.open, JSON.stringify([run.open, output.open]));
+  check('after a reload "Run configuration" is still folded, and "Output settings" folded as it starts', !run.open && !output.open, JSON.stringify([run.open, output.open]));
   check('... with its summary line', run.line === LINE, run.line);
 
   // ---- unfolding; a warning inside is marked on the folded line -------------------------------------------------------------------------
@@ -132,6 +134,9 @@ await runChecks(browser, async () => {
   check('with the budget back the mark is gone', (await state(RUN)).attention === null && !(await state(RUN)).open, JSON.stringify(await state(RUN)));
 
   // ---- the output module; an error that appears WHILE it is folded ----------------------------------------------------------------------------
+  await clickHeading(OUTPUT);
+  check('a click opens "Output settings", its output root in view, and that is remembered', (await state(OUTPUT)).open
+    && await evaluate(`${OUTPUT}.querySelector('#output-root').checkVisibility()`) && (await remembered('output')) === 'open');
   await clickHeading(OUTPUT);
   output = await state(OUTPUT);
   check('"Output settings" folds the same way; its line says the experiment and the END of the output root', !output.open && output.line === 'fixture - .../the/output-root' && output.attention === null, JSON.stringify(output));

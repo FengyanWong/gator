@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { registerInputWindow } from '../store';
-import { followLook } from '../theme';
 
 /** What a panel says when the browser refused to open its window. */
 export const BLOCKED = 'The browser blocked the new window. Allow pop-ups for this page, then press the button again.';
@@ -40,7 +39,6 @@ export function usePopupWindow(name: string, options: {
       doc.head.appendChild(copy);
     });
     doc.body.innerHTML = '';
-    doc.documentElement.dataset.theme = document.documentElement.dataset.theme;   // the page's look from the first paint (theme.ts)
     const element = doc.createElement('div');
     element.id = rootId;
     if (rootClass) element.className = rootClass;
@@ -56,12 +54,10 @@ export function usePopupWindow(name: string, options: {
     const leave = () => popup.close();                     // the workbench page is leaving: do not leave a dead window behind
     popup.addEventListener('pagehide', closed);
     window.addEventListener('pagehide', leave);
-    const stopFollowingLook = followLook(popup);           // Switch look reaches an open window too
     return () => {
       stopTrackingInput();
       popup.removeEventListener('pagehide', closed);
       window.removeEventListener('pagehide', leave);
-      stopFollowingLook();
       if (latest.current.closeOnUnmount) popup.close();
     };
   }, [popup]);

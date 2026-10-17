@@ -9,6 +9,7 @@ import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
 import { requestTaskSave } from './TaskSave';
 import { ContinueForm } from './ContinueForm';
 import { LaunchRefusal } from './LaunchRefusal';
+import { KeyTile } from './fields';
 
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
@@ -122,6 +123,22 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
     {status.calibration && <Calibration value={status.calibration} live={!!status.worker_alive || !ENDED.includes(status.state)} config={config} setConfig={setConfig} />}
+    {/* The run at a glance (record 7.360, the Roadster look): how far it is, then four numbers; the table below holds them all. */}
+    {b && <div className="status-hero">
+      <div className="status-hero-count">
+        <span className="status-hero-state">{status.state}{status.stop_reason ? ` · ${status.stop_reason}` : ''}</span>
+        <span className="status-hero-number">{b.charged}<span className="of"> / {b.max_evaluations}</span></span>
+        <span className="hint">evaluations charged · {b.in_flight} in flight · {b.failed} failed</span>
+        <span className="status-hero-bar"><span style={{ width: `${b.max_evaluations ? Math.min(100, (100 * b.charged) / b.max_evaluations) : 0}%` }} /></span>
+      </div>
+      <div className="key-tiles">
+        <KeyTile label="Spectre launches" value={b.launches} after={`retries ${b.retries} · cache hits ${b.cache_hits}`} />
+        <KeyTile label="Learner updates" value={status.learner_updates ?? 0} />
+        <KeyTile label="First feasible design" value={first ? first.first_feasible_eval_count : 'none yet'} before={first ? 'at' : undefined} after={first ? 'evaluations' : undefined} />
+        <KeyTile label="Best design" value={!best ? 'none' : best.feasible ? 'feasible' : best.nominal_feasible ? 'nominal only' : 'infeasible'}
+          after={best ? `hard violation ${num(best.violation)}` : undefined} />
+      </div>
+    </div>}
     <table className="grid small"><tbody>
       <tr><td>State</td><td><b>{status.state}</b>{status.stop_reason ? ` (${status.stop_reason})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>
       <tr><td>Mode / model</td><td>{status.mode} {status.manifest?.source_model?.run_id ? `from ${status.manifest.source_model.run_id.slice(0, 12)} / ${status.manifest.source_model.checkpoint_id}` : '(no weights loaded)'}</td></tr>

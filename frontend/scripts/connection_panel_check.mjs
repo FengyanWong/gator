@@ -176,7 +176,7 @@ await runChecks(browser, async () => {
   check('opening the window sends NO request at all', seen.length === mark, names(mark).join(', '));
   check('the window shows the test made when the page opened: its clock time and OK', /^tested at \d/.test(await hint()) && (await badge()) === 'OK', `${await badge()} | ${await hint()}`);
   check('the button says the window is open', (await evaluate(`${BUTTON}.textContent`)).includes('(window open)'));
-  const styled = await far.evaluate(`(() => { const s = getComputedStyle(${WINDOW}.querySelector('.step-no')); return s.borderRadius !== '0px' && s.color === 'rgb(255, 255, 255)'; })()`);
+  const styled = await far.evaluate(`(() => { const s = getComputedStyle(${WINDOW}.querySelector('.step-no')); return s.borderRadius !== '0px' && s.color === 'rgb(10, 10, 11)'; })()`);   // record 7.360: black on the white circle
   check('the window carries the workbench style sheet', styled);
 
   // ---- Virtuoso over SSH: the three steps, as before ----------------------------------------------------------------

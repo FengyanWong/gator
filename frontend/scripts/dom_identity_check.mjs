@@ -2,7 +2,7 @@
 // folder, so that a build made after a pure restructuring can be compared byte for byte with the build before it. Hermetic: no
 // writing request reaches a backend (refused with 418, the page's one connection test answered as not tested - lib/harness.mjs).
 //
-// What it does, in both looks (Whiteprint, Silicon Night), each scene on a fresh browser and a fresh page:
+// What it does, in the page's look (one since record 7.360; Whiteprint and Silicon Night until then), each scene on a fresh browser and a fresh page:
 //   fresh       nothing kept in the browser: the page, the Tasks window, the MOCK stand-in task chosen there (a task choice)
 //   tabs        a FIXTURE run shown (and held by the header): each bottom tab in turn, the Training tab with a compared run
 //   runs        the Runs window, then the shown run's Details
@@ -35,8 +35,8 @@
 //   2. node dom_identity_check.mjs <ref> --replay <recorded> --build <dist of the build before>   (the reference)
 //   3. node dom_identity_check.mjs <new> --replay <recorded> --build <dist of the build after> --compare <ref>
 // Run by hand (Windows node; replay needs no backend): "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w
-// frontend/scripts/dom_identity_check.mjs)" <out dir> [--replay <dir>] [--build <dist>] [--compare <dir>] [--looks whiteprint]
-// [--scenes rl,runs] [--styles] [--widths 1680,1000,640]. About 3 min for both looks.
+// frontend/scripts/dom_identity_check.mjs)" <out dir> [--replay <dir>] [--build <dist>] [--compare <dir>]
+// [--scenes rl,runs] [--styles] [--widths 1680,1000,640]. About 2 min.
 //
 // A stylesheet's proof (plan-refactoring C11; the static half is css_order_proof.mjs) adds two options, to all three steps:
 //   --styles   beside each <NN>-<step>.html, <NN>-<step>.styles.txt: getComputedStyle of every element of the page (html, body and
@@ -56,13 +56,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AGENT_WINDOW, APP_ROOT_ID, check, CONFIG_KEY, CONNECTION_WINDOW, fail, finish, HEADER_RUN_KEY, launchEdge, LOOK_KEY, NGSPICE_WINDOW, NO_WRITES, PAGE_OPEN_TEST, PDK_WINDOW,
+import { AGENT_WINDOW, APP_ROOT_ID, check, CONFIG_KEY, CONNECTION_WINDOW, fail, finish, HEADER_RUN_KEY, launchEdge, NGSPICE_WINDOW, NO_WRITES, PAGE_OPEN_TEST, PDK_WINDOW,
   readOnly, RL_MODEL_WINDOW, RUNNING_WINDOW, RUNS_WINDOW, sleep, TASK_PANEL, TASKS_WINDOW, TRAINING_COMPARE_KEY, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const args = process.argv.slice(2);
 const option = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : null; };
 const REPLAY = option('--replay'), COMPARE = option('--compare'), BUILD = option('--build');
-const LOOKS = (option('--looks') ?? 'whiteprint,silicon').split(',');
+const LOOKS = ['roadster'];                     // one look since record 7.360 (whiteprint and silicon until then)
 const ONLY = option('--scenes')?.split(',') ?? null;
 const STYLES = args.includes('--styles');
 const DEFAULT_WIDTH = 1680;                               // launchEdge's window and browser.open's viewport (lib/harness.mjs)
@@ -342,7 +342,7 @@ async function scene(look, name, local, body) {
     });
     await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*', requestStage: 'Request' }] });
     await send('Page.addScriptToEvaluateOnNewDocument', { source: FIXED_CLOCK });
-    const put = Object.entries({ [LOOK_KEY]: look, ...local }).map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join(' ');
+    const put = Object.entries({ ...local }).map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join(' ');
     await send('Page.addScriptToEvaluateOnNewDocument', { source: `if (location.protocol.startsWith('http') && !sessionStorage.getItem('dom-seeded')) { sessionStorage.setItem('dom-seeded', '1'); ${put} }` });
     const popups = async () => {
       const open = (await browser.pages()).filter(t => t.id !== page.target.id && t.title.startsWith('GATOR - '));

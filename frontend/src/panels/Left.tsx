@@ -10,7 +10,7 @@ import { pdksChanged } from './Pdk';
 import { NgspiceButton } from './Ngspice';
 import { TaskBaseline } from './TaskBaseline';
 import { TaskSave, baselineText } from './TaskSave';
-import { TaskListButton, taskMark } from './TaskList';
+import { shownName, TaskListButton, taskMark } from './TaskList';
 import { CheckSteps } from './Consistency';
 import { Typed } from './Typed';
 import { CircuitPicture } from './CircuitPicture';
@@ -66,17 +66,20 @@ const copyQuestion = (r: Json) => `Work in ${r.library}/${r.cell} directly?\n\n`
   + 'So only read a COPY you made in Virtuoso (Library Manager: copy the cell and its testbench into a library of yours).\n\n'
   + `OK = ${r.library}/${r.cell} is such a copy: read it and work in it.\nCancel = read nothing.`;
 
-/** The header's title block (record 7.158): what the page works on, as a drawing names its subject - the saved task's
- *  revision, the circuit's class and PDK labels, and the label the RL model is saved under (record 7.159: it took the
- *  project name's place). Read-only; the fields themselves stay in their panels. */
-function TitleFacts({ config, revision }: { config: Json; revision: number | string | null }) {
+/** The header's title block (record 7.158): what the page works on, as a drawing names its subject - since record 7.360
+ *  (Draft A of the Roadster look, which the user chose: the banner names the task) the task as the Task window names it, then
+ *  one line of its facts: the circuit's class and PDK labels, the saved task's revision, and the label the RL model is saved
+ *  under (record 7.159). The task name had left the header on 2026-10-05 (record 7.182); the chosen draft brings it back.
+ *  Read-only; the fields themselves stay in their panels. */
+function TitleFacts({ config, task }: { config: Json; task: Json | null }) {
   const ref = config.circuit;
-  // No task name here (record 7.182, user: "remove the current task name on the header"): the Project column's Task list
-  // names it; the revision of the saved task stays.
+  const name = ref.source === 'registered_task' && ref.task_id ? shownName(task, ref.task_id) : (config.project.task_name || 'no task chosen');
+  const revision = task?.revision ?? null;
   const model = (config.run.model_label ?? '').trim() || config.project.task_name;
-  const fact = (key: string, value: string, extra = '') => <span className={`tb-cell${extra}`}><span className="tb-k">{key}</span><span className="tb-v" title={value}>{value}</span></span>;
-  return <>{fact('Rev', revision == null ? '-' : String(revision), ' tb-rev')}
-    {fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}{fact('RL model', model, ' tb-model')}</>;
+  const fact = (key: string, value: string, extra = '') => <span className={`tb-cell${extra}`}><span className="tb-k">{key}</span><span className="tb-v" title={`${key}: ${value}`}>{value}</span></span>;
+  return <><span className="tb-task" title={ref.task_id ?? name}>{name}</span>
+    <span className="tb-details">{fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}
+      {fact('Rev', revision == null ? '-' : String(revision), ' tb-rev')}{fact('RL model', model, ' tb-model')}</span></>;
 }
 
 export type { TaskLoad, TaskLoaded } from './taskChoice';
@@ -348,7 +351,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
     <TaskSave profileId={profileId} library={ref.library} cell={ref.cell} task={null} hasCopy={!!circuit.working_copy?.verified}
       config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />);
   const titleFacts = titleSlot && createPortal(<TitleFacts config={config}
-    revision={ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id)?.revision ?? null : null} />, titleSlot);
+    task={ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id) ?? null : null} />, titleSlot);
   return <>{column}{firstSave}{titleFacts}<PopupPortal popup={popup} root={root}><VirtuosoWindow profileId={profileId} virtuosoOn={virtuosoOn} offered={offered}
     circuitRef={ref} chosen={chosen} libraries={libraries} cells={cells} chosenCell={chosenCell} listing={listing} importing={importing} patch={patch} setRefresh={setRefresh}
     pdkStep={pdkStep} nativeError={nativeError} error={error} circuit={circuit} taskNote={taskNote} importCell={importCell} config={config} setConfig={setConfig}

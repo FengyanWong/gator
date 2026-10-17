@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline } from '../api';
 import { createdAt as created, runName, runTaskOrBlank as taskOf, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
-import { useLook } from '../theme';
 import { si, unitLabel } from '../units';
 import { Icon } from './Icons';
+import { KeyTile } from './fields';
 import { shownLive } from '../runState';
 import { TRAINING_CAPS_KEY, TRAINING_COMPARE_KEY } from '../contract';
 import { TrainingChart } from './TrainingChart';
@@ -130,7 +130,6 @@ function useTrainingReads(runs: () => { dir: string; store: TrainingStore }[] | 
 }
 
 export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean; runDir: string | null; status: Json; runs: Json[] }) {
-  const look = useLook();
   const pageHidden = usePageHidden();
   const active = !hidden && !pageHidden && !!runDir;
   const live = shownLive(status, runDir);
@@ -333,7 +332,21 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
     </div>}
     {own.answers > 0 && !empty && <details className="training-keys" open={keysOpen} onToggle={e => setKeysOpen(e.currentTarget.open)}>
       <summary title="Key numbers: what each run on the charts reached, read from its recorded rows (episode starts left out, as on the charts).">Key numbers</summary>
-      <table className="grid training-keys-table"><thead><tr><th>Run</th><th title="Evaluations recorded so far.">Evaluations</th>
+      {/* One run: its numbers as tiles (record 7.360, user: "make it more compact but keeping the style"); several: one row each. */}
+      {keyRows.length === 1 && keyRows[0].numbers ? ((k: NonNullable<(typeof keyRows)[number]['numbers']>) => <div className="key-tiles training-key-tiles">
+        <KeyTile label="Evaluations" value={k.evaluations} title="Evaluations recorded so far." />
+        <KeyTile label="First passing design" value={k.firstPass ?? 'none yet'} before={k.firstPass != null ? 'evaluation' : undefined}
+          title="The evaluation number of the first design that met every hard spec." />
+        <KeyTile label={`Passing, last ${RECENT}`} value={!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged}` : 'no verdict'}
+          after={k.recent?.judged ? `${Math.round((100 * k.recent.passed) / k.recent.judged)} %` : undefined}
+          title={`Of the designs of the last ${RECENT} evaluations with a verdict (a timeout or a lost link is none), how many met every hard spec.${k.recent ? ` Evaluations ${k.recent.from} to ${k.recent.to}.` : ''}`} />
+        <KeyTile label="Best design's worst miss" value={k.bestMiss != null ? plain(k.bestMiss) : '-'}
+          title="The worst-spec miss of the design the run keeps as its best, at the newest evaluation: 0 = it has a design that meets every hard spec." />
+        <KeyTile label={'Entropy estimate, first \u2192 last'} value={k.entropy ? `${plain(k.entropy[0])} \u2192 ${plain(k.entropy[1])}` : '-'}
+          title={`The policy's entropy estimate (-mean_log_prob): the mean of the learner updates of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}. Fallen far = the policy has settled; level = it still explores.`} />
+        <KeyTile label={'Temperature \u03b1, first \u2192 last'} value={k.alpha ? `${plain(k.alpha[0])} \u2192 ${plain(k.alpha[1])}` : '-'}
+          title={`The temperature \u03b1 the same way: the mean of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}.`} />
+      </div>)(keyRows[0].numbers!) : <table className="grid training-keys-table"><thead><tr><th>Run</th><th title="Evaluations recorded so far.">Evaluations</th>
         <th title="The evaluation number of the first design that met every hard spec.">First passing design</th>
         <th title={`Of the designs of the last ${RECENT} evaluations with a verdict (a timeout or a lost link is none), how many met every hard spec.`}>Passing, last {RECENT}</th>
         <th title="The worst-spec miss of the design the run keeps as its best, at the newest evaluation: 0 = it has a design that meets every hard spec.">Best design's worst miss</th>
@@ -348,7 +361,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
             <td>{k.bestMiss != null ? plain(k.bestMiss) : '-'}</td>
             <td>{k.entropy ? `${plain(k.entropy[0])} \u2192 ${plain(k.entropy[1])}` : '-'}</td>
             <td>{k.alpha ? `${plain(k.alpha[0])} \u2192 ${plain(k.alpha[1])}` : '-'}</td></>}
-        </tr>)}</tbody></table>
+        </tr>)}</tbody></table>}
     </details>}
     {state === 'failed' && status?.error && <p className="error training-note">The run failed: {status.error}</p>}
     {reading.error && <p className="error training-note">The training numbers could not be read: {reading.error} <button onClick={() => setRetry(n => n + 1)}>Retry read</button></p>}
@@ -374,7 +387,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
             {!spec ? <p className="hint training-empty">{own.answers > 0 ? `This run has no ${chartName(slot.id)} chart (a spec of another task?). Choose another in the title.` : 'Reading...'}</p>
               : !spec.available ? <p className="hint training-empty">{spec.reason}</p>
               : <>{made?.missing?.length ? <p className="hint training-missing">Not on this chart: {made.missing.map(m => `${m.label} (${m.reason})`).join('; ')}</p> : null}
-                <TrainingChart built={made} hidden={!active} look={look} xLabel={spec.axis === 'update' && learnerX === 'update' ? 'Learner update' : 'Evaluation'}
+                <TrainingChart built={made} hidden={!active} xLabel={spec.axis === 'update' && learnerX === 'update' ? 'Learner update' : 'Evaluation'}
                   format={formatFor(spec.unit)} describe={describe(spec.axis)}
                   onWidth={width => setWidths(w => (Math.abs((w[slot.key] ?? 600) - width) < 8 ? w : { ...w, [slot.key]: width }))}
                   onZoom={(min, max) => setView(slot.key, { mode: 'fixed', min, max })} onReset={() => setView(slot.key, NONE)} /></>}

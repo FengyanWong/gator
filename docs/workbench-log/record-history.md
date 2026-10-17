@@ -510,3 +510,6 @@ One row per commit, newest last.
 | `b80b08b` | 10-15 02:51 | 7.336-7.352 | Round 3 archive training (GraphGPS, CircuitGPS), CircuitGPS v2 and its CPU speed-up (optimizer digest e29b39e1 -> ba551575), two Virtuoso sessions under one connection and the work sent to whichever is free, Round 2 runs, the reading guide, review fixes (the user's Codex session; session "check codex work") |
 | `f8ff5ce` | 10-15 02:51 | - | record only: names the commit of records 7.336-7.352, and the table rows for a01cca0 and b80b08b |
 | `9d87ccb` | 10-17 01:21 | 7.353-7.359 | Round 3 seed 0 with an RGCN arm and its session-2 recovery; Step 1's GATv2 arm; CircuitGPS version 3, opt-in (optimizer digest ba551575 -> 6ebf5ba5), its offline training and its Round 3 arms; the log rolled over (sessions "check codex work" and "Weekly experiments summary") |
+| `d0938bc` | 10-17 01:21 | - | record only: names the commit of records 7.353-7.359, and the table rows for f8ff5ce and 9d87ccb |
+| `342b77a` | 10-17 02:28 | 7.356, 7.357 | the index rows of the two CircuitGPS version 3 records, written from their entries (their session had ended) |
+| `dd6398a` | 10-17 02:38 | 7.360 | the Roadster look: dark only, red, white and black, Draft A built into the workbench (session "Frontend workbench layout design") |

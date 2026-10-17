@@ -114,6 +114,23 @@ root-only computation for historical inference. New CircuitGPS models default
 to version 2; all other encoders retain version 1. Full checkpoint resume still
 requires an identical source/architecture contract; migration is explicit.
 
+Version 3 (2026-10-16, record 7.356) is version 2 with scale-invariant
+aggregation. Four sums grew with the size of the circuit: a spec's bindings
+into its program tree, the spec-to-node binding messages, the group-member
+messages and the final readout over nodes, groups, specs and blocks. Version 3
+averages them instead; the readout keeps its explicit log counts, so how many
+there are remains an input. On one recorded state of each of the 65 Round 3
+training tasks (15-123 nodes), the node part of a fresh version 2 readout had
+median RMS 15.0, rising with circuit size (Spearman 0.96), and the first
+critic's value reached 5.80 on the largest circuit; a fresh version 3 network
+gave 0.62 (Spearman 0.10) and at most 0.21. The weight names and shapes are
+those of version 2, so no tensor is added or removed. Version 3 is opt-in:
+`architecture_version: 3` in `run.network`, or in an offline request's
+`model`. Version 2 stays the default, and a trained version 2 model gives
+bit-identical values before and after the change. A model loads only with its
+own version. Unset, the field is not written into a saved configuration, so
+one saved now still loads in a frozen runtime or a server not yet restarted.
+
 The CPU execution optimization of 2026-10-14 (record 7.344) evaluates the v2
 parent-combine MLP only for parents at the current height. A raw height/child/
 parent/operand-slot schedule is built once per encoder forward and shared by

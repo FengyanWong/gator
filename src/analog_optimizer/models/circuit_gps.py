@@ -2,6 +2,14 @@
 
 Separate weights for each relation, Pre-LN gated residuals, no learned instance
 IDs. The actor and each action-conditioned critic own their entire encoder.
+
+Architecture versions (same weight names and shapes in every version):
+1. root-only program-tree normalization;
+2. normalization at every tree level;
+3. version 2 with scale-invariant aggregation: program bindings, spec-to-node binding messages,
+   group-member messages and the final readout average instead of summing, so their scale no longer
+   grows with circuit size or the number of measurement references; the readout keeps its explicit
+   log counts, so cardinality remains an input.
 """
 from collections import OrderedDict, deque
 import threading
@@ -133,9 +141,10 @@ def _program_levels(data):
 
 class ProgramReader(nn.Module):
     """Bottom-up ordered tree computation, with live graph embeddings at leaves."""
-    def __init__(self, h, *, normalize_tree=True):
+    def __init__(self, h, *, normalize_tree=True, mean_bindings=False):
         super().__init__()
         self.normalize_tree = normalize_tree
+        self.mean_bindings = mean_bindings
         self.operation = nn.Embedding(len(OPERATIONS), h)
         self.values = mlp(6, h, h)
         self.binding_role = nn.Embedding(len(BINDING_ROLES), h)
@@ -149,7 +158,7 @@ class ProgramReader(nn.Module):
         base = self.operation(data['op']) + self.values(data['values'])
         tokens, ids = data['bindings']
         bound = self.binding(torch.cat((nodes[ids], self.binding_role(data['binding_role'])), dim=-1))
-        base = base + segment_sum(bound, tokens, len(base))
+        base = base + (segment_mean if self.mean_bindings else segment_sum)(bound, tokens, len(base))
         # Bound the states reused at every tree height. Root-only normalization
         # allows repeated learned amplification to overflow on deep programs.
         # No affine parameters: saved weights retain their names and shapes.
@@ -184,6 +193,8 @@ class JointBlock(nn.Module):
     def __init__(self, config, relations, structured):
         super().__init__()
         h = config.hidden_dim
+        # Version 3 averages the messages a node or group receives; earlier versions sum them.
+        self.aggregate = segment_mean if config.architecture_version >= 3 else segment_sum
         self.norm_local, self.norm_global = nn.LayerNorm(h), nn.LayerNorm(h)
         self.attention = TransformerConv(h, h // config.heads, heads=config.heads,
                                          edge_dim=h, dropout=0, root_weight=False)
@@ -200,7 +211,8 @@ class JointBlock(nn.Module):
         self.member_message = mlp(2 * h, h, h)
         self.member_gate = nn.Parameter(torch.full((h,), -1.))
         if structured:
-            self.program = ProgramReader(h, normalize_tree=config.architecture_version >= 2)
+            self.program = ProgramReader(h, normalize_tree=config.architecture_version >= 2,
+                                         mean_bindings=config.architecture_version >= 3)
             self.program_gate = nn.Parameter(torch.full((h,), -1.))
             self.spec_binding = mlp(2 * h, h, h)
             self.block_from_nodes = RelationAttention(config, 'block_graph', fallback=False)
@@ -219,7 +231,7 @@ class JointBlock(nn.Module):
             ti, ni = data['bindings']
             messages = self.spec_binding(torch.cat((specs[data['owner'][ti]],
                                                     self.program.binding_role(data['binding_role'])), dim=-1))
-            nodes = nodes + self.program_gate.sigmoid() * segment_sum(messages, ni, len(nodes))
+            nodes = nodes + self.program_gate.sigmoid() * self.aggregate(messages, ni, len(nodes))
             bi, ni = data['block_members']
             blocks = blocks + segment_mean(nodes[ni], bi, len(blocks))
             blocks = self.block_ff(self.block_from_nodes(blocks, nodes, data['block_batch'], batch.node_batch,
@@ -229,7 +241,7 @@ class JointBlock(nn.Module):
             nodes = self.nodes_from_blocks(nodes, blocks, batch.node_batch, data['block_batch'], run, packing=packing)
         gi, ni = batch.graph.group_member_index
         bound = self.member_message(torch.cat((nodes[ni], member_features), dim=-1))
-        groups = groups + self.member_gate.sigmoid() * segment_sum(bound, gi, len(groups))
+        groups = groups + self.member_gate.sigmoid() * self.aggregate(bound, gi, len(groups))
         specs = self.spec_from_nodes(specs, nodes, spec_batch, batch.node_batch, run, packing=packing)
         specs = self.spec_ff(self.spec_self(specs, specs, spec_batch, spec_batch, run, packing=packing))
         nodes = self.nodes_from_specs(nodes, specs, batch.node_batch, spec_batch, run, packing=packing)
@@ -272,7 +284,8 @@ class CircuitGPSEncoder(nn.Module):
                                     for _ in range(config.layers))
         self.output_norm, self.group_norm = nn.LayerNorm(h), nn.LayerNorm(h)
         self.readout = RelationAttention(config, 'joint_readout')
-        # Attention + separate sums of each type + counts preserve cardinality.
+        # Attention + separate pools of each type + counts preserve cardinality. The pools are sums up
+        # to version 2 and means from version 3, where the log counts alone carry cardinality.
         self.readout_output = mlp(5 * h + 4, 2 * h, h)
 
     def forward(self, batch, actions=None):
@@ -323,7 +336,8 @@ class CircuitGPSEncoder(nn.Module):
         types = ((nodes, batch.node_batch), (groups, batch.group_batch), (specs, spec_batch), (blocks, block_batch))
         keys, key_batch = torch.cat([v for v, _ in types]), torch.cat([b for _, b in types])
         attended = self.readout(run, keys, torch.arange(batch.size, device=nodes.device), key_batch, run, packing=packing)
-        sums = [segment_sum(v, b, batch.size) for v, b in types]
+        pool = segment_mean if self.config.architecture_version >= 3 else segment_sum
+        sums = [pool(v, b, batch.size) for v, b in types]
         counts = torch.stack([torch.bincount(b, minlength=batch.size) for _, b in types], dim=-1).to(nodes).log1p()
         context = self.readout_output(torch.cat((attended, *sums, counts), dim=-1))
         return nodes, groups, context

@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from gator_workbench import checkpoints, graph_view, model_structure, network_inputs, pretrain, spec_programs, spec_descriptors
+from gator_workbench import (checkpoints, compile as compile_mod, graph_view, model_structure, modes, network_inputs, pretrain,
+                             runs, schema, spec_programs, spec_descriptors, tasks)
 from gator_workbench.compile import build_spec_schema
 from gator_workbench.schema import NetworkConfig
 from gator_workbench.storage.atomic import read_json
@@ -116,3 +117,33 @@ def test_offline_pool_rebuilds_the_same_structured_inputs(joint_run, tmp_path):
     meta = checkpoints.read_metadata(checkpoints.resolve_checkpoint(output, 'latest'))
     assert meta['contract']['model_config']['encoder_type'] == 'circuit_gps'
     assert meta['contract']['spec_schema']['layout'] == 'spec-program-v1'
+
+
+def test_version_3_is_chosen_in_the_network_and_its_model_loads_only_as_version_3(tmp_path):
+    """Record 7.356: run.network.architecture_version 3 builds CircuitGPS with its sums averaged. Unset or at the encoder's
+    default it hashes as absent, so every configuration written before keeps its hashes, and unset it is not written, so
+    a configuration saved now loads where the field is not known. A MOCK run trains version 3, its save point records it,
+    and a fine-tune loads it only into a version-3 network."""
+    net = dict(encoder_type='circuit_gps', hidden_dim=16, heads=2, layers=2)
+    networks = {None: net, 2: dict(net, architecture_version=2), 3: dict(net, architecture_version=3)}
+    made = {v: make_config(tmp_path, run=dict(max_evaluations=8, network=n), advanced=dict(updates_per_transition=1, gamma=0.))
+            for v, n in networks.items()}
+    assert [modes.model_config_from(c.run.network).architecture_version for c in made.values()] == [2, 2, 3]
+    assert schema.config_hash(made[None]) == schema.config_hash(made[2]) != schema.config_hash(made[3])
+    written = {v: c.model_dump(mode='json')['run']['network'] for v, c in made.items()}      # unset: not written at all
+    assert 'architecture_version' not in written[None]
+    assert [written[v]['architecture_version'] for v in (2, 3)] == [2, 3]
+    for encoder, version in (('circuit_gps', 4), ('graph_gps', 2), ('rgcn', 3)):
+        with pytest.raises(ValueError, match='architecture_version'):
+            NetworkConfig(encoder_type=encoder, architecture_version=version)
+    layout, state = execute(made[3], tmp_path)
+    assert state == 'completed'
+    meta = checkpoints.read_metadata(checkpoints.resolve_checkpoint(layout.run_dir, 'latest'))
+    assert meta['contract']['model_config']['architecture_version'] == 3
+    loaded = tasks.load_task(made[3].circuit)
+    spec_schema = compile_mod.compile_task(made[3], loaded.base_graph).spec_schema
+    for version, expected in ((3, True), (None, False)):
+        contract = runs.learner_contract(made[version], loaded, 'h' * 64, spec_schema, runs._vocabulary_for(made[version]))
+        report = checkpoints.check_compatibility(meta, mode='fine_tune', contract=contract, task_definition_hash='h' * 64)
+        refused = [c['component'] for c in report['checks'] if c['status'] == 'incompatible']
+        assert report['compatible'] is expected and refused == ([] if expected else ['network architecture']), report

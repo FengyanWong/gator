@@ -34,7 +34,8 @@ def sac_config_from(advanced):
 def model_config_from(network):
     from analog_optimizer.models import ModelConfig
     return ModelConfig(hidden_dim=network.hidden_dim, heads=network.heads, layers=network.layers,
-                       encoder_type=network.encoder_type, structural_encoding=network.structural_encoding)
+                       encoder_type=network.encoder_type, structural_encoding=network.structural_encoding,
+                       architecture_version=network.architecture_version)
 
 
 def seed_everything(seed):

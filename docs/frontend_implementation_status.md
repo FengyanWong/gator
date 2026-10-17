@@ -28,22 +28,23 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.291-7.300.md`](workbench-log/7.291-7.300.md) | entries 7.291-7.300 |
 | [`7.301-7.323.md`](workbench-log/7.301-7.323.md) | entries 7.301–7.323 |
 | [`7.324-7.335.md`](workbench-log/7.324-7.335.md) | entries 7.324–7.335 |
-| [`7.336-and-later.md`](workbench-log/7.336-and-later.md) | entries 7.336 onwards: the OPEN file |
+| [`7.336-7.352.md`](workbench-log/7.336-7.352.md) | entries 7.336–7.352 |
+| [`7.353-and-later.md`](workbench-log/7.353-and-later.md) | entries 7.353 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md` and `7.301-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md` and `7.336-and-later.md` are pointers kept for old links.
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.360 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.324-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.380 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.353-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
-and 75 kB, 2026-10-08, record 7.279; `7.279-and-later.md` at entry 7.290 and 70 kB, 2026-10-09, record 7.291; `7.291-and-later.md` at entry 7.300 and 96 kB, 2026-10-10, record 7.301.) One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
+and 75 kB, 2026-10-08, record 7.279; `7.279-and-later.md` at entry 7.290 and 70 kB, 2026-10-09, record 7.291; `7.291-and-later.md` at entry 7.300 and 96 kB, 2026-10-10, record 7.301; `7.336-and-later.md` at entry 7.352 and 61 kB, 2026-10-15, record 7.353.) One Read returns about 68 kB of text: a larger open file hides its newest entries from a default read
 (7.64).
 
 ## Entries
@@ -405,3 +406,8 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.350 | Round 2 recovery: DFF already follows Claude's failure policy and continues; BGR's cross-session edit lock released after confirming no unsaved edits, exact 50-parameter write/readback/restoration passed, same-seed retry and second queue resumed; failed attempt retained and total budget unchanged |
 | 7.351 | Two Virtuoso sessions under one connection (user: "send it to whichever is free"): Start, Baseline simulation, Calibration, Continue, Check now and Save task go to a free session - first the one holding the task's cell open for editing, then the one whose last test passed; a busy holder lets go of a saved cell in no window, else a refusal in words; a run lets go of its cell when it ends; the Connection window's review findings fixed (true list value, late answers kept, "1 of 2 OK") |
 | 7.352 | Review fixes to record 7.336's offline tools: qualification reads a disk pool and refuses transferable/migrated pools before rebuilding; a rehearsal snapshot of a migrated pool is re-scored like the pool; the sampler record precedes its save point; the offline_storage/pretrain import cycle broken; 24 absolute doc links made relative |
+| 7.353 | Round 3 seed 0 chained after Round 2 on both Virtuosos (GraphGPS and CircuitGPS: frozen/adapt/scratch on RING3, LDO1, DFFRX1 power and the amplifier, 24 runs) and an RGCN arm (a third general model trained on the same archive, 12 runs once qualified); the log rolled over |
+| 7.354 | Round 3 session 2 recovered: remote evidence confirmed the timed-out Ring3 Spectre invocation, its completed but stuck process was stopped, and CircuitGPS resumed in the same run at 567 evaluations / 4,248 updates with optimizer and replay intact; original 800 cap and shared queue retained, both sessions advancing |
+| 7.355 | Step 1 GATv2 arm (user: "add gatv2 to round 1 step 1"): 12 scratch runs, each the RGCN twin with only the encoder changed, frozen Step 1 runtime; sessions chosen by where each cell is held (read-only look); all 12 qualified with zero simulations; dispatched 2026-10-16 14:45 on both Virtuosos, 9,600 designs |
+| 7.358 | Step 1 GATv2 arm complete (12/12, 9,600 launches, no failure): level with GT/GraphGPS/RGCN on OTA5t and VCO, like GT on RING3 (88 vs ~183 for GraphGPS/RGCN), published LDO 4/5 median 21 (no difference shown at five seeds), amplifier 274 passes on one seed; LDO1/reference/system none |
+| 7.359 | CircuitGPS v3 Round 3 arm (user: "Queue the 12 v3 arms"): frozen/adapt/scratch on RING3, LDO1, DFFRX1, amplifier, each the v2 twin with architecture_version 3; chained after the v3 training: review + publish, qualification, queue; runtime 7356r (7356 src + f8ff5ce configs); <= 7,600 designs |

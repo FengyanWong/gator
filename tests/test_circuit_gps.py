@@ -30,7 +30,7 @@ def test_tree_normalization_is_versioned_without_new_weights():
     assert ModelConfig(**legacy.to_dict()) == legacy
     assert ModelConfig(**MODEL.to_dict()) == MODEL
     with pytest.raises(ValueError, match='architecture_version'):
-        replace(MODEL, architecture_version=3)
+        replace(MODEL, architecture_version=4)
 
 
 @pytest.mark.parametrize('depth', [16, 64])
@@ -307,3 +307,50 @@ def test_structured_sac_update_checkpoint_restores_next_update(tmp_path, transit
     assert actual == expected
     for key, value in learner.actor.state_dict().items():
         torch.testing.assert_close(value, restored.actor.state_dict()[key], rtol=0, atol=0)
+
+
+V3 = replace(MODEL, architecture_version=3)
+
+
+def test_v3_keeps_v2_weights_and_changes_only_aggregation(opamp):
+    old = GroupActor(spec_schema=SCHEMA, config=MODEL)
+    new = GroupActor(spec_schema=SCHEMA, config=V3)
+    new.load_state_dict(old.state_dict(), strict=True)
+    assert new.encoder.blocks[0].program.mean_bindings and not old.encoder.blocks[0].program.mean_bindings
+    assert ModelConfig(**V3.to_dict()) == V3 and ModelConfig(**MODEL.to_dict()).architecture_version == 2
+    observed = batch(described(opamp))
+    assert not torch.allclose(old.distribution(observed)[0], new.distribution(observed)[0])
+
+
+def test_v3_readout_pools_are_means_of_the_final_tokens(opamp, ldo):
+    from analog_optimizer.models.encoders import segment_mean
+    torch.manual_seed(5)
+    actor = GroupActor(spec_schema=SCHEMA, config=V3)
+    together = batch(described(opamp), described(ldo))
+    captured = {}
+    handle = actor.encoder.readout_output.register_forward_pre_hook(lambda module, inputs: captured.update(x=inputs[0]))
+    nodes, groups, context = actor.encoder(together)
+    handle.remove()
+    h = V3.hidden_dim
+    torch.testing.assert_close(captured['x'][:, h:2 * h], segment_mean(nodes, together.node_batch, together.size))
+    torch.testing.assert_close(captured['x'][:, 2 * h:3 * h], segment_mean(groups, together.group_batch, together.size))
+    # Averages of normalized rows stay within the rows' own range, whatever the circuit size.
+    assert captured['x'][:, h:3 * h].abs().max() <= max(nodes.abs().max(), groups.abs().max()) + 1e-6
+    assert torch.isfinite(context).all()
+
+
+def test_v3_program_bindings_average_repeated_references():
+    torch.manual_seed(3)
+    h = 8
+    summed, averaged = ProgramReader(h), ProgramReader(h, mean_bindings=True)
+    averaged.load_state_dict(summed.state_dict(), strict=True)
+    nodes = torch.randn(1, h).repeat(8, 1)
+
+    def program(k):
+        return {'op': torch.zeros(1, dtype=torch.long), 'values': torch.zeros(1, 6),
+                'bindings': (torch.zeros(k, dtype=torch.long), torch.arange(k)),
+                'binding_role': torch.zeros(k, dtype=torch.long),
+                'children': torch.zeros((2, 0), dtype=torch.long), 'height': torch.zeros(1, dtype=torch.long),
+                'slot': torch.zeros(0), 'roots': torch.zeros(1, dtype=torch.long)}
+    torch.testing.assert_close(averaged(nodes, program(1)), averaged(nodes, program(8)))
+    assert not torch.allclose(summed(nodes, program(1)), summed(nodes, program(8)))

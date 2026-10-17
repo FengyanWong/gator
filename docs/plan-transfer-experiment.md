@@ -8,19 +8,19 @@ circuit with different target), test pdk transfer on two/three circuits, and the
 agentic sizing for hopefully better performance."; settled in the conversation that followed (section 12 lists each
 decision in the user's words), then "yes save the plan now".
 
-Status checked **2026-10-14** (records 7.347, 7.349, 7.350): **Round 1's planned arms are complete, including the 12 RGCN runs.
-Both Round 3 source models have completed 20,000 offline updates and passed their recorded numerical checks.
-Round 2's 24 development repeats were dispatched at 22:14 Europe/London; Round 3's online comparison and the journal experiments have not started.**
-Completion means the configured budget was reached, not that the circuit met its specifications.
+Status checked **2026-10-15, 13:55 Europe/London** (records 7.353, 7.354): **Round 1 and all 24 Round 2 repeats are complete.
+Round 3's GraphGPS, CircuitGPS v2 and RGCN source models have each completed 20,000 offline updates and passed qualification.
+Round 3 seed 0 is running on both Virtuoso sessions: 14 of 36 arms complete at this snapshot; the journal experiments have not started.**
+Completion means the run reached its configured budget or stopping condition; completion alone does not establish feasibility.
 
 | Block | Verified status |
 |---|---|
-| Round 1, Step 1 | 32 scratch runs complete: 20 original and 12 RGCN; the additional four GT LDO seeds are reused from Step 3 |
+| Round 1, Step 1 | 32 scratch runs complete: 20 original and 12 RGCN; the additional four GT LDO seeds are reused from Step 3. 12 GATv2 runs complete 2026-10-16 18:22 (section 6.1.2, records 7.355, 7.358) |
 | Round 1, Steps 2 / 3 / 3b | 40 / 9 / 24 new runs complete; Step 3 also reuses Step 1's GT seed 0 |
 | Round 1, Steps 4 / 5 / 6 | 12 runs + 3 probes / 2 runs + 1 probe / 4 runs + 4 probes complete |
-| Round 2 | Dispatched 14 October at 22:14: 4 DFFRX1 repeats + 20 Step 6 repeats, at most 19,200 new evaluations, across two checked Virtuoso sessions (section 7) |
-| Round 3, offline | GraphGPS and fresh CircuitGPS v2 complete; published checkpoint identities and hashes below |
-| Round 3, online | 0 of the proposed 72 arms launched; 45,600 nominal evaluations remain a proposed budget |
+| Round 2 | All 24 repeats complete: 15,893 charged attempts and 15,889 simulator launches, including the retained four-attempt BGR preparation failure (section 7) |
+| Round 3, offline | GraphGPS, fresh CircuitGPS v2 and RGCN complete and qualified; RGCN's 12 online arms are admitted |
+| Round 3, online | Seed 0: all 36 arms complete (2026-10-16 02:32 Europe/London; 22,800 evaluations, no failed run); results record owed; seeds 1-2 remain proposed |
 | Journal | J0 protocol/test split not frozen; J1 online comparison, J2-J5 and manuscript milestones remain outstanding |
 
 Evidence: `artifacts/local/reviews/transfer-experiment-2026-10-10/plan-status-audit-2026-10-14.json`, the RGCN
@@ -31,6 +31,9 @@ Historical preparation, interrupted attempts and conditional continuations remai
 ("dont use plain gcn, use what my code have") and "queue it after the circuit gps training". Section 6.1.1 adds
 12 from-scratch runs after CircuitGPS training and checkpoint review. **All 12 finished on 14 October at 20:04
 Europe/London.** They are separate from Round 3's still-planned online comparison. No plain GCN implementation is added.
+
+**Step 1 extension (2026-10-16, record 7.355):** the user asked to "add gatv2 to round 1 step 1". Section 6.1.2 adds
+12 from-scratch GATv2 runs matched to the RGCN extension, run on both Virtuoso sessions 14:45-18:22 Europe/London.
 
 **Journal extension (2026-10-13, record 7.338):** [section 14](#14-journal-experiments) adds the prospective
 experiments needed to assess a CircuitGPS paper; [section 15](#15-timeline-to-august-2027-publication) gives a dated
@@ -64,7 +67,7 @@ Six questions, one step each. Round 1 runs every comparison once; round 2 repeat
 
 | Step | Question | Circuits | Network | Runs | Time |
 |---|---|---|---|---|---|
-| 1 | How do GT, GraphGPS and RGCN compare with matched inputs and SAC settings? | 4 core + 4 AgenticSizing | GT, GraphGPS, RGCN | 32 (20 original + 12 RGCN) | original estimate about 7 h; RGCN measured 3 h 59 min elapsed |
+| 1 | How do GT, GraphGPS, RGCN and GATv2 compare with matched inputs and SAC settings? | 4 core + 4 AgenticSizing | GT, GraphGPS, RGCN, GATv2 | 44 (20 original + 12 RGCN + 12 GATv2) | original estimate about 7 h; RGCN measured 3 h 59 min elapsed; GATv2 estimated 3-4 h |
 | 2 | Does a trained model reach a new target faster than starting over? | logic cell DFFRX1 first, then OTA5t, RING3, LDO1 | GraphGPS | 40 | about 7.8 h |
 | 3 | Is SAC better than Bayesian optimization, from scratch? | AgenticSizing LDO | GT (SAC) | 9 | about 1.7 h |
 | 3b | Does the second build of the network inputs learn as well as the first, and what do the operating-point ratios add? | OTA5t, RING3, LDO1 at an eased limit | GraphGPS | 24 | about 5.2 h |
@@ -72,7 +75,7 @@ Six questions, one step each. Round 1 runs every comparison once; round 2 repeat
 | 5 | Does one general model beat starting over on an unseen circuit in the known PDK? | telescopic cascode | GraphGPS | 2 + 1 probe | about 0.75 h |
 | 6 | Does the same general model beat starting over on the AgenticSizing circuits? | 4 AgenticSizing | GraphGPS | 4 + 4 probes | about 2 h |
 
-Round 1 including the RGCN extension: **123 runs and 8 probes, 101,864 planned charged design evaluations** (section 9).
+Round 1 including the RGCN and GATv2 extensions: **135 runs and 8 probes, 111,464 planned charged design evaluations** (section 9).
 The previous planning estimate was about 27.6 h before the extra RGCN runs. The RGCN campaign took 3 h 59 min
 elapsed, with 5 h 35 min summed active run time across both sessions. These are cumulative plan totals, not counts
 of work still outstanding or a full actual-cost ledger. They include the revised step 2,
@@ -327,6 +330,46 @@ VCO reaches the 50% window earlier but has slightly fewer total passes than Grap
 LDO1 or the published reference. The amplifier and system gains are single-seed observations; the system's earlier
 GT continuation beyond 800 is not included in this 800-attempt comparison. Width/depth matching does not isolate
 attention or match parameter counts. These scratch results do not compare the two Round 3 pretrained models.
+
+#### 6.1.2 GATv2 + SAC extension (12 runs, completed 2026-10-16)
+
+Added 2026-10-16, record 7.355 (user: "add gatv2 to round 1 step 1", then "Yes, start now" to the 12 runs). Use
+`encoder_type: gatv2`, the existing dynamic-attention encoder with port features on the edges, with the common SAC
+learner: a local-attention baseline beside GT's transformer convolution, GraphGPS's local + global blocks and RGCN's
+attention-free relations. It is not a reproduction of any published GAT sizing method.
+
+| Tasks | Seeds per task | New runs | Design budget |
+|---|---|---:|---:|
+| `mscr_ota5t`, `mscr_ring3`, `graphgps_ldo1`, `mscr_vco_lin_c` | 0 | 4 | 3,200 |
+| `agentic_ldo_pub`, `agentic_bgr_pub`, `agentic_fc_pub_far`, `agentic_sys_pub` | 0 | 4 | 3,200 |
+| `agentic_ldo_pub`, additional repeats | 1, 2, 3, 4 | 4 | 3,200 |
+| **Extension total** | | **12** | **9,600** |
+
+- **Matched to 6.1.1 exactly:** every configuration is its RGCN twin with only `encoder_type` changed (checked field by
+  field by `prepare.py`): scratch, 800 designs, four lanes, the first Transferable input build, the Step 1 task, start,
+  reward and SAC settings, width 48, four layers, four heads (used by GATv2), `structural_encoding: none`, the frozen
+  Step 1 runtime (`94e7dd4f...`) and the private PDK settings with the native-export path of 6.1.1.
+- **Sessions:** by where each cell was held on 2026-10-16 (a read-only look of both Virtuosos before dispatch, so no
+  cell is let go of): Virtuoso 1 runs OTA5t, RING3, LDO1, the amplifier and VCO; Virtuoso 2 the published LDO seeds 0-4,
+  the reference and the system (`asz2`, the only change to those configurations). Cells are disjoint between sessions.
+- **Checks before dispatch, zero simulations:** schema, saved rows, compilation and session routing for all 12; the
+  physical check (saved task against the cell) and the daemon's nonce cache for all 12 in their own session.
+- **Queue:** one worker per session with a fixed job list; each holds its session's queue lock and its cells' locks for
+  its whole life, waits while the host has less than 1.2 GB free, and stops on a failed run or check with no automatic
+  costed retry. `HOLD`, `HOLD-s1`, `HOLD-s2` hold before the next job.
+- **Comparison:** add GATv2 columns beside GT, GraphGPS and RGCN with the measures of 6.1.1 (`compare_completed.py`'s
+  measures; five seeds per encoder on the published LDO, one elsewhere). The same limits apply: one seed outside the
+  published LDO, shared machine load (no speed comparison), width/depth matched rather than parameter counts.
+- **Evidence:** `artifacts/local/reviews/transfer-experiment-2026-10-10/gatv2-2026-10-16/` (`prepare.py`,
+  `dispatch.py`, `manifest.json`, `qualification.json`, `cell-holds-before.json`, `queue-status.json`, logs). Labels
+  `tx1-<circuit>-gatv2` and `tx1-asz-ldo-gatv2-s<seed>`. The data does not enter any source pool.
+
+**Completed 2026-10-16 18:22 (record 7.358):** 12 of 12 runs, 9,600 Spectre launches, no infrastructure failure.
+Passing designs of 800, seed 0, GT / GraphGPS / RGCN / GATv2: OTA5t 617 / 636 / 628 / 636; RING3 94 / 182 / 183 / 88;
+VCO 466 / 546 / 539 / 587; LDO1, published reference 0 for all; published system 0 / 0 / 2 / 0; published amplifier
+1 / 0 / 8 / 274 (one seed). Published LDO, five seeds: GATv2 4/5 runs pass, median 21 passing designs, between GT (5/5,
+15) and RGCN (5/5, 122); no difference shown against any encoder (exact rank tests p >= 0.095 on passes, >= 0.22 on the
+first pass). GATv2 behaves like GT on RING3, where both local-attention encoders trail.
 
 ### 6.2 Step 2: new targets on a known circuit - a logic cell first, then three analog circuits (40 runs)
 
@@ -966,6 +1009,34 @@ winner. If time allows only screening, keep the one-seed result exploratory. No 
 until CircuitGPS's measured update cost and the benches' throughput are available. These are proposed simulation
 budgets, not simulations authorized by the request to train offline and add this plan.
 
+**Seed 0 dispatched (record 7.353, 2026-10-15; user: "Chain it after Round 2", "RGCN arm").** The 24 arms of seed 0
+are queued in both Virtuoso sessions, each session starting when its Round 2 runs have completed; a job goes to
+whichever session is free (`round3-all-circuits-2026-10-13/online-2026-10-15/queue3.py`). The four tasks are as above,
+DFFRX1 as `real:dffrx1_t2`. Each arm takes everything but its network from the task's round 1 configuration, identical
+in task and start; the network is the general model's (the second input build with operating-point ratios). A third
+encoder is added: RGCN, trained offline on the same request as GraphGPS but the network (`request-rgcn.json`), checked
+and published like the other two, then the same three arms on the four tasks (12 arms, at most 7,600 evaluations). The
+two sessions run side by side and share the host with that training: compare designs to first pass and pass counts,
+not elapsed time. Seeds 1 and 2 stay proposed.
+
+**CircuitGPS version 3 arm (record 7.359, 2026-10-17; user: "Queue the 12 v3 arms").** After the v3 training of
+records 7.356/7.357, the same 12 arms for a CircuitGPS model at `architecture_version: 3` (frozen 300, adapt 800,
+scratch 800 on the four tasks; at most 7,600 designs), each configuration the v2 arm's with only the version and
+the model changed; chained: review + publish, zero-simulation qualification, then the two-session queue.
+
+**Session 2 recovery (record 7.354, 2026-10-15, 13:54 Europe/London).** CircuitGPS Ring3 adaptation stopped at
+567 charged evaluations / 4,248 updates after a 120-second bridge timeout left one physical launch unconfirmed.
+The VM's matching netlist and Spectre completion log proved that launch occurred; its completed simulator process
+was stuck exiting and was terminated by its exact PID and start identity. The original failed evaluation stays
+failed and charged, with no metrics backfilled. An audited receipt resolves the one uncertainty during exact restore
+from `ckpt-00000567-9ed81941`; weights, optimizers, RNG and the 538-entry replay are retained. The same run continues
+to its original 800-attempt limit, then the original shared dispatcher takes the remaining jobs. Session 1 and all
+frozen runtime/configuration files were preserved. Evidence and the replacement monitor/worker are in
+`round3-all-circuits-2026-10-13/online-2026-10-15/recovery/`; `process.json` there identifies the live recovery processes.
+At 13:54, the resumed run had advanced to 583 completed evaluations and 4,312 updates, zero unresolved launches and
+no additional infrastructure failures. Historical raw receipts retain their original uncertainty; the
+`physical_launch_reconciled` event and `resume-reconciliation.json` supply its resolution.
+
 Keep the existing random-search and Bayesian results as labelled historical references. A claim against these
 optimizers requires matched new controls under the same tasks/starts/reward/budgets; the optional matrix is four
 tasks × three seeds × two optimizers × 800 evaluations = 19,200 additional evaluations, separately authorized.
@@ -1047,14 +1118,14 @@ simulator-launch ledger; failures, interruptions and separately authorized conti
 
 | Step | Runs | Probes | Other evaluations | Planned evaluations | Time |
 |---|---|---|---|---|---|
-| 1 | 32 | - | 65 (amplifier start) | 25,665 | original estimate about 7 h; RGCN measured 3 h 59 min elapsed |
+| 1 | 44 | - | 65 (amplifier start) | 35,265 | original estimate about 7 h; RGCN measured 3 h 59 min elapsed; GATv2 estimated 3-4 h |
 | 2 | 40 | - | 777 | 32,777 | about 7.8 h |
 | 3 | 9 | - | - | 7,200 | about 1.7 h |
 | 3b | 24 | - | 27 | 19,227 | about 5.2 h |
 | 4 | 12 | 3 | 195 | 10,695 | about 3.2 h |
 | 5 | 2 | 1 | - | 1,900 | about 0.75 h |
 | 6 | 4 | 4 | - | 4,400 | about 2 h |
-| **Round 1** | **123** | **8** | **1,064** | **101,864** | **original estimate about 27.6 h; RGCN measured 3 h 59 min elapsed** |
+| **Round 1** | **135** | **8** | **1,064** | **111,464** | **original estimate about 27.6 h; RGCN measured 3 h 59 min elapsed; GATv2 estimated 3-4 h** |
 
 The RGCN extension consumed `12 × 800 = 9,600` charged attempts: **9,596 actual Spectre launches and four preparation
 failures**, with no extra calibration/probe budget. Its measured 3 h 59 min campaign duration includes overlapping

@@ -66,7 +66,7 @@ class ModelConfig:
         version = self.architecture_version
         if version is None:
             version = 2 if encoder == 'circuit_gps' else 1
-        if type(version) is not int or version not in ((1, 2) if encoder == 'circuit_gps' else (1,)):
+        if type(version) is not int or version not in ((1, 2, 3) if encoder == 'circuit_gps' else (1,)):
             raise ValueError('Unsupported encoder architecture_version')
         object.__setattr__(self, 'architecture_version', version)
         object.__setattr__(self, 'structural_encoding', structural)

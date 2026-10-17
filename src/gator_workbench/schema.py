@@ -15,7 +15,7 @@ import math
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from . import CONFIG_SCHEMA_VERSION
 from .names import PROFILE_ID
@@ -312,6 +312,11 @@ class NetworkConfig(_Model):
     structural_encoding: Literal['none', 'rwse'] | None = Field(None,
         description='Topology-only random-walk return probabilities at 2, 4, 8, 16 steps. GraphGPS and CircuitGPS default '
                     'to rwse; parameter-group cross-attention defaults to none. Supported by these three encoders.')
+    architecture_version: int | None = Field(None, description=(
+        "The encoder's version. None: its default (CircuitGPS 2, every other encoder 1). CircuitGPS also builds 1 (its "
+        'models saved before 2026-10-13) and 3 (record 7.356: version 2 averaging where it summed - program bindings, '
+        "spec-to-node messages, group members and the readout - so the network's numbers keep their size on a large "
+        'circuit). A saved model loads only with its own version.'))
     operating_points: bool = Field(False, description='Include measured nominal device operating points and missing-value masks.')
     # The transferable inputs of record 7.298 (the page sets the three together: "Network inputs: Transferable").
     spec_input: Literal['slots', 'set', 'structured'] = Field('slots', description=(
@@ -368,6 +373,23 @@ class NetworkConfig(_Model):
         if self.structural_encoding != 'none' and self.encoder_type not in GLOBAL_ENCODERS:
             raise ValueError('rwse requires graph_gps, group_cross_attention or circuit_gps')
         return self
+
+    @model_validator(mode='after')
+    def _architecture_version(self):
+        built = (1, 2, 3) if self.encoder_type == 'circuit_gps' else (1,)
+        if self.architecture_version is not None and self.architecture_version not in built:
+            raise ValueError(f"{self.encoder_type} has architecture_version {' or '.join(map(str, built))}, "
+                             f'not {self.architecture_version}')
+        return self
+
+    @model_serializer(mode='wrap')
+    def _unset_version_left_out(self, handler):
+        """An unset architecture_version is not written (record 7.356), so a configuration saved now still loads where the
+        field is not known: a frozen runtime, a server that was not restarted."""
+        data = handler(self)
+        if isinstance(data, dict) and data.get('architecture_version') is None:
+            data.pop('architecture_version', None)
+        return data
 
     @field_validator('encoder_type', mode='before')
     @classmethod
@@ -714,8 +736,9 @@ def _hashed(data):
     """What both hashes see. A spec whose equation is one Probe ID is hashed in the form every configuration had before
     specs were equations (`measurement_id`), so a configuration written earlier keeps its hashes: its runs still
     resume, its checkpoints still load, and approvals and proposals made for it still bind. The network's component list
-    (`run.network.vocabulary`, added later) is hashed as absent while it is the standard one, for the same reason. The
-    Parameters and Probes fields retired on 2026-09-26 (record 7.92) and 2026-09-29 (record 7.105, the Probes' conditions
+    (`run.network.vocabulary`, added later) is hashed as absent while it is the standard one, for the same reason. So is
+    `run.network.architecture_version` (record 7.356) while it is unset or the encoder's default. The Parameters and
+    Probes fields retired on 2026-09-26 (record 7.92) and 2026-09-29 (record 7.105, the Probes' conditions
     and aggregation) are hashed as present at their old defaults, for the
     same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
     differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS). The search block retired
@@ -778,6 +801,9 @@ def _hashed(data):
                 network.pop(key)
         if network.get('structural_encoding') in (None, 'none') and network.get('encoder_type') not in GLOBAL_ENCODERS:
             network.pop('structural_encoding', None)
+        version = network.get('architecture_version')
+        if version is None or type(version) is int and version == (2 if network.get('encoder_type') == 'circuit_gps' else 1):
+            network.pop('architecture_version', None)                                   # record 7.356
         data['run'] = dict(run, network=network)
     for section, retired in (('parameters', RETIRED_PARAMETER_FIELDS), ('measurements', RETIRED_MEASUREMENT_FIELDS)):
         rows = data.get(section) if isinstance(data, dict) else None

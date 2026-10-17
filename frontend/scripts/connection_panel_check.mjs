@@ -404,6 +404,13 @@ await runChecks(browser, async () => {
   const pageBadge = () => evaluate(`${BUTTON}.querySelector('.badge').textContent`);
   check('the button counts the sessions whose last test passed', (await pageBadge()) === '1 of 2 OK'
     && (await evaluate(`${BUTTON}.textContent`)).includes('lab - Virtuoso over SSH (2 sessions)'), await evaluate(`${BUTTON}.textContent`));
+  // Record 7.361: in a narrow banner (1280 px, still one line) the long name gives way with "..." and the state word stays
+  // whole - on the live page it was cut to "unknow" while the name ran past the pill.
+  await page.viewport(1280, 900); await sleep(300);
+  const pill = await evaluate(`(() => { const b = ${BUTTON}, w = b.querySelector('.connection-button-what'), g = b.querySelector('.badge'), r = b.getBoundingClientRect(), q = g.getBoundingClientRect();
+    return { button: Math.round(r.width), past: b.scrollWidth - b.clientWidth, inside: q.left >= r.left - 0.5 && q.right <= r.right + 0.5, badge: g.textContent, name: w.scrollWidth > w.clientWidth ? 'cut' : 'whole' }; })()`);
+  check('...in a narrow banner the name gives way with "..." and the state word stays whole (record 7.361)', pill.past <= 0 && pill.inside && pill.badge === '1 of 2 OK', JSON.stringify(pill));
+  await page.viewport(1680, 1050); await sleep(300);
   mark = seen.length; await openWindow(1100);
   const sessionsSelector = `${WINDOW}.querySelectorAll('.connection-session')`;
   const sessionNode = id => `${WINDOW}.querySelector('[data-session-profile="${id}"]')`;

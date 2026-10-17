@@ -8,7 +8,7 @@ It produces **data, configurations, models, netlists and logs only**: no plots, 
 spreadsheets or analysis reports are ever written, and the backend installs and imports no plotting library.
 Two exceptions ON SCREEN, by user decision: the **circuit graph view** (2026-09-21, see "Circuit graph view"
 below), drawn in the browser with cytoscape (MIT, frontend only, loaded when the view is opened), and the **circuit
-picture** in the Project column (2026-10-03, see "The page's looks and layout"), drawn as plain SVG. Both are diagnostic
+picture** in the circuit column (2026-10-03; shown by **Show circuit** since record 7.362, see "The page's look and layout"), drawn as plain SVG. Both are diagnostic
 pictures; nothing drawn is written into a run folder or an export, so the outputs stay data-only.
 
 **Where things are described** (this file is long: read only the section you need - `grep -n '^##' docs/workbench.md`
@@ -127,7 +127,7 @@ runs then). Run configuration's model line and this line come from the same valu
   in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run.
   While a run is active or paused in the header, "Calibration" is not available. A finished
   Baseline simulation of a task saved from a cell records its result as the task's reference by itself
-  (status record 7.78): once the run has come to rest the Project column reads the task again and no longer
+  (status record 7.78): once the run has come to rest the page reads the task again and no longer
   says "No real baseline yet" (one line since record 7.188, its explanation in the line's tooltip). Until the run the
   header remembers has answered its first status read, the main button is not offered ("Looking up the run..."); a read
   that gets no answer at all (the backend restarting, a failed read on the mounted drive) is asked again every 3 s for a
@@ -257,6 +257,17 @@ switch are gone; every panel, button and field stands where it stood.
   draw the shown run in red, then white, blue and violet for compared runs (`--series-1` to `--series-4`); limits stay
   amber. The browser draws its own parts dark too (`color-scheme: dark`): scroll bars and the open list of a drop-down.
 
+**The task's card** (record 7.362; from a preview of four arrangements the user chose Option D: "go with D, build it into
+the workbench"). The task stretches across the left and the centre. Its name starts the editors' tab line - the button that
+opens the Tasks window - then its revision and whether the rows are saved; **Show circuit**, **Check now** (its tooltip says
+what the check compares), **Save as** and **Task file** end it. What the task says about itself - loading, Blocked, MOCK,
+its baseline, the check's result - stands under the toolbar. The circuit - labels, picture, notes, hierarchy - is a column
+of its own, folded away by default so that the rows take the width (1264 px instead of 952 at 1680 x 1050; at 1366 x 768
+every column of Parameters in view instead of 7 of 10), and **Show circuit** brings it back beside them, kept in this
+browser. The two ways to a new task are in the Tasks window, **New task: From a Virtuoso cell...** and **From an ngspice
+netlist...**; while the page follows a Virtuoso cell or an ngspice task, **Virtuoso cell...** or **ngspice netlist...** on
+the tab line goes back to its window. Under 1101 px the editors come first and the run settings under them.
+
 **Research experiments** (record 7.163; user: "Check the research experiments module and see which should be kept",
 then "Remove both" and "Fold them"). Since record 7.166 its heading looks like the other modules' headings, and its note
 ("Optional for a single run; missing labels stay unspecified") is the tooltip of its name; over the name the pointer is
@@ -335,7 +346,7 @@ a JSON value has a column of bounded width of its own.
 row. The Specs line lists the Probe ids as Probe-coloured chips; its words are the same as before.
 
 **The circuit picture.** A second on-screen picture by user decision, on the graph view's terms (drawn in the browser,
-nothing written). Under the loaded task in the Project column, the circuit appears as a small node-link drawing in the
+nothing written). In the circuit column (**Show circuit** on the editors' tab line, record 7.362), the circuit appears as a small node-link drawing in the
 graph view's manner: devices as boxes (nmos blue, pmos rose, passives green), nets as dots, supply on top and ground at
 the bottom. It is placed by the graph view's own hard-coded hints (`circuitLayout.ts`) and drawn from the circuit summary
 the task's load already returns, so nothing more is asked of the backend. It shows:
@@ -360,8 +371,8 @@ Browser check: `frontend/scripts/looks_check.mjs` (47 checks, hermetic).
 
 ### Choosing a registered task: whose rows Parameters, Probes and Specs show
 
-The three tabs hold rows of the *configuration*, so they belong to a task. Choosing another task in the Project
-column (**Registered task -> Task**, a double click in the Tasks window opened by the task-name button) brings that task's rows. A fresh page has no task until you choose one (the MOCK task
+The three tabs hold rows of the *configuration*, so they belong to a task. Choosing another task (a double click in the
+Tasks window, opened by the task's name at the start of the editors' tab line, record 7.362) brings that task's rows. A fresh page has no task until you choose one (the MOCK task
 that used to open there, and the verified OTA7 and LDO circuits with their targets of record, were removed on 2026-09-30,
 record 7.128):
 
@@ -399,7 +410,8 @@ starters from a restarted or scratch backend). Tests: `tests/workbench/test_wb_r
 
 User: "make the loaded task a button similar to the runs... button style. It opens a new window showing all the tasks."
 
-In the Project column the **Task** row shows the task name as one button across the remaining row (`mscr_ota5t`,
+The task's name starts the editors' tab line, one button followed by its revision and whether the rows are saved (record
+7.362; until then the Project column's **Task** row) (`mscr_ota5t`,
 with a mark when something keeps it from running: `[blocked]`, `[ngspice: choose its
 connection]`, `[MOCK]`; or a placeholder: "(choose a task)", "(none: MScR/x is read from Virtuoso)", "(none: the saved
 source was removed)", "synthetic:vco (removed)"). There is no separate **Tasks...** button beside the name.
@@ -430,7 +442,7 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   their limits, read from the starter route when the details open.
 * **Rename** (record 7.302, user request 2026-10-10: "add rename functionality to tasks"): the first line of a task's
   Details is a **Name** box with a **Rename** button, as a saved model has. It changes the name the task is SHOWN under -
-  in this window, on the Project column's task button, in the Runs window's task link ("ldo1_relaxed
+  in this window, on the task's name on the editors' tab line, in the Runs window's task link ("ldo1_relaxed
   (real:graphgps_ldo1)") - and the label new runs of the task are filed under (the run label, once the page follows the
   task again). Nothing else changes: the task's key, its files, its Virtuoso cell and every run and saved model made on
   it keep the internal name, so each run still belongs to its task and a model still loads on it; a configuration file
@@ -760,8 +772,9 @@ non-M names and unlabelled rails, a folded cascode, a 2:1 bias mirror, kept and 
 
 ### Spectre netlist import: removed
 
-The Project column offers the **Registered task** list; a Virtuoso cell is read in the **Virtuoso cell...**
-window (since 2026-09-23, user request; until then a **Circuit source** list offered both). A third source,
+The Tasks window lists the registered tasks; a Virtuoso cell is read in the Virtuoso cell window, opened by **New task:
+From a Virtuoso cell...** in the Tasks window (record 7.362; from 2026-09-23 a **Virtuoso cell...** button in the Project
+column, by user request; until then a **Circuit source** list offered both). A third source,
 "Import Spectre netlist" (a `.scs` file plus a device-mapping JSON, MOCK runs only), was removed on user
 request (2026-09-21, status record 7.53).
 
@@ -779,11 +792,13 @@ run's `artifact_manifest.json` says why; `parameters.csv` always holds the value
 
 ### An ngspice netlist as a task: the ngspice window (added 2026-09-23, user request)
 
-The Project column's second one-button window, **ngspice netlist...**, takes a SPICE deck - pasted into its text box,
+The second way to a new task, **From an ngspice netlist...** in the Tasks window (record 7.362; until then the Project
+column's **ngspice netlist...** button), opens a window that takes a SPICE deck - pasted into its text box,
 or loaded from a file on the backend machine (a path under the allowed input roots, `--allow-input-root`; a Windows
 path is converted for the WSL backend; **Example** loads `examples/circuits/ngspice_ota5_level1.cir`, a
 five-transistor OTA on textbook level-1 models with no PDK at all) - and saves it as the task `ngspice:<name>`.
-The Project column then follows that task: Parameters and Probes show its rows, Specs is yours to fill. Saving the
+The page then follows that task: Parameters and Probes show its rows, Specs is yours to fill; **ngspice netlist...** on the
+editors' tab line opens its deck again. Saving the
 same name again stores the next revision (the deck before is kept as `history/r<N>.cir`); runs made before keep
 their own copy of the deck in `input_snapshot/netlist.cir`, and a changed deck is a changed task. **Check** reads
 the deck on the backend without keeping it and says what it found: elements by kind, the values a run can vary,
@@ -793,9 +808,9 @@ and, in plain words, what would stop a run. **Delete task** (in the Tasks window
 for the task the page follows) takes
 it out of the list; its folder is kept aside on the backend machine. Nothing in the window runs a simulation.
 
-**Which launcher the column shows follows the connection in use** (user request 2026-09-23): with a Virtuoso
-connection chosen (the "Connection" button) the column offers **Virtuoso cell...** only, with an ngspice connection
-**ngspice netlist...** only; with no connection chosen, or one of a kind the page does not know, both. The family is
+**Which way to a new task the Tasks window offers follows the connection in use** (user request 2026-09-23): with a
+Virtuoso connection chosen (the "Connection" button) **From a Virtuoso cell...** only, with an ngspice connection
+**From an ngspice netlist...** only; with no connection chosen, or one of a kind the page does not know, both. The family is
 read from the connection list (the workbench's own file, no probe) when the connection changes. The Registered task
 list follows the same rule for the ngspice tasks (user request 2026-09-24: the ngspice OTA example is to show only
 while ngspice is connected): while a Virtuoso connection is in use they are left out of the list, except the task the
@@ -871,15 +886,14 @@ ngspice-47, was built from source into `~/.local/opt/ngspice-47` with a user-loc
 
 ### Browsing a Virtuoso library: the Virtuoso window
 
-The Project column holds the project fields and the registered task only (user request 2026-09-23). Its
-**Virtuoso cell...** button - one short button, with what it is for as text beside it - opens the **Virtuoso
-window**, a browser window of its own like the connection window (needs a connection profile and a link
+**New task: From a Virtuoso cell...** in the Tasks window (record 7.362; until then one short button, **Virtuoso
+cell...**, in the Project column) opens the **Virtuoso window**, a browser window of its own like the connection window (needs a connection profile and a link
 that is up; allow pop-ups if the browser blocks it). There is nothing to press: opening the window lists
 the libraries, choosing a library lists its cells, choosing a cell reads its schematic. Each step is a
 gated, read-only, zero-cost bridge call and waits for the one before it. **Refresh** repeats the chain, for
 example after the link came up or the design changed in Virtuoso. A library chosen in the window makes
-the page follow the Virtuoso cell instead of the task: the column's Task list then shows none and names
-the cell beside the button. Choosing a task in the column makes the page follow the task again, and the
+the page follow the Virtuoso cell instead of the task: the task's place on the tab line then names the cell, and
+**Virtuoso cell...** on the tab line opens the window again. Choosing a task makes the page follow the task again, and the
 window then starts from a blank library. Closing the window loses nothing.
 
 The column and the window keep their explanations folded: a line with a small triangle ("Labels: class
@@ -951,12 +965,12 @@ to say.
   PDK's property form lets a user type goes to the form writer (see "What a real run writes" below). A range
   must contain the present value and is snapped onto the grid the PDK keeps (the editor then shows it exactly
   as registered); anything else is refused with the reason. The cell
-  becomes the task `real:<name>` under **Registered task** (files in
+  becomes the task `real:<name>` in the Tasks window (files in
   `configs/local/workbench/profiles/<name>/`) and stops being browse-only.
   A cell that already has a registered task - one saved from it, or one of the verified built-in
   circuits (`real:gpdk045_ldo` for `ldo_m6_v1`, ...; the library is the one the Virtuoso connection
   states) - shows "This cell already has a registered task: `real:<name>`" and says to choose it under
-  **Task** in the Project column (its **Open** button went on 2026-09-29, 7.109); change it there
+  in the Tasks window (the task's name on the editors' tab line; its **Open** button went on 2026-09-29, 7.109); change it there
   (Save as); another task gets its own copy through that save, or from another copy made in Virtuoso and read in
   the window. A built-in circuit gets no second task.
   **Delete task** (in the Tasks window beside the current task name since 7.260; asks once more; was: Delete profile):
@@ -1866,7 +1880,7 @@ baseline press, the Specs scale). The measurement: `artifacts/local/reviews/defa
 circuit automatically. The task supplies the saved parameters, measurements and specs; the baseline fixes scratch mode,
 seed 0, one lane, nominal only, one evaluation/launch maximum and zero retries. It saves no model and learns nothing.
 Connection/readiness failures are reported without undoing the save. Unknown probe results permit the one bounded
-attempt; known failures still refuse it. A missing/failed baseline can be retried from the Project column. In-place
+attempt; known failures still refuse it. A missing/failed baseline can be retried from the task's lines under the editors' toolbar. In-place
 Virtuoso updates that invalidate a reference also start a new baseline; specs-only updates retain their reference.
 New ngspice tasks run their saved deck too. Before optimization specs exist, the baseline checks measurement presence
 with `probe - probe >= 0`, using an explicit Scale of 1; these run-only checks never become task specs or performance
@@ -1948,7 +1962,7 @@ proposes nothing says why on the same line. Nothing is applied by itself.
   applied", and a run of another task than the one on the page offers nothing. Such a run is not compared with the
   page's rows at all (record 7.214: an LDO's `pm_deg` used to stand as the "Scale now" of an OTA's): a line names both
   tasks, the table shows **Scale in the run** and the Initial alpha the run had, and Apply waits until the page holds
-  the run's task (choose it under Registered task).
+  the run's task (choose it in the Tasks window).
 - **From a script:** `POST /api/runs/start` takes `calibration_only: true` with `calibration_designs` (1 to 500).
   The result is `calibration.json` and `calibration` in run status, with `random_only: true` in its request. It cannot
   also request `baseline_only`. The historical combined API remains available for existing scripts.
@@ -3287,8 +3301,9 @@ before anything is created (`runs.prepare_run`). A difference starts nothing: th
 saved: press Save task to take the copy as it is now, or undo the change in Virtuoso", or which ADE/Maestro windows to
 close). A passed check is kept in the run's manifest (`consistency_check`, for a resume in its segment).
 
-**Check now** (in the task's block, where "Check against Virtuoso" was - that button and its route are gone: it was
-part 2 alone) runs all three parts on its own: free, read-only, no simulation. Its result goes as soon as a row changes.
+**Check now** (on the editors' tab line since record 7.362, before Save task; its tooltip says what it compares; until then
+in the task's block, where "Check against Virtuoso" was - that button and its route are gone: it was part 2 alone) runs all
+three parts on its own; its result stands under the editors' toolbar: free, read-only, no simulation. Its result goes as soon as a row changes.
 Without a connection it compares the rows and says the rest needs one.
 
 **A size the optimizer's grid does not hold as a start** (record 7.333). A run starts from the circuit as it stands,
@@ -3573,7 +3588,7 @@ tab's conversation, the AI threads and the AI sizing settings named here went on
 * **The Agent tab keeps its message box** while an AI run's thread is shown (the thread scrolls in a row of its own).
 * **Import JSON:** only a file this workbench exported replaces the whole configuration; other files are rows for the
   open tab (every row with its ID) or are refused in words. The confirmation shows Apply / Cancel first and scrolls.
-* **The first Save task of a cell** lives with the Project column: closing the Virtuoso window keeps Save task, Task
+* **The first Save task of a cell** lives with the circuit panel (`Left.tsx`): closing the Virtuoso window keeps Save task, Task
   file and an agent setup that waits for the save.
 * **Pause and Abort stay** when one read of the run fails for a moment (two misses in a row are needed, as for the
   tabs). Banners lead with the backend's sentence; its code is under "Technical details". A configuration the backend

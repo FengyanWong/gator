@@ -33,11 +33,18 @@ const LABELS: Record<string, Record<string, string>> = {
 /** `taskSlot` / `taskNotes`: where the circuit panel puts "Save task" (right end of the tab line) and its messages (under
  *  the toolbar) - the save sits with the rows it stores (user request 2026-09-22). No "Save" button of its own any more:
  *  the configuration is kept in this browser by itself (store.ts, 0.8 s after each change), and a second "Save" next to
- *  "Save task" only confused. */
-function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, validation, taskSlot, taskNotes }:
+ *  "Save task" only confused.
+ *  Record 7.362 (the user's Option D, "go with D"): the editors are the task's card. `taskHead` = the tab line's start, where
+ *  the circuit panel names the task (its name opens the Tasks window) and its revision; `taskTools` = the tab line's end, before
+ *  Save task (Check now); `taskStatus` = under the toolbar, the task's own lines (loading, blocked, MOCK, the check's result).
+ *  "Show circuit" brings the circuit column back beside the rows (`circuitShown`, `onCircuit`: App.tsx). */
+function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, validation, taskSlot, taskNotes, taskHead, taskTools, taskStatus,
+  circuitShown, onCircuit }:
   { schema: Json; config: Json; setConfig: (c: Json | ((c: Json) => Json)) => void; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
     validation: Json;
-    taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void }) {
+    taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void;
+    taskHead: (element: HTMLElement | null) => void; taskTools: (element: HTMLElement | null) => void; taskStatus: (element: HTMLElement | null) => void;
+    circuitShown: boolean; onCircuit: () => void }) {
   const [tab, setTab] = useState<Section>('parameters');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [help, setHelp] = useState<Json>(null);
@@ -485,6 +492,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return { isNew, changeOf, savedIn, rowNote, unsavedTitle };
   }
   const { isNew, changeOf, savedIn, rowNote, unsavedTitle } = unsavedMarks();
+  // Beside the task's name (record 7.362): whether the rows are the saved task's - only for a saved task, which validation
+  // compares with its file (record 7.222); the tabs' dots say where they differ.
+  const savedState = !validation?.unsaved_rows?.sections ? null : (Object.keys(TITLES) as Section[]).some(s => unsavedTitle(s)) ? 'not saved' : 'saved';
 
   // Back to the cell after Enter or Esc, as a spreadsheet does.
   const backToCell = () => {
@@ -500,10 +510,18 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
           is its press - it asked the backend with nobody pressing anything, and a reviewed diff was gone.
           Each editor has a colour of its own (record 7.158): its tab, its table's header row, and its ids where another editor shows them.
           A tab holding rows not saved in the task carries a dot, its tooltip says how many (record 7.222). */}
-      <div className="tabs">{(Object.keys(TITLES) as Section[]).map(s => { const notSaved = unsavedTitle(s);
+      <div className="tabs"><span className="task-head" ref={taskHead} />
+        {savedState && <span className={`task-saved${savedState === 'saved' ? '' : ' unsaved'}`} title={savedState === 'saved'
+          ? "The rows of Parameters, Probes and Specs are the saved task's." : 'Rows here differ from the saved task: a tab with a dot says how.'}>{savedState}</span>}
+        {(Object.keys(TITLES) as Section[]).map(s => { const notSaved = unsavedTitle(s);
         return <button key={s} data-editor={s} className={[s === tab ? 'active' : '', notSaved ? 'has-unsaved' : ''].filter(Boolean).join(' ')}
           title={notSaved ?? undefined} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>; })}
-        <span className="tab-actions" ref={taskSlot} /></div>
+        <span className="tab-actions">
+          <button className={`circuit-toggle${circuitShown ? ' active' : ''}`} aria-pressed={circuitShown} onClick={onCircuit}
+            title={circuitShown ? 'Hide circuit: The circuit column folds away and the rows take the width again.'
+              : "Show circuit: The circuit's labels, picture, notes and hierarchy beside the rows - a Parameters row pointed at lights its devices in the picture."}>
+            {circuitShown ? 'Hide circuit' : 'Show circuit'}</button>
+          <span className="task-tools" ref={taskTools} /><span className="task-save-slot" ref={taskSlot} /></span></div>
       <div className="toolbar">
         <button onClick={add} title="Add: A new row at the end, with a free ID."><Icon name="add" label="Add" /></button>
         <button disabled={!selection.length} onClick={remove} title="Delete selected: The rows whose box is ticked. Undo takes them back."><Icon name="delete" label="Delete selected" /></button>
@@ -526,6 +544,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)} title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(c => c.label ?? c.name).join(', ') + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
         {tab === 'parameters' && <button className="text" onClick={() => setMatched(n => n + 1)} title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. Press again to refresh the results. You review a diff; nothing is applied automatically.">Matched devices...</button>}
       </div>
+      <div className="task-status" ref={taskStatus} />
       <div className="task-notes" ref={taskNotes} />
       {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)} />}
       {/* The lines above the tables give their fact; what explains it is the line's tooltip (record 7.176, user: "reduce or

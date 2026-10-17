@@ -1,21 +1,25 @@
-// Browser check of the folded explanations of the Project column and of the Virtuoso window (there is no frontend test
-// runner in this project). Same approach as blocking_issues_check.mjs: a throwaway headless Edge over the DevTools protocol
-// against the RUNNING workbench (default http://127.0.0.1:8765/). EVERY request to /api/virtuoso/* is answered with a canned
-// FIXTURE, so Virtuoso is never contacted. GET requests and the two read-only POSTs (circuit load of a registered task,
-// static validation) pass through; every other writing request is refused here, so this check can start, save or probe
-// nothing on the backend it runs against. The browser profile is new and temporary.
+// Browser check of the folded explanations of the circuit column (the Project column until record 7.362) and of the Virtuoso
+// window (there is no frontend test runner in this project). Same approach as blocking_issues_check.mjs: a throwaway headless
+// Edge over the DevTools protocol against the RUNNING workbench (default http://127.0.0.1:8765/). EVERY request to
+// /api/virtuoso/* is answered with a canned FIXTURE, so Virtuoso is never contacted. GET requests and the two read-only POSTs
+// (circuit load of a registered task, static validation) pass through; every other writing request is refused here, so this
+// check can start, save or probe nothing on the backend it runs against. The browser profile is new and temporary.
 // What it pins (user request 2026-09-21): the long explanations are closed "details" lines like "Instances and parameters"
 // - present, but not shown until their line is clicked - while headlines, warnings and every button stay visible;
 // "Native schematic" is closed by default and then keeps the state the user gave it. Second request the same day ("hide
 // this part"): the whole Hierarchy block is ONE closed line under its own heading, and it keeps the state the user gave it.
-// Since 2026-09-23 (user request) the column holds the project and the registered task only - the labels are one folded
-// line - and the Virtuoso cell lives in a window of its own behind one button; its notes fold the same way, and the warning
-// that the cell itself is written stays in view.
+// Since 2026-09-23 (user request) the labels are one folded line, and the Virtuoso cell lives in a window of its own behind
+// one button; its notes fold the same way, and the warning that the cell itself is written stays in view. Since record 7.362
+// (the user's Option D) the column is the circuit column - labels, picture, notes, hierarchy - itself folded away until "Show
+// circuit" on the editors' tab line (this browser keeps the choice); the task's own lines (MOCK, a missing baseline) stand
+// under the editors' toolbar, Check now on the tab line with what the check compares as its tooltip; the Virtuoso window
+// opens from the Tasks window's "New task: From a Virtuoso cell..." and, while the page follows the cell, from the tab
+// line's "Virtuoso cell...".
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/project_help_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, reportRefused, runChecks, sleep, TASK_PANEL, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
+import { check, CIRCUIT_PANEL, CIRCUIT_SHOWN_KEY, launchEdge, outDir, reportRefused, runChecks, showCircuit, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -75,15 +79,24 @@ await runChecks(browser, async () => {
   };
   const onDialog = session => session.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return session.send('Page.handleJavaScriptDialog', { accept: true, ...(p.type === 'prompt' ? { promptText: p.defaultPrompt } : {}) }); });
   onDialog(page);
+  // Record 7.362 (the user's Option D): the editors are the task's card - its name and actions on their tab line, its own lines
+  // under their toolbar - and the circuit column holds the circuit alone; the ways to a new task are in the Tasks window.
   const PANEL = TASK_PANEL;
-  const LAUNCH = `${PANEL}.querySelector('button.virtuoso-button')`;
+  const STATUS = `${PANEL}.querySelector('.task-status')`;
+  const COLUMN = CIRCUIT_PANEL;
+  const NEW = `document.querySelector('.task-window-new')`;                         // the Tasks window's "New task:" row
+  const LAUNCH = `${NEW}.querySelector('button.virtuoso-button')`;                   // "From a Virtuoso cell...", pressed in the Tasks window
   const WIN = `document.querySelector('.virtuoso-window')`;
+  const tw = taskWindow(page, browser);
   let far = null;
   const openWindow = async () => {
-    far = await browser.popup(page, LAUNCH, VIRTUOSO_WINDOW, { width: 720, height: 2000, ready: WIN, onDialog });   // tall: the whole window on one picture
+    // The Tasks window holds the press, so it opens the Virtuoso window (popupWindow.ts); the page keeps it when the Tasks window closes.
+    far = await browser.popup(await tw.open(), LAUNCH, VIRTUOSO_WINDOW, { width: 720, height: 2000, ready: WIN, onDialog });   // tall: the whole window on one picture
+    await tw.close();
     await sleep(400);
   };
-  // The same questions asked of the column (page session, PANEL) and of the window (far session, WIN).
+  // The same questions asked of the column (page session, COLUMN), of the editors' card (PANEL, STATUS), of the Tasks window
+  // and of the Virtuoso window (far session, WIN).
   const on = (session, ROOT) => {
     const FIELD = label => `[...${ROOT}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})?.querySelector('input, select')`;
     const BUTTON = text => `[...${ROOT}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
@@ -99,7 +112,9 @@ await runChecks(browser, async () => {
     const buttonShown = text => session.evaluate(`!!(${BUTTON(text)}) && ${BUTTON(text)}.checkVisibility()`);
     const choose = (label, v) => session.setValue(`${FIELD(label)}`, v);
     const height = () => session.evaluate(`Math.round(${ROOT}.getBoundingClientRect().height)`);
-    return { FIELD, BUTTON, present, shown, folded, SUMMARY, isOpen, click, openLines, buttonShown, choose, height, text: () => session.evaluate(`${ROOT}.textContent`) };
+    // Whether a library, cell or source box is there (the Virtuoso window's own boxes).
+    const boxes = () => session.evaluate(`[${['Library', 'Cell', 'Source'].map(FIELD).join(', ')}].some(Boolean)`);
+    return { FIELD, BUTTON, present, shown, folded, SUMMARY, isOpen, click, openLines, buttonShown, choose, height, boxes, text: () => session.evaluate(`${ROOT}.textContent`) };
   };
   const quiet = async (ms = 700) => { let seen = -1; while (seen !== calls.length || inFlight) { seen = calls.length; await sleep(ms); } };
   // Save task sits at the right end of the editors' tab line (user request 2026-09-22), not in the column, not in the window.
@@ -108,29 +123,44 @@ await runChecks(browser, async () => {
   const taskButtonShown = text => evaluate(`!!(${TASK_BUTTON(text)}) && ${TASK_BUTTON(text)}.checkVisibility()`);
   const shotColumn = async name => {                          // a tall window, so the whole column is on the picture instead of its visible part
     await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 2600, deviceScaleFactor: 1, mobile: false }); await sleep(250);
-    await page.shot(path.join(out, name), PANEL, { pad: 4, scale: 2, maxHeight: 2500 });
+    await page.shot(path.join(out, name), COLUMN, { pad: 4, scale: 2, maxHeight: 2500 });
     await send('Emulation.setDeviceMetricsOverride', { width: 1680, height: 1050, deviceScaleFactor: 1, mobile: false });
   };
+  const shotTask = async name => page.shot(path.join(out, name), await evaluate(`(() => { const p = ${PANEL}.getBoundingClientRect(), s = ${STATUS}.getBoundingClientRect();
+    return { x: p.x, y: p.y, width: p.width, height: Math.max(s.bottom, p.y + 80) - p.y + 2, scale: 2 }; })()`));   // the tab line down to the task's lines
   const shotWindow = name => far.shot(path.join(out, name), WIN, { scale: 2, maxHeight: 1900, beyond: true });
 
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG });
   await send('Page.navigate', { url: APP });
-  if (!(await until(`!!(${PANEL}) && ${PANEL}.textContent.includes('Hierarchy (')`, 150))) throw new Error('the Project column never showed a loaded circuit | panel: '
-    + (await evaluate(`${PANEL}?.textContent.slice(0, 700) ?? 'no panel'`)) + ' | console: ' + consoleErrors.join(' | ').slice(0, 300));
-  const col = on(page, PANEL);
+  if (!(await until(`!!(${PANEL}) && !!(${COLUMN}) && ${COLUMN}.textContent.includes('Hierarchy (') && !!${STATUS}?.querySelector('.mock')`, 150))) throw new Error('the circuit column never held a loaded circuit | column: '
+    + (await evaluate(`${COLUMN}?.textContent.slice(0, 700) ?? 'no column'`)) + ' | console: ' + consoleErrors.join(' | ').slice(0, 300));
+  const col = on(page, COLUMN), card = on(page, PANEL), status = on(page, STATUS);
 
-  // ---- a registered task: nothing is unfolded by itself ----------------------------------------------------------
-  check('on page load no line of the column is unfolded', (await col.openLines()).length === 0, (await col.openLines()).join(' | '));
+  // ---- the circuit column is folded away until "Show circuit" (record 7.362); shown, nothing in it is unfolded by itself -------------
+  const TOGGLE = `${PANEL}.querySelector('.tabs button.circuit-toggle')`;
+  const toggle = () => evaluate(`(() => { const b = ${TOGGLE}; return b ? b.textContent.trim() + ', pressed ' + b.getAttribute('aria-pressed') : 'no toggle'; })()`);
+  const layout = async () => ({ toggle: await toggle(), column: await evaluate(`${COLUMN}.checkVisibility()`), editors: await evaluate(`Math.round(${PANEL}.getBoundingClientRect().width)`) });
+  const away = await layout();
+  check('on page load the circuit column is folded away and "Show circuit" stands on the editors\' tab line', !away.column && away.toggle === 'Show circuit, pressed false', JSON.stringify(away));
+  const shown = await showCircuit(page), beside = { ...(await layout()), kept: await evaluate(`localStorage.getItem(${JSON.stringify(CIRCUIT_SHOWN_KEY)})`) };
+  check('"Show circuit" brings it back beside the rows, which give it room; the button says "Hide circuit" and this browser keeps the choice', shown && beside.column
+    && beside.toggle === 'Hide circuit, pressed true' && beside.editors < away.editors && beside.kept === 'shown', JSON.stringify([away, beside]));
+  check('shown, no line of the circuit column is unfolded', (await col.openLines()).length === 0, (await col.openLines()).join(' | '));
   check('the labels are one closed line naming their values; the boxes and their explanation are folded', await col.shown('Labels: class') && await col.folded('labels saved with every run')
     && !(await evaluate(`${col.FIELD('PDK id')}.checkVisibility()`)));
-  check('the MOCK banner stays in view', await col.shown('MOCK evaluation backend'));
+  check('the MOCK line stays in view, with the task\'s lines under the editors\' toolbar', await status.shown('MOCK evaluation backend'));
   await col.click(col.SUMMARY('Labels: class')); await sleep(200);
   check('a click on the line shows the boxes and the text', await col.shown('labels saved with every run') && await col.isOpen('Labels: class') && await evaluate(`${col.FIELD('PDK id')}.checkVisibility()`));
   await col.click(col.SUMMARY('Labels: class')); await sleep(200);
   check('a second click folds it again', await col.folded('labels saved with every run'));
-  check('the Virtuoso cell is ONE button in the column; no library, cell or testbench box here', await col.buttonShown('Virtuoso cell...')
-    && !(await evaluate(`!!(${col.FIELD('Library')}) || !!(${col.FIELD('Cell')}) || !!(${col.FIELD('Source')})`)));
+  // The way to a cell since record 7.362: the Tasks window's "New task:" row; the tab line has "Virtuoso cell..." only while the page follows one.
+  const taskWin = on(await tw.open(), `document.querySelector('.task-window')`);
+  const launchers = await tw.window.evaluate(`[...(${NEW}?.querySelectorAll('button') ?? [])].filter(b => b.textContent.trim() === 'From a Virtuoso cell...' && b.checkVisibility()).length`);
+  check('the Virtuoso cell is ONE button, in the Tasks window\'s New task row (none on the tab line while a task is followed); no library, cell or testbench box on the page or there',
+    launchers === 1 && !(await card.buttonShown('Virtuoso cell...')) && !(await col.buttonShown('Virtuoso cell...')) && !(await col.boxes()) && !(await card.boxes()) && !(await taskWin.boxes()),
+    `${launchers} button(s)`);
+  await tw.close();
 
   // ---- the whole Hierarchy block is one closed line under its heading -------------------------------------------------
   const HIERARCHY = `${col.SUMMARY('Hierarchy (')}?.parentElement`;
@@ -153,13 +183,13 @@ await runChecks(browser, async () => {
   await win.choose('Library', LIBRARY); await quiet();
   await win.choose('Cell', 'ring_b'); await quiet();                                // a cell without a tb_ of its own: the note asks for one
   check('virtuoso: the three reads happened through fixtures only', JSON.stringify(calls) === JSON.stringify(['libraries', 'cells', 'read']), calls.join(' | '));
-  check('browse only: the headline is in view, in the window', await win.shown('Browse only: you can look at this cell here') && !(await col.present('Browse only')));
+  check('browse only: the headline is in view, in the window', await win.shown('Browse only: you can look at this cell here') && !(await col.present('Browse only')) && !(await card.present('Browse only')));
   check('browse only: what a circuit profile is, is folded under "Why: ..."', await win.shown('Why: it has no circuit profile yet') && await win.folded('a checked description of three things')
     && await win.folded('which testbench simulates the circuit'));
   // The row of real:* shortcut buttons was removed on the user's request (status record 7.40): one folded sentence points to the column instead.
   const offered = await far.evaluate(`[...${WIN}.querySelectorAll('.note button')].filter(b => b.textContent.startsWith('real:')).length`);
   check('browse only: no shortcut buttons to the existing real tasks; where they are is one folded sentence under "Why: ..."', offered === 0
-    && await win.folded('Circuits that already have one are under Registered task, in the Project column.'), `${offered} button(s)`);
+    && await win.folded('Circuits that already have one are in the Tasks window, under their task.'), `${offered} button(s)`);
   check('browse only: the copy warning is NOT folded: the cell itself is written', await win.shown('Work on a copy, never on your design.') && await win.shown('every run sets device sizes in the cell'));
   check('browse only: "Read this cell into the workbench" stays in view, its explanation is folded', await win.buttonShown('Read this cell into the workbench')
     && await win.shown('To start a profile for this cell') && await win.shown('choose its Testbench cell above first') && await win.folded('Read-only, no simulation, some seconds'));
@@ -203,6 +233,10 @@ await runChecks(browser, async () => {
     && await win.folded('Save as asks for a new name') && !(await far.evaluate(`!!(${win.BUTTON('Save as')})`)));
   check('draft: the name and the two buttons are in view in the editors\' tab line of the workbench', !(await evaluate(`!!${TASK_BAR}?.querySelector('input')`))
     && await taskButtonShown('Save as') && await taskButtonShown('Task file') && !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)));
+  const head = await evaluate(`(() => { const b = ${PANEL}.querySelector('.tabs .task-tools button.virtuoso-button');
+    return { task: ${PANEL}.querySelector('.tabs .task-row .task-list-key')?.textContent ?? '', back: b && b.checkVisibility() ? b.textContent.trim() : null }; })()`);
+  check('draft: the tab line names the cell as read from Virtuoso and offers "Virtuoso cell..." back to its window (record 7.362)',
+    head.task === `(none: ${LIBRARY}/ring_a is read from Virtuoso)` && head.back === 'Virtuoso cell...', JSON.stringify(head));
   check('draft: the backend\'s note is one closed line "1 note on this circuit"', await win.shown('1 note on this circuit') && await win.folded(NOTE));
   await win.click(win.SUMMARY('1 note on this circuit')); await sleep(200);
   check('draft: a click shows the note', await win.shown(NOTE));
@@ -218,17 +252,23 @@ await runChecks(browser, async () => {
     && await win.shown('Hierarchy (3 instances)') && await far.evaluate(`!${WTREE}.checkVisibility()`) && await win.folded('Instances and parameters') && await win.folded('Native schematic'));
   await shotWindow('help-4b-draft-hierarchy-closed.png');
 
-  // ---- a saved task: in the column -----------------------------------------------------------------------------------------
-  await evaluate(`${TASK_BUTTON('Save as')}.click()`, true); await quiet(); await until(`${PANEL}.textContent.includes('Before every run')`);
-  check('saved task: a missing baseline has its retry action in the column', !(await col.present('REAL evaluation backend'))
-    && await col.shown('No real baseline yet.') && await col.buttonShown('Retry baseline'));
-  check('saved task: "Before every run" and "Check now" stay in view; no manual baseline button (a baseline records itself)', await col.shown('Before every run:')
-    && await col.buttonShown('Check now') && !(await col.buttonShown('Record the baseline run as reference')));
-  check('saved task: what the check compares is folded', await col.shown('What the check compares') && await col.folded('no ADE/Maestro window may be open on the copy'));
+  // ---- a saved task: its lines under the editors' toolbar, Check now on the tab line, its circuit in the column (record 7.362) ----------
+  await evaluate(`${TASK_BUTTON('Save as')}.click()`, true); await quiet(); await until(`!!${PANEL}.querySelector('.tabs .task-tools button.check-now')`);
+  check('saved task: a missing baseline has its retry action, with the task\'s lines under the editors\' toolbar', !(await status.present('REAL evaluation backend'))
+    && !(await col.present('REAL evaluation backend')) && await status.shown('No real baseline yet.') && await status.buttonShown('Retry baseline'));
+  const checkNow = await evaluate(`(() => { const b = [...${PANEL}.querySelectorAll('.tabs .task-tools button')].find(b => b.textContent.trim() === 'Check now');
+    return b ? { shown: b.checkVisibility(), title: b.title } : null; })()`);
+  check('saved task: "Check now" stays in view on the tab line, its tooltip says the check runs before every run; no manual baseline button (a baseline records itself)',
+    !!checkNow?.shown && checkNow.title.includes('Start, Calibration and Resume first check that the editors, this saved task and its cell in Virtuoso agree')
+    && !(await card.buttonShown('Record the baseline run as reference')) && !(await col.buttonShown('Record the baseline run as reference')), JSON.stringify(checkNow).slice(0, 200));
+  check('saved task: what the check compares is in that tooltip, not a line on the page (the folded "What the check compares" until record 7.362)',
+    !!checkNow?.title.includes('no ADE/Maestro window may be open on the copy') && !(await card.present('What the check compares')) && !(await col.present('What the check compares'))
+    && !(await card.present('no ADE/Maestro window may be open on the copy')) && !(await col.present('no ADE/Maestro window may be open on the copy')));
   check('saved task: two notes are one closed line', await col.shown('2 notes on this circuit') && await col.folded('FIXTURE NOTE: a second one.'));
   check('saved task: Hierarchy is back in the column and stays closed, as the user left it', (await evaluate(`${HIERARCHY}.open`)) === false && await col.shown('Hierarchy (1 instances)') && await col.folded('Instances and parameters'));
   check('saved task: the window follows it and shows no cell note', await win.shown('follows the task real:ring_a') && !(await win.present('Not optimizable yet')));
   await shotColumn('help-5-generated-profile.png');
+  await shotTask('help-5b-task-lines.png');
 
   reportRefused(refused);
   check('the page asked to start, continue, command, connect or open an agent CLI on its own: never', !refused.some(r => /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify)/.test(r)), refused.join(', '));

@@ -2,10 +2,11 @@
 // the backend under test, every writing request is refused.
 // What it pins (one look since record 7.360): a callout inside a panel or a window has no frame of its own - a rule at its left sets it
 // off - and only a status keeps its faint fill (blocker, warning, MOCK / REAL, a test result); a callout inside a callout has
-// no rule of its own; the MOCK banner between the header and the columns keeps its frame; the page's own MOCK note in the
-// Project column is drawn so.
+// no rule of its own; the MOCK banner between the header and the columns keeps its frame; the page's own MOCK note - under the
+// editors' toolbar, with the task's other lines, since record 7.362 (the Project column until then) - is drawn so.
 // How: most callouts show only in a particular state (an import to confirm, a blocking issue, a test result), so
-// one of each kind is placed in the Project column's panel and measured there; the stylesheet decides how each one is drawn.
+// one of each kind is placed among the task's lines in the editors' panel and measured there; the stylesheet decides how each
+// one is drawn.
 // Run: bash frontend/scripts/run_checks.sh --only callouts_check. About 10 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
@@ -26,10 +27,10 @@ await runChecks(browser, async () => {
   await page.intercept(['*/api/config/validate'], params => page.pass(params.requestId), { others: 'read' });
   await page.seed({ config, when: 'once' });
   await send('Page.navigate', { url: APP });
-  check('the page opens', await page.until(`!!document.querySelector('.left .panel') && !!document.querySelector('.editors table.editor tbody tr')`, 200));
+  check('the page opens', await page.until(`!!document.querySelector('.editors .task-status .mock') && !!document.querySelector('.editors table.editor tbody tr')`, 200));
   await sleep(800);
   const measure = () => evaluate(`(() => {
-    const host = document.querySelector('.left .panel');
+    const host = document.querySelector('section.panel.editors .task-status');     // the task's lines (record 7.362)
     host.querySelector('.fixture-callouts')?.remove();
     const box = document.createElement('div'); box.className = 'fixture-callouts'; host.append(box);
     const kinds = ${JSON.stringify(KINDS)};
@@ -48,7 +49,7 @@ await runChecks(browser, async () => {
     for (const [name] of kinds) result[name] = read(box.querySelector('.' + name.split(' ').join('.')));
     result.nested = read(box.querySelector('.confirm.nested'));
     result.banner = read(box.querySelector('.banner.mock'));
-    const mock = [...document.querySelectorAll('.left .panel .mock')].find(e => !box.contains(e));
+    const mock = [...document.querySelectorAll('section.panel.editors .task-status .mock')].find(e => !box.contains(e));
     result.pageMock = mock ? read(mock) : null;
     box.remove();
     return result; })()`);
@@ -60,9 +61,9 @@ await runChecks(browser, async () => {
     check(`(${look}) only a status keeps its fill: blocker, test result, warning, MOCK, REAL, settings problem`, fills.length === 0, JSON.stringify(fills.map(n => [n, seen[n]])));
     check(`(${look}) a callout inside a callout has no rule of its own`, seen.nested.left === 0 && !seen.nested.top && !seen.nested.fill, JSON.stringify(seen.nested));
     check(`(${look}) the MOCK banner between the header and the columns keeps its frame`, seen.banner.top >= 1 && seen.banner.right >= 1 && seen.banner.bottom >= 1, JSON.stringify(seen.banner));
-    check(`(${look}) the page's own MOCK note in the Project column is drawn so: a rule and its fill, no frame`, !!seen.pageMock && seen.pageMock.left >= 3 && !seen.pageMock.top && !seen.pageMock.right
+    check(`(${look}) the page's own MOCK note under the editors' toolbar (record 7.362) is drawn so: a rule and its fill, no frame`, !!seen.pageMock && seen.pageMock.left >= 3 && !seen.pageMock.top && !seen.pageMock.right
       && !seen.pageMock.bottom && seen.pageMock.fill, JSON.stringify(seen.pageMock));
-    await page.shot(path.join(out, `callouts-${look}.png`), `document.querySelector('.left .panel')`);
+    await page.shot(path.join(out, `callouts-${look}.png`), `document.querySelector('section.panel.editors')`);
   }
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
   check('no console error', !consoleErrors.length, consoleErrors.slice(0, 3).join(' | '));

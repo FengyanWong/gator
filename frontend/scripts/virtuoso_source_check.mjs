@@ -1,25 +1,30 @@
-// Browser check of the Virtuoso cellview import in its WINDOW and of the left column that keeps only the registered task
-// (user request 2026-09-23; there is no frontend test runner). Same approach as connection_panel_check.mjs: a throwaway
+// Browser check of the Virtuoso cellview import in its WINDOW and of the page around it (user request 2026-09-23; since record
+// 7.362, the user's Option D, the task on the editors' tab line, the circuit column and the Tasks window's way to a new task;
+// there is no frontend test runner). Same approach as connection_panel_check.mjs: a throwaway
 // headless Edge over the DevTools protocol against a workbench page (default http://127.0.0.1:8765/; GATOR_WORKBENCH_URL for
 // a preview of a temporary build). EVERY request to /api/virtuoso/* is intercepted, logged and answered with a canned
 // FIXTURE answer, so Virtuoso is never contacted and the check does not depend on the backend version; any other writing
 // request of the page is refused here (reads pass): hermetic.
 // What it pins:
-//   - the column: Project, Registered task (the Task list), ONE button "Virtuoso cell..." with the text beside it, the labels
-//     folded into one line; no Source list, no library / cell boxes, no Virtuoso note in the column;
+//   - the page (record 7.362): the task row starts the editors' tab line and names the task; the circuit column is folded
+//     away until "Show circuit", its heading is Circuit, its labels one folded line; the Tasks window's "New task" row has ONE
+//     button "From a Virtuoso cell..." (a Virtuoso connection), which opens the window; "Virtuoso cell..." stands on the tab
+//     line only while the page follows a cell, the task row then names the cell, and the button opens the window again; no
+//     Source list, no library / cell boxes, no Virtuoso note in the circuit column or on the task's card;
 //   - the window: opening it lists the libraries (no button), a library its cells, a cell its schematic, one request per step
 //     and in that order; no view is asked for; the PDK id is offered from the technology library;
 //   - reading a cell ASKS whether it is a copy the user made (window.confirm): Cancel reads nothing, OK reads it with
 //     `work_here` and the cell becomes the one the flow works in - the window says so; no "Make a working copy" anywhere;
 //     a cell without a testbench is refused in words; reading it again asks nothing;
-//   - Save task (no Save as) from the window's cell, the task then in the column; Check now / Record in its block, Delete task in the task row;
-//     a cell that already has a task, a built-in cell; a blocked gate and an older backend are readable.
+//   - Save as (no Save task) from the window's cell, the task then named on the tab line, what happened said under the
+//     toolbar; Check now on the tab line before Save as, what it checks in its tooltip, its result under the toolbar; Delete
+//     task in the Tasks window; a cell that already has a task, a built-in cell; a blocked gate and an older backend are readable.
 // Needs a configured connection profile (the page selects the active one; reading the profiles probes nothing).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, MOCK_PAGE_CONFIG, outDir, runChecks, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
+import { check, CIRCUIT_PANEL, launchEdge, MOCK_PAGE_CONFIG, outDir, runChecks, showCircuit, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -148,19 +153,30 @@ await runChecks(browser, async () => {
     return session.send('Page.handleJavaScriptDialog', { accept: !!accept });
   });
   onDialog(page);
-  // ---- the column ------------------------------------------------------------------------------------------------------
+  // ---- the task's card and the circuit column (record 7.362, the user's Option D; the Project column's "Registered task"
+  // panel until then) ---------------------------------------------------------------------------------------------------------
+  // The task's card is the editors: the task's name (it opens the Tasks window) starts their tab line, Check now and Save as end
+  // it, the task's own lines stand under the toolbar. The circuit column holds the circuit only - its labels among it - and is
+  // folded away until "Show circuit".
   const PANEL = TASK_PANEL;
-  const LABEL = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;
+  const CIRCUIT = CIRCUIT_PANEL;
+  const LABEL = (label, where = CIRCUIT) => `[...${where}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;
   const FIELD = label => `${LABEL(label)}?.querySelector('input, select')`;
   const BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
-  const LAUNCH = `${PANEL}.querySelector('button.virtuoso-button')`;
+  const ANY_BUTTON = text => `[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;   // anywhere on the page
+  // "Virtuoso cell..." on the tab line, back to the window: only while the page follows a Virtuoso cell.
+  const LAUNCH = `${PANEL}.querySelector('.tabs .task-tools button.virtuoso-button')`;
+  // The way to a new task from a cell: the Tasks window's "New task: From a Virtuoso cell..." (a button of the column until then).
+  const NEW_FROM_CELL = `document.querySelector('.task-window .task-window-new button.virtuoso-button')`;
   const text = () => evaluate(`${PANEL}.textContent`);
+  const statusText = () => evaluate(`${PANEL}.querySelector('.task-status').textContent`);          // the task's own lines, under the toolbar
+  const circuitText = () => evaluate(`${CIRCUIT}.textContent`);
   // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
   const tw = taskWindow(page, browser);
   const value = label => label === 'Task' ? tw.current() : evaluate(`${FIELD(label)}.value`);
   const choose = (label, v) => label === 'Task' ? tw.choose(v, { tries: 0 }) : page.setValue(`${FIELD(label)}`, v);
   const type = async (label, textToType) => {                                       // the labels sit in a folded line: open it, then type
-    await evaluate(`(() => { const d = ${PANEL}.querySelector('details.labels'); if (!d.open) d.querySelector('summary').click(); const i = ${FIELD(label)}; i.focus(); i.select(); })()`);
+    await evaluate(`(() => { const d = ${CIRCUIT}.querySelector('details.labels'); if (!d.open) d.querySelector('summary').click(); const i = ${FIELD(label)}; i.focus(); i.select(); })()`);
     await send('Input.insertText', { text: textToType });
   };
   // The page saves its configuration 800 ms after the last change: read it once no save is pending, not one step behind.
@@ -176,8 +192,10 @@ await runChecks(browser, async () => {
   // page's own step from one answer to its next request (it chains them without delay): 1.5 s until 2026-09-30, when 29
   // such waits were a third of the batch's slowest script.
   const quiet = async (ms = 800) => { let seen = -1; while (seen !== calls.length || inFlight) { seen = calls.length; await sleep(ms); } };
+  // The task on the tab line and the circuit column beside the rows, as two pictures (record 7.362).
   const shotColumn = async name => {
     await evaluate(`${PANEL}.scrollIntoView({ block: 'start' })`); await sleep(200);
+    await page.shot(path.join(out, name.replace(/\.png$/, '-tab-line.png')), `${PANEL}.querySelector('.tabs')`, { scale: 2 });
     await page.shot(path.join(out, name), `document.querySelector('.left')`, { scale: 2, maxHeight: 1400 });
   };
   // ---- the window: a second page, found by its title, with a DevTools session of its own -------------------------------
@@ -185,8 +203,11 @@ await runChecks(browser, async () => {
   let far = null, farPage = null;
   const WIN = `document.querySelector('.virtuoso-window')`;
   const openWindow = async () => {
-    far = await browser.popup(page, LAUNCH, VIRTUOSO_WINDOW, { width: 720, height: 980, ready: WIN, onDialog });
+    // Pressed in the Tasks window, which holds the click: the window is opened by it (popupWindow.ts) and found by its title as
+    // before. The Tasks window then closes; it opens again where a task is chosen.
+    far = await browser.popup(await tw.open(), NEW_FROM_CELL, VIRTUOSO_WINDOW, { width: 720, height: 980, ready: WIN, onDialog });
     farPage = far.target;
+    await tw.close();
     await sleep(400);
   };
   const wText = () => far.evaluate(`${WIN}.textContent`);
@@ -205,36 +226,47 @@ await runChecks(browser, async () => {
   await page.trackSaves();                                                          // stored() waits for the page's 800 ms save
   await page.seed({ config: MOCK_PAGE_CONFIG, when: 'once' });           // on the MOCK stand-in (record 7.128)
   await send('Page.navigate', { url: APP });
-  for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
-  // The connection in use is named on the one "Connection" button of the left column (its window is not needed here).
+  for (let i = 0; i < 100 && !(await evaluate(`!!${PANEL}?.querySelector('.task-row button.task-list-button')`)); i++) await sleep(100);
+  // The connection in use is named on the header's one "Connection" button (its window is not needed here).
   for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('header button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
   await sleep(800);
   check('nothing is read from Virtuoso when the page opens', calls.length === 0, ops().join(' | '));
 
-  // ---- the column holds the registered task only --------------------------------------------------------------------------
+  // ---- the task on the editors' tab line; the circuit column, folded away until "Show circuit" (record 7.362) ----------------
+  check('the task row starts the editors\' tab line and names the MOCK task (no drop-down list since record 7.227)', (await value('Task')) === 'synthetic:gpdk045_ota5'
+    && await evaluate(`!!document.querySelector('.editors > .tabs > .task-head:first-child > .task-row button.task-list-button') && !${PANEL}.querySelector('.task-row select')`), await value('Task'));
+  check('no "Virtuoso cell..." on the tab line while the page follows a task', !(await evaluate(`!!(${LAUNCH})`)));
+  check('the circuit column is folded away when the page opens', await evaluate(`!document.querySelector('.layout').classList.contains('circuit-shown') && !document.querySelector('aside.left').checkVisibility()`));
+  check('"Show circuit" on the tab line puts it back beside the rows', await showCircuit(page)
+    && await evaluate(`document.querySelector('aside.left').checkVisibility() && document.querySelector('.editors .circuit-toggle').getAttribute('aria-pressed') === 'true'`));
   const headings = await evaluate(`[...document.querySelectorAll('.left h3')].map(h => h.textContent.trim()).filter(h => !h.startsWith('Hierarchy (') && h !== 'Circuit picture')`);   // the Hierarchy and circuit picture folds' lines are h3s too
-  // (the Project heading went with the project name box, record 7.159)
-  check('the column\'s heading is Registered task - no "Circuit source", no Project name box', JSON.stringify(headings) === JSON.stringify(['Registered task']), headings.join(' | '));
-  check('no Source list, no Library / Cell / Testbench boxes in the column', !(await evaluate(`!!(${LABEL('Source')}) || !!(${LABEL('Library')}) || !!(${LABEL('Cell')}) || !!(${LABEL('Testbench cell')})`)));
-  check('the Task row names the MOCK task (no drop-down list since record 7.227)', (await value('Task')) === 'synthetic:gpdk045_ota5' && !(await evaluate(`!!${PANEL}.querySelector('.task-row select')`)), await value('Task'));
-  const launcher = await evaluate(`(() => { const b = ${LAUNCH}; const row = b?.closest('.row'); return b ? { caption: b.textContent.trim(), beside: row.querySelector('.hint')?.textContent.trim() } : null; })()`);
-  check('ONE short button "Virtuoso cell..." with what it is for as text beside it', !!launcher && launcher.caption === 'Virtuoso cell...' && launcher.beside === 'From a cell you copied in Virtuoso:', JSON.stringify(launcher));
-  check('the labels are one folded line naming their values', await evaluate(`(() => { const d = ${PANEL}.querySelector('details.labels'); return !!d && !d.open && /^Labels: class \\w+, PDK \\w+/.test(d.querySelector('summary').textContent.trim()); })()`),
-    await evaluate(`${PANEL}.querySelector('details.labels summary')?.textContent`));
-  check('Circuit class and PDK id are explained', !!(await evaluate(`!!(${LABEL('Circuit class')})`)) && (await text()).includes('labels saved with every run')
+  // (the Project heading went with the project name box, record 7.159; "Registered task" with the task, record 7.362)
+  check('the circuit column\'s heading is Circuit - no "Registered task", no "Circuit source", no Project name box', JSON.stringify(headings) === JSON.stringify(['Circuit']), headings.join(' | '));
+  check('no Source list, no Library / Cell / Testbench boxes in the circuit column or on the task\'s card', !(await evaluate(['Source', 'Library', 'Cell', 'Testbench cell']
+    .flatMap(label => [CIRCUIT, PANEL].map(where => `!!(${LABEL(label, where)})`)).join(' || '))));
+  check('the labels are one folded line naming their values, in the circuit column', await evaluate(`(() => { const d = ${CIRCUIT}.querySelector('details.labels'); return !!d && !d.open && /^Labels: class \\w+, PDK \\w+/.test(d.querySelector('summary').textContent.trim()); })()`),
+    await evaluate(`${CIRCUIT}.querySelector('details.labels summary')?.textContent`));
+  check('Circuit class and PDK id are explained', !!(await evaluate(`!!(${LABEL('Circuit class')})`)) && (await circuitText()).includes('labels saved with every run')
     && (await evaluate(`${LABEL('PDK id')}.title`)).includes('process design kit'));
   await shotColumn('virtuoso-0-column.png');
 
+  // ---- the way to a new task: the Tasks window's "New task" row (record 7.362; ONE button of the column until then) ----------
+  const newRow = await (await tw.open()).evaluate(`(() => { const r = document.querySelector('.task-window .task-window-new'); return r && { caption: r.querySelector('.hint')?.textContent.trim(),
+    buttons: [...r.querySelectorAll('button')].map(b => b.textContent.trim()), title: r.querySelector('button.virtuoso-button')?.title ?? '' }; })()`);
+  check('the Tasks window\'s New task row has ONE button "From a Virtuoso cell..." (a Virtuoso connection: no ngspice one), what it opens in its tooltip',
+    newRow?.caption === 'New task:' && JSON.stringify(newRow.buttons) === JSON.stringify(['From a Virtuoso cell...']) && newRow.title.startsWith('From a Virtuoso cell: Opens the Virtuoso window'),
+    JSON.stringify(newRow)?.slice(0, 200));
+
   // ---- opening the window lists the libraries: no button ------------------------------------------------------------------
   await openWindow(); await quiet();
-  check('the button opens a window of its own, titled "GATOR - Virtuoso cell", with the heading "Virtuoso cell"', !!farPage && farPage.title === VIRTUOSO_WINDOW
+  check('"From a Virtuoso cell..." opens a window of its own, titled "GATOR - Virtuoso cell", with the heading "Virtuoso cell"', !!farPage && farPage.title === VIRTUOSO_WINDOW
     && (await far.evaluate(`${WIN}.querySelector('h2')?.textContent`)) === 'Virtuoso cell');
   check('opening the window lists the libraries by itself, once', JSON.stringify(ops()) === JSON.stringify(['libraries']), ops().join(' | '));
   check('there is no "List libraries" button', !(await wHas('List libraries')));
   check('the Library dropdown offers what Virtuoso answered', JSON.stringify((await wOptions('Library')).slice(1).map(o => o.value)) === JSON.stringify(LIBRARIES), JSON.stringify(await wOptions('Library')));
   check('the Cell dropdown waits for a library', await far.evaluate(`${wField('Cell')}.disabled`) && (await wOptions('Cell'))[0].text === '(choose a library first)');
   check('no view is asked for', !(await far.evaluate(`!!(${wLabel('View')})`)));
-  check('the window says the page follows the task until a library is chosen; the column still shows the task', await wShown('.follows-task')
+  check('the window says the page follows the task until a library is chosen; the tab line still names the task', await wShown('.follows-task')
     && (await wText()).includes('follows the task synthetic:gpdk045_ota5') && (await value('Task')) === 'synthetic:gpdk045_ota5');
   await shotWindow('virtuoso-1-window-opened.png');
 
@@ -245,18 +277,21 @@ await runChecks(browser, async () => {
   const cellOptions = await wOptions('Cell');
   check('the Cell dropdown lists them; a cell without a schematic cannot be chosen', cellOptions.length === 5 && cellOptions.find(o => o.value === 'symbol_only')?.disabled === true
     && cellOptions.find(o => o.value === 'symbol_only').text.includes('no schematic view') && cellOptions.find(o => o.value === 'ota5_v1')?.disabled === false, JSON.stringify(cellOptions));
-  check('the page follows the Virtuoso source now: the Task list shows none, its text says a cell is being chosen', (await stored())?.circuit?.source === 'virtuoso'
+  check('the page follows the Virtuoso source now: the task row on the tab line shows none, its text says a cell is being chosen', (await stored())?.circuit?.source === 'virtuoso'
     && ((await value('Task')) ?? '').includes('a Virtuoso cell is being chosen'), await value('Task'));
-  check('the PDK id is offered from the technology library (in the column\'s labels line)', (await value('PDK id')) === 'gpdk045' && (await evaluate(`${PANEL}.querySelector('details.labels summary').textContent`)).includes('PDK gpdk045'), await value('PDK id'));
+  check('following a cell, the tab line offers "Virtuoso cell..." back to its window (record 7.362)', await evaluate(`${LAUNCH}?.textContent.trim() === 'Virtuoso cell...'`));
+  check('the PDK id is offered from the technology library (in the circuit column\'s labels line)', (await value('PDK id')) === 'gpdk045' && (await evaluate(`${CIRCUIT}.querySelector('details.labels summary').textContent`)).includes('PDK gpdk045'), await value('PDK id'));
   check('the testbench dropdown offers the cells that have a schematic', JSON.stringify((await wOptions('Testbench cell')).map(o => o.value)) === JSON.stringify(['', 'ota5_v1', 'ota5_tb', 'vco_fixture']), JSON.stringify(await wOptions('Testbench cell')));
 
   // ---- a cell reads its schematic ------------------------------------------------------------------------------------
   mark = calls.length;
   await wChoose('Cell', 'ota5_v1'); await quiet();
   check('choosing a cell reads its schematic, once', JSON.stringify(ops(mark)) === JSON.stringify(['read FIXTURE_DESIGNS ota5_v1']), ops(mark).join(' | '));
-  check('the schematic is shown as read, in the window', (await wText()).includes('Native schematic FIXTURE_DESIGNS/ota5_v1 (2 instances') && !(await text()).includes('Native schematic'));
+  check('the schematic is shown as read, in the window - not on the task\'s card, not in the circuit column', (await wText()).includes('Native schematic FIXTURE_DESIGNS/ota5_v1 (2 instances')
+    && !(await text()).includes('Native schematic') && !(await circuitText()).includes('Native schematic'));
   check('the window says which view is read and which others exist', (await wText()).includes('View: schematic') && (await wText()).includes('maestro, symbol'));
-  check('the column names the cell beside the button', (await evaluate(`${LAUNCH}.closest('.row').querySelector('.hint').textContent`)) === 'Read from Virtuoso: FIXTURE_DESIGNS/ota5_v1');
+  check('the task row on the tab line names the cell; "Virtuoso cell..." stays on the tab line', (await value('Task')) === '(none: FIXTURE_DESIGNS/ota5_v1 is read from Virtuoso)'
+    && await evaluate(`!!(${LAUNCH})`), await value('Task'));
   check('browse only, said in the window - not "Blocked"; the copy warning stays in view', (await wText()).includes('Browse only:') && !(await wText()).includes('Blocked:')
     && await wShown('.copy-warning') && (await wText()).includes('Work on a copy, never on your design'));
   check('the warning says why: the cell is written', (await wText()).includes('every run sets device sizes in the cell'));
@@ -281,10 +316,11 @@ await runChecks(browser, async () => {
   check('with the testbench: read through it, with work_here, once', JSON.stringify(ops(mark)) === JSON.stringify(['import FIXTURE_DESIGNS ota5_v1 ota5_tb work_here']), ops(mark).join(' | '));
   check('the cell\'s PDK was read in the same press - with the ideal parts of analogLib -, and the window says so under the buttons',
     (await wText()).includes('PDK gpdk045 read with the cell: 54 components (version cccccccc) and 45 ideal parts of analogLib. To build the network'));
-  check('the cell is then loaded and shown as a draft in the window - the column shows no hierarchy', (await wText()).includes('Read from Virtuoso. Not optimizable yet') && (await wText()).includes('Hierarchy (3 instances)')
+  check('the cell is then loaded and shown as a draft in the window - the circuit column shows no hierarchy and says where it is', (await wText()).includes('Read from Virtuoso. Not optimizable yet')
+    && (await wText()).includes('Hierarchy (3 instances)') && !(await circuitText()).includes('Hierarchy (') && (await circuitText()).includes('shows its hierarchy in the Virtuoso window')
     && !(await text()).includes('Hierarchy (') && !(await wText()).includes('Browse only'));
   check('the window says the cell itself is worked in, as declared; no "Make a working copy" anywhere', await wShown('.declared') && (await wText()).includes('Working in FIXTURE_DESIGNS/ota5_tb directly: you declared it a copy you made')
-    && !(await wHas('Make a working copy')) && !(await evaluate(`!!(${BUTTON('Make a working copy')})`)));
+    && !(await wHas('Make a working copy')) && !(await evaluate(`!!(${ANY_BUTTON('Make a working copy')})`)));
   check('one button "Read setup", and no "Ask the agent to set up" any more (record 7.226)', await wHas('Read setup') && !(await wHas('Ask the agent to set up')));
   await shotWindow('virtuoso-2b-draft.png');
   mark = calls.length;
@@ -295,7 +331,7 @@ await runChecks(browser, async () => {
     && (await wText()).includes('Read from Virtuoso. Not optimizable yet'));
   check('no agent CLI was opened by itself', agentRequests === 0, `${agentRequests} request(s)`);
 
-  // ---- Save task from the window's cell: refused in words, asks the frequency once, then the task opens in the column ---------
+  // ---- Save as from the window's cell: refused in words, asks the frequency once, then the task is named on the tab line -------
   check('no Create profile form; Save as replaces Save task', !(await wHas('Create profile')) && !(await far.evaluate(`!!(${wLabel('Circuit type')})`)) && !(await evaluate(`!!(${TASK_BUTTON('Save task')})`)));
   check('"Save task" is offered in the editors\' tab line once the cell is declared', !(await evaluate(`${TASK_BUTTON('Save as')}.disabled`)) && (await wText()).includes('Then save it as a task'));
   names.push('refuse_me');
@@ -313,26 +349,31 @@ await runChecks(browser, async () => {
   await evaluate(`[...${TASK}.querySelectorAll('.task-notes button')].find(b => b.textContent.trim() === 'Save as').click()`); await quiet();
   check('1.2G = 1.2e9 Hz is sent with the rows, never as_new', calls.slice(mark).length === 1 && calls[mark].extras?.expected_frequency_hz === 1.2e9 && calls[mark].as_new === false
     && Array.isArray(calls[mark].config?.parameters), JSON.stringify(calls.slice(mark)));
-  check('the new task is opened in the column', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:ota5_v1', await value('Task'));
-  check('the column says what happened, in which cell, and what comes first', (await text()).includes('Saved the new task real:ota5_v1') && (await text()).includes('the cell you declared as your copy')
-    && (await text()).includes('No real baseline yet'));                    // record 7.248: the task starts its own baseline (Retry baseline)
+  check('the new task is opened: the task row on the tab line names it', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:ota5_v1', await value('Task'));
+  check('the task\'s lines under the toolbar say what happened, in which cell, and what comes first', (await statusText()).includes('Saved the new task real:ota5_v1')
+    && (await statusText()).includes('the cell you declared as your copy') && (await statusText()).includes('No real baseline yet'));   // record 7.248: the task starts its own baseline (Retry baseline)
   check('the parameter editor shows the rows as saved', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
   check('the open task offers Save as and Task file', await evaluate(`!!(${TASK_BUTTON('Save as')}) && !!(${TASK_BUTTON('Task file')}) && !(${TASK_BUTTON('Save task')})`));
   check('the window now says it follows the task and starts from a blank library', await wShown('.follows-task') && (await wText()).includes('follows the task real:ota5_v1') && (await wValue('Library')) === '');
   await shotColumn('virtuoso-2c-task-saved.png');
   // ---- before every run: the check Start runs by itself, pressed on its own; a finished baseline records itself ----------
-  check('"Check now" is in the column with "Before every run:"', !!(await evaluate(`!!(${BUTTON('Check now')})`)) && (await text()).includes('Before every run:'));
+  // Record 7.362: "Check now" stands on the tab line before Save as; the task's block said "Before every run: ..." beside it until
+  // then - its tooltip says it now.
+  const checkNow = await evaluate(`(() => { const b = ${BUTTON('Check now')}, save = ${PANEL}.querySelector('.tabs .task-save-slot');
+    return b ? { tools: !!b.closest('.editors > .tabs .tab-actions .task-tools'), beforeSave: !!save && !!(b.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING), title: b.title } : null; })()`);
+  check('"Check now" stands on the tab line before Save as; its tooltip says the check runs before every run', !!checkNow && checkNow.tools && checkNow.beforeSave
+    && checkNow.title.includes('Start, Calibration and Resume first check that the editors, this saved task and its cell in Virtuoso agree'), JSON.stringify(checkNow)?.slice(0, 200));
   mark = calls.length;
   await evaluate(`${BUTTON('Check now')}.click()`); await quiet();
   check('the check is one request with this connection and the editors\' rows', JSON.stringify(calls.slice(mark).map(c => [c.op, c.profile_id, c.config?.circuit?.task_id])) === JSON.stringify([['task/check', 'lab', 'real:ota5_v1']])
     && Array.isArray(calls[mark]?.config?.parameters), JSON.stringify(calls.slice(mark)).slice(0, 200));
-  const shownCheck = await text();
-  check('its steps and the verdict are shown', ['passed: The editors hold the rows of the saved task', 'passed: The netlist Virtuoso exports from the working copy matches',
-    'agree. Nothing was simulated.'].every(t => shownCheck.includes(t)), shownCheck.slice(shownCheck.indexOf('Check now'), shownCheck.indexOf('Check now') + 300));
+  const shownCheck = await statusText();
+  check('its steps and the verdict are shown under the toolbar', ['passed: The editors hold the rows of the saved task', 'passed: The netlist Virtuoso exports from the working copy matches',
+    'agree. Nothing was simulated.'].every(t => shownCheck.includes(t)), shownCheck.slice(0, 300));
   check('no manual "Record the baseline run as reference": a finished baseline records itself (2026-09-29)',
-    !(await evaluate(`!!(${BUTTON('Record the baseline run as reference')})`)));
+    !(await evaluate(`!!(${ANY_BUTTON('Record the baseline run as reference')})`)));
   baselineRecorded = true;          // as a finished Baseline simulation records itself (7.78): the task's next read says so
-  // ---- a cell that already has a registered task says so in the window: no second task; the Task list opens it ---------------
+  // ---- a cell that already has a registered task says so in the window: no second task; the Tasks window opens it ------------
   mark = calls.length;
   await wChoose('Library', 'FIXTURE_DESIGNS'); await quiet();
   await wChoose('Cell', 'ota5_v1'); await quiet();
@@ -340,8 +381,9 @@ await runChecks(browser, async () => {
   check('the cell is no longer browse-only: the window names its task', shown.includes('This cell already has a registered task: real:ota5_v1') && !shown.includes('built-in')
     && !shown.includes('Not optimizable yet') && !shown.includes('Browse only'), ops(mark).join(' | '));
   check('no second draft is offered for it', !(await evaluate(`!!(${TASK_BUTTON('Save as')})`)) && !(await wHas('Read the cell again')) && !(await wHas('Read this cell into the workbench')));
-  check('no "Open" shortcut (it repeated the Task list): the note says where to choose the task', JSON.stringify(await far.evaluate(`[...${WIN}.querySelectorAll('.note button')].map(b => b.textContent.trim())`)) === '[]'
-    && shown.includes('Choose it under Task in the Project column.'));
+  check('no "Open" shortcut (it repeated the Tasks window): the note says where to choose the task - the Tasks window, behind the task\'s name on the tab line (record 7.362)',
+    JSON.stringify(await far.evaluate(`[...${WIN}.querySelectorAll('.note button')].map(b => b.textContent.trim())`)) === '[]'
+    && shown.includes("Choose it in the Tasks window (the task's name on the editors' tab line)."));
   await shotWindow('virtuoso-2d-cell-has-task.png');
   await wChoose('Cell', 'vco_fixture'); await quiet();
   shown = await wText();
@@ -357,7 +399,7 @@ await runChecks(browser, async () => {
   await wChoose('Library', 'FIXTURE_DESIGNS'); await quiet();
   await wChoose('Cell', 'ota5_v1'); await quiet();
   await choose('Task', 'real:ota5_v1'); await quiet();
-  check('the saved task is opened in the Task list', (await value('Task')) === 'real:ota5_v1', await value('Task'));
+  check('the saved task is chosen in the Tasks window: the tab line names it', (await value('Task')) === 'real:ota5_v1', await value('Task'));
   // Delete is in the Tasks window, beside the current task's name. Its confirmation belongs to that window too. Choosing the task
   // closed the window (record 7.291): it is opened again for Delete.
   check('choosing the task closed the Tasks window (record 7.291)', await tw.closedAfterChoice());
@@ -367,7 +409,7 @@ await runChecks(browser, async () => {
   const DELETE = `document.querySelector('.task-window-actions button')`;
   const deleteTask = () => tw.window.evaluate(`${DELETE}.click()`, true);
   const taskWindowText = () => tw.window.evaluate(`document.querySelector('.task-window').textContent`);
-  check('the task module has neither Delete task nor Reload saved values', !(await evaluate(`!!${BUTTON('Delete task')} || !!${BUTTON('Reload saved values')}`)));
+  check('the task\'s card has neither Delete task nor Reload saved values', !(await evaluate(`!!${BUTTON('Delete task')} || !!${BUTTON('Reload saved values')}`)));
   check('Delete task is in the Tasks window beside its target name', await tw.window.evaluate(`!!${DELETE} && ${DELETE}.textContent.trim() === 'Delete task'
     && document.querySelector('.task-window-actions code').textContent === 'ota5_v1'`));
   mark = calls.length; answers.push(false);
@@ -382,13 +424,14 @@ await runChecks(browser, async () => {
     && (await value('Task')) === 'real:ota5_v1', ops(mark).join(' | '));
   deleteRefused = false; mark = calls.length; answers.push(true);
   await deleteTask(); await quiet();
-  shown = await text();
+  shown = await statusText();
   check('deleting is one request', JSON.stringify(ops(mark).filter(o => o.startsWith('profile'))) === JSON.stringify(['profile/delete ota5_v1']), ops(mark).join(' | '));
-  check('the page goes back to the cell the task was saved from: the column names it, the window shows it', (await stored()).circuit.source === 'virtuoso'
-    && (await evaluate(`${LAUNCH}.closest('.row').querySelector('.hint').textContent`)) === 'Read from Virtuoso: FIXTURE_DESIGNS/ota5_v1'
-    && (await wValue('Library')) === 'FIXTURE_DESIGNS' && (await wValue('Cell')) === 'ota5_v1' && (await wValue('Testbench cell')) === 'ota5_tb', `${await wValue('Library')} / ${await wValue('Cell')} / ${await wValue('Testbench cell')}`);
-  check('the column says what happened; where the files went is one folded line', shown.includes('Task real:ota5_v1 deleted.')
-    && await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(x => x.querySelector('summary').textContent === 'Where its files went');
+  check('the page goes back to the cell the task was saved from: the tab line names it, the window shows it', (await stored()).circuit.source === 'virtuoso'
+    && (await value('Task')) === '(none: FIXTURE_DESIGNS/ota5_v1 is read from Virtuoso)' && await evaluate(`!!(${LAUNCH})`)
+    && (await wValue('Library')) === 'FIXTURE_DESIGNS' && (await wValue('Cell')) === 'ota5_v1' && (await wValue('Testbench cell')) === 'ota5_tb',
+    `${await value('Task')} / ${await wValue('Library')} / ${await wValue('Cell')} / ${await wValue('Testbench cell')}`);
+  check('the task\'s lines under the toolbar say what happened; where the files went is one folded line', shown.includes('Task real:ota5_v1 deleted.')
+    && await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('.task-status details')].find(x => x.querySelector('summary')?.textContent === 'Where its files went');
       return !!d && !d.open && d.textContent.includes('/fixture/profiles/.deleted/ota5_v1'); })()`));
   check('the cell offers Save task again', !!(await evaluate(`!!(${TASK_BUTTON('Save as')})`)) && (await wText()).includes('Not optimizable yet') && !(await wText()).includes('already has a registered task'));
   check('the task left the Registered task list', !(await evaluate(`(async () => (await (await fetch('/api/tasks')).json()).tasks.some(t => t.task_key === 'real:ota5_v1'))()`)));
@@ -435,14 +478,22 @@ await runChecks(browser, async () => {
   check('the note does not suggest the existing real:* tasks', offered.length === 0 && !(await wText()).includes('have a profile today'), offered.join(', '));
   check('it still offers the way forward for THIS cell', await wHas('Read this cell into the workbench'));
 
-  // ---- closing the window loses nothing; the column keeps following the cell ----------------------------------------------------
+  // ---- closing the window loses nothing; the page keeps following the cell, and the tab line's button opens the window again ---
   await far.send('Target.closeTarget', { targetId: farPage.id }).catch(() => undefined);
   await windowTarget(false); await sleep(500);
-  check('closing the window keeps the page on the cell; the column names it and offers the window again', (await stored()).circuit.source === 'virtuoso'
-    && (await evaluate(`${LAUNCH}.closest('.row').querySelector('.hint').textContent`)) === 'Read from Virtuoso: FIXTURE_OTHER/inv' && !!(await evaluate(`!!(${LAUNCH})`)));
+  check('closing the window keeps the page on the cell; the tab line names it and offers the window again', (await stored()).circuit.source === 'virtuoso'
+    && (await value('Task')) === '(none: FIXTURE_OTHER/inv is read from Virtuoso)' && !!(await evaluate(`!!(${LAUNCH})`)), await value('Task'));
+  mark = calls.length;
+  far = await browser.popup(page, LAUNCH, VIRTUOSO_WINDOW, { width: 720, height: 980, ready: WIN, onDialog });
+  farPage = far.target; await quiet();
+  check('"Virtuoso cell..." on the tab line opens the window again, on the cell the page follows (record 7.362)', (await wValue('Library')) === 'FIXTURE_OTHER'
+    && (await wValue('Cell')) === 'inv' && (await wText()).includes('Native schematic FIXTURE_OTHER/inv'), `${await wValue('Library')} / ${await wValue('Cell')} / ${ops(mark).join(' | ')}`);
+  await far.send('Target.closeTarget', { targetId: farPage.id }).catch(() => undefined);
+  await windowTarget(false);
   answers.push(true);                       // leave the cell draft and replace its rows with the selected task's
   await choose('Task', 'synthetic:gpdk045_ota5'); await sleep(1200);
-  check('choosing a task in the column makes the page follow it again', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'synthetic:gpdk045_ota5');
+  check('choosing a task in the Tasks window makes the page follow it again; "Virtuoso cell..." leaves the tab line', (await stored()).circuit.source === 'registered_task'
+    && (await value('Task')) === 'synthetic:gpdk045_ota5' && !(await evaluate(`!!(${LAUNCH})`)));
 
   check('first-save naming suggests the cell name with numbering', naming[0]?.defaultPrompt === 'ota5_v1_2' && naming.every(p => p.planned), JSON.stringify(naming));
   check('frequency retry keeps the chosen name without another prompt', naming.length === 2);

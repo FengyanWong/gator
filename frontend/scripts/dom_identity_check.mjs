@@ -8,8 +8,9 @@
 //   runs        the Runs window, then the shown run's Details
 //   rl          the RL model window in each Mode (New model, Fine-tune, Evaluate only, New model again)
 //   rl-loaded   a configuration that fine-tunes a FIXTURE saved model: the RL model window with the model in use
-//   virtuoso    the Virtuoso cell window, then the PDK window opened from it
-//   ngspice     the ngspice netlist window
+//   virtuoso    the Tasks window, then its "New task: From a Virtuoso cell..." (record 7.362; a button of the Project column
+//               until then): the Virtuoso cell window, then the PDK window opened from it
+//   ngspice     the Tasks window, then its "New task: From an ngspice netlist..." (record 7.362): the ngspice netlist window
 //   connection  the Connection window, then its "Folders..."
 //   agent       the Agent window, then "What's missing?"
 //   brief       the header's run chip: the run brief window
@@ -444,13 +445,16 @@ const LOADED = { ...CONFIG, run: { ...CONFIG.run, mode: 'fine_tune', network: { 
 const seeded = (config, extra = {}) => ({ [CONFIG_KEY]: JSON.stringify(config), ...extra });
 const FOOTER_TAB = label => `[...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
 const MODE = mode => `document.querySelector('.rl-modes button[data-mode="${mode}"]')`;
+const TASKS_BUTTON = `${TASK_PANEL}.querySelector('.task-row button.task-list-button')`;     // the task's name on the editors' tab line
+// The Tasks window's two ways to a new task (record 7.362): pressed in that window, which holds the click.
+const NEW_TASK = kind => `document.querySelector('.task-window-new button.${kind}-button')`;
 
 try {
   for (const width of WIDTHS) for (const look of LOOKS) {
     WIDTH = width;
     await scene(look, 'fresh', {}, async s => {
       let tasks = null;
-      await s.take('tasks-window', async () => { tasks = await s.popup(s.page, `${TASK_PANEL}.querySelector('.task-row button.task-list-button')`, TASKS_WINDOW, { width: 1500, height: 760 }); });
+      await s.take('tasks-window', async () => { tasks = await s.popup(s.page, TASKS_BUTTON, TASKS_WINDOW, { width: 1500, height: 760 }); });
       await s.take('task-chosen', async () => {
         await tasks.until(`!!document.querySelector('table.task-table tr[data-task-key="synthetic:gpdk045_ota5"] code')`, 100);
         const at = await tasks.evaluate(`(() => { const el = document.querySelector('table.task-table tr[data-task-key="synthetic:gpdk045_ota5"] code'); el.scrollIntoView({ block: 'center' });
@@ -478,12 +482,15 @@ try {
       await s.take('mode-frozen', () => rl.evaluate(`${MODE('frozen')}.click()`));
     });
     await scene(look, 'virtuoso', seeded(CONFIG), async s => {
-      let cell = null;
-      await s.take('virtuoso-window', async () => { cell = await s.popup(s.page, `${TASK_PANEL}.querySelector('button.virtuoso-button')`, VIRTUOSO_WINDOW, { width: 720, height: 980 }); });
+      let tasks = null, cell = null;
+      await s.take('tasks-window', async () => { tasks = await s.popup(s.page, TASKS_BUTTON, TASKS_WINDOW, { width: 1500, height: 760 }); });
+      await s.take('virtuoso-window', async () => { cell = await s.popup(tasks, NEW_TASK('virtuoso'), VIRTUOSO_WINDOW, { width: 720, height: 980 }); });
       await s.take('pdk-window', () => s.popup(cell, `document.querySelector('button.pdk-open')`, PDK_WINDOW, { width: 1100, height: 900 }));
     });
     await scene(look, 'ngspice', seeded(CONFIG), async s => {
-      await s.take('ngspice-window', () => s.popup(s.page, `document.querySelector('button.ngspice-button')`, NGSPICE_WINDOW, { width: 760, height: 980 }));
+      let tasks = null;
+      await s.take('tasks-window', async () => { tasks = await s.popup(s.page, TASKS_BUTTON, TASKS_WINDOW, { width: 1500, height: 760 }); });
+      await s.take('ngspice-window', () => s.popup(tasks, NEW_TASK('ngspice'), NGSPICE_WINDOW, { width: 760, height: 980 }));
     });
     await scene(look, 'connection', seeded(CONFIG), async s => {
       let connection = null;

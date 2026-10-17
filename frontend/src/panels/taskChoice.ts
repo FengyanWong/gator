@@ -1,4 +1,4 @@
-// Choosing a registered task in the Project column (plan-refactoring C9, out of Left.tsx's CircuitPanelBody): its saved rows
+// Choosing a registered task in the Tasks window (plan-refactoring C9, out of Left.tsx's CircuitPanelBody): its saved rows
 // replace the editors' rows - after the user agreed to drop edits -, as one Undo step, and the task load the Runs window uses.
 import { MutableRefObject, useEffect, useState } from 'react';
 import { api, Json } from '../api';

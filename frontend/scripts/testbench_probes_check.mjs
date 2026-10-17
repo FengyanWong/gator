@@ -1,5 +1,6 @@
 // Browser check: the Testbench cell box (in the Virtuoso WINDOW since 2026-09-23) finds `tb_<cell>` by name, and the Probes
-// tab follows the testbench a Virtuoso cell was read through (user request 2026-09-21, status record 7.49). Same approach
+// tab follows the testbench a Virtuoso cell was read through (user request 2026-09-21, status record 7.49). The window is
+// opened as a user opens it since record 7.362: the Tasks window's "New task: From a Virtuoso cell...". Same approach
 // as virtuoso_source_check.mjs: a throwaway headless Edge over the DevTools protocol against a served workbench page
 // (default http://127.0.0.1:8765/).
 // Every /api/virtuoso/* request and every circuit load of the Virtuoso source is answered with a canned FIXTURE answer, so
@@ -11,7 +12,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/testbench_probes_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, MOCK_PAGE_CONFIG, outDir, runChecks, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, MOCK_PAGE_CONFIG, newTaskFrom, outDir, runChecks, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -84,10 +85,18 @@ await runChecks(browser, async () => {
   const PANEL = TASK_PANEL;
   const COLUMN_BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   // The library / cell / testbench boxes and the cell's note are in the Virtuoso window: a second page with a session of its own.
+  // It opens from the Tasks window's "New task: From a Virtuoso cell..." (record 7.362; the Project column's "Virtuoso cell..."
+  // until then): the Tasks window holds the click, the Virtuoso window is found by its title as before, then the Tasks window closes.
   const WIN = `document.querySelector('.virtuoso-window')`;
   let far = null;
   const openWindow = async () => {
-    far = await browser.popup(page, `${PANEL}.querySelector('button.virtuoso-button')`, VIRTUOSO_WINDOW, { width: 720, height: 1400, ready: WIN, onDialog });
+    const { tasks, pressed } = await newTaskFrom(page, browser, 'virtuoso');
+    check('the Tasks window offers "New task: From a Virtuoso cell..." (record 7.362)', pressed);
+    far = await browser.attach(await browser.window(VIRTUOSO_WINDOW, { except: page.target.id }), { errors: consoleErrors, prefix: 'window: ' });
+    await far.send('Page.enable'); onDialog(far);
+    await far.viewport(720, 1400);
+    await far.until(`!!(${WIN})`, 50);
+    await tasks.close();
     await quiet();
   };
   const LABEL = label => `[...${WIN}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)})`;

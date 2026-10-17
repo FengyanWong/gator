@@ -5,7 +5,8 @@ import { CIRCUIT_PICTURE_KEY } from '../contract';
 import { signal } from '../signal';
 import { keep, readKept } from '../kept';
 
-/** The circuit picture of the Project column (record 7.158, the user's choice of 2026-10-03: "move 5"). The loaded circuit as
+/** The circuit picture of the circuit column (record 7.158, the user's choice of 2026-10-03: "move 5"; the column is shown by
+ *  "Show circuit" since record 7.362, the Project column until then). The loaded circuit as
  *  a small node-link drawing in the manner of the circuit graph view - devices as boxes, nets as dots, supply on top and
  *  ground at the bottom - placed by the graph view's own hard-coded hints (circuitLayout.ts: no agent, no model call, the same
  *  circuit always gives the same picture). A second on-screen picture by user decision, under the graph view's terms: it is
@@ -118,7 +119,7 @@ function netLabels(graph: Graph, at: Record<string, Point>) {
 }
 
 export function CircuitPicture({ circuit }: { circuit: Json }) {
-  // Folded at first, like every block of the Project column (the user's rule); opened once, it stays open in this browser.
+  // Folded at first, like every block of the circuit column (the user's rule for the Project column); opened once, it stays open in this browser.
   const [open, setOpen] = useState(() => readKept(s => s.getItem(CIRCUIT_PICTURE_KEY) === 'open', () => false));
   const graph = useMemo(() => (circuit?.loaded ? pictureGraph(circuit.summary) : null), [circuit]);
   const layout = useMemo(() => {

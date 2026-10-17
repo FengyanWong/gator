@@ -1,5 +1,6 @@
-// Browser check of the check before every run of a saved task (task flow part 4, backend consistency.py): "Check now" in
-// the task's block (it replaced "Check against Virtuoso"), a failed step with what to do beside it and its reason folded,
+// Browser check of the check before every run of a saved task (task flow part 4, backend consistency.py): "Check now" on
+// the editors' tab line since record 7.362 (in the task's block until then; it replaced "Check against Virtuoso"), what the
+// check does in its tooltip, a failed step with what to do beside it and its reason folded,
 // the result going once a row changes, and a Start the backend refused with code `consistency` showing the same steps in
 // the banner - readable, not JSON. A throwaway headless Edge over the DevTools protocol against a workbench page
 // (GATOR_WORKBENCH_URL for a preview of a temporary build). EVERY /api request is paused: the task list, the circuit
@@ -77,10 +78,14 @@ await runChecks(browser, async () => {
   await sleep(1000);
   if (!(await evaluate(`!!(${BUTTON('Check now')})`))) console.log('DEBUG panel: ' + (await evaluate(`${PANEL}?.textContent.slice(0, 900) ?? 'no panel'`)) + '\nDEBUG errors: ' + consoleErrors.join(' | '));
 
-  check('the task\'s block says the check runs before every run; "Check against Virtuoso" is gone', (await shownText(PANEL)).includes('Before every run:')
-    && !(await evaluate(`!!(${BUTTON('Check against Virtuoso (no simulation)')})`)));
-  check('what the check compares is one closed line', await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('details')].find(x => x.querySelector('summary')?.textContent === 'What the check compares');
-    return !!d && !d.open && d.textContent.includes('no ADE/Maestro window may be open on the copy'); })()`));
+  // Record 7.362 (the user's Option D): Check now stands on the editors' tab line, before Save task; the task's block said "Before
+  // every run: ..." and folded "What the check compares" - both are its tooltip now.
+  const checkNow = await evaluate(`(() => { const b = ${BUTTON('Check now')}; return { onTabLine: !!b?.closest('.editors > .tabs .tab-actions'), title: b?.title ?? '' }; })()`);
+  check('Check now stands on the editors\' tab line, its tooltip says the check runs before every run; "Check against Virtuoso" is gone',
+    checkNow.onTabLine && checkNow.title.includes('Start, Calibration and Resume first check that the editors, this saved task and its cell in Virtuoso agree')
+    && !(await evaluate(`!!(${BUTTON('Check against Virtuoso (no simulation)')})`)), JSON.stringify(checkNow).slice(0, 200));
+  check('what the check compares is in that tooltip too', checkNow.title.includes('no ADE/Maestro window may be open on the copy')
+    && checkNow.title.includes("the cell's Maestro test with the task"));
   check('nothing is checked on page load', calls.length === 0, JSON.stringify(calls));
   await evaluate(`${BUTTON('Check now')}.click()`);
   await sleep(100);

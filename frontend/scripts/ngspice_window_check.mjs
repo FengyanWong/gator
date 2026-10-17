@@ -3,19 +3,23 @@
 // browser profile. EVERY /api/* request is paused: GETs, static validation and the load of the MOCK task pass through
 // (read-only); the ngspice routes are answered with canned FIXTURES here (so the check does not depend on the backend
 // version), and every other writing request is refused - nothing is started, saved or probed. Safe on the live backend.
-// What it pins: ONE button "ngspice netlist..." in the Project column with its text beside it; the window opens (title
-// "GATOR - ngspice netlist") and sends nothing by itself; Example loads a deck through /api/ngspice/read (the path under
-// the repository); Check sends the text and shows the summary (elements, results with units, problems); Save sends the
-// name, text, kinds and labels, then the column follows the new task (the Task list shows it as [ngspice]) and the
-// editors hold its starter rows; a saved ngspice task shows its block in the column (revision, results, Delete task);
-// the launchers follow the connection in use (/api/connection/profiles answered by fixtures: none chosen = both, a
-// Virtuoso connection = "Virtuoso cell..." only, an ngspice connection = "ngspice netlist..." only), and the Task list
-// lists the ngspice tasks under the same rule, except the task the page follows (record 7.77).
+// What it pins: ONE button "From an ngspice netlist..." in the Tasks window's "New task:" row, after "From a Virtuoso
+// cell..." (record 7.362; until then "ngspice netlist..." in the Project column with its text beside it); the window opens
+// (title "GATOR - ngspice netlist"), sends nothing by itself and stays open when the Tasks window that opened it closes;
+// Example loads a deck through /api/ngspice/read (the path under the repository); Check sends the text and shows the
+// summary (elements, results with units, problems); Save sends the name, text, kinds and labels, then the page follows the
+// new task (its name on the editors' tab line, marked [ngspice]) and the editors hold its starter rows; a saved ngspice
+// task says under the editors' toolbar that it runs on ngspice and which connection it needs, shows its block in the
+// circuit column (revision, results), has "ngspice netlist..." back to its deck on the tab line and Delete task in the
+// Tasks window (record 7.362); the launchers follow the connection in use (/api/connection/profiles answered by fixtures:
+// none chosen = both, a Virtuoso connection = "From a Virtuoso cell..." only, an ngspice connection = "From an ngspice
+// netlist..." only; the tab line's "ngspice netlist..." by the same rule), and the Tasks window lists the ngspice tasks
+// under the same rule - every task, marked "choose its connection" while that connection is not in use (records 7.77, 7.227).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/ngspice_window_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, sleep, TASK_PANEL, taskWindow, workbenchUrl, NGSPICE_WINDOW } from './lib/harness.mjs';
+import { check, CIRCUIT_PANEL, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, showCircuit, sleep, TASK_PANEL, TASKS_WINDOW, taskWindow, workbenchUrl, NGSPICE_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -44,7 +48,7 @@ await runChecks(browser, async () => {
   const { send, evaluate, until, consoleErrors } = page;
   const sent = [];   // every ngspice request: { name, body }
   const refused = [];
-  let tasksSeen = 0, saved = false;
+  let tasksSeen = 0, profilesSeen = 0, saved = false;
   // The connection list is a fixture: no connection at first (so the page adopts none and shows both launchers), later two
   // connections of the two families. The live backend's file - and its active connection - never reaches the page.
   const KINDS = [{ kind: 'virtuoso_ssh', family: 'virtuoso', transport: 'ssh', label: 'Virtuoso over SSH', summary: '' },
@@ -55,7 +59,7 @@ await runChecks(browser, async () => {
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
     const body = request.postData ? JSON.parse(request.postData) : null;
-    if (name === '/api/connection/profiles') return page.fulfil(requestId, 200, profilesAnswer());
+    if (name === '/api/connection/profiles') { profilesSeen++; return page.fulfil(requestId, 200, profilesAnswer()); }
     if (name === '/api/connection/status') return page.fulfil(requestId, 200, { profile_id: null, overall: 'unknown', layers: [], stale: true });
     if (name.startsWith('/api/ngspice/')) {
       sent.push({ name, body });
@@ -80,34 +84,60 @@ await runChecks(browser, async () => {
     if (name !== '/api/output/check') refused.push(`${request.method} ${name}`);
     return page.refuse(requestId, 'FIXTURE: this check lets no other request through');
   };
+  // Record 7.362 (the user's Option D): the editors are the task's card - its name and revision start their tab line, the way
+  // back to its window ends it (span.task-tools), its own lines stand under the toolbar (div.task-status); the circuit column is
+  // folded away until "Show circuit"; the two ways to a new task are the Tasks window's "New task:" row.
   const PANEL = TASK_PANEL;
-  const LAUNCHER = `${PANEL}.querySelector('.row.ngspice-launcher')`;
-  const text = () => evaluate(`${PANEL}.textContent`);
-  const shot = async (name, expression = `document.querySelector('.left')`) => page.shot(path.join(out, name), expression);
+  const STATUS = `${PANEL}.querySelector('.task-status')`;
+  const TOOLS = `${PANEL}.querySelector('.tabs .task-tools')`;
+  const NEW = `document.querySelector('.task-window-new')`;                                     // in the Tasks window
+  const ROWED = `!!(${PANEL}) && !!${PANEL}.querySelector('.tabs .task-row button.task-list-button')`;
+  // A netlist form of its own: a text box (the editors' formula bar is the table cells' own) or a deck's path field.
+  const FORM = root => `[...(${root}?.querySelectorAll('textarea, input[placeholder*=".cir"]') ?? [])].some(e => !e.closest('.formula-bar'))`;
+  const deckButton = () => evaluate(`${TOOLS}?.querySelector('button.ngspice-button')?.textContent.trim() ?? null`);
+  // The editors' card from its tab line to the end of the task's lines; the circuit column as it stands.
+  const shotTask = async name => page.shot(path.join(out, name), await evaluate(`(() => { const p = ${PANEL}.getBoundingClientRect(), s = ${STATUS}.getBoundingClientRect();
+    return { x: p.x, y: p.y, width: p.width, height: Math.max(s.bottom, p.y + 80) - p.y + 2, scale: 1 }; })()`));
+  const shot = async (name, expression = CIRCUIT_PANEL) => page.shot(path.join(out, name), expression);
 
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: { schema_version: 'gator-workbench-config-v1', project: { name: 'gator-project', task_name: 'task', notes: '' },
     circuit: { source: 'registered_task', task_id: 'synthetic:gpdk045_ota5', circuit_class: 'unspecified', pdk_id: 'unspecified' },
     parameters: [], targets: [], measurements: [], run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0 }, output: { experiment_name: 'x' }, research: {} } });
   await send('Page.navigate', { url: APP });
-  if (!(await until(`!!(${PANEL}) && !!(${LAUNCHER})`, 150))) throw new Error('the Project column never showed the ngspice launcher | console: ' + consoleErrors.join(' | ').slice(0, 300));
+  if (!(await until(ROWED, 150))) throw new Error('the editors\' tab line never showed the task row | console: ' + consoleErrors.join(' | ').slice(0, 300));
   await sleep(1500);
 
-  // ---- the column: one button, its text beside it, nothing sent -------------------------------------------------------------
-  check('one short button "ngspice netlist..." with what it is for as text beside it',
-    (await evaluate(`${LAUNCHER}.querySelector('button.ngspice-button')?.textContent.trim()`)) === 'ngspice netlist...'
-    && (await evaluate(`${LAUNCHER}.querySelector('.hint')?.textContent`)).includes('From an ngspice netlist'));
-  check('the column holds no netlist form of its own (no text box, no path field)', !(await evaluate(`!!${PANEL}.querySelector('textarea, input[placeholder*=".cir"]')`)));
+  // ---- the Tasks window's New task row (record 7.362): one button, "New task:" beside it, nothing sent --------------------------------
   check('nothing was sent to the ngspice routes on page load', sent.length === 0);
+  check('while the page follows the MOCK task the tab line has no "ngspice netlist..." (the way back to an ngspice task\'s deck)', (await deckButton()) === null, await deckButton());
+  // Since record 7.227 the task's name is the button that opens the Tasks window (harness taskWindow drives it).
+  const tw = taskWindow(page, browser);
+  const tasks = await tw.open();
+  const offer = await tasks.evaluate(`(() => { const r = ${NEW}; return r && { hint: r.querySelector('.hint')?.textContent.trim() ?? '',
+    ngspice: [...r.querySelectorAll('button.ngspice-button')].map(b => b.textContent.trim()), virtuoso: [...r.querySelectorAll('button.virtuoso-button')].map(b => b.textContent.trim()) }; })()`);
+  check('the Tasks window offers ONE short button "From an ngspice netlist..." in its "New task:" row', !!offer && offer.hint === 'New task:'
+    && offer.ngspice.length === 1 && offer.ngspice[0] === 'From an ngspice netlist...', JSON.stringify(offer));
+  const aligned = await tasks.evaluate(`(() => { const r = ${NEW}, parts = [r?.querySelector('.hint'), r?.querySelector('button.virtuoso-button'), r?.querySelector('button.ngspice-button')];
+    if (!parts.every(Boolean)) return null;
+    const [h, a, b] = parts.map(e => e.getBoundingClientRect()), middle = x => (x.top + x.bottom) / 2;
+    return { oneLine: Math.abs(middle(a) - middle(b)) < 2 && Math.abs(middle(h) - middle(a)) < 4, inOrder: h.right <= a.left && a.right <= b.left }; })()`);
+  check('the two New task buttons stand in one line after "New task:", "From a Virtuoso cell..." first', !!aligned?.oneLine && aligned.inOrder, JSON.stringify(aligned));
+  check('neither the page nor the Tasks window holds a netlist form of its own (no deck text box, no path field)', !(await evaluate(FORM(PANEL)))
+    && !(await evaluate(FORM(CIRCUIT_PANEL))) && !(await tasks.evaluate(FORM(`document.querySelector('.task-window')`))));
 
-  // ---- the window opens on the press, reads nothing by itself -------------------------------------------------------------------
-  await evaluate(`${LAUNCHER}.querySelector('button.ngspice-button').click()`, true);
+  // ---- the window opens on the press, reads nothing by itself, and outlives the Tasks window that opened it --------------------------------
+  await tasks.evaluate(`${NEW}.querySelector('button.ngspice-button').click()`, true);          // a user's press in the Tasks window (as harness newTaskFrom)
   const target = await browser.window(NGSPICE_WINDOW, { ms: 8000 });
   check('the window opened with its title', !!target);
   const win = await browser.attach(target);
   const W = `document.querySelector('.ngspice-window')`;
   await win.until(`!!(${W})`, 60);
+  await tw.close();
+  const tasksClosed = await browser.window(TASKS_WINDOW, { present: false, ms: 3000, except: page.target.id }).then(() => true, () => false);
   await sleep(600);
+  check('it stays open when the Tasks window that opened it closes: the page keeps it (record 7.362)', tasksClosed && !win.closed
+    && await win.evaluate(`!!(${W})`).catch(() => false) && !!(await browser.window(NGSPICE_WINDOW, { ms: 500 }).catch(() => null)));
   check('the window holds a name box, a file path box with Load and Example, the deck text box, Check and Save', await win.evaluate(`(() => { const w = ${W};
     const buttons = [...w.querySelectorAll('button')].map(b => b.textContent.trim());
     return !!w.querySelector('textarea.ngspice-text') && ['Load', 'Example', 'Check', 'Save as task'].every(b => buttons.includes(b))
@@ -136,7 +166,7 @@ await runChecks(browser, async () => {
     summary.includes(CHECK.title) && summary.includes('2 elements') && summary.includes('3 values a run can vary') && summary.includes('vout_v') && summary.includes('V'), summary.slice(0, 200));
   await win.shot(path.join(out, 'ngspice-2-checked.png'), W);
 
-  // ---- Save: the task is stored, the column follows it, the editors hold its rows ----------------------------------------------------
+  // ---- Save: the task is stored, the page follows it, the editors hold its rows ------------------------------------------------------
   await win.setValue(`[...${W}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Task name').querySelector('input')`, 'fixture_ota', { event: 'input' });
   await sleep(200);
   await win.evaluate(`[...${W}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save as task').click()`, true);
@@ -146,35 +176,51 @@ await runChecks(browser, async () => {
   check('Save sends the name, the deck, the kinds and the labels - nothing else', !!save && save.body.name === 'fixture_ota' && save.body.text === DECK
     && save.body.device_kinds === '' && save.body.circuit_class === 'unspecified' && save.body.pdk_id === 'unspecified' && save.body.source_path === `${meta.repo_root}/examples/circuits/ngspice_ota5_level1.cir`
     && Object.keys(save.body).sort().join() === 'circuit_class,device_kinds,name,pdk_id,source_path,text', JSON.stringify(save?.body ?? null).slice(0, 300));
-  check('the window says the task was saved and the column follows it', (await win.evaluate(`${W}.querySelector('p.ok')?.textContent ?? ''`)).includes('Saved the new task ngspice:fixture_ota'));
-  // Since record 7.227 the task is plain text + a mark + a "Tasks..." button (harness taskWindow drives the window).
-  const tw = taskWindow(page, browser);
+  check('the window says the task was saved and the page follows it', (await win.evaluate(`${W}.querySelector('p.ok')?.textContent ?? ''`)).includes('Saved the new task ngspice:fixture_ota'));
+  // The task's name on the editors' tab line since record 7.362 (the Project column's Task row since record 7.227 until then).
   const chosen = await tw.current();
-  check('the Project column follows ngspice:fixture_ota, marked [ngspice]', chosen === 'ngspice:fixture_ota'
-    && (await evaluate(`${PANEL}.querySelector('.task-row .task-list-mark')?.textContent ?? ''`)).includes('[ngspice'), chosen);
+  check('the editors\' tab line names ngspice:fixture_ota, marked [ngspice]', chosen === 'ngspice:fixture_ota'
+    && (await evaluate(`${PANEL}.querySelector('.tabs .task-row .task-list-mark')?.textContent ?? ''`)).includes('[ngspice'), chosen);
   const config = await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1') || 'null')`);
   check('the editors hold the task\'s starter rows (Parameters, Probes) and Specs is empty', config?.parameters?.[0]?.variable_id === 'm1_w'
     && config?.measurements?.[0]?.measurement_id === 'm_vout_v' && (config?.targets ?? []).length === 0, JSON.stringify(config?.parameters ?? null).slice(0, 120));
-  const column = await text();
-  check('the column shows the ngspice task block without a Delete task button',
-    column.includes('ngspice evaluation backend') && column.includes('Choose an ngspice connection') && column.includes('revision 1') && column.includes('vout_v')
-    && !(await evaluate(`[...${PANEL}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Delete task')`)), column.slice(0, 300));
+  // The ngspice task block of the Project column, in its two places since record 7.362: what the task needs under the toolbar,
+  // the deck's revision and results in the circuit column; Delete task is in the Tasks window.
+  const lines = await evaluate(`${STATUS}?.textContent ?? ''`);
+  check('under the editors\' toolbar the task says it runs on ngspice and needs an ngspice connection', lines.includes('ngspice evaluation backend')
+    && lines.includes('Choose an ngspice connection'), lines.slice(0, 300));
+  const rev = await evaluate(`${PANEL}.querySelector('.tabs .task-head .task-rev')?.textContent.trim() ?? ''`);
+  check('the tab line gives its revision beside its name', rev === 'rev. 1', rev);
+  const shown = await showCircuit(page);
+  const column = await evaluate(`${CIRCUIT_PANEL}.textContent`);
+  check('"Show circuit" brings the circuit column with the ngspice task block: its revision and its results', shown
+    && column.includes('ngspice netlist task') && column.includes('revision 1') && column.includes('vout_v'), column.slice(0, 300));
+  check('no Delete task button on the page (the editors\' card, the circuit column)', !(await evaluate(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Delete task')`)));
   await tw.open();
   check('the Tasks window offers deletion beside the current ngspice task name', await tw.window.evaluate(`document.querySelector('.task-window-actions code')?.textContent === 'ngspice:fixture_ota'
     && document.querySelector('.task-window-actions button')?.textContent.trim() === 'Delete task'`));
   await tw.close();
-  check('the launcher text names the task the page follows', (await evaluate(`${LAUNCHER}.querySelector('.hint')?.textContent`)).includes('ngspice task: fixture_ota'));
-  const aligned = await evaluate(`(() => { const a = ${PANEL}.querySelector('button.virtuoso-button').getBoundingClientRect(), b = ${LAUNCHER}.querySelector('button.ngspice-button').getBoundingClientRect();
-    return { sameColumn: Math.abs(a.left - b.left) < 1 && Math.abs(a.right - b.right) < 1, below: b.top > a.bottom }; })()`);
-  check('the two window buttons stand under each other in one column of the same width', aligned.sameColumn && aligned.below, JSON.stringify(aligned));
-  check('no red Blocked box for the followed task', !(await evaluate(`!!${PANEL}.querySelector('.blocker')`)));
+  check('the tab line offers "ngspice netlist..." back to the deck of the task it names (the launcher\'s text named it until record 7.362)',
+    (await deckButton()) === 'ngspice netlist...' && (await tw.current()) === 'ngspice:fixture_ota', await deckButton());
+  await evaluate(`${TOOLS}.querySelector('button.ngspice-button').click()`, true);
+  await sleep(600);
+  const windows = (await browser.pages()).filter(t => t.title === NGSPICE_WINDOW).length;
+  check('pressed, it brings that window back: still one ngspice window, holding the deck', windows === 1
+    && (await win.evaluate(`${W}.querySelector('textarea.ngspice-text').value`)) === DECK, `${windows} window(s)`);
+  check('no red Blocked box for the followed task', !(await evaluate(`!!${PANEL}.querySelector('.blocker') || !!${CIRCUIT_PANEL}.querySelector('.blocker')`)));
+  await shotTask('ngspice-3-task.png');
   await shot('ngspice-3-column.png');
   check('the window now offers the next revision', (await win.evaluate(`[...${W}.querySelectorAll('button')].map(b => b.textContent.trim())`)).includes('Save (next revision)'));
 
-  // ---- the launchers follow the connection in use, and so do the ngspice tasks in the Task list (records 7.76, 7.77) -----------------
+  // ---- the launchers follow the connection in use, and so do the ngspice tasks in the Task list (records 7.76, 7.77, 7.362) -----------
   connections = [{ id: 'fixture-lab', kind: 'virtuoso_ssh', family: 'virtuoso' }, { id: 'fixture-sim', kind: 'ngspice_local', family: 'ngspice' }];
-  const launchers = () => evaluate(`(() => { const p = ${PANEL}; return { virtuoso: !!p.querySelector('button.virtuoso-button'), ngspice: !!p.querySelector('button.ngspice-button'),
-    task: ((p.querySelector('.task-row .task-list-key')?.textContent ?? '') + ' ' + (p.querySelector('.task-row .task-list-mark')?.textContent ?? '')).trim() }; })()`);
+  // What the page offers: the Tasks window's New task buttons (record 7.362), the tab line's way back to an ngspice task's deck,
+  // and the task the tab line names, with its mark.
+  const launchers = async () => {
+    const offered = await (await tw.open()).evaluate(`(() => { const r = ${NEW}; return { virtuoso: !!r?.querySelector('button.virtuoso-button'), ngspice: !!r?.querySelector('button.ngspice-button') }; })()`);
+    return { ...offered, ...(await evaluate(`(() => { const p = ${PANEL}; return { deck: !!p.querySelector('.tabs .task-tools button.ngspice-button'),
+      task: ((p.querySelector('.task-row .task-list-key')?.textContent ?? '') + ' ' + (p.querySelector('.task-row .task-list-mark')?.textContent ?? '')).trim() }; })()`)) };
+  };
   // The task window lists EVERY task (record 7.227): an ngspice task without its connection carries the mark beside its name.
   const windowTasks = async () => (await tw.rows()).map(r => `${r.key} ${r.mark}`);
   // The page reloaded with the connection `id` in use and, when one is given, another task followed (its rows emptied; the MOCK
@@ -183,8 +229,12 @@ await runChecks(browser, async () => {
     const stored = JSON.parse(await evaluate(`localStorage.getItem('gator-workbench-config-v1')`));
     await page.seed({ config: { ...stored, ...(task ? { circuit: { ...stored.circuit, source: 'registered_task', task_id: task }, parameters: [], measurements: [], targets: [] } : {}),
       run: { mode: 'scratch', max_evaluations: 60, concurrency: 1, threads_per_job: 1, seed: 0, connection_profile_id: id } } });
+    const asked = profilesSeen;
     await send('Page.navigate', { url: APP });
-    await until(`!!(${PANEL})`, 150);
+    await until(ROWED, 150);
+    await browser.window(TASKS_WINDOW, { present: false, ms: 3000, except: page.target.id }).catch(() => null);   // the old page's, gone with it
+    // The connection's kind comes with the profile list, read once the page knows its connection: until then both ways show.
+    if (id) for (let i = 0; i < 50 && profilesSeen === asked; i++) await sleep(100);
     // Settled once a launcher shows (the connection's kind is known), the task list is filled and two readings 0.3 s apart
     // agree. It slept 2 s until 2026-09-30.
     for (let i = 0, last = ''; i < 40; i++) {
@@ -196,8 +246,9 @@ await runChecks(browser, async () => {
   };
   const ngspiceListed = rows => rows.filter(t => t.startsWith('ngspice:'));
   const onVirtuoso = await withConnection('fixture-lab');
-  check('with a Virtuoso connection in use the column offers "Virtuoso cell..." only', onVirtuoso.virtuoso && !onVirtuoso.ngspice, JSON.stringify(onVirtuoso));
-  check('the ngspice task the page follows is named in the Task row, marked "choose its connection"', onVirtuoso.task.startsWith('ngspice:fixture_ota') && onVirtuoso.task.includes('choose its connection'), onVirtuoso.task);
+  check('with a Virtuoso connection in use the Tasks window offers "From a Virtuoso cell..." only', onVirtuoso.virtuoso && !onVirtuoso.ngspice, JSON.stringify(onVirtuoso));
+  check('and the tab line drops "ngspice netlist..." of the ngspice task it follows', !onVirtuoso.deck, JSON.stringify(onVirtuoso));
+  check('the ngspice task the page follows is named on the tab line, marked "choose its connection"', onVirtuoso.task.startsWith('ngspice:fixture_ota') && onVirtuoso.task.includes('choose its connection'), onVirtuoso.task);
   let listed = await windowTasks();
   check('the task window lists it with that mark (the example shows only while ngspice is connected)', ngspiceListed(listed).length === 1 && ngspiceListed(listed)[0].includes('choose its connection'), JSON.stringify(listed));
   const onVirtuosoMock = await withConnection('fixture-lab', 'synthetic:gpdk045_ota5');
@@ -205,14 +256,18 @@ await runChecks(browser, async () => {
   check('with the MOCK task followed and a Virtuoso connection in use, the window still lists the ngspice task, marked "choose its connection" (the window shows every task, record 7.227)',
     onVirtuosoMock.task.startsWith('synthetic:gpdk045_ota5') && ngspiceListed(listed).length === 1 && ngspiceListed(listed)[0].includes('choose its connection'), JSON.stringify([onVirtuosoMock.task, listed]));
   const onNgspice = await withConnection('fixture-sim');
-  check('with an ngspice connection in use it offers "ngspice netlist..." only', !onNgspice.virtuoso && onNgspice.ngspice, JSON.stringify(onNgspice));
+  check('with an ngspice connection in use the Tasks window offers "From an ngspice netlist..." only', !onNgspice.virtuoso && onNgspice.ngspice, JSON.stringify(onNgspice));
   listed = await windowTasks();
   check('and the ngspice task is listed there too (the fixture task stays "choose its connection": the backend, not the page, judges a task available)', ngspiceListed(listed).length === 1, JSON.stringify(listed));
-  await shot('ngspice-4-launcher-ngspice.png');
+  await tw.window.shot(path.join(out, 'ngspice-4-launcher-ngspice.png'), `document.querySelector('.task-window')`, { maxHeight: 360 });
   const onNone = await withConnection(null);
   check('with no connection chosen it offers both', onNone.virtuoso && onNone.ngspice, JSON.stringify(onNone));
   listed = await windowTasks();
   check('and the window lists the ngspice task (the same rule as the button)', ngspiceListed(listed).length === 1, JSON.stringify(listed));
+  // The tab line's way back to an ngspice task's deck follows the same rule (record 7.362): the ngspice task followed again.
+  const onNgspiceTask = await withConnection('fixture-sim', 'ngspice:fixture_ota');
+  check('with an ngspice connection in use and the ngspice task followed, the tab line offers "ngspice netlist..." again',
+    onNgspiceTask.deck && onNgspiceTask.task.startsWith('ngspice:fixture_ota') && onNgspiceTask.ngspice && !onNgspiceTask.virtuoso, JSON.stringify(onNgspiceTask));
 
   check('the page asked nothing else of the backend (every request besides reads is refused here)', refused.length === 0, refused.join(' | '));
   check('no console errors in the page', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

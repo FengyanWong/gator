@@ -142,7 +142,7 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
           title="Read-only and zero-cost: one query of the library's description, and the model files downloaded, scanned and deleted.">{busy ? 'Reading...' : 'Load'}</button>
       </div>
       <p className="hint">Through connection <b>{profileId ?? '(none chosen)'}</b>.{busy ? ' Reading the description and the model files - usually well under a minute.' : ''}</p>
-      {!profileId && <p className="warn">Choose a connection first: the "Connection" button in the left column.</p>}
+      {!profileId && <p className="warn">Choose a connection first: the "Connection" button in the header.</p>}
       {(libraryProblem || fileProblem) && <p className="error">{libraryProblem ?? fileProblem}</p>}
       {error && <p className="error">{error}</p>}
       {listError && <p className="warn">{listError}</p>}

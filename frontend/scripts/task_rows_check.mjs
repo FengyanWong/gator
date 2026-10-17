@@ -16,7 +16,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_rows_check.mjs)" [--live] [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { answerDialogs, check, launchEdge, mockStarter, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, TASK_PANEL, taskWindow, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { answerDialogs, check, CIRCUIT_PANEL, launchEdge, mockStarter, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, TASK_PANEL, taskWindow, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 
 const LIVE = process.argv.includes('--live');                 // reads go to the backend; writing requests are refused either way
@@ -93,7 +93,8 @@ await runChecks(browser, async () => {
   };
   const until = (expression, tries = 100) => page.until(expression, tries);
   const PANEL = TASK_PANEL;
-  const FIELD = label => `[...${PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)}).querySelector('input, select')`;
+  // The labels (circuit class, PDK id) are in the circuit column since record 7.362, read here as they are, shown or folded away.
+  const FIELD = label => `[...${CIRCUIT_PANEL}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === ${JSON.stringify(label)}).querySelector('input, select')`;
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const EDITORS = `document.querySelector('.editors')`;
   // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
@@ -110,8 +111,9 @@ await runChecks(browser, async () => {
   const nameBox = () => evaluate(`[...document.querySelectorAll('.left label')].some(l => l.firstChild?.textContent.trim() === 'Project name')`);
   const choose = (label, v) => tw.choose(v, { tries: 0 });     // as the old list's change event: the waits below are the check's own
   const setInput = (element, v) => page.setValue(`${element}`, v, { event: 'input' });
-  const strip = () => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].map(b => b.textContent.trim()).join(' | ')`);
-  const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll('.tabs button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(name)})).click()`);
+  // The three tabs only: the tab line also holds the task's name and Show circuit since record 7.362.
+  const strip = () => evaluate(`[...${EDITORS}.querySelectorAll(':scope > .tabs > button')].map(b => b.textContent.trim()).join(' | ')`);
+  const openTab = name => evaluate(`[...${EDITORS}.querySelectorAll(':scope > .tabs > button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(name)})).click()`);
   const column = name => evaluate(`(() => { const head = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field ?? h.textContent.replace(' *', '').trim()), at = head.indexOf(${JSON.stringify(name)});
     return [...${EDITORS}.querySelectorAll('table.editor tbody tr')].map(r => { const c = r.children[at]?.querySelector('input, select'); return c ? c.value : null; }); })()`);
   const note = () => evaluate(`${PANEL}.querySelector('.task-rows')?.textContent ?? ''`);

@@ -1,4 +1,4 @@
-import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, NO_ANSWER, saveJson } from './api';
 import { setUnitForms } from './units';
 import { rowsFrom, useConfig, useRequest, useTaskSaves } from './store';
@@ -25,7 +25,8 @@ import { useRunWindowActions } from './page/runWindowActions';
 import { shownRun, useRunList, useShownRun } from './page/shownRun';
 import { useLiveRunAdoption } from './page/liveRunAdoption';
 import { useTaskRunFollow } from './page/taskRunFollow';
-import { oncePerBrowser } from './kept';
+import { keep, oncePerBrowser, readKept } from './kept';
+import { CIRCUIT_SHOWN_KEY } from './contract';
 
 /** A configuration the backend cannot even read (HTTP 422): one blocking issue per field it names, in its plain words
  *  (schema.describe_errors), at the place the validation report uses (parameters[1].variable_id), so the list names the
@@ -51,7 +52,8 @@ function GatorChip() {
   </svg>);
 }
 
-/** Layout (specification section 2): left = project, connection, circuit; center = three editors;
+/** Layout (specification section 2; record 7.362, Option D of the user's preview): the task across the left and the centre - its
+ *  name, revision and actions on the editors' tab line, the three editors under it - with the circuit beside them on request;
  *  right = run configuration + output settings (always visible); bottom = status, logs, data, files, training, corner check,
  *  with the Agent window and the run window opened from its tab line (record 7.253: the Agent tab became "Agent...", drawn
  *  as a tab but opening a window - no tab view).
@@ -78,6 +80,14 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null);            // the header's title block: the circuit panel puts the task's facts there
   const [taskSlot, setTaskSlot] = useState<HTMLElement | null>(null);              // editors' tab line: where the circuit panel puts "Save task"
   const [taskNotes, setTaskNotes] = useState<HTMLElement | null>(null);            // under the editors' toolbar: its messages and questions
+  const [taskHead, setTaskHead] = useState<HTMLElement | null>(null);              // the tab line's start: the task, by name (record 7.362)
+  const [taskTools, setTaskTools] = useState<HTMLElement | null>(null);            // the tab line's end, before Save task: Check now (record 7.362)
+  const [taskStatus, setTaskStatus] = useState<HTMLElement | null>(null);          // under the editors' toolbar: the task's own lines (record 7.362)
+  // The circuit column (record 7.362, user: "go with D"): folded away by default, so the task's rows take the width; "Show
+  // circuit" on the tab line brings it back beside them. The choice is kept in this browser.
+  const [circuitShown, setCircuitShown] = useState(() => readKept(s => s.getItem(CIRCUIT_SHOWN_KEY) === 'shown', () => false));
+  const toggleCircuit = useCallback(() => setCircuitShown(now => !now), []);      // stable: the editors are memoised (record 7.275)
+  useEffect(() => keep(s => { if (circuitShown) s.setItem(CIRCUIT_SHOWN_KEY, 'shown'); else s.removeItem(CIRCUIT_SHOWN_KEY); }), [circuitShown]);
   const [message, setMessage] = useState<Json>(null);
   // Two output defaults changed (record 7.280): a save point every 200 evaluations (50 before) and the data tables written
   // every 64 (16 before). A draft keeps the values it was made with, so, once per browser, a draft that still holds an old
@@ -178,7 +188,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
   if (!schema) return <p>Loading schema...</p>;
   return (
-    <div className={`layout${folded ? ' bottom-folded' : ''}`} ref={layoutRef} style={bottom.height ? { '--foot': `${bottom.height}px` } as CSSProperties : undefined}>
+    <div className={`layout${folded ? ' bottom-folded' : ''}${circuitShown ? ' circuit-shown' : ''}`} ref={layoutRef} style={bottom.height ? { '--foot': `${bottom.height}px` } as CSSProperties : undefined}>
       <header>
         {/* The title block (record 7.158; the banner of the Roadster look, record 7.360): the name as a chip, then what the page
             works on - the task and its facts come from the circuit panel. The version and the environment are one hover away,
@@ -233,12 +243,13 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
             <pre>{[message.detail.code && `code: ${message.detail.code}`, message.detail.report && JSON.stringify(message.detail.report, null, 1)].filter(Boolean).join('\n')}</pre></details>}</>}</div>}
       <aside className="left">
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
-          taskSlot={taskSlot} taskNotes={taskNotes} titleSlot={titleSlot}
+          taskSlot={taskSlot} taskNotes={taskNotes} taskHead={taskHead} taskTools={taskTools} taskStatus={taskStatus} titleSlot={titleSlot}
           taskEpoch={taskEpoch} runs={runs} refreshRuns={refreshRuns} taskLoad={taskLoad} />
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}
-          validation={validation} taskSlot={setTaskSlot} taskNotes={setTaskNotes} />
+          validation={validation} taskSlot={setTaskSlot} taskNotes={setTaskNotes} taskHead={setTaskHead} taskTools={setTaskTools}
+          taskStatus={setTaskStatus} circuitShown={circuitShown} onCircuit={toggleCircuit} />
       </main>
       <aside className="right">
         <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} />

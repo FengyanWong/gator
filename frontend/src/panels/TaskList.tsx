@@ -11,8 +11,8 @@ import { Icon } from './Icons';
 import { OPEN_TASKS, openRunsAt, TasksAt } from '../openAt';
 
 /** Which registered task the page follows (user request 2026-10-06, record 7.227: "make the loaded task a button similar to
- *  the runs... button style. It opens a new window showing all the tasks"): in the Project column the task name is the
- *  button that opens its window. It replaced the drop-down list of tasks, as "Runs..." replaced the list of
+ *  the runs... button style. It opens a new window showing all the tasks"): the task name is the button that opens its
+ *  window - at the start of the editors' tab line since record 7.362 (in the Project column until then). It replaced the drop-down list of tasks, as "Runs..." replaced the list of
  *  runs (RunList.tsx). Pressing it opens the task window - a browser window of its own, drawn through a portal like the
  *  run window - with every registered task as a table: what it is, which cell it runs in, its saved revision and baseline,
  *  how many sizes and results it has, and its newest run. A double click on a row makes the page follow that task (exactly
@@ -122,11 +122,14 @@ function TaskDetails({ task, runs, rows, error, followed, onRenamed }: { task: J
 }
 
 export function TaskListButton({ tasks, runs, current, currentText, currentMark, ngspiceOffered, loading, onChoose, onRefresh, onRefreshRuns,
-  onDelete, deleting, deleteDisabled, deleteTitle, deleteNotice }: { tasks: Json[]; runs: Json[];
+  onDelete, deleting, deleteDisabled, deleteTitle, deleteNotice, newTask }: { tasks: Json[]; runs: Json[];
   current: string | null; currentText: string; currentMark?: string; ngspiceOffered: boolean; loading: string | null;
   onChoose: (taskKey: string) => Promise<{ loaded: boolean }> | void;
   onRefresh: () => Promise<Json[]>; onRefreshRuns?: () => Promise<Json[]>;
-  onDelete?: (owner: Window) => void; deleting?: boolean; deleteDisabled?: boolean; deleteTitle?: string; deleteNotice?: ReactNode }) {
+  onDelete?: (owner: Window) => void; deleting?: boolean; deleteDisabled?: boolean; deleteTitle?: string; deleteNotice?: ReactNode;
+  /** The ways to a new task (record 7.362: they left the circuit column): drawn in this window, handed the window so that the
+   *  windows they open are opened by the window holding the click (popupWindow.ts). */
+  newTask?: (owner: Window) => ReactNode }) {
   // While `popup` is set, the task window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-tasks',
     { title: TASKS_WINDOW, features: 'popup,width=1500,height=760', rootId: 'tasks-root' });
@@ -207,13 +210,14 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
           <Icon name="delete-task" label={deleting ? 'Deleting...' : 'Delete task'} /></button>
       </div>}
       {deleteNotice}
+      {newTask && <div className="row task-window-new"><span className="hint">New task:</span>{newTask(popup)}</div>}
       <p className="hint"><b>Double click</b> a task to make the workbench follow it: its Parameters, Probes and Specs come into the editors (edits you made are asked about first) and the bottom tabs show its newest run. Then the window closes; it stays open when you answer Cancel to the edits question or the task cannot be read. The task the page follows is marked. <b>Details</b> shows the rest, the task's rows included.</p>
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
           <li>All times are the local time of this computer. Press a column title to sort by it.</li></ul></details>
       {runs.length > 0 && !known && !reading && <p className="warn">The workbench server that is running is older than this page and does not say which task a run belongs to:
         the run columns stay empty. Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Refresh list".</p>}
-      {tasks.length === 0 && !reading && !tasksError && <p className="hint task-empty">No registered task yet. Save one from a Virtuoso cell (Virtuoso cell...) or from an ngspice netlist.</p>}
+      {tasks.length === 0 && !reading && !tasksError && <p className="hint task-empty">No registered task yet. Save one from a Virtuoso cell or from an ngspice netlist (New task, above).</p>}
       <div className="task-browser">
       <Folders state={folders} keys={tasks.map(t => t.task_key)} popup={popup} onSelect={chooseFolder} />
       <div className="task-folder-content">

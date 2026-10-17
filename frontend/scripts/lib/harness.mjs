@@ -457,8 +457,19 @@ export async function launchEdge(tag = 'check', { width = 1680, height = 1050, l
 }
 
 // ---- the task window (record 7.227) ------------------------------------------------------------------------------------
-/** The Project column's "Registered task" panel (an expression for `evaluate`). */
-export const TASK_PANEL = `[...document.querySelectorAll('.left .panel')].find(p => [...p.querySelectorAll('h3')].some(h => h.textContent.trim() === 'Registered task'))`;
+/** The task's card (an expression for `evaluate`): since record 7.362, the user's Option D, the editors - the task's name (the
+ *  button that opens the task window) and its revision start their tab line, Check now and Save task end it, the task's own lines
+ *  (loading, blocked, MOCK, the check's result) stand under the toolbar. Until then the Project column's "Registered task" panel. */
+export const TASK_PANEL = `document.querySelector('section.panel.editors')`;
+/** The circuit column since record 7.362: labels, circuit picture, notes, hierarchy - folded away until "Show circuit". */
+export const CIRCUIT_PANEL = `document.querySelector('aside.left section.panel')`;
+/** Presses "Show circuit" on the editors' tab line when the circuit column is folded away, and waits for it: true once shown. */
+export async function showCircuit(page) {
+  const shown = () => page.evaluate(`!!document.querySelector('.layout')?.classList.contains('circuit-shown')`);
+  if (!(await shown())) await page.evaluate(`document.querySelector('.editors .circuit-toggle')?.click()`);
+  for (let i = 0; i < 30 && !(await shown()); i++) await sleep(100);
+  return shown();
+}
 /** The Project column's registered task since record 7.227: plain text naming the task the page follows, and ONE button
  *  "Tasks..." that opens the task window (TaskList.tsx), where a DOUBLE CLICK on a row chooses a task - what the old
  *  drop-down's choice did. `taskWindow(page, browser)` drives it for the checks: `current()` = the canonical key or placeholder text
@@ -506,4 +517,14 @@ export function taskWindow(page, browser, { width = 1500, height = 760 } = {}) {
   };
   const close = async () => { closing = false; if (alive()) { try { await far.send('Runtime.evaluate', { expression: 'window.close()', userGesture: true }); } catch { /* gone */ } } far = null; await sleep(200); };
   return { open, choose, closedAfterChoice, keys, rows, current, close, get window() { return far; }, PANEL, ROW, TABLE };
+}
+/** Record 7.362: the two ways to a new task stand in the task window, "New task: From a Virtuoso cell... / From an ngspice
+ *  netlist..." (until then two buttons in the Project column). Opens the task window and presses the one of `kind` ('virtuoso' or
+ *  'ngspice') as a user's click; the window it opens is the task window's own, found by its title as before. Returns the task
+ *  window's driver and whether the button was there. */
+export async function newTaskFrom(page, browser, kind) {
+  const tasks = taskWindow(page, browser);
+  const far = await tasks.open();
+  const pressed = await far.evaluate(`(() => { const b = document.querySelector('.task-window-new button.${kind}-button'); if (!b) return false; b.click(); return true; })()`, true);
+  return { tasks, pressed };
 }

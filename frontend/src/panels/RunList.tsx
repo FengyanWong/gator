@@ -16,7 +16,7 @@ import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
  *  LEFT. Pressing it opens the run window - a browser window of its own, drawn through a portal like the connection
  *  window - with every run under the output folder as a table: when it started and finished, how long it worked, and
  *  what it was and came to. A double click on a row shows that run; "Details" adds the rest; "Clear" shows no run.
- *  Choosing a task in the Project column shows that task's newest run, or none (App.tsx, record 7.212).
+ *  Choosing a task (the Tasks window) shows that task's newest run, or none (App.tsx, record 7.212).
  *
  *  Nothing here updates on a timer: the list is read when the button is pressed and by "Refresh list", a run's details
  *  when they are opened. So a run that is working shows the state and duration AS OF the read time, which is printed.

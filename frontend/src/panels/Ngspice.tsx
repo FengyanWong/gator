@@ -1,5 +1,5 @@
 import { useAsyncAction } from '../store';
-import { useEffect, useRef, useState } from 'react';
+import { MutableRefObject, useEffect, useRef, useState } from 'react';
 import { api, Json, problemText } from '../api';
 import { baselineText, followTaskBaseline } from './TaskSave';
 import { usePopupWindow } from './popupWindow';
@@ -8,7 +8,9 @@ import { NGSPICE_WINDOW } from '../contract';
 
 /** The ngspice window (user request 2026-09-23): a SPICE deck pasted or loaded from a file on the backend machine, checked,
  *  and saved as the task ngspice:<name> - one more entry of the Registered task list, which then runs on an ngspice
- *  connection (on this machine or over SSH; the Connection window). ONE button in the Project column opens it, the way the
+ *  connection (on this machine or over SSH; the Connection window). "From an ngspice netlist..." in the Tasks window opens it
+ *  (record 7.362; until then ONE button in the Project column), and "ngspice netlist..." on the editors' tab line while the page
+ *  follows such a task - the way the
  *  Virtuoso cell and the connection have their windows (a portal into a named pop-up). Opening the window runs nothing;
  *  Check reads the deck on the backend without storing it; Save stores it (the next revision when the name exists). */
 
@@ -17,13 +19,17 @@ const NAME = /^[a-z][a-z0-9_]{1,39}$/;
 /** A Windows path typed on this machine, as the WSL backend sees it (D:\x\y.cir -> /mnt/d/x/y.cir). */
 const backendPath = (text: string) => text.trim().replace(/^([A-Za-z]):[\\/]/, (_, d) => `/mnt/${d.toLowerCase()}/`).replace(/\\/g, '/');
 
-export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
-  { config: Json; circuit: Json; chooseTask: (taskKey: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }) => Promise<unknown> | void; onTasksChanged: () => void }) {
+/** `button` false (record 7.362): this keeps the window and its work, and the buttons that open it stand elsewhere - in the Tasks
+ *  window and on the editors' tab line - calling `openRef.current(from)`; `onBlocked` tells them when the browser refused it. */
+export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged, button = true, openRef, onBlocked }:
+  { config: Json; circuit: Json; chooseTask: (taskKey: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }) => Promise<unknown> | void; onTasksChanged: () => void;
+    button?: boolean; openRef?: MutableRefObject<((from?: Window | null) => void) | null>; onBlocked?: (blocked: boolean) => void }) {
   const ref = config.circuit;
   const followed: string | null = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? ref.task_id.slice('ngspice:'.length) : null;
   // A Virtuoso connection hides this button (Left.tsx): the window closes with it instead of staying blank and orphaned.
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-ngspice',
     { title: NGSPICE_WINDOW, features: 'popup,width=760,height=980', rootId: 'ngspice-root', closeOnUnmount: true });
+  useEffect(() => { onBlocked?.(blocked); }, [blocked]);
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [kinds, setKinds] = useState('');
@@ -72,7 +78,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
     setChecked(made.check ?? null); setLoadedFrom(made.name);
     onTasksChanged();
     await chooseTask(made.task_key, { circuit_class: made.circuit_class, pdk_id: made.pdk_id });   // a new task is not in the list read before
-    setMessage({ level: made.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `${made.created ? 'Saved the new task' : `Saved revision ${made.revision} of`} ${made.task_key}. The Project column follows it; `
+    setMessage({ level: made.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `${made.created ? 'Saved the new task' : `Saved revision ${made.revision} of`} ${made.task_key}. The page follows it; `
       + 'Parameters and Probes show its rows (Specs are yours to fill). It runs on an ngspice connection: choose one in the Connection window.' + baselineText(made) });
   });
   const nameOk = NAME.test(name);
@@ -126,7 +132,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
         <button disabled={!!busy || !text.trim()} onClick={check} title="Reads the deck on the backend: elements, what can be sized, the results it measures, problems. Stores and runs nothing.">
           {busy === 'check' ? 'Checking...' : 'Check'}</button>
         <button className="primary" disabled={!!busy || !text.trim() || !nameOk} onClick={save}
-          title={nameOk ? 'Stores the deck as the task ngspice:<name> and makes the Project column follow it. A new task automatically runs one baseline simulation.' : 'Give the task a name first: lowercase letters, digits and _ (2-40 characters, starting with a letter).'}>
+          title={nameOk ? 'Stores the deck as the task ngspice:<name> and makes the page follow it. A new task automatically runs one baseline simulation.' : 'Give the task a name first: lowercase letters, digits and _ (2-40 characters, starting with a letter).'}>
           {busy === 'save' ? 'Saving...' : followed && name === followed ? 'Save (next revision)' : 'Save as task'}</button>
         <p className="hint">Creating a task automatically runs one baseline simulation of its starting design.</p>
       </div>
@@ -147,10 +153,11 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged }:
             <ul>{checked.diagnostics.map((d: Json, i: number) => <li key={i} className={d.severity}>{d.code}: {d.message}</li>)}</ul></details>}
         </div>))}
     </div>);
+  if (openRef) openRef.current = from => { openWindow(from ?? undefined); };
   return <>
-    <button className="ngspice-button" onClick={openWindow} title={popup ? 'The ngspice window is open: press to bring it to the front.'
-      : 'Opens the ngspice window: paste or load a SPICE deck, check it and save it as a task that runs on an ngspice connection. Opening it runs nothing.'}>ngspice netlist...</button>
-    {blocked && <Blocked />}
+    {button && <button className="ngspice-button" onClick={openWindow} title={popup ? 'The ngspice window is open: press to bring it to the front.'
+      : 'Opens the ngspice window: paste or load a SPICE deck, check it and save it as a task that runs on an ngspice connection. Opening it runs nothing.'}>ngspice netlist...</button>}
+    {button && blocked && <Blocked />}
     <PopupPortal popup={popup} root={root}>{view}</PopupPortal>
   </>;
 }

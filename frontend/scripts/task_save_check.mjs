@@ -9,6 +9,8 @@
 //     the save ended and reads the task list again;
 //   - a save refused because another one runs says so, and the page follows that one to its end;
 //   - reads that fail do not end the following; a save the backend no longer knows (started again) ends with a warning.
+// Record 7.362 (the user's Option D): the task's name and revision start the editors' tab line (the bar held them until then),
+// Save as and Task file end it, and Check now stands there too - nothing of the task's in the circuit column.
 // Record 7.203 (user: "yes build it", for rows older than the saved task):
 //   - Save task sends which saved revision the rows came from: none before the page knows, then the revision of the
 //     last save or of the rows Reload saved values brought; the check while editing gets it too;
@@ -137,7 +139,8 @@ await runChecks(browser, async () => {
   const BLOCK = `document.querySelector('.editors .tabs .task-save')`;          // the bar: right end of the editors' tab line
   const NOTES = `document.querySelector('.editors .task-notes')`;              // its messages and questions, under the toolbar
   const BUTTON = text => `[...(${BLOCK}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
-  const blockText = () => evaluate(`${BLOCK}?.textContent ?? ''`);
+  const HEAD = `document.querySelector('.editors .tabs .task-head')`;          // the tab line's start: the task's name and revision (record 7.362)
+  const headText = () => evaluate(`${HEAD}?.textContent ?? ''`);
   const notesText = () => evaluate(`${NOTES}?.textContent ?? ''`);
   const press = (label, gesture = false) => evaluate(`${BUTTON(label)}.click()`, gesture);
   const stored = page.stored;
@@ -165,10 +168,10 @@ await runChecks(browser, async () => {
   for (let i = 0; i < 100 && !(await evaluate(`!!(${BLOCK})`)); i++) await sleep(100);
   await settle(1500);
   check('nothing is saved or read from Virtuoso on load', calls.length === 0, calls.map(c => c.op).join(' | '));
-  check('the open task names itself and its revision', (await blockText()).includes('Task real:ring_osc, revision 1'), await blockText());
+  check('the open task names itself and its revision at the start of the tab line', (await headText()).includes('ring_osc') && (await headText()).includes('rev. 1'), await headText());
   check('two short buttons: Save as and Task file', await evaluate(`!!(${BUTTON('Save as')}) && !(${BUTTON('Save task')}) && !!(${BUTTON('Task file')})`));
-  check('they sit in the editors\' tab line, none in the Project panel', await evaluate(`!!${BLOCK}.closest('.tabs') && !${PANEL}.querySelector('.task-save')
-    && ![...${PANEL}.querySelectorAll('button')].some(b => ['Save task', 'Save as', 'Task file'].includes(b.textContent.trim()))`));
+  check('they sit at the end of the editors\' tab line, none in the circuit column', await evaluate(`!!${BLOCK}.closest('.tabs .tab-actions') && !document.querySelector('aside.left .task-save')
+    && ![...document.querySelectorAll('aside.left button')].some(b => ['Save task', 'Save as', 'Task file'].includes(b.textContent.trim()))`));
   const place = await evaluate(`(() => { const bar = ${BLOCK}.getBoundingClientRect(), tabs = ${BLOCK}.closest('.tabs'), line = tabs.getBoundingClientRect();
     const first = tabs.querySelector('button').getBoundingClientRect();
     const modify = [...document.querySelectorAll('.editors .toolbar button')].pop().getBoundingClientRect();         // the toolbar's right end
@@ -211,13 +214,13 @@ await runChecks(browser, async () => {
     && saveCall.extras?.analyses?.tran?.stop === '40n' && saveCall.config?.targets?.[0]?.lower === 1.25e9, JSON.stringify(saveCall ?? calls.slice(mark)));
   check('it reports the revision and that the baseline no longer holds, under the toolbar', (await notesText()).includes('Saved real:ring_osc, revision 2.') && (await notesText()).includes('no longer holds'), await notesText());
   await sleep(500);
-  check('the open task shows its new revision', (await blockText()).includes('revision 2'), await blockText());
+  check('the open task shows its new revision', (await headText()).includes('rev. 2'), await headText());
 
   // Calibration still updates the current task through its explicit request.
   check('nothing under the toolbar asks for a new task name', !(await evaluate(`[...${NOTES}?.querySelectorAll('label') ?? []].some(l => l.firstChild?.textContent.trim() === 'New task name')`)));
   check('calibration update requests never create another task', calls.filter(c => c.op === 'task/save').every(c => c.as_new === false), JSON.stringify(calls.filter(c => c.op === 'task/save').map(c => c.as_new)));
-  check('the task\'s block in the column names it and offers Check now', (await evaluate(`${PANEL}.textContent`)).includes('Before every run:')
-    && (await evaluate(`[...${PANEL}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Check now')`)));
+  check('the tab line names the task and offers Check now, its tooltip saying the check runs before every run', (await headText()).includes('ring_osc')
+    && (await evaluate(`[...${PANEL}.querySelectorAll('.tabs .tab-actions button')].some(b => b.textContent.trim() === 'Check now' && b.title.includes('first check that the editors'))`)));
 
   // ---- record 7.198: a running save shows its step and keeps Save task closed until it ends, also after a reload ----------
   const SAVE = `${BLOCK}?.querySelector('button.primary')`;                    // its caption says "Saving..." while one runs
@@ -267,8 +270,8 @@ await runChecks(browser, async () => {
   check('when it ends, the line goes', await page.until(`!(${LINE})`, 40), await lineText());
   check('and the page says how it ended', (await notesText()).includes('The save that was running has ended. Saved real:ring_osc, revision 4. The recorded baseline still holds.'),
     await notesText());
-  check('it reads the task list again, so the task shows its new revision', await page.until(`(${BLOCK}?.textContent ?? '').includes('revision 4')`, 40)
-    && taskListReads > listed, `${await blockText()} | ${taskListReads - listed} reads`);
+  check('it reads the task list again, so the task shows its new revision', await page.until(`(${HEAD}?.textContent ?? '').includes('rev. 4')`, 40)
+    && taskListReads > listed, `${await headText()} | ${taskListReads - listed} reads`);
   check('Save task opens again after it', (await closed()) === false);
 
   // A press that meets another save (a stale page or another tab): refused by the backend, said, and followed.

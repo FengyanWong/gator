@@ -18,8 +18,10 @@ export const CALIBRATION_ANSWERED_KEY = 'gator-workbench-calibration-answered-v1
 export const BOTTOM_KEY = 'gator-workbench-bottom-v1';
 /** A right-column module folded or open: this prefix + the module's id (Right.tsx Module). */
 export const MODULE_KEY_PREFIX = 'gator-workbench-module-';
-/** The circuit picture's fold in the Project column (CircuitPicture.tsx). */
+/** The circuit picture's fold in the circuit column (CircuitPicture.tsx). */
 export const CIRCUIT_PICTURE_KEY = 'gator-workbench-circuit-picture-v1';
+/** The circuit column shown beside the task's rows (App.tsx, record 7.362): 'shown', or nothing - folded away, the default. */
+export const CIRCUIT_SHOWN_KEY = 'gator-workbench-circuit-shown-v1';
 /** The Training tab's runs compared with the shown one (TrainingTab.tsx, record 7.200). */
 export const TRAINING_COMPARE_KEY = 'gator-workbench-training-compare-v1';
 /** Lower caps of the Training tab's memory bound, set only by a browser check (TrainingTab.tsx, trainingData.ts setCaps). */

@@ -17,7 +17,8 @@
 //   - "PDK window..." opens the PDK window: the form, the connection it reads through, the loaded PDKs (double click shows
 //     one, with every component, its pins and roles, its parameters); "Load" sends exactly the typed fields, shows that it
 //     is reading, then shows the answer and reads the list again; without a connection it cannot be pressed; closing the
-//     Virtuoso window closes it too (2026-09-29);
+//     Virtuoso window closes it too (2026-09-29). The Virtuoso window is opened as a user opens it since record 7.362: the
+//     Tasks window's "New task: From a Virtuoso cell...";
 //   - the ideal parts read with a PDK (record 7.190: analogLib's sources, ideal R / C / L, probes, controlled sources): the
 //     window says that every read brings them, the list has their count, a shown PDK names how many were read and which have
 //     a kind of their own, their list is folded and shows both pin orders of one component; a PDK answered without them (an
@@ -27,7 +28,7 @@
 // Exit code 1 if any check fails.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
-import { check, launchEdge, mockStarter, outDir, runChecks, sleep, TASK_PANEL, validConfiguration, workbenchUrl, VIRTUOSO_WINDOW, PDK_WINDOW } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, newTaskFrom, outDir, runChecks, sleep, validConfiguration, workbenchUrl, VIRTUOSO_WINDOW, PDK_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -165,15 +166,17 @@ await runChecks(browser, async () => {
 
   // ---- the window ---------------------------------------------------------------------------------------------------------
   // Since 2026-09-27 the PDK window opens from the Virtuoso window: its "PDK window..." button beside Refresh (the PDK is
-  // read with the cell there). The Virtuoso window itself opens from the Project column's "Virtuoso cell..." button; its
-  // libraries listing is answered with none, so nothing reaches Virtuoso. The click happens IN the Virtuoso window, which
-  // is what lets the browser open a second pop-up (popupWindow.ts, `open(from)`).
-  const LAUNCH = `${TASK_PANEL}?.querySelector('button.virtuoso-button')`;
+  // read with the cell there). The Virtuoso window itself opens from the Tasks window's "New task: From a Virtuoso cell..."
+  // (record 7.362; the Project column's "Virtuoso cell..." until then): the Tasks window holds that click, so the Virtuoso
+  // window is a pop-up of a pop-up already; it is found by its title, and the Tasks window is closed again. Its libraries
+  // listing is answered with none, so nothing reaches Virtuoso. The click on "PDK window..." happens IN the Virtuoso window,
+  // which is what lets the browser open the PDK window from it (popupWindow.ts, `open(from)`).
   let virtuoso = null;
   const openPdkWindow = async except => {
     if (!virtuoso) {
-      await evaluate(`${LAUNCH}.click()`);
-      const found = await browser.window(VIRTUOSO_WINDOW, { ms: 10000 }).catch(() => null);
+      const { tasks, pressed } = await newTaskFrom(page, browser, 'virtuoso');
+      const found = pressed ? await browser.window(VIRTUOSO_WINDOW, { ms: 10000 }).catch(() => null) : null;
+      await tasks.close();
       if (!found) return null;
       virtuoso = await browser.attach(found, { errors: consoleErrors, prefix: 'Virtuoso window: ' });
       await virtuoso.until(`!!document.querySelector('.virtuoso-window button.pdk-open')`, 60);

@@ -23,11 +23,13 @@ import { VirtuosoWindow } from './VirtuosoWindow';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
-/** The left column holds the Project fields and the REGISTERED TASK only (user request 2026-09-23). Reading a cell from
- *  Virtuoso - library / cell / testbench, the read, the task's first save - lives in a window of its
- *  own behind ONE button, "Virtuoso cell..." (the mechanism of the connection window: a portal into a named pop-up).
- *  An ngspice netlist (a SPICE deck pasted or loaded from a file) becomes a task the same way, behind "ngspice netlist..."
- *  (Ngspice.tsx): such a task runs on an ngspice connection and needs no Virtuoso.
+/** The circuit panel: the task the page follows and the circuit it is about. Since record 7.362 (the user's Option D) it draws
+ *  the task into the editors - its name and revision at the start of their tab line, Check now at its end, its own lines under
+ *  the toolbar - and keeps the circuit alone in its column (labels, picture, notes, hierarchy), folded away until "Show
+ *  circuit". Reading a cell from Virtuoso - library / cell / testbench, the read, the task's first save - lives in a window
+ *  of its own (the mechanism of the connection window: a portal into a named pop-up), opened by "New task: From a Virtuoso
+ *  cell..." in the Tasks window. An ngspice netlist (a SPICE deck pasted or loaded from a file) becomes a task the same way,
+ *  behind "From an ngspice netlist..." (Ngspice.tsx): such a task runs on an ngspice connection and needs no Virtuoso.
  *  The workbench makes no working copy of its own any more: reading a cell asks whether it is a copy the user made, and
  *  then works in THAT cell (the backend records it as the cell's working copy: import with `work_here`). */
 
@@ -36,6 +38,16 @@ import { VirtuosoWindow } from './VirtuosoWindow';
 const SOURCES = ['registered_task', 'virtuoso'];
 
 const CIRCUIT_CLASSES = ['opamp', 'ldo', 'vco', 'bandgap', 'comparator', 'oscillator', 'unspecified'];
+/** What the two ways to a new task open (their buttons: the Tasks window's "New task", and the tab line while the page follows one). */
+const VIRTUOSO_OPENS = 'Opens the Virtuoso window: choose a library, a cell and its testbench, read the cell into the workbench (it asks whether the cell is a copy you made), set it up, save it as a task. Opening it lists the libraries of that Virtuoso - and, for the cell chosen last time, its cells and schematic - read-only; nothing comes into the workbench until you press Read.';
+const NGSPICE_OPENS = 'Opens the ngspice window: paste or load a SPICE deck, check it and save it as a task that runs on an ngspice connection. Opening it runs nothing.';
+/** Check now's tooltip: the sentence and the steps the task's block showed until record 7.362 (records 7.177, 7.362). */
+const CHECK_NOW = 'Check now: Start, Calibration and Resume first check that the editors, this saved task and its cell in Virtuoso agree - the check '
+  + 'simulates nothing; a difference starts nothing and says what to do. It compares the rows of Parameters, Probes and Specs with the saved task '
+  + "(while you edit, the header's blocking issues say it too); the cell in Virtuoso with the task - the run adapter connects (no ADE/Maestro window "
+  + 'may be open on the copy), Virtuoso exports its netlist, the export is compared with the saved one, topology and every parameter, and the '
+  + "simulation deck is written; and, for a task measured by Maestro, the cell's Maestro test with the task. Everything but the rows needs the "
+  + 'link up. Nothing is written into Virtuoso.';
 /** Use the page's themed dropdown; its Custom option keeps arbitrary research labels editable. */
 function CircuitClass({ value, onChange }: { value?: string | null; onChange: (value: string) => void }) {
   const current = value || 'unspecified';
@@ -84,14 +96,17 @@ function TitleFacts({ config, task }: { config: Json; task: Json | null }) {
 
 export type { TaskLoad, TaskLoaded } from './taskChoice';
 
-function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, titleSlot = null, taskEpoch = 0, runs = [], refreshRuns, taskLoad }:
+function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, taskHead = null, taskTools = null, taskStatus = null,
+  titleSlot = null, taskEpoch = 0, runs = [], refreshRuns, taskLoad }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
-    taskSlot: HTMLElement | null; taskNotes: HTMLElement | null;
+    taskSlot: HTMLElement | null; taskNotes: HTMLElement | null; taskHead?: HTMLElement | null; taskTools?: HTMLElement | null; taskStatus?: HTMLElement | null;
     titleSlot?: HTMLElement | null; taskEpoch?: number; runs?: Json[]; refreshRuns?: () => Promise<Json[]>; taskLoad?: MutableRefObject<TaskLoad | null> }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nativeOpen, setNativeOpen] = useState(false);                    // closed until asked for; the choice then lasts across cells and Refresh
   const [hierarchyOpen, setHierarchyOpen] = useState(false);              // the whole Hierarchy block is one closed line; same rule
+  const ngspiceOpen = useRef<((from?: Window | null) => void) | null>(null);   // the ngspice window's opener (NgspiceButton, record 7.362)
+  const [ngspiceBlocked, setNgspiceBlocked] = useState(false);
   const ref = config.circuit;
   const offered = SOURCES.includes(ref.source);     // false: a saved configuration names the removed netlist source
   const virtuosoOn = ref.source === 'virtuoso';     // the page follows a Virtuoso cell (the window's work), not a task
@@ -216,9 +231,9 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   const taskNote = circuit?.profile_task && virtuosoOn ? (
     <div className="note">
       <p><b>This cell already has a registered task:</b> <code>{circuit.profile_task}</code>{builtIn ? ' (a verified built-in circuit)' : ''}{' '}
-        Choose it under <b>Task</b> in the Project column.</p>
+        Choose it in the Tasks window (the task's name on the editors' tab line).</p>
       <details className="more"><summary>What this means</summary>
-        <p>The workbench can already optimize this cell - through that task, in the Project column.{builtIn ? ' A verified built-in circuit gets no second task.'
+        <p>The workbench can already optimize this cell - through that task, in the Tasks window.{builtIn ? ' A verified built-in circuit gets no second task.'
           : ' Open it and use Save as to store edited rows as a new task with its own copy. To start over from this cell, open the task and press Delete task.'}</p></details>
     </div>) : null;
   // What was read straight from Virtuoso. It is a line of the Hierarchy block; while no circuit is loaded (browse only)
@@ -227,60 +242,88 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   const circuitInfo = <CircuitDetails circuit={circuit} open={hierarchyOpen} setOpen={setHierarchyOpen}>
     {virtuosoOn && nativeSchematic}</CircuitDetails>;
 
-  // ---- the left column: the project and the registered task --------------------------------------------------------------
+  // ---- the task on the editors' tab line, its own lines under the toolbar, and the circuit column (record 7.362) -----------
+  // The user's Option D ("go with D"): the editors are the task's card. The task's name - the button that opens the Tasks
+  // window - and its revision start the tab line; Check now stands before Save task at its end; what the task says about
+  // itself (loading, blocked, MOCK, its baseline, the check's result) stands under the toolbar. The circuit column holds the
+  // circuit alone - labels, picture, notes, hierarchy - folded away until "Show circuit". The two ways to a new task, a
+  // Virtuoso cell and an ngspice netlist, are in the Tasks window ("New task"); while the page follows a Virtuoso cell or an
+  // ngspice task, the button back to its window is on the tab line too.
+  const current = ref.source === 'registered_task' && ref.task_id && !removedMock ? ref.task_id : null;
+  const revision: number | null = current ? tasks.find(t => t.task_key === current)?.revision ?? null : null;
+  const newTask = showVirtuoso || showNgspice ? (owner: Window) => <>
+    {showVirtuoso && <button className="virtuoso-button" onClick={() => openWindow(owner)}
+      title={popup ? 'The Virtuoso window is open: press to bring it to the front.' : `From a Virtuoso cell: ${VIRTUOSO_OPENS}`}>From a Virtuoso cell...</button>}
+    {showVirtuoso && blocked && <Blocked />}
+    {showNgspice && <button className="ngspice-button" onClick={() => ngspiceOpen.current?.(owner)} title={`From an ngspice netlist: ${NGSPICE_OPENS}`}>From an ngspice netlist...</button>}
+    {showNgspice && ngspiceBlocked && <Blocked />}
+  </> : undefined;
+  const head = taskHead && createPortal(
+    <span className="row task-row" title="The task the editors and a run are about; its name opens the Tasks window. A cell read from Virtuoso becomes one of these with Save as.">
+      <span className="task-caption">Task</span>
+      <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={key => chooseTask(key)}
+        onRefresh={() => tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
+        current={current}
+        currentMark={current ? taskMark(tasks.find(t => t.task_key === current) ?? { kind: 'real', available: true }, showNgspice) : undefined}
+        onDelete={current && (deletableName || ngspiceTask) ? (ngspiceTask ? deleteNgspice : deleteProfile) : undefined}
+        deleting={profileBusy === 'delete'} deleteDisabled={!!profileBusy}
+        deleteTitle={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
+          : 'Delete task: Asks once more. The task leaves the Registered task list and its cell can get a new one; its files are kept aside on the backend machine, and runs already made keep their data.'}
+        deleteNotice={profileMessage?.what === 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
+        currentText={ref.source !== 'registered_task' ? (virtuosoOn ? (ref.cell ? `(none: ${ref.library}/${ref.cell} is read from Virtuoso)` : '(none: a Virtuoso cell is being chosen)')
+          : '(none: the saved source was removed)') : !ref.task_id ? '(choose a task)' : `${ref.task_id} (removed)`}
+        newTask={newTask} />
+      {revision != null && <span className="task-rev" title={`Revision ${revision} of the saved task.`}>rev. {revision}</span>}
+    </span>, taskHead);
+  const tools = taskTools && createPortal(<>
+    {virtuosoOn && showVirtuoso && <button className="virtuoso-button" onClick={() => openWindow()}
+      title={popup ? 'The Virtuoso window is open: press to bring it to the front.' : `Virtuoso cell: back to the cell the page follows. ${VIRTUOSO_OPENS}`}>Virtuoso cell...</button>}
+    {ngspiceTask && showNgspice && <button className="ngspice-button" onClick={() => ngspiceOpen.current?.()}
+      title={`ngspice netlist: the deck of this task; saving stores its next revision. ${NGSPICE_OPENS}`}>ngspice netlist...</button>}
+    {generatedName && <button className="check-now" disabled={!!profileBusy} onClick={checkTask} title={CHECK_NOW}>
+      {profileBusy === 'check' ? 'Checking...' : 'Check now'}</button>}
+  </>, taskTools);
+  const status = taskStatus && createPortal(<>
+    {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
+      The workbench no longer imports netlists: choose a task, or a Virtuoso cell, in the Tasks window (the task's name on this tab line).</p></div>}
+    {ref.source === 'registered_task' && (<>
+      {/* A configuration saved with a removed MOCK task (the four of status record 7.59; the last one, synthetic:gpdk045_ota5,
+          on 2026-09-30, record 7.128): a plain note, not a red "Blocked". */}
+      {removedMock && <div className="note"><p><code>{ref.task_id}</code> no longer exists: the workbench has no MOCK task since
+        2026-09-30. Choose one of your saved tasks in the Tasks window; it brings its own rows.</p></div>}
+      {!taskLoading && taskRows?.task === ref.task_id && sameRows(config, taskRows!.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
+            {taskRows!.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>}
+    </>)}
+    {taskLoading && <p className="hint task-rows" role="status">Loading <code>{taskLoading}</code>...</p>}
+    {taskLoadError && <p className="error task-rows" role="alert">{taskLoadError}</p>}
+    {virtuosoOn && showVirtuoso && blocked && <Blocked />}
+    {ngspiceTask && showNgspice && ngspiceBlocked && <Blocked />}
+    {deletedHere && !circuit?.profile_task && (<>
+      <p className="ok">Task <code>{deletedHere.deleted}</code> deleted. Its cell <code>{deletedHere.library}/{deletedHere.cell}</code> can get a new one (Tasks window: New task, From a Virtuoso cell...).</p>
+      <details className="more hint"><summary>Where its files went</summary>
+        <p>Nothing was erased. They are kept on the backend machine in <code>{deletedHere.kept_copy}</code>.</p></details>
+    </>)}
+    {error && <p className="error">{error}</p>}
+    {ref.source === 'registered_task' && circuit && !circuit.loaded && !removedMock && <div className="blocker"><b>Blocked:</b> {circuit.blocker}
+      {circuit.interface_contract && <details><summary>Interface contract</summary><pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre></details>}</div>}
+    {ref.source === 'registered_task' && circuit?.loaded && (<>
+      {circuit.mock && <p className="mock">MOCK evaluation backend: {circuit.evaluation_backend}</p>}
+      {circuit.simulator === 'ngspice' && (<>
+        <p className="real">ngspice evaluation backend: every evaluation is one real circuit simulation by ngspice (no license). Start asks you to
+          confirm the number of simulations first.</p>
+        {circuit.circuit?.connection_problem && <p className="warn">{circuit.circuit.connection_problem}</p>}
+      </>)}
+      <TaskBaseline key={circuit.task_key} circuit={circuit} config={config} refresh={() => load(ref)} />
+      {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in
+        <code> {saved.copy?.library}/{saved.copy?.testbench}</code>{saved.copy?.library === saved.original?.library && saved.copy?.cell === saved.original?.cell ? ' - the cell you declared as your copy' : ' - its working copy'}.{baselineText(saved)}</p>}
+      {generatedName && taskCheck && <CheckSteps result={taskCheck} />}
+      {generatedName && profileMessage && profileMessage.what !== 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
+    </>)}
+  </>, taskStatus);
+  // The circuit column: the circuit alone, beside the rows on request ("Show circuit", App.tsx).
   const column = (
-    <section className="panel">
-      {/* No Project name box (record 7.159, user: "remove the project name box in the Project module"): the name only filed
-          the last run, which the RL model's own label in the RL model window does now. */}
-      <h3>Registered task</h3>
-      {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
-        The workbench no longer imports netlists: choose a task below, or a Virtuoso cell in its window.</p></div>}
-      {/* The task name is the button that opens the Tasks window. Choosing a row there loads its saved settings. */}
-      <div className="row task-row" title="The circuit the editors and a run are about. A cell read from Virtuoso becomes one of these with Save as.">
-        <span className="task-caption">Task</span>
-        <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={key => chooseTask(key)}
-          onRefresh={() => tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
-          current={ref.source === 'registered_task' && ref.task_id && !removedMock ? ref.task_id : null}
-          currentMark={ref.source === 'registered_task' && ref.task_id && !removedMock ? taskMark(tasks.find(t => t.task_key === ref.task_id) ?? { kind: 'real', available: true }, showNgspice) : undefined}
-          onDelete={ref.source === 'registered_task' && ref.task_id && !removedMock && (deletableName || ngspiceTask) ? (ngspiceTask ? deleteNgspice : deleteProfile) : undefined}
-          deleting={profileBusy === 'delete'} deleteDisabled={!!profileBusy}
-          deleteTitle={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
-            : 'Delete task: Asks once more. The task leaves the Registered task list and its cell can get a new one; its files are kept aside on the backend machine, and runs already made keep their data.'}
-          deleteNotice={profileMessage?.what === 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
-          currentText={ref.source !== 'registered_task' ? (virtuosoOn ? (ref.cell ? `(none: ${ref.library}/${ref.cell} is read from Virtuoso)` : '(none: a Virtuoso cell is being chosen)')
-            : '(none: the saved source was removed)') : !ref.task_id ? '(choose a task)' : `${ref.task_id} (removed)`} />
-      </div>
-      {ref.source === 'registered_task' && (<>
-        {/* A configuration saved with a removed MOCK task (the four of status record 7.59; the last one, synthetic:gpdk045_ota5,
-            on 2026-09-30, record 7.128): a plain note, not a red "Blocked". */}
-        {removedMock && <div className="note"><p><code>{ref.task_id}</code> no longer exists: the workbench has no MOCK task since
-          2026-09-30. Choose one of your saved tasks under Task; it brings its own rows.</p></div>}
-        {!taskLoading && taskRows?.task === ref.task_id && sameRows(config, taskRows!.starter) && <p className="hint task-rows">Parameters, Probes and Specs now show this task's rows
-              {taskRows!.starter.targets.length ? '' : ' - it has no targets of record, so Specs is yours to fill (its results are ready in Probes)'}. Undo brings the previous ones back.</p>}
-      </>)}
-      {taskLoading && <p className="hint task-rows" role="status">Loading <code>{taskLoading}</code>...</p>}
-      {taskLoadError && <p className="error task-rows" role="alert">{taskLoadError}</p>}
-      {/* The two other ways to a task, each ONE button that opens its window (user request 2026-09-23): the Virtuoso cellview
-          import and an ngspice netlist. One small grid, so the two buttons stand under each other in one column and the text
-          beside each says what the page follows (user: "arrange this part to make it more readable", 2026-09-23). */}
-      <div className="launchers">
-        {showVirtuoso && <div className="row virtuoso-launcher">
-          <span className="hint">{virtuosoOn && ref.cell ? <>Read from Virtuoso: <code>{ref.library}/{ref.cell}</code></> : virtuosoOn ? 'Reading from Virtuoso: choose a cell in the window'
-            : 'From a cell you copied in Virtuoso:'}</span>
-          <button className="virtuoso-button" onClick={openWindow} title={popup ? 'The Virtuoso window is open: press to bring it to the front.'
-            : 'Opens the Virtuoso window: choose a library, a cell and its testbench, read the cell into the workbench (it asks whether the cell is a copy you made), set it up, save it as a task. Opening it lists the libraries of that Virtuoso - and, for the cell chosen last time, its cells and schematic - read-only; nothing comes into the workbench until you press Read.'}>Virtuoso cell...</button>
-        </div>}
-        {showVirtuoso && blocked && <Blocked />}
-        {showNgspice && <div className="row virtuoso-launcher ngspice-launcher">
-          <span className="hint">{ngspiceTask ? <>ngspice task: <code>{ngspiceTask}</code></> : 'From an ngspice netlist (a SPICE deck):'}</span>
-          <NgspiceButton config={config} circuit={circuit} chooseTask={chooseTask} onTasksChanged={refreshTasks} />
-        </div>}
-      </div>
-      {deletedHere && !circuit?.profile_task && (<>
-        <p className="ok">Task <code>{deletedHere.deleted}</code> deleted. Its cell <code>{deletedHere.library}/{deletedHere.cell}</code> can get a new one (Virtuoso cell...).</p>
-        <details className="more hint"><summary>Where its files went</summary>
-          <p>Nothing was erased. They are kept on the backend machine in <code>{deletedHere.kept_copy}</code>.</p></details>
-      </>)}
+    <section className="panel circuit-panel">
+      <h3>Circuit</h3>
       {/* The labels of the circuit, saved with every run: one folded line whose text names them. */}
       <details className="more hint labels"><summary>Labels: class <b>{ref.circuit_class ?? 'unspecified'}</b>, PDK <b>{ref.pdk_id ?? 'unspecified'}</b></summary>
         <div className="row circuit-labels">
@@ -291,57 +334,29 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
         <p>Circuit class and PDK id are labels saved with every run. They do not change the simulation or the optimization;
           "unspecified" is fine for a single run. A task brings its own; a cell read from Virtuoso brings the PDK id of its library's technology library.</p>
       </details>
-      {error && <p className="error">{error}</p>}
-      {ref.source === 'registered_task' && circuit && !circuit.loaded && !removedMock && <div className="blocker"><b>Blocked:</b> {circuit.blocker}
-        {circuit.interface_contract && <details><summary>Interface contract</summary><pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre></details>}</div>}
-      {ref.source === 'registered_task' && circuit?.loaded && (<>
-        {circuit.mock && <p className="mock">MOCK evaluation backend: {circuit.evaluation_backend}</p>}
-        {circuit.simulator === 'ngspice' && (<>
-          <p className="real">ngspice evaluation backend: every evaluation is one real circuit simulation by ngspice (no license). Start asks you to
-            confirm the number of simulations first.</p>
-          {circuit.circuit?.connection_problem && <p className="warn">{circuit.circuit.connection_problem}</p>}
-          <div className="note">
-            <p><b>ngspice netlist task</b>, revision {circuit.circuit?.revision ?? '?'}{circuit.circuit?.title ? <>: <i>{circuit.circuit.title}</i></> : null}.
-              {' '}{(circuit.circuit?.measurements ?? []).length} results: <code>{(circuit.circuit?.measurements ?? []).join(', ')}</code>.</p>
-            <details className="more"><summary>How it runs</summary>
-              <p>Each evaluation writes the chosen sizes into their own places in the deck, runs <code>ngspice -b</code> on it through the ngspice
-                connection (on this machine, or over SSH with the deck sent in), and reads the <code>name = value</code> lines it prints. To change
-                the deck, press <b>ngspice netlist...</b> above (shown while an ngspice connection is in use): saving stores the next revision
-                (runs made before keep their own copy).</p></details>
-          </div>
-        </>)}
-        <TaskBaseline key={circuit.task_key} circuit={circuit} config={config} refresh={() => load(ref)} />
-        {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in
-          <code> {saved.copy?.library}/{saved.copy?.testbench}</code>{saved.copy?.library === saved.original?.library && saved.copy?.cell === saved.original?.cell ? ' - the cell you declared as your copy' : ' - its working copy'}.{baselineText(saved)}</p>}
-        {/* The circuit picture (record 7.158) above the long note, so it is in view while Parameters rows are pointed at. */}
+      {ref.source === 'registered_task' && circuit?.loaded ? (<>
+        {circuit.simulator === 'ngspice' && <div className="note">
+          <p><b>ngspice netlist task</b>, revision {circuit.circuit?.revision ?? '?'}{circuit.circuit?.title ? <>: <i>{circuit.circuit.title}</i></> : null}.
+            {' '}{(circuit.circuit?.measurements ?? []).length} results: <code>{(circuit.circuit?.measurements ?? []).join(', ')}</code>.</p>
+          <details className="more"><summary>How it runs</summary>
+            <p>Each evaluation writes the chosen sizes into their own places in the deck, runs <code>ngspice -b</code> on it through the ngspice
+              connection (on this machine, or over SSH with the deck sent in), and reads the <code>name = value</code> lines it prints. To change
+              the deck, press <b>ngspice netlist...</b> on the editors' tab line (shown while an ngspice connection is in use): saving stores the
+              next revision (runs made before keep their own copy).</p></details>
+        </div>}
+        {/* The circuit picture (record 7.158) above the long notes, so it is in view while Parameters rows are pointed at. */}
         <CircuitPicture circuit={circuit} />
-        {generatedName && (
-          <div className="note">
-            <TaskSave profileId={profileId} library={null} cell={null} task={generatedName}
-              revision={tasks.find(t => t.task_key === ref.task_id)?.revision ?? null} hasCopy
-              config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere}
-              onReload={() => chooseTask(ref.task_id, undefined, true)} bar={taskSlot} notes={taskNotes} />
-            {/* One line; the explanation is its tooltip (record 7.177, user: "reduce the texts this part"). */}
-            <p title={'Start, Calibration and Resume first check that the editors, this saved task and its cell in Virtuoso agree. '
-              + 'The check simulates nothing; a difference starts nothing and says what to do.'}><b>Before every run:</b> the editors, the task and its cell must agree.</p>
-            <details className="more"><summary>What the check compares</summary>
-              <ul className="steps-list">
-                <li>The rows of Parameters, Probes and Specs against the saved task. While you edit, the header's blocking issues say it too.</li>
-                <li>The cell in Virtuoso against the task: the run adapter connects (no ADE/Maestro window may be open on the copy), Virtuoso exports
-                  its netlist, the export is compared with the saved one - topology and every parameter - and the simulation deck is written.</li>
-                <li>For a task measured by Maestro: the cell's Maestro test against the task.</li>
-              </ul>
-              <p>Everything but the rows needs the link up. Nothing is written into Virtuoso.</p></details>
-            <div className="row">
-              <button disabled={!!profileBusy} onClick={checkTask} title="The check Start runs by itself before every run. Read-only, no simulation.">
-                {profileBusy === 'check' ? 'Checking...' : 'Check now'}</button>
-            </div>
-            {taskCheck && <CheckSteps result={taskCheck} />}
-            {profileMessage && profileMessage.what !== 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
-          </div>)}
         {circuitInfo}
-      </>)}
+      </>) : <p className="hint">{virtuosoOn ? 'A cell read from Virtuoso shows its hierarchy in the Virtuoso window (Virtuoso cell... on the tab line).'
+        : 'The picture and the hierarchy of the task show here once it is loaded.'}</p>}
     </section>);
+  const taskSave = generatedName && (
+    <TaskSave profileId={profileId} library={null} cell={null} task={generatedName} hasCopy
+      config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere}
+      onReload={() => chooseTask(ref.task_id, undefined, true)} bar={taskSlot} notes={taskNotes} />);
+  // The ngspice window and its work stay with the page; its buttons are in the Tasks window and on the tab line.
+  const ngspiceWindow = showNgspice && <NgspiceButton config={config} circuit={circuit} chooseTask={chooseTask} onTasksChanged={refreshTasks}
+    button={false} openRef={ngspiceOpen} onBlocked={setNgspiceBlocked} />;
 
   // ---- the Virtuoso window: library / cell / testbench, the read, the setup, the first save: VirtuosoWindow.tsx --------------------
   // The first save of a cell read from Virtuoso. It lives with the column, not in the Virtuoso window: its buttons sit on
@@ -352,7 +367,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
       config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />);
   const titleFacts = titleSlot && createPortal(<TitleFacts config={config}
     task={ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id) ?? null : null} />, titleSlot);
-  return <>{column}{firstSave}{titleFacts}<PopupPortal popup={popup} root={root}><VirtuosoWindow profileId={profileId} virtuosoOn={virtuosoOn} offered={offered}
+  return <>{column}{head}{tools}{status}{taskSave}{firstSave}{titleFacts}{ngspiceWindow}<PopupPortal popup={popup} root={root}><VirtuosoWindow profileId={profileId} virtuosoOn={virtuosoOn} offered={offered}
     circuitRef={ref} chosen={chosen} libraries={libraries} cells={cells} chosenCell={chosenCell} listing={listing} importing={importing} patch={patch} setRefresh={setRefresh}
     pdkStep={pdkStep} nativeError={nativeError} error={error} circuit={circuit} taskNote={taskNote} importCell={importCell} config={config} setConfig={setConfig}
     noteHere={noteHere} takeTestbenchProbes={takeTestbenchProbes} circuitInfo={circuitInfo} nativeSchematic={nativeSchematic} /></PopupPortal></>;

@@ -531,6 +531,17 @@ button.training-chip-remove { border: none; background: none; padding: 0 1px; li
 @media (max-width: 700px) {
   .layout { grid-template: 'head' auto 'msg' auto 'left' minmax(240px, 45vh) 'main' minmax(360px, 60vh) 'right' minmax(240px, 45vh) 'foot' minmax(420px, 65vh) / minmax(0, 1fr); }
 }
+/* The circuit column folds away (record 7.362, the user's Option D, "go with D"): the task's card - main - takes its place too,
+   at every width, until "Show circuit" (.circuit-shown) puts it back beside the rows. */
+.layout:not(.circuit-shown) > aside.left { display: none; }
+@media (min-width: 1101px) { .layout:not(.circuit-shown) { grid-template-areas: 'head head head' 'msg msg msg' 'main main right' 'foot foot foot'; } }
+@media (max-width: 1100px) {
+  .layout:not(.circuit-shown) { grid-template: 'head head' auto 'msg msg' auto 'main main' minmax(360px, 60vh) 'right right' minmax(240px, 45vh) 'foot foot' minmax(420px, 65vh) / minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .layout:not(.circuit-shown) { grid-template: 'head' auto 'msg' auto 'main' minmax(360px, 60vh) 'right' minmax(240px, 45vh) 'foot' minmax(420px, 65vh) / minmax(0, 1fr); }
+}
+.task-status:empty { display: none; } .task-status > * { margin: 4px 0; }
 
 /* ---- the task window (record 7.227): the Project column's Task row = text + "Tasks..." button, the window reuses the run window's rules ---- */
 .row.task-row { align-items: center; gap: 8px; margin: 4px 0 2px; flex-wrap: nowrap; } .task-caption { flex: none; color: var(--muted); font-size: 11.5px; }

@@ -54,7 +54,7 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
     {result.recalculated && <p className="hint recalculated">Worked out again from this run's recorded designs with today's rule; the run's own file keeps what it
       said at its end.</p>}
     {otherTask && <p className="hint other-task">This run calibrated <b>{result.task_key}</b>; the page holds {config.circuit.task_id}. The table shows the
-      Scales the run had. To apply the proposals, choose {result.task_key} under Registered task.</p>}
+      Scales the run had. To apply the proposals, choose {result.task_key} in the Tasks window.</p>}
     {result.scale_note && <p className="hint">{result.scale_note}</p>}
     {rows.length > 0 && <table className="grid small calibration-rows"><thead><tr>
       <th title="The Specs row, by its ID.">Specs row</th><th title="The row's limit, as the run had it.">Limit</th>

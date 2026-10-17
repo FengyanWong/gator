@@ -23,7 +23,7 @@
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { writeFileSync } from 'node:fs';
-import { check, launchEdge, mockStarter, outDir, reportRefused, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, outDir, reportRefused, runChecks, showCircuit, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 import { NETWORK_PANEL, openNetworks, setMode } from './lib/rl_networks.mjs';
 
 const APP = await workbenchUrl();
@@ -208,6 +208,8 @@ await runChecks(browser, async () => {
 
   // ---- (b) Circuit class and PDK id: emptied, then typed ---------------------------------------------------------------------------------
   // Circuit class is a drop-down since record 7.245: "Custom..." opens the "Custom circuit class" box, where free text is typed.
+  // Record 7.362: the labels are in the circuit column, folded away until "Show circuit" on the editors' tab line.
+  check('"Show circuit" brings the circuit column with its labels', await showCircuit(page));
   const CLASS = LABELLED('.left', 'Circuit class'), CUSTOM = LABELLED('.left', 'Custom circuit class'), PDK = LABELLED('.left', 'PDK id');
   await page.setValue(CLASS, '');
   check('"Custom..." in the Circuit class drop-down opens the "Custom circuit class" box', await page.until(`!!(${CUSTOM})`, 30));

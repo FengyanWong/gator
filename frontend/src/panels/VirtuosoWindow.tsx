@@ -33,7 +33,7 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
         no simulation); nothing is read on its own.</p>
       {!profileId && <p className="warn">Press "Connection" in the workbench and choose a Virtuoso connection: the libraries are read from that Virtuoso.</p>}
       {!virtuosoOn && offered && <p className="hint follows-task">The workbench follows the task <code>{ref.task_id}</code> now. Choosing a library here makes it follow the
-        cell instead; the task is one choice away in the Project column.</p>}
+        cell instead; the task is one choice away in the Tasks window.</p>}
       <label>Library
         <select value={chosen.library ?? ''} disabled={!libraries || importing} onChange={e => patch({ source: 'virtuoso', library: e.target.value || null, cell: null, view: null, testbench_cell: null }, 'choice')}>
           <option value="">{listing === 'libraries' ? 'Reading the libraries...' : libraries ? `(choose one of ${libraries.length})` : '(not listed)'}</option>
@@ -90,7 +90,7 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
               <li>which testbench simulates the circuit, and under which conditions;</li>
               <li>how the results - gain, frequency, current ... - are read from the simulation.</li>
             </ul>
-            <p>Circuits that already have one are under Registered task, in the Project column.</p>
+            <p>Circuits that already have one are in the Tasks window, under their task.</p>
           </details>
           {copyWarning}
           <p><b>To start a profile for this cell</b>, read it into the workbench

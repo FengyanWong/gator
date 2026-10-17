@@ -163,7 +163,7 @@ await runChecks(browser, async () => {
   });
   await send('Page.reload');
   check('a run of another task: the block names both tasks and where to choose the run\'s task', await until(`!!${BLOCK}?.querySelector('.other-task')`, 200)
-    && (await evaluate(`${BLOCK}.querySelector('.other-task').textContent.replace(/\\s+/g, ' ')`)) === `This run calibrated ${OTHER}; the page holds synthetic:gpdk045_ota5. The table shows the Scales the run had. To apply the proposals, choose ${OTHER} under Registered task.`,
+    && (await evaluate(`${BLOCK}.querySelector('.other-task').textContent.replace(/\\s+/g, ' ')`)) === `This run calibrated ${OTHER}; the page holds synthetic:gpdk045_ota5. The table shows the Scales the run had. To apply the proposals, choose ${OTHER} in the Tasks window.`,
     await evaluate(`${BLOCK}?.textContent.slice(0, 300)`));
   const foreignCells = await cells();
   check('...the Scale column is the run\'s own ("Scale in the run" 2), not the page\'s row of the same ID (1), and no row is "not applied"',

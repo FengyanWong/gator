@@ -73,8 +73,8 @@ const progressOf = (running: Json) => {
     text: `Saving ${running.task_key} - ${where} (${Math.round(running.seconds ?? 0)} s${usual})` };
 };
 
-export function TaskSave({ profileId, library, cell, task, revision, hasCopy, config, setConfig, onSaved, onSavedElsewhere, onReload, bar, notes }: {
-  profileId: string | null; library: string | null; cell: string | null; task: string | null; revision?: number | null;
+export function TaskSave({ profileId, library, cell, task, hasCopy, config, setConfig, onSaved, onSavedElsewhere, onReload, bar, notes }: {
+  profileId: string | null; library: string | null; cell: string | null; task: string | null;
   hasCopy: boolean; config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; onSaved: (made: Json, sentConfig: Json) => void;
   onSavedElsewhere: (last: Json) => void; onReload?: () => void; bar: HTMLElement | null; notes: HTMLElement | null }) {
   const [choice, setChoice] = useState<SaveChoice | null>(null);
@@ -216,7 +216,7 @@ export function TaskSave({ profileId, library, cell, task, revision, hasCopy, co
   return (<>
     {bar && createPortal(
       <div className="task-save">
-        {task && <span className="hint">Task <code>real:{task}</code>{revision ? `, revision ${revision}` : ''}</span>}
+        {/* The task and its revision start the tab line (record 7.362): this holds Save as and Task file only. */}
         <button className="primary" disabled={!canSave || askFrequency} onClick={saveAs}
           title={'Save as: ' + waits + 'Asks for a new task name, with the next available numbered name suggested. ' + (task ? 'Stores the rows of Parameters, Probes and Specs as a new task with its own DUT and testbench copies. ' : hasCopy
             ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '

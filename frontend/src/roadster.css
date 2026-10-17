@@ -112,6 +112,24 @@ header button.run-main svg.icon, header button.run-abort svg.icon { width: 17px;
 .editors > .tabs > button[data-editor].active::before { content: ''; position: absolute; left: 50%; bottom: 5px; width: 26px; height: 3px; margin: 0 0 0 -13px;
   border: none; border-radius: 2px; background: var(--accent); }
 
+/* ---- the task on the editors' tab line (record 7.362, the user's Option D): its name as a chip (it opens the Tasks window),
+   its revision and whether the rows are saved; Show circuit, Check now, Save as and Task file at the line's end -------------- */
+.editors > .tabs { align-items: center; row-gap: 6px; }
+.editors > .tabs .task-head:empty { display: none; }
+.editors > .tabs .row.task-row { margin: 0 8px 0 0; gap: 8px; flex: 0 1 auto; min-width: 0; }
+.editors > .tabs .task-caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.editors > .tabs .row.task-row button.task-list-button { flex: 0 1 auto; max-width: 420px; min-height: 36px; padding: 6px 12px; border: none; border-radius: 9px; background: var(--field); }
+.editors > .tabs .row.task-row button.task-list-button:hover:not(:disabled) { background: var(--hover); }
+.editors > .tabs .task-rev, .editors > .tabs .task-saved { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.editors > .tabs .task-saved { margin-right: 14px; } .editors > .tabs .task-saved::before { content: '· '; }
+.editors > .tabs .task-saved.unsaved { color: var(--unsaved-mark); }
+.editors > .tabs .tab-actions { align-items: center; gap: 6px; }
+.editors > .tabs .task-tools, .editors > .tabs .task-save-slot { display: inline-flex; align-items: center; gap: 6px; }
+.editors > .tabs .task-tools:empty, .editors > .tabs .task-save-slot:empty { display: none; }
+.editors > .tabs .task-save { padding-bottom: 0; }
+.editors > .tabs .circuit-toggle.active { background: var(--selected); border-color: #5a5a61; }   /* on, not a warning: no red */
+.task-window-new { align-items: center; gap: 8px; margin: 6px 0 10px; }
+
 /* ---- tables ------------------------------------------------------------------------------------------------------------ */
 table.grid { font-size: 13.5px; line-height: 1.4; }
 table.grid th, table.grid td { border-color: var(--grid-line); padding: 6px 10px; }

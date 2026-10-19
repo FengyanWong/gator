@@ -19,11 +19,34 @@ cube here; the engine's proposals are the same numbers on [-1, 1].
 """
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import math
 
 import torch
 
 DTYPE = torch.float64
+
+
+def _malloc_trim():
+    """glibc's `malloc_trim`, or None on a system without it."""
+    try:
+        return ctypes.CDLL(ctypes.util.find_library('c') or 'libc.so.6').malloc_trim
+    except (OSError, AttributeError):
+        return None
+
+
+_TRIM = _malloc_trim()
+
+
+def release_freed_memory():
+    """Give the memory a proposal freed back to the system (record 7.382). A proposal fits the process on up to 600
+    designs and draws it jointly at 2,000 candidates: matrices of up to ~30 MB, freed when it returns. glibc's allocator
+    keeps such freed blocks instead of returning them (its mmap threshold rises to the size of the freed block), so a
+    run's process grew to 12-13 GB over 800 designs of a 22-variable task while 0.1 MB of tensors were alive. Trimming
+    after each proposal keeps it near 0.3 GB, costs 8-14 % of the method's own time and changes no number."""
+    if _TRIM is not None:
+        _TRIM(0)
 
 
 class GaussianProcess:
@@ -216,6 +239,7 @@ class Proposer:
 
     def propose(self) -> dict:
         point = self.search.ask()
+        release_freed_memory()
         return {group: float(2.0 * point[index] - 1.0) for index, group in enumerate(self.group_ids)}
 
     def observe(self, proposal, reward, *, asked):

@@ -1,6 +1,7 @@
 """Bayesian optimization as a second search method (record 7.304, run.optimizer "bayes"): the method itself on functions
 whose optimum is known, and a run searched by it - the same run in everything but who proposes the designs."""
 import math
+import sys
 
 import pytest
 import torch
@@ -67,6 +68,24 @@ def test_the_same_seed_proposes_the_same_designs_and_another_seed_others():
     other = search(hartmann6, 6, 30, 6, n_candidates=200)[1]
     assert all(torch.equal(a, b) for a, b in zip(first, again))
     assert not all(torch.equal(a, b) for a, b in zip(first, other))
+
+
+def test_each_proposal_gives_its_freed_memory_back_and_changes_no_number(monkeypatch):
+    """Record 7.382: glibc kept the matrices a proposal freed (a run's process reached 12-13 GB over 800 designs of
+    DFFRX1); `Proposer.propose` trims after every proposal. Allocator work only: the proposals are the same with and
+    without it, and a system without glibc's `malloc_trim` simply runs without it."""
+    def proposals(trim):
+        calls = []
+        monkeypatch.setattr(bayes, '_TRIM', (lambda pad: calls.append(pad) or 1) if trim else None)
+        proposer, made = bayes.Proposer([f'g{i}' for i in range(4)], seed=3, warmup=2), []
+        for _ in range(14):
+            made.append(proposer.propose())
+            proposer.observe(made[-1], -sum(v * v for v in made[-1].values()), asked=True)
+        return made, calls
+    trimmed, calls = proposals(True)
+    plain, none = proposals(False)
+    assert trimmed == plain and calls == [0] * 14 and none == []
+    assert bayes._malloc_trim() is not None or not sys.platform.startswith('linux')
 
 
 def test_a_design_without_a_value_counts_as_the_worst_and_a_region_that_shrinks_to_nothing_starts_again():

@@ -21,6 +21,7 @@ Completion means the run reached its configured budget or stopping condition; co
 | Round 2 | All 24 repeats complete: 15,893 charged attempts and 15,889 simulator launches, including the retained four-attempt BGR preparation failure (section 7) |
 | Round 3, offline | GraphGPS, fresh CircuitGPS v2 and RGCN complete and qualified; RGCN's 12 online arms are admitted |
 | Round 3, online | Seed 0: all 36 arms complete (2026-10-16 02:32 Europe/London; 22,800 evaluations, no failed run); results record owed; seeds 1-2 remain proposed |
+| Round 4 | Done offline 2026-10-17 to 2026-10-19 (sections 7b.7-7b.8, records 7.363, 7.381 and 7.383): LOADBench did not help the Round 3 models - stage 1 + stage 2, the predictor transplant (option C) and the pretrained input layers (option 1) all end at the control's error; online test not run |
 | Journal | J0 protocol/test split not frozen; J1 online comparison, J2-J5 and manuscript milestones remain outstanding |
 
 Evidence: `artifacts/local/reviews/transfer-experiment-2026-10-10/plan-status-audit-2026-10-14.json`, the RGCN
@@ -1057,6 +1058,309 @@ explicitly. The Round 3 result table remains empty until actual new evaluations 
 
 Round 3 supplies development evidence for the journal programme in section 14. Its full-archive models and seen
 tasks do not replace that programme's prospective test split, independent pretraining seeds or component ablations.
+
+## 7b. Round 4: the Round 3 models trained further on LOADBench and all saved runs
+
+Added 2026-10-17 (record 7.363, session "Training encoders with Zenodo dataset"). User: "write a plan for round 4 train
+loadbench onto rgcn graphgps and circuitgpsv3 s 304 pretrained run trained model then run on experiments like round 3
+to see how it works after trained on all my own runs and loadbench knowledge". **A plan only: nothing is built, trained
+or run, and no simulation is authorized by it.**
+
+**Revised the same day** (user: "I want to train everything in the loadbench in fastest way", then the choices "Keep 15
+out", "LOADBench, then yours" and, for the encoders, "all three wanted but wait for the test speed first"). This
+replaces the sample, the mix and the training path of 7b.2-7b.3; the rest stands.
+
+- **Data: all of LOADBench except its 15 test op-amps**, every distinct design of the other 86 (about 75 million; the
+  logs list each generation's survivors again: SimpleOpAmp2 has 2,033,664 rows and 879,981 distinct designs, and no
+  repeat with different results). The 15 (SimpleOpAmp1, 13, 36, 53, 130; SimpleTwoStageOpAmp_SimpleOpAmp1_1, _33_7,
+  _43_9, _47_9, _8_7; SimpleThreeStageOpAmp_SimpleOpAmp1_1_4, _1_2_1, _47_2_pfc1, _54_2_1, _8_1_7) are the offline check
+  of op-amps the models never saw.
+- **Two stages instead of the 1 : 1 mix.** Stage 1: each Round 3 model learns all of LOADBench once, on the GPU.
+  Stage 2: Round 3's own-run recipe from the stage-1 model (the 304-run pool, 20,000 updates, batch 8, CPU). Control:
+  stage 2 alone, from the Round 3 model. A 1 : 1 mix over all of LOADBench would show each of the 168,589 own training
+  designs about 450 times.
+- **A fast path for stage 1.** Measured 2026-10-17 (no simulator): unpacking one stored design costs about 15 ms and
+  assembling a batch most of a GPU step, while the GPU's own work is about 0.6 ms per RGCN design. So LOADBench is kept
+  as compact per-op-amp arrays (`~/gator/offline-pools/loadbench/`, about 13 GB), and batches are built by GATOR's own
+  input code in parallel worker processes while the GPU learns, with large batches. It is checked to give exactly the
+  inputs that a replay run of the same designs gives. The batch size and learning rate come from the RGCN batch-size
+  check of the same day (no simulator).
+- **Encoders** (speed test 2026-10-17, batch 512 on the RTX 4090; GPU-only rates are what fast feeding would reach):
+  RGCN 228 designs/s as fed today, about 1,800 GPU-only (one pass over the 75 million designs about 12 h); GraphGPS
+  178 / about 490 (about 1.8 days); CircuitGPS v3 43 / about 55 (about 16 days; batch 512 already takes 9.2 GB of GPU
+  memory). The user chose "Subset first, then decide": all three first learn the same subset of 20,000 designs per
+  op-amp (1.7 million; CircuitGPS v3 about 9 h), and their held-out error curves are compared; RGCN and GraphGPS then go
+  on to all the designs, CircuitGPS v3 only if its error is still falling faster than the other two at the subset's end.
+  Evidence: `artifacts/local/reviews/round4-loadbench-2026-10-17/speed-test/` (`summary.json`).
+
+**In plain words.** Round 3 trained one model per encoder on 304 saved runs and tried each on four circuits. Round 4
+takes three of those models (RGCN, GraphGPS, CircuitGPS v3), trains each further on a mix of the same 304 runs and
+LOADBench (an open dataset of 101 SKY130 op-amps, about a million ngspice-simulated designs each), then repeats Round 3's
+test on the same four circuits. Two questions: does op-amp knowledge from another process and simulator change how the
+models do on the Virtuoso tasks, and does it cost them what they knew?
+
+### 7b.1 LOADBench as a source
+
+Checked 2026-10-17 on the download (`~/Loadbench`, seven zips, 34 GB of op-amp data):
+
+- Leibl, Azevedo et al., MLCAD 2026; Zenodo DOI 10.5281/zenodo.21759759; CC BY 4.0, so it is cited wherever used.
+- 101 op-amps: 31 one-stage, 44 two-stage, 18 three-stage, 8 symmetrical; 6-25 transistors (median 16), 0-2 sized
+  compensation capacitors (62 of 101 have one); SKY130 low-threshold 1.8 V transistors.
+- One ngspice deck per op-amp, the same bench for all 101: 1.8 V, 1 pF load, 10 uA bias (typical corner, 27 C), three
+  test circuits (closed-loop transient, open-loop AC, DC output range).
+- Per op-amp, the whole NSGA-II log: about 2 million rows (1,000 generations x 2,048) of sizes in um (W, L; the
+  multiplier is always 1; capacitors where present) with 14 results (dc_gain, ft, p, phasemargin, sr_neg, sr_pos,
+  voffset, icmr_min, icmr_max, vout_min, vout_max, area, cmrr, psrr), sizing-rule margins and flags; plus a Pareto
+  front of about 1,000 designs. Matched transistors share their sizes (`param_match.txt`).
+- Traps: failed results are stored as numbers (slew +-1e13, phase margin -1.5e7, ft -4.9e12), not blanks; about half
+  the rows break LOADBench's own sizing rules (`feasible = False` concerns those rules, not any spec); each deck's
+  control block runs shell commands, so a deck is read before it is ever run; its flow was tested on ngspice 44.2 only.
+- Its protocol holds out 15 op-amps (five per stage count) from training.
+
+### 7b.2 To build first (workbench and scripts only; no simulation)
+
+Nothing under `src/analog_optimizer/`: the digest stays `6ebf5ba5`, so the Round 3 models keep loading. Each piece
+comes with tests, and an independent review precedes any training.
+
+1. **Extraction.** Stream each op-amp's `all_sims.zip` once, never unpacked whole, and drop each file's cached pages
+   as it is read: unpacking about 100 GB would fill WSL's file cache, the host-memory squeeze that froze the simulator
+   VM. Never while a Spectre run is going. Keep the seeded sample of 7b.3 per op-amp in a small table with the source
+   file's SHA-256 and row numbers.
+2. **Importer: one LOADBench op-amp -> one GATOR task.** The graph is the op-amp with ONE bench (the open-loop AC
+   bench), not the deck's three copies (GATOR's ngspice reader gives 18 transistors for a 6-transistor op-amp and no
+   transistor size); the sizes come from `params.cir` (um -> m); matched transistors share one parameter group; the
+   SKY130 cells map to the nMOS/pMOS families; each variable's range is its smallest and largest value in the whole
+   log, on a 0.01 um grid, the dataset's own resolution, so every stored design lies exactly on the grid; capacitor
+   units are checked against the deck.
+3. **SKY130 PDK numbers** for PDK-relative sizes and the device-model inputs (minimum length and width, threshold
+   voltage, mobility, saturation velocity, oxide thickness of each transistor model's smallest bin), read from the
+   dataset's trimmed SKY130 library by a small SPICE-library reader: `device_models.py` reads Spectre libraries only.
+   The numbers stay in the local PDK folder, as for the other PDKs.
+4. **Measurement descriptions.** One measurement description per LOADBench result, of the same kind the Virtuoso
+   amplifier tasks produce (open-loop gain, unity-gain frequency, phase margin, power, slew rates, offset, ranges,
+   area, CMRR, PSRR), written from LOADBench's extractor so it says what was measured; signs explicit (sr_neg is
+   negative; larger CMRR and PSRR are better). RGCN and GraphGPS read them as a spec set, CircuitGPS v3 as its
+   structured programs. Checked column by column against a Virtuoso amplifier task.
+5. **Replay runs.** A proposer like the Bayesian one (record 7.304) that proposes the sampled designs in a fixed order,
+   and a backend that returns their stored results instead of simulating and refuses any design not in the list. GATOR
+   then records each op-amp as an ordinary run archive, which offline training reads with all its existing checks
+   (checksums, every reward re-scored). Zero simulator launches. Each design records its dataset file, hash and row;
+   the origin stays "real" (they are simulator results), because any other origin would make the models unloadable on
+   the real tasks. Stored failure numbers become failed measurements.
+6. **Offline training.** (a) Start from a published model's weights (actor, critics, targets, temperature; new
+   optimizers), recording the parent: today `cli pretrain` always starts from new weights. (b) A sampler that splits
+   each batch between source groups (own runs : LOADBench = 1 : 1), each task equally often within its group: today
+   every task is sampled equally, which would give LOADBench's 86 op-amps 57 % of the updates.
+7. **A Round 4 results script** in the Round 4 evidence folder, with Round 3's definitions
+   (`thesis/figures/round3-extract.py`).
+
+Optional, local CPU only: re-simulate about 20 stored designs on five op-amps with the local ngspice and compare them
+with the stored results, as the AnalogGym import did.
+
+### 7b.3 Training (offline; no simulation)
+
+| Setting | Round 4 |
+|---|---|
+| Starting weights | Round 3's published models: RGCN `6ea424647872`, GraphGPS `0c88320d35bd`, CircuitGPS v3 `bd7263396019` |
+| Own data | Round 3's exact pool: 304 runs, 187,407 transitions, 65 task variants; the same split (seed 0, 10 % of episodes held out) and reward migration |
+| LOADBench data | 86 op-amps (101 minus its 15 test op-amps); 2,000 designs each, seed 0: 500 from generation 0, 1,000 spread over all generations, 500 from the final Pareto front, repeats removed; 10 % of episodes held out |
+| LOADBench goals | Three goal sets per op-amp, each copying the results of one Pareto design drawn with seed 0, so every set is reachable; rows: gain, unity-gain frequency, phase margin, power, both slew rates, offset, area; fixed before training |
+| Inputs | Each model's Round 3 inputs unchanged: PDK-relative sizes, model features, family list, relative bench features, rule-based net roles, operating-point ratios (masked: LOADBench has none, like the older own runs); spec set (RGCN, GraphGPS), structured (CircuitGPS v3) |
+| Mix | Each batch half own runs, half LOADBench |
+| Updates | 20,000 more per model, batch 8, Round 3's SAC settings (gamma 0, learning rate 0.001, tau 0.005); the temperature continues from the model |
+| Control | The same continuation on the own pool only, 20,000 updates: tells "LOADBench" apart from "more training" |
+
+Six trainings (three Round 4, three control), one at a time on the CPU, the pool on disk, with Round 3's host-memory
+guard (stop below 0.7 GB free on the host). Round 3 measured about 3 h to load 304 sources and, for CircuitGPS v3,
+0.5-0.6 s per update on one thread (about 3 h for 20,000 updates).
+
+**Before anything goes online** (offline numbers, not circuit performance): checkpoint integrity and reload; finite
+outputs; legal proposals on all 65 own task variants and all 101 LOADBench tasks; the held-out critic error on the
+own tasks against the Round 3 model and the control (did it forget?) and on LOADBench's 15 test op-amps and held-out
+episodes, before and after (did it learn?). **Gate:** an encoder whose own-task held-out error rises more than 25 %
+above its Round 3 model's goes online only on the user's word.
+
+### 7b.4 Online test, as Round 3
+
+- Round 3's seed-0 arms copied in every setting (RING3 `real:mscr_ring3`, relaxed LDO1 `real:graphgps_ldo1`, DFFRX1
+  `real:dffrx1_t2`, the published amplifier's far start `real:agentic_fc_pub_far`); only the model changes. Each arm
+  runs on the runtime its Round 3 twin used (`gator-runtime-f8ff5ce` for RGCN and GraphGPS, `gator-runtime-7356r`
+  for CircuitGPS v3), so that only the weights differ.
+- Per encoder and task: frozen (300 sampled designs) and adapt (800, fine-tune) from the Round 4 model. Scratch is not
+  repeated: Round 3's scratch arms are the same task, start, seed and settings with no model at all.
+- 3 encoders x 4 tasks x 2 arms = 24 runs, at most 13,200 nominal designs, seed 0, both Virtuoso sessions; about
+  12-16 h at Round 3's pace (820-1,100 designs an hour).
+- Optional: adapt arms from the three control models (12 runs, at most 9,600 designs), only if Round 4's adapt arms
+  differ from Round 3's.
+- Seeds 1 and 2 stay proposed, for the whole matrix rather than an apparent winner.
+
+Reference, Round 3 seed 0 passes (frozen of 300 / adapt of 800 / scratch of 800; audited from the run records
+2026-10-17 with `thesis/figures/round3-extract.py`, every arm complete, parity with round 1 passed):
+
+| Task | RGCN | GraphGPS | CircuitGPS v3 |
+|---|---|---|---|
+| RING3 | 118 / 305 / 223 | 1 / 276 / 210 | 21 / 281 / 196 |
+| LDO1 | 0 / 64 / 0 | 0 / 17 / 0 | 0 / 0 / 0 |
+| DFFRX1 | 8 / 196 / 6 | 1 / 10 / 0 | 0 / 0 / 0 |
+| Amplifier | 0 / 229 / 353 | 7 / 509 / 27 | 0 / 22 / 0 |
+
+### 7b.5 What it can show, and what is expected (written before any result)
+
+- Round 4 against Round 3 on the same seen circuits: all four are in the own pool, and LOADBench adds no Virtuoso
+  circuit. It cannot show transfer to an unseen circuit.
+- The amplifier is the only op-amp of the four: it is where LOADBench could help (SKY130 op-amp knowledge reaching an
+  amplifier in the second PDK). RING3, LDO1 and DFFRX1 test whether the mix costs anything.
+- Expected: at most a small change on the amplifier; none, or a loss, on the other three; frozen arms still weak;
+  CircuitGPS v3 still without LDO1 or DFFRX1 passes. One seed decides nothing either way.
+- A Round 4 gain that the control matches is a gain from more training, not from LOADBench.
+- Reported like Round 3 (7a.3): passes, first pass, the first 300 designs, early and late pass rates; Round 4 against
+  Round 3's same arm, and adapt against Round 3's scratch.
+
+### 7b.6 Order, budget and decisions
+
+Order: build, tests and review -> extraction -> replay archives -> (optional ngspice check) -> six trainings ->
+offline checks and gate -> online seed 0 -> results record -> seeds 1-2 on the user's word.
+
+Spectre: at most 13,200 nominal designs, 22,800 with the control arms. The user authorizes it; this plan does not.
+
+Decisions, defaults as written above:
+
+1. Start from Round 3's models (the request), not a fresh model on the combined pool.
+2. Mix own runs and LOADBench 1 : 1.
+3. 2,000 designs per op-amp, LOADBench's 15 test op-amps held out.
+4. Goals copied from three Pareto designs per op-amp.
+5. The offline control always; its online arms only if Round 4 differs from Round 3.
+6. Round 3's scratch arms reused.
+7. The Spectre budget of the 24 online runs.
+
+Parked and unchanged: the AnalogGym-Opt SKY130 benchmark (record 7.121: zero passes in 4,800 designs, mostly the 1 us
+settling target, with low fixed bias currents in four circuits; 162 s per design under load). Its two decisions stay
+open: let SAC vary the bias current and recalibrate, or compare on the MScR circuits in Spectre instead. Its checkout
+was lost from /tmp; Round 4 does not use it.
+
+### 7b.7 Results, offline (2026-10-17 to 2026-10-19; record 7.381)
+
+**In plain words.** LOADBench did not help. Three ways of teaching the Round 3 models from it left their error on the
+user's own held-out designs where more training on the user's runs alone puts it, or made it worse. The networks did
+learn each LOADBench op-amp they were trained on, but almost nothing that carries over to an op-amp they had not
+seen: the 77 million designs are 86 circuits, and the user's tasks are new circuits in another PDK. What did carry
+over is close to device physics (area, power, unity-gain frequency, the transistors' operating-region margins), not
+circuit behaviour (gain, phase margin, CMRR, PSRR). The online test of 7b.4 was not run: its condition, an offline
+gain, was not met.
+
+**Run instead of 7b.2-7b.3** (the user's decisions in the revision block above and in records 7.363 and 7.381):
+
+- Extraction of all 101 op-amps: 191,348,736 rows, 90,745,908 distinct designs (77,075,107 in the 86 training
+  op-amps, 13,670,801 in the 15 test ones); 63 op-amps hold 365,408 repeated rows with differing results, the first is
+  kept. No replay archives: an importer builds each op-amp as a GATOR task from GATOR's own classes (every design step
+  passes `Transition.validate`), and the fast path of the revision block builds the batches.
+- Batch size by the rule of the revision block (RGCN, held-out error on the own designs at 160,000 designs): batch 8
+  0.0100; batch 512 0.0169 (not within 5 %); batch 128 0.0114, and 0.0090 at 320,000 -> batch 128, learning rate 0.004.
+- Stage 1 on the subset of 20,000 designs per op-amp (1.72 million), all three encoders, on the GPU: each step pairs a
+  design (the action) with another valid design of the op-amp (the state), one of three goal sets and a budget of 1-4
+  steps; the critic regresses the reward (gamma 0).
+- Stage 2: Round 3's own-run recipe (its exact pool and split, the task-balanced sampler, batch 8, learning rate
+  0.001, 20,000 updates, one CPU thread); the control is the same from the Round 3 model. Seeds 1 and 2 only where
+  the result hinged on them.
+- Option C (user, 2026-10-18: "build it"): the RGCN encoder learns to predict LOADBench's 14 measured results and each
+  transistor's sizing-rule margins (one fixed neutral goal set for all op-amps, so the goals cannot give an op-amp's
+  level away), then replaces the encoders of the Round 3 model (actor, critics and their targets; the critics keep
+  their action layer) before stage 2.
+- Not run: the full passes over all designs (stage 1 learned nothing that carried over on the subset); CircuitGPS v3's
+  stage 2 (its subset run lost its last part to a helper crash and two resumes to the PC's restart, record 7.381; its
+  curve was not falling faster than the others', so it was left at 1,500,032 designs); GraphGPS's option C (each
+  attempt was lost: a helper crash, a passing read fault, the PC's restart; one seed could not change the outcome).
+
+**Error on the user's own held-out designs** (Round 3's held-out split, up to 30 designs per task variant, 65 variants;
+the critic's mean squared error on the reward, from the start of stage 2 to its end; "ratio" is the median over the
+variants of that error over the error of the variant's training-mean constant; lower is better):
+
+| Model | Error start -> end | Median ratio | Beats the constant |
+|---|---|---|---|
+| RGCN control, seeds 0 / 1 / 2 | 0.00999 -> 0.00826 / 0.00792 / 0.00788 | 0.255 / 0.259 / 0.223 | 61 / 62 / 62 of 65 |
+| RGCN stage 1 + stage 2 | 0.444 -> 0.00787 | 0.267 | 61 |
+| RGCN predictor transplant, encoder free, seeds 0 / 1 / 2 | 0.1005 -> 0.00785 / 0.00806 / 0.00776 | 0.233 / 0.213 / 0.247 | 61 / 63 / 63 |
+| RGCN predictor transplant, encoder frozen | 0.1005 -> 0.01523 | 0.630 | 51 |
+| GraphGPS control | 0.01168 -> 0.00929 | 0.286 | 59 |
+| GraphGPS stage 1 + stage 2 | 0.335 -> 0.01354 | 0.496 | 48 |
+| CircuitGPS v3 control | 0.01454 -> 0.01211 | 0.453 | 54 |
+
+| Against its control (same seed) | Mean error | Better on variants | Geometric-mean error ratio |
+|---|---|---|---|
+| RGCN stage 1 + stage 2, seed 0 | 0.00787 vs 0.00826 | 31 of 65 | 0.950 |
+| GraphGPS stage 1 + stage 2, seed 0 | 0.01354 vs 0.00929 | 3 | 1.714 |
+| RGCN transplant, encoder free, seed 0 | 0.00785 vs 0.00826 | 37 | 0.912 |
+| RGCN transplant, encoder free, seed 1 | 0.00806 vs 0.00792 | 37 | 0.915 |
+| RGCN transplant, encoder free, seed 2 | 0.00776 vs 0.00788 | 31 | 1.025 |
+| RGCN transplant, encoder frozen, seed 0 | 0.01523 vs 0.00826 | 2 | 2.163 |
+
+**What stage 1 learned.** On LOADBench's 15 test op-amps the critic's error, as a ratio to each op-amp's own mean
+reward (1 = no better than that mean), fell from 2.3 (RGCN), 2.8 (GraphGPS) and 2.2 (CircuitGPS v3) to about 1.0
+within 250,000 designs and stayed there (at the end 1.04, 0.97 and 1.02; CircuitGPS v3 at 1.5 million). Meanwhile the
+error on the user's own designs rose from 0.010, 0.012 and 0.015 to 0.44, 0.33 and 0.25. On new designs of op-amps it
+was trained on, RGCN reached 0.73 with a rank correlation of 0.58; on the test op-amps 0.98 and 0.25. After stage 2
+these were 2.01 and 2.64: it forgot LOADBench. A check that the critic reads the proposed sizes rather than the state
+(Round 3's RGCN, its own held-out designs, each step's state swapped for another of the same task): ratio 0.31 as
+recorded, 0.47 swapped.
+
+**What option C's predictor learned** (RGCN, 3.25 million designs; R^2 within each test op-amp, median over the 15):
+area 0.63, power 0.47, unity-gain frequency 0.22, slew rates 0.07-0.09, transistor margins 0.26-0.48; gain -0.20,
+phase margin -0.04, CMRR -0.01, PSRR -0.11.
+
+**The rule** (fixed 2026-10-18 22:45 BST, before the results): the transplant "helps" only if its error is below the
+control's on all three seeds by more than the spread of the control's seeds (0.00038). **Outcome: it does not help**:
+only seed 0 is below the control by more than that (0.00785 against 0.00826); seed 1 is above it (0.00806 against
+0.00792) and seed 2 below by less (0.00776 against 0.00788). Typical variants came out about 9 % better in seeds 0 and 1
+(37 of 65 better; geometric-mean error ratio 0.912 and 0.915), but not in seed 2 (31 of 65; 1.025): no consistent edge
+either.
+
+**Why, and what next.** For a circuit it has not seen, a network can only use what is common to many circuits, and
+LOADBench gives 86. Put to the user on 2026-10-19: pretrain only the per-transistor input layers on what carried over,
+keeping the circuit-level layers from the user's runs ("option 1"; the user: "try option 1 after the write-up");
+describe transistors by their bias point instead of their sizes, so that the PDKs look alike; many more circuits rather
+than more designs; use LOADBench as a prior for Bayesian optimisation instead of for SAC.
+
+Evidence: `artifacts/local/reviews/round4-loadbench-2026-10-17/` - `speed-test/`, `batch-check/`, `code/`,
+`results/` (`results.json`, `results.md` and every run's small files, written by `code/2026-10-19/lb_results.py`); the
+save points stay on the Linux disk in `~/gator/offline-pools/loadbench-r4-runs/`.
+
+### 7b.8 Option 1: only the per-transistor input layers (2026-10-19; record 7.383)
+
+**In plain words.** The per-transistor input layers alone can hold what carried over from LOADBench: with every other
+layer of the Round 3 networks frozen, they learned to predict area and power on op-amps they had not seen about as
+well as option C's whole retrained encoder. After Round 3's own-run recipe, though, the model ends where the control
+ends: in all three seeds within 3 % of the control's error, closer than the control's own seeds are to each other.
+It does not help either.
+
+**What** (user, 2026-10-19: "try option 1 after the write-up"). For each of the Round 3 RGCN model's three networks
+(actor, both critics; each has its own encoder) only the layers that turn one transistor's or one net's inputs into a
+vector learned (`device_values`, `device_kind`, `operating_points`, `net_values`: 13,593 weights per network); the
+other 301,488-306,240 weights of each encoder kept their Round 3 values. Two new heads read them: the design's area,
+power and unity-gain frequency (from the pooled transistor vectors and the goal context), and each transistor's three
+sizing-rule margins. The critics saw each design as both state and proposal; one fixed neutral goal set. 10,000
+designs per training op-amp, one pass (860,000), batch 128, learning rate 0.001, 25 min on the GPU. Then only those
+layers replaced the Round 3 model's (actor, critics, targets; every other weight checked unchanged), and Round 3's
+own-run recipe ran on seeds 0-2 against the RGCN control's seeds 0-2, by the rule of 7b.7.
+
+**Learned** (R^2 within each of LOADBench's 15 test op-amps, median; actor / critic 1 / critic 2): area 0.59 / 0.71 /
+0.71, power 0.40 / 0.57 / 0.66, unity-gain frequency 0.01 / 0.35 / 0.11, transistor margins 0.06-0.37 (option C's
+whole encoder: area 0.63, power 0.47, unity-gain frequency 0.22, margins 0.26-0.48).
+
+| Seed | Option 1 | Control | Better on variants | Geometric-mean error ratio |
+|---|---|---|---|---|
+| 0 | 0.00801 | 0.00826 | 35 of 65 | 0.988 |
+| 1 | 0.00791 | 0.00792 | 38 | 0.936 |
+| 2 | 0.00785 | 0.00788 | 32 | 0.999 |
+
+(Held-out error on the user's own designs after 20,000 stage-2 updates. Stage 2 started from 0.0160, the control from
+0.0100: the new input layers first shift the critics' outputs.) **By the rule it does not help**: below the control by
+0.00025, 0.00001 and 0.00003, against a control-seed spread of 0.00038. Unlike option C it is never above the control,
+but every difference is smaller than the control's own seed-to-seed spread.
+
+**Reading.** What a transistor's inputs carry - its size, hence the area; its share of the bias, hence the power - the
+user's own 168,589 designs teach as well; what they cannot teach, how a new circuit behaves, is what LOADBench does not
+carry. Round 4 ends here unless one of 7b.7's other options is chosen (bias-point inputs, many more circuits, a prior
+for Bayesian optimisation). Evidence: `results/` (now with option 1) and `code/2026-10-19-option1/`.
 
 ## 8. To prepare first
 

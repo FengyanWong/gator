@@ -134,7 +134,7 @@ def test_a_task_saved_before_it_has_no_deck_still_opens_and_says_what_to_do(tmp_
     entry = profiles.list_profiles()['ring_maestro']
     (Path(entry['directory']) / profiles.FILES['maestro_deck']).unlink()
     profile = profiles.load_profile('ring_maestro')                      # opens: the deck is read only when a run needs it
-    with pytest.raises(recipes.RulesError, match='press Save task once'):
+    with pytest.raises(recipes.RulesError, match='save it as a new task'):
         profile.build_deck('X', '/pdk/model.scs', 'tt')
 
 

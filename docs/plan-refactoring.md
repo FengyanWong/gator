@@ -359,10 +359,12 @@ after the commit (the shared-index recipe): no committed line missing from the w
 ### 4.7 DOM snapshot and request log (frontend)
 
 A new hermetic check
-`dom_identity_check.mjs` (harness, fixtures, `readOnly`) opens the page against canned answers, in both looks, with
-each window opened in turn (Runs, RL model, Virtuoso cell, Connection, Agent, Folders), and writes `#root`'s
-`outerHTML` (React's internal attributes stripped) and the ordered list of requests the page made, to a folder; the
-reference is taken from HEAD once, and each package's build must reproduce it byte for byte. `tsc --noEmit` and
+`dom_identity_check.mjs` (harness, fixtures, `readOnly`) opens the page against canned answers, in both looks (one
+since record 7.360, the Roadster look), with each window opened in turn (Runs, RL model, Virtuoso cell, Connection,
+Agent, Folders; the Tasks window too since record 7.362), and writes `#root`'s `outerHTML` (React's internal attributes
+stripped) and the ordered list of requests the page made, to a folder; the reference is taken from HEAD once per
+refactor - none is kept between refactors, so a change of the page needs no reference recorded again - and each
+package's build must reproduce it byte for byte. `tsc --noEmit` and
 `vite build` of the copy, then `run_checks.sh --lanes 2`.
 
 ## 5. The live tree, the running queue, and going live

@@ -8,6 +8,9 @@
 // next to the live backend; the browser profile is new and temporary.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_list_check.mjs)" [screenshot-dir]
+// Since record 7.362 the task's name, the button that opens the window, starts the editors' tab line. Record 7.372: with no
+// task yet the task's lines under the editors' toolbar offer Open Tasks and the ways to a new task, and the banner lists the
+// windows open (one press brings one to the front; Close all).
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, starterConfig, taskWindow, validConfiguration, workbenchUrl, TASKS_WINDOW, RUNS_WINDOW } from './lib/harness.mjs';
@@ -345,6 +348,24 @@ await runChecks(browser, async () => {
   refuseFolders = false; await press('Refresh list'); await settled();
   check('Refresh list recovers folder access', await far.evaluate(`!${WINDOW}.querySelector('[role="alert"]') && !${TABLE}.querySelector('thead input').disabled`));
   check('closing the window leaves the page on its task, the button no longer marked open', (await tw.close(), await until(`!${ROW}.querySelector('button.task-list-button').classList.contains('open')`, 30)) && (await tw.current()) === 'real:fixture_ota');
+
+  // ---- record 7.372: no task yet - its ways stand under the toolbar; the banner lists the windows open ------------------------------
+  await page.saved();
+  await evaluate(`(() => { const c = JSON.parse(localStorage.getItem('gator-workbench-config-v1')); c.circuit = { ...c.circuit, source: 'registered_task', task_id: null };
+    localStorage.setItem('gator-workbench-config-v1', JSON.stringify(c)); })()`);
+  await send('Page.reload');
+  const START = `document.querySelector('.editors .task-status .task-start')`;
+  check('no task yet: the task\'s lines say so and offer Open Tasks and the ways to a new task', await until(`!!(${START})`, 150)
+    && (await evaluate(`[...${START}.querySelectorAll('button')].map(b => b.textContent)[0]`)) === 'Open Tasks', await evaluate(`${START}?.innerText ?? 'none'`));
+  check('no window is open: the banner lists none', !(await evaluate(`!!document.querySelector('header .windows-button')`)));
+  await evaluate(`${START}.querySelector('button.open-tasks').click()`, true);
+  check('Open Tasks opens the Tasks window', await browser.window(TASKS_WINDOW, { ms: 8000 }).then(() => true, () => false));
+  check('...and the banner says one window is open', await until(`document.querySelector('header .windows-button .windows-count')?.textContent === '1'`, 40));
+  await evaluate(`document.querySelector('header .windows-button').click()`);
+  check('its list names it, with Close all', await until(`[...document.querySelectorAll('header .windows-list button')].map(b => b.textContent).join() === 'Tasks,Close all'`, 30),
+    await evaluate(`[...document.querySelectorAll('header .windows-list button')].map(b => b.textContent).join()`));
+  await evaluate(`[...document.querySelectorAll('header .windows-list button')].find(b => b.textContent === 'Close all').click()`);
+  check('"Close all" closes it, and the button goes', await until(`!document.querySelector('header .windows-button')`, 40));
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.filter(e => !/404|418/.test(e)).length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

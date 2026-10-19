@@ -396,8 +396,8 @@ def _check_measurements(config, report, *, provided_metrics):
                 # A saved task measured by Maestro provides its outputs (OCEAN on every run, task flow part 5); anything
                 # else cannot measure a Maestro output.
                 report.add('blocker', 'ade_outputs_not_wired', path + '.result_source',
-                           f'The Maestro output {m.source_name!r} is measured only by a task saved with it (Save task): this '
-                           'circuit does not measure it.')
+                           f'The Maestro output {m.source_name!r} is measured only by a task saved with it: this circuit '
+                           'does not measure it.')
         elif m.result_source == 'size_estimate':                   # worked out from the sizes, never simulated (record 7.308)
             if not m.source_name:
                 report.add('error', 'missing_source_name', path + '.source_name',

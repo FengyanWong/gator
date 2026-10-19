@@ -81,7 +81,9 @@ function stateOf(phase: Phase, status: Json): typeof STATES[number] {
   if (['starting', 'resuming', 'running', 'pausing', 'aborting', 'finishing'].includes(phase)) return 'Running';
   return phase === 'idle' && status && ENDED.includes(status.state) ? 'Ended' : 'Ready';
 }
-export function RunChip({ control, onChip }: { control: RunControl; onChip: () => void }) {
+export function RunChip({ control, onChip, takeover = null }: { control: RunControl; onChip: () => void;
+  /** The run the header took over when the page opened (liveRunAdoption.ts): a badge while the header holds it (record 7.372). */
+  takeover?: { dir: string; label: string; text: string } | null }) {
   const { dir, status, phase, forced } = control;
   const now = stateOf(phase, dir ? status : null);
   const note = describe(status, phase, forced);
@@ -90,6 +92,7 @@ export function RunChip({ control, onChip }: { control: RunControl; onChip: () =
       {STATES.map(s => <span key={s} aria-hidden="true" className={s === now ? 'on' : undefined}>{s}</span>)}</span>
     {dir && note && <button className={`run-chip ${phase}`} onClick={onChip}
       title={`The current run: ${dir}\nPress for the run brief: this run and every other live run, each with Show results and Open in Runs (record 7.264).`}>{note}</button>}
+    {dir && takeover?.dir === dir && <span className="run-taken" title={takeover.text}>{takeover.label}</span>}
   </div>);
 }
 

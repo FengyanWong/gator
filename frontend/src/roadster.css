@@ -15,7 +15,7 @@ label { font-size: 13px; gap: 4px; }
 button.text-link { font-size: 13px; }   /* an action on a caption line, at the caption's size (Output root ... Copy path) */
 .hint { font-size: 13px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-a { color: var(--text); } a:hover { color: var(--bad); }
+a { color: var(--text); } a:hover { color: #ffffff; }
 details > summary::marker { color: var(--muted); }
 
 /* ---- fields and buttons ------------------------------------------------------------------------------------------------- */
@@ -63,7 +63,6 @@ header .title-block { align-items: center; align-self: center; gap: 16px; }
 .tb-details .tb-cell + .tb-cell::before { content: ' · '; white-space: pre; }
 .tb-details .tb-k { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .tb-details .tb-v { display: inline; font: 13px var(--f-body); color: var(--muted); max-width: none; }
-.tb-details .tb-rev .tb-v { font: 13px var(--f-body); } .tb-details .tb-rev .tb-v::before { content: 'revision '; }
 /* the connection as a pill: its name for screen readers, what it is, and its state in the state's colour */
 header button.connection-button { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border: none; border-radius: 999px; background: var(--field); white-space: nowrap; }
 header button.connection-button:hover:not(:disabled) { background: var(--hover); }
@@ -75,6 +74,17 @@ header .connection-button .badge { flex: none; border: none; background: none; p
 header .connection-button .badge.state-unknown, header .connection-button .badge.state-not_checked { color: var(--muted); }
 /* the run's state as a gear selector shows its gear, then the header's run chip */
 header .run-state { display: flex; align-items: center; gap: 10px; flex: none; }
+/* under 1400 px only the state that holds is shown (record 7.372): the four words took ~300 px of a crowded banner */
+@media (max-width: 1400px) { .run-state-strip > span:not(.on) { display: none; } }
+/* a run the header took over when the page opened (record 7.372): a badge, its sentence in the tooltip */
+header .run-taken { flex: none; padding: 2px 8px; border-radius: 999px; background: var(--field); color: var(--warn); font-size: 12px; white-space: nowrap; cursor: help; }
+/* the open windows (record 7.372): a button with their count, its list under it */
+header .windows-menu { position: relative; flex: none; }
+header button.windows-button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; }
+header .windows-count { font: 600 12px var(--f-label); }
+header .windows-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; display: flex; flex-direction: column; gap: 4px; min-width: 180px;
+  padding: 8px; border-radius: 12px; background: var(--card); box-shadow: 0 8px 24px rgba(0, 0, 0, .6); }
+header .windows-list button { text-align: left; white-space: nowrap; } header .windows-list .windows-close-all { color: var(--muted); }
 .run-state-strip { display: flex; gap: 3px; padding: 3px; border-radius: 11px; background: var(--field); }
 .run-state-strip > span { position: relative; padding: 5px 10px 7px; border-radius: 8px; color: #8e8e96; font: 13.5px/1.2 var(--f-label); }
 .run-state-strip > span.on { background: #2a2a2f; color: var(--text); }
@@ -121,8 +131,16 @@ header button.run-main svg.icon, header button.run-abort svg.icon { width: 17px;
 .editors > .tabs .row.task-row button.task-list-button { flex: 0 1 auto; max-width: 420px; min-height: 36px; padding: 6px 12px; border: none; border-radius: 9px; background: var(--field); }
 .editors > .tabs .row.task-row button.task-list-button:hover:not(:disabled) { background: var(--hover); }
 .editors > .tabs .task-rev, .editors > .tabs .task-saved { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
-.editors > .tabs .task-saved { margin-right: 14px; } .editors > .tabs .task-saved::before { content: '· '; }
-.editors > .tabs .task-saved.unsaved { color: var(--unsaved-mark); }
+.editors > .tabs .task-saved-slot { display: inline-flex; align-items: center; margin-right: 14px; color: var(--muted); font-size: 12.5px; }
+.editors > .tabs .task-saved-slot::before { content: '·'; margin-right: 4px; }
+/* "not saved" is a button since record 7.372: it opens what differs (Editors.tsx) */
+.editors > .tabs button.task-saved { min-height: 0; padding: 2px 4px; border: none; border-radius: 6px; background: none; color: var(--unsaved-mark);
+  font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.editors > .tabs button.task-saved:hover:not(:disabled), .editors > .tabs button.task-saved.open { background: var(--hover); }
+.unsaved-summary { margin: 4px 0 8px; padding: 6px 12px; border-left: 3px solid var(--unsaved-mark); border-radius: 0 8px 8px 0; background: var(--unsaved-row); }
+.unsaved-summary p { margin: 2px 0; } .unsaved-summary ul { margin: 2px 0 6px; padding-left: 18px; } .unsaved-summary .row { gap: 6px; }
+/* no task yet (record 7.372): the ways to one */
+.task-start { margin: 4px 0 8px; padding: 6px 12px; border-left: 3px solid #5a5a61; } .task-start p { margin: 0 0 6px; } .task-start .row { gap: 6px; flex-wrap: wrap; }
 .editors > .tabs .tab-actions { align-items: center; gap: 6px; }
 .editors > .tabs .task-tools, .editors > .tabs .task-save-slot { display: inline-flex; align-items: center; gap: 6px; }
 .editors > .tabs .task-tools:empty, .editors > .tabs .task-save-slot:empty { display: none; }
@@ -164,3 +182,16 @@ table.editor td:has(> input[type="checkbox"]) { vertical-align: middle; }   /* a
 .key-tile-label { font-size: 12px; line-height: 1.35; color: var(--muted); }
 .key-tile-value { font: 600 17px/1.3 var(--f-label); white-space: nowrap; } .key-tile-value .unit { font: 400 13px var(--f-body); color: #8e8e96; }
 details.training-keys .key-tiles { margin: 6px 0 2px; }
+
+/* ---- red stays for attention (record 7.372): text links are white and underlined, a chosen or pressed button is outlined in
+   white, and Save as and the sort marks lose their red - red is left for Abort, errors, the tab bars, focus, the active cell
+   and the current run ---------------------------------------------------------------------------------------------------- */
+button.notes-link, button.item-link, button.text-link, details a { color: var(--text); text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: #8e8e96; }
+button.notes-link:hover:not(:disabled), button.item-link:hover:not(:disabled), button.text-link:hover:not(:disabled), details a:hover { color: #ffffff;
+  text-decoration-color: currentColor; }
+button.active, .rl-modes .rl-mode.active, .task-folder.active, .training-head button[aria-pressed="true"], .row.task-row button.task-list-button.open { border-color: var(--text); }
+.editors > .tabs .row.task-row button.task-list-button.open { box-shadow: inset 0 0 0 1px var(--text); }
+.tabs .task-save button.primary { border-color: var(--accent-fill); }
+.tabs button.run-list-button:hover { border-color: #5a5a61; }
+.sort-mark { color: var(--text); }

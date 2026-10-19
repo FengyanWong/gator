@@ -85,7 +85,8 @@ def _refuse_recorded_group_values(name, mapping_file):
     if stale:
         raise ProfileError(f'real:{name} was saved before the mapping stopped recording a fixed value per variable, so its '
                            f'first changed candidate would be refused by its own graph check ({", ".join(map(str, stale[:3]))}'
-                           f'{"..." if len(stale) > 3 else ""}). Open the task and press "Save task" once; nothing else changes.')
+                           f'{"..." if len(stale) > 3 else ""}). Open the task and press "Save as": the new task\'s mapping is '
+                           'written without them; nothing else changes.')
 
 
 # ---------------------------------------------------------------------------------- starting over

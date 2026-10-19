@@ -1,6 +1,7 @@
 // Browser check of the reward as the page states it since record 7.183 (2026-10-05): one sentence for the set of values a
-// new configuration starts with, the controls in a closed "Advanced" fold, a configuration with other values told which and
-// offered the tested set on a button; the soft actor-critic values with which the search stays random named in the RL
+// new configuration starts with - since record 7.372 folded behind one line, "Reward: the tested one - <objective>" - the
+// controls in a closed "Advanced" fold, a configuration with other values told how many and which (folded) and offered the
+// tested set on a button; the soft actor-critic values with which the search stays random named in the RL
 // model window, and "Use saved defaults" (the starting preset) taking them away; the Specs scale headed "Scale"
 // behind "More columns" and suggested as the size of the limit (6 dB for dB).
 // Hermetic: reads go to the scratch backend, every writing request but validation is refused, and a network-settings
@@ -39,6 +40,9 @@ await runChecks(browser, async () => {
     await evaluate(`${RIGHT}?.textContent.slice(0, 300)`));
   check('...which says what a passing design earns, and that no objective row is marked',
     await evaluate(`${SENTENCE}.textContent.includes('up to +1 for the room it leaves on its tightest row') && ${SENTENCE}.textContent.endsWith('(none is marked in Specs).')`), await evaluate(`${SENTENCE}.textContent`));
+  check('...folded behind one line that names it the tested one and says the objective (record 7.372)', await evaluate(`(() => { const d = ${SENTENCE}.closest('details.reward-summary');
+    return !!d && !d.open && d.querySelector('summary').textContent === 'Reward: the tested one - no objective in Specs'; })()`),
+    await evaluate(`${SENTENCE}.closest('details')?.querySelector('summary')?.textContent ?? 'no fold'`));
   check('its five values are the tested set: compressed, share 0.5, objective 1 (compressed), margin 1', JSON.stringify(await values()) === JSON.stringify(SIMPLE), JSON.stringify(await values()));
   check('the controls are in a closed "Advanced" fold and nothing is flagged', await evaluate(`${FOLD}.open === false && ${FOLD}.querySelector('summary').textContent.trim() === 'Advanced' && !${OTHER}
     && !${RIGHT}.querySelector('.module-body .warn, .module-body .error')?.closest('.reward-advanced')`));
@@ -53,6 +57,8 @@ await runChecks(browser, async () => {
   check('a changed value replaces the sentence by what differs', await page.until(`${OTHER}?.textContent.includes('worst hard-spec share 0 instead of 0.5') && !${SENTENCE}`),
     await evaluate(`${OTHER}?.textContent`));
   check('the fold says how many values are not as tested', await evaluate(`${FOLD}.querySelector('summary').textContent.includes('1 not as tested')`));
+  check('...and so does one line, which values folded under it (record 7.372)', await evaluate(`${OTHER}.querySelector('.reward-other-count')?.textContent === 'Reward: 1 setting not as tested.'
+    && !!${OTHER}.querySelector('details') && !${OTHER}.querySelector('details').open`), await evaluate(`${OTHER}?.textContent.slice(0, 160)`));
   await page.shot(path.join(out, 'reward-2-other.png'), `${OTHER}.closest('.module-body')`, { maxHeight: 900 });
   await evaluate(`${RIGHT}.querySelector('button.reward-simple').click()`, true);
   check('"Use the tested reward" brings the sentence and the value back', await page.until(`!!${SENTENCE} && ${control('Worst hard-spec share')}?.value === '0.5'`));

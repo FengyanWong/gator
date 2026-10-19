@@ -187,7 +187,8 @@ def testbench_probes(imported, graph=None) -> dict:
 
 MAESTRO = 'maestro'                     # a task whose probes are Maestro outputs of its working copy (runs: OCEAN, coming)
 MAESTRO_NOT_RUNNABLE = ('This task measures the Maestro outputs of its working copy, and it was saved before such tasks could '
-                        'run: press Save task once - Maestro then netlists its test, and every run uses that deck.')
+                        'run: save it as a new task (Save as) - Maestro then netlists its test, and every run of the new '
+                        'task uses that deck.')
 NEEDS_FREQUENCY = ('The ring-oscillator measurement needs a rough expected oscillation frequency: it sizes the transient '
                    '(60 periods, measured after 20). Give it once; the task file keeps it.')
 

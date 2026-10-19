@@ -47,5 +47,5 @@ export function calibrationPlan(result: Json, config: Json) {
 export const savingText = (asked: { taken: boolean; why: string }) => asked.taken
   ? " Saving the task now: the progress is under the editors' tabs."
   : ` Saving could not be started from here (${asked.why}): try Apply and save again when ready, or use Save as above the editors.`;
-export const APPLY_AND_SAVE = 'then runs Save task: the rows become the task\'s next revision, the cell in Virtuoso is written to match and read back '
+export const APPLY_AND_SAVE = 'then saves the task: the rows become its next revision, the cell in Virtuoso is written to match and read back '
   + '(about half a minute, no simulation). A change of Scale alone keeps the recorded baseline.';

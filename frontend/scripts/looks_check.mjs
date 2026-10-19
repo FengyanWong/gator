@@ -141,6 +141,13 @@ await runChecks(browser, async () => {
     JSON.stringify(banner.states) === '["Ready","Running","Paused","Ended"]' && JSON.stringify(banner.lit) === '["Ended"]' && banner.said === 'Run state: ended', JSON.stringify(banner));
   check('...and Start round and white, Abort round and red (red Abort: the user\'s request of 2026-09-21)',
     banner.main?.[0] === '50%' && banner.main[1] === 'rgb(244, 244, 245)' && banner.abort?.[0] === '50%' && banner.abort[1] === 'rgb(208, 16, 44)', JSON.stringify([banner.main, banner.abort]));
+  // Record 7.372: the banner's facts leave the revision to the tab line's task chip; under 1400 px only the state that holds shows.
+  check('the banner\'s facts name the class, the PDK and the RL model - not the revision, which the tab line\'s task chip says',
+    await evaluate(`(() => { const d = document.querySelector('header .tb-details'); return !!d && !d.querySelector('.tb-rev') && !/revision/.test(d.textContent); })()`));
+  await page.viewport(1366, 768); await sleep(400);
+  const narrow = await evaluate(`[...document.querySelectorAll('header .run-state-strip > span')].filter(x => x.checkVisibility()).map(x => x.textContent)`);
+  check('...and at 1366 px the strip shows only the state that holds (the four words took a crowded banner\'s room)', JSON.stringify(narrow) === '["Ended"]', JSON.stringify(narrow));
+  await page.viewport(1680, 1050); await sleep(400);
   check('Output settings starts folded on a fresh browser (record 7.360, user: "by default make output settings collapsible and collapsed")',
     await evaluate(`(() => { const d = [...document.querySelectorAll('.right details.module')].find(x => x.querySelector(':scope > summary h3')?.textContent === 'Output settings'); return !!d && !d.open; })()`));
   await evaluate(`[...document.querySelectorAll('footer button')].find(b => b.textContent.trim().startsWith('Runs'))?.click()`, true);
@@ -151,6 +158,10 @@ await runChecks(browser, async () => {
     await sleep(600);
     const leftInWindow = await lightBoxes(runs);
     check('no light box in the Runs window: a pop-up takes the page\'s colours from its stylesheet', !leftInWindow.length, JSON.stringify(leftInWindow));
+    // Record 7.372: red stays for attention - a link (Details, a task's or a run's name) is white and underlined, as the stylesheet draws it.
+    const link = await runs.evaluate(`(() => { const b = document.createElement('button'); b.className = 'notes-link'; b.textContent = 'Details';
+      (document.querySelector('.run-window') ?? document.body).append(b); const st = getComputedStyle(b); const seen = { colour: st.color, line: st.textDecorationLine }; b.remove(); return seen; })()`);
+    check('a link in the Runs window is white and underlined, not red (record 7.372)', link.colour === 'rgb(244, 244, 245)' && link.line.includes('underline'), JSON.stringify(link));
   }
 
   // ---- Research experiments (record 7.163) and no "Search method" (record 7.226) ------------------------------------------
@@ -208,8 +219,8 @@ await runChecks(browser, async () => {
 
   // ---- the title block ------------------------------------------------------------------------------------------------------
   const facts = await evaluate(`Object.fromEntries([...document.querySelectorAll('header .tb-cell')].map(c => [c.querySelector('.tb-k').textContent, c.querySelector('.tb-v').textContent]))`);
-  check('the title block names the revision, the class and PDK, and the RL model label in its facts (no project name: record 7.159)',
-    !('Project' in facts) && !('Task' in facts) && facts.Rev === '-' && facts['Class · PDK'] === `${config.circuit.circuit_class} · ${config.circuit.pdk_id}`
+  check('the title block names the class and PDK and the RL model label in its facts (no project name: record 7.159; the revision is the tab line\'s since record 7.372)',
+    !('Project' in facts) && !('Task' in facts) && !('Rev' in facts) && facts['Class · PDK'] === `${config.circuit.circuit_class} · ${config.circuit.pdk_id}`
     && facts['RL model'] === config.project.task_name, JSON.stringify(facts));
   // The label is typed in the RL model window since record 7.265 ("Name of the new model"; in Run configuration until then).
   await openNetworks(page, browser);

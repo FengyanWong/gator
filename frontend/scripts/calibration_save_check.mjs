@@ -123,8 +123,8 @@ await runChecks(browser, async () => {
   check('the line names the task and writes the proposed Scale as a quantity: 100 MHz', line.startsWith(`Calibration ready for ${TASK}: osc_frequency_hz 100 MHz. Proposed from 64 random designs; nothing has changed yet.`), line);
   check('for a saved task it offers Apply and save, Apply only and Not now', JSON.stringify(await readyButtons()) === JSON.stringify(['Apply and save', 'Apply only', 'Not now']), JSON.stringify(await readyButtons()));
   const saveTitle = await evaluate(`${readyButton('Apply and save')}.title`);
-  check('the tooltip says what the press does: Apply, then Save task - the cell is written, nothing is simulated',
-    saveTitle.startsWith('Apply and save: Writes the Scale of 1 Specs row into the page, as one Undo step, then runs Save task:') && /the cell in Virtuoso is written to match and read back/.test(saveTitle)
+  check('the tooltip says what the press does: Apply, then the save - the cell is written, nothing is simulated',
+    saveTitle.startsWith('Apply and save: Writes the Scale of 1 Specs row into the page, as one Undo step, then saves the task:') && /the cell in Virtuoso is written to match and read back/.test(saveTitle)
     && /no simulation/.test(saveTitle) && /A change of Scale alone keeps the recorded baseline/.test(saveTitle), saveTitle);
   await page.shot(path.join(out, 'calibration-save-0-line.png'), `document.querySelector('header')`, { pad: 4 });
 

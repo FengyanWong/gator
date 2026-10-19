@@ -345,8 +345,8 @@ def create_profile(profile_id=DEFAULT_PROFILE_ID, *, kind=connection.DEFAULT_KIN
         backup = _write_connection_file(target, document, existing, profile_id)
     note = ('Enough for connecting and testing. Real-simulation tasks also need library, creation_receipt, model_file and '
             'reference_measurements in this file (docs/workbench.md).' if family == 'virtuoso' else
-            'Enough for testing and for running the ngspice netlist tasks (Project column: "ngspice netlist..."). Virtuoso '
-            'cells still need a Virtuoso connection.')
+            'Enough for testing and for running the ngspice netlist tasks (the Tasks window: "From an ngspice netlist..."). '
+            'Virtuoso cells still need a Virtuoso connection.')
     return dict(created=True, profile_id=profile_id, kind=kind, connection_file=str(target), settings_present=sorted(profile),
                 backup=None if backup is None else str(backup), note=note)
 
@@ -390,7 +390,7 @@ def save_directories(values) -> dict:
             for folder in {current.get('adapter_state') or default, wanted.get('adapter_state') or default}:
                 # every Virtuoso session's lock and every cell's (record 7.311), not the first session's alone
                 if any(RunLock.held(lock) for lock in bridge_locks(Path(folder).expanduser())):
-                    raise FolderBusy(f'A run, a corner check or Save task holds the adapter\'s session lock in {folder}. '
+                    raise FolderBusy(f'A run, a corner check or a task save holds the adapter\'s session lock in {folder}. '
                                      'Change the folder once it has finished.')
         backup = None
         if changed:

@@ -120,7 +120,7 @@ def _table_items(config, by_section, profile) -> list:
                                   else 'The configured variables differ from them, so the run would be refused the moment it starts.'
                                   if mismatch else 'None is configured yet.'))
             items.append(_item(name, TITLES[name], 'missing', 'agent', detail,
-                               'Press "Reload saved values" in the Project panel (left): it brings exactly these rows, free.'))
+                               'Double-click the task in the Tasks window: it brings exactly these rows, free.'))
             continue
         unsaved = [i for i in found if i.get('code') == 'task_not_saved']
         if unsaved and len(unsaved) == len(found):
@@ -129,7 +129,8 @@ def _table_items(config, by_section, profile) -> list:
             # sentence, and the general advice below ("Reload saved values ... or the agent writes the rows") told the
             # user to throw away what they had just applied (found with the calibration, record 7.204).
             items.append(_item(name, TITLES[name], 'missing', 'you', ' '.join(str(i.get('message')) for i in unsaved),
-                               '"Save task" is above the editors; "Reload saved values" is in the Project panel (left).'))
+                               '"Save as" is on the editors\' tab line; "Reload saved values" is under "not saved", beside '
+                               'the task\'s name.'))
             continue
         empty = dict(parameters=not rows['parameters'], targets=not hard, measurements=not rows['measurements'])[name]
         if found or empty:
@@ -139,7 +140,7 @@ def _table_items(config, by_section, profile) -> list:
             action = ('Write each requirement in the "Specs" tab, with where it comes from.' if name == 'targets'
                       else f'Fill in the "{TITLES[name]}" tab.')
             if registered:                  # a registered task brings its own rows: free, exact, and the first thing to try
-                action = 'Press "Reload saved values" in the Project panel (left) for this task\'s own rows, or ' + action[0].lower() + action[1:]
+                action = 'Double-click the task in the Tasks window for its own rows, or ' + action[0].lower() + action[1:]
             action += AGENT_HELP
             items.append(_item(name, TITLES[name], 'missing', 'agent', detail, action))
         else:

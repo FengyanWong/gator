@@ -9,7 +9,7 @@ export const OPEN_TASKS = 'gator-open-tasks';
 /** The Runs window at one run, or filtered to one task's runs. `from`: the window the link was pressed in - a pop-up may only
  *  be opened by the window that holds the click (popupWindow.ts). */
 export type RunsAt = { run_dir?: string; task_key?: string; from?: Window | null };
-export type TasksAt = { task_key: string; from?: Window | null };
+export type TasksAt = { task_key?: string; from?: Window | null };   // no task_key: the Tasks window as it is (record 7.372)
 
 export const openRunsAt = (at: RunsAt) => window.dispatchEvent(new CustomEvent<RunsAt>(OPEN_RUNS, { detail: at }));
 export const openTasksAt = (at: TasksAt) => window.dispatchEvent(new CustomEvent<TasksAt>(OPEN_TASKS, { detail: at }));

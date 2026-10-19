@@ -33,7 +33,7 @@ const LOADED = { loaded: true, task_key: TASK, mock: false, native_draft: false,
   summary: { device_count: 1, unknown_devices: [], devices: [] }, notes: [] };
 const STEP = (step, ok, title, extra = {}) => ({ step, ok, title, detail: `FIXTURE: ${step}`, ...extra });
 const DRIFT = 'ValueError: FIXTURE MN1 w=1.1u in Virtuoso, 1u saved';
-const FIX = 'The working copy was changed in Virtuoso after the task was saved: press Save task to take the copy as it is now, or undo the change in Virtuoso.';
+const FIX = 'The working copy was changed in Virtuoso after the task was saved: undo the change in Virtuoso, or press Save as to make a new task from the copy as it is now.';
 const FAILED_CHECK = { consistency_check: true, task: TASK, revision: 2, ok: false, simulated: false, steps: [
   STEP('editors', true, 'The editors hold the rows of the saved task'), STEP('connect', true, 'The run adapter reaches the working copy'),
   STEP('export', false, 'The working copy in Virtuoso differs from the saved task', { detail: DRIFT, fix: FIX })] };
@@ -96,7 +96,7 @@ await runChecks(browser, async () => {
     && sent[0].config?.parameters?.[0]?.upper === 1.6, JSON.stringify(sent).slice(0, 200));
   const steps = await shownText(STEPS);
   check('each step is one line: passed, and the failed one with what to do beside it', steps.includes('passed: The editors hold the rows of the saved task.')
-    && steps.includes('FAILED: The working copy in Virtuoso differs from the saved task.') && steps.includes('press Save task to take the copy as it is now')
+    && steps.includes('FAILED: The working copy in Virtuoso differs from the saved task.') && steps.includes('press Save as to make a new task from the copy as it is now')
     && steps.includes('real:ring_osc - one step does not agree, so a run would not start. Nothing was simulated.'), steps.slice(0, 300));
   check('the reason is folded until asked for', !(await evaluate(`[...${STEPS}.querySelectorAll('details p')].find(p => p.textContent.includes('FIXTURE MN1')).checkVisibility()`)));
   await page.shot(path.join(out, 'consistency-1-check-now.png'));

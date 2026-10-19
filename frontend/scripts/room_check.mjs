@@ -7,6 +7,8 @@
 //     (launches, retries, wall time and the two failure rules) in one closed "Limits" fold whose line names the limits set;
 //   - Output settings: "Always saved" in one line with the whole list in its tooltip; the output root's facts in one line
 //     with the table folded behind it (open when the root cannot be written).
+//   - record 7.372: a cell entered while the table has room for under about four rows (a small screen, the panel open) folds the
+//     bottom panel to its tab line; a tab brings it back; with room for the rows a cell leaves it open.
 // Run: bash frontend/scripts/run_checks.sh --only room_check. About 20 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
@@ -89,6 +91,24 @@ await runChecks(browser, async () => {
   await send('Page.reload');
   await page.until(`!!document.querySelector('footer .tabs')`, 200); await sleep(800);
   check('...and opened again it is open on load', await evaluate(`!(${FOLDED})`));
+
+  // ---- record 7.372: entering a cell while the table has little room folds the panel; a tab brings it back -------------------------
+  const CELL = `document.querySelector('.editors table.editor tbody tr td[data-field] input:not([type="checkbox"])')`;
+  const enterCell = async () => {               // a real click: el.focus() fires no focus event in a headless page (formula_bar_check)
+    await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    const at = await evaluate(`(() => { const r = ${CELL}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    await page.clickAt(at); await sleep(400);
+  };
+  await page.viewport(1366, 768); await sleep(600);
+  const small = await evaluate(`({ table: Math.round(document.querySelector('.editors .scroll').clientHeight), folded: ${FOLDED} })`);
+  await enterCell();
+  check('a small screen, the panel open: entering a cell folds it to its tab line (the table had room for under four rows)',
+    small.table < 200 && !small.folded && await page.until(FOLDED, 30), JSON.stringify(small));
+  await evaluate(`[...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent.trim() === 'Run status').click()`);
+  check('...and a tab brings it back', await page.until(`!(${FOLDED})`, 30));
+  await page.viewport(1680, 1050); await sleep(600);
+  await enterCell();
+  check('with room for the rows, entering a cell leaves the panel open', await evaluate(`!(${FOLDED})`));
 
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
   check('no console error', !consoleErrors.length, consoleErrors.slice(0, 3).join(' | '));

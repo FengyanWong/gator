@@ -346,9 +346,9 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       {addForm}
       {multipleSessions && <p className="hint">Each Virtuoso window has its own bridge. Connect each session and load its commands in the matching CIW.</p>}
       {multipleSessions && (pinned
-        ? <p className="warn">This configuration names {pinnedLabel} by its own name ({profileId}): runs, Check now and Save task go there, even
+        ? <p className="warn">This configuration names {pinnedLabel} by its own name ({profileId}): runs, Check now and Save as go there, even
           while it is busy. Choose "{group.profile_id}" above to send them to whichever session is free.</p>
-        : <p className="hint">Runs (Start, Baseline simulation, Calibration, Continue), Check now and Save task go to whichever session is free:
+        : <p className="hint">Runs (Start, Baseline simulation, Calibration, Continue), Check now and Save as go to whichever session is free:
           first the one that holds the task's cell open for editing, then the one whose last test passed. The run's message says which.</p>)}
       <div className={multipleSessions ? 'connection-sessions-grid' : undefined}>{sessions.map(renderSession)}</div>
       {error && <p className="error">{error}</p>}

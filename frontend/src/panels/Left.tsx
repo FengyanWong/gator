@@ -18,7 +18,8 @@ import { useNewest } from '../newest';
 import { sameRows } from './taskRows';
 import { useTaskActions } from './taskActions';
 import { useTestbenchProbes } from './testbenchProbes';
-import { type TaskLoad, useTaskChoice } from './taskChoice';
+import { RELOAD_SAVED_REQUEST, type TaskLoad, useTaskChoice } from './taskChoice';
+import { openTasksAt } from '../openAt';
 import { VirtuosoWindow } from './VirtuosoWindow';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
@@ -80,18 +81,17 @@ const copyQuestion = (r: Json) => `Work in ${r.library}/${r.cell} directly?\n\n`
 
 /** The header's title block (record 7.158): what the page works on, as a drawing names its subject - since record 7.360
  *  (Draft A of the Roadster look, which the user chose: the banner names the task) the task as the Task window names it, then
- *  one line of its facts: the circuit's class and PDK labels, the saved task's revision, and the label the RL model is saved
- *  under (record 7.159). The task name had left the header on 2026-10-05 (record 7.182); the chosen draft brings it back.
+ *  one line of its facts: the circuit's class and PDK labels and the label the RL model is saved under (record 7.159). The
+ *  saved task's revision left it in record 7.372: the task's chip on the editors' tab line says it. The task name had left the header on 2026-10-05 (record 7.182); the chosen draft brings it back.
  *  Read-only; the fields themselves stay in their panels. */
 function TitleFacts({ config, task }: { config: Json; task: Json | null }) {
   const ref = config.circuit;
   const name = ref.source === 'registered_task' && ref.task_id ? shownName(task, ref.task_id) : (config.project.task_name || 'no task chosen');
-  const revision = task?.revision ?? null;
   const model = (config.run.model_label ?? '').trim() || config.project.task_name;
   const fact = (key: string, value: string, extra = '') => <span className={`tb-cell${extra}`}><span className="tb-k">{key}</span><span className="tb-v" title={`${key}: ${value}`}>{value}</span></span>;
   return <><span className="tb-task" title={ref.task_id ?? name}>{name}</span>
     <span className="tb-details">{fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}
-      {fact('Rev', revision == null ? '-' : String(revision), ' tb-rev')}{fact('RL model', model, ' tb-model')}</span></>;
+      {fact('RL model', model, ' tb-model')}</span></>;
 }
 
 export type { TaskLoad, TaskLoaded } from './taskChoice';
@@ -224,6 +224,15 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
 
   const { taskRows, taskLoading, taskLoadError, removedMock, chooseTask } = useTaskChoice({ ref, tasks, latest, setConfig, request, followCount,
     setCircuit, load, taskLoad });
+  // "Reload saved values" asked by the summary of the rows not saved (record 7.372, Editors.tsx): the open task's saved rows,
+  // asking first, as the same button under the toolbar does.
+  const reloadNow = useRef(() => {});
+  reloadNow.current = () => { const now = latest.current.circuit; if (now.source === 'registered_task' && now.task_id) chooseTask(now.task_id, undefined, true); };
+  useEffect(() => {
+    const reload = () => reloadNow.current();
+    window.addEventListener(RELOAD_SAVED_REQUEST, reload);
+    return () => window.removeEventListener(RELOAD_SAVED_REQUEST, reload);
+  }, []);
   // A cell that already has a registered task - the task saved from it, or one of the verified built-in circuits - gets
   // no second task: the note names the task. One short button, because it is about THIS cell (not a list of tasks); it
   // does what choosing the task in the Project column does.
@@ -286,6 +295,16 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   const status = taskStatus && createPortal(<>
     {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
       The workbench no longer imports netlists: choose a task, or a Virtuoso cell, in the Tasks window (the task's name on this tab line).</p></div>}
+    {/* No task yet (record 7.372): the ways to one, here, instead of a lone "(choose a task)" on the tab line. */}
+    {ref.source === 'registered_task' && !ref.task_id && <div className="task-start">
+      <p>No task yet: choose one in the Tasks window, or make one.</p>
+      <div className="row">
+        <button className="open-tasks" onClick={() => openTasksAt({})} title="Open Tasks: every registered task; a double click makes the page follow one.">Open Tasks</button>
+        {showVirtuoso && <button className="new-virtuoso" onClick={() => openWindow()} title={`From a Virtuoso cell: ${VIRTUOSO_OPENS}`}>From a Virtuoso cell...</button>}
+        {showNgspice && <button className="new-ngspice" onClick={() => ngspiceOpen.current?.()} title={`From an ngspice netlist: ${NGSPICE_OPENS}`}>From an ngspice netlist...</button>}
+      </div>
+      {showVirtuoso && blocked && <Blocked />}{showNgspice && ngspiceBlocked && <Blocked />}
+    </div>}
     {ref.source === 'registered_task' && (<>
       {/* A configuration saved with a removed MOCK task (the four of status record 7.59; the last one, synthetic:gpdk045_ota5,
           on 2026-09-30, record 7.128): a plain note, not a red "Blocked". */}

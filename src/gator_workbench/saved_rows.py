@@ -21,11 +21,15 @@ from .storage.atomic import UNREADABLE, read_json_quiet
 # (configuration key, editor name, row ID field, task file part)
 SECTIONS = (('parameters', 'Parameters', 'variable_id', 'parameters'), ('measurements', 'Probes', 'measurement_id', 'probes'),
             ('targets', 'Specs', 'metric_id', 'specs'))
-FIX_ROWS = 'Press Save task to save the rows as they are now, or Reload saved values to take the saved rows back.'
+# The page's words (record 7.376): its one save button is Save as, a new task (record 7.246); Reload saved values opens
+# from "not saved" beside the task's name (record 7.372).
+FIX_ROWS = ('Press Save as to keep these rows as a new task, or Reload saved values (under "not saved", beside the task\'s '
+            'name) to take the saved rows back.')
 # The rows are older than the saved task (record 7.203): saving them would undo what was saved since.
+# Save as makes a new task: it undoes nothing of the saved one (only an update of the task itself would, and it asks first).
 FIX_NEWER = ('These rows are older than the saved task: it was saved again (revision {current}) after they were loaded '
-             '(revision {base}). Press Reload saved values to take the saved rows; Save task would undo that change, and asks '
-             'first.')
+             '(revision {base}). Press Reload saved values (under "not saved", beside the task\'s name) to take the saved '
+             'rows; Save as keeps these rows as a new task and leaves the saved one as it is.')
 
 
 def saved_task(config, *, with_entry=True):

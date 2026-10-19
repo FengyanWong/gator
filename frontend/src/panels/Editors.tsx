@@ -10,6 +10,8 @@ import { DiffView } from './DiffView';
 import { exact, FOLLOWER_IGNORES, limitLabel, QUANTITY, readNumber, type Section, suggestedScale, withFollowers, withSaved } from './editorRules';
 import { type BarCell, FormulaBar } from './FormulaBar';
 import { keep, readKept } from '../kept';
+import { RELOAD_SAVED_REQUEST } from './taskChoice';
+import { requestSaveAs } from './TaskSave';
 
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
 const ROW_TABS = Object.keys(TITLES);
@@ -30,6 +32,9 @@ const LABELS: Record<string, Record<string, string>> = {
     direction_after_feasible: 'Objective', soft_weight: 'Soft weight', active: 'Active', basis: 'Basis' },
 };
 
+/** The table's room under which entering a cell folds the bottom panel (record 7.372): about four rows and the heading. */
+const CRAMPED_PX = 200;
+
 /** `taskSlot` / `taskNotes`: where the circuit panel puts "Save task" (right end of the tab line) and its messages (under
  *  the toolbar) - the save sits with the rows it stores (user request 2026-09-22). No "Save" button of its own any more:
  *  the configuration is kept in this browser by itself (store.ts, 0.8 s after each change), and a second "Save" next to
@@ -39,12 +44,14 @@ const LABELS: Record<string, Record<string, string>> = {
  *  Save task (Check now); `taskStatus` = under the toolbar, the task's own lines (loading, blocked, MOCK, the check's result).
  *  "Show circuit" brings the circuit column back beside the rows (`circuitShown`, `onCircuit`: App.tsx). */
 function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, validation, taskSlot, taskNotes, taskHead, taskTools, taskStatus,
-  circuitShown, onCircuit }:
+  circuitShown, onCircuit, onCramped }:
   { schema: Json; config: Json; setConfig: (c: Json | ((c: Json) => Json)) => void; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
     validation: Json;
     taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void;
     taskHead: (element: HTMLElement | null) => void; taskTools: (element: HTMLElement | null) => void; taskStatus: (element: HTMLElement | null) => void;
-    circuitShown: boolean; onCircuit: () => void }) {
+    circuitShown: boolean; onCircuit: () => void;
+    /** Called when a cell is entered while the table has room for under about four rows (record 7.372): App folds the bottom panel. */
+    onCramped?: () => void }) {
   const [tab, setTab] = useState<Section>('parameters');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [help, setHelp] = useState<Json>(null);
@@ -218,7 +225,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
 
   // Why a cell is shown and not typed: it follows another field, or its row's leader decides it (record 7.158 review).
   const fixedOf = (row: Json, c: Json): string | null => tab === 'measurements' && c.name === 'measurement_id' && row.result_source === 'ade_output'
-    ? `A Maestro output's Probe ID is m_ + its output name (Save task names it so): it follows the name, and so do the spec equations that use it.` : null;
+    ? `A Maestro output's Probe ID is m_ + its output name (saving the task names it so): it follows the name, and so do the spec equations that use it.` : null;
   const offOf = (row: Json, c: Json): string | null => tab === 'parameters' && row.binding_group && FOLLOWER_IGNORES.includes(c.name)
     ? `Follows ${row.binding_group}: its leader's value times the ratio is written, so this field does nothing on this row.` : null;
   const at = !active ? -1 : rows[active.index] && (active.name === keyField || String(rows[active.index][keyField] ?? '') === active.key)
@@ -495,6 +502,21 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // Beside the task's name (record 7.362): whether the rows are the saved task's - only for a saved task, which validation
   // compares with its file (record 7.222); the tabs' dots say where they differ.
   const savedState = !validation?.unsaved_rows?.sections ? null : (Object.keys(TITLES) as Section[]).some(s => unsavedTitle(s)) ? 'not saved' : 'saved';
+  // "not saved" opens what differs, table by table, with Reload saved values and Save as (record 7.372): the tabs' dots said
+  // it in their tooltips only.
+  const [changesOpen, setChangesOpen] = useState(false);
+  const [saveAsWhy, setSaveAsWhy] = useState<string | null>(null);        // why its Save as could not start (record 7.376)
+  useEffect(() => { if (savedState !== 'not saved') setChangesOpen(false); }, [savedState]);
+  useEffect(() => { if (!changesOpen) setSaveAsWhy(null); }, [changesOpen]);
+  const idList = (list: string[]) => `${list.slice(0, 4).join(', ')}${list.length > 4 ? ', ...' : ''}`;
+  const changesIn = (s: Section): string | null => {
+    const u: Json = validation?.unsaved_rows?.sections?.[s];
+    if (!u) return null;
+    const changed = Object.keys(u.changed ?? {}), added: string[] = u.added ?? [], removed: string[] = u.removed ?? [];
+    const parts = [changed.length ? `${changed.length} changed (${idList(changed)})` : '', added.length ? `${added.length} new (${idList(added)})` : '',
+      removed.length ? `${removed.length} saved row${removed.length === 1 ? '' : 's'} deleted here (${idList(removed)})` : '', u.reordered ? 'rows in another order' : ''].filter(Boolean);
+    return parts.length ? parts.join(', ') : null;
+  };
 
   // Back to the cell after Enter or Esc, as a spreadsheet does.
   const backToCell = () => {
@@ -511,8 +533,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
           Each editor has a colour of its own (record 7.158): its tab, its table's header row, and its ids where another editor shows them.
           A tab holding rows not saved in the task carries a dot, its tooltip says how many (record 7.222). */}
       <div className="tabs"><span className="task-head" ref={taskHead} />
-        {savedState && <span className={`task-saved${savedState === 'saved' ? '' : ' unsaved'}`} title={savedState === 'saved'
-          ? "The rows of Parameters, Probes and Specs are the saved task's." : 'Rows here differ from the saved task: a tab with a dot says how.'}>{savedState}</span>}
+        {savedState && <span className="task-saved-slot">{savedState === 'saved'
+          ? <span className="task-saved" title="The rows of Parameters, Probes and Specs are the saved task's.">saved</span>
+          : <button className={`task-saved unsaved${changesOpen ? ' open' : ''}`} aria-expanded={changesOpen} onClick={() => setChangesOpen(o => !o)}
+              title="Not saved: press to see what differs from the saved task, with Reload saved values and Save as.">not saved</button>}</span>}
         {(Object.keys(TITLES) as Section[]).map(s => { const notSaved = unsavedTitle(s);
         return <button key={s} data-editor={s} className={[s === tab ? 'active' : '', notSaved ? 'has-unsaved' : ''].filter(Boolean).join(' ')}
           title={notSaved ?? undefined} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>; })}
@@ -545,6 +569,19 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         {tab === 'parameters' && <button className="text" onClick={() => setMatched(n => n + 1)} title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. Press again to refresh the results. You review a diff; nothing is applied automatically.">Matched devices...</button>}
       </div>
       <div className="task-status" ref={taskStatus} />
+      {changesOpen && savedState === 'not saved' && <div className="unsaved-summary" role="region" aria-label="Rows not saved in the task">
+        <p><b>Not saved in the task:</b></p>
+        <ul>{(Object.keys(TITLES) as Section[]).map(s => { const said = changesIn(s); return said && <li key={s}>
+          <button className="item-link" onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }} title={`Show ${TITLES[s]}`}>{TITLES[s]}</button>: {said}</li>; })}</ul>
+        <div className="row">
+          <button onClick={() => window.dispatchEvent(new CustomEvent(RELOAD_SAVED_REQUEST))}
+            title="Reload saved values: The saved rows of the task come back into the editors. Asks first; Undo takes it back.">Reload saved values</button>
+          <button className="primary" onClick={() => { const asked = requestSaveAs(); setSaveAsWhy(asked.taken ? null : asked.why); }}
+            title="Save as: The rows here become a new task; it asks for the name.">Save as...</button>
+          <button onClick={() => setChangesOpen(false)} title="Close: The rows stay as they are.">Close</button>
+        </div>
+        {saveAsWhy && <p className="warn">Save as cannot start now: {saveAsWhy}.</p>}
+      </div>}
       <div className="task-notes" ref={taskNotes} />
       {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)} />}
       {/* The lines above the tables give their fact; what explains it is the line's tooltip (record 7.176, user: "reduce or
@@ -562,7 +599,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}</div>}
       <FormulaBar cell={activeRow && !inView(activeRow, at) ? null : barCell} commit={commitBar} back={backToCell} />
       {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}</p>}
-      <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}>
+      <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}
+        onFocusCapture={e => {      // a cell entered while the table has room for under about four rows (record 7.372)
+          if (onCramped && window.innerWidth > 1100 && e.currentTarget.clientHeight < CRAMPED_PX && !e.currentTarget.closest('.layout.bottom-folded')) onCramped(); }}>
         <table className="grid editor" ref={table}>
           <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance ? `${c.name}: ${c.guidance}` : c.name} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody onKeyDown={onTableKey} onPaste={onTablePaste}>{rows.map((row, index) => {

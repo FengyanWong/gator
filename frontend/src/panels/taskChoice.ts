@@ -1,3 +1,6 @@
+/** "Reload saved values" asked by the summary of the rows not saved (record 7.372, `Editors.tsx`): the circuit panel loads the
+ *  open task's saved rows again, asking first, as the same button under the toolbar does. */
+export const RELOAD_SAVED_REQUEST = 'gator-reload-saved-request';
 // Choosing a registered task in the Tasks window (plan-refactoring C9, out of Left.tsx's CircuitPanelBody): its saved rows
 // replace the editors' rows - after the user agreed to drop edits -, as one Undo step, and the task load the Runs window uses.
 import { MutableRefObject, useEffect, useState } from 'react';

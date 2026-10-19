@@ -234,9 +234,11 @@ class GenericMaestroProfile(GenericMosWidthProfile):
             try:
                 deck = json.loads(self._deck_file.read_text())
             except (OSError, ValueError):
-                raise RulesError('This task has no Maestro deck yet: press Save task once (Maestro then netlists its test)')
+                raise RulesError('This task has no Maestro deck yet: save it as a new task (Save as) - Maestro then netlists '
+                                 'its test')
             if deck.get('format') != DECK_FORMAT or not deck.get('outputs') or not deck.get('head') or not deck.get('tail'):
-                raise RulesError('The Maestro deck of this task is not one this workbench reads: press Save task once')
+                raise RulesError('The Maestro deck of this task is not one this workbench reads: save it as a new task '
+                                 '(Save as)')
             self._deck = deck
         return self._deck
 

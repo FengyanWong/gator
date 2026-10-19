@@ -34,13 +34,18 @@ export function RewardConditions({ m }: { m: RlModel }) {
           settings compared in training on 2026-10-05 are fixed for a new configuration (store.ts SIMPLE_REWARD) and said here in
           words; the controls sit in one fold, for reproducing an older run or for an experiment. A configuration that holds other
           values is told which, and offered the tested set on a button - it is never changed by itself. */}
+      {/* One line, the sentence one press away (record 7.372): the paragraph took the run column's room. */}
       {rewardOther.length === 0
-        ? <p className="hint reward-sentence">Reward: minus half the average miss, minus half the worst miss. A design that meets every Specs row
+        ? <details className="more reward-summary"><summary>Reward: the tested one - {objective.length
+            ? <>objective <b>{objective.map((t: Json) => `${t.direction_after_feasible} ${t.metric_id}`).join('; ')}</b></> : 'no objective in Specs'}</summary>
+          <p className="hint reward-sentence">Reward: minus half the average miss, minus half the worst miss. A design that meets every Specs row
             scores above 0: up to +1 for the room it leaves on its tightest row, and up to +1 more for improving the objective
-            row{objective.length ? <> (<b>{objective.map((t: Json) => `${t.direction_after_feasible} ${t.metric_id}`).join('; ')}</b>).</> : ' (none is marked in Specs).'}</p>
+            row{objective.length ? <> (<b>{objective.map((t: Json) => `${t.direction_after_feasible} ${t.metric_id}`).join('; ')}</b>).</> : ' (none is marked in Specs).'}</p></details>
         : <div className="note reward-other">
-            <p className="hint">This configuration's reward is not the one a new configuration starts with (the set compared in training on 2026-10-05):
-              {' '}{rewardOther.map(k => `${REWARD_NAMES[k]} ${reward[k]} instead of ${SIMPLE_REWARD[k]}`).join('; ')}.</p>
+            <p className="hint reward-other-count">Reward: {rewardOther.length} setting{rewardOther.length === 1 ? '' : 's'} not as tested.</p>
+            <details className="more"><summary>Which</summary>
+              <p className="hint">This configuration's reward is not the one a new configuration starts with (the set compared in training on 2026-10-05):
+                {' '}{rewardOther.map(k => `${REWARD_NAMES[k]} ${reward[k]} instead of ${SIMPLE_REWARD[k]}`).join('; ')}.</p></details>
             <div className="row"><button className="reward-simple" onClick={() => set({ reward: { ...run.reward, ...SIMPLE_REWARD } })}
               title="Compressed violations, worst hard-spec share 0.5, objective bonus weight 1 with the compressed shape, tightest-margin bonus weight 1. Nothing else changes.">Use the tested reward</button></div>
           </div>}

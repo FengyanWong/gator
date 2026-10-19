@@ -70,6 +70,7 @@ await runChecks(browser, async () => {
   const { send, evaluate, fulfil } = page;
   const validations = [], saves = [];
   let noSavedTask = false, saving = { running: null, last: null };
+  let held = null;                                   // a save held back while the page waits for it (record 7.376)
   const answer = async ({ requestId, request }) => {
     const url = new URL(request.url), pathname = url.pathname, body = JSON.parse(request.postData ?? '{}');
     if (pathname === '/api/tasks') return fulfil(requestId, 200, TASKS());
@@ -83,11 +84,15 @@ await runChecks(browser, async () => {
       return fulfil(requestId, 200, { blocks_run: issues.length > 0, counts: {}, issues, facts: {}, unsaved_rows: noSavedTask ? null : unsavedRows(body.config) });
     }
     if (pathname === '/api/virtuoso/task/save') {            // the save stores the rows it was sent: they are the saved rows now
-      saves.push(body);
-      revision += 1;
-      saved = { parameters: body.config.parameters, measurements: body.config.measurements, targets: body.config.targets };
-      return fulfil(requestId, 200, { task_key: TASK, name: 'ring_osc', revision, created: false, runnable: true, circuit_class: 'vco', pdk_id: 'gpdk045',
-        parameters: body.config.parameters, baseline_kept: true, changed: [], copy: { library: 'GPDK045_RINGOSC_GATOR', cell: 'ring_osc_3stage', testbench: 'tb_ring_osc_3stage' } });
+      const reply = () => {
+        saves.push(body);
+        revision += 1;
+        saved = { parameters: body.config.parameters, measurements: body.config.measurements, targets: body.config.targets };
+        return fulfil(requestId, 200, { task_key: TASK, name: 'ring_osc', revision, created: false, runnable: true, circuit_class: 'vco', pdk_id: 'gpdk045',
+          parameters: body.config.parameters, baseline_kept: true, changed: [], copy: { library: 'GPDK045_RINGOSC_GATOR', cell: 'ring_osc_3stage', testbench: 'tb_ring_osc_3stage' } });
+      };
+      if (held) { held.reply = reply; return; }
+      return reply();
     }
     return page.readOrRefuse({ requestId, request }, page.refused, { reads: true });
   };
@@ -136,6 +141,20 @@ await runChecks(browser, async () => {
     `${await title(TAB('parameters'))} / ${await title(TAB('targets'))}`);
   const dot = await evaluate(`(() => { const s = getComputedStyle(${TAB('parameters')}, '::after'); return [s.content, s.backgroundColor, s.borderRadius]; })()`);
   check('the dot is the mark colour, round', dot[0] !== 'none' && dot[1] === await colour('--unsaved-mark') && dot[2] === '50%', JSON.stringify(dot));
+  // Record 7.372: "not saved" on the tab line opens what differs, table by table, with Reload saved values and Save as.
+  const CHIP = `document.querySelector('.editors .tabs button.task-saved')`, SUMMARY = `document.querySelector('.editors .unsaved-summary')`;
+  check('the tab line says "not saved", as a button', (await evaluate(`${CHIP}?.textContent ?? null`)) === 'not saved', await evaluate(`document.querySelector('.editors .tabs .task-saved')?.outerHTML.slice(0, 120) ?? 'none'`));
+  await evaluate(`${CHIP}.click()`); await sleep(300);
+  const summary = await evaluate(`(() => { const x = ${SUMMARY}; return x ? { lines: [...x.querySelectorAll('li')].map(l => l.textContent), buttons: [...x.querySelectorAll('.row button')].map(b => b.textContent) } : null; })()`);
+  check('pressed, it says what differs in each table, and offers Reload saved values and Save as', !!summary && summary.lines.length === 2
+    && summary.lines[0].startsWith('Parameters: 3 changed (') && summary.lines[0].includes(', 1 new (')
+    && summary.lines[1].startsWith('Specs: 1 changed (') && summary.lines[1].endsWith('1 saved row deleted here (old_spec)')
+    && JSON.stringify(summary.buttons) === '["Reload saved values","Save as...","Close"]', JSON.stringify(summary));
+  await evaluate(`[...${SUMMARY}.querySelectorAll('li button')].find(b => b.textContent === 'Specs').click()`); await sleep(300);
+  check('a table\'s name shows that table', /\bactive\b/.test(await cls(TAB('targets'))));
+  await tab('parameters');
+  await evaluate(`[...${SUMMARY}.querySelectorAll('.row button')].find(b => b.textContent === 'Close').click()`); await sleep(200);
+  check('Close closes it, the rows as they are', !(await evaluate(`!!(${SUMMARY})`)) && (await evaluate(`${CHIP}?.textContent ?? null`)) === 'not saved');
   for (const look of ['roadster']) {              // one look since record 7.360 (two until then, each checked here)
     const want = { row: await colour('--unsaved-row'), cell: await colour('--unsaved-cell'), added: await colour('--added-bg'), mark: await colour('--unsaved-mark'), addedMark: await colour('--added-mark') };
     const got = { row: await bg(`${PROW('wn')}.querySelector('td[data-field="lower"]')`), id: await bg(`${PROW('wn')}.querySelector('td[data-field="variable_id"]')`),
@@ -174,7 +193,15 @@ await runChecks(browser, async () => {
   await page.until(`!!(${BAR}) && !${BAR}.disabled`, 50);
   await sleep(1000);                                          // the page keeps its rows 0.8 s after the last edit
   const before = validations.length, storedBefore = JSON.stringify(await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).parameters`));
+  held = {};
   await evaluate(`window.dispatchEvent(new CustomEvent('gator-save-task-request', { detail: { task: '${TASK}' } }))`);
+  // Record 7.376: while that save is under way, the summary's Save as says why it cannot start (it did nothing before).
+  for (let i = 0; i < 50 && !held.reply; i++) await sleep(100);
+  await evaluate(`${CHIP}.click()`); await sleep(300);
+  await evaluate(`[...${SUMMARY}.querySelectorAll('.row button')].find(b => b.textContent === 'Save as...').click()`); await sleep(300);
+  const why = await evaluate(`${SUMMARY}?.querySelector('p.warn')?.textContent ?? null`);
+  check('while a save is under way, the summary\'s Save as says why it cannot start (record 7.376)', !!held.reply && why === 'Save as cannot start now: a save is under way.', `${!!held.reply} ${why}`);
+  const release = held.reply; held = null; await release?.();
   const gone = await page.until(`!document.querySelector('.editors table.editor tbody tr[class*="unsaved-"]') && !document.querySelector('.editors .tabs > button.has-unsaved')`, 60);
   await sleep(1200);
   const storedAfter = JSON.stringify(await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).parameters`));

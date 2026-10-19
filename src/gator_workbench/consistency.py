@@ -30,8 +30,8 @@ from .saved_rows import (SECTIONS, FIX_ROWS, FIX_NEWER, saved_task, QUANTITY_FIE
                          describe_rows, _FILES, _read_json, revision_file, _models, _rows, _file_rows, unsaved_rows,
                          undone_by_saving, undone_lines, describe_undone)
 
-FIX_COPY = ('The working copy was changed in Virtuoso after the task was saved: press Save task to take the copy as it is '
-            'now, or undo the change in Virtuoso.')
+FIX_COPY = ('The working copy was changed in Virtuoso after the task was saved: undo the change in Virtuoso, or press Save '
+            'as to make a new task from the copy as it is now.')
 # Another real run or check holds the run adapter's session lock (record 7.207): nothing is wrong with the task.
 FIX_BUSY = ('Nothing in the task or its working copy needs changing: check again when that run has ended. A run started '
             'from this page stops with Abort; one started from a command line stops there.')
@@ -145,7 +145,7 @@ def _connect_fix(detail) -> str:
     if 'tunnel' in text:
         return 'Bring the link up in the Connection window, then check again.'
     if 'creation receipt' in text or 'receipt' in text:
-        return 'The task\'s files and its creation record disagree: save the task again (Save task).'
+        return 'The task\'s files and its creation record disagree: save it as a new task (Save as).'
     return FIX_COPY
 
 
@@ -173,7 +173,7 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
             steps.append(_step(step, True, detail=item.get('detail'), **({'skipped': True} if item.get('skipped') else {})))
         else:
             fix = (_connect_fix(item.get('detail')) if step == 'connect' else FIX_COPY if step == 'export'
-                   else 'Save the task again (Save task).' if step == 'profile' else 'See the reason; then check again.')
+                   else 'Save it as a new task (Save as).' if step == 'profile' else 'See the reason; then check again.')
             steps.append(_step(step, False, detail=item.get('detail'), fix=fix))
     if entry.get('recipe') == profiles.MAESTRO and all(s['ok'] for s in steps):
         expected = saved.get('maestro') or {}
@@ -189,8 +189,9 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
         told = ['the working copy has no Maestro test GATOR any more'] if not found.get('test') else differences(expected, found)
         steps.append(_step('maestro', True, detail='Read back from the working copy: it matches the task file.') if not told else
                      _step('maestro', False, detail='; '.join(told[:8]) + (f'; and {len(told) - 8} more' if len(told) > 8 else ''),
-                           fix='Press Save task: it writes the task\'s setup into the copy again. If the change in Maestro is what '
-                               'you want instead: Read setup, Use in editors, then Save task.'))
+                           fix='Undo the change in Maestro, or press Save as: it makes a new task and writes these rows\' setup '
+                               'into its own copy. If the change in Maestro is what you want, make it in Probes and Specs (or '
+                               'the Task file) first.'))
     return steps
 
 
@@ -199,7 +200,7 @@ def check(monitor, profile_id, config, *, rows=True, acknowledge_unknown=False, 
     validation, before a start). Raises KeyError when the configuration runs no saved task."""
     found = saved_task(config)
     if found is None:
-        raise KeyError('Only a task saved with "Save task" is checked: open one under Source: Registered task')
+        raise KeyError('Only a saved task is checked: choose one in the Tasks window')
     name, entry, saved = found
     steps = [editors_step(config, name, saved)] if rows else []
     if not profile_id:

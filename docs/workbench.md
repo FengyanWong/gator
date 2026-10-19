@@ -184,9 +184,11 @@ runs then). Run configuration's model line and this line come from the same valu
     saved again, the save point is from older optimizer code - a button offers it: **Fine-tune from its newest save
     point (a new run)** makes the next run on the page a fine-tune from exactly that save point, as one Undo step.
   - **Taking over is said.** A live run found when the page opens, or a task's baseline simulation started by Save task,
-    becomes the header's run only when the header is free or holds a run at rest. The message names a paused run it
-    lets go of, which stays paused: "... stays paused; continue it from Runs." A task's baseline started while the
-    header's run is live stays under Runs, and the header keeps its own.
+    becomes the header's run only when the header is free or holds a run at rest. A run found when the page opens gets a
+    badge beside the run chip - "started elsewhere", or "recovered" for this tab's own launch found after a reload (record
+    7.372; a line under the header until then) - whose tooltip says so and names a paused run the header lets go of, which
+    stays paused: "... stays paused; continue it from Runs."; the baseline's message names it the same way. A task's
+    baseline started while the header's run is live stays under Runs, and the header keeps its own.
   - The page sends request ids and asks the continuation check only where `GET /api/meta` lists them under
     `features`. A page newer than its backend works as before until the backend is restarted.
 * The run shown is read every 1.5 s while it can change by itself: a worker is alive, its state is a live one, or the
@@ -231,9 +233,10 @@ canvas, with a switch in the header. On 2026-10-17 the user asked for new drafts
 switch are gone; every panel, button and field stands where it stood.
 
 **One look: the Roadster look** (record 7.360). Black ground, white type, one red.
-- White is what is chosen, on or ready: Start, a ticked box, the chosen tab. Red marks where the eye goes - the short bar
-  under a chosen tab, keyboard focus, a chart's line - fills Abort (red, the user's request of 2026-09-21) and colours an
-  error, which always comes with its words. Amber is kept for rows not saved in the task and for warnings; a note's rule at
+- White is what is chosen, on or ready: Start, a ticked box, the chosen tab, a chosen or pressed button's outline, and a
+  link, which is underlined (record 7.372; links and outlines were red until then). Red marks where the eye goes - the short
+  bar under a chosen tab, keyboard focus, the active cell, the current run, a chart's line - fills Abort (red, the user's
+  request of 2026-09-21) and colours an error, which always comes with its words. Amber is kept for rows not saved in the task and for warnings; a note's rule at
   its left is grey.
 - Readability: text at 14 px (12.5 before), headings in sentence case instead of small capitals, roomier rows and fields
   (the list tables of the Runs and RL model windows a step tighter, so that each still fits its window), and cards told
@@ -242,8 +245,10 @@ switch are gone; every panel, button and field stands where it stood.
   1366 x 768.
 - The banner: the name GATOR as a chip - a package outline with five pins along each long edge and the red dot that marks
   pin 1 (its tooltip holds the version) - then the task by the name the Task window gives it, with one grey line of its
-  facts; the connection as a pill; the run's state as four words, Ready, Running, Paused, Ended, the one that holds lit as a
-  gear selector shows its gear, beside the run chip (its press opens the run brief, record 7.264); then "Configuration
+  facts (class and PDK, the RL model's label; the revision is the tab line's since record 7.372); the connection as a pill;
+  the run's state as four words, Ready, Running, Paused, Ended, the one that holds lit as a gear selector shows its gear
+  (under 1400 px only that one, record 7.372), beside the run chip (its press opens the run brief, record 7.264) and, while
+  windows are open, a button with their count (record 7.372); then "Configuration
   valid", Calibration, Save now, the "Next:" line and Start (white) and Abort (red), both round. From 1201 px the banner keeps
   one line - the task's facts and the connection's description give way with "..." first - and a narrower window wraps it.
 - Tabs: the chosen tab of every strip is white with a short red bar under its name; the three editors' tabs are one
@@ -267,6 +272,24 @@ every column of Parameters in view instead of 7 of 10), and **Show circuit** bri
 browser. The two ways to a new task are in the Tasks window, **New task: From a Virtuoso cell...** and **From an ngspice
 netlist...**; while the page follows a Virtuoso cell or an ngspice task, **Virtuoso cell...** or **ngspice netlist...** on
 the tab line goes back to its window. Under 1101 px the editors come first and the run settings under them.
+
+**Nine changes of record 7.372** (user: "give improvement ideas of the frontend", then "fix everything"):
+- Red stays for attention: links are white and underlined, a chosen or pressed button is outlined in white, Save as and the
+  sort marks lost their red (above).
+- The banner's facts leave the revision to the tab line's task chip.
+- "not saved" beside the task's name is a button: it opens what differs from the saved task, table by table (each table's
+  name shows it), with **Reload saved values** (it asks first, as choosing another task does; Undo takes it back) and **Save as...**.
+- A cell entered while the table has room for under about four rows - a small screen with the bottom panel open - folds the
+  bottom panel to its tab line; a tab brings it back, as before.
+- A run the header took over when the page opened is a badge beside the run chip - "started elsewhere", or "recovered" for
+  this tab's own launch found after a reload - its sentence (and a paused run's "continue it from Runs") in the tooltip; it
+  was a line of its own under the header.
+- The reward in Run configuration is one line - "Reward: the tested one - <objective>" - its sentence folded behind it; a
+  configuration with other values says how many on one line, which ones folded, "Use the tested reward" in view.
+- Under 1400 px the run's state shows only the word that holds.
+- With no task yet, the task's lines under the toolbar offer **Open Tasks** and the ways to a new task.
+- **Windows**: while pop-up windows are open, a button in the banner with their count lists them; a press brings one to the
+  front, **Close all** closes them.
 
 **Research experiments** (record 7.163; user: "Check the research experiments module and see which should be kept",
 then "Remove both" and "Fold them"). Since record 7.166 its heading looks like the other modules' headings, and its note
@@ -1234,8 +1257,8 @@ where the numbered ones sit.
 | Adapter state | `~/.local/state/gator/bridge-state` | this machine | the session lock that runs, corner checks and Save task take, and the crash journal of every write to a cell (7.167) | the next run, corner check or Save task |
 | Simulator scratch | `/tmp/gator-work` | this machine | export packages and Spectre job folders of a run whose output folder is on a slow mount (7.149) | the next run |
 | virtuoso-bridge checkout | `~/virtuoso-bridge-lite` | this machine | where "Add a connection" looks for the bridge's `.venv` when the backend cannot import the bridge; the agent diagnostics look for the bridge's skills there | the next "Add a connection" |
-| Initial-condition files | `~/.gator/ic` | simulator host | the file of a Maestro test's initial conditions that Save task writes | the next Save task |
-| Maestro netlists | `/tmp/gator_maestro_netlist` | simulator host | the netlist Maestro writes for a saved task, which GATOR then downloads | the next Save task |
+| Initial-condition files | `~/.gator/ic` | simulator host | the file of a Maestro test's initial conditions that saving a task writes | the next task save |
+| Maestro netlists | `/tmp/gator_maestro_netlist` | simulator host | the netlist Maestro writes for a saved task, which GATOR then downloads | the next task save |
 
 The values are stored as a `"directories"` block of `bridge_connection.json`, only those that differ from the defaults:
 
@@ -1821,8 +1844,9 @@ only: the user's live frontend/backend were not rebuilt or restarted. The subseq
 ### The reward as one sentence, and the tested defaults (2026-10-05, record 7.183)
 
 **In plain words.** A new configuration's reward is said in one sentence in Run configuration, under Reward and
-conditions: *minus half the average miss, minus half the worst miss; a design that meets every Specs row scores above 0 -
-up to +1 for the room it leaves on its tightest row, and up to +1 more for improving the row marked as the objective.*
+conditions - folded since record 7.372 behind one line, "Reward: the tested one - objective minimize phase_noise" (or "no
+objective in Specs"): *minus half the average miss, minus half the worst miss; a design that meets every Specs row scores
+above 0 - up to +1 for the room it leaves on its tightest row, and up to +1 more for improving the row marked as the objective.*
 A miss is how far a value sits outside its limit, as a fraction of the limit, compressed to between 0 and 1 (10 %
 outside costs 0.09, 50 % costs 0.33, 100 % costs 0.5). You set the limits in Specs and, on one row at most, "then lower /
 higher is better". Nothing else needs setting.
@@ -1832,8 +1856,9 @@ higher is better". Nothing else needs setting.
   band joins them while corners are planned). They were compared in training on 2026-10-05; the reasons are in
   [decisions.md](decisions.md), "The tested defaults".
 - **A configuration that holds other values** - every one saved before this record - is not changed. In place of the
-  sentence the block names each value that differs ("worst hard-spec share 0 instead of 0.5") and offers **Use the
-  tested reward**, which sets the five and nothing else. The fold's line counts them ("Advanced - 2 not as tested").
+  sentence one line counts them ("Reward: 2 settings not as tested."; record 7.372), a fold **Which** names each value
+  that differs ("worst hard-spec share 0 instead of 0.5") and **Use the tested reward** stays in view; it sets the five
+  and nothing else. The fold's line counts them ("Advanced - 2 not as tested").
 - **No warning for a bonus without an objective row:** the weight is 1 in every new configuration, and without an
   objective row the bonus is simply 0; the sentence says that no row is marked.
 - **The schema's own defaults are unchanged** (capped, share 0, no bonus): a configuration file without these fields means
@@ -3190,6 +3215,17 @@ The page still keeps its configuration in the browser after edits. Browser-stora
 and **Export JSON**; this is separate from saving a task. Calibration's explicit **Apply and save** still updates
 the current task in place, with its existing revision and baseline rules.
 
+**The words that send you to it** (record 7.376, user: "fix things"). The backend's messages kept the button's old name,
+"Save task", and some pointed to parts of the page that are gone (the Project column, Read setup and Use in editors,
+Source: Registered task). They name what the page shows now: **Save as** to keep rows - a new task, which undoes
+nothing of the saved one, so rows older than the saved task no longer warn that saving would undo what was saved since;
+**Reload saved values** under "not saved" beside the task's name (record 7.372); a double click on the task in the Tasks
+window for its own rows; "From an ngspice netlist..." in the Tasks window. A message that asked for "Save task once" to
+bring an older task up to date (no Maestro deck yet, a mapping that still records a fixed value per variable, files
+that disagree with the creation record) says to save it as a new task: the only other save is Apply and save. Locks and folders speak
+of "a task save". The Save as of "not saved"'s summary says why it cannot start - a save under way, no connection - where
+it did nothing.
+
 Editing stays available while a save is in flight. The reply applies normalized parameters only when those rows
 have not changed since the press; newer edits stay in the editors and the message says they are not saved yet. A reply
 for a task, cell or connection that is no longer selected cannot change the current rows, circuit or save message
@@ -3223,8 +3259,9 @@ by another session, or while the page still held older rows - saving the rows he
   The backend refuses such a save before anything is written or read in Virtuoso (409 `saved_task_newer`), so no other
   tab saves over it unasked either; Save anyway sends it again (`replace_newer`).
 - While editing, the blocking issue ("Specs differ from the saved task ...") then ends with "These rows are older than
-  the saved task ... Press Reload saved values to take the saved rows; Save task would undo that change, and asks
-  first." instead of offering Save task first.
+  the saved task ... Press Reload saved values (under "not saved", beside the task's name) to take the saved rows; Save
+  as keeps these rows as a new task and leaves the saved one as it is." (record 7.376; until then it said that Save task
+  would undo that change, which Save as, a new task, never does).
 - Only what was saved since counts, not the user's own edits. Rows exactly like an earlier revision are recognized
   without the page's note too (a page from before this change, rows brought back by Undo); edits on top of an earlier
   revision need the note. The saved revisions are the task's `history/r<N>/task.json`.
@@ -3298,7 +3335,7 @@ three things must say the same thing:
 **Start, Calibration and Resume** run parts 2 and 3 by themselves, right after the connection gate and
 before anything is created (`runs.prepare_run`). A difference starts nothing: the banner under the header lists each step
 - passed / FAILED, what differs, and what to do (for example "The working copy was changed in Virtuoso after the task was
-saved: press Save task to take the copy as it is now, or undo the change in Virtuoso", or which ADE/Maestro windows to
+saved: undo the change in Virtuoso, or press Save as to make a new task from the copy as it is now", or which ADE/Maestro windows to
 close). A passed check is kept in the run's manifest (`consistency_check`, for a resume in its segment).
 
 **Check now** (on the editors' tab line since record 7.362, before Save task; its tooltip says what it compares; until then

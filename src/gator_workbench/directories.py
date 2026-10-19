@@ -40,12 +40,12 @@ class Folder:
 FIELDS = {
     'adapter_state': Folder(
         LOCAL, 'Adapter state', '~/.local/state/gator/bridge-state',
-        'The locks that runs, corner checks and Save task take - one per Virtuoso session and one per cell, so that two '
+        'The locks that runs, corner checks and task saves take - one per Virtuoso session and one per cell, so that two '
         'never work in a session or on a cell at once - and the crash journal of every write to a cell. Every GATOR '
         'process of this machine must use the same folder. Keep it on '
         'the local disk (on D: from WSL a candidate\'s journal writes took 16 ms instead of 1) and out of /tmp, which a '
         'restart empties.',
-        'the next run, corner check or Save task', env='GATOR_BRIDGE_STATE_DIR', writable=True),
+        'the next run, corner check or task save', env='GATOR_BRIDGE_STATE_DIR', writable=True),
     'local_scratch': Folder(
         LOCAL, 'Simulator scratch', '/tmp/gator-work',
         'Export packages and Spectre job folders of a run whose output folder is on a slow mount (D: from WSL). Each run '
@@ -60,14 +60,14 @@ FIELDS = {
         'the next "Add a connection"'),
     'simulator_ic': Folder(
         SIMULATOR, 'Initial-condition files', '~/.gator/ic',
-        'Save task writes a Maestro test\'s initial conditions there, as a file the test includes; the folder is made '
+        'Saving a task writes its Maestro test\'s initial conditions there, as a file the test includes; the folder is made '
         'when missing. Files already registered in a test - also in the default folder - are still recognized.',
-        'the next Save task'),
+        'the next task save'),
     'maestro_netlist': Folder(
         SIMULATOR, 'Maestro netlists', '/tmp/gator_maestro_netlist',
         'Maestro writes a test\'s netlist there when a task is saved, and GATOR downloads it. On a host shared with other '
         'users, or where Virtuoso\'s /tmp is not the one SSH sees, choose a folder of your own (e.g. ~/gator/netlists).',
-        'the next Save task'),
+        'the next task save'),
 }
 REMOTE_PATH = re.compile(r'^~?(?:/[A-Za-z0-9_.+\-]+)+$')      # characters that pass SKILL strings and shell commands as they are
 

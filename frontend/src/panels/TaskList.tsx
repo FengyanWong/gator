@@ -165,9 +165,9 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   useEffect(() => {
     const show = (event: Event) => {
       const at = (event as CustomEvent<TasksAt>).detail;
-      if (!at?.task_key) return;
+      if (!at) return;
       latest.current.openPopup(at.from);
-      latest.current.focusTask(at.task_key);
+      if (at.task_key) latest.current.focusTask(at.task_key);       // without one, the window as it is (record 7.372)
     };
     window.addEventListener(OPEN_TASKS, show);
     return () => window.removeEventListener(OPEN_TASKS, show);

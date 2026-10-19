@@ -9,7 +9,7 @@
  *  icon-only button's title starts with its label. */
 
 export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'load' | 'delete-task' | 'export' | 'import' | 'task-file'
-  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'folder' | 'new-folder' | 'rename' | 'follow' | 'zoom-reset';
+  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'windows' | 'folder' | 'new-folder' | 'rename' | 'follow' | 'zoom-reset';
 
 const DRAWINGS: Record<IconName, JSX.Element> = {
   // A floppy disk: the model is written to disk while the run goes on.
@@ -24,6 +24,8 @@ const DRAWINGS: Record<IconName, JSX.Element> = {
   stop: <rect x="3" y="3" width="10" height="10" rx="1" fill="currentColor" />,
   // Force abort: the stop square struck through, it does not wait.
   'force-stop': <><rect x="3" y="3" width="10" height="10" rx="1" /><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" /></>,
+  // Open windows (record 7.372, the banner's Windows list): two windows, one in front of the other.
+  windows: <><rect x="2" y="5" width="9.5" height="8.5" rx="1" /><path d="M5 5V2.5h9V11h-2.5" /></>,
   // Save task: a document with a check mark, the rows become the task's next revision.
   task: <><path d="M4 1.5h5.5L13 5v9.5H4z" /><path d="M9.5 1.5V5H13" /><path d="M6 10l2 2 3.5-3.5" /></>,
   // Add: a plus, one new row.

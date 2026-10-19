@@ -701,7 +701,7 @@ def cell_lock(library, cell, root=None):
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         handle.close()
-        raise CellBusy(f'The cell {library}/{cell} is in use by another run, check or Save task - through this Virtuoso session '
+        raise CellBusy(f'The cell {library}/{cell} is in use by another run, check or task save - through this Virtuoso session '
                        f'or another one ({path}). Try again when it has finished.') from None
     return handle
 

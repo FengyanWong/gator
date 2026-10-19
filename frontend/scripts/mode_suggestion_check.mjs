@@ -84,13 +84,13 @@ await runChecks(browser, async () => {
   const word = await evaluate(`(() => { const b = ${WORD}; if (!b) return null; const cs = getComputedStyle(b), ps = getComputedStyle(b.parentElement);
     return { tag: b.tagName, text: b.textContent, title: b.title, cursor: cs.cursor, size: cs.fontSize, paraSize: ps.fontSize, weight: cs.fontWeight, color: cs.color,
       border: cs.borderStyle, background: cs.backgroundColor, underline: cs.textDecorationLine, visible: b.checkVisibility(), disabled: b.disabled,
-      accent: (name => { const s = document.createElement('span'); s.style.color = 'var(' + name + ')'; document.body.appendChild(s); const c = getComputedStyle(s).color; s.remove(); return c; })('--accent') }; })()`);   // the look's accent (record 7.158)
+      ink: (name => { const s = document.createElement('span'); s.style.color = 'var(' + name + ')'; document.body.appendChild(s); const c = getComputedStyle(s).color; s.remove(); return c; })('--text') }; })()`);   // the look's text colour: links are white since record 7.372 (the accent until then)
   check('the suggested mode itself is the control: a button holding just its name, Fine-tune, visible and enabled',
     word?.tag === 'BUTTON' && word.text === 'Fine-tune' && word.visible && !word.disabled && word.cursor === 'pointer', JSON.stringify(word));
   check('... titled with what a click does', word?.title === 'Set Mode to Fine-tune', JSON.stringify(word?.title));
-  check('... drawn as a link, not a box: no border, no background, bold, accent colour, at the size of its sentence',
-    !!word && word.border === 'none' && word.background === 'rgba(0, 0, 0, 0)' && Number(word.weight) >= 600 && word.color === word.accent && word.size === word.paraSize, JSON.stringify(word));
-  check('... not underlined until the mouse is over it', word?.underline === 'none', word?.underline);
+  check('... drawn as a link, not a box: no border, no background, bold, in the page\'s white, at the size of its sentence (record 7.372: red is left for attention)',
+    !!word && word.border === 'none' && word.background === 'rgba(0, 0, 0, 0)' && Number(word.weight) >= 600 && word.color === word.ink && word.size === word.paraSize, JSON.stringify(word));
+  check('... underlined, as every text link since record 7.372: the line, not a colour, tells a link', word?.underline === 'underline', word?.underline);
   await page.shot(path.join(out, 'mode-suggestion-1-shown.png'), await around(MODE, PARA));
   const at = await centre(WORD);
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y }); await sleep(150);

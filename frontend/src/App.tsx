@@ -8,6 +8,7 @@ import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
 import { RunButtons, RunChip } from './panels/RunControl';
+import { WindowsMenu } from './panels/WindowsMenu';
 import { RESUMABLE } from './runState';
 import { CALIBRATION_DESIGNS, useLaunchActions } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
@@ -23,7 +24,7 @@ import { BottomPanel, type BottomTab, useBottomPanel } from './panels/BottomPane
 import { useCalibrationOffer } from './page/calibrationOffer';
 import { useRunWindowActions } from './page/runWindowActions';
 import { shownRun, useRunList, useShownRun } from './page/shownRun';
-import { useLiveRunAdoption } from './page/liveRunAdoption';
+import { type Takeover, useLiveRunAdoption } from './page/liveRunAdoption';
 import { useTaskRunFollow } from './page/taskRunFollow';
 import { keep, oncePerBrowser, readKept } from './kept';
 import { CIRCUIT_SHOWN_KEY } from './contract';
@@ -140,7 +141,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     if (control.phase === 'idle' && ['starting', 'resuming', 'running', 'pausing', 'aborting', 'finishing'].includes(lastPhase.current)) setTaskEpoch(n => n + 1);
     lastPhase.current = control.phase;
   }, [control.phase]);
-  useLiveRunAdoption({ control, outputRoot: config.output.output_root, refreshRuns, setRunDir, setMessage, setLooked });
+  const [takeover, setTakeover] = useState<Takeover | null>(null);             // the run taken over when the page opened (record 7.372)
+  useLiveRunAdoption({ control, outputRoot: config.output.output_root, refreshRuns, setRunDir, setTakeover, setLooked });
   // The bottom tabs follow the registered task (record 7.212): page/taskRunFollow.ts.
   const { taskKey, loadSerial, followTask } = useTaskRunFollow({ config, runDir, readRuns, setRunDir });
 
@@ -201,7 +203,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
               over the connection and its state, as the cells beside it; it opens the connection window as before. */}
           <ConnectionButton profileId={profileId} setProfileId={(id, record) => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }), record)} />
         </div>
-        <RunChip control={control} onChip={brief.open} />
+        <RunChip control={control} onChip={brief.open} takeover={takeover} />
+        <WindowsMenu />
         {/* The hand-edited settings.json is not valid JSON: the backend works on defaults and leaves the file alone. Said on a
             line of its own under the header, as /api/meta said it when the page opened - never hidden, not dismissable. */}
         {meta?.settings_problem && <p className="settings-problem warn">{meta.settings_problem}</p>}
@@ -249,7 +252,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}
           validation={validation} taskSlot={setTaskSlot} taskNotes={setTaskNotes} taskHead={setTaskHead} taskTools={setTaskTools}
-          taskStatus={setTaskStatus} circuitShown={circuitShown} onCircuit={toggleCircuit} />
+          taskStatus={setTaskStatus} circuitShown={circuitShown} onCircuit={toggleCircuit} onCramped={panel.foldForRows} />
       </main>
       <aside className="right">
         <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} />

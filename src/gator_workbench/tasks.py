@@ -177,7 +177,7 @@ def _not_a_virtuoso_connection(profile_id, settings):
         return None                                   # an unknown kind is named by the connection check itself
     return (f'Connection {profile_id or "(the active one)"!r} is "{KINDS[kind]["label"]}". This circuit runs on Virtuoso + '
             'Spectre: choose a Virtuoso connection in the Connection window. An ngspice connection runs the ngspice netlist '
-            'tasks (Project column: "ngspice netlist...").')
+            'tasks (the Tasks window: "From an ngspice netlist...").')
 
 
 def bridge_config_of(connection):
@@ -473,7 +473,8 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
         from .cdf_write import factory_class              # a task written by the PDK's form: the form writer owns the cell
         if graph_contract(compiled.graph) != graph_contract(graph):
             raise TaskBlocked('This task fixes which values may change, their ranges and their grid. The rows of the parameter '
-                              'editor differ from what was saved; press "Save task" to save the new rows first.')
+                              'editor differ from what was saved: press "Save as" to keep them as a new task, or "Reload saved '
+                              'values" to take the saved ones back.')
         adv = run_settings.advanced
         from analog_optimizer.measurements.specs import RewardSettings
         # its decks load only the parts of the model file it uses (7.154)

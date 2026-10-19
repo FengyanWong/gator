@@ -101,7 +101,7 @@ await runChecks(browser, async () => {
     if (op === 'task/save' && conflict) {
       saving = { running: conflict, last: saving.last };
       return fulfil(requestId, 409, { detail: { code: 'save_running', running: conflict,
-        message: 'Another save is running (real:ring_osc, 5 s so far). Save task can be pressed again when it has ended.' } });
+        message: 'Another save is running (real:ring_osc, 5 s so far). Save as can be pressed again when it has ended.' } });
     }
     if (op === 'task/save' && hold) {
       saving = { running: runningAt('own', 2, 12), last: saving.last };

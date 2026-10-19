@@ -50,7 +50,7 @@ def test_empty_tables_are_the_agents_to_fix_and_everything_else_is_the_users(tmp
     assert items['validation']['who'] == 'you' and 'fine_tune needs a model' in items['validation']['detail']
     assert items['output']['status'] == 'done' and 'created when the run starts' in items['output']['detail']
     assert items['start']['status'] == 'missing'
-    assert items['parameters']['action'].startswith('Press "Reload saved values"')            # a registered task brings its own rows
+    assert items['parameters']['action'].startswith('Double-click the task in the Tasks window')   # a registered task brings its own rows
     assert all('Claude Code or Codex (the Agent window)' in items[k]['action'] for k in ('parameters', 'targets', 'measurements'))
     typed = readiness.build(dict(config, circuit=dict(source='virtuoso', library='L', cell='C')), task=task(), validation=dict(blocks_run=True, issues=found, facts={}))
     assert by_id(typed)['parameters']['action'].startswith('Fill in')                                  # a cell read from Virtuoso has no starter
@@ -61,16 +61,17 @@ def test_rows_that_differ_from_the_saved_task_are_one_press_of_the_users_and_the
     the issue before its last sentence and to advise "Reload saved values ... or the agent writes the rows"."""
     message = ('Specs differ from the saved task real:demo (revision 1): gain_vv: normalization_scale 260 V/V here, (none) saved; ibias_a: '
                'normalization_scale 280 uA here, (none) saved; pm_deg: normalization_scale 9.6 deg here, (none) saved; ugbw_hz: normalization_scale '
-               '11 MHz here, (none) saved. Press Save task to save the rows as they are now, or Reload saved values to take the saved rows back.')
+               '11 MHz here, (none) saved. Press Save as to keep these rows as a new task, or Reload saved values (under "not saved", beside the '
+               'task\'s name) to take the saved rows back.')
     report = readiness.build(complete(tmp_path), task=task(), validation=dict(blocks_run=True, issues=[issue('error', 'task_not_saved', 'targets', message)], facts={}))
     item = by_id(report)['targets']
     assert item['status'] == 'missing' and item['who'] == 'you' and item['detail'] == message          # whole, its last sentence included
-    assert item['action'].startswith('"Save task" is above the editors') and 'agent' not in item['action']
+    assert item['action'].startswith('"Save as" is on the editors\' tab line') and 'agent' not in item['action']
     assert not report['ready'] and report['next']['id'] == 'targets'
     # another blocking issue on the same table keeps the general advice: the rows themselves need work
     both = readiness.build(complete(tmp_path), task=task(), validation=dict(blocks_run=True, facts={}, issues=[
         issue('error', 'task_not_saved', 'targets', message), issue('error', 'unknown_metric', 'targets[0].equation', 'no such probe')]))
-    assert by_id(both)['targets']['who'] == 'agent' and by_id(both)['targets']['action'].startswith('Press "Reload saved values"')
+    assert by_id(both)['targets']['who'] == 'agent' and by_id(both)['targets']['action'].startswith('Double-click the task in the Tasks window')
 
 
 def test_an_inactive_or_soft_target_does_not_define_feasibility(tmp_path):
@@ -137,7 +138,7 @@ def test_a_real_profile_accepts_only_its_own_variables_and_the_checklist_says_so
     differs = readiness.build(real, profile=dict(rows=fixed, matches=False, error=None), **kw)
     assert not differs['ready'] and by_id(differs)['parameters']['status'] == 'missing'
     assert 'refused the moment it starts' in by_id(differs)['parameters']['detail']
-    assert by_id(differs)['parameters']['action'].startswith('Press "Reload saved values"')      # free and exact
+    assert by_id(differs)['parameters']['action'].startswith('Double-click the task in the Tasks window')   # free and exact
     same = readiness.build(real, profile=dict(rows=fixed, matches=True, error=None), **kw)
     assert same['ready'] and by_id(same)['parameters']['status'] == 'done'
     stuck = readiness.build(real, profile=dict(rows=fixed, matches=None, error='CompileError: no such device'), **kw)

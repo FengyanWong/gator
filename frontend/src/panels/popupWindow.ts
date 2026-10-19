@@ -1,5 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { registerInputWindow } from '../store';
+
+/** The windows open now, for the banner's Windows list (record 7.372): by name, with the window and the title it was given. */
+export type OpenWindow = { name: string; title: string; window: Window };
+const openNow = new Map<string, OpenWindow>();
+const listeners = new Set<() => void>();
+let openList: OpenWindow[] = [];
+const openChanged = () => { openList = [...openNow.values()]; listeners.forEach(listener => listener()); };
+const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
+/** The pop-up windows open now, in the order they opened. */
+export function useOpenWindows(): OpenWindow[] { return useSyncExternalStore(subscribe, () => openList); }
 
 /** What a panel says when the browser refused to open its window. */
 export const BLOCKED = 'The browser blocked the new window. Allow pop-ups for this page, then press the button again.';
@@ -50,6 +60,7 @@ export function usePopupWindow(name: string, options: {
   useEffect(() => {
     if (!popup) return;
     const stopTrackingInput = registerInputWindow(popup);
+    openNow.set(name, { name, title: latest.current.title, window: popup }); openChanged();
     const closed = () => { setPopup(null); setRoot(null); latest.current.onClose?.(); };   // closed with its own close button
     const leave = () => popup.close();                     // the workbench page is leaving: do not leave a dead window behind
     popup.addEventListener('pagehide', closed);
@@ -59,6 +70,7 @@ export function usePopupWindow(name: string, options: {
       popup.removeEventListener('pagehide', closed);
       window.removeEventListener('pagehide', leave);
       if (latest.current.closeOnUnmount) popup.close();
+      if (openNow.get(name)?.window === popup) { openNow.delete(name); openChanged(); }
     };
   }, [popup]);
 

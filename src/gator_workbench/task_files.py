@@ -31,8 +31,8 @@ from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTar
 FORMAT = 'gator-task-1'
 HELP = {
     'what this is': 'The task file: everything this task is, in one place. Edit it here or in the three editors. '
-                    '"Apply to editors" checks it and puts the rows into the editors; "Save task" stores it. Nothing is '
-                    'written to Virtuoso or saved until you press "Save task".',
+                    '"Apply to editors" checks it and puts the rows into the editors; "Save as" stores them as a new task. '
+                    'Nothing is written to Virtuoso or saved until you press "Save as".',
     'cell': 'The cell the task was read from. Since 2026-09-23 that is the copy you made in Virtuoso and read in the '
             'Virtuoso window (the workbench makes no copy of its own), so cell and copy name the same cell.',
     'copy': 'The cell in Virtuoso that the task simulates and writes its Maestro test into. A task saved before '

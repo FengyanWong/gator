@@ -38,6 +38,9 @@ export function useBottomPanel(runDir: string | null) {
   // A press that asks to see something in the bottom panel (one of its tabs, the header's run) opens it.
   const unfold = useCallback(() => { setOpened(true); changeBottom(b => (b.folded ? { ...b, folded: false } : b)); }, [changeBottom]);
   const toggleBottom = () => (folded ? unfold() : changeBottom(b => ({ ...b, folded: true })));
+  // A cell entered while the table has little room (record 7.372, Editors.tsx onCramped): the panel folds to its tab line, and a
+  // tab, the splitter or a run brings it back as before. Stable, for the memoised editors.
+  const foldForRows = useCallback(() => changeBottom(b => (b.folded ? b : { ...b, folded: true })), [changeBottom]);
 
   // ---- the splitter above the bottom panel (record 7.158): nothing moves unless it is dragged, double-clicked or keyed --------
   const layoutRef = useRef<HTMLDivElement>(null);
@@ -68,7 +71,7 @@ export function useBottomPanel(runDir: string | null) {
     const now = e.currentTarget.parentElement?.getBoundingClientRect().height ?? 0;
     setOpened(true); changeBottom(() => ({ height: fitBottom(now + step), folded: false }));
   };
-  return { bottom, folded, unfold, toggleBottom, layoutRef, dragBottom, keyBottom };
+  return { bottom, folded, unfold, toggleBottom, foldForRows, layoutRef, dragBottom, keyBottom };
 }
 export type BottomPanelState = ReturnType<typeof useBottomPanel>;
 /** The Runs window's presses, as the page hands them to the Runs button (App.tsx: functions that stay the same). */

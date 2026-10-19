@@ -416,9 +416,9 @@ def _configuration_routes(app: FastAPI, context: ApiContext):
         if verified:
             return dict(answer, suggestions=[], why_not=f'The rows of {runtime.task_key} are fixed by its verified circuit '
                         'profile: a run accepts exactly those. The structures are listed for information.')
-        answer['note'] = ('Save task afterwards: the task runs with the rows it was saved with.'
+        answer['note'] = ('Save as afterwards: a task runs with the rows it was saved with, so the ties run in the new task.'
                           if runtime.circuit.get('generated_profile') else 'The ties become part of the task when you '
-                          'press Save task.' if runtime.circuit.get('native_draft') else '')
+                          'press Save as.' if runtime.circuit.get('native_draft') else '')
         if body.apply is not None:
             before = config.model_dump(mode='json')
             after = dict(before, parameters=answer['parameters'])

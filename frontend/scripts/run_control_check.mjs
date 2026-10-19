@@ -388,7 +388,10 @@ await runChecks(browser, async () => {
   Object.assign(sim, { dir: DIR, mock: true, state: 'running', alive: true, charged: 3, steps: [] });   // the run the list names
   await open(null);
   check('a live run found in the run list is taken over: "Pause", not "Start"', await mainReads('Pause') && (await look()).remembered === DIR);
-  check('... and the message says so (7.261)', /^The header took over fixture_task__scratch__seed0__0001, a live run started elsewhere/.test((await look()).banner ?? ''), (await look()).banner ?? '');
+  // Record 7.372: a badge beside the run chip says so, the sentence in its tooltip (a line of its own under the header until then).
+  const taken = await evaluate(`(() => { const b = document.querySelector('header .run-state .run-taken'); return b ? { label: b.textContent, title: b.title } : null; })()`);
+  check('... and a badge beside the run chip says so, the sentence in its tooltip (7.261; a badge since 7.372)', taken?.label === 'started elsewhere'
+    && /^The header took over fixture_task__scratch__seed0__0001, a live run started elsewhere/.test(taken.title), JSON.stringify(taken));
   check('"Start" was never offered while it was looked up', !(await seen()).some(s => s[0] === 'Start' && s[1] === false), JSON.stringify(await seen()));
   await shot('run-7-taken-over.png');
 

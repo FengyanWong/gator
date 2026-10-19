@@ -341,7 +341,7 @@ def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
     existing = task_for_cell(imported['library'], imported['cell'])
     if existing:
         raise ProfileError(f'{imported["library"]}/{imported["cell"]} already has the registered task {existing["task_key"]}'
-                           + ('' if existing['generated'] else ' (a verified built-in circuit): choose it under Source: Registered task'))
+                           + ('' if existing['generated'] else ' (a verified built-in circuit): choose it in the Tasks window'))
     staging = directory.with_name(f'.{name}.creating')
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)

@@ -391,8 +391,9 @@ def claim(library, cell, task):
     """The first task saved from a cell takes the cell's working copy; a second task gets its own copy (Save as)."""
     record = verified(library, cell)
     if record.get('claimed_by') not in (None, task):
-        raise CopyError(f'{library}/{cell} belongs to the task real:{record["claimed_by"]}: open it (Save task saves it again). Another task '
-                        'needs another copy: make one in Virtuoso and read it in the Virtuoso window')
+        raise CopyError(f'{library}/{cell} belongs to the task real:{record["claimed_by"]}: open it in the Tasks window (its Save as '
+                        'makes another task, with a copy of its own). Another task of this cell otherwise needs another copy: '
+                        'make one in Virtuoso and read it in the Virtuoso window')
     write_json(record_dir(library, cell) / RECORD, dict(record, claimed_by=task))
 
 

@@ -200,7 +200,7 @@ def test_check_now_says_which_lock_is_held_the_tasks_session_or_its_cell(tmp_pat
         taken.kill()
         taken.wait()
     # the adapter's own refusal, when the cell was taken between the look and the connect
-    late = consistency._busy_step('CellBusy: The cell LIB/cell is in use by another run, check or Save task', (session, cell))
+    late = consistency._busy_step('CellBusy: The cell LIB/cell is in use by another run, check or task save', (session, cell))
     assert 'The cell\'s lock' in late['detail'] and 'another process (CellBusy' in late['detail']
     assert 'session lock' in consistency._busy_step('BlockingIOError: [Errno 11]', (session, cell))['detail']
 

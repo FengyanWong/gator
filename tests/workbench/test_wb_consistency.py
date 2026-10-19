@@ -36,7 +36,7 @@ def test_static_validation_says_when_the_editors_differ_from_the_saved_task(tmp_
     [issue] = issues(tighter)
     assert issue['path'] == 'targets' and issue['level'] == 'error'
     assert 'Specs differ from the saved task real:ring_osc (revision 1): osc_frequency_hz: lower 1.3 GHz here, 1.1 GHz saved' in issue['message']
-    assert 'Press Save task' in issue['message'] and 'Reload saved values' in issue['message']
+    assert 'Press Save as' in issue['message'] and 'Reload saved values' in issue['message']        # the page's words (7.376)
     wider = cfg.model_copy(deep=True)
     wider.parameters[0].upper = wider.parameters[0].upper + 0.2
     wider.measurements = wider.measurements[:0]
@@ -96,7 +96,7 @@ def test_a_maestro_measured_task_is_compared_with_its_maestro_test(tmp_path):
     result = consistency.check(probe(tmp_path), 'lab', cfg, commands=dict(preflight=preflight_process(tmp_path, skipped, 'maestro'),
                                                                            setup=setup_writer(tmp_path, changed)))
     [failed] = [s for s in result['steps'] if not s['ok']]
-    assert failed['step'] == 'maestro' and 'VT("/OUT2")' in failed['detail'] and 'Save task' in failed['fix']
+    assert failed['step'] == 'maestro' and 'VT("/OUT2")' in failed['detail'] and 'Save as' in failed['fix']
     reads = [json.loads(line)['op'] for line in (tmp_path / 'setup_calls.jsonl').read_text().splitlines()]
     assert reads.count('read_setup') == 2                                     # a read, never a write
 
@@ -124,7 +124,7 @@ def test_a_start_voltage_changed_in_virtuoso_stops_the_run(tmp_path):
                                                                            setup=setup_writer(tmp_path, answer({'OUT': '0.5'}))))
     [failed] = [s for s in result['steps'] if not s['ok']]
     assert failed['step'] == 'maestro' and 'Initial condition on OUT: the task says 0.9, Virtuoso has 0.5' in failed['detail']
-    assert 'Initial condition on N1' in failed['detail'] and 'Save task' in failed['fix']
+    assert 'Initial condition on N1' in failed['detail'] and 'Save as' in failed['fix']
 
 
 def test_a_start_is_refused_on_a_difference_and_the_check_is_recorded_when_it_passes(tmp_path, monkeypatch):
@@ -163,7 +163,7 @@ def test_a_busy_virtuoso_is_named_and_the_task_is_not_blamed(tmp_path, monkeypat
     taken = OK_STEPS[:1] + [dict(step='connect', ok=False, detail='BlockingIOError: [Errno 11] Resource temporarily unavailable')]
     result = consistency.check(probe(tmp_path), 'lab', cfg, commands=dict(preflight=preflight_process(tmp_path, taken)))
     busy = result['steps'][-1]
-    assert busy['step'] == 'busy' and busy['fix'] == consistency.FIX_BUSY and 'Save task' not in busy['fix']
+    assert busy['step'] == 'busy' and busy['fix'] == consistency.FIX_BUSY and 'Save' not in busy['fix']
     assert 'held by another process (BlockingIOError: [Errno 11]' in busy['detail']
     lock = bridge_state_dir() / 'session.lock'
     lock.parent.mkdir(parents=True, exist_ok=True)

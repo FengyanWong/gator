@@ -521,3 +521,5 @@ One row per commit, newest last.
 | `a481619` | 10-19 05:08 | 7.372, 7.376, 7.380 | nine page changes; the page's words name its buttons (Save as, not "Save task"); 8765 live again after the PC restarted (session "Frontend workbench layout design") |
 | `8d43a00` | 10-19 05:09 | - | record only: names the commit of records 7.372, 7.376 and 7.380, and the table rows for 8b67d97 and a481619 |
 | `c6f172c` | 10-19 16:49 | 7.363, 7.381, 7.383 | Round 4 offline: the plan (section 7b) and its results - LOADBench does not help the Round 3 models, option 1 neither (session "Training encoders with Zenodo dataset") |
+| `a5d3c5c` | 10-19 16:49 | - | record only: names the commit of records 7.363, 7.381 and 7.383, and the table rows for 8d43a00 and c6f172c |
+| `f6a989e` | 10-19 19:50 | 7.382 | TuRBO against transfer-learned SAC on three tasks (a trained model wins only near its training; TuRBO wins on the amplifier); TuRBO's memory growth fixed with malloc_trim after each proposal |

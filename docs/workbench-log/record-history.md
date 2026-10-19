@@ -519,3 +519,5 @@ One row per commit, newest last.
 | `705d43d` | 10-17 13:46 | 7.362 | the task's card: the task across the left and the centre, the circuit on request - the user's Option D (session "Frontend workbench layout design") |
 | `8b67d97` | 10-17 13:47 | - | record only: names the commit of record 7.362, and the table rows for ccd1d3f and 705d43d |
 | `a481619` | 10-19 05:08 | 7.372, 7.376, 7.380 | nine page changes; the page's words name its buttons (Save as, not "Save task"); 8765 live again after the PC restarted (session "Frontend workbench layout design") |
+| `8d43a00` | 10-19 05:09 | - | record only: names the commit of records 7.372, 7.376 and 7.380, and the table rows for 8b67d97 and a481619 |
+| `c6f172c` | 10-19 16:49 | 7.363, 7.381, 7.383 | Round 4 offline: the plan (section 7b) and its results - LOADBench does not help the Round 3 models, option 1 neither (session "Training encoders with Zenodo dataset") |

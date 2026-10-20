@@ -107,20 +107,25 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
     // the row under the pointer, and only the values recorded AT it (a row has one category: the other series have none there).
     // Rows that share its x count as it: compared runs learning 8 and 1 times per evaluation have 8 and 1 rows at one x (7.213).
     const index = hovering ? Math.min(data.x.length - 1, Math.max(0, u.posToIdx(u.cursor.left!))) : data.x.length - 1;
-    const parts: string[] = [];
+    const parts: [string, string][] = [];
     data.series.forEach((series, i) => {
       if (series.role === 'limit' || !u.series[i + 1]?.show) return;
       let value = series.values[index];
       for (let j = index - 1; value === undefined && j >= 0 && data.x[j] === data.x[index]; j--) value = series.values[j];
       for (let j = index + 1; value === undefined && j < data.x.length && data.x[j] === data.x[index]; j++) value = series.values[j];
       if (value === undefined) return;
-      parts.push(`${series.label} ${value === null ? 'no value' : latest.current.format(value)}`);
+      parts.push([series.label, value === null ? 'no value' : latest.current.format(value)]);
     });
     const row = data.rows[index];      // -1 on a comparison: several runs' rows share an x, none of them is named
     // The values first, then the row's phase and episode (branch record SIF-7): the line is cut at the chart's width, and the
     // values came last - "Newest: Evaluation 800 · search · episode 1-000189 step 4 · Training (recorded) 0.06274 · Training: me...".
-    element.textContent = `${hovering ? '' : 'Newest: '}${xLabel} ${data.x[index]}${parts.length ? ` · ${parts.join(' · ')}` : ''}${row != null && row >= 0 ? ` · ${latest.current.describe(row)}` : ''}`;
-    element.title = element.textContent;
+    // The numbers in the text colour, the words muted (branch record SIF-25): the eye finds a value; the line's text is the same.
+    const value = (text: string) => { const b = element.ownerDocument.createElement('b'); b.textContent = text; return b; };
+    const nodes: (Node | string)[] = [`${hovering ? '' : 'Newest: '}${xLabel} `, value(String(data.x[index]))];
+    parts.forEach(([label, text]) => nodes.push(` · ${label} `, value(text)));
+    if (row != null && row >= 0) nodes.push(` · ${latest.current.describe(row)}`);
+    element.replaceChildren(...nodes);
+    element.title = element.textContent ?? '';
   };
 
   const layoutKey = useMemo(() => (built ? `${built.axis}|${built.unit}|${built.series.map(s => `${s.role}:${s.label}:${s.category}`).join('|')}` : ''), [built]);

@@ -242,3 +242,6 @@ table.run-table td .run-design { display: block; }
 table.task-table th, table.task-table td.task-cell, table.task-table :is(.task-folder-label, .task-internal-name, .task-mark) { white-space: normal; }
 @media (max-width: 1250px) { table.task-table td.task-when { white-space: normal; } }   /* a narrow window: date over time */
 table.task-table .task-date { white-space: nowrap; } table.task-table .name-part { display: inline-block; }
+
+/* SIF-25: the Training charts' readout line - its numbers in the text colour, the words around them muted. */
+.training-readout b { color: var(--text); font-weight: 600; }

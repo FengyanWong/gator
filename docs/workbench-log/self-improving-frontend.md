@@ -341,3 +341,15 @@ Measured (69 tasks): 1500 px - Newest run 279 px, two lines; rows 47 px median (
 
 **Checked.** `tsc` clean; `task_list_check` 80 (one new: minute, tooltip, unbreakable date, name part), `task_rows_check`
 52, `task_run_check` 31, `run_list_check` 119, `ngspice_window_check` 39, `dom_identity_check` 56, `looks_check` 62.
+
+### SIF-25 The Training readout's numbers stand out (2026-10-20)
+
+**Found.** The line above each Training chart ("Newest: Evaluation 800 · Training (recorded) 0.06274 · Training: mean of
+last 20 0.05706 · search · episode ...") was one muted 11 px monospace run of text: the numbers - what the line is read
+for - looked like the words around them.
+
+**Changed** (`TrainingChart.tsx`, `roadster.css`): the x and each value are `<b>` in the text colour, the words stay muted.
+The line's text is the same (every check reads it), and so is its tooltip.
+
+**Checked.** `tsc` clean; `training_tab_check` 89 (one new: three emphasised numbers, not in the muted colour),
+`training_data_check` 117, `looks_check` 62; the user's VCO run on the branch (5174).

@@ -286,6 +286,9 @@ await runChecks(browser, async () => {
   await page.setValue(SMOOTH, '50');
   check('smoothing: the recorded values stay under a mean of the last 50', await until(`/Training \\(recorded\\) -?[\\d.]+.*Training: mean of last 50 -?[\\d.]+/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`),
     await readout(0));
+  check('the readout\'s numbers stand out: the x and each value in the text colour, the words muted (branch record SIF-25)',
+    await evaluate(`(() => { const r = [...(${TRAINING}).querySelectorAll('.training-readout')][0], b = [...r.querySelectorAll('b')];
+      return b.length === 3 && /^\\d+$/.test(b[0].textContent) && b.every(x => getComputedStyle(x).color !== getComputedStyle(r).color); })()`), await readout(0));
   await page.shot(path.join(out, 'training-critic-smoothed.png'), `(${TRAINING})`);
 
   // ---- resizing the bottom panel ---------------------------------------------------------------------------------------------

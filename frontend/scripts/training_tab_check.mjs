@@ -427,7 +427,7 @@ await runChecks(browser, async () => {
   const onceAt288 = RUNS.once.data.updates.find(u => u.evaluations_collected === 288), onceLast = RUNS.once.data.updates.at(-1);
   const p4 = v => String(+v.toPrecision(4));
   check('learner charts are drawn by update unless chosen otherwise', (await evaluate(`(${LEARNER_X}).value`)) === 'update'
-    && await until(`/^Newest: Learner update ${liveLast.cumulative_updates} \u00b7 after 288 evaluations/.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)`, 40), await readout(1));
+    && await until(`/^Newest: Learner update ${liveLast.cumulative_updates} \u00b7 .* \u00b7 after 288 evaluations$/.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)`, 40), await readout(1));
   box = await plotBox(1);
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x + box.w * 0.2, y: box.y + box.h / 2, button: 'left', clickCount: 1 });
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w * 0.4, y: box.y + box.h / 2, button: 'left', buttons: 1 });
@@ -436,7 +436,7 @@ await runChecks(browser, async () => {
   const learnerZoomed = await until(`!(${RESET}).disabled`, 30);
   await page.setValue(LEARNER_X, 'evaluation');
   check('by evaluation: x = the evaluations collected, the newest row named by its update; the zoom of the learner chart let go',
-    learnerZoomed && await until(`/^Newest: Evaluation 288 \u00b7 update ${liveLast.cumulative_updates} \u00b7 Critic loss \\(recorded\\) ${p4(liveLast.critic_loss).replace('.', '\\.')} \u00b7 Critic loss: mean of last 50 evaluations /.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)`, 40)
+    learnerZoomed && await until(`/^Newest: Evaluation 288 \u00b7 Critic loss \\(recorded\\) ${p4(liveLast.critic_loss).replace('.', '\\.')} \u00b7 Critic loss: mean of last 50 evaluations \\S+ \u00b7 update ${liveLast.cumulative_updates}$/.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)`, 40)
     && await evaluate(`(${RESET}).disabled`), await readout(1));
   await page.setValue(COMPARE, RUNS.once.dir);
   await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2`, 60);
@@ -559,11 +559,11 @@ await runChecks(browser, async () => {
   check('the long live run is drawn on as results arrive: its newest evaluation on the first chart', await until(`/^Newest: Evaluation ${newest} /.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 60),
     await readout(0));
   // the newest learner update and its mean of the last 50, as recorded (the learner's numbers derived as rows arrived)
-  const newestText = await readout(1), parsed = /^Newest: Learner update (\d+) · after (\d+) evaluations · Critic loss \(recorded\) (\S+) · Critic loss: mean of last 50 (\S+)/.exec(newestText);
+  const newestText = await readout(1), parsed = /^Newest: Learner update (\d+) · Critic loss \(recorded\) (\S+) · Critic loss: mean of last 50 (\S+) · after (\d+) evaluations/.exec(newestText);   // values first (SIF-7)
   const lastUpdate = RUNS.long.data.updates[RUNS.long.data.prefix[newest] - 1], window50 = RUNS.long.data.updates.slice(RUNS.long.data.prefix[newest] - 50, RUNS.long.data.prefix[newest]);
   check('...its newest learner update with the recorded critic loss and the mean of the last 50 recorded ones', !!parsed && Number(parsed[1]) === lastUpdate.cumulative_updates
-    && Number(parsed[2]) === lastUpdate.evaluations_collected && Number(parsed[3]) === +lastUpdate.critic_loss.toPrecision(4)
-    && Number(parsed[4]) === +(window50.reduce((sum, u) => sum + u.critic_loss, 0) / 50).toPrecision(4), `${newestText} | recorded: update ${lastUpdate.cumulative_updates}, ${lastUpdate.critic_loss}`);
+    && Number(parsed[4]) === lastUpdate.evaluations_collected && Number(parsed[2]) === +lastUpdate.critic_loss.toPrecision(4)
+    && Number(parsed[3]) === +(window50.reduce((sum, u) => sum + u.critic_loss, 0) / 50).toPrecision(4), `${newestText} | recorded: update ${lastUpdate.cumulative_updates}, ${lastUpdate.critic_loss}`);
   RUNS.longlive.state = 'completed';
 
   // switching runs in the run window, three times to the long run and back: each time its rows are given back

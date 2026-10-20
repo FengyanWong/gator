@@ -130,3 +130,15 @@ seed0 | completed [MOCK]": "|" where every other line of the page sets parts apa
 part. Checks: `run_list_check` (the label), `task_run_check` (finds the run by its task between the dots).
 
 **Checked.** `tsc` clean; `run_list_check` 119, `task_list_check` 79, `task_run_check` 31, `run_control_check` 101.
+
+### SIF-7 A Training chart's line says its values first (2026-10-20; from the design survey)
+
+**Found.** The line over each Training chart - the newest values, or those under the pointer - is cut at the chart's width,
+and its values came last: "Newest: Evaluation 800 · search · episode 1-000189 step 4 · Training (recorded) 0.06274 ·
+Training: me...", so at 1366 px only the phase and the episode showed.
+
+**Changed.** `TrainingChart.tsx`: the evaluation (or update), then the values, then the row's phase and episode ("Newest:
+Evaluation 800 · Training (recorded) 0.06274 · Training: mean of last 20 0.061 · search · episode 1-000189 step 4"); the
+whole line stays in its tooltip. Check: `training_tab_check` (three patterns follow the order).
+
+**Checked.** `tsc` clean; `training_tab_check` 88, `training_data_check` 117, `graph_view_check` 63.

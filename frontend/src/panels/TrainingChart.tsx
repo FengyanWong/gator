@@ -117,7 +117,9 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
       parts.push(`${series.label} ${value === null ? 'no value' : latest.current.format(value)}`);
     });
     const row = data.rows[index];      // -1 on a comparison: several runs' rows share an x, none of them is named
-    element.textContent = `${hovering ? '' : 'Newest: '}${xLabel} ${data.x[index]}${row != null && row >= 0 ? ` · ${latest.current.describe(row)}` : ''}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
+    // The values first, then the row's phase and episode (branch record SIF-7): the line is cut at the chart's width, and the
+    // values came last - "Newest: Evaluation 800 · search · episode 1-000189 step 4 · Training (recorded) 0.06274 · Training: me...".
+    element.textContent = `${hovering ? '' : 'Newest: '}${xLabel} ${data.x[index]}${parts.length ? ` · ${parts.join(' · ')}` : ''}${row != null && row >= 0 ? ` · ${latest.current.describe(row)}` : ''}`;
     element.title = element.textContent;
   };
 

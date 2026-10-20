@@ -4,7 +4,7 @@ import { Blocked, PopupPortal } from './popupParts';
 import { RUNS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { tasksShared } from '../shared';
-import { bytes, clock, durationTenths as span, folderName, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, short, stamp } from '../format';
+import { bytes, clock, durationTenths as span, folderName, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, short, stamp, stopWords } from '../format';
 import { isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
@@ -268,7 +268,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   const copyPath = (text: string) => (popup ?? window).navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
 
   const current: Json = runs.find(r => r.run_dir === runDir) ?? null;
-  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, runMode(r), runDesign(r), r.model_label, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folderName(r.run_dir),
+  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, runMode(r), runDesign(r), r.model_label, `seed${r.seed}`, r.state, r.stop_reason, stopWords(r.stop_reason), r.experiment, r.mock ? 'mock' : 'real', folderName(r.run_dir),
     folders.data.folders[folders.of(r.run_dir)]].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
   // Only while the window is open: the page redraws on every status poll, and a closed window needs no sorted list.
@@ -311,7 +311,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
               && <div className="hint task-folder-label">{folders.data.folders[folders.of(r.run_dir)]}</div>}</td>
             <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{end.text}</td>
             <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && ' so far'}</td>
-            <td><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint">{breakAt(r.stop_reason)}</div>}</td>
+            <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}</td>
             <td className="wrap" title={r.task_id}>{taskOf(r)}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
             <td className="wrap">{origin.parent ? <button className="item-link" onClick={() => focusRun(origin.parent!)} title={`${origin.parent}\nShow the run it started from.`}>{origin.text}</button> : origin.text}
               {origin.missing && <span className="hint" title="That run is not under this output folder."> (gone)</span>}</td>

@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
 import { si } from '../units';
-import { bytes, num, runName, short, sig, stamp } from '../format';
+import { bytes, num, runName, short, sig, stamp, stopWords } from '../format';
 import { ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
@@ -127,7 +127,7 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
     {/* The run at a glance (record 7.360, the Roadster look): how far it is, then four numbers; the table below holds them all. */}
     {b && <div className="status-hero">
       <div className="status-hero-count">
-        <span className="status-hero-state">{status.state}{status.stop_reason ? ` · ${status.stop_reason}` : ''}</span>
+        <span className="status-hero-state" title={status.stop_reason ?? undefined}>{status.state}{status.stop_reason ? ` · ${stopWords(status.stop_reason)}` : ''}</span>
         <span className="status-hero-number">{b.charged}<span className="of"> / {b.max_evaluations}</span></span>
         <span className="hint">evaluations charged · {b.in_flight} in flight · {b.failed} failed</span>
         <span className={`status-hero-bar${status.state === 'completed' ? ' done' : ['failed', 'cancelled', 'interrupted'].includes(status.state) ? ' bad'
@@ -142,7 +142,7 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       </div>
     </div>}
     <table className="grid small"><tbody>
-      <tr><td>State</td><td><b>{status.state}</b>{status.stop_reason ? ` (${status.stop_reason})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>
+      <tr><td>State</td><td title={status.stop_reason ?? undefined}><b>{status.state}</b>{status.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>
       {/* The Mode as the RL model window names it (branch record SIF-14: it wrote the key, "scratch (no weights loaded)"). */}
       <tr><td>Mode / model</td><td>{MODE_NAME[status.mode] ?? status.mode}{status.manifest?.source_model?.run_id ? ` - from run ${status.manifest.source_model.run_id.slice(0, 12)}, save point ${status.manifest.source_model.checkpoint_id}` : ' - no weights loaded'}</td></tr>
       <tr><td>Budget</td><td>{b ? `${b.charged} charged / ${b.max_evaluations}  (in flight ${b.in_flight}, completed ${b.completed}, failed ${b.failed}, remaining ${b.remaining})` : '-'}</td></tr>

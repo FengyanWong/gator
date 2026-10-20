@@ -234,3 +234,20 @@ ckpt-...": the configuration's key.
 Mode as the RL model window names it. Check: `room_check` (22: the fixture run's row).
 
 **Checked.** `tsc` clean; `room_check` 22, `looks_check` 62, `calibration_check` 38, `run_control_live_check` 23.
+
+### SIF-15 Why a run stopped, in words (2026-10-20; from the design survey)
+
+**Found.** A stopped run said why by its key - "completed · budget_exhausted" in Run status, "budget_exhausted",
+"offline_update_budget", "unresolved_launch_intent" under the state in the Runs window - though the page says everything
+else in words.
+
+**Changed.** `format.ts` (`STOP_WORDS`, `stopWords`): "budget used up", "update budget used up", "first feasible design
+found", "an evaluation failed", "launch not confirmed", "too many failures in a row", "stopped by you", ... (a key the list
+does not know reads with spaces); the key on hover. In Run status's first line and its State row (`RunTabs.tsx`) and under the
+state in the Runs window (`RunList.tsx`; the cell may wrap now, so the table still fits; the filter finds the words too).
+Check: `run_list_check` ("completed budget used up").
+
+**Checked.** `tsc` clean; `run_list_check` 119, `room_check` 22, `task_run_check` 31, `task_list_check` 79, `looks_check` 62,
+`calibration_check` 38, `run_control_live_check` 23. With the user's 549 runs: "budget used up" 483, "update budget used up"
+23, "an evaluation failed" 13, "first feasible design found" 11, "stopped by you" 6, "launch not confirmed" 5, ...; the
+table 1234 px in its 1234 px.

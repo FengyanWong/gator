@@ -195,7 +195,7 @@ await runChecks(browser, async () => {
     ['Started', 'Finished', 'Duration', 'State', 'Task', 'Mode', 'Seed', 'Evaluations', 'First feasible', 'Experiment', 'Data', 'Can continue'].every(t => titles.includes(t)), titles.join(', '));
   let r = rowOf(rows, DONE);
   check('a finished run shows when it started and finished (local time) and how long it worked', r.Started === stamp(DONE.created_utc) && r.Finished === stamp(DONE.ended_utc) && r.Duration === '17.8 s', JSON.stringify(r));
-  check('... and what it was and came to', /^completed\s*budget_exhausted$/.test(r.State) && r.Task === 'fixture_task' && r.Mode === 'New model Graph Transformer' && r.Seed === '1' && r.Evaluations === '60 / 60'
+  check('... and what it was and came to', /^completed\s*budget used up$/.test(r.State) && r.Task === 'fixture_task' && r.Mode === 'New model Graph Transformer' && r.Seed === '1' && r.Evaluations === '60 / 60'
     && r['First feasible'] === 'at 23' && r.Experiment === 'fixture_exp__0001' && r.Data === 'MOCK' && r['Can continue'] === 'yes', JSON.stringify(r));
   r = rowOf(rows, RESUMED);
   check('a run that was paused and continued: the duration is its working time, the pause is named, not counted', r.Duration === '15 min 00 s' && /sat paused for 2 h 00 min/.test(r.durationTitle)

@@ -546,3 +546,25 @@ red ... Red border ...". (The node colours - blue nmos, red pmos, yellow bipolar
 
 **Checked.** `tsc` clean; `graph_view_check` 64 (one new: the title's design name, no tool shorter than its line),
 `model_chooser_check` 77, `network_panel_check` 58, `looks_check` 64; the box scan of the open graph view finds no cut box.
+
+### SIF-38 Run status's facts in the page's words (2026-10-20)
+
+**Found** (the user's VCO run, Run status scrolled through, the branch on 5174):
+- "Worst applicable values: f_center_hz=1.28318e+9 Hz; kvco_hz_v=-1.09516e+9 Hz/V; inl1=-0.00179155 1; ..." - six digits,
+  exponents, a "1" for a ratio; "Nominal values" listed the same specs in another order;
+- "Best design: Full-plan feasible; reward ; hard violation 0" (no reward recorded: an empty clause);
+- "worst hard-spec share 0.500000"; "Tightest clearance: 0.0459112 f_center_hz";
+- "Connection: unknown 57244 s old"; "last save 2026-10-16T17:20:54.493259+00:00", "Last checkpoint
+  2026-10-16T17:21:11.499986+00:00" - UTC where every other time on the page is this computer's;
+- "(dispatch #1, 1 completed, 3 in flight, 1 launches)".
+
+**Changed** (`RunTabs.tsx`): values in their units as the editors write them, three digits ("f_center_hz = 1.28 GHz;
+kvco_hz_v = -1.1 GHz/V; inl1 = -0.00179; ... power_w = 284 uW"), Nominal values in the order of the row above; the reward
+clause only when there is a reward; "share 0.5"; "0.0459, on f_center_hz"; "15 h 56 min old"; local times with the UTC
+in the tooltip; "1 launch".
+
+**Checked.** `tsc` clean; `save_now_check` 25 (one new: Last checkpoint in this computer's time, the UTC in its tooltip),
+`run_control_check` 101, `calibration_check` 38, `calibration_save_check` 22, `export_check` 22, `training_tab_check` 89,
+`run_list_check` 121, `task_run_check` 31, `dom_identity_check` 56, `looks_check` 64, `agent_window_check` 28,
+`room_check` 22. (`reward_v2_frontend_check`, stand-alone, reads "Executed reward ... worst hard-spec share 0.5" and "Best
+design" starting "Nominal feasible only": both hold.)

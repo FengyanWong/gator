@@ -110,6 +110,9 @@ await runChecks(browser, async () => {
   check('the Run status tab has no Save now, Pause, Stop or Force cancel of its own: the header has them', await until(`!!document.querySelector('.status-grid') && ${TAB_COMMANDS} === 0`, 60));
   const ROW = `[...document.querySelectorAll('.status-grid tr')].find(r => r.cells[0]?.textContent === 'Last checkpoint')?.cells[1]?.textContent ?? ''`;
   check('its "Last checkpoint" row shows the answered request', await until(`/Save now: saved at 14 evaluations \\(ckpt-00000014-fixture\\)/.test(${ROW})`, 40), await evaluate(ROW));
+  const when = await evaluate(`(() => { const td = [...document.querySelectorAll('.status-grid tr')].find(r => r.cells[0]?.textContent === 'Last checkpoint')?.cells[1]; return { text: td?.textContent ?? '', title: td?.title ?? '' }; })()`);
+  const local = (() => { const d = new Date('2026-09-21T00:00:20+00:00'), two = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; })();
+  check('its time is this computer\'s, as every time on the page, the UTC in its tooltip (branch record SIF-38)', when.text.startsWith(local) && when.title === '2026-09-21T00:00:20+00:00 (UTC)', JSON.stringify({ ...when, local }));
   sim.manual_save = { id: 'fixture-request-3', state: 'waiting', requested_utc: '2026-09-21T00:00:30+00:00', checkpoint_id: null, saved_utc: null, evaluations: null };
   check('while a request is waiting the row says so', await until(`/Save now: requested, waiting for the simulation in flight to finish/.test(${ROW})`, 40), await evaluate(ROW));
   await shot('save-now-4-status-tab.png');

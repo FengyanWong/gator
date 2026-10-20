@@ -1,8 +1,8 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
-import { si } from '../units';
-import { bytes, num, runName, short, sig, stamp, stopWords } from '../format';
+import { quantity, si } from '../units';
+import { bytes, durationWhole, num, runName, short, sig, stamp, stopWords } from '../format';
 import { ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
@@ -113,9 +113,17 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection;
   const firstNominal = b?.first_nominal_feasible;
   const firstCost = (event: Json) => event
-    ? `at ${event.first_feasible_eval_count} evaluations charged (dispatch #${event.dispatch_index}, ${event.completed_count} completed, ${event.in_flight_count} in flight, ${event.spectre_launches} launches)`
+    ? `at ${event.first_feasible_eval_count} evaluations charged (dispatch #${event.dispatch_index}, ${event.completed_count} completed, ${event.in_flight_count} in flight, ${event.spectre_launches} launch${event.spectre_launches === 1 ? '' : 'es'})`
     : 'not observed';
   const executedReward = status.summary?.reward;
+  // The facts below in the page's words (branch record SIF-38): a number to three digits, a value in its unit as the editors
+  // write it (1.28 GHz, not "1.28318e+9 Hz"; a ratio without a "1"), times in this computer's time with UTC in the tooltip.
+  const few = (v: Json) => typeof v === 'number' ? sig(v) : v == null ? '-' : String(v);
+  const metric = (k: string, v: Json) => { const u = best?.metric_units?.[k];
+    return `${k} = ${typeof v === 'number' && u && u !== '1' ? quantity(v, u, 3) : few(v)}`; };
+  const metricKeys = Object.keys(best?.worst_metrics ?? best?.metrics ?? {});
+  const nominalKeys = [...metricKeys, ...Object.keys(best?.nominal_metrics ?? {}).filter(k => !metricKeys.includes(k))]
+    .filter(k => k in (best?.nominal_metrics ?? {}) && k in (best?.metrics ?? {}));   // the order of the row above
   const hasV2 = Object.prototype.hasOwnProperty.call(b ?? {}, 'first_nominal_feasible');
   // Continue... is worth a word while the run is at rest in a state it can go on from: a completed run too, once the
   // backend's continuation check can say whether a higher total is allowed (record 7.261).
@@ -150,18 +158,18 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       {b && <tr><td>Launch accounting</td><td>{b.confirmed_launches ?? b.launches} confirmed, {b.uncertain_launches ?? 0} uncertain, {b.reserved_launches ?? 0} reserved</td></tr>}
       <tr><td>Active workers</td><td>{(status.active_workers ?? []).map((w: Json) => `#${w.worker_id}: ${w.phase} attempt ${w.attempt}`).join('; ') || 'none'} (concurrency {status.concurrency})</td></tr>
       <tr><td>Learner updates</td><td>{status.learner_updates}</td></tr>
-      {executedReward?.version === 'constraint_violation_v2' && <tr><td>Executed reward</td><td>{executedReward.settings.violation_shape}; worst hard-spec share {num(executedReward.settings.worst_spec_share)}; objective weight {num(executedReward.settings.objective_weight)}; margin weight {num(executedReward.settings.margin_weight)}</td></tr>}
+      {executedReward?.version === 'constraint_violation_v2' && <tr><td>Executed reward</td><td>{executedReward.settings.violation_shape}; worst hard-spec share {few(executedReward.settings.worst_spec_share)}; objective weight {few(executedReward.settings.objective_weight)}; margin weight {few(executedReward.settings.margin_weight)}</td></tr>}
       <tr><td>{hasV2 ? 'First full-plan feasibility' : 'First feasibility (recorded)'}</td><td>{firstCost(first)}</td></tr>
       <tr><td>First nominal feasibility</td><td>{firstNominal ? firstCost(firstNominal) : hasV2 ? 'not observed' : 'unknown (historical run)'}</td></tr>
-      <tr><td>Best design</td><td>{best ? `${best.feasible ? best.conditions_complete === true ? 'Full-plan feasible' : 'Feasible (coverage unknown)' : best.nominal_feasible ? 'Nominal feasible only' : 'Infeasible'}; reward ${num(best.reward)}; hard violation ${num(best.violation)}` : 'none'}</td></tr>
+      <tr><td>Best design</td><td>{best ? `${best.feasible ? best.conditions_complete === true ? 'Full-plan feasible' : 'Feasible (coverage unknown)' : best.nominal_feasible ? 'Nominal feasible only' : 'Infeasible'}${best.reward != null ? `; reward ${few(best.reward)}` : ''}; hard violation ${few(best.violation)}` : 'none'}</td></tr>
       {best && <tr><td>Conditions</td><td>Nominal: {best.nominal_feasible == null ? 'unknown' : best.nominal_feasible ? 'pass' : 'fail'}; robust: {best.robust_feasible == null ? 'not evaluated' : best.robust_feasible ? 'pass' : 'fail'}; coverage: {best.conditions_complete == null ? 'unknown' : best.conditions_complete ? 'complete' : 'partial'}</td></tr>}
       {best && <tr><td>Conditions evaluated / planned</td><td>{best.conditions_evaluated ?? 'unknown'} / {best.conditions_planned ?? 'unknown'}</td></tr>}
-      {best && <tr><td>{best.worst_metrics ? 'Worst applicable values' : 'Recorded values'}</td><td>{Object.entries(best.worst_metrics ?? best.metrics ?? {}).map(([k, v]) => `${k}=${num(v)} ${best.metric_units?.[k] ?? ''}`).join('; ')}</td></tr>}
-      {best?.nominal_metrics && <tr><td>Nominal values</td><td>{Object.entries(best.nominal_metrics).filter(([k]) => k in (best.metrics ?? {})).map(([k, v]) => `${k}=${num(v)} ${best.metric_units?.[k] ?? ''}`).join('; ')}</td></tr>}
-      {best && <tr><td>Tightest clearance</td><td>{num(best.clearance_margin)} {best.tightest_clearance_spec ?? ''}</td></tr>}
-      <tr><td>Connection</td><td><span className={`badge state-${conn?.overall}`}>{conn?.overall}</span>{conn?.age_seconds != null && ` ${Math.round(conn.age_seconds)} s old`}</td></tr>
-      <tr><td>Persistence</td><td className={status.persistence?.failed ? 'error' : ''}>{status.persistence ? `commit ${status.persistence.last_commit_seq}, flushed ${status.persistence.flushed_seq}, ${bytes(status.persistence.bytes_written)} table data; last save ${status.persistence.last_successful_save ?? '-'}` : '-'} {status.persistence?.failed ?? ''}</td></tr>
-      <tr><td>Last checkpoint</td><td>{status.last_checkpoint_utc ?? '-'}
+      {best && <tr><td>{best.worst_metrics ? 'Worst applicable values' : 'Recorded values'}</td><td>{metricKeys.map(k => metric(k, (best.worst_metrics ?? best.metrics)[k])).join('; ')}</td></tr>}
+      {best?.nominal_metrics && <tr><td>Nominal values</td><td>{nominalKeys.map(k => metric(k, best.nominal_metrics[k])).join('; ')}</td></tr>}
+      {best && <tr><td>Tightest clearance</td><td>{few(best.clearance_margin)}{best.tightest_clearance_spec ? `, on ${best.tightest_clearance_spec}` : ''}</td></tr>}
+      <tr><td>Connection</td><td><span className={`badge state-${conn?.overall}`}>{conn?.overall}</span>{conn?.age_seconds != null && ` ${durationWhole(conn.age_seconds)} old`}</td></tr>
+      <tr><td>Persistence</td><td className={status.persistence?.failed ? 'error' : ''} title={status.persistence?.last_successful_save ? `last save ${status.persistence.last_successful_save} (UTC)` : undefined}>{status.persistence ? `commit ${status.persistence.last_commit_seq}, flushed ${status.persistence.flushed_seq}, ${bytes(status.persistence.bytes_written)} table data; last save ${stamp(status.persistence.last_successful_save) ?? status.persistence.last_successful_save ?? '-'}` : '-'} {status.persistence?.failed ?? ''}</td></tr>
+      <tr><td>Last checkpoint</td><td title={status.last_checkpoint_utc ? `${status.last_checkpoint_utc} (UTC)` : undefined}>{stamp(status.last_checkpoint_utc) ?? status.last_checkpoint_utc ?? '-'}
         {status.manual_save && <span className={status.manual_save.state === 'saved' ? 'ok' : 'warn'}> - Save now: {status.manual_save.state === 'saved'
           ? `saved at ${status.manual_save.evaluations} evaluations (${status.manual_save.checkpoint_id})`
           : 'requested, waiting for the simulation in flight to finish'}</span>}</td></tr>

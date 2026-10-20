@@ -296,3 +296,7 @@ details.compat-raw > pre { max-height: 12em; overflow: auto; white-space: pre-wr
 /* SIF-37: the circuit graph view's tools keep their compact 26 px (styles.css) without the Roadster padding above and below:
    12 px of room cut the lists' words ("Local port edges", "block 1") through the middle. */
 .graph-tools :is(input, select, button) { padding-top: 0; padding-bottom: 0; }
+
+/* SIF-43: the Windows menu's "Close all" is an action, not a window: a line sets it apart from the windows listed above it. */
+header .windows-list .windows-close-all { position: relative; margin-top: 6px; }
+header .windows-list .windows-close-all::before { content: ''; position: absolute; left: 2px; right: 2px; top: -6px; border-top: 1px solid var(--line); }

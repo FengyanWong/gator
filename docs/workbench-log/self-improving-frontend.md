@@ -620,3 +620,10 @@ Full suite on SIF-1..42: 53/54 scripts, 2,222 checks; `save_now_check` failed on
 `checkpoint` command" - it read the command list the moment the button said "Saving...", before the request reached its
 intercept (its later "only checkpoint was ever sent" passed). The step now waits for the command; then three runs of
 `save_now_check` + `run_control_check`, 126 checks each, none failed.
+
+### SIF-43 The Windows menu sets "Close all" apart (2026-10-20)
+
+**Changed** (`roadster.css`): in the banner's Windows menu a thin line stands between the windows listed (Runs, Tasks ...)
+and "Close all", an action on all of them (it was already muted, but looked like one more window).
+
+**Checked.** `task_list_check` 80, `looks_check` 64; the menu with the Runs and Tasks windows open at 1366 px (5174).

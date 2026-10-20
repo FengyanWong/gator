@@ -201,6 +201,9 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
   const exportResearch = () => exporting('research', async () => {
     const written = await api.exportAggregates(runDir);
     return `Downloaded ${await download(api.aggregatesUrl(runDir), 'aggregates.zip')} (${Object.keys(written.files).length} tables). Also kept in ${written.experiment_dir}/aggregates`; });
+  // A column of numbers only (no id) is right-aligned in figures of one width (branch record SIF-32), as a spreadsheet's.
+  const numeric = new Set<string>((data?.columns ?? []).filter((c: string) => !/_id$/.test(c) && (data.rows as Json[]).some(r => r[c] != null)
+    && (data.rows as Json[]).every(r => r[c] == null || typeof r[c] === 'number')));
   return (<div>
     <SteeringCheck value={status?.steering} />
     <div className="row"><select className="tab-choice" value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
@@ -208,14 +211,14 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
       <button disabled={!!busy} onClick={exportCsv} title="Export detailed CSV: The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded."><Icon name={busy === 'csv' ? 'wait' : 'csv'} label={busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'} /></button>
       <button disabled={!!busy} onClick={exportResearch} title="Export research CSVs: The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip."><Icon name={busy === 'research' ? 'wait' : 'zip'} label={busy === 'research' ? 'Exporting...' : 'Export research CSVs'} /></button>
       <span className="hint">{data ? `${data.total_rows} rows (snapshot at commit ${data.cutoff_commit_seq}); last ${data.rows.length} shown.` : ''} {error ?? note}</span></div>
-    {data && <div className="scroll"><table className="grid small data-table"><thead><tr>{data.columns.map((c: string) => <th key={c}>{c}</th>)}</tr></thead>
+    {data && <div className="scroll"><table className="grid small data-table"><thead><tr>{data.columns.map((c: string) => <th key={c} className={numeric.has(c) ? 'num-cell' : undefined}>{c}</th>)}</tr></thead>
       <tbody>{data.rows.map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
         // One line per row (record 7.158): an id ends in "..." - the whole value on hover, a click copies it - a time keeps
         // its full width, and no word is cut in two; a long hash used to wrap into a column of letters as tall as a paragraph.
         const object = typeof r[c] === 'object' && r[c] !== null, text = object ? JSON.stringify(r[c]) : num(r[c]);
         const id = /_id$/.test(c) && text !== '', time = /_(at|utc)$/.test(c);
         // A JSON value keeps to one line too (branch record SIF-4): it wrapped into a block 200 px tall.
-        return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : undefined} title={id || object ? `${text}\nClick to copy` : undefined}
+        return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : numeric.has(c) ? 'num-cell' : undefined} title={id || object ? `${text}\nClick to copy` : undefined}
           onClick={id || object ? () => copy(text) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>}
   </div>);
 }

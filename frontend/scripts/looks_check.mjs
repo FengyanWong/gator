@@ -39,9 +39,9 @@ const STATUS = { state: 'completed', run_id: 'fixture-run', mode: 'scratch', ent
   manifest: { mode: 'scratch', mock: true, task_id: 'fixture_task:0000', seeds: { target_seed: 0 }, source_model: null, budgets: { max_evaluations: 1 },
     mock_notice: 'FIXTURE MOCK DATA: nothing was started.' } };
 const TABLE = { table: 'evaluations', total_rows: 1, cutoff_commit_seq: 1,
-  columns: ['run_id', 'evaluation_id', 'task_id', 'worker_id', 'phase', 'action_source', 'proposed_at', 'action'],
+  columns: ['run_id', 'evaluation_id', 'task_id', 'worker_id', 'phase', 'action_source', 'proposed_at', 'action', 'global_env_step'],
   rows: [{ run_id: ID, evaluation_id: 'ac07f01279ed4c28b08ea78fd1ef9036', task_id: 'mscr_ldo2_rgcn.baseline:e55a553bf64ec', worker_id: 0, phase: 'baseline',
-    action_source: 'reset', proposed_at: '2026-10-03T15:15:01.076735+00:00', action: { input_pair_width: 0.5, mirror_pair_width: -0.25, tail_width: 0.125 } }] };
+    action_source: 'reset', proposed_at: '2026-10-03T15:15:01.076735+00:00', action: { input_pair_width: 0.5, mirror_pair_width: -0.25, tail_width: 0.125 }, global_env_step: 12 }] };
 
 // The page's own colours, as it has them now: text / background pairs that must stay readable (WCAG AA, 4.5 : 1).
 const PAIRS = [['--text', '--panel'], ['--muted', '--panel'], ['--accent', '--panel'], ['--bad', '--panel'], ['--warn', '--panel'], ['--ok', '--panel'],
@@ -319,6 +319,11 @@ await runChecks(browser, async () => {
   check('...and keeps to one line, "..." where it is cut, the whole value on hover (SIF-4)', json?.ws === 'nowrap' && json?.over === 'ellipsis' && /^[\[{]/.test(json?.title ?? '') && /Click to copy$/.test(json?.title ?? ''), JSON.stringify(json));
   await evaluate(`document.querySelector('footer table.data-table td.id-cell').click()`);
   check('a click on an id copies the whole value', await evaluate(`window.__copied`) === ID);
+  const number = await evaluate(`(() => { const t = document.querySelector('footer table.data-table'), td = t.querySelector('tbody tr').lastElementChild, th = t.querySelector('thead tr').lastElementChild,
+    id = t.querySelector('tbody td.id-cell'); return { td: [td.className, getComputedStyle(td).textAlign, getComputedStyle(td).fontVariantNumeric, td.textContent].join(' '),
+      th: [th.className, getComputedStyle(th).textAlign].join(' '), id: getComputedStyle(id).textAlign }; })()`);
+  check('a column of numbers is right-aligned in figures of one width, its title too; an id is not (branch record SIF-32)',
+    number.td === 'num-cell right tabular-nums 12' && number.th === 'num-cell right' && number.id !== 'right', JSON.stringify(number));
 
   // ---- the circuit picture: folded at first like every block of the Project column; opened once, kept open ------------------
   check('the circuit picture starts folded into its heading line, like every block of the Project column',

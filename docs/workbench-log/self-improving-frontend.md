@@ -453,3 +453,18 @@ page, the RL model window (three Modes, folds open), Runs or Tasks.
 **Checked.** `tsc` clean; `pdk_check` 37 (one new: the list's room against its line; and its "the list read again" now
 waits for the list - read at once it failed once in a two-lane run, then passed five times), `editor_columns_check` 14 (one
 new: a number's 11-character minimum) and the 19 other editor checks - 687 checks.
+
+### SIF-32 Data tables: numbers right-aligned in figures of one width (2026-10-20)
+
+**Found** (the user's VCO run, the branch on 5174). Data tables showed numbers left-aligned in proportional figures, so a
+column of losses or counters ("-0.0262258", "0.000591748", "-1.71668"; "736", "5800") could not be read down by magnitude.
+
+**Changed** (`RunTabs.tsx`, `roadster.css`): a column whose shown values are all numbers (not an id column) is right-aligned
+in tabular figures, its title too - as a spreadsheet's. Ids, times, words and JSON cells keep their own look.
+
+Seen: evaluations - episode_step ... policy_version; metrics - raw_value, threshold_lower/upper, violation; learner_updates -
+evaluations_collected, actor_loss ... update_seconds.
+
+**Checked.** `tsc` clean; `looks_check` 64 (one new, with a number column added at the end of its fixture row: the cell and
+its title right-aligned in tabular figures, an id cell not), `export_check` 22, `training_data_check` 117,
+`dom_identity_check` 56.

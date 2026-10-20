@@ -217,7 +217,7 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     setFile({ text: null, title: 'Task file' });
     try {
       const answer = await api.taskFile({ config, library, cell, task, extras });
-      const title = task ? `Task file of real:${task}${answer.revision ? ` (revision ${answer.revision})` : ''}` : `Task file of ${cell} (not saved yet)`;
+      const title = task ? `Task file of ${task}${answer.revision ? ` (revision ${answer.revision})` : ''}` : `Task file of ${cell} (not saved yet)`;
       opened.document.title = `GATOR - ${title}`;
       setFile({ text: answer.text, title });
     } catch (e: any) { setFile(null); opened.close(); report(e); }

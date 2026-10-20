@@ -245,3 +245,10 @@ table.task-table .task-date { white-space: nowrap; } table.task-table .name-part
 
 /* SIF-25: the Training charts' readout line - its numbers in the text colour, the words around them muted. */
 .training-readout b { color: var(--text); font-weight: 600; }
+
+/* SIF-26: the task file's text fills its window; the buttons, and the problems a refused file has, stay in view under it. */
+#task-file-root { height: 100vh; }
+.task-file { height: 100%; display: flex; flex-direction: column; }
+.task-file > * { flex: none; }
+.task-file > textarea { flex: 1 1 0; height: auto; min-height: 160px; resize: none; }
+.task-file > .blocker { max-height: 35vh; overflow: auto; }

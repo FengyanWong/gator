@@ -186,6 +186,10 @@ await runChecks(browser, async () => {
     && Array.isArray(calls[0].config?.targets), JSON.stringify(calls));
   const opened = await popupEval(`return d.querySelector('.task-file textarea')?.value ?? ''`);
   check('it opens in its own window, as one readable file with its _help', opened.includes('"_help"') && opened.includes('"specs"') && opened.includes('GPDK045_RINGOSC_GATOR'), opened.slice(0, 80));
+  const fills = await popupEval(`const b = [...d.querySelectorAll('.task-file .row button')].at(-1).getBoundingClientRect();
+    return { title: d.querySelector('.task-file h3').textContent, gap: Math.round(w.innerHeight - b.bottom), scroll: d.documentElement.scrollHeight - w.innerHeight }`);
+  check('its title names the task as the Tasks list does; its text fills the window, the buttons at the bottom, nothing scrolls (branch record SIF-26)',
+    fills.title.startsWith('Task file of ring_osc') && fills.gap >= 0 && fills.gap < 40 && fills.scroll <= 0, JSON.stringify(fills));
   const edited = JSON.parse(opened);
   edited.specs[0].lower = 1.25e9; edited.maestro.analyses = { tran: { stop: '40n' } }; edited.notes = 'tighter';
   await typeInto(`${POPUP}.document.querySelector('.task-file textarea')`, JSON.stringify(edited, null, 2));

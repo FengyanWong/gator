@@ -353,3 +353,19 @@ The line's text is the same (every check reads it), and so is its tooltip.
 
 **Checked.** `tsc` clean; `training_tab_check` 89 (one new: three emphasised numbers, not in the muted colour),
 `training_data_check` 117, `looks_check` 62; the user's VCO run on the branch (5174).
+
+### SIF-26 The task file fills its window (2026-10-20)
+
+**Found** (the user's VCO task, the branch on 5174). The task file's text box was 70 % of the window's height whatever the
+window: at 900 px the bottom 140 px stayed empty. Its title said "Task file of real:mscr_vco_lin_c", where the Tasks list
+and the tab line say "mscr_vco_lin_c".
+
+**Changed** (`roadster.css`, `TaskSave.tsx`): the window is a column - title, help line, the text taking the rest, the buttons
+at the bottom; a refused file's problems list scrolls inside 35 % of the window, so the buttons stay in view. The title
+names the task without "real:".
+
+Measured: 900 px tall - the text 740 px (was about 630), the buttons end 18 px above the window's edge; 600 px - 440 px;
+nothing scrolls.
+
+**Checked.** `tsc` clean; `task_save_check` 70 (one new: title, the text fills the window, nothing scrolls),
+`virtuoso_source_check` 95, `looks_check` 62.

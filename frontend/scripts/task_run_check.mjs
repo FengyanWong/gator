@@ -97,7 +97,7 @@ await runChecks(browser, async () => {
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const SHOWN = `(document.querySelector('footer .tabs .run-list-current')?.textContent ?? '')`;
   const shown = () => evaluate(SHOWN);
-  const names = r => `${SHOWN}.includes(${JSON.stringify(stamp(r.created_utc))}) && ${SHOWN}.includes(${JSON.stringify(` | ${r.task_name} | `)})`;
+  const names = r => `${SHOWN}.includes(${JSON.stringify(stamp(r.created_utc))}) && ${SHOWN}.includes(${JSON.stringify(` · ${r.task_name} · `)})`;
   const headerRun = () => evaluate(`localStorage.getItem(${JSON.stringify(RUN_KEY)})`);
   // A choice in the task window; it is done once the Task row names it and the run list has been read for it.
   const choose = async (taskKey, { reads = 1 } = {}) => {

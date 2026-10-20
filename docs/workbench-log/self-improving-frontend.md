@@ -119,3 +119,14 @@ words and the tooltip), `blocking_issues_check`. Docs: `docs/functionality-refer
 `unsaved_rows`, `task_rows` - 501 checks in the twelve scripts SIF-3 to SIF-5 touch. With the user's real data (the VCO
 task's Specs): "warning The unit of a formula is not checked", "info 'f_center_hz' is new to the result registry ...";
 the Issues column takes 240 px while a row has an issue, so the first clause shows whole.
+
+### SIF-6 The run shown is named as the rest of the page writes (2026-10-20; from the design survey)
+
+**Found.** Left of **Runs...** the bottom tab line named the run shown as "2026-10-16 16:32:51 | mscr_vco_lin_c | scratch
+seed0 | completed [MOCK]": "|" where every other line of the page sets parts apart with "·", the Mode by its key
+(`scratch`, `fine_tune`) where the RL model window names it (New model, Fine-tune, Evaluate only), "seed0" as one word.
+
+**Changed.** `RunList.tsx` (`label`): "2026-10-16 16:32:51 · mscr_vco_lin_c · New model, seed 0 · completed", MOCK as one more
+part. Checks: `run_list_check` (the label), `task_run_check` (finds the run by its task between the dots).
+
+**Checked.** `tsc` clean; `run_list_check` 119, `task_list_check` 79, `task_run_check` 31, `run_control_check` 101.

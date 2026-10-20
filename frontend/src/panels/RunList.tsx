@@ -10,6 +10,7 @@ import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
 import { childrenOf, historyOf, startedFrom } from '../lineage';
 import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
+import { MODE_NAME } from './rlModelText';
 
 /** An experiment's folder by its name (branch record SIF-4): the folder's hash ("__ae6e1ae24977") only in the tooltip, and a
  *  line may break after "-" or "_" - the column wrapped "r5-dffr-powermid-bodata-s2_ae6e1a / e24977" between any letters. */
@@ -49,7 +50,9 @@ const pairs = (values: Json) => Object.entries(values ?? {}).map(([k, v]) => `${
 // A best design lists its variables as [{ variable_id, value, unit }].
 const variables = (list: Json) => Array.isArray(list) ? list.map((v: Json) => `${v.variable_id}=${short(v.value)}${v.unit ? ` ${v.unit}` : ''}`).join('  ') : pairs(list);
 // `state`: what the page's own status poll says now - the list row keeps the state of its last read ("starting").
-const label = (r: Json, state?: string | null) => `${stamp(r.created_utc) ?? 'unknown time'} | ${taskOf(r)} | ${r.mode} seed${r.seed} | ${state ?? r.state ?? 'not started'}${r.mock ? ' [MOCK]' : ''}`;
+// The run shown, left of Runs...: its start, task, Mode (as the RL model window names it), seed and state, set apart by "·"
+// as the page's other lines are (branch record SIF-6: "2026-10-16 16:32:51 | mscr_vco_lin_c | scratch seed0 | completed").
+const label = (r: Json, state?: string | null) => `${stamp(r.created_utc) ?? 'unknown time'} · ${taskOf(r)} · ${MODE_NAME[r.mode] ?? r.mode}, seed ${r.seed} · ${state ?? r.state ?? 'not started'}${r.mock ? ' · MOCK' : ''}`;
 const RESUME: Record<string, string> = { full_state: 'yes', weights_only: 'model only', none: 'no' };
 
 /** The "Finished" cell. A run at rest has the end of its last segment; a run that is working has none; a worker that

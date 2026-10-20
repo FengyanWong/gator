@@ -223,7 +223,7 @@ await runChecks(browser, async () => {
   check('a run\'s row can be double clicked', await doubleClick(RESUMED));
   check('the workbench\'s Run status tab now shows that run', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(RESUMED.run_dir)})`));
   s = await strip();
-  check('the text left of the strip button names the run: start time, task, mode, seed, state; the caption stays "Runs..."', s.current === `${stamp(RESUMED.created_utc)} | fixture_task | fine_tune seed2 | completed [MOCK]` && s.currentIsLeft && s.text === 'Runs...' && !s.overflowX, JSON.stringify(s));
+  check('the text left of the strip button names the run: start time, task, mode, seed, state; the caption stays "Runs..."', s.current === `${stamp(RESUMED.created_utc)} · fixture_task · Fine-tune, seed 2 · completed · MOCK` && s.currentIsLeft && s.text === 'Runs...' && !s.overflowX, JSON.stringify(s));
   check('the run window closes once a run is chosen (record 7.291)', await closedByChoice());
   check('choosing a run did not read the list again', lists() === 2, `${lists()} list request(s)`);
   await openWindow();

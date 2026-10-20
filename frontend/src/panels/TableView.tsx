@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { FolderView } from './Folders';
 
 /** A column title of the Tasks, Runs and saved models tables: its key, its words and its tooltip. */
-type Head = { key: string; title: string; help: string };
+type Head = { key: string; title: string; help: string; numeric?: boolean };   // numeric: right-aligned over its numbers (SIF-34)
 
 /** What the Tasks, Runs and saved models windows share of their tables (record 7.276; each carried its own copy, and the
  *  copies had begun to differ): the filter box, sorting by a column - a press on a column title sorts by it, again the
@@ -40,7 +40,7 @@ export function TableHead<T>({ view, columns, shown, id, what, disabled }: {
     <th className="task-select"><input type="checkbox" aria-label={`Select all shown ${what}`} disabled={disabled || !shown.length}
       checked={shown.length > 0 && every} ref={input => { if (input) input.indeterminate = view.selected.length > 0 && !every; }}
       onChange={e => view.setSelected(e.target.checked ? shown.map(id) : [])} /></th>
-    {columns.map(c => <th key={c.key} className="sortable" title={`${c.help} Press to sort.`}
+    {columns.map(c => <th key={c.key} className={c.numeric ? 'sortable numeric' : 'sortable'} title={`${c.help} Press to sort.`}
       aria-sort={view.sort.key === c.key ? (view.sort.down ? 'descending' : 'ascending') : undefined} onClick={() => view.sortBy(c.key)}>
       {c.title}{view.sort.key === c.key && <span className="sort-mark">{view.sort.down ? ' ▼' : ' ▲'}</span>}</th>)}
     <th className="plain"></th></tr></thead>);

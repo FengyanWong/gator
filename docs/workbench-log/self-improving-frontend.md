@@ -476,3 +476,19 @@ figures of one width, its title too - as Data tables' numbers (SIF-32).
 
 **Checked.** `tsc` clean; `files_tab_check` 20 (one new: the sizes and their title right-aligned, tabular), `export_check` 22,
 `looks_check` 64; the user's VCO run (508 files) on the branch (5174).
+
+### SIF-34 Numeric cells right-aligned, as they always meant to be (2026-10-20)
+
+**Found.** `td.numeric` asks for right alignment (styles.css), but `table.grid td { text-align: left }` outranks it, so in
+every grid table the numbers sat on the left: the Runs window's Duration, Seed, Evaluations ("800 / 800", "0 / 0") and First
+feasible; the Tasks list's Rev, Sizes / results and Runs; the saved models' Evaluations and Save points; the model facts,
+the circuit picture's and the Issues tables' numbers.
+
+**Changed** (`roadster.css`, `TableView.tsx`; `RunList.tsx`, `TaskList.tsx`, `ModelChooser.tsx` mark their number columns
+`numeric`): a numeric cell is right-aligned, and so is the sortable title over such a column.
+
+Measured (the user's runs and tasks, the branch on 5174): both tables still fit the window's 1500 px (1234 px in 1234).
+
+**Checked.** `tsc` clean; `run_list_check` 121 (one new: Seed's title and cell right-aligned), `task_list_check` 80,
+`task_run_check` 31, `model_chooser_check` 76, `network_panel_check` 58, `model_structure_check` 29, `graph_view_check` 63,
+`blocking_issues_check` 39, `pdk_check` 37, `encoder_models_check` 24, `looks_check` 64, `dom_identity_check` 56.

@@ -202,6 +202,9 @@ await runChecks(browser, async () => {
     return { dates: dates.map(d => d.textContent + ' ' + getComputedStyle(d).whiteSpace), taskBreaks: tr.children[5].querySelectorAll('wbr').length }; })()`);
   check('its dates stay whole - date over time in a narrow column, never "2026-10-" over "20" - and its task name may break after a "_" (branch record SIF-27)',
     whole?.dates.length === 2 && whole.dates.every(d => /^\d{4}-\d\d-\d\d nowrap$/.test(d)) && whole.taskBreaks === 1, JSON.stringify(whole));
+  const seedAlign = await far.evaluate(`(() => { const t = ${WINDOW}.querySelector('table.run-table'), heads = [...t.querySelectorAll('thead th')], i = heads.findIndex(h => h.textContent.trim().startsWith('Seed'));
+    const tr = [...t.querySelectorAll('tbody tr')].find(x => x.title === ${JSON.stringify(DONE.run_dir)}); return { head: getComputedStyle(heads[i]).textAlign, cell: getComputedStyle(tr.children[i]).textAlign }; })()`);
+  check('a column of numbers (Seed) is right-aligned, its title too (branch record SIF-34)', seedAlign.head === 'right' && seedAlign.cell === 'right', JSON.stringify(seedAlign));
   r = rowOf(rows, RESUMED);
   check('a run that was paused and continued: the duration is its working time, the pause is named, not counted', r.Duration === '15 min 00 s' && /sat paused for 2 h 00 min/.test(r.durationTitle)
     && r.Finished === stamp(RESUMED.ended_utc) && r['First feasible'] === 'none' && r.Evaluations === '40 / 40', JSON.stringify(r));

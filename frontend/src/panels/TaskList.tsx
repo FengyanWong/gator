@@ -53,17 +53,17 @@ const dateTime = (utc?: string | null) => { const text = minute(utc); if (!text)
 const newestText = (r: Json | null) => !r ? 'none' : `${minute(r.created_utc) ?? '?'} · ${r.state ?? 'not started'} · ${r.evaluations ?? 0} evaluation${r.evaluations === 1 ? '' : 's'}`
   + (r.first_feasible_eval_count != null ? ` · first feasible at ${r.first_feasible_eval_count}` : r.evaluations ? ' · none feasible' : '');
 
-type Column = { key: string; title: string; help: string; value: (t: Json, runs: Json[]) => string | number | null };
+type Column = { key: string; title: string; help: string; numeric?: boolean; value: (t: Json, runs: Json[]) => string | number | null };
 const COLUMNS: Column[] = [
   { key: 'task', title: 'Task', help: 'The name the task is shown under. A renamed task says its internal name below it: the name its files, its cell and its runs keep (Details holds the Name box). A mark says what keeps it from running now; synthetic tasks carry a MOCK badge.', value: t => shownName(t) },
   { key: 'class', title: 'Class', help: 'The circuit class label the task carries (opamp, ldo, oscillator, ...).', value: t => t.circuit_class ?? '' },
   { key: 'cell', title: 'Cell', help: 'The Virtuoso library and cell the task runs in (the copy you declared), with its testbench cell.', value: t => cellOf(t) },
-  { key: 'revision', title: 'Rev', help: 'The saved revision of the task. Save as creates a new task at revision 1.', value: t => t.revision ?? null },
+  { key: 'revision', numeric: true, title: 'Rev', help: 'The saved revision of the task. Save as creates a new task at revision 1.', value: t => t.revision ?? null },
   { key: 'saved', title: 'Saved', help: 'When the task was last saved (local time of this computer).', value: t => t.saved_utc ?? null },
   { key: 'baseline', title: 'Baseline', help: 'When the task\'s reference was recorded (a finished Baseline simulation records it by itself); none = no real baseline yet.', value: t => t.baseline_recorded_utc ?? null },
-  { key: 'rows', title: 'Sizes / results', help: 'How many sizes the task varies and how many results its testbench measures.', value: t => t.variables != null ? `${t.variables} / ${t.results ?? 0}` : null },
+  { key: 'rows', numeric: true, title: 'Sizes / results', help: 'How many sizes the task varies and how many results its testbench measures.', value: t => t.variables != null ? `${t.variables} / ${t.results ?? 0}` : null },
   { key: 'newest', title: 'Newest run', help: 'The task\'s newest run under the output folder: started, state, evaluations, first feasible. The bottom tabs show it when the task is chosen (record 7.212).', value: (t, runs) => runsOf(runs, t.task_key).newest?.created_utc ?? null },
-  { key: 'runs', title: 'Runs', help: 'How many runs of the task the output folder holds, Baseline simulations included.', value: (t, runs) => runsOf(runs, t.task_key).count },
+  { key: 'runs', numeric: true, title: 'Runs', help: 'How many runs of the task the output folder holds, Baseline simulations included.', value: (t, runs) => runsOf(runs, t.task_key).count },
 ];
 
 /** Everything else about one task, and its rows (read from the starter route when the details open). */

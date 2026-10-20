@@ -69,20 +69,20 @@ function finished(r: Json): { text: string; css?: string; title?: string } {
   return { text: '-' };
 }
 
-type Column = { key: string; title: string; help: string; value?: (r: Json, byDir: Map<string, Json>) => string | number | null };
+type Column = { key: string; title: string; help: string; numeric?: boolean; value?: (r: Json, byDir: Map<string, Json>) => string | number | null };
 const COLUMNS: Column[] = [
   { key: 'started', title: 'Started', help: 'When the run was created (local time of this computer).', value: r => r.created_utc ?? null },
   { key: 'finished', title: 'Finished', help: 'When the run came to rest: completed, stopped, failed or paused. A run that is working has no finish time yet.', value: r => (isLive(r) ? null : r.ended_utc ?? r.last_seen_utc ?? null) },
-  { key: 'duration', title: 'Duration', help: 'How long the run was actually working. The time it sat paused is not counted; "Details" shows it.', value: r => r.active_seconds ?? null },
+  { key: 'duration', numeric: true, title: 'Duration', help: 'How long the run was actually working. The time it sat paused is not counted; "Details" shows it.', value: r => r.active_seconds ?? null },
   { key: 'state', title: 'State', help: 'How the run stands, and under it why it stopped.', value: r => r.state ?? '' },
   { key: 'task', title: 'Task', help: 'The task (circuit and its targets) the run optimizes.', value: r => taskOf(r) },
   { key: 'mode', title: 'Mode', help: 'New model = from random weights; Fine-tune and Evaluate only = from a saved model; Baseline, Calibration and Offline training by their names. Under it, the design of the network the run trains or evaluates (GraphGPS, RGCN, ...).', value: r => `${runMode(r)} ${runDesign(r)}` },
   { key: 'from', title: 'Started from', help: 'Where the run\'s model came from: "template GT" = a new model made from an encoder\'s template; "ota7t (2) @ 420" = the saved model it loaded and the save point (its evaluations), a link to that run; "offline: 22 runs" = a model trained offline on recorded runs; "-" = a baseline or a calibration, which loads none.',
     value: (r, byDir) => startedFrom(r, byDir).text },
   { key: 'model', title: 'Saved model', help: 'The name of the RL model this run saves; every model under the output folder has one of its own, so a name already given gets a number. Empty for a run that saves none (a baseline, LLM only).', value: r => r.model_label ?? null },
-  { key: 'seed', title: 'Seed', help: 'The random seed of the run.', value: r => r.seed ?? null },
-  { key: 'evaluations', title: 'Evaluations', help: 'Candidate designs simulated so far, of the budget the run was given.', value: r => r.evaluations ?? null },
-  { key: 'feasible', title: 'First feasible', help: 'How many evaluations had been spent when the first design met every target. "none" = no design has met them.', value: r => r.first_feasible_eval_count ?? null },
+  { key: 'seed', numeric: true, title: 'Seed', help: 'The random seed of the run.', value: r => r.seed ?? null },
+  { key: 'evaluations', numeric: true, title: 'Evaluations', help: 'Candidate designs simulated so far, of the budget the run was given.', value: r => r.evaluations ?? null },
+  { key: 'feasible', numeric: true, title: 'First feasible', help: 'How many evaluations had been spent when the first design met every target. "none" = no design has met them.', value: r => r.first_feasible_eval_count ?? null },
   { key: 'experiment', title: 'Experiment', help: 'The experiment folder the run belongs to.', value: r => r.experiment ?? '' },
   { key: 'data', title: 'Data', help: 'MOCK = the built-in synthetic backend, not a circuit result. real = Virtuoso / Spectre simulations.', value: r => (r.mock ? 'mock' : 'real') },
   { key: 'resume', title: 'Can continue', help: 'Whether the saved state allows this run to be continued: yes (full state), model only (usable for Fine-tune and Evaluate only - also a full save point written by an older version of the optimizer code, which only that version can continue), no - also when the run folder no longer holds its save point (a copy made without them, or deleted ones).', value: r => r.resumability ?? '' },

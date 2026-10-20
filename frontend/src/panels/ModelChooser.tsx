@@ -43,13 +43,13 @@ const trainedKey = (m: Json) => m.circuit_task ?? m.task_key ?? m.circuit_class 
 const trainedOn = (m: Json) => m.run_kind === 'offline_pretraining' ? 'multi-task (offline)' : String(trainedKey(m)).replace(/^real:/, '');
 export const RESTORABLE: Record<string, string> = { full_state: 'full state', weights_only: 'weights only' };
 
-type Column = { key: string; title: string; help: string; value: (m: Json, byDir: Map<string, Json>) => string | number | null };
+type Column = { key: string; title: string; help: string; numeric?: boolean; value: (m: Json, byDir: Map<string, Json>) => string | number | null };
 const COLUMNS: Column[] = [
   { key: 'name', title: 'Name', help: 'The model\'s name: the RL model label of the run that saved it, numbered when another model has it already. Rename it in its Details.', value: m => modelName(m) },
   { key: 'task', title: 'Trained on', help: 'The task the model was trained on; "multi-task" for a model trained offline on recorded runs.', value: m => trainedOn(m) },
   { key: 'design', title: 'Design', help: 'The network design the model was built as - Graph Transformer, RGCN, GATv2, GraphGPS, CircuitGPS (v2 or v3) or parameter-group attention - and under it its size: hidden width / attention heads / layers, and RWSE (random-walk structural encoding) where the design has it. A fine-tuned model keeps the design of the model it started from; a run that loads it uses this network as it is.', value: m => `${designName(m.network)} ${sizeLabel(m.network)}` },
-  { key: 'evaluations', title: 'Evaluations', help: 'The evaluations of training behind its newest save point.', value: m => m.trained_evaluations ?? null },
-  { key: 'points', title: 'Save points', help: 'How many save points its run wrote.', value: m => m.checkpoints?.length ?? 0 },
+  { key: 'evaluations', numeric: true, title: 'Evaluations', help: 'The evaluations of training behind its newest save point.', value: m => m.trained_evaluations ?? null },
+  { key: 'points', numeric: true, title: 'Save points', help: 'How many save points its run wrote.', value: m => m.checkpoints?.length ?? 0 },
   { key: 'saved', title: 'Last saved', help: 'When its newest save point was written (local time of this computer).', value: m => m.saved_utc ?? null },
   { key: 'from', title: 'Started from', help: 'Where the model came from: a template (a new model), a saved model it was fine-tuned from, or recorded runs (offline).', value: (m, byDir) => startedFrom(m, byDir).text },
   { key: 'data', title: 'Data', help: 'MOCK = trained on the built-in synthetic backend; real = Virtuoso / Spectre (or ngspice). A model only loads for a task of the same kind.', value: m => (m.mock ? 'mock' : 'real') },

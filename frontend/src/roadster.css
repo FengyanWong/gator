@@ -276,3 +276,7 @@ table.grid.small.data-table :is(td, th).num-cell { text-align: right; font-varia
 
 /* SIF-33: Output files - the sizes right-aligned in figures of one width, as Data tables' numbers (SIF-32). */
 table.grid.small.files-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* SIF-34: a numeric cell is right-aligned, as td.numeric always meant (styles.css) - "table.grid td { text-align: left }"
+   outranked it in every grid table: Runs (seed, evaluations), Tasks (revision, sizes), saved models, model facts. */
+table.grid td.numeric, table.grid th.numeric { text-align: right; }   /* and the title over such a column */

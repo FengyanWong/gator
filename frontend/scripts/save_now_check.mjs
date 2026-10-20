@@ -78,7 +78,11 @@ await runChecks(browser, async () => {
 
   // ---- one press = one `checkpoint` command; no pause; "Saving..." until the RUN says it is saved ------------------------------------
   await evaluate(`${SAVE}.click()`);
-  check('one press sends exactly one `checkpoint` command', await until(`${SAVE}.textContent === 'Saving...'`, 40) && commands.join() === 'checkpoint', commands.join());
+  const saving = await until(`${SAVE}.textContent === 'Saving...'`, 40);
+  // the label changes before the request reaches this check's intercept: wait for it (read at once, it failed once under a
+  // full two-lane suite - branch record SIF-42)
+  for (let i = 0; i < 30 && !commands.length; i++) await sleep(100);
+  check('one press sends exactly one `checkpoint` command', saving && commands.join() === 'checkpoint', commands.join());
   now = await look();
   check('it reads "Saving..." and cannot be pressed twice', now.save === 'Saving...' && now.saveOff === true);
   check('the run is NOT paused: the main button still reads Pause and Abort stays available', now.main === 'Pause' && now.abortOff === false, JSON.stringify([now.main, now.abortOff]));

@@ -615,3 +615,8 @@ violation 0.309319" above facts that now say three digits. (The calibration tabl
 **Checked.** `tsc` clean; `looks_check` 64, `room_check` 22, `calibration_check` 38, `export_check` 22,
 `run_control_check` 101. The look answers a load's "Switch to ...?" question with OK (the preview page's own editors only)
 - unanswered, it held a headless page until the look's time ran out.
+
+Full suite on SIF-1..42: 53/54 scripts, 2,222 checks; `save_now_check` failed once on "one press sends exactly one
+`checkpoint` command" - it read the command list the moment the button said "Saving...", before the request reached its
+intercept (its later "only checkpoint was ever sent" passed). The step now waits for the command; then three runs of
+`save_now_check` + `run_control_check`, 126 checks each, none failed.

@@ -292,3 +292,7 @@ ul.compat-diff { margin: 3px 0 3px 0.4em; padding: 0; list-style: none; color: v
 ul.compat-diff > li { margin: 1px 0; overflow-wrap: anywhere; } ul.compat-diff code { color: var(--muted); }
 details.compat-raw > summary, details.compat-passed > summary { color: var(--muted); }
 details.compat-raw > pre { max-height: 12em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.4 var(--f-mono); color: var(--muted); }
+
+/* SIF-37: the circuit graph view's tools keep their compact 26 px (styles.css) without the Roadster padding above and below:
+   12 px of room cut the lists' words ("Local port edges", "block 1") through the middle. */
+.graph-tools :is(input, select, button) { padding-top: 0; padding-bottom: 0; }

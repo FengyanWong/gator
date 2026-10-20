@@ -531,3 +531,18 @@ answer made incompatible for one look: the summary, the two key lines, the folde
 `module_fold_check` 30, `graph_view_check` 63, `reward_block_check` 32, `room_check` 22, `looks_check` 64,
 `dom_identity_check` 56. (`reward_v2_frontend_check`, stand-alone, reads `li.issue.error` items starting
 "reward_settings: incompatible": they are kept.)
+
+### SIF-37 The circuit graph view: its design by name, its tools uncut, its colours as drawn (2026-10-20)
+
+**Found** (the user's model dffrx1_t2 (30), Circuit graph view, the branch on 5174). The title said "graph_gps 48/4/4"; all
+twelve tools kept the old look's 26 px with the Roadster padding - 12 px of room for a 16-18 px line, so the lists' words
+("Local port edges", "block 1", "mean of 4") were cut through the middle; and the reading line said "Thick blue = much
+attention ... Blue border = a device whose size the policy sets" while both are drawn in the page's accent - red since the
+Roadster look (record 7.360).
+
+**Changed** (`CircuitGraphView.tsx`, `roadster.css`): the title names the design ("GraphGPS 48/4/4 - save point ...", as
+the models' table does); the tools keep their compact 26 px without padding above and below; the reading line says "Thick
+red ... Red border ...". (The node colours - blue nmos, red pmos, yellow bipolar - are the picture's own and were right.)
+
+**Checked.** `tsc` clean; `graph_view_check` 64 (one new: the title's design name, no tool shorter than its line),
+`model_chooser_check` 77, `network_panel_check` 58, `looks_check` 64; the box scan of the open graph view finds no cut box.

@@ -124,6 +124,11 @@ await runChecks(browser, async () => {
   check('opening it shows a dialog and asks once, for the RESOLVED save point and the default evaluation', (await until(`${DIALOG}.open`, 30)) && (await waitAsked(1)) === 1
     && asked[0].run_dir === RUN && asked[0].checkpoint_id === POINT.checkpoint_id && asked[0].evaluation === null, JSON.stringify(asked[0]));
   check('the graph is drawn', await until(`!!(${CY}) && ${CY}.nodes().length > 0`, 80));
+  const head = await evaluate(`(() => { const d = ${DIALOG}, tools = [...d.querySelectorAll('.graph-tools select, .graph-tools button, .graph-tools input:not([type=checkbox])')].filter(e => e.checkVisibility());
+    const cut = tools.filter(e => { const c = getComputedStyle(e); return e.clientHeight - parseFloat(c.paddingTop) - parseFloat(c.paddingBottom) < (parseFloat(c.lineHeight) || 1.25 * parseFloat(c.fontSize)) - 1; });
+    return { title: [...d.querySelectorAll('.hint')].map(h => h.textContent).find(t => / - save point /.test(t)) ?? null, tools: tools.length, cut: cut.map(e => e.value || e.textContent.trim()) }; })()`);
+  check('its title names the design ("Graph Transformer 16/2/2"), and every tool has the height of its line - no word cut (branch record SIF-37)',
+    head.title?.startsWith('Graph Transformer 16/2/2 - save point ') && head.tools > 4 && head.cut.length === 0, JSON.stringify(head));
   const after = await scripts();
   check('the drawing library was loaded only now, as its own file', after.length > before.length, JSON.stringify(after.filter(s => !before.includes(s))));
   let graph = await drawn();

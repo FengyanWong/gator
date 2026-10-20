@@ -4,6 +4,7 @@ import { si } from '../units';
 import { short } from '../format';
 import { hintedLayout } from './circuitLayout';
 import { useNewest } from '../newest';
+import { designName } from '../lineage';
 
 // The circuit graph view (user decision 2026-09-21: ONE on-screen diagnostic picture; nothing drawn is ever written to
 // a run's outputs). The chosen save point is replayed by the backend on a state its own run ARCHIVED
@@ -30,6 +31,7 @@ const netRole = (net: Json) => (net.roles as string[]).find(r => r !== 'normal')
  *  lines and their labels take the page's look (record 7.158), read from the canvas, which may stand in a pop-up window. */
 function graphStyle(canvas: HTMLElement): Json {
   const style = getComputedStyle(canvas), v = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+  // The lines and the policy's devices take --accent: red in the Roadster look (the reading line says "red" - branch record SIF-37).
   const muted = v('--muted', '#66707e'), accent = v('--accent', '#1f5fbf'), edge = v('--graph-edge', '#c9ced6');
   return [
     { selector: 'node', style: { label: 'data(label)', 'font-size': 10, 'text-wrap': 'wrap', 'text-valign': 'center', 'text-halign': 'center', color: '#1c2430',
@@ -162,7 +164,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
       title="Opens a picture of the circuit as the network sees it: attention on every connection and the sizes this save point proposes, replayed on a state its own run archived. Nothing is simulated and nothing is written.">Circuit graph view</button></div>
     <dialog ref={dialog} className="graph-dialog" onCancel={close}>
       <div className="row"><h3>Circuit graph view{label ? ` - ${label.replace(/:[0-9a-f]{16}$/, '')}` : ''}</h3><span className="spacer" />
-        {view && <span className="hint">{view.network.encoder_type} {view.network.hidden_dim}/{view.network.heads}/{view.network.layers} - save point {view.checkpoint_id}{view.origin === 'synthetic' ? ' - MOCK' : ''}</span>}
+        {view && <span className="hint">{designName(view.network)} {view.network.hidden_dim}/{view.network.heads}/{view.network.layers} - save point {view.checkpoint_id}{view.origin === 'synthetic' ? ' - MOCK' : ''}</span>}
         <button className="dialog-close" aria-label="Close" title="Close (Esc)" onClick={close}>{'\u00d7'}</button></div>
       {error && <p className="error graph-error">The view could not be built: {error}</p>}
       {busy && !view && <p className="hint">Replaying the saved policy on an archived state...</p>}
@@ -198,7 +200,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
             {generic && <p className="note graph-generic">This graph names no supply and no ground net, so there are no circuit hints for the positions: the drawing package's own layered layout is used.</p>}
             {!attention.available && <p className="note graph-no-attention">{attention.reason}</p>}
             {attention.available && <div className="note graph-reading"><p>{scope === 'local' ? view.reading : dense?.reading}</p>
-              <p className="hint">{scope === 'local' ? 'Thick blue = much attention; thin dashed grey = a receiver with a single connection (always 1.0). Blue border = a device whose size the policy sets.'
+              <p className="hint">{scope === 'local' ? 'Thick red = much attention; thin dashed grey = a receiver with a single connection (always 1.0). Red border = a device whose size the policy sets.'
                 : 'Darker node fill = greater weight for the chosen query, scaled to its strongest weight. Purple border = receiving node. Lines show physical connections.'}</p></div>}
             {scope !== 'local' && <table className="grid small graph-node-attention"><thead><tr><th>Node</th><th>Attention</th><th>Uniform</th></tr></thead><tbody>
               {(dense?.nodes ?? []).map((id: string, i: number) => <tr key={id}><td>{id}</td><td className="numeric">{fixed(weights[i], 5)}</td>

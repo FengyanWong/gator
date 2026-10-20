@@ -523,3 +523,5 @@ One row per commit, newest last.
 | `c6f172c` | 10-19 16:49 | 7.363, 7.381, 7.383 | Round 4 offline: the plan (section 7b) and its results - LOADBench does not help the Round 3 models, option 1 neither (session "Training encoders with Zenodo dataset") |
 | `a5d3c5c` | 10-19 16:49 | - | record only: names the commit of records 7.363, 7.381 and 7.383, and the table rows for 8d43a00 and c6f172c |
 | `f6a989e` | 10-19 19:50 | 7.382 | TuRBO against transfer-learned SAC on three tasks (a trained model wins only near its training; TuRBO wins on the amplifier); TuRBO's memory growth fixed with malloc_trim after each proposal |
+| `c2177fa` | 10-19 19:59 | - | record only: names the commit of record 7.382, and the table rows for a5d3c5c and f6a989e |
+| `f87b8ce` | 10-20 13:20 | 7.384 | TuRBO and transfer-learned SAC combined: neither a TuRBO-data model nor a TuRBO warm start helps; three seeds on every row (session "Zenodo dataset encoder performance") |

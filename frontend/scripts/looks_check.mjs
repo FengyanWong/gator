@@ -302,6 +302,9 @@ await runChecks(browser, async () => {
   // ---- Data tables: one line per row -------------------------------------------------------------------------------------------
   await evaluate(`[...document.querySelectorAll('footer .tabs button')].find(b => b.textContent.trim() === 'Data tables').click()`);
   check('Data tables shows the FIXTURE row', await page.until(`!!document.querySelector('footer table.data-table td.id-cell')`, 50));
+  const choice = await evaluate(`(() => { const s = document.querySelector('footer select.tab-choice'), b = s?.parentElement.querySelector('button'); if (!s || !b) return null;
+    const r = s.getBoundingClientRect(), q = b.getBoundingClientRect(); return { width: Math.round(r.width), line: Math.abs((r.top + r.bottom) / 2 - (q.top + q.bottom) / 2) < 4 }; })()`);
+  check('the table list sits at its own width at the start of its tool line, not on a line of its own (branch record SIF-29)', !!choice && choice.width < 300 && choice.line, JSON.stringify(choice));
   await evaluate(`navigator.clipboard.writeText = text => { window.__copied = text; return Promise.resolve(); }`);
   const cells = await evaluate(`(() => { const t = document.querySelector('footer table.data-table'), row = t.querySelector('tbody tr'), td = [...row.children];
     const line = Math.max(...td.map(c => { const s = getComputedStyle(c); return parseFloat(s.lineHeight) || 1.2 * parseFloat(s.fontSize); }));

@@ -255,3 +255,7 @@ table.task-table .task-date { white-space: nowrap; } table.task-table .name-part
 
 /* SIF-27: in the Runs window a date stays whole (SIF-11's narrower cells broke "2026-10-" over "20"); a task name breaks after "_" or "-". */
 table.run-table .run-date { white-space: nowrap; }
+
+/* SIF-29: the Logs and Data tables lists sit at their own width at the start of their tool line (they took a line of the
+   bottom panel to themselves, the window's whole width for "events"). */
+.row > select.tab-choice { width: auto; flex: none; min-width: 10em; }

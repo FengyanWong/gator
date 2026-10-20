@@ -402,3 +402,16 @@ Measured (1680 px): Specs - Equation 185 -> 321 px, Lower/Upper 194 -> 122; Prob
 **Checked.** `tsc` clean; `editor_columns_check` 13 (one new: natural sizes 40 / 11, Equation wider than Lower) and the 19
 other checks that use the editor tables - 591 checks (`reward_v21_check` is a stand-alone check for its own scratch
 backend on 5191, not run by the runner's default list).
+
+### SIF-29 The Logs and Data tables lists sit on their tool line (2026-10-20)
+
+**Found.** In the bottom panel's Logs and Data tables, the list ("events", "evaluations") took a line of its own across the
+whole window - 1600 px for one word - and pushed its buttons and note to a second line: a row of the panel's height lost.
+(Every select is as wide as its line; the tool line wraps.)
+
+**Changed** (`RunTabs.tsx`, `roadster.css`): both lists (`select.tab-choice`) keep their own width (140 px) at the start of
+their tool line, the buttons and note beside them.
+
+**Checked.** `tsc` clean; `looks_check` 63 (one new: the list's width and line), `export_check` 22, `training_tab_check` 89,
+`room_check` 22, `dom_identity_check` 56, `agent_window_check` 28, `reliability_check` 20; the user's VCO run on the branch
+(5174). Before it: the full suite on SIF-1..28 - 54/54 scripts, 2,213 checks, none failed, none flaky.

@@ -203,7 +203,7 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
     return `Downloaded ${await download(api.aggregatesUrl(runDir), 'aggregates.zip')} (${Object.keys(written.files).length} tables). Also kept in ${written.experiment_dir}/aggregates`; });
   return (<div>
     <SteeringCheck value={status?.steering} />
-    <div className="row"><select value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
+    <div className="row"><select className="tab-choice" value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
       <button onClick={refresh} title="Refresh: Read this table again."><Icon name="refresh" label="Refresh" /></button>
       <button disabled={!!busy} onClick={exportCsv} title="Export detailed CSV: The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded."><Icon name={busy === 'csv' ? 'wait' : 'csv'} label={busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'} /></button>
       <button disabled={!!busy} onClick={exportResearch} title="Export research CSVs: The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip."><Icon name={busy === 'research' ? 'wait' : 'zip'} label={busy === 'research' ? 'Exporting...' : 'Export research CSVs'} /></button>
@@ -277,7 +277,7 @@ function LogsTabBody({ runDir, alive }: { runDir: string | null; alive: boolean 
   const nothing = `Nothing to download: this run has logged no ${kind} so far.`;
   const save = () => value?.kind === kind && !value.entries.length ? setNote(nothing)
     : download(api.downloadUrl(runDir, `logs/${kind}.jsonl`), `${kind}.jsonl`).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.status === 404 ? nothing : e.message));
-  return (<div><div className="row"><select value={kind} onChange={e => setKind(e.target.value)}><option>events</option><option>errors</option></select>
+  return (<div><div className="row"><select className="tab-choice" value={kind} onChange={e => setKind(e.target.value)}><option>events</option><option>errors</option></select>
     <button onClick={save} title={`Download full log (${kind}.jsonl): The whole log file of this run, not only the newest 200 entries listed here. One JSON record per line.`}><Icon name="download" label={`Download full log (${kind}.jsonl)`} /></button>
     <span className="hint">{note ?? 'Newest first, the newest 200 entries at most.'}</span></div>
     {error && <p className="error">{error} <button onClick={refresh}>Retry read</button></p>}

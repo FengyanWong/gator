@@ -251,3 +251,11 @@ Check: `run_list_check` ("completed budget used up").
 `calibration_check` 38, `run_control_live_check` 23. With the user's 549 runs: "budget used up" 483, "update budget used up"
 23, "an evaluation failed" 13, "first feasible design found" 11, "stopped by you" 6, "launch not confirmed" 5, ...; the
 table 1234 px in its 1234 px.
+
+### SIF-16 Stop reasons in words everywhere a run is described (2026-10-20; completing SIF-15)
+
+**Changed.** The Runs window's Details - the fact "Stop reason" reads "paused by you (user_pause)", the segments' table "paused
+by you", "budget used up" (the key on hover) - and the Training tab's state badge ("completed (budget used up)"); `RunList.tsx`,
+`TrainingTab.tsx`. Check: `run_list_check` (the Details facts and the segments).
+
+**Checked.** `tsc` clean; `run_list_check` 119, `task_run_check` 31, `training_tab_check` 88.

@@ -142,7 +142,7 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     ['Created', stamp(row.created_utc)], ['Worker began', stamp(row.started_utc)], ['Came to rest', stamp(row.ended_utc)], ['Last sign of life', row.ended_utc ? null : stamp(row.last_seen_utc)],
     ['Worked for', span(row.active_seconds)], ['Paused between segments', row.paused_seconds ? span(row.paused_seconds) : null],
     ['Summed simulator job time', summary?.time?.sum_job_runtime_seconds != null ? `${span(summary.time.sum_job_runtime_seconds)} (parallel jobs added up: not elapsed time)` : null],
-    ['Stop reason', row.stop_reason], ['Error', row.error],
+    ['Stop reason', row.stop_reason ? `${stopWords(row.stop_reason)} (${row.stop_reason})` : null], ['Error', row.error],   // words, the key beside them (SIF-16)
     ['Budget', b ? `${b.charged} charged / ${b.max_evaluations} (completed ${b.completed}, failed ${b.failed}, in flight ${b.in_flight}, remaining ${b.remaining})` : null],
     ['Spectre launches', b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''} (retries ${b.retries}, cache hits ${b.cache_hits})` : null],
     ['Learner updates', info ? String(info.learner_updates ?? 0) : null],
@@ -176,7 +176,7 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
       <h4>Segments <span className="hint">- one per Start or Resume; a pause lies between two of them</span></h4>
       <table className="grid small run-segments"><thead><tr><th>#</th><th>Began as</th><th>Started</th><th>Ended</th><th>Ended as</th><th>Why</th><th>Worked for</th></tr></thead>
         <tbody>{row.segments.map((s: Json) => <tr key={s.segment}><td>{s.segment}</td><td>{s.entry}</td><td>{stamp(s.started_utc) ?? 'not begun'}</td><td>{stamp(s.ended_utc) ?? (s.started_utc ? 'open' : '-')}</td>
-          <td>{s.end_state ?? '-'}</td><td>{s.stop_reason ?? '-'}</td><td className="numeric">{span(s.active_seconds) ?? '-'}</td></tr>)}</tbody></table></>}
+          <td>{s.end_state ?? '-'}</td><td title={s.stop_reason ?? undefined}>{s.stop_reason ? stopWords(s.stop_reason) : '-'}</td><td className="numeric">{span(s.active_seconds) ?? '-'}</td></tr>)}</tbody></table></>}
   </div>);
 }
 

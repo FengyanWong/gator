@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline } from '../api';
-import { createdAt as created, runName, runTaskOrBlank as taskOf, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
+import { createdAt as created, runName, runTaskOrBlank as taskOf, stopWords, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
 import { si, unitLabel } from '../units';
 import { Icon } from './Icons';
 import { KeyTile } from './fields';
@@ -298,7 +298,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
       {/* what is shown on the left (it shortens with an ellipsis), the controls on the right (they never wrap away) */}
       <span className="training-what">
         <span className="training-run" title={runDir}>{runName(runDir)}</span>
-        {state && <span className={`badge ${STATE_CLASS[state] ?? 'state-unknown'}`}>{state}{status?.stop_reason ? ` (${status.stop_reason})` : ''}</span>}
+        {state && <span className={`badge ${STATE_CLASS[state] ?? 'state-unknown'}`}>{state}{status?.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}</span>}
         <span className="hint training-counts" title={counts}>{counts}</span>
       </span>
       <span className="training-controls">

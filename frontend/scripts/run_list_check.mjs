@@ -247,7 +247,7 @@ await runChecks(browser, async () => {
     && /^6 min 53 s \(parallel jobs added up/.test(details.facts['Summed simulator job time']), JSON.stringify(details?.facts));
   check('... the budget, the launches, the best design and the saved state', /^25 charged \/ 60 \(completed 24, failed 1, in flight 0, remaining 35\)$/.test(details?.facts['Budget']) && /^25 \(retries 0, cache hits 0\)$/.test(details.facts['Spectre launches'])
     && /^infeasible\s+gain_db=41\.5\s+violation 0\.125$/.test(details.facts['Best design']) && details.facts['Best design variables'] === 'input_pair_width=2.34558e-6 m  load_capacitance=2.5e-13 F' && details.facts['First feasibility'] === 'not reached' && /^full_state \(complete output, latest save ckpt-000040\)$/.test(details.facts['Saved state'])
-    && details.facts['Model loaded at the start'] === 'none (random weights)' && details.facts['Data written'] === '1.2 MiB' && details.facts['Stop reason'] === 'user_pause', JSON.stringify(details?.facts));
+    && details.facts['Model loaded at the start'] === 'none (random weights)' && details.facts['Data written'] === '1.2 MiB' && details.facts['Stop reason'] === 'paused by you (user_pause)', JSON.stringify(details?.facts));
   check('empty facts are left out instead of printed as blanks', !('Error' in (details?.facts ?? {})) && !('Paused between segments' in (details?.facts ?? {})));
   await pressIn(PAUSED, 'Hide details');
   await pressIn(RESUMED, 'Details'); await sleep(600);
@@ -256,8 +256,8 @@ await runChecks(browser, async () => {
     segments: [...d.querySelectorAll('table.run-segments tbody tr')].map(tr => [...tr.children].map(td => td.textContent)) }; })()`);
   check('one run\'s details are open at a time', resumedDetails.count === 1);
   check('a continued run lists its segments: how each began and ended, and how long it worked', JSON.stringify(resumedDetails.segments) === JSON.stringify([
-    ['1', 'start', stamp('2026-09-21T10:00:03+00:00'), stamp('2026-09-21T10:10:00+00:00'), 'paused', 'user_pause', '10 min 00 s'],
-    ['2', 'resume', stamp('2026-09-21T12:10:00+00:00'), stamp('2026-09-21T12:15:00+00:00'), 'completed', 'budget_exhausted', '5 min 00 s']]) && resumedDetails.paused === '2 h 00 min', JSON.stringify(resumedDetails));
+    ['1', 'start', stamp('2026-09-21T10:00:03+00:00'), stamp('2026-09-21T10:10:00+00:00'), 'paused', 'paused by you', '10 min 00 s'],
+    ['2', 'resume', stamp('2026-09-21T12:10:00+00:00'), stamp('2026-09-21T12:15:00+00:00'), 'completed', 'budget used up', '5 min 00 s']]) && resumedDetails.paused === '2 h 00 min', JSON.stringify(resumedDetails));
   check('the details of a run saved by an older version of the optimizer code say why it cannot be continued (7.221)',
     resumedDetails.saved === 'model only: the latest save ckpt-000040 is a full save point written by an older version of the optimizer code - only that version can continue it; fine-tune and frozen still load its model',
     JSON.stringify(resumedDetails.saved));

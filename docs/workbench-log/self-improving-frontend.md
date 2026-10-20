@@ -581,3 +581,15 @@ write them, set apart by "; " - real data: "f_center_hz = 1.28 GHz; kvco_hz_v = 
 **Checked.** `tsc` clean; `run_list_check` 121 (its Details expectations now "gain_db = 41.5" and "input_pair_width =
 2.34558 um; load_capacitance = 250 fF"), `task_run_check` 31, `dom_identity_check` 56. Before it: the full suite on
 SIF-1..38 - 54/54 scripts, 2,223 checks, none failed, none flaky.
+
+### SIF-40 A task's Details: the searched sizes first, the tied rows folded (2026-10-20)
+
+**Found** (the user's VCO task in the Tasks window, the branch on 5174). Details listed all 66 parameter rows; the 7 sizes
+the task searches stood among 59 rows that only follow them ("wn_main_f1 ... Follows wn_main").
+
+**Changed** (`TaskList.tsx`): the table holds the searched rows, each with the rows tied to it ("7: DUT/MNA2, DUT/MNA3,
+DUT/MNA4, DUT/MNB1, ..." - every one in its tooltip); the tied rows have their own table in a closed fold, "59 more rows
+follow a searched one". The heading still counts both (7 searched, 66 rows).
+
+**Checked.** `tsc` clean; `task_list_check` 80 (its rows check now: 1 searched parameter, its tied row in the closed fold,
+1 probe, 1 spec), `task_rows_check` 52, `dom_identity_check` 56; the user's VCO task on the branch (5174).

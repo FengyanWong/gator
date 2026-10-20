@@ -98,6 +98,7 @@ function TaskDetails({ task, runs, rows, error, followed, onRenamed }: { task: J
     ['Run label', task.starter_project?.task_name], ['Runs', `${of.count}${of.newest ? `; newest ${newestText(of.newest)}` : ''}`],
   ];
   const unit = (v: unknown, u?: string | null) => v == null || v === '' ? '' : si(v, u);
+  const searched = (rows?.parameters ?? []).filter((p: Json) => !p.binding_group), following = (rows?.parameters ?? []).filter((p: Json) => p.binding_group);
   const limits = (s: Json) => s.constraint === 'interval' ? `${unit(s.lower, s.unit)} to ${unit(s.upper, s.unit)}`
     : s.constraint === '>=' ? `>= ${unit(s.lower, s.unit)}` : s.constraint === '<=' ? `<= ${unit(s.upper, s.unit)}` : `${s.constraint ?? ''} ${unit(s.lower ?? s.upper, s.unit)}`.trim();
   return (<div className="run-details task-details">
@@ -115,9 +116,16 @@ function TaskDetails({ task, runs, rows, error, followed, onRenamed }: { task: J
     </tbody></table>
     {rows && <>
       <h4>Parameters <span className="hint">- the sizes the task varies ({(rows.parameters ?? []).filter((p: Json) => !p.binding_group).length} searched, {(rows.parameters ?? []).length} rows)</span></h4>
-      <table className="grid small task-rows-table"><thead><tr><th>ID</th><th>Instance</th><th>Parameter</th><th>Range</th><th>Follows</th></tr></thead>
-        <tbody>{(rows.parameters ?? []).map((p: Json) => <tr key={p.variable_id}><td>{p.variable_id}</td><td>{p.instance_path}</td><td>{p.parameter_name}</td>
-          <td>{p.binding_group ? '' : `${unit(p.lower, p.unit)} to ${unit(p.upper, p.unit)}`}</td><td>{p.binding_group ?? ''}</td></tr>)}</tbody></table>
+      {/* The searched rows, each with the rows tied to it; the tied rows themselves folded (branch record SIF-40: the VCO's 7
+          searched sizes stood among 59 rows that only follow them). */}
+      <table className="grid small task-rows-table"><thead><tr><th>ID</th><th>Instance</th><th>Parameter</th><th>Range</th><th>Rows tied to it</th></tr></thead>
+        <tbody>{searched.map((p: Json) => { const tied = following.filter((f: Json) => f.binding_group === p.variable_id); return <tr key={p.variable_id}>
+          <td>{p.variable_id}</td><td>{p.instance_path}</td><td>{p.parameter_name}</td><td>{`${unit(p.lower, p.unit)} to ${unit(p.upper, p.unit)}`}</td>
+          <td title={tied.map((f: Json) => `${f.variable_id} (${f.instance_path})`).join('\n') || undefined}>{tied.length
+            ? `${tied.length}: ${tied.slice(0, 4).map((f: Json) => f.instance_path).join(', ')}${tied.length > 4 ? ', ...' : ''}` : ''}</td></tr>; })}</tbody></table>
+      {following.length > 0 && <details className="more task-followers"><summary>{following.length} more row{following.length === 1 ? '' : 's'} follow{following.length === 1 ? 's' : ''} a searched one</summary>
+        <table className="grid small task-rows-table"><thead><tr><th>ID</th><th>Instance</th><th>Parameter</th><th>Follows</th></tr></thead>
+          <tbody>{following.map((p: Json) => <tr key={p.variable_id}><td>{p.variable_id}</td><td>{p.instance_path}</td><td>{p.parameter_name}</td><td>{p.binding_group}</td></tr>)}</tbody></table></details>}
       <h4>Probes <span className="hint">- the results it measures</span></h4>
       <table className="grid small task-rows-table"><thead><tr><th>ID</th><th>Result</th><th>Analysis</th><th>Unit</th></tr></thead>
         <tbody>{(rows.measurements ?? []).map((m: Json) => <tr key={m.measurement_id}><td>{m.measurement_id}</td><td>{m.source_name ?? ''}</td><td>{m.analysis ?? ''}</td><td>{m.unit ?? ''}</td></tr>)}</tbody></table>

@@ -220,7 +220,9 @@ await runChecks(browser, async () => {
     'Revision3', `Baseline recorded${stamp(OTA.baseline_recorded_utc)}`, 'Statebaseline recorded', 'Sizes varied6', 'Results measured6', 'Runs2; newest'].every(t => details.includes(t)) && !(await far.evaluate(`[...${DETAILS}.querySelectorAll('.run-facts tr')].some(tr => tr.children[0].textContent === 'Kind')`)), details.slice(0, 300));
   // rows holding cells (td): the heading row holds th only - a quirks-mode pop-up counts 'tbody tr' oddly (the heading row too)
   const tables = await far.evaluate(`[...${DETAILS}.querySelectorAll('table.task-rows-table')].map(t => [...t.querySelectorAll('tr')].filter(tr => tr.querySelector('td')).length)`);
-  check('the rows: 2 parameters, 1 probe, 1 spec, with the spec\'s limit', JSON.stringify(tables) === JSON.stringify([2, 1, 1]) && details.includes('>= 30 dB') && details.includes('w_pair_f1') && details.includes('m_gain_db'), `${JSON.stringify(tables)} ${details.slice(-200)}`);
+  // Branch record SIF-40: the searched parameter with the rows tied to it, the tied row in a fold of its own
+  check('the rows: 1 searched parameter (its tied row folded), 1 probe, 1 spec, with the spec\'s limit', JSON.stringify(tables) === JSON.stringify([1, 1, 1, 1]) && details.includes('>= 30 dB') && details.includes('w_pair_f1') && details.includes('m_gain_db')
+    && await far.evaluate(`!!${DETAILS}.querySelector('details.task-followers:not([open]) table.task-rows-table')`), `${JSON.stringify(tables)} ${details.slice(-200)}`);
   await far.shot(path.join(out, 'task-list-3-details.png'));
   await press('Hide details');
   check('Hide details closes them', await far.until(`!(${DETAILS})`, 20));

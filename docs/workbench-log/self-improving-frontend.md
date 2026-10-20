@@ -300,3 +300,14 @@ Check: `run_list_check` (119).
 and Run status's fine-tune offer ("... in Mode Fine-tune, as one Undo step"); `RunList.tsx`, `RunTabs.tsx`.
 
 **Checked.** `tsc` clean; `run_list_check` 119, `run_control_check` 101.
+
+### SIF-22 Matched devices leaves room for the table (2026-10-20; from the survey at 1366 x 768)
+
+**Found.** At 1366 x 768 with a run in the bottom panel, Matched devices' results (capped at 45 % of the window) took the
+whole editors' card - 345 px of 389 - and the table went out of view.
+
+**Changed** (`roadster.css`): the panel, and the confirm questions in the same place, take 40 % of the card at most; they scroll
+inside. Measured with the user's VCO task (the branch on 5174): the panel 144 px of the 389 px card, the table's heading in
+view; entering a cell then folds the bottom panel (record 7.372).
+
+**Checked.** `matched_devices_check` 30, `looks_check` 62, `room_check` 22, `reliability_check` 20, `edit_state_check` 24.

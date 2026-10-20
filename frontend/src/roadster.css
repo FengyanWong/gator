@@ -228,3 +228,7 @@ table.run-table td .run-design { display: block; }
 /* the Runs window's fifteen columns fit a 1500 px window with real names: its wrapping cells may be narrower (they were 85 px at
    least, and the table 1302 px in its 1234 px) */
 .run-window table.run-table td.wrap, .run-window table.run-table td.wrap-words { min-width: 5em; }
+
+/* ---- branch record SIF-22: Matched devices and the confirm questions take 40 % of the editors' card at most (45 % of the window
+   could be the whole card at 1366 x 768 with a run below, the table pushed out of view) */
+.editors > .confirm, .editors > .matched-devices { max-height: min(45vh, 40%); }

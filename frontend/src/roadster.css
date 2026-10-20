@@ -218,3 +218,7 @@ table.grid.small.data-table td.json-cell { white-space: nowrap; word-break: norm
 table.editor td.issues .issue { max-width: 40ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
 table.editor:has(td.issues > .issue) td.issues { min-width: 240px; }   /* room for the first words while a row has an issue */
 table.editor td.issues .issue b { font-weight: 600; margin-right: 3px; }
+
+/* ---- branch record SIF-9: a cell that holds more than it shows says so - "main-inverter NMOS..." - while it is not being edited
+   (the formula bar and the cell itself show all of it once entered) */
+table.editor td input:not([type="checkbox"]):not(:focus) { text-overflow: ellipsis; }

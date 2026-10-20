@@ -287,6 +287,9 @@ await runChecks(browser, async () => {
       head: same(getComputedStyle(th).backgroundColor, css.getPropertyValue('--param-head')) }; })()`);
   check('the three editor tabs carry their editor, in tab order', JSON.stringify(tabColours.editors) === '["parameters","measurements","targets"]', JSON.stringify(tabColours));
   check("the active editor's tab and table header row take the editors' one ink and head colour (record 7.360: no colour per editor)", tabColours.ink && tabColours.head, JSON.stringify(tabColours));
+  // Branch record SIF-9: a text cell that holds more than it shows ends in "..." while it is not being edited.
+  const cut = await evaluate(`(() => { const i = document.querySelector('.editors table.editor tbody input:not([type="checkbox"])'); return i ? getComputedStyle(i).textOverflow : null; })()`);
+  check('a text cell not being edited ends in "..." where it is cut (SIF-9)', cut === 'ellipsis', String(cut));
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Specs')).click()`);
   await sleep(300);
   const probes = config.measurements.map(m => m.measurement_id).filter(Boolean);

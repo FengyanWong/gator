@@ -154,3 +154,13 @@ the design ("Where the Graph Transformer values come from"). Check: `network_pan
 
 **Checked.** `tsc` clean; `network_panel_check` 58, `encoder_models_check` 24, `model_chooser_check` 71,
 `model_structure_check` 29, `network_inputs_check` 8, `mode_suggestion_check` 20.
+
+### SIF-9 A cell that holds more than it shows says so (2026-10-20; from the design survey)
+
+**Found.** The editors' text cells cut their text at the cell's edge with nothing to tell it goes on ("main-inverter NMO",
+"auxiliary (cross-coup" in Notes).
+
+**Changed** (`roadster.css`): a text cell that is not being edited ends in "..." where it is cut; entered, it shows all of it,
+as the formula bar does. Check: `looks_check` (62).
+
+**Checked.** `looks_check` 62, `sheet_check` 43, `typing_check` 47, `find_fill_copy_check` 30, `formula_bar_check` 19.

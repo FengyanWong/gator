@@ -119,6 +119,9 @@ await runChecks(browser, async () => {
   check('the page itself does not scroll: the scroll areas hold what is placed in them (an icon\'s screen-reader label made it scroll 500 px)',
     sif3.scroll <= sif3.inner + 1 && sif3.held.every(p => p === 'relative'), JSON.stringify(sif3));
   check('a completed run\'s bar is white, not the red of the current run', /\bdone\b/.test(sif3.bar ?? '') && sif3.barColour === sif3.text, JSON.stringify([sif3.bar, sif3.barColour, sif3.text]));
+  // Branch record SIF-14: Run status names the Mode as the RL model window does.
+  const modeRow = await evaluate(`[...document.querySelectorAll('footer table tr')].find(r => r.cells[0]?.textContent === 'Mode / model')?.cells[1].textContent ?? null`);
+  check('Run status names the Mode in words: "New model - no weights loaded" (SIF-14)', modeRow === 'New model - no weights loaded', String(modeRow));
   check('Run configuration\'s model line is in the body font, two lines at most', !!sif3.line && !/mono/i.test(sif3.line.font) && sif3.line.lines <= 2, JSON.stringify(sif3.line));
 
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);

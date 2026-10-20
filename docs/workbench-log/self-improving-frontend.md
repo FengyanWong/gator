@@ -224,3 +224,13 @@ such); the key on hover. Check: `model_chooser_check` (75: the real fixture mode
 tooltip).
 
 **Checked.** `tsc` clean; `model_chooser_check` 75, `mode_suggestion_check` 20, `graph_view_check` 63.
+
+### SIF-14 Run status names the Mode in words (2026-10-20; from the design survey)
+
+**Found.** Run status's facts wrote "Mode / model: scratch (no weights loaded)", a fine-tune "fine_tune from 1a2b3c4d5e6f /
+ckpt-...": the configuration's key.
+
+**Changed** (`RunTabs.tsx`): "New model - no weights loaded"; "Fine-tune - from run 1a2b3c4d5e6f, save point ckpt-...", the
+Mode as the RL model window names it. Check: `room_check` (22: the fixture run's row).
+
+**Checked.** `tsc` clean; `room_check` 22, `looks_check` 62, `calibration_check` 38, `run_control_live_check` 23.

@@ -593,3 +593,14 @@ follow a searched one". The heading still counts both (7 searched, 66 rows).
 
 **Checked.** `tsc` clean; `task_list_check` 80 (its rows check now: 1 searched parameter, its tied row in the closed fold,
 1 probe, 1 spec), `task_rows_check` 52, `dom_identity_check` 56; the user's VCO task on the branch (5174).
+
+### SIF-41 The model in use names its reward (2026-10-20)
+
+**Found** (the RL model window, Fine-tune, the user's VCO model). "The model in use" wrote its reward as the stored names:
+"Reward: constraint_violation_v2; compressed".
+
+**Changed** (`RlModelWindow.tsx`): "Constraint violation, version 2; violation shape compressed" - an unknown version with its
+underscores as spaces, none as "Legacy nominal" as before; the stored names in the tooltip.
+
+**Checked.** `tsc` clean; `network_panel_check` 58, `model_chooser_check` 77, `reward_block_check` 32,
+`mode_suggestion_check` 20, `looks_check` 64; the user's VCO model on the branch (5174).

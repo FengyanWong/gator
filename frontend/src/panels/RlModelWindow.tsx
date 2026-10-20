@@ -15,6 +15,8 @@ import { NoModeNote } from './RunConfiguration';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
 import type { RlModel } from './useRlModel';
 /** The training conditions as Reward and conditions names them (branch record SIF-12): the facts wrote the key ("off"). */
+/** The reward a saved model was trained with, by name (SIF-41). */
+const REWARD_NAME: Record<string, string> = { constraint_violation_v2: 'Constraint violation, version 2' };
 const CONDITIONS: Record<string, string> = { off: 'Nominal only', after_nominal: 'Corners after nominal passes', always: 'Every planned corner' };
 
 /** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the
@@ -184,7 +186,10 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           <tr><td>Trained on</td><td title={model.description.source_task_id}>{taskNameOf(model.description.source_task_id)}</td></tr>
           <tr><td>Saved</td><td title={`${model.description.created_utc} (UTC)`}>{stamp(model.description.created_utc) ?? model.description.created_utc}</td></tr>
           <tr><td>Schema</td><td>{model.description.metadata_version}</td></tr>
-          <tr><td>Reward</td><td>{model.description.contract?.reward_version ?? 'Legacy nominal'}; {model.description.contract?.reward_settings?.violation_shape ?? 'capped'}</td></tr>
+          {/* in words, the stored names in the tooltip (branch record SIF-41: it read "constraint_violation_v2; compressed") */}
+          <tr><td>Reward</td><td title={`${model.description.contract?.reward_version ?? 'none recorded'}; ${model.description.contract?.reward_settings?.violation_shape ?? 'capped'}`}>
+            {REWARD_NAME[model.description.contract?.reward_version ?? ''] ?? (model.description.contract?.reward_version ? String(model.description.contract.reward_version).replace(/_/g, ' ') : 'Legacy nominal')}; violation
+            shape {model.description.contract?.reward_settings?.violation_shape ?? 'capped'}</td></tr>
           <tr><td>Worst hard-spec share</td><td>{short(model.description.contract?.reward_settings?.worst_spec_share ?? 0)}</td></tr>
           <tr><td>Objective bonus weight</td><td>{short(model.description.contract?.reward_settings?.objective_weight ?? 0)}</td></tr>
           <tr><td>Margin bonus weight</td><td>{short(model.description.contract?.reward_settings?.margin_weight ?? 0)}</td></tr>

@@ -11,6 +11,7 @@ import { TableHead, useTableView } from './TableView';
 import { childrenOf, historyOf, startedFrom } from '../lineage';
 import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
 import { runDesign, runMode } from './rlModelText';
+import { quantity } from '../units';
 
 /** An experiment's folder by its name (branch record SIF-4): the folder's hash ("__ae6e1ae24977") only in the tooltip, and a
  *  line may break after "-" or "_" - the column wrapped "r5-dffr-powermid-bodata-s2_ae6e1a / e24977" between any letters. */
@@ -50,9 +51,13 @@ const keepDates = (text: string) => text.split(/(\d{4}-\d\d-\d\d)/).map((part, i
  *  Cancel at the edits question or a model that cannot be read leaves it open, with the reason on the page. Clear, Details,
  *  the folders and the links inside the window keep it open. */
 
-const pairs = (values: Json) => Object.entries(values ?? {}).map(([k, v]) => `${k}=${short(v)}`).join('  ');
+// Values in their units, as the editors and Run status write them (branch record SIF-39: "input_pair_width=2.34558e-6 m"):
+// a result to three digits, a size to six; a ratio without a "1".
+const inUnit = (v: Json, unit: string | null | undefined, digits: number) => typeof v === 'number'
+  ? (unit && unit !== '1' ? quantity(v, unit, digits) : String(Number(v.toPrecision(digits)))) : short(v);
+const pairs = (values: Json, units?: Json) => Object.entries(values ?? {}).map(([k, v]) => `${k} = ${inUnit(v, units?.[k], 3)}`).join('; ');
 // A best design lists its variables as [{ variable_id, value, unit }].
-const variables = (list: Json) => Array.isArray(list) ? list.map((v: Json) => `${v.variable_id}=${short(v.value)}${v.unit ? ` ${v.unit}` : ''}`).join('  ') : pairs(list);
+const variables = (list: Json) => Array.isArray(list) ? list.map((v: Json) => `${v.variable_id} = ${inUnit(v.value, v.unit, 6)}`).join('; ') : pairs(list);
 // `state`: what the page's own status poll says now - the list row keeps the state of its last read ("starting").
 // The run shown, left of Runs...: its start, task, Mode (as the RL model window names it), seed and state, set apart by "·"
 // as the page's other lines are (branch record SIF-6: "2026-10-16 16:32:51 | mscr_vco_lin_c | scratch seed0 | completed").
@@ -150,8 +155,8 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     ['Budget', b ? `${b.charged} charged / ${b.max_evaluations} (completed ${b.completed}, failed ${b.failed}, in flight ${b.in_flight}, remaining ${b.remaining})` : null],
     ['Spectre launches', b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''} (retries ${b.retries}, cache hits ${b.cache_hits})` : null],
     ['Learner updates', info ? String(info.learner_updates ?? 0) : null],
-    ['First feasibility', info ? (first ? `at ${first.first_feasible_eval_count} evaluations charged (${first.completed_count} completed, ${first.spectre_launches} launches)` : 'not reached') : null],
-    ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics)} · violation ${short(best.violation)}` : 'none') : null],   // not shouted (SIF-19)
+    ['First feasibility', info ? (first ? `at ${first.first_feasible_eval_count} evaluations charged (${first.completed_count} completed, ${first.spectre_launches} launch${first.spectre_launches === 1 ? '' : 'es'})` : 'not reached') : null],
+    ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics, best.metric_units)} · violation ${short(best.violation)}` : 'none') : null],   // not shouted (SIF-19)
     ['Best design variables', best?.variables ? variables(best.variables) : null],
     ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}` : 'none (random weights)') : null],
     ['Last model save', info ? stamp(info.last_checkpoint_utc) ?? 'none' : null],

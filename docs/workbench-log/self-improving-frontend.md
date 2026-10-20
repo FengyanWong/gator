@@ -568,3 +568,16 @@ in the tooltip; "1 launch".
 `run_list_check` 121, `task_run_check` 31, `dom_identity_check` 56, `looks_check` 64, `agent_window_check` 28,
 `room_check` 22. (`reward_v2_frontend_check`, stand-alone, reads "Executed reward ... worst hard-spec share 0.5" and "Best
 design" starting "Nominal feasible only": both hold.)
+
+### SIF-39 A run's Details in the Runs window: values in their units (2026-10-20; as SIF-38)
+
+**Found.** A run's Details wrote its best design as "gain_db=41.5" without units and its sizes as
+"input_pair_width=2.34558e-6 m  load_capacitance=2.5e-13 F"; "First feasibility" said "1 launches".
+
+**Changed** (`RunList.tsx`): results in their units to three digits, sizes to six, as Run status (SIF-38) and the editors
+write them, set apart by "; " - real data: "f_center_hz = 1.28 GHz; kvco_hz_v = -1.1 GHz/V; ... power_w = 284 uW",
+"wn_main = 4.69 um; ... r1_r = 2.74675 kohm; r2_r = 927.891 ohm"; "1 launch".
+
+**Checked.** `tsc` clean; `run_list_check` 121 (its Details expectations now "gain_db = 41.5" and "input_pair_width =
+2.34558 um; load_capacitance = 250 fF"), `task_run_check` 31, `dom_identity_check` 56. Before it: the full suite on
+SIF-1..38 - 54/54 scripts, 2,223 checks, none failed, none flaky.

@@ -146,7 +146,7 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
         <KeyTile label="Learner updates" value={status.learner_updates ?? 0} />
         <KeyTile label="First feasible design" value={first ? first.first_feasible_eval_count : 'none yet'} before={first ? 'at' : undefined} after={first ? 'evaluations' : undefined} />
         <KeyTile label="Best design" value={!best ? 'none' : best.feasible ? 'feasible' : best.nominal_feasible ? 'nominal only' : 'infeasible'}
-          after={best ? `hard violation ${num(best.violation)}` : undefined} />
+          after={best ? `hard violation ${few(best.violation)}` : undefined} />   {/* three digits, as the facts below (SIF-42) */}
       </div>
     </div>}
     <table className="grid small"><tbody>

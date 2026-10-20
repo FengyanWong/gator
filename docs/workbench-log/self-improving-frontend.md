@@ -604,3 +604,14 @@ underscores as spaces, none as "Legacy nominal" as before; the stored names in t
 
 **Checked.** `tsc` clean; `network_panel_check` 58, `model_chooser_check` 77, `reward_block_check` 32,
 `mode_suggestion_check` 20, `looks_check` 64; the user's VCO model on the branch (5174).
+
+### SIF-42 Run status's Best design tile to three digits (2026-10-20; as SIF-38)
+
+**Found** (a calibration run of the user's, graphgps_ldo1_t3, on the branch on 5174): the Best design tile said "hard
+violation 0.309319" above facts that now say three digits. (The calibration table itself reads well.)
+
+**Changed** (`RunTabs.tsx`): "hard violation 0.309".
+
+**Checked.** `tsc` clean; `looks_check` 64, `room_check` 22, `calibration_check` 38, `export_check` 22,
+`run_control_check` 101. The look answers a load's "Switch to ...?" question with OK (the preview page's own editors only)
+- unanswered, it held a headless page until the look's time ran out.

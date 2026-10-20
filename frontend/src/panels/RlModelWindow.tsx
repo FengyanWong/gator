@@ -5,6 +5,7 @@ import { Fragment } from 'react';
 import { copy, Json } from '../api';
 import { folderName, num } from '../format';
 import { SavedModels } from './ModelChooser';
+import { designName } from '../lineage';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Check, LookFold, Num } from './fields';
@@ -168,7 +169,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         {modelLoading && <p className="hint" role="status">Checking model compatibility...</p>}
         {error && <p className="error">{error}</p>}
         {model?.description && <table className="grid small model-facts"><tbody>
-          {savedNet && <tr className="model-network"><td>Network</td><td><b>{savedNet.encoder_type}</b>, hidden {savedModel.hidden_dim}, heads {savedModel.heads}{archDiffers || usesHeads ? '' : ' (ignored by this encoder)'}, layers {savedModel.layers}
+          {savedNet && <tr className="model-network"><td>Network</td><td><b>{designName(savedNet)}</b>, hidden {savedModel.hidden_dim}, heads {savedModel.heads}{archDiffers || usesHeads ? '' : ' (ignored by this encoder)'}, layers {savedModel.layers}
             <span className="hint"> - this run uses it as it is: a saved model only loads into the network it was trained with.</span></td></tr>}
           {model.vocabulary && <tr className="model-components"><td>Components</td><td><b>{model.vocabulary.label}</b>
             <span className="hint"> - the network of this run knows the same list{model.vocabulary.name !== 'standard' && !model.vocabulary.loaded

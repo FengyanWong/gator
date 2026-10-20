@@ -179,13 +179,16 @@ await runChecks(browser, async () => {
     && [...${RIGHT}.querySelectorAll('label.check')].some(l => l.textContent === 'Freeze encoder') && !!${RIGHT}.querySelector('input.model-label')`));
   check('... "no saved model chosen yet" is said, and none was filled in by itself (record 7.265)', await evaluate(`!!${RIGHT}.querySelector('.model-none-chosen')`)
     && !(await storedWhen(s => s?.mode === 'fine_tune'))?.model_source?.run_dir && /^Fine-tune · no saved model chosen/.test(await line()), await line());
-  check('the columns: name, trained on, network, evaluations, save points, last saved, started from, data, restorable', JSON.stringify((await heads()).slice(1, 10))
-    === JSON.stringify(['Name', 'Trained on', 'Network', 'Evaluations', 'Save points', 'Last saved', 'Started from', 'Data', 'Restorable']), JSON.stringify(await heads()));
+  // Branch record SIF-1: the network's design by name (user: "show what is each models original shape design"), its size
+  // under it, in the column that was "Network".
+  check('the columns: name, trained on, design, evaluations, save points, last saved, started from, data, restorable', JSON.stringify((await heads()).slice(1, 10))
+    === JSON.stringify(['Name', 'Trained on', 'Design', 'Evaluations', 'Save points', 'Last saved', 'Started from', 'Data', 'Restorable']), JSON.stringify(await heads()));
   let shown = await rows();
   check('one row per saved model, most recently saved first', shown.length === MODELS.length && shown.map(r => r.dir).join() === MODELS.map(m => m.run_dir).join(), shown.map(r => r.cells[1]).join(' | '));
   const cellsOf = m => shown.find(r => r.dir === m.run_dir).cells;
-  check('a row names the model, its task, ITS network (in short, as the model line writes it), its evaluations and save points', cellsOf(A)[1] === A.task_name
-    && cellsOf(A)[2] === 'synthetic:gpdk045_ota5' && cellsOf(A)[3] === 'GT 16/2/1' && cellsOf(A)[4] === '20' && cellsOf(A)[5] === '4' && cellsOf(B)[3] === 'GATv2 16/2/1'
+  check('a row names the model, its task, ITS design by name and its size, its evaluations and save points', cellsOf(A)[1] === A.task_name
+    && cellsOf(A)[2] === 'synthetic:gpdk045_ota5' && cellsOf(A)[3] === 'Graph Transformer 16/2/1' && cellsOf(A)[4] === '20' && cellsOf(A)[5] === '4'
+    && cellsOf(B)[3] === 'GATv2 16/2/1'
     && await evaluate(`(${row(B)}).querySelector('td.model-net').title`) === 'gatv2 16/2/1', JSON.stringify(cellsOf(A)));
   check('MOCK models are tagged, the real one is not; a model saved without its replay restores "weights only"', cellsOf(A)[8] === 'MOCK' && cellsOf(D)[8] === 'real'
     && cellsOf(C)[9] === 'weights only' && cellsOf(A)[9] === 'full state', JSON.stringify([cellsOf(A)[8], cellsOf(D)[8], cellsOf(C)[9]]));
@@ -239,7 +242,7 @@ await runChecks(browser, async () => {
   check('a double click on a row uses its newest save point, pinned', run?.model_source?.run_dir === B.run_dir && run.model_source.checkpoint_id === B.latest, JSON.stringify(run?.model_source));
   check('... and its network (gatv2) is the run\'s at once - nothing follows later by itself', sameNet(run?.network, GATV2), JSON.stringify(run?.network));
   check('... and the double click closes the window too', await chosenAndReopened());
-  check('the model in use is described under the table: its network, and that the run uses it as it is', await until(`/^Network\\s+gatv2, hidden 16, heads 2, layers 1 - this run uses it as it is/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40),
+  check('the model in use is described under the table: its network, and that the run uses it as it is', await until(`/^Network\\s+GATv2, hidden 16, heads 2, layers 1 - this run uses it as it is/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40),
     await evaluate(`${RIGHT}.querySelector('tr.model-network')?.innerText ?? 'no row'`));
   await sleep(1100);
   // A network that arrives from ELSEWHERE while the model is loaded (an imported configuration) is taken back - and that is said.
@@ -253,7 +256,7 @@ await runChecks(browser, async () => {
   const APPLY = `[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent.trim() === 'Apply')`;
   check('(set-up) a configuration with another network is imported through "Import JSON..."', await until(`!!(${APPLY})`, 60));
   await evaluate(`${APPLY}.click()`);
-  check('a network from elsewhere is taken back while the model is loaded, and that is SAID', await until(`/The network stays gatv2 16\\/2\\/1: this run loads a saved model/.test(${RIGHT}.querySelector('.net-message.warn')?.textContent ?? '')`, 60),
+  check('a network from elsewhere is taken back while the model is loaded, and that is SAID', await until(`/The network stays GATv2 16\\/2\\/1: this run loads a saved model/.test(${RIGHT}.querySelector('.net-message.warn')?.textContent ?? '')`, 60),
     await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no message'`));
   check('... the configuration holds the model\'s network again', sameNet((await storedWhen(s => sameNet(s?.network, GATV2)))?.network, GATV2));
 

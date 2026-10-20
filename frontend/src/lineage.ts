@@ -7,8 +7,17 @@
 import { Json } from './api';
 import { folderName } from './format';
 
-/** The encoders' short names, as Run configuration writes them. */
-export const ENCODER_SHORT: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GPS', group_cross_attention: 'Group attention', circuit_gps: 'CircuitGPS' };
+/** The encoders' short names, as Run configuration writes them (GraphGPS, not "GPS", since branch record SIF-1). */
+export const ENCODER_SHORT: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GraphGPS', group_cross_attention: 'Group attention', circuit_gps: 'CircuitGPS' };
+/** A network's design by name, as the RL model window's chooser names it (branch record SIF-1, user: "show what is each
+ *  models original shape design (rgcn or graphgps or circuit gps etc)"). CircuitGPS carries its version: 2 and 3 are
+ *  different networks (record 7.356). A fine-tuned model keeps the design of the model it started from. */
+export const DESIGN_NAME: Record<string, string> = { graph_transformer: 'Graph Transformer', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GraphGPS',
+  group_cross_attention: 'Parameter-group attention', circuit_gps: 'CircuitGPS' };
+const version = (n: Json) => (n?.encoder_type === 'circuit_gps' && n.architecture_version ? ` v${n.architecture_version}` : '');
+export const designName = (n: Json): string => (n?.encoder_type ? `${DESIGN_NAME[n.encoder_type] ?? n.encoder_type}${version(n)}` : 'unknown');
+/** The same in the short form Run configuration writes ("GT", "CircuitGPS v3"). */
+export const designShort = (n: Json): string => (n?.encoder_type ? `${ENCODER_SHORT[n.encoder_type] ?? n.encoder_type}${version(n)}` : 'unknown');
 
 /** The evaluations a save point was written at, read from its id (ckpt-000420-...), or null. */
 export const pointEvaluations = (id?: string | null): number | null => {
@@ -32,7 +41,7 @@ export function startedFrom(run: Json, byDir: Map<string, Json>): Origin {
       parent: parent.run_dir, missing: !from };
   }
   if (run.run_kind === 'baseline_preflight' || run.run_kind === 'calibration') return { text: '-' };
-  return run.encoder ? { text: `template ${ENCODER_SHORT[run.encoder] ?? run.encoder}` } : { text: '-' };
+  return run.encoder ? { text: `template ${designShort({ encoder_type: run.encoder, architecture_version: run.network?.architecture_version })}` } : { text: '-' };
 }
 
 /** The runs that started from this run's model, newest first (the list is sorted so). */

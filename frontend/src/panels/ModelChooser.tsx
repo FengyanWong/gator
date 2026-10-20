@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRequest } from '../store';
 import { api, copy, Json } from '../api';
 import { folderName, savedAt as when } from '../format';
-import { childrenOf, ENCODER_SHORT, historyOf, startedFrom } from '../lineage';
+import { childrenOf, designName, ENCODER_SHORT, historyOf, startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { CircuitGraphView } from './CircuitGraphView';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
@@ -26,6 +26,8 @@ const KIND: Record<string, string> = { periodic: 'automatic save', manual: 'save
  *  model button writes it): the window has room for it. */
 export const netLabel = (n: Json, short = false) => n?.encoder_type ? `${short ? ENCODER_SHORT[n.encoder_type] ?? n.encoder_type : n.encoder_type} ${n.hidden_dim}/${n.heads}/${n.layers}${n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${n.structural_encoding}` : ''}` : 'unknown network';
 const netShort = (n: Json) => netLabel(n, true);
+/** Its size, under its design's name (branch record SIF-1): hidden width / heads / layers, and RWSE where it has it. */
+const sizeLabel = (n: Json) => n?.encoder_type ? `${n.hidden_dim}/${n.heads}/${n.layers}${n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${String(n.structural_encoding).toUpperCase()}` : ''}` : '?';
 // A name or task key may break after ':' and '_' ("synthetic:" / "gpdk045_" / "ota5"), never inside a word.
 const breakable = (text: string) => text.split(/(?<=[:_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -40,7 +42,7 @@ type Column = { key: string; title: string; help: string; value: (m: Json, byDir
 const COLUMNS: Column[] = [
   { key: 'name', title: 'Name', help: 'The model\'s name: the RL model label of the run that saved it, numbered when another model has it already. Rename it in its Details.', value: m => modelName(m) },
   { key: 'task', title: 'Trained on', help: 'The task the model was trained on; "multi-task" for a model trained offline on recorded runs.', value: m => trainedOn(m) },
-  { key: 'network', title: 'Network', help: 'The network the model has - a run that loads it uses this network as it is.', value: m => netLabel(m.network) },
+  { key: 'design', title: 'Design', help: 'The network design the model was built as - Graph Transformer, RGCN, GATv2, GraphGPS, CircuitGPS (v2 or v3) or parameter-group attention - and under it its size: hidden width / attention heads / layers, and RWSE (random-walk structural encoding) where the design has it. A fine-tuned model keeps the design of the model it started from; a run that loads it uses this network as it is.', value: m => `${designName(m.network)} ${sizeLabel(m.network)}` },
   { key: 'evaluations', title: 'Evaluations', help: 'The evaluations of training behind its newest save point.', value: m => m.trained_evaluations ?? null },
   { key: 'points', title: 'Save points', help: 'How many save points its run wrote.', value: m => m.checkpoints?.length ?? 0 },
   { key: 'saved', title: 'Last saved', help: 'When its newest save point was written (local time of this computer).', value: m => m.saved_utc ?? null },
@@ -144,7 +146,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
   const [open, setOpen] = useState<string | null>(null);              // the model whose Details are open
   const byDir = useMemo(() => new Map(runs.map(r => [r.run_dir, r])), [runs]);
   const list = models ?? [];
-  const text = (m: Json) => [modelName(m), m.task_name, m.task_id, trainedOn(m), m.circuit_class, netLabel(m.network), netShort(m.network), m.mode, m.state, m.mock ? 'mock' : 'real',
+  const text = (m: Json) => [modelName(m), m.task_name, m.task_id, trainedOn(m), m.circuit_class, designName(m.network), netLabel(m.network), netShort(m.network), m.mode, m.state, m.mock ? 'mock' : 'real',
     `seed${m.seed}`, folders.data.folders[folders.of(m.run_dir)]].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
   const shown = table.arrange(list, m => folders.holds(m.run_dir), text, m => column.value(m, byDir));
@@ -158,7 +160,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
   return (<div className="saved-models">
     <div className="row"><button onClick={() => { freshNext.current = true; load(); void folders.refresh(); }} disabled={loading}
       title="Refresh list: every run folder is read again from the disk.">Refresh list</button>
-      <input className="model-filter" placeholder="Filter: name, task, network, mock / real ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
+      <input className="model-filter" placeholder="Filter: name, task, design, mock / real ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
       <span className="hint model-count">{loading ? 'Reading the saved models...' : models ? `${plural(list.length, 'saved model')} under the output folder` : ''}</span></div>
     {error && <p className="error">The list of saved models could not be read: {error}</p>}
     {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
@@ -182,7 +184,8 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
                 disabled={folders.busy || !folders.ready} onChange={e => table.select(m.run_dir, e.target.checked)} /></td>
               <td className="wrap-words"><b>{breakable(modelName(m))}</b>{used && <span className="badge model-tag in-use-tag">in use</span>}
                 {folders.folder === 'all' && folders.data.folders[folders.of(m.run_dir)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(m.run_dir)]}</div>}</td>
-              <td className="wrap-words">{breakable(trainedOn(m))}</td><td className="model-net" title={netLabel(m.network)}>{netShort(m.network)}</td>
+              <td className="wrap-words">{breakable(trainedOn(m))}</td>
+              <td className="wrap-words model-net" title={netLabel(m.network)}>{designName(m.network)}{' '}<span className="hint model-size">{sizeLabel(m.network)}</span></td>
               <td className="numeric">{m.trained_evaluations ?? '?'}</td><td className="numeric">{m.checkpoints?.length ?? 0}</td>
               <td className="wrap-words">{when(m.saved_utc)}</td><td className="wrap">{origin.text}</td>
               <td>{m.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>

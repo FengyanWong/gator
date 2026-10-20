@@ -2570,8 +2570,16 @@ trained with (the backend refuses any other one in `fine_tune`, `frozen` and a l
 point** sets the model's network and component list with it, and the model's facts start with a "Network" row. Only
 the network follows; the training numbers under "Advanced" stay yours. A network that arrives from elsewhere while a
 model is loaded (an imported or opened configuration, an old draft) is taken back, and the window says so: "The network
-stays gatv2 16/2/1: this run loads a saved model ...". Back in New model the saved model chosen is cleared in the same
+stays GATv2 16/2/1: this run loads a saved model ...". Back in New model the saved model chosen is cleared in the same
 step, and the template in use is the network that was last in use.
+
+**Every model says its design** (branch `self-improving-frontend`, record SIF-1; user: "show what is each models original
+shape design (rgcn or graphgps or circuit gps etc)"). The saved models' table names each model's network design in its
+**Design** column - Graph Transformer, RGCN, GATv2, GraphGPS, CircuitGPS v2 or v3 (two different networks, record 7.356),
+parameter-group attention - with its size under it ("48/4/4 · RWSE"); the column was "Network", in the encoders' keys
+("graph_gps 48/4/4 · rwse"), where CircuitGPS v2 and v3 looked the same. A fine-tuned model keeps the design of the model
+it started from. The model's facts, its structure, the notes about its network and Run configuration's model line use the
+same names; the short form says GraphGPS, not "GPS".
 
 Using a template loads its remembered settings. A delayed reply or preset reset only changes the configuration
 while that choice and its network values are still current; later choices, edits, Undo and imports take precedence.

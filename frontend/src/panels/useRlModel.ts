@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SIMPLE_REWARD, useRequest } from '../store';
 import { api, Json } from '../api';
 import { modelNameAt } from './ModelChooser';
-import { ENCODER_SHORT, pointEvaluations } from '../lineage';
+import { designName, ENCODER_SHORT, pointEvaluations } from '../lineage';
 import { LOADS, NETWORK_FIELDS, networkOf, pick, readSavePoint, withSavePoint } from '../savePoint';
 import { usePopupWindow } from './popupWindow';
 import { PRESET_RATE_KEY, RL_MODEL_WINDOW } from '../contract';
@@ -222,7 +222,7 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     // warning (a silent revert would read as a button that does nothing). A model that came without its network - an old
     // draft, the launcher's "Fine-tune from its newest save point", an imported configuration naming another model - gets
     // it here, said as a note.
-    const named = `${savedNet.encoder_type} ${savedModel.hidden_dim}/${savedModel.heads}/${savedModel.layers}`;
+    const named = `${designName(savedNet)} ${savedModel.hidden_dim}/${savedModel.heads}/${savedModel.layers}`;
     setNetMessage(seen ? { level: 'warn', text: `The network stays ${named}: this run loads a saved model, and a saved model only loads into the network it was trained with. A new network needs New model.` }
       : { level: 'ok', text: `The network is now the saved model's, ${named}: a saved model only loads into the network it was trained with.`,
         about: JSON.stringify([run.mode, source.run_dir, source.checkpoint_id]) });

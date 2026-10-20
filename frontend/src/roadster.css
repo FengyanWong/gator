@@ -159,6 +159,7 @@ table.editor td { padding: 0; }
 table.grid.run-table { font-size: 13px; }
 table.grid.run-table th, table.grid.run-table td { padding: 5px 5px; }
 table.grid.model-table, table.grid.model-table th { font-size: 12.5px; }
+table.grid.model-table td .model-size { display: block; }   /* the size under the design's name (branch record SIF-1) */
 /* The Runs window keeps room for its scroll bar: a run's details opening under a short list would add one, narrow the
    columns and move the row's Details button from under a double click (run_list_check). */
 .run-window .scroll { scrollbar-gutter: stable; }

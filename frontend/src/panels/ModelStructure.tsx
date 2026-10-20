@@ -1,6 +1,7 @@
 import { useRequest } from '../store';
 import { useRef, useState } from 'react';
 import { api, Json } from '../api';
+import { designName } from '../lineage';
 
 // The structure of the chosen saved RL model as TABLES (no plot, no library): a short summary in the narrow run panel
 // and the full layer-by-layer table in a wide dialog. Read only when the fold-out is opened (/api/runs/model/structure:
@@ -40,7 +41,7 @@ export function ModelStructure({ runDir, checkpointId, label }: { runDir: string
         <div className="row"><button onClick={() => dialog.current?.showModal()}>Full layer table</button></div>
         <dialog ref={dialog} className="structure-dialog" onClick={e => { if (e.target === dialog.current) dialog.current?.close(); }}>
           <div className="row"><h3>Network structure{label ? ` - ${label.replace(/:[0-9a-f]{16}$/, '')}` : ''}</h3><span className="spacer" />
-            <span className="hint">{table.network.encoder_type} {table.network.hidden_dim}/{table.network.heads}/{table.network.layers} - save point {table.checkpoint_id}</span>
+            <span className="hint">{designName(table.network)} {table.network.hidden_dim}/{table.network.heads}/{table.network.layers} - save point {table.checkpoint_id}</span>
             <button className="dialog-close" aria-label="Close" title="Close (Esc)" onClick={() => dialog.current?.close()}>{'\u00d7'}</button></div>
           <div className="structure-scroll">
             {table.parts.map((part: Json) => (<div key={part.part}>

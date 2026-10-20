@@ -1,7 +1,7 @@
 // The RL model's words (plan-refactoring C4, out of Right.tsx): the Modes, the encoders' settings and the reward fields as
 // the panel names them, and the lines it writes about the next run's model - pure functions of the configuration.
 import type { Json } from '../api';
-import { ENCODER_SHORT } from '../lineage';
+import { designShort } from '../lineage';
 
 // Settings stored per encoder in the backend (src/gator_workbench/network_presets.py). The lists are
 // only a fallback for the moment before the backend answers; the backend's own lists are used afterwards.
@@ -124,7 +124,7 @@ export function networkSizes(net: Json, entry: Json) {
 export type NetworkSizes = ReturnType<typeof networkSizes>;
 /** The network in short, beside the RL model button. */
 export const networkShort = (encoder: string, { hidden, heads, layers, components }: NetworkSizes, usesHeads: boolean, net: Json) =>
-  [`${ENCODER_SHORT[encoder] ?? encoder} ${hidden}/${usesHeads ? heads : '–'}/${layers}`, net.operating_points ? 'op. points' : null,
+  [`${designShort({ encoder_type: encoder, architecture_version: net.architecture_version })} ${hidden}/${usesHeads ? heads : '–'}/${layers}`, net.operating_points ? 'op. points' : null,
       inputsChoice(net) === 'transferable2' ? 'transferable 2' : inputsChoice(net) !== 'standard' ? 'transferable' : null, components === 'families' ? 'families' : components ? `${components} parts` : null].filter(Boolean).join(' · ');
 /** The next run's model in one line, beside the button (record 7.265; plan "RL model window": "New model · Graph Transformer
  *  template · GT 48/4/4", "Fine-tune ota7t (2) · save point 420 evaluations", "Evaluate ... · deterministic actions"). */

@@ -30,6 +30,7 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.324-7.335.md`](workbench-log/7.324-7.335.md) | entries 7.324–7.335 |
 | [`7.336-7.352.md`](workbench-log/7.336-7.352.md) | entries 7.336–7.352 |
 | [`7.353-and-later.md`](workbench-log/7.353-and-later.md) | entries 7.353 onwards: the OPEN file |
+| [`self-improving-frontend.md`](workbench-log/self-improving-frontend.md) | the branch `self-improving-frontend`'s own entries, SIF-1 onwards (2026-10-20) |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
 `7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md` and `7.336-and-later.md` are pointers kept for old links.

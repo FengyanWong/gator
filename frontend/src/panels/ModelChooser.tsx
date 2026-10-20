@@ -149,7 +149,15 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
   const text = (m: Json) => [modelName(m), m.task_name, m.task_id, trainedOn(m), m.circuit_class, designName(m.network), netLabel(m.network), netShort(m.network), m.mode, m.state, m.mock ? 'mock' : 'real',
     `seed${m.seed}`, folders.data.folders[folders.of(m.run_dir)]].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
-  const shown = table.arrange(list, m => folders.holds(m.run_dir), text, m => column.value(m, byDir));
+  // One design only, chosen beside Refresh list (branch record SIF-10): the designs there are, the most models first.
+  const [design, setDesign] = useState('');
+  const designs = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const m of list) { const d = designName(m.network); count.set(d, (count.get(d) ?? 0) + 1); }
+    return [...count].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [list]);
+  useEffect(() => { if (design && !designs.some(([d]) => d === design)) setDesign(''); }, [designs]);
+  const shown = table.arrange(list, m => folders.holds(m.run_dir) && (!design || designName(m.network) === design), text, m => column.value(m, byDir));
   const inUse: Json = list.find(m => m.run_dir === source.run_dir) ?? null;
   // A newer save point of the model in use is offered, never followed by itself (the source is pinned).
   const pinned = inUse?.checkpoints?.find((p: Json) => p.checkpoint_id === source.checkpoint_id);
@@ -160,6 +168,9 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
   return (<div className="saved-models">
     <div className="row"><button onClick={() => { freshNext.current = true; load(); void folders.refresh(); }} disabled={loading}
       title="Refresh list: every run folder is read again from the disk.">Refresh list</button>
+      <select className="model-design-filter" value={design} aria-label="Design" onChange={e => { setDesign(e.target.value); setSelected([]); }}
+        title="Design: the saved models of one network design only, with how many there are of each.">
+        <option value="">All designs</option>{designs.map(([d, n]) => <option key={d} value={d}>{d} ({n})</option>)}</select>
       <input className="model-filter" placeholder="Filter: name, task, design, mock / real ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
       <span className="hint model-count">{loading ? 'Reading the saved models...' : models ? `${plural(list.length, 'saved model')} under the output folder` : ''}</span></div>
     {error && <p className="error">The list of saved models could not be read: {error}</p>}
@@ -196,7 +207,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
               <ModelDetails model={m} models={list} runs={runs} byDir={byDir} source={source} usable={usable} config={config} from={popup}
                 onUse={onUse} onRenamed={load} onSelect={dir => { folders.setFolder('all'); setFilter(''); setOpen(dir); }} /></td></tr>}
           </Fragment>); })}</tbody></table></div>
-        {shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No saved model matches the filter in this folder.' : 'This folder is empty. Select models in All models, then use Move to…'}</p>}
+        {shown.length === 0 && <p className="hint task-folder-empty">{filter || design ? 'No saved model matches the filter in this folder.' : 'This folder is empty. Select models in All models, then use Move to…'}</p>}
       </div></div>}
   </div>);
 }

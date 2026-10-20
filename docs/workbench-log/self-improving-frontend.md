@@ -164,3 +164,15 @@ the design ("Where the Graph Transformer values come from"). Check: `network_pan
 as the formula bar does. Check: `looks_check` (62).
 
 **Checked.** `looks_check` 62, `sheet_check` 43, `typing_check` 47, `find_fill_copy_check` 30, `formula_bar_check` 19.
+
+### SIF-10 The saved models of one design, with how many there are of each (2026-10-20; continuing SIF-1, the user's "models panel")
+
+**Changed** (`ModelChooser.tsx`): a **Design** list beside Refresh list - "All designs", then each design with its count, the
+most models first - keeps the table to one design; the folder's count and the empty-table note follow it. Check:
+`model_chooser_check` (74: the list for the fixture's seven models - "Graph Transformer (5) | GATv2 (1) | RGCN (1)" -
+choosing RGCN keeps its one model, All designs brings the seven back). Docs: `docs/functionality-reference.md`.
+
+**Checked.** `tsc` clean; `model_chooser_check` 74, `mode_suggestion_check` 20, `graph_view_check` 63. With the user's real
+models (the branch on 5174): "All designs | GraphGPS (212) | Graph Transformer (109) | RGCN (27) | Parameter-group attention
+(24) | CircuitGPS v2 (13) | CircuitGPS v3 (13) | GATv2 (13)"; CircuitGPS v2 chosen, 13 rows, each "CircuitGPS v2 48/4/4 ·
+RWSE". Pictures: `artifacts/local/reviews/design-loop-2026-10-20/sif10/`.

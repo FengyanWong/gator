@@ -192,6 +192,15 @@ await runChecks(browser, async () => {
     && await evaluate(`(${row(B)}).querySelector('td.model-net').title`) === 'gatv2 16/2/1', JSON.stringify(cellsOf(A)));
   check('MOCK models are tagged, the real one is not; a model saved without its replay restores "weights only"', cellsOf(A)[8] === 'MOCK' && cellsOf(D)[8] === 'real'
     && cellsOf(C)[9] === 'weights only' && cellsOf(A)[9] === 'full state', JSON.stringify([cellsOf(A)[8], cellsOf(D)[8], cellsOf(C)[9]]));
+  // Branch record SIF-10: one design only, from a list beside Refresh list that counts each design.
+  const DESIGN = `${RIGHT}.querySelector('select.model-design-filter')`;
+  check('the Design list offers every design there is, the most models first, with how many (SIF-10)',
+    (await evaluate(`[...(${DESIGN}).options].map(o => o.textContent).join(' | ')`)) === 'All designs | Graph Transformer (5) | GATv2 (1) | RGCN (1)',
+    await evaluate(`[...(${DESIGN}).options].map(o => o.textContent).join(' | ')`));
+  await page.setValue(DESIGN, 'RGCN', { event: 'change' }); await sleep(300);
+  check('...choosing one keeps its models only', JSON.stringify((await rows()).map(r => r.dir)) === JSON.stringify([D.run_dir]), JSON.stringify((await rows()).map(r => r.cells[1])));
+  await page.setValue(DESIGN, '', { event: 'change' }); await sleep(300);
+  check('...and All designs brings every model back', (await rows()).length === MODELS.length, String((await rows()).length));
   check('the table fits the window (1100 px): no sideways scroll, every Details button in view', await evaluate(`(() => { const s = ${RIGHT}.querySelector('.task-folder-content .scroll'), w = ${NETWORK_DOCUMENT}.documentElement.clientWidth;
     return s.scrollWidth <= s.clientWidth + 1 && [...${RIGHT}.querySelectorAll('tr.model-row button.notes-link')].every(b => b.getBoundingClientRect().right <= w); })()`),
     await evaluate(`(() => { const s = ${RIGHT}.querySelector('.task-folder-content .scroll'); return s.scrollWidth + ' > ' + s.clientWidth; })()`));

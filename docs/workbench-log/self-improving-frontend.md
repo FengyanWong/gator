@@ -142,3 +142,15 @@ Evaluation 800 · Training (recorded) 0.06274 · Training: mean of last 20 0.061
 whole line stays in its tooltip. Check: `training_tab_check` (three patterns follow the order).
 
 **Checked.** `tsc` clean; `training_tab_check` 88, `training_data_check` 117, `graph_view_check` 63.
+
+### SIF-8 The RL model window's templates say each thing once, in words (2026-10-20; from the design survey)
+
+**Found.** In New model the templates table read "Parameter-group attention — experimental (experimental)" (the backend's
+label says it, and the page added it again), its sizes wrote "rwse" where the saved models' table now writes "RWSE"
+(SIF-1), and the fold under the template in use read "Where the graph_transformer values come from" - the encoder's key.
+
+**Changed** (`RlModelWindow.tsx`): "(experimental)" only where the label does not say it; RWSE in capitals; the fold names
+the design ("Where the Graph Transformer values come from"). Check: `network_panel_check` (58: the six rows, the fold).
+
+**Checked.** `tsc` clean; `network_panel_check` 58, `encoder_models_check` 24, `model_chooser_check` 71,
+`model_structure_check` 29, `network_inputs_check` 8, `mode_suggestion_check` 20.

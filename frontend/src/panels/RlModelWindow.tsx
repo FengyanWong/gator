@@ -5,7 +5,7 @@ import { Fragment } from 'react';
 import { copy, Json } from '../api';
 import { folderName, num, short, stamp, taskNameOf } from '../format';
 import { RESTORABLE, SavedModels } from './ModelChooser';
-import { designName } from '../lineage';
+import { DESIGN_NAME, designName } from '../lineage';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Check, LookFold, Num } from './fields';
@@ -27,8 +27,10 @@ function TemplatesTable({ settings, encoders, current, runs, onUse }: { settings
     <th title="Saved models under the output folder made from this template (new models, not fine-tuned ones).">Models made</th><th className="plain"></th></tr></thead>
     <tbody>{encoders.map(e => { const s = settings?.settings?.[e], n = s?.network ?? {}, a = s?.advanced ?? {}, active = e === current; return (
       <tr key={e} className={`template-row${active ? ' current' : ''}`} aria-current={active ? 'true' : undefined} data-encoder={e} onDoubleClick={() => onUse(e)}>
-        <td><b>{s?.label ?? e}</b>{s?.experimental && <span className="hint"> (experimental)</span>}</td>
-        <td className="numeric">{n.hidden_dim ?? '?'}/{s?.uses_heads === false ? '–' : n.heads ?? '?'}/{n.layers ?? '?'}{n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${n.structural_encoding}` : ''}</td>
+        {/* "(experimental)" only where the label does not say it already (branch record SIF-8: "Parameter-group attention -
+            experimental (experimental)") */}
+        <td><b>{s?.label ?? e}</b>{s?.experimental && !/experimental/i.test(s?.label ?? '') && <span className="hint"> (experimental)</span>}</td>
+        <td className="numeric">{n.hidden_dim ?? '?'}/{s?.uses_heads === false ? '–' : n.heads ?? '?'}/{n.layers ?? '?'}{n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${String(n.structural_encoding).toUpperCase()}` : ''}</td>
         <td className="numeric">{a.updates_per_transition ?? '?'} updates · alpha {a.initial_alpha ?? '?'} · gamma {a.gamma ?? '?'} · lr {a.learning_rate ?? '?'}</td>
         <td>{s ? ORIGIN[s.origin] ?? s.origin : 'not read yet'}</td>
         <td className="numeric">{made(e)}</td>
@@ -139,7 +141,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           <button onClick={() => { queueSave(net, adv); flush(); }} title="Keep this run's values and remember them as the defaults for this encoder.">Save as defaults</button></div>
       </div>}
       {entry?.problem && <p className="warn">{entry.problem}</p>}
-      {entry && <details><summary>Where the {encoder} values come from</summary>
+      {entry && <details><summary>Where the {DESIGN_NAME[encoder] ?? encoder} values come from</summary>
         <p className="hint">{entry.summary}</p>
         {entry.architecture_reference && <p className="hint">Architecture reference: <a href={entry.architecture_reference.url} target="_blank" rel="noreferrer">{entry.architecture_reference.short}</a>. The starting values are project choices.</p>}
         <table className="grid small"><thead><tr><th>Setting</th><th>Preset</th><th>Basis</th><th>Source and note</th></tr></thead><tbody>

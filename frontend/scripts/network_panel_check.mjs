@@ -78,6 +78,11 @@ await runChecks(browser, async () => {
     && short.title.startsWith('The network in use: graph_transformer'), JSON.stringify(short));
   const options = await evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('tr.template-row')].map(r => r.dataset.encoder)`);
   check('the templates table offers all six backend encoders, one row each', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps']), JSON.stringify(options));
+  // Branch record SIF-8: "(experimental)" once at most; the fold under the template names the design, not its key.
+  const words = await evaluate(`({ rows: [...${NETWORK_DOCUMENT}.querySelectorAll('tr.template-row td:first-child')].map(td => td.textContent),
+    fold: [...${NETWORK_DOCUMENT}.querySelectorAll('summary')].map(x => x.textContent).find(t => /^Where the .+ values come from$/.test(t)) ?? null })`);
+  check('each template says "experimental" once at most, and the fold names the design (Graph Transformer), not its key (SIF-8)',
+    words.rows.length === 6 && words.rows.every(t => (t.match(/experimental/gi) ?? []).length <= 1) && words.fold === 'Where the Graph Transformer values come from', JSON.stringify(words));
   check('the mode is New model: the window\'s Mode buttons say so', await evaluate(`${NETWORK_DOCUMENT}.querySelector('.rl-modes button[aria-checked="true"]')?.dataset.mode`) === 'scratch');
   for (const encoder of ['graph_gps', 'group_cross_attention', 'circuit_gps']) {
     await select(encoder);

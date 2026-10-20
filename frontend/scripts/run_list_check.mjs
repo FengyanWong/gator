@@ -197,6 +197,11 @@ await runChecks(browser, async () => {
   check('a finished run shows when it started and finished (local time) and how long it worked', r.Started === stamp(DONE.created_utc) && r.Finished === stamp(DONE.ended_utc) && r.Duration === '17.8 s', JSON.stringify(r));
   check('... and what it was and came to', /^completed\s*budget used up$/.test(r.State) && r.Task === 'fixture_task' && r.Mode === 'New model Graph Transformer' && r.Seed === '1' && r.Evaluations === '60 / 60'
     && r['First feasible'] === 'at 23' && r.Experiment === 'fixture_exp__0001' && r.Data === 'MOCK' && r['Can continue'] === 'yes', JSON.stringify(r));
+  const whole = await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody tr')].find(x => x.title === ${JSON.stringify(DONE.run_dir)}) ?? null;
+    if (!tr) return null; const dates = [...tr.querySelectorAll('.run-date')];
+    return { dates: dates.map(d => d.textContent + ' ' + getComputedStyle(d).whiteSpace), taskBreaks: tr.children[5].querySelectorAll('wbr').length }; })()`);
+  check('its dates stay whole - date over time in a narrow column, never "2026-10-" over "20" - and its task name may break after a "_" (branch record SIF-27)',
+    whole?.dates.length === 2 && whole.dates.every(d => /^\d{4}-\d\d-\d\d nowrap$/.test(d)) && whole.taskBreaks === 1, JSON.stringify(whole));
   r = rowOf(rows, RESUMED);
   check('a run that was paused and continued: the duration is its working time, the pause is named, not counted', r.Duration === '15 min 00 s' && /sat paused for 2 h 00 min/.test(r.durationTitle)
     && r.Finished === stamp(RESUMED.ended_utc) && r['First feasible'] === 'none' && r.Evaluations === '40 / 40', JSON.stringify(r));

@@ -252,3 +252,6 @@ table.task-table .task-date { white-space: nowrap; } table.task-table .name-part
 .task-file > * { flex: none; }
 .task-file > textarea { flex: 1 1 0; height: auto; min-height: 160px; resize: none; }
 .task-file > .blocker { max-height: 35vh; overflow: auto; }
+
+/* SIF-27: in the Runs window a date stays whole (SIF-11's narrower cells broke "2026-10-" over "20"); a task name breaks after "_" or "-". */
+table.run-table .run-date { white-space: nowrap; }

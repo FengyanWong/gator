@@ -18,6 +18,8 @@ const experimentName = (folder?: string | null) => String(folder ?? '').replace(
 /** A run's saved state in the saved models' words (branch record SIF-20: "full_state" in the Details). */
 const SAVED_STATE: Record<string, string> = { full_state: 'full state', weights_only: 'weights only' };
 const breakAt = (text: string) => text.split(/(?<=[-_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
+/** A date never breaks at its hyphens (branch record SIF-27): in a narrow column "2026-10-20 13:09:11" goes date over time, not "2026-10-" over "20". */
+const keepDates = (text: string) => text.split(/(\d{4}-\d\d-\d\d)/).map((part, i) => <Fragment key={i}>{i % 2 ? <span className="run-date">{part}</span> : part}</Fragment>);
 
 /** Which run the bottom tabs show (user request 2026-09-21): ONE button at the right end of the bottom tab strip, where
  *  the drop-down list of runs used to be. It only reads "Runs..."; the run that is shown is named as plain text to its
@@ -309,12 +311,12 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
           <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={r.run_dir} onDoubleClick={e => showRun(e, r)}>
             <td className="task-select"><input type="checkbox" aria-label={`Select ${folderName(r.run_dir)}`} checked={selected.includes(r.run_dir)}
               disabled={folders.busy || !folders.ready} onChange={e => table.select(r.run_dir, e.target.checked)} /></td>
-            <td className="wrap-words">{stamp(r.created_utc) ?? '-'}{folders.folder === 'all' && folders.data.folders[folders.of(r.run_dir)]
+            <td className="wrap-words">{keepDates(stamp(r.created_utc) ?? '-')}{folders.folder === 'all' && folders.data.folders[folders.of(r.run_dir)]
               && <div className="hint task-folder-label">{folders.data.folders[folders.of(r.run_dir)]}</div>}</td>
-            <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{end.text}</td>
+            <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{keepDates(end.text)}</td>
             <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && ' so far'}</td>
             <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}</td>
-            <td className="wrap" title={r.task_id}>{taskOf(r)}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
+            <td className="wrap" title={r.task_id}>{breakAt(taskOf(r))}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
             <td className="wrap">{origin.parent ? <button className="item-link" onClick={() => focusRun(origin.parent!)} title={`${origin.parent}\nShow the run it started from.`}>{origin.text}</button> : origin.text}
               {origin.missing && <span className="hint" title="That run is not under this output folder."> (gone)</span>}</td>
             <td className="wrap">{r.model_label ?? '-'}</td><td className="numeric">{r.seed}</td>

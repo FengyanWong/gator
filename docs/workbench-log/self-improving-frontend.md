@@ -369,3 +369,18 @@ nothing scrolls.
 
 **Checked.** `tsc` clean; `task_save_check` 70 (one new: title, the text fills the window, nothing scrolls),
 `virtuoso_source_check` 95, `looks_check` 62.
+
+### SIF-27 Dates stay whole in the Runs window (2026-10-20; correcting SIF-11)
+
+**Found** (the user's 549 runs, the branch on 5174, the window's own 1500 px). The Finished column read "2026-10-" over
+"20" over "13:09:11": SIF-11 let the Runs window's wrapping cells go down to 5em, narrower than a date. Task names broke
+anywhere ("mscr_otat" over "c").
+
+**Changed** (`RunList.tsx`, `roadster.css`): the dates in Started and Finished (also "(paused)" and "last seen ...") sit in
+a `.run-date` that never wraps, so a narrow column puts the time under the date; a task name may break after a "_" or "-"
+(as the experiment name does), e.g. "mscr_" over "otatc".
+
+Measured: at 1500 px the table still fits (1234 px in 1234), no date broken.
+
+**Checked.** `tsc` clean; `run_list_check` 120 (one new: two whole dates, one break point in the task name),
+`task_run_check` 31, `dom_identity_check` 56, `looks_check` 62.

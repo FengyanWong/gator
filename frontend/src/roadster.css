@@ -284,3 +284,11 @@ table.grid td.numeric, table.grid th.numeric { text-align: right; }   /* and the
 /* SIF-35: the output folder's facts read as the run's and the model's facts do: each name on one line, muted; the value
    takes the rest ("Allowed / writable" took three lines in the right column). */
 .output-facts table.grid.small td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
+
+/* SIF-36: a saved model's compatibility - the problems first; a "saved {...} != current {...}" pair as the keys that differ,
+   in the text colour under the red head; the checks that pass folded under one line. */
+ul.compat-problems, details.compat-passed > ul { margin: 4px 0; padding-left: 1.2em; }
+ul.compat-diff { margin: 3px 0 3px 0.4em; padding: 0; list-style: none; color: var(--text); font-size: 12px; }
+ul.compat-diff > li { margin: 1px 0; overflow-wrap: anywhere; } ul.compat-diff code { color: var(--muted); }
+details.compat-raw > summary, details.compat-passed > summary { color: var(--muted); }
+details.compat-raw > pre { max-height: 12em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.4 var(--f-mono); color: var(--muted); }

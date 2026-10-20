@@ -2536,6 +2536,8 @@ save point: their learner was never trained. Selecting such a saved path returns
   safety), with the best policy and the newest marked. A click on one selects it for the next part.
 - **Name** and **Rename** (record 7.225);
 - **With the task on the page**: the selected save point checked against the configuration on the page, an inspection;
+  the problems come first, a "saved {...} != current {...}" pair shown as the keys whose values differ, and the checks
+  that pass are folded under one line (branch record SIF-36);
 - **Relationships**: the run that saved it, what it started from, the models trained from it and the runs that loaded
   it - each a link: a model is shown in this table, a run opens the Runs window at it - then its history, folded, oldest
   first, and its folder;

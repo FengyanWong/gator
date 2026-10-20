@@ -510,3 +510,24 @@ look (the request filter refused the start; nothing ran).
 
 **Checked.** `tsc` clean; `output_panel_check` 66 (one new: yes / yes, the retention list's words and value, names on one
 line), `module_fold_check` 30, `pdk_check` 37, `looks_check` 64, `room_check` 22, `reliability_check` 20.
+
+### SIF-36 A saved model's compatibility reads as a list of problems (2026-10-20)
+
+**Found** (the user's model dffrx1_t2 (30) in the RL model window, the branch on 5174). Its compatibility with the task on
+the page listed 20 checks in their backend order, and two of the problems were dumps of two Python dictionaries in red -
+"goal/spec input schema: incompatible - saved {'descriptor_version': ..., 'descriptor_columns': [...], ...} != current
+{...}" took twelve lines; "network architecture" two. What differs could not be read off. The title said "for fine_tune".
+
+**Changed** (new `CompatibilityList.tsx`, used by the saved model's Details and by the chosen model's facts; `roadster.css`):
+the problems come first; a "saved {...} != current {...}" pair is shown as the keys whose values differ - "encoder_type
+GraphGPS -> Graph Transformer" (a design by its name), "attention_mode none -> local_port_attention", "layout spec-set-v1 ->
+spec-input-v2", "version (not there) -> ...", long values cut at 70 characters with the whole in the tooltip - and the
+pair in full behind "Both values in full"; anything else keeps its sentence. The checks that pass are folded under one line
+("The other 16 checks pass"). The title names the Mode as its button does: "for Fine-tune".
+
+**Checked.** `tsc` clean; `model_chooser_check` 77 (its "Compatible for fine_tune" now "for Fine-tune"; one new, with D's
+answer made incompatible for one look: the summary, the two key lines, the folded passing check),
+`network_panel_check` 58, `mode_suggestion_check` 20, `encoder_models_check` 24, `model_structure_check` 29,
+`module_fold_check` 30, `graph_view_check` 63, `reward_block_check` 32, `room_check` 22, `looks_check` 64,
+`dom_identity_check` 56. (`reward_v2_frontend_check`, stand-alone, reads `li.issue.error` items starting
+"reward_settings: incompatible": they are kept.)

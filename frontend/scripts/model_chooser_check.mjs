@@ -75,6 +75,7 @@ await runChecks(browser, async () => {
   const page = await browser.open({ consoleApi: false });
   const { send, evaluate, fulfil, consoleErrors } = page;
   const refused = []; const asked = []; const renames = []; let lists = 0, canned = true, served = MODELS;
+  let incompatibleD = false;   // branch record SIF-36: D's compatibility answered as a "saved {...} != current {...}" pair
   let holdModel = false; const heldModel = [];                                     // record 7.278: a "Use" read held back, answered late
   let failModel = null;                                                            // record 7.291: a "Use" whose save point cannot be read
   const modelFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
@@ -90,6 +91,9 @@ await runChecks(browser, async () => {
       if (holdModel && !body.config) { heldModel.push({ requestId, body }); return; }
       if (failModel && failModel === body.run_dir && !body.config) return fulfil(requestId, 503, { detail: 'FIXTURE: the server is busy' });
       const found = describe(body.run_dir, body.checkpoint_id);
+      if (found?.compatibility && incompatibleD && body.run_dir === D.run_dir) found.compatibility = { ...found.compatibility, compatible: false, checks: [
+        { component: 'network architecture', status: 'incompatible', detail: "saved {'hidden_dim': 48, 'encoder_type': 'graph_gps', 'attention_mode': None} != current {'hidden_dim': 48, 'encoder_type': 'graph_transformer', 'attention_mode': 'local_port_attention'}" },
+        { component: 'FIXTURE check', status: 'ok', detail: 'identical' }] };
       if (found && body.run_dir === C.run_dir && body.config) { delete found.compatibility; found.compatibility_unchecked = { title: 'FIXTURE: Not compared with your configuration yet: the configuration on this page is incomplete.',
         what: 'FIXTURE: Parameter row "mp1_w" is set to be optimized but has no lower and no upper bound. Fill in both bounds in the Parameters table.',
         note: 'FIXTURE: This says nothing about the saved model.', technical: 'CompileError: mp1_w: bounds are required' }; }
@@ -219,7 +223,7 @@ await runChecks(browser, async () => {
   check('Details list the save points, newest first, each with its kind', await until(`!!${RIGHT}.querySelector('table.model-points')`, 30)
     && JSON.stringify(await evaluate(`[...${RIGHT}.querySelectorAll('table.model-points tbody tr')].map(r => r.title)`)) === JSON.stringify([...A.checkpoints].reverse().map(p => p.checkpoint_id))
     && /saved at the end of the run · newest/.test(await evaluate(`${RIGHT}.querySelector('table.model-points tbody tr').innerText`)));
-  check('... its compatibility with the task on the page is checked for its newest save point - an inspection', await until(`/Compatible for fine_tune/.test(${RIGHT}.querySelector('details.model-compatibility')?.textContent ?? '')`, 40)
+  check('... its compatibility with the task on the page is checked for its newest save point - an inspection', await until(`/Compatible for Fine-tune/.test(${RIGHT}.querySelector('details.model-compatibility')?.textContent ?? '')`, 40)
     && asked.slice(askedBefore).some(a => a.run_dir === A.run_dir && a.checkpoint_id === A.latest && a.withConfig), JSON.stringify(asked.slice(askedBefore)));
   await sleep(1100);
   check('... and opening Details changed nothing in the draft', !(await stored())?.model_source?.run_dir);
@@ -299,8 +303,16 @@ await runChecks(browser, async () => {
   check('... and the developer text is folded away under "Technical details"', await evaluate(`(() => { const d = ${RIGHT}.querySelector('.compat-unchecked details'); return !d.open && d.querySelector('summary').textContent === 'Technical details' && /CompileError: mp1_w/.test(d.textContent); })()`));
 
   // ---- a best policy is marked where one exists; rename (record 7.225) --------------------------------------------------------------
+  incompatibleD = true;
   await details(D);
   check('a run with a selected best policy marks that save point', await until(`/best policy/.test((${pointRow(D.checkpoints[0].checkpoint_id)})?.innerText ?? '')`, 30));
+  const compat = await until(`/differ in 2 keys/.test(${RIGHT}.querySelector('details.model-compatibility')?.textContent ?? '')`, 40)
+    ? await evaluate(`(() => { const d = ${RIGHT}.querySelector('details.model-compatibility'); return { open: d.open, summary: d.querySelector('summary').textContent,
+        lines: [...d.querySelectorAll('ul.compat-diff > li')].map(li => li.textContent), passed: d.querySelector('details.compat-passed > summary')?.textContent }; })()`) : null;
+  incompatibleD = false;
+  check('an incompatible model: its problems first, a "saved {...} != current {...}" pair as the keys that differ (a design by its name), the passing check folded (branch record SIF-36)',
+    compat?.open && compat.summary === 'NOT compatible - there is no fallback to scratch for Fine-tune' && JSON.stringify(compat.lines) === JSON.stringify(['encoder_type GraphGPS → Graph Transformer', 'attention_mode none → local_port_attention'])
+    && compat.passed === 'The other check passes', JSON.stringify(compat));
   const NAME = `${RIGHT}.querySelector('input.model-rename')`, RENAME = `${RIGHT}.querySelector('button.model-rename-apply')`;
   const note = () => evaluate(`${RIGHT}.querySelector('.model-rename-note')?.textContent ?? ''`);
   check('its Details have a Name box with the model\'s name, and Rename is off while the name is unchanged', (await evaluate(`${NAME}?.value`)) === D.task_name && (await evaluate(`${RENAME}?.disabled`)) === true);

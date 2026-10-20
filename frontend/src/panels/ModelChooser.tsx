@@ -8,6 +8,7 @@ import { CircuitGraphView } from './CircuitGraphView';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
 import { ModelStructure } from './ModelStructure';
+import { CompatibilityList, compatibilityMode } from './CompatibilityList';
 /** When, as the Runs and Tasks windows and the model's facts write it - 2026-10-20 13:09:10 (branch record SIF-17; the table
  *  wrote "20 Oct, 13:09:10"). */
 const when = (utc?: string | null) => stamp(utc) ?? 'unknown time';
@@ -106,8 +107,8 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
     {checkError && <p className="error">{checkError}</p>}
     {checked?.compatibility_unchecked && <p className="hint">{checked.compatibility_unchecked.title}: {checked.compatibility_unchecked.what}</p>}
     {compatibility && <details className="model-compatibility" open={!compatibility.compatible}><summary className={compatibility.compatible ? '' : 'error'}>
-      {compatibility.compatible ? 'Compatible' : 'NOT compatible - there is no fallback to scratch'} for {compatibility.mode}</summary>
-      <ul>{compatibility.checks.map((c: Json) => <li key={c.component} className={`issue ${c.status === 'ok' ? 'info' : c.status === 'warning' ? 'warning' : 'error'}`}>{c.component}: {c.status} - {c.detail}</li>)}</ul></details>}
+      {compatibility.compatible ? 'Compatible' : 'NOT compatible - there is no fallback to scratch'} for {compatibilityMode(compatibility.mode)}</summary>
+      <CompatibilityList checks={compatibility.checks} /></details>}
     {!checked && !checkError && point && <p className="hint">Checking it against the task on the page...</p>}
     <h4>Relationships</h4>
     <table className="grid small run-relations model-relations"><tbody>

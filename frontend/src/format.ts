@@ -81,6 +81,12 @@ export const TRAINING_STATE_CLASS: Record<string, string> = { completed: 'state-
 /** A size in bytes, in the largest binary unit under its size: 512 B, 1.5 KiB, 2.25 GiB. */
 export const bytes = (n?: number | null) => n == null ? '-' : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KiB`
   : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MiB` : `${(n / 1073741824).toFixed(2)} GiB`;
+/** A number for reading, not for a table's column: three significant digits, no padding - 0.037, -0.0248, 12.3 (branch record
+ *  SIF-2: the reward spread was written 0.0370463). */
+export const sig = (v: number) => String(Number(v.toPrecision(3)));
+/** A task's name from a task id as a model or a run records it: "mscr_vco_lin_c:4fd0a8f9303827bd" (the name and its definition's
+ *  hash) or "real:mscr_vco_lin_c" -> "mscr_vco_lin_c" (branch record SIF-2). */
+export const taskNameOf = (id?: string | null) => String(id ?? '').replace(/^(real|ngspice|synthetic):/, '').split(':')[0] || 'unknown task';
 /** A number as the tables write it: whole numbers as they are, others to six significant digits; nothing for none. */
 export const num = (v: unknown) => typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(6)) : v == null ? '' : String(v);
 // ONE way of writing a number in the whole page (review of 2026-09-23: the SI form was written twice, in the corner

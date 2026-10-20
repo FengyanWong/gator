@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
 import { si } from '../units';
-import { bytes, num, runName, short } from '../format';
+import { bytes, num, runName, short, sig, stamp } from '../format';
 import { ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
@@ -20,8 +20,8 @@ const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learn
 function SteeringCheck({ value }: { value: Json }) {
   if (!value) return null;
   if (value.reward_spread == null) return <div className="steering-check"><p className="hint">Reward spread: not enough scored designs yet.</p></div>;
-  return <div className="steering-check"><p>Reward spread (p90 − p10, last {value.scored_designs} scored designs): <b>{num(value.reward_spread)}</b>;
-    exploration bonus (latest update): <b>{value.exploration_bonus == null ? 'no update yet' : num(value.exploration_bonus)}</b>.</p>
+  return <div className="steering-check"><p>Reward spread (p90 − p10, last {value.scored_designs} scored designs): <b>{sig(value.reward_spread)}</b>;
+    exploration bonus (latest update): <b>{value.exploration_bonus == null ? 'no update yet' : sig(value.exploration_bonus)}</b>.</p>
     {value.verdict && <p className="warn">{value.verdict}</p>}</div>;
 }
 
@@ -230,8 +230,8 @@ function FilesTabBody({ runDir }: { runDir: string | null }) {
   return (<div><div className="row"><button onClick={refresh} title="Refresh: Read the run folder again."><Icon name="refresh" label="Refresh" /></button>
     <button disabled={note === 'Packing...'} onClick={pack} title="Download data-only package (.zip): Every data file of this run in one zip, named after the run; no plots, nothing drawn."><Icon name={note === 'Packing...' ? 'wait' : 'download'} label="Download data-only package (.zip)" /></button>
     <button onClick={() => copy(runDir)} title="Copy run path: The run folder's path, as text, to the clipboard."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${files.files.length} files, ${bytes(files.total_bytes)}.`} {error ?? note} "Open local folder" is not offered: no desktop integration is available from a browser.</span></div>
-    <div className="scroll"><table className="grid small"><thead><tr><th>File</th><th>Size</th><th>Modified (UTC)</th><th></th></tr></thead>
-      <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td>{bytes(f.bytes)}</td><td>{f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
+    <div className="scroll"><table className="grid small"><thead><tr><th>File</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+      <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td>{bytes(f.bytes)}</td><td title={`${f.modified_utc} (UTC)`}>{stamp(f.modified_utc) ?? f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
         title={`Download ${f.path}: This file as it is now, to the browser's download folder.`}><Icon name={saving === f.path ? 'wait' : 'download'} label={`Download ${f.path}`} /></button></td></tr>)}</tbody></table></div></div>);
 }
 
@@ -241,7 +241,8 @@ const LOG_HIDDEN = ['time_utc', 'event', 'error', 'run_id', 'traceback'];
 function logLines(entries: Json[]) {
   const count = new Map<string, number>();
   return entries.map((e: Json) => {
-    const time = (e.time_utc ?? '').slice(11, 19), name = e.event ?? e.error ?? '';
+    // This computer's time of day, as every other time on the page (branch record SIF-2; it was UTC, unsaid).
+    const time = stamp(e.time_utc)?.slice(11) ?? (e.time_utc ?? '').slice(11, 19), name = e.event ?? e.error ?? '';
     const text = JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => !LOG_HIDDEN.includes(k))));
     const base = `${e.time_utc}|${name}|${text}`, n = (count.get(base) ?? 0) + 1;
     count.set(base, n);

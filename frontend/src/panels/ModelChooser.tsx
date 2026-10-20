@@ -36,7 +36,7 @@ export const modelName = (m: Json): string => m?.model_label ?? m?.task_name ?? 
 /** The name of the model a run folder saved: as the run list names it, or the folder's own name when it is not listed. */
 export const modelNameAt = (runs: Json[], dir: string): string => { const row = runs.find(r => r.run_dir === dir); return row ? modelName(row) : folderName(dir); };
 const trainedOn = (m: Json) => m.run_kind === 'offline_pretraining' ? 'multi-task (offline)' : m.circuit_task ?? m.task_key ?? m.circuit_class ?? 'unknown task';
-const RESTORABLE: Record<string, string> = { full_state: 'full state', weights_only: 'weights only' };
+export const RESTORABLE: Record<string, string> = { full_state: 'full state', weights_only: 'weights only' };
 
 type Column = { key: string; title: string; help: string; value: (m: Json, byDir: Map<string, Json>) => string | number | null };
 const COLUMNS: Column[] = [

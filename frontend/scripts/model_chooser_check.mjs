@@ -244,6 +244,11 @@ await runChecks(browser, async () => {
   check('... and the double click closes the window too', await chosenAndReopened());
   check('the model in use is described under the table: its network, and that the run uses it as it is', await until(`/^Network\\s+GATv2, hidden 16, heads 2, layers 1 - this run uses it as it is/.test(${RIGHT}.querySelector('tr.model-network')?.innerText ?? '')`, 40),
     await evaluate(`${RIGHT}.querySelector('tr.model-network')?.innerText ?? 'no row'`));
+  // Branch record SIF-2: the facts read plainly - the task by its name, the time in this computer's time, the table's words.
+  const facts = await evaluate(`Object.fromEntries([...${RIGHT}.querySelectorAll('table.model-facts tr')].map(r => [r.cells[0].textContent, r.cells[1].textContent]))`);
+  check('... and its facts read plainly: "Saved" in this computer\'s time, Restorable "full state", no zero padding (SIF-2)',
+    /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(facts['Saved'] ?? '') && !('Saved (UTC)' in facts) && /^full state/.test(facts['Restorable'] ?? '')
+    && !/0{4}$/.test(facts['Worst hard-spec share'] ?? '0') && !/:/.test(facts['Trained on'] ?? ':'), JSON.stringify(facts).slice(0, 400));
   await sleep(1100);
   // A network that arrives from ELSEWHERE while the model is loaded (an imported configuration) is taken back - and that is said.
   check('no note about the network so far', !(await evaluate(`!!${RIGHT}.querySelector('.net-message.warn')`)));

@@ -86,6 +86,11 @@ await runChecks(browser, async () => {
   check('no row has a "download" text link any more', rows.every(r => r.links === 0), JSON.stringify(rows.filter(r => r.links)));
   check('every row ends with an enabled icon button named "Download <file>"', rows.every(r => r.cells === 4 && r.button && r.icon && !r.disabled && r.text === `Download ${r.file}`), JSON.stringify(rows.map(r => r.text)));
   check('... whose tooltip starts with that name and says where the file goes', rows.every(r => r.title.startsWith(`Download ${r.file}: `) && /download folder/.test(r.title)), rows[0]?.title);
+  // Branch record SIF-2: the time a file was modified in this computer's time, as every other time on the page; UTC in its tooltip.
+  const times = await evaluate(`({ head: (${TABLE}).querySelector('thead tr').cells[2].textContent, cells: ${ROWS}.map(r => [r.cells[2].textContent, r.cells[2].title]),
+    local: (() => { const d = new Date(${JSON.stringify(at())}), two = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()); })() })`);
+  check('"Modified" is written in this computer\'s time (YYYY-MM-DD hh:mm:ss), its UTC in the tooltip (SIF-2)', times.head === 'Modified'
+    && times.cells.some(([text, title]) => text === times.local && title === at() + ' (UTC)') && times.cells.every(([text]) => /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(text)), JSON.stringify(times).slice(0, 300));
   const header = await evaluate(`(${TABLE}).querySelector('thead tr').getBoundingClientRect().height`);
   check('the button keeps the rows as low as text rows (no taller than the heading row plus 3 px)', rows.every(r => r.height <= header + 3), `rows ${rows.map(r => r.height).join('/')} px, heading ${header} px`);
 

@@ -3,8 +3,8 @@
 // its pop-up window.
 import { Fragment } from 'react';
 import { copy, Json } from '../api';
-import { folderName, num } from '../format';
-import { SavedModels } from './ModelChooser';
+import { folderName, num, short, stamp, taskNameOf } from '../format';
+import { RESTORABLE, SavedModels } from './ModelChooser';
 import { designName } from '../lineage';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
@@ -174,19 +174,21 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           {model.vocabulary && <tr className="model-components"><td>Components</td><td><b>{model.vocabulary.label}</b>
             <span className="hint"> - the network of this run knows the same list{model.vocabulary.name !== 'standard' && !model.vocabulary.loaded
               ? '; that PDK is not loaded now, which is needed only for Parameters rows on its own parameters' : ''}.</span></td></tr>}
-          <tr><td>Trained on</td><td>{model.description.source_task_id}</td></tr>
-          <tr><td>Saved (UTC)</td><td>{model.description.created_utc}</td></tr>
+          {/* Branch record SIF-2: the task by its name (the id with its definition's hash in the tooltip), the time as the Runs and
+              Tasks windows write it, in this computer's time; numbers without padding; the table's words for Restorable. */}
+          <tr><td>Trained on</td><td title={model.description.source_task_id}>{taskNameOf(model.description.source_task_id)}</td></tr>
+          <tr><td>Saved</td><td title={`${model.description.created_utc} (UTC)`}>{stamp(model.description.created_utc) ?? model.description.created_utc}</td></tr>
           <tr><td>Schema</td><td>{model.description.metadata_version}</td></tr>
           <tr><td>Reward</td><td>{model.description.contract?.reward_version ?? 'Legacy nominal'}; {model.description.contract?.reward_settings?.violation_shape ?? 'capped'}</td></tr>
-          <tr><td>Worst hard-spec share</td><td>{num(model.description.contract?.reward_settings?.worst_spec_share ?? 0)}</td></tr>
-          <tr><td>Objective bonus weight</td><td>{num(model.description.contract?.reward_settings?.objective_weight ?? 0)}</td></tr>
-          <tr><td>Margin bonus weight</td><td>{num(model.description.contract?.reward_settings?.margin_weight ?? 0)}</td></tr>
+          <tr><td>Worst hard-spec share</td><td>{short(model.description.contract?.reward_settings?.worst_spec_share ?? 0)}</td></tr>
+          <tr><td>Objective bonus weight</td><td>{short(model.description.contract?.reward_settings?.objective_weight ?? 0)}</td></tr>
+          <tr><td>Margin bonus weight</td><td>{short(model.description.contract?.reward_settings?.margin_weight ?? 0)}</td></tr>
           <tr><td>Conditions</td><td>{model.description.contract?.condition_policy ?? 'off'}; {model.description.contract?.planned_conditions?.length ?? 'unknown'} planned</td></tr>
           {model.description.contract?.planned_conditions?.length! > 0 && <tr><td>Saved condition plan</td><td>{model.description.contract!.planned_conditions!.map(c => c.corner.id).join(', ')}</td></tr>}
           <tr><td>Operating points</td><td>{savedNet?.operating_points ? 'enabled' : 'off'}</td></tr>
           <tr className="model-inputs"><td>Network inputs</td><td>{inputsText(savedNet)}</td></tr>
           <tr><td>Training</td><td>{model.description.counters.evaluations_committed} evaluations, {model.description.counters.learner_updates} updates, replay {model.description.counters.replay_size}</td></tr>
-          <tr><td>Restorable</td><td><b>{model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}</td></tr>
+          <tr><td>Restorable</td><td><b>{RESTORABLE[model.description.restoration_capability] ?? model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}</td></tr>
           <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>
         </tbody></table>}
         {model?.compatibility_unchecked && <div className="note compat-unchecked"><p><b>{model.compatibility_unchecked.title}</b></p>

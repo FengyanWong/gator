@@ -415,3 +415,21 @@ their tool line, the buttons and note beside them.
 **Checked.** `tsc` clean; `looks_check` 63 (one new: the list's width and line), `export_check` 22, `training_tab_check` 89,
 `room_check` 22, `dom_identity_check` 56, `agent_window_check` 28, `reliability_check` 20; the user's VCO run on the branch
 (5174). Before it: the full suite on SIF-1..28 - 54/54 scripts, 2,213 checks, none failed, none flaky.
+
+### SIF-30 The RL model window grows with its window (2026-10-20)
+
+**Found** (the user's 411 saved models, the branch on 5174). The window's content stopped at 1060 px whatever the window:
+in a 1600 px window the saved models' table had 788 px and empty margins of 270 px each side; its rows were 77 px tall
+(names, "Trained on" and "Started from" over two or three lines).
+
+**Changed** (`roadster.css`, `RlModelWindow.tsx`): the content grows to 1440 px; its sentences stop at 120 characters; the
+template's size boxes (hidden, heads, layers), its lists and its one-line boxes stop at 640 px ("48" needs no 450 px box).
+
+Measured: the window's own 1180 px - content 1060 -> 1165 px, the models' table 788 -> 893 px, rows 77 -> 59 px (median);
+1600 px - content 1440, table 1168 px, rows 46 px. No sideways scrolling.
+
+**Checked.** `tsc` clean; `pdk_check` 36 (its "the list spans the narrow column" now reads "the list spans the column, up
+to 640 px" - written when the list sat in the page's narrow column), `model_chooser_check` 76, `network_panel_check` 58,
+`encoder_models_check` 24, `graph_view_check` 63, `module_fold_check` 30, `model_structure_check` 29,
+`mode_suggestion_check` 20, `network_inputs_check` 8, `dom_identity_check` 56, `looks_check` 63, `reliability_check` 20,
+`reward_block_check` 32, `room_check` 22, `task_rows_check` 52, `typing_check` 47.

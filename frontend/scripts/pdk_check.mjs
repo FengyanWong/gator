@@ -140,8 +140,11 @@ await runChecks(browser, async () => {
   check('page load read the list of loaded PDKs (local files) and started no load', listReads >= 1 && loadBodies.length === 0);
   const fits = await evaluate(`(() => { const right = ${NETWORK_DOCUMENT}.documentElement, panel = ${RUN}.getBoundingClientRect(),
     select = ${LIST}.querySelector('.component-row select').getBoundingClientRect();
-    return { noSideScroll: right.scrollWidth <= right.clientWidth + 1, inside: select.left >= panel.left - 1 && select.right <= panel.right + 1, wide: select.width > panel.width * 0.8 }; })()`);
-  check('the list spans the narrow column, with no sideways scrolling', fits.noSideScroll && fits.inside && fits.wide, JSON.stringify(fits));
+    // As wide as the panel lets it, up to 640 px (branch record SIF-30: the RL model window grows with a wide window; a list of
+    // short names stops at 640 px there).
+    return { noSideScroll: right.scrollWidth <= right.clientWidth + 1, inside: select.left >= panel.left - 1 && select.right <= panel.right + 1,
+      wide: select.width >= Math.min(panel.width * 0.8, 640) - 1, width: Math.round(select.width), panel: Math.round(panel.width) }; })()`);
+  check('the list spans the column (up to 640 px), with no sideways scrolling', fits.noSideScroll && fits.inside && fits.wide, JSON.stringify(fits));
 
   // ---- choosing a list --------------------------------------------------------------------------------------------------
   await choose(SELECT, 'pdk:fixpdk');

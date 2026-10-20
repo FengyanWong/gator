@@ -259,3 +259,8 @@ table.run-table .run-date { white-space: nowrap; }
 /* SIF-29: the Logs and Data tables lists sit at their own width at the start of their tool line (they took a line of the
    bottom panel to themselves, the window's whole width for "events"). */
 .row > select.tab-choice { width: auto; flex: none; min-width: 10em; }
+
+/* SIF-30: the RL model window uses a wider window (its saved models' table wrapped names over two lines beside empty
+   margins); its sentences keep a readable length. */
+.rl-networks-window { max-width: 1440px; } .rl-networks-window p { max-width: 120ch; }
+.rl-networks-window :is(.row.template-sizes, label > select, label > input:not([type="checkbox"])) { max-width: 640px; }   /* "48", "4" need no 450 px box */

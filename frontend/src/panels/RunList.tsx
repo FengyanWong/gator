@@ -15,6 +15,8 @@ import { runDesign, runMode } from './rlModelText';
 /** An experiment's folder by its name (branch record SIF-4): the folder's hash ("__ae6e1ae24977") only in the tooltip, and a
  *  line may break after "-" or "_" - the column wrapped "r5-dffr-powermid-bodata-s2_ae6e1a / e24977" between any letters. */
 const experimentName = (folder?: string | null) => String(folder ?? '').replace(/__[0-9a-f]{8,}$/, '');
+/** A run's saved state in the saved models' words (branch record SIF-20: "full_state" in the Details). */
+const SAVED_STATE: Record<string, string> = { full_state: 'full state', weights_only: 'weights only' };
 const breakAt = (text: string) => text.split(/(?<=[-_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 
 /** Which run the bottom tabs show (user request 2026-09-21): ONE button at the right end of the bottom tab strip, where
@@ -153,11 +155,11 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     ['Last model save', info ? stamp(info.last_checkpoint_utc) ?? 'none' : null],
     // a save point the summary names but the run folder no longer holds (a copy made without them, deleted ones): said (7.215)
     ['Saved state', summary?.output ? (info?.save_point === null && summary.output.resumability !== 'none'
-      ? `none: the run's summary names its save point ${summary.output.latest_checkpoint ?? ''} as ${summary.output.resumability}, but the run folder no longer holds it (a copy made without its save points, or they were deleted); nothing to continue from`
+      ? `none: the run's summary names its save point ${summary.output.latest_checkpoint ?? ''} as ${SAVED_STATE[summary.output.resumability] ?? summary.output.resumability}, but the run folder no longer holds it (a copy made without its save points, or they were deleted); nothing to continue from`
       // a full save point of an older optimizer source: only that source can continue it (record 7.221)
       : info?.save_point_code === 'older' && summary.output.resumability === 'full_state'
       ? `model only: the latest save ${summary.output.latest_checkpoint ?? ''} is a full save point written by an older version of the optimizer code - only that version can continue it; fine-tune and frozen still load its model`
-      : `${summary.output.resumability} (${summary.output.completeness} output, latest save ${summary.output.latest_checkpoint ?? 'none'})`) : null],
+      : `${SAVED_STATE[summary.output.resumability] ?? summary.output.resumability} (${summary.output.completeness} output, latest save ${summary.output.latest_checkpoint ?? 'none'})`) : null],
     ['Parallel simulations', info?.concurrency ? `${info.concurrency}` : null],
     ['Connection', info?.connection_profile_id ?? (info ? 'none (not needed)' : null)],
     ['Data written', info?.bytes_written != null ? bytes(info.bytes_written) : null],

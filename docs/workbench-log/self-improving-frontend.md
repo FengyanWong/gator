@@ -285,3 +285,11 @@ where they wrote "FEASIBLE  gain_db=41.5  violation 0.125" in capitals beside a 
 two spaces. Check: `run_list_check` (119).
 
 **Checked.** `tsc` clean; `run_list_check` 119.
+
+### SIF-20 A run's saved state in the saved models' words (2026-10-20)
+
+**Changed** (`RunList.tsx`): the Runs window's Details write "Saved state: full state (complete output, latest save ...)",
+where they wrote the key "full_state"; "weights only" likewise - as the saved models' table and the model's facts do (SIF-2).
+Check: `run_list_check` (119).
+
+**Checked.** `tsc` clean; `run_list_check` 119.

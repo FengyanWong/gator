@@ -280,3 +280,7 @@ table.grid.small.files-table :is(td, th).num-cell { text-align: right; font-vari
 /* SIF-34: a numeric cell is right-aligned, as td.numeric always meant (styles.css) - "table.grid td { text-align: left }"
    outranked it in every grid table: Runs (seed, evaluations), Tasks (revision, sizes), saved models, model facts. */
 table.grid td.numeric, table.grid th.numeric { text-align: right; }   /* and the title over such a column */
+
+/* SIF-35: the output folder's facts read as the run's and the model's facts do: each name on one line, muted; the value
+   takes the rest ("Allowed / writable" took three lines in the right column). */
+.output-facts table.grid.small td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }

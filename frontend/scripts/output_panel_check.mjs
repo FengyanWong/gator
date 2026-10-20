@@ -130,6 +130,12 @@ await runChecks(browser, async () => {
   await evaluate(`(() => { const d = ${PANEL}.querySelector('details.output-facts'); d.open = true; })()`); await sleep(200);
   const MEASURE = `[...${PANEL}.querySelectorAll('details.output-facts button')].find(b => b.textContent === 'Measure')`;
   check('the facts table offers "Measure" where the folder\'s size was', await evaluate(`!!${MEASURE}`));
+  const words = await evaluate(`(() => { const facts = [...${PANEL}.querySelectorAll('details.output-facts tr')].map(r => [...r.cells].map(c => c.textContent.trim()));
+    const allowed = facts.find(([name]) => name === 'Allowed / writable'), name = ${PANEL}.querySelector('details.output-facts td');
+    const retention = [...${PANEL}.querySelectorAll('label')].find(l => l.textContent.startsWith('Raw waveform retention'))?.querySelector('select');
+    return { allowed: allowed?.[1], nameWraps: getComputedStyle(name).whiteSpace, retention: retention && [retention.value, retention.selectedOptions[0].textContent] }; })()`);
+  check('the facts and the retention list speak words: yes / yes, "Best design and failures" (its value unchanged), each fact\'s name on one line (branch record SIF-35)',
+    words.allowed === 'yes / yes' && words.nameWraps === 'nowrap' && JSON.stringify(words.retention) === JSON.stringify(['best_and_failures', 'Best design and failures']), JSON.stringify(words));
   const asked = probes.length;
   await evaluate(`${MEASURE}.click()`);
   check('"Measure" asks for the size once, and shows it', await until(`[...${PANEL}.querySelectorAll('details.output-facts td')].some(td => td.textContent.includes('used here 3.00 GiB'))`, 30)

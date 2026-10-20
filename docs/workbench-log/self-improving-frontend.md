@@ -492,3 +492,21 @@ Measured (the user's runs and tasks, the branch on 5174): both tables still fit 
 **Checked.** `tsc` clean; `run_list_check` 121 (one new: Seed's title and cell right-aligned), `task_list_check` 80,
 `task_run_check` 31, `model_chooser_check` 76, `network_panel_check` 58, `model_structure_check` 29, `graph_view_check` 63,
 `blocking_issues_check` 39, `pdk_check` 37, `encoder_models_check` 24, `looks_check` 64, `dom_identity_check` 56.
+
+### SIF-35 Output settings and Research experiments speak words (2026-10-20)
+
+**Found** (the right column with every fold open, the branch on 5174). Lists and facts showed program values: Raw waveform
+retention "best_and_failures", Split "unspecified", Generalization level "unseen_circuit_class", the output folder's
+"Allowed / writable: true / true"; and that facts table squeezed its names into two or three lines ("Allowed / / writable")
+beside room for the values.
+
+**Changed** (`OutputPanel.tsx`, `ResearchPanel.tsx`, `roadster.css`): the lists show words - "None", "Best design and
+failures", "Every evaluation"; "Unspecified", "Train", "Unseen circuit class" ... - and store the same values as before;
+"Allowed / writable" reads "yes / yes"; the facts table has the run's and model's facts look (each name on one line,
+muted), 40 px shorter.
+
+Also: the design-loop look scripts never press Calibration - it starts a calibration run; its confirm dialog blocked one
+look (the request filter refused the start; nothing ran).
+
+**Checked.** `tsc` clean; `output_panel_check` 66 (one new: yes / yes, the retention list's words and value, names on one
+line), `module_fold_check` 30, `pdk_check` 37, `looks_check` 64, `room_check` 22, `reliability_check` 20.

@@ -62,7 +62,7 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
       {check && <details className="more output-facts" open={!(check.allowed && check.writable)}><summary>{check.allowed && check.writable ? 'writable' : 'NOT writable'} · {bytes(check.free_bytes)} free{check.windows_path ? ` · ${check.windows_path}` : ''}</summary>
       <table className="grid small"><tbody>
         <tr><td>Resolved</td><td className="path">{check.resolved ?? '-'}</td></tr>
-        <tr><td>Allowed / writable</td><td className={check.allowed && check.writable ? '' : 'error'}>{String(check.allowed)} / {String(check.writable)} {check.error ?? ''}</td></tr>
+        <tr><td>Allowed / writable</td><td className={check.allowed && check.writable ? '' : 'error'}>{check.allowed ? 'yes' : 'no'} / {check.writable ? 'yes' : 'no'} {check.error ?? ''}</td></tr>
         <tr><td>Backend host</td><td>{check.host} ({check.environment}, {check.filesystem})</td></tr>
         <tr><td>Free space</td><td>{bytes(check.free_bytes)}; used here {sized && sized.root === root ? bytes(sized.bytes)
           : <button className="text-link" title="Adds up the files under the output root (on D: this takes a while for many runs)."
@@ -95,7 +95,9 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
           <option>evaluations</option><option>seconds</option></select>} />
       {both && <p className="warn">This configuration has both: every {every} evaluations and every {seconds} seconds. Only one can be kept - type a number or choose the unit, and the other is emptied.</p>}
       <label title="Raw PSF only; nothing is rendered. Applies to raw outputs that actually exist.">Raw waveform retention
-        <select value={out.waveform_retention ?? 'best_and_failures'} onChange={e => set({ waveform_retention: e.target.value })}><option>none</option><option>best_and_failures</option><option>all</option></select></label>
+        <select value={out.waveform_retention ?? 'best_and_failures'} onChange={e => set({ waveform_retention: e.target.value })}><option value="none">None</option>
+          {/* the setting's words, its value unchanged (branch record SIF-35: the list showed "best_and_failures") */}
+          <option value="best_and_failures">Best design and failures</option><option value="all">Every evaluation</option></select></label>
       {/* null is a real setting here (no limit); only a configuration without the field shows the backend's default. */}
       <ByteSize label="Waveform storage limit" empty="no limit" value={out.waveform_storage_limit_bytes === undefined ? 2147483648 : out.waveform_storage_limit_bytes}
         onChange={v => set({ waveform_storage_limit_bytes: v })}

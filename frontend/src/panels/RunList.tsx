@@ -8,20 +8,13 @@ import { bytes, clock, durationTenths as span, folderName, RUN_STATE_CLASS as ST
 import { isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
-import { childrenOf, designName, historyOf, startedFrom } from '../lineage';
+import { childrenOf, historyOf, startedFrom } from '../lineage';
 import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
-import { MODE_NAME } from './rlModelText';
+import { runDesign, runMode } from './rlModelText';
 
 /** An experiment's folder by its name (branch record SIF-4): the folder's hash ("__ae6e1ae24977") only in the tooltip, and a
  *  line may break after "-" or "_" - the column wrapped "r5-dffr-powermid-bodata-s2_ae6e1a / e24977" between any letters. */
 const experimentName = (folder?: string | null) => String(folder ?? '').replace(/__[0-9a-f]{8,}$/, '');
-/** What a run was, in the RL model window's words (branch record SIF-11): New model, Fine-tune, Evaluate only - a baseline
- *  simulation, a calibration and an offline training by their own names (a baseline's mode is "scratch", which read as a new
- *  model) - and, for a run that trains or evaluates a model, its design ("GraphGPS"; a run does not say CircuitGPS's version). */
-const runMode = (r: Json) => r.run_kind === 'baseline_preflight' ? 'Baseline' : r.run_kind === 'calibration' ? 'Calibration'
-  : r.run_kind === 'offline_pretraining' ? 'Offline training' : r.mode === 'resume' ? 'Resume' : MODE_NAME[r.mode] ?? r.mode ?? '';
-const runDesign = (r: Json) => (['baseline_preflight', 'calibration'].includes(r.run_kind) || !r.encoder ? ''
-  : designName({ encoder_type: r.encoder, architecture_version: r.network?.architecture_version }));
 const breakAt = (text: string) => text.split(/(?<=[-_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 
 /** Which run the bottom tabs show (user request 2026-09-21): ONE button at the right end of the bottom tab strip, where

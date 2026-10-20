@@ -1,7 +1,7 @@
 // The RL model's words (plan-refactoring C4, out of Right.tsx): the Modes, the encoders' settings and the reward fields as
 // the panel names them, and the lines it writes about the next run's model - pure functions of the configuration.
 import type { Json } from '../api';
-import { designShort } from '../lineage';
+import { designName, designShort } from '../lineage';
 
 // Settings stored per encoder in the backend (src/gator_workbench/network_presets.py). The lists are
 // only a fallback for the moment before the backend answers; the backend's own lists are used afterwards.
@@ -104,6 +104,13 @@ export const MODES: [string, string, string][] = [
   ['frozen', 'Evaluate only', 'a saved model is used as it is, with no learning'],
 ];
 export const MODE_NAME: Record<string, string> = { scratch: 'New model', fine_tune: 'Fine-tune', frozen: 'Evaluate only', resume: 'no Mode chosen' };
+/** What a run was, in the RL model window's words (branch record SIF-11): New model, Fine-tune, Evaluate only - a baseline
+ *  simulation, a calibration and an offline training by their own names (a baseline's mode is "scratch", which read as a new
+ *  model) - and, for a run that trains or evaluates a model, its design ("GraphGPS"; a run does not say CircuitGPS's version). */
+export const runMode = (r: Json) => r.run_kind === 'baseline_preflight' ? 'Baseline' : r.run_kind === 'calibration' ? 'Calibration'
+  : r.run_kind === 'offline_pretraining' ? 'Offline training' : r.mode === 'resume' ? 'Resume' : MODE_NAME[r.mode] ?? r.mode ?? '';
+export const runDesign = (r: Json) => (['baseline_preflight', 'calibration'].includes(r.run_kind) || !r.encoder ? ''
+  : designName({ encoder_type: r.encoder, architecture_version: r.network?.architecture_version }));
 // Where an encoder's settings come from. The backend still calls it `publication`; since record 7.192 it is the network size
 // from publications with every training value of the runs that learned on GATOR circuits (user: "keep this as the starting
 // preset").
@@ -156,5 +163,5 @@ export const limitsText = (run: Json) =>
 /** Run configuration folded into one line: the Mode, the model label, the budget and the network. */
 export const foldedText = (run: Json, budget: number, encoder: string, net: Json) =>
   [MODE_NAME[run.mode] ?? run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${budget} evaluations` : null,
-    `${encoder} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,
+    `${designName({ encoder_type: encoder, architecture_version: net.architecture_version })} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,   // the design by name (SIF-12)
     net.vocabulary === 'families' ? 'device families' : net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');

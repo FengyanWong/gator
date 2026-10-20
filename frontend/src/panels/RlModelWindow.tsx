@@ -13,6 +13,8 @@ import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_
   inputsText } from './rlModelText';
 import { NoModeNote } from './RunConfiguration';
 import type { RlModel } from './useRlModel';
+/** The training conditions as Reward and conditions names them (branch record SIF-12): the facts wrote the key ("off"). */
+const CONDITIONS: Record<string, string> = { off: 'Nominal only', after_nominal: 'Corners after nominal passes', always: 'Every planned corner' };
 
 /** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the
  *  starting preset, or values edited and saved there), and how many saved models were made from it. A double click or "Use
@@ -101,7 +103,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
       <p className="hint">A new model starts from one template: its network and its training values, kept per encoder in the backend. Editing a value
         below saves it for that encoder.</p>
       <TemplatesTable settings={netSettings} encoders={offeredEncoders} current={encoder} runs={runs} onUse={chooseEncoder} />
-      {!offeredEncoders.includes(encoder) && <p className="error">{encoder} is unavailable. Choose an available template. Existing models need their matching historical optimizer version.</p>}
+      {!offeredEncoders.includes(encoder) && <p className="error">{DESIGN_NAME[encoder] ?? encoder} is unavailable. Choose an available template. Existing models need their matching historical optimizer version.</p>}
       <h3>The {entry?.label ?? encoder} template, for this run</h3>
       <div className="row"><Num label="hidden" value={net.hidden_dim ?? entry?.network?.hidden_dim ?? 32} onChange={v => editNet({ hidden_dim: v })} />
         <Num label="heads" value={net.heads ?? entry?.network?.heads ?? 4} onChange={v => editNet({ heads: v })} disabled={!usesHeads} note={usesHeads ? undefined : 'ignored by this encoder'}
@@ -131,7 +133,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
       {presetRateUpdated && adv.learning_rate === 0.001 && <p className="hint preset-rate-updated" role="status">
         Updated the restored starting preset’s learning rate from 0.0003 to 0.001. Undo in the main window restores the previous value.</p>}
       {differs && <div className="note network-differences">
-        <p className="warn">Current run values differ from the saved {encoder} defaults ({originLabel}).</p>
+        <p className="warn">Current run values differ from the saved {DESIGN_NAME[encoder] ?? encoder} defaults ({originLabel}).</p>
         <p className="hint">This run uses the values shown in the controls. Saved defaults are loaded when you use a template; they do not replace an existing configuration on page reload.</p>
         <table className="grid small" aria-label="Network settings differences"><thead><tr><th>Setting</th><th>This run</th><th>Saved default</th></tr></thead><tbody>
           {settingDifferences.map(row => <tr key={row.field}><td title={row.field}>{NETWORK_SETTING_LABELS[row.field] ?? row.field}</td>
@@ -185,7 +187,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           <tr><td>Worst hard-spec share</td><td>{short(model.description.contract?.reward_settings?.worst_spec_share ?? 0)}</td></tr>
           <tr><td>Objective bonus weight</td><td>{short(model.description.contract?.reward_settings?.objective_weight ?? 0)}</td></tr>
           <tr><td>Margin bonus weight</td><td>{short(model.description.contract?.reward_settings?.margin_weight ?? 0)}</td></tr>
-          <tr><td>Conditions</td><td>{model.description.contract?.condition_policy ?? 'off'}; {model.description.contract?.planned_conditions?.length ?? 'unknown'} planned</td></tr>
+          <tr><td>Conditions</td><td>{CONDITIONS[model.description.contract?.condition_policy ?? 'off'] ?? model.description.contract?.condition_policy}; {model.description.contract?.planned_conditions?.length ?? 'unknown'} planned</td></tr>
           {model.description.contract?.planned_conditions?.length! > 0 && <tr><td>Saved condition plan</td><td>{model.description.contract!.planned_conditions!.map(c => c.corner.id).join(', ')}</td></tr>}
           <tr><td>Operating points</td><td>{savedNet?.operating_points ? 'enabled' : 'off'}</td></tr>
           <tr className="model-inputs"><td>Network inputs</td><td>{inputsText(savedNet)}</td></tr>

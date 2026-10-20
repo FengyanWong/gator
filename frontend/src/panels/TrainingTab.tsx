@@ -7,6 +7,7 @@ import { KeyTile } from './fields';
 import { shownLive } from '../runState';
 import { TRAINING_CAPS_KEY, TRAINING_COMPARE_KEY } from '../contract';
 import { TrainingChart } from './TrainingChart';
+import { runMode } from './rlModelText';
 import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, ENDS, keyNumbers, LearnerX, RECENT, setCaps, TrainingStore, View } from './trainingData';
 import type { Built } from './trainingData';
 import type { Answer } from './trainingData';
@@ -71,7 +72,8 @@ const CHOICES = new WeakMap<object, string>();
 const runChoice = (r: Json) => {
   let text = CHOICES.get(r);
   if (text === undefined) {
-    text = `${created(r.created_utc)} | ${taskOf(r)} | ${r.mode} seed${r.seed} | ${r.state ?? 'not started'}${r.evaluations != null ? ` | ${r.evaluations} eval.` : ''}${r.mock ? ' [MOCK]' : ''}`;
+    // As the run shown is named left of Runs... (branch records SIF-6, SIF-11): dots, the Mode in words, "seed 2".
+    text = `${created(r.created_utc)} · ${taskOf(r)} · ${runMode(r)}, seed ${r.seed} · ${r.state ?? 'not started'}${r.evaluations != null ? ` · ${r.evaluations} evaluations` : ''}${r.mock ? ' · MOCK' : ''}`;
     CHOICES.set(r, text);
   }
   return text;

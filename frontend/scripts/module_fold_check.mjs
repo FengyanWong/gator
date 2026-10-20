@@ -33,7 +33,9 @@ await runChecks(browser, async () => {
   const entry = stored.settings[stored.default_encoder];
   const NET = { encoder_type: stored.default_encoder, ...entry.network };
   const BUDGET = Math.max(entry.advanced.warmup_transitions ?? 0, entry.advanced.batch_size ?? 0) + 1000;
-  const LINE = `New model - ${BUDGET} evaluations - ${NET.encoder_type} ${NET.hidden_dim}/${NET.heads}/${NET.layers}`;   // the Mode by its name (record 7.265)
+  // the Mode by its name (record 7.265), the network by its design's (branch record SIF-12; it wrote the key, graph_transformer)
+  const DESIGN = { graph_transformer: 'Graph Transformer', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GraphGPS', group_cross_attention: 'Parameter-group attention', circuit_gps: 'CircuitGPS' }[NET.encoder_type] ?? NET.encoder_type;
+  const LINE = `New model - ${BUDGET} evaluations - ${DESIGN} ${NET.hidden_dim}/${NET.heads}/${NET.layers}`;
   const CONFIG = { ...starter, run: { ...starter.run, mode: 'scratch', max_evaluations: BUDGET, network: NET, advanced: { ...(starter.run.advanced ?? {}), ...entry.advanced } },
     output: { experiment_name: 'fixture', output_root: ROOT }, research: {} };
   const page = await browser.open({ consoleApi: false });

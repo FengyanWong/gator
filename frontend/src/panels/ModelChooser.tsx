@@ -35,7 +35,9 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export const modelName = (m: Json): string => m?.model_label ?? m?.task_name ?? m?.task_id ?? folderName(m?.run_dir ?? '');
 /** The name of the model a run folder saved: as the run list names it, or the folder's own name when it is not listed. */
 export const modelNameAt = (runs: Json[], dir: string): string => { const row = runs.find(r => r.run_dir === dir); return row ? modelName(row) : folderName(dir); };
-const trainedOn = (m: Json) => m.run_kind === 'offline_pretraining' ? 'multi-task (offline)' : m.circuit_task ?? m.task_key ?? m.circuit_class ?? 'unknown task';
+/** The task by the name the page gives it - without "real:", as since record 7.249 (branch record SIF-13); the key on hover. */
+const trainedKey = (m: Json) => m.circuit_task ?? m.task_key ?? m.circuit_class ?? 'unknown task';
+const trainedOn = (m: Json) => m.run_kind === 'offline_pretraining' ? 'multi-task (offline)' : String(trainedKey(m)).replace(/^real:/, '');
 export const RESTORABLE: Record<string, string> = { full_state: 'full state', weights_only: 'weights only' };
 
 type Column = { key: string; title: string; help: string; value: (m: Json, byDir: Map<string, Json>) => string | number | null };
@@ -195,7 +197,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
                 disabled={folders.busy || !folders.ready} onChange={e => table.select(m.run_dir, e.target.checked)} /></td>
               <td className="wrap-words"><b>{breakable(modelName(m))}</b>{used && <span className="badge model-tag in-use-tag">in use</span>}
                 {folders.folder === 'all' && folders.data.folders[folders.of(m.run_dir)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(m.run_dir)]}</div>}</td>
-              <td className="wrap-words">{breakable(trainedOn(m))}</td>
+              <td className="wrap-words" title={m.run_kind === 'offline_pretraining' ? undefined : String(trainedKey(m))}>{breakable(trainedOn(m))}</td>
               <td className="wrap-words model-net" title={netLabel(m.network)}>{designName(m.network)}{' '}<span className="hint model-size">{sizeLabel(m.network)}</span></td>
               <td className="numeric">{m.trained_evaluations ?? '?'}</td><td className="numeric">{m.checkpoints?.length ?? 0}</td>
               <td className="wrap-words">{when(m.saved_utc)}</td><td className="wrap">{origin.text}</td>

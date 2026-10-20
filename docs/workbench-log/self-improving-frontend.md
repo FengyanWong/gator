@@ -213,3 +213,14 @@ evaluations - Graph Transformer 48/4/4", where it said "graph_transformer 48/4/4
 `run_list_check` 119, `model_chooser_check` 74, `network_panel_check` 58, `task_run_check` 31, `training_tab_check` 88,
 `module_fold_check` 30. With the user's real data (the branch on 5174): the Compare list "20/10, 10:43 · dffrx1_t2 ·
 Fine-tune, seed 2 · completed · 800 evaluations".
+
+### SIF-13 The saved models' "Trained on" without "real:" (2026-10-20; from the real-data look at the models table)
+
+**Found.** "Trained on" wrote a real task's key - "real:dffrx1_t2", "real:agentic_fc_pub_far" - where every other place
+gives a task's name without "real:" since record 7.249.
+
+**Changed** (`ModelChooser.tsx`): the name without "real:" (MOCK tasks keep their "synthetic:" key, so they still read as
+such); the key on hover. Check: `model_chooser_check` (75: the real fixture model reads "gpdk045_ota5", its key in the
+tooltip).
+
+**Checked.** `tsc` clean; `model_chooser_check` 75, `mode_suggestion_check` 20, `graph_view_check` 63.

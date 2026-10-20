@@ -237,8 +237,8 @@ function FilesTabBody({ runDir }: { runDir: string | null }) {
   return (<div><div className="row"><button onClick={refresh} title="Refresh: Read the run folder again."><Icon name="refresh" label="Refresh" /></button>
     <button disabled={note === 'Packing...'} onClick={pack} title="Download data-only package (.zip): Every data file of this run in one zip, named after the run; no plots, nothing drawn."><Icon name={note === 'Packing...' ? 'wait' : 'download'} label="Download data-only package (.zip)" /></button>
     <button onClick={() => copy(runDir)} title="Copy run path: The run folder's path, as text, to the clipboard."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${files.files.length} files, ${bytes(files.total_bytes)}.`} {error ?? note} "Open local folder" is not offered: no desktop integration is available from a browser.</span></div>
-    <div className="scroll"><table className="grid small"><thead><tr><th>File</th><th>Size</th><th>Modified</th><th></th></tr></thead>
-      <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td>{bytes(f.bytes)}</td><td title={`${f.modified_utc} (UTC)`}>{stamp(f.modified_utc) ?? f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
+    <div className="scroll"><table className="grid small files-table"><thead><tr><th>File</th><th className="num-cell">Size</th><th>Modified</th><th></th></tr></thead>
+      <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td className="num-cell">{bytes(f.bytes)}</td><td title={`${f.modified_utc} (UTC)`}>{stamp(f.modified_utc) ?? f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
         title={`Download ${f.path}: This file as it is now, to the browser's download folder.`}><Icon name={saving === f.path ? 'wait' : 'download'} label={`Download ${f.path}`} /></button></td></tr>)}</tbody></table></div></div>);
 }
 

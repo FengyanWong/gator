@@ -273,3 +273,6 @@ table.editor td input.numeric { min-width: calc(11ch + 20px); }
 
 /* SIF-32: Data tables - a column of numbers is right-aligned in figures of one width, its title too. */
 table.grid.small.data-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* SIF-33: Output files - the sizes right-aligned in figures of one width, as Data tables' numbers (SIF-32). */
+table.grid.small.files-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }

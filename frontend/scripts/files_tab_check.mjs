@@ -91,6 +91,8 @@ await runChecks(browser, async () => {
     local: (() => { const d = new Date(${JSON.stringify(at())}), two = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()); })() })`);
   check('"Modified" is written in this computer\'s time (YYYY-MM-DD hh:mm:ss), its UTC in the tooltip (SIF-2)', times.head === 'Modified'
     && times.cells.some(([text, title]) => text === times.local && title === at() + ' (UTC)') && times.cells.every(([text]) => /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(text)), JSON.stringify(times).slice(0, 300));
+  const sizes = await evaluate(`({ head: getComputedStyle((${TABLE}).querySelector('thead tr').cells[1]).textAlign, cells: ${ROWS}.map(r => getComputedStyle(r.cells[1]).textAlign + ' ' + getComputedStyle(r.cells[1]).fontVariantNumeric) })`);
+  check('sizes are right-aligned in figures of one width, their title too (branch record SIF-33)', sizes.head === 'right' && sizes.cells.length > 0 && sizes.cells.every(c => c === 'right tabular-nums'), JSON.stringify(sizes).slice(0, 200));
   const header = await evaluate(`(${TABLE}).querySelector('thead tr').getBoundingClientRect().height`);
   check('the button keeps the rows as low as text rows (no taller than the heading row plus 3 px)', rows.every(r => r.height <= header + 3), `rows ${rows.map(r => r.height).join('/')} px, heading ${header} px`);
 

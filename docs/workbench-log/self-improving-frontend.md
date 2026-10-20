@@ -468,3 +468,11 @@ evaluations_collected, actor_loss ... update_seconds.
 **Checked.** `tsc` clean; `looks_check` 64 (one new, with a number column added at the end of its fixture row: the cell and
 its title right-aligned in tabular figures, an id cell not), `export_check` 22, `training_data_check` 117,
 `dom_identity_check` 56.
+
+### SIF-33 Output files: sizes right-aligned (2026-10-20)
+
+**Changed** (`RunTabs.tsx`, `roadster.css`): the Size column of Output files ("159.2 KiB", "580 B") is right-aligned in
+figures of one width, its title too - as Data tables' numbers (SIF-32).
+
+**Checked.** `tsc` clean; `files_tab_check` 20 (one new: the sizes and their title right-aligned, tabular), `export_check` 22,
+`looks_check` 64; the user's VCO run (508 files) on the branch (5174).

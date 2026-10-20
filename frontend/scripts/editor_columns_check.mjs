@@ -88,6 +88,10 @@ await runChecks(browser, async () => {
   const specFields = await fields();
   check('the Constraint list offers no "target ± tolerance", and Specs has no target or tolerance column',
     !choices.some(c => /target/.test(c)) && !specFields.includes('target') && !specFields.includes('tolerance'), JSON.stringify(choices));
+  const share = await evaluate(`(() => { const width = f => ${EDITORS}.querySelector(\`table.editor thead th[data-field="\${f}"]\`).getBoundingClientRect().width;
+    return { size: [${CELL(0, 'equation')}.size, ${CELL(0, 'lower')}.size], equation: Math.round(width('equation')), lower: Math.round(width('lower')) }; })()`);
+  check('the columns share the card by what they hold: an equation is 40 characters wide by nature, a number 11, so Equation is wider than Lower (branch record SIF-28)',
+    share.size.join() === '40,11' && share.equation > share.lower, JSON.stringify(share));
   await evaluate(`${TOOL('Add')}.click()`);
   await until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === 3`);
   config = await saved();

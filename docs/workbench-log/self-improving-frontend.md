@@ -384,3 +384,21 @@ Measured: at 1500 px the table still fits (1234 px in 1234), no date broken.
 
 **Checked.** `tsc` clean; `run_list_check` 120 (one new: two whole dates, one break point in the task name),
 `task_run_check` 31, `dom_identity_check` 56, `looks_check` 62.
+
+### SIF-28 The editors' columns share the card by what they hold (2026-10-20)
+
+**Found** (the user's VCO task, the branch on 5174). Every box in the editors had the browser's natural width of 20
+characters, so the table gave its columns about the same room whatever they held: at 1680 px the four text columns of
+Probes were 229 px each - Probe ID ("m_f1_hz") as wide as Expression, whose six values were all cut; in Specs, Lower and
+Upper took 194 px each for "-0.006" while Equation had 185 px and cut five of eight.
+
+**Changed** (`cells.tsx`): a box's natural width (`size`) is 11 characters for a number, 40 for an Expression or Equation,
+28 for Notes and 8 for Parameter (w, l, r); the rest keep 20 and the minimum widths stay. Every box still fills its column.
+
+Measured (1680 px): Specs - Equation 185 -> 321 px, Lower/Upper 194 -> 122; Probes - Expression 229 -> 331, Notes
+229 -> 248, Probe ID / Output name 229 -> 193; Parameters - Notes 146 -> 218, Lower/Upper 152 -> 114, Parameter 149 -> 101.
+1366 px: Expression 166 -> 209, Equation 107 -> 138. No number is cut, no table scrolls sideways.
+
+**Checked.** `tsc` clean; `editor_columns_check` 13 (one new: natural sizes 40 / 11, Equation wider than Lower) and the 19
+other checks that use the editor tables - 591 checks (`reward_v21_check` is a stand-alone check for its own scratch
+backend on 5191, not run by the runner's default list).

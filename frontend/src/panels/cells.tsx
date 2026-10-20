@@ -6,6 +6,11 @@ import { Typed } from './Typed';
 import { quantity, readQuantity, sameUnit, unitChoices, unitLabel } from '../units';
 import { LIMIT_CHOICES, limitLabel, readNumber, withSaved } from './editorRules';
 
+/** A box's natural width in characters (branch record SIF-28): the editors' columns share the card by it, so a number or a
+ *  one-letter parameter no longer takes as much room as an expression. Every box still fills its column. */
+const NUMBER_SIZE = 11;
+const TEXT_SIZE: Record<string, number> = { signal: 40, equation: 40, notes: 28, parameter_name: 8 };
+
 export function LimitSelect({ row, title, onChange }: { row: Json; title: string; onChange: (fields: Json) => void }) {
   const objective = row.direction_after_feasible ?? 'none', current = `${row.constraint}|${objective}`;
   const offered = LIMIT_CHOICES.some(([c, o]) => `${c}|${o}` === current);
@@ -43,7 +48,7 @@ export function Cell({ column, value, onChange, fixed = null, off = null, unit, 
     return <QuantityBox title={title} disabled={disabled} nullable={!!column.nullable} value={value} unit={unit} stored={stored} tell={tell}
       onCommit={(v, u) => onPatch ? onPatch({ [column.name]: v, ...(u ? { unit: u } : {}) }) : onChange(v)} />;
   if (column.type === 'number' || column.type === 'integer') {
-    return <Typed title={title} disabled={disabled} className="numeric" placeholder={column.nullable ? '-' : ''} value={value} onChange={onChange}
+    return <Typed title={title} disabled={disabled} className="numeric" size={NUMBER_SIZE} placeholder={column.nullable ? '-' : ''} value={value} onChange={onChange}
       format={v => v == null ? '' : String(v)}
       parse={t => { const n = readNumber(t); return t.trim() === '' ? { value: column.nullable ? null : 0 } : n !== undefined ? { value: n } : undefined; }} />;
   }
@@ -52,7 +57,7 @@ export function Cell({ column, value, onChange, fixed = null, off = null, unit, 
     return <Typed title={title + ' (JSON)'} disabled={disabled} value={value} onChange={onChange} format={v => v == null ? '' : JSON.stringify(v)}
       parse={t => { if (t.trim() === '') return { value: null }; try { return { value: JSON.parse(t) }; } catch { return undefined; } }} />;
   }
-  return <input title={title} disabled={disabled} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)} />;
+  return <input title={title} disabled={disabled} size={TEXT_SIZE[column.name]} value={value ?? ''} onChange={e => onChange(e.target.value === '' && column.nullable ? null : e.target.value)} />;
 }
 
 /** A number of a row in its unit (record 7.208): written the one way (450 nm, 400 uA), typed in any form - 400u, 400 uA,
@@ -70,7 +75,7 @@ function QuantityBox({ value, unit, stored, nullable, title, disabled, onCommit,
     adopted.current = r.unit ?? (unit && unit !== stored ? unit : null);
     return { value: r.value ?? (nullable ? null : 0) };
   };
-  return <Typed title={title} disabled={disabled} className="numeric" placeholder={nullable ? '-' : ''} value={value}
+  return <Typed title={title} disabled={disabled} className="numeric" size={NUMBER_SIZE} placeholder={nullable ? '-' : ''} value={value}
     format={v => v == null ? '' : typeof v === 'number' ? quantity(v, stored) : String(v)} parse={read} onChange={v => onCommit(v, adopted.current)}
     onRefused={text => { const r = readQuantity(text, unit); if ('problem' in r) tell?.(r.problem); }} />;
 }

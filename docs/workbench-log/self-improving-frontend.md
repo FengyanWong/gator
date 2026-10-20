@@ -269,3 +269,11 @@ note so), where the Runs and Tasks windows, and since SIF-2 the model's facts, w
 
 **Checked.** `tsc` clean; `model_chooser_check` 76 (the table still fits 1100 px), `mode_suggestion_check` 20,
 `graph_view_check` 63.
+
+### SIF-18 "Compatibility for Fine-tune", not "fine_tune" (2026-10-20)
+
+**Changed** (`RlModelWindow.tsx`): the compatibility line under the model in use names the Mode as the window's buttons do
+("Compatibility for Fine-tune: compatible"; a legacy resume reads "Resume"). `reward_v2_frontend_check` (skipped without its
+evidence folders) follows.
+
+**Checked.** `tsc` clean; `model_chooser_check` 76, `mode_suggestion_check` 20, `network_panel_check` 58.

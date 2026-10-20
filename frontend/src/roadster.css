@@ -232,3 +232,7 @@ table.run-table td .run-design { display: block; }
 /* ---- branch record SIF-22: Matched devices and the confirm questions take 40 % of the editors' card at most (45 % of the window
    could be the whole card at 1366 x 768 with a run below, the table pushed out of view) */
 .editors > .confirm, .editors > .matched-devices { max-height: min(45vh, 40%); }
+
+/* ---- branch record SIF-23: the saved models' Design list sits beside Refresh list at its own width (the window's selects take
+   the whole line) */
+.saved-models > .row { flex-wrap: wrap; gap: 6px; } .saved-models select.model-design-filter { width: auto; flex: none; max-width: 22em; }

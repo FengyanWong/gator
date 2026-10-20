@@ -311,3 +311,12 @@ inside. Measured with the user's VCO task (the branch on 5174): the panel 144 px
 view; entering a cell then folds the bottom panel (record 7.372).
 
 **Checked.** `matched_devices_check` 30, `looks_check` 62, `room_check` 22, `reliability_check` 20, `edit_state_check` 24.
+
+### SIF-23 The Design list sits beside Refresh list (2026-10-20; correcting SIF-10)
+
+**Found.** SIF-10's Design list took the whole line in the RL model window (the window's selects are as wide as their line).
+
+**Changed** (`roadster.css`): at its own width (234 px with the user's designs), beside Refresh list.
+
+**Checked.** `model_chooser_check` 76, `looks_check` 62, `mode_suggestion_check` 20; with the user's models (the branch on
+5174): 234 px, on Refresh list's line, eight entries.

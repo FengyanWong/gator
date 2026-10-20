@@ -145,6 +145,9 @@ await runChecks(browser, async () => {
     return { noSideScroll: right.scrollWidth <= right.clientWidth + 1, inside: select.left >= panel.left - 1 && select.right <= panel.right + 1,
       wide: select.width >= Math.min(panel.width * 0.8, 640) - 1, width: Math.round(select.width), panel: Math.round(panel.width) }; })()`);
   check('the list spans the column (up to 640 px), with no sideways scrolling', fits.noSideScroll && fits.inside && fits.wide, JSON.stringify(fits));
+  const room = await evaluate(`(() => { const s = ${LIST}.querySelector('.component-row select'), c = getComputedStyle(s);
+    return { room: s.clientHeight - parseFloat(c.paddingTop) - parseFloat(c.paddingBottom), line: parseFloat(c.lineHeight) || 1.25 * parseFloat(c.fontSize) }; })()`);
+  check('the list is as tall as its line needs - its text is not cut (branch record SIF-31)', room.room >= room.line - 1, JSON.stringify(room));
 
   // ---- choosing a list --------------------------------------------------------------------------------------------------
   await choose(SELECT, 'pdk:fixpdk');
@@ -244,7 +247,11 @@ await runChecks(browser, async () => {
   holdLoad?.();
   await popup.until(`document.querySelector('.pdk-details h3')?.textContent === 'fixload: 2 components'`, 60);
   check('Load sent exactly the typed fields (empty model file = the connection\'s)', JSON.stringify(loadBodies) === JSON.stringify([{ profile_id: 'fixture-link', technology_library: 'fixload', model_file: null }]), JSON.stringify(loadBodies));
-  check('the answer is shown and the list read again', (await pev(`[...document.querySelectorAll('.pdk-list tbody tr')].map(r => r.cells[0].textContent).join()`)) === 'fixpdk,fixload' && listReads > readsBefore);
+  // The list is read again after the answer is drawn: wait for it (branch record SIF-31 - read at once, it failed once in a
+  // two-lane run).
+  const relisted = await popup.until(`[...document.querySelectorAll('.pdk-list tbody tr')].map(r => r.cells[0].textContent).join() === 'fixpdk,fixload'`, 40);
+  check('the answer is shown and the list read again', relisted && listReads > readsBefore,
+    await pev(`[...document.querySelectorAll('.pdk-list tbody tr')].map(r => r.cells[0].textContent).join()`));
   const older = await pev(`({ none: document.querySelector('.pdk-window .ideal-none')?.textContent ?? null, head: !!document.querySelector('.pdk-window .ideal-head'),
     counts: [...document.querySelectorAll('.pdk-list tbody tr')].map(r => r.cells[2].textContent) })`);
   check('a PDK answered without ideal parts (an older server, a PDK loaded before) says that they were not read', /not read with this PDK/.test(older.none ?? '') && !older.head

@@ -264,3 +264,9 @@ table.run-table .run-date { white-space: nowrap; }
    margins); its sentences keep a readable length. */
 .rl-networks-window { max-width: 1440px; } .rl-networks-window p { max-width: 120ch; }
 .rl-networks-window :is(.row.template-sizes, label > select, label > input:not([type="checkbox"])) { max-width: 640px; }   /* "48", "4" need no 450 px box */
+
+/* SIF-31: no text cut by its box. The Components list kept the old look's 26 px height - 12 px of room for a 16 px line
+   under the Roadster padding. A number in the editors keeps its 11 characters when the table is narrow (with the circuit
+   shown it read "3.25 ko...": SIF-28 gave numbers their natural width, no minimum); text columns give way first. */
+.component-row > label select, .component-row > button { height: auto; }
+table.editor td input.numeric { min-width: calc(11ch + 20px); }

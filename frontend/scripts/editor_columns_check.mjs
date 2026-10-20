@@ -92,6 +92,8 @@ await runChecks(browser, async () => {
     return { size: [${CELL(0, 'equation')}.size, ${CELL(0, 'lower')}.size], equation: Math.round(width('equation')), lower: Math.round(width('lower')) }; })()`);
   check('the columns share the card by what they hold: an equation is 40 characters wide by nature, a number 11, so Equation is wider than Lower (branch record SIF-28)',
     share.size.join() === '40,11' && share.equation > share.lower, JSON.stringify(share));
+  const floor = await evaluate(`parseFloat(getComputedStyle(${CELL(0, 'lower')}).minWidth)`);
+  check('...and a number keeps its 11 characters when the table is narrow: text columns give way first (branch record SIF-31)', floor >= 100, String(floor));
   await evaluate(`${TOOL('Add')}.click()`);
   await until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === 3`);
   config = await saved();

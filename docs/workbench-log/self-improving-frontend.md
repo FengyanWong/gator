@@ -433,3 +433,23 @@ to 640 px" - written when the list sat in the page's narrow column), `model_choo
 `encoder_models_check` 24, `graph_view_check` 63, `module_fold_check` 30, `model_structure_check` 29,
 `mode_suggestion_check` 20, `network_inputs_check` 8, `dom_identity_check` 56, `looks_check` 63, `reliability_check` 20,
 `reward_block_check` 32, `room_check` 22, `task_rows_check` 52, `typing_check` 47.
+
+### SIF-31 No text cut by its box: the Components list and the editors' numbers (2026-10-20; correcting SIF-28)
+
+**Found** (a scan of every visible box on the page and in the windows, the user's VCO task on 5174). The RL model window's
+Components list kept the old look's 26 px height: 12 px of room for a 16 px line under the Roadster padding, so "Device
+families (any PDK)" was cut through the middle. And with the circuit shown, the editors' numbers gave way before the text
+columns: "3.25 ko...", "1.215 G..." - already on the live page (measured at 1366 px), and SIF-28, which gave numbers their
+natural width but no minimum, cut "3.25 kohm" at 1680 px too.
+
+**Changed** (`roadster.css`): the Components list and its button take the height their line needs (19 px of room); a
+number in the editors keeps at least its 11 characters (105 px), so the text columns give way first. In the narrowest
+layout (circuit shown at 1366 px) the table scrolls sideways a little further (Specs 160 -> 271 px; it did before too).
+
+Measured (numbers cut / total, page widths 1680 and 1366, circuit hidden and shown, Parameters and Specs): none of 14 and
+16 in every case; the live page cut 1 and 2 at 1366 px with the circuit shown. The box scan finds no other cut box in the
+page, the RL model window (three Modes, folds open), Runs or Tasks.
+
+**Checked.** `tsc` clean; `pdk_check` 37 (one new: the list's room against its line; and its "the list read again" now
+waits for the list - read at once it failed once in a two-lane run, then passed five times), `editor_columns_check` 14 (one
+new: a number's 11-character minimum) and the 19 other editor checks - 687 checks.

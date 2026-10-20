@@ -147,7 +147,7 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     ['Spectre launches', b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''} (retries ${b.retries}, cache hits ${b.cache_hits})` : null],
     ['Learner updates', info ? String(info.learner_updates ?? 0) : null],
     ['First feasibility', info ? (first ? `at ${first.first_feasible_eval_count} evaluations charged (${first.completed_count} completed, ${first.spectre_launches} launches)` : 'not reached') : null],
-    ['Best design', info ? (best ? `${best.feasible ? 'FEASIBLE' : 'infeasible'}  ${pairs(best.metrics)}  violation ${short(best.violation)}` : 'none') : null],
+    ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics)} · violation ${short(best.violation)}` : 'none') : null],   // not shouted (SIF-19)
     ['Best design variables', best?.variables ? variables(best.variables) : null],
     ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}` : 'none (random weights)') : null],
     ['Last model save', info ? stamp(info.last_checkpoint_utc) ?? 'none' : null],

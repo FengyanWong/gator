@@ -277,3 +277,11 @@ note so), where the Runs and Tasks windows, and since SIF-2 the model's facts, w
 evidence folders) follows.
 
 **Checked.** `tsc` clean; `model_chooser_check` 76, `mode_suggestion_check` 20, `network_panel_check` 58.
+
+### SIF-19 A run's best design, not shouted (2026-10-20)
+
+**Changed** (`RunList.tsx`): the Runs window's Details write the best design as "feasible · gain_db=41.5 · violation 0.125"
+where they wrote "FEASIBLE  gain_db=41.5  violation 0.125" in capitals beside a lower-case "infeasible", parts set apart by
+two spaces. Check: `run_list_check` (119).
+
+**Checked.** `tsc` clean; `run_list_check` 119.

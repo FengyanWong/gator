@@ -174,7 +174,7 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
           + 'same run folder, from its saved state, with its own saved configuration. The form asks for the total first.'}><Icon name="play" label="Continue..." /></button>
       {resting && continueBlocked && <span className="hint continue-why">{continueBlocked}</span>}
       {resting && check?.alternative && <button className="continue-alternative" onClick={() => onFineTune(check.alternative)}
-        title={`${check.alternative.label}: The next run on this page loads this run's save point ${check.alternative.checkpoint_id} in Mode fine_tune, as one Undo step. Nothing starts until Start.`}>{check.alternative.label}</button>}
+        title={`${check.alternative.label}: The next run on this page loads this run's save point ${check.alternative.checkpoint_id} in Mode Fine-tune, as one Undo step. Nothing starts until Start.`}>{check.alternative.label}</button>}
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
         title="Export status (JSON): Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary."><Icon name="export" label="Export status (JSON)" /></button>
     </div>

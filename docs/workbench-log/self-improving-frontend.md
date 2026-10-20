@@ -293,3 +293,10 @@ where they wrote the key "full_state"; "weights only" likewise - as the saved mo
 Check: `run_list_check` (119).
 
 **Checked.** `tsc` clean; `run_list_check` 119.
+
+### SIF-21 Tooltips name the Modes as the buttons do (2026-10-20)
+
+**Changed.** The Runs window's "Can continue" help ("usable for Fine-tune and Evaluate only", it said "fine_tune / frozen")
+and Run status's fine-tune offer ("... in Mode Fine-tune, as one Undo step"); `RunList.tsx`, `RunTabs.tsx`.
+
+**Checked.** `tsc` clean; `run_list_check` 119, `run_control_check` 101.

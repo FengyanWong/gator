@@ -320,3 +320,24 @@ view; entering a cell then folds the bottom panel (record 7.372).
 
 **Checked.** `model_chooser_check` 76, `looks_check` 62, `mode_suggestion_check` 20; with the user's models (the branch on
 5174): 234 px, on Refresh list's line, eight entries.
+
+### SIF-24 The Tasks list shares its width (2026-10-20)
+
+**Found** (the user's 69 tasks, the branch on 5174). At the window's own 1500 px the Newest run column got 150 px and took
+four or five lines a row: the Task column (its folder line), the Cell column (`graphgps/graphgps_ldo1_graphgps_ldo1_t1`)
+and the dates never wrapped, so only Newest run could give way. At 1100 px the table was 1149 px in a 850 px space:
+Newest run, Runs and Details out of view, 156 px a row. "completed · 1 evaluations".
+
+**Changed** (`TaskList.tsx`, `roadster.css`):
+- Saved, Baseline and Newest run's start are to the minute; the tooltip has the full time. Details keep the seconds.
+- A task's folder line, the column titles and the cell may take two lines: the cell name moves under its library
+  ("agenticsizing/" over "asz_bgr") as a whole and breaks after a "_" only when it is longer than the column; the
+  testbench name likewise.
+- Under 1250 px a date goes over its time; a date never breaks at its hyphens.
+- "1 evaluation".
+
+Measured (69 tasks): 1500 px - Newest run 279 px, two lines; rows 47 px median (none over 63 px but the three
+`graphgps_ldo1_t*`, 81 px). 1250 px - fits, 66 px median. 1100 px - the table 834 px fits, every column in view.
+
+**Checked.** `tsc` clean; `task_list_check` 80 (one new: minute, tooltip, unbreakable date, name part), `task_rows_check`
+52, `task_run_check` 31, `run_list_check` 119, `ngspice_window_check` 39, `dom_identity_check` 56, `looks_check` 62.

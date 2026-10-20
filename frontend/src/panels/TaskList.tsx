@@ -42,7 +42,15 @@ function runsOf(runs: Json[], key: string) {
   const mine = runs.filter(r => r.task_key === key).sort((a, b) => String(b.created_utc ?? '').localeCompare(String(a.created_utc ?? '')));
   return { count: mine.length, newest: mine[0] ?? null };
 }
-const newestText = (r: Json | null) => !r ? 'none' : `${stamp(r.created_utc) ?? '?'} · ${r.state ?? 'not started'} · ${r.evaluations ?? 0} evaluations`
+/** A time in the list to the minute (branch record SIF-24): its columns are narrower and wrap less. Details show Created, Saved and Baseline recorded to the second. */
+const minute = (utc?: string | null) => stamp(utc)?.slice(0, 16) ?? null;
+/** A cell or testbench name may break after a "_" (SIF-24), so one long generated name does not widen the Cell column for every row.
+ *  It sits in a .name-part box: the name first moves under the library ("library/") as a whole and breaks inside only when longer than the column. */
+const namePart = (text: string) => <span className="name-part">{text.split(/(?<=_)/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>)}</span>;
+const cellName = (text: string) => { const at = text.indexOf('/'); return at < 0 ? text : <>{text.slice(0, at + 1)}{namePart(text.slice(at + 1))}</>; };
+/** "2026-10-09 22:35": in a narrow window the time goes under the date; the date never breaks at its hyphens. */
+const dateTime = (utc?: string | null) => { const text = minute(utc); if (!text) return null; const [day, time] = text.split(' '); return <><span className="task-date">{day}</span> {time}</>; };
+const newestText = (r: Json | null) => !r ? 'none' : `${minute(r.created_utc) ?? '?'} · ${r.state ?? 'not started'} · ${r.evaluations ?? 0} evaluation${r.evaluations === 1 ? '' : 's'}`
   + (r.first_feasible_eval_count != null ? ` · first feasible at ${r.first_feasible_eval_count}` : r.evaluations ? ' · none feasible' : '');
 
 type Column = { key: string; title: string; help: string; value: (t: Json, runs: Json[]) => string | number | null };
@@ -233,10 +241,10 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
               {folders.folder === 'all' && folders.data.folders[folders.of(t.task_key)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(t.task_key)]}</div>}
               {mark && <div className="task-mark">{t.kind === 'mock' ? <span className="badge model-tag mock-tag">MOCK</span> : <span className={`hint${t.available ? '' : ' warn'}`}>{mark}</span>}</div>}</td>
             <td>{t.circuit_class ?? ''}</td>
-            <td title={t.testbench ? `testbench ${t.testbench}` : undefined}>{cellOf(t)}{t.testbench && <div className="hint">tb {t.testbench}</div>}</td>
+            <td className="task-cell" title={t.testbench ? `testbench ${t.testbench}` : undefined}>{cellName(cellOf(t))}{t.testbench && <div className="hint">tb {namePart(t.testbench)}</div>}</td>
             <td className="numeric">{t.revision ?? '-'}</td>
-            <td>{stamp(t.saved_utc) ?? '-'}</td>
-            <td>{t.baseline_recorded_utc ? stamp(t.baseline_recorded_utc) : t.kind === 'real' && t.generated ? <span className="hint">none</span> : '-'}</td>
+            <td className="task-when" title={stamp(t.saved_utc) ?? undefined}>{dateTime(t.saved_utc) ?? '-'}</td>
+            <td className="task-when" title={stamp(t.baseline_recorded_utc) ?? undefined}>{t.baseline_recorded_utc ? dateTime(t.baseline_recorded_utc) : t.kind === 'real' && t.generated ? <span className="hint">none</span> : '-'}</td>
             <td className="numeric">{t.variables != null ? `${t.variables} / ${t.results ?? 0}` : '-'}</td>
             {/* Links into the Runs window (record 7.264): at the newest run, or with this task's runs only. Nothing is chosen. */}
             <td title={of.newest?.run_dir}>{of.newest ? <button className="item-link" onClick={() => openRunsAt({ run_dir: of.newest.run_dir, task_key: t.task_key, from: popup })}

@@ -159,11 +159,15 @@ await runChecks(browser, async () => {
   // ---- 3. the facts of each row ----------------------------------------------------------------------------------------------
   check('a saved task: clean name, its cell and testbench, revision, saved time, baseline time, sizes / results',
     (await cell(OTA.task_key, 0)) === 'fixture_ota' && (await cell(OTA.task_key, 1)) === 'opamp' && (await cell(OTA.task_key, 2)) === 'FIXTURE_LIB/fixture_otatb tb_fixture_ota'
-    && (await cell(OTA.task_key, 3)) === '3' && (await cell(OTA.task_key, 4)) === stamp(OTA.saved_utc) && (await cell(OTA.task_key, 5)) === stamp(OTA.baseline_recorded_utc) && (await cell(OTA.task_key, 6)) === '6 / 6',
+    && (await cell(OTA.task_key, 3)) === '3' && (await cell(OTA.task_key, 4)) === stamp(OTA.saved_utc).slice(0, 16) && (await cell(OTA.task_key, 5)) === stamp(OTA.baseline_recorded_utc).slice(0, 16) && (await cell(OTA.task_key, 6)) === '6 / 6',
     JSON.stringify(await Promise.all([0, 1, 2, 3, 4, 5, 6].map(n => cell(OTA.task_key, n)))));
   check('its newest run: started, state, evaluations, first feasible; and how many runs it has (the Baseline simulation counts)',
-    (await cell(OTA.task_key, 7)) === `${stamp(NEWEST.created_utc)} · completed · 8 evaluations · first feasible at 5` && (await cell(OTA.task_key, 8)) === '2',
+    (await cell(OTA.task_key, 7)) === `${stamp(NEWEST.created_utc).slice(0, 16)} · completed · 8 evaluations · first feasible at 5` && (await cell(OTA.task_key, 8)) === '2',
     `${await cell(OTA.task_key, 7)} | ${await cell(OTA.task_key, 8)}`);
+  check('times in the list are to the minute with the full time as the tooltip, a date never breaks at its hyphens, a cell name moves under its library whole (branch record SIF-24)',
+    await tw.window.evaluate(`(() => { const tr = ${ROWS}.find(tr => tr.dataset.taskKey === ${JSON.stringify(OTA.task_key)}), saved = tr.children[5], cellOf = tr.children[3];
+      return saved.title === ${JSON.stringify(stamp(OTA.saved_utc))} && getComputedStyle(saved.querySelector('.task-date')).whiteSpace === 'nowrap'
+        && getComputedStyle(cellOf.querySelector('.name-part')).display === 'inline-block' && cellOf.querySelector('.name-part').textContent === 'fixture_ota'; })()`));
   check('a blocked task without a baseline: the mark [blocked], baseline none, no run', (await cell(LDO.task_key, 0)) === 'fixture_ldo[blocked]' && (await cell(LDO.task_key, 5)) === 'none'
     && (await cell(LDO.task_key, 7)) === 'none' && (await cell(LDO.task_key, 8)) === '0', JSON.stringify(await Promise.all([0, 5, 7, 8].map(n => cell(LDO.task_key, n)))));
   check('an ngspice task without its connection: the mark "choose its connection", no cell, no baseline column value', (await cell(NG.task_key, 0)) === 'ngspice:fixture_div[ngspice: choose its connection]'

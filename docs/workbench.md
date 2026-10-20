@@ -453,7 +453,7 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 | Class | The circuit class label. |
 | Cell | The library and cell the task runs in (the copy you declared), and its testbench cell. |
 | Rev | The saved revision. |
-| Saved | When the task was last saved (local time of this computer). |
+| Saved | When the task was last saved (local time of this computer), to the minute; the tooltip has the seconds (branch record SIF-24). |
 | Baseline | When the task's reference was recorded by a finished Baseline simulation; "none" until then. |
 | Sizes / results | How many sizes the task varies, how many results its testbench measures. |
 | Newest run | The task's newest run under the output folder: started, state, evaluations, first feasible - the run the bottom tabs show when the task is chosen (record 7.212). A link (record 7.264): it opens the Runs window at that run, with this task's runs only. |

@@ -1,5 +1,5 @@
 import { useAsyncAction } from '../store';
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { signal } from '../signal';
@@ -187,7 +187,7 @@ function IdealParts({ ideal }: { ideal: Json }) {
     </div>);
 }
 
-function PdkDetails({ pdk, devices }: { pdk: Json; devices: Json[] }) {
+const PdkDetails = memo(function PdkDetails({ pdk, devices }: { pdk: Json; devices: Json[] }) {
   const files: Json[] = pdk.sources?.model_files ?? [];
   const troubled = devices.filter(d => d.problems?.length);
   return (
@@ -214,4 +214,4 @@ function PdkDetails({ pdk, devices }: { pdk: Json; devices: Json[] }) {
       <details><summary>Model files read</summary>
         <table className="grid small"><tbody>{files.map((f: Json) => <tr key={f.path}><td className="mono">{f.path}</td><td className="numeric">{f.bytes} bytes</td><td className="mono">{String(f.sha256).slice(0, 16)}</td></tr>)}</tbody></table></details>
     </div>);
-}
+});

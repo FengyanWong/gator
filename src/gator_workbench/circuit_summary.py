@@ -8,11 +8,16 @@ MAX_SUMMARY_DEVICES = 400
 
 def circuit_summary(graph, *, circuit: dict | None = None) -> dict:
     """Engineering summary of a parsed circuit. Identifiers and numbers only."""
+    shown = graph.devices[:MAX_SUMMARY_DEVICES]
+    shown_ids = {device.id for device in shown}
     devices = []
     connections = {}
     for c in graph.connections:
-        connections.setdefault(c.device_id, []).append(dict(terminal=c.terminal, net=c.net_id, role=c.role))
-    for device in graph.devices[:MAX_SUMMARY_DEVICES]:
+        device_id = c.device_id
+        if device_id in shown_ids:
+            # The summary shows at most 400 devices; do not allocate terminal records for the others.
+            connections.setdefault(device_id, []).append(dict(terminal=c.terminal, net=c.net_id, role=c.role))
+    for device in shown:
         devices.append(dict(
             instance_path=device.id, kind=device.kind, model=device.model_ref,
             terminals=connections.get(device.id, []),

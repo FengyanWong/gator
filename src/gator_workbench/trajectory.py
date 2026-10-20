@@ -11,6 +11,7 @@ circular buffer stored inside a checkpoint and forgets evicted samples.
 """
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import fields
 import json
 from pathlib import Path
@@ -103,9 +104,11 @@ class TrajectoryLoader:
         return self._states
 
     def observation(self, state_id):
+        return self._observation(self.state_rows()[state_id])
+
+    def _observation(self, row):
         from analog_optimizer.envs.sizing import Observation
         codec = _codec()
-        row = self.state_rows()[state_id]
         template = self._static_value(row['static_graph_ref'])
         patches = codec.untree(json.loads(row['graph_patch_json']))
         graph = codec.untree(codec.patched(template, patches))
@@ -118,19 +121,25 @@ class TrajectoryLoader:
 
         Transitions that were never eligible for training replay (e.g. failures, frozen-mode
         rollouts that ended in an invalid state) cannot satisfy ``Transition.validate`` and are
-        returned by ``transition_rows`` only.
+        returned by ``transition_rows`` only. A candidate subset filters batches before Python
+        conversion and keeps only its referenced states, without populating the full state cache.
         """
         from analog_optimizer.training.replay import Transition
+        rows = [row for row in self.transition_rows(candidate_ids=candidate_ids) if row['replay_eligible_archive']]
+        if any(row.get('reward_version') != 'constraint_violation_v2' for row in rows):
+            raise ValueError('Legacy transition archive needs an explicit migration; inspect raw tables without training')
+        states = self._states
+        if candidate_ids is not None and states is None:
+            references = {row[key] for row in rows for key in ('state_ref', 'next_state_ref')}
+            states = {row['state_id']: row for row in self._selected_rows('states', 'state_id', references)}
         result = []
-        for row in self.transition_rows():
-            if not row['replay_eligible_archive'] or (candidate_ids is not None and row['candidate_id'] not in candidate_ids):
-                continue
-            if row.get('reward_version') != 'constraint_violation_v2':
-                raise ValueError('Legacy transition archive needs an explicit migration; inspect raw tables without training')
-            observation = self.observation(row['state_ref'])
+        for row in rows:
+            observation = self.observation(row['state_ref']) if states is None else self._observation(states[row['state_ref']])
+            following = (self.observation(row['next_state_ref']) if states is None
+                         else self._observation(states[row['next_state_ref']]))
             transition = Transition(
                 observation=observation, proposal=map_to_dict(row['action']),
-                reward=row['reward'], next_observation=self.observation(row['next_state_ref']),
+                reward=row['reward'], next_observation=following,
                 terminated=row['terminated'], truncated=row['truncated'], bootstrap=row['bootstrap'],
                 applied_parameters={(m['instance_path'], m['parameter']): m['value']
                                     for m in row['applied_parameters']},
@@ -142,8 +151,23 @@ class TrajectoryLoader:
             result.append(transition)
         return result
 
-    def transition_rows(self):
-        rows = sorted(self.reader.rows('transitions'), key=lambda r: r['commit_seq'])
+    def _selected_rows(self, table, key, values):
+        """Scan the fixed snapshot in bounded Arrow batches; only selected rows become Python objects.
+        Scan every part so duplicate state IDs retain state_rows()'s last-record-wins behavior."""
+        import pyarrow as pa
+        import pyarrow.compute as pc
+        if not values:
+            return []
+        wanted, rows = pa.array(list(values), type=pa.string()), []
+        with closing(self.reader.iter_batches(table)) as batches:
+            for batch in batches:
+                rows.extend(batch.filter(pc.is_in(batch[key], value_set=wanted)).to_pylist())
+        return rows
+
+    def transition_rows(self, *, candidate_ids=None):
+        rows = (self.reader.rows('transitions') if candidate_ids is None
+                else self._selected_rows('transitions', 'candidate_id', candidate_ids))
+        rows = sorted(rows, key=lambda r: r['commit_seq'])
         for row in rows:
             row['replay_eligible_archive'] = (row['reward'] is not None and not row['truncated']
                                               and row['next_state_ref'] is not None)

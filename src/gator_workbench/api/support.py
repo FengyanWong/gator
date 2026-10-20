@@ -60,12 +60,16 @@ class _ArchiveResponse(StreamingResponse):
 
 
 def zip_download(members, name: str):
-    """Bounded-memory ZIP download; large archives spill to an automatically deleted temporary file."""
+    """Bounded-memory ZIP download; large archives spill to an automatically deleted temporary file.
+
+    Parquet already compresses its data pages: use fast DEFLATE for these files, while text keeps ZIP's default
+    compression. The files inside the download are unchanged.
+    """
     stream = tempfile.SpooledTemporaryFile(max_size=1 << 20, mode='w+b')
     try:
         with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as archive:
             for item, inside in members:
-                archive.write(item, inside)
+                archive.write(item, inside, compresslevel=1 if Path(item).suffix.lower() == '.parquet' else None)
         return _ArchiveResponse(stream, name)
     except BaseException:
         stream.close()
@@ -90,6 +94,49 @@ def run_files(root, *, exclude_roots=(), exclude_dirs=()):
     entries = [(path, path.relative_to(root).as_posix(), info) for path, info in zip(paths, runs.read_many(stat_of, paths))
                if info is not None and stat.S_ISREG(info.st_mode)]
     return sorted(entries, key=lambda entry: entry[1])
+
+
+def package_files(root, *, exclude_roots=(), exclude_dirs=()):
+    """Sorted regular-file members without collecting metadata the ZIP writer would immediately read again.
+
+    Directory-entry types usually answer is_file without a full stat; links and filesystems without those types
+    may still need one. ZipFile.write keeps its fresh stat when packing, so changing files do not use old sizes,
+    timestamps or permissions from the inventory. The Output files table still uses run_files for its metadata.
+    This is not a snapshot: an entry removed after scandir may fail at packing rather than at the old preliminary
+    stat. A failure while packing still discards the package and closes its spool.
+    """
+    root = Path(root)
+    pending, members = [root], []
+    while pending:
+        base = pending.pop()
+        if base != root and os.path.islink(base):  # a sibling scan may have replaced this directory since enqueueing
+            continue                              # explicit root links still follow, as with os.walk
+        directories, files = [], []
+        try:
+            with os.scandir(base) as entries:
+                for entry in entries:
+                    try:
+                        is_directory = entry.is_dir()
+                    except OSError:
+                        is_directory = False       # os.walk likewise treats an unclassifiable entry as a file
+                    if is_directory:
+                        directories.append(entry.name)
+                    else:
+                        files.append(entry)
+        except OSError:
+            continue                              # match os.walk's default handling of an unreadable directory
+        for entry in files:
+            try:
+                is_file = entry.is_file()          # follows regular-file links; a vanished/broken target is false
+            except FileNotFoundError:
+                continue                          # also match run_files if an implementation raises on disappearance
+            if is_file:
+                path = Path(entry.path)
+                members.append((path, path.relative_to(root).as_posix()))
+        for name in reversed(directories):
+            if name not in exclude_dirs and not (base == root and name in exclude_roots):
+                pending.append(base / name)
+    return sorted(members, key=lambda member: member[1])
 
 
 def file_snapshot(path: Path, chunk_size: int = 1 << 20):

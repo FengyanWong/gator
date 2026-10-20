@@ -181,6 +181,18 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   </div>);
 }
 
+// A table snapshot changes on Refresh or selection; status updates still refresh the steering line and toolbar.
+const DataSnapshot = memo(function DataSnapshot({ data }: { data: Json }) {
+  return (<div className="scroll"><table className="grid small data-table"><thead><tr>{data.columns.map((c: string) => <th key={c}>{c}</th>)}</tr></thead>
+    <tbody>{data.rows.map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
+      // One line per row (record 7.158): an id ends in "..." - the whole value on hover, a click copies it - a time keeps
+      // its full width, and no word is cut in two; a long hash used to wrap into a column of letters as tall as a paragraph.
+      const object = typeof r[c] === 'object' && r[c] !== null, text = object ? JSON.stringify(r[c]) : num(r[c]);
+      const id = /_id$/.test(c) && text !== '', time = /_(at|utc)$/.test(c);
+      return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : undefined} title={id ? `${text}\nClick to copy` : undefined}
+        onClick={id ? () => copy(text) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>);
+});
+
 /** `status`: the shown run's status as the page already polls it (App.tsx) - for the steering line only. This tab used to
  *  poll the same file again every 2 s, finished runs too. */
 export function DataTab({ runDir, status }: { runDir: string | null; status: Json }) {
@@ -205,14 +217,7 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
       <button disabled={!!busy} onClick={exportCsv} title="Export detailed CSV: The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded."><Icon name={busy === 'csv' ? 'wait' : 'csv'} label={busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'} /></button>
       <button disabled={!!busy} onClick={exportResearch} title="Export research CSVs: The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip."><Icon name={busy === 'research' ? 'wait' : 'zip'} label={busy === 'research' ? 'Exporting...' : 'Export research CSVs'} /></button>
       <span className="hint">{data ? `${data.total_rows} rows (snapshot at commit ${data.cutoff_commit_seq}); last ${data.rows.length} shown.` : ''} {error ?? note}</span></div>
-    {data && <div className="scroll"><table className="grid small data-table"><thead><tr>{data.columns.map((c: string) => <th key={c}>{c}</th>)}</tr></thead>
-      <tbody>{data.rows.map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
-        // One line per row (record 7.158): an id ends in "..." - the whole value on hover, a click copies it - a time keeps
-        // its full width, and no word is cut in two; a long hash used to wrap into a column of letters as tall as a paragraph.
-        const object = typeof r[c] === 'object' && r[c] !== null, text = object ? JSON.stringify(r[c]) : num(r[c]);
-        const id = /_id$/.test(c) && text !== '', time = /_(at|utc)$/.test(c);
-        return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : undefined} title={id ? `${text}\nClick to copy` : undefined}
-          onClick={id ? () => copy(text) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>}
+    {data && <DataSnapshot data={data} />}
   </div>);
 }
 

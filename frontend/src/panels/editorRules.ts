@@ -67,8 +67,11 @@ export const FOLLOWER_IGNORES = ['optimized', 'value_type', 'lower', 'upper', 's
 // A Maestro output's Probe ID is m_ + its name, as Save task names it (virtuoso_setup.probe_id); spec equations are rewritten
 // when it follows a renamed output. Equation names are plain identifiers (spec_equations.parse reads them with Python's ast).
 const probeIdOf = (outputName: string) => `m_${outputName}`;
-const renameInEquation = (equation: string, from: string, to: string) =>
-  equation.replace(new RegExp(`(?<![A-Za-z0-9_.])${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), to);
+const equationRenamer = (from: string, to: string) => {
+  // An edit may touch many Specs. Compile once for this rename, only when a string equation needs it.
+  let pattern: RegExp | undefined;
+  return (equation: string) => equation.replace(pattern ??= new RegExp(`(?<![A-Za-z0-9_.])${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), to);
+};
 
 export const exact = (v: Json) => (v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
 
@@ -79,7 +82,7 @@ export const exact = (v: Json) => (v == null ? '' : typeof v === 'object' ? JSON
  * must not be frozen into the row by that. One path for a typed cell, a pasted block and a fill since record 7.184 (a pasted
  * output name had left its Probe ID behind); a limit written without its objective keeps the objective where they still pair. */
 export function withFollowers(tab: Section, c: Json, changes: Map<number, Json>): Json {
-  const renames: [string, string][] = [], moves: [string, string][] = [];
+  const renames: ((equation: string) => string)[] = [], moves: [string, string][] = [];
   const next = { ...c, [tab]: c[tab].map((r: Json, i: number) => {
     const fields = changes.get(i);
     if (!fields) return r;
@@ -90,7 +93,7 @@ export function withFollowers(tab: Section, c: Json, changes: Map<number, Json>)
     if (tab === 'measurements' && typeof fields.source_name === 'string' && r.result_source === 'ade_output'
         && /^[A-Za-z_][A-Za-z0-9_]*$/.test(fields.source_name)) {
       row.measurement_id = probeIdOf(fields.source_name);
-      if (r.measurement_id && r.measurement_id !== row.measurement_id) renames.push([String(r.measurement_id), row.measurement_id]);
+      if (r.measurement_id && r.measurement_id !== row.measurement_id) renames.push(equationRenamer(String(r.measurement_id), row.measurement_id));
     }
     if (tab === 'targets') {
       const probe = typeof fields.equation === 'string' && !('unit' in fields)
@@ -103,7 +106,7 @@ export function withFollowers(tab: Section, c: Json, changes: Map<number, Json>)
     return row;
   }) };
   if (renames.length) next.targets = (c.targets ?? []).map((t: Json) => typeof t.equation === 'string'
-    ? { ...t, equation: renames.reduce((e, [from, to]) => renameInEquation(e, from, to), t.equation) } : t);
+    ? { ...t, equation: renames.reduce((e, rename) => rename(e), t.equation) } : t);
   // A Probe now of another quantity: the Specs on it alone take its unit (they have no Unit column since record 7.208).
   if (moves.length) next.targets = (next.targets ?? c.targets ?? []).map((t: Json) => {
     const move = moves.find(([id]) => typeof t.equation === 'string' && t.equation.trim() === id);

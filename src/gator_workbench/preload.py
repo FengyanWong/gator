@@ -26,7 +26,7 @@ import threading
 GUARDED_PACKAGES = ('analog_optimizer', 'torch', 'torch_geometric', 'numpy', 'pyarrow')
 
 MODULES = (
-    'numpy', 'pyarrow', 'pyarrow.parquet', 'torch', 'torch_geometric',
+    'numpy', 'pyarrow', 'pyarrow.parquet', 'pyarrow.compute', 'torch', 'torch_geometric',
     'torch_geometric.nn',                             # structure table of a saved model (model_structure.py)
     'analog_optimizer.backends.conditions',           # training corners of a run (compile.py, tasks.py)
     'analog_optimizer.backends.spectre_validation',   # generated profiles (recipes.py)

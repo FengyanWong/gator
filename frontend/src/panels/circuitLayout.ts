@@ -117,14 +117,18 @@ export function hintedLayout(view: Json): Record<string, Point> | null {
   for (const id of core) walk(id);
   const x: Record<string, number> = {};
   for (const id of order) { rows[rowOf[id]].push(id); x[id] = (rows[rowOf[id]].length - 1) * COLUMN; }
+  // Row membership and link weights stay fixed through the sweeps; only their neighbours' x positions change.
+  const across = Object.fromEntries(order.map(id => {
+    const others = (links[id] ?? []).filter(l => rowOf[l.to] !== rowOf[id]);
+    return [id, { others, total: others.reduce((s, l) => s + l.weight, 0) }] as const;
+  }));
   const gap = (a: string, b: string) => a[0] === 'd' && b[0] === 'd' ? COLUMN : a[0] === 'n' && b[0] === 'n' ? COLUMN * 0.55 : COLUMN * 0.78;
   for (let sweep = 0; sweep < 8; sweep++) {
     const sequence = sweep % 2 ? [...rows.keys()].reverse() : [...rows.keys()];
     for (const r of sequence) {
       const wish: Record<string, number> = {};
       for (const id of rows[r]) {
-        const others = (links[id] ?? []).filter(l => rowOf[l.to] !== r);
-        const total = others.reduce((s, l) => s + l.weight, 0);
+        const { others, total } = across[id];
         wish[id] = total ? others.reduce((s, l) => s + l.weight * x[l.to], 0) / total : x[id];
       }
       rows[r].sort((a, b) => wish[a] - wish[b] || x[a] - x[b]);
@@ -203,10 +207,12 @@ export function hintedLayout(view: Json): Record<string, Point> | null {
   // ends - the one with the fewest links steps sideways: a loosely attached net moves, a transistor in its column stays.
   const degree: Record<string, number> = {};
   for (const w of wires) if (w.role !== 'bulk') { degree[`d:${w.device}`] = (degree[`d:${w.device}`] ?? 0) + 1; degree[`n:${w.net}`] = (degree[`n:${w.net}`] ?? 0) + 1; }
+  // Every node is placed now. Moves replace coordinates, so keep the keys and read each node's current position.
+  const placedIds = Object.keys(positions);
   const step = (id: string, away: number) => {
     for (const side of [away, -away]) {
       const at = { x: positions[id].x + side * 72, y: positions[id].y };
-      if (!Object.entries(positions).some(([other, o]) => other !== id && Math.abs(o.x - at.x) < 100 && Math.abs(o.y - at.y) < 50)) { positions[id] = at; return true; }
+      if (!placedIds.some(other => { const o = positions[other]; return other !== id && Math.abs(o.x - at.x) < 100 && Math.abs(o.y - at.y) < 50; })) { positions[id] = at; return true; }
     }
     return false;
   };
@@ -215,7 +221,7 @@ export function hintedLayout(view: Json): Record<string, Point> | null {
     for (const w of wires) {
       const from = `d:${w.device}`, to = `n:${w.net}`, a = positions[from], b = positions[to];
       if (!a || !b || w.role === 'bulk') continue;
-      for (const id of Object.keys(positions)) {
+      for (const id of placedIds) {
         const q = positions[id];
         if (id === from || id === to) continue;
         if (!through(a, b, q, id)) continue;

@@ -267,7 +267,8 @@ def read_jsonl(path):
 def read_jsonl_tail(path, limit, *, block_size=65536):
     """Newest complete log records, without scanning the journal's entire history.
 
-    Display only: skip malformed log lines and an unfinished final line. Recovery still
+    Display only: skip malformed log lines and an unfinished final line. Discard that unfinished
+    suffix block by block instead of accumulating bytes that cannot be returned. Recovery still
     uses read_jsonl, which refuses a malformed complete record in the journal.
     """
     if limit <= 0:
@@ -291,11 +292,18 @@ def read_jsonl_tail(path, limit, *, block_size=65536):
             size = min(position, block_size)
             position -= size
             stream.seek(position)
-            pieces = (stream.read(size) + pending).split(b'\n')
-            pending = pieces.pop(0)
-            if at_end and pieces:
-                pieces.pop()                         # bytes after the final newline are not a committed record
+            block = stream.read(size)
+            if at_end:
+                if b'\n' not in block:
+                    del block
+                    continue                         # the whole block is an uncommitted tail: retain none of it
+                pieces = block.split(b'\n')
+                pieces.pop()                         # the suffix after its final newline is not a committed record
                 at_end = False
+            else:
+                pieces = (block + pending).split(b'\n')
+            del block
+            pending = pieces.pop(0)
             for line in reversed(pieces):
                 take(line)
                 if len(records) == limit:

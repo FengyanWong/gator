@@ -18,6 +18,7 @@ looked, not why it chose an action; it is a debugging aid, not evidence.
 """
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 
 from . import checkpoints as ckpt, model_structure, network_inputs
@@ -40,7 +41,7 @@ class GraphViewUnavailable(ValueError):
 
 def _actor(meta, weights):
     try:
-        actor = model_structure.rebuild_network(meta['contract'])['actor']
+        actor = model_structure.rebuild_network(meta['contract'], parts=('actor',))['actor']
     except Exception as exc:
         raise GraphViewUnavailable('The network of this save point could not be rebuilt from its recorded settings '
                                    f'({type(exc).__name__}), so it cannot be run here.') from exc
@@ -64,11 +65,9 @@ def _one_row(reader, table, column, value, columns=None, flushes=None):
     return None
 
 
-def _step(loader, wanted, saved_at):
-    """The archived transition to show: the asked evaluation, else the last one the save point had seen.
-    Only the column of evaluation numbers is read in full; the chosen transition and its state are single-row reads,
-    so the cost of a request does not grow with everything a long run archived."""
-    numbers = sorted(loader.reader.table('transitions', ['commit_seq'])['commit_seq'].to_pylist())
+def _legacy_step_number(reader, wanted, saved_at):
+    """The direct path for small archives; also retain the original errors on exceptional input."""
+    numbers = sorted(reader.table('transitions', ['commit_seq'])['commit_seq'].to_pylist())
     if not numbers:
         raise GraphViewUnavailable('This run kept no archive of the states the network saw ("Transition archive" was '
                                    'off in its output settings, or it recorded no evaluation yet), so there is nothing '
@@ -80,6 +79,71 @@ def _step(loader, wanted, saved_at):
         chosen = wanted
     else:
         raise GraphViewUnavailable(f'This run has no archived evaluation {wanted}: it holds {first} to {last}.')
+    return chosen, dict(first=first, last=last, count=len(numbers))
+
+
+def _small_step_archive(reader):
+    """Keep the direct read for at most 4,096 declared transition rows, without any extra filesystem reads."""
+    count = 0
+    for flush in reader.flushes:
+        if 'transitions' not in flush['parts']:
+            continue
+        rows = flush.get('rows')
+        rows = rows.get('transitions') if isinstance(rows, dict) else None
+        if type(rows) is not int or rows < 0:
+            return False
+        count += rows
+        if count > 4096:
+            return False
+    return True
+
+
+def _step_number(reader, wanted, saved_at):
+    """Long archives use bounded Arrow batches; only bounds and the selected number become Python values.
+
+    Small archives keep the direct read/sort: the 4,096-row cap bounds that allocation, not an optimal timing cutoff.
+    All published numbers are inspected, including duplicates and parts stored out of order. Null values take the old
+    path: Arrow reductions skip them, whereas the original Python sort/comparisons may reject that archive.
+    """
+    import pyarrow.compute as pc
+    if (_small_step_archive(reader)
+            or any(value is not None and type(value) is not int for value in (wanted, saved_at))):
+        return _legacy_step_number(reader, wanted, saved_at)
+    first = last = chosen = None
+    count, found, malformed = 0, False, False
+    with closing(reader.iter_batches('transitions', ['commit_seq'], batch_size=1024)) as batches:
+        for batch in batches:
+            numbers = batch['commit_seq']
+            if numbers.null_count:
+                malformed = True
+                break
+            if not len(numbers):
+                continue
+            bounds = pc.min_max(numbers).as_py()
+            low, high = bounds['min'], bounds['max']
+            first = low if first is None else min(first, low)
+            last = high if last is None else max(last, high)
+            count += len(numbers)
+            if wanted is None:
+                candidate = (high if saved_at is None or high <= saved_at else
+                             None if low > saved_at else
+                             pc.max(pc.filter(numbers, pc.less_equal(numbers, saved_at))).as_py())
+                if candidate is not None:
+                    chosen = candidate if chosen is None else max(chosen, candidate)
+            elif not found and low <= wanted <= high:
+                found = pc.any(pc.equal(numbers, wanted)).as_py()
+    if malformed or not count:
+        return _legacy_step_number(reader, wanted, saved_at)
+    if wanted is not None and not found:
+        raise GraphViewUnavailable(f'This run has no archived evaluation {wanted}: it holds {first} to {last}.')
+    return (wanted if wanted is not None else last if chosen is None else chosen), dict(first=first, last=last, count=count)
+
+
+def _step(loader, wanted, saved_at):
+    """The asked archived evaluation, else the last one the save point had seen.
+    Long-archive selection scans numbers in bounded batches; the chosen transition and state are single-row reads.
+    """
+    chosen, steps = _step_number(loader.reader, wanted, saved_at)
     # A transition is committed with its evaluation number, so it sits in the part of the flush whose range holds that
     # number; its state was written in that flush or an earlier one (once, with the first transition that saw it). One read
     # for the transition and the states newest first from there, instead of every part of a long run oldest first (the
@@ -95,7 +159,7 @@ def _step(loader, wanted, saved_at):
     if state is None:
         raise GraphViewUnavailable(f'The archive of this run holds no state for evaluation {chosen}.')
     loader._states = {state['state_id']: state}           # what TrajectoryLoader.observation() looks the state up in
-    return row, dict(first=first, last=last, count=len(numbers))
+    return row, steps
 
 
 def capture_attention(actor, run):

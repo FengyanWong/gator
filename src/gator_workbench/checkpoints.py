@@ -560,14 +560,25 @@ def unique_model_labels(rows) -> dict:
     """run_dir -> the name its model goes by, no two alike. Rows: dicts with run_dir, created_utc, model_label and
     renamed (as model_label_of gives them); a row without a model is left out. Renamed models keep their names (taken
     first); the others are taken oldest first, and a name already taken gets its first free number."""
-    taken, names = set(), {}
+    taken, names, next_suffix = set(), {}, {}
     ordered = sorted(rows, key=lambda row: (row.get('created_utc') or '', row['run_dir']))
     for renamed_pass in (True, False):
         for row in ordered:
             label = row.get('model_label')
             if not label or bool(row.get('renamed')) != renamed_pass:
                 continue
-            name = free_model_label(label, taken)
+            name = label
+            if label in taken:
+                own = re.fullmatch(r'(.+) \((\d+)\)', label)
+                base = own.group(1) if own else label
+                n = next_suffix.get(base, 2)
+                name = numbered(base, n)
+                while name in taken:
+                    n += 1
+                    name = numbered(base, n)
+                # Names are only added during this listing. Every smaller suffix for this base is still taken,
+                # so repeated labels need not scan them again. Other bases can fill holes: check each new candidate.
+                next_suffix[base] = n + 1
             taken.add(name)
             names[row['run_dir']] = name
     return names

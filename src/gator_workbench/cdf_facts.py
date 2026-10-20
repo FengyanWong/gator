@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import re
 
-from .cdf_text import cdf_number, query_fields, write_source
+from .cdf_text import _parse_cdf_fields, cdf_number, query_fields, write_source
 from .names import CADENCE_NAME
-from .pdk import CDF_UNITS, parse_cdf_text, skill_value
+from .pdk import CDF_UNITS, skill_value
 
 FORMAT = 'gator-cdf-facts-1'
 FILE = 'core_cdf.json'
@@ -105,8 +105,10 @@ def facts_skill(library, cell) -> str:
 def parse_facts(text, *, library, cell) -> dict:
     """The query's lines -> {format, library, cell, instances, masters, cells, leaves, rules, modified, conflicts}."""
     instances, masters, rules, conflicts, opened, after = {}, {}, {}, [], None, None
+    lines = []
     for raw in (text or '').splitlines():
         parts = query_fields(raw.rstrip('\r'))
+        lines.append(parts)
         tag = parts[0] if parts else ''
         if tag == 'INST' and len(parts) >= 4:
             instances[parts[1]] = dict(library=parts[2], cell=parts[3])
@@ -120,7 +122,7 @@ def parse_facts(text, *, library, cell) -> dict:
             opened = parts[1:]
         elif tag == 'AFTER' and len(parts) >= 2:
             after = skill_value(parts[1])
-    cdf = parse_cdf_text(text)
+    cdf = _parse_cdf_fields(lines)
     return dict(format=FORMAT, library=library, cell=cell, instances=instances, masters=masters, cells=cdf['cells'],
                 leaves=cdf['leaves'], rules=rules, conflicts=sorted(set(conflicts)),
                 opened_mode=skill_value(opened[0]) if opened else None, modified_after=bool(after))

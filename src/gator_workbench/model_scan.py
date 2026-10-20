@@ -87,7 +87,8 @@ def _assignments(text):
 
 def includes_of(text):
     """The files a model file includes, as written (relative to that file)."""
-    return sorted({m.group(1) for line in text.splitlines() for m in [_INCLUDE.match(_strip_comment(line))] if m})
+    # The anchored quoted prefix cannot contain an external comment; comments after it do not affect the match.
+    return sorted({m.group(1) for line in text.splitlines() for m in [_INCLUDE.match(line)] if m})
 
 
 def _define(into, name, item, models, subckts, duplicates):
@@ -251,25 +252,27 @@ def _paths(subckt, scan, start, end, blocked, *, behavioural=False):
     """Families of the elements on every simple path from pin `start` to pin `end` through internal nodes only.
     `behavioural`: also a behavioural source with controlling nodes (`bsource` with more than two), through the first two
     nodes its current flows between - labelled by what it sets, else 'behavioural' (record 7.298)."""
-    edges = []
+    adjacent = {}
     for element in subckt['elements']:
         if len(element['nodes']) == 2:
-            family = _element_family(element, subckt, scan)[0]
-            edges.append((element['nodes'][0], element['nodes'][1], family or 'other'))
+            family = _element_family(element, subckt, scan)[0] or 'other'
         elif behavioural and element['master'].lower() == 'bsource' and len(element['nodes']) > 2:
             family = _element_family(element, subckt, scan)[0]
-            edges.append((element['nodes'][0], element['nodes'][1], 'behavioural' if family in (None, 'other') else family))
+            family = 'behavioural' if family in (None, 'other') else family
+        else:
+            continue
+        a, b = element['nodes'][0], element['nodes'][1]
+        # Keep element order and both orientations, including duplicate entries for a self-loop.
+        adjacent.setdefault(a, []).append((b, family))
+        adjacent.setdefault(b, []).append((a, family))
     found, stack = [], [(start, (), frozenset([start]))]
     while stack and len(found) < 64:
         node, families, seen = stack.pop()
-        for a, b, family in edges:
-            for here, there in ((a, b), (b, a)):
-                if here != node:
-                    continue
-                if there == end:
-                    found.append(families + (family,))
-                elif there not in seen and there not in blocked and len(seen) < 32:
-                    stack.append((there, families + (family,), seen | {there}))
+        for there, family in adjacent.get(node, ()):
+            if there == end:
+                found.append(families + (family,))
+            elif there not in seen and there not in blocked and len(seen) < 32:
+                stack.append((there, families + (family,), seen | {there}))
     return found
 
 

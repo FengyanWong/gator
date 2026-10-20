@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import functools
+from heapq import nsmallest
 import os
 from pathlib import Path
 import shutil
@@ -263,11 +264,13 @@ class OutputRoots:
         current = self.resolve(path)
         entries = []
         if current.is_dir():
-            for child in sorted(current.iterdir()):
-                if child.is_dir() and not child.is_symlink() and not child.name.startswith('.'):
-                    entries.append(dict(name=child.name, path=str(child), exists=True))
+            with os.scandir(current) as children:
+                names = nsmallest(500, (child.name for child in children
+                                       if child.is_dir() and not child.is_symlink() and not child.name.startswith('.')),
+                                  key=Path)  # preserve native Path ordering, including Windows case folding
+            entries = [dict(name=name, path=str(current / name), exists=True) for name in names]
         parent = str(current.parent) if self.is_allowed(current.parent) else None
-        return dict(path=str(current), parent=parent, entries=entries[:500])
+        return dict(path=str(current), parent=parent, entries=entries)
 
     # ---------------------------------------------------------------- checks
     def check(self, path, *, create=False, verify_windows=True):

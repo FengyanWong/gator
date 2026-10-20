@@ -1,13 +1,16 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRequest } from '../store';
 import { api, copy, Json } from '../api';
-import { folderName, savedAt as when } from '../format';
+import { folderName, stamp } from '../format';
 import { childrenOf, designName, ENCODER_SHORT, historyOf, startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { CircuitGraphView } from './CircuitGraphView';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
 import { ModelStructure } from './ModelStructure';
+/** When, as the Runs and Tasks windows and the model's facts write it - 2026-10-20 13:09:10 (branch record SIF-17; the table
+ *  wrote "20 Oct, 13:09:10"). */
+const when = (utc?: string | null) => stamp(utc) ?? 'unknown time';
 
 /** The saved models of the RL model window (record 7.265; plan "RL model window: the load-model window, renewed"). A saved
  *  model is the RL model one run saved, in that run's folder; every save is a "save point". One row per saved model, with

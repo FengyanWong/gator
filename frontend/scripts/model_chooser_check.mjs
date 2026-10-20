@@ -192,6 +192,8 @@ await runChecks(browser, async () => {
     && await evaluate(`(${row(B)}).querySelector('td.model-net').title`) === 'gatv2 16/2/1', JSON.stringify(cellsOf(A)));
   check('MOCK models are tagged, the real one is not; a model saved without its replay restores "weights only"', cellsOf(A)[8] === 'MOCK' && cellsOf(D)[8] === 'real'
     && cellsOf(C)[9] === 'weights only' && cellsOf(A)[9] === 'full state', JSON.stringify([cellsOf(A)[8], cellsOf(D)[8], cellsOf(C)[9]]));
+  // Branch record SIF-17: "Last saved" as the Runs and Tasks windows write a time.
+  check('"Last saved" reads as the other windows write a time: 2026-10-20 13:09:10 (SIF-17)', /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(cellsOf(A)[6]), cellsOf(A)[6]);
   // Branch record SIF-13: a real task by its name, without "real:" (as since record 7.249); the key on hover.
   check('a real model\'s task is named without "real:", its key on hover (SIF-13)', cellsOf(D)[2] === 'gpdk045_ota5'
     && await evaluate(`(${row(D)}).children[2].title`) === 'real:gpdk045_ota5', JSON.stringify([cellsOf(D)[2], await evaluate(`(${row(D)}).children[2].title`)]));

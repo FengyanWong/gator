@@ -259,3 +259,13 @@ by you", "budget used up" (the key on hover) - and the Training tab's state badg
 `TrainingTab.tsx`. Check: `run_list_check` (the Details facts and the segments).
 
 **Checked.** `tsc` clean; `run_list_check` 119, `task_run_check` 31, `training_tab_check` 88.
+
+### SIF-17 The saved models' times as the other windows write them (2026-10-20)
+
+**Found.** The saved models' table wrote "Last saved" as "20 Oct, 13:09:10" (and its save points and the "newer save point"
+note so), where the Runs and Tasks windows, and since SIF-2 the model's facts, write "2026-10-20 13:09:10".
+
+**Changed** (`ModelChooser.tsx`): one way of writing a time. Check: `model_chooser_check` (76: the cell's form).
+
+**Checked.** `tsc` clean; `model_chooser_check` 76 (the table still fits 1100 px), `mode_suggestion_check` 20,
+`graph_view_check` 63.

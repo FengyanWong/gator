@@ -525,3 +525,5 @@ One row per commit, newest last.
 | `f6a989e` | 10-19 19:50 | 7.382 | TuRBO against transfer-learned SAC on three tasks (a trained model wins only near its training; TuRBO wins on the amplifier); TuRBO's memory growth fixed with malloc_trim after each proposal |
 | `c2177fa` | 10-19 19:59 | - | record only: names the commit of record 7.382, and the table rows for a5d3c5c and f6a989e |
 | `f87b8ce` | 10-20 13:20 | 7.384 | TuRBO and transfer-learned SAC combined: neither a TuRBO-data model nor a TuRBO warm start helps; three seeds on every row (session "Zenodo dataset encoder performance") |
+| `d6f6d81` | 10-20 13:21 | - | record only: names the commit of record 7.384, and the table rows for c2177fa and f87b8ce |
+| `9f761f7` | 10-20 14:10 | 7.364-7.371, 7.373-7.375, 7.377-7.379 | less work for the same results: streamed CSVs, projected and bounded reads, leaner inventories and ZIP exports, repeated parsing and sorting removed; the log rolled over twice (the user's Codex session) |

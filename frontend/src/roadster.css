@@ -178,6 +178,9 @@ table.editor td:has(> input[type="checkbox"]) { vertical-align: middle; }   /* a
 .status-hero-number { font: 300 46px/1 var(--f-label); } .status-hero-number .of { color: #8e8e96; }
 .status-hero-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 6px; }
 .status-hero-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+/* how the run stands (branch record SIF-3): red while it runs - the current run - white once completed, grey paused or stopped,
+   the error red when it failed; a completed run's red bar read as an error */
+.status-hero-bar.done > span { background: var(--text); } .status-hero-bar.rest > span { background: #8e8e96; } .status-hero-bar.bad > span { background: var(--bad-fill); }
 .key-tiles { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
 .key-tile { display: flex; flex-direction: column; padding: 7px 12px; border-radius: 10px; background: var(--field); }
 .key-tile-label { font-size: 12px; line-height: 1.35; color: var(--muted); }
@@ -196,3 +199,22 @@ button.active, .rl-modes .rl-mode.active, .task-folder.active, .training-head bu
 .tabs .task-save button.primary { border-color: var(--accent-fill); }
 .tabs button.run-list-button:hover { border-color: #5a5a61; }
 .sort-mark { color: var(--text); }
+
+/* ---- branch record SIF-3 ----------------------------------------------------------------------------------------------------
+   Run configuration's model line in the body font, two lines at most ("New model · Graph Transformer template · GT 48/4/4" was
+   cut to "New model · Graph Transform..." in a monospace font); its tooltip keeps the whole. */
+.rl-networks-row .net-short, .rl-networks-row .net-short.net-code { font-family: var(--f-body); white-space: normal; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+/* The scroll areas hold what is placed in them: an icon button's screen-reader label (.sr-only, absolute) at the end of a long
+   Run status was placed by the footer, 500 px below the window, and the whole page scrolled. */
+.bottom-body, aside.right { position: relative; }
+
+/* ---- branch record SIF-4: the Data tables keep one line per row - a JSON value too (best_so_far_metrics wrapped into a block
+   200 px tall); the whole value on hover, a click copies it */
+table.grid.small.data-table td.json-cell { white-space: nowrap; word-break: normal; overflow: hidden; text-overflow: ellipsis; max-width: 48ch; cursor: copy; }
+
+/* ---- branch record SIF-5: an issue in a row says what it is - its level and the first clause of its message, one line, the
+   whole message and its code on hover; it showed the code ("warning: equation_unit_unchecked") */
+table.editor td.issues .issue { max-width: 40ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+table.editor:has(td.issues > .issue) td.issues { min-width: 240px; }   /* room for the first words while a row has an issue */
+table.editor td.issues .issue b { font-weight: 600; margin-right: 3px; }

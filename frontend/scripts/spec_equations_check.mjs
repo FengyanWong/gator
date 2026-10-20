@@ -36,7 +36,9 @@ await runChecks(browser, async () => {
     return ${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].children[at].querySelector('input, select'); })()`;
   const cell = (row, name) => evaluate(`${CELL(row, name)}.value`);
   const type = (row, name, v) => page.setValue(`${CELL(row, name)}`, v, { event: 'input' });
-  const issues = row => evaluate(`[...${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].querySelectorAll('td.issues .issue')].map(d => d.textContent.trim())`);
+  // Branch record SIF-5: a row's issue shows its level and the first words of its message; its code is in data-code.
+  const issues = row => evaluate(`[...${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].querySelectorAll('td.issues .issue')].map(d => d.className.replace('issue ', '') + ': ' + d.dataset.code)`);
+  const issueWords = row => evaluate(`[...${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].querySelectorAll('td.issues .issue')].map(d => [d.textContent.trim(), d.title])`);
   const issuesUntil = async (row, wanted, absent = []) => {
     for (let i = 0; i < 60; i++) {
       const found = await issues(row);
@@ -109,6 +111,10 @@ await runChecks(browser, async () => {
   const row = async () => JSON.stringify(await saved1())
     + ' | page issues: ' + JSON.stringify(await evaluate(`[...document.querySelectorAll('.editors .issue')].map(d => d.textContent.trim())`));
   check('a formula is accepted: its unit is not checkable, its name is new to the registry', ok, JSON.stringify(found) + (ok ? '' : ' ' + await row()));
+  const words = await issueWords(1);
+  check('...each said in words - its level and the first clause of its message, the whole message and its code on hover (SIF-5)',
+    words.length >= 2 && words.some(([text, title]) => text === 'warning The unit of a formula is not checked' && title.endsWith('(warning: equation_unit_unchecked)'))
+    && words.every(([text, title]) => !text.includes(title.match(/: (\w+)\)$/)?.[1] ?? 'no code in the tooltip')), JSON.stringify(words));
   const sized = await saved1();
   check('typing the lower limit proposes a scale from it (0.5)', sized?.normalization_scale === 0.5, JSON.stringify(sized));
   await shot('spec_equation_formula.png');

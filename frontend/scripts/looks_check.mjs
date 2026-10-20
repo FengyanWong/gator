@@ -72,7 +72,8 @@ const PROBES_TAB = `[...document.querySelectorAll('.editors > .tabs > button')].
 /** Visible boxes whose own background is light (a pastel left over from the light look); a primary button is white on purpose. */
 const lightBoxes = session => session.evaluate(`(() => { const lum = ${LUMINANCE}, found = new Set();
   for (const e of document.querySelectorAll('body *')) {
-    if (e.closest('svg') || e.matches('button.primary') || !e.checkVisibility?.()) continue;
+    // a primary button's white fill, and a bar's (branch record SIF-3: a completed run's bar is white)
+    if (e.closest('svg') || e.matches('button.primary, .status-hero-bar > span') || !e.checkVisibility?.()) continue;
     const m = getComputedStyle(e).backgroundColor.match(/[\\d.]+/g); if (!m) continue;
     const [r, g, b, a = 1] = m.map(Number); if (a < 0.5) continue;
     if (lum([r, g, b]) > 0.35) found.add(e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\\s+/).join('.') : ''));
@@ -307,6 +308,9 @@ await runChecks(browser, async () => {
   check('the four ids (worker_id too) are id cells, a long one ending in "...", the whole value in its tooltip', cells.ids === 4 && cells.cut && cells.title.startsWith(ID), JSON.stringify(cells));
   check('the row is one line high, the word "baseline" uncut', cells.height <= cells.line + cells.pad + 8 && cells.phase <= cells.line + cells.pad + 8, JSON.stringify(cells));
   check('a time keeps its width, a JSON value has a cell of its own', cells.time === 'time-cell' && cells.json === 'json-cell', JSON.stringify(cells));
+  // Branch record SIF-4: a JSON value keeps to one line as well, its whole text on hover (it wrapped into a block 200 px tall).
+  const json = await evaluate(`(() => { const td = document.querySelector('footer table.data-table td.json-cell'); return td ? { ws: getComputedStyle(td).whiteSpace, over: getComputedStyle(td).textOverflow, title: td.title } : null; })()`);
+  check('...and keeps to one line, "..." where it is cut, the whole value on hover (SIF-4)', json?.ws === 'nowrap' && json?.over === 'ellipsis' && /^[\[{]/.test(json?.title ?? '') && /Click to copy$/.test(json?.title ?? ''), JSON.stringify(json));
   await evaluate(`document.querySelector('footer table.data-table td.id-cell').click()`);
   check('a click on an id copies the whole value', await evaluate(`window.__copied`) === ID);
 

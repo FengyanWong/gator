@@ -11,6 +11,11 @@ import { TableHead, useTableView } from './TableView';
 import { childrenOf, historyOf, startedFrom } from '../lineage';
 import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
 
+/** An experiment's folder by its name (branch record SIF-4): the folder's hash ("__ae6e1ae24977") only in the tooltip, and a
+ *  line may break after "-" or "_" - the column wrapped "r5-dffr-powermid-bodata-s2_ae6e1a / e24977" between any letters. */
+const experimentName = (folder?: string | null) => String(folder ?? '').replace(/__[0-9a-f]{8,}$/, '');
+const breakAt = (text: string) => text.split(/(?<=[-_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
+
 /** Which run the bottom tabs show (user request 2026-09-21): ONE button at the right end of the bottom tab strip, where
  *  the drop-down list of runs used to be. It only reads "Runs..."; the run that is shown is named as plain text to its
  *  LEFT. Pressing it opens the run window - a browser window of its own, drawn through a portal like the connection
@@ -310,7 +315,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
             <td className="wrap">{r.model_label ?? '-'}</td><td className="numeric">{r.seed}</td>
             <td className="numeric">{r.evaluations ?? '-'}{r.max_evaluations != null && ` / ${r.max_evaluations}`}</td>
             <td className="numeric">{r.first_feasible_eval_count != null ? `at ${r.first_feasible_eval_count}` : r.evaluations != null ? 'none' : '-'}</td>
-            <td className="wrap">{r.experiment}</td>
+            <td className="wrap-words run-experiment" title={r.experiment}>{breakAt(experimentName(r.experiment))}</td>
             <td>{r.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>
             <td>{RESUME[r.resumability] ?? '-'}</td>
             <td><button className="notes-link" aria-expanded={open === r.run_dir} onClick={() => toggle(r.run_dir)}>{open === r.run_dir ? 'Hide details' : 'Details'}</button></td>

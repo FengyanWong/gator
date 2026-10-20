@@ -257,7 +257,13 @@ switch are gone; every panel, button and field stands where it stood.
   tab directly"), its line naming the experiment and the end of the output root; a fold or unfold is kept in this browser.
 - The Training tab shows one run's key numbers as six compact tiles (two runs or more: the table, a row each), and Run
   status opens with the run at a glance: its state, the evaluations charged as a large number with a bar, and four numbers
-  (Spectre launches, learner updates, the first feasible design, the best design); the table below holds them all.
+  (Spectre launches, learner updates, the first feasible design, the best design); the table below holds them all. The bar
+  is red while the run runs (the current run), white once it completed, grey paused or stopped, the error red when it
+  failed (branch record SIF-3; a completed run's red bar read as an error).
+- The page never scrolls as a whole (SIF-3): the bottom panel's and the run column's scroll areas hold what is placed in
+  them - an icon button's screen-reader label at the end of a long Run status had been placed by the footer, below the
+  window, and the whole page scrolled about 500 px. Run configuration's model line is in the body font on two lines at
+  most (it was cut to one line in a monospace font); its tooltip keeps the whole.
 - Every pop-up window takes these colours from the page's stylesheet, which it copies when it opens. The Training charts
   draw the shown run in red, then white, blue and violet for compared runs (`--series-1` to `--series-4`); limits stay
   amber. The browser draws its own parts dark too (`color-scheme: dark`): scroll bars and the open list of a drop-down.

@@ -129,7 +129,8 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
         <span className="status-hero-state">{status.state}{status.stop_reason ? ` · ${status.stop_reason}` : ''}</span>
         <span className="status-hero-number">{b.charged}<span className="of"> / {b.max_evaluations}</span></span>
         <span className="hint">evaluations charged · {b.in_flight} in flight · {b.failed} failed</span>
-        <span className="status-hero-bar"><span style={{ width: `${b.max_evaluations ? Math.min(100, (100 * b.charged) / b.max_evaluations) : 0}%` }} /></span>
+        <span className={`status-hero-bar${status.state === 'completed' ? ' done' : ['failed', 'cancelled', 'interrupted'].includes(status.state) ? ' bad'
+          : ['paused', 'stopped'].includes(status.state) ? ' rest' : ''}`}><span style={{ width: `${b.max_evaluations ? Math.min(100, (100 * b.charged) / b.max_evaluations) : 0}%` }} /></span>
       </div>
       <div className="key-tiles">
         <KeyTile label="Spectre launches" value={b.launches} after={`retries ${b.retries} · cache hits ${b.cache_hits}`} />
@@ -211,8 +212,9 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
         // its full width, and no word is cut in two; a long hash used to wrap into a column of letters as tall as a paragraph.
         const object = typeof r[c] === 'object' && r[c] !== null, text = object ? JSON.stringify(r[c]) : num(r[c]);
         const id = /_id$/.test(c) && text !== '', time = /_(at|utc)$/.test(c);
-        return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : undefined} title={id ? `${text}\nClick to copy` : undefined}
-          onClick={id ? () => copy(text) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>}
+        // A JSON value keeps to one line too (branch record SIF-4): it wrapped into a block 200 px tall.
+        return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : undefined} title={id || object ? `${text}\nClick to copy` : undefined}
+          onClick={id || object ? () => copy(text) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>}
   </div>);
 }
 

@@ -164,7 +164,8 @@ await runChecks(browser, async () => {
   await evaluate(`${TECH}[0].querySelector('summary').click()`);
   check('one click shows them', await until(`${TECH}[0].open && ${TECH}[0].querySelector('code').checkVisibility() && ${TECH}[0].querySelector('code').textContent.includes('string_pattern_mismatch')`, 30));
   const EDITOR_ROWS = `[...document.querySelectorAll('section.editors table.editor tbody tr')]`;
-  const marked = await evaluate(`${EDITOR_ROWS}.map(tr => [tr.classList.contains('has-error'), tr.querySelector('td.issues').textContent])`);
+  // Branch record SIF-5: an issue shows words; its level is its class, its code its data-code.
+  const marked = await evaluate(`${EDITOR_ROWS}.map(tr => [tr.classList.contains('has-error'), [...tr.querySelectorAll('td.issues .issue')].map(d => d.className.replace('issue ', '') + ': ' + d.dataset.code).join('')])`);
   check('the Parameters editor marks exactly those rows', marked.length === 5 && marked.every(([bad, text], n) => bad === FOLLOWERS.includes(n) && text === (FOLLOWERS.includes(n) ? 'error: invalid_id' : '')), JSON.stringify(marked));
   await shot('issues-5-rejected.png');
   await revalidate(fixtures.rejectedOld);

@@ -65,3 +65,57 @@ the user's real data (the branch on 5174, a VCO run loaded from the Runs window)
 bonus ... -0.0248"; "artifact_manifest.json / 159.2 KiB / 2026-10-16 18:21:18"; the facts "Trained on mscr_vco_lin_c",
 "Saved 2026-10-16 18:21:11", "Worst hard-spec share 0.5", "Restorable full state"; the log's newest line at 18:21:12 (it
 said 17:21:12); no console error. Pictures: `artifacts/local/reviews/design-loop-2026-10-20/sif2/`.
+
+### SIF-3 The page never scrolls as a whole; a completed run's bar is not red; the model line reads whole (2026-10-20; from the design survey)
+
+**Found.** With a run in the bottom panel the whole page scrolled about 500 px past the window: two icon buttons'
+screen-reader labels (`.sr-only`, absolutely placed) at the end of a long Run status were placed by the footer - the bottom
+panel's scroll area was not a positioned box - so they reached y = 1577 in a 1050 px window (found by measuring every box's
+scroll height: `artifacts/local/reviews/design-loop-2026-10-20/probe_scroll.mjs`). Run status's bar was red for every run,
+red that since record 7.372 means "look here": a completed run's bar read as an error. Run configuration's model line was
+cut to one line in a monospace font ("New model · Graph Transform...").
+
+**Changed** (`roadster.css`, `RunTabs.tsx`): the bottom panel's and the run column's scroll areas are positioned, so they hold
+what is placed in them; the bar is red while the run runs, white once completed, grey paused or stopped, the error red when it
+failed; the model line in the body font, two lines at most (its tooltip keeps the whole). Check: `room_check` (the page does
+not scroll and the scroll areas are positioned; a completed run's bar is white; the model line's font and lines). Docs:
+`docs/workbench.md` (§ The page's look and layout), `docs/functionality-reference.md` (Run status).
+
+**Checked.** `tsc` clean. The whole browser suite of this branch with SIF-3 in it: 54 scripts, 2,197 checks passed;
+the one that failed, `looks_check`'s "no light box is left", took the white bar of a completed run for a left-over of the light
+look - a bar's fill is now let through as a primary button's is. `room_check` 21 with the new checks: the page 1050 px in a
+1050 px window, both scroll areas positioned, the bar "status-hero-bar done" in the text's white, the model line in Segoe UI
+on two lines. With the user's real data (branch on 5174, a VCO run loaded): the page 1050 px tall where it was 1578; the model
+line "Fine-tune mscr_vco_lin_c (6) · save point 800 evaluations" on two lines; the bar white. Pictures:
+`artifacts/local/reviews/design-loop-2026-10-20/sif3/`.
+
+### SIF-4 Tables keep one line per row: experiment names, JSON values (2026-10-20; from the design survey)
+
+**Found.** The Runs window's Experiment column broke names anywhere ("r5-dffr- / powermid- / bodata- / s2_ae6e1a /
+e24977"), making each row five lines tall; its folder's 12-letter hash was most of the text. The Data tables wrapped JSON
+values (`best_so_far_metrics`, `reward_components`) into blocks up to 200 px tall, so a row filled the panel.
+
+**Changed.** `RunList.tsx`: the experiment by its name, the hash ("__ae6e1ae24977") only in the tooltip, a line broken only
+after "-" or "_". `RunTabs.tsx` + `roadster.css`: a JSON cell is one line with "...", its whole value on hover, a click copies
+it - as id cells already were (record 7.158). Docs: `docs/functionality-reference.md` (Runs..., Data tables).
+
+**Checked.** `tsc` clean; `run_list_check` 119, `looks_check` 61 (with a new check: a JSON cell keeps to one line, "..." and
+its whole value on hover). With the user's real data: the Runs window's experiments "r5-dffr-powermid-bodata-s2" (the folder
+with its hash in the tooltip), those rows 66 px tall where they were about 100; the Data tables' rows 32 px each where the
+first was 213. Pictures: `artifacts/local/reviews/design-loop-2026-10-20/sif45/`.
+
+### SIF-5 An issue in a row says what it is, not its code (2026-10-20; from the design survey)
+
+**Found.** The editors' Issues column wrote each issue as its level and code - "warning: equation_unit_unchecked",
+"info: spec_adds_registry_entry" on every formula row of the VCO task's Specs - the words only in the tooltip.
+
+**Changed.** `Editors.tsx` (`issueHead`): the level, then the first clause of the message ("warning The unit of a formula
+is not checked"), one line with "..." (`roadster.css`); the whole message and "(warning: equation_unit_unchecked)" on hover;
+the code stays in the issue's `data-code`. Checks: `spec_equations_check` (reads the level and the code from the issue; the
+words and the tooltip), `blocking_issues_check`. Docs: `docs/functionality-reference.md` (N blocking issue(s)).
+
+**Checked.** `tsc` clean; `spec_equations_check` 32 (a new check: the words, and the code only in the tooltip),
+`blocking_issues_check` 39, and `editor_columns`, `reliability`, `room`, `sheet`, `find_fill_copy`, `typing`,
+`unsaved_rows`, `task_rows` - 501 checks in the twelve scripts SIF-3 to SIF-5 touch. With the user's real data (the VCO
+task's Specs): "warning The unit of a formula is not checked", "info 'f_center_hz' is new to the result registry ...";
+the Issues column takes 240 px while a row has an issue, so the first clause shows whole.

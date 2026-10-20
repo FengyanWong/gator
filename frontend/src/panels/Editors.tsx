@@ -32,6 +32,10 @@ const LABELS: Record<string, Record<string, string>> = {
     direction_after_feasible: 'Objective', soft_weight: 'Soft weight', active: 'Active', basis: 'Basis' },
 };
 
+/** An issue in a row by the first clause of its message (branch record SIF-5): "The unit of a formula is not checked", where the
+ *  row said "equation_unit_unchecked"; the whole message and the code stay in its tooltip. */
+const issueHead = (message?: string | null) => String(message ?? '').split(/(?<=[.:;])\s/)[0].replace(/[.:;]$/, '');
+
 /** The table's room under which entering a cell folds the bottom panel (record 7.372): about four rows and the heading. */
 const CRAMPED_PX = 200;
 
@@ -631,7 +635,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                 : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
                     fixed={fixedOf(row, c)} off={offOf(row, c)} unit={QUANTITY[tab]?.includes(c.name) ? effectiveUnit(row) : undefined}
                     stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true })} saved={saved} />}</td>; })}
-              <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} title={i.message}>{i.level}: {i.code}</div>)}</td>
+              <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} data-code={i.code}
+                title={`${i.message}\n(${i.level}: ${i.code})`}><b>{i.level}</b> {issueHead(i.message)}</div>)}</td>
             </tr>; })}</tbody>
         </table>
       </div>

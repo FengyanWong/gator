@@ -222,3 +222,9 @@ table.editor td.issues .issue b { font-weight: 600; margin-right: 3px; }
 /* ---- branch record SIF-9: a cell that holds more than it shows says so - "main-inverter NMOS..." - while it is not being edited
    (the formula bar and the cell itself show all of it once entered) */
 table.editor td input:not([type="checkbox"]):not(:focus) { text-overflow: ellipsis; }
+
+/* ---- branch record SIF-11: the Runs window's Mode cell names what the run was, its design under it */
+table.run-table td .run-design { display: block; }
+/* the Runs window's fifteen columns fit a 1500 px window with real names: its wrapping cells may be narrower (they were 85 px at
+   least, and the table 1302 px in its 1234 px) */
+.run-window table.run-table td.wrap, .run-window table.run-table td.wrap-words { min-width: 5em; }

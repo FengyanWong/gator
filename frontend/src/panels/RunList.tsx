@@ -8,13 +8,20 @@ import { bytes, clock, durationTenths as span, folderName, RUN_STATE_CLASS as ST
 import { isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
-import { childrenOf, historyOf, startedFrom } from '../lineage';
+import { childrenOf, designName, historyOf, startedFrom } from '../lineage';
 import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
 import { MODE_NAME } from './rlModelText';
 
 /** An experiment's folder by its name (branch record SIF-4): the folder's hash ("__ae6e1ae24977") only in the tooltip, and a
  *  line may break after "-" or "_" - the column wrapped "r5-dffr-powermid-bodata-s2_ae6e1a / e24977" between any letters. */
 const experimentName = (folder?: string | null) => String(folder ?? '').replace(/__[0-9a-f]{8,}$/, '');
+/** What a run was, in the RL model window's words (branch record SIF-11): New model, Fine-tune, Evaluate only - a baseline
+ *  simulation, a calibration and an offline training by their own names (a baseline's mode is "scratch", which read as a new
+ *  model) - and, for a run that trains or evaluates a model, its design ("GraphGPS"; a run does not say CircuitGPS's version). */
+const runMode = (r: Json) => r.run_kind === 'baseline_preflight' ? 'Baseline' : r.run_kind === 'calibration' ? 'Calibration'
+  : r.run_kind === 'offline_pretraining' ? 'Offline training' : r.mode === 'resume' ? 'Resume' : MODE_NAME[r.mode] ?? r.mode ?? '';
+const runDesign = (r: Json) => (['baseline_preflight', 'calibration'].includes(r.run_kind) || !r.encoder ? ''
+  : designName({ encoder_type: r.encoder, architecture_version: r.network?.architecture_version }));
 const breakAt = (text: string) => text.split(/(?<=[-_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 
 /** Which run the bottom tabs show (user request 2026-09-21): ONE button at the right end of the bottom tab strip, where
@@ -52,7 +59,7 @@ const variables = (list: Json) => Array.isArray(list) ? list.map((v: Json) => `$
 // `state`: what the page's own status poll says now - the list row keeps the state of its last read ("starting").
 // The run shown, left of Runs...: its start, task, Mode (as the RL model window names it), seed and state, set apart by "·"
 // as the page's other lines are (branch record SIF-6: "2026-10-16 16:32:51 | mscr_vco_lin_c | scratch seed0 | completed").
-const label = (r: Json, state?: string | null) => `${stamp(r.created_utc) ?? 'unknown time'} · ${taskOf(r)} · ${MODE_NAME[r.mode] ?? r.mode}, seed ${r.seed} · ${state ?? r.state ?? 'not started'}${r.mock ? ' · MOCK' : ''}`;
+const label = (r: Json, state?: string | null) => `${stamp(r.created_utc) ?? 'unknown time'} · ${taskOf(r)} · ${runMode(r)}, seed ${r.seed} · ${state ?? r.state ?? 'not started'}${r.mock ? ' · MOCK' : ''}`;
 const RESUME: Record<string, string> = { full_state: 'yes', weights_only: 'model only', none: 'no' };
 
 /** The "Finished" cell. A run at rest has the end of its last segment; a run that is working has none; a worker that
@@ -72,7 +79,7 @@ const COLUMNS: Column[] = [
   { key: 'duration', title: 'Duration', help: 'How long the run was actually working. The time it sat paused is not counted; "Details" shows it.', value: r => r.active_seconds ?? null },
   { key: 'state', title: 'State', help: 'How the run stands, and under it why it stopped.', value: r => r.state ?? '' },
   { key: 'task', title: 'Task', help: 'The task (circuit and its targets) the run optimizes.', value: r => taskOf(r) },
-  { key: 'mode', title: 'Mode', help: 'scratch = from random weights; fine_tune / frozen / resume = from a saved model.', value: r => r.mode ?? '' },
+  { key: 'mode', title: 'Mode', help: 'New model = from random weights; Fine-tune and Evaluate only = from a saved model; Baseline, Calibration and Offline training by their names. Under it, the design of the network the run trains or evaluates (GraphGPS, RGCN, ...).', value: r => `${runMode(r)} ${runDesign(r)}` },
   { key: 'from', title: 'Started from', help: 'Where the run\'s model came from: "template GT" = a new model made from an encoder\'s template; "ota7t (2) @ 420" = the saved model it loaded and the save point (its evaluations), a link to that run; "offline: 22 runs" = a model trained offline on recorded runs; "-" = a baseline or a calibration, which loads none.',
     value: (r, byDir) => startedFrom(r, byDir).text },
   { key: 'model', title: 'Saved model', help: 'The name of the RL model this run saves; every model under the output folder has one of its own, so a name already given gets a number. Empty for a run that saves none (a baseline, LLM only).', value: r => r.model_label ?? null },
@@ -268,7 +275,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   const copyPath = (text: string) => (popup ?? window).navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
 
   const current: Json = runs.find(r => r.run_dir === runDir) ?? null;
-  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, r.model_label, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folderName(r.run_dir),
+  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, runMode(r), runDesign(r), r.model_label, `seed${r.seed}`, r.state, r.stop_reason, r.experiment, r.mock ? 'mock' : 'real', folderName(r.run_dir),
     folders.data.folders[folders.of(r.run_dir)]].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
   // Only while the window is open: the page redraws on every status poll, and a closed window needs no sorted list.
@@ -311,8 +318,8 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
               && <div className="hint task-folder-label">{folders.data.folders[folders.of(r.run_dir)]}</div>}</td>
             <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{end.text}</td>
             <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && ' so far'}</td>
-            <td><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint">{r.stop_reason}</div>}</td>
-            <td className="wrap" title={r.task_id}>{taskOf(r)}</td><td>{r.mode}</td>
+            <td><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint">{breakAt(r.stop_reason)}</div>}</td>
+            <td className="wrap" title={r.task_id}>{taskOf(r)}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
             <td className="wrap">{origin.parent ? <button className="item-link" onClick={() => focusRun(origin.parent!)} title={`${origin.parent}\nShow the run it started from.`}>{origin.text}</button> : origin.text}
               {origin.missing && <span className="hint" title="That run is not under this output folder."> (gone)</span>}</td>
             <td className="wrap">{r.model_label ?? '-'}</td><td className="numeric">{r.seed}</td>

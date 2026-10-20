@@ -176,3 +176,21 @@ choosing RGCN keeps its one model, All designs brings the seven back). Docs: `do
 models (the branch on 5174): "All designs | GraphGPS (212) | Graph Transformer (109) | RGCN (27) | Parameter-group attention
 (24) | CircuitGPS v2 (13) | CircuitGPS v3 (13) | GATv2 (13)"; CircuitGPS v2 chosen, 13 rows, each "CircuitGPS v2 48/4/4 ·
 RWSE". Pictures: `artifacts/local/reviews/design-loop-2026-10-20/sif10/`.
+
+### SIF-11 The Runs window says what each run was, and its design (2026-10-20; continuing SIF-1 for runs)
+
+**Found.** The Runs window's Mode column wrote the configuration's keys - "scratch", "fine_tune", "frozen" - where the RL
+model window says New model, Fine-tune, Evaluate only, and a baseline simulation (mode "scratch") read as a new model; no
+column said which network design a run trained, though the encoders are what the experiments compare. With the user's 549
+runs the table was 1302 px wide in its 1234 px at a 1500 px window (it scrolled sideways before this record too, by about
+40 px).
+
+**Changed** (`RunList.tsx`, `roadster.css`): the Mode cell - "New model", "Fine-tune", "Evaluate only", "Resume", or
+"Baseline", "Calibration", "Offline training" by the run's kind - with the design of the run's network under it (not for a
+baseline or a calibration; a run does not say CircuitGPS's version); the same words in the filter and in the label of the run
+shown (SIF-6); a stop reason may break after "_" and the window's wrapping cells may be 5em wide, so the table fits.
+
+**Checked.** `tsc` clean; `run_list_check` 119 (the fixture's row: "New model Graph Transformer"), `task_run_check` 31,
+`task_list_check` 79, `run_control_check` 101, `looks_check` 62. With the user's real runs (the branch on 5174): Baseline 85,
+Calibration 17, New model GraphGPS 129, Fine-tune GraphGPS 81, New model Graph Transformer 78, ... Offline training 23; the
+table 1234 px in its 1234 px.

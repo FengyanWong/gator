@@ -1009,3 +1009,13 @@ margin" stands beside the best design; the ended run's tile reads a count or "no
 reads "none" for its first passing design), `run_list_check` 122 (new: Details says "Concurrent Spectre jobs 2", no
 "Parallel simulations"), `connection_panel_check` 81, `model_chooser_check` 79, `dom_identity_check` 56, `save_now_check`
 25, `room_check` 22, `files_tab_check` 20; none flaky.
+
+**Review follow-up.** The review found one slip, in the Training tab: the test "unless its last read found its worker
+alive" applied to the shown run too, against what "Changed" above says. That read (`comparedState`) is written only for
+compared runs and never cleared, so a run compared while its worker lived and then shown, in the same tab, kept its old
+entry: once it ended without a passing design, Run status read "none" and the Training tab's "First passing design" went
+on reading "none yet" until the tab was made again - the text this record set out to fix. Now the compared read counts
+only for a run compared at that moment (`others`); the shown run goes by its status alone, as "Changed" says.
+`training_tab_check` has a new check of that case: the failed run compared while its answers say its worker lives, taken
+off, then picked in the run window, reads "none" (without the fix it read "none yet", seen failing first). `tsc` clean;
+`training_tab_check` 92.

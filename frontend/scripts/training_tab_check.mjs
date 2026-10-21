@@ -632,6 +632,20 @@ await runChecks(browser, async () => {
   const afterRemoved = await heapNow();
   check('a long run compared and taken off again: its rows are given back', compared && removed && withCompared - alone > 10 && afterRemoved - alone < 0.2 * (withCompared - alone),
     `${mb(alone)} -> ${mb(withCompared)} compared -> ${mb(afterRemoved)} taken off`);
+  // A run compared while its answers said its worker lived, then shown once its status says it ended (SIF-54 review): that
+  // old compared read held its "First passing design" at "none yet" for as long as the tab stayed. Taken off while still
+  // "alive", so its last compared read is the live one; picked in the run window, so the tab is not made again.
+  RUNS.failed.alive = true;
+  await page.setValue(COMPARE, RUNS.failed.dir);
+  const comparedLive = await until(`[...(${KEYS}).querySelectorAll('tbody tr')][1]?.cells[2]?.textContent === 'none yet'`, 60);
+  await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
+  await until(`!(${TRAINING}).querySelector('.training-compared')`, 30);
+  RUNS.failed.alive = undefined;
+  const pickedFailed = await pickRun(RUNS.failed) && await until(`/32 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 100);
+  check('a run compared while its worker lived, then shown once it ended: its "First passing design" reads "none"',
+    comparedLive && pickedFailed && await until(`(${KEYS})?.querySelectorAll('.key-tile .key-tile-value')[1]?.textContent === 'none'`, 40),
+    `${comparedLive ? '' : 'its compared row never read "none yet"; '}${JSON.stringify(await keyTiles())}`);
+  await pickRun(RUNS.live); await until(`/288 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 100);
   listRuns = false;
 
   // (the look switch that redrew the charts here went with the day look, record 7.360)

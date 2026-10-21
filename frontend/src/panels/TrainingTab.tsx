@@ -297,8 +297,9 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const state: string | undefined = status?.state;
   // "none yet" only while a run can still pass (branch record SIF-54: an ended run said it too), as Run status's tile: the
   // shown run by its status, a compared one by its row in the run list - unless its last read found its worker alive.
+  // That read counts only while the run is compared (SIF-54 review): a run compared live and then shown keeps its old entry.
   const noPassWord = (dir: string) => { const s: Json = status?.run_dir === dir ? status : rowOf.get(dir);
-    return s && ENDED.includes(s.state) && !s.worker_alive && !comparedState[dir]?.live ? 'none' : 'none yet'; };
+    return s && ENDED.includes(s.state) && !s.worker_alive && !(others.includes(dir) && comparedState[dir]?.live) ? 'none' : 'none yet'; };
   const empty = own.answers > 0 && evaluations === 0 && updates === 0 && !others.length;
   const candidates = runs.filter(r => r.run_dir !== runDir && !others.includes(r.run_dir));
   const unavailable = charts.filter(c => !c.available);

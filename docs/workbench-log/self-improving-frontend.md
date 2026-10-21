@@ -1102,3 +1102,17 @@ it)."; new: after Resume it reads "Continuing <folder> in its own folder.", afte
 check, written against the first run's folder instead of the later start it lets go of), `calibration_check` 38,
 `calibration_save_check` 22, `run_list_check` 122, `task_run_check` 31, `launch_recovery_check` 20, `save_now_check` 25,
 `consistency_check` 14, `callouts_check` 8 (the MOCK line keeps its frame with the room for the mark); none flaky.
+
+**Review follow-up.** The review found two slips, both real. The tooltip "Click to close (selecting text keeps it)." held
+only for a drag: the first click of a double click - the usual way to take one word, and a run's folder name is one word -
+comes before anything is selected, so it closed the line before the second. The line now closes 0.5 s after a click
+(Windows' default double-click time; the page cannot read the user's own), and only if nothing is selected by then; a
+second or third click cancels the close, and a newer message is never closed by an older click. The tooltip stays as it
+was, now true. The line's tooltip also showed over its "Technical details", which a click opens without closing the line;
+the fold has an empty title of its own now, which keeps the line's tooltip off it. `run_control_check` has two new checks:
+a real double click (CDP, clickCount 1 then 2) on the folder's name in the Start line selects
+"fixture_task__scratch__seed0__0001" and the line stays, and a single click then closes it; with the old click handler put
+back, the first failed (the line was gone). `save_now_check` has one: the refusal line's fold carries `title=""`, the line
+"Click to close (selecting text keeps it).". `tsc` clean; `run_control_check` 110, `save_now_check` 26,
+`calibration_check` 38, `calibration_save_check` 22, `run_list_check` 122, `task_run_check` 31, `launch_recovery_check`
+20, `consistency_check` 14, `callouts_check` 8; none flaky.

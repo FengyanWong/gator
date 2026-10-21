@@ -106,6 +106,12 @@ await runChecks(browser, async () => {
   refuseNext = { code: 'checkpoints_off', message: 'FIXTURE: This run was started with "Model checkpoints" switched off, so it keeps no saved model.' };
   await evaluate(`${SAVE}.click()`);
   check('a refusal is shown as the backend worded it', await banner('This run was started with "Model checkpoints" switched off'));
+  // Review of branch record SIF-56: the line's "Click to close" tooltip is not shown over its "Technical details", which a
+  // click opens without closing the line - the fold has an empty title of its own.
+  const fold = await evaluate(`(() => { const b = document.querySelector('.banner'), d = b?.querySelector('details');
+    return d ? { line: b.title, has: d.hasAttribute('title'), title: d.title, summary: d.querySelector('summary')?.textContent } : null; })()`);
+  check('... its "Technical details" has an empty title of its own, so the line\'s "Click to close" is not shown over it', fold?.line === 'Click to close (selecting text keeps it).'
+    && fold.has && fold.title === '' && fold.summary === 'Technical details', JSON.stringify(fold));
   check('... and the button is back at once', await until(`${SAVE}.textContent === 'Save now' && !${SAVE}.disabled`, 40));
 
   // ---- the Run status tab: no Save now of its own, the request in its "Last checkpoint" row ------------------------------------------------

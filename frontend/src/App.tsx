@@ -29,6 +29,10 @@ import { useTaskRunFollow } from './page/taskRunFollow';
 import { keep, oncePerBrowser, readKept } from './kept';
 import { CIRCUIT_SHOWN_KEY } from './contract';
 
+/** How long a click on the message line waits for a second one before it closes the line: Windows' default double-click
+ *  time (the page cannot read the user's own). */
+const DOUBLE_CLICK_MS = 500;
+
 /** A configuration the backend cannot even read (HTTP 422): one blocking issue per field it names, in its plain words
  *  (schema.describe_errors), at the place the validation report uses (parameters[1].variable_id), so the list names the
  *  row and the editor marks it. Before, all of them were one issue with pydantic's list as JSON (user report 2026-09-21).
@@ -90,6 +94,19 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const toggleCircuit = useCallback(() => setCircuitShown(now => !now), []);      // stable: the editors are memoised (record 7.275)
   useEffect(() => keep(s => { if (circuitShown) s.setItem(CIRCUIT_SHOWN_KEY, 'shown'); else s.removeItem(CIRCUIT_SHOWN_KEY); }), [circuitShown]);
   const [message, setMessage] = useState<Json>(null);
+  // The message line closes a moment after a click, not on it (review of branch record SIF-56): the first click of a double
+  // click - how one word, such as a run's folder name, is taken - comes before anything is selected, and closed the line
+  // before the second. A second or third click cancels the close; a selection made by then (a drag, a double click) keeps
+  // the line, and a click that only collapses one closes it.
+  const closing = useRef(0);
+  const closeMessage = (clicks: number) => {
+    window.clearTimeout(closing.current);
+    if (clicks > 1) return;
+    const shown = message;                                                         // a newer message is not closed by this click
+    closing.current = window.setTimeout(() => {
+      if (!window.getSelection()?.toString()) setMessage((now: Json) => (now === shown ? null : now));
+    }, DOUBLE_CLICK_MS);
+  };
   // Two output defaults changed (record 7.280): a save point every 200 evaluations (50 before) and the data tables written
   // every 64 (16 before). A draft keeps the values it was made with, so, once per browser, a draft that still holds an old
   // default exactly gets the new one - as one Undo step, and said; a value chosen otherwise is kept.
@@ -245,12 +262,13 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       </header>
       {/* The message line: a click closes it, a click that ends a selection of its text (to copy it) keeps it, and its tooltip
           says so, under the full path when the message names a run by its folder (branch record SIF-56: dragging across the
-          line to copy it took it away). The close mark is drawn by CSS (roadster.css), so the line's text is the message alone. */}
+          line to copy it took it away). The close mark is drawn by CSS (roadster.css), so the line's text is the message alone.
+          "Technical details" opens without closing the line, so its empty title keeps the line's tooltip off it (review of SIF-56). */}
       {message && <div className={`banner ${message.level}`} title={[message.title, 'Click to close (selecting text keeps it).'].filter(Boolean).join('\n')}
-        onClick={() => { if (!window.getSelection()?.toString()) setMessage(null); }}>
+        onClick={e => closeMessage(e.detail)}>
         {/* A start refused by the check before every run: its steps say it all (what differs, what to do). */}
         {message.detail?.code === 'consistency' && message.detail.report?.steps ? <CheckSteps result={message.detail.report} refused />
-          : <>{message.text}{(message.detail?.code || message.detail?.report) && <details onClick={e => e.stopPropagation()}><summary>Technical details</summary>
+          : <>{message.text}{(message.detail?.code || message.detail?.report) && <details title="" onClick={e => e.stopPropagation()}><summary>Technical details</summary>
             <pre>{[message.detail.code && `code: ${message.detail.code}`, message.detail.report && JSON.stringify(message.detail.report, null, 1)].filter(Boolean).join('\n')}</pre></details>}</>}</div>}
       <aside className="left">
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}

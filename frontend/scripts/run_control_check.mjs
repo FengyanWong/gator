@@ -212,6 +212,17 @@ await runChecks(browser, async () => {
     && (await evaluate('window.__clip')) === DIR && await until(`${RUN_FOLDER}.textContent === ${JSON.stringify(DIR)}`, 40), await evaluate(`${RUN_FOLDER}.textContent`));
   await evaluate(`delete navigator.clipboard.writeText`);
   await shot('run-2-running.png');
+  // Review of branch record SIF-56: a double click on the folder's name in the line takes that word and keeps the line (its
+  // first click, before anything was selected, closed it); a single click still closes it, a moment later.
+  const word = await evaluate(`(() => { const t = [...(document.querySelector('.banner')?.childNodes ?? [])].find(n => n.nodeType === 3 && n.data.includes(${JSON.stringify(FOLDER)}));
+    if (!t) return null; const r = document.createRange(), i = t.data.indexOf(${JSON.stringify(FOLDER)}); r.setStart(t, i); r.setEnd(t, i + ${FOLDER.length});
+    const q = r.getBoundingClientRect(); return { x: q.x + q.width / 2, y: q.y + q.height / 2 }; })()`);
+  if (word) { await page.clickAt(word, { count: 2 }); await sleep(900); }
+  const picked = await evaluate(`window.getSelection().toString()`);
+  check('a double click on the run\'s folder in the line takes that word, and the line stays (review of SIF-56)',
+    !!word && picked === FOLDER && (await look()).banner === `FIXTURE MOCK DATA: nothing was started. Started ${FOLDER}.`, JSON.stringify([word, picked, (await look()).banner]));
+  if (word) await page.clickAt(word);
+  check('... and a single click closes it', await until(`!document.querySelector('.banner')`, 20));
 
   // ---- 3. Pause -> "Pausing..." -> "Resume" -----------------------------------------------------------------------------
   sim.steps = [{}, {}, { state: 'pausing', stop_reason: 'user_pause' }, {}, { state: 'paused' }, {}, { alive: false }];   // the run answers late, then finishes its files

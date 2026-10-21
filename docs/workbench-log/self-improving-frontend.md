@@ -1860,3 +1860,12 @@ evaluations." and "... at 40 evaluations.", New run like this "Fine-tune from fi
 evaluations, seed 2"; new, its fixture's best design has a reward, and the tile reads "infeasible reward -0.25 · hard violation
 0.125". `looks_check` 74 (73): new, the fixture's time cell reads its local time with "2026-10-03T15:15:01.076735+00:00 (UTC)"
 on hover. `task_run_check` 31, `room_check` 27, `dom_identity_check` 56. None flaky.
+
+**Review follow-up.** The review of 23ae964 found two slips, both real. (1) `frontend/scripts/reward_v2_frontend_check.mjs`
+(stand-alone, not run) still looked for "at N evaluations charged" in the First nominal feasibility row, which `firstCost` now
+writes "used": it looks for "used", one as one, as SIF-18 kept its words in step. (2) The rewritten lines built "evaluations"
+by hand, so a baseline whose design is feasible read "First full-plan feasibility: at 1 evaluations used". `firstCost`
+(RunTabs.tsx), Details' First feasibility (RunList.tsx), `pointWords` (runWindowActions.ts) and `pointText` (lineage.ts, the
+same form) now go through `plural()`, and the launches beside them too (the same words as before). Not changed: the First
+feasible tile's "at N evaluations" (this entry's "Not changed"). Checked: `tsc` clean, `export_check` 31, `run_list_check` 128,
+`model_chooser_check` 83.

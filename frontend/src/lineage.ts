@@ -5,7 +5,7 @@
 // or encoder labels.
 
 import { Json } from './api';
-import { folderName } from './format';
+import { folderName, plural } from './format';
 
 /** The encoders' short names, as Run configuration writes them (GraphGPS, not "GPS", since branch record SIF-1). */
 export const ENCODER_SHORT: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GraphGPS', group_cross_attention: 'Group attention', circuit_gps: 'CircuitGPS' };
@@ -26,8 +26,8 @@ export const pointEvaluations = (id?: string | null): number | null => {
 };
 /** A save point in words, as its table's Evaluations column and the model line count it: "at 420 evaluations"; the id itself
  *  when it holds no count ("latest"), "none" for none. The id goes in a tooltip (branch record SIF-67: the RL model window
- *  named it "save point ckpt-00000800-003f07c8" beside a table that says 800). */
-export const pointText = (id?: string | null) => { const n = pointEvaluations(id); return n != null ? `at ${n} evaluations` : (id || 'none'); };
+ *  named it "save point ckpt-00000800-003f07c8" beside a table that says 800); one as one (SIF-76 review). */
+export const pointText = (id?: string | null) => { const n = pointEvaluations(id); return n != null ? `at ${plural(n, 'evaluation')}` : (id || 'none'); };
 
 /** `at`: the evaluations the text names after "@", so a caller does not name that save point again (branch record SIF-67). */
 export type Origin = { text: string; parent?: string; missing?: boolean; at?: number | null };

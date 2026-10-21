@@ -4,7 +4,7 @@ import { Blocked, PopupPortal } from './popupParts';
 import { RUNS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { tasksShared } from '../shared';
-import { bytes, clock, durationTenths as span, folderName, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, short, sig, stamp, stopWords } from '../format';
+import { bytes, clock, durationTenths as span, folderName, plural, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, short, sig, stamp, stopWords } from '../format';
 import { isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
@@ -161,7 +161,7 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     ['Budget', b ? `${b.charged} used / ${b.max_evaluations} (completed ${b.completed}, failed ${b.failed}, in flight ${b.in_flight}, remaining ${b.remaining})` : null],
     ['Spectre launches', b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''} (retries ${b.retries}, cache hits ${b.cache_hits})` : null],
     ['Learner updates', info ? String(info.learner_updates ?? 0) : null],
-    ['First feasibility', info ? (first ? `at ${first.first_feasible_eval_count} evaluations used (${first.completed_count} completed, ${first.spectre_launches} launch${first.spectre_launches === 1 ? '' : 'es'})` : 'not reached') : null],
+    ['First feasibility', info ? (first ? `at ${plural(first.first_feasible_eval_count, 'evaluation')} used (${first.completed_count} completed, ${plural(first.spectre_launches, 'launch', 'launches')})` : 'not reached') : null],   // one as one (SIF-76 review)
     ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics, best.metric_units)} · violation ${typeof best.violation === 'number' ? sig(best.violation) : '-'}` : 'none') : null],   // not shouted (SIF-19); three digits (SIF-44)
     ['Best design variables', best?.variables ? variables(best.variables) : null],
     ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}` : 'none (random weights)') : null],

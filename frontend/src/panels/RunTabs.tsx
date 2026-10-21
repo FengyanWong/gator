@@ -115,9 +115,10 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   if (!status) return <p className="hint">{!runDir ? 'No run selected.' : error ? `The status of this run could not be read: ${error}` : 'Reading the run...'}</p>;
   const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection, saved = status.persistence;
   const firstNominal = b?.first_nominal_feasible;
-  // "used", as the Continue... form and the Abort question count the budget (branch record SIF-76: here alone it read "charged")
+  // "used", as the Continue... form and the Abort question count the budget (branch record SIF-76: here alone it read "charged");
+  // one as one (SIF-76 review: a baseline feasible at once read "at 1 evaluations used")
   const firstCost = (event: Json) => event
-    ? `at ${event.first_feasible_eval_count} evaluations used (dispatch #${event.dispatch_index}, ${event.completed_count} completed, ${event.in_flight_count} in flight, ${event.spectre_launches} launch${event.spectre_launches === 1 ? '' : 'es'})`
+    ? `at ${plural(event.first_feasible_eval_count, 'evaluation')} used (dispatch #${event.dispatch_index}, ${event.completed_count} completed, ${event.in_flight_count} in flight, ${plural(event.spectre_launches, 'launch', 'launches')})`
     : 'not observed';
   const executedReward = status.summary?.reward;
   // The facts below in the page's words (branch record SIF-38): a number to three digits, a value in its unit as the editors

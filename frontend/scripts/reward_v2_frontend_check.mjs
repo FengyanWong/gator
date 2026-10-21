@@ -44,7 +44,9 @@ try {
   }
   await page.evaluate("Array.from(document.querySelectorAll('footer .tabs button')).find(e => e.textContent === 'Run status').click()", true);
   check('best is explicitly nominal feasible only', await page.until(`${row('.status-grid', 'Best design')}?.startsWith('Nominal feasible only')`, 150));
-  check('actual first nominal cost', await page.evaluate(`${row('.status-grid', 'First nominal feasibility')}?.includes('at ${status.budget.first_nominal_feasible.first_feasible_eval_count} evaluations charged')`));
+  // "used", one as one (branch record SIF-76 and its review: it read "evaluations charged")
+  const firstNominal = status.budget.first_nominal_feasible.first_feasible_eval_count;
+  check('actual first nominal cost', await page.evaluate(`${row('.status-grid', 'First nominal feasibility')}?.includes('at ${firstNominal} evaluation${firstNominal === 1 ? '' : 's'} used')`));
   check('no invented full-plan feasibility', await page.evaluate(`${row('.status-grid', 'First full-plan feasibility')} === 'not observed'`));
   check('actual complete condition count', await page.evaluate(`${row('.status-grid', 'Conditions evaluated / planned')} === '5 / 5'`));
   check('nominal and adverse values distinguished', await page.evaluate(`!!${row('.status-grid', 'Nominal values')} && !!${row('.status-grid', 'Worst applicable values')}`));

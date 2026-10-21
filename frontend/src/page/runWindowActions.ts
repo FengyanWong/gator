@@ -3,7 +3,7 @@
 // (plan-refactoring C5).
 import { useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, plainError } from '../api';
-import { dateTime, folderName, runTitle } from '../format';
+import { dateTime, folderName, plural, runTitle } from '../format';
 import { pointText } from '../lineage';
 import type { Newest } from '../newest';
 import type { BottomTab } from '../panels/BottomPanel';
@@ -68,7 +68,8 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
   const nameOf = (point: SavePoint) => modelNameAt(runs, point.run_dir);
   // A save point by its evaluations, as the model line and the RL model window name it (branch record SIF-76: the messages
   // read "Fine-tune from X (6) @ 800" beside the model line's "save point 800 evaluations"; SIF-67 did the RL model window).
-  const pointWords = (point: SavePoint) => `save point ${point.evaluations != null ? `at ${point.evaluations} evaluations` : pointText(point.checkpoint_id)}`;
+  // One as one (SIF-76 review).
+  const pointWords = (point: SavePoint) => `save point ${point.evaluations != null ? `at ${plural(point.evaluations, 'evaluation')}` : pointText(point.checkpoint_id)}`;
   const sinceText = (since: string | null, what: string) => since
     ? ` The task was saved again after ${what} began (${dateTime(since)}): the RL model window's check says whether the model still fits.` : '';
   /** Load run: its task, the model it ended with (in a Mode that loads one) and its results - one Undo step for the task and

@@ -1156,3 +1156,11 @@ String() of the backend's value), `reward_block_check` 32 (the warning must end 
 template's values" takes it away; the first run stopped after its 22nd check, all the changed ones passed, on "the
 DevTools session closed (its window went away)" at the check's own `window.close()`; alone it passed whole: a flake),
 `model_chooser_check` 79, `network_inputs_check` 8, `encoder_models_check` 24, `room_check` 22.
+
+**Review follow-up.** The review found one slip, real: `docs/network-presets.md`, which the Templates row of the
+functionality reference names as the place to read about the feature, still described the box in the old words - the
+"This run / Saved default" table, "Use saved defaults" and "Save as defaults" ("remembers them for this encoder"), in its
+paragraph on an existing configuration and again under "The three tested values". Both now name the column "Template"
+and the buttons "Use the template's values" / "Save into the template", as `docs/workbench.md` does; the paragraph's
+"RL networks..." window and the later "RL networks window" (renamed RL model in 7.265) say RL model. A change to that
+doc only: no page code or check text names it, so `tsc` and the checks were not rerun.

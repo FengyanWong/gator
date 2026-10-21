@@ -44,11 +44,12 @@ Now the backend keeps **one setting per network type**:
 * The **heads** box is greyed out with "ignored by this encoder" unless the network is
   `graph_transformer` or `gatv2`. Only those two have attention heads.
 
-An existing configuration retains its explicit values on reload, even if the saved defaults differ. In the
-**RL networks...** window, **In use: current run settings** and the **This run / Saved default** table identify that
-case, including differences under Advanced. A new run uses the current values. **Use saved defaults** replaces the
-configuration's network and Advanced values without writing preferences; **Save as defaults** keeps the current
-values and remembers them for this encoder. A preset's name is shown as in use only when its saved values match.
+An existing configuration retains its explicit values on reload, even if the template's values differ. In the
+**RL model...** window, **In use: current run settings** and the **This run / Template** table identify that
+case, including differences under Advanced. A new run uses the current values. **Use the template's values** replaces
+the configuration's network and Advanced values without writing preferences; **Save into the template** keeps the
+current values and saves them into that template (branch record SIF-57; the box said "saved defaults" until then). A
+preset's name is shown as in use only when its saved values match.
 
 **The one thing to keep in mind:** the papers ran thousands of simulations per run; GATOR's real runs
 used tens to hundreds. A published batch size of 128 with 1,000 warm-up steps means that in a 60-evaluation run
@@ -172,7 +173,7 @@ record 7.199), so a shorter from-scratch run is close to a random search.
 * The schema defaults stay as they were: a configuration without an Advanced block, a test and a saved model keep
   their meaning. Static validation warns (`sac_values_random_search`) when a run that trains has fewer than 4 updates
   per evaluation or a starting temperature above 0.05, and (`budget_below_sac_learning`) when a from-scratch SAC run
-  has fewer than 300 evaluations; the RL networks window says the first where the values are set.
+  has fewer than 300 evaluations; the RL model window says the first where the values are set.
 * Every starting preset holds these three and the other training numbers of the runs that learned (record 7.192);
   until then a published value stayed (`rgcn`: one update per step from the authors' code, the attention presets'
   `gamma` 0.9). The published network sizes were measured with them on ngspice and on Spectre (records 7.199 and
@@ -180,7 +181,7 @@ record 7.199), so a shorter from-scratch run is close to a random search.
 * An encoder whose saved values were the GATOR baseline (the old baseline saved before the change, or the baseline
   with the three values saved on 2026-10-05) is read as its starting preset since record 7.191;
   `network_settings.json` is not rewritten. A configuration already open keeps its own numbers: the window's
-  **This run / Saved default** table shows the differences, and **Use saved defaults** applies the preset.
+  **This run / Template** table shows the differences, and **Use the template's values** applies the preset.
 
 `(4)` = ignored by that network; kept at 4 because the number is written into every checkpoint.
 

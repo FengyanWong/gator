@@ -1019,3 +1019,45 @@ only for a run compared at that moment (`others`); the shown run goes by its sta
 `training_tab_check` has a new check of that case: the failed run compared while its answers say its worker lives, taken
 off, then picked in the run window, reads "none" (without the fix it read "none yet", seen failing first). `tsc` clean;
 `training_tab_check` 92.
+
+### SIF-55 The Connection window in words: its parts, its failures, its times (2026-10-21; from the readability audit)
+
+**Found.** Before a real Start, Calibration or Corner check whose connection test could not tell, the page asked
+"Connection layers are UNKNOWN: tunnel, session_readiness, spectre_license.\nUnknown is not OK. Proceed anyway?" - the
+backend's layer keys, and no word on what to do instead. The Connection window's Details table listed the same keys and
+the reason codes as its text ("session_readiness | UNKNOWN | never_checked"). A failed Connect SSH or Set up local bridge
+read "Connect failed: ssh_failed - TimeoutError: ...", code first. Every connection error was the browser's own text, so
+a backend that had stopped showed "Failed to fetch", in red under the header's Connection pill; that note floats over the
+row under the header (record 7.182) and stayed until a later action in the window went well, with no way to close it.
+The Folders section did the same with its errors. With a run active, the Details footer printed "last successful bridge
+interaction: 2026-10-21T08:14:02.512+00:00".
+
+**Changed** (`format.ts`, `launch.ts`, `Connection.tsx`, `ConnectionFolders.tsx`, `roadster.css`): format.ts has
+`LAYER_WORDS` / `layerWords` for the backend's ten layer keys (its two lists in connection.py): bridge package, connection
+settings, SSH tunnel, bridge in Virtuoso, Virtuoso session, Spectre, Spectre license, SSH login, ngspice program, test
+simulation; a key it does not know reads with spaces for its underscores. The question reads "These parts of the
+connection are not known to work: Virtuoso session, Spectre license.\nCancel, then press "+ Spectre / license" in the
+Connection window; or OK to go ahead anyway." - "Test connection" when no Spectre part is among them, and "go ahead"
+since Resume and Continue ask it too. Details shows each layer and reason in words, the key in its tooltip ("Virtuoso
+session | UNKNOWN | never checked"); the state badges keep the pill's words. A failed Connect reads "Connect failed: ssh
+failed - TimeoutError: ..." ("Set-up failed: ..." on this machine), the code in the line's tooltip. The audit proposed
+the diagnostic alone, without the reason; it stays after the reason here, since the bridge's diagnostic can be as bare as
+"installed 1.2.3" (`bridge_version_unverified`) or "missing settings: ['daemon_host']". Errors in the window, under the
+pill and in Folders are said as the rest of the page says them (`plainError`): "The workbench backend did not answer: it
+may have stopped (start it again with gator_workbench.cli serve), or the connection to it dropped."; the backend's own
+refusals read as before. The note under the pill has "Click to close" and a pointer, and a click closes it; the next
+failure shows it again. The footer gives the bridge interaction in local time, "2026-10-21 09:14:02", with "UTC: ..." in
+its tooltip. Left as they were: api.ts `gateText` ("Virtuoso cannot be reached (tunnel)", pinned by
+`virtuoso_source_check` and `working_copy_check`), the badges' mixed case (shared with the pill, pinned throughout
+`connection_panel_check`), and "Last test took 0.4 s" (the audit's optional rounding). The other places of XC-11 and XC-13
+(Corner check, Output settings, circuit diagnostics) belong to other batches. The docs quote none of these texts.
+
+**Checked.** `tsc` clean; `connection_panel_check` 85 (Details' first column now reads "connection settings", "SSH
+login", "ngspice program", "test simulation" with the keys as tooltips; new: a failed set-up reads "Set-up failed: bridge
+version unverified - installed 0.0.FIXTURE Next step: FIXTURE next step." with `bridge_version_unverified` in its
+tooltip; an old result's reasons read "stale result" with `stale_result` in the tooltip, and an active run's footer reads
+the local time with "UTC: ...+00:00" in its tooltip; a page-open test with no answer at all puts "The workbench backend
+did not answer ..." under the pill, with "Click to close" and a pointer, and a click takes it away),
+`corner_check_check` 37 (its fixture names `spectre_license` now, and the question must read "These parts of the
+connection are not known to work: Spectre license." and point at "+ Spectre / license"), `virtuoso_source_check` 95,
+`working_copy_check` 29, `looks_check` 64; none flaky.

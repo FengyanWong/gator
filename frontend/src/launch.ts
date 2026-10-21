@@ -17,7 +17,7 @@ import { useRequest } from './store';
 import { restingFor, type RunControl } from './runState';
 import { BLOCKING_LEVELS, LAUNCH_KEY } from './contract';
 import { keepInTab, readKeptInTab } from './kept';
-import { folderName, plural } from './format';
+import { folderName, layerWords, plural } from './format';
 import type { NextModel } from './panels/rlModelText';
 
 export type Action = 'start' | 'calibration' | 'resume' | 'continue';
@@ -47,6 +47,13 @@ const newRequestId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now().to
 const realQuestion = (report: Json) => `This runs REAL simulations${report?.task_key ? ` of ${report.task_key}` : ''} (the page had taken it for a MOCK run).\n`
   + `Authorize a total budget of ${report?.requested_max_evaluations != null ? plural(report.requested_max_evaluations, 'candidate evaluation') : 'its candidate evaluations'}?`;
 
+/** The question when the connection test could not say whether parts the run needs work (their state unknown, busy or not
+ *  checked): the parts in words, and the button that tests them - "+ Spectre / license" for the Spectre parts, which "Test
+ *  connection" leaves out. It read "Connection layers are UNKNOWN: session_readiness, spectre_license. Unknown is not OK.
+ *  Proceed anyway?" (branch record SIF-55). */
+const connectionQuestion = (uncertain: string[]) => `These parts of the connection are not known to work: ${uncertain.map(layerWords).join(', ')}.\n`
+  + `Cancel, then press ${uncertain.some(layer => layer.startsWith('spectre')) ? '"+ Spectre / license"' : '"Test connection"'} in the Connection window; or OK to go ahead anyway.`;
+
 /** The backend never starts on a guess: it refuses, creates nothing, and names what it needs - the budget of a REAL
  *  simulation, a model trained on another task, connection layers it could not check. Each question is put to the
  *  user once and the request is repeated with the answers. Returns null when the user said no. A Mode is named as its
@@ -64,7 +71,7 @@ export async function launchWithConsent(send: (flags: Json) => Promise<Json>, op
       if (detail.code === 'real_authorization_required')
         [flag, question] = ['authorize_real_simulation', options.real ? options.authorizeText : realQuestion(detail.report)];
       else if (detail.code === 'confirm_transfer' && options.transfer) [flag, question] = ['confirm_transfer', `${detail.report?.reason}\n\nLoad this model for a NEW task? (Fine-tune makes a new run that starts from this model; the model's own run is not changed.)`];
-      else if (detail.code === 'connection_gate_acknowledge') [flag, question] = ['acknowledge_unknown_connection', `Connection layers are UNKNOWN: ${detail.report?.uncertain?.join(', ')}.\nUnknown is not OK. Proceed anyway?`];
+      else if (detail.code === 'connection_gate_acknowledge') [flag, question] = ['acknowledge_unknown_connection', connectionQuestion(detail.report?.uncertain ?? [])];
       if (!flag || flags[flag]) throw e;                                          // not a question, or already answered
       if (!window.confirm(question)) return null;
       flags[flag] = true;

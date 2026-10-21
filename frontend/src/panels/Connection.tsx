@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { CONNECTION_WINDOW } from '../contract';
-import { api, Json } from '../api';
+import { api, Json, plainError } from '../api';
 import { connectionProfilesChanged, connectionProfilesShared } from '../shared';
 import { ConnectionFolders } from './ConnectionFolders';
 import { Icon } from './Icons';
-import { CONNECTION_STATE as STATE_LABEL, timeOrDateTime as testedAt } from '../format';
+import { CONNECTION_STATE as STATE_LABEL, layerWords, stamp, timeOrDateTime as testedAt } from '../format';
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$/;
 const SUGGESTED_NAME: Record<string, string> = { virtuoso_ssh: 'lab', virtuoso_local: 'virtuoso-local', ngspice_local: 'ngspice-local', ngspice_ssh: 'ngspice-ssh' };
@@ -50,16 +50,18 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   const [created, setCreated] = useState<Json>(null);
   const [folders, setFolders] = useState(false);                // the Folders section (record 7.168)
 
-  const loadSetup = () => api.connectionSetup().then(setSetup).catch(e => setError(e.message));          // locates and names; contacts nothing
+  // Every error here is said as the rest of the page says it (plainError): a backend that did not answer showed the
+  // browser's "Failed to fetch" under the button (branch record SIF-55).
+  const loadSetup = () => api.connectionSetup().then(setSetup).catch(e => setError(plainError(e)));          // locates and names; contacts nothing
   // The connection file's active profile fills an empty choice by itself: not an Undo step (nobody chose it).
   const loadProfiles = () => connectionProfilesShared().then(p => {
     setProfiles(p); if (!profileId && p.active) setProfileId(p.active, false);
     if (p.profiles.length === 0) { setAdding(true); loadSetup(); }
-  }).catch(e => setError(e.message));
+  }).catch(e => setError(plainError(e)));
   useEffect(() => { loadProfiles(); }, []);
 
   // Each session keeps its own result and action state, including while its sibling is connecting.
-  const { busy, run } = useAsyncAction(e => setError(e.message), () => setError(null));
+  const { busy, run } = useAsyncAction(e => setError(plainError(e)), () => setError(null));
   const [busyFor, setBusyFor] = useState<Record<string, string>>({});
   const revisions = useRef<Record<string, number>>({});
   const nextRevision = (id: string) => (revisions.current[id] = (revisions.current[id] ?? 0) + 1);
@@ -68,7 +70,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     setBusyFor(b => ({ ...b, [id]: name }));
     setSessionErrors(e => ({ ...e, [id]: null }));
     try { await action(revision); }
-    catch (e) { if (revisions.current[id] === revision) setSessionErrors(errors => ({ ...errors, [id]: (e as Error).message })); }
+    catch (e) { if (revisions.current[id] === revision) setSessionErrors(errors => ({ ...errors, [id]: plainError(e) })); }
     finally { setBusyFor(b => { const rest = { ...b }; delete rest[id]; return rest; }); }
   };
   // A status is shown only when it is not older than the one shown: a cached read that comes back after a test must not put
@@ -109,7 +111,7 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         const revision = revisions.current[id] ?? 0;
         api.connectionStatus(id).then(answer => {
           if (live) showStatus(id, answer);
-        }).catch(e => { if (live && (revisions.current[id] ?? 0) === revision) setSessionErrors(errors => ({ ...errors, [id]: e.message })); });
+        }).catch(e => { if (live && (revisions.current[id] ?? 0) === revision) setSessionErrors(errors => ({ ...errors, [id]: plainError(e) })); });
       }
     }
     return () => { live = false; };
@@ -160,7 +162,10 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
           : <span className={`badge state-${overall}`} title={multipleSessions && !pinned ? 'Sessions that passed their last test: runs go to whichever session is free. Each session is in Connection.' : status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{overallText}</span>)}
       </button>
       {blocked && <Blocked />}
-      {!popup && (error || (profileId && sessionErrors[profileId])) && <p className="error">{error ?? sessionErrors[profileId as string]}</p>}
+      {/* The note floats over the row under the header (record 7.182), so a click closes it: it stayed until a later action
+          in the window went well (branch record SIF-55). The next failure shows it again. */}
+      {!popup && (error || (profileId && sessionErrors[profileId])) && <p className="error" title="Click to close"
+        onClick={() => { setError(null); if (profileId) setSessionErrors(errors => ({ ...errors, [profileId]: null })); }}>{error ?? sessionErrors[profileId as string]}</p>}
     </section>
   );
 
@@ -184,14 +189,16 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     const loadCommand = ciw ? `setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")\n${ciw.load}` : '';
     const replaceCommand = ciw ? `setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")\n${ciw.replace_running_daemon.join('\n')}` : '';
     const linkUp = local ? !!ciw : status?.layers?.some((l: Json) => l.layer === 'tunnel' && l.state === 'ok');
+    // Each part and reason in words, its key in the tooltip: the table listed "session_readiness | UNKNOWN | never_checked"
+    // (branch record SIF-55). The state badges keep the words the button's pill shows.
     const details = open && status && (
       <table className="grid small">
         <thead><tr><th>Layer</th><th>State</th><th>Reason</th></tr></thead>
         <tbody>
           {status.layers.map((l: Json) => (
             <tr key={l.layer} title={l.diagnostic ?? ''}>
-              <td>{l.layer}</td><td><span className={`badge state-${l.state}`}>{STATE_LABEL[l.state] ?? l.state}</span></td>
-              <td>{l.reason_code ?? ''}{l.diagnostic && <div className="hint">{l.diagnostic}</div>}
+              <td title={l.layer}>{layerWords(l.layer)}</td><td><span className={`badge state-${l.state}`}>{STATE_LABEL[l.state] ?? l.state}</span></td>
+              <td>{l.reason_code && <span title={l.reason_code}>{l.reason_code.replace(/_/g, ' ')}</span>}{l.diagnostic && <div className="hint">{l.diagnostic}</div>}
                 {l.details?.next_step && <div className="hint">Next step: {l.details.next_step}</div>}
                 {l.details?.note && <div className="hint">{l.details.note}</div>}</td>
             </tr>))}
@@ -199,7 +206,9 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         <tfoot><tr><td colSpan={3} className="hint">Last test took {status.duration_seconds ?? '-'} s. {family === 'ngspice'
           ? 'A test installs, starts and changes nothing. Its one simulation is the built-in three-element test circuit, never one of yours.'
           : 'A test observes and never starts, restarts or stops the tunnel, the daemon or Virtuoso. It is not the costed baseline simulation.'}
-          {status.run_active && ` A run is active; last successful bridge interaction: ${status.last_successful_bridge_interaction_utc ?? 'none yet'}.`}</td></tr></tfoot>
+          {/* in local time, the backend's UTC in the tooltip (branch record SIF-55: it printed "2026-10-21T08:14:02.512+00:00") */}
+          {status.run_active && <span title={status.last_successful_bridge_interaction_utc ? `UTC: ${status.last_successful_bridge_interaction_utc}` : undefined}>
+            {` A run is active; last successful bridge interaction: ${stamp(status.last_successful_bridge_interaction_utc) ?? status.last_successful_bridge_interaction_utc ?? 'none yet'}.`}</span>}</td></tr></tfoot>
       </table>
     );
     const result = summary && <div className={`status-line level-${summary.level}`}>
@@ -218,10 +227,12 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
             {local ? (mine === 'connect' ? 'Setting up...' : linkUp ? 'Set up local bridge (already done)' : 'Set up local bridge')
               : (mine === 'connect' ? 'Connecting... (can take a minute)' : linkUp ? 'Connect SSH (already up)' : 'Connect SSH')}</button>
         </div>
-        {connected && <p className={connected.ok ? 'ok' : 'error'}>
+        {/* A failure reads in words, its code in the tooltip: it read "Connect failed: ssh_failed - TimeoutError: ..." (branch
+            record SIF-55). The reason stays in front of the bridge's diagnostic, which alone can be as bare as "installed 1.2.3". */}
+        {connected && <p className={connected.ok ? 'ok' : 'error'} title={connected.ok ? undefined : connected.reason_code ?? undefined}>
           {connected.ok ? (local ? (connected.action === 'already_running' ? 'The local bridge was already set up - left untouched.' : `Local bridge set up (${connected.duration_seconds} s).`)
             : (connected.action === 'already_running' ? 'SSH tunnel was already running - left untouched.' : `SSH tunnel started (${connected.duration_seconds} s).`))
-            : `${local ? 'Set-up' : 'Connect'} failed: ${connected.reason_code}${connected.diagnostic ? ` - ${connected.diagnostic}` : ''}`}
+            : `${local ? 'Set-up' : 'Connect'} failed: ${String(connected.reason_code ?? 'no reason given').replace(/_/g, ' ')}${connected.diagnostic ? ` - ${connected.diagnostic}` : ''}`}
           {connected.details?.next_step && <span className="hint"> Next step: {connected.details.next_step}</span>}</p>}
       </div>
 

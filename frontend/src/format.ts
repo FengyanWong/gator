@@ -81,6 +81,13 @@ export const TRAINING_STATE_CLASS: Record<string, string> = { completed: 'state-
 export const CONNECTION_STATE: Record<string, string> = {
   ok: 'OK', failed: 'FAILED', not_ready: 'NOT READY', not_applicable: 'n/a', not_checked: 'not checked', busy: 'BUSY', unknown: 'UNKNOWN',
 };
+/** A part ("layer") of a connection in words, as the Connection window's Details and a launch's question name it (branch
+ *  record SIF-55: "Connection layers are UNKNOWN: session_readiness, spectre_license"). The keys are the backend's two
+ *  layer lists (connection.py LAYERS, NGSPICE_LAYERS); one this list does not know reads with spaces for its underscores. */
+export const LAYER_WORDS: Record<string, string> = { bridge_package: 'bridge package', connection_profile: 'connection settings', tunnel: 'SSH tunnel',
+  daemon: 'bridge in Virtuoso', session_readiness: 'Virtuoso session', spectre: 'Spectre', spectre_license: 'Spectre license', ssh: 'SSH login',
+  ngspice: 'ngspice program', trial_run: 'test simulation' };
+export const layerWords = (layer: string) => LAYER_WORDS[layer] ?? layer.replace(/_/g, ' ');
 
 // ---- numbers (plan-refactoring C10, out of api.ts) ------------------------------------------------------------------------
 /** A size in bytes, in the largest binary unit under its size: 512 B, 1.5 KiB, 2.25 GiB. */

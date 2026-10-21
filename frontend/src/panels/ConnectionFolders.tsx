@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError, Json } from '../api';
+import { api, ApiError, Json, plainError } from '../api';
 
 const SIDES: [string, string][] = [
   ['local', 'On this machine (the workbench backend)'],
@@ -23,10 +23,11 @@ export function ConnectionFolders() {
     setValues(Object.fromEntries(answer.fields.map((f: Json) => [f.key, f.set_by_environment ? f.value : f.saved ?? f.default])));
   };
   // A server started before record 7.168 has no such route: said in words, like "Add a connection" does for an old server.
+  // Other errors as the rest of the page says them (plainError: "Failed to fetch" was shown as it came; branch record SIF-55).
   useEffect(() => {
     api.connectionDirectories().then(take, e => setError({ message: e instanceof ApiError && e.status === 404
       ? 'The workbench server that is running is older than this page and has no folder settings yet. Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Folders..." again.'
-      : e.message }));
+      : plainError(e) }));
   }, []);
   if (!shown) return (
     <div className="connection-add connection-folders">
@@ -41,7 +42,7 @@ export function ConnectionFolders() {
       const answer = await api.saveConnectionDirectories(Object.fromEntries(changed.map(f => [f.key, values[f.key].trim() || null])));
       take(answer); setSaved(answer);
     } catch (e) {
-      setError({ message: (e as Error).message, folder: e instanceof ApiError ? e.detail?.folder : undefined });
+      setError({ message: plainError(e), folder: e instanceof ApiError ? e.detail?.folder : undefined });
     } finally {
       setBusy(false);
     }

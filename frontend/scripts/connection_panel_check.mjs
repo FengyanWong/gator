@@ -79,7 +79,7 @@ const fixtures = {
     ciw: kindOf(id).family === 'ngspice' ? null : ciwFor(id),
     summary: { level: 'ok', headline: `FIXTURE: ${id} connected (canned answer, nothing was probed).`, broken_layer: null, next_step: null } }),
   old: id => ({ profile_id: id, ...described(id), scope: 'interactive', trigger: 'user', checked_utc: utc(Date.now() - 600000), duration_seconds: 0.4, age_seconds: 600,
-    stale: true, overall: 'unknown', run_active: false, layers: layersOf(id, 'unknown', 'stale_result'), ciw,
+    stale: true, overall: 'unknown', run_active: true, last_successful_bridge_interaction_utc: utc(Date.now() - 600000), layers: layersOf(id, 'unknown', 'stale_result'), ciw,
     summary: { level: 'unknown', headline: 'The last test is too old to trust - test again.', broken_layer: null, next_step: null } }),
   setup: { env_file: '/fixture/.env', env_file_exists: true, bridge_importable: true, bridge_site_packages: null, problems: [], can_create: true,
     kinds: KINDS.map(k => ({ ...k, can_create: k.kind !== 'virtuoso_local' || true, problems: [], note: `FIXTURE note for ${k.kind}`,
@@ -92,11 +92,15 @@ await runChecks(browser, async () => {
   const seen = []; let statusAnswer = fixtures.never; let live = false; const savedFolders = {};
   let holdNextCheck = false, heldCheck = null;                                    // one test answer kept back, to arrive late
   let lateHeadline = null;                                                        // ... with a headline of its own, when set
+  let failNextCheck = false, failNextConnect = null;                              // a test with no answer at all; a Connect that fails
   const answer = ({ requestId, request }) => {                                    // every connection request: log it, answer it here
     const url = new URL(request.url), name = url.pathname.replace('/api/connection/', '');
     const body = request.postData ? JSON.parse(request.postData) : null;
     seen.push({ method: request.method, name, body, at: Date.now() });
     if (live) return send('Fetch.continueRequest', { requestId });                // the last section only: a scratch backend answers
+    if (request.method === 'POST' && name === 'check' && failNextCheck) { failNextCheck = false; return send('Fetch.failRequest', { requestId, errorReason: 'ConnectionRefused' }); }
+    if (request.method === 'POST' && name === 'connect' && failNextConnect) { const failure = failNextConnect; failNextConnect = null;
+      return fulfil(requestId, 200, { connect: { ok: false, action: 'failed', duration_seconds: 0.3, ...failure }, status: fixtures.never(body.profile_id) }); }
     if (request.method === 'POST' && name === 'check' && holdNextCheck) {
       holdNextCheck = false;
       heldCheck = () => { const t = fixtures.tested(body.profile_id, body.scope);
@@ -228,6 +232,14 @@ await runChecks(browser, async () => {
   check('"Set up local bridge" sends one connect with the profile name and nothing else', pressed.length === 1 && pressed[0].name === 'connect' && JSON.stringify(pressed[0].body) === JSON.stringify({ profile_id: 'here' }), JSON.stringify(pressed.map(p => p.body)));
   check('its result is worded for this machine', (await text()).includes('Local bridge set up (1.2 s).') && (await buttons()).includes('Set up local bridge (already done)'));
   await shot('window', '.connection-window', 'connection-4-window-virtuoso-local.png');
+  // branch record SIF-55: a failed set-up reads in words, its code in the tooltip (it read "Set-up failed: bridge_version_unverified - ...")
+  failNextConnect = { reason_code: 'bridge_version_unverified', diagnostic: 'installed 0.0.FIXTURE', details: { next_step: 'FIXTURE next step.' } };
+  mark = seen.length;
+  await press('Set up local bridge (already done)');
+  await settle(mark);
+  const failedLine = await far.evaluate(`(() => { const p = ${WINDOW}.querySelector('.connection-session .step p.error'); return p && { text: p.textContent, title: p.title }; })()`);
+  check('a failed set-up says its reason in words, then the bridge\'s diagnostic and the next step, with the code in the tooltip', !!failedLine && !failNextConnect
+    && failedLine.text === 'Set-up failed: bridge version unverified - installed 0.0.FIXTURE Next step: FIXTURE next step.' && failedLine.title === 'bridge_version_unverified', JSON.stringify(failedLine));
 
   await select('sim');
   shown = await text();
@@ -244,8 +256,11 @@ await runChecks(browser, async () => {
   check('testing ngspice sends one interactive check of that connection', pressed.length === 1 && JSON.stringify(pressed[0].body) === JSON.stringify({ profile_id: 'sim', scope: 'interactive', trigger: 'user' }), JSON.stringify(pressed.map(p => p.body)));
   await press('Details');
   await sleep(300);
-  const rows = await far.evaluate(`[...${WINDOW}.querySelectorAll('table.grid tbody tr td:first-child')].map(td => td.textContent)`);
-  check('Details lists the four ngspice layers, and says the one simulation is the built-in test circuit', JSON.stringify(rows) === JSON.stringify(NGSPICE) && (await text()).includes('built-in three-element test circuit, never one of yours'), rows.join(', '));
+  // branch record SIF-55: the layers in words, each key in its tooltip (the column listed the keys)
+  const rows = await far.evaluate(`[...${WINDOW}.querySelectorAll('table.grid tbody tr td:first-child')].map(td => [td.textContent, td.title])`);
+  check('Details lists the four ngspice layers in words, each key in its tooltip, and says the one simulation is the built-in test circuit',
+    JSON.stringify(rows.map(r => r[1])) === JSON.stringify(NGSPICE) && JSON.stringify(rows.map(r => r[0])) === JSON.stringify(['connection settings', 'SSH login', 'ngspice program', 'test simulation'])
+    && (await text()).includes('built-in three-element test circuit, never one of yours'), JSON.stringify(rows));
   await shot('window', '.connection-window', 'connection-5-window-ngspice-local.png');
   await press('Hide');
 
@@ -389,6 +404,30 @@ await runChecks(browser, async () => {
   await select('sim');                                                        // a connection chosen later: its cached result, here an old one
   check('an old cached result is labelled as too old', /^tested at .* - too old to trust, shown as unknown$/.test(await hint()) && (await badge()) === 'UNKNOWN', `${await badge()} | ${await hint()}`);
   await shot('window', '.connection-window', 'connection-7-window-old-result.png');
+  // branch record SIF-55: a reason in words with its code in the tooltip ("stale_result"), and the time of the last bridge
+  // interaction of an active run in local time, its UTC in the tooltip (it printed the ISO text)
+  await press('Details'); await sleep(300);
+  const oldDetails = await far.evaluate(`(() => { const t = ${WINDOW}.querySelector('table.grid'), s = t?.querySelector('tfoot span');
+    return t && { reasons: [...t.querySelectorAll('tbody tr td:nth-child(3) > span')].map(x => [x.textContent, x.title]), foot: s?.textContent, tip: s?.title }; })()`);
+  check('Details gives each reason in words with its code in the tooltip, and an active run\'s last bridge interaction in local time with UTC in the tooltip',
+    !!oldDetails && oldDetails.reasons.length === NGSPICE.length && oldDetails.reasons.every(([words, key]) => words === 'stale result' && key === 'stale_result')
+    && /^ A run is active; last successful bridge interaction: \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.$/.test(oldDetails.foot ?? '') && /^UTC: \d{4}-\d\d-\d\dT.*\+00:00$/.test(oldDetails.tip ?? ''), JSON.stringify(oldDetails));
+  await press('Hide');
+
+  // ---- branch record SIF-55: a test the backend never answers is said in words under the button, and a click closes the note --------
+  await sleep(1500);                                                            // the page keeps its configuration 800 ms after the last change
+  failNextCheck = true;
+  await send('Page.reload'); await sleep(300); await loaded('sim');
+  await windowTarget(false); far.close();
+  const launcherNote = () => evaluate(`(() => { const p = document.querySelector('header .connection-launcher > p');
+    return p && { text: p.textContent, title: p.title, cursor: getComputedStyle(p).cursor }; })()`);
+  let note = null;
+  for (let i = 0; i < 50 && !(note = await launcherNote()); i++) await sleep(100);
+  check('a test with no answer says so in words under the button (not "Failed to fetch"), as a note a click closes', !failNextCheck && !!note
+    && note.text.startsWith('The workbench backend did not answer') && note.title === 'Click to close' && note.cursor === 'pointer', JSON.stringify(note));
+  await evaluate(`document.querySelector('header .connection-launcher > p').click()`); await sleep(300);
+  check('... and a click closes it', !(await launcherNote()), JSON.stringify(await launcherNote()));
+  await openWindow();
 
   // ---- two Virtuoso sessions under one connection: both visible, actions and late replies stay separate ----------
   await select('lab'); await sleep(1000);

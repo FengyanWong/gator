@@ -1619,3 +1619,11 @@ synthetic:gpdk045_ota5 · ...". `docs/workbench.md` (§ What Start would start):
 read "ota_relaxed" ("Next: ota_relaxed · New model · ..."), and when the rename is taken back all three read
 "fixture_ota" again. `mode_suggestion_check` 20 and `model_chooser_check` 83 still find "Next: synthetic:gpdk045_ota5 ·
 ...", unchanged. `run_control_check` 111, `project_help_check` 49. None flaky.
+
+**Review follow-up.** The review found one slip, in words only: the code is right. The new text in `docs/workbench.md`
+put the Virtuoso cell under "as the header's title names it", which holds for saved tasks only: for a cell read from
+Virtuoso the title shows the project's task name (or "no task chosen"), while the Next line shows library/cell, so the
+two still differ there. It now reads "the task (a saved task as the header's title names it: without its `real:` prefix,
+a renamed one by its new name - branch record SIF-71; or a Virtuoso cell as library/cell)". The comment over `nextTask`
+in `launch.ts` made the same claim ("The task as the title beside it names it"); it reads "A saved task ..." and says
+the cell is library/cell, which the title does not show. `tsc` clean. No check reads either text, so none was rerun.

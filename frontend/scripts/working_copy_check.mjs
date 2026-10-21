@@ -12,6 +12,7 @@
 //   - a copy the workbench made before that date keeps its record and its own line ("made by the workbench before");
 //   - "Read setup" reads AND fills Probes/Specs in one press, keeping the user's unit and optimizer settings, one Undo step
 //     (which also takes back what the page said); read again: the editors already say what the cell says; nothing written;
+//     a limit lands in the user's prefixed unit with exact digits (0.7 V = 700 mV, branch record SIF-69);
 //   - a test without outputs and a cell without a Maestro view take nothing and say what to do; a blocked gate and an older
 //     backend read plainly.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; WSLENV carries the URL into it):
@@ -41,16 +42,21 @@ const draft = () => ({ loaded: true, task_key: `virtuoso:${LIB}/${CELL}`, mock: 
 const SETUP_ROWS = {
   measurements: [
     { measurement_id: 'm_freq', analysis: 'tran', result_source: 'ade_output', source_name: 'freq', signal: 'frequency(VT("/OUT"))', unit: 'Hz', notes: 'FIXTURE suggested' },
-    { measurement_id: 'm_vmax', analysis: 'tran', result_source: 'ade_output', source_name: 'vmax', signal: 'ymax(VT("/OUT"))', unit: 'V', notes: 'FIXTURE suggested' }],
+    { measurement_id: 'm_vmax', analysis: 'tran', result_source: 'ade_output', source_name: 'vmax', signal: 'ymax(VT("/OUT"))', unit: 'V', notes: 'FIXTURE suggested' },
+    { measurement_id: 'm_vmin', analysis: 'tran', result_source: 'ade_output', source_name: 'vmin', signal: 'ymin(VT("/OUT"))', unit: 'V', notes: 'FIXTURE suggested' }],
   targets: [
     { metric_id: 'freq', equation: 'm_freq', unit: 'Hz', constraint: '>=', lower: 1e9, normalization_scale: 1e9, basis: 'FIXTURE' },
-    { metric_id: 'vmax', equation: 'm_vmax', unit: 'V', constraint: 'interval', lower: 0.9, upper: 1.1, normalization_scale: 1.1, basis: 'FIXTURE' }] };
+    { metric_id: 'vmax', equation: 'm_vmax', unit: 'V', constraint: 'interval', lower: 0.9, upper: 1.1, normalization_scale: 1.1, basis: 'FIXTURE' },
+    // limits that division by 1e-3 does not keep exact: 0.35 V / 1e-3 = 349.99999999999994 (branch record SIF-69)
+    { metric_id: 'vmin', equation: 'm_vmin', unit: 'V', constraint: 'interval', lower: 0.35, upper: 0.7, normalization_scale: 0.35, basis: 'FIXTURE' }] };
 const setupAnswer = config => {
   const ade = (config?.measurements ?? []).filter(m => m.result_source === 'ade_output').map(m => m.source_name).sort();
   return { exists: true, tests: ['GATOR'], test: 'GATOR', model_files: [['/pdk/gpdk045.scs', 'tt']], analyses: { tran: { stop: '50n' } },
-    variables: { VSUP: '1.0' }, bindings: [], outputs: [{ name: 'freq', expression: 'frequency(VT("/OUT"))' }, { name: 'vmax', expression: 'ymax(VT("/OUT"))' }],
-    specs: [{ output: 'freq', op: 'gt', value: '1e+09' }, { output: 'vmax', op: 'range', value: ['0.9', '1.1'] }], fingerprint: 'f'.repeat(64),
-    rows: SETUP_ROWS, editor_differences: JSON.stringify(ade) === JSON.stringify(['freq', 'vmax']) ? [] : ['Output freq: the task says (none), Virtuoso has frequency(VT("/OUT"))',
+    variables: { VSUP: '1.0' }, bindings: [], outputs: [{ name: 'freq', expression: 'frequency(VT("/OUT"))' }, { name: 'vmax', expression: 'ymax(VT("/OUT"))' },
+      { name: 'vmin', expression: 'ymin(VT("/OUT"))' }],
+    specs: [{ output: 'freq', op: 'gt', value: '1e+09' }, { output: 'vmax', op: 'range', value: ['0.9', '1.1'] }, { output: 'vmin', op: 'range', value: ['0.35', '0.7'] }],
+    fingerprint: 'f'.repeat(64),
+    rows: SETUP_ROWS, editor_differences: JSON.stringify(ade) === JSON.stringify(['freq', 'vmax', 'vmin']) ? [] : ['Output freq: the task says (none), Virtuoso has frequency(VT("/OUT"))',
       'Output vmax: the task says (none), Virtuoso has ymax(VT("/OUT"))'] };
 };
 const gateBlocked = { message: 'The connection gate blocked reading the Maestro setup', gate: { allowed: false, status: 'blocked', blocking: ['tunnel'], uncertain: [] } };
@@ -118,7 +124,8 @@ await runChecks(browser, async () => {
   const starter = await stored();                                   // the page's own configuration: every field the page needs
   const seeded = { ...starter, circuit: { ...starter.circuit, source: 'virtuoso', task_id: null, library: LIB, cell: CELL, view: 'schematic', testbench_cell: TB, pdk_id: 'gpdk045' },
     measurements: [...starter.measurements, { measurement_id: 'm_freq', analysis: 'ac', result_source: 'ade_output', source_name: 'freq',
-      signal: 'frequency(VT("/OUT"))', unit: 'GHz', notes: 'mine' }],
+      signal: 'frequency(VT("/OUT"))', unit: 'GHz', notes: 'mine' },
+      { measurement_id: 'm_vmin', analysis: 'tran', result_source: 'ade_output', source_name: 'vmin', signal: 'ymin(VT("/OUT"))', unit: 'mV', notes: 'mine' }],
     targets: [...starter.targets, { metric_id: 'freq', equation: 'm_freq', unit: 'GHz', constraint: '>=', lower: 0.5, normalization_scale: 0.5, hard: false, soft_weight: 3,
       basis: 'mine: datasheet', margin_sides: 'lower' }] };
   await evaluate(`localStorage.setItem('gator-workbench-config-v1', ${JSON.stringify(JSON.stringify(seeded))})`);
@@ -147,13 +154,16 @@ await runChecks(browser, async () => {
     && (await blockText()).includes('device sizes are written here'), await blockText());
   check('then one button, Read setup - no Write to Virtuoso, no Use in editors', await far.evaluate(`!!(${BUTTON('Read setup')}) && !(${BUTTON('Write to Virtuoso')}) && !(${BUTTON('Use in editors')})`));
   check('the text beside it says when to press it', (await blockText()).includes('Changed its Maestro test yourself?'), await blockText());
+  // branch record SIF-69: the fold said "source ade_output, the expression in signal" - a hidden column's value and a key
+  check('the fold on how the editors and Maestro relate names the Probes columns by their headers',
+    (await blockText()).includes('a Probes row (its name in Output name, its expression in Expression)') && !(await blockText()).includes('ade_output'), await blockText());
   check('reading the setup still waits for a press', !calls.some(c => c.op === 'setup/read'));
 
   // ---- Read setup: read and take in one press ---------------------------------------------------------------------------
   mark = calls.length;
   await press('Read setup'); await settle();
   check('Read setup sends the editors along, once', calls.slice(mark).length === 1 && calls[mark].op === 'setup/read' && Array.isArray(calls[mark].config?.measurements));
-  check('the setup is summarized in one line', (await blockText()).includes('Test GATOR: 2 outputs, 2 specs, 1 variable, analyses: tran'), await blockText());
+  check('the setup is summarized in one line', (await blockText()).includes('Test GATOR: 3 outputs, 3 specs, 1 variable, analyses: tran'), await blockText());
   let config = await stored();
   for (let i = 0; i < 30 && !config.measurements.some(m => m.measurement_id === 'm_vmax'); i++) { await sleep(100); config = await stored(); }   // stored a moment later
   const probe = config.measurements.find(m => m.measurement_id === 'm_freq'), vmax = config.measurements.find(m => m.measurement_id === 'm_vmax');
@@ -161,7 +171,7 @@ await runChecks(browser, async () => {
   check('the same press brings the cell\'s outputs as Probes rows', !!vmax && vmax.result_source === 'ade_output' && vmax.signal === 'ymax(VT("/OUT"))', JSON.stringify(vmax));
   check('your unit on a probe of the same name stays', probe?.unit === 'GHz' && probe?.notes === 'mine', JSON.stringify(probe));
   check('your optimizer settings on the spec stay; the cell\'s limit (1e9 Hz) arrives in your unit (1 GHz)', spec?.hard === false && spec?.soft_weight === 3
-    && spec?.unit === 'GHz' && Math.abs(spec?.lower - 1) < 1e-12 && spec?.normalization_scale === 0.5, JSON.stringify(spec));
+    && spec?.unit === 'GHz' && spec?.lower === 1 && spec?.normalization_scale === 0.5, JSON.stringify(spec));
   // Review of 2026-10-03: the analysis came back as a guess from the expression ("other" for getData outputs, so Save task
   // refused the rows), and a spec's citation became "Maestro spec on ..." - what the cell does not hold now stays.
   check('your analysis stays while the expression is the cell\'s, and so do the spec\'s citation and its margin sides',
@@ -169,7 +179,11 @@ await runChecks(browser, async () => {
     JSON.stringify({ analysis: probe?.analysis, basis: spec?.basis, margin_sides: spec?.margin_sides }));
   const vmaxSpec = config.targets.find(t => t.metric_id === 'vmax');
   check('a spec on a probe in the base unit keeps the cell\'s numbers', vmaxSpec?.unit === 'V' && vmaxSpec?.lower === 0.9 && vmaxSpec?.upper === 1.1, JSON.stringify(vmaxSpec));
-  check('the other rows are left alone', config.measurements.length === starter.measurements.length + 2
+  // branch record SIF-69: the limits were divided by 1e-3, and the Specs cells read "349.99999999999994 mV" .. "699.9999999999999 mV"
+  const vminSpec = config.targets.find(t => t.metric_id === 'vmin');
+  check('a spec on a probe in mV gets the cell\'s 0.35 .. 0.7 V with exact digits: 350 .. 700 mV, its scale 350 mV', vminSpec?.unit === 'mV'
+    && vminSpec?.lower === 350 && vminSpec?.upper === 700 && vminSpec?.normalization_scale === 350, JSON.stringify(vminSpec));
+  check('the other rows are left alone', config.measurements.length === starter.measurements.length + 3
     && starter.targets.every(t => config.targets.some(u => u.metric_id === t.metric_id)), JSON.stringify(config.targets.map(t => t.metric_id)));
   check('the page says what it took and that Undo brings the previous rows back', (await blockText()).includes('Probes and Specs now show the cell\'s outputs and specs')
     && (await blockText()).includes('Undo brings the previous rows back'), await blockText());

@@ -1547,3 +1547,30 @@ select-all box in all three windows, so the advice could not be followed. While 
 Refresh list to retry."), or "Not available: the folders are being read." while a read is under way. `tsc` clean.
 `task_list_check` 86: new, after the refused folder read, "Move to…" says "Not available: the folders could not be read -
 press Refresh list.". `task_save_check` 70, `run_list_check` 123, `model_chooser_check` 83. None flaky.
+
+### SIF-69 Read setup brings a cell's limits in with exact digits, and its help names the Probes columns as their headers do (2026-10-21; from the readability audit)
+
+**Found.** Read setup in the Virtuoso window takes the cell's Maestro specs into Specs, and a limit (Maestro keeps it in
+the base unit) is moved into the unit the user chose on the Probe. It was divided by the prefix: 0.7 / 1e-3 is
+699.9999999999999, so a 0.7 V spec on a Probe in mV showed Lower "699.9999999999999 mV" (4.5e-7 s into ns:
+"449.99999999999994 ns"). The editors write the stored digits as they are, so the long digits reached the Specs cells. The
+cell's Scale was divided the same way, and a scale the backend sends as null became 0. `working_copy_check` compared the
+limit with a 1e-12 tolerance and its only prefixed case was Hz into GHz, which divides exactly, so it could not see this.
+And the fold "How the editors and the cell's Maestro relate" said "Each Maestro output of the cell is a Probes row (source
+ade_output, the expression in signal)": `ade_output` is the value of a column the editors never show, and `signal` is the
+key of the column whose header reads "Expression".
+
+**Changed.** `frontend/src/panels/WorkingCopy.tsx`: `withSetupRows` moves a limit and the cell's scale with `convert()`
+from `units.ts`, which moves the digits rather than computing them, as the editors do when a Probe's unit changes: 0.7 V
+is 700 mV, 0.35 V is 350 mV. Division stays for a unit the backend's table does not know (`convert` gives null). A scale
+that is not a number stays as it is. The fold reads "Each Maestro output of the cell is a Probes row (its name in *Output
+name*, its expression in *Expression*); a Maestro spec is the Specs row on that one probe. ...", the rest unchanged.
+`docs/workbench.md` describes the same link by the field keys (`source_name`, `signal`). It is the technical reference,
+not a quote of the page, so it stays.
+
+**Checked.** `tsc` clean. `working_copy_check` 31. Its fixture cell has a third output, `vmin`, with a spec of 0.35 ..
+0.7 V and a scale of 0.35; the user's Probe for it is in mV. New: that spec arrives as exactly 350 .. 700 mV with a scale
+of 350 (the old division gave 349.99999999999994 and 699.9999999999999); the fold names "Output name" and "Expression"
+and no longer says `ade_output`. The GHz limit is now compared exactly (`=== 1`, was within 1e-12). Its summary
+expectation is now "3 outputs, 3 specs", and it counts three Probes rows more than the starter's, not two.
+`virtuoso_source_check` 95. None flaky.

@@ -2,7 +2,7 @@ import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
 import { api, gateText, Json, problemText } from '../api';
 import { dateTimeOrNull as declaredAt } from '../format';
-import { PREFIX_FACTOR as PREFIX } from '../units';
+import { PREFIX_FACTOR as PREFIX, convert } from '../units';
 
 /** The Virtuoso side of a cell read into the workbench: the cell the task flow WORKS IN and the Maestro setup of that
  *  cell (outputs = Probes, specs = the starting Specs rows). Since 2026-09-23 (user request) the workbench makes no copy
@@ -45,11 +45,15 @@ function withSetupRows(config: Json, rows: Json): Json {
   const NOT_IN_THE_CELL = ['basis', 'missing_is_failure', 'margin_sides', 'nominal_only'];   // kept whatever the unit
   const fromCopy = rows.targets.map((row: Json) => {
     const wanted = units.get(row.equation) ?? row.unit, factor = prefixFactor(wanted, row.unit);
-    const limits = factor === null ? {} : Object.fromEntries(['lower', 'upper'].filter(k => typeof row[k] === 'number').map(k => [k, row[k] / factor]));
+    // A number moves its digits into the wanted unit, as the editors convert one (branch record SIF-69): divided, 0.7 V
+    // came out "699.9999999999999 mV". Divided still for a unit the backend's table does not know; a scale that is no
+    // number stays as it is (a null one became 0).
+    const inWanted = (v: Json) => typeof v === 'number' ? convert(v, row.unit, wanted) ?? v / factor! : v;
+    const limits = factor === null ? {} : Object.fromEntries(['lower', 'upper'].filter(k => typeof row[k] === 'number').map(k => [k, inWanted(row[k])]));
     const old = oldSpecs.get(row.metric_id);
     const mine = old && factor !== null ? Object.fromEntries(OPTIMIZER_ONLY.filter(k => old[k] !== undefined && (k !== 'normalization_scale' || old.unit === wanted)).map(k => [k, old[k]])) : {};
     const theirs = old ? Object.fromEntries(NOT_IN_THE_CELL.filter(k => old[k] !== undefined && old[k] !== '').map(k => [k, old[k]])) : {};
-    const scale = factor === null ? {} : { normalization_scale: row.normalization_scale / factor };
+    const scale = factor === null ? {} : { normalization_scale: inWanted(row.normalization_scale) };
     return { ...row, ...(factor === null ? {} : { unit: wanted }), ...limits, ...scale, ...mine, ...theirs };
   });
   return { ...config, measurements, targets: [...kept, ...fromCopy] };
@@ -110,8 +114,10 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
         <button disabled={!profileId || !!busy} onClick={read}
           title="Reads the cell's Maestro test GATOR and takes its outputs and specs into Probes and Specs; your units and optimizer settings stay, Undo takes it back. Nothing is written into Virtuoso; no simulation.">
           {busy === 'read' ? 'Reading...' : 'Read setup'}</button></div>}
+      {/* Columns named by their headers (branch record SIF-69): it said "source ade_output, the expression in signal" - a
+          hidden column's value and the Expression column's key. */}
       <details className="more hint"><summary>How the editors and the cell's Maestro relate</summary>
-        <p>Each Maestro output of the cell is a Probes row (source <i>ade_output</i>, the expression in <i>signal</i>); a Maestro spec is the
+        <p>Each Maestro output of the cell is a Probes row (its name in <i>Output name</i>, its expression in <i>Expression</i>); a Maestro spec is the
           Specs row on that one probe. Units, ranges, weights and the other optimizer settings exist only in the workbench. <b>Save as</b>
           writes the cell and reads it back. <b>Read setup</b> goes the other way:
           after you changed outputs or specs in Maestro yourself, it takes them into Probes and Specs. Analyses and variables changed in

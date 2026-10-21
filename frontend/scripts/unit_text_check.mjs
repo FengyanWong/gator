@@ -4,7 +4,8 @@
 //   - a stored number is written with its own digits, an SI prefix and its unit, in English letters (450 nm, 9.535 kohm,
 //     60 deg, 0 um, 1e-21 m; user: "dont use greek characters for unit, use english letters instead");
 //   - what is written reads back to the stored number exactly; 450n, 0.45 µm, 4.5e-7 and a plain number (in the row's
-//     unit) are read; another quantity and an unknown unit are refused in words;
+//     unit) are read; another quantity and an unknown unit are refused in words, the examples in the row's own unit
+//     (branch record SIF-49), and a cell's tooltip names the unit a plain number is in;
 //   - a unit changed to another of the same quantity moves a number exactly; the Unit column writes µm as um, kΩ as kohm.
 // Run: WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:<preview>/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/unit_text_check.mjs)"
 //   (the default URL is the live 8765, which needs a backend started after record 7.208 for its table)
@@ -45,6 +46,20 @@ check(`${READS.length} typed forms are read into the row's unit`, !misread.lengt
 check('another quantity is refused in words', read('200 mV', 'A') === '"200 mV" is a voltage; this row holds a current (A).', read('200 mV', 'A'));
 check('an unknown unit is refused in words', String(read('3 furlong', 'm')).startsWith('"furlong" is not a unit the page knows; this row holds a length (m).'), read('3 furlong', 'm'));
 check('what is not a number is refused in words', String(read('abc', 'm')).startsWith('"abc" is not a number'), read('abc', 'm'));
+// The refusals' examples are in the row's own unit, and a row without one is said in words (branch record SIF-49: "400 uA"
+// was offered in a length row, which refuses it; a row without a unit was "no unit" in quotes).
+check('...with the forms a number takes, the example in the row\'s own unit (a length row: 0.5 m, not 400 uA)',
+  read('abc', 'm') === '"abc" is not a number: type it plain (0.5), with an exponent (2.5e-6), an SI letter (2.5u) or this row\'s unit (0.5 m).'
+  && read('abc', 'count') === '"abc" is not a number: type it plain (0.5), with an exponent (2.5e-6) or an SI letter (2.5u).', `${read('abc', 'm')} | ${read('abc', 'count')}`);
+check('an unknown unit\'s example is the row\'s own unit; a row without a unit says so in words',
+  String(read('3 furlong', 'm')).endsWith('Type the number with an SI letter (400u) or with this row\'s unit (400 m).')
+  && read('3 furlong', '') === '"furlong" is not a unit the page knows; this row has no unit. Type the number with an SI letter (400u) or with a unit the page knows (400 uA).'
+  && read('3 furlong', 'count') === '"furlong" is not a unit the page knows; this row holds a count. Type the number with an SI letter (400u) or plain (400).',
+  `${read('3 furlong', 'm')} | ${read('3 furlong', '')} | ${read('3 furlong', 'count')}`);
+const { plainNumberIn } = units;
+check('a cell\'s tooltip names the unit a plain number is in: the row\'s own, not the prefix the cell shows (branch record SIF-49)',
+  plainNumberIn('m') === 'A plain number here is in m.' && plainNumberIn('um') === 'A plain number here is in um.' && plainNumberIn('kΩ') === 'A plain number here is in kohm.'
+  && plainNumberIn('count') === '' && plainNumberIn(null).startsWith('This row has no unit yet'), ['m', 'um', 'kΩ', 'count', null].map(u => `${u}: ${plainNumberIn(u)}`).join(' | '));
 
 check('a unit changed within its quantity moves the number exactly', convert(0.6, 'um', 'nm') === 600 && convert(2e-6, 'm', 'um') === 2 && convert(3, 'nm', 'um') === 0.003
   && convert(0.0004, 'A', 'µA') === 400 && convert(1, 'A', 'V') === null && convert(60, 'deg', '°') === 60,

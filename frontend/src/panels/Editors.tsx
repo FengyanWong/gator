@@ -3,7 +3,7 @@ import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import { pointAt } from './CircuitPicture';
 import { api, Json, saveJson } from '../api';
 import { migrateConfig } from '../store';
-import { convert, kindUnit, quantity, readQuantity, sameQuantity } from '../units';
+import { convert, kindUnit, NUMBER_FORMS, quantity, readQuantity, sameQuantity } from '../units';
 import { MatchedDevices } from './MatchedDevices';
 import { Cell, LimitSelect } from './cells';
 import { DiffView } from './DiffView';
@@ -101,8 +101,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   useEffect(() => () => watched.current.watch?.disconnect(), []);
   // `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a
   // net name (review of 2026-10-03). For a profile metric it is a label of what is measured.
-  // Units in words (record 7.208): only Probes have a Unit column; the values of Parameters and Specs carry theirs.
-  const VALUE_HELP = ' Written with its unit (450 nm, 400 uA). Type 450n, 0.45 um or 0.4mA; a plain number is in the unit the row shows. '
+  // Units in words (record 7.208): only Probes have a Unit column; the values of Parameters and Specs carry theirs. A plain
+  // number is in the row's own unit, not in the prefix its cell shows ("2" in a row stored in m showing "1 um" is 2 m): each
+  // cell's tooltip names that unit (branch record SIF-49; "the unit the row shows" was left from the Unit column).
+  const VALUE_HELP = ' Written with its unit (450 nm, 400 uA). Type 450n, 0.45 um or 0.4mA; a plain number is in the row\'s own unit, '
+    + 'not in the prefix the cell shows (each cell\'s tooltip names that unit). '
     + 'A Parameters row is in the unit of its parameter (w, l: a length), a Spec in its Probe\'s: a value of another quantity is refused.';
   const columns: Json[] = schema.editors[tab].map((c: Json) => ({ ...c, label: c.label ?? LABELS[tab]?.[c.name] }))
     .map((c: Json) => c.name === 'unit' ? { ...c, guidance: 'The unit of what this Probe measures, chosen from the list (V, A, Hz, dB, deg...). '
@@ -232,6 +235,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     ? `A Maestro output's Probe ID is m_ + its output name (saving the task names it so): it follows the name, and so do the spec equations that use it.` : null;
   const offOf = (row: Json, c: Json): string | null => tab === 'parameters' && row.binding_group && FOLLOWER_IGNORES.includes(c.name)
     ? `Follows ${row.binding_group}: its leader's value times the ratio is written, so this field does nothing on this row.` : null;
+  // What an empty number box means, in a word (branch record SIF-49): a bare "-" said neither "no limit" (a one-sided spec's
+  // other side) nor "as far as the limit itself" (an empty Scale). A follower's greyed field keeps "-": its tooltip says why.
+  const emptyOf = (row: Json, c: Json): string | undefined => offOf(row, c) ? undefined
+    : tab === 'targets' && (c.name === 'lower' || c.name === 'upper') ? 'no limit' : c.name === 'normalization_scale' ? 'auto' : undefined;
   const at = !active ? -1 : rows[active.index] && (active.name === keyField || String(rows[active.index][keyField] ?? '') === active.key)
     ? active.index : rows.findIndex(r => String(r[keyField] ?? '') === active.key);
   const activeRow = at >= 0 ? rows[at] : null;
@@ -262,7 +269,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       if (takes) { patch(at, { [c.name]: value, unit: takes }); return null; }
     } else if (c.type === 'number' || c.type === 'integer') {
       const s = text.trim(), n = readNumber(s);
-      if (s !== '' && n === undefined) return `"${s}" is not a number: type it plain, with an exponent (2.5e-6) or an SI letter (2.5u); the unit column says the unit.`;
+      // a unitless number (Ratio, Soft weight): no Unit column to point at (branch record SIF-49)
+      if (s !== '' && n === undefined) return `"${s}" is not a number: ${NUMBER_FORMS}.`;
       value = s === '' ? (c.nullable ? null : 0) : n;
     } else if (c.type === 'array' || c.type === 'object') {
       if (text.trim() === '') value = null;
@@ -634,7 +642,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                 ? <LimitSelect row={row} title={withSaved(saved, c.guidance)} onChange={fields => patch(index, fields)} />
                 : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
                     fixed={fixedOf(row, c)} off={offOf(row, c)} unit={QUANTITY[tab]?.includes(c.name) ? effectiveUnit(row) : undefined}
-                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true })} saved={saved} />}</td>; })}
+                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true })} saved={saved}
+                    placeholder={emptyOf(row, c)} />}</td>; })}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} data-code={i.code}
                 title={`${i.message}\n(${i.level}: ${i.code})`}><b>{i.level}</b> {issueHead(i.message)}</div>)}</td>
             </tr>; })}</tbody>

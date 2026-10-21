@@ -3,9 +3,10 @@
 //     not typed - it follows the output name typed into source_name, and so do the spec equations that use it, in ONE Undo
 //     step; "Add" makes a probe that measures the way the task's others do (it was backend_profile in a Maestro task);
 //   - Specs: no "target ± tolerance" in the Constraint list and no target or tolerance column; a new spec whose equation
-//     becomes another probe takes that probe's unit while it has no limits;
+//     becomes another probe takes that probe's unit while it has no limits; an empty limit reads "no limit", an empty Scale
+//     "auto" (branch record SIF-49);
 //   - Parameters: initial_value is not shown; value_type, step, scale and ratio come after "More columns"; on a follower row
-//     (binding_group set) the fields its leader decides are greyed, with why.
+//     (binding_group set) the fields its leader decides are greyed, with why; a word typed into Ratio is refused in words.
 // HERMETIC (lib/harness.mjs): validation is answered with a canned valid report labelled FIXTURE, other reads pass, every
 // other writing request is refused. A temporary browser profile: the user's saved configuration is not touched.
 // Exit code 1 if any check fails.
@@ -94,6 +95,16 @@ await runChecks(browser, async () => {
     share.size.join() === '40,11' && share.equation > share.lower, JSON.stringify(share));
   const floor = await evaluate(`parseFloat(getComputedStyle(${CELL(0, 'lower')}).minWidth)`);
   check('...and a number keeps its 11 characters when the table is narrow: text columns give way first (branch record SIF-31)', floor >= 100, String(floor));
+  // An empty number box says what empty means (branch record SIF-49): a bare "-" said neither.
+  check('a one-sided spec\'s other limit reads "no limit" when empty, not a bare "-" (branch record SIF-49)',
+    await evaluate(`${CELL(0, 'upper')}.value === '' && ${CELL(0, 'upper')}.placeholder === 'no limit' && ${CELL(0, 'lower')}.placeholder === 'no limit'`),
+    await evaluate(`JSON.stringify([${CELL(0, 'upper')}.value, ${CELL(0, 'upper')}.placeholder])`));
+  await evaluate(`${MORE}.click()`);
+  await until(`!!${CELL(0, 'normalization_scale')}`);
+  check('...and an empty Scale reads "auto": as far as the limit itself', await evaluate(`${CELL(0, 'normalization_scale')}?.placeholder === 'auto'`),
+    await evaluate(`${CELL(0, 'normalization_scale')}?.placeholder`));
+  await evaluate(`${MORE}.click()`);
+  await until(`!${CELL(0, 'normalization_scale')}`);
   await evaluate(`${TOOL('Add')}.click()`);
   await until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === 3`);
   config = await saved();
@@ -119,6 +130,14 @@ await runChecks(browser, async () => {
   const after = await fields();
   check('after "More columns" value_type, step, scale and ratio are there, initial_value still not',
     ['value_type', 'step', 'scale', 'ratio'].every(c => after.includes(c)) && !after.includes('initial_value'), JSON.stringify(after));
+  // A word typed into a number without a unit is said in words, as a bound's is; it used to vanish on leaving the cell
+  // (branch record SIF-49).
+  const ratioBefore = (await saved()).parameters[0].ratio;
+  await typeInto(CELL(0, 'ratio'), 'half');
+  const NOTE = `(document.querySelector('.paste-note')?.textContent ?? '')`;
+  check('a word typed into Ratio is refused in words under the formula bar, and the ratio kept (branch record SIF-49)',
+    await until(`${NOTE}.startsWith('"half" in Ratio is not a number: type it plain (0.5)')`) && (await saved()).parameters[0].ratio === ratioBefore,
+    await evaluate(NOTE));
   await evaluate(`${MORE}.click()`);
   reportRefused(refused);
 });

@@ -10,7 +10,8 @@
 //     as one Undo step; a text a column cannot read is named and left as it was; lines below the last row are named; cells
 //     that a leader decides are kept;
 //   - (record 7.208) a bound is written with its prefix and unit in English letters (450 nm, 2 um) in the cell and the
-//     formula bar, never a Greek letter; 450n, 0.6 µm and a plain number (in the row's unit) are read; another quantity is
+//     formula bar, never a Greek letter; 450n, 0.6 µm and a plain number (in the row's unit, which the cell's tooltip names:
+//     branch record SIF-49) are read; another quantity is
 //     refused in words; no Unit column: a row whose parameter becomes m (a multiplier) is a count, and a length again when
 //     it is w;
 //   - (record 7.182) the tick box and the row's ID stay at the left while the table scrolls sideways, the ID right beside the
@@ -124,6 +125,9 @@ await runChecks(browser, async () => {
     await typeIn('lower', '0.000002');
     check('a plain number is in the row\'s unit, metres: 0.000002 is 2 um', await page.until(stored(`c.parameters[${metre}].lower === 0.000002`), 30) && (await shownOf('lower')) === '2 um',
       `${await evaluate(stored(`c.parameters[${metre}].lower`))} / ${await shownOf('lower')}`);
+    // The cell shows "2 um" yet reads a plain number in m: its tooltip says so (branch record SIF-49).
+    check('...and the cell\'s tooltip names that unit: "A plain number here is in m."', (await evaluate(`${BOX(metre, 'lower')}.title`)).endsWith('A plain number here is in m.'),
+      await evaluate(`${BOX(metre, 'lower')}.title`));
     await typeIn('lower', '5 mV');
     check('another quantity is refused in words and changes nothing', (await evaluate(stored(`c.parameters[${metre}].lower`))) === 0.000002
       && (await evaluate(NOTE)).includes('is a voltage; this row holds a length (m)') && (await shownOf('lower')) === '2 um', await evaluate(NOTE));

@@ -752,3 +752,38 @@ open, so the tooltip does not say so. The checks' expectations all still hold (`
 **Checked.** `tsc` clean; `run_control_check` 102, `calibration_check` 38 (its "Nothing was changed. The proposals stay
 under Run status of that run" prefix kept), `calibration_save_check` 22, `files_tab_check` 20 (the hint reads "7 files,
 8.2 MiB." and nothing after it), `module_fold_check` 30; none flaky.
+
+### SIF-49 A cell names the unit a plain number is in, and says why a text was refused (2026-10-21; from the readability audit)
+
+**Found.** The tooltip of every bound (Parameters' Lower, Upper, Step; Specs' Lower, Upper, Scale), of its header and of
+the help line a header opens said "Type 450n, 0.45 um or 0.4mA; a plain number is in the unit the row shows." No row has
+shown its unit since the Unit column went (record 7.208): a W row stored in m shows "1 um", and a "2" typed there,
+meant as 2 um, became "2 m". A word typed into a number without a unit (Ratio, Soft weight) or into a JSON cell
+vanished when the cell lost focus, with no word. The formula bar refused it with ""half" is not a number: type it plain,
+with an exponent (2.5e-6) or an SI letter (2.5u); the unit column says the unit.", which points at a column that is gone.
+A non-number in a bound read "... type it as 400u, 400 uA, 0.4m or 4e-4." in every row, so a length row suggested a
+current and then refused it. An unknown unit ended "... or with the unit (400 uA).", and a row without a unit was named
+"this row holds a plain number ()". Every empty Lower or Upper of a one-sided spec, and an empty Scale, showed a bare "-".
+
+**Changed** (`Editors.tsx`, `cells.tsx`, `units.ts`): the help reads "... a plain number is in the row's own unit, not
+in the prefix the cell shows (each cell's tooltip names that unit).", and a bound's tooltip ends with "A plain number
+here is in m." (`plainNumberIn`). It says nothing more for a count, nothing more for a greyed follower field, and for a
+row without a unit "This row has no unit yet: a value typed with one (400 uA) gives it that unit." The reading rule
+itself is unchanged (record 7.208 chose it). A word left in Ratio, Soft weight or another unitless number now shows
+under the formula bar as ""half" in Ratio is not a number: type it plain (0.5), with an exponent (2.5e-6) or an SI
+letter (2.5u).". A JSON cell's says "... is not JSON: a list is written as ["a", "b"].", and the formula bar's refusal
+ends at "(2.5u).". In a bound, a non-number reads "... type it plain (0.5), with an exponent (2.5e-6), an SI letter
+(2.5u) or this row's unit (0.5 m)." (in the row's own unit; a count or a unitless row gets the three forms only). An
+unknown unit reads "... this row holds a length (m). Type the number with an SI letter (400u) or with this row's unit
+(400 m).", "... this row has no unit. ... with a unit the page knows (400 uA)." or "... this row holds a count. ... or
+plain (400).". An empty Lower or Upper on Specs reads "no limit" and an empty Scale "auto"; a follower's greyed field
+and every other empty number keep "-". The checks' pinned starts all still hold: unit_text_check's ""abc" is not a
+number" and "this row holds a length (m).", sheet_check's "this row holds a count", formula_bar_check's "is not a
+number". reward_v21_check reads the Scale's value (still empty), not its placeholder. It is stand-alone and was not run.
+
+**Checked.** `tsc` clean; `unit_text_check` 14 (new: the full refusals in a length row, a count row and a row without a
+unit; `plainNumberIn` for m, um, kohm, a count and no unit), `sheet_check` 44 (new: the metre row's Lower tooltip ends
+"A plain number here is in m."), `editor_columns_check` 17 (new: a one-sided spec's empty Upper reads "no limit", the
+Scale's placeholder "auto", and "half" typed into Ratio is said under the formula bar with the ratio kept),
+`formula_bar_check` 19, `typing_check` 47, `find_fill_copy_check` 30, `unsaved_rows_check` 25 (its tooltips still start
+with "Saved in the task: ..."); none flaky.

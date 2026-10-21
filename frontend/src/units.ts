@@ -6,7 +6,7 @@ import type { Json } from './api';
  *  only (user: "dont use greek characters for unit, use english letters instead"; the Greek spellings µm, kΩ, ° are still
  *  read). The digits are the stored number's own, moved and never computed, so what is shown is exactly what is stored.
  *  Typed, any form is read - 400u, 400 uA, 0.4mA, 4e-4 - into the unit its row stores; a plain number is in that unit, the one
- *  the Unit column shows; a wrong
+ *  the cell's tooltip names (`plainNumberIn`, branch record SIF-49: no Unit column shows it); a wrong
  *  quantity is refused in words. Stored numbers and units never change by being shown. The table is the backend's
  *  (units.py `written_forms`, sent with /api/schema), and units.py `text` writes the backend's messages the same way. */
 
@@ -123,21 +123,40 @@ export function quantity(value: unknown, unit: string | null | undefined, digits
 
 const NUMBER = /^([-+]?(?:\d+\.?\d*|\.\d+))(?:[eE]([-+]?\d+))?\s*(.*)$/;
 
+/** How a typed number may be written, as the refusals say it (branch record SIF-49): what readQuantity and editorRules.ts
+ *  readNumber both read. */
+export const NUMBER_FORMS = 'type it plain (0.5), with an exponent (2.5e-6) or an SI letter (2.5u)';
+
+/** What a plain number typed into a row in `unit` is, for its cell's tooltip (branch record SIF-49): no Unit column shows it
+ *  since record 7.208, and the cell writes each value with a prefix of its own - "1 um" in a row stored in m, where a typed
+ *  "2" is 2 m. A count or a plain number needs no word; a row without a unit takes the one a typed value says. */
+export function plainNumberIn(unit: string | null | undefined): string {
+  const written = unitSymbol(unit);
+  return !unit ? 'This row has no unit yet: a value typed with one (400 uA) gives it that unit.'
+    : written ? `A plain number here is in ${written}.` : '';
+}
+
 function wrongUnit(text: string, typed: string, unit: string): string {
-  const rule = spellings[unit], other = spellings[typed];
-  const here = rule ? `${quantities[rule[0]] ?? rule[0]} (${unitLabel(unit)})` : `"${unit || 'no unit'}"`;
-  return other ? `"${text}" is ${quantities[other[0]] ?? other[0]}; this row holds ${here}.`
-    : `"${typed}" is not a unit the page knows; this row holds ${here}. Type the number with an SI letter (400u) or with the unit (400 uA).`;
+  // The row in words and the example in its own unit (branch record SIF-49): a row without a unit was "no unit" in quotes,
+  // and "400 uA" was offered in every row - a length row refuses it.
+  const rule = unit ? spellings[unit] : undefined, other = spellings[typed], written = unitSymbol(unit);
+  const here = rule ? `holds ${quantities[rule[0]] ?? rule[0]}${written ? ` (${written})` : ''}` : unit ? `holds "${unit}"` : 'has no unit';
+  const how = !unit ? 'with a unit the page knows (400 uA)' : written ? `with this row's unit (400 ${written})` : 'plain (400)';
+  return other ? `"${text}" is ${quantities[other[0]] ?? other[0]}; this row ${here}.`
+    : `"${typed}" is not a unit the page knows; this row ${here}. Type the number with an SI letter (400u) or ${how}.`;
 }
 
 /** What `text` is in `unit`, the unit its row stores: a number, null for an empty box, or why it cannot be read. A plain
- *  number (300, 4.5e-7) is in that unit - the one the Unit column shows, and what a block copied out of the table holds; with
- *  an SI letter or a unit it is exactly that (300u, 300 uA, 0.3mA in a row in A). */
+ *  number (300, 4.5e-7) is in that unit - the one the cell's tooltip names, and what a block copied out of the table holds;
+ *  with an SI letter or a unit it is exactly that (300u, 300 uA, 0.3mA in a row in A). */
 export function readQuantity(text: string, unit: string | null | undefined): { value: number | null; unit?: string } | { problem: string } {
   const s = text.trim(), u = unit ?? '';
   if (s === '') return { value: null };
   const m = NUMBER.exec(s);
-  if (!m) return { problem: `"${s}" is not a number: type it as 400u, 400 uA, 0.4m or 4e-4.` };
+  // Not a number: the forms it may take, the example in this row's own unit (branch record SIF-49; "400 uA" was offered in
+  // every row, and a length row refuses it).
+  if (!m) { const written = unitSymbol(u);
+    return { problem: `"${s}" is not a number: ${written ? `type it plain (0.5), with an exponent (2.5e-6), an SI letter (2.5u) or this row's unit (0.5 ${written})` : NUMBER_FORMS}.` }; }
   const mantissa = m[1], typed = Number(m[2] ?? 0), rest = m[3].trim();
   const make = (tens: number) => { const n = Number(`${mantissa}e${typed + tens}`); return Number.isFinite(n) ? { value: n } : { problem: `"${s}" is out of range.` }; };
   const rule = spellings[u], power = tenPower(u);

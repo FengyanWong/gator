@@ -99,7 +99,7 @@ await runChecks(browser, async () => {
 
   // ---- (a) number cells keep what is being typed ----------------------------------------------------------------------------
   // Record 7.208: a number box of a row writes its value with an SI prefix and the unit (1 µm); a plain number typed into it
-  // is in the row's unit, the one the Unit column shows.
+  // is in the row's unit, the one the cell's tooltip names (branch record SIF-49; there is no Unit column since 7.208).
   const symbolOf = unit => ({ um: 'm', 'µm': 'm', nm: 'm', mm: 'm', 'Ω': 'ohm', '°': 'deg' })[unit] ?? unit;
   await openTab('Parameters');
   check('(set-up) the Parameters tab holds the starter rows', (await evaluate(`${EDITORS}.querySelectorAll('table.editor tbody tr').length`)) === CONFIG.parameters.length);

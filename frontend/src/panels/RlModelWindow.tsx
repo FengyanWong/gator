@@ -3,7 +3,7 @@
 // its pop-up window.
 import { Fragment } from 'react';
 import { copy, Json } from '../api';
-import { folderName, short, stamp, taskNameOf } from '../format';
+import { folderName, plural, short, stamp, taskNameOf } from '../format';
 import { RESTORABLE, SavedModels } from './ModelChooser';
 import { DESIGN_NAME, designName } from '../lineage';
 import { LOADS } from '../savePoint';
@@ -19,6 +19,9 @@ const CONDITIONS: Record<string, string> = { off: 'Nominal only', after_nominal:
 /** A setting's value in the differences table: RWSE as the saved models table writes it (SIF-8), a switch as on/off (branch
  *  record SIF-57: "rwse", "true"). */
 const settingValue = (v: Json) => v === 'rwse' ? 'RWSE' : typeof v === 'boolean' ? (v ? 'on' : 'off') : String(v);
+/** A saved model's counter in its facts, grouped as the warning below writes "1,500", with its noun in the right number
+ *  (branch record SIF-58: "Training 12000 evaluations, 96000 updates, replay 12000"); '?' where a model recorded none. */
+const count = (n: Json, word: string) => `${typeof n === 'number' ? n.toLocaleString('en-US') : '?'} ${n === 1 ? word : `${word}s`}`;
 
 /** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the
  *  starting preset, or values edited and saved there), and how many saved models were made from it. A double click or "Use
@@ -194,7 +197,9 @@ export function RlModelWindow({ m }: { m: RlModel }) {
               Tasks windows write it, in this computer's time; numbers without padding; the table's words for Restorable. */}
           <tr><td>Trained on</td><td title={model.description.source_task_id}>{taskNameOf(model.description.source_task_id)}</td></tr>
           <tr><td>Saved</td><td title={`${model.description.created_utc} (UTC)`}>{stamp(model.description.created_utc) ?? model.description.created_utc}</td></tr>
-          <tr><td>Schema</td><td>{model.description.metadata_version}</td></tr>
+          {/* Branch record SIF-58: the facts below in words - "Schema" named the version of the save point's description,
+              "1 planned" did not say what, "enabled" stood against "off", and the counters read "12000 evaluations, replay 12000". */}
+          <tr><td>Metadata version</td><td title="The version of the format the save point's description is written in.">{model.description.metadata_version}</td></tr>
           {/* in words, the stored names in the tooltip (branch record SIF-41: it read "constraint_violation_v2; compressed") */}
           <tr><td>Reward</td><td title={`${model.description.contract?.reward_version ?? 'none recorded'}; ${model.description.contract?.reward_settings?.violation_shape ?? 'capped'}`}>
             {REWARD_NAME[model.description.contract?.reward_version ?? ''] ?? (model.description.contract?.reward_version ? String(model.description.contract.reward_version).replace(/_/g, ' ') : 'Legacy nominal')}; violation
@@ -202,11 +207,13 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           <tr><td>Worst hard-spec share</td><td>{short(model.description.contract?.reward_settings?.worst_spec_share ?? 0)}</td></tr>
           <tr><td>Objective bonus weight</td><td>{short(model.description.contract?.reward_settings?.objective_weight ?? 0)}</td></tr>
           <tr><td>Margin bonus weight</td><td>{short(model.description.contract?.reward_settings?.margin_weight ?? 0)}</td></tr>
-          <tr><td>Conditions</td><td>{CONDITIONS[model.description.contract?.condition_policy ?? 'off'] ?? model.description.contract?.condition_policy}; {model.description.contract?.planned_conditions?.length ?? 'unknown'} planned</td></tr>
+          <tr><td>Conditions</td><td>{CONDITIONS[model.description.contract?.condition_policy ?? 'off'] ?? model.description.contract?.condition_policy}; {model.description.contract?.planned_conditions == null ? 'plan not recorded'
+            : `${plural(model.description.contract.planned_conditions.length, 'condition')} planned`}</td></tr>
           {model.description.contract?.planned_conditions?.length! > 0 && <tr><td>Saved condition plan</td><td>{model.description.contract!.planned_conditions!.map(c => c.corner.id).join(', ')}</td></tr>}
-          <tr><td>Operating points</td><td>{savedNet?.operating_points ? 'enabled' : 'off'}</td></tr>
+          <tr><td>Operating points</td><td>{savedNet?.operating_points ? 'on' : 'off'}</td></tr>
           <tr className="model-inputs"><td>Network inputs</td><td>{inputsText(savedNet)}</td></tr>
-          <tr><td>Training</td><td>{model.description.counters.evaluations_committed} evaluations, {model.description.counters.learner_updates} updates, replay {model.description.counters.replay_size}</td></tr>
+          <tr><td>Training</td><td>{count(model.description.counters.evaluations_committed, 'evaluation')}, {count(model.description.counters.learner_updates, 'learner update')},
+            {' '}{count(model.description.counters.replay_size, 'transition')} in replay</td></tr>
           <tr><td>Restorable</td><td><b>{RESTORABLE[model.description.restoration_capability] ?? model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}</td></tr>
           <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>
         </tbody></table>}
@@ -220,9 +227,15 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         <h3>{run.mode === 'frozen' ? 'Evaluate only' : 'Fine-tune'}: its own settings</h3>
         {run.mode === 'frozen' && <label title="Deterministic: each step takes the policy's mean action, so the same state gives the same design. Sampled: each step draws an action from the policy, as in training.">Actions<select value={run.frozen_action ?? 'deterministic'} onChange={e => set({ frozen_action: e.target.value })}><option value="deterministic">Deterministic</option><option value="sampled">Sampled</option></select></label>}
         {run.mode === 'fine_tune' && <>
-          <Check label="Freeze encoder" value={adv.freeze_encoder} onChange={v => setAdv({ freeze_encoder: v })} />
-          <Check label="Encoder-only transfer" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })} />
-          <Check label="Reset critic" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })} />
+          {/* What each switch does, as the backend's modes.py does it (branch record SIF-58: no tooltip, so how Freeze
+              encoder and Encoder-only transfer differ was said nowhere on the page). The actor and both critics each have
+              an encoder. */}
+          <Check label="Freeze encoder" value={adv.freeze_encoder} onChange={v => setAdv({ freeze_encoder: v })}
+            title="The graph encoders of the actor and the critics keep their loaded weights; only the actor and critic heads learn." />
+          <Check label="Encoder-only transfer" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })}
+            title="Only the encoders' weights are loaded; the actor and critic heads start from new random weights." />
+          <Check label="Reset critic" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })}
+            title="The critics and their target copies start from new random weights; the actor keeps its loaded ones." />
           <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />
           <label title={`The name the model this run saves goes by. Empty: the task's run label (${config.project.task_name}); a name taken already gets a number.`}>Name of the model it saves
             <ModelLabelInput m={m} /></label></>}

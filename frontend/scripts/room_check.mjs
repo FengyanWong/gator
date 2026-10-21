@@ -4,7 +4,8 @@
 //   - with no run shown the bottom panel starts folded to its tab line and the editors take the room; a tab press opens it, a
 //     reload with no run folds it again, the splitter's double click opens and folds it; with a run remembered it opens as kept;
 //   - Run configuration as a property sheet: a number's label and its box on one line, the box at the right; the run limits
-//     (launches, retries, wall time and the two failure rules) in one closed "Limits" fold whose line names the limits set;
+//     (launches, retries, wall time and the two failure rules) in one closed "Limits" fold whose line names the limits set,
+//     counted and the wall time in hours ("42 launches, 1 retry, wall time 24 h 00 min", branch record SIF-58);
 //   - Output settings: "Always saved" in one line with the whole list in its tooltip; the output root's facts in one line
 //     with the table folded behind it (open when the root cannot be written).
 //   - record 7.372: a cell entered while the table has room for under about four rows (a small screen, the panel open) folds the
@@ -67,6 +68,14 @@ await runChecks(browser, async () => {
   check('the run limits are in one closed "Limits" fold', limits && !limits.open && JSON.stringify(limits.fields) === JSON.stringify(['Max Spectre launches', 'Max retries per evaluation',
     'Wall-time limit (s)', 'Pause after N consecutive infrastructure failures', 'Stop after N consecutive failed evaluations']), JSON.stringify(limits));
   check('...whose line names the limits that are set', limits?.line === 'Limits - 42 launches', limits?.line);
+  // Branch record SIF-58: a retry and a wall time in that line, counted and in hours (it read "1 launches, 1 retries, 86400 s");
+  // both put back after, for what follows.
+  const limitBox = name => `(${LABEL(name)}).querySelector('input')`, LIMITS_LINE = `document.querySelector('.right details.limits summary').textContent`;
+  await page.setValue(limitBox('Max retries per evaluation'), '1'); await page.setValue(limitBox('Wall-time limit (s)'), '86400');
+  check('...one retry and a day of wall time in words: "Limits - 42 launches, 1 retry, wall time 24 h 00 min" (SIF-58)',
+    await page.until(`${LIMITS_LINE} === 'Limits - 42 launches, 1 retry, wall time 24 h 00 min'`, 30), await evaluate(LIMITS_LINE));
+  await page.setValue(limitBox('Max retries per evaluation'), '0'); await page.setValue(limitBox('Wall-time limit (s)'), '');
+  check('...and without them the launches alone again', await page.until(`${LIMITS_LINE} === 'Limits - 42 launches'`, 30), await evaluate(LIMITS_LINE));
   const height = await evaluate(`({ right: document.querySelector('.right').scrollHeight, run: Math.round([...document.querySelectorAll('.right details.module')].find(d => d.querySelector('summary h3')?.textContent.trim() === 'Run configuration').querySelector('.module-body').getBoundingClientRect().height) })`);
   console.log(`INFO  right column ${height.right} px high, Run configuration's body ${height.run} px`);
 

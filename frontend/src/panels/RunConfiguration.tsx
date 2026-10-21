@@ -1,6 +1,6 @@
 // Run configuration's own part (plan-refactoring C4, out of Right.tsx): the next run's model in one line with the RL model
 // window's button, the budget, the seed and the limits. It only draws what useRlModel holds.
-import { folderName } from '../format';
+import { folderName, plural } from '../format';
 import { openRunsAt } from '../openAt';
 import { Blocked } from './popupParts';
 import { Check, Num } from './fields';
@@ -38,7 +38,8 @@ export function RunConfiguration({ m }: { m: RlModel }) {
             onClick={() => set({ mode: model.suggestion!.mode })}>{MODE_NAME[model.suggestion.mode] ?? model.suggestion.mode}</button> - {model.suggestion.reason}
             {model.suggestion.requires_confirmation ? ' (needs your confirmation)' : ''}</p>)}
       <Num label="Concurrent Spectre jobs" value={run.concurrency} onChange={v => set({ concurrency: v })} title="Independent simulation jobs at once. NOT the thread count of one simulation." />
-      {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {circuit.max_concurrency} jobs.</p>}
+      {/* the noun in the right number, and what to do (branch record SIF-58: "This task supports at most 1 jobs.") */}
+      {circuit?.max_concurrency && run.concurrency > circuit.max_concurrency && <p className="error">This task supports at most {plural(circuit.max_concurrency, 'job')}: lower Concurrent Spectre jobs.</p>}
       <Num label="Evaluation budget" value={run.max_evaluations} onChange={v => set({ max_evaluations: v })}
         title="NEW candidate evaluations that may START in the whole run, shared by all workers. Baselines, warm-up and failures count. Episode resets do not reset it." />
       <Num label="Random seed" value={run.seed} onChange={v => set({ seed: v })} title="Seed of THIS run. The source model's pretraining seed is recorded separately." />

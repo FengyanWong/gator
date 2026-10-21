@@ -57,7 +57,8 @@ try {
   await page.setValue(selectFor('Mode'), 'resume');
   // The backend remembers B as the project's last real model; no start/continue command is clicked.
   check('real model reward facts', await page.until("window.__checkRLWindow.document.querySelector('.rl-networks-panel').innerText.includes('constraint_violation_v2')", 250));
-  check('real model OP facts', await page.evaluate("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel tr')).some(r => r.innerText.includes('Operating points') && r.innerText.includes('enabled'))"));
+  // "on", no longer "enabled", beside "off" (branch record SIF-58)
+  check('real model OP facts', await page.evaluate("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel tr')).some(r => r.cells[0]?.textContent === 'Operating points' && r.cells[1]?.textContent === 'on')"));
   await page.evaluate("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel tr')).find(r => r.innerText.includes('constraint_violation_v2')).scrollIntoView()", true);
   await networkPage.shot(path.join(dir, 'model-facts.png'));
   await page.viewport(1100, 800);

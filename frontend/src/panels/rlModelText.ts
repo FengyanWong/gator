@@ -1,6 +1,7 @@
 // The RL model's words (plan-refactoring C4, out of Right.tsx): the Modes, the encoders' settings and the reward fields as
 // the panel names them, and the lines it writes about the next run's model - pure functions of the configuration.
 import type { Json } from '../api';
+import { durationWhole, plural } from '../format';
 import { designName, designShort } from '../lineage';
 
 // Settings stored per encoder in the backend (src/gator_workbench/network_presets.py). The lists are
@@ -159,10 +160,12 @@ export const networkTitle = ({ loads, source, run, encoder, hidden, heads, layer
     : `The network in use: ${designName({ encoder_type: encoder, architecture_version: net.architecture_version })}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
       + `inputs ${inputsText(net)}; `
       + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}, save point ${source.checkpoint_id}).` : '.'} RL model... changes it.`;
-/** The limits a run seldom changes that are set, for the line of the Limits fold. */
+/** The limits a run seldom changes that are set, for the line of the Limits fold: "42 launches, 1 retry, wall time 24 h 00
+ *  min" (branch record SIF-58: "1 launches, 1 retries, 86400 s"). */
 export const limitsText = (run: Json) =>
-  [run.max_spectre_launches != null ? `${run.max_spectre_launches} launches` : null, (run.max_retries ?? 0) > 0 ? `${run.max_retries} retries` : null,
-    run.max_wall_seconds != null ? `${run.max_wall_seconds} s` : null].filter(Boolean) as string[];
+  [run.max_spectre_launches != null ? plural(run.max_spectre_launches, 'launch', 'launches') : null,
+    (run.max_retries ?? 0) > 0 ? plural(run.max_retries, 'retry', 'retries') : null,
+    run.max_wall_seconds != null ? `wall time ${durationWhole(run.max_wall_seconds) ?? `${run.max_wall_seconds} s`}` : null].filter(Boolean) as string[];
 /** Run configuration folded into one line: the Mode, the model label, the budget and the network. */
 export const foldedText = (run: Json, budget: number, encoder: string, net: Json) =>
   [MODE_NAME[run.mode] ?? run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${budget} evaluations` : null,

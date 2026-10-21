@@ -1164,3 +1164,35 @@ paragraph on an existing configuration and again under "The three tested values"
 and the buttons "Use the template's values" / "Save into the template", as `docs/workbench.md` does; the paragraph's
 "RL networks..." window and the later "RL networks window" (renamed RL model in 7.265) say RL model. A change to that
 doc only: no page code or check text names it, so `tsc` and the checks were not rerun.
+
+### SIF-58 The RL model's facts and limits are counted in words, and the Fine-tune switches say what they do (2026-10-21; from the readability audit)
+
+**Found.** In the RL model window, Fine-tune or Evaluate only with a saved model chosen, "The model in use" read "Training
+12000 evaluations, 96000 updates, replay 12000" - no grouping (the warning a little below writes "1,500"), "1
+evaluations" for a count of one, and "replay 12000" not saying of what; "Conditions Nominal only; 1 planned" (or "unknown
+planned") without saying what was planned; "Operating points enabled" against "off"; and a row "Schema" for the version of
+the save point's description. Fine-tune's three switches "Freeze encoder", "Encoder-only transfer" and "Reset critic" had
+no tooltip, where every control around them has one, so how the first two differ was said nowhere on the page. In Run
+configuration the Limits fold's line, on screen whenever one is set, read "Limits - 1 launches, 1 retries, 86400 s" (the
+wall time in raw seconds, a day), and the red line under Concurrent Spectre jobs "This task supports at most 1 jobs."
+
+**Changed** (`panels/RlModelWindow.tsx`, `panels/rlModelText.ts`, `panels/RunConfiguration.tsx`): the facts read
+"Training 12,000 evaluations, 96,000 learner updates, 12,000 transitions in replay" (a local `count`: en-US grouping as
+ModelStructure writes it, the noun singular at 1, "?" where a model recorded none); "Conditions Nominal only; 1 condition
+planned" ("plan not recorded" where the contract holds no plan); "Operating points on" / "off"; and "Metadata version",
+its tooltip "The version of the format the save point's description is written in.". The switches have tooltips, worded
+from what the backend's `modes.py` does (read only): Freeze encoder "The graph encoders of the actor and the critics keep
+their loaded weights; only the actor and critic heads learn." (`EncoderFreeze` freezes the actor's and both critics'
+encoders); Encoder-only transfer "Only the encoders' weights are loaded; the actor and critic heads start from new random
+weights."; Reset critic "The critics and their target copies start from new random weights; the actor keeps its loaded
+ones.". The Limits line reads "Limits - 42 launches, 1 retry, wall time 24 h 00 min" (`plural` with "launches" /
+"retries", `durationWhole`); the red line "This task supports at most 1 job: lower Concurrent Spectre jobs.". The
+Wall-time field keeps its label ("Wall-time limit (s)", which room_check reads). The docs quote none of these words.
+
+**Checked.** `tsc` clean; `model_chooser_check` 81 (new: the three switches' tooltips; the facts "8 evaluations, 4
+learner updates, 8 transitions in replay", "Nominal only; plan not recorded", "off", a "Metadata version" row and no
+"Schema"; the incomplete-configuration check's `/10 evaluations, 6 updates/` now reads "6 learner updates" - its first run
+failed there, the one pin the audit had not listed), `room_check` 24 (new: with one retry and 86400 s typed, the line reads
+"Limits - 42 launches, 1 retry, wall time 24 h 00 min", and "Limits - 42 launches" again once both are cleared),
+`network_panel_check` 62, `module_fold_check` 30; none flaky. `reward_v2_real_check` (stand-alone, not run) looked for
+"enabled" in the Operating points row: it now reads that row's cells for "Operating points" and "on".

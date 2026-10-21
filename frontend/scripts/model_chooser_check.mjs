@@ -181,6 +181,11 @@ await runChecks(browser, async () => {
     await evaluate(`!${RIGHT}.querySelector('table.template-table') && ![...${RIGHT}.querySelectorAll('h3')].some(h => / template, for this run$/.test(h.textContent)) && ![...${RIGHT}.querySelectorAll('summary')].some(s => /^Where the .+ values come from$/.test(s.textContent.trim()))`));
   check('... the Advanced numbers and Fine-tune\'s own settings are there', await evaluate(`[...${RIGHT}.querySelectorAll('summary')].some(s => /^Advanced/.test(s.textContent.trim()))
     && [...${RIGHT}.querySelectorAll('label.check')].some(l => l.textContent === 'Freeze encoder') && !!${RIGHT}.querySelector('input.model-label')`));
+  // Branch record SIF-58: the three switches had no tooltip, so how Freeze encoder and Encoder-only transfer differ was said nowhere.
+  const switchTitles = await evaluate(`Object.fromEntries(['Freeze encoder', 'Encoder-only transfer', 'Reset critic'].map(t => [t, [...${RIGHT}.querySelectorAll('label.check')].find(l => l.textContent === t)?.title ?? null]))`);
+  check('... and each of its three switches says what it does (SIF-58)', /^The graph encoders .* only the actor and critic heads learn\.$/.test(switchTitles['Freeze encoder'] ?? '')
+    && /^Only the encoders' weights are loaded;/.test(switchTitles['Encoder-only transfer'] ?? '') && /^The critics and their target copies start from new random weights;/.test(switchTitles['Reset critic'] ?? ''),
+    JSON.stringify(switchTitles));
   check('... "no saved model chosen yet" is said, and none was filled in by itself (record 7.265)', await evaluate(`!!${RIGHT}.querySelector('.model-none-chosen')`)
     && !(await storedWhen(s => s?.mode === 'fine_tune'))?.model_source?.run_dir && /^Fine-tune · no saved model chosen/.test(await line()), await line());
   // Branch record SIF-1: the network's design by name (user: "show what is each models original shape design"), its size
@@ -269,6 +274,11 @@ await runChecks(browser, async () => {
   check('... and its facts read plainly: "Saved" in this computer\'s time, Restorable "full state", no zero padding (SIF-2)',
     /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(facts['Saved'] ?? '') && !('Saved (UTC)' in facts) && /^full state/.test(facts['Restorable'] ?? '')
     && !/0{4}$/.test(facts['Worst hard-spec share'] ?? '0') && !/:/.test(facts['Trained on'] ?? ':'), JSON.stringify(facts).slice(0, 400));
+  // Branch record SIF-58: the counters with their nouns ("8 evaluations, 4 updates, replay 8"), what is planned ("unknown
+  // planned"), on/off ("enabled"), and the version by what it is the version of ("Schema").
+  check('... the counters, the condition plan and the metadata version in words (SIF-58)', facts['Training'] === '8 evaluations, 4 learner updates, 8 transitions in replay'
+    && facts['Conditions'] === 'Nominal only; plan not recorded' && facts['Operating points'] === 'off' && facts['Metadata version'] === 'FIXTURE' && !('Schema' in facts),
+    JSON.stringify(facts).slice(0, 700));
   await sleep(1100);
   // A network that arrives from ELSEWHERE while the model is loaded (an imported configuration) is taken back - and that is said.
   check('no note about the network so far', !(await evaluate(`!!${RIGHT}.querySelector('.net-message.warn')`)));
@@ -301,7 +311,7 @@ await runChecks(browser, async () => {
   check('an incomplete configuration is said in plain words, as a calm note - not as a red error', await until(`!!${RIGHT}.querySelector('.compat-unchecked')`, 40)
     && /Parameter row "mp1_w" is set to be optimized but has no lower and no upper bound/.test(await evaluate(`${RIGHT}.querySelector('.compat-unchecked').innerText`))
     && !(await evaluate(`[...${RIGHT}.querySelectorAll('p.error')].some(p => /CompileError|bounds are required/.test(p.textContent))`)));
-  check('... the model in use is still described in full', await until(`/10 evaluations, 6 updates/.test(${RIGHT}.innerText)`, 40));
+  check('... the model in use is still described in full', await until(`/10 evaluations, 6 learner updates/.test(${RIGHT}.innerText)`, 40));   // "learner" since SIF-58
   check('... and the developer text is folded away under "Technical details"', await evaluate(`(() => { const d = ${RIGHT}.querySelector('.compat-unchecked details'); return !d.open && d.querySelector('summary').textContent === 'Technical details' && /CompileError: mp1_w/.test(d.textContent); })()`));
 
   // ---- a best policy is marked where one exists; rename (record 7.225) --------------------------------------------------------------

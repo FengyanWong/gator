@@ -154,6 +154,9 @@ table.editor tr.tied > td[data-field="variable_id"] input { padding-left: 16px; 
 .right .module-body > label.num, .right .module-body > details > label.num { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; }
 .right .module-body > label.num > input, .right .module-body > details > label.num > input { width: 92px; }
 .right .module-body > label.num > .with-unit, .right .module-body > details > label.num > .with-unit { width: 176px; }
+/* The sheet keeps a column's width when the narrow layout gives this column the page's (branch record SIF-82: at 1100 px
+   "Concurrent Spectre jobs" sat at the left and its box about 930 px away, the model line and "RL model..." as far apart). */
+@media (max-width: 1100px) { .right .module-body { max-width: 560px; } }
 .right details.limits { margin: 4px 0; } .right details.limits > summary { cursor: pointer; } .right details.limits > :not(summary) { margin-left: 13px; }
 .output-facts > summary { font-size: 11.5px; color: var(--muted); }
 .right input[aria-invalid="true"] { border-color: var(--bad); }

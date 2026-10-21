@@ -2074,3 +2074,22 @@ pointing at the list with no `_help`, and Revert closed on a file just opened. `
 headline check reads the new first sentence; new, the headline does not say "Each button", ends with the What's missing?
 sentence, and the Codex button's tooltip says "in /mnt/d/gator-fixture, as if you had started it yourself:".
 `dom_identity_check` 56. None flaky.
+
+### SIF-82 Run configuration keeps its width at a narrow window (2026-10-21; from the real-data survey)
+
+**Found.** At 1100 px (survey picture 13-page-1100.png), Run configuration read "Concurrent Spectre jobs" at x 24 and its box
+"6" at about x 955-1045, and the model line "Fine-tune mscr_vco_lin_c (6) · save point 800 evaluations" sat at the left with
+"RL model..." at the far right (survey issue 21). At 1100 px and under, the narrow layout gives the run column the page's
+width, and the property sheet of record 7.179 puts each box at the right end of its line (`minmax(0, 1fr) auto`), so a label
+and its box were about 930 px apart. Not changed: the nested scroll areas of the narrow layout (its fixed-height rows), a
+layout choice of its own.
+
+**Changed.** `frontend/src/styles.css` (SIF-82): under `@media (max-width: 1100px)` the run column's module bodies (Run
+configuration and Output settings) are at most 560 px wide, so a label keeps its box near it, the model line its "RL
+model..." button, and the hints, the reward fold and the Limits fold the same width. With the circuit shown, or above
+1100 px, the column is narrower than that and nothing changes.
+
+**Checked.** `tsc` clean. `room_check` 28 (27 before): new, at 1100 x 900, with the run column 1069 px wide, "Concurrent
+Spectre jobs" to the right edge of its box and the model line to the right edge of "RL model..." are each 560 px (photographed,
+`room-1b-narrow-sheet.png`); the page goes back to 1680 x 1050 for what follows. `looks_check` 74 and `module_fold_check` 30.
+None flaky.

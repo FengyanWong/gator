@@ -5,7 +5,8 @@
 //     reload with no run folds it again, the splitter's double click opens and folds it; with a run remembered it opens as kept;
 //   - Run configuration as a property sheet: a number's label and its box on one line, the box at the right; the run limits
 //     (launches, retries, wall time and the two failure rules) in one closed "Limits" fold whose line names the limits set,
-//     counted and the wall time in hours ("42 launches, 1 retry, wall time 24 h 00 min", branch record SIF-58);
+//     counted and the wall time in hours ("42 launches, 1 retry, wall time 24 h 00 min", branch record SIF-58); at 1100 px,
+//     where the column takes the page's width, a label stays near its box and the model line near "RL model..." (SIF-82);
 //   - Output settings: "Always saved" in one line with the whole list in its tooltip; the output root's facts in one line
 //     with the table folded behind it (open when the root cannot be written); with a run shown, its "Current run paths" in
 //     words ("Run folder", "Last successful save" in local time, the UTC in its tooltip; branch record SIF-60), a path saying
@@ -82,6 +83,16 @@ await runChecks(browser, async () => {
   check('...and without them the launches alone again', await page.until(`${LIMITS_LINE} === 'Limits - 42 launches'`, 30), await evaluate(LIMITS_LINE));
   const height = await evaluate(`({ right: document.querySelector('.right').scrollHeight, run: Math.round([...document.querySelectorAll('.right details.module')].find(d => d.querySelector('summary h3')?.textContent.trim() === 'Run configuration').querySelector('.module-body').getBoundingClientRect().height) })`);
   console.log(`INFO  right column ${height.right} px high, Run configuration's body ${height.run} px`);
+  // Branch record SIF-82: at 1100 px the narrow layout gives this column the page's width, and the sheet followed it -
+  // "Concurrent Spectre jobs" at the left, its box about 930 px away; the model line and "RL model..." as far apart.
+  await page.viewport(1100, 900); await sleep(400);
+  const narrow = await evaluate(`(() => { const l = ${LABEL('Concurrent Spectre jobs')}, t = l?.querySelector('span').getBoundingClientRect(), i = l?.querySelector('input').getBoundingClientRect();
+    const m = document.querySelector('.rl-networks-row .net-short')?.getBoundingClientRect(), b = document.querySelector('.rl-networks-row .rl-networks-open')?.getBoundingClientRect();
+    return { column: Math.round(document.querySelector('.right').getBoundingClientRect().width), box: i && t ? Math.round(i.right - t.left) : null, button: m && b ? Math.round(b.right - m.left) : null }; })()`);
+  check('at 1100 px, the column as wide as the page: the sheet stays 560 px wide - a label to its box, the model line to "RL model..." (SIF-82)',
+    narrow.column > 900 && narrow.box != null && narrow.box <= 562 && narrow.button != null && narrow.button <= 562, JSON.stringify(narrow));
+  await page.shot(path.join(out, 'room-1b-narrow-sheet.png'), `document.querySelector('.right')`, { beyond: true });
+  await page.viewport(1680, 1050); await sleep(400);
 
   // ---- Output settings ---------------------------------------------------------------------------------------------------------------
   await evaluate(`(() => { const d = [...document.querySelectorAll('.right details.module')].find(x => x.querySelector('summary h3')?.textContent.trim() === 'Output settings'); d.open = true; })()`);

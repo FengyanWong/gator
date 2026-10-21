@@ -202,7 +202,7 @@ export function schemaProblem(e: any): string | null {
   if (!errors.length) return null;
   const them = errors.length === 1 ? 'it' : 'them';
   return `The configuration is not valid yet, so this cannot be done: ${errors.slice(0, 3).map(x => `${x.path || 'the configuration'}: ${String(x.message ?? '').replace(/\.\s*$/, '')}`).join('; ')}`
-    + `${errors.length > 3 ? `; and ${errors.length - 3} more` : ''}. Put ${them} right first - the red "blocking issue(s)" button in the header lists ${them} too.`;
+    + `${errors.length > 3 ? `; and ${errors.length - 3} more` : ''}. Put ${them} right first - the red blocking-issues button in the header lists ${them} too.`;
 }
 /** A failed request in plain words: the backend's own sentence, or - when no answer came at all ("Failed to fetch") -
  *  what that means. Where a machine code is shown at all, it goes into a folded "Technical details". */

@@ -93,10 +93,15 @@ await runChecks(browser, async () => {
 
   // ---- the notifier is a button; nothing is listed before a press ---------------------------------------------
   check('the notifier is a <button>', (await evaluate(`${BUTTON}.tagName`)) === 'BUTTON');
-  check('it counts the blocking issues only (3 of 6 reported)', (await evaluate(`${BUTTON}.textContent`)) === '3 blocking issue(s)', await evaluate(`${BUTTON}.textContent`));
+  check('it counts the blocking issues only (3 of 6 reported)', (await evaluate(`${BUTTON}.textContent`)) === '3 blocking issues', await evaluate(`${BUTTON}.textContent`));
   check('the old text notifier is gone', !(await evaluate(`[...document.querySelectorAll('header span')].some(s => /blocking issue/.test(s.textContent))`)));
   check('nothing is listed before a press', !(await evaluate(`!!(${LIST})`)) && (await evaluate(`${BUTTON}.getAttribute('aria-expanded')`)) === 'false');
   check('Start and Calibration are disabled', await evaluate(`${headerButton('Start')}.disabled && ${headerButton('Calibration')}.disabled`));
+  // Branch record SIF-45: their tooltip counts the levels the button counts, and names it by its words (errors alone were
+  // counted: "has 2 blocking issues: the red button in the header lists them" beside a button that said 3).
+  const why = () => evaluate(`${headerButton('Calibration')}.title`);
+  const tooltipSays = text => until(`${headerButton('Calibration')}.title === ${JSON.stringify(`Calibration: ${text}`)}`, 30);   // waited for: the header may still be looking up its run
+  check('the tooltip counts what the button counts, and names it', await tooltipSays('The configuration has 3 blocking issues: the red "3 blocking issues" button in the header lists them.'), await why());
   const heightClosed = await evaluate(`document.querySelector('header').getBoundingClientRect().height`);
   await shot('issues-1-closed.png');
 
@@ -107,6 +112,8 @@ await runChecks(browser, async () => {
   await mouse('mouseReleased', at);
   check('releasing the button shows the list', await until(`!!(${LIST})`, 30));
   check('the button reports the open state', (await evaluate(`${BUTTON}.getAttribute('aria-expanded')`)) === 'true' && await evaluate(`${BUTTON}.classList.contains('active')`));
+  const head = await evaluate(`${LIST}.querySelector('.issue-list-head').textContent`);
+  check('the list\'s head counts them and names the buttons they hold back', head.startsWith('3 blocking issuesStart and Calibration stay disabled until all of them are resolved.'), head);
 
   // ---- ALL blocking issues, in full, and no other ---------------------------------------------------------------
   const listed = await rows();
@@ -125,7 +132,8 @@ await runChecks(browser, async () => {
   // ---- it follows the next validation while it is open ---------------------------------------------------------
   await revalidate(fixtures.one);
   const after = await rows();
-  check('an open list follows the next validation (3 -> 1)', after.length === 1 && after[0][2] === 'heads_divisibility' && (await evaluate(`${BUTTON}.textContent`)) === '1 blocking issue(s)', JSON.stringify(after));
+  check('an open list follows the next validation (3 -> 1)', after.length === 1 && after[0][2] === 'heads_divisibility' && (await evaluate(`${BUTTON}.textContent`)) === '1 blocking issue', JSON.stringify(after));
+  check('a blocker alone is one blocking issue in the tooltip too', await tooltipSays('The configuration has a blocking issue: the red "1 blocking issue" button in the header lists it.'), await why());
   await shot('issues-3-one-left.png');
 
   // ---- a second press, and the Hide button, close it --------------------------------------------------------------
@@ -144,7 +152,7 @@ await runChecks(browser, async () => {
   check('Start and Calibration are enabled again', await until(`!${headerButton('Start')}.disabled && !${headerButton('Calibration')}.disabled`, 30));
   await shot('issues-4-valid.png');
   await revalidate(fixtures.three);
-  check('a new problem brings the button back, closed', (await until(`!!(${BUTTON})`, 30)) && !(await evaluate(`!!(${LIST})`)) && (await evaluate(`${BUTTON}.textContent`)) === '3 blocking issue(s)');
+  check('a new problem brings the button back, closed', (await until(`!!(${BUTTON})`, 30)) && !(await evaluate(`!!(${LIST})`)) && (await evaluate(`${BUTTON}.textContent`)) === '3 blocking issues');
 
   // ---- the keyboard works as for any button --------------------------------------------------------------------------
   await evaluate(`${BUTTON}.focus()`);
@@ -156,7 +164,7 @@ await runChecks(browser, async () => {
   await revalidate(fixtures.rejected);
   const schemaRows = await rows();
   const key = n => CONFIG.parameters[n].variable_id;
-  check('each rejected field is its own blocking issue (2)', schemaRows.length === 2 && (await evaluate(`${BUTTON}.textContent`)) === '2 blocking issue(s)', JSON.stringify(schemaRows.map(r => r.slice(0, 4))));
+  check('each rejected field is its own blocking issue (2)', schemaRows.length === 2 && (await evaluate(`${BUTTON}.textContent`)) === '2 blocking issues', JSON.stringify(schemaRows.map(r => r.slice(0, 4))));
   check('each names its field and the key of its row', schemaRows.every((r, n) => r[2] === 'invalid_id' && r[3] === `parameters[${FOLLOWERS[n]}].variable_id row ${key(FOLLOWERS[n])}`), JSON.stringify(schemaRows.map(r => r[3])));
   check('each message is the plain one, not a JSON list', schemaRows.every((r, n) => r[4].startsWith(idError(FOLLOWERS[n]).message)) && !schemaRows.some(r => r[4].includes('[{')), JSON.stringify(schemaRows.map(r => r[4])));
   const TECH = `[...${LIST}.querySelectorAll('tbody tr')].map(tr => tr.querySelector('details.more'))`;

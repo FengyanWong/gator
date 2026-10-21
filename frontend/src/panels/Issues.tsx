@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Json } from '../api';
-import { BLOCKING_ISSUES_ID } from '../contract';
+import { BLOCKING_ISSUES_ID, BLOCKING_LEVELS } from '../contract';
+import { plural } from '../format';
 
-const BLOCKING = ['error', 'blocker'];
+const BLOCKING = BLOCKING_LEVELS;
 
 /** `parameters[2].lower` -> the key of that row, which is what the editor tables show (not the index). */
 function rowKey(path: string, config: Json, schema: Json): string | null {
@@ -22,12 +23,14 @@ export function ValidationStatus({ validation, config, schema }: { validation: J
   useEffect(() => { if (!blocked) setOpen(false); }, [blocked]);
   if (!blocked) return <span className="ok">{validation ? 'configuration valid' : 'validating...'}</span>;
   const blocking: Json[] = (validation.issues ?? []).filter((i: Json) => BLOCKING.includes(i.level));
+  // "1 blocking issue", "3 blocking issues" - it read "1 blocking issue(s)" (branch record SIF-45).
+  const count = plural(blocking.length, 'blocking issue');
   return (<>
     <button className={`issues-button${open ? ' active' : ''}`} aria-expanded={open} aria-controls={BLOCKING_ISSUES_ID}
-      title={open ? 'Hide the list' : 'Show every blocking issue'} onClick={() => setOpen(o => !o)}>{blocking.length} blocking issue(s)</button>
+      title={open ? 'Hide the list' : 'Show every blocking issue'} onClick={() => setOpen(o => !o)}>{count}</button>
     {open && <div id={BLOCKING_ISSUES_ID} className="issue-list" role="region" aria-label="Blocking issues">
-      <div className="issue-list-head"><b>{blocking.length} blocking issue(s)</b>
-        <span className="hint">Start and the baseline simulation stay disabled until all of them are resolved. The list follows every edit.</span>
+      <div className="issue-list-head"><b>{count}</b>
+        <span className="hint">Start and Calibration stay disabled until all of them are resolved. The list follows every edit.</span>
         <span className="spacer" /><button onClick={() => setOpen(false)}>Hide</button></div>
       <div className="issue-list-body"><table className="grid small">
         <thead><tr><th title="Order of the validation report">#</th>

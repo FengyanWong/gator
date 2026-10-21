@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRequest } from '../store';
 import { api, copy, Json } from '../api';
-import { folderName, stamp } from '../format';
+import { folderName, plural, stamp } from '../format';
 import { childrenOf, designName, ENCODER_SHORT, historyOf, startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { CircuitGraphView } from './CircuitGraphView';
@@ -35,7 +35,6 @@ const netShort = (n: Json) => netLabel(n, true);
 const sizeLabel = (n: Json) => n?.encoder_type ? `${n.hidden_dim}/${n.heads}/${n.layers}${n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${String(n.structural_encoding).toUpperCase()}` : ''}` : '?';
 // A name or task key may break after ':' and '_' ("synthetic:" / "gpdk045_" / "ota5"), never inside a word.
 const breakable = (text: string) => text.split(/(?<=[:_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 /** The name a model is listed under. */
 export const modelName = (m: Json): string => m?.model_label ?? m?.task_name ?? m?.task_id ?? folderName(m?.run_dir ?? '');
 /** The name of the model a run folder saved: as the run list names it, or the folder's own name when it is not listed. */

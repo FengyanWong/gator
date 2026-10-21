@@ -3632,7 +3632,7 @@ tab's conversation, the AI threads and the AI sizing settings named here went on
 
 * **A real run is never authorized with MOCK wording.** When the backend says a run is real although the page still
   took it for MOCK (a task chosen a moment before its circuit was read), the question is built from the backend's own
-  report: "This runs REAL simulations of real:<task> ... Authorize a total budget of N candidate evaluation(s)?".
+  report: "This runs REAL simulations of real:<task> ... Authorize a total budget of N candidate evaluations?".
 * **Undo while typing:** keys typed into one field less than 1.5 s apart are one Undo step (user choice); leaving the
   field ends it, and a change that was not typed there - a button, an applied proposal, rows read from Virtuoso - is a
   step of its own even while the field has focus (7.131). An edit made less than 0.8 s before the page is closed or
@@ -3831,7 +3831,7 @@ Connection tests use fake bridge clients and a fake probe process. No test opens
 Virtuoso: the Agent window's launcher is tested with fake CLIs and fake terminals (`test_wb_agent_cli.py`, which also runs a
 start script for real with a fake CLI), and the suite runs with `GATOR_AGENT_CLI_LAUNCH=off`.
 
-The header shows blocking issues as a red button, "N blocking issue(s)": a press lists every one of
+The header shows blocking issues as a red button, "N blocking issues": a press lists every one of
 them in full (level, code, field and editor row, message), including those that belong to no editor
 tab; the list follows each validation and closes when nothing blocks. A configuration the schema
 cannot even read (for example an ID with a `/` in it) is listed the same way, one issue per field:

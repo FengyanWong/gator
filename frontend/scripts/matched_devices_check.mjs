@@ -119,7 +119,7 @@ await runChecks(browser, async () => {
   invalid = true;
   await press(TOOLBAR, 'Matched devices...');
   check('a configuration that is not valid yet: the box names the field, in words, and points to the header\'s list',
-    await until(`/run\\.max_evaluations: max_evaluations is missing: this field needs a value/.test(${BOX}?.textContent ?? '') && /blocking issue/.test(${BOX}?.textContent ?? '')`), await boxText());
+    await until(`/run\\.max_evaluations: max_evaluations is missing: this field needs a value/.test(${BOX}?.textContent ?? '') && /the red blocking-issues button in the header/.test(${BOX}?.textContent ?? '')`), await boxText());   // it said "blocking issue(s)" (branch record SIF-45)
   await shot('matched_devices_invalid.png', BOX);
   invalid = false;
   await press(BOX, 'Close');

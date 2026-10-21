@@ -92,6 +92,9 @@ export const stopWords = (reason?: string | null) => (reason ? STOP_WORDS[reason
 /** A number for reading, not for a table's column: three significant digits, no padding - 0.037, -0.0248, 12.3 (branch record
  *  SIF-2: the reward spread was written 0.0370463). */
 export const sig = (v: number) => String(Number(v.toPrecision(3)));
+/** A count with its noun in the right number: "1 blocking issue", "3 blocking issues"; `many` for a plural that is not the
+ *  word with an s ("launches"). The header's button read "1 blocking issue(s)" (branch record SIF-45; out of ModelChooser). */
+export const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 /** A task's name from a task id as a model or a run records it: "mscr_vco_lin_c:4fd0a8f9303827bd" (the name and its definition's
  *  hash) or "real:mscr_vco_lin_c" -> "mscr_vco_lin_c" (branch record SIF-2). */
 export const taskNameOf = (id?: string | null) => String(id ?? '').replace(/^(real|ngspice|synthetic):/, '').split(':')[0] || 'unknown task';

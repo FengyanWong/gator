@@ -15,9 +15,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, plainError } from './api';
 import { useRequest } from './store';
 import { restingFor, type RunControl } from './runState';
-import { LAUNCH_KEY } from './contract';
+import { BLOCKING_LEVELS, LAUNCH_KEY } from './contract';
 import { keepInTab, readKeptInTab } from './kept';
-import { folderName } from './format';
+import { folderName, plural } from './format';
 import type { NextModel } from './panels/rlModelText';
 
 export type Action = 'start' | 'calibration' | 'resume' | 'continue';
@@ -42,9 +42,10 @@ const newRequestId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now().to
 
 /** The question when the BACKEND says a run is real although the page took it for MOCK (a task chosen a moment ago
  *  whose circuit had not been read yet, or a run whose status was not known): worded from the backend's own report,
- *  never from the page's MOCK text - an OK here authorizes real simulations (audit 2026-09-30). */
+ *  never from the page's MOCK text - an OK here authorizes real simulations (audit 2026-09-30). The questions count in the
+ *  right number, "1 candidate evaluation" / "600 candidate evaluations" (they said "evaluation(s)"; branch record SIF-45). */
 const realQuestion = (report: Json) => `This runs REAL simulations${report?.task_key ? ` of ${report.task_key}` : ''} (the page had taken it for a MOCK run).\n`
-  + `Authorize a total budget of ${report?.requested_max_evaluations ?? 'its'} candidate evaluation(s)?`;
+  + `Authorize a total budget of ${report?.requested_max_evaluations != null ? plural(report.requested_max_evaluations, 'candidate evaluation') : 'its candidate evaluations'}?`;
 
 /** The backend never starts on a guess: it refuses, creates nothing, and names what it needs - the budget of a REAL
  *  simulation, a model trained on another task, connection layers it could not check. Each question is put to the
@@ -98,7 +99,7 @@ export function continueConsent(status: Json, check: Json | null, newTotal: numb
   const total: number | null = newTotal ?? check?.total ?? status?.budget?.max_evaluations ?? null;
   const left = used != null && total != null ? Math.max(0, total - used) : null;
   return { real, authorizeText: (real ? 'This continues REAL simulations (Virtuoso/Spectre, or ngspice for an ngspice netlist task).\n' : 'This continues the synthetic run.\n')
-    + (left === null ? 'Authorize the rest of its evaluation budget?' : `Authorize up to ${left} more candidate evaluation(s)? (${used} of ${total} are used.)`) };
+    + (left === null ? 'Authorize the rest of its evaluation budget?' : `Authorize up to ${left} more candidate evaluation${left === 1 ? '' : 's'}? (${used} of ${total} are used.)`) };
 }
 
 // ---- readiness: why each action cannot run now, or null ------------------------------------------------------------------------
@@ -118,8 +119,10 @@ export function startReadiness(phase: string, validation: Json): string | null {
   if (phase === 'paused') return 'Not while the header holds a paused run: Let go of it first (the button beside Resume), or Resume it.';
   if (phase !== 'idle') return HEADER_BUSY[phase] ?? 'A run is live in the header.';
   if (validation?.blocks_run) {
-    const count = (validation.issues ?? []).filter((i: Json) => i.level === 'error').length;
-    return `The configuration has ${count || 'a'} blocking issue${count === 1 ? '' : 's'}: the red button in the header lists ${count === 1 ? 'it' : 'them'}.`;
+    // The levels the header's button counts, and the button by its words (branch record SIF-45: errors alone were counted,
+    // so an error and a blocker made this say "1 blocking issue ... lists it" beside a button that said 2).
+    const count = (validation.issues ?? []).filter((i: Json) => BLOCKING_LEVELS.includes(i.level)).length;
+    return `The configuration has ${count === 1 ? 'a blocking issue' : `${count || 'some'} blocking issues`}: the red "${plural(count, 'blocking issue')}" button in the header lists ${count === 1 ? 'it' : 'them'}.`;
   }
   return null;
 }
@@ -313,8 +316,8 @@ export function useLaunchActions({ control, meta, config, setConfig, configKey, 
     const calibrationText = calibration_only ? `\n(${calibration_designs} random designs for calibration; no starting-design baseline.)` : '';
     launcher.go(calibration_only ? 'calibration' : 'start', configKey, null,
       flags => api.start({ config, calibration_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true,
-        authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${budget} candidate evaluation(s)?`
-          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${budget} candidate evaluation(s)?`) + calibrationText },
+        authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${plural(budget, 'candidate evaluation')}?`
+          : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${plural(budget, 'candidate evaluation')}?`) + calibrationText },
       'Not started: you answered no, so nothing was created.');
   };
   // Continue... of the Run status tab: the run shown there, with the total of the budget form (null = unchanged). The

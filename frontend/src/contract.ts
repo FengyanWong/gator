@@ -47,3 +47,8 @@ export const APP_ROOT_ID = 'root';
 export const OUTPUT_ROOT_ID = 'output-root';
 /** The header's list of blocking issues (Issues.tsx). */
 export const BLOCKING_ISSUES_ID = 'blocking-issues';
+
+// ---- validation -------------------------------------------------------------------------------------------------------------
+/** The issue levels that stop a start: the header's button counts these, and so does the Start and Calibration tooltip
+ *  (launch.ts) - it counted errors alone, so with a blocker it named a number the button did not (branch record SIF-45). */
+export const BLOCKING_LEVELS = ['error', 'blocker'];

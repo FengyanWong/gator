@@ -651,3 +651,28 @@ its History "synthetic:gpdk045_ota5 · New model · 60 evaluations · fixture"),
 "fixture_task · New model · no model saved"), `model_chooser_check` 78 (new: "Saved by" reads "New model, seed 1,
 completed"), `room_check` 22 ("New model - no weights loaded" holds), `save_now_check` 25, `dom_identity_check` 56; none
 flaky.
+
+### SIF-45 The header's blocking issues and the real-run questions count in the right number (2026-10-21; from the readability audit)
+
+**Found.** The header's red button, shown whenever a start is blocked, read "1 blocking issue(s)" (the user, on seeing it:
+"whats the problem here"), and its list's head the same; the list said "Start and the baseline simulation stay disabled",
+a button now called Calibration. The question before every real Start, Resume and Continue asked "Authorize a budget of
+600 candidate evaluation(s)?" ("a total budget of N candidate evaluation(s)", "up to N more candidate evaluation(s)", "Run
+a budget of N candidate evaluation(s)" for ngspice). The Start and Calibration tooltip counted errors alone, where the
+button counts errors and blockers: with one of each it said "has 1 blocking issue" beside a button that said 2, with a
+blocker alone "has a blocking issues: the red button in the header lists them". A configuration the schema rejects
+pointed to 'the red "blocking issue(s)" button'.
+
+**Changed** (`format.ts`: `plural`, moved out of `ModelChooser.tsx`; `contract.ts`: `BLOCKING_LEVELS`, which `Issues.tsx`
+and `launch.ts` share; `Issues.tsx`, `launch.ts`, `api.ts`): "1 blocking issue", "3 blocking issues"; "Start and
+Calibration stay disabled until all of them are resolved."; "Authorize a budget of 600 candidate evaluations?", "a total
+budget of 1 candidate evaluation" ("its candidate evaluations" with no number, as before), "up to 40 more candidate
+evaluations"; the tooltip "Calibration: The configuration has 3 blocking issues: the red "3 blocking issues" button in the
+header lists them." and "... has a blocking issue: the red "1 blocking issue" button in the header lists it."; "the red
+blocking-issues button in the header lists it too". `docs/workbench.md` and `docs/functionality-reference.md` quote the
+button as "N blocking issues".
+
+**Checked.** `tsc` clean; `blocking_issues_check` 42 (its button counts now "3 blocking issues", "1 blocking issue", "2
+blocking issues"; new: the list's head, and the tooltip for 2 errors + 1 blocker and for a blocker alone),
+`matched_devices_check` 30 (it looks for "the red blocking-issues button in the header"), `run_control_check` 102,
+`consistency_check` 14, `launch_recovery_check` 20, `corner_check_check` 37, `model_chooser_check` 78; none flaky.

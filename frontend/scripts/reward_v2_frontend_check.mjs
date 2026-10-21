@@ -94,7 +94,7 @@ try {
   await page.setValue(control('Mode'), 'resume');
   const compatible = "Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel summary')).some(e => e.textContent === 'Compatibility for Resume: compatible')";
   check('actual checkpoint initially resume compatible', await page.until(compatible, 300));
-  check('saved reward coefficients shown', await page.evaluate(`Number(${row('.model-facts', 'Worst hard-spec share')}) === 0.5 && Number(${row('.model-facts', 'Objective bonus weight')}) === 0 && Number(${row('.model-facts', 'Margin bonus weight')}) === 0`));
+  check('saved reward coefficients shown', await page.evaluate(`Number(${row('.model-facts', 'Worst hard-spec share')}) === 0.5 && Number(${row('.model-facts', 'Objective bonus weight')}) === 0 && Number(${row('.model-facts', 'Tightest-margin bonus weight')}) === 0`));   // the reward block's name since SIF-80
   check('saved full condition identities shown', await page.evaluate(`${row('.model-facts', 'Saved condition plan')} === ${JSON.stringify(['nominal', ...corners].join(', '))}`));
   await page.setValue(control('Worst hard-spec share', 'input'), '0.7');
   check('reward edit refreshes exact-resume compatibility', await page.until("Array.from(window.__checkRLWindow.document.querySelectorAll('.rl-networks-panel li.issue.error')).some(e => e.textContent.startsWith('reward_settings: incompatible'))", 300));

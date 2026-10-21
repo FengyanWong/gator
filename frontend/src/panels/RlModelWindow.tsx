@@ -4,18 +4,25 @@
 import { Fragment } from 'react';
 import { copy, Json } from '../api';
 import { folderName, plural, short, stamp, taskNameOf } from '../format';
-import { RESTORABLE, SavedModels } from './ModelChooser';
+import { RESTORABLE, RESTORABLE_MEANS, SavedModels } from './ModelChooser';
 import { DESIGN_NAME, designName, pointText } from '../lineage';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Check, LookFold, Num } from './fields';
-import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_CHOICES, INPUT_NAMES, REWARD_NAME, TRANSFER_TITLE, inputsChoice, newModelChoice,
-  newModelInputs, inputsText } from './rlModelText';
+import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_CHOICES, INPUT_NAMES, REWARD_HELP, REWARD_NAME, TRANSFER_TITLE, inputsChoice,
+  newModelChoice, newModelInputs, inputsText } from './rlModelText';
 import { NoModeNote } from './RunConfiguration';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
 import type { RlModel } from './useRlModel';
 /** The training conditions as Reward and conditions names them (branch record SIF-12): the facts wrote the key ("off"). */
 const CONDITIONS: Record<string, string> = { off: 'Nominal only', after_nominal: 'Corners after nominal passes', always: 'Every planned corner' };
+/** A saved model's training conditions: the policy, then its plan - nothing more for Nominal only with nothing planned (branch
+ *  record SIF-80: "Nominal only; 0 conditions planned" said the one fact twice, the second time as a zero). */
+const conditionsText = (contract: Json) => {
+  const policy = contract?.condition_policy ?? 'off', planned = contract?.planned_conditions;
+  return `${CONDITIONS[policy] ?? policy}${planned == null ? '; plan not recorded' : planned.length ? `; ${plural(planned.length, 'condition')} planned`
+    : policy === 'off' ? '' : '; no corners planned'}`;
+};
 /** A setting's value in the differences table: RWSE as the saved models table writes it (SIF-8), a switch as on/off (branch
  *  record SIF-57: "rwse", "true"). */
 const settingValue = (v: Json) => v === 'rwse' ? 'RWSE' : typeof v === 'boolean' ? (v ? 'on' : 'off') : String(v);
@@ -127,7 +134,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
       {/* A new model's inputs come with its encoder's template (record 7.332; user: "Yes, no box"): one line of text. A box is
           drawn only while the configuration still holds another choice - that choice, and the encoder's own to move to. */}
       {inputsChoice(net) === newModelChoice(encoder)
-        ? <p className="hint network-inputs-line" title={TRANSFER_TITLE}>Network inputs: {INPUT_NAMES[newModelChoice(encoder)]} ({inputsText(net).replace(/^[^:]*: /, '')})</p>
+        ? <p className="hint network-inputs-line" title={TRANSFER_TITLE}>Network inputs: {INPUT_NAMES[newModelChoice(encoder)]} ({inputsText(net).replace(/^.*? - /, '')})</p>
         : <label title={TRANSFER_TITLE}>Network inputs<select className="network-inputs" value={inputsChoice(net)}
           onChange={e => setNet(INPUT_CHOICES[e.target.value] ?? newModelInputs(encoder))}>
           <option value={newModelChoice(encoder)}>{INPUT_NAMES[newModelChoice(encoder)]} (a new model's inputs)</option>
@@ -191,7 +198,9 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         {model?.description && <table className="grid small model-facts"><tbody>
           {savedNet && <tr className="model-network"><td>Network</td><td><b>{designName(savedNet)}</b>, hidden {savedModel.hidden_dim}, heads {savedModel.heads}{archDiffers || usesHeads ? '' : ' (ignored by this encoder)'}, layers {savedModel.layers}
             <span className="hint"> - this run uses it as it is: a saved model only loads into the network it was trained with.</span></td></tr>}
-          {model.vocabulary && <tr className="model-components"><td>Components</td><td><b>{model.vocabulary.label}</b>
+          {/* The list's name begins the cell, capitalised as every other fact (branch record SIF-80: "device families (11
+              kinds)"); the backend's label stays as it is, which the graph view writes inside a sentence. */}
+          {model.vocabulary && <tr className="model-components"><td>Components</td><td><b>{String(model.vocabulary.label).replace(/^./, c => c.toUpperCase())}</b>
             <span className="hint"> - the network of this run knows the same list{model.vocabulary.name !== 'standard' && !model.vocabulary.loaded
               ? '; that PDK is not loaded now, which is needed only for Parameters rows on its own parameters' : ''}.</span></td></tr>}
           {/* Branch record SIF-2: the task by its name (the id with its definition's hash in the tooltip), the time as the Runs and
@@ -205,17 +214,19 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           <tr><td>Reward</td><td title={`${model.description.contract?.reward_version ?? 'none recorded'}; ${model.description.contract?.reward_settings?.violation_shape ?? 'capped'}`}>
             {REWARD_NAME[model.description.contract?.reward_version ?? ''] ?? (model.description.contract?.reward_version ? String(model.description.contract.reward_version).replace(/_/g, ' ') : 'Legacy nominal')}; violation
             shape {model.description.contract?.reward_settings?.violation_shape ?? 'capped'}</td></tr>
-          <tr><td>Worst hard-spec share</td><td>{short(model.description.contract?.reward_settings?.worst_spec_share ?? 0)}</td></tr>
-          <tr><td>Objective bonus weight</td><td>{short(model.description.contract?.reward_settings?.objective_weight ?? 0)}</td></tr>
-          <tr><td>Margin bonus weight</td><td>{short(model.description.contract?.reward_settings?.margin_weight ?? 0)}</td></tr>
-          <tr><td>Conditions</td><td>{CONDITIONS[model.description.contract?.condition_policy ?? 'off'] ?? model.description.contract?.condition_policy}; {model.description.contract?.planned_conditions == null ? 'plan not recorded'
-            : `${plural(model.description.contract.planned_conditions.length, 'condition')} planned`}</td></tr>
+          {/* The weights by the reward block's names, with its tooltips (branch record SIF-80: "Margin bonus weight" here was
+              "Tightest-margin bonus weight" there, and no row said what it does). */}
+          <tr title={REWARD_HELP.worst_spec_share}><td>Worst hard-spec share</td><td>{short(model.description.contract?.reward_settings?.worst_spec_share ?? 0)}</td></tr>
+          <tr title={REWARD_HELP.objective_weight}><td>Objective bonus weight</td><td>{short(model.description.contract?.reward_settings?.objective_weight ?? 0)}</td></tr>
+          <tr title={REWARD_HELP.margin_weight}><td>Tightest-margin bonus weight</td><td>{short(model.description.contract?.reward_settings?.margin_weight ?? 0)}</td></tr>
+          <tr><td>Conditions</td><td>{conditionsText(model.description.contract)}</td></tr>
           {model.description.contract?.planned_conditions?.length! > 0 && <tr><td>Saved condition plan</td><td>{model.description.contract!.planned_conditions!.map(c => c.corner.id).join(', ')}</td></tr>}
           <tr><td>Operating points</td><td>{savedNet?.operating_points ? 'on' : 'off'}</td></tr>
           <tr className="model-inputs"><td>Network inputs</td><td>{inputsText(savedNet)}</td></tr>
           <tr><td>Training</td><td>{count(model.description.counters.evaluations_committed, 'evaluation')}, {count(model.description.counters.learner_updates, 'learner update')},
             {' '}{count(model.description.counters.replay_size, 'transition')} in replay</td></tr>
-          <tr><td>Restorable</td><td><b>{RESTORABLE[model.description.restoration_capability] ?? model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}</td></tr>
+          <tr><td>Restorable</td><td><b>{RESTORABLE[model.description.restoration_capability] ?? model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}
+            {RESTORABLE_MEANS[model.description.restoration_capability] && <span className="hint">{model.description.missing_components.length ? '; ' : ' - '}{RESTORABLE_MEANS[model.description.restoration_capability]}.</span>}</td></tr>
           <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>
         </tbody></table>}
         {model?.compatibility_unchecked && <div className="note compat-unchecked"><p><b>{model.compatibility_unchecked.title}</b></p>

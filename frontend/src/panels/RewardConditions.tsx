@@ -2,7 +2,7 @@
 import { SIMPLE_REWARD } from '../store';
 import type { Json } from '../api';
 import { Check, Num } from './fields';
-import { REWARD_NAMES } from './rlModelText';
+import { REWARD_HELP, REWARD_NAMES } from './rlModelText';
 import type { RlModel } from './useRlModel';
 
 export function RewardConditions({ m }: { m: RlModel }) {
@@ -58,12 +58,12 @@ export function RewardConditions({ m }: { m: RlModel }) {
       {gated && <Num label="Nominal gate band" value={run.reward?.nominal_gate_band ?? 0.5} onChange={v => set({ reward: { ...run.reward, nominal_gate_band: v } })} title="Strictly between 0 and 1. Gate-passing designs always rank above gate-failing designs." />}
       <label>Objective shape<select value={run.reward?.objective_shape ?? 'clipped'} onChange={e => set({ reward: { ...run.reward, objective_shape: e.target.value } })}><option value="clipped">Clipped</option><option value="compressed">Compressed</option></select></label>
       <Num label="Worst hard-spec share" bounded value={run.reward?.worst_spec_share ?? 0} onChange={v => set({ reward: { ...run.reward, worst_spec_share: v } })}
-        title="0 to 1. Mix the weighted mean violation with the worst hard-spec violation. At 1, soft violations do not contribute to the penalty." />
+        title={REWARD_HELP.worst_spec_share} />
       <Num label="Objective bonus weight" bounded value={run.reward?.objective_weight ?? 0} onChange={v => set({ reward: { ...run.reward, objective_weight: v } })}
-        title="0 to 1. Applies only to a complete hard-feasible plan and the single objective selected in Specs. Without an objective row the bonus is 0." />
+        title={REWARD_HELP.objective_weight} />
       <p className="hint reward-objective">Objective: {objective.length ? objective.map((t: Json) => `${t.direction_after_feasible} ${t.metric_id}`).join('; ') : 'none'}</p>
       <Num label="Tightest-margin bonus weight" bounded value={run.reward?.margin_weight ?? 0} onChange={v => set({ reward: { ...run.reward, margin_weight: v } })}
-        title="Complete hard-feasible plans only. Equality constraints remain mandatory but do not contribute clearance." />
+        title={REWARD_HELP.margin_weight} />
       </details>
   </>);
 }

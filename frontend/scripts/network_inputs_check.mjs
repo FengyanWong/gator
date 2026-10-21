@@ -41,6 +41,11 @@ await runChecks(browser, async () => {
   check('choosing New model brings the new model\'s inputs: the box is gone and a line names them', await page.until(`!${SELECT}
     && ${TEXT}.includes('Network inputs: Transferable 2') && (${LINE}).includes('transferable 2')`, 50), await evaluate(`${TEXT} + ' / ' + (${LINE})`));
   check('the line\'s tooltip lists what the network reads', (await evaluate(`document.querySelector('.rl-networks-row .net-short')?.title ?? ''`)).includes('operating-point ratios'));
+  // Branch record SIF-80: the inputs in words begin with the choice's name ("transferable 2: ..." before), and the window's
+  // line names it once, what it reads in brackets.
+  const named = [await evaluate(TEXT), await evaluate(`document.querySelector('.rl-networks-row .net-short')?.title ?? ''`)];
+  check('... by the choice\'s name, once: "Network inputs: Transferable 2 (specs read as a set, ...)", "inputs Transferable 2 - specs read as a set, ..." on hover (SIF-80)',
+    /^Network inputs: Transferable 2 \(specs read as a set, [^()]*operating-point ratios\)$/.test(named[0]) && named[1].includes('inputs Transferable 2 - specs read as a set, '), JSON.stringify(named));
   await popup.shot(path.join(out, 'network-inputs-2.png'), `${NETWORK_DOCUMENT}.querySelector('.network-inputs-line')`, { maxHeight: 200 });
   // The component list of a new model is the device-family list (record 7.298): offered first, and choosing New model brings it.
   const LIST = `${NETWORK_DOCUMENT}.querySelector('.component-list select')`;

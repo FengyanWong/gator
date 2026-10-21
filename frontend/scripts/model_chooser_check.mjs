@@ -49,7 +49,8 @@ const model = (name, circuit, points, extra = {}) => { const newest = points.fin
   encoder: newest.network.encoder_type, ...extra }; };
 const A = model('FIXTURE_opamp_gt', 'synthetic:gpdk045_ota5', [point('a1', 6, 'periodic', 1), point('a2', 12, 'periodic', 2), point('a3', 18, 'periodic', 3), point('a4', 20, 'final', 4, { is_latest: true })]);
 const B = model('FIXTURE_ldo_gat', 'synthetic:ldo', [point('b1', 8, 'stop', 5, { is_latest: true, network: GATV2 })]);
-const C = model('FIXTURE_weights_only', 'synthetic:vco', [point('c1', 10, 'pause', 6, { is_latest: true, restoration_capability: 'weights_only', missing_components: ['replay_snapshot (disabled in output settings)'] })]);
+const C = model('FIXTURE_weights_only', 'synthetic:vco', [point('c1', 10, 'pause', 6, { is_latest: true, restoration_capability: 'weights_only', missing_components: ['replay_snapshot (disabled in output settings)'],
+  contract: { condition_policy: 'off', planned_conditions: [] } })]);                                    // a plan recorded empty (branch record SIF-80)
 const D = model('FIXTURE_real_ota5', 'real:gpdk045_ota5', [point('d1', 30, 'periodic', 7, { is_best_policy: true, network: RGCN }), point('d2', 40, 'final', 8, { is_latest: true, network: RGCN })], { mock: false });
 const FILLERS = ['e', 'f', 'g'].map((t, n) => model(`FIXTURE_filler_${t}`, 'synthetic:gpdk045_ota5', [point(`${t}1`, 5 + n, 'final', 9 + n, { is_latest: true })]));
 const MODELS = [A, B, C, D, ...FILLERS].sort((x, y) => (x.saved_utc < y.saved_utc ? 1 : -1));            // newest save first, as the backend sends it
@@ -59,7 +60,7 @@ const describe = (run_dir, checkpoint_id) => {
   if (!p) return null;
   return { description: { checkpoint_id: p.checkpoint_id, path: `${run_dir}/checkpoints/${p.checkpoint_id}`, kind: p.kind, source_run_id: m.run_id, source_task_id: m.task_id, mode: p.mode,
     created_utc: p.created_utc, metadata_version: 'FIXTURE', counters: { evaluations_committed: p.evaluations, learner_updates: p.learner_updates, replay_size: p.replay_size },
-    restoration_capability: p.restoration_capability, restorable_components: [], missing_components: p.missing_components, contract: { model_config: p.network, sac_config: {} }, file_problems: [] },
+    restoration_capability: p.restoration_capability, restorable_components: [], missing_components: p.missing_components, contract: { model_config: p.network, sac_config: {}, ...p.contract }, file_problems: [] },
     vocabulary: { name: 'standard', label: 'standard (8 generic kinds)', pdk_id: null, sha256: null, loaded: true },
     compatibility: { mode: 'fine_tune', compatible: true, checks: [{ component: 'FIXTURE check', status: 'ok', detail: 'identical' }], checkpoint_id: p.checkpoint_id, source_run_id: m.run_id,
       restoration_capability: p.restoration_capability, suggestion: null }, suggestion: null };
@@ -287,6 +288,15 @@ await runChecks(browser, async () => {
   check('... the counters, the condition plan and the metadata version in words (SIF-58)', facts['Training'] === '8 evaluations, 4 learner updates, 8 transitions in replay'
     && facts['Conditions'] === 'Nominal only; plan not recorded' && facts['Operating points'] === 'off' && facts['Metadata version'] === 'FIXTURE' && !('Schema' in facts),
     JSON.stringify(facts).slice(0, 700));
+  // Branch record SIF-80: "Restorable full state" with no meaning, "standard: ..." / "device families (11 kinds)" in lower
+  // case, and "Margin bonus weight" with no tooltip where the reward block says "Tightest-margin bonus weight" and what it does.
+  const rewardTips = await evaluate(`(() => { const tip = name => [...${RIGHT}.querySelectorAll('table.model-facts tr')].find(r => r.cells[0].textContent === name)?.title ?? 'no row';
+    const block = name => [...document.querySelectorAll('aside.right label.num')].find(l => l.firstElementChild?.textContent === name)?.title ?? 'no control';
+    return ['Worst hard-spec share', 'Objective bonus weight', 'Tightest-margin bonus weight'].map(n => [tip(n), block(n)]); })()`);
+  check('... and they explain themselves: Restorable says what it allows, the inputs and the list are named in capitals, the reward weights carry the reward block\'s names and tooltips (SIF-80)',
+    facts['Restorable'] === 'full state - the run that saved it can be continued exactly.' && facts['Network inputs'] === 'Standard'
+    && facts['Components'] === 'Standard (8 generic kinds) - the network of this run knows the same list.' && !('Margin bonus weight' in facts)
+    && rewardTips.every(([tip, block]) => tip.length > 20 && tip === block), JSON.stringify([facts['Restorable'], facts['Network inputs'], facts['Components'], rewardTips]).slice(0, 900));
   await sleep(1100);
   // A network that arrives from ELSEWHERE while the model is loaded (an imported configuration) is taken back - and that is said.
   check('no note about the network so far', !(await evaluate(`!!${RIGHT}.querySelector('.net-message.warn')`)));
@@ -320,6 +330,10 @@ await runChecks(browser, async () => {
     && /Parameter row "mp1_w" is set to be optimized but has no lower and no upper bound/.test(await evaluate(`${RIGHT}.querySelector('.compat-unchecked').innerText`))
     && !(await evaluate(`[...${RIGHT}.querySelectorAll('p.error')].some(p => /CompileError|bounds are required/.test(p.textContent))`)));
   check('... the model in use is still described in full', await until(`/10 evaluations, 6 learner updates/.test(${RIGHT}.innerText)`, 40));   // "learner" since SIF-58
+  const factsC = await evaluate(`Object.fromEntries([...${RIGHT}.querySelectorAll('table.model-facts tr')].map(r => [r.cells[0].textContent, r.cells[1].textContent]))`);
+  check('... weights only says what it lacks and what it allows; Nominal only with an empty plan is said once, with no "0 conditions" (SIF-80)',
+    factsC['Restorable'] === 'weights only - missing: replay_snapshot (disabled in output settings); usable for Fine-tune and Evaluate only.' && factsC['Conditions'] === 'Nominal only',
+    JSON.stringify([factsC['Restorable'], factsC['Conditions']]));
   check('... and the developer text is folded away under "Technical details"', await evaluate(`(() => { const d = ${RIGHT}.querySelector('.compat-unchecked details'); return !d.open && d.querySelector('summary').textContent === 'Technical details' && /CompileError: mp1_w/.test(d.textContent); })()`));
 
   // ---- a best policy is marked where one exists; rename (record 7.225) --------------------------------------------------------------

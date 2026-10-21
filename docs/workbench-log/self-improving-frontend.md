@@ -1984,3 +1984,41 @@ space or at the line's own end, one of them after a "/", and the box's text is t
 its folders under the head and the button's tooltip does not repeat it; the opened section starts with "Each folder starts
 ...". `corner_check_check` 39: the connection question names "Full test (Spectre, license)". `dom_identity_check` 56,
 `callouts_check` 8. None flaky.
+
+### SIF-80 The model in use explains its facts (2026-10-21; from the real-data survey)
+
+**Found.** In the RL model window, Fine-tune with a saved model chosen (survey picture 06-rl-model.png), "The model in use"
+read "Restorable **full state**" with nothing after it, while the Network row beside it says what its fact means and the
+saved models table holds the meaning only in its column's help (survey issue 35). "Components **device families (11
+kinds)**" and "Network inputs transferable: specs read as a set, sizes relative to the PDK, device model features" began in
+lower case, the second with a key-like name and a colon - a second label inside the cell - where New model's line and box
+call the same choice "Transferable" / "Transferable 2" (issue 36). "Worst hard-spec share 0.5", "Objective bonus weight 1",
+"Margin bonus weight 1" had no tooltip, where the reward block's controls carry one, and the third is called
+"Tightest-margin bonus weight" there - one setting, two names; "Conditions Nominal only; 0 conditions planned" said the
+empty plan twice, the second time as a zero (SIF-58 fixed "1 planned", not this case; issue 37). Not changed: the Runs
+window's Details keep "Saved state" (a run's fact, pinned by run_list_check), the backend's list label (the graph view writes
+it inside a sentence).
+
+**Changed.** `frontend/src/panels/ModelChooser.tsx`: `RESTORABLE_MEANS` holds what each kind allows, and the Restorable
+column's help is built from it (the same text as before). `panels/RlModelWindow.tsx`: Restorable reads "**full state** - the
+run that saved it can be continued exactly." and "**weights only** - missing: replay_snapshot (...); usable for Fine-tune and
+Evaluate only." (the meaning as a hint); Components capitalises the list's name in this cell only ("**Standard (8 generic
+kinds)**", "**Device families (11 kinds)**"; "PDK ..." as it was); the three weights are "Worst hard-spec share", "Objective
+bonus weight" and "Tightest-margin bonus weight", each row with the reward block's tooltip; Conditions (`conditionsText`)
+reads "Nominal only" when nothing is planned, "...; no corners planned" for a corner policy with an empty plan, and
+"...; N conditions planned" / "...; plan not recorded" as before; New model's line strips the new prefix (it still reads
+"Network inputs: Transferable 2 (specs read as a set, ...)"). `panels/rlModelText.ts`: `inputsText` begins with the choice's
+own name from `INPUT_NAMES` and a dash - "Transferable - specs read as a set, sizes relative to the PDK, device model
+features", "Structured + Transferable 2 - ...", "Custom - ..." for a set no choice makes, "Standard" - which the Run
+configuration line's tooltip writes too ("inputs Transferable 2 - specs read as a set, ..."); `REWARD_HELP` holds the three
+tooltips. `panels/RewardConditions.tsx`: its three controls take their tooltips from `REWARD_HELP` (text unchanged).
+
+**Checked.** `tsc` clean. `model_chooser_check` 85 (83 before): new, the model in use's facts read "full state - the run that
+saved it can be continued exactly.", Network inputs "Standard", Components "Standard (8 generic kinds) - the network of this
+run knows the same list.", no "Margin bonus weight" row, and each weight row's tooltip is the reward block control's own; with
+the weights-only model (its fixture now records an empty plan), Restorable reads "weights only - missing: replay_snapshot
+(disabled in output settings); usable for Fine-tune and Evaluate only." and Conditions "Nominal only".
+`network_inputs_check` 9 (8 before): new, the line reads "Network inputs: Transferable 2 (specs read as a set, ...,
+operating-point ratios)" and the Run configuration line's tooltip "inputs Transferable 2 - specs read as a set, ...".
+`network_panel_check` 62, `reward_block_check` 32, `dom_identity_check` 56. `reward_v2_frontend_check` (stand-alone, not run)
+now finds the facts row "Tightest-margin bonus weight". None flaky.

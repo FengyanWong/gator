@@ -78,13 +78,16 @@ export function inputsChoice(net: Json): 'standard' | 'transferable' | 'transfer
   if (!(values[0] === 'set' && values[1] === 'pdk_relative' && values[2])) return 'custom';
   return none ? 'transferable' : all ? 'transferable2' : 'custom';
 }
-/** A saved model's network inputs in words (the RL model window's model facts). */
+/** A saved model's network inputs in words (the RL model window's model facts): the choice by the name New model's line and
+ *  box give it, then what it reads (branch record SIF-80: "transferable: specs read as a set, ..." began with a lower-case
+ *  key and a colon, a second label inside the cell). A set no choice makes is "Custom". */
 export function inputsText(net: Json): string {
   if (!net) return 'unknown';
   const parts = [net.spec_input === 'structured' ? 'measurement programs and circuit bindings' : net.spec_input === 'set' ? 'specs read as a set' : null, net.size_features === 'pdk_relative' ? 'sizes relative to the PDK' : null,
     net.device_model_features ? 'device model features' : null, net.bench_features === 'relative' ? 'bench sources on their own scales' : null,
     net.net_roles === 'rule' ? 'net tags by rule' : null, net.operating_point_ratios ? 'operating-point ratios' : null].filter(Boolean);
-  return parts.length ? `${net.spec_input === 'structured' ? 'structured' : inputsChoice(net) === 'transferable2' ? 'transferable 2' : 'transferable'}: ${parts.join(', ')}` : 'standard';
+  const choice = inputsChoice(net);
+  return parts.length ? `${choice === 'custom' ? 'Custom' : INPUT_NAMES[choice]} - ${parts.join(', ')}` : INPUT_NAMES.standard;
 }
 
 export const NETWORK_SETTING_LABELS: Record<string, string> = {
@@ -95,6 +98,12 @@ export const NETWORK_SETTING_LABELS: Record<string, string> = {
 /** The five reward settings a new configuration fixes (store.ts SIMPLE_REWARD), as the reward block names them. */
 export const REWARD_NAMES: Record<string, string> = { violation_shape: 'violation shape', worst_spec_share: 'worst hard-spec share',
   objective_weight: 'objective bonus weight', objective_shape: 'objective shape', margin_weight: 'tightest-margin bonus weight' };
+/** What three of them do: the reward block's tooltips, and the same rows of a saved model's facts (branch record SIF-80: the
+ *  facts had none). */
+export const REWARD_HELP: Record<string, string> = {
+  worst_spec_share: '0 to 1. Mix the weighted mean violation with the worst hard-spec violation. At 1, soft violations do not contribute to the penalty.',
+  objective_weight: '0 to 1. Applies only to a complete hard-feasible plan and the single objective selected in Specs. Without an objective row the bonus is 0.',
+  margin_weight: 'Complete hard-feasible plans only. Equality constraints remain mandatory but do not contribute clearance.' };
 /** A reward version by name: a saved model's (SIF-41) and a run's executed reward in Run status (SIF-54). */
 export const REWARD_NAME: Record<string, string> = { constraint_violation_v2: 'Constraint violation, version 2' };
 

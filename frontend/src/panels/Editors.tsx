@@ -606,10 +606,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)} />}
       {/* The lines above the tables give their fact; what explains it is the line's tooltip (record 7.176, user: "reduce or
           delete these texts"). The rows the optimizer changes are "searched", as the task's Details call them (branch record
-          SIF-40), where this line said "Independent action variables" (branch record SIF-50). */}
+          SIF-40), where this line said "Independent action variables" (branch record SIF-50). "..." only before the first
+          validation answer: App keeps the last answer while the next one is on its way, so a missing count after that means
+          validation could not count (a tie to a row that does not exist, a cycle, a refused configuration) and reads "?". */}
       {tab === 'parameters' && <p className="fact" title={'The rows the optimizer changes itself; the others follow a tied row or stay fixed. '
         + 'The initial value is the one read from the circuit. Equal initial values do not imply a binding. '
-        + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>Searched rows: <b>{validation?.facts?.independent_action_variables ?? '...'}</b> of {rows.length}.</p>}
+        + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>Searched rows: <b>{validation == null ? '...'
+          : (validation.facts?.independent_action_variables ?? '?')}</b> of {rows.length}.</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
         + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns).'}>Probes: {probeIds.length
           ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}

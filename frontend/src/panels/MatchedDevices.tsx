@@ -71,8 +71,10 @@ export function MatchedDevices({ config, setConfig, onClose }: { config: Json; s
           <div className="row"><button disabled={busy || stale || !chosen.length} onClick={review}
             title="Review: the rows with the ticked ties made, as a diff. Nothing changes before Apply.">Review...</button>
             {/* "Searched rows", as the Parameters fact line and the task's Details say it, where both lines here said
-                "independent action variables" and the heading "Tie 2: ..." read like an order to tie item 2 (branch record SIF-50). */}
-            <span className="hint">Searched rows now: <b>{answer.independent_before ?? '...'}</b>.</span></div>
+                "independent action variables" and the heading "Tie 2: ..." read like an order to tie item 2 (branch record SIF-50).
+                "?" as before: the line is drawn only once the answer is here, so no count means the route could not count, not
+                that it is still counting. */}
+            <span className="hint">Searched rows now: <b>{answer.independent_before ?? '?'}</b>.</span></div>
           {answer.note && <p className="hint">{answer.note}</p>}
         </>}
         {answer.applicable && answer.suggestions.length === 0 && answer.structures.length > 0 &&

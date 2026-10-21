@@ -808,7 +808,7 @@ JSON"), and a row without its ID read "Import failed: every Specs row needs its 
 paste over one cell a leader decides said "1 cell that follow another field kept."; fill down already said "that follows".
 
 **Changed** (`Editors.tsx`, `MatchedDevices.tsx`, `docs/workbench.md`): the fact line reads "Searched rows: 7 of 66."
-("..." until validation answers), its tooltip starting "The rows the optimizer changes itself; the others follow a tied row
+("..." until validation first answers, "?" when it answered without a count), its tooltip starting "The rows the optimizer changes itself; the others follow a tied row
 or stay fixed."; Matched devices reads "Searched rows now: 5." and "2 ties: searched rows 5 -> 3" ("1 tie: ..."; the arrow drawn as before). The
 zero-floor hint (reward v2.1 B3, kept on purpose) shows only for an interval from 0 whose Margin sides is not upper, and
 reads "supply_power_w: the margin also measures the distance to 0. If 0 is only a physical floor, set Margin sides to upper
@@ -829,3 +829,14 @@ interval from 0 to 1 V is named in the hint with "(More columns)", and the hint 
 "2 cells that follow another field kept." unchanged), `find_fill_copy_check` 30 (fill down's "1 cell that follows"
 unchanged); none flaky. The singular paste note has no check of its own: a one-cell block over a follower needs a column
 order the sheet check does not set up, and the text now matches fill down's, which is pinned.
+
+**Review follow-up.** The review found one slip: the count placeholder became "..." for every missing count, which reads
+as "still counting". App keeps the last validation answer while the next is on its way (`keepPrevious`), so after the first
+answer a missing count means validation could not count: a "Tied to" naming a row that does not exist, a ratio that cannot
+be used or a tie cycle (`independent_action_count` returns None), a refused configuration, or no answer at all (`rejected()`
+gives `facts: {}`). The line then said "Searched rows: ... of 66." for as long as the problem stayed. Matched devices draws
+its line only once its answer is here, so "..." there never meant pending: only a route answer with
+`independent_before = null`. Now the Parameters line reads "..." only while `validation` is null and "?" when an answer
+has no count; Matched devices reads "?" again, as before SIF-50. "Changed" above now says so. `tsc` clean;
+`editor_columns_check` 23 (new: its canned report has no count, and the line reads "Searched rows: ? of 5."),
+`matched_devices_check` 30; neither flaky. Matched devices' "?" has no pin: its fixture answers always carry a count.

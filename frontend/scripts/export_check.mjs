@@ -88,6 +88,17 @@ await runChecks(browser, async () => {
   check('... "Tightest margin" beside a best design, never "Tightest clearance"', !!facts['Tightest margin'] === !!status.best_design && !facts['Tightest clearance'], Object.keys(facts).join(', '));
   check('... the ended run\'s "First feasible design" reads a number or "none", never "none yet"', (await evaluate(`[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.querySelector('.key-tile-value')?.textContent`))
     === (status.first_feasible ? `at ${status.first_feasible.first_feasible_eval_count} evaluations` : 'none'));
+  // Branch record SIF-76: the budget "used", as the Continue... form and the Abort question count it (it read "charged" here
+  // alone), what counts in the tooltip; the best design's reward in its tile, and its hard violation only while it misses
+  // (a feasible one read "feasible hard violation 0", always 0, and no reward).
+  const hero = await evaluate(`(() => { const h = document.querySelector('.status-grid .status-hero-count > .hint'); return h ? { text: h.textContent, title: h.title } : null; })()`);
+  check('... the budget in words: "evaluations used · 0 in flight · 0 failed", what counts on hover; the Budget row "N used / N" (SIF-76)',
+    hero?.text === `evaluations used · ${status.budget.in_flight} in flight · ${status.budget.failed} failed` && /^A design counts against the budget once it is sent to the simulator/.test(hero.title)
+    && new RegExp(`^${status.budget.charged} used / ${status.budget.max_evaluations} `).test(facts.Budget?.text ?? ''), `${JSON.stringify(hero)} | ${facts.Budget?.text}`);
+  const bestTile = await evaluate(`[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'Best design')?.querySelector('.key-tile-value')?.textContent ?? null`);
+  const best = status.best_design;
+  check('... the "Best design" tile gives its reward, and the hard violation only while it misses (SIF-76)', !best ? bestTile === 'none'
+    : (best.reward == null || / reward -?\d/.test(bestTile ?? '')) && /hard violation/.test(bestTile ?? '') === !best.feasible, `${bestTile} | feasible ${best?.feasible}, reward ${best?.reward}`);
   await shot('export-1-status.png');
 
   // ---- 1 Logs: the whole file, not the newest 200 entries --------------------------------------------------------------------------------------
@@ -121,9 +132,22 @@ await runChecks(browser, async () => {
   // ---- 3 + 4 Data tables: the CSV comes to the browser; so do the research CSVs, as one zip ------------------------------------------------------
   await tab('Data tables'); row = 'Refresh';
   check('Data tables shows the run\'s evaluations', await until(`/^${status.budget.charged} rows/.test${HINT(row)}`, 80), await hint());
-  // In words, the store's commit in the tooltip (branch record SIF-54: "12 rows (snapshot at commit 14); last 12 shown.").
-  check('... "N rows; the last M shown.", with "Snapshot at commit N" in its tooltip', new RegExp(`^${status.budget.charged} rows; the last ${Math.min(25, status.budget.charged)} shown\\.`).test(await hint())
+  // In words, the store's commit in the tooltip (branch record SIF-54: "12 rows (snapshot at commit 14); last 12 shown."); the
+  // newest row first, as Logs lists its lines (branch record SIF-76: "the last 25 shown", oldest first, the newest below the fold).
+  const shownRows = status.budget.charged > 25 ? `; the newest 25 shown` : '';
+  check('... "N rows, newest first." ("; the newest 25 shown" when there are more), with "Snapshot at commit N" in its tooltip', new RegExp(`^${status.budget.charged} rows${shownRows}, newest first\\.`).test(await hint())
     && /^Snapshot at commit \d+$/.test(await evaluate(`${button(row)}?.closest('.row').querySelector('.hint')?.title ?? ''`)), await hint());
+  // Branch record SIF-76: a time in this computer's time, as Logs and Output files write it, its UTC value on hover (it read
+  // "2026-10-16T17:17:20.704501+", cut at the panel's edge); the newest row on top.
+  const cells = await evaluate(`(() => { const t = document.querySelector('footer table.data-table'); if (!t) return null;
+    const heads = [...t.tHead.rows[0].cells].map(th => th.textContent), at = heads.indexOf('proposed_at'), seq = heads.indexOf('commit_seq'), rows = [...t.tBodies[0].rows];
+    const local = s => { const d = new Date(s), two = n => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()); };
+    const cell = at >= 0 ? rows[0]?.cells[at] : null, utc = /^(.*) \\(UTC\\)$/.exec(cell?.title ?? '')?.[1] ?? null;
+    return { text: cell?.textContent ?? null, title: cell?.title ?? null, local: utc && local(utc), seqs: seq >= 0 ? rows.map(r => Number(r.cells[seq].textContent)) : null }; })()`);
+  check('... a time reads this computer\'s "YYYY-MM-DD hh:mm:ss", its UTC value on hover (SIF-76)', !!cells?.text && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(cells.text) && cells.text === cells.local
+    && /^20\d\d-\d\d-\d\dT[\d:.]+(\+00:00|Z) \(UTC\)$/.test(cells.title), JSON.stringify(cells));
+  check('... the newest row on top (SIF-76)', !!cells?.seqs && cells.seqs.length > 1 && cells.seqs.every((v, i) => i === 0 || v < cells.seqs[i - 1]), JSON.stringify(cells?.seqs));
   await press('Export detailed CSV');
   check('"Export detailed CSV" says what was downloaded and where the copy is kept', await until(`/Downloaded evaluations__seq\\d+\\.csv\\. Also kept in the run folder: exports\\/evaluations__seq\\d+\\.csv/.test${HINT(row)}`, 100), await hint());
   const csvName = /Downloaded (evaluations__seq\d+\.csv)/.exec(await hint())?.[1] ?? 'missing';

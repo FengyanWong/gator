@@ -1821,3 +1821,42 @@ over two lines while Task and Saved model take two; the link takes three lines, 
 with the whole name; the outside run's folder leaves "Started from" as wide as its title. `dom_identity_check` 56,
 `training_tab_check` 95, `run_control_check` 120, `looks_check` 73, `task_list_check` 88, `task_run_check` 31,
 `reliability_check` 20. None flaky.
+
+### SIF-76 The bottom panel's times, budget words and best design read like the rest of the page (2026-10-21; from the real-data survey)
+
+**Found.** On the user's finished vco run (800 evaluations), Data tables' `proposed_at` column read "2026-10-16T17:17:20.704501+",
+cut at the panel's edge and an hour off Logs, which writes this computer's time (18:20:50 for the run's last receipt): SIF-2 and
+SIF-59 moved every other time on the page to the local form (survey issue 11). Its hint read "800 rows; the last 25 shown." over rows 736, 737 ... in the order
+the backend sends the tail, oldest first, so during a run each new row landed below the fold of a panel six rows tall, while
+Logs, the tab beside it, lists newest first (issue 28). Run status's Best design tile read "feasible hard violation 0": always 0
+for a feasible design, and no reward, which the run brief gives as "best so far: reward -0.037" (issue 12). The same budget
+number was "charged" here ("evaluations charged · 0 in flight · 0 failed", "800 charged / 800 (...)") and in the Runs window's
+Details, but "Used 800" in the Continue... form under it and "Used so far" in the Abort question (issue 29). The message after a
+Load run read "Fine-tune from mscr_vco_lin_c (6) @ 800." beside the model line's "save point 800 evaluations": SIF-67 left the
+Runs window's sentences to a later batch (issue 30). Not changed: the run's short time "10-16 16:32" in that message (SIF-59's
+runTitle form) and "real:" (deliberate); "at 4 evaluations" in the First feasible tile (the Runs window's "at 4" column).
+
+**Changed.** `frontend/src/panels/RunTabs.tsx`: a Data tables cell of a time column (`_at`, `_utc`) reads stamp()'s local
+"2026-10-16 18:17:20", "2026-10-16T17:17:20.704501+00:00 (UTC)" on hover, as Output files writes its times; a value stamp()
+cannot read stays as it was, and the CSV export keeps the raw values. The rows are drawn newest first, and the hint reads "800
+rows; the newest 25 shown, newest first." ("12 rows, newest first." when every row is shown). The Best design tile gives the
+reward when the design has one and the hard violation only while it misses: "feasible reward -0.037", "infeasible reward -0.25 ·
+hard violation 0.125" (a MOCK run's best design has no reward and reads "feasible" alone). The budget is "used": "evaluations
+used · 0 in flight · 0 failed", with "A design counts against the budget once it is sent to the simulator, whether it then
+completes, fails or is cancelled." on hover; "800 used / 800 (in flight 0, ...)"; "First full-plan feasibility: at 4
+evaluations used (dispatch #4, ...)". `panels/RunList.tsx`: Details' Budget "25 used / 60 (...)" and First feasibility "at N
+evaluations used (...)". `page/runWindowActions.ts`: "Fine-tune from mscr_vco_lin_c (6), save point at 800 evaluations. Undo
+takes it back."; New run like this, in its list, "Fine-tune from fixture (save point at 40 evaluations), 40 evaluations, seed
+2, ..."; a save point without a count gives its id, through `pointText` (lineage.ts). The Abort message's "stays charged" and
+the header's compact "Next: ... @ 420" line are left as they are. `docs/workbench.md` (the Load run message it quotes; "the
+evaluations used as a large number") and `docs/functionality-reference.md` (the same Run status phrase).
+
+**Checked.** `tsc` clean. `export_check` 31 (27 before), on a real MOCK run: the hint "12 rows, newest first."; new, a
+`proposed_at` cell reads the browser's local "YYYY-MM-DD hh:mm:ss" with "<UTC value> (UTC)" on hover, the rows' `commit_seq`
+falls from 12 to 1, the hero line reads "evaluations used · 0 in flight · 0 failed" with its tooltip and the Budget row "12 used
+/ 12", and the Best design tile has a reward when the design has one and "hard violation" only when it is not feasible.
+`run_list_check` 128 (127): the Budget "25 used / 60", the Load run messages "Fine-tune from fixture, save point at 60
+evaluations." and "... at 40 evaluations.", New run like this "Fine-tune from fixture (save point at 40 evaluations), 40
+evaluations, seed 2"; new, its fixture's best design has a reward, and the tile reads "infeasible reward -0.25 · hard violation
+0.125". `looks_check` 74 (73): new, the fixture's time cell reads its local time with "2026-10-03T15:15:01.076735+00:00 (UTC)"
+on hover. `task_run_check` 31, `room_check` 27, `dom_identity_check` 56. None flaky.

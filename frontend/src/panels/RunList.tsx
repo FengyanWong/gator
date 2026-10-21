@@ -157,10 +157,11 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     ['Worked for', span(row.active_seconds)], ['Paused between segments', row.paused_seconds ? span(row.paused_seconds) : null],
     ['Summed simulator job time', summary?.time?.sum_job_runtime_seconds != null ? `${span(summary.time.sum_job_runtime_seconds)} (parallel jobs added up: not elapsed time)` : null],
     ['Stop reason', row.stop_reason ? `${stopWords(row.stop_reason)} (${row.stop_reason})` : null], ['Error', row.error],   // words, the key beside them (SIF-16)
-    ['Budget', b ? `${b.charged} charged / ${b.max_evaluations} (completed ${b.completed}, failed ${b.failed}, in flight ${b.in_flight}, remaining ${b.remaining})` : null],
+    // "used", as Run status, the Continue... form and the Abort question count the budget (SIF-76: "charged")
+    ['Budget', b ? `${b.charged} used / ${b.max_evaluations} (completed ${b.completed}, failed ${b.failed}, in flight ${b.in_flight}, remaining ${b.remaining})` : null],
     ['Spectre launches', b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''} (retries ${b.retries}, cache hits ${b.cache_hits})` : null],
     ['Learner updates', info ? String(info.learner_updates ?? 0) : null],
-    ['First feasibility', info ? (first ? `at ${first.first_feasible_eval_count} evaluations charged (${first.completed_count} completed, ${first.spectre_launches} launch${first.spectre_launches === 1 ? '' : 'es'})` : 'not reached') : null],
+    ['First feasibility', info ? (first ? `at ${first.first_feasible_eval_count} evaluations used (${first.completed_count} completed, ${first.spectre_launches} launch${first.spectre_launches === 1 ? '' : 'es'})` : 'not reached') : null],
     ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics, best.metric_units)} · violation ${typeof best.violation === 'number' ? sig(best.violation) : '-'}` : 'none') : null],   // not shouted (SIF-19); three digits (SIF-44)
     ['Best design variables', best?.variables ? variables(best.variables) : null],
     ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}` : 'none (random weights)') : null],

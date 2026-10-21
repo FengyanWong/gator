@@ -266,7 +266,7 @@ switch are gone; every panel, button and field stands where it stood.
 - Output settings starts folded (user: "by default make output settings collapsible and collapsed so I can see training
   tab directly"), its line naming the experiment and the end of the output root; a fold or unfold is kept in this browser.
 - The Training tab shows one run's key numbers as six compact tiles (two runs or more: the table, a row each), and Run
-  status opens with the run at a glance: its state, the evaluations charged as a large number with a bar, and four numbers
+  status opens with the run at a glance: its state, the evaluations used as a large number with a bar, and four numbers
   (Spectre launches, learner updates, the first feasible design, the best design); the table below holds them all. The bar
   is red while the run runs (the current run), white once it completed, grey paused or stopped, the error red when it
   failed (branch record SIF-3; a completed run's red bar read as an error).
@@ -1458,8 +1458,8 @@ it). The window lists every run under the output folder, newest first, one row p
     there (or not under the allowed output folders) makes Load run go on to the next one - a passing failure (the server
     busy, a timeout) stops it, where it used to load the model the run started from and say it had worked. And only the
     newest Load run or New run like this lands: one still on its way when another is pressed, or when a task is chosen
-    elsewhere, changes nothing. The message names what came in - "Loaded run ota7t 10-06 14:02: task real:ota7t, Fine-tune from ota7t (2) @
-    420. Undo takes it back." - and says when the task was saved again since the run (the RL model window's check then
+    elsewhere, changes nothing. The message names what came in - "Loaded run ota7t 10-06 14:02: task real:ota7t, Fine-tune from ota7t (2),
+    save point at 420 evaluations. Undo takes it back." - and says when the task was saved again since the run (the RL model window's check then
     says whether the model still fits).
   - **Show results**: only the bottom tabs show the run, as the double click did until record 7.267.
   - **Continue...** (a run at rest that kept a save point): Run status shows the run with its budget form open; the run

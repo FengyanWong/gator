@@ -115,8 +115,9 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   if (!status) return <p className="hint">{!runDir ? 'No run selected.' : error ? `The status of this run could not be read: ${error}` : 'Reading the run...'}</p>;
   const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection, saved = status.persistence;
   const firstNominal = b?.first_nominal_feasible;
+  // "used", as the Continue... form and the Abort question count the budget (branch record SIF-76: here alone it read "charged")
   const firstCost = (event: Json) => event
-    ? `at ${event.first_feasible_eval_count} evaluations charged (dispatch #${event.dispatch_index}, ${event.completed_count} completed, ${event.in_flight_count} in flight, ${event.spectre_launches} launch${event.spectre_launches === 1 ? '' : 'es'})`
+    ? `at ${event.first_feasible_eval_count} evaluations used (dispatch #${event.dispatch_index}, ${event.completed_count} completed, ${event.in_flight_count} in flight, ${event.spectre_launches} launch${event.spectre_launches === 1 ? '' : 'es'})`
     : 'not observed';
   const executedReward = status.summary?.reward;
   // The facts below in the page's words (branch record SIF-38): a number to three digits, a value in its unit as the editors
@@ -143,7 +144,8 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       <div className="status-hero-count">
         <span className="status-hero-state" title={status.stop_reason ?? undefined}>{status.state}{status.stop_reason ? ` · ${stopWords(status.stop_reason)}` : ''}</span>
         <span className="status-hero-number">{b.charged}<span className="of"> / {b.max_evaluations}</span></span>
-        <span className="hint">evaluations charged · {b.in_flight} in flight · {b.failed} failed</span>
+        <span className="hint" title="A design counts against the budget once it is sent to the simulator, whether it then completes, fails or is cancelled.">
+          evaluations used · {b.in_flight} in flight · {b.failed} failed</span>
         <span className={`status-hero-bar${status.state === 'completed' ? ' done' : ['failed', 'cancelled', 'interrupted'].includes(status.state) ? ' bad'
           : ['paused', 'stopped'].includes(status.state) ? ' rest' : ''}`}><span style={{ width: `${b.max_evaluations ? Math.min(100, (100 * b.charged) / b.max_evaluations) : 0}%` }} /></span>
       </div>
@@ -152,8 +154,10 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
         <KeyTile label="Learner updates" value={status.learner_updates ?? 0} />
         {/* "none yet" only while the run can still find one (branch record SIF-54: an ended run said it too) */}
         <KeyTile label="First feasible design" value={first ? first.first_feasible_eval_count : ENDED.includes(status.state) && !status.worker_alive ? 'none' : 'none yet'} before={first ? 'at' : undefined} after={first ? 'evaluations' : undefined} />
+        {/* Its reward, and the hard violation only while it misses (branch record SIF-76: a feasible one read "feasible hard
+            violation 0", always 0, and no reward); three digits, as the facts below (SIF-42) */}
         <KeyTile label="Best design" value={!best ? 'none' : best.feasible ? 'feasible' : best.nominal_feasible ? 'nominal only' : 'infeasible'}
-          after={best ? `hard violation ${few(best.violation)}` : undefined} />   {/* three digits, as the facts below (SIF-42) */}
+          after={best ? [best.reward != null && `reward ${few(best.reward)}`, !best.feasible && `hard violation ${few(best.violation)}`].filter(Boolean).join(' · ') || undefined : undefined} />
       </div>
     </div>}
     <table className="grid small"><tbody>
@@ -161,7 +165,7 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       {/* The Mode as the RL model window names it (branch record SIF-14: it wrote the key, "scratch (no weights loaded)"). */}
       <tr><td>Mode / model</td><td>{modeWords}{status.manifest?.source_model?.run_id ? ` - from run ${status.manifest.source_model.run_id.slice(0, 12)}, save point ${status.manifest.source_model.checkpoint_id}`
         : ['Baseline', 'Calibration'].includes(modeWords) ? '' : ' - no weights loaded'}</td></tr>
-      <tr><td>Budget</td><td>{b ? `${b.charged} charged / ${b.max_evaluations}  (in flight ${b.in_flight}, completed ${b.completed}, failed ${b.failed}, remaining ${b.remaining})` : '-'}</td></tr>
+      <tr><td>Budget</td><td>{b ? `${b.charged} used / ${b.max_evaluations}  (in flight ${b.in_flight}, completed ${b.completed}, failed ${b.failed}, remaining ${b.remaining})` : '-'}</td></tr>
       <tr><td>Spectre launches</td><td>{b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''}  (retries ${b.retries}, cache hits ${b.cache_hits})` : '-'}</td></tr>
       {b && <tr><td>Launch accounting</td><td>{b.confirmed_launches ?? b.launches} confirmed, {b.uncertain_launches ?? 0} uncertain, {b.reserved_launches ?? 0} reserved</td></tr>}
       {/* The setting by Run configuration's name (branch record SIF-54: "none (concurrency 4)", the configuration's key). */}
@@ -243,16 +247,23 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
       <button onClick={refresh} title="Refresh: Read this table again."><Icon name="refresh" label="Refresh" /></button>
       <button disabled={!!busy} onClick={exportCsv} title="Export detailed CSV: The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded."><Icon name={busy === 'csv' ? 'wait' : 'csv'} label={busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'} /></button>
       <button disabled={!!busy} onClick={exportResearch} title="Export research CSVs: The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip."><Icon name={busy === 'research' ? 'wait' : 'zip'} label={busy === 'research' ? 'Exporting...' : 'Export research CSVs'} /></button>
-      {/* the store's commit in the tooltip, a row as one (branch record SIF-54: "1 rows (snapshot at commit 3)") */}
-      <span className="hint" title={data ? `Snapshot at commit ${data.cutoff_commit_seq}` : undefined}>{data ? `${plural(data.total_rows, 'row')}; the last ${data.rows.length} shown.` : ''} {error ?? note}</span></div>
+      {/* the store's commit in the tooltip, a row as one (branch record SIF-54: "1 rows (snapshot at commit 3)"); the newest
+          row on top, as Logs lists its lines (branch record SIF-76: the backend sends the tail oldest first, and during a run
+          each new row landed below the fold of a panel six rows tall) */}
+      <span className="hint" title={data ? `Snapshot at commit ${data.cutoff_commit_seq}` : undefined}>{data ? `${plural(data.total_rows, 'row')}${data.rows.length < data.total_rows
+        ? `; the newest ${data.rows.length} shown` : ''}${data.rows.length > 1 ? ', newest first' : ''}.` : ''} {error ?? note}</span></div>
     {data && <div className="scroll"><table className="grid small data-table"><thead><tr>{data.columns.map((c: string) => <th key={c} className={numeric.has(c) ? 'num-cell' : undefined}>{c}</th>)}</tr></thead>
-      <tbody>{data.rows.map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
+      <tbody>{[...data.rows].reverse().map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
         // One line per row (record 7.158): an id ends in "..." - the whole value on hover, a click copies it - a time keeps
         // its full width, and no word is cut in two; a long hash used to wrap into a column of letters as tall as a paragraph.
-        const object = typeof r[c] === 'object' && r[c] !== null, text = object ? JSON.stringify(r[c]) : num(r[c]);
-        const id = /_id$/.test(c) && text !== '', time = /_(at|utc)$/.test(c);
+        // A time in this computer's time, as Logs and Output files write it, its UTC value on hover (branch record SIF-76: it
+        // read "2026-10-16T17:17:20.704501+", cut at the panel's edge and an hour off the same moment in Logs).
+        const time = /_(at|utc)$/.test(c), local = time && typeof r[c] === 'string' ? stamp(r[c]) : null;
+        const object = typeof r[c] === 'object' && r[c] !== null, text = object ? JSON.stringify(r[c]) : local ?? num(r[c]);
+        const id = /_id$/.test(c) && text !== '';
         // A JSON value keeps to one line too (branch record SIF-4): it wrapped into a block 200 px tall.
-        return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : numeric.has(c) ? 'num-cell' : undefined} title={id || object ? `${text}\nClick to copy` : undefined}
+        return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : numeric.has(c) ? 'num-cell' : undefined}
+          title={id || object ? `${text}\nClick to copy` : local ? `${r[c]} (UTC)` : undefined}
           onClick={id || object ? () => copy(text) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>}
   </div>);
 }

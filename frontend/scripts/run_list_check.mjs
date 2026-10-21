@@ -91,7 +91,7 @@ const statusOf = r => ({ state: r.state, run_id: r.run_id, mode: r.mode, entry: 
   heartbeat_utc: r.last_seen_utc ?? r.ended_utc, stop_reason: r.stop_reason, error: r.error, active_workers: [], concurrency: 2, threads_per_job: 1, learner_updates: 36, first_feasible: null,
   budget: { max_evaluations: r.max_evaluations, max_launches: null, max_retries: 0, charged: r.evaluations ?? 0, reserved: 0, in_flight: 0, completed: (r.evaluations ?? 0) - 1, failed: 1, released: 0,
     remaining: r.max_evaluations - (r.evaluations ?? 0), launches: r.evaluations ?? 0, retries: 0, cache_hits: 0, first_feasible: null },
-  best_design: { evaluation_id: 'fixture', feasible: false, metrics: { gain_db: 41.5 }, violation: 0.125, variables: [{ variable_id: 'input_pair_width', value: 2.3455777695373655e-6, unit: 'm', optimized: true }, { variable_id: 'load_capacitance', value: 2.5e-13, unit: 'F', optimized: true }] }, persistence: null,   // a LIST, as the engine writes it
+  best_design: { evaluation_id: 'fixture', feasible: false, metrics: { gain_db: 41.5 }, violation: 0.125, reward: -0.25, variables: [{ variable_id: 'input_pair_width', value: 2.3455777695373655e-6, unit: 'm', optimized: true }, { variable_id: 'load_capacitance', value: 2.5e-13, unit: 'F', optimized: true }] }, persistence: null,   // a LIST, as the engine writes it
   last_checkpoint_utc: r.ended_utc, connection_profile_id: null, bytes_written: 1234567, active_seconds: r.active_seconds, paths: { run_dir: r.run_dir }, connection: { overall: 'not_applicable' },
   save_point: 'ckpt-000040', save_point_code: r.save_point_code ?? 'current',
   summary: { time: { active_seconds: r.active_seconds, paused_seconds: r.paused_seconds, sum_job_runtime_seconds: 412.5 }, output: { resumability: 'full_state', completeness: 'complete', latest_checkpoint: 'ckpt-000040' } },
@@ -271,7 +271,7 @@ await runChecks(browser, async () => {
   check('they name the run folder, the run id and the task', details?.facts['Run folder'] === PAUSED.run_dir && details.facts['Run id'] === PAUSED.run_id && details.facts['Task id'] === 'fixture_task:0000', JSON.stringify(details?.facts));
   check('... the times in full', details?.facts['Created'] === stamp(PAUSED.created_utc) && details.facts['Worker began'] === stamp(PAUSED.started_utc) && details.facts['Came to rest'] === stamp(PAUSED.ended_utc) && details.facts['Worked for'] === '29 min 50 s'
     && /^6 min 53 s \(parallel jobs added up/.test(details.facts['Summed simulator job time']), JSON.stringify(details?.facts));
-  check('... the budget, the launches, the best design and the saved state', /^25 charged \/ 60 \(completed 24, failed 1, in flight 0, remaining 35\)$/.test(details?.facts['Budget']) && /^25 \(retries 0, cache hits 0\)$/.test(details.facts['Spectre launches'])
+  check('... the budget ("used", as Run status and the Continue... form count it; branch record SIF-76: "charged"), the launches, the best design and the saved state', /^25 used \/ 60 \(completed 24, failed 1, in flight 0, remaining 35\)$/.test(details?.facts['Budget']) && /^25 \(retries 0, cache hits 0\)$/.test(details.facts['Spectre launches'])
     && /^infeasible · gain_db = 41\.5 · violation 0\.125$/.test(details.facts['Best design']) && details.facts['Best design variables'] === 'input_pair_width = 2.34558 um; load_capacitance = 250 fF' && details.facts['First feasibility'] === 'not reached' && /^full state \(complete output, latest save ckpt-000040\)$/.test(details.facts['Saved state'])
     && details.facts['Model loaded at the start'] === 'none (random weights)' && details.facts['Data written'] === '1.2 MiB' && details.facts['Stop reason'] === 'paused by you (user_pause)', JSON.stringify(details?.facts));
   check('empty facts are left out instead of printed as blanks', !('Error' in (details?.facts ?? {})) && !('Paused between segments' in (details?.facts ?? {})));
@@ -384,6 +384,10 @@ await runChecks(browser, async () => {
   check('a double click there still shows a run in the bottom tabs', await doubleClick(PAUSED)
     && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`));
   check('... and closes the window; opened again, the folders are as they were', await closedByChoice());
+  // Branch record SIF-76: the Best design tile gives the reward, and the hard violation while the design misses (a feasible
+  // one read "feasible hard violation 0", always 0, and never its reward).
+  const bestTile = await evaluate(`[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'Best design')?.querySelector('.key-tile-value')?.textContent ?? null`);
+  check('Run status: the "Best design" tile reads "infeasible reward -0.25 · hard violation 0.125" (SIF-76)', bestTile === 'infeasible reward -0.25 · hard violation 0.125', bestTile);
   await openWindow(); await far.send('Page.enable');
   far.on('Page.javascriptDialogOpening', () => far.send('Page.handleJavaScriptDialog', replies.shift() ?? { accept: false }));
   await nav(pilot); await sleep(200);
@@ -513,14 +517,14 @@ await runChecks(browser, async () => {
   check('Load run of a trained run: its newest save point, pinned (a concrete id, never "latest"), in Fine-tune', draft?.mode === 'fine_tune' && draft.model_source.checkpoint_id === 'ckpt-000060-final', JSON.stringify(draft?.model_source));
   check('... with the model\'s network in the same step', sameNet(draft?.network, RGCN), JSON.stringify(draft?.network));
   check('... the bottom tabs show the run', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`, 40));
-  check('... and the message names the run, its task (the page\'s own: the editors stay) and the model', /^Loaded run fixture_task \d\d-\d\d \d\d:\d\d: task synthetic:gpdk045_ota5 \(already on the page: the editors stay as they were\), Fine-tune from fixture @ 60\. Undo takes it back\.$/.test(await banner()), await banner());
+  check('... and the message names the run, its task (the page\'s own: the editors stay) and the model, its save point by its evaluations (branch record SIF-76: "@ 60")', /^Loaded run fixture_task \d\d-\d\d \d\d:\d\d: task synthetic:gpdk045_ota5 \(already on the page: the editors stay as they were\), Fine-tune from fixture, save point at 60 evaluations\. Undo takes it back\.$/.test(await banner()), await banner());
   await undo();
   draft = await runWhen(x => !x?.model_source?.run_dir);
   check('one Undo takes the model and the Mode back together', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir && !sameNet(draft.network, RGCN), JSON.stringify({ mode: draft?.mode, source: draft?.model_source, net: draft?.network }));
   await openDetails(EVALUATED); await actAndClose('Load run');
   draft = await runWhen(x => x?.model_source?.run_dir === DONE.run_dir);
   check('Load run of an Evaluate-only run: the save point it evaluated (its weights never changed), in Fine-tune', draft?.mode === 'fine_tune' && draft.model_source.checkpoint_id === 'ckpt-000040-final'
-    && /Fine-tune from fixture @ 40\./.test(await banner()), `${JSON.stringify(draft?.model_source)} | ${await banner()}`);
+    && /Fine-tune from fixture, save point at 40 evaluations\./.test(await banner()), `${JSON.stringify(draft?.model_source)} | ${await banner()}`);
   await openDetails(PAUSED); await actAndClose('Load run');
   check('Load run of a run without a save point (and none it started from): the model stays as it was, and the message says so', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`, 40)
     && /the model as it was: this run has no save point and loaded none\./.test(await banner()) && (await storedRun())?.model_source?.checkpoint_id === 'ckpt-000040-final', await banner());
@@ -535,7 +539,7 @@ await runChecks(browser, async () => {
     && draft.model_label === 'fixture (2)' && draft.advanced?.batch_size === 16 && sameNet(draft.network, RGCN), JSON.stringify(draft));
   check('... from the save point it started from, pinned - not the "latest" its configuration recorded', draft?.model_source?.checkpoint_id === 'ckpt-000040-final', JSON.stringify(draft?.model_source));
   check('... the shown run stays, and the message says what the next run repeats', await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`)
-    && /^The next run repeats fixture_task \d\d-\d\d \d\d:\d\d: task synthetic:gpdk045_ota5, Fine-tune from fixture @ 40, 40 evaluations, seed 2/.test(await banner()), await banner());
+    && /^The next run repeats fixture_task \d\d-\d\d \d\d:\d\d: task synthetic:gpdk045_ota5, Fine-tune from fixture \(save point at 40 evaluations\), 40 evaluations, seed 2/.test(await banner()), await banner());
   await undo();
   draft = await runWhen(x => !x?.model_source?.run_dir);
   check('one Undo takes all of it back', modeOf(draft) === 'scratch' && draft.seed !== 2, JSON.stringify(draft));
@@ -576,7 +580,7 @@ await runChecks(browser, async () => {
   const late = heldModel.shift(); await fulfil(late.requestId, 200, described(late.body.run_dir, 'ckpt-000040-final', 40)); await sleep(1500);
   draft = await runWhen(x => !!x, 5);
   check('... and the older one, answered late, changes nothing: the newer run and its model stay', draft?.model_source?.checkpoint_id === 'ckpt-000060-final'
-    && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`) && /^Loaded run fixture_task .*Fine-tune from fixture @ 60\./.test(await banner()),
+    && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`) && /^Loaded run fixture_task .*Fine-tune from fixture, save point at 60 evaluations\./.test(await banner()),
     `${JSON.stringify(draft?.model_source)} | ${await banner()}`);
   await undo();
   draft = await runWhen(x => !x?.model_source?.run_dir);

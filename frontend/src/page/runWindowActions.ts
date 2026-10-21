@@ -4,6 +4,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, plainError } from '../api';
 import { dateTime, folderName, runTitle } from '../format';
+import { pointText } from '../lineage';
 import type { Newest } from '../newest';
 import type { BottomTab } from '../panels/BottomPanel';
 import type { TaskLoad, TaskLoaded } from '../panels/Left';
@@ -65,6 +66,9 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
     return result;
   };
   const nameOf = (point: SavePoint) => modelNameAt(runs, point.run_dir);
+  // A save point by its evaluations, as the model line and the RL model window name it (branch record SIF-76: the messages
+  // read "Fine-tune from X (6) @ 800" beside the model line's "save point 800 evaluations"; SIF-67 did the RL model window).
+  const pointWords = (point: SavePoint) => `save point ${point.evaluations != null ? `at ${point.evaluations} evaluations` : pointText(point.checkpoint_id)}`;
   const sinceText = (since: string | null, what: string) => since
     ? ` The task was saved again after ${what} began (${dateTime(since)}): the RL model window's check says whether the model still fits.` : '';
   /** Load run: its task, the model it ended with (in a Mode that loads one) and its results - one Undo step for the task and
@@ -87,7 +91,7 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
     if (!result.loaded) { setMessage({ level: 'info', text: `Run ${runTitle(row)} was not loaded: ${result.why}. Nothing changed.` }); return false; }
     setRunDir(row.run_dir); setTab('status'); unfold();
     setMessage({ level: 'info', text: `Loaded run ${runTitle(row)}: task ${row.task_key}${same ? ' (already on the page: the editors stay as they were)' : ''}, `
-      + (point ? `${MODE_NAME[mode]} from ${nameOf(point)} @ ${point.evaluations ?? point.checkpoint_id}.` : 'the model as it was: this run has no save point and loaded none.')
+      + (point ? `${MODE_NAME[mode]} from ${nameOf(point)}, ${pointWords(point)}.` : 'the model as it was: this run has no save point and loaded none.')
       + `${sinceText(since, 'this run')} Undo takes it back.` });
     return true;
   };
@@ -118,7 +122,7 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
     if (!result.loaded) { setMessage({ level: 'info', text: `New run like ${runTitle(row)}: not taken, ${result.why}. Nothing changed.` }); return false; }
     setMessage({ level: 'info', text: `The next run repeats ${runTitle(row)}: task ${row.task_key}, ${MODE_NAME[mode] ?? mode}`
       + (search.optimizer === 'bayes' ? ' searched by Bayesian optimization (the network is neither asked nor trained)' : search.optimizer ? ` searched by ${search.optimizer}` : '')
-      + (from ? ` from ${point ? `${nameOf(point)} @ ${point.evaluations ?? point.checkpoint_id}` : `${folderName(from.run_dir)}'s save point ${from.checkpoint_id} (it could not be read now)`}` : '')
+      + (from ? ` from ${point ? `${nameOf(point)} (${pointWords(point)})` : `${folderName(from.run_dir)}'s save point ${from.checkpoint_id} (it could not be read now)`}` : '')
       + `, ${settings.max_evaluations} evaluations, seed ${settings.seed}, with its network, training values, reward, conditions and limits.`
       + `${sinceText(since, 'that run')} A model name already taken gets a number at the start. Undo takes it back.` });
     return true;

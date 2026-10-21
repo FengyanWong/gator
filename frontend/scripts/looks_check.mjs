@@ -374,6 +374,11 @@ await runChecks(browser, async () => {
   check('the four ids (worker_id too) are id cells, a long one ending in "...", the whole value in its tooltip', cells.ids === 4 && cells.cut && cells.title.startsWith(ID), JSON.stringify(cells));
   check('the row is one line high, the word "baseline" uncut', cells.height <= cells.line + cells.pad + 8 && cells.phase <= cells.line + cells.pad + 8, JSON.stringify(cells));
   check('a time keeps its width, a JSON value has a cell of its own', cells.time === 'time-cell' && cells.json === 'json-cell', JSON.stringify(cells));
+  // Branch record SIF-76: a time in this computer's time, as Logs and Output files write it, its UTC value on hover (it read
+  // "2026-10-16T17:17:20.704501+", cut at the panel's edge and an hour off the same moment in Logs).
+  const when = await evaluate(`(() => { const td = document.querySelector('footer table.data-table td.time-cell'), d = new Date(${JSON.stringify(TABLE.rows[0].proposed_at)}), two = n => String(n).padStart(2, '0');
+    return { text: td?.textContent, title: td?.title, local: d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()) }; })()`);
+  check('...in this computer\'s time, "YYYY-MM-DD hh:mm:ss", its UTC value on hover (SIF-76)', when.text === when.local && when.title === `${TABLE.rows[0].proposed_at} (UTC)`, JSON.stringify(when));
   // Branch record SIF-4: a JSON value keeps to one line as well, its whole text on hover (it wrapped into a block 200 px tall).
   const json = await evaluate(`(() => { const td = document.querySelector('footer table.data-table td.json-cell'); return td ? { ws: getComputedStyle(td).whiteSpace, over: getComputedStyle(td).textOverflow, title: td.title } : null; })()`);
   check('...and keeps to one line, "..." where it is cut, the whole value on hover (SIF-4)', json?.ws === 'nowrap' && json?.over === 'ellipsis' && /^[\[{]/.test(json?.title ?? '') && /Click to copy$/.test(json?.title ?? ''), JSON.stringify(json));

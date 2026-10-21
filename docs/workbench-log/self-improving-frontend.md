@@ -1754,3 +1754,33 @@ leaves the table its heading and about three rows with no condition, while the c
 card under about 410 px (the bottom panel opened again under the open box, this entry's 361 px case) the table keeps its
 heading and about one row. The page now states the condition, as this entry and the CSS comment do. Checked: `tsc` clean,
 `matched_devices_check` 37, `editor_columns_check` 23.
+
+### SIF-74 The editors: issue lines, probe chips and tie markers that read (2026-10-21; from the real-data survey)
+
+**Found.** On the user's VCO (mscr_vco_lin_c) the Specs tab's Issues column gave every spec "info 'inl1' is new to the
+result registry the netw..." - SIF-5's first clause, cut by the column's 40 characters before its point, which is the
+message's second sentence (models saved without the spec do not load) - and its lines touched the cell's left line, left of
+the "Issues" heading's text, while f_center_hz's one line sat at the top of its row (survey issue 4): the column took the
+editor cells' zero padding and the old look's top alignment. The "Probes: m_f1_hz, m_f2_hz, ... m_power_w" chips, the names
+an Equation is typed with, were the old look's 11 px beside the 14 px line (issue 5; SIF-63 raised the other 11 px text and
+missed them). On Parameters the tick boxes stood at x 47, 50 and 62 px: the tick-box cell centred the box together with a
+leader's count, so "▸7", "▸31" and no count each put the box somewhere else (issues 22, 23 and 33, one defect seen three
+times). Not a defect: the warning repeated on every formula row (SIF-5's one line per issue), the empty Tied to of a leader,
+and the count's meaning (its tooltip, "7 tied rows follow this one: show them.").
+
+**Changed.** `frontend/src/panels/Editors.tsx`: `ISSUE_HEAD` gives an issue whose first clause the column cuts words of its
+own that fit - "info New spec: models without it do not load" for `spec_adds_registry_entry`, and "info The source of this
+spec is not recorded" for `basis_not_stated` (the new check found it cut too: "...is not recor..." on a spec with no basis);
+every other issue keeps its first clause, and the whole message and the code stay in the tooltip. `frontend/src/roadster.css`
+(SIF-74 block): the Issues column is padded 10 px at its sides, as its heading, and centred in the row, nothing added above
+or below, so a row with two lines stays as high as the others; the Probe chips are 13 px with 1 px / 6 px around the name
+(the line keeps its 1.75 height, so wrapped chips do not touch); the tick-box cell starts at its left, so every box stands
+in one column and a count or the tied mark follows it. `docs/functionality-reference.md` (the blocking issues row): the
+column's own words where the clause was cut.
+
+**Checked.** `tsc` clean. `spec_equations_check` 36 (35 before): new, the registry line reads "info New spec: models without
+it do not load" with its code in the tooltip, no line of the formula row is cut, and the column is padded 10 px at its sides
+and centred. `looks_check` 73 (72): new, the Probe chips at 13 px beside the 14 px line. `sheet_check` 45 (44): new, with a
+leader's rows open every tick box in view - with a count, the tied mark or nothing after it - stands at the same x.
+`task_rows_check` 52, `find_fill_copy_check` 30, `unsaved_rows_check` 25, `blocking_issues_check` 42, `room_check` 27,
+`editor_columns_check` 23, `formula_bar_check` 21, `matched_devices_check` 37. None flaky.

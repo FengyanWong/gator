@@ -390,3 +390,15 @@ table.run-table td .run-so-far { white-space: normal; }
 dialog.graph-dialog[open] { display: flex; flex-direction: column; }
 dialog.graph-dialog[open] > * { flex: none; }
 dialog.graph-dialog[open] > .graph-body { flex: 1 1 0; min-height: 0; height: auto; }
+
+/* SIF-74: the editors' small parts at the table's measure. The Issues column took the editor cells' zero padding (their boxes
+   pad themselves) and the old look's top alignment: its lines touched the cell's left line, left of the "Issues" heading's
+   text, and a row's one line sat at the top of the row. Now it is padded as the heading is at the sides and centred in the
+   row; nothing above or below, so a row with two lines stays as high as the others. */
+table.editor td.issues { padding: 0 10px; vertical-align: middle; }
+/* the Specs tab's Probe chips - the names an Equation is typed with - were the old look's 11 px beside the 14 px "Probes:" and
+   the Equation cells (SIF-63 raised the other 11 px text); the line keeps its 1.75 height, so wrapped chips do not touch */
+.spec-probes code.probe-id { font-size: 13px; padding: 1px 6px; }
+/* the tick boxes in one column: centred with a leader's count beside it ("▸7", "▸31") or without one, each box stood at another
+   place (x 47, 50 and 62 px on the VCO's Parameters); at the cell's start the count follows the box */
+table.editor td.sel { text-align: left; }

@@ -27,6 +27,12 @@ const MORE_KEY = 'gator-workbench-editor-more-columns';
 /** An issue in a row by the first clause of its message (branch record SIF-5): "The unit of a formula is not checked", where the
  *  row said "equation_unit_unchecked"; the whole message and the code stay in its tooltip. */
 const issueHead = (message?: string | null) => String(message ?? '').split(/(?<=[.:;])\s/)[0].replace(/[.:;]$/, '');
+/** An issue whose first clause the column's 40 characters cut, in words of its own that fit (branch record SIF-74): every spec
+ *  of a task the network had not seen read "'inl1' is new to the result registry the netw...", cut before its point, which is
+ *  the message's second sentence; a spec with no basis "The source of this requirement is not recor...". The whole message
+ *  and the code stay in the tooltip. */
+const ISSUE_HEAD: Record<string, string> = { spec_adds_registry_entry: 'New spec: models without it do not load',
+  basis_not_stated: 'The source of this spec is not recorded' };
 
 /** The table's room under which entering a cell (record 7.372) or Matched devices' answer (branch record SIF-73) folds the
  *  bottom panel: about four rows and the heading. */
@@ -664,7 +670,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                     stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true })} saved={saved}
                     placeholder={emptyOf(row, c)} />}</td>; })}
               <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} data-code={i.code}
-                title={`${i.message}\n(${i.level}: ${i.code})`}><b>{i.level}</b> {issueHead(i.message)}</div>)}</td>
+                title={`${i.message}\n(${i.level}: ${i.code})`}><b>{i.level}</b> {ISSUE_HEAD[i.code] ?? issueHead(i.message)}</div>)}</td>
             </tr>; })}</tbody>
         </table>
       </div>

@@ -115,6 +115,14 @@ await runChecks(browser, async () => {
   check('...each said in words - its level and the first clause of its message, the whole message and its code on hover (SIF-5)',
     words.length >= 2 && words.some(([text, title]) => text === 'warning The unit of a formula is not checked' && title.endsWith('(warning: equation_unit_unchecked)'))
     && words.every(([text, title]) => !text.includes(title.match(/: (\w+)\)$/)?.[1] ?? 'no code in the tooltip')), JSON.stringify(words));
+  // Branch record SIF-74: the registry line says its point ("'score_sq' is new to the result registry the netw..." was cut
+  // before it), no line is cut (the basis line was: "The source of this requirement is not recor..."), and the column is
+  // padded at its sides and centred in the row (its lines touched the cell's line).
+  const column = await evaluate(`(() => { const td = ${EDITORS}.querySelectorAll('table.editor tbody tr')[1].querySelector('td.issues'), s = getComputedStyle(td);
+    return { pad: [s.paddingLeft, s.paddingRight], align: s.verticalAlign, cut: [...td.querySelectorAll('.issue')].filter(d => d.scrollWidth > d.clientWidth).map(d => d.dataset.code) }; })()`);
+  check('...the registry line in words of its own, no line cut, the column padded at its sides and centred in the row (SIF-74)',
+    words.some(([text, title]) => text === 'info New spec: models without it do not load' && title.endsWith('(info: spec_adds_registry_entry)'))
+    && JSON.stringify(column.pad) === '["10px","10px"]' && column.align === 'middle' && column.cut.length === 0, JSON.stringify({ words, column }));
   const sized = await saved1();
   check('typing the lower limit proposes a scale from it (0.5)', sized?.normalization_scale === 0.5, JSON.stringify(sized));
   await shot('spec_equation_formula.png');

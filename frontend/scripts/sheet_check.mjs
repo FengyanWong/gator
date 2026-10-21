@@ -59,6 +59,12 @@ await runChecks(browser, async () => {
   const [lead] = leaders[0], follower = config.parameters.findIndex(p => p.binding_group === config.parameters[lead].variable_id);
   await evaluate(`${ROW(lead)}.querySelector('.tie-toggle').click()`);
   check('pressing it opens them, marked as tied', await page.until(`!${ROW(follower)}.hidden && !!${ROW(follower)}.querySelector('.tie-mark') && ${ROW(lead)}.querySelector('.tie-toggle').getAttribute('aria-expanded') === 'true'`, 20));
+  // Branch record SIF-74: the tick boxes stand in one column whatever follows them - a count, the tied mark or nothing (centred
+  // with what follows, each box stood at another place: x 47, 50 and 62 px on the VCO's Parameters).
+  const ticks = await evaluate(`[...document.querySelectorAll('table.editor tbody > tr:not([hidden])')].map(tr => [tr.querySelector('.tie-toggle') ? 'count'
+    : tr.querySelector('.tie-mark') ? 'mark' : 'none', +tr.querySelector('td.sel input').getBoundingClientRect().left.toFixed(1)])`);
+  check('...and every tick box stands in one column, with a count, a mark or nothing after it (SIF-74)', ['count', 'mark', 'none'].every(k => ticks.some(([kind]) => kind === k))
+    && Math.max(...ticks.map(([, x]) => x)) - Math.min(...ticks.map(([, x]) => x)) < 0.5, JSON.stringify(ticks));
   await evaluate(`${ROW(lead)}.querySelector('.tie-toggle').click()`);
   check('...and folds them again', await page.until(`${ROW(follower)}.hidden`, 20));
   report = validConfiguration({ issues: [{ level: 'error', path: `parameters[${follower}].ratio`, code: 'fixture', message: 'FIXTURE: an error on a tied row' }], blocks_run: true });

@@ -18,7 +18,8 @@
 //   - the editors share one ink and head colour; the Specs line offers the Probe ids as chips (same text);
 //   - the old look's small sizes no longer outrank the page: issue lines, the toolbar's text buttons, the tied rows' toggle, the
 //     task chip's name; a heading with no tooltip shows no help cursor (branch record SIF-63); a list table's second lines,
-//     its Details link, the state words and the paths, and the copy cursor only on a path that copies (SIF-64);
+//     its Details link, the state words and the paths, and the copy cursor only on a path that copies (SIF-64); the Probe
+//     chips (SIF-74);
 //   - Data tables: one line per row - ids end in "...", the whole value on hover, a click copies it; no word cut in two;
 //   - Research experiments: the two retired labels dropped from a saved configuration, three labels shown, six folded; no
 //     "Search method" any more (record 7.226; one, as its label, since 7.163);
@@ -349,9 +350,12 @@ await runChecks(browser, async () => {
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Specs')).click()`);
   await sleep(300);
   const probes = config.measurements.map(m => m.measurement_id).filter(Boolean);
-  const chips = await evaluate(`(() => { const p = document.querySelector('.fact.spec-probes'); return { ids: [...p.querySelectorAll('code.probe-id')].map(c => c.textContent), text: p.textContent }; })()`);
+  const chips = await evaluate(`(() => { const p = document.querySelector('.fact.spec-probes'), chip = p.querySelector('code.probe-id');
+    return { ids: [...p.querySelectorAll('code.probe-id')].map(c => c.textContent), text: p.textContent, size: chip && [getComputedStyle(chip).fontSize, getComputedStyle(p).fontSize] }; })()`);
   check('the Specs line offers the Probe ids as chips', JSON.stringify(chips.ids) === JSON.stringify(probes), JSON.stringify(chips.ids));
   check('...the line reads "Probes:" and the ids, a comma between them (its explanation in the tooltip, record 7.176)', chips.text === `Probes: ${probes.join(', ')}`, chips.text.slice(0, 160));
+  // Branch record SIF-74: the chips, the names an Equation is typed with, were the old look's 11 px beside the 14 px line.
+  check('...the chips at 13 px in their mono font beside the 14 px line (SIF-74)', JSON.stringify(chips.size) === '["13px","14px"]', JSON.stringify(chips.size));
   check('the Specs table header row takes the Specs colour', await evaluate(`document.querySelector('.editors').dataset.editor === 'targets'`));
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Parameters')).click()`);
 

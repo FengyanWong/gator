@@ -408,3 +408,11 @@ table.editor td.sel { text-align: left; }
    view. Three lines are the height a row's State (the stop reason under it) and Mode (the design under it) take already, and
    they keep the word that tells two archives apart ("GraphGPS", "CircuitGPS"). */
 table.run-table td.run-from .run-from-name { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* SIF-81: the task file's _help part as a list over its text, each part's name in bold and its wrapped lines hanging in
+   under it: inside the box they ran back under the opening "{". The list scrolls by itself at about a third of the
+   window, so the text keeps the rest of it (SIF-26). */
+.task-file-help { margin: 0 0 8px; } .task-file-help > summary { cursor: pointer; font-size: 13px; }
+.task-file-help dl { max-height: 30vh; overflow: auto; margin: 4px 0 0; font-size: 13px; }
+.task-file-help dl > div { margin: 0 0 4px; padding-left: 1.5em; text-indent: -1.5em; }
+.task-file-help dt { display: inline; font-weight: 600; } .task-file-help dd { display: inline; margin: 0 0 0 0.5em; }

@@ -2038,3 +2038,39 @@ point written by an older version of the optimizer code: only that version can c
 FIXTURE_opamp_gt. New: with its save point in use, Restorable reads the older-source words beside the digest warning, and
 the column's help says it too. The other models still read "full state - the run that saved it can be continued exactly.".
 `dom_identity_check` 56, `model_structure_check` 30 and `mode_suggestion_check` 20. None flaky.
+
+### SIF-81 The task file explains its parts in a list, and the Agent window's headline names its two CLIs (2026-10-21; from the real-data survey)
+
+**Found.** In the Task file window of mscr_vco_lin_c (survey picture 10-task-file.png), the `_help` part sat in the
+wrapping monospace box with the rest of the file, and its long lines ran back to the box's edge, under the opening "{":
+`editors\" checks it and puts the rows into the editors; ...` and `(ring_oscillator only): a rough oscillation frequency;
+it sizes the transient.` started at column 0, so one part's text could not be told from the next, and the hint over the box
+("The `_help` part says what each part is.") sent the reader to that block (survey issue 9; SIF-26 only made the box fill
+the window). In the Agent window (07-agent.png) the row read "In /mnt/d/gator: [Claude Code] [Codex] ... [What's
+missing?]" over "Each button opens the CLI in a terminal window of its own, in this folder, as you start it yourself: your
+settings, your account, your history.": "each button" took in What's missing?, which opens no CLI, its own job (a free
+checklist, no agent) was said only on hover, and "as you start it yourself: your settings, ..." was hard to read (issue
+18). Not changed: the button's name "What's missing?" (7.226; the checklist's heading and its "press again" line use it).
+
+**Changed.** `frontend/src/panels/TaskFile.tsx`: `splitHelp` takes the `_help` part out of the file the backend sends. The
+backend writes it first, with two-space indents (`task_files.render`), so it is cut out of the text and every number stays as
+written (1.0, 5e-06). A file of another shape is written out again without it, and text that is not JSON stays whole. The
+part shows over the box as **What each part is** (open; `details.task-file-help`), each part's name in bold and its text after
+it, the wrapped lines hanging in under it. The box holds the file without the part; Revert and its "nothing to undo" compare
+with that, and Apply sends it so (the backend ignores `_help` anyway). The hint reads "... nothing is saved until you press
+**Save as**. **What each part is**, below, says what each part holds." `frontend/src/roadster.css` (SIF-81): the list's look;
+it scrolls by itself at 30vh at most, so the box keeps the rest of the window (SIF-26). `frontend/src/panels/Agent.tsx`: the
+headline reads "Claude Code and Codex each open in a terminal window of their own, in this folder, as if you had started them
+yourself: your own settings, account and history. "What's missing?" asks no agent and runs no simulation: the workbench
+itself lists what the run still needs before it can start."; the two CLI buttons' tooltips and the Agent... tab's say "as if
+you had started it yourself". `docs/workbench.md`: the task file window's list and the Agent window's headline.
+
+**Checked.** `tsc` clean. `task_save_check` 71 (70 before): the fixture's file is written as the backend writes it, with a
+second, long help part and `1200000000.0`; the window is now sized as it asks (760 x 900) and photographed
+(`task-file.png`). Changed, the file opens as text without `_help`, starting `{ "format": "gator-task-1",`, its
+`1200000000.0` kept. New, the list over the box is open, headed "What each part is", parts "what this is|maestro" in bold,
+the maestro text whole on more than one line with its second line hanging in (20 px right of the part's name), the hint
+pointing at the list with no `_help`, and Revert closed on a file just opened. `agent_window_check` 29 (28 before): the
+headline check reads the new first sentence; new, the headline does not say "Each button", ends with the What's missing?
+sentence, and the Codex button's tooltip says "in /mnt/d/gator-fixture, as if you had started it yourself:".
+`dom_identity_check` 56. None flaky.

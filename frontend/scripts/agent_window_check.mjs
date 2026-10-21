@@ -9,6 +9,7 @@
 //     never the active tab, underlined while its window is open;
 //   - opening the page sends nothing about agents; opening the window asks once which CLIs there are, nothing else;
 //   - the window holds the folder, the two CLI buttons and "What's missing?", the headline and the closed help line, no list yet;
+//     the headline speaks of Claude Code and Codex by name and says "What's missing?" asks no agent (branch record SIF-81);
 //   - a CLI opens on its button only, one request naming that CLI; an opened CLI is said in one line; one that could not be
 //     opened says why and what to type, with Copy; a CLI the backend did not find is a disabled button with the reason;
 //   - "What's missing?" fills the lower part of the SAME window (no second window) with the verdict, the items, whose step
@@ -98,7 +99,14 @@ await runChecks(browser, async () => {
     && seen.filter(s => s.name === '/api/agent/clis').length === 1, JSON.stringify(seen));
   check('no conversation, message box, provider, model or effort list, proposal or import', await far.evaluate(`!${WINDOW}.querySelector('textarea, select, .chat, .msg, .compose, .notes, .confirm')
     && !${WINDOW}.textContent.includes('Export task description') && !${WINDOW}.textContent.includes('Review settings') && !${WINDOW}.textContent.includes('Provider')`));
-  check('the headline says how the CLI starts: your settings, your account, your history', await far.evaluate(`${WINDOW}.querySelector('.agent-headline').textContent.includes('as you start it yourself: your settings, your account, your history')`));
+  const HEADLINE = `${WINDOW}.querySelector('.agent-headline').textContent`;
+  check('the headline says how Claude Code and Codex start: your own settings, account and history', await far.evaluate(`${HEADLINE}.startsWith('Claude Code and Codex each open in a `
+    + `terminal window of their own, in this folder, as if you had started them yourself: your own settings, account and history.')`), await far.evaluate(HEADLINE));
+  const MISSING_SAYS = `"What's missing?" asks no agent and runs no simulation: the workbench itself lists what the run still needs before it can start.`;
+  check('...about the two CLIs only, not "each button": What\'s missing? asks no agent and runs no simulation, said there and not only on hover; the '
+    + 'buttons\' tooltips say the CLI starts the same way (branch record SIF-81)', await far.evaluate(`!${HEADLINE}.includes('Each button')
+      && ${HEADLINE}.endsWith(${JSON.stringify(MISSING_SAYS)}) && ${BUTTON('Codex')}.title.includes('in ${FOLDER}, as if you had started it yourself:')`),
+    await far.evaluate(HEADLINE));
   check('the help is one closed line: what to ask it, and that Codex should read CLAUDE.md first', await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('details.agent-help');
     return !!d && !d.open && d.querySelector('summary').textContent === 'What to ask it' && d.textContent.includes('tell Codex to read CLAUDE.md first'); })()`));
   check('the buttons say in their tooltip how the CLI starts', await far.evaluate(`${BUTTON('Claude Code')}.title.includes('your own Claude Code settings decide what it may do') && ${BUTTON('Codex')}.title.includes('Codex history')`));

@@ -3335,7 +3335,9 @@ This restores Save as to the page by the user's request, superseding its removal
 **The task file.** One readable JSON file: the cell, the copy, the measurement, the Maestro part, the Parameters /
 Probes / Specs rows and notes, with a `_help` part that explains every part (JSON has no comments). **Task file** opens
 the file of the CURRENT editors in a window of its own (opened within the press; a blocked pop-up is said, and the next
-press tries again; a window already open is brought forward with its draft); **Apply to editors** checks every row with the editors' schema
+press tries again; a window already open is brought forward with its draft). The window shows the `_help` part as a list
+over the text, **What each part is** (open; each part's name in bold, its lines hanging in under it), and the text without
+that part, every number as the backend wrote it (branch record SIF-81); **Apply to editors** checks every row with the editors' schema
 and fills the editors (one Undo step) - a broken file is refused with its problems and changes nothing. What the file
 adds beside the rows (analyses, variables, bindings, the rough frequency, notes) is sent with the next save.
 Nothing is saved or written to Virtuoso from the window.
@@ -3584,7 +3586,8 @@ There is no Agent tab view since 2026-10-07 (record 7.253, user: "make the agent
 then "make it still a tab style but not button style"): **Agent...**, first in the bottom panel's tab line and still drawn
 as a tab (never the active one; underlined while its window is open), opens the Agent window instead of showing anything
 in the panel. The window holds, on one line, the folder the CLIs open in, **Claude Code**, **Codex** and, at the right end, **What's
-missing?**; under it one headline and one closed line, "What to ask it"; and under those, once asked for, the start
+missing?**; under it one headline (how Claude Code and Codex start, and that "What's missing?" asks no agent and runs no
+simulation; branch record SIF-81) and one closed line, "What to ask it"; and under those, once asked for, the start
 checklist. Opening the window asks the backend which CLIs are installed (free) and nothing else; the page itself never
 asks about agents. Pressed while the window is open, **Agent...** brings it to the front and looks for the CLIs again; a
 reload of the page closes the window, and one opened anew starts clean. The line itself is record 7.226's (user: "rewrite

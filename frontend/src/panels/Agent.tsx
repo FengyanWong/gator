@@ -72,12 +72,15 @@ export function AgentWindowTab({ config }: { config: Json }) {
       <span className="hint">In {directory}:</span>
       {CLIS.map(({ cli, name }) => { const c = cliOf(cli); return <button key={cli} className="agent-cli" disabled={!!opening || (!!found && !c?.available)}
         onClick={() => open(cli, name)} title={c && !c.available ? c.note : `Opens ${name} in a terminal window of its own, in ${directory}, `
-          + `as you start it yourself: your own ${name} settings decide what it may do, and the session is in your ${cli === 'claude' ? 'claude.ai' : 'Codex'} history.`
+          + `as if you had started it yourself: your own ${name} settings decide what it may do, and the session is in your ${cli === 'claude' ? 'claude.ai' : 'Codex'} history.`
           + (c?.executable ? `\n${c.executable}` : '')}>{opening === cli ? 'Opening...' : name}</button>; })}
       <span className="spacer" />
       <button className="missing" onClick={whatIsMissing} title="What's missing?: what this run still needs before it can start, and what to do about each - worked out by the workbench from the configuration as it is, shown below. Free: no agent, no simulation.">What's missing?</button>
     </div>
-    <p className="hint agent-headline">Each button opens the CLI in a terminal window of its own, in this folder, as you start it yourself: your settings, your account, your history.</p>
+    {/* Branch record SIF-81: "Each button opens the CLI" took in "What's missing?" too, whose job only its tooltip said. */}
+    <p className="hint agent-headline">Claude Code and Codex each open in a terminal window of their own, in this folder, as if you had started them yourself:
+      your own settings, account and history. "What's missing?" asks no agent and runs no simulation: the workbench itself lists what the run still
+      needs before it can start.</p>
     <details className="agent-help"><summary>What to ask it</summary>
       <p className="hint">Describe what you need in words, for example: "The run shown in the workbench is stuck on the gain spec: look at its designs and
         suggest what to change", or "Draft the Specs rows for this task from these requirements". The agent works in this folder with what your own settings
@@ -104,7 +107,7 @@ export function AgentWindowTab({ config }: { config: Json }) {
     {/* Drawn as a tab (the strip's tab rules), never `active`: it shows nothing in the panel; `open` underlines it while its window is open. */}
     <button className={`agent-tab${agent.popup ? ' open' : ''}`} onClick={openWindow}
       title={agent.popup ? 'The agent window is open: press to bring it to the front.'
-        : 'Opens the agent window: Claude Code or Codex in a terminal window of its own, in the workbench\'s folder, as you start it yourself - and "What\'s missing?", the free checklist of what the run still needs.'}>Agent...</button>
+        : 'Opens the agent window: Claude Code or Codex in a terminal window of its own, in the workbench\'s folder, as if you had started it yourself - and "What\'s missing?", the free checklist of what the run still needs.'}>Agent...</button>
     <PopupPortal popup={agent.popup} root={agent.root}>{view}</PopupPortal>
   </>);
 }

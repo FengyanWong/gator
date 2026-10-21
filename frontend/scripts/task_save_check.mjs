@@ -35,11 +35,17 @@ const tasksKnown = new Set(['real:ring_osc']);
 const generated = task => ({ loaded: true, task_key: task, mock: false, native_draft: false, generated_profile: true, baseline_recorded: true, complete: true,
   diagnostics: [], circuit: {}, hierarchy: { XU1: { MN1: {} } }, analysis_context: null, evaluation_backend: 'FIXTURE', max_concurrency: 4,
   summary: { device_count: 1, unknown_devices: [], devices: [] }, notes: ['FIXTURE: a saved task.'] });
-const fileText = (task, rows) => JSON.stringify({ _help: { 'what this is': 'The task file: everything this task is, in one place.' }, format: 'gator-task-1', name: task,
+// Written as the backend writes it (task_files.render: two-space indents, `_help` first, a float as Python spells it).
+const MAESTRO_HELP = 'The copy\'s Maestro test. Edit analyses (e.g. {"tran": {"stop": "50n"}}), variables ({"VSUP": "1.0"}), bindings and '
+  + 'initial_conditions here. Outputs and specs come from the Probes and Specs rows. initial_conditions give nets a start voltage, which a '
+  + 'circuit that does not start by itself needs.';
+const fileText = (task, rows) => JSON.stringify({ _help: { 'what this is': 'The task file: everything this task is, in one place.', maestro: MAESTRO_HELP },
+  format: 'gator-task-1', name: task,
   revision: 1, cell: { library: 'GPDK045_RINGOSC', cell: 'ring_osc_3stage', testbench: 'tb_ring_osc_3stage' },
   copy: { library: 'GPDK045_RINGOSC_GATOR', cell: 'ring_osc_3stage', testbench: 'tb_ring_osc_3stage' },
   measurement: { kind: 'ring_oscillator', expected_frequency_hz: 1.2e9 }, maestro: { analyses: {}, variables: {}, bindings: [], model_files: [] },
-  parameters: rows.parameters, probes: rows.measurements, specs: rows.targets, notes: '' }, null, 2);
+  parameters: rows.parameters, probes: rows.measurements, specs: rows.targets, notes: '' }, null, 2)
+  .replace('"expected_frequency_hz": 1200000000', '"expected_frequency_hz": 1200000000.0') + '\n';
 
 await runChecks(browser, async () => {
   const page = await browser.open({ errors: consoleErrors });
@@ -184,12 +190,29 @@ await runChecks(browser, async () => {
   await press('Task file', true); await settle(1500);
   check('"Task file" asks for the file of the current editors, once', calls.map(c => c.op).join() === 'task/file' && calls[0].task === 'ring_osc'
     && Array.isArray(calls[0].config?.targets), JSON.stringify(calls));
+  // At the size the window asks for (a headless pop-up ignores it), so what is measured and photographed is what a person sees.
+  const fileWindow = await browser.attach(await browser.window('GATOR - Task file of ring_osc (revision 1)', { except: page.target.id }), { errors: consoleErrors, prefix: 'file window: ' });
+  await fileWindow.viewport(760, 900);
   const opened = await popupEval(`return d.querySelector('.task-file textarea')?.value ?? ''`);
-  check('it opens in its own window, as one readable file with its _help', opened.includes('"_help"') && opened.includes('"specs"') && opened.includes('GPDK045_RINGOSC_GATOR'), opened.slice(0, 80));
+  check('it opens in its own window, as one readable file: the text without its _help, every number as the backend wrote it (branch record SIF-81)',
+    !opened.includes('"_help"') && opened.startsWith('{\n  "format": "gator-task-1",') && opened.includes('"specs"') && opened.includes('GPDK045_RINGOSC_GATOR')
+    && opened.includes('"expected_frequency_hz": 1200000000.0'), opened.slice(0, 80));
+  const help = await popupEval(`const list = d.querySelector('.task-file details.task-file-help'), box = d.querySelector('.task-file textarea');
+    const dt = [...(list?.querySelectorAll('dt') ?? [])], long = list?.querySelectorAll('dd')[1], lines = long ? [...long.getClientRects()] : [];
+    const revert = [...d.querySelectorAll('.task-file .row button')].find(b => b.textContent.trim() === 'Revert');
+    return { open: !!list?.open, summary: list?.querySelector('summary').textContent, parts: dt.map(t => t.textContent).join('|'),
+      says: long?.textContent, bold: dt[0] ? getComputedStyle(dt[0]).fontWeight : null, above: !!list && list.getBoundingClientRect().bottom <= box.getBoundingClientRect().top, lines: lines.length,
+      hang: lines.length > 1 ? Math.round(lines[1].left - dt[1].getBoundingClientRect().left) : null,
+      hint: d.querySelector('.task-file > .hint').textContent, revert: !!revert?.disabled }`);
+  check('the _help part is a list over the text, open: each part in bold, its wrapped lines hanging in under it; the hint points there; Revert has nothing to undo (branch record SIF-81)',
+    help.open && help.summary === 'What each part is' && help.parts === 'what this is|maestro' && Number(help.bold) >= 600 && help.says === MAESTRO_HELP && help.above
+    && help.lines > 1 && help.hang >= 12 && help.hint.includes('What each part is, below, says what each part holds.') && !help.hint.includes('_help') && help.revert,
+    JSON.stringify(help));
   const fills = await popupEval(`const b = [...d.querySelectorAll('.task-file .row button')].at(-1).getBoundingClientRect();
     return { title: d.querySelector('.task-file h3').textContent, gap: Math.round(w.innerHeight - b.bottom), scroll: d.documentElement.scrollHeight - w.innerHeight }`);
   check('its title names the task as the Tasks list does; its text fills the window, the buttons at the bottom, nothing scrolls (branch record SIF-26)',
     fills.title.startsWith('Task file of ring_osc') && fills.gap >= 0 && fills.gap < 40 && fills.scroll <= 0, JSON.stringify(fills));
+  await fileWindow.shot(path.join(out, 'task-file.png'), `document.querySelector('.task-file')`);
   const edited = JSON.parse(opened);
   edited.specs[0].lower = 1.25e9; edited.maestro.analyses = { tran: { stop: '40n' } }; edited.notes = 'tighter';
   await typeInto(`${POPUP}.document.querySelector('.task-file textarea')`, JSON.stringify(edited, null, 2));

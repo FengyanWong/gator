@@ -2022,3 +2022,19 @@ the weights-only model (its fixture now records an empty plan), Restorable reads
 operating-point ratios)" and the Run configuration line's tooltip "inputs Transferable 2 - specs read as a set, ...".
 `network_panel_check` 62, `reward_block_check` 32, `dom_identity_check` 56. `reward_v2_frontend_check` (stand-alone, not run)
 now finds the facts row "Tightest-margin bonus weight". None flaky.
+
+**Review follow-up.** The review of db752c7 found one slip, and it was real. Restorable promised "the run that saved it can
+be continued exactly" for every full save point. A full save point written by an older optimizer source cannot be continued:
+Continue needs exactly that source (record 7.221; the backend refuses it as `older_code`, and the Runs window's Saved state
+reads "model only"). So the one window could make that promise while its own Compatibility list warned that the source
+differs, and that covers every model saved before the latest change under src/analog_optimizer/. `panels/RlModelWindow.tsx`
+(`restorableMeans`) now reads the compatibility's "optimizer source code digest" check. When it passes, the meaning is said
+as before. When it is a warning, Restorable reads "**full state** - written by an older version of the optimizer code: only
+that version can continue it; Fine-tune and Evaluate only still load its model." (the Runs window's words). With no
+compatibility (still checking, or the configuration is incomplete), no meaning is shown. Weights only always gets its
+meaning. `panels/ModelChooser.tsx`: `RESTORABLE_OLDER` holds those words, and the Restorable column's help adds "A full save
+point written by an older version of the optimizer code: only that version can continue it; ...". Checked: `tsc` clean.
+`model_chooser_check` 86 (85 before): the fixture's compatibility now carries the backend's digest check, a warning for
+FIXTURE_opamp_gt. New: with its save point in use, Restorable reads the older-source words beside the digest warning, and
+the column's help says it too. The other models still read "full state - the run that saved it can be continued exactly.".
+`dom_identity_check` 56, `model_structure_check` 30 and `mode_suggestion_check` 20. None flaky.

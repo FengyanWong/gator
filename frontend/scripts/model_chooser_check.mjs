@@ -47,7 +47,8 @@ const model = (name, circuit, points, extra = {}) => { const newest = points.fin
   checkpoints: points, network: newest.network, saved_utc: newest.created_utc, trained_evaluations: newest.evaluations,
   learner_updates: newest.learner_updates, restoration_capability: newest.restoration_capability, run_kind: 'optimization', parent: null,
   encoder: newest.network.encoder_type, ...extra }; };
-const A = model('FIXTURE_opamp_gt', 'synthetic:gpdk045_ota5', [point('a1', 6, 'periodic', 1), point('a2', 12, 'periodic', 2), point('a3', 18, 'periodic', 3), point('a4', 20, 'final', 4, { is_latest: true })]);
+const A = model('FIXTURE_opamp_gt', 'synthetic:gpdk045_ota5', [point('a1', 6, 'periodic', 1), point('a2', 12, 'periodic', 2), point('a3', 18, 'periodic', 3), point('a4', 20, 'final', 4, { is_latest: true })],
+  { code: 'older' });                                                     // saved by an older optimizer source (review of branch record SIF-80)
 const B = model('FIXTURE_ldo_gat', 'synthetic:ldo', [point('b1', 8, 'stop', 5, { is_latest: true, network: GATV2 })]);
 const C = model('FIXTURE_weights_only', 'synthetic:vco', [point('c1', 10, 'pause', 6, { is_latest: true, restoration_capability: 'weights_only', missing_components: ['replay_snapshot (disabled in output settings)'],
   contract: { condition_policy: 'off', planned_conditions: [] } })]);                                    // a plan recorded empty (branch record SIF-80)
@@ -62,8 +63,11 @@ const describe = (run_dir, checkpoint_id) => {
     created_utc: p.created_utc, metadata_version: 'FIXTURE', counters: { evaluations_committed: p.evaluations, learner_updates: p.learner_updates, replay_size: p.replay_size },
     restoration_capability: p.restoration_capability, restorable_components: [], missing_components: p.missing_components, contract: { model_config: p.network, sac_config: {}, ...p.contract }, file_problems: [] },
     vocabulary: { name: 'standard', label: 'standard (8 generic kinds)', pdk_id: null, sha256: null, loaded: true },
-    compatibility: { mode: 'fine_tune', compatible: true, checks: [{ component: 'FIXTURE check', status: 'ok', detail: 'identical' }], checkpoint_id: p.checkpoint_id, source_run_id: m.run_id,
-      restoration_capability: p.restoration_capability, suggestion: null }, suggestion: null };
+    compatibility: { mode: 'fine_tune', compatible: true, checks: [{ component: 'FIXTURE check', status: 'ok', detail: 'identical' },
+      // the backend's digest check: a warning, never fatal, for fine_tune and frozen (checkpoints.check_compatibility)
+      { component: 'optimizer source code digest', status: m.code === 'older' ? 'warning' : 'ok', detail: m.code === 'older' ? 'FIXTURE: checkpoint was written by analog_optimizer '
+        + 'source 0123456789ab..., current source is ba9876543210... (a file under src/analog_optimizer/ changed). Weight tensors are still loaded shape-strictly; recorded as provenance.' : 'identical' }],
+      checkpoint_id: p.checkpoint_id, source_run_id: m.run_id, restoration_capability: p.restoration_capability, suggestion: null }, suggestion: null };
 };
 // The page's run list is answered here too: the run of each saved model. The list of the backend this check runs against
 // is read slowly from D:, and its late answer would read the saved models again in the middle of a section.
@@ -259,6 +263,15 @@ await runChecks(browser, async () => {
   check('... a newer save point is offered, never followed; the one loaded is named by its evaluations (SIF-67)', await until(`/has a newer save point: 20 evaluations/.test(${RIGHT}.querySelector('.model-newer')?.textContent ?? '')`, 30)
     && /the next run loads the save point at 6 evaluations\./.test(await evaluate(`${RIGHT}.querySelector('.model-newer')?.textContent ?? ''`))
     && (await stored())?.model_source?.checkpoint_id === early, await evaluate(`${RIGHT}.querySelector('.model-newer')?.textContent ?? 'no note'`));
+  // Review of branch record SIF-80: a full save point of an older optimizer source cannot be continued (record 7.221: Continue
+  // needs that source) - Restorable said "the run that saved it can be continued exactly" beside a digest warning.
+  const OLDER = 'full state - written by an older version of the optimizer code: only that version can continue it; Fine-tune and Evaluate only still load its model.';
+  const restorableA = `[...${RIGHT}.querySelectorAll('table.model-facts tr')].find(r => r.cells[0].textContent === 'Restorable')?.cells[1].textContent ?? 'no row'`;
+  check('... its full save point of an older optimizer source is not promised an exact continuation: Restorable says it in the Runs window\'s words (SIF-80 review)',
+    await until(`(${restorableA}) === ${JSON.stringify(OLDER)}`, 40) && /optimizer source code digest: warning/.test(await evaluate(`${RIGHT}.querySelector('ul.compat-problems')?.textContent ?? ''`))
+    && /^full state: the run that saved it can be continued exactly; weights only: .*\. A full save point written by an older version of the optimizer code: only that version can continue it;/
+      .test(await evaluate(`[...${RIGHT}.querySelector('table.model-table').tHead.rows[0].cells].find(c => c.textContent.startsWith('Restorable'))?.title ?? ''`)),
+    await evaluate(restorableA));
   await undo();
   run = await storedWhen(s => !s?.model_source?.run_dir);
   check('one Undo takes the choice back', !run?.model_source?.run_dir, JSON.stringify(run?.model_source));

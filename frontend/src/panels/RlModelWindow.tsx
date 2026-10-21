@@ -4,7 +4,7 @@
 import { Fragment } from 'react';
 import { copy, Json } from '../api';
 import { folderName, plural, short, stamp, taskNameOf } from '../format';
-import { RESTORABLE, RESTORABLE_MEANS, SavedModels } from './ModelChooser';
+import { RESTORABLE, RESTORABLE_MEANS, RESTORABLE_OLDER, SavedModels } from './ModelChooser';
 import { DESIGN_NAME, designName, pointText } from '../lineage';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
@@ -29,6 +29,14 @@ const settingValue = (v: Json) => v === 'rwse' ? 'RWSE' : typeof v === 'boolean'
 /** A saved model's counter in its facts, grouped as the warning below writes "1,500", with its noun in the right number
  *  (branch record SIF-58: "Training 12000 evaluations, 96000 updates, replay 12000"); '?' where a model recorded none. */
 const count = (n: Json, word: string) => `${typeof n === 'number' ? n.toLocaleString('en-US') : '?'} ${n === 1 ? word : `${word}s`}`;
+/** What the model in use's Restorable allows (review of branch record SIF-80): a full save point is continued exactly only by
+ *  the optimizer source that wrote it (record 7.221). The compatibility's digest check says whether it did - a warning when it
+ *  did not, then the Runs window's words; no meaning while no compatibility is known (still checking, or not checked). */
+const restorableMeans = (capability: string, checks?: Json[]) => {
+  if (capability !== 'full_state') return RESTORABLE_MEANS[capability];
+  const code = checks?.find(c => c.component === 'optimizer source code digest')?.status;
+  return code === 'ok' ? RESTORABLE_MEANS.full_state : code ? RESTORABLE_OLDER : undefined;
+};
 
 /** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the
  *  starting preset, or values edited and saved there), and how many saved models were made from it. A double click or "Use
@@ -105,6 +113,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
     const shown = networkWindow.popup;
     void useSavePoint(run_dir, checkpoint_id).then(ok => { if (ok && shown && !shown.closed) shown.close(); });
   };
+  const means = model?.description && restorableMeans(model.description.restoration_capability, model.compatibility?.checks);
   return <section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
       {/* No close button of its own (user, 2026-10-03: "delete the cross button in RL network window"): the window's own close
           does it, and the settings are kept either way. Record 7.265: the RL model window - the Mode at the top, then that
@@ -226,7 +235,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           <tr><td>Training</td><td>{count(model.description.counters.evaluations_committed, 'evaluation')}, {count(model.description.counters.learner_updates, 'learner update')},
             {' '}{count(model.description.counters.replay_size, 'transition')} in replay</td></tr>
           <tr><td>Restorable</td><td><b>{RESTORABLE[model.description.restoration_capability] ?? model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}
-            {RESTORABLE_MEANS[model.description.restoration_capability] && <span className="hint">{model.description.missing_components.length ? '; ' : ' - '}{RESTORABLE_MEANS[model.description.restoration_capability]}.</span>}</td></tr>
+            {means && <span className="hint">{model.description.missing_components.length ? '; ' : ' - '}{means}.</span>}</td></tr>
           <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>
         </tbody></table>}
         {model?.compatibility_unchecked && <div className="note compat-unchecked"><p><b>{model.compatibility_unchecked.title}</b></p>

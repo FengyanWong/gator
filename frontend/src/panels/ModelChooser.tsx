@@ -46,6 +46,9 @@ export const RESTORABLE: Record<string, string> = { full_state: 'full state', we
 /** What each one allows: the Restorable column's help, and the model in use's facts after the bold word (branch record SIF-80:
  *  "Restorable full state" there with no meaning, where the Network row beside it says its own). */
 export const RESTORABLE_MEANS: Record<string, string> = { full_state: 'the run that saved it can be continued exactly', weights_only: 'usable for Fine-tune and Evaluate only' };
+/** A full save point of an older optimizer source, in the Runs window's words (review of branch record SIF-80): Continue needs
+ *  exactly the source that wrote it (record 7.221), so "continued exactly" holds only for a save point of the source of now. */
+export const RESTORABLE_OLDER = 'written by an older version of the optimizer code: only that version can continue it; Fine-tune and Evaluate only still load its model';
 
 type Column = { key: string; title: string; help: string; numeric?: boolean; value: (m: Json, byDir: Map<string, Json>) => string | number | null };
 const COLUMNS: Column[] = [
@@ -57,7 +60,7 @@ const COLUMNS: Column[] = [
   { key: 'saved', title: 'Last saved', help: 'When its newest save point was written (local time of this computer).', value: m => m.saved_utc ?? null },
   { key: 'from', title: 'Started from', help: 'Where the model came from: a template (a new model), a saved model it was fine-tuned from, or recorded runs (offline).', value: (m, byDir) => startedFrom(m, byDir).text },
   { key: 'data', title: 'Data', help: 'MOCK = trained on the built-in synthetic backend; real = Virtuoso / Spectre (or ngspice). A model only loads for a task of the same kind.', value: m => (m.mock ? 'mock' : 'real') },
-  { key: 'restorable', title: 'Restorable', help: `${Object.entries(RESTORABLE_MEANS).map(([k, means]) => `${RESTORABLE[k]}: ${means}`).join('; ')}.`, value: m => RESTORABLE[m.restoration_capability] ?? m.restoration_capability ?? '' },
+  { key: 'restorable', title: 'Restorable', help: `${Object.entries(RESTORABLE_MEANS).map(([k, means]) => `${RESTORABLE[k]}: ${means}`).join('; ')}. A full save point ${RESTORABLE_OLDER}.`, value: m => RESTORABLE[m.restoration_capability] ?? m.restoration_capability ?? '' },
 ];
 
 /** One model's Details: what can be done with it, and what it is. */

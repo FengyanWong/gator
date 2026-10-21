@@ -13,6 +13,7 @@ import { type BarCell, FormulaBar } from './FormulaBar';
 import { keep, readKept } from '../kept';
 import { RELOAD_SAVED_REQUEST } from './taskChoice';
 import { requestSaveAs } from './TaskSave';
+import { plural } from '../format';
 
 const ROW_TABS = Object.keys(TITLES);
 /** The start of a new row's ID (Add), in the tab's own word (branch record SIF-50). */
@@ -607,11 +608,12 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
           it (branch record SIF-73): "Searched rows: 7 of 66." under the empty Find rows box, beside the 7 rows a fold leaves
           in view, read as the result of a search. "..." only before the first validation answer: App keeps the last answer
           while the next one is on its way, so a missing count after that means validation could not count (a tie to a row
-          that does not exist, a cycle, a refused configuration) and reads "?". */}
+          that does not exist, a cycle, a refused configuration) and reads "?". A table of one row reads "of 1 row" (review of
+          SIF-73). */}
       {tab === 'parameters' && <p className="fact" title={'The rows the optimizer changes itself; the others follow a tied row or stay fixed. '
         + 'The initial value is the one read from the circuit. Equal initial values do not imply a binding. '
         + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>The optimizer searches <b>{validation == null ? '...'
-          : (validation.facts?.independent_action_variables ?? '?')}</b> of {rows.length} rows.</p>}
+          : (validation.facts?.independent_action_variables ?? '?')}</b> of {plural(rows.length, 'row')}.</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
         + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns).'}>Probes: {probeIds.length
           ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}

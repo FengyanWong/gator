@@ -1745,3 +1745,12 @@ MOCK line: 575 px, the box 230, the table 127); the panel opened again under the
 by itself, the table its heading and a whole row (40 % of the 361 px card would leave it none). `editor_columns_check` 23 ("The
 optimizer searches ? of N rows."). `room_check` 27, `looks_check` 72, `callouts_check` 8, `edit_state_check` 24,
 `reliability_check` 20, `spec_equations_check` 35. None flaky.
+
+**Review follow-up.** The review of 15f2b0a found two slips, both real. (1) The new fact line fixed its noun's number in the
+text: a Parameters table of one row read "The optimizer searches 1 of 1 rows." (the old "Searched rows: N of M." had no noun
+after the count). `frontend/src/panels/Editors.tsx` now writes `of {plural(rows.length, 'row')}`, as the header's "of N
+evaluations" does; the checks' `of \d+ rows` still hold for their 5 and more rows. (2) `docs/workbench.md` said the box
+leaves the table its heading and about three rows with no condition, while the cap keeps the box at 72 px at least: on a
+card under about 410 px (the bottom panel opened again under the open box, this entry's 361 px case) the table keeps its
+heading and about one row. The page now states the condition, as this entry and the CSS comment do. Checked: `tsc` clean,
+`matched_devices_check` 37, `editor_columns_check` 23.

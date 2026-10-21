@@ -98,10 +98,11 @@ function TitleFacts({ config, task }: { config: Json; task: Json | null }) {
 export type { TaskLoad, TaskLoaded } from './taskChoice';
 
 function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, taskHead = null, taskTools = null, taskStatus = null,
-  titleSlot = null, taskEpoch = 0, runs = [], refreshRuns, taskLoad }:
+  titleSlot = null, taskEpoch = 0, runs = [], refreshRuns, taskLoad, onTaskName }:
   { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
     taskSlot: HTMLElement | null; taskNotes: HTMLElement | null; taskHead?: HTMLElement | null; taskTools?: HTMLElement | null; taskStatus?: HTMLElement | null;
-    titleSlot?: HTMLElement | null; taskEpoch?: number; runs?: Json[]; refreshRuns?: () => Promise<Json[]>; taskLoad?: MutableRefObject<TaskLoad | null> }) {
+    titleSlot?: HTMLElement | null; taskEpoch?: number; runs?: Json[]; refreshRuns?: () => Promise<Json[]>; taskLoad?: MutableRefObject<TaskLoad | null>;
+    onTaskName?: (name: string | null) => void }) {
   const [tasks, setTasks] = useState<Json[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nativeOpen, setNativeOpen] = useState(false);                    // closed until asked for; the choice then lasts across cells and Refresh
@@ -385,8 +386,12 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   const firstSave = virtuosoOn && circuit?.loaded && circuit.native_draft && !taskNote && (
     <TaskSave profileId={profileId} library={ref.library} cell={ref.cell} task={null} hasCopy={!!circuit.working_copy?.verified}
       config={config} setConfig={setConfig} onSaved={taskSaved} onSavedElsewhere={savedElsewhere} bar={taskSlot} notes={taskNotes} />);
-  const titleFacts = titleSlot && createPortal(<TitleFacts config={config}
-    task={ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id) ?? null : null} />, titleSlot);
+  const followed = ref.source === 'registered_task' ? tasks.find(t => t.task_key === ref.task_id) ?? null : null;
+  const titleFacts = titleSlot && createPortal(<TitleFacts config={config} task={followed} />, titleSlot);
+  // The name the title gives the task, for the header's "Next:" line beside Start (branch record SIF-71: under the title
+  // "ota_relaxed" it read "Next: fixture_ota · ...", the key of a task renamed in the Tasks window). Null: no registered task.
+  const shownTask = ref.source === 'registered_task' && ref.task_id ? shownName(followed, ref.task_id) : null;
+  useEffect(() => onTaskName?.(shownTask), [shownTask]);
   return <>{column}{head}{tools}{status}{taskSave}{firstSave}{titleFacts}{ngspiceWindow}<PopupPortal popup={popup} root={root}><VirtuosoWindow profileId={profileId} virtuosoOn={virtuosoOn} offered={offered}
     circuitRef={ref} chosen={chosen} libraries={libraries} cells={cells} chosenCell={chosenCell} listing={listing} importing={importing} patch={patch} setRefresh={setRefresh}
     pdkStep={pdkStep} nativeError={nativeError} error={error} circuit={circuit} taskNote={taskNote} importCell={importCell} config={config} setConfig={setConfig}

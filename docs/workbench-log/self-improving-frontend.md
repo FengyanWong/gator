@@ -1598,3 +1598,24 @@ evaluations. The run goes on.". New: the line's tooltip starts "save point ckpt-
 "ckpt-". The row ends " - Save now: saved at 14 evaluations", with "save point ckpt-00000014-fixture" on hover, and no
 row is called "Last checkpoint". `run_list_check` 124. New: the Details' "Last save point" gives the run's time, and no
 fact is called "Last model save". `run_control_check` 111, `room_check` 27. None flaky.
+
+### SIF-71 The Next line beside Start names the task as the header's title does (2026-10-21; from the readability audit)
+
+**Found.** The header named the same task two ways side by side. Its title gives a task renamed in the Tasks window
+(record 7.302) its new name: "ota_relaxed". The grey line beside Start, and the first sentence of Start's tooltip, built
+the name from the task's key with "real:" removed, so they kept the old one: "Next: fixture_ota · New model · GT 48/4/4 ·
+60 evaluations". Record 7.269 chose "the task without its real: prefix" before tasks could be renamed, and before the
+title used the shown name (record 7.360).
+
+**Changed.** `frontend/src/panels/Left.tsx`: the circuit panel says the name its title gives the task through a new
+optional prop `onTaskName` (`shownName`, as the title; null while it follows no registered task). `App.tsx` keeps it
+(`taskShown`) and hands it to the launcher. `launch.ts` (`useLaunchActions`): the line's task is that name, so a renamed
+task reads "Next: ota_relaxed · ...", and the key without "real:" only until the panel has said. A task that is not
+renamed reads as before: shownName also keeps "synthetic:" and "ngspice:", so the MOCK stand-in still reads "Next:
+synthetic:gpdk045_ota5 · ...". `docs/workbench.md` (§ What Start would start): "the task as the header's title names it
+(a saved task without its `real:` prefix, a renamed one by its new name ...)".
+
+**Checked.** `tsc` clean. `task_list_check` 88. New: after the rename the title, the Next line and Start's tooltip all
+read "ota_relaxed" ("Next: ota_relaxed · New model · ..."), and when the rename is taken back all three read
+"fixture_ota" again. `mode_suggestion_check` 20 and `model_chooser_check` 83 still find "Next: synthetic:gpdk045_ota5 ·
+...", unchanged. `run_control_check` 111, `project_help_check` 49. None flaky.

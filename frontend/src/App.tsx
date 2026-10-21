@@ -199,9 +199,11 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const brief = useRunBrief({ control, runs, onRefreshRuns: refreshRuns, onShow: dir => { setRunDir(dir); setTab('status'); unfold(); } });
 
   // ---- the launcher (record 7.261, launch.ts): Start, Calibration, Resume and Continue -------------------------------------
+  // The task's name as the header's title gives it, which the circuit panel says, for the "Next:" line (branch record SIF-71).
+  const [taskShown, setTaskShown] = useState<string | null>(null);
   const { launcher, shownCheck, startBlocked, setNextModel, nextLine, resumeBlocked, continueBlocked, headerRefusal, shownRefusal, start,
     continueShown, resumeHeld, fineTuneFrom } = useLaunchActions({ control, meta, config, setConfig, configKey, validation, runDir, status, circuit,
-    isReal: !!isReal, launchedRun, setMessage });
+    isReal: !!isReal, launchedRun, setMessage, taskShown });
 
   // ---- the Runs window's actions (record 7.267; plan "Load run" and "Existing runs: continued in place"): page/runWindowActions.ts
   const { taskLoad, askContinue, runWindow } = useRunWindowActions({ config, setConfig, runs, taskKey, followTask, loadSerial, setMessage, setRunDir, setTab, unfold });
@@ -273,7 +275,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       <aside className="left">
         <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
           taskSlot={taskSlot} taskNotes={taskNotes} taskHead={taskHead} taskTools={taskTools} taskStatus={taskStatus} titleSlot={titleSlot}
-          taskEpoch={taskEpoch} runs={runs} refreshRuns={refreshRuns} taskLoad={taskLoad} />
+          taskEpoch={taskEpoch} runs={runs} refreshRuns={refreshRuns} taskLoad={taskLoad} onTaskName={setTaskShown} />
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}

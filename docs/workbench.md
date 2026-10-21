@@ -101,8 +101,9 @@ main button changes with the run:
 
 **What Start would start** stands beside it while it reads Start, in one line (record 7.269; plan
 [frontend run workflow](plan-frontend-run-workflow.md), "The draft"), and is the first sentence of its tooltip:
-"Next: mscr_ota7t · Fine-tune from ota7t (2) @ 420 · GT 48/4/4 · 800 evaluations" - the task (a saved task without its
-`real:` prefix, or a Virtuoso cell as library/cell), the Mode with its model and save point ("New model", "Evaluate ...
+"Next: mscr_ota7t · Fine-tune from ota7t (2) @ 420 · GT 48/4/4 · 800 evaluations" - the task as the header's title
+names it (a saved task without its `real:` prefix, a renamed one by its new name - branch record SIF-71; or a Virtuoso
+cell as library/cell), the Mode with its model and save point ("New model", "Evaluate ...
 (deterministic actions)", "no Mode chosen"), the network in short, and the budget. When Start is off, the tooltip adds
 why. The line only says: it starts nothing, and it is not shown while a run holds the header (the run chip says what
 runs then). Run configuration's model line and this line come from the same values (`RunPanel` passes them up).

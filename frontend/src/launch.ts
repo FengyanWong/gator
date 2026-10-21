@@ -290,11 +290,12 @@ export const CALIBRATION_DESIGNS = 64;
 
 /** The page's launcher: Start, Calibration, Continue... of the run shown and Resume of the header's run, the continuation checks
  *  they depend on, why each cannot go now, the refusals kept beside them, the header's "Next" line (`setNextModel`: Run
- *  configuration's part of it) and Fine-tune from a run's newest save point. `launchedRun`: the page's "the run has started". */
-export function useLaunchActions({ control, meta, config, setConfig, configKey, validation, runDir, status, circuit, isReal, launchedRun, setMessage }: {
+ *  configuration's part of it) and Fine-tune from a run's newest save point. `launchedRun`: the page's "the run has started".
+ *  `taskShown`: the name the header's title gives the registered task (the circuit panel's `onTaskName`). */
+export function useLaunchActions({ control, meta, config, setConfig, configKey, validation, runDir, status, circuit, isReal, launchedRun, setMessage, taskShown = null }: {
   control: RunControl; meta: Json; config: Json; setConfig: (next: Json | ((c: Json) => Json), record?: boolean) => void; configKey: string;
   validation: Json; runDir: string | null; status: Json; circuit: Json; isReal: boolean; launchedRun: (started: Json, as: 'start' | 'resume', note?: string) => void;
-  setMessage: (message: Json) => void }) {
+  setMessage: (message: Json) => void; taskShown?: string | null }) {
   const features = useMemo(() => featuresOf(meta), [meta]);
   const launcher = useLauncher({ control, features, onLaunched: launchedRun, onMessage: setMessage });
   // The backend's continuation check (when it has one): of the run shown, for Continue..., and of the header's paused run,
@@ -303,9 +304,12 @@ export function useLaunchActions({ control, meta, config, setConfig, configKey, 
   const heldCheck = useContinuation(features, control.dir, control.phase === 'paused' ? control.status : null);
   const startBlocked = startReadiness(control.phase, validation) ?? (config.run.mode === 'resume' ? NO_MODE : null);
   // What Start would start (record 7.269; plan "The draft": "What Start will start is one line beside it ... It is also Start's
-  // tooltip, with the reason when Start is disabled"): the task, Run configuration's model and network, the budget.
+  // tooltip, with the reason when Start is disabled"): the task, Run configuration's model and network, the budget. The task
+  // as the title beside it names it (branch record SIF-71: a renamed task by its new name; it was the key without "real:"
+  // for every task, the old name of a renamed one); the key without "real:" until the circuit panel has said.
   const [nextModel, setNextModel] = useState<NextModel | null>(null);
-  const nextTask: string | null = config.circuit?.source === 'registered_task' ? (config.circuit.task_id ? String(config.circuit.task_id).replace(/^real:/, '') : null)
+  const nextTask: string | null = config.circuit?.source === 'registered_task'
+    ? (config.circuit.task_id ? (taskShown ?? String(config.circuit.task_id).replace(/^real:/, '')) : null)
     : config.circuit?.cell ? `${config.circuit.library}/${config.circuit.cell}` : null;
   const nextLine = nextModel ? `Next: ${nextTask ?? 'no task chosen'} · ${nextModel.model} · ${nextModel.network} · ${config.run.max_evaluations} evaluations` : null;
   const resumeBlocked = control.phase === 'paused'

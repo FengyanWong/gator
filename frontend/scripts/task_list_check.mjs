@@ -279,6 +279,13 @@ await runChecks(browser, async () => {
   check('its runs are still its runs (the links go by the key)', (await cell(OTA.task_key, 8)) === '2');
   check('the Project column\'s button shows the new name, for the same task', await until(`${ROW}.querySelector('.task-list-key')?.textContent === 'ota_relaxed' && ${ROW}.querySelector('.task-list-key')?.dataset.taskKey === 'real:fixture_ota'`, 50),
     await evaluate(`${ROW}.querySelector('.task-list-key')?.textContent`));
+  // Branch record SIF-71: the header's "Next:" line beside Start, and Start's tooltip, name the task as the title beside them
+  // does; under the title "ota_relaxed" the line kept the key, "Next: fixture_ota · ...".
+  const HEAD = `[document.querySelector('header .tb-task')?.textContent, document.querySelector('header span.next-run')?.textContent, document.querySelector('header button.run-main')?.title]`;
+  const headNames = name => `(([title, next, tip]) => title === ${JSON.stringify(name)} && (next ?? '').startsWith(${JSON.stringify(`Next: ${name} · `)})
+    && (tip ?? '').includes(${JSON.stringify(`: Next: ${name} · `)}))(${HEAD})`;
+  check('the header\'s title, the Next line beside Start and Start\'s tooltip all name the task by its new name', await until(headNames('ota_relaxed'), 50),
+    JSON.stringify(await evaluate(HEAD)));
   // Delete task asks about a renamed task by its key AND by the name the window shows beside the button (branch record SIF-61:
   // it asked "Delete the task real:fixture_ota?" under "Current task: ota_relaxed"). Answered Cancel: nothing goes. Only that
   // question is answered here; the folder prompts below have their own answers.
@@ -313,6 +320,7 @@ await runChecks(browser, async () => {
   await far.evaluate(`${renameButton(OTA.task_key)}.click()`, true);
   check('typing the internal name takes the rename back: one name again, no second line', await far.until(`${ROWS}.find(tr => tr.dataset.taskKey === 'real:fixture_ota').children[1].textContent.trim() === 'fixture_ota'`, 60)
     && !(await far.evaluate(`${DETAILS_OF(OTA.task_key)}.textContent`)).includes('Internal name') && await until(`${ROW}.querySelector('.task-list-key')?.textContent === 'fixture_ota'`, 50), await cell(OTA.task_key, 0));
+  check('... and the header\'s title, Next line and Start\'s tooltip go back to it with the button', await until(headNames('fixture_ota'), 50), JSON.stringify(await evaluate(HEAD)));
   await far.shot(path.join(out, 'task-list-3b-rename.png'));
   await press('Hide details');
   await openDetails(MOCK.task_key);

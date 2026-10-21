@@ -1233,3 +1233,14 @@ placeholders, "Scratch" is stored as typed, an emptied box stays empty and store
 with the run shown, its paths read Run folder (tooltip run_dir), Bytes written, Last successful save, Remote Spectre work
 folder, the save as "YYYY-MM-DD hh:mm:ss" with "2026-10-05T00:59:30+00:00 (UTC)" in its tooltip; its fixture status
 has a `persistence` now), `module_fold_check` 30; none flaky.
+
+**Review follow-up.** The review found one slip, real: the list's new "Close" only emptied the list. A folder still on its
+way (a click on a name, slow on D:) was the newest ask, so its answer opened the list again after Close, and a failed one
+showed its error under a closed list; only a change of the root let such an answer go, which is why "Use this folder" had
+no such slip. The folder list now asks on its own line (a second `useNewest`): Close lets it go, and so does "Use this
+folder" (the same root again changes nothing), as another root still does. Test writability and Measure keep their own
+line, so Close drops neither, and a folder click no longer drops a Test writability on its way either (both ran on one line
+before, and the later press threw the other's answer away). `output_panel_check` has five new checks: with the folder's
+answer held back until after Close, the list stays closed, and Test writability, pressed before and also held, still
+answers ("NOT writable"); with a 403 held back the same way, the list stays closed and shows no error. `tsc` clean;
+`output_panel_check` 81; none flaky.

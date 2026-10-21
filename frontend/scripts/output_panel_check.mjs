@@ -14,6 +14,7 @@
 //   - the closing line "Pausing, stopping and normal completion always save safely..." is gone;
 //   - "Browse allowed roots..." (GET /api/output/browse answered here with FIXTURE folders) says which folder it shows, opens
 //     a folder by its name, goes "Up one folder", can be closed, and "Use this folder" sets the root (branch record SIF-60);
+//     a folder still on its way when Close is pressed neither opens the list again nor shows its error (SIF-60 review);
 //   - "Replay snapshots" and its warning name Continue... and the Modes, "weights only" in words (branch record SIF-60).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
@@ -46,11 +47,14 @@ await runChecks(browser, async () => {
   const { send, fulfil, consoleErrors } = page;
   const refused = []; const probes = []; let oldBackend = false;   // oldBackend: answer `usage` as a backend from before record 7.189 does
   const browsed = [];                                              // the folders the list asked for ('' for the roots)
+  let holdBrowse = false, holdTest = false; const held = [];       // answers held back until after Close (branch record SIF-60 review)
   const answer = params => {
     const { requestId, request } = params, name = new URL(request.url).pathname;
     if (name === '/api/output/browse') { const at = new URL(request.url).searchParams.get('path') ?? ''; browsed.push(at);
+      if (holdBrowse) { held.push({ requestId, at }); return; }
       return BROWSE[at] ? fulfil(requestId, 200, BROWSE[at]) : fulfil(requestId, 403, { detail: 'FIXTURE: not an allowed folder' }); }
     if (name === '/api/output/check') { const body = JSON.parse(request.postData ?? '{}'); probes.push(body);
+      if (holdTest && body.create) { held.push({ requestId, test: true }); return; }
       return oldBackend && body.usage ? fulfil(requestId, 422, { detail: [{ type: 'extra_forbidden', loc: ['body', 'usage'], msg: 'Extra inputs are not permitted' }] }) : fulfil(requestId, 200, OUTPUT_CHECK); }
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
     return page.readOrRefuse(params, refused);
@@ -305,12 +309,34 @@ await runChecks(browser, async () => {
   await evaluate(`[...${TREE}.previousElementSibling.querySelectorAll('button')].find(b => b.textContent === 'Close').click()`);
   check('"Close" takes the list away and leaves the output root as it was', await until(`!(${TREE})`, 30) && (await evaluate(`${ROOT_INPUT}.value`)) === rootBefore,
     `${JSON.stringify(await listing())} / ${await evaluate(`${ROOT_INPUT}.value`)}`);
+  // Close lets a folder on its way go (branch record SIF-60 review): its answer, or its error, came after Close and opened
+  // the list again. Test writability, pressed before, still answers: it asks on another line than the list.
+  const heldAll = async n => { for (let i = 0; i < 40 && held.length < n; i++) await sleep(100); return held.length === n; };
+  const ERRORS = `[...${PANEL}.querySelectorAll('p.error')].map(p => p.textContent).join(' | ')`;
+  for (const status of [200, 403]) {
+    await evaluate(`${BUTTON('Browse allowed roots...')}.click()`); await until(`!!(${TREE})`, 30);
+    holdBrowse = true; holdTest = status === 200;
+    if (holdTest) await evaluate(`${BUTTON('Test writability')}.click()`);
+    await evaluate(`[...${TREE}.querySelectorAll('button.text-link')].find(b => b.textContent === ${JSON.stringify(TOP)}).click()`);
+    check(`(set-up) the folder${holdTest ? ' and Test writability are' : ' is'} held back`, await heldAll(holdTest ? 2 : 1), JSON.stringify(held));
+    holdBrowse = holdTest = false;
+    await evaluate(`[...${TREE}.previousElementSibling.querySelectorAll('button')].find(b => b.textContent === 'Close').click()`);
+    await until(`!(${TREE})`, 30);
+    for (const { requestId, test } of held.splice(0)) await (test ? fulfil(requestId, 200, { ...OUTPUT_CHECK, writable: false, error: 'FIXTURE: held test' })
+      : status === 200 ? fulfil(requestId, 200, BROWSE[TOP]) : fulfil(requestId, 403, { detail: 'FIXTURE: not an allowed folder' }));
+    await sleep(800);
+    check(status === 200 ? 'a folder answered after Close leaves the list closed' : '...and a folder that fails after Close shows no error',
+      !(await evaluate(`!!(${TREE})`)) && !(await evaluate(ERRORS)).includes('FIXTURE'), `${JSON.stringify(await listing())} / ${await evaluate(ERRORS)}`);
+    if (status === 200) check('...while Test writability, pressed before Close, still answers ("NOT writable")',
+      (await evaluate(`${PANEL}.querySelector('details.output-facts > summary')?.textContent ?? ''`)).startsWith('NOT writable'),
+      await evaluate(`${PANEL}.querySelector('details.output-facts > summary')?.textContent ?? ''`));
+  }
   await evaluate(`${BUTTON('Browse allowed roots...')}.click()`); await until(`!!(${TREE})`, 30);
   await evaluate(`[...${TREE}.querySelectorAll('li')].find(li => li.textContent.startsWith(${JSON.stringify(TOP)})).querySelector('button:not(.text-link)').click()`);
   await page.saved();
   check('"Use this folder" sets the output root to it and closes the list', await until(`!(${TREE})`, 30) && (await evaluate(`${ROOT_INPUT}.value`)) === TOP
     && (await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).output.output_root`)) === TOP, await evaluate(`${ROOT_INPUT}.value`));
-  check('the list asked only for the folders pressed', JSON.stringify(browsed) === JSON.stringify(['', TOP, DEEP, TOP, '']), JSON.stringify(browsed));
+  check('the list asked only for the folders pressed', JSON.stringify(browsed) === JSON.stringify(['', TOP, DEEP, TOP, '', TOP, '', TOP, '']), JSON.stringify(browsed));
 
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

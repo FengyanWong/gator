@@ -5,7 +5,7 @@ import { api, ApiError, copy, Json } from '../api';
 import { bytes, stamp } from '../format';
 import { OUTPUT_ROOT_ID } from '../contract';
 import { ByteSize, Check, Module, Num } from './fields';
-import { useNewest } from '../newest';
+import { type Newest, useNewest } from '../newest';
 
 type Every = 'evaluations' | 'seconds';
 
@@ -33,11 +33,15 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   // Browse, a folder of its list and Test writability say what went wrong, as the other panels do (they used to say nothing).
   const [problem, setProblem] = useState<string | null>(null);
   // Only the newest press answers (two quick clicks in the folder list showed whichever came last), and a problem is
-  // about the root it was pressed for: another root clears it.
-  const pressed = useNewest();
-  const ask = <T,>(work: () => Promise<T>, done: (value: T) => void) => { const mine = pressed.next(); setProblem(null);
+  // about the root it was pressed for: another root clears it. The folder list asks on its own line, which Close and "Use
+  // this folder" let go: a folder on its way opened the list again after Close, or showed its error there (branch record
+  // SIF-60 review); Test writability's and Measure's answers are not dropped with it.
+  const pressed = useNewest(), listing = useNewest();
+  const ask = <T,>(work: () => Promise<T>, done: (value: T) => void, line: Newest = pressed) => { const mine = line.next(); setProblem(null);
     work().then(v => { if (mine()) done(v); }, e => { if (mine()) setProblem(e.message); }); };
-  useEffect(() => { pressed.drop(); setProblem(null); }, [root]);
+  useEffect(() => { pressed.drop(); listing.drop(); setProblem(null); }, [root]);
+  const openFolder = (path?: string) => ask(() => api.browse(path), setBrowse, listing);
+  const closeList = () => { listing.drop(); setBrowse(null); };
   const paths = activeRun?.paths;
   const saved: string | null = activeRun?.persistence?.last_successful_save ?? null;   // ISO in UTC, as the backend writes it
   const tail = String(root).split(/[\\/]/).filter(Boolean).slice(-2).join('/');
@@ -58,7 +62,7 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
       <div className="field-head"><label htmlFor={OUTPUT_ROOT_ID} title="A backend directory inside an allowed root. Not a browser upload folder.">Output root</label>
         <button className="text-link" title="Copy the output root to the clipboard" onClick={() => copy(root)}>Copy path</button></div>
       <input id={OUTPUT_ROOT_ID} value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} />
-      <div className="row"><button disabled={locked} onClick={() => ask(() => api.browse(), setBrowse)}>Browse allowed roots...</button>
+      <div className="row"><button disabled={locked} onClick={() => openFolder()}>Browse allowed roots...</button>
         <button onClick={() => { const at = root; if (at) ask(() => api.checkOutput(at, true), value => setTested({ root: at, value })); }}>Test writability</button></div>
       {problem && <p className="error">{problem}</p>}
       {!tested && lookError && <p className="error">{lookError} <button onClick={retryLook}>Retry read</button></p>}
@@ -67,9 +71,10 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
       {/* The list says which folder it shows and can be closed; a folder's name is a link that opens it (it was a span
           drawn as plain text), ".." reads "Up one folder", "select" "Use this folder" (branch record SIF-60). The backend's
           path is null at the top, where the entries are the allowed roots. */}
-      {browse && <><p className="hint">{browse.path ? `In ${browse.path}` : 'The allowed roots'} <button className="text-link" onClick={() => setBrowse(null)}>Close</button></p>
-        <ul className="tree">{browse.parent && <li><button className="text-link" title={`Open ${browse.parent}`} onClick={() => ask(() => api.browse(browse.parent), setBrowse)}>Up one folder</button></li>}
-        {browse.entries.map((e: Json) => <li key={e.path}><button className="text-link" title="Open this folder" onClick={() => ask(() => api.browse(e.path), setBrowse)}>{e.name}</button> <button onClick={() => { set({ output_root: e.path }); setBrowse(null); }}>Use this folder</button></li>)}</ul></>}
+      {browse && <><p className="hint">{browse.path ? `In ${browse.path}` : 'The allowed roots'} <button className="text-link" onClick={closeList}>Close</button></p>
+        <ul className="tree">{browse.parent && <li><button className="text-link" title={`Open ${browse.parent}`} onClick={() => openFolder(browse.parent)}>Up one folder</button></li>}
+        {/* "Use this folder" closes on the listing line too: the same root again changes nothing that would drop a folder on its way */}
+        {browse.entries.map((e: Json) => <li key={e.path}><button className="text-link" title="Open this folder" onClick={() => openFolder(e.path)}>{e.name}</button> <button onClick={() => { set({ output_root: e.path }); closeList(); }}>Use this folder</button></li>)}</ul></>}
       {/* What the backend found for the root, as one line; the table behind it (record 7.179, design advice 3). Open at once when
           the root cannot be written. */}
       {check && <details className="more output-facts" open={!(check.allowed && check.writable)}><summary>{check.allowed && check.writable ? 'writable' : 'NOT writable'} · {bytes(check.free_bytes)} free{check.windows_path ? ` · ${check.windows_path}` : ''}</summary>

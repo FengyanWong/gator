@@ -95,12 +95,15 @@ export function Folders({ state, keys, popup, onSelect }: { state: FolderView; k
   </nav>;
 }
 
-/** The bar above a window's table: the folder chosen, how many are shown and selected, and "Move to..." for the selection. */
+/** The bar above a window's table: the folder chosen, how many are shown and selected, and "Move to..." for the selection.
+ *  Its tooltip says what it moves, or - greyed out with nothing ticked - to tick rows first (branch record SIF-68). */
 export function FolderMoveBar({ state, shown, selected, onMove }: { state: FolderView; shown: number; selected: number; onMove: (id: string) => void }) {
+  const what = selected === 1 ? `selected ${PLURAL[state.kind].slice(0, -1)}` : `${selected} selected ${PLURAL[state.kind]}`;
   return <div className="row task-move-bar">
     <b>{state.title}</b>
     <span className="hint">{shown} shown{selected > 0 ? ` · ${selected} selected` : ''}</span>
-    <select aria-label={`Move selected ${PLURAL[state.kind]} to folder`} value="" disabled={!selected || state.busy || !state.ready} onChange={e => onMove(e.target.value)}>
+    <select aria-label={`Move selected ${PLURAL[state.kind]} to folder`} value="" disabled={!selected || state.busy || !state.ready} onChange={e => onMove(e.target.value)}
+      title={selected ? `Move the ${what} to a folder.` : `Tick ${PLURAL[state.kind]} in the table first, then choose a folder here.`}>
       <option value="" disabled>Move to…</option><option value="unfiled">Unfiled</option>
       {state.names.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
     </select>

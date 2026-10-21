@@ -1504,3 +1504,35 @@ variable's name clashed with one further down the script. `typing_check` 50 (the
 evaluations. Use", the id on hover). `graph_view_check` 69 (new: "Graph Transformer 16/2/2 - save point at 20 evaluations -
 MOCK", the id on hover). `model_structure_check` 30 (new: the Full layer table's heading ends "save point at 20
 evaluations", the id on hover). `mode_suggestion_check` 20. None flaky.
+
+### SIF-68 The Tasks window and the editors' tab line say why a control is greyed out, and what a number counts (2026-10-21; from the readability audit)
+
+**Found.** With no connection chosen, Save as on the editors' tab line was greyed out and its tooltip did not say why:
+"Save as: Asks for a new task name, with the next available numbered name suggested. Stores the rows ...". The page
+already had the reason ("no connection is chosen"), but only Apply and save's request used it; a running save was the only
+case the tooltip named ("Waits for the save of ..."). The "Move to…" list above the tables of the Tasks, Runs and RL
+model windows stayed greyed out until rows were ticked, with no tooltip; only `docs/workbench.md` said to tick them first.
+The Tasks window's All tasks with no task in it (none saved yet, the first read still running, or a list that could not
+be read) said "No registered task yet. Save one from ..." and under it "This folder is empty. Select tasks in All tasks,
+then use Move to…", to a user already in All tasks. And the Newest run column read "2026-10-09 22:35 · completed · 120
+evaluations · first feasible at 34", where the bare 34 after a clock time read like a time.
+
+**Changed.** `panels/TaskSave.tsx`: with no connection, Save as's tooltip reads "Save as: Not available: no connection is
+chosen - choose one with the Connection button in the header. Asks for a new task name, ...". A running save's "Waits
+for the save of ..." stays first: a save runs only with a connection, so `task_save_check`'s `startsWith('Save as: Waits
+for the save of real:ring_osc that is running.')` holds. The audit's fix also gave the rough-frequency case a reason; the
+review left it out, since the frequency box and its own Save as stand in view under the toolbar. `panels/Folders.tsx`:
+"Move to…" (`FolderMoveBar`, shared by the three windows) has a tooltip: "Tick tasks in the table first, then choose a
+folder here." while nothing is ticked ("runs" and "models" in the other two windows), and "Move the 2 selected tasks to a
+folder." once rows are ticked ("Move the selected task to a folder." for one; the audit's text said "the 1 selected
+tasks"). `panels/TaskList.tsx`: the empty-folder line shows only while there are tasks, as the Runs window's already did
+(the RL model window shows no folders at all without a saved model); and the Newest run reads "... · first feasible at
+evaluation 34", as the Running now window's "First feasible design at evaluation N" does. No docs quoted the old words.
+
+**Checked.** `tsc` clean. `task_list_check` 85. Its newest-run expectation is now "... · 8 evaluations · first feasible
+at evaluation 5". New: in a new, empty folder "Move to…" says "Tick tasks in the table first, then choose a folder here.",
+with two tasks ticked "Move the 2 selected tasks to a folder."; with the task list answered empty, All tasks shows "No
+registered task yet" and no empty-folder line, and Refresh list brings the four tasks back. `task_save_check` 70 (its
+waiting tooltip unchanged). `run_list_check` 123 and `model_chooser_check` 83 (the same "Move to…", found by its
+`aria-label`, unchanged). None flaky. The no-connection tooltip has no check: the checks' fixture connection fills an
+empty choice by itself, as the page does with the connection file's active profile.

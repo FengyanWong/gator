@@ -50,8 +50,9 @@ const namePart = (text: string) => <span className="name-part">{text.split(/(?<=
 const cellName = (text: string) => { const at = text.indexOf('/'); return at < 0 ? text : <>{text.slice(0, at + 1)}{namePart(text.slice(at + 1))}</>; };
 /** "2026-10-09 22:35": in a narrow window the time goes under the date; the date never breaks at its hyphens. */
 const dateTime = (utc?: string | null) => { const text = minute(utc); if (!text) return null; const [day, time] = text.split(' '); return <><span className="task-date">{day}</span> {time}</>; };
+/** "first feasible at evaluation 34" (branch record SIF-68): a bare "at 34" after a clock time read like a time. */
 const newestText = (r: Json | null) => !r ? 'none' : `${minute(r.created_utc) ?? '?'} · ${r.state ?? 'not started'} · ${r.evaluations ?? 0} evaluation${r.evaluations === 1 ? '' : 's'}`
-  + (r.first_feasible_eval_count != null ? ` · first feasible at ${r.first_feasible_eval_count}` : r.evaluations ? ' · none feasible' : '');
+  + (r.first_feasible_eval_count != null ? ` · first feasible at evaluation ${r.first_feasible_eval_count}` : r.evaluations ? ' · none feasible' : '');
 
 type Column = { key: string; title: string; help: string; numeric?: boolean; value: (t: Json, runs: Json[]) => string | number | null };
 const COLUMNS: Column[] = [
@@ -266,7 +267,9 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
             <TaskDetails task={t} runs={runs} rows={rows?.key === t.task_key ? rows?.value : null} error={rows?.key === t.task_key ? rows?.error : undefined}
               followed={active} onRenamed={() => refresh(false)} /></td></tr>}
         </Fragment>); })}</tbody></table></div>}
-      {shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No task matches the filter in this folder.' : 'This folder is empty. Select tasks in All tasks, then use Move to…'}</p>}
+      {/* Only while there are tasks, as in the Runs window (branch record SIF-68): with none, All tasks told the user to
+          select tasks in All tasks, under the line that says why the list is empty. */}
+      {shown.length === 0 && tasks.length > 0 && <p className="hint task-folder-empty">{filter ?'No task matches the filter in this folder.' : 'This folder is empty. Select tasks in All tasks, then use Move to…'}</p>}
       </div></div>
     </div>
   );

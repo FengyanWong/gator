@@ -66,7 +66,7 @@ await runChecks(browser, async () => {
   let runsMode = 'normal';
   const folderData = { version: 1, folders: {}, assignments: {} };
   let folderSerial = 0, refuseMove = false, refuseFolders = false, lastMove = null;
-  const renames = []; let refuseRename = false;
+  const renames = []; let refuseRename = false, noTasks = false;
   page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: true }); });
   const answer = params => {
     const { requestId, request } = params, url = new URL(request.url), name = url.pathname;
@@ -98,7 +98,7 @@ await runChecks(browser, async () => {
       return fulfil(requestId, 200, { task_key: body.task_key, name: body.name, previous, internal_name: own });
     }
     if (['/api/tasks', '/api/runs', '/api/tasks/starter'].includes(name)) seen.push(name === '/api/tasks/starter' ? `starter ${url.searchParams.get('task_key')}` : name);
-    if (name === '/api/tasks') return fulfil(requestId, 200, { tasks: TASKS, real_interface_contract: {} });
+    if (name === '/api/tasks') return fulfil(requestId, 200, { tasks: noTasks ? [] : TASKS, real_interface_contract: {} });
     if (name === '/api/runs') return fulfil(requestId, 200, { runs: runsMode === 'older' ? [NEWEST, BASELINE].map(older) : [NEWEST, BASELINE] });
     if (name === '/api/tasks/starter' && url.searchParams.get('task_key') === 'real:fixture_ota') return fulfil(requestId, 200, STARTER);
     if (name === '/api/circuit/load' && JSON.parse(request.postData ?? '{}').circuit?.task_id === 'real:fixture_ota') return fulfil(requestId, 200, LOADED);
@@ -162,7 +162,7 @@ await runChecks(browser, async () => {
     && (await cell(OTA.task_key, 3)) === '3' && (await cell(OTA.task_key, 4)) === stamp(OTA.saved_utc).slice(0, 16) && (await cell(OTA.task_key, 5)) === stamp(OTA.baseline_recorded_utc).slice(0, 16) && (await cell(OTA.task_key, 6)) === '6 / 6',
     JSON.stringify(await Promise.all([0, 1, 2, 3, 4, 5, 6].map(n => cell(OTA.task_key, n)))));
   check('its newest run: started, state, evaluations, first feasible; and how many runs it has (the Baseline simulation counts)',
-    (await cell(OTA.task_key, 7)) === `${stamp(NEWEST.created_utc).slice(0, 16)} · completed · 8 evaluations · first feasible at 5` && (await cell(OTA.task_key, 8)) === '2',
+    (await cell(OTA.task_key, 7)) === `${stamp(NEWEST.created_utc).slice(0, 16)} · completed · 8 evaluations · first feasible at evaluation 5` && (await cell(OTA.task_key, 8)) === '2',
     `${await cell(OTA.task_key, 7)} | ${await cell(OTA.task_key, 8)}`);
   check('times in the list are to the minute with the full time as the tooltip, a date never breaks at its hyphens, a cell name moves under its library whole (branch record SIF-24)',
     await tw.window.evaluate(`(() => { const tr = ${ROWS}.find(tr => tr.dataset.taskKey === ${JSON.stringify(OTA.task_key)}), saved = tr.children[5], cellOf = tr.children[3];
@@ -336,8 +336,11 @@ await runChecks(browser, async () => {
   replies.push({ accept: true, promptText: 'Graph Transformer' }); await press('New folder'); await settled();
   const gt = Object.keys(folderData.folders)[0];
   check('a new folder opens empty', !!gt && (await tw.keys()).length === 0 && await far.evaluate(`!!${WINDOW}.querySelector('.task-folder-empty')`));
+  const moveTitle = () => far.evaluate(`${WINDOW}.querySelector('.task-move-bar select').title`);
+  check('a greyed-out "Move to…" says to tick tasks first (branch record SIF-68)', (await moveTitle()) === 'Tick tasks in the table first, then choose a folder here.', await moveTitle());
   await nav('all'); await selectTask(OTA.task_key); await selectTask(LDO.task_key);
   check('checkboxes select tasks without changing the followed task', (await tw.current()) === OTA.task_key && await far.evaluate(`${WINDOW}.querySelector('.task-move-bar').textContent.includes('2 selected')`));
+  check('... and "Move to…" says what it moves', (await moveTitle()) === 'Move the 2 selected tasks to a folder.', await moveTitle());
   refuseMove = true; await moveTo(gt); await settled();
   check('a failed move is visible, leaves the assignments intact and keeps selection for retry', Object.keys(folderData.assignments).length === 0
     && await far.evaluate(`${WINDOW}.querySelector('[role="alert"]').textContent.includes('move refused') && ${ROWS}.filter(tr => tr.querySelector('input').checked).length === 2`));
@@ -368,6 +371,13 @@ await runChecks(browser, async () => {
   check('folder read failures leave tasks accessible but disable moves', await far.evaluate(`${WINDOW}.querySelector('[role="alert"]').textContent.includes('folder read failed') && ${ROWS}.length === 1 && ${TABLE}.querySelector('thead input').disabled`));
   refuseFolders = false; await press('Refresh list'); await settled();
   check('Refresh list recovers folder access', await far.evaluate(`!${WINDOW}.querySelector('[role="alert"]') && !${TABLE}.querySelector('thead input').disabled`));
+  await far.evaluate(`(() => { const i = ${WINDOW}.querySelector('input.task-filter'); i.focus(); i.select(); })()`);
+  await far.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 }); await far.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+  await nav('all'); noTasks = true; await press('Refresh list'); await settled();
+  check('no task at all: All tasks says so once, not "This folder is empty. Select tasks in All tasks" under it (branch record SIF-68)',
+    await far.until(`!!${WINDOW}.querySelector('.task-empty') && !${WINDOW}.querySelector('.task-folder-empty')`, 30), await far.evaluate(`${WINDOW}.innerText.slice(0, 600)`));
+  noTasks = false; await press('Refresh list'); await settled();
+  check('... and Refresh list brings the tasks back', await far.until(`!!${TABLE} && ${ROWS}.length === 4`, 30));
   check('closing the window leaves the page on its task, the button no longer marked open', (await tw.close(), await until(`!${ROW}.querySelector('button.task-list-button').classList.contains('open')`, 30)) && (await tw.current()) === 'real:fixture_ota');
 
   // ---- record 7.372: no task yet - its ways stand under the toolbar; the banner lists the windows open ------------------------------

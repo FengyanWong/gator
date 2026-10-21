@@ -38,17 +38,21 @@ function BriefCard({ dir, row, status, header, byDir, from, onShow }: { dir: str
   const share = used != null && total ? Math.min(100, Math.round(used / total * 100)) : 0;
   const origin = row ? startedFrom(row, byDir).text : '-';
   // The task and the Mode as the Runs window names them (branch record SIF-44: "real:mscr_ota7t · scratch", and a baseline
-  // read "scratch" too); the task's key in the tooltip.
+  // read "scratch" too); the task's key in the tooltip. A real run's word takes the line's " · " (branch record SIF-78: a bare
+  // "real" after "model graphgps_ldo1 (31)" read as part of the model's name); MOCK keeps its badge.
   return <section className="brief-card" data-run-dir={dir} aria-label={folderName(dir)}>
     <div className="brief-title"><b title={row?.task_key ?? status?.manifest?.task_id ?? dir}>{row ? runTask(row)
         : status?.manifest?.task_id ? taskNameOf(status.manifest.task_id) : folderName(dir)}</b>
       <span> · {runMode(row ?? { mode: status?.mode, run_kind: status?.manifest?.run_kind }) || 'Mode unknown'} · {row?.model_label ? `model ${row.model_label}` : 'no model saved'}</span>
-      {' '}{mock ? <span className="badge model-tag mock-tag">MOCK</span> : <span className="hint">real</span>}</div>
+      {mock ? <>{' '}<span className="badge model-tag mock-tag">MOCK</span></> : <span className="hint brief-data"> · real data</span>}</div>
     <div className="hint brief-where">{header ? "In this page's header" : "Not in this page's header"} · {status?.state ?? row?.state ?? 'unknown state'}</div>
     <div className="brief-progress" title={used != null && total ? `${used} of ${total} evaluations` : undefined}>
       <span className="brief-bar"><span style={{ width: `${share}%` }} /></span>
       <span className="brief-count">{used ?? '?'} / {total ?? '?'} evaluations</span></div>
-    <div className="hint">{[span(working) && `worked ${span(working)}`, left != null && `about ${span(left)} left`].filter(Boolean).join(' · ') || 'no working time yet'}</div>
+    {/* the working time as the Runs window's Duration names it, "so far" while live (branch record SIF-78: "worked 5 min 01 s"
+        here, "4 min 23 s so far" there, for one number); not "Running for" - the header's card can be a paused or ended run */}
+    <div className="hint brief-time" title="How long the run was actually working. The time it sat paused is not counted.">
+      {[span(working) && `Duration ${span(working)}${live ? ' so far' : ''}`, left != null && `about ${span(left)} left`].filter(Boolean).join(' · ') || 'No working time yet'}</div>
     <div>{first != null ? `First feasible design at evaluation ${first}` : 'None feasible yet'}
       {/* three digits, as Run status writes it (SIF-44: "reward -0.0370463") */}
       {best ? ` · best so far: ${typeof best.reward === 'number' ? `reward ${sig(best.reward)}` : 'no reward recorded'}${best.feasible ? ', meets every spec' : ''}` : ''}</div>

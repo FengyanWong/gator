@@ -1915,3 +1915,24 @@ read at: ..." on a run at rest before any read had a time. It is now built from 
 only when its words are on the line. Checked: `tsc` clean, `training_tab_check` 103 (100 before; new: a re-read that fails
 keeps "numbers read at" the last good read's time and Retry read reads again, and the empty live run's "0 evaluations · 0
 learner updates · live" has the tooltip "Live: ..." alone).
+
+### SIF-78 The Running now card names its working time and real data as the rest of the page does (2026-10-21; from the real-data survey)
+
+**Found.** In the Running now window, a live real run's card read "worked 5 min 01 s · about 8 min 04 s left" in lower case,
+while the Runs window gave the same number (the run's working time) as Duration "4 min 23 s so far", and the card's other
+lines start with a capital ("None feasible yet", "Started from ...") (survey issue 24). The card's title read "graphgps_ldo1 ·
+Fine-tune · model graphgps_ldo1 (31) real": every other part of the line is split by " · ", but a real run's word came
+straight after the model's name, so "(31) real" read as part of it; a MOCK run's badge reads as separate (issue 25). Not
+changed: the MOCK badge, and the card's lower-case state word "running" (the run's state as the Runs window shows it).
+
+**Changed.** `frontend/src/panels/RunBrief.tsx`: the time line reads "Duration 5 min 01 s so far · about 8 min 04 s left"
+("so far" only while the run is live, as in the Runs window; not "Running for", since the header's card can be a paused or
+ended run), "No working time yet" when there is none, and its tooltip is the Runs window's Duration help ("How long the run
+was actually working. The time it sat paused is not counted."). A real run's title ends " · real data" after the line's own
+separator, in the same grey; a MOCK run keeps its badge.
+
+**Checked.** `tsc` clean. `run_control_check` 122 (120 before): its fixture status now gives the header's run a working time
+while the run brief is open, and a REAL run working elsewhere is listed while the brief reads the list again; new, the
+header's card reads "Duration 5 min 01 s so far · about ... left", and after Refresh the real run's card is titled
+"fixture_task · New model · no model saved · real data" with no MOCK badge and reads "Duration 2 min 05 s so far · about 4 min
+10 s left" (picture `run-4c-brief-real.png`). `dom_identity_check` 56. None flaky.

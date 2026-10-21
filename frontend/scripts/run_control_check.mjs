@@ -28,7 +28,8 @@ const browser = await launchEdge('runcontrol');
 
 // ---- the simulated run (FIXTURE): one status "file" that the page polls, advanced by scripted steps ----------------
 const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed0__0001';
-const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, beat: 0, steps: [], output: {}, starts: 0, calibration: null };
+// `active`: the working time the status gives (null until the run brief reads it, branch record SIF-78).
+const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, beat: 0, steps: [], output: {}, starts: 0, calibration: null, active: null };
 const listed = () => sim.state ? [{ run_dir: DIR, run_id: 'fixture-run', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: sim.mock, seed: 0,
   created_utc: '2026-09-21T00:00:00+00:00', state: sim.state, experiment: 'fixture_experiment__0001', evaluations: null, first_feasible_eval_count: null, resumability: null }] : [];
 const statusOf = () => {
@@ -41,6 +42,7 @@ const statusOf = () => {
     budget: { max_evaluations: sim.max, max_launches: null, max_retries: 0, charged: sim.charged, reserved: 0, in_flight: sim.alive && sim.state === 'running' ? 1 : 0,
       completed: sim.charged, failed: 0, released: 0, remaining: sim.max - sim.charged, launches: sim.charged, retries: 0, cache_hits: 0, first_feasible: null },
     best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: sim.dir }, connection: { overall: 'not_applicable' }, summary: null, calibration: sim.calibration,
+    active_seconds: sim.active,
     manifest: { mode: 'scratch', mock: sim.mock, task_id: 'fixture_task:0000', seeds: { target_seed: 0 }, source_model: null, budgets: { max_evaluations: sim.max },
       mock_notice: sim.mock ? 'FIXTURE MOCK DATA: nothing was started.' : null } };
 };
@@ -60,6 +62,16 @@ const otherStatus = () => ({ state: 'paused', run_id: 'fixture-run-2', mode: 'sc
   best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: OTHER }, connection: { overall: 'not_applicable' }, summary: null,
   save_point: 'ckpt-000007', save_point_code: otherOlder ? 'older' : 'current',
   manifest: { mode: 'scratch', mock: true, task_id: 'fixture_task:0000', seeds: { target_seed: 1 }, source_model: null, budgets: { max_evaluations: 60 }, mock_notice: 'FIXTURE MOCK DATA: nothing was started.' } });
+// Branch record SIF-78: a REAL run working elsewhere (the command line), listed only while the run brief reads it again: 20 of
+// 60 evaluations in 125 s of working time.
+const ELSEWHERE = '/fixture/outputs/real/fixture_experiment__0002/runs/fixture_task__scratch__seed2__0003';
+let elsewhereListed = false;
+const elsewhereRow = () => ({ run_dir: ELSEWHERE, run_id: 'fixture-run-3', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: false, seed: 2,
+  created_utc: '2026-09-21T00:00:00+00:00', state: 'running', experiment: 'fixture_experiment__0002', evaluations: 20, max_evaluations: 60, active_seconds: 125,
+  first_feasible_eval_count: null, resumability: null });
+const elsewhereStatus = () => ({ state: 'running', run_id: 'fixture-run-3', mode: 'scratch', entry: 'start', provenance: 'real', mock: false, worker_alive: true, run_dir: ELSEWHERE,
+  active_seconds: 125, budget: { max_evaluations: 60, charged: 20 }, best_design: null, last_checkpoint_utc: null, first_feasible: null,
+  manifest: { mode: 'scratch', mock: false, task_id: 'fixture_task:0000', seeds: { target_seed: 2 }, source_model: null, budgets: { max_evaluations: 60 }, mock_notice: null } });
 const validReport = validConfiguration({ mock: true });
 // Record 7.261: the backend's continuation check (GET /api/runs/continuation) - every run can go on, but OTHER once its save
 // point is from older optimizer code, in the backend's words, with the new run that still goes on from it - and what became
@@ -84,8 +96,9 @@ await runChecks(browser, async () => {
     const url = new URL(request.url), name = url.pathname, body = request.postData ? JSON.parse(request.postData) : null;
     if (name === '/api/config/validate') return fulfil(requestId, 200, validReport);
     if (name === '/api/runs/status') { statusRequests++; const asked = url.searchParams.get('run_dir'); if (asked === GONE) goneAsked++;
-      return asked === sim.dir ? fulfil(requestId, 200, statusOf()) : asked === OTHER && otherListed ? fulfil(requestId, 200, otherStatus()) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
-    if (name === '/api/runs') return fulfil(requestId, 200, { runs: [...listed(), ...(otherListed ? [otherRow()] : [])] });
+      return asked === sim.dir ? fulfil(requestId, 200, statusOf()) : asked === OTHER && otherListed ? fulfil(requestId, 200, otherStatus())
+        : asked === ELSEWHERE && elsewhereListed ? fulfil(requestId, 200, elsewhereStatus()) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
+    if (name === '/api/runs') return fulfil(requestId, 200, { runs: [...listed(), ...(otherListed ? [otherRow()] : []), ...(elsewhereListed ? [elsewhereRow()] : [])] });
     if (name === '/api/runs/continuation') return fulfil(requestId, 200, checkOf(url.searchParams.get('run_dir')));
     if (name === '/api/runs/request') { requestLookups.push(url.searchParams.get('request_id')); return fulfil(requestId, 200, requestAnswer ?? { state: 'unknown' }); }
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
@@ -306,6 +319,7 @@ await runChecks(browser, async () => {
   // The run brief (record 7.264, plan "The run brief"): the chip opens a small window; it only shows - Show results there does what
   // the chip's press did until then, and Open in Runs opens the Runs window at the run.
   const tabsBefore = await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`);
+  sim.active = 301;                                                                // its status gives a working time from now on (SIF-78)
   await evaluate(`${CHIP}.click()`, true);                                       // a click that opens a window
   const briefTarget = await browser.window(RUNNING_WINDOW).catch(() => null);
   check('pressing the run in the header opens the run brief, a window of its own', !!briefTarget);
@@ -320,8 +334,24 @@ await runChecks(browser, async () => {
     && card.buttons.join() === 'Show results,Open in Runs' && card.others === 1 && /Nothing else is live/.test(card.none), JSON.stringify(card));
   check('... titled as the Runs window names the run: its task\'s name and the Mode in words, not "fixture_task:0000 · scratch" (SIF-44)',
     /^fixture_task · New model · no model saved\b/.test(card?.text ?? ''), card?.text);
+  // Branch record SIF-78: the working time as the Runs window's Duration names it, "so far" while live - it read "worked 5 min 01 s".
+  const TIME = `document.querySelector('.brief-card .brief-time')?.textContent ?? ''`;
+  check('... its working time reads as the Runs window\'s Duration: "Duration 5 min 01 s so far", then the time left (SIF-78)',
+    await brief.until(`/^Duration 5 min 01 s so far · about \\d.* left$/.test(${TIME})`, 50), await brief.evaluate(TIME));
   await brief.shot(path.join(out, 'run-4b-brief.png'), `document.querySelector('.run-brief')`);
   check('opening it changed nothing: the bottom tabs show what they showed', (await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`)) === tabsBefore);
+  // Branch record SIF-78: a REAL run's card says so after the line's " · " - a bare grey "real" after "model graphgps_ldo1 (31)"
+  // read as part of the model's name.
+  elsewhereListed = true;
+  await brief.evaluate(`[...document.querySelectorAll('.run-brief button')].find(b => b.textContent === 'Refresh').click()`);
+  const REAL_CARD = `document.querySelector(${JSON.stringify(`.brief-card[data-run-dir="${ELSEWHERE}"]`)})`;
+  await brief.until(`!!${REAL_CARD}`, 50);
+  const real = await brief.evaluate(`(() => { const c = ${REAL_CARD}; return c && { title: c.querySelector('.brief-title').textContent.replace(/\\s+/g, ' '),
+    time: c.querySelector('.brief-time')?.textContent ?? '', badge: !!c.querySelector('.mock-tag') }; })()`);
+  check('Refresh adds a real run working elsewhere, its title ending " · real data" (no MOCK badge), its time "Duration 2 min 05 s so far" (SIF-78)',
+    real?.title === 'fixture_task · New model · no model saved · real data' && !real.badge && real.time === 'Duration 2 min 05 s so far · about 4 min 10 s left', JSON.stringify(real));
+  await brief.shot(path.join(out, 'run-4c-brief-real.png'), `document.querySelector('.run-brief')`);
+  elsewhereListed = false;
   await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Show results').click()`);
   check('Show results in the brief shows the run under Run status again', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})`));
   await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Open in Runs').click()`, true);
@@ -331,6 +361,7 @@ await runChecks(browser, async () => {
     .find(tr => tr.title === ${JSON.stringify(DIR)}); return !!tr && tr.querySelector('button.notes-link')?.getAttribute('aria-expanded') === 'true'; })()`, 60));
   runsWindow?.close(); if (runsTarget) await send('Target.closeTarget', { targetId: runsTarget.id });
   brief.close(); await send('Target.closeTarget', { targetId: briefTarget.id });
+  sim.active = null;
 
   // ---- 6. a reload: the live run is still the header's run, and "Start" is never offered meanwhile ---------------------------
   await send('Page.reload'); await until(`!!(${MAIN})`, 150);

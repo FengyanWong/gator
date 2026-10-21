@@ -627,3 +627,27 @@ intercept (its later "only checkpoint was ever sent" passed). The step now waits
 and "Close all", an action on all of them (it was already muted, but looked like one more window).
 
 **Checked.** `task_list_check` 80, `looks_check` 64; the menu with the Runs and Tasks windows open at 1366 px (5174).
+
+### SIF-44 A run's Mode in words everywhere, its best numbers to three digits (2026-10-21; from the readability audit)
+
+**Found.** Four places still wrote a run's Mode as its key while the rest of the page says New model / Fine-tune /
+Evaluate only (SIF-6/11/14): the "Running now" card ("real:mscr_ota7t · scratch · model ota7t"), a saved model's Details
+in the RL model window ("Saved by ... · fine_tune, seed 0, completed"; History "· scratch · 800 evaluations"), and a run's
+Details in the Runs window (History "· scratch ·"; "Runs that started from its model: 2026-10-20 13:09:11 fine_tune
+(dffrx1_t2 (3))"). Run status read the Mode alone, so a Baseline or a Calibration said "New model - no weights loaded".
+The card wrote the best reward to six digits ("reward -0.0370463"; "reward ," with none recorded), the Runs Details the
+best violation too ("violation 0.309319"), where Run status writes three.
+
+**Changed** (`RunBrief.tsx`, `ModelChooser.tsx`, `RunList.tsx`, `RunTabs.tsx`; all through `runMode`): the card reads
+"mscr_ota7t · Fine-tune · model ota7t (2)" (the task's name as the Runs window gives it, its key in the tooltip; "Mode
+unknown" for none) and "best so far: reward -0.037, meets every spec" ("no reward recorded" for none); "Saved by ... ·
+Fine-tune, seed 0, completed"; History "real:mscr_ota7t · New model · 800 evaluations" (the key kept there, as before;
+"1 evaluation", "evaluations unknown"); "2026-10-20 13:09:11 Fine-tune (dffrx1_t2 (3))"; "violation 0.309"; Run status
+"Baseline", "Calibration" (no model at all, so nothing after it), "Offline training - no weights loaded", "New model - no
+weights loaded" as before.
+
+**Checked.** `tsc` clean; `run_list_check` 121 (its "Runs that started from its model" now /Fine-tune \(fixture \(2\)\)/,
+its History "synthetic:gpdk045_ota5 · New model · 60 evaluations · fixture"), `run_control_check` 102 (new: the card reads
+"fixture_task · New model · no model saved"), `model_chooser_check` 78 (new: "Saved by" reads "New model, seed 1,
+completed"), `room_check` 22 ("New model - no weights loaded" holds), `save_now_check` 25, `dom_identity_check` 56; none
+flaky.

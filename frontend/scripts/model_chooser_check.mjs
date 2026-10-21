@@ -227,6 +227,8 @@ await runChecks(browser, async () => {
     && asked.slice(askedBefore).some(a => a.run_dir === A.run_dir && a.checkpoint_id === A.latest && a.withConfig), JSON.stringify(asked.slice(askedBefore)));
   await sleep(1100);
   check('... and opening Details changed nothing in the draft', !(await stored())?.model_source?.run_dir);
+  const savedBy = await evaluate(`[...${RIGHT}.querySelectorAll('table.model-relations tr')].find(tr => tr.children[0].textContent === 'Saved by')?.children[1].innerText.replace(/\\s+/g, ' ').trim() ?? ''`);
+  check('... "Saved by" names the run\'s Mode as the Mode buttons do: "New model, seed 1, completed", not "scratch" (SIF-44)', / · New model, seed 1, completed$/.test(savedBy), savedBy);
 
   // ---- Use this save point: pinned, with its network, one Undo step -----------------------------------------------------
   const early = A.checkpoints[0].checkpoint_id;

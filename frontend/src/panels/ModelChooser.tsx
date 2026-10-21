@@ -9,6 +9,7 @@ import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
 import { ModelStructure } from './ModelStructure';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
+import { runMode } from './rlModelText';
 /** When, as the Runs and Tasks windows and the model's facts write it - 2026-10-20 13:09:10 (branch record SIF-17; the table
  *  wrote "20 Oct, 13:09:10"). */
 const when = (utc?: string | null) => stamp(utc) ?? 'unknown time';
@@ -111,9 +112,10 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
       <CompatibilityList checks={compatibility.checks} /></details>}
     {!checked && !checkError && point && <p className="hint">Checking it against the task on the page...</p>}
     <h4>Relationships</h4>
+    {/* A run's Mode in the words of the Mode buttons above (branch record SIF-44: "fine_tune, seed 0"); the task keeps its key. */}
     <table className="grid small run-relations model-relations"><tbody>
       <tr><td>Saved by</td><td><button className="item-link" onClick={() => openRunsAt({ run_dir: model.run_dir, from })} title="Open the Runs window at this run.">{folderName(model.run_dir)}</button>
-        <span className="hint"> · {model.mode ?? '?'}, seed {model.seed ?? '?'}, {model.state ?? 'unknown state'}</span></td></tr>
+        <span className="hint"> · {runMode(model) || '?'}, seed {model.seed ?? '?'}, {model.state ?? 'unknown state'}</span></td></tr>
       <tr><td>Started from</td><td>{origin.parent ? link(origin.parent, origin.text) : origin.text}{model.parent?.checkpoint_id && <span className="hint">{` (save point ${model.parent.checkpoint_id})`}</span>}</td></tr>
       <tr><td>Models trained from it</td><td>{children.filter(c => c.model_label && c.mode !== 'frozen').map((c, i) => <Fragment key={c.run_dir}>{i > 0 && ', '}{link(c.run_dir, c.model_label)}</Fragment>)}
         {!children.some(c => c.model_label && c.mode !== 'frozen') && <span className="hint">none under this output folder</span>}</td></tr>
@@ -123,7 +125,7 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
       <tr><td>History</td><td><details className="more model-history"><summary>{history.steps.length - 1 ? `${plural(history.steps.length - 1, 'model')} behind it, oldest first` : 'no saved model behind it'}</summary>
         <ol className="steps-list"><li className={history.root.missing ? 'warn' : 'hint'}>{history.root.text}</li>
           {history.steps.map(s => <li key={s.run_dir}>{s.run_dir === model.run_dir ? <b>this model</b> : link(s.run_dir, s.row?.model_label ?? folderName(s.run_dir))}
-            {s.row && <span className="hint">{` · ${s.row.task_key ?? '?'} · ${s.row.mode ?? '?'} · ${s.row.evaluations ?? '?'} evaluations`}</span>}
+            {s.row && <span className="hint">{` · ${s.row.task_key ?? '?'} · ${runMode(s.row) || '?'} · ${s.row.evaluations != null ? plural(s.row.evaluations, 'evaluation') : 'evaluations unknown'}`}</span>}
             {s.checkpoint_id && <span className="hint">{` - loaded the one above at its save point ${s.checkpoint_id}`}</span>}</li>)}</ol></details></td></tr>
       <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.run_dir)}>{model.run_dir}</td></tr>
     </tbody></table>

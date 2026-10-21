@@ -4,7 +4,7 @@ import { Blocked, PopupPortal } from './popupParts';
 import { RUNS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { tasksShared } from '../shared';
-import { bytes, clock, durationTenths as span, folderName, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, short, stamp, stopWords } from '../format';
+import { bytes, clock, durationTenths as span, folderName, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, short, sig, stamp, stopWords } from '../format';
 import { isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
@@ -106,7 +106,9 @@ function Relationships({ row, info, runs, byDir, tasks, from, onFocus }: { row: 
   const runLink = (dir: string, text: string) => byDir.has(dir)
     ? <button className="item-link" onClick={() => onFocus(dir)} title={`${dir}\nShow this run here: selected, its Details open.`}>{text}</button>
     : <span title={dir}>{text} <span className="hint">(not under this output folder)</span></span>;
-  const stepText = (s: Json) => `${s?.task_key ?? (s ? taskOf(s) : '?')} · ${s?.mode ?? '?'} · ${s?.evaluations ?? '?'} evaluations${s?.model_label ? ` · ${s.model_label}` : ''}`;
+  // A run's Mode in words here too, as its Mode column (branch record SIF-44: "· scratch ·", "2026-10-20 13:09:11 fine_tune").
+  const stepText = (s: Json) => `${s?.task_key ?? (s ? taskOf(s) : '?')} · ${s ? runMode(s) || '?' : '?'} · ${s?.evaluations != null
+    ? `${s.evaluations} evaluation${s.evaluations === 1 ? '' : 's'}` : 'evaluations unknown'}${s?.model_label ? ` · ${s.model_label}` : ''}`;
   return (<table className="grid small run-relations"><tbody>
     <tr><td>Task</td><td>{row.task_key ? <button className="item-link" onClick={() => openTasksAt({ task_key: row.task_key, from })}
         title="Open the Tasks window at this task.">{task && typeof task.name === 'string' && task.name !== row.task_key.replace(/^[^:]+:/, '') ? `${task.name} (${row.task_key})` : row.task_key}</button> : taskOf(row)}
@@ -125,7 +127,7 @@ function Relationships({ row, info, runs, byDir, tasks, from, onFocus }: { row: 
     <tr><td>Saved model</td><td>{row.model_label ? <>{row.model_label}{info && <span className="hint"> · latest save point {info.save_point ?? 'none'}</span>}</>
       : <span className="hint">none</span>}</td></tr>
     <tr><td>Runs that started from its model</td><td>{children.length ? children.map((c, i) => <Fragment key={c.run_dir}>{i > 0 && ', '}
-      {runLink(c.run_dir, `${stamp(c.created_utc) ?? folderName(c.run_dir)} ${c.mode}${c.model_label ? ` (${c.model_label})` : ''}`)}</Fragment>)
+      {runLink(c.run_dir, `${stamp(c.created_utc) ?? folderName(c.run_dir)} ${runMode(c)}${c.model_label ? ` (${c.model_label})` : ''}`)}</Fragment>)
       : <span className="hint">none under this output folder</span>}</td></tr>
     <tr><td>History</td><td><details className="more run-history"><summary>{behind ? `${behind} model${behind > 1 ? 's' : ''} behind this run, oldest first` : 'no saved model behind this run'}</summary>
       <ol className="steps-list"><li className={history.root.missing ? 'warn' : 'hint'}>{history.root.text}</li>
@@ -156,7 +158,7 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     ['Spectre launches', b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''} (retries ${b.retries}, cache hits ${b.cache_hits})` : null],
     ['Learner updates', info ? String(info.learner_updates ?? 0) : null],
     ['First feasibility', info ? (first ? `at ${first.first_feasible_eval_count} evaluations charged (${first.completed_count} completed, ${first.spectre_launches} launch${first.spectre_launches === 1 ? '' : 'es'})` : 'not reached') : null],
-    ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics, best.metric_units)} · violation ${short(best.violation)}` : 'none') : null],   // not shouted (SIF-19)
+    ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics, best.metric_units)} · violation ${typeof best.violation === 'number' ? sig(best.violation) : '-'}` : 'none') : null],   // not shouted (SIF-19); three digits (SIF-44)
     ['Best design variables', best?.variables ? variables(best.variables) : null],
     ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}` : 'none (random weights)') : null],
     ['Last model save', info ? stamp(info.last_checkpoint_utc) ?? 'none' : null],

@@ -260,6 +260,8 @@ await runChecks(browser, async () => {
   check('its first card is the header\'s run: in this page\'s header, its evaluations, MOCK, Show results and Open in Runs - no run controls',
     card?.dir === DIR && /In this page's header/.test(card.text) && /\d+ \/ 60 evaluations/.test(card.text) && /MOCK/.test(card.text)
     && card.buttons.join() === 'Show results,Open in Runs' && card.others === 1 && /Nothing else is live/.test(card.none), JSON.stringify(card));
+  check('... titled as the Runs window names the run: its task\'s name and the Mode in words, not "fixture_task:0000 · scratch" (SIF-44)',
+    /^fixture_task · New model · no model saved\b/.test(card?.text ?? ''), card?.text);
   await brief.shot(path.join(out, 'run-4b-brief.png'), `document.querySelector('.run-brief')`);
   check('opening it changed nothing: the bottom tabs show what they showed', (await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`)) === tabsBefore);
   await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Show results').click()`);

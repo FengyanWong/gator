@@ -10,7 +10,7 @@ import { requestTaskSave } from './TaskSave';
 import { ContinueForm } from './ContinueForm';
 import { LaunchRefusal } from './LaunchRefusal';
 import { KeyTile } from './fields';
-import { MODE_NAME } from './rlModelText';
+import { runMode } from './rlModelText';
 
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
@@ -125,6 +125,9 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   const nominalKeys = [...metricKeys, ...Object.keys(best?.nominal_metrics ?? {}).filter(k => !metricKeys.includes(k))]
     .filter(k => k in (best?.nominal_metrics ?? {}) && k in (best?.metrics ?? {}));   // the order of the row above
   const hasV2 = Object.prototype.hasOwnProperty.call(b ?? {}, 'first_nominal_feasible');
+  // The run's kind first (branch record SIF-44): a baseline or a calibration has mode "scratch" and read "New model - no
+  // weights loaded"; it loads no model at all, so it is named alone.
+  const modeWords = runMode({ run_kind: status.manifest?.run_kind, mode: status.mode });
   // Continue... is worth a word while the run is at rest in a state it can go on from: a completed run too, once the
   // backend's continuation check can say whether a higher total is allowed (record 7.261).
   const resting = restingShown(status, check);
@@ -152,7 +155,8 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
     <table className="grid small"><tbody>
       <tr><td>State</td><td title={status.stop_reason ?? undefined}><b>{status.state}</b>{status.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>
       {/* The Mode as the RL model window names it (branch record SIF-14: it wrote the key, "scratch (no weights loaded)"). */}
-      <tr><td>Mode / model</td><td>{MODE_NAME[status.mode] ?? status.mode}{status.manifest?.source_model?.run_id ? ` - from run ${status.manifest.source_model.run_id.slice(0, 12)}, save point ${status.manifest.source_model.checkpoint_id}` : ' - no weights loaded'}</td></tr>
+      <tr><td>Mode / model</td><td>{modeWords}{status.manifest?.source_model?.run_id ? ` - from run ${status.manifest.source_model.run_id.slice(0, 12)}, save point ${status.manifest.source_model.checkpoint_id}`
+        : ['Baseline', 'Calibration'].includes(modeWords) ? '' : ' - no weights loaded'}</td></tr>
       <tr><td>Budget</td><td>{b ? `${b.charged} charged / ${b.max_evaluations}  (in flight ${b.in_flight}, completed ${b.completed}, failed ${b.failed}, remaining ${b.remaining})` : '-'}</td></tr>
       <tr><td>Spectre launches</td><td>{b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''}  (retries ${b.retries}, cache hits ${b.cache_hits})` : '-'}</td></tr>
       {b && <tr><td>Launch accounting</td><td>{b.confirmed_launches ?? b.launches} confirmed, {b.uncertain_launches ?? 0} uncertain, {b.reserved_launches ?? 0} reserved</td></tr>}

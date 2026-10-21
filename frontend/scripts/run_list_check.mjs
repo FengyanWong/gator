@@ -288,8 +288,8 @@ await runChecks(browser, async () => {
   await far.evaluate(`[...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(RESUMED.run_dir)}).querySelector('button.item-link').click()`);
   check('the link in "Started from" shows that run here, its Details open', await detailsOpen(DONE));
   let relations = await far.evaluate(RELATIONS);
-  check('Details name the task, where the model came from, the model it saved and the runs that started from it', relations['Task']?.startsWith('synthetic:gpdk045_ota5')
-    && relations['Started from'] === 'template GT (a new model)' && relations['Saved model'].startsWith('fixture') && /fine_tune \(fixture \(2\)\)/.test(relations['Runs that started from its model'] ?? ''),
+  check('Details name the task, where the model came from, the model it saved and the runs that started from it (their Mode in words, SIF-44)', relations['Task']?.startsWith('synthetic:gpdk045_ota5')
+    && relations['Started from'] === 'template GT (a new model)' && relations['Saved model'].startsWith('fixture') && /Fine-tune \(fixture \(2\)\)/.test(relations['Runs that started from its model'] ?? ''),
     JSON.stringify(relations));
   await far.evaluate(`[...${WINDOW}.querySelector('table.run-relations').querySelectorAll('tr')].find(tr => tr.children[0].textContent === 'Runs that started from its model').querySelector('button.item-link').click()`);
   check('... and a run that started from it is a link too', await detailsOpen(RESUMED));
@@ -298,7 +298,7 @@ await runChecks(browser, async () => {
   const history = await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('details.run-history'); d.open = true;
     return { summary: d.querySelector('summary').textContent, steps: [...d.querySelectorAll('li')].map(li => li.innerText.replace(/\\s+/g, ' ').trim()) }; })()`);
   check('its history is folded: one model behind it, oldest first, from the template', history.summary === '1 model behind this run, oldest first' && history.steps[0] === 'template GT'
-    && history.steps[1].startsWith('synthetic:gpdk045_ota5 · scratch · 60 evaluations · fixture') && /^this run - loaded the one above at its save point ckpt-000040-final$/.test(history.steps[2]),
+    && history.steps[1].startsWith('synthetic:gpdk045_ota5 · New model · 60 evaluations · fixture') && /^this run - loaded the one above at its save point ckpt-000040-final$/.test(history.steps[2]),
     JSON.stringify(history));
   await far.evaluate(`[...${WINDOW}.querySelector('table.run-relations').querySelectorAll('tr')].find(tr => tr.children[0].textContent === 'Task').querySelector('button.item-link').click()`, true);
   const taskTarget = await browser.window(TASKS_WINDOW).catch(() => null);

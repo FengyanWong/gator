@@ -1784,3 +1784,8 @@ and centred. `looks_check` 73 (72): new, the Probe chips at 13 px beside the 14 
 leader's rows open every tick box in view - with a count, the tied mark or nothing after it - stands at the same x.
 `task_rows_check` 52, `find_fill_copy_check` 30, `unsaved_rows_check` 25, `blocking_issues_check` 42, `room_check` 27,
 `editor_columns_check` 23, `formula_bar_check` 21, `matched_devices_check` 37. None flaky.
+
+**Review follow-up.** The reference's blocking issues row read as if every row issue cut by the column got words of its own;
+`ISSUE_HEAD` covers only `spec_adds_registry_entry` and `basis_not_stated`, and other long first clauses (`spec_name_is_a_probe`,
+`spec_name_is_a_result`, `metric_not_in_registry`) still end in "...", as this entry says. The row now names the two lines and
+says the others are still cut. Docs only: no page changed, so no check was run.

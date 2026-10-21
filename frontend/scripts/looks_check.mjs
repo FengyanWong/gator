@@ -16,7 +16,8 @@
 //     opens it, the arrow keys and Enter do the same from the keyboard; kept in this browser; hidden on narrow windows;
 //   - the editors share one ink and head colour; the Specs line offers the Probe ids as chips (same text);
 //   - the old look's small sizes no longer outrank the page: issue lines, the toolbar's text buttons, the tied rows' toggle, the
-//     task chip's name; a heading with no tooltip shows no help cursor (branch record SIF-63);
+//     task chip's name; a heading with no tooltip shows no help cursor (branch record SIF-63); a list table's second lines,
+//     its Details link, the state words and the paths, and the copy cursor only on a path that copies (SIF-64);
 //   - Data tables: one line per row - ids end in "...", the whole value on hover, a click copies it; no word cut in two;
 //   - Research experiments: the two retired labels dropped from a saved configuration, three labels shown, six folded; no
 //     "Search method" any more (record 7.226; one, as its label, since 7.163);
@@ -165,6 +166,21 @@ await runChecks(browser, async () => {
     const link = await runs.evaluate(`(() => { const b = document.createElement('button'); b.className = 'notes-link'; b.textContent = 'Details';
       (document.querySelector('.run-window') ?? document.body).append(b); const st = getComputedStyle(b); const seen = { colour: st.color, line: st.textDecorationLine }; b.remove(); return seen; })()`);
     check('a link in the Runs window is white and underlined, not red (record 7.372)', link.colour === 'rgb(244, 244, 245)' && link.line.includes('underline'), JSON.stringify(link));
+    // Branch record SIF-64: a list table's second lines, its Details link, the state words and the paths read at sizes near the
+    // table's 13 px - a second line and "Details" were 11 px (the link in a hit box about 16 px tall), a state and "MOCK" 10 to
+    // 10.5 px; a path showed the copy cursor where a click copied nothing. A stand-in row: this window lists no run.
+    const row = await runs.evaluate(`(() => { const t = document.createElement('table'); t.className = 'grid run-table';
+      t.innerHTML = '<tbody><tr><td><span class="badge state-ok">completed</span><div class="hint">budget reached</div></td><td><span class="badge model-tag mock-tag">MOCK</span></td>'
+        + '<td><button class="notes-link">Details</button></td><td><button class="notes-link">Hide details</button></td><td class="path">/a/b</td><td class="path" title="Click to copy">/a/b</td></tr></tbody>';
+      (document.querySelector('.run-window') ?? document.body).append(t);
+      const st = e => getComputedStyle(e), [shut, open] = t.querySelectorAll('button.notes-link'), [plain, copies] = t.querySelectorAll('td.path'), box = e => e.getBoundingClientRect();
+      const seen = { cell: st(t.querySelector('td')).fontSize, hint: st(t.querySelector('.hint')).fontSize, state: st(t.querySelector('.badge')).fontSize, spacing: st(t.querySelector('.badge')).letterSpacing, tag: st(t.querySelector('.model-tag')).fontSize,
+        link: [st(shut).fontSize, st(shut).paddingTop, Math.round(box(shut).height)], widths: [box(shut).width, box(open).width, open.scrollWidth <= open.clientWidth],
+        paths: [st(plain).fontSize, st(plain).cursor, st(copies).cursor] }; t.remove(); return seen; })()`);
+    check('a list table\'s second line reads at 12 px, a state at 12 px with no letter spacing, "MOCK" at 11.5 px, "Details" at the table\'s 13 px with 3 px above and below (SIF-64)',
+      row.cell === '13px' && row.hint === '12px' && row.state === '12px' && ['0px', 'normal'].includes(row.spacing) && row.tag === '11.5px' && row.link[0] === '13px' && row.link[1] === '3px' && row.link[2] >= 22, JSON.stringify(row));
+    check('..."Details" and "Hide details" take the same room, so a toggle moves no column', row.widths[0] === row.widths[1] && row.widths[2], JSON.stringify(row.widths));
+    check('...a path reads at 12 px with the text cursor, the copy cursor only where it says "Click to copy"', JSON.stringify(row.paths) === '["12px","text","copy"]', JSON.stringify(row.paths));
   }
 
   // ---- Research experiments (record 7.163) and no "Search method" (record 7.226) ------------------------------------------

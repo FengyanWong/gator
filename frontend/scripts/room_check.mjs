@@ -8,7 +8,8 @@
 //     counted and the wall time in hours ("42 launches, 1 retry, wall time 24 h 00 min", branch record SIF-58);
 //   - Output settings: "Always saved" in one line with the whole list in its tooltip; the output root's facts in one line
 //     with the table folded behind it (open when the root cannot be written); with a run shown, its "Current run paths" in
-//     words ("Run folder", "Last successful save" in local time, the UTC in its tooltip; branch record SIF-60).
+//     words ("Run folder", "Last successful save" in local time, the UTC in its tooltip; branch record SIF-60), a path saying
+//     "Click to copy" under the copy cursor (SIF-64).
 //   - record 7.372: a cell entered while the table has room for under about four rows (a small screen, the panel open) folds the
 //     bottom panel to its tab line; a tab brings it back; with room for the rows a cell leaves it open.
 // Run: bash frontend/scripts/run_checks.sh --only room_check. About 20 s.
@@ -115,6 +116,10 @@ await runChecks(browser, async () => {
     && runPaths[0].key === 'run_dir' && runPaths[0].value === RUN, JSON.stringify(runPaths));
   check('...the last save in local time "YYYY-MM-DD hh:mm:ss", the UTC in its tooltip', !!runPaths && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(runPaths[2].value)
     && runPaths[2].tip === `${SAVED} (UTC)`, JSON.stringify(runPaths?.[2]));
+  // Branch record SIF-64: a click on the path copied it, and nothing said so (Run status's Run folder said "Click to copy").
+  const pathCursor = runPaths ? await evaluate(`getComputedStyle((${PATHS}).querySelector('tr').cells[1]).cursor`) : null;
+  check('...the run folder says that a click copies it, under the copy cursor (SIF-64)', runPaths?.[0].tip === 'Click to copy' && pathCursor === 'copy',
+    JSON.stringify([runPaths?.[0].tip, pathCursor]));
 
   // ---- record 7.372: entering a cell while the table has little room folds the panel; a tab brings it back -------------------------
   const CELL = `document.querySelector('.editors table.editor tbody tr td[data-field] input:not([type="checkbox"])')`;

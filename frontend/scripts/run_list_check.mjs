@@ -15,6 +15,7 @@
 // started from it, a folded history), every run named a link that shows it here and the task one that opens the Tasks window.
 // Record 7.267: a run's Details have Load run (also the double click), Show results, Continue... and New run like this; Load
 // run brings the model the run ended with, pinned with its network, as one Undo step; a run whose task is gone offers neither.
+// Branch record SIF-64: a working run's "so far" may go under its time, so it does not widen the table.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -384,6 +385,10 @@ await runChecks(browser, async () => {
   rows = await table();
   r = rowOf(rows, LIVE);
   check('a run that is working reads "still running" and its duration "so far"', !!r && r.Finished === 'still running' && r.Duration === '1 h 06 min so far' && /^running/.test(r.State) && r.Evaluations === '12 / 60' && r['Can continue'] === '-', JSON.stringify(r));
+  // Branch record SIF-64: "so far" may go under the time, the time itself stays whole - on one line a live run's duration was
+  // the table's widest cell, and with the user's runs the table was wider than its 1500 px window while a run was live.
+  check('...and "so far" may go under its time, which stays on one line (SIF-64)', await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(LIVE.run_dir)});
+    const s = tr?.querySelector('.run-so-far'); return !!s && getComputedStyle(s).whiteSpace === 'normal' && getComputedStyle(s.parentElement).whiteSpace === 'nowrap'; })()`));
   check('the count follows', /^7 runs under the output folder/.test(await far.evaluate(`${WINDOW}.querySelector('.run-count').textContent`)));
 
   // ---- 7. "Clear": the bottom tabs show no run -----------------------------------------------------------------------------------

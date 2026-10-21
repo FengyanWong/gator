@@ -95,8 +95,9 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
         <label title="Set to append runs to an existing experiment; empty creates a new unique ID.">Experiment ID<input value={out.experiment_id ?? ''} placeholder="new" onChange={e => set({ experiment_id: e.target.value || null })} /></label></div>
       {paths && <details open><summary>Current run paths</summary><table className="grid small"><tbody>
         {/* words, and the save in local time with the UTC in its tooltip, as Run status writes it (branch record SIF-60: the
-            rows read "run_dir", "bytes written", "last successful save 2026-10-05T10:21:40+00:00") */}
-        {Object.entries(paths).map(([k, v]) => <tr key={k}><td title={k}>{pathName(k)}</td><td className="path" onClick={() => copy(String(v))}>{String(v)}</td></tr>)}
+            rows read "run_dir", "bytes written", "last successful save 2026-10-05T10:21:40+00:00"); a path says that a click
+            copies it, as Run status's Run folder does (branch record SIF-64) */}
+        {Object.entries(paths).map(([k, v]) => <tr key={k}><td title={k}>{pathName(k)}</td><td className="path" title="Click to copy" onClick={() => copy(String(v))}>{String(v)}</td></tr>)}
         <tr><td>Bytes written</td><td>{bytes(activeRun?.bytes_written ?? activeRun?.persistence?.bytes_written)}</td></tr>
         <tr><td>Last successful save</td><td title={saved ? `${saved} (UTC)` : undefined}>{stamp(saved) ?? saved ?? '-'}</td></tr>
         <tr><td>Remote Spectre work folder</td><td className="hint">local work/ for this task; final files are written directly here (sync: local)</td></tr>

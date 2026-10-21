@@ -15,7 +15,8 @@
 //   - "Browse allowed roots..." (GET /api/output/browse answered here with FIXTURE folders) says which folder it shows, opens
 //     a folder by its name, goes "Up one folder", can be closed, and "Use this folder" sets the root (branch record SIF-60);
 //     a folder still on its way when Close is pressed neither opens the list again nor shows its error (SIF-60 review);
-//   - "Replay snapshots" and its warning name Continue... and the Modes, "weights only" in words (branch record SIF-60).
+//   - "Replay snapshots" and its warning name Continue... and the Modes, "weights only" in words (branch record SIF-60);
+//   - the facts' "Resolved" path, which a click does not copy, shows no copy cursor (branch record SIF-64).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -151,6 +152,10 @@ await runChecks(browser, async () => {
     return { allowed: allowed?.[1], nameWraps: getComputedStyle(name).whiteSpace, retention: retention && [retention.value, retention.selectedOptions[0].textContent] }; })()`);
   check('the facts and the retention list speak words: yes / yes, "Best design and failures" (its value unchanged), each fact\'s name on one line (branch record SIF-35)',
     words.allowed === 'yes / yes' && words.nameWraps === 'nowrap' && JSON.stringify(words.retention) === JSON.stringify(['best_and_failures', 'Best design and failures']), JSON.stringify(words));
+  // Branch record SIF-64: "Resolved" showed the copy cursor, and a click on it copies nothing - the text cursor now, no "Click to copy".
+  const resolved = await evaluate(`(() => { const td = [...${PANEL}.querySelectorAll('details.output-facts tr')].find(r => r.cells[0].textContent === 'Resolved')?.cells[1];
+    if (!td) return null; window.__copied = null; td.click(); return { cursor: getComputedStyle(td).cursor, title: td.title, copied: window.__copied }; })()`);
+  check('..."Resolved", which a click does not copy, shows the text cursor and no "Click to copy" (SIF-64)', JSON.stringify(resolved) === '{"cursor":"text","title":"","copied":null}', JSON.stringify(resolved));
   const asked = probes.length;
   await evaluate(`${MEASURE}.click()`);
   check('"Measure" asks for the size once, and shows it', await until(`[...${PANEL}.querySelectorAll('details.output-facts td')].some(td => td.textContent.includes('used here 3.00 GiB'))`, 30)

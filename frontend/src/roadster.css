@@ -328,3 +328,25 @@ table.editor .tie-toggle { font-size: 12.5px; padding: 4px; }
 /* a heading with no tooltip shows no help cursor: there is no help to give (Details, diffs, Matched devices, save points,
    the editors' Issues); a sortable heading always has its tooltip and keeps the hand */
 table.grid th:not([title]) { cursor: default; }
+
+/* SIF-64: the list tables' second lines, their Details links, the state words and the paths at sizes that read. The old
+   look's 11 px outranked the Runs, Tasks and saved-models tables' 13 px: the design under the Mode, the stop reason under
+   the state, the folder under the date, a run's Details facts. "Details" / "Hide details", the way into every row, was
+   11 px in a hit box about 16 px tall (the old padding outranked Roadster's); a run's state ("completed"), a connection
+   layer's and the "MOCK" / "in use" tags were 10 to 10.5 px. The tables still fit their windows: the Runs window's 1500 px
+   (run_list_check), the saved models' 1100 px (model_chooser_check). */
+table.run-table td .hint { font-size: 12px; }
+button.notes-link { font-size: inherit; padding: 3px 4px; }
+/* "Details" and "Hide details" take the same room, so a toggle moves no column: 6em at the table's 13 px holds "Hide details"
+   and its padding (styles.css's 6.5em was for 11 px) */
+table.run-table button.notes-link { min-width: 6em; }
+/* a state and a tag lose the old look's letter spacing, as the header's connection pill (above, which keeps its 12.5 px), the
+   headings and the tabs did in record 7.360: with it, the bigger "interrupted" made the Runs window's State column 9 px
+   wider and the table, with the user's 603 runs at rest, 4 px wider than its 1500 px window */
+.badge { font-size: 12px; letter-spacing: 0; } .model-tag { font-size: 11.5px; }
+/* a working run's Duration may put "so far" under its time: "16 min 33 s so far" on one line was the Runs table's widest cell,
+   and with a run live the table was 21 px wider than its 1500 px window before the sizes above (33 px with them) */
+table.run-table td .run-so-far { white-space: normal; }
+/* a path shows the copy cursor only where a click copies it, and says so in its tooltip: Output settings' "Resolved" and
+   "Mock data root" showed it and copied nothing */
+.path { font-size: 12px; cursor: text; } .path[title="Click to copy"] { cursor: copy; }

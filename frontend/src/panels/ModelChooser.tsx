@@ -188,7 +188,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
     {models && !list.length && !error && <p className="hint model-empty">No saved model yet under this output folder. A run saves one when it is paused, stopped or finished,
       and every N evaluations while it runs ("Model checkpoints" in the output settings must be on).</p>}
     {source.run_dir && models && !inUse && !loading && usable && <p className="warn model-missing">The model in use is not in this list: its run folder is outside the current output
-      folder, or it no longer holds a complete save point. <span className="path" onClick={() => copy(source.run_dir)}>{source.run_dir}</span></p>}
+      folder, or it no longer holds a complete save point. <span className="path" title="Click to copy" onClick={() => copy(source.run_dir)}>{source.run_dir}</span></p>}
     {newer && <p className="note model-newer">The model in use has a newer save point: <b>{newer.evaluations} evaluations</b> ({when(newer.created_utc)}); the next run loads save point
       {' '}{source.checkpoint_id}. <button className="model-use-newer" onClick={() => onUse(inUse.run_dir, newer.checkpoint_id)}>Use the newer one</button></p>}
     {list.length > 0 && <div className="task-browser">

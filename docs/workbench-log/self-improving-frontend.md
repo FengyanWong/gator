@@ -1348,3 +1348,35 @@ idle and while finding), `editor_columns_check` 23, `sheet_check` 44, `unsaved_r
 elements, `model_chooser_check` 81 (the compatibility list), `reward_block_check` 32 ("More columns"), `task_rows_check`
 52, `output_panel_check` 81; none flaky. `css_order_proof.mjs` was not run: it proves that a regrouped stylesheet adds
 nothing, and this change adds rules on purpose.
+
+### SIF-64 Tables and badges at sizes that read: second lines, Details links, state words, and paths that say they copy (2026-10-21; from the readability audit)
+
+**Found.** The Runs, Tasks and saved-models tables are 13 px, but their second lines were 11 px: the design under the
+Mode ("Graph Transformer"), the stop reason under the state ("budget used up"), the folder under the date, "(gone)" and a
+run's Details facts (the old look's `table.run-table td .hint` outranked Roadster's 13 px hints). "Details" / "Hide
+details", the way into every row, was an 11 px word in a hit box about 16 px tall (the old `padding: 0 3px` outranked
+Roadster's button padding). The state words - "completed", "failed" in the Runs window and the Training head, the
+Connection window's layer states, Run status's connection - were 10.5 px, the "MOCK" and "in use" tags 10 px. Every path
+showed the copy cursor: Output settings' "Resolved" and "Mock data root" copy nothing, while "Current run paths" and the
+folder in "The model in use is not in this list" copy on a click and did not say so. Measured with the user's runs at
+1500 px (the branch's build, its API answered by the live backend, every write refused): at rest the Runs table was
+1234 px in its 1234 px, but while a run was live "16 min 33 s so far" on one line made it 1255 to 1262 px, a sideways
+scroll.
+
+**Changed** (`frontend/src/roadster.css`, one block at its end; `panels/OutputPanel.tsx`, `panels/ModelChooser.tsx`,
+`panels/RunList.tsx`): a list table's second line reads at 12 px; "Details" / "Hide details" at the table's 13 px with
+3 px above and below (24 px tall), 6em wide in a table so a toggle moves no column ("Hide details" takes 75.7 px of its
+78); a state at 12 px and a tag at 11.5 px, without the old look's letter spacing (as the header's connection pill, the
+headings and the tabs since record 7.360: with it the bigger "interrupted" made the State column 9 px wider and the table
+4 px wider than its window at rest); the header's pill keeps its 12.5 px. A path reads at 12 px under the text cursor,
+the copy cursor only where it says "Click to copy": "Current run paths" and the missing model's folder now say so. A
+working run's "so far" may go under its time (a span the cell's nowrap does not hold), the time itself stays whole. With
+the user's 605 runs, two of them live: the Runs table 1234 px in 1234, live and at rest (1255 px with the old sizes and
+"so far" on one line); the Tasks table 1234 in 1234 (69 tasks). No words changed; no doc quoted the old sizes.
+
+**Checked.** `tsc` clean; `looks_check` 70 (new: a list table's second line, state, tag and Details sizes and padding,
+"Details" and "Hide details" the same width, a path's two cursors), `run_list_check` 123 (new: "so far" may go under its
+time; the table still fits its 1500 px window), `output_panel_check` 82 (new: "Resolved" shows the text cursor and no
+"Click to copy", and a click copies nothing), `room_check` 27 (new: the run folder says "Click to copy" under the copy
+cursor), `model_chooser_check` 82 (new: the missing model's folder says "Click to copy"; the table still fits 1100 px),
+`task_list_check` 81, `connection_panel_check` 86, `dom_identity_check` 56, `task_run_check` 31; none flaky.

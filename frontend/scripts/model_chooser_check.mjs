@@ -16,7 +16,8 @@
 //   Undo step; a double click on a row uses its newest save point; a newer save point is offered, never followed;
 // - a network that arrives from elsewhere while a model is loaded is taken back, and that is said;
 // - an incomplete configuration is a calm note; rename refuses a taken name; the filter; one read per Refresh, no timer;
-//   a model in use that left the list; an empty folder; the models' folders; back to New model; the real route.
+//   a model in use that left the list, its folder saying "Click to copy" (branch record SIF-64); an empty folder; the models'
+//   folders; back to New model; the real route.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -368,6 +369,8 @@ await runChecks(browser, async () => {
   check('"Refresh list" reads the list exactly once', (await until(`${ROWS}.length === ${MODELS.length - 1}`, 40)) && lists === before + 1, `${lists - before} read(s)`);
   check('a model in use that left the list is said in plain words, with its folder', await until(`!!${RIGHT}.querySelector('.model-missing')`, 30)
     && (await evaluate(`${RIGHT}.querySelector('.model-missing').innerText`)).includes(C.run_dir));
+  // Branch record SIF-64: a click on the folder copies it, and nothing said so.
+  check('...the folder says that a click copies it (SIF-64)', (await evaluate(`${RIGHT}.querySelector('.model-missing .path')?.title`)) === 'Click to copy');
   served = []; await evaluate(`${button('Refresh list')}.click()`);
   check('no saved model: said in plain words, with what makes a run save one', await until(`/No saved model yet/.test(${RIGHT}.querySelector('.model-empty')?.innerText ?? '')`, 40));
   served = MODELS; await evaluate(`${button('Refresh list')}.click()`); await until(`${ROWS}.length === ${MODELS.length}`, 40);

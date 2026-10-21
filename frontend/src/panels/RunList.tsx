@@ -322,7 +322,8 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
             <td className="wrap-words">{keepDates(stamp(r.created_utc) ?? '-')}{folders.folder === 'all' && folders.data.folders[folders.of(r.run_dir)]
               && <div className="hint task-folder-label">{folders.data.folders[folders.of(r.run_dir)]}</div>}</td>
             <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{keepDates(end.text)}</td>
-            <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && ' so far'}</td>
+            {/* "so far" may go under the time (roadster.css, branch record SIF-64): on one line it made the table wider than its window */}
+            <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && <span className="run-so-far"> so far</span>}</td>
             <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}</td>
             <td className="wrap" title={r.task_id}>{breakAt(taskOf(r))}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
             <td className="wrap">{origin.parent ? <button className="item-link" onClick={() => focusRun(origin.parent!)} title={`${origin.parent}\nShow the run it started from.`}>{origin.text}</button> : origin.text}

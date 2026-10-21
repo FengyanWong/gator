@@ -151,11 +151,12 @@ export const nextModelText = ({ run, noMode, source, sourceName, pointAt }: { ru
     : noMode ? 'no Mode chosen'
     : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} - no saved model chosen`
     : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune from'} ${sourceName} @ ${pointAt ?? source.checkpoint_id}${run.mode === 'frozen' ? ` (${run.frozen_action ?? 'deterministic'} actions)` : ''}`;
-/** That line's tooltip: the network in words, or what a Mode that loads a model still needs. */
+/** That line's tooltip: the network in words, or what a Mode that loads a model still needs. The design by name (branch
+ *  record SIF-57: it began "The network in use: graph_transformer"). */
 export const networkTitle = ({ loads, source, run, encoder, hidden, heads, layers, components, usesHeads, net }: { loads: boolean; source: Json; run: Json;
   encoder: string; usesHeads: boolean; net: Json } & NetworkSizes) =>
   loads && !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} loads a saved model: choose one in RL model...; the run then uses its network.`
-    : `The network in use: ${encoder}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
+    : `The network in use: ${designName({ encoder_type: encoder, architecture_version: net.architecture_version })}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
       + `inputs ${inputsText(net)}; `
       + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}, save point ${source.checkpoint_id}).` : '.'} RL model... changes it.`;
 /** The limits a run seldom changes that are set, for the line of the Limits fold. */

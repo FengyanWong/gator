@@ -2,7 +2,7 @@
 // new configuration starts with - since record 7.372 folded behind one line, "Reward: the tested one - <objective>" - the
 // controls in a closed "Advanced" fold, a configuration with other values told how many and which (folded) and offered the
 // tested set on a button; the soft actor-critic values with which the search stays random named in the RL
-// model window, and "Use saved defaults" (the starting preset) taking them away; the Specs scale headed "Scale"
+// model window, and "Use the template's values" (the starting preset) taking them away; the Specs scale headed "Scale"
 // behind "More columns" and suggested as the size of the limit (6 dB for dB).
 // Hermetic: reads go to the scratch backend, every writing request but validation is refused, and a network-settings
 // write is held here (none is expected: there is no GATOR baseline to press since record 7.191).
@@ -86,7 +86,7 @@ await runChecks(browser, async () => {
     await evaluate(`${SENTENCE}?.textContent`));
   check('the fold keeps the objective line', await evaluate(`${FOLD}.querySelector('.reward-objective').textContent === ${JSON.stringify('Objective: ' + objective)}`));
 
-  // ---- the soft actor-critic values of before: named where they are set, gone with the encoder's saved defaults -------------
+  // ---- the soft actor-critic values of before: named where they are set, gone with the template's values -----------------------
   // branch record SIF-46: the notice says why, and its "RL model..." is the way to the window
   const REVIEW = `${RIGHT}.querySelector('p.network-review')`;
   check('Run configuration points at RL model, and says why', await page.until(`${REVIEW}?.classList.contains('warn') && ${REVIEW}.textContent
@@ -94,17 +94,19 @@ await runChecks(browser, async () => {
     await evaluate(`${REVIEW}?.textContent ?? 'no notice'`));
   const networkPage = await openNetworks(page, browser, 'p.network-review button.text-link');
   const SLOW = `${NETWORK_PANEL}.querySelector('.sac-values')`;
-  check('the window names 1 update per evaluation and the starting temperature 0.2, and the tested values',
+  // branch record SIF-57: the tested values with the labels of the fields under Advanced, which carry other names
+  check('the window names 1 update per evaluation and the starting temperature 0.2, and the tested values with their fields\' labels',
     await page.until(`${SLOW}?.textContent.startsWith('With 1 update per evaluation and a starting temperature of 0.2, soft actor-critic learned late or not at all')
-      && ${SLOW}.textContent.includes('8 updates per evaluation, starting temperature 0.01 and discount 0 (under Advanced).')`), await evaluate(`${SLOW}?.textContent`));
+      && ${SLOW}.textContent.endsWith('The tested values are 8 updates per evaluation (Updates per transition), starting temperature 0.01 (Initial alpha) and discount 0 (Discount gamma), under Advanced.')`),
+    await evaluate(`${SLOW}?.textContent`));
   check('no GATOR baseline button and no word of it (record 7.191)', !(await evaluate(`${NETWORK_PANEL}.textContent.includes('GATOR baseline')
     || [...${NETWORK_PANEL}.querySelectorAll('button')].some(b => ['GATOR baseline', 'Publication preset'].includes(b.textContent.trim()))`)));
   await networkPage.shot(path.join(out, 'reward-3-sac-values.png'), NETWORK_PANEL, { maxHeight: 1100, beyond: true });
   const held = settings.settings.graph_transformer.advanced;                  // the starting preset on a scratch backend
   check('the default encoder\'s saved setting learns: 8 updates per evaluation, temperature 0.01 (the old schema values 1 and 0.2)',
     held.updates_per_transition === 8 && held.initial_alpha === 0.01 && settings.legacy_baseline.advanced.updates_per_transition === 1, JSON.stringify(held));
-  await evaluate(`[...${NETWORK_PANEL}.querySelectorAll('.network-differences button')].find(b => b.textContent === 'Use saved defaults').click()`);
-  check('with "Use saved defaults" the warning is gone, here and in Run configuration', await page.until(`!${SLOW} && ![...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent.startsWith('Review the settings in RL model'))`),
+  await evaluate(`[...${NETWORK_PANEL}.querySelectorAll('.network-differences button')].find(b => b.textContent === "Use the template's values").click()`);
+  check('with "Use the template\'s values" the warning is gone, here and in Run configuration', await page.until(`!${SLOW} && ![...${RIGHT}.querySelectorAll('.warn')].some(e => e.textContent.startsWith('Review the settings in RL model'))`),
     await evaluate(`${SLOW}?.textContent ?? ''`) + ' | ' + await evaluate(`${REVIEW}?.textContent ?? 'no notice'`));
   await page.saved();
   const advanced = (await page.stored())?.run?.advanced ?? {};

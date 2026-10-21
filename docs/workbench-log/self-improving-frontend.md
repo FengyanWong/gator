@@ -1116,3 +1116,43 @@ back, the first failed (the line was gone). `save_now_check` has one: the refusa
 "Click to close (selecting text keeps it).". `tsc` clean; `run_control_check` 110, `save_now_check` 26,
 `calibration_check` 38, `calibration_save_check` 22, `run_list_check` 122, `task_run_check` 31, `launch_recovery_check`
 20, `consistency_check` 14, `callouts_check` 8; none flaky.
+
+### SIF-57 The RL model window has one name for a template, its values and its design (2026-10-21; from the readability audit)
+
+**Found.** In New model the window calls one thing by three names. Its table and buttons say "template" (Templates, Use
+template, "The Graph Transformer template, for this run"), but the Advanced fold read "Advanced (stored per encoder, like
+the network sizes)" with "...the other settings belong to the selected encoder" (no encoder is chosen any more), the hint
+under Templates "...kept per encoder in the backend. Editing a value below saves it for that encoder.", and the box shown
+when this run differs "Current run values differ from the saved Graph Transformer defaults (starting preset)." with a
+column "Saved default" and the buttons "Use saved defaults" / "Save as defaults". After every edit of a template value the
+line under the settings read "Saved in the backend as the graph_transformer setting.", and the model line's tooltip in Run
+configuration began "The network in use: graph_transformer, ...". The warning about values that leave the search random
+ended "The tested values are 8 updates per evaluation, starting temperature 0.01 and discount 0 (under Advanced).", but
+the fields there are "Updates per transition (UTD)", "Initial alpha" and "Discount gamma". The fold "Where the Graph
+Transformer values come from" listed "updates_per_transition", "initial_alpha", "hidden_dim" with presets "0.00100000",
+"0.0100000" (padded to six digits), and the differences table wrote a structural encoding as "rwse".
+
+**Changed** (`panels/RlModelWindow.tsx`, `panels/useRlModel.ts`, `panels/rlModelText.ts`, `docs/workbench.md`,
+`docs/functionality-reference.md`): "template" throughout. The fold reads "Advanced (kept with the template, like the
+network sizes)" and "...the other settings belong to the Graph Transformer template."; the Templates hint "...kept per
+template in the backend. Editing a value below saves it into that template."; the box "This run's values differ from the
+Graph Transformer template (starting preset)." and "This run uses the values shown in the controls. A template's values are
+loaded when you use it; they do not replace an existing configuration on page reload.", its columns Setting | This run |
+Template, its buttons "Use the template's values" / "Save into the template" (their tooltips name the template). After an
+edit: "Saved into the Graph Transformer template." (`DESIGN_NAME`: a template is kept per encoder, so no CircuitGPS
+version); the tooltip: "The network in use: Graph Transformer, hidden 48, ..." (`designName`, with CircuitGPS's version).
+The warning ends "The tested values are 8 updates per evaluation (Updates per transition), starting temperature 0.01
+(Initial alpha) and discount 0 (Discount gamma), under Advanced." - the fields keep their labels, "Initial alpha" being also
+the calibration's word. The "Where ... come from" table names each setting as the differences table does ("Updates per
+transition (UTD)"), the key in its tooltip, and writes the preset as the Templates table does ("0.001", "0.01"; `num`
+padded them, and it is no longer imported there); the differences table writes "RWSE" and on/off. The saved models' Design-cell tooltip keeps the key
+(SIF-1). The docs name the new buttons and column.
+
+**Checked.** `tsc` clean; `network_panel_check` 62 (the tooltip must start "The network in use: Graph Transformer,"; the
+buttons are found by their new names; new: the box's sentence, columns and buttons as above with no "default" in it, the
+message "Saved into the Graph Transformer template." after Save into the template, the Advanced fold's summary and hint
+and the Templates hint, and the "Where ... come from" table in words with the key in each tooltip and every preset as
+String() of the backend's value), `reward_block_check` 32 (the warning must end with the new sentence; "Use the
+template's values" takes it away; the first run stopped after its 22nd check, all the changed ones passed, on "the
+DevTools session closed (its window went away)" at the check's own `window.close()`; alone it passed whole: a flake),
+`model_chooser_check` 79, `network_inputs_check` 8, `encoder_models_check` 24, `room_check` 22.

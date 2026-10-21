@@ -73,9 +73,9 @@ await runChecks(browser, async () => {
   const gt = settings.settings.graph_transformer.network;
   check('fresh page shows the backend values of the default encoder', JSON.stringify(await numbers()) === JSON.stringify([gt.hidden_dim, gt.heads, gt.layers].map(String)), JSON.stringify(await numbers()));
   const short = await evaluate(`(() => { const e = document.querySelector('.rl-networks-row .net-short'); return e && { text: e.textContent, title: e.title, left: e.getBoundingClientRect().right <= document.querySelector('.rl-networks-open').getBoundingClientRect().left }; })()`);
-  check('beside the button, the next run\'s model in short: New model, its template, GT hidden/heads/layers; left of the button, the whole of it in the tooltip',
+  check('beside the button, the next run\'s model in short: New model, its template, GT hidden/heads/layers; left of the button, the whole of it in the tooltip, the design by name (SIF-57)',
     /^New model · .+ template · GT /.test(short?.text ?? '') && short.text.includes(`GT ${gt.hidden_dim}/${gt.heads}/${gt.layers}`) && short.left
-    && short.title.startsWith('The network in use: graph_transformer'), JSON.stringify(short));
+    && short.title.startsWith('The network in use: Graph Transformer,'), JSON.stringify(short));
   const options = await evaluate(`[...${NETWORK_DOCUMENT}.querySelectorAll('tr.template-row')].map(r => r.dataset.encoder)`);
   check('the templates table offers all six backend encoders, one row each', JSON.stringify(options) === JSON.stringify(['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps']), JSON.stringify(options));
   // Branch record SIF-8: "(experimental)" once at most; the fold under the template names the design, not its key.
@@ -83,6 +83,24 @@ await runChecks(browser, async () => {
     fold: [...${NETWORK_DOCUMENT}.querySelectorAll('summary')].map(x => x.textContent).find(t => /^Where the .+ values come from$/.test(t)) ?? null })`);
   check('each template says "experimental" once at most, and the fold names the design (Graph Transformer), not its key (SIF-8)',
     words.rows.length === 6 && words.rows.every(t => (t.match(/experimental/gi) ?? []).length <= 1) && words.fold === 'Where the Graph Transformer values come from', JSON.stringify(words));
+  // Branch record SIF-57: that fold's table names each setting as the differences table does, the key in its tooltip, and
+  // writes the preset unpadded (it read "updates_per_transition", "0.0100000").
+  const provenance = await evaluate(`[...[...${NETWORK_DOCUMENT}.querySelectorAll('summary')].find(x => /^Where the .+ values come from$/.test(x.textContent))
+    .parentElement.querySelectorAll('table tbody tr')].map(r => [r.cells[0].textContent, r.cells[0].title, r.cells[1].textContent])`);
+  const preset = settings.settings.graph_transformer.provenance ?? {};
+  const presetRow = key => provenance.find(([, title]) => title === key);
+  check('the fold\'s Setting column reads in words, the key in the tooltip, and the Preset column unpadded (SIF-57)', provenance.length > 0
+    && provenance.every(([name, key, value]) => !name.includes('_') && /^[a-z_]+$/.test(key) && value === (preset[key]?.value == null ? '' : String(preset[key].value)))
+    && JSON.stringify(presetRow('updates_per_transition')) === JSON.stringify(['Updates per transition (UTD)', 'updates_per_transition', String(preset.updates_per_transition?.value)])
+    && JSON.stringify(presetRow('initial_alpha')) === JSON.stringify(['Initial alpha', 'initial_alpha', '0.01']), JSON.stringify(provenance));
+  // ...and the Advanced fold and the Templates hint say "template", the window's word (they said "stored per encoder", "the
+  // selected encoder" and "saves it for that encoder")
+  const advancedWords = await evaluate(`(() => { const d = ${NETWORK_PANEL}.querySelector('details.rl-advanced'), t = [...${NETWORK_PANEL}.querySelectorAll('h3')].find(h => h.textContent === 'Templates');
+    return { summary: d?.querySelector('summary').textContent, hint: d?.querySelector('p.hint').textContent, templates: t?.nextElementSibling.textContent }; })()`);
+  check('the Advanced fold and the Templates hint call it the template, not the encoder (SIF-57)', advancedWords.summary === 'Advanced (kept with the template, like the network sizes)'
+    && advancedWords.hint.startsWith('Alpha learning rate and the tick box below belong to this configuration; the other settings belong to the Graph Transformer template.')
+    && advancedWords.templates === 'A new model starts from one template: its network and its training values, kept per template in the backend. Editing a value below saves it into that template.',
+    JSON.stringify(advancedWords));
   check('the mode is New model: the window\'s Mode buttons say so', await evaluate(`${NETWORK_DOCUMENT}.querySelector('.rl-modes button[aria-checked="true"]')?.dataset.mode`) === 'scratch');
   for (const encoder of ['graph_gps', 'group_cross_attention', 'circuit_gps']) {
     await select(encoder);
@@ -203,24 +221,34 @@ await runChecks(browser, async () => {
     ['Initial alpha', String(restored.run.advanced.initial_alpha), String(settings.settings.graph_transformer.advanced.initial_alpha)],
   ]), JSON.stringify(compared));
   check('In use identifies current run settings instead of falsely claiming the preset', await evaluate(`${NETWORK_PANEL}.querySelector('.in-use').textContent === 'In use: current run settings'`));
-  check('the comparison explains which values run and where saved defaults apply', await evaluate(`${differences}.textContent.includes('This run uses the values shown in the controls') && ${differences}.textContent.includes('starting preset')`));
+  check('the comparison explains which values run and where the template\'s values apply', await evaluate(`${differences}.textContent.includes('This run uses the values shown in the controls') && ${differences}.textContent.includes('starting preset')`));
+  // Branch record SIF-57: the box, its column and its buttons say "template", as the rest of the window does (they said
+  // "the saved Graph Transformer defaults", "Saved default", "Use saved defaults" / "Save as defaults").
+  check('the comparison names the template, in its sentence, its column and its buttons, and no "defaults" (SIF-57)', await evaluate(`${differences}.querySelector('p.warn').textContent
+    === "This run's values differ from the Graph Transformer template (starting preset)." && [...${differences}.querySelectorAll('th')].map(t => t.textContent).join('|') === 'Setting|This run|Template'
+    && [...${differences}.querySelectorAll('button')].map(b => b.textContent).join('|') === "Use the template's values|Save into the template" && !/default/i.test(${differences}.textContent)`),
+    await evaluate(`${differences}.textContent`));
   await networkPage.shot(path.join(out, 'network-5-restored-differences.png'), NETWORK_PANEL, { maxHeight: 1100, beyond: true });
-  await evaluate(`[...${differences}.querySelectorAll('button')].find(b => b.textContent === 'Use saved defaults').click()`);
-  check('Use saved defaults updates this run, clears the comparison and does not write preferences', await page.until(`!${differences}`)
+  await evaluate(`[...${differences}.querySelectorAll('button')].find(b => b.textContent === "Use the template's values").click()`);
+  check('Use the template\'s values updates this run, clears the comparison and does not write preferences', await page.until(`!${differences}`)
     && (await numbers())[0] === String(gt.hidden_dim) && paused.length === 0);
   check('a matching configuration can accurately name the starting preset', await evaluate(`${NETWORK_PANEL}.querySelector('.in-use').textContent === 'In use: starting preset'`));
   await evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
   check('Undo restores the differing values and their comparison', await page.until(`!!${differences}`) && (await numbers())[0] === String(restored.run.network.hidden_dim));
-  await evaluate(`[...${differences}.querySelectorAll('button')].find(b => b.textContent === 'Save as defaults').click()`);
+  await evaluate(`[...${differences}.querySelectorAll('button')].find(b => b.textContent === 'Save into the template').click()`);
   const saveDefaults = await nextWrite();
   const defaultsBody = saveDefaults ? JSON.parse(saveDefaults.postData) : {};
-  check('Save as defaults stores both network and Advanced values for this encoder', saveDefaults?.method === 'PUT'
+  check('Save into the template stores both network and Advanced values for this encoder', saveDefaults?.method === 'PUT'
     && saveDefaults.url.endsWith('/api/network-settings/graph_transformer')
     && defaultsBody.network.hidden_dim === restored.run.network.hidden_dim && defaultsBody.advanced.initial_alpha === restored.run.advanced.initial_alpha);
   if (saveDefaults) await fulfil(saveDefaults.requestId, 200, { ...settings.settings.graph_transformer, ...defaultsBody, origin: 'custom' });
   check('after saving, the comparison clears and the current run values stay', await page.until(`!${differences}`)
     && (await numbers())[0] === String(restored.run.network.hidden_dim)
     && await evaluate(`${NETWORK_PANEL}.querySelector('.in-use').textContent.includes('edited, saved in the backend')`));
+  // Branch record SIF-57: it read "Saved in the backend as the graph_transformer setting."
+  check('the window says where the values went, by the template\'s name (SIF-57)',
+    await page.until(`${NETWORK_PANEL}.querySelector('.net-message')?.textContent === 'Saved into the Graph Transformer template.'`),
+    await evaluate(`${NETWORK_PANEL}.querySelector('.net-message')?.textContent ?? 'no message'`));
 
   // The screenshot's stale rate is the sole difference from the old starting preset. The one-time browser upgrade
   // follows the current preset, without saving preferences or repeatedly undoing an intentional choice of 3e-4.

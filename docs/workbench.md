@@ -1889,8 +1889,8 @@ shows:
   so since record 7.210). The page's starting budget stays 60 - every evaluation of a real task is a simulation
   you authorize - so a new SAC configuration carries that warning until the budget is raised.
 - **An encoder you had put on the GATOR baseline** reads as its starting preset since record 7.191 (the settings file
-  is not rewritten). A configuration already open keeps its own numbers; the window's This run / Saved default table
-  shows the differences, and **Use saved defaults** applies the preset. There are no preset buttons any more: typing a
+  is not rewritten). A configuration already open keeps its own numbers; the window's This run / Template table
+  shows the differences, and **Use the template's values** applies the preset. There are no preset buttons any more: typing a
   preset number back is the way to it, and the window then says **In use: starting preset**.
 
 **Specs.** `hard` and the scale (headed **Scale**) are behind **More columns**. A new row's scale is the size of its
@@ -2448,8 +2448,8 @@ chosen. A configuration without any Mode (a task's starter rows, an old file) is
   saved models were made from it. **Use template** or a double click fills the next run's network and training values
   from it, as one Undo step - what choosing an encoder did before. The template in use is marked.
 - **The ... template, for this run**: its sizes, structural input, the operating-point input, Advanced (record 7.195),
-  the Components list, the "In use" line with Use saved defaults and Save as defaults (below), and where the values come
-  from. No preset buttons (record 7.191).
+  the Components list, the "In use" line with Use the template's values and Save into the template (below), and where
+  the values come from. No preset buttons (record 7.191).
 - **Name of the new model**: the RL model label (below).
 - **Saved models, to look at**, folded: the saved models table of Fine-tune (next sections), read only once the fold is
   opened, for looking - Details, structure, graph view. Its "Use this save point" buttons are off, and looking changes
@@ -2597,10 +2597,10 @@ while that choice and its network values are still current; later choices, edits
 Preference writes and resets are ordered so an older save cannot overwrite a newer reset (record 7.130).
 
 An existing configuration keeps its explicit network and Advanced values when the page reloads. If they differ from
-the encoder's saved defaults, **In use** says **current run settings**, and a comparison table lists each differing
-setting with **This run** and **Saved default** values. The run uses the current values. **Use saved defaults** replaces
-this run's settings (one Undo step) without writing preferences; **Save as defaults** keeps this run's settings and
-remembers them for that encoder. The publication/baseline label is shown as in use only while the values match.
+the template's values, **In use** says **current run settings**, and a comparison table lists each differing
+setting with **This run** and **Template** values. The run uses the current values. **Use the template's values**
+replaces this run's settings (one Undo step) without writing preferences; **Save into the template** keeps this run's
+settings and saves them into that template (branch record SIF-57; the box said "saved defaults" until then). The publication/baseline label is shown as in use only while the values match.
 
 One browser upgrade handles the old starting preset's learning rate (record 7.243): on the first page load after this
 fix, a scratch configuration for GT, RGCN or GATv2 that exactly matches the starting preset except for learning rate

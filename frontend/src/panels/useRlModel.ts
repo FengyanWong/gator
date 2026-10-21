@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SIMPLE_REWARD, useRequest } from '../store';
 import { api, Json } from '../api';
 import { modelNameAt } from './ModelChooser';
-import { designName, ENCODER_SHORT, pointEvaluations } from '../lineage';
+import { DESIGN_NAME, designName, ENCODER_SHORT, pointEvaluations } from '../lineage';
 import { LOADS, NETWORK_FIELDS, networkOf, pick, readSavePoint, withSavePoint } from '../savePoint';
 import { usePopupWindow } from './popupWindow';
 import { PRESET_RATE_KEY, RL_MODEL_WINDOW } from '../contract';
@@ -115,8 +115,10 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     const job = pending.current; pending.current = null;
     if (!job) return writing.current;
     const revision = netRevision.current;
+    // The template by the window's name for it (branch record SIF-57: "Saved in the backend as the graph_transformer
+    // setting." came after every edit). It is kept per encoder, so no CircuitGPS version.
     writing.current = writing.current.then(() => api.saveNetworkSettings(job.encoder, job.body))
-      .then(e => { remember(e); if (currentReply(revision, job.encoder)) setNetMessage({ level: 'ok', text: `Saved in the backend as the ${e.encoder_type} setting.` }); })
+      .then(e => { remember(e); if (currentReply(revision, job.encoder)) setNetMessage({ level: 'ok', text: `Saved into the ${DESIGN_NAME[e.encoder_type] ?? e.encoder_type} template.` }); })
       .catch(e => { if (currentReply(revision, job.encoder)) setNetMessage({ level: 'error', text: `Not saved in the backend: ${e.message}`,
         reason: 'a template value was not saved in the backend' }); });
     return writing.current;

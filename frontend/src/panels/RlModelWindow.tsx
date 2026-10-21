@@ -3,7 +3,7 @@
 // its pop-up window.
 import { Fragment } from 'react';
 import { copy, Json } from '../api';
-import { folderName, num, short, stamp, taskNameOf } from '../format';
+import { folderName, short, stamp, taskNameOf } from '../format';
 import { RESTORABLE, SavedModels } from './ModelChooser';
 import { DESIGN_NAME, designName } from '../lineage';
 import { LOADS } from '../savePoint';
@@ -16,6 +16,9 @@ import { CompatibilityList, compatibilityMode } from './CompatibilityList';
 import type { RlModel } from './useRlModel';
 /** The training conditions as Reward and conditions names them (branch record SIF-12): the facts wrote the key ("off"). */
 const CONDITIONS: Record<string, string> = { off: 'Nominal only', after_nominal: 'Corners after nominal passes', always: 'Every planned corner' };
+/** A setting's value in the differences table: RWSE as the saved models table writes it (SIF-8), a switch as on/off (branch
+ *  record SIF-57: "rwse", "true"). */
+const settingValue = (v: Json) => v === 'rwse' ? 'RWSE' : typeof v === 'boolean' ? (v ? 'on' : 'off') : String(v);
 
 /** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the
  *  starting preset, or values edited and saved there), and how many saved models were made from it. A double click or "Use
@@ -47,13 +50,17 @@ function TemplatesTable({ settings, encoders, current, runs, onUse }: { settings
  * device op checkbox", record 7.195); a Mode that loads a model shows no network block, so there they close the window -
  * they hold the fine_tune switches. */
 function AdvancedFields({ m }: { m: RlModel }) {
-  const { adv, setAdv, editAdv, entry, schema, sacSlow } = m;
+  const { adv, setAdv, editAdv, entry, encoder, schema, sacSlow } = m;
+  // Branch record SIF-57: the tested values with the labels of their fields below (the warning named "starting temperature"
+  // and "updates per evaluation", which no field there carries), and "template", the window's one word for what keeps them
+  // (it said "stored per encoder" and "the selected encoder", and no encoder is chosen any more).
   return <>
     {sacSlow.length > 0 && <p className="warn sac-values">With {sacSlow.join(' and ')}, soft actor-critic learned late or not at all in the tests of 2026-10-05:
       with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of 0.2 delayed
-      learning to about evaluation 1,000. The tested values are 8 updates per evaluation, starting temperature 0.01 and discount 0 (under Advanced).</p>}
-    <details className="rl-advanced"><summary>Advanced (stored per encoder, like the network sizes)</summary>
-      <p className="hint">Alpha learning rate and the tick box below belong to this configuration; the other settings belong to the selected encoder. The algorithm stays soft actor-critic; only its numbers change.</p>
+      learning to about evaluation 1,000. The tested values are 8 updates per evaluation (Updates per transition), starting temperature 0.01 (Initial
+      alpha) and discount 0 (Discount gamma), under Advanced.</p>}
+    <details className="rl-advanced"><summary>Advanced (kept with the template, like the network sizes)</summary>
+      <p className="hint">Alpha learning rate and the tick box below belong to this configuration; the other settings belong to the {DESIGN_NAME[encoder] ?? encoder} template. The algorithm stays soft actor-critic; only its numbers change.</p>
       <Num label="Alpha learning rate" nullable value={adv.alpha_learning_rate} onChange={v => setAdv({ alpha_learning_rate: v })} title="Empty uses the actor learning rate. A separate rate is stored in this configuration." />
       <Check label="Send the next design before learning (faster)" value={adv.update_after_dispatch ?? schema.$defs.AdvancedRL.properties.update_after_dispatch.default ?? true}
         onChange={v => setAdv({ update_after_dispatch: v })}
@@ -101,8 +108,8 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         : <p className="hint rl-mode-help">{MODES.find(([m]) => m === run.mode)?.[2]?.replace(/^./, c => c.toUpperCase())}{loads ? '. The next run uses the network of the model chosen below.' : '.'}</p>}
       {run.mode === 'scratch' && <>
       <h3>Templates</h3>
-      <p className="hint">A new model starts from one template: its network and its training values, kept per encoder in the backend. Editing a value
-        below saves it for that encoder.</p>
+      <p className="hint">A new model starts from one template: its network and its training values, kept per template in the backend. Editing a value
+        below saves it into that template.</p>
       <TemplatesTable settings={netSettings} encoders={offeredEncoders} current={encoder} runs={runs} onUse={chooseEncoder} />
       {!offeredEncoders.includes(encoder) && <p className="error">{DESIGN_NAME[encoder] ?? encoder} is unavailable. Choose an available template. Existing models need their matching historical optimizer version.</p>}
       <h3>The {entry?.label ?? encoder} template, for this run</h3>
@@ -133,23 +140,27 @@ export function RlModelWindow({ m }: { m: RlModel }) {
       {entry && <p className="hint in-use">In use: <b>{settingDifferences.length ? 'current run settings' : originLabel}</b></p>}
       {presetRateUpdated && adv.learning_rate === 0.001 && <p className="hint preset-rate-updated" role="status">
         Updated the restored starting preset’s learning rate from 0.0003 to 0.001. Undo in the main window restores the previous value.</p>}
+      {/* The template by that word (branch record SIF-57): this box called it "the saved Graph Transformer defaults", with
+          "Use saved defaults" / "Save as defaults", in a window whose table and buttons say "template". */}
       {differs && <div className="note network-differences">
-        <p className="warn">Current run values differ from the saved {DESIGN_NAME[encoder] ?? encoder} defaults ({originLabel}).</p>
-        <p className="hint">This run uses the values shown in the controls. Saved defaults are loaded when you use a template; they do not replace an existing configuration on page reload.</p>
-        <table className="grid small" aria-label="Network settings differences"><thead><tr><th>Setting</th><th>This run</th><th>Saved default</th></tr></thead><tbody>
+        <p className="warn">This run's values differ from the {DESIGN_NAME[encoder] ?? encoder} template ({originLabel}).</p>
+        <p className="hint">This run uses the values shown in the controls. A template's values are loaded when you use it; they do not replace an existing configuration on page reload.</p>
+        <table className="grid small" aria-label="Network settings differences"><thead><tr><th>Setting</th><th>This run</th><th>Template</th></tr></thead><tbody>
           {settingDifferences.map(row => <tr key={row.field}><td title={row.field}>{NETWORK_SETTING_LABELS[row.field] ?? row.field}</td>
-            <td className="numeric">{String(row.current)}</td><td className="numeric">{row.saved == null ? 'Not set' : String(row.saved)}</td></tr>)}
+            <td className="numeric">{settingValue(row.current)}</td><td className="numeric">{row.saved == null ? 'Not set' : settingValue(row.saved)}</td></tr>)}
         </tbody></table>
-        <div className="row pair"><button onClick={() => applyEntry(entry)} title="Replace this run's network and Advanced values with the saved defaults for this encoder.">Use saved defaults</button>
-          <button onClick={() => { queueSave(net, adv); flush(); }} title="Keep this run's values and remember them as the defaults for this encoder.">Save as defaults</button></div>
+        <div className="row pair"><button onClick={() => applyEntry(entry)} title={`Replace this run's network and Advanced values with the ${DESIGN_NAME[encoder] ?? encoder} template's values, as one Undo step.`}>Use the template's values</button>
+          <button onClick={() => { queueSave(net, adv); flush(); }} title={`Keep this run's values and save them into the ${DESIGN_NAME[encoder] ?? encoder} template.`}>Save into the template</button></div>
       </div>}
       {entry?.problem && <p className="warn">{entry.problem}</p>}
       {entry && <details><summary>Where the {DESIGN_NAME[encoder] ?? encoder} values come from</summary>
         <p className="hint">{entry.summary}</p>
         {entry.architecture_reference && <p className="hint">Architecture reference: <a href={entry.architecture_reference.url} target="_blank" rel="noreferrer">{entry.architecture_reference.short}</a>. The starting values are project choices.</p>}
         <table className="grid small"><thead><tr><th>Setting</th><th>Preset</th><th>Basis</th><th>Source and note</th></tr></thead><tbody>
+          {/* the settings by the differences table's names, the key in the tooltip, and numbers unpadded (branch record SIF-57:
+              "updates_per_transition", "0.0100000"); String() keeps 0.0003 as the Templates table writes it */}
           {[...netFields, ...advFields].map(f => { const p = entry.provenance?.[f]; const ref = p?.source ? netSettings.references?.[p.source] : null; return (
-            <tr key={f}><td>{f}</td><td className="numeric">{typeof p?.value === 'string' ? p.value : num(p?.value)}</td><td>{p?.basis}{p?.match === 'closest' ? ', closest network' : ''}</td>
+            <tr key={f}><td title={f}>{NETWORK_SETTING_LABELS[f] ?? f.replace(/_/g, ' ')}</td><td className="numeric">{p?.value == null ? '' : String(p.value)}</td><td>{p?.basis}{p?.match === 'closest' ? ', closest network' : ''}</td>
               <td>{ref && <a href={ref.url} target="_blank" rel="noreferrer">{ref.short}</a>} {p?.note}</td></tr>); })}
         </tbody></table>
         <p className="hint">{netSettings.scale_note}</p></details>}

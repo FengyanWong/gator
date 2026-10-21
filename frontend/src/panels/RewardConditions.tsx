@@ -27,9 +27,12 @@ export function RewardConditions({ m }: { m: RlModel }) {
         <tr><td>Launches / reset</td><td>1</td></tr>
         <tr><td>Launch cap</td><td>{run.max_spectre_launches ?? (robust ? 'Required' : 'Not set')}</td></tr>
       </tbody></table></>}
-      {robust && !supportsCorners && <p className="error">Training corners require the registered real OTA7 task.</p>}
-      {robust && (run.max_spectre_launches == null || run.max_spectre_launches < 1) && <p className="error">A positive launch cap is required for training corners.</p>}
-      {robust && (run.max_retries ?? 0) !== 0 && <p className="error">Training corners require zero automatic retries.</p>}
+      {/* Each refusal says what to change, by the control's own name (branch record SIF-48): the first named the OTA7 task,
+          deleted in record 7.128 with the last corner deck (task_registry.py CORNER_TASKS), and the other two named fields
+          that read otherwise in the closed Limits fold. */}
+      {robust && !supportsCorners && <p className="error">No task can train at corners now: choose Nominal only under Training conditions.</p>}
+      {robust && (run.max_spectre_launches == null || run.max_spectre_launches < 1) && <p className="error">A positive launch cap is required for training corners: set Max Spectre launches under Limits.</p>}
+      {robust && (run.max_retries ?? 0) !== 0 && <p className="error">Training corners require zero automatic retries: set Max retries per evaluation under Limits to 0.</p>}
       {/* The reward in one sentence (record 7.183, user: "it is too complicated... is there room for simplification?"). The five
           settings compared in training on 2026-10-05 are fixed for a new configuration (store.ts SIMPLE_REWARD) and said here in
           words; the controls sit in one fold, for reproducing an older run or for an experiment. A configuration that holds other

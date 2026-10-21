@@ -28,7 +28,8 @@ export function useCalibrationOffer({ control, config, setConfig, setMessage }: 
     setCalibrationAnswered(dir);
     keep(s => s.setItem(CALIBRATION_ANSWERED_KEY, dir));   // a private window: asked again after a reload
     if (calibrated.status === 'calibrated') setMessage({ level: 'info', text: how !== 'no' ? `Calibration applied: ${calibrationOffer.what}, as one Undo step.${after}`
-      : 'Nothing was changed. The proposals stay under Run status of that run, with Apply calibration.' });
+      // "its Apply buttons" (branch record SIF-48): for a task saved from a cell, Run status offers Apply and save / Apply only.
+      : 'Nothing was changed. The proposals stay under Run status of that run, with its Apply buttons.' });
   };
   return { calibrated, calibrationOffer, calibrationReady, answerCalibration };
 }

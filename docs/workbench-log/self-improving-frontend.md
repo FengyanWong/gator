@@ -723,3 +723,32 @@ does"; its tooltip's source column keeps the phase key (`frozen_eval`), as the d
 **Checked.** `tsc` clean; `training_tab_check` 90 (its hover line now /search|random warm-up|episode start|baseline/ with
 no key left and a timeout as "result timed out"; new: with the run list the head reads "fixture_task · seed 1 · <made>",
 the folder in its tooltip), `training_data_check` 117, `looks_check` 64; none flaky.
+
+### SIF-48 Directions that point at buttons and tasks that exist (2026-10-21; from the readability audit)
+
+**Found.** Four messages sent the user to something that is not there. Let go on a paused run asked "... it can still be
+continued later (press "Runs..." at the bottom, double click the run, then Run status > Continue).": since record 7.267 a
+double click in the Runs window LOADS the run - its task into the editors, its model as the next run's model - so
+following the dialog changed the draft. A configuration that still asks for training corners read, in red, "Training
+corners require the registered real OTA7 task." (that task was deleted in record 7.128, and no task trains at corners
+since), "A positive launch cap is required for training corners." and "Training corners require zero automatic retries."
+- none said which control to change, and the two fields sit in the closed Limits fold under other names. "Not now" on
+"Calibration ready" said, in its tooltip and in the message after, "The proposals stay under Run status of that run, with
+Apply calibration.", a button a task saved from a cell does not have (it gets Apply and save / Apply only). Every visit to
+Output files ended its tool line with ""Open local folder" is not offered: no desktop integration is available from a
+browser.", about a button that does not exist, and one file counted "1 files".
+
+**Changed** (`RunControl.tsx`, `RewardConditions.tsx`, `page/calibrationOffer.ts`, `App.tsx`, `RunTabs.tsx`): Let go
+asks "... it can still be continued later: press "Runs..." at the bottom, open the run's Details, then Continue... (or
+Show results, then Continue... under Run status)."; the corner errors read "No task can train at corners now: choose
+Nominal only under Training conditions.", "A positive launch cap is required for training corners: set Max Spectre
+launches under Limits." and "Training corners require zero automatic retries: set Max retries per evaluation under Limits
+to 0."; "Not now" says "... with its Apply buttons."; the Output files line reads "7 files, 8.2 MiB." and the notes alone
+("1 file" with `plural`), and Copy run path's tooltip ends "A browser cannot open a folder itself." The audit proposed
+"paste it into Explorer to open the folder" there; the path is the server's (a Linux path), which Explorer does not
+open, so the tooltip does not say so. The checks' expectations all still hold (`reward_v2_frontend_check` looks for
+"zero automatic retries" and "positive launch cap", both kept; it is stand-alone and was not run).
+
+**Checked.** `tsc` clean; `run_control_check` 102, `calibration_check` 38 (its "Nothing was changed. The proposals stay
+under Run status of that run" prefix kept), `calibration_save_check` 22, `files_tab_check` 20 (the hint reads "7 files,
+8.2 MiB." and nothing after it), `module_fold_check` 30; none flaky.

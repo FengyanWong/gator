@@ -117,8 +117,11 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
   };
   const abort = () => {
     if (phase === 'paused') {
+      // The way back names the Continue... buttons that exist (branch record SIF-48): since record 7.267 a double click in
+      // the Runs window LOADS the run - its task into the editors, its model as the next run's - which this used to advise.
       if (!window.confirm('Let go of this paused run?\n\nNothing is deleted: its data and its saved state stay in the run directory, and it can still be continued '
-        + 'later (press "Runs..." at the bottom, double click the run, then Run status > Continue).\n\nThe main button goes back to Start, for a new run.')) return;
+        + 'later: press "Runs..." at the bottom, open the run\'s Details, then Continue... (or Show results, then Continue... under Run status).'
+        + '\n\nThe main button goes back to Start, for a new run.')) return;
       control.release();
       onMessage({ level: 'info', text: `Left paused, nothing deleted: ${dir}` });
     } else if (phase === 'running') {

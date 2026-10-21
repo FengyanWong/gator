@@ -5,7 +5,7 @@ import { Fragment } from 'react';
 import { copy, Json } from '../api';
 import { folderName, plural, short, stamp, taskNameOf } from '../format';
 import { RESTORABLE, SavedModels } from './ModelChooser';
-import { DESIGN_NAME, designName } from '../lineage';
+import { DESIGN_NAME, designName, pointText } from '../lineage';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Check, LookFold, Num } from './fields';
@@ -177,9 +177,10 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         Published settings assume thousands of simulations. Lower them under Advanced or raise the budget.</p>}
       {loads && (<>
         <h3>Saved models</h3>
-        {/* No model is filled in by itself (record 7.265): the newest one under the RL model label is offered. */}
+        {/* No model is filled in by itself (record 7.265): the newest one under the RL model label is offered. Its save point
+            by its evaluations, the id on hover (branch record SIF-67). */}
         {!source.run_dir && suggested?.run_dir && <p className="note model-suggested">Newest model named <b>{label}</b>: {folderName(String(suggested.run_dir))}
-          {suggested.description?.checkpoint_id ? `, save point ${suggested.description.checkpoint_id}` : ''}. <button className="model-suggested-use" disabled={usingPoint}
+          {suggested.description?.checkpoint_id ? <span title={suggested.description.checkpoint_id}>{`, save point ${pointText(suggested.description.checkpoint_id)}`}</span> : ''}. <button className="model-suggested-use" disabled={usingPoint}
             onClick={() => chooseModel(suggested.run_dir, suggested.description?.checkpoint_id ?? 'latest')}>Use</button></p>}
         {!source.run_dir && <p className="warn model-none-chosen">No saved model is chosen yet: {MODE_NAME[run.mode]} needs one. Use a save point below; this window then closes.</p>}
         <SavedModels source={source} usable={LOADS.includes(run.mode) ? run.mode : null} runs={runs} outputRoot={config.output?.output_root}

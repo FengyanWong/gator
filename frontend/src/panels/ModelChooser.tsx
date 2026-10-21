@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRequest } from '../store';
 import { api, copy, Json } from '../api';
 import { folderName, plural, stamp } from '../format';
-import { childrenOf, designName, ENCODER_SHORT, historyOf, startedFrom } from '../lineage';
+import { childrenOf, designName, ENCODER_SHORT, historyOf, pointText, startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { CircuitGraphView } from './CircuitGraphView';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
@@ -103,7 +103,9 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); rename(); } }} /></label>
       <button className="model-rename-apply" disabled={!canRename} onClick={rename} title="Give this saved model the name in the box.">{renaming ? 'Renaming...' : 'Rename'}</button></div>
     {renameNote && <p className={`${renameNote.level === 'warn' ? 'warn' : 'hint'} model-rename-note`}>{renameNote.text}</p>}
-    <h4>With the task on the page <span className="hint">- save point {point || 'none'}</span></h4>
+    {/* A save point by its evaluations, as the table above counts it; its id on hover (branch record SIF-67: "- save point
+        ckpt-00000800-003f07c8", and the same id in Started from, History and the newer save point's note). */}
+    <h4>With the task on the page <span className="hint">- save point <span title={point || undefined}>{pointText(point)}</span></span></h4>
     {checkError && <p className="error">{checkError}</p>}
     {checked?.compatibility_unchecked && <p className="hint">{checked.compatibility_unchecked.title}: {checked.compatibility_unchecked.what}</p>}
     {/* An incompatible model says what that means in the Modes' own words (it said "no fallback to scratch", the key of
@@ -118,7 +120,8 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
     <table className="grid small run-relations model-relations"><tbody>
       <tr><td>Saved by</td><td><button className="item-link" onClick={() => openRunsAt({ run_dir: model.run_dir, from })} title="Open the Runs window at this run.">{folderName(model.run_dir)}</button>
         <span className="hint"> · {runMode(model) || '?'}, seed {model.seed ?? '?'}, {model.state ?? 'unknown state'}</span></td></tr>
-      <tr><td>Started from</td><td>{origin.parent ? link(origin.parent, origin.text) : origin.text}{model.parent?.checkpoint_id && <span className="hint">{` (save point ${model.parent.checkpoint_id})`}</span>}</td></tr>
+      <tr><td>Started from</td><td>{origin.parent ? link(origin.parent, origin.text) : origin.text}{model.parent?.checkpoint_id && origin.at == null
+        && <span className="hint" title={model.parent.checkpoint_id}>{` (save point ${pointText(model.parent.checkpoint_id)})`}</span>}</td></tr>
       <tr><td>Models trained from it</td><td>{children.filter(c => c.model_label && c.mode !== 'frozen').map((c, i) => <Fragment key={c.run_dir}>{i > 0 && ', '}{link(c.run_dir, c.model_label)}</Fragment>)}
         {!children.some(c => c.model_label && c.mode !== 'frozen') && <span className="hint">none under this output folder</span>}</td></tr>
       <tr><td>Runs that loaded it</td><td>{children.map((c, i) => <Fragment key={c.run_dir}>{i > 0 && ', '}<button className="item-link" onClick={() => openRunsAt({ run_dir: c.run_dir, from })}
@@ -128,7 +131,7 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
         <ol className="steps-list"><li className={history.root.missing ? 'warn' : 'hint'}>{history.root.text}</li>
           {history.steps.map(s => <li key={s.run_dir}>{s.run_dir === model.run_dir ? <b>this model</b> : link(s.run_dir, s.row?.model_label ?? folderName(s.run_dir))}
             {s.row && <span className="hint">{` · ${s.row.task_key ?? '?'} · ${runMode(s.row) || '?'} · ${s.row.evaluations != null ? plural(s.row.evaluations, 'evaluation') : 'evaluations unknown'}`}</span>}
-            {s.checkpoint_id && <span className="hint">{` - loaded the one above at its save point ${s.checkpoint_id}`}</span>}</li>)}</ol></details></td></tr>
+            {s.checkpoint_id && <span className="hint" title={s.checkpoint_id}>{` - loaded the one above, its save point ${pointText(s.checkpoint_id)}`}</span>}</li>)}</ol></details></td></tr>
       <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.run_dir)}>{model.run_dir}</td></tr>
     </tbody></table>
     {point && <ModelStructure runDir={model.run_dir} checkpointId={point} label={modelName(model)} />}
@@ -189,8 +192,8 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
       and every N evaluations while it runs ("Model checkpoints" in the output settings must be on).</p>}
     {source.run_dir && models && !inUse && !loading && usable && <p className="warn model-missing">The model in use is not in this list: its run folder is outside the current output
       folder, or it no longer holds a complete save point. <span className="path" title="Click to copy" onClick={() => copy(source.run_dir)}>{source.run_dir}</span></p>}
-    {newer && <p className="note model-newer">The model in use has a newer save point: <b>{newer.evaluations} evaluations</b> ({when(newer.created_utc)}); the next run loads save point
-      {' '}{source.checkpoint_id}. <button className="model-use-newer" onClick={() => onUse(inUse.run_dir, newer.checkpoint_id)}>Use the newer one</button></p>}
+    {newer && <p className="note model-newer">The model in use has a newer save point: <b>{newer.evaluations} evaluations</b> ({when(newer.created_utc)}); the next run loads the save point
+      {' '}<span title={source.checkpoint_id}>{pointText(source.checkpoint_id)}</span>. <button className="model-use-newer" onClick={() => onUse(inUse.run_dir, newer.checkpoint_id)}>Use the newer one</button></p>}
     {list.length > 0 && <div className="task-browser">
       {popup && <Folders state={folders} keys={list.map(m => m.run_dir)} popup={popup} onSelect={chooseFolder} />}
       <div className="task-folder-content">

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SIMPLE_REWARD, useRequest } from '../store';
 import { api, Json } from '../api';
 import { modelNameAt } from './ModelChooser';
-import { DESIGN_NAME, designName, ENCODER_SHORT, pointEvaluations } from '../lineage';
+import { DESIGN_NAME, designName, ENCODER_SHORT, pointEvaluations, pointText } from '../lineage';
 import { LOADS, NETWORK_FIELDS, networkOf, pick, readSavePoint, withSavePoint } from '../savePoint';
 import { usePopupWindow } from './popupWindow';
 import { PRESET_RATE_KEY, RL_MODEL_WINDOW } from '../contract';
@@ -261,7 +261,8 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     return readSavePoint(run_dir, checkpoint_id, netFields).then(point => {   // savePoint.ts: Load run and New run like this take one the same way
       if (stale()) return false;
       setConfig(c => ({ ...c, run: withSavePoint(c.run, point) }));
-      setNetMessage({ level: 'ok', text: `The next run ${run.mode === 'frozen' ? 'evaluates' : 'fine-tunes'} ${nameOf(run_dir)} from its save point ${point.checkpoint_id}, with its network (one Undo step takes it back).`,
+      // The save point by its evaluations, as the model line names it (branch record SIF-67: "from its save point ckpt-00000006-a1").
+      setNetMessage({ level: 'ok', text: `The next run ${run.mode === 'frozen' ? 'evaluates' : 'fine-tunes'} ${nameOf(run_dir)} from its save point ${pointText(point.checkpoint_id)}, with its network (one Undo step takes it back).`,
         about: JSON.stringify([run.mode, run_dir, point.checkpoint_id]) });
       return true;
     }).catch((e: any) => { if (!stale()) setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}`,

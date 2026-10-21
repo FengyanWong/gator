@@ -1469,3 +1469,38 @@ facts at 11 to 83 px); now the fixture's name is whole there (0 px lost) and end
 0 px. A long stand-in ends in "..." at every width, its facts at 0 px. The docs' "first, then the task's name" now holds
 as written; the commit message stays as pushed. `tsc` clean; `looks_check` 72, `run_control_check` 111,
 `connection_panel_check` 86, `reliability_check` 20; none flaky.
+
+### SIF-67 Save points named by their evaluations in the RL model window (2026-10-21; from the readability audit)
+
+**Found.** The RL model window named a save point by its raw id, zero-padded count and hex tag and all. A saved model's
+Details said "With the task on the page - save point ckpt-00000800-003f07c8" under a Save points table that lists the same
+point as 800 in its Evaluations column. The same id showed in "Started from" ("(save point ckpt-...)"), in History ("loaded
+the one above at its save point ckpt-..."), in the newer save point's note ("the next run loads save point ckpt-..."), in
+"Newest model named X: <folder>, save point ckpt-...", in the message after a Use ("The next run fine-tunes X from its save
+point ckpt-00000006-a1, with its network ...") and in the headings of the Full layer table and the circuit graph view. The
+model line beside the RL model button says "save point 6 evaluations" and "Started from" says "@ 420", so the two could not
+be matched by eye.
+
+**Changed.** `frontend/src/lineage.ts`: `pointText(id)` gives "at 420 evaluations" from the id's count, the id itself when it
+holds none ("latest"), and "none" for none. `Origin` (`startedFrom`) now also carries `at`, the count its text gives
+after "@". `panels/ModelChooser.tsx`: the heading reads "With the task on the page - save point at 800 evaluations", History
+"- loaded the one above, its save point at 6 evaluations", and the newer save point's note "the next run loads the save
+point at 6 evaluations." "Started from" drops its "(save point ...)" where its "@ 420" already gives the count. It keeps the
+hint, in the same words, where it does not: a parent offline model (its text says "(offline)", no "@") or an id without
+a count. The audit's fix assumed offline save points' ids hold no count, but they are "ckpt-00000000-...", the 0 that
+model's own table shows. `panels/RlModelWindow.tsx`: "Newest model named X: <folder>, save point at 12 evaluations. Use".
+`panels/useRlModel.ts`: "The next run fine-tunes X from its save point at 6 evaluations, with its network (one Undo step
+takes it back)." `panels/ModelStructure.tsx` and `panels/CircuitGraphView.tsx`: "Graph Transformer 16/2/2 - save point at
+20 evaluations". The graph view's heading is not in the audit batch's list of files, but its finding lists it, and it
+stands beside the structure dialog with the same form. The id stays on hover everywhere a tooltip can hold it. The message
+after a Use is plain text and has no tooltip; the save points table's rows hold the id there. Two save points at the same
+count (a pause save and an automatic one) read the same; their ids tell them apart on hover. The Runs window, Run status
+and the header's banners are left to their own batch; the model line's tooltip keeps the id. No docs quoted the old words.
+
+**Checked.** `tsc` clean. `model_chooser_check` 83. Its message expectation is now "from its save point at 6 evaluations".
+New: the heading reads "With the task on the page - save point at 20 evaluations" with the id "ckpt-00000020-a4" on hover,
+and the newer note says "the next run loads the save point at 6 evaluations." Its first run stopped before any check: a new
+variable's name clashed with one further down the script. `typing_check` 50 (the suggestion now ends "save point at 12
+evaluations. Use", the id on hover). `graph_view_check` 69 (new: "Graph Transformer 16/2/2 - save point at 20 evaluations -
+MOCK", the id on hover). `model_structure_check` 30 (new: the Full layer table's heading ends "save point at 20
+evaluations", the id on hover). `mode_suggestion_check` 20. None flaky.

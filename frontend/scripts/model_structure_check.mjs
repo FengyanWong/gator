@@ -127,6 +127,9 @@ await runChecks(browser, async () => {
   check('"Full layer table" opens a dialog', await until(`${DIALOG}.open`, 30));
   const box = await evaluate(`(() => { const r = ${DIALOG}.getBoundingClientRect(); return { width: r.width, left: r.left, right: r.right, bottom: r.bottom }; })()`);
   check('the dialog is wide (the panel is 340 px) and inside the window', box.width > 900 && box.left >= 0 && box.right <= 1680 && box.bottom <= 1050, JSON.stringify(box));
+  // Branch record SIF-67: the save point by its evaluations, as the save points table counts it; its id on hover (it read "ckpt-00000020-final").
+  const named = await evaluate(`(() => { const h = ${DIALOG}.querySelector('.row .hint'); return { text: h?.textContent ?? '', id: h?.title ?? null }; })()`);
+  check('its heading names the save point by its evaluations, its id on hover', / - save point at 20 evaluations$/.test(named.text) && named.id === POINTS[1].checkpoint_id, JSON.stringify(named));
   let rows = await layers();
   check('every layer of both networks is listed, plus a total row each', rows.length === 2 && rows.every((r, i) => r.length === full.parts[i].layers.length + 1), JSON.stringify(rows.map(r => r.length)));
   check('columns: #, section, layer, type, shape, parameters, share, what it does', (await evaluate(`[...${DIALOG}.querySelector('table.structure-layers').tHead.rows[0].cells].map(c => c.textContent).join('|')`)) === '#|Section|Layer|Type|Shape|Parameters|Share|What it does');

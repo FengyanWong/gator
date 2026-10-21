@@ -4,7 +4,7 @@ import { kindUnit, si } from '../units';
 import { short } from '../format';
 import { hintedLayout } from './circuitLayout';
 import { useNewest } from '../newest';
-import { designName } from '../lineage';
+import { designName, pointText } from '../lineage';
 
 // The circuit graph view (user decision 2026-09-21: ONE on-screen diagnostic picture; nothing drawn is ever written to
 // a run's outputs). The chosen save point is replayed by the backend on a state its own run ARCHIVED
@@ -164,7 +164,8 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
       title="Opens a picture of the circuit as the network sees it: attention on every connection and the sizes this save point proposes, replayed on a state its own run archived. Nothing is simulated and nothing is written.">Circuit graph view</button></div>
     <dialog ref={dialog} className="graph-dialog" onCancel={close}>
       <div className="row"><h3>Circuit graph view{label ? ` - ${label.replace(/:[0-9a-f]{16}$/, '')}` : ''}</h3><span className="spacer" />
-        {view && <span className="hint">{designName(view.network)} {view.network.hidden_dim}/{view.network.heads}/{view.network.layers} - save point {view.checkpoint_id}{view.origin === 'synthetic' ? ' - MOCK' : ''}</span>}
+        {/* The save point by its evaluations, as the structure dialog beside it names it; its id on hover (branch record SIF-67). */}
+        {view && <span className="hint" title={view.checkpoint_id}>{designName(view.network)} {view.network.hidden_dim}/{view.network.heads}/{view.network.layers} - save point {pointText(view.checkpoint_id)}{view.origin === 'synthetic' ? ' - MOCK' : ''}</span>}
         <button className="dialog-close" aria-label="Close" title="Close (Esc)" onClick={close}>{'\u00d7'}</button></div>
       {error && <p className="error graph-error">The view could not be built: {error}</p>}
       {busy && !view && <p className="hint">Replaying the saved policy on an archived state...</p>}

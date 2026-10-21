@@ -235,6 +235,12 @@ await runChecks(browser, async () => {
   check('... and opening Details changed nothing in the draft', !(await stored())?.model_source?.run_dir);
   const savedBy = await evaluate(`[...${RIGHT}.querySelectorAll('table.model-relations tr')].find(tr => tr.children[0].textContent === 'Saved by')?.children[1].innerText.replace(/\\s+/g, ' ').trim() ?? ''`);
   check('... "Saved by" names the run\'s Mode as the Mode buttons do: "New model, seed 1, completed", not "scratch" (SIF-44)', / · New model, seed 1, completed$/.test(savedBy), savedBy);
+  // Branch record SIF-67: a save point is named by its evaluations, as the table above counts it, its id on hover (it read
+  // "- save point ckpt-00000020-a4").
+  const withTask = await evaluate(`(() => { const h = [...${RIGHT}.querySelectorAll('.model-details h4')].find(h => h.textContent.startsWith('With the task on the page'));
+    return { text: h?.textContent ?? '', title: h?.querySelector('.hint span')?.title ?? null }; })()`);
+  check('... "With the task on the page" names the save point by its evaluations, its id on hover (SIF-67)',
+    withTask.text === 'With the task on the page - save point at 20 evaluations' && withTask.title === A.latest, JSON.stringify(withTask));
 
   // ---- Use this save point: pinned, with its network, one Undo step -----------------------------------------------------
   const early = A.checkpoints[0].checkpoint_id;
@@ -242,15 +248,16 @@ await runChecks(browser, async () => {
   let run = await storedWhen(s => s?.model_source?.checkpoint_id === early);
   check('"Use this save point" pins exactly that save point - a concrete id, never "latest"', run?.model_source?.run_dir === A.run_dir && run.model_source.checkpoint_id === early, JSON.stringify(run?.model_source));
   check('... and closes the RL model window (record 7.291)', await chosenAndReopened());
-  check('... and says so, with the one Undo step', /^The next run fine-tunes FIXTURE_opamp_gt from its save point ckpt-00000006-a1, with its network \(one Undo step takes it back\)\.$/.test(await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? ''`)),
+  check('... and says so, with the one Undo step', /^The next run fine-tunes FIXTURE_opamp_gt from its save point at 6 evaluations, with its network \(one Undo step takes it back\)\.$/.test(await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? ''`)),
     await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no note'`));
   check('... with the model\'s network, in the same step', sameNet(run?.network, NET), JSON.stringify(run?.network));
   check('... the row says "in use", and the model line names it with its save point', await until(`(${row(A)})?.getAttribute('aria-current') === 'true' && !!(${row(A)}).querySelector('.in-use-tag')`, 30)
     && await until(`/^Fine-tune FIXTURE_opamp_gt · save point 6 evaluations$/.test(document.querySelector('.rl-networks-row .net-short')?.textContent ?? '')`, 30), await line());
   check('... and so does the header\'s Next line, and Start\'s tooltip with it', await until(`/^Next: synthetic:gpdk045_ota5 · Fine-tune from FIXTURE_opamp_gt @ 6 · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 30)
     && (await startTitle()).startsWith(`Start: ${await evaluate(`(${NEXT}).textContent`)}. `), `${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)} | ${await startTitle()}`);
-  check('... a newer save point is offered, never followed', await until(`/has a newer save point: 20 evaluations/.test(${RIGHT}.querySelector('.model-newer')?.textContent ?? '')`, 30)
-    && (await stored())?.model_source?.checkpoint_id === early);
+  check('... a newer save point is offered, never followed; the one loaded is named by its evaluations (SIF-67)', await until(`/has a newer save point: 20 evaluations/.test(${RIGHT}.querySelector('.model-newer')?.textContent ?? '')`, 30)
+    && /the next run loads the save point at 6 evaluations\./.test(await evaluate(`${RIGHT}.querySelector('.model-newer')?.textContent ?? ''`))
+    && (await stored())?.model_source?.checkpoint_id === early, await evaluate(`${RIGHT}.querySelector('.model-newer')?.textContent ?? 'no note'`));
   await undo();
   run = await storedWhen(s => !s?.model_source?.run_dir);
   check('one Undo takes the choice back', !run?.model_source?.run_dir, JSON.stringify(run?.model_source));

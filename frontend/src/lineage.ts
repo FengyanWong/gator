@@ -24,8 +24,13 @@ export const pointEvaluations = (id?: string | null): number | null => {
   const match = /^ckpt-0*(\d+)/.exec(id ?? '');
   return match ? Number(match[1]) : null;
 };
+/** A save point in words, as its table's Evaluations column and the model line count it: "at 420 evaluations"; the id itself
+ *  when it holds no count ("latest"), "none" for none. The id goes in a tooltip (branch record SIF-67: the RL model window
+ *  named it "save point ckpt-00000800-003f07c8" beside a table that says 800). */
+export const pointText = (id?: string | null) => { const n = pointEvaluations(id); return n != null ? `at ${n} evaluations` : (id || 'none'); };
 
-export type Origin = { text: string; parent?: string; missing?: boolean };
+/** `at`: the evaluations the text names after "@", so a caller does not name that save point again (branch record SIF-67). */
+export type Origin = { text: string; parent?: string; missing?: boolean; at?: number | null };
 
 /** "Started from" (the plan's column): "template GT" for a new model, "ota7t (2) @ 420" for a run that loaded a saved
  *  model (a link to that run), "offline: 22 runs" for an offline model, "-" for a baseline or a calibration. A parent
@@ -38,7 +43,7 @@ export function startedFrom(run: Json, byDir: Map<string, Json>): Origin {
     const offline = from?.run_kind === 'offline_pretraining';
     const at = offline ? null : pointEvaluations(parent.checkpoint_id);
     return { text: `${from?.model_label ?? folderName(parent.run_dir)}${offline ? ' (offline)' : at != null ? ` @ ${at}` : ''}`,
-      parent: parent.run_dir, missing: !from };
+      parent: parent.run_dir, missing: !from, at };
   }
   if (run.run_kind === 'baseline_preflight' || run.run_kind === 'calibration') return { text: '-' };
   return run.encoder ? { text: `template ${designShort({ encoder_type: run.encoder, architecture_version: run.network?.architecture_version })}` } : { text: '-' };

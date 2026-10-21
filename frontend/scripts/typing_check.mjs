@@ -247,7 +247,9 @@ await runChecks(browser, async () => {
   const networkPage = await openNetworks(page, browser);
   await setMode(networkPage, 'fine_tune');
   const SUGGESTED = `${NETWORK_PANEL}.querySelector('.model-suggested')`;
-  check('Fine-tune offers the newest model saved under the RL model label, with its save point', await until(`/: scratch__seed0__0001, save point ${POINT}\\. Use$/.test(${SUGGESTED}?.textContent ?? '')`, 60)
+  // The save point by its evaluations, its id on hover (branch record SIF-67: it read "save point ckpt-000012-fixture").
+  check('Fine-tune offers the newest model saved under the RL model label, with its save point', await until(`/: scratch__seed0__0001, save point at 12 evaluations\\. Use$/.test(${SUGGESTED}?.textContent ?? '')`, 60)
+    && await evaluate(`${SUGGESTED}?.querySelector('span[title]')?.title === ${JSON.stringify(POINT)}`)
     && defaultAsks.length >= 1, await evaluate(`${SUGGESTED}?.textContent ?? 'no suggestion'`));
   await sleep(1000);
   config = await saved();

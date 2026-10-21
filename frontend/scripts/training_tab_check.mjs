@@ -47,6 +47,11 @@ function columns(rows, names) {
   return result;
 }
 const T0 = Date.parse('2026-10-05T12:00:00Z') / 1000;
+// When a run was made, as its chips write it since branch record SIF-59: "10-05 11:00" in local time, as the run window's
+// messages do (it was the browser's own form, "05/10, 11:00" in an en-GB browser). Edge and this script run on the same
+// Windows clock, so the expected text is built the same way.
+const two = n => String(n).padStart(2, '0');
+const madeAt = utc => { const d = new Date(utc); return `${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`; };
 const reward = k => -0.3 * Math.exp(-k / 150) - 0.01 * (1 + Math.sin(k));              // a learning curve with noise
 const gain = k => (k % 37 === 0 ? null : 350 + 120 * (1 - Math.exp(-k / 120)) + 5 * Math.cos(k));
 /** A run of `n` evaluations (every 5th an episode start, every 41st a timeout) with 8 learner updates each after a warm-up;
@@ -398,8 +403,7 @@ await runChecks(browser, async () => {
   await until(`/288 evaluations/.test((${TRAINING}).querySelector('.training-counts')?.textContent ?? '')`, 60);
   // branch record SIF-47: the head named the run by its folder ("scratch__seed1__live", the Mode's key) beside chips that say
   // "fixture_task · seed 1 · ..."; now as its chip, the folder in the tooltip
-  check('with the run list, the head names the run as its chip: task, seed, when it was made', await until(`(${TRAINING}).querySelector('.training-run').textContent === 'fixture_task \u00b7 seed 1 \u00b7 '
-    + new Date('2026-10-05T10:00:00+00:00').toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  check('with the run list, the head names the run as its chip: task, seed, when it was made', await until(`(${TRAINING}).querySelector('.training-run').textContent === 'fixture_task \u00b7 seed 1 \u00b7 ${madeAt('2026-10-05T10:00:00+00:00')}'
     && (${TRAINING}).querySelector('.training-run').title === ${JSON.stringify(RUNS.live.dir)}`, 60), await evaluate(`(${TRAINING}).querySelector('.training-run').textContent`));
   await page.setValue(SECOND, 'critic_loss');
   const COMPARE = `(${TRAINING}).querySelector('select[aria-label="Compare with another run"]')`;
@@ -408,8 +412,7 @@ await runChecks(browser, async () => {
   const twinReads = () => reads.filter(r => r.run === 'twin').length;
   await page.setValue(COMPARE, RUNS.twin.dir);
   check('a compared run gets its chip and its own colour on both charts, its whole name in the legend', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2
-    && [...(${TRAINING}).querySelectorAll('.training-legend')][0].textContent.includes('fixture_task \u00b7 seed 4 \u00b7 '
-      + new Date('2026-10-05T13:00:00+00:00').toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }))
+    && [...(${TRAINING}).querySelectorAll('.training-legend')][0].textContent.includes('fixture_task \u00b7 seed 4 \u00b7 ${madeAt('2026-10-05T13:00:00+00:00')}')
     && [...(${TRAINING}).querySelectorAll('.training-legend')].every(l => l.querySelector('.key-run0') && l.querySelector('.key-run1'))`, 60),
     await evaluate(`(${TRAINING}).querySelector('.training-compared')?.innerText`));
   const chipSize = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-compared .training-chip')].map(c => getComputedStyle(c).fontSize).join(' ')`);

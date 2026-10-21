@@ -2,6 +2,7 @@ import { Icon } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, Json } from '../api';
 import { si } from '../units';
+import { stamp } from '../format';
 import { launchWithConsent } from '../launch';
 import { useRequest } from '../store';
 
@@ -15,6 +16,9 @@ const STATE_TEXT: Record<string, string> = { starting: 'Starting', running: 'Run
   completed: 'Completed', stopped: 'Stopped', failed: 'Failed', interrupted: 'Interrupted' };
 const LIVE = ['starting', 'running', 'stopping'];
 const isLive = (check: Json) => !!check && (check.alive || LIVE.includes(check.status?.state)) && check.status?.state !== 'interrupted';
+/** A corner's label in English letters, as units.ts writes a temperature (branch record SIF-59): the backend's label has the
+ *  degree sign, "SS, 125 °C, 0.9 V". */
+const cornerLabel = (corner: Json) => String(corner.label ?? '').replace(/°C/g, 'degC');
 
 /** One cell of the grid: what that corner said about that design. */
 function Cell({ record, running }: { record?: Json; running: boolean }) {
@@ -103,8 +107,8 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
     {note && <p className={note.level === 'error' ? 'error' : 'hint'}>{note.text}</p>}
     {plan && !plan.supported && plan.reason && <p className="note">{plan.reason}</p>}
     <details className="more"><summary>What the corner check does</summary>
-      <p>After an optimization run it simulates the run's best designs again at five fixed conditions: the normal one (TT, 27 °C,
-        1.0 V), slow transistors at 125 °C and 0.9 V, fast transistors at -40 °C and 1.1 V, and the two mixed process corners.</p>
+      <p>After an optimization run it simulates the run's best designs again at five fixed conditions: the normal one (TT, 27 degC,
+        1.0 V), slow transistors at 125 degC and 0.9 V, fast transistors at -40 degC and 1.1 V, and the two mixed process corners.</p>
       <p>A design is <b>accepted</b> only when it meets every hard spec at all five. One failed corner <b>rejects</b> it. A corner
         that could not be judged (no result, a measurement or connection error) makes it <b>inconclusive</b>; that is never
         blamed on the design. Nothing of the check goes back into the run, its replay or its model.</p>
@@ -117,8 +121,10 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
         says nothing about mismatch (that would be Monte Carlo).</p>
     </details>
     {check && <div className="corner-result">
-      <h4>Check {check.check_id} <span className="hint">{request?.created_utc?.slice(0, 19).replace('T', ' ')} UTC{request?.mock ? ' - MOCK' : ''}</span></h4>
-      <table className="grid small corner-grid"><thead><tr><th>Design</th>{corners.map(c => <th key={c.id}>{c.id}<span className="hint">{c.label}</span></th>)}<th>Verdict</th></tr></thead>
+      {/* local time, as every other time on the page; it read "2026-09-22 10:00:00 UTC" (branch record SIF-59) */}
+      <h4>Check {check.check_id} <span className="hint" title={request?.created_utc ? `${request.created_utc} (UTC)` : undefined}>{stamp(request?.created_utc)
+        ?? request?.created_utc ?? ''}{request?.mock ? ' - MOCK' : ''}</span></h4>
+      <table className="grid small corner-grid"><thead><tr><th>Design</th>{corners.map(c => <th key={c.id}>{c.id}<span className="hint">{cornerLabel(c)}</span></th>)}<th>Verdict</th></tr></thead>
         <tbody>{(request?.designs ?? []).map((d: Json, i: number) => {
           const verdict = summary?.designs?.[i];
           const [text, css] = verdict ? VERDICT[verdict.disposition] ?? [verdict.disposition, ''] : [live ? 'checking...' : '-', 'hint'];
@@ -154,7 +160,7 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
           <td title={d.evaluation_id}>{d.label ?? d.evaluation_id.slice(0, 8)} {d.completion_index != null && <span className="hint">(evaluation #{d.completion_index})</span>}</td>
           <td>{d.min_margin == null ? '-' : String(+d.min_margin.toPrecision(3))} <span className="hint">({d.tightest_spec})</span></td><td>{variables(d)}</td></tr>)}</tbody></table>
       <p className="hint">This run has {plan.counts.feasible} feasible evaluation{plan.counts.feasible === 1 ? '' : 's'}, {plan.counts.distinct} different
-        design{plan.counts.distinct === 1 ? '' : 's'}. Corners: {plan.corners.map((c: Json) => `${c.id} (${c.label})`).join(' · ')}.</p>
+        design{plan.counts.distinct === 1 ? '' : 's'}. Corners: {plan.corners.map((c: Json) => `${c.id} (${cornerLabel(c)})`).join(' · ')}.</p>
     </>}
     {(plan?.checks?.length ?? 0) > 1 && <details className="more"><summary>Earlier checks of this run ({plan.checks.length})</summary>
       <p className="hint">Double click a row to show that check.</p>

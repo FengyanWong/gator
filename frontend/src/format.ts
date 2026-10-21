@@ -17,33 +17,27 @@ export const clock = () => new Date().toLocaleTimeString([], { hour12: false });
 
 // ---- dates and times, as each place writes them (plan-refactoring C8: moved here and named, never merged where the words
 // differ; a caller imports one under the name it has always used) ------------------------------------------------------------
+// All of them write stamp()'s form, or a part of it, since branch record SIF-59: they wrote the browser's own
+// ("16/10/2026, 14:03:22" in an en-GB browser, "20/10, 10:43" in the Compare list) beside the Runs window's "2026-10-20 10:43".
 /** A fixed clock time instead of a running "N s ago": nothing re-renders this on a timer, so an age would freeze. The time of
- *  day when it was today, else date and time (Connection.tsx: when the connection was tested). */
+ *  day when it was today, else date and time; a text that is no date as it is (Connection.tsx: when the connection was tested). */
 export const timeOrDateTime = (iso: string) => {
-  const at = new Date(iso);
-  return at.toDateString() === new Date().toDateString() ? at.toLocaleTimeString() : at.toLocaleString();
+  const s = stamp(iso);
+  if (!s) return iso;
+  return new Date(iso).toDateString() === new Date().toDateString() ? s.slice(11) : s;
 };
-/** Date and time in the viewer's words; a text that is no date is shown as it is (Pdk.tsx: when a PDK was loaded). */
-export const dateTimeOrText = (iso: string) => { const at = new Date(iso); return isNaN(+at) ? iso : at.toLocaleString(); };
+/** Date and time; a text that is no date is shown as it is (Pdk.tsx: when a PDK was loaded). */
+export const dateTimeOrText = (iso: string) => stamp(iso) ?? iso;
 /** A fixed clock time of the declaration, in the viewer's local time; null for none (WorkingCopy.tsx). */
-export const dateTimeOrNull = (iso?: string | null) => { const d = iso ? new Date(iso) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleString() : null; };
-/** Date and time in the viewer's words, whatever the text: "Invalid Date" for none (App.tsx: when a task was saved again). */
-export const dateTime = (since: string) => new Date(since).toLocaleString();
-// One formatter (record 7.279): toLocaleString built one per call, for every saved model at every keystroke while the
-// RL model window was open.
-const WHEN = new Intl.DateTimeFormat(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-/** When a save point or a saved model was saved: "09 Oct, 12:00:00" (ModelChooser.tsx). */
-export const savedAt = (utc?: string | null) => { const d = utc ? new Date(utc) : null;
-  return d && !Number.isNaN(d.getTime()) ? WHEN.format(d) : 'unknown time'; };
-// One formatter for every date (record 7.279): toLocaleString built a new one per call, and the Compare list formatted
-// every run's date at every status update - 85 % of the page's work per update, even with the tab hidden.
-const CREATED = new Intl.DateTimeFormat([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-/** When a run was created, as the Training tab's Compare list writes it (TrainingTab.tsx). */
-export const createdAt = (utc?: string | null) => {
-  if (!utc) return 'unknown time';
-  const d = new Date(utc);
-  return Number.isNaN(d.getTime()) ? 'Invalid Date' : CREATED.format(d);         // what toLocaleString said for it
-};
+export const dateTimeOrNull = (iso?: string | null) => stamp(iso);
+/** Date and time, whatever the text: a text that is no date as it is (runWindowActions.ts: when a task was saved again). */
+export const dateTime = (since: string) => stamp(since) ?? since;
+// The Compare list wrote every run's date at every status update, hidden or not (record 7.279: toLocaleString built a new
+// formatter per call, 85 % of the page's work per update; one Intl formatter replaced it). Its labels are kept per row
+// since (TrainingTab.tsx's runChoice), and stamp() is a few getters. savedAt and its formatter went too: nothing used them
+// since branch record SIF-17.
+/** When a run was created, as the Training tab's Compare list and chips write it: "10-20 10:43", as runTitle does (TrainingTab.tsx). */
+export const createdAt = (utc?: string | null) => stamp(utc)?.slice(5, 16) ?? 'unknown time';
 /** A time of day from seconds since 1970, as the Training tab writes it (its `clock`: format.ts has a clock() of its own). */
 export const timeOfDay = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 /** A run as a message names it: its task and when it was created, "ota7t 10-06 14:02" (the folder's name without a date). */

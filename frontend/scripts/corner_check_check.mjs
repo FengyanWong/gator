@@ -10,7 +10,7 @@
 // verdicts - and stops reading once it has ended; a REAL check asks for the budget first (no = nothing sent), then the
 // connection question, and sends both answers; a finished real check says whether the cell was restored and whether the
 // nominal repeat agreed with the run; an unsupported circuit is a neutral note with Check off; earlier checks are chosen by
-// double click.
+// double click. A check's time is local (its UTC on hover), a temperature reads "27 degC" (branch record SIF-59).
 // Run (Windows node through WSL interop; node >= 22 for the built-in WebSocket; about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/corner_check_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -20,6 +20,9 @@ import { validConfiguration, check, launchEdge, outDir, reportRefused, runChecks
 const APP = await workbenchUrl();
 const out = outDir();
 const browser = await launchEdge('corners');
+// The page writes local time; Edge and this script run on the same Windows clock, so the expected text is built the same way.
+const two = n => String(n).padStart(2, '0');
+const stamp = utc => { const d = new Date(utc); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
 
 // ---- the fixture run and its corner checks ------------------------------------------------------------------------------
 const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task/scratch__seed0__0001';
@@ -129,9 +132,13 @@ await runChecks(browser, async () => {
   check('Check is on, and reads only "Check"', await evaluate(`!!(${BUTTON('Check')}) && !${BUTTON('Check')}.disabled && ${BUTTON('Check')}.classList.contains('primary')`));
   const designRows = await evaluate(`[...document.querySelectorAll('table.corner-designs tbody tr')].map(r => r.textContent)`);
   check('the three designs are listed, safest first, with their margin and sizes', designRows.length === 3 && /0\.21.*unity_gain_hz/.test(designRows[0]) && designRows[0].includes('input_pair 4.2 um'), designRows[0]);
-  check('the counts and the corners are said in one line', now.includes('12 feasible evaluations, 9 different designs') && now.includes('ss_hot_low (SS, 125 \u00b0C, 0.9 V)'));
+  // branch record SIF-59: a corner's temperature in English letters, as units.ts writes one (the backend's label has "\u00b0C")
+  check('the counts and the corners are said in one line', now.includes('12 feasible evaluations, 9 different designs') && now.includes('ss_hot_low (SS, 125 degC, 0.9 V)'));
   check('the explanation is folded (one click away)', await evaluate(`(() => { const d = [...document.querySelectorAll('.corner-check details')].find(x => x.querySelector('summary')?.textContent === 'What the corner check does');
     return !!d && !d.open && ![...d.querySelectorAll('p')].some(p => p.checkVisibility()); })()`));
+  check('... and it writes its temperatures in English letters too: "TT, 27 degC", no degree sign in the tab', await evaluate(`(() => {
+    const d = [...document.querySelectorAll('.corner-check details')].find(x => x.querySelector('summary')?.textContent === 'What the corner check does');
+    return d.textContent.includes('(TT, 27 degC,') && d.textContent.includes('-40 degC') && !${TAB}.textContent.includes(String.fromCharCode(176)); })()`));
   await page.setValue(`document.querySelector('.corner-check select')`, '1');
   check('"Designs 1" reads the plan again and costs 5 simulations', await until(`${TAB}.innerText.includes('1 design x 5 corners = 5 MOCK simulations')`) && sim.planRequests.at(-1) === 1);
   await page.setValue(`document.querySelector('.corner-check select')`, '3');
@@ -150,6 +157,13 @@ await runChecks(browser, async () => {
   check('the grid has one row per design and one column per corner, plus the verdict', grid.length === 3 && grid.every(r => r.length === 7), JSON.stringify(grid.map(r => r.length)));
   check('finished corners say pass / FAIL with the spec and its value; the corner in flight says running', grid[0].slice(1, 6).every(c => c === 'pass')
     && grid[1][3] === 'FAIL supply_power_w 2.6 uW' && grid[1][4] === 'running...' && grid[2][2] === '-' && grid[0][6] === 'checking...', JSON.stringify(grid[1]));
+  // branch record SIF-59: the check's time in local time, as every other time on the page, the UTC on hover (it read
+  // "2026-09-22 10:00:00 UTC - MOCK"); the grid's corners in English letters
+  const heading = await evaluate(`(() => { const s = document.querySelector('.corner-result h4 .hint');
+    return [s?.textContent, s?.title, [...document.querySelectorAll('table.corner-grid thead th')].map(th => th.textContent)]; })()`);
+  check('the heading gives the check\'s local time, the UTC on hover; the grid names each corner in English letters',
+    heading[0] === `${stamp('2026-09-22T10:00:00+00:00')} - MOCK` && heading[1] === '2026-09-22T10:00:00+00:00 (UTC)'
+    && heading[2].includes('ss_hot_lowSS, 125 degC, 0.9 V') && heading[2].includes('ff_cold_highFF, -40 degC, 1.1 V'), JSON.stringify(heading));
   check('the check is read again while it works', await waitFor(() => (sim.statusReads[C1] ?? 0) >= 3, 50), String(sim.statusReads[C1]));
   sim.failStatus = true;
   await evaluate(`${BUTTON('Refresh')}.click()`);

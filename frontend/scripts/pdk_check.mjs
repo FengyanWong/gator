@@ -212,6 +212,12 @@ await runChecks(browser, async () => {
   check('the window shows "Load PDK" with its two optional boxes and a Load button', win.heading === 'Load PDK' && win.inputs.length === 2 && win.load === 'Load' && !win.disabled, JSON.stringify(win));
   check('it names the connection it reads through', win.link);
   check('it lists the loaded PDKs; the how-it-decides text is folded', JSON.stringify(win.rows) === '["fixpdk"]' && win.folded, JSON.stringify(win.rows));
+  // Branch record SIF-59: when it was loaded in local time as the Runs window writes a time, the UTC on hover (it was the
+  // browser's own form, "21/09/2026, 22:00:00" in an en-GB browser). Edge and this script share the Windows clock.
+  const loadedCell = await pev(`[...document.querySelectorAll('.pdk-list tbody tr')].map(r => [r.cells[3].textContent, r.cells[3].title])[0]`);
+  const local = (d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:`
+    + `${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`)(new Date('2026-09-21T21:00:00+00:00'));
+  check('the Loaded column gives the local time as the Runs window writes it, the UTC on hover', JSON.stringify(loadedCell) === JSON.stringify([local, '2026-09-21T21:00:00+00:00 (UTC)']), JSON.stringify(loadedCell));
   await pev(`document.querySelector('.pdk-list tbody tr').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
   await popup.until(`!!document.querySelector('.pdk-devices')`);
   const shown = await pev(`(() => { const t = document.querySelector('.pdk-devices'); return { rows: [...t.querySelectorAll('tbody tr')].map(r => [...r.cells].map(c => c.textContent)),

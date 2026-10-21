@@ -1627,3 +1627,25 @@ two still differ there. It now reads "the task (a saved task as the header's tit
 a renamed one by its new name - branch record SIF-71; or a Virtuoso cell as library/cell)". The comment over `nextTask`
 in `launch.ts` made the same claim ("The task as the title beside it names it"); it reads "A saved task ..." and says
 the cell is library/cell, which the title does not show. `tsc` clean. No check reads either text, so none was rerun.
+
+### SIF-59 Times in one local form, temperatures in degC (2026-10-21; from the readability audit)
+
+(Written after SIF-71: this batch's agent finished its edits and its type check, but its time ran out while its checks were
+still running, so by the rule it did not commit; the next batches committed only their own files, and the edits were checked
+and committed here.)
+
+**Found.** Some times still came in the browser's own form ("16/10/2026, 14:03:22", the Compare list's "20/10, 10:43");
+the Corner check's heading wrote "2026-09-22 10:00:00 UTC"; its explainer and corner labels wrote "27 °C", where the page
+writes units in English letters.
+
+**Changed** (`format.ts`, `CornerCheck.tsx`, `Pdk.tsx`): the time helpers (timeOrDateTime, dateTimeOrText, dateTimeOrNull,
+dateTime, createdAt) write stamp()'s local form "2026-10-16 14:03:22" (a time of today stays time-only; createdAt gives
+"10-20 10:43" as runTitle does; the unused CREATED / savedAt / WHEN went); the Corner check's heading is the local time with
+the UTC in its tooltip, its explainer says "27 degC", "125 degC", "-40 degC", and its corner labels go through cornerLabel()
+("SS, 125 degC, 0.9 V"); the PDK window's Loaded cell carries "<time> (UTC)" as its tooltip.
+
+**Checked.** `tsc` clean; `training_tab_check` 95 (its two dates now expected as "MM-DD hh:mm" built in Node),
+`connection_panel_check` 86, `run_list_check` 124, `corner_check_check` 39 (the corner label now "ss_hot_low (SS, 125 degC,
+0.9 V)"; two new: the explainer in degC with no degree sign, the heading in local time with the UTC tooltip and the grid in
+degC), `working_copy_check` 31, `task_run_check` 31, `pdk_check` 40 (one new: the Loaded cell's local time and UTC tooltip),
+`training_data_check` 117 - 563 checks, none failed.

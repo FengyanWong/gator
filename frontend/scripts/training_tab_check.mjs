@@ -290,14 +290,14 @@ await runChecks(browser, async () => {
   await evaluate(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent)).click()`);
   check('pressed again, the series is back', await until(`/Training \\(recorded\\)/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`));
   // Branch record SIF-65: the charts' text at the page's sizes - a chart's title at 13 px, its keys at 12.5 px, the readout at
-  // 12 px in its mono font (11 to 11.5 px before; the axis numbers with eight charts, below); the key numbers stay compact
-  // (record 7.360)
+  // 12 px in its mono font (11 to 11.5 px before; the axis numbers with eight charts, below); the "Key numbers" line keeps its
+  // 11.5 px (the numbers under it are record 7.360's tiles, or a table.grid for several runs)
   const sizes = await evaluate(`(() => { const t = ${TRAINING}, st = e => getComputedStyle(e), mono = document.createElement('span');
     mono.style.fontFamily = 'var(--f-mono)'; t.append(mono); const family = st(mono).fontFamily; mono.remove();
     const r = t.querySelector('.training-readout');
     return { title: st(t.querySelector('figure.training-chart select.training-chart-choice')).fontSize, key: st(t.querySelector('.training-legend .training-key')).fontSize,
       readout: [st(r).fontSize, st(r).fontFamily === family, st(r.querySelector('b') ?? r).fontSize], keys: st(t.querySelector('details.training-keys > summary')).fontSize }; })()`);
-  check('...a chart\'s title reads at 13 px, its keys at 12.5 px, the readout and its values at 12 px in the mono font; the key numbers at 11.5 px',
+  check('...a chart\'s title reads at 13 px, its keys at 12.5 px, the readout and its values at 12 px in the mono font; the "Key numbers" line at 11.5 px',
     JSON.stringify(sizes) === JSON.stringify({ title: '13px', key: '12.5px', readout: ['12px', true, '12px'], keys: '11.5px' }), JSON.stringify(sizes));
   const SECOND = CHART(1);
   await page.setValue(SECOND, 'critic_loss');

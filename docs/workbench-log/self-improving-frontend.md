@@ -1394,12 +1394,25 @@ were drawn at 11 px (`TrainingChart.tsx`), none of them overridden by the Roadst
 jump about under a moving cursor; it is cut at the chart's width a little sooner, its values first since SIF-7). The axis
 numbers and the x axis's word are drawn at 12 px, a whole number of px: uPlot multiplies the digits before "px" by the
 screen's pixel ratio, so "12.5px" would draw "12.10px" on a screen of twice the pixels. The y axis keeps its 64 px: the
-gain chart's widest number, "400 V/V", ends 12.8 px inside it with eight charts on the page. The key numbers keep their
-compact 11.5 px (record 7.360, user: "make it more compact but keeping the style"); the "Not on this chart: ..." line
-(`.training-missing`, 11 px) was not in the audit's list and is left as it is. No words changed; no check or doc pinned
-the old sizes.
+gain chart's widest number, "400 V/V", ends 12.8 px inside it with eight charts on the page. The "Key numbers" line
+keeps its 11.5 px (`.training-keys`, styles.css); the numbers under it already read at the Roadster sizes: one run's
+tiles at 12 px labels and 17 px values (record 7.360, user: "make it more compact but keeping the style"), several runs'
+`table.grid` at 13.5 px. The "Not on this chart: ..." line already reads at 13 px (a `.hint`: the Roadster `.hint` rule
+outweighs its `.training-missing` 11 px) and is left as it is. No words changed; no check or doc pinned the old sizes.
 
 **Checked.** `tsc` clean; `training_tab_check` 95 (new: a chart's title at 13 px, its keys at 12.5 px, the readout and
-its values at 12 px in the mono font, the key numbers still 11.5 px; the compared runs' chips at 12.5 px; every text the
-plots draw while six charts are added is 12 px, the markers' 10 px words aside, and no y axis number, "400 V/V" included, starts left of its canvas - a
-`fillText` watch in the page), `training_data_check` 117, `looks_check` 70; none flaky.
+its values at 12 px in the mono font, the "Key numbers" line still 11.5 px; the compared runs' chips at 12.5 px; every
+text the plots draw while six charts are added is 12 px, the markers' 10 px words aside, and no y axis number, "400 V/V"
+included, starts left of its canvas - a `fillText` watch in the page), `training_data_check` 117, `looks_check` 70; none
+flaky.
+
+**Review follow-up.** The review found two slips, in words only: the code is right. "Changed" above, the `roadster.css`
+comment, a comment and a label in `training_tab_check` and the commit message said the key numbers keep their compact
+11.5 px. Only the "Key numbers" line over them is 11.5 px (styles.css's `.training-keys`, which the Roadster look leaves
+alone), and that line is all the check measures. The numbers themselves already read at the look's sizes: one run's
+tiles at 12 px labels and 17 px values (`.key-tile-label`, `.key-tile-value`; record 7.360's compact tiles), several
+runs' `table.grid` at 13.5 px. And "Changed" put the "Not on this chart: ..." line at 11 px; it reads at 13 px. It is a
+`p.hint.training-missing` (`TrainingTab.tsx`), and roadster.css's `.hint { font-size: 13px }` weighs the same as
+styles.css's `.training-missing { font-size: 11px }` and loads after it (`main.tsx`), so it wins. "Changed", "Checked",
+the two comments and the label now say so; the commit message stays as pushed. No code changed: `tsc` clean;
+`training_tab_check` 95 (only a comment and a label changed in it).

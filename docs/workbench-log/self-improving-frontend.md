@@ -755,7 +755,7 @@ under Run status of that run" prefix kept), `calibration_save_check` 22, `files_
 
 ### SIF-49 A cell names the unit a plain number is in, and says why a text was refused (2026-10-21; from the readability audit)
 
-**Found.** The tooltip of every bound (Parameters' Lower, Upper, Step; Specs' Lower, Upper, Scale), of its header and of
+**Found.** The tooltip of every bound (Parameters' Lower, Upper, Step; Specs' Lower, Upper), of its header and of
 the help line a header opens said "Type 450n, 0.45 um or 0.4mA; a plain number is in the unit the row shows." No row has
 shown its unit since the Unit column went (record 7.208): a W row stored in m shows "1 um", and a "2" typed there,
 meant as 2 um, became "2 m". A word typed into a number without a unit (Ratio, Soft weight) or into a JSON cell
@@ -787,3 +787,9 @@ unit; `plainNumberIn` for m, um, kohm, a count and no unit), `sheet_check` 44 (n
 Scale's placeholder "auto", and "half" typed into Ratio is said under the formula bar with the ratio kept),
 `formula_bar_check` 19, `typing_check` 47, `find_fill_copy_check` 30, `unsaved_rows_check` 25 (its tooltips still start
 with "Saved in the task: ..."); none flaky.
+
+**Review follow-up.** The review found one slip, in this entry only: "Found" listed Specs' Scale among the bounds whose
+tooltip, header tooltip and help line carried the stale sentence. It never did: `Editors.tsx` gives normalization_scale
+its own guidance ("How far outside its limit a value counts as a miss of 1. ...") after VALUE_HELP is added, which drops
+it. The list now reads "Specs' Lower, Upper". "Changed" still holds: the Scale cell's own tooltip does end with
+`plainNumberIn`'s sentence. No code changed; nothing to type-check or run.

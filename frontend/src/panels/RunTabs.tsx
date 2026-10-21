@@ -189,9 +189,12 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       <tr><td>Saved to disk</td><td className={saved?.failed ? 'error' : ''}
         title={saved ? `${saved.last_successful_save ? `last save ${saved.last_successful_save} (UTC); ` : ''}commit ${saved.last_commit_seq}, flushed ${saved.flushed_seq}` : undefined}>
         {saved ? `${saved.failed ? `failed: ${saved.failed} · ` : ''}last save ${stamp(saved.last_successful_save) ?? saved.last_successful_save ?? '-'} · ${bytes(saved.bytes_written)} of table data` : '-'}</td></tr>
-      <tr><td>Last checkpoint</td><td title={status.last_checkpoint_utc ? `${status.last_checkpoint_utc} (UTC)` : undefined}>{stamp(status.last_checkpoint_utc) ?? status.last_checkpoint_utc ?? '-'}
-        {status.manual_save && <span className={status.manual_save.state === 'saved' ? 'ok' : 'warn'}> - Save now: {status.manual_save.state === 'saved'
-          ? `saved at ${status.manual_save.evaluations} evaluations (${status.manual_save.checkpoint_id})`
+      {/* A "save point", as the Runs window's Details and the RL model window name one (branch record SIF-70: it read "Last
+          checkpoint" here, "Last model save" there); a Save now by its evaluations, its id on hover (it said both) */}
+      <tr><td>Last save point</td><td title={status.last_checkpoint_utc ? `${status.last_checkpoint_utc} (UTC)` : undefined}>{stamp(status.last_checkpoint_utc) ?? status.last_checkpoint_utc ?? '-'}
+        {status.manual_save && <span className={status.manual_save.state === 'saved' ? 'ok' : 'warn'}
+          title={status.manual_save.state === 'saved' ? `save point ${status.manual_save.checkpoint_id}` : undefined}> - Save now: {status.manual_save.state === 'saved'
+          ? `saved at ${status.manual_save.evaluations} evaluations`
           : 'requested, waiting for the simulation in flight to finish'}</span>}</td></tr>
       {/* named, and said when copied, as the Runs window's Details do (branch record SIF-54) */}
       <tr><td>Run folder</td><td className="path" title="Click to copy" onClick={() => copy(status.run_dir)?.then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined)}>

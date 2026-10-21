@@ -1574,3 +1574,27 @@ of 350 (the old division gave 349.99999999999994 and 699.9999999999999); the fol
 and no longer says `ade_output`. The GHz limit is now compared exactly (`=== 1`, was within 1e-12). Its summary
 expectation is now "3 outputs, 3 specs", and it counts three Probes rows more than the starter's, not two.
 `virtuoso_source_check` 95. None flaky.
+
+### SIF-70 One name for the last save point in Run status and the Runs window, and Save now says its evaluations once (2026-10-21; from the readability audit)
+
+**Found.** The time a run last saved its model (`last_checkpoint_utc`) had a different name in each place that showed
+it. Run status's row was "Last checkpoint", the Runs window's Details said "Last model save", and the rest of the page
+(RL model window, Relationships, the Runs window's column help) calls every save a "save point". After Save now, the
+line under the header said "Saved at 14 evaluations as save point ckpt-00000014-fixture. The run goes on." and the Run
+status row "- Save now: saved at 14 evaluations (ckpt-00000014-fixture)". Both gave the count and then the raw id,
+which repeats the count with zero padding and a tag.
+
+**Changed.** `frontend/src/panels/RunTabs.tsx`: the row reads "Last save point". A Save now there reads "- Save now:
+saved at 14 evaluations", with "save point ckpt-..." on hover. The row's own tooltip, the time in UTC, is unchanged.
+`panels/RunList.tsx`: the Details fact reads "Last save point". `panels/RunControl.tsx`: the line reads "Saved at 14
+evaluations. The run goes on.", with "save point ckpt-..." in its tooltip, above "Click to close" (the `title` a message
+carries since SIF-56). The ids the audit chose to keep stay as they are: Run status's Mode row ("- from run ..., save
+point ckpt-...", SIF-14) and the Runs window's Relationships, History and Saved state (record 7.264). `docs/workbench.md`
+(§ Save now): the line "says at how many evaluations, the save point's id in its tooltip". It used to say "and under which
+id".
+
+**Checked.** `tsc` clean. `save_now_check` 29. It finds the row by "Last save point" and expects "Saved at 14
+evaluations. The run goes on.". New: the line's tooltip starts "save point ckpt-00000014-fixture" and its text holds no
+"ckpt-". The row ends " - Save now: saved at 14 evaluations", with "save point ckpt-00000014-fixture" on hover, and no
+row is called "Last checkpoint". `run_list_check` 124. New: the Details' "Last save point" gives the run's time, and no
+fact is called "Last model save". `run_control_check` 111, `room_check` 27. None flaky.

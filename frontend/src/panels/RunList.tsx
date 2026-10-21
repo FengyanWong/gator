@@ -161,7 +161,7 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics, best.metric_units)} · violation ${typeof best.violation === 'number' ? sig(best.violation) : '-'}` : 'none') : null],   // not shouted (SIF-19); three digits (SIF-44)
     ['Best design variables', best?.variables ? variables(best.variables) : null],
     ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}` : 'none (random weights)') : null],
-    ['Last model save', info ? stamp(info.last_checkpoint_utc) ?? 'none' : null],
+    ['Last save point', info ? stamp(info.last_checkpoint_utc) ?? 'none' : null],   // as Run status names it (SIF-70: "Last model save")
     // a save point the summary names but the run folder no longer holds (a copy made without them, deleted ones): said (7.215)
     ['Saved state', summary?.output ? (info?.save_point === null && summary.output.resumability !== 'none'
       ? `none: the run's summary names its save point ${summary.output.latest_checkpoint ?? ''} as ${SAVED_STATE[summary.output.resumability] ?? summary.output.resumability}, but the run folder no longer holds it (a copy made without its save points, or they were deleted); nothing to continue from`

@@ -7,9 +7,10 @@
 // The browser profile is new and temporary: the user's saved configuration and remembered run are not touched.
 // What it pins (user request 2026-09-21, "add a save now button"): the button exists left of the main button (Abort
 // stays directly right of it) and is off unless a run is RUNNING; one press = one `checkpoint` command, no pause - the
-// main button keeps reading Pause; it reads "Saving..." until the RUN reports that request as saved, then says where it
-// was saved; a refusal is shown in the backend's plain words; the header does not shift; the Run status tab shows the
-// request in its "Last checkpoint" row and has NO copy of the button any more (its four run buttons went on 2026-09-29).
+// main button keeps reading Pause; it reads "Saving..." until the RUN reports that request as saved, then says at how
+// many evaluations it was saved, the save point's id on hover; a refusal is shown in the backend's plain words; the header
+// does not shift; the Run status tab shows the request in its "Last save point" row (branch record SIF-70: "Last
+// checkpoint") and has NO copy of the button any more (its four run buttons went on 2026-09-29).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/save_now_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -98,7 +99,11 @@ await runChecks(browser, async () => {
   sim.charged = 14; sim.last_checkpoint_utc = '2026-09-21T00:00:20+00:00';
   sim.manual_save = { id: 'fixture-request-1', state: 'saved', requested_utc: '2026-09-21T00:00:10+00:00', checkpoint_id: 'ckpt-00000014-fixture', saved_utc: '2026-09-21T00:00:20+00:00', evaluations: 14 };
   check('when the run reports THIS request as saved the button is back', await until(`${SAVE}.textContent === 'Save now' && !${SAVE}.disabled`, 60));
-  check('... and the line says where it was saved, and that the run goes on', await banner('Saved at 14 evaluations as save point ckpt-00000014-fixture. The run goes on.'));
+  // branch record SIF-70: the evaluations name the save point, its id in the line's tooltip (the line said both)
+  check('... and the line says at how many evaluations it was saved, and that the run goes on', await banner('Saved at 14 evaluations. The run goes on.'));
+  const savedTip = await evaluate(`document.querySelector('.banner')?.title ?? ''`);
+  check('... the save point\'s id in its tooltip, not in the line', savedTip.startsWith('save point ckpt-00000014-fixture\n')
+    && !(await evaluate(`document.querySelector('.banner')?.textContent ?? ''`)).includes('ckpt-'), JSON.stringify(savedTip));
   check('no pause, stop or cancel was ever sent', commands.join() === 'checkpoint', commands.join());
   await shot('save-now-3-saved.png');
 
@@ -114,13 +119,18 @@ await runChecks(browser, async () => {
     && fold.has && fold.title === '' && fold.summary === 'Technical details', JSON.stringify(fold));
   check('... and the button is back at once', await until(`${SAVE}.textContent === 'Save now' && !${SAVE}.disabled`, 40));
 
-  // ---- the Run status tab: no Save now of its own, the request in its "Last checkpoint" row ------------------------------------------------
+  // ---- the Run status tab: no Save now of its own, the request in its "Last save point" row ------------------------------------------------
   await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Run status')?.click()`);
   const TAB_COMMANDS = `[...document.querySelectorAll('.status-grid button')].filter(b => /Save now|Pause and save|Stop and save|Force cancel/.test(b.textContent)).length`;
   check('the Run status tab has no Save now, Pause, Stop or Force cancel of its own: the header has them', await until(`!!document.querySelector('.status-grid') && ${TAB_COMMANDS} === 0`, 60));
-  const ROW = `[...document.querySelectorAll('.status-grid tr')].find(r => r.cells[0]?.textContent === 'Last checkpoint')?.cells[1]?.textContent ?? ''`;
-  check('its "Last checkpoint" row shows the answered request', await until(`/Save now: saved at 14 evaluations \\(ckpt-00000014-fixture\\)/.test(${ROW})`, 40), await evaluate(ROW));
-  const when = await evaluate(`(() => { const td = [...document.querySelectorAll('.status-grid tr')].find(r => r.cells[0]?.textContent === 'Last checkpoint')?.cells[1]; return { text: td?.textContent ?? '', title: td?.title ?? '' }; })()`);
+  // branch record SIF-70: "Last save point", as the Runs window's Details name it ("Last checkpoint" here, "Last model
+  // save" there); the request by its evaluations, the save point's id on hover (it read "... 14 evaluations (ckpt-...)")
+  const ROW = `[...document.querySelectorAll('.status-grid tr')].find(r => r.cells[0]?.textContent === 'Last save point')?.cells[1]?.textContent ?? ''`;
+  check('its "Last save point" row shows the answered request by its evaluations', await until(`/ - Save now: saved at 14 evaluations$/.test(${ROW})`, 40), await evaluate(ROW));
+  const saveTip = await evaluate(`[...document.querySelectorAll('.status-grid tr')].find(r => r.cells[0]?.textContent === 'Last save point')?.cells[1]?.querySelector('span')?.title ?? ''`);
+  check('... the save point\'s id on hover', saveTip === 'save point ckpt-00000014-fixture', JSON.stringify(saveTip));
+  check('... and no row is called "Last checkpoint" any more', await evaluate(`![...document.querySelectorAll('.status-grid tr')].some(r => r.cells[0]?.textContent === 'Last checkpoint')`));
+  const when = await evaluate(`(() => { const td = [...document.querySelectorAll('.status-grid tr')].find(r => r.cells[0]?.textContent === 'Last save point')?.cells[1]; return { text: td?.textContent ?? '', title: td?.title ?? '' }; })()`);
   const local = (() => { const d = new Date('2026-09-21T00:00:20+00:00'), two = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; })();
   check('its time is this computer\'s, as every time on the page, the UTC in its tooltip (branch record SIF-38)', when.text.startsWith(local) && when.title === '2026-09-21T00:00:20+00:00 (UTC)', JSON.stringify({ ...when, local }));
   sim.manual_save = { id: 'fixture-request-3', state: 'waiting', requested_utc: '2026-09-21T00:00:30+00:00', checkpoint_id: null, saved_utc: null, evaluations: null };

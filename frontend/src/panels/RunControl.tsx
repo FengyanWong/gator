@@ -153,7 +153,8 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
     const answer = status?.manual_save;
     if (answer?.id === saving && answer.state === 'saved') {
       setSaving(null);
-      onMessage({ level: 'info', text: `Saved at ${answer.evaluations} evaluations as save point ${answer.checkpoint_id}. The run goes on.` });
+      // the evaluations name the save point, its id in the line's tooltip (branch record SIF-70: the line said both)
+      onMessage({ level: 'info', text: `Saved at ${answer.evaluations} evaluations. The run goes on.`, title: `save point ${answer.checkpoint_id}` });
     } else if (phase !== 'running') setSaving(null);             // paused, aborted or ended meanwhile: that saves everything anyway
   }, [status, phase, saving]);
 

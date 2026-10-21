@@ -215,7 +215,8 @@ flight finish (with several in parallel: all of them), writes a complete save po
 (full training state, kind `manual`) and goes on by itself. Nothing is charged and nothing is lost; on a real
 circuit the wait is at most the rest of the simulation that is running. The button reads "Saving..." until the run
 itself reports that request as written (`manual_save` in `status.json`), then the line under the header says at how
-many evaluations and under which id. The save point appears in its model's Details (RL model window) as `saved with "Save now"`,
+many evaluations, the save point's id in its tooltip (branch record SIF-70; Run status's "Last save point" row says the
+same). The save point appears in its model's Details (RL model window) as `saved with "Save now"`,
 and pruning (`output.keep_last_checkpoints`) never removes it.
 
 It is refused, in plain words, when nothing would come of it: the run is not running (a paused or ended run has

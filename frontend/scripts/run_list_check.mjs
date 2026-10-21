@@ -260,6 +260,8 @@ await runChecks(browser, async () => {
   check('empty facts are left out instead of printed as blanks', !('Error' in (details?.facts ?? {})) && !('Paused between segments' in (details?.facts ?? {})));
   check('... the jobs at once by Run configuration\'s name: "Concurrent Spectre jobs 2" (branch record SIF-54: "Parallel simulations")',
     details?.facts['Concurrent Spectre jobs'] === '2' && !('Parallel simulations' in (details?.facts ?? {})), JSON.stringify(details?.facts));
+  check('... when it last saved its model as "Last save point", as Run status names it (branch record SIF-70: "Last model save")',
+    details?.facts['Last save point'] === stamp(PAUSED.ended_utc) && !('Last model save' in (details?.facts ?? {})), JSON.stringify(details?.facts));
   await pressIn(PAUSED, 'Hide details');
   await pressIn(RESUMED, 'Details'); await sleep(600);
   const resumedDetails = await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('.run-details'); return { count: ${WINDOW}.querySelectorAll('.run-details').length, paused: [...d.querySelectorAll('table.run-facts tr')].find(tr => tr.children[0].textContent === 'Paused between segments')?.children[1].textContent,

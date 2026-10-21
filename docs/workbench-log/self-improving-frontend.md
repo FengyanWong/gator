@@ -676,3 +676,28 @@ button as "N blocking issues".
 blocking issues"; new: the list's head, and the tooltip for 2 errors + 1 blocker and for a blocker alone),
 `matched_devices_check` 30 (it looks for "the red blocking-issues button in the header"), `run_control_check` 102,
 `consistency_check` 14, `launch_recovery_check` 20, `corner_check_check` 37, `model_chooser_check` 78; none flaky.
+
+### SIF-46 Run configuration says why RL model needs a look, and opens it (2026-10-21; from the readability audit)
+
+**Found.** The only sign on the main page that the next run's model has a problem, red or amber under the model line,
+read "Review the settings in RL model." for each of its nine reasons: the saved model NOT compatible, its check failed, a
+message of the window's (a template value not saved, the templates or a save point not read), an encoder that is
+unavailable, the network taken back to the saved model's, a budget too small to learn, the soft actor-critic values that
+learn late, the template's saved values ignored, this run's values not the template's. It never said which, and "RL model"
+was plain text beside a button called "RL model...": the window had to be opened and searched every time.
+
+**Changed** (`useRlModel.ts`: `networkReason`, the first reason that applies, the errors first so its words match the
+notice's colour; a window message that is an error carries its own few words, `reason`; `RunConfiguration.tsx`;
+`styles.css`): "Review the settings in RL model... - the budget is too small for the network to learn.", its "RL
+model..." a link at the sentence's size that opens the window. The other reasons: "with 1 update per evaluation and a
+starting temperature of 0.2, the network learned late or not at all in tests", "the saved model is NOT compatible with
+this run", "the saved model could not be checked", "a template value was not saved in the backend", "the templates could
+not be read from the backend", "the chosen save point could not be read", "Graph Transformer is unavailable", "the
+network was taken back to the saved model's", "the saved Graph Transformer template values could not be used", "this
+run's values differ from the Graph Transformer template". `docs/workbench.md` quotes the new notice. The checks'
+`lib/rl_networks.mjs` `openNetworks` can press another "RL model..." than the module's button.
+
+**Checked.** `tsc` clean; `reward_block_check` 32 (its notice now read whole, with the soft actor-critic reason, and the
+window opened from the notice's link; the two "no notice" checks match any notice, where the old exact text would have
+passed for the wrong reason), `module_fold_check` 30 (a budget of 1: "... - the budget is too small for the network to
+learn."), `network_panel_check` 58, `model_chooser_check` 78, `mode_suggestion_check` 20, `room_check` 22; none flaky.

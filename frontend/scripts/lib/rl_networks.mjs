@@ -6,10 +6,11 @@ import { RL_MODEL_WINDOW } from '../../src/contract.ts';
 export const NETWORK_DOCUMENT = 'window.__checkRLWindow.document';
 export const NETWORK_PANEL = `${NETWORK_DOCUMENT}.querySelector('.rl-networks-panel')`;
 
-export async function openNetworks(page, browser) {
-  if (!await page.until(`!!document.querySelector('button.rl-networks-open')`, 150)) throw new Error('the RL model... button did not appear');
+// `button`: another "RL model..." that opens it - Run configuration's notice names the window with one (branch record SIF-46).
+export async function openNetworks(page, browser, button = 'button.rl-networks-open') {
+  if (!await page.until(`!!document.querySelector(${JSON.stringify(button)})`, 150)) throw new Error('the RL model... button did not appear');
   await page.evaluate(`(() => {
-    const button = document.querySelector('button.rl-networks-open');
+    const button = document.querySelector(${JSON.stringify(button)});
     if (button.disabled) throw new Error('the RL model... button is disabled');
     const open = window.open;
     window.open = function(...args) { return window.__checkRLWindow = open.apply(this, args); };

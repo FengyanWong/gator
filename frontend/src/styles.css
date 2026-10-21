@@ -285,6 +285,8 @@ td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space:
 button.text-link { border: none; background: none; padding: 0; color: var(--accent); font-size: 11.5px; } button.text-link:hover:not(:disabled) { text-decoration: underline; } button.text-link:active { color: var(--text); }
 /* The suggested Mode in the run panel is the clickable word itself (user request 2026-09-26), at the size of its sentence. */
 button.text-link.mode-suggestion { font-size: inherit; font-weight: 600; }
+/* "RL model..." in Run configuration's notice is a word of its sentence too (branch record SIF-46). */
+p.network-review button.text-link { font-size: inherit; }
 .with-unit { display: flex; gap: 4px; } .with-unit input { flex: 1; } .with-unit select { flex: none; width: auto; }
 /* The tags of a saved model, a run or a task (in use, MOCK), and the saved models table's filter. */
 .model-tag { font-size: 10px; font-weight: 600; padding: 0 5px; color: var(--muted); } .model-tag.mock-tag { background: var(--warn-bg); border-color: var(--mock-line); color: var(--text); }

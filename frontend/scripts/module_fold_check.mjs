@@ -125,7 +125,10 @@ await runChecks(browser, async () => {
   await clickHeading(RUN);
   check('a second click unfolds it, and that is remembered too', (await state(RUN)).open && (await evaluate(`${MODE}.checkVisibility()`)) && (await remembered('run')) === 'open');
   await type(BUDGET_BOX, '1');
-  check('(set-up) a budget of 1 marks the RL model settings for review', await until(`[...${RUN}.querySelectorAll('.module-body p.warn')].some(p => /Review the settings in RL model/.test(p.textContent))`, 30));
+  // the notice says why (branch record SIF-46)
+  check('(set-up) a budget of 1 marks the RL model settings for review, as too small to learn', await until(`[...${RUN}.querySelectorAll('.module-body p.warn')].some(p =>
+    /^Review the settings in RL model\\.\\.\\. - the budget is too small for the network to learn\\.$/.test(p.textContent))`, 30),
+    await evaluate(`${RUN}.querySelector('.module-body p.network-review')?.textContent ?? 'no notice'`));
   check('open, the warning is in view itself: no mark on the heading', (await state(RUN)).attention === null);
   await clickHeading(RUN);
   run = await state(RUN);

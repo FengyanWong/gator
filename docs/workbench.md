@@ -2467,7 +2467,9 @@ the cross button in RL network window"): the browser's close keeps all configura
 work for typing in the window. A blocked popup is explained beside the launcher. Reloading or leaving the workbench closes
 its window.
 
-Settings in the window that need attention leave a notice in Run configuration ("Review the settings in RL model."), including its folded warning/error mark.
+Settings in the window that need attention leave a notice in Run configuration, including its folded warning/error mark. Since
+branch record SIF-46 it says the first reason that applies, and its "RL model..." opens the window ("Review the settings in
+RL model... - the budget is too small for the network to learn.").
 Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check.mjs`, `mode_suggestion_check.mjs`, `model_structure_check.mjs`,
 `graph_view_check.mjs`, `pdk_check.mjs`, `module_fold_check.mjs`, `typing_check.mjs` and `reliability_check.mjs`.
 

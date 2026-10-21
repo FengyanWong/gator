@@ -17,7 +17,7 @@ export function NoModeNote({ m, from }: { m: RlModel; from: Window | null }) {
 }
 
 export function RunConfiguration({ m }: { m: RlModel }) {
-  const { run, set, source, circuit, networkWindow, loads, netTitle, modelLine, networkError, networkWarning, modelChecked, model, limitsSet } = m;
+  const { run, set, source, circuit, networkWindow, loads, netTitle, modelLine, networkError, networkWarning, networkReason, modelChecked, model, limitsSet } = m;
   return (<>
       {/* The Mode and the RL model label moved into the RL model window (record 7.265); here the next run's model is one line. */}
       <div className="rl-networks-row"><span className={`hint net-short${loads && !source.run_dir ? '' : ' net-code'}`} title={netTitle}>{modelLine}</span>
@@ -25,7 +25,10 @@ export function RunConfiguration({ m }: { m: RlModel }) {
           onClick={() => networkWindow.open()}>RL model...</button></div>
       {networkWindow.blocked && <Blocked role="alert" />}
       <NoModeNote m={m} from={null} />
-      {(networkError || networkWarning) && <p className={networkError ? 'error' : 'warn'}>Review the settings in RL model.</p>}
+      {/* The notice says why, and its "RL model..." opens the window (branch record SIF-46: it was the same fixed sentence for
+          every reason, its words no link). */}
+      {(networkError || networkWarning) && <p className={`${networkError ? 'error' : 'warn'} network-review`}>Review the settings in <button className="text-link"
+        title="Open the RL model window, which says this in full." onClick={() => networkWindow.open()}>RL model...</button>{networkReason ? ` - ${networkReason}` : ''}.</p>}
       {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01).
           "resume" is no Mode any more (record 7.265): its suggestion is the run itself, a link into the Runs window (Continue...). */}
       {modelChecked && model?.suggestion && model.suggestion.mode !== run.mode && (model.suggestion.mode === 'resume'

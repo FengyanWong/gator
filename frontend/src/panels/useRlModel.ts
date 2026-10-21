@@ -67,7 +67,8 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   // for that encoder. The configuration always carries explicit values, so what is shown is what runs.
   const [netSettings, setNetSettings] = useState<Json>(null);
   // `about`: the Mode and saved model a message is about - it is shown only while they are still the ones chosen.
-  const [netMessage, setNetMessage] = useState<{ level: string; text: string; about?: string } | null>(null);
+  // `reason`: an error's few words for Run configuration's notice (branch record SIF-46); the window shows `text`.
+  const [netMessage, setNetMessage] = useState<{ level: string; text: string; about?: string; reason?: string } | null>(null);
   const [presetRateUpdated, setPresetRateUpdated] = useState(false);
   const pending = useRef<{ encoder: string; body: Json } | null>(null);
   const netRevision = useRef(0);
@@ -116,7 +117,8 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     const revision = netRevision.current;
     writing.current = writing.current.then(() => api.saveNetworkSettings(job.encoder, job.body))
       .then(e => { remember(e); if (currentReply(revision, job.encoder)) setNetMessage({ level: 'ok', text: `Saved in the backend as the ${e.encoder_type} setting.` }); })
-      .catch(e => { if (currentReply(revision, job.encoder)) setNetMessage({ level: 'error', text: `Not saved in the backend: ${e.message}` }); });
+      .catch(e => { if (currentReply(revision, job.encoder)) setNetMessage({ level: 'error', text: `Not saved in the backend: ${e.message}`,
+        reason: 'a template value was not saved in the backend' }); });
     return writing.current;
   };
   const queueSave = (network: Json, advanced: Json) => {
@@ -166,7 +168,8 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
         run: { ...c.run, advanced: { ...c.run.advanced, learning_rate: saved.advanced.learning_rate } } }));
       setPresetRateUpdated(true);
     })
-      .catch(e => { if (netRevision.current === revision) setNetMessage({ level: 'error', text: `Backend network settings unavailable (${e.message}).` }); });
+      .catch(e => { if (netRevision.current === revision) setNetMessage({ level: 'error', text: `Backend network settings unavailable (${e.message}).`,
+        reason: 'the templates could not be read from the backend' }); });
     return () => { ++netRevision.current; flush(); };
   }, []);
   // A configuration that leaves a value out would silently run the schema default. Fill it from the backend instead.
@@ -259,7 +262,8 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
       setNetMessage({ level: 'ok', text: `The next run ${run.mode === 'frozen' ? 'evaluates' : 'fine-tunes'} ${nameOf(run_dir)} from its save point ${point.checkpoint_id}, with its network (one Undo step takes it back).`,
         about: JSON.stringify([run.mode, run_dir, point.checkpoint_id]) });
       return true;
-    }).catch((e: any) => { if (!stale()) setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}` }); return false; })
+    }).catch((e: any) => { if (!stale()) setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}`,
+      reason: 'the chosen save point could not be read' }); return false; })
       .finally(() => { if (!stale()) setUsingPoint(false); });
   };
   // A Mode is one Undo step. New model clears the saved model chosen: scratch never loads one (a source left there is a
@@ -287,11 +291,25 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     || (modelChecked && model?.compatibility?.compatible === false);
   const networkWarning = netMessage?.level === 'warn' || (run.mode === 'scratch' && (differs || entry?.problem))
     || starved || archDiffers || sacSlow.length > 0;
+  // Why Run configuration's notice is up, in a few words (branch record SIF-46): it read "Review the settings in RL model."
+  // for every one of the reasons above, and the window had to be searched for it. The first that applies, the errors first,
+  // so the words match the notice's colour; the window says each in full.
+  const template = designName({ encoder_type: encoder });
+  const networkReason: string | null = !offeredEncoders.includes(encoder) ? `${template} is unavailable`
+    : modelChecked && model?.compatibility?.compatible === false ? 'the saved model is NOT compatible with this run'
+    : error ? 'the saved model could not be checked'
+    : netMessage?.level === 'error' ? netMessage.reason ?? netMessage.text
+    : archDiffers || netMessage?.level === 'warn' ? "the network was taken back to the saved model's"
+    : starved ? 'the budget is too small for the network to learn'
+    : sacSlow.length ? `with ${sacSlow.join(' and ')}, the network learned late or not at all in tests`
+    : run.mode === 'scratch' && entry?.problem ? `the saved ${template} template values could not be used`
+    : run.mode === 'scratch' && differs ? `this run's values differ from the ${template} template`
+    : null;
   return { config, setConfig, runs, circuit, schema, run, set, setAdv, setNet, source, adv, net, networkWindow, modelChecked,
     error, modelLoading, model, cornerIds, robust, gated, corners, supportsCorners, launchesPerStep, objective, reward, rewardOther,
     toggleCorner, netSettings, netMessage, presetRateUpdated, netFields, advFields, encoder, entry, offeredEncoders, usesHeads, usesStructure, applyEntry,
     chooseList, flush, queueSave, editNet, editAdv, chooseEncoder, settingDifferences, differs, originLabel, budget, sacSlow, starved,
     loads, noMode, label, savedModel, savedNet, archDiffers, suggested, usingPoint, useSavePoint, chooseMode, modelLine, netTitle,
-    limitsSet, folded, networkError, networkWarning };
+    limitsSet, folded, networkError, networkWarning, networkReason };
 }
 export type RlModel = ReturnType<typeof useRlModel>;

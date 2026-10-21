@@ -365,10 +365,10 @@ table.run-table td .run-so-far { white-space: normal; }
 /* SIF-66: no text cut through a letter, and no dialog that scrolls to show its own parts. The header's task name could not
    shrink (min-width: auto): between about 1201 and 1300 px with a run in the header, the facts' box (overflow: hidden) cut it
    through a letter ("OTA 7T wid") while the grey facts and the connection ended in "...". Now it ends in "..." too, its
-   tooltip holding the task; the grey facts give way first: shrinking is weighted by width, so at 1000 to 1 the name gives up
-   less than a pixel before they are gone, and 6 characters of it stay. */
-.tb-task { flex: 0 1 auto; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; }
-.tb-details { flex-shrink: 1000; }
+   tooltip holding the task, and only once the grey facts are gone: it never shrinks (SIF-66 review: weighted 1000 to 1
+   against the facts, it gave up a fraction of a pixel while they showed, and the browser draws the "..." for that too -
+   "OTA 7T wi..." at 1250 to 1366 px); its box's width clamps it when the box is narrower than the name. */
+.tb-task { flex: none; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Continue...'s "New total": 9ch less the look's padding left about six characters - the empty field's "more than 1200" read
    "more th". It holds "more than 12000" and "1,000,000" whole (run_control_check). */
 .continue-form input { width: calc(15ch + 20px); }

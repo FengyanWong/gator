@@ -1454,3 +1454,18 @@ with "..."). `run_control_check` 111 (new: the field has 105 px for text; "more 
 scrollHeight 844 = clientHeight 844, with the drawing at 711 x 696 px. A refusal's line over the tools takes it to 711 x
 654 px, and the drawn canvas follows. At 1680 x 1050 the tools keep one line and the drawing is 850 px tall, close to
 the fixed height's 848 px). `find_fill_copy_check` 30 and `reliability_check` 20. None flaky.
+
+**Review follow-up.** The review found two slips, both real, both about the header's task name. Weighting the shrink 1000
+to 1 did not make the facts give way first. Once the facts shrank at all, the name gave up a fraction of a pixel, and the
+browser draws the "..." for any overflow, less than a pixel too. With the FIXTURE run in the header the name read "OTA 7T
+wi..." from 1250 to 1366 px while 11 to 83 px of grey facts showed (0.125 to 0.172 px lost). And `looks_check` could not
+see it: it took "cut" from `scrollWidth > clientWidth`, whole pixels both, so "Checked" above wrongly reports the name whole
+from 1250 px. The name now never shrinks (`flex: none`); `max-width: 100%` clamps it, with its "...", once the facts' box
+is narrower than the name, so the facts are gone by then. Its 6-character floor went with it: a floor wider than the box
+is what cut through a letter. `.tb-details`' `flex-shrink: 1000` went too, since the facts are the only part left that
+shrinks. The check now compares the name's box with a max-content clone of it, to the 64th of a pixel the layout counts
+in, and asks for facts at 0 px wherever a name is cut. Against the old rule it failed (the name cut at 1250 to 1366 px,
+facts at 11 to 83 px); now the fixture's name is whole there (0 px lost) and ends in "..." only at 1210 px, its facts at
+0 px. A long stand-in ends in "..." at every width, its facts at 0 px. The docs' "first, then the task's name" now holds
+as written; the commit message stays as pushed. `tsc` clean; `looks_check` 72, `run_control_check` 111,
+`connection_panel_check` 86, `reliability_check` 20; none flaky.

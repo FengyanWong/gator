@@ -2,12 +2,19 @@
 import { useEffect, useState } from 'react';
 import { useRequest } from '../store';
 import { api, ApiError, copy, Json } from '../api';
-import { bytes } from '../format';
+import { bytes, stamp } from '../format';
 import { OUTPUT_ROOT_ID } from '../contract';
 import { ByteSize, Check, Module, Num } from './fields';
 import { useNewest } from '../newest';
 
 type Every = 'evaluations' | 'seconds';
+
+/** A run folder's part in words, its key in the tooltip (branch record SIF-60: the rows read "run", "raw_data",
+ *  "csv_exports"). The backend's keys (layout.py's subpaths) and the checks' fixtures' (run_dir, data); any other key
+ *  in words as it is. */
+const PATH_NAME: Record<string, string> = { run: 'Run folder', run_dir: 'Run folder', raw_data: 'Raw data', data: 'Data folder',
+  csv_exports: 'CSV exports', simulator_work: 'Simulator work folder' };
+const pathName = (key: string) => PATH_NAME[key] ?? key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
 
 export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Json; setConfig: (f: (c: Json) => Json) => void; meta: Json; activeRun: Json }) {
   const out = config.output;
@@ -32,6 +39,7 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
     work().then(v => { if (mine()) done(v); }, e => { if (mine()) setProblem(e.message); }); };
   useEffect(() => { pressed.drop(); setProblem(null); }, [root]);
   const paths = activeRun?.paths;
+  const saved: string | null = activeRun?.persistence?.last_successful_save ?? null;   // ISO in UTC, as the backend writes it
   const tail = String(root).split(/[\\/]/).filter(Boolean).slice(-2).join('/');
   // ONE checkpoint interval, counted in evaluations OR in seconds (user request 2026-09-22). The number goes into the field
   // of the chosen unit and the other field is emptied - also the default of 200 evaluations (50 before record 7.280) that an
@@ -54,9 +62,14 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
         <button onClick={() => { const at = root; if (at) ask(() => api.checkOutput(at, true), value => setTested({ root: at, value })); }}>Test writability</button></div>
       {problem && <p className="error">{problem}</p>}
       {!tested && lookError && <p className="error">{lookError} <button onClick={retryLook}>Retry read</button></p>}
-      {locked && <p className="hint">The run directory is locked while a run is active. A resumed run writes back to its original directory.</p>}
-      {browse && <ul className="tree">{browse.parent && <li onClick={() => ask(() => api.browse(browse.parent), setBrowse)}>..</li>}
-        {browse.entries.map((e: Json) => <li key={e.path}><span onClick={() => ask(() => api.browse(e.path), setBrowse)}>{e.name}</span> <button onClick={() => { set({ output_root: e.path }); setBrowse(null); }}>select</button></li>)}</ul>}
+      {/* Continue... is where a run goes on since record 7.261; it said "A resumed run" (branch record SIF-60) */}
+      {locked && <p className="hint">The run directory is locked while a run is active. A run that is continued writes back to its own folder.</p>}
+      {/* The list says which folder it shows and can be closed; a folder's name is a link that opens it (it was a span
+          drawn as plain text), ".." reads "Up one folder", "select" "Use this folder" (branch record SIF-60). The backend's
+          path is null at the top, where the entries are the allowed roots. */}
+      {browse && <><p className="hint">{browse.path ? `In ${browse.path}` : 'The allowed roots'} <button className="text-link" onClick={() => setBrowse(null)}>Close</button></p>
+        <ul className="tree">{browse.parent && <li><button className="text-link" title={`Open ${browse.parent}`} onClick={() => ask(() => api.browse(browse.parent), setBrowse)}>Up one folder</button></li>}
+        {browse.entries.map((e: Json) => <li key={e.path}><button className="text-link" title="Open this folder" onClick={() => ask(() => api.browse(e.path), setBrowse)}>{e.name}</button> <button onClick={() => { set({ output_root: e.path }); setBrowse(null); }}>Use this folder</button></li>)}</ul></>}
       {/* What the backend found for the root, as one line; the table behind it (record 7.179, design advice 3). Open at once when
           the root cannot be written. */}
       {check && <details className="more output-facts" open={!(check.allowed && check.writable)}><summary>{check.allowed && check.writable ? 'writable' : 'NOT writable'} · {bytes(check.free_bytes)} free{check.windows_path ? ` · ${check.windows_path}` : ''}</summary>
@@ -76,16 +89,20 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
       <div className="row"><label>Experiment name<input value={out.experiment_name ?? ''} onChange={e => set({ experiment_name: e.target.value })} /></label>
         <label title="Set to append runs to an existing experiment; empty creates a new unique ID.">Experiment ID<input value={out.experiment_id ?? ''} placeholder="new" onChange={e => set({ experiment_id: e.target.value || null })} /></label></div>
       {paths && <details open><summary>Current run paths</summary><table className="grid small"><tbody>
-        {Object.entries(paths).map(([k, v]) => <tr key={k}><td>{k}</td><td className="path" onClick={() => copy(String(v))}>{String(v)}</td></tr>)}
-        <tr><td>bytes written</td><td>{bytes(activeRun?.bytes_written ?? activeRun?.persistence?.bytes_written)}</td></tr>
-        <tr><td>last successful save</td><td>{activeRun?.persistence?.last_successful_save ?? '-'}</td></tr>
-        <tr><td>remote Spectre work dir</td><td className="hint">local work/ for this task; final files are written directly here (sync: local)</td></tr>
+        {/* words, and the save in local time with the UTC in its tooltip, as Run status writes it (branch record SIF-60: the
+            rows read "run_dir", "bytes written", "last successful save 2026-10-05T10:21:40+00:00") */}
+        {Object.entries(paths).map(([k, v]) => <tr key={k}><td title={k}>{pathName(k)}</td><td className="path" onClick={() => copy(String(v))}>{String(v)}</td></tr>)}
+        <tr><td>Bytes written</td><td>{bytes(activeRun?.bytes_written ?? activeRun?.persistence?.bytes_written)}</td></tr>
+        <tr><td>Last successful save</td><td title={saved ? `${saved} (UTC)` : undefined}>{stamp(saved) ?? saved ?? '-'}</td></tr>
+        <tr><td>Remote Spectre work folder</td><td className="hint">local work/ for this task; final files are written directly here (sync: local)</td></tr>
       </tbody></table></details>}
       <p className="hint always-saved" title="Always saved: configuration/provenance snapshots, per-evaluation records, actual parameters, metrics, simulator-job accounting, run summary, event/error logs (Parquet + JSON).">Always saved: configuration, evaluations, logs.</p>
       <Check label="Learner-update log" value={out.save_learner_updates ?? true} onChange={v => set({ save_learner_updates: v })} />
       <Check label="Model checkpoints" value={out.save_checkpoints ?? true} onChange={v => set({ save_checkpoints: v })} />
-      <Check label="Replay snapshots (needed for a FULL resume)" value={out.save_replay_snapshots ?? true} onChange={v => set({ save_replay_snapshots: v })} />
-      {out.save_replay_snapshots === false && <p className="warn">Without replay snapshots checkpoints are weights_only: a full training-state resume of this run will NOT be possible.</p>}
+      {/* Continue... and the Modes by their buttons' names, "weights only" in words (branch record SIF-60: "needed for a FULL
+          resume", "checkpoints are weights_only: a full training-state resume of this run will NOT be possible") */}
+      <Check label="Replay snapshots (needed to Continue a run exactly)" value={out.save_replay_snapshots ?? true} onChange={v => set({ save_replay_snapshots: v })} />
+      {out.save_replay_snapshots === false && <p className="warn">Without replay snapshots this run's checkpoints are weights only: Continue... cannot pick it up exactly; Fine-tune and Evaluate only can still load its model.</p>}
       <Check label="Complete transition archive (independent of replay snapshots)" value={out.save_transition_archive ?? true} onChange={v => set({ save_transition_archive: v })} />
       <Check label="Experiment summary CSVs" value={out.export_summary_csv ?? true} onChange={v => set({ export_summary_csv: v })} />
       <Num label="Checkpoint every" nullable value={interval} placeholder="only at pause, stop, end" onChange={v => setEvery(by, v)}

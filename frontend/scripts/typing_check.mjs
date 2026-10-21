@@ -8,7 +8,8 @@
 //     Probes has none since its conditions and aggregation were retired (record 7.105; conditions was the editors' only
 //     JSON cell, so no JSON cell is typed into any more);
 //   - a new row gets a FREE ID (rows.length + 1 repeated an existing ID after a deletion);
-//   - Research experiments: "a, b" typed key by key becomes ['a', 'b'] (the old box swallowed the comma);
+//   - Research experiments: "a, b" typed key by key becomes ['a', 'b'] (the old box swallowed the comma); Method label and
+//     Comparison pair ID start empty with "unspecified" as their placeholder, and an emptied box stores "unspecified" (SIF-60);
 //   - Circuit class / PDK id: emptied, then typed, they take the new text (the old box put "unspecified" back at once);
 //   - the page writes no saved model into run.model_source by itself: not on page load in New model (scratch), and since
 //     record 7.265 not when Fine-tune is chosen either - the newest model under the RL model label is offered, and its Use
@@ -204,6 +205,19 @@ await runChecks(browser, async () => {
   config = await saved();
   check('"Budget checkpoints" typed "10, 20" is stored as [10, 20]', JSON.stringify(config.research.budget_checkpoints) === '[10,20]', JSON.stringify(config.research.budget_checkpoints));
   await blur(CHECKPOINTS);
+  // Branch record SIF-60: "unspecified", the backend's word for no label, is the placeholder, not text to delete first.
+  const METHOD = LABELLED('.right details.panel', 'Method label'), PAIR = LABELLED('.right details.panel', 'Comparison pair ID');
+  const unset = await evaluate(`({ method: ${METHOD}?.value, methodHint: ${METHOD}?.placeholder, pair: ${PAIR}?.value, pairHint: ${PAIR}?.placeholder })`);
+  check('Method label and Comparison pair ID start empty, "unspecified" their placeholder (it was text in the box)', unset.method === '' && unset.pair === ''
+    && unset.methodHint === 'unspecified - e.g. Scratch, Pretrained-Frozen, Pretrained-Fine-tuned, encoder-only transfer' && unset.pairHint === 'unspecified', JSON.stringify(unset));
+  await focusAll(METHOD); await typeKeys('Scratch');
+  config = await saved();
+  check('"Scratch" typed into Method label is stored as it is', config.research.method_label === 'Scratch' && (await valueOf(METHOD)) === 'Scratch', `${config.research.method_label}`);
+  await focusAll(METHOD); await deleteKey();
+  config = await saved();
+  check('...emptied, the box stays empty and stores "unspecified", the backend\'s default', (await valueOf(METHOD)) === '' && config.research.method_label === 'unspecified',
+    `${JSON.stringify(await valueOf(METHOD))} / ${config.research.method_label}`);
+  await blur(METHOD);
   await shot('typing-2-research.png', `[...document.querySelectorAll('.right details.panel')].find(x => x.open)`);
 
   // ---- (b) Circuit class and PDK id: emptied, then typed ---------------------------------------------------------------------------------

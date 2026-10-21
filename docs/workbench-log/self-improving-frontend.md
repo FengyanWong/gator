@@ -1196,3 +1196,40 @@ failed there, the one pin the audit had not listed), `room_check` 24 (new: with 
 "Limits - 42 launches, 1 retry, wall time 24 h 00 min", and "Limits - 42 launches" again once both are cleared),
 `network_panel_check` 62, `module_fold_check` 30; none flaky. `reward_v2_real_check` (stand-alone, not run) looked for
 "enabled" in the Operating points row: it now reads that row's cells for "Operating points" and "on".
+
+### SIF-60 Output settings in words: the run's paths, the folder list, replay snapshots and the research boxes (2026-10-21; from the readability audit)
+
+**Found.** Under Output settings, "Current run paths" (open whenever a run is shown) listed the backend's keys as row
+names ("run", "raw_data", "csv_exports", "simulator_work"; the checks' fixtures "run_dir"), then "bytes written", "last
+successful save 2026-10-05T10:21:40+00:00" (raw ISO in UTC, where Run status writes the same save in local time) and
+"remote Spectre work dir". The "Replay snapshots (needed for a FULL resume)" box warned, unticked, "Without replay
+snapshots checkpoints are weights_only: a full training-state resume of this run will NOT be possible." and the lock hint
+said "A resumed run writes back to its original directory." - resume is Continue... since record 7.261, "weights_only" a
+raw key, and nothing said Fine-tune and Evaluate only still load the model. "Browse allowed roots..." showed a bare list
+("..", "outputs select") that never said which folder it was, its names opened folders but were drawn as plain text, and it
+could only be left by choosing one. In Research experiments the Method label and Comparison pair ID boxes held the word
+"unspecified" as text: it had to be deleted before typing, and Method label's examples never showed.
+
+**Changed** (`panels/OutputPanel.tsx`, `panels/ResearchPanel.tsx`): the paths' rows read "Run folder", "Raw data", "CSV
+exports", "Simulator work folder", any other key in words ("Best designs", "Logs"), the key in the name's tooltip; then
+"Bytes written", "Last successful save 2026-10-05 11:21:40" (`stamp`, the ISO with "(UTC)" in its tooltip, as RunTabs
+writes it) and "Remote Spectre work folder". The box reads "Replay snapshots (needed to Continue a run exactly)", its
+warning "Without replay snapshots this run's checkpoints are weights only: Continue... cannot pick it up exactly; Fine-tune
+and Evaluate only can still load its model." ("checkpoints" kept: the "Model checkpoints" box beside it says it), the
+lock hint "... A run that is continued writes back to its own folder.". The folder list has a line above it, "The allowed
+roots" or "In /that/folder", with a "Close" link; each name is a link ("Open this folder"), the parent "Up one folder", the
+button "Use this folder". The backend's reply has no ".." entry (paths.py's browse() sends `parent`), so the audit's
+`e.name === '..'` form was not used. The two research boxes show nothing for "unspecified", which is their placeholder
+("unspecified - e.g. Scratch, Pretrained-Frozen, Pretrained-Fine-tuned, encoder-only transfer": the research tables'
+method labels, kept, not Mode names; "unspecified"); an emptied box stores "unspecified", the backend's default, where it
+stored "". XC-11's Corner check and Connection sites belong to SIF-55 and SIF-59; only its Output settings sites are
+here. The docs quote none of these words.
+
+**Checked.** `tsc` clean; `output_panel_check` 76 (new: the Replay snapshots label and its warning word for word, gone
+when ticked again; the folder list against FIXTURE folders - "The allowed roots Close", a root's name opens "In
+/fixture/roots/one Close", "Up one folder" one level down and back, Close leaves the root as it was, "Use this folder" sets
+it, and only the folders pressed were asked for), `typing_check` 50 (new: both research boxes start empty with their
+placeholders, "Scratch" is stored as typed, an emptied box stays empty and stores "unspecified"), `room_check` 26 (new:
+with the run shown, its paths read Run folder (tooltip run_dir), Bytes written, Last successful save, Remote Spectre work
+folder, the save as "YYYY-MM-DD hh:mm:ss" with "2026-10-05T00:59:30+00:00 (UTC)" in its tooltip; its fixture status
+has a `persistence` now), `module_fold_check` 30; none flaky.

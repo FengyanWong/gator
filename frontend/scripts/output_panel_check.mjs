@@ -11,7 +11,10 @@
 //     and stays empty; a value from outside is shown exactly, in the unit that reads best;
 //   - "Checkpoint every" is ONE number with the unit evaluations OR seconds: the other field is always emptied (also the
 //     default of 200 evaluations since record 7.280, 50 before), another unit carries the number over, a configuration with both says so;
-//   - the closing line "Pausing, stopping and normal completion always save safely..." is gone.
+//   - the closing line "Pausing, stopping and normal completion always save safely..." is gone;
+//   - "Browse allowed roots..." (GET /api/output/browse answered here with FIXTURE folders) says which folder it shows, opens
+//     a folder by its name, goes "Up one folder", can be closed, and "Use this folder" sets the root (branch record SIF-60);
+//   - "Replay snapshots" and its warning name Continue... and the Modes, "weights only" in words (branch record SIF-60).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -27,6 +30,11 @@ const GIB = 1024 ** 3, MIB = 1024 ** 2;
 const OUTPUT_CHECK = { resolved: ROOT, allowed: true, writable: true, error: null, host: 'FIXTURE', environment: 'fixture', filesystem: 'fixture',
   free_bytes: 400 * GIB, bytes_used: 3 * GIB, windows_path: null, windows_mapping: 'fixture', mock_data_root: '/fixture/mock' };
 const VALID = validConfiguration();
+// The folder list as paths.py's browse() answers it: no path and no parent at the top, where the entries are the roots.
+const TOP = '/fixture/roots/one', DEEP = `${TOP}/outputs`;
+const BROWSE = { '': { path: null, parent: null, entries: [{ name: TOP, path: TOP, exists: true }] },
+  [TOP]: { path: TOP, parent: null, entries: [{ name: 'outputs', path: DEEP, exists: true }] },
+  [DEEP]: { path: DEEP, parent: TOP, entries: [] } };
 
 await runChecks(browser, async () => {
   const listed = (await (await fetch(new URL('api/tasks', APP))).json()).tasks.map(t => t.task_key);
@@ -37,8 +45,11 @@ await runChecks(browser, async () => {
   const page = await browser.open({ height: 2200 });
   const { send, fulfil, consoleErrors } = page;
   const refused = []; const probes = []; let oldBackend = false;   // oldBackend: answer `usage` as a backend from before record 7.189 does
+  const browsed = [];                                              // the folders the list asked for ('' for the roots)
   const answer = params => {
     const { requestId, request } = params, name = new URL(request.url).pathname;
+    if (name === '/api/output/browse') { const at = new URL(request.url).searchParams.get('path') ?? ''; browsed.push(at);
+      return BROWSE[at] ? fulfil(requestId, 200, BROWSE[at]) : fulfil(requestId, 403, { detail: 'FIXTURE: not an allowed folder' }); }
     if (name === '/api/output/check') { const body = JSON.parse(request.postData ?? '{}'); probes.push(body);
       return oldBackend && body.usage ? fulfil(requestId, 422, { detail: [{ type: 'extra_forbidden', loc: ['body', 'usage'], msg: 'Extra inputs are not permitted' }] }) : fulfil(requestId, 200, OUTPUT_CHECK); }
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
@@ -259,6 +270,47 @@ await runChecks(browser, async () => {
   await evaluate(`(() => { const c = JSON.parse(localStorage.getItem('gator-workbench-config-v1')); delete c.output.waveform_storage_limit_bytes; localStorage.setItem('gator-workbench-config-v1', JSON.stringify(c)); })()`);
   await send('Page.reload'); await until(`!!(${PANEL}) && !!(${LIMIT})`, 150); s = await settled();
   check('a configuration without the field shows the backend default, 2 GiB, and writes nothing by itself', s.box === '2' && s.unit === 'GiB' && s.bytes === undefined, JSON.stringify(s));
+
+  // ---- "Replay snapshots": Continue... and the Modes by their names (branch record SIF-60) -----------------------------------
+  const REPLAY = `[...${PANEL}.querySelectorAll('label.check')].find(l => l.textContent.startsWith('Replay snapshots'))`;
+  check('"Replay snapshots" says what it is needed for: "Replay snapshots (needed to Continue a run exactly)" (it said "a FULL resume")',
+    (await evaluate(`${REPLAY}?.textContent`)) === 'Replay snapshots (needed to Continue a run exactly)', await evaluate(`${REPLAY}?.textContent ?? 'no such box'`));
+  await evaluate(`${REPLAY}.querySelector('input').click()`);
+  const replayWarn = await until(`[...${PANEL}.querySelectorAll('p.warn')].some(p => p.textContent.startsWith('Without replay snapshots'))`, 30)
+    ? await evaluate(`[...${PANEL}.querySelectorAll('p.warn')].find(p => p.textContent.startsWith('Without replay snapshots')).textContent`) : null;
+  check('unticked, its warning reads "...checkpoints are weights only: Continue... cannot pick it up exactly; Fine-tune and Evaluate only can still load its model." (no weights_only, no resume)',
+    replayWarn === 'Without replay snapshots this run\'s checkpoints are weights only: Continue... cannot pick it up exactly; Fine-tune and Evaluate only can still load its model.', String(replayWarn));
+  await evaluate(`${REPLAY}.querySelector('input').click()`);
+  check('...and ticked again, the warning goes', await until(`![...${PANEL}.querySelectorAll('p.warn')].some(p => p.textContent.startsWith('Without replay snapshots'))`, 30));
+
+  // ---- "Browse allowed roots...": which folder, Up one folder, Close, Use this folder (branch record SIF-60) ----------------------
+  const BUTTON = text => `[...${PANEL}.querySelectorAll('button')].find(b => b.textContent === ${JSON.stringify(text)})`;
+  const TREE = `${PANEL}.querySelector('ul.tree')`;
+  const listing = () => evaluate(`(() => { const t = ${TREE}; if (!t) return null; const head = t.previousElementSibling;
+    return { head: head?.textContent ?? null, rows: [...t.children].map(li => [...li.querySelectorAll('button')].map(b => b.textContent + (b.classList.contains('text-link') ? ' (link)' : ''))) }; })()`);
+  const rootBefore = await evaluate(`${ROOT_INPUT}.value`);
+  await evaluate(`${BUTTON('Browse allowed roots...')}.click()`); await until(`!!(${TREE})`, 30);
+  let list = await listing();
+  check('the list starts with the allowed roots, says so and offers Close: each root a link to open it and "Use this folder"',
+    list?.head === 'The allowed roots Close' && JSON.stringify(list.rows) === JSON.stringify([[`${TOP} (link)`, 'Use this folder']]), JSON.stringify(list));
+  await evaluate(`[...${TREE}.querySelectorAll('button.text-link')].find(b => b.textContent === ${JSON.stringify(TOP)}).click()`);
+  await until(`(${TREE})?.previousElementSibling?.textContent.startsWith('In ${TOP}')`, 30); list = await listing();
+  check('a root\'s name opens it: "In /fixture/roots/one Close", its folder "outputs", no way up from a root',
+    list?.head === `In ${TOP} Close` && JSON.stringify(list.rows) === JSON.stringify([['outputs (link)', 'Use this folder']]), JSON.stringify(list));
+  await evaluate(`[...${TREE}.querySelectorAll('button.text-link')].find(b => b.textContent === 'outputs').click()`);
+  await until(`(${TREE})?.previousElementSibling?.textContent.startsWith('In ${DEEP}')`, 30); list = await listing();
+  check('inside a root the list offers "Up one folder" (it was a bare "..")', list?.head === `In ${DEEP} Close` && JSON.stringify(list.rows) === JSON.stringify([['Up one folder (link)']]), JSON.stringify(list));
+  await evaluate(`${BUTTON('Up one folder')}.click()`);
+  check('...which goes back to its parent', await until(`(${TREE})?.previousElementSibling?.textContent === 'In ${TOP} Close'`, 30), JSON.stringify(await listing()));
+  await evaluate(`[...${TREE}.previousElementSibling.querySelectorAll('button')].find(b => b.textContent === 'Close').click()`);
+  check('"Close" takes the list away and leaves the output root as it was', await until(`!(${TREE})`, 30) && (await evaluate(`${ROOT_INPUT}.value`)) === rootBefore,
+    `${JSON.stringify(await listing())} / ${await evaluate(`${ROOT_INPUT}.value`)}`);
+  await evaluate(`${BUTTON('Browse allowed roots...')}.click()`); await until(`!!(${TREE})`, 30);
+  await evaluate(`[...${TREE}.querySelectorAll('li')].find(li => li.textContent.startsWith(${JSON.stringify(TOP)})).querySelector('button:not(.text-link)').click()`);
+  await page.saved();
+  check('"Use this folder" sets the output root to it and closes the list', await until(`!(${TREE})`, 30) && (await evaluate(`${ROOT_INPUT}.value`)) === TOP
+    && (await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).output.output_root`)) === TOP, await evaluate(`${ROOT_INPUT}.value`));
+  check('the list asked only for the folders pressed', JSON.stringify(browsed) === JSON.stringify(['', TOP, DEEP, TOP, '']), JSON.stringify(browsed));
 
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

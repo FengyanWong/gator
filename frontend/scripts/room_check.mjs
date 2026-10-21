@@ -7,7 +7,8 @@
 //     (launches, retries, wall time and the two failure rules) in one closed "Limits" fold whose line names the limits set,
 //     counted and the wall time in hours ("42 launches, 1 retry, wall time 24 h 00 min", branch record SIF-58);
 //   - Output settings: "Always saved" in one line with the whole list in its tooltip; the output root's facts in one line
-//     with the table folded behind it (open when the root cannot be written).
+//     with the table folded behind it (open when the root cannot be written); with a run shown, its "Current run paths" in
+//     words ("Run folder", "Last successful save" in local time, the UTC in its tooltip; branch record SIF-60).
 //   - record 7.372: a cell entered while the table has room for under about four rows (a small screen, the panel open) folds the
 //     bottom panel to its tab line; a tab brings it back; with room for the rows a cell leaves it open.
 // Run: bash frontend/scripts/run_checks.sh --only room_check. About 20 s.
@@ -18,11 +19,13 @@ const APP = await workbenchUrl();
 const out = outDir();
 const browser = await launchEdge('room');
 const RUN = '/fixture/room/run';
+const SAVED = '2026-10-05T00:59:30+00:00';                     // the run's last save, as the backend writes it (ISO, UTC)
 const STATUS = { state: 'completed', run_id: 'fixture-run', mode: 'scratch', entry: 'start', provenance: 'mock', mock: true, worker_alive: false, run_dir: RUN,
   heartbeat_utc: '2026-10-05T01:00:00Z', stop_reason: 'budget_exhausted', error: null, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: null,
   budget: { max_evaluations: 1, max_launches: null, max_retries: 0, charged: 1, reserved: 0, in_flight: 0, completed: 1, failed: 0, released: 0, remaining: 0,
     launches: 1, retries: 0, cache_hits: 0, first_feasible: null },
-  best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: RUN }, connection: { overall: 'not_applicable' }, summary: null,
+  best_design: null, persistence: { last_successful_save: SAVED, bytes_written: 2048, last_commit_seq: 1, flushed_seq: 1 }, last_checkpoint_utc: null,
+  paths: { run_dir: RUN }, connection: { overall: 'not_applicable' }, summary: null,
   manifest: { mode: 'scratch', mock: true, task_id: 'fixture_task:0000', seeds: { target_seed: 0 }, source_model: null, budgets: { max_evaluations: 1 },
     mock_notice: 'FIXTURE MOCK DATA: nothing was started.' } };
 const LABEL = name => `[...document.querySelectorAll('.right label.num')].find(l => l.firstChild?.textContent?.trim() === ${JSON.stringify(name)})`;
@@ -100,6 +103,18 @@ await runChecks(browser, async () => {
   await send('Page.reload');
   await page.until(`!!document.querySelector('footer .tabs')`, 200); await sleep(800);
   check('...and opened again it is open on load', await evaluate(`!(${FOLDED})`));
+
+  // ---- branch record SIF-60: the shown run's paths under Output settings in words, its last save in local time -----------------
+  // They read "run_dir", "bytes written", "last successful save 2026-10-05T00:59:30+00:00".
+  await evaluate(`(() => { const d = [...document.querySelectorAll('.right details.module')].find(x => x.querySelector('summary h3')?.textContent.trim() === 'Output settings'); d.open = true; })()`);
+  const PATHS = `[...document.querySelectorAll('.right details')].find(d => d.querySelector(':scope > summary')?.textContent === 'Current run paths')`;
+  const runPaths = await page.until(`!!(${PATHS})`, 50)
+    ? await evaluate(`[...(${PATHS}).querySelectorAll('tr')].map(r => ({ name: r.cells[0].textContent, key: r.cells[0].title, value: r.cells[1].textContent, tip: r.cells[1].title }))`) : null;
+  check('the run\'s paths are in words: Run folder (its key run_dir in the tooltip), Bytes written, Last successful save, Remote Spectre work folder',
+    !!runPaths && JSON.stringify(runPaths.map(r => r.name)) === JSON.stringify(['Run folder', 'Bytes written', 'Last successful save', 'Remote Spectre work folder'])
+    && runPaths[0].key === 'run_dir' && runPaths[0].value === RUN, JSON.stringify(runPaths));
+  check('...the last save in local time "YYYY-MM-DD hh:mm:ss", the UTC in its tooltip', !!runPaths && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(runPaths[2].value)
+    && runPaths[2].tip === `${SAVED} (UTC)`, JSON.stringify(runPaths?.[2]));
 
   // ---- record 7.372: entering a cell while the table has little room folds the panel; a tab brings it back -------------------------
   const CELL = `document.querySelector('.editors table.editor tbody tr td[data-field] input:not([type="checkbox"])')`;

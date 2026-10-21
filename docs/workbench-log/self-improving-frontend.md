@@ -898,7 +898,7 @@ source, 1 nmos), 3 nets, 3 values a run can vary, 1 result.": vsource, isource a
 source and unknown part (resistor, capacitor, inductor stay), with an s for more than one; nmos and pmos stay as the
 deck's .model lines write them, and a kind the list does not know is shown as sent. Every count there uses `plural`
 (format.ts). The diagnostics fold reads "1 diagnostic", and each line is the message alone, with "warning: unknown_device"
-on hover. Load says "(179 B)" for the example deck (`bytes`, as the Output and Runs views write sizes); "Model files read" writes
+on hover. Load says "(1.3 KiB)" for the example deck (`bytes`, as the Output and Runs views write sizes); "Model files read" writes
 "46.0 MiB" with "48213337 bytes" on hover. The first paragraph says "It then stands in the Tasks window as
 ngspice:<name>". The Components line says "A new model uses this list.", and the help "Its parameters can also be varied
 (lengths, counts, resistances, capacitances, inductances, voltages) by a Parameters row; what a real run may write in
@@ -915,3 +915,10 @@ its message alone, "warning: unknown_device" on hover; its "2 elements" and "3 v
 no MOCK backend and says what a Parameters row varies and what decides a real run's writes; the fixture's model file is
 now 48213337 bytes and reads "46.0 MiB" with the exact count on hover; its /device families of any PDK/ and /loads with
 any PDK/ pins unchanged); neither flaky.
+
+**Review follow-up.** The review found one slip, in words only: the code is right. "Changed" above said Load reads
+"(179 B)" for the example deck, but 179 B is the length of `ngspice_window_check`'s canned deck (its mocked
+/api/ngspice/read answers `size: DECK.length`). The real examples/circuits/ngspice_ota5_level1.cir is 1345 bytes and the
+backend sends its `stat().st_size` (`ngspice_tasks.py`), so the real page's green line reads "(1.3 KiB)"; "Changed" now
+says so. "Checked" stays: it describes the check, whose fixture deck does read "(179 B)". The commit message stays as
+pushed. No code changed: `tsc` clean; no check pins this text, so none was rerun.

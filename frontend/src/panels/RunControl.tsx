@@ -1,7 +1,7 @@
 import { Icon, IconName } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, plainError } from '../api';
-import { folderName } from '../format';
+import { folderName, runTask } from '../format';
 import { ENDED, type Pending, type Phase, type RunControl } from '../runState';
 
 /** The header's run buttons (user request 2026-09-21): ONE main button that reads Start -> Pause -> Resume, and
@@ -17,15 +17,25 @@ import { ENDED, type Pending, type Phase, type RunControl } from '../runState';
  *  reload), whatever run the bottom tabs are showing - a live run never loses its Pause and Abort. The run states and the
  *  header's run itself (useRunControl) are in runState.ts. */
 
-const used = (status: Json) => status?.budget ? ` ${status.budget.charged} / ${status.budget.max_evaluations}` : '';
+// The count says what it counts, and the chip leaves the state word to the strip beside it, which lights it (branch record
+// SIF-72: "Running" stood beside "running 292 / 800", a number easy to take for the Training tab's or the next run's).
+const used = (status: Json) => status?.budget ? ` ${status.budget.charged} of ${status.budget.max_evaluations} evaluations` : '';
 const WAITING = 'waiting for the simulation in flight';
 function describe(status: Json, phase: Phase, forced: boolean): string {
-  const text = ({ checking: '', starting: 'starting', resuming: 'resuming', running: `running${used(status)}`, pausing: `pausing - ${WAITING}`, finishing: 'finishing',
+  const at = status?.budget ? `at${used(status)}` : '';
+  const text = ({ checking: '', starting: 'starting', resuming: 'resuming', running: used(status).trim() || 'running', pausing: `pausing - ${WAITING}`, finishing: 'finishing',
     aborting: forced ? 'forced abort sent' : `aborting - ${WAITING}`,
-    paused: status?.state === 'interrupted' ? `interrupted at${used(status)} (the worker is gone)` : `paused at${used(status)}${status?.stop_reason === 'infrastructure_failures' ? ' (connection failures)' : ''}`,
-    idle: status ? `${status.state}${ENDED.includes(status.state) ? used(status) : ''}` : '' } as Record<Phase, string>)[phase];
+    paused: status?.state === 'interrupted' ? `interrupted${at && ` ${at}`} (the worker is gone)` : `${at || 'paused'}${status?.stop_reason === 'infrastructure_failures' ? ' (connection failures)' : ''}`,
+    idle: status ? `${status.state}${ENDED.includes(status.state) && at ? ` ${at}` : ''}` : '' } as Record<Phase, string>)[phase];
   return text && (status?.mock ?? status?.manifest?.mock) ? `${text} [MOCK]` : text;
 }
+
+/** The task of the header's run (`row`: its line of the run list) when it is not the task the header's title names - told by
+ *  its key, or by its name where the list gives no key; null when it is that task, or while the run is not listed. Pause and
+ *  Abort act on a run the page may have taken over from another task (branch record SIF-72: the chip read "running 270 /
+ *  800" under the title "mscr_vco_lin_c" while its run was one of graphgps_ldo1, which no line on the page named). */
+export const otherTask = (row: Json | undefined, taskKey: string | null, taskShown: string | null): string | null =>
+  !row || (typeof row.task_key === 'string' ? row.task_key === taskKey : runTask(row) === taskShown) ? null : runTask(row);
 
 /** A pause is only worth the name if the run can come back. Checkpoints or replay snapshots may have been switched off
  *  for THIS run (its own saved configuration counts, not the page's); then a pause simply ends it, and the user is told
@@ -47,8 +57,9 @@ async function pauseConfirmed(dir: string): Promise<boolean> {
   const reason = await cannotResume(dir);
   return !reason || window.confirm(`This run cannot be resumed after a pause: ${reason} for it.\n\nPause anyway? It is saved and simply ends here.`);
 }
-// A stopped calibration keeps its completed random designs and can still propose from them.
-const abortConfirmed = (status: Json) => window.confirm(`Abort this run?\n\nThe simulation that is running now is allowed to finish, so nothing already paid for is lost and the circuit is put back `
+// A stopped calibration keeps its completed random designs and can still propose from them. `task`: the run's task when the
+// header's title names another (branch record SIF-72).
+const abortConfirmed = (status: Json, task: string | null) => window.confirm(`Abort this run${task ? ` of ${task}` : ''}?\n\nThe simulation that is running now is allowed to finish, so nothing already paid for is lost and the circuit is put back `
   + `as it was. Then everything is saved and the run ends.${status?.budget ? `\nUsed so far: ${status.budget.charged} of ${status.budget.max_evaluations} evaluations.` : ''}`
   + (status?.calibration ? '\n\nCalibration proposes only from the random designs simulated so far '
     + '(at least 16 must give a reward).' : '')
@@ -82,9 +93,11 @@ function stateOf(phase: Phase, status: Json): typeof STATES[number] {
   if (['starting', 'resuming', 'running', 'pausing', 'aborting', 'finishing'].includes(phase)) return 'Running';
   return phase === 'idle' && status && ENDED.includes(status.state) ? 'Ended' : 'Ready';
 }
-export function RunChip({ control, onChip, takeover = null }: { control: RunControl; onChip: () => void;
+export function RunChip({ control, onChip, takeover = null, task = null }: { control: RunControl; onChip: () => void;
   /** The run the header took over when the page opened (liveRunAdoption.ts): a badge while the header holds it (record 7.372). */
-  takeover?: { dir: string; label: string; text: string } | null }) {
+  takeover?: { dir: string; label: string; text: string } | null;
+  /** The run's task when the header's title names another (`otherTask`): the chip names it first (branch record SIF-72). */
+  task?: string | null }) {
   const { dir, status, phase, forced } = control;
   const now = stateOf(phase, dir ? status : null);
   const note = describe(status, phase, forced);
@@ -92,17 +105,19 @@ export function RunChip({ control, onChip, takeover = null }: { control: RunCont
     <span className="run-state-strip" role="img" aria-label={`Run state: ${now.toLowerCase()}`}>
       {STATES.map(s => <span key={s} aria-hidden="true" className={s === now ? 'on' : undefined}>{s}</span>)}</span>
     {dir && note && <button className={`run-chip ${phase}`} onClick={onChip}
-      title={`The current run: ${dir}\nPress for the run brief: this run and every other live run, each with Show results and Open in Runs (record 7.264).`}>{note}</button>}
+      title={`The current run${task ? `, a run of ${task}` : ''}: ${dir}\nPress for the run brief: this run and every other live run, each with Show results and Open in Runs (record 7.264).`}>
+      {task && <><b>{task}</b>{' · '}</>}{note}</button>}
     {dir && takeover?.dir === dir && <span className="run-taken" title={takeover.text}>{takeover.label}</span>}
   </div>);
 }
 
 /** `startBlocked` / `resumeBlocked`: why the main button cannot start or resume now (launch.ts readiness), or null - said
  *  as the button's tooltip. Resume itself is the launcher's (`onResume`). `next`: what Start would start, "Next: ..." (record
- *  7.269) - beside the button while it reads Start, and the first sentence of its tooltip. */
-export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onResume, onMessage, next = null }: {
+ *  7.269) - beside the button while it reads Start, and the first sentence of its tooltip. `task`: the run's task when the
+ *  header's title names another (`otherTask`), for the Abort question (branch record SIF-72). */
+export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onResume, onMessage, next = null, task = null }: {
   control: RunControl; startBlocked: string | null; resumeBlocked: string | null; onStart: () => void; onResume: () => void;
-  onMessage: (m: Json) => void; next?: string | null }) {
+  onMessage: (m: Json) => void; next?: string | null; task?: string | null }) {
   const { dir, status, phase, forced } = control;
   const fail = (e: any) => onMessage({ level: 'error', text: plainError(e), detail: e?.detail });
   const command = (name: string, waitFor: Pending, text: string) => {
@@ -127,7 +142,7 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
       // The run by its folder's name, its full path in the line's tooltip (branch record SIF-56), as after Start.
       onMessage({ level: 'info', text: `Left paused, nothing deleted: ${folderName(dir!)}`, title: dir });
     } else if (phase === 'running') {
-      if (!abortConfirmed(status)) return;
+      if (!abortConfirmed(status, task)) return;
       command('stop', 'abort', 'Aborting: the simulation in flight finishes first, then everything is saved and the run ends.');
     } else {
       if (!forceAbortConfirmed()) return;

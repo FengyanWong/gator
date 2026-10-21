@@ -64,7 +64,7 @@ await runChecks(browser, async () => {
   check('a MOCK run asks nothing and starts', await until(`!!localStorage.getItem('gator-workbench-current-run-v1')`, 900) && dialogs.length === 0, JSON.stringify(dialogs));
   const dir = await evaluate(`localStorage.getItem('gator-workbench-current-run-v1')`);
   check('while it runs, Run status says what is coming', await until(`/64 random designs are simulated; the proposals appear here when the run has ended/.test(${BLOCK}?.textContent ?? '') || !!(${APPLY})`, 300));
-  check('the run completes with 64 evaluations charged', await until(`/^completed 64 \\/ 64 \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '')`, 600), await evaluate(`${CHIP}?.textContent`));
+  check('the run completes with 64 evaluations charged', await until(`/^completed at 64 of 64 evaluations \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '')`, 600), await evaluate(`${CHIP}?.textContent`));
   const status = await get('runs/status', { run_dir: dir });
   const result = status.calibration?.result, row = result?.rows?.[0];
   check('the backend says: calibration asked for 64 designs and exactly 64 evaluations', JSON.stringify(status.calibration?.request) === JSON.stringify({ designs: 64, lanes: 1, evaluations: 64, random_only: true })

@@ -52,7 +52,7 @@ await runChecks(browser, async () => {
   check('Start: a real worker is launched and the button reads "Pause"', await mainReads('Pause'));
   const dir = await evaluate(`localStorage.getItem('gator-workbench-current-run-v1')`);
   check('the run lies in the scratch output root, under mock/', typeof dir === 'string' && dir.startsWith(OUT_ROOT) && dir.includes('/mock/'), String(dir));
-  check('the header follows the real run: evaluations are being charged', await until(`Number((${CHIP}?.textContent.match(/running (\\d+) \\//) ?? [])[1]) >= 5`, 600), await evaluate(`${CHIP}?.textContent`));
+  check('the header follows the real run: evaluations are being charged', await until(`Number((${CHIP}?.textContent.match(/^(\\d+) of 20000 evaluations/) ?? [])[1]) >= 5`, 600), await evaluate(`${CHIP}?.textContent`));
   await shot('live-1-running.png');
 
   // ---- Pause ---------------------------------------------------------------------------------------------------------
@@ -62,7 +62,10 @@ await runChecks(browser, async () => {
   const pausedAt = status.budget?.charged;
   check('the backend says: paused, no worker, a FULL saved state', status.state === 'paused' && status.worker_alive === false && status.summary?.output?.resumability === 'full_state' && pausedAt >= 5,
     JSON.stringify({ state: status.state, alive: status.worker_alive, resumability: status.summary?.output?.resumability, charged: pausedAt }));
-  check('the header says where it stands', (await evaluate(`${CHIP}.textContent`)) === `paused at ${pausedAt} / 20000 [MOCK]`, await evaluate(`${CHIP}.textContent`));
+  // Branch record SIF-72: the count in evaluations, "paused" left to the lit strip; the run is of the title's task, so no task
+  // is named before it.
+  check('the header says where it stands: "at N of 20000 evaluations", no task named - the run is the title\'s task (SIF-72)',
+    (await evaluate(`${CHIP}.textContent`)) === `at ${pausedAt} of 20000 evaluations [MOCK]`, await evaluate(`${CHIP}.textContent`));
   await sleep(2500);
   check('a paused run stays paused: nothing is charged meanwhile', (await get('runs/status', { run_dir: dir })).budget?.charged === pausedAt);
   await shot('live-2-paused.png');
@@ -71,7 +74,7 @@ await runChecks(browser, async () => {
   const before = (await labels()).length;
   await press(MAIN);
   check('Resume: the button reads "Pause" again', await mainReads('Pause'));
-  check('it continues the SAME run from where it stopped', await until(`Number((${CHIP}?.textContent.match(/running (\\d+) \\//) ?? [])[1]) > ${pausedAt}`, 600)
+  check('it continues the SAME run from where it stopped', await until(`Number((${CHIP}?.textContent.match(/^(\\d+) of 20000 evaluations/) ?? [])[1]) > ${pausedAt}`, 600)
     && (await evaluate(`localStorage.getItem('gator-workbench-current-run-v1')`)) === dir, await evaluate(`${CHIP}?.textContent`));
   const during = (await labels()).slice(before);
   check('while the new worker was starting the button never fell back to "Resume", "Pausing..." or "Start"', during.join(' > ') === 'Resuming... > Pause', during.join(' > '));
@@ -86,7 +89,7 @@ await runChecks(browser, async () => {
   status = await get('runs/status', { run_dir: dir });
   check('the backend says: stopped by the user, saved, no worker', status.state === 'stopped' && status.stop_reason === 'user_stop' && status.worker_alive === false
     && status.summary?.totals?.candidate_evaluations_charged === status.budget.charged, JSON.stringify({ state: status.state, reason: status.stop_reason, charged: status.budget?.charged }));
-  check('the header says how it ended, Abort is disabled', /^stopped \d+ \/ 20000 \[MOCK\]$/.test(await evaluate(`${CHIP}.textContent`)) && await evaluate(`${ABORT}.disabled`), await evaluate(`${CHIP}.textContent`));
+  check('the header says how it ended, Abort is disabled', /^stopped at \d+ of 20000 evaluations \[MOCK\]$/.test(await evaluate(`${CHIP}.textContent`)) && await evaluate(`${ABORT}.disabled`), await evaluate(`${CHIP}.textContent`));
   const events = (await get('runs/logs', { run_dir: dir, kind: 'events', limit: 200 })).entries.filter(e => ['control', 'resumed', 'segment_ended'].includes(e.event)).map(e => e.event === 'control' ? e.command : e.event === 'segment_ended' ? `ended:${e.state}` : e.event);
   check('the run\'s own event log tells the same story', events.join(' > ') === 'pause > ended:paused > resumed > stop > ended:stopped', events.join(' > '));
   const story = (await labels()).join(' > ');
@@ -103,7 +106,7 @@ await runChecks(browser, async () => {
   check('that run is paused with a saved state, and it is a NEW run directory', status.state === 'paused' && second !== dir && status.summary?.output?.resumability === 'full_state',
     JSON.stringify({ state: status.state, charged: status.budget?.charged, resumability: status.summary?.output?.resumability }));
   await press(MAIN);
-  check('and it resumes', await mainReads('Pause') && await until(`Number((${CHIP}?.textContent.match(/running (\\d+) \\//) ?? [])[1]) > ${status.budget?.charged ?? 0}`, 600), await evaluate(`${CHIP}?.textContent`));
+  check('and it resumes', await mainReads('Pause') && await until(`Number((${CHIP}?.textContent.match(/^(\\d+) of 20000 evaluations/) ?? [])[1]) > ${status.budget?.charged ?? 0}`, 600), await evaluate(`${CHIP}?.textContent`));
   await press(ABORT);
   check('cleanup: aborted', await mainReads('Start', 600));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 400));

@@ -117,6 +117,9 @@ await runChecks(browser, async () => {
   const REFUSAL = `document.querySelector('header .launch-refusal')`;
   const FIRST_TILE = `[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.querySelector('.key-tile-value')?.textContent ?? null`;
   const RUN_FOLDER = `[...document.querySelectorAll('.status-grid > table tr')].find(tr => tr.cells[0].textContent === 'Run folder').cells[1]`;
+  // Branch record SIF-72: Run configuration's line while the header holds a run, and the tab line's link to the header's run.
+  const NEXT_NOTE = `(document.querySelector('aside.right .next-start-note')?.textContent ?? null)`;
+  const HEADER_LINK = `document.querySelector('footer .tabs .run-list-header button')`, SHOWN_LINE = `(document.querySelector('footer .tabs .run-list-current')?.textContent ?? '')`;
   const look = () => evaluate(`({ main: ${MAIN}?.textContent, mainOff: ${MAIN}?.disabled, abort: ${ABORT}?.textContent, abortOff: ${ABORT}?.disabled, chip: ${CHIP}?.textContent ?? null,
     baselineOff: ${BASELINE}?.disabled, banner: document.querySelector('.banner')?.textContent ?? null, bannerTitle: document.querySelector('.banner')?.title ?? null,
     remembered: localStorage.getItem(${JSON.stringify(RUN_KEY)}) })`);
@@ -156,6 +159,7 @@ await runChecks(browser, async () => {
     return { next: ${MAIN}.nextElementSibling === ${ABORT}, sameRow: Math.abs(a.top - b.top) < 2, gap: b.left - a.right, inHeader: b.right <= h.right + 1, overflowX: document.documentElement.scrollWidth > window.innerWidth }; })()`);
   check('Abort sits directly to the right of the main button, on the same line', place.next && place.sameRow && place.gap >= 0 && place.gap < 16 && place.inHeader && !place.overflowX, JSON.stringify(place));
   check('no run is shown and none is remembered', v.chip === null && v.remembered === null);
+  check('... and Run configuration needs no word that it is for the next Start: no run holds the header (SIF-72)', (await evaluate(NEXT_NOTE)) === null);
   check('with no run held the page asks for no run status and sends no command', statusRequests === 0 && log.length === 0, `${statusRequests} status request(s)`);
   await shot('run-1-start.png');
 
@@ -196,7 +200,15 @@ await runChecks(browser, async () => {
   check('the MOCK notice and the run are reported: "Started <its folder>.", the full path in the line\'s tooltip, with how it closes',
     (v.banner ?? '') === `FIXTURE MOCK DATA: nothing was started. Started ${FOLDER}.` && v.bannerTitle === `${DIR}\nClick to close (selecting text keeps it).`,
     JSON.stringify([v.banner, v.bannerTitle]));
-  check('the header shows the run and its progress', await until(`/^running \\d+ \\/ 60 \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '')`), (await look()).chip ?? '');
+  // Branch record SIF-72: the count says what it counts and leaves "running" to the lit strip beside it ("Running" stood beside
+  // "running 292 / 800"), and the run's task comes first when the title names another (the FIXTURE run is fixture_task's).
+  check('the header shows the run and its progress: its task, which is not the title\'s, then "N of 60 evaluations" - no "running" beside the strip\'s Running (SIF-72)',
+    await until(`/^fixture_task · \\d+ of 60 evaluations \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '') && ${CHIP}.querySelector('b')?.textContent === 'fixture_task'`), (await look()).chip ?? '');
+  const chipLook = await evaluate(`(() => { const s = getComputedStyle(${CHIP}); return { border: s.borderTopStyle + ' ' + s.borderTopWidth, font: s.fontFamily, title: ${CHIP}.title }; })()`);
+  check('... outlined as the button it is (it opens the run brief), in the text font, not mono; its tooltip names the task too (SIF-72)',
+    chipLook.border === 'solid 1px' && chipLook.font.includes('Segoe UI') && chipLook.title.startsWith(`The current run, a run of fixture_task: ${DIR}\n`), JSON.stringify(chipLook));
+  check('Run configuration says that it is for the next Start while the header holds a run (SIF-72: its budget and Mode stood beside the run\'s own)',
+    (await evaluate(NEXT_NOTE)) === 'For the next Start: the run in the header goes on with the settings it was started with.', await evaluate(NEXT_NOTE));
   check('the Run status tab shows this run', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})`));
   // Branch record SIF-54: the facts in words - the connection as the Connection window words it (it printed "not_applicable"),
   // the jobs at once by Run configuration's name ("none (concurrency 1)"), "Saved to disk" ("Persistence"), "Run folder"
@@ -236,9 +248,10 @@ await runChecks(browser, async () => {
   await shot('run-3-pausing.png');
   check('after the pause the button reads "Resume"', await mainReads('Resume', 150) && (await look()).mainOff === false);
   v = await look();
-  check('on the paused run the second button reads "Let go" (7.261), the header says where the run stands', v.abort === 'Let go' && v.abortOff === false && /^paused at \d+ \/ 60 \[MOCK\]$/.test(v.chip ?? ''), JSON.stringify(v));
+  check('on the paused run the second button reads "Let go" (7.261), the header says where the run stands (no "paused" beside the strip\'s Paused, SIF-72)',
+    v.abort === 'Let go' && v.abortOff === false && /^fixture_task · at \d+ of 60 evaluations \[MOCK\]$/.test(v.chip ?? ''), JSON.stringify(v));
   check('the baseline simulation stays unavailable while the header holds a paused run', v.baselineOff === true);
-  check('the line under the header no longer says "Pausing": it says that the run is paused and saved', /^Paused at \d+ \/ 60: everything is saved/.test(v.banner ?? ''), v.banner ?? '');
+  check('the line under the header no longer says "Pausing": it says that the run is paused and saved', /^Paused at \d+ of 60 evaluations: everything is saved/.test(v.banner ?? ''), v.banner ?? '');
   let labels = (await seen()).map(s => s[0]);
   check('the button went Start -> Starting... -> Pause -> Pausing... -> Resume with nothing in between', labels.join(' > ') === 'Start > Starting... > Pause > Pausing... > Resume', labels.join(' > '));
   await shot('run-4-paused.png');
@@ -261,6 +274,13 @@ await runChecks(browser, async () => {
   await sleep(1800); const atRest = statusRequests; await sleep(4000);
   check('a paused run is not polled by the header (no timer at rest)', statusRequests === atRest, `${statusRequests - atRest} request(s) in 4 s`);
   check('the header still holds it: "Resume"', (await look()).main === 'Resume');
+  // Branch record SIF-72: the tab line offers the header's run while the tabs show another (or none), and a press shows it.
+  const offer = await evaluate(`({ shown: ${SHOWN_LINE}, link: ${HEADER_LINK}?.textContent ?? null, title: ${HEADER_LINK}?.title ?? '' })`);
+  check('with the tabs on no run, the tab line offers the header\'s paused run: "Show the header\'s run", its folder in the tooltip (SIF-72)',
+    offer.shown === 'No run selected' && offer.link === 'Show the header\'s run' && offer.title.endsWith(`act on: ${DIR}\nPress to show it in these tabs.`), JSON.stringify(offer));
+  await press(HEADER_LINK);
+  check('... a press shows it under Run status, and the link goes: the tabs show the header\'s run', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})
+    && !(${HEADER_LINK}) && !${SHOWN_LINE}.startsWith('Shown:')`, 50), await evaluate(SHOWN_LINE));
 
   // ---- 5. Resume -> "Resuming..." -> "Pause": the same run, no budget question --------------------------------------------
   holdNext = '/api/runs/continue';
@@ -281,7 +301,7 @@ await runChecks(browser, async () => {
   await showNoRun();                                                               // Resume brought the run back under Run status; look away again
   await sleep(300); const liveBefore = statusRequests; await sleep(3500);
   check('with the bottom tabs on no run, the live run is polled by the header and keeps its Pause', statusRequests > liveBefore && (await look()).main === 'Pause', `${statusRequests - liveBefore} request(s) in 3.5 s`);
-  check('the header follows its progress', /^running \d+ \/ 60 \[MOCK\]$/.test((await look()).chip ?? ''), (await look()).chip ?? '');
+  check('the header follows its progress', /^fixture_task · \d+ of 60 evaluations \[MOCK\]$/.test((await look()).chip ?? ''), (await look()).chip ?? '');
   // The run brief (record 7.264, plan "The run brief"): the chip opens a small window; it only shows - Show results there does what
   // the chip's press did until then, and Open in Runs opens the Runs window at the run.
   const tabsBefore = await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`);
@@ -319,8 +339,11 @@ await runChecks(browser, async () => {
 
   // ---- 7. Abort: asked first; graceful stop; "Force abort" as the second step --------------------------------------------------
   log.length = 0; answers.push(false);
+  await until(`/^fixture_task · /.test(${CHIP}?.textContent ?? '')`);           // the run list read again: the page knows the run's task
   await press(ABORT); await sleep(400);
-  check('Abort asks first, in plain words', lastDialog().type === 'confirm' && /^Abort this run\?/.test(lastDialog().message) && /allowed to finish/.test(lastDialog().message) && /use Pause instead/.test(lastDialog().message), lastDialog().message);
+  // Branch record SIF-72: the question names the run's task when the header's title names another - the run Abort ends.
+  check('Abort asks first, in plain words, naming the run\'s task, which is not the title\'s (SIF-72)', lastDialog().type === 'confirm' && /^Abort this run of fixture_task\?\n/.test(lastDialog().message)
+    && /allowed to finish/.test(lastDialog().message) && /use Pause instead/.test(lastDialog().message), lastDialog().message);
   check('answering no sends nothing', log.length === 0 && (await look()).main === 'Pause');
   check('...and a run that is no Baseline simulation is not told about a baseline', !/Baseline simulation/.test(lastDialog().message), lastDialog().message);
   // A Baseline simulation calibrates (record 7.202): Abort is how its baseline is kept alone, and the question says so (7.206).
@@ -328,7 +351,7 @@ await runChecks(browser, async () => {
   await sleep(3200);                                                                // two status polls (1.5 s each): the page holds it
   answers.push(false); await press(ABORT); await sleep(400);
   const asked = lastDialog().message.replace(/\n/g, ' ');
-  check('Abort of Calibration says what its partial proposal needs', lastDialog().type === 'confirm' && /^Abort this run\?/.test(asked)
+  check('Abort of Calibration says what its partial proposal needs', lastDialog().type === 'confirm' && /^Abort this run of fixture_task\?/.test(asked)
     && !/baseline/.test(asked) && /Calibration proposes only from the random designs simulated so far/.test(asked)
     && /at least 16 must give a reward/.test(asked), asked);
   check('...and answering no sends nothing there either', log.length === 0 && (await look()).main === 'Pause');
@@ -345,8 +368,10 @@ await runChecks(browser, async () => {
   sim.steps = [{}, { state: 'cancelled', stop_reason: 'user_cancel' }, { alive: false }];
   check('when the run has ended the button reads "Start" again', await mainReads('Start', 150) && (await look()).mainOff === false);
   v = await look();
-  check('the line under the header says that the run has ended, and how', /^The run has ended \(cancelled\) at \d+ \/ 60/.test(v.banner ?? ''), v.banner ?? '');
-  check('Abort is disabled, the baseline simulation is available, the header says how the run ended', v.abortOff === true && v.baselineOff === false && /^cancelled \d+ \/ 60 \[MOCK\]$/.test(v.chip ?? ''), JSON.stringify(v));
+  check('the line under the header says that the run has ended, and how', /^The run has ended \(cancelled\) at \d+ of 60 evaluations: /.test(v.banner ?? ''), v.banner ?? '');
+  check('Abort is disabled, the baseline simulation is available, the header says how the run ended', v.abortOff === true && v.baselineOff === false
+    && /^fixture_task · cancelled at \d+ of 60 evaluations \[MOCK\]$/.test(v.chip ?? ''), JSON.stringify(v));
+  check('... and Run configuration no longer says it is for the next Start: the header\'s run has ended (SIF-72)', (await evaluate(NEXT_NOTE)) === null, await evaluate(NEXT_NOTE));
   check('... and Run status\'s "First feasible design" reads "none", not "none yet" (branch record SIF-54)', await until(`${FIRST_TILE} === 'none'`, 40), await evaluate(FIRST_TILE));
   await shot('run-6-ended.png');
 
@@ -415,7 +440,7 @@ await runChecks(browser, async () => {
   // is real when it opens, as a page shown a paused real run does.
   sim.mock = false; sim.steps = [{}];
   await send('Page.reload'); await until(`!!(${MAIN})`, 150);
-  check('(the page has learned that the run is real)', await until(`/^paused at/.test(${CHIP}?.textContent ?? '') && !/MOCK/.test(${CHIP}.textContent)`, 60));
+  check('(the page has learned that the run is real)', await until(`/^(fixture_task · )?at \\d+ of 60 evaluations$/.test(${CHIP}?.textContent ?? '')`, 60), await evaluate(`${CHIP}?.textContent`));
   log.length = 0; answers.push(false);
   await press(MAIN); await sleep(500);
   check('Resume of a REAL run asks to authorize what is left of the budget', /REAL simulations \(Virtuoso\/Spectre, or ngspice/.test(lastDialog().message) && new RegExp(`up to ${sim.max - sim.charged} more`).test(lastDialog().message), lastDialog().message);
@@ -462,6 +487,10 @@ await runChecks(browser, async () => {
   await showInTabs(OTHER);
   check('(the Run status tab shows another run, a paused one, while the header\'s run is live)', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(OTHER)})`)
     && (await look()).main === 'Pause');
+  // Branch record SIF-72: the survey's tab line named only the run shown ("... · completed") under a header running another.
+  const strip = await evaluate(`({ shown: ${SHOWN_LINE}, title: ${HEADER_LINK}?.title ?? null })`);
+  check('... the tab line says "Shown:" before it, and offers the header\'s live run beside it, its folder in the tooltip (SIF-72)',
+    /^Shown: \S+ \S+ · fixture_task · New model, seed 1 · paused · MOCK$/.test(strip.shown) && (strip.title ?? '').includes(`act on: ${DIR}\n`), JSON.stringify(strip));
   const other = await evaluate(`({ off: ${CONTINUE}?.disabled, title: ${CONTINUE}?.title ?? '' })`);
   check('its Continue is off while the header\'s run is live, and its tooltip says why', other.off === true && other.title.startsWith('Continue: ') && /another run is live in the header/i.test(other.title), JSON.stringify(other));
   sim.steps = [{}, { state: 'pausing' }, {}, { state: 'paused', alive: false }];

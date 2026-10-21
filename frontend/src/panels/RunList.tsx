@@ -192,9 +192,10 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
   </div>);
 }
 
-function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRefresh, onLoad, onNewLike, onContinue }: { runs: Json[]; runsError: string | null; runDir: string | null;
+/** `headerDir`: the header's run while it works or is paused (App.tsx); when the tabs show another, the line says so. */
+function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRefresh, onLoad, onNewLike, onContinue, headerDir = null }: { runs: Json[]; runsError: string | null; runDir: string | null;
   shownState: string | null; onChoose: (runDir: string | null) => void; onRefresh: (fresh?: boolean) => Promise<Json[]>;
-  onLoad?: (row: Json) => Promise<boolean> | void; onNewLike?: (row: Json) => Promise<boolean> | void; onContinue?: (row: Json) => void }) {
+  onLoad?: (row: Json) => Promise<boolean> | void; onNewLike?: (row: Json) => Promise<boolean> | void; onContinue?: (row: Json) => void; headerDir?: string | null }) {
   // While `popup` is set, the run window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-runs',
     { title: RUNS_WINDOW, features: 'popup,width=1500,height=860', rootId: 'runs-root' });
@@ -280,7 +281,8 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   const copyPath = (text: string) => (popup ?? window).navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
 
   const current: Json = runs.find(r => r.run_dir === runDir) ?? null;
-  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, runMode(r), runDesign(r), r.model_label, `seed${r.seed}`, r.state, r.stop_reason, stopWords(r.stop_reason), r.experiment, r.mock ? 'mock' : 'real', folderName(r.run_dir),
+  const elsewhere = headerDir && headerDir !== runDir ? headerDir : null;          // the header's run, when these tabs show another
+  const text =(r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, runMode(r), runDesign(r), r.model_label, `seed${r.seed}`, r.state, r.stop_reason, stopWords(r.stop_reason), r.experiment, r.mock ? 'mock' : 'real', folderName(r.run_dir),
     folders.data.folders[folders.of(r.run_dir)]].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
   // Only while the window is open: the page redraws on every status poll, and a closed window needs no sorted list.
@@ -348,7 +350,11 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   return (<>
     {blocked && <Blocked as="span" className="error run-list-blocked" />}
     {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}
-    <span className="run-list-current" title={runDir ?? undefined}>{current ? label(current, shownState) : runDir ? folderName(runDir) : 'No run selected'}</span>
+    {/* Branch record SIF-72: while the header's run works or is paused and these tabs show another, the line says "Shown:" and
+        offers the header's run - it showed "... mscr_vco_lin_c · New model, seed 0 · completed" under a header running 270 of 800. */}
+    <span className="run-list-current" title={runDir ?? undefined}>{elsewhere && runDir ? 'Shown: ' : ''}{current ? label(current, shownState) : runDir ? folderName(runDir) : 'No run selected'}</span>
+    {elsewhere && <span className="run-list-header"><button className="item-link" onClick={() => onChoose(elsewhere)}
+      title={`The header holds another run, the one its Pause and Abort act on: ${elsewhere}\nPress to show it in these tabs.`}>Show the header's run</button></span>}
     <button className={`run-list-button${popup ? ' open' : ''}`} onClick={() => openWindow()}
       title={popup ? 'The run window is open: press to bring it to the front and read the list again.' : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show; the window then closes.'}>Runs...</button>
     <PopupPortal popup={popup} root={root}>{view}</PopupPortal>

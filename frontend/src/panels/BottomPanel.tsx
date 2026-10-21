@@ -80,14 +80,15 @@ export type BottomPanelState = ReturnType<typeof useBottomPanel>;
 export type RunWindowActions = { choose: (dir: string | null) => void; load: (row: TaskRunSummary) => Promise<boolean>;
   newLike: (row: TaskRunSummary) => Promise<boolean>; continueFrom: (row: TaskRunSummary) => void };
 
-/** The bottom panel: the splitter, the tab line (Agent..., the tabs, the run shown and Runs...) and the tab shown. */
+/** The bottom panel: the splitter, the tab line (Agent..., the tabs, the run shown and Runs...) and the tab shown.
+ *  `headerDir`: the header's run while it works or is paused, so the tab line can say when it shows another (branch record SIF-72). */
 export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConfig, runs, runsError, runDir, status, statusError, runWindow, refreshRuns,
-  shownCheck, continueBlocked, shownRefusal, continueShown, launcher, fineTuneFrom, askContinue }: { panel: BottomPanelState; tab: BottomTab;
+  shownCheck, continueBlocked, shownRefusal, continueShown, launcher, fineTuneFrom, askContinue, headerDir = null }: { panel: BottomPanelState; tab: BottomTab;
   setTab: (tab: BottomTab) => void; cornersUsable: boolean; config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void; runs: Json[];
   runsError: string | null; runDir: string | null; status: Json; statusError: string | null; runWindow: RunWindowActions;
   refreshRuns: (fresh?: boolean) => Promise<Json[]>; shownCheck: Json | null; continueBlocked: string | null; shownRefusal: Refusal | null;
   continueShown: (total: number | null) => void; launcher: ReturnType<typeof useLauncher>; fineTuneFrom: (alternative: Json) => void;
-  askContinue: { runDir: string; serial: number } | null }) {
+  askContinue: { runDir: string; serial: number } | null; headerDir?: string | null }) {
   const { bottom, folded, unfold, toggleBottom, dragBottom, keyBottom } = panel;
   return (
     <footer>
@@ -101,7 +102,7 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
           {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
         <span className="spacer" />
         <RunListButton runs={runs} runsError={runsError} runDir={runDir} shownState={status?.run_dir === runDir ? status?.state ?? null : null}
-          onChoose={runWindow.choose} onRefresh={refreshRuns} onLoad={runWindow.load} onNewLike={runWindow.newLike} onContinue={runWindow.continueFrom} />
+          onChoose={runWindow.choose} onRefresh={refreshRuns} onLoad={runWindow.load} onNewLike={runWindow.newLike} onContinue={runWindow.continueFrom} headerDir={headerDir} />
       </div>
       <div className="bottom-body">
         {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} check={shownCheck} continueBlocked={continueBlocked} refusal={shownRefusal}

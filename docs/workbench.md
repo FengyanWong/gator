@@ -106,7 +106,9 @@ header's title names it: without its `real:` prefix, a renamed one by its new na
 cell as library/cell), the Mode with its model and save point ("New model", "Evaluate ...
 (deterministic actions)", "no Mode chosen"), the network in short, and the budget. When Start is off, the tooltip adds
 why. The line only says: it starts nothing, and it is not shown while a run holds the header (the run chip says what
-runs then). Run configuration's model line and this line come from the same values (`RunPanel` passes them up).
+runs then, and Run configuration opens with "For the next Start: the run in the header goes on with the settings it was
+started with." - branch record SIF-72). Run configuration's model line and this line come from the same values
+(`RunPanel` passes them up).
 
 * **Resume and Continue... are the same machinery, used differently.** Resume is the one-press way for the run in the
   header and does not touch the Mode. It continues with the settings the run was STARTED with (its own
@@ -124,8 +126,13 @@ runs then). Run configuration's model line and this line come from the same valu
   The run stays paused on disk and can still be continued from Run status > Continue.... The button read "Abort" in that
   state until record 7.261, although it only let go.
 * The header controls ONE run - the one started or resumed from this page, remembered across a reload - and shows
-  it as a small text button ("running 12 / 60"; press it for the run brief, below). It is not the run chosen
-  in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run.
+  it as a small outlined button beside the lit state ("12 of 60 evaluations", "at 12 of 60 evaluations" when paused,
+  "completed at 60 of 60 evaluations"; press it for the run brief, below). When the run is of another task than the one
+  the title names - a run taken over when the page opened - the chip names that task first ("graphgps_ldo1 · 270 of 800
+  evaluations"), and so does Abort's question (branch record SIF-72). It is not the run chosen
+  in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run. While
+  the header's run works or is paused and the tabs show another, their line says "Shown: ..." and offers "Show the
+  header's run" beside it.
   While a run is active or paused in the header, "Calibration" is not available. A finished
   Baseline simulation of a task saved from a cell records its result as the task's reference by itself
   (status record 7.78): once the run has come to rest the page reads the task again and no longer

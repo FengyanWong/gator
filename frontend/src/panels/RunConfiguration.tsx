@@ -16,9 +16,14 @@ export function NoModeNote({ m, from }: { m: RlModel; from: Window | null }) {
     Choose a Mode {from ? 'above' : 'in RL model...'} for the next run: Start waits until then.</p>;
 }
 
-export function RunConfiguration({ m }: { m: RlModel }) {
+/** `runHeld`: the header holds a run that works or is paused (App.tsx). */
+export function RunConfiguration({ m, runHeld = false }: { m: RlModel; runHeld?: boolean }) {
   const { run, set, source, circuit, networkWindow, loads, netTitle, modelLine, networkError, networkWarning, networkReason, modelChecked, model, limitsSet } = m;
   return (<>
+      {/* Branch record SIF-72: with a run in the header, this column's Mode and budget stood beside that run's own (New model and
+          200 here, Fine-tune and 800 under Run status) with nothing to tell them apart - the "Next:" line beside Start, which says
+          what these settings are for, is hidden while a run holds the header. */}
+      {runHeld && <p className="hint next-start-note">For the next Start: the run in the header goes on with the settings it was started with.</p>}
       {/* The Mode and the RL model label moved into the RL model window (record 7.265); here the next run's model is one line. */}
       <div className="rl-networks-row"><span className={`hint net-short${loads && !source.run_dir ? '' : ' net-code'}`} title={netTitle}>{modelLine}</span>
         <button className="rl-networks-open" title="Open the RL model window: the Mode (New model, Fine-tune, Evaluate only), the templates of a new model, and the saved models."

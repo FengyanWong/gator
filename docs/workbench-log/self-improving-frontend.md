@@ -1656,3 +1656,47 @@ Training tab's "last metric ..." and "read ..." times) still used the browser's 
 text, never "Invalid Date"). The log's "the unused CREATED" was wrong: CREATED went with the old createdAt it served. `tsc` clean;
 `training_tab_check` 95, `training_data_check` 117. Before it: the full suite on SIF-1..71 - 54/54 scripts, 2,347 checks, none
 failed, none flaky.
+
+### SIF-72 The header's run chip names the run it controls, and the right column says it is for the next Start (2026-10-21; from the real-data survey)
+
+**Found** (survey issues 1, 14, 10 and 3). The page had taken over a live run of graphgps_ldo1 when it opened. The header
+read "mscr_vco_lin_c" (the editors' task), the lit "Running", then "running 270 / 800" in borderless mono and "started
+elsewhere". After a Load run (1366 px) the bottom tabs' line read "2026-10-16 16:32:51 · mscr_vco_lin_c · New model, seed
+0 · completed" under the same header, and no line on the page named graphgps_ldo1: the chip named its run only in its
+tooltip, by folder. The chip repeated the strip's word ("Running" beside "running 315 / 800" at 1100 px), and "292 / 800"
+named no unit beside the Training tab's 800 and the budget of 200. Run configuration showed "New model ...", budget 200,
+while Run status showed the run's Fine-tune and "270 charged / 800": the "Next: ..." line, which says what those settings
+are for, is hidden while a run holds the header. And the chip, a button that opens the run brief, read as status text.
+
+**Changed.** `frontend/src/panels/RunControl.tsx`: the chip counts evaluations and leaves the state word to the strip -
+"270 of 800 evaluations" while the run works, "at 7 of 60 evaluations" when paused ("interrupted at ... (the worker is
+gone)" and "(connection failures)" as before), "completed at 64 of 64 evaluations" or "stopped at ..." once it ended;
+"starting", "pausing - waiting ..." and "aborting ..." are unchanged. The lines under the header count the same way ("Paused
+at 7 of 60 evaluations: everything is saved.", "The run has ended (cancelled) at 5 of 60 evaluations: ..."). A new
+`otherTask` gives the header's run's task when the title names another: by the run list's task key against the followed
+task's key, by name where the list gives no key, nothing while the run is not listed. The chip then starts with it in
+bold, "graphgps_ldo1 · 270 of 800 evaluations", its tooltip reads "The current run, a run of graphgps_ldo1: <folder>",
+and Abort asks "Abort this run of graphgps_ldo1?". `roadster.css`: the chip in the text font with tabular figures and a
+1 px outline, as the button it is. `App.tsx` works out that task and whether the header holds a run that works or is
+paused. `panels/BottomPanel.tsx`, `panels/RunList.tsx`: while it does and the tabs show another run, the line left of
+Runs... reads "Shown: <run>"; beside it (also when the tabs show none) a link "Show the header's run", its folder in the
+tooltip, shows that run, as the brief's Show results does. `panels/Right.tsx`, `panels/RunConfiguration.tsx`: then Run
+configuration opens with "For the next Start: the run in the header goes on with the settings it was started with." (a
+flag through the memoised panel, which changes only when the header's run starts or comes to rest). `docs/workbench.md`
+(§ Start, Pause, Resume, Abort): the chip's words and the two cues. Not done: issue 1's third point, "graphgps_ldo1 run,
+started elsewhere" on the badge - the chip beside it names the task now, and a longer badge would widen a full header
+(issue 14's own review dropped it).
+
+**Checked.** `tsc` clean. `run_control_check` 118 (111 before). Its FIXTURE run is fixture_task's, not the title's task: the
+chip is expected as "fixture_task · N of 60 evaluations [MOCK]", "fixture_task · at N of 60 evaluations [MOCK]" when
+paused and "fixture_task · cancelled at N of 60 evaluations [MOCK]" when ended; the lines as "Paused at N of 60
+evaluations: ..." and "The run has ended (cancelled) at N of 60 evaluations: ..."; both Abort questions as "Abort this run
+of fixture_task?". New: the task in bold first, the chip outlined in Segoe UI and its tooltip naming the task; Run
+configuration's line absent with no run, there while the run is held, gone once it ended; with the tabs on no run, "Show
+the header's run" with the run's folder, and a press shows the run and the link goes; with the tabs on another, paused
+run, "Shown: ... · fixture_task · New model, seed 1 · paused · MOCK" and the link naming the live run's folder.
+`run_control_live_check` 23: its run is the title's task, so "at N of 20000 evaluations [MOCK]" exactly, no task named,
+and "Abort this run?" as before; "stopped at N of 20000 evaluations [MOCK]". `calibration_check` 38 ("completed at 64 of
+64 evaluations [MOCK]"). `run_list_check` 124, `looks_check` 72, `room_check` 27, `reliability_check` 20,
+`launch_recovery_check` 20, `save_now_check` 29, `task_run_check` 31, `dom_identity_check` 56, `mode_suggestion_check` 20.
+None flaky.

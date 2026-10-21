@@ -7,7 +7,7 @@ import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
-import { RunButtons, RunChip } from './panels/RunControl';
+import { otherTask, RunButtons, RunChip } from './panels/RunControl';
 import { WindowsMenu } from './panels/WindowsMenu';
 import { RESUMABLE } from './runState';
 import { CALIBRATION_DESIGNS, useLaunchActions } from './launch';
@@ -204,6 +204,12 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const { launcher, shownCheck, startBlocked, setNextModel, nextLine, resumeBlocked, continueBlocked, headerRefusal, shownRefusal, start,
     continueShown, resumeHeld, fineTuneFrom } = useLaunchActions({ control, meta, config, setConfig, configKey, validation, runDir, status, circuit,
     isReal: !!isReal, launchedRun, setMessage, taskShown });
+  // Branch record SIF-72 (the survey found a run of graphgps_ldo1 in the header under the title mscr_vco_lin_c, the bottom tabs
+  // on yet another run, and nothing that told the three apart): the header's run is named by its task when the title names
+  // another (its chip and Abort's question); while it works or is paused, the bottom tabs offer it when they show another, and
+  // Run configuration says that it is for the next Start.
+  const headerTask = otherTask(runs.find(r => r.run_dir === control.dir), taskKey, taskShown);
+  const headerHeld = !!control.dir && control.phase !== 'idle' && control.phase !== 'checking';
 
   // ---- the Runs window's actions (record 7.267; plan "Load run" and "Existing runs: continued in place"): page/runWindowActions.ts
   const { taskLoad, askContinue, runWindow } = useRunWindowActions({ config, setConfig, runs, taskKey, followTask, loadSerial, setMessage, setRunDir, setTab, unfold });
@@ -226,7 +232,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
               over the connection and its state, as the cells beside it; it opens the connection window as before. */}
           <ConnectionButton profileId={profileId} setProfileId={(id, record) => setConfig((c: Json) => ({ ...c, run: { ...c.run, connection_profile_id: id } }), record)} />
         </div>
-        <RunChip control={control} onChip={brief.open} takeover={takeover} />
+        <RunChip control={control} onChip={brief.open} takeover={takeover} task={headerTask} />
         <WindowsMenu />
         {/* The hand-edited settings.json is not valid JSON: the backend works on defaults and leaves the file alone. Said on a
             line of its own under the header, as /api/meta said it when the page opened - never hidden, not dismissable. */}
@@ -259,7 +265,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
             : `${CALIBRATION_DESIGNS} random designs over the Parameters ranges, each costed. No starting-design baseline. `
               + 'Proposes a Scale for each Specs row and the Initial alpha; Run status shows them with Apply, nothing changes by itself.'}>Calibration</button>
         <RunButtons control={control} startBlocked={startBlocked} resumeBlocked={resumeBlocked} onStart={() => start(false)} onResume={resumeHeld}
-          onMessage={setMessage} next={nextLine} />
+          onMessage={setMessage} next={nextLine} task={headerTask} />
         {brief.element}
       </header>
       {/* The message line: a click closes it, a click that ends a selection of its text (to copy it) keeps it, and its tooltip
@@ -283,14 +289,14 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           taskStatus={setTaskStatus} circuitShown={circuitShown} onCircuit={toggleCircuit} onCramped={panel.foldForRows} />
       </main>
       <aside className="right">
-        <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} />
+        <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} runHeld={headerHeld} />
         <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} />
         <ResearchPanel config={config} setConfig={setConfig} />
       </aside>
       <BottomPanel panel={panel} tab={tab} setTab={setTab} cornersUsable={cornersUsable} config={config} setConfig={setConfig} runs={runs} runsError={runsError}
         runDir={runDir} status={status} statusError={statusError} runWindow={runWindow} refreshRuns={refreshRuns} shownCheck={shownCheck}
         continueBlocked={continueBlocked} shownRefusal={shownRefusal} continueShown={continueShown} launcher={launcher} fineTuneFrom={fineTuneFrom}
-        askContinue={askContinue} />
+        askContinue={askContinue} headerDir={headerHeld ? control.dir : null} />
     </div>
   );
 }

@@ -1536,3 +1536,14 @@ registered task yet" and no empty-folder line, and Refresh list brings the four 
 waiting tooltip unchanged). `run_list_check` 123 and `model_chooser_check` 83 (the same "Move to…", found by its
 `aria-label`, unchanged). None flaky. The no-connection tooltip has no check: the checks' fixture connection fills an
 empty choice by itself, as the page does with the connection file's active profile.
+
+**Review follow-up.** The review found two slips, both real. The edit to Save as's tooltip lost a space: it read "Asks
+for a new task name,with the next available numbered name suggested." for every user, though "Found" above quotes it
+right; it reads "name, with" again (the same edit's `filter ?'No task matches ...` in `TaskList.tsx` lost one too, in the
+source only). And "Move to…" gave a false reason while the folders could not be read: greyed out by `!state.ready` as
+well, it still said "Tick tasks in the table first, ...", but the same `ready` greys out every row's checkbox and the
+select-all box in all three windows, so the advice could not be followed. While the folders are unread it now says
+"Not available: the folders could not be read - press Refresh list." (the alert above the table already says "Press
+Refresh list to retry."), or "Not available: the folders are being read." while a read is under way. `tsc` clean.
+`task_list_check` 86: new, after the refused folder read, "Move to…" says "Not available: the folders could not be read -
+press Refresh list.". `task_save_check` 70, `run_list_check` 123, `model_chooser_check` 83. None flaky.

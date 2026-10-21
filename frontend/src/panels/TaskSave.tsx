@@ -239,7 +239,7 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
         {/* The task and its revision start the tab line (record 7.362): this holds Save as and Task file only. Greyed out
             for want of a connection, its tooltip says so and where to choose one (branch record SIF-68). */}
         <button className="primary" disabled={!canSave || askFrequency} onClick={saveAs}
-          title={'Save as: ' + waits + (!profileId ? 'Not available: no connection is chosen - choose one with the Connection button in the header. ' : '') + 'Asks for a new task name,with the next available numbered name suggested. ' + (task ? 'Stores the rows of Parameters, Probes and Specs as a new task with its own DUT and testbench copies. ' : hasCopy
+          title={'Save as: ' + waits + (!profileId ? 'Not available: no connection is chosen - choose one with the Connection button in the header. ' : '') + 'Asks for a new task name, with the next available numbered name suggested. ' + (task ? 'Stores the rows of Parameters, Probes and Specs as a new task with its own DUT and testbench copies. ' : hasCopy
             ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '
             : 'Read the cell in the Virtuoso window first and confirm that it is a copy you made: the task is saved into that cell. ')
             + 'It writes the cell in Virtuoso to match and reads it back, then automatically runs one baseline simulation. Only you can press it.'}>

@@ -369,6 +369,8 @@ await runChecks(browser, async () => {
   check('changing the filter clears selection so hidden tasks cannot be moved', await far.until(`${ROWS}.length === 1 && ${WINDOW}.querySelector('.task-move-bar select').disabled`, 30));
   refuseFolders = true; await press('Refresh list'); await settled();
   check('folder read failures leave tasks accessible but disable moves', await far.evaluate(`${WINDOW}.querySelector('[role="alert"]').textContent.includes('folder read failed') && ${ROWS}.length === 1 && ${TABLE}.querySelector('thead input').disabled`));
+  check('... and "Move to…" says why, not to tick tasks that cannot be ticked (SIF-68 review follow-up)',
+    (await moveTitle()) === 'Not available: the folders could not be read - press Refresh list.', await moveTitle());
   refuseFolders = false; await press('Refresh list'); await settled();
   check('Refresh list recovers folder access', await far.evaluate(`!${WINDOW}.querySelector('[role="alert"]') && !${TABLE}.querySelector('thead input').disabled`));
   await far.evaluate(`(() => { const i = ${WINDOW}.querySelector('input.task-filter'); i.focus(); i.select(); })()`);

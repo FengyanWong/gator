@@ -269,7 +269,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
         </Fragment>); })}</tbody></table></div>}
       {/* Only while there are tasks, as in the Runs window (branch record SIF-68): with none, All tasks told the user to
           select tasks in All tasks, under the line that says why the list is empty. */}
-      {shown.length === 0 && tasks.length > 0 && <p className="hint task-folder-empty">{filter ?'No task matches the filter in this folder.' : 'This folder is empty. Select tasks in All tasks, then use Move to…'}</p>}
+      {shown.length === 0 && tasks.length > 0 && <p className="hint task-folder-empty">{filter ? 'No task matches the filter in this folder.' : 'This folder is empty. Select tasks in All tasks, then use Move to…'}</p>}
       </div></div>
     </div>
   );

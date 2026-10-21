@@ -251,6 +251,10 @@ button.item-link { border: none; background: none; padding: 0; color: var(--acce
 .connection-window .hint, .connection-window label, .connection-window .steps-list, .virtuoso-window .hint, .virtuoso-window label, .virtuoso-window .steps-list, .pdk-window .hint, .pdk-window label { font-size: 12.5px; }
 .connection-window .step { margin-top: 10px; padding-top: 8px; } .connection-window .step-head { font-size: 13.5px; }
 .connection-window .step-no { width: 18px; height: 18px; line-height: 18px; font-size: 11.5px; } .connection-window .command code { font-size: 12.5px; } .connection-window .status-line { font-size: 13px; }
+/* branch record SIF-79: a CIW line breaks after a "/" (its <wbr>s) or between words, inside a word only when nothing else fits -
+   break-all split a setup path "virtuoso_bri" | "dge_s2", which read like the box's real line break. A kind the connection
+   file does not name is explained on hover. */
+.connection-window .command code { word-break: normal; overflow-wrap: anywhere; } .connection-kind b[title] { cursor: help; }
 /* record 7.170: the Folders section's sign in the steps' number circle. The pop-up windows are about:blank documents, in quirks
    mode, where a line holding only a picture ignores the line height: an invisible zero-width character keeps the circle where
    the numbered ones sit. */

@@ -1936,3 +1936,51 @@ while the run brief is open, and a REAL run working elsewhere is listed while th
 header's card reads "Duration 5 min 01 s so far · about ... left", and after Refresh the real run's card is titled
 "fixture_task · New model · no model saved · real data" with no MOCK badge and reads "Duration 2 min 05 s so far · about 4 min
 10 s left" (picture `run-4c-brief-real.png`). `dom_identity_check` 56. None flaky.
+
+### SIF-79 The Connection window: its buttons, notes, setup line and folders (2026-10-21; from the real-data survey)
+
+**Found.** In the user's Connection window (connection `lab`, two sessions), step 3 of each card read "Test connection | +
+Spectre / license | Details": a label that starts with "+" reads like adding something, nothing on screen said it was the longer,
+slower test, and its tooltip read "Adds Spectre and a license SNAPSHOT (can be slow)"; the Start question of SIF-55 points at
+this label (survey issue 16). Under Virtuoso 1's UNKNOWN badge the card read "(This connection was written before kinds existed;
+it is treated as Virtuoso over SSH unless a test finds Virtuoso on this machine.)": the program's history, not what the user
+should know or do, and two more lines, so its steps started lower than Virtuoso 2's (issue 17). The hint over the cards read
+"Each Virtuoso window has its own bridge. Connect each session and load its commands in the matching CIW." beside cards headed
+"Virtuoso 1 (lab)" and "Virtuoso 2 (lab2)", while "lab" also names the connection in the list (issue 34; the ids stay, the data
+model names a connection after its first session). Virtuoso 2's CIW box read `load("/tmp/virtuoso_bridge_minlei/fyworkstation_s2/
+virtuoso_bri` over `dge_s2/virtuoso_setup.il")`: `word-break: break-all` split the path inside a word, which looked like the box's
+real line break between `setShellEnvVar` and `load` (issue 38). At the foot, a folder sign and "Folders" over one button
+"Folders...", and only the button's tooltip said which folders (issue 39). Not changed: "Details" / "Hide" (minor, and its
+table names each part), the "Folders..." label (7.170).
+
+**Changed.** `frontend/src/panels/Connection.tsx`: the button reads "Full test (Spectre, license)", with "Test connection, then
+also finds Spectre on the simulator host and asks the license server once for free seats (a snapshot: it takes no seat). No
+simulation, no budget. Can be slow." on hover (the backend's full scope finds the program and reads its version and the license
+server; it runs no simulation). A kind the connection file does not name is said on hover of the bold kind label (help cursor):
+"The connection file does not say where Virtuoso runs, so this connection is taken as Virtuoso over SSH until a test finds
+Virtuoso on this machine. Nothing to do."; the card shows the same lines as its sibling. The hint reads "This connection has 2
+sessions, Virtuoso 1 and Virtuoso 2 below, each a Virtuoso with its own bridge: connect each one and paste its lines into that
+Virtuoso's CIW.", and the cards are headed "Virtuoso 1 (session lab)" and "Virtuoso 2 (session lab2)", the name's tooltip saying
+what naming it does ("lab" in the list sends the work to whichever session is free; a configuration or queue naming lab2 sends
+it to Virtuoso 2 only). Both CIW boxes put a `<wbr>` after each "/" (`breakAfterSlash`, the idiom of RunList's `breakAt`), so a
+long path breaks after a slash; Copy and a selection keep the plain line. Under the Folders head: "Where GATOR keeps its files
+outside the repository: lock and crash journals, simulator scratch and the virtuoso-bridge checkout on this machine;
+initial-condition files and Maestro netlists on the simulator host."; the button's tooltip no longer repeats it ("Shows each
+folder at its value in use; a change is kept only by Save folders. Opening it changes nothing."). `panels/ConnectionFolders.tsx`:
+the opened section starts with "Each folder starts at the value GATOR has always used; ..." (its "Where GATOR keeps the files of
+the simulator connection outside the repository." was the same sentence again). `frontend/src/styles.css`: a CIW box breaks
+with `word-break: normal; overflow-wrap: anywhere` (inside a word only when nothing else fits), and the kind label with a
+tooltip has the help cursor. `frontend/src/launch.ts`: the Start question says 'press "Full test (Spectre, license)" in the
+Connection window'. `docs/workbench.md` and `docs/functionality-reference.md`: the button's name and "Virtuoso 2 (session lab2)".
+
+**Checked.** `tsc` clean. `connection_panel_check` 92 (86 before): the button lists "Full test (Spectre, license)" and the
+cards "Virtuoso 1 (session lab)" / "Virtuoso 2 (session lab2)"; the undeclared kind is checked on hover (was "says so" in the
+card's text); new, the full test's tooltip says it is Test connection and more, takes no seat and can be slow, and no button
+starts with "+"; the kind label's tooltip ends "Nothing to do." with the help cursor and the card says nothing of kinds' history;
+the two-session hint reads "This connection has 2 sessions, Virtuoso 1 and Virtuoso 2 below, ..." with no "Virtuoso window", and
+each session name's tooltip says where naming it sends the work; both cards' first steps start at the same height although only
+Virtuoso 2's kind is named; with Virtuoso 2's CIW box narrowed to about 38 characters, every line break comes after a "/", at a
+space or at the line's own end, one of them after a "/", and the box's text is the line Copy copies; the Folders section says
+its folders under the head and the button's tooltip does not repeat it; the opened section starts with "Each folder starts
+...". `corner_check_check` 39: the connection question names "Full test (Spectre, license)". `dom_identity_check` 56,
+`callouts_check` 8. None flaky.

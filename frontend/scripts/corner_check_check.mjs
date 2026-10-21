@@ -201,10 +201,11 @@ await runChecks(browser, async () => {
   answers.push(true, true);
   sim.refuseNextStart = { code: 'connection_gate_acknowledge', message: 'FIXTURE: some layers are unknown', report: { uncertain: ['spectre_license'] } };
   await evaluate(`${BUTTON('Check')}.click()`);
-  // branch record SIF-55: the part in words, and the button that tests it (it read "Connection layers are UNKNOWN: spectre_license")
+  // branch record SIF-55: the part in words, and the button that tests it (it read "Connection layers are UNKNOWN: spectre_license");
+  // the button by the name it has since branch record SIF-79
   check('yes, then the connection question, then the start with both answers', await (async () => { await waitFor(() => sim.starts.length >= startsBefore + 2);
     const [a, b] = sim.starts.slice(startsBefore); return dialogs.length === 3 && dialogs[2].includes('These parts of the connection are not known to work: Spectre license.')
-      && dialogs[2].includes('press "+ Spectre / license" in the Connection window')
+      && dialogs[2].includes('press "Full test (Spectre, license)" in the Connection window')
       && a?.authorize_real_simulation === true && !a.acknowledge_unknown_connection && b?.authorize_real_simulation === true && b.acknowledge_unknown_connection === true && b.simulations === 15; })(),
     JSON.stringify(sim.starts.slice(startsBefore)));
   sim.stage[C2] = 'done';

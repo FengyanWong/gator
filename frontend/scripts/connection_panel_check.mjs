@@ -187,8 +187,16 @@ await runChecks(browser, async () => {
   let shown = await text();
   // The test made when the page opened found the (canned) tunnel up, so step 1 reads "Connect SSH (already up)".
   check('Virtuoso over SSH: 1 Connect SSH, 2 CIW line, 3 Test', shown.includes('Connect to the target over SSH') && shown.includes('Load the bridge in the Virtuoso CIW')
-    && shown.includes('Test the connection') && (await buttons()).includes('Connect SSH (already up)') && (await buttons()).includes('+ Spectre / license'), (await buttons()).join(' | '));
-  check('a connection written before kinds existed says so', shown.includes('written before kinds existed'));
+    && shown.includes('Test the connection') && (await buttons()).includes('Connect SSH (already up)') && (await buttons()).includes('Full test (Spectre, license)'), (await buttons()).join(' | '));
+  // branch record SIF-79: the longer test is named as one (it read "+ Spectre / license", like adding something)
+  const fullTest = await far.evaluate(`[...${WINDOW}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Full test (Spectre, license)')?.title ?? null`);
+  check('the longer test reads "Full test (Spectre, license)", and its tooltip says it is Test connection and more, takes no seat and can be slow (SIF-79)',
+    !!fullTest && fullTest.startsWith('Test connection, then also') && fullTest.includes('it takes no seat') && fullTest.endsWith('Can be slow.') && !(await buttons()).some(b => b.startsWith('+')), fullTest);
+  // branch record SIF-79: a kind the file does not name is said on hover, for the user - not as the program's history in two more lines
+  const kindLabel = await far.evaluate(`(() => { const b = ${WINDOW}.querySelector('.connection-kind b'); return b && { text: b.textContent, tip: b.title, cursor: getComputedStyle(b).cursor }; })()`);
+  check('a connection whose kind the file does not name says on hover how it is taken and that there is nothing to do; the card no longer tells the program\'s history (SIF-79)',
+    !!kindLabel && kindLabel.text === 'Virtuoso over SSH.' && kindLabel.tip.startsWith('The connection file does not say where Virtuoso runs, so this connection is taken as Virtuoso over SSH')
+    && kindLabel.tip.endsWith('Nothing to do.') && kindLabel.cursor === 'help' && !shown.includes('before kinds existed'), JSON.stringify(kindLabel));
   await shot('window', '.connection-window', 'connection-2-window-virtuoso-ssh.png');
 
   // ---- no timer ---------------------------------------------------------------------------------------------------
@@ -313,9 +321,10 @@ await runChecks(browser, async () => {
   // like the steps: the same rule above it, the same heading, a folder sign in the steps' circle
   const section = await far.evaluate(`(() => { const b = [...${WINDOW}.querySelectorAll('button')].find(x => x.textContent.trim() === 'Folders...');
     const own = b?.closest('.step'), step = [...${WINDOW}.querySelectorAll('.step')].find(s => /^\\d+$/.test(s.querySelector('.step-no')?.textContent ?? ''));
+    const said = own?.querySelector(':scope > p.hint')?.textContent.replace(/\\s+/g, ' ');
     const rule = e => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopWidth, c.borderTopColor, c.paddingTop, c.marginTop].join('|'); };
     const font = e => { const c = getComputedStyle(e); return [c.fontFamily, c.fontSize, c.fontWeight].join('|'); };
-    return own && step && { head: own.querySelector('.step-head')?.textContent.trim(), sign: !!own.querySelector('.step-no svg'),
+    return own && step && { head: own.querySelector('.step-head')?.textContent.trim(), sign: !!own.querySelector('.step-no svg'), said, tip: b.title,
       sameRule: rule(own) === rule(step), sameHead: font(own.querySelector('.step-head')) === font(step.querySelector('.step-head')),
       sameCircle: own.querySelector('.step-no').getBoundingClientRect().width === step.querySelector('.step-no').getBoundingClientRect().width,
       // the circle sits where the numbered ones sit beside their heading's words (a picture alone in a line moves it in quirks mode)
@@ -324,10 +333,16 @@ await runChecks(browser, async () => {
       quirks: document.compatMode }; })()`);
   check('Folders is a section of its own, headed like the steps: the same rule above it, the same heading, a folder sign in the circle',
     !!section && section.head === 'Folders' && section.sign && section.sameRule && section.sameHead && section.sameCircle && Math.abs(section.sameSpot) < 0.5, JSON.stringify(section));
+  // branch record SIF-79: which folders, said under the head (it read "Folders" over "Folders..." and only the tooltip said more)
+  check('under its head the section says which folders it holds and on which machine, and the button\'s tooltip does not say it again (SIF-79)',
+    !!section && section.said === 'Where GATOR keeps its files outside the repository: lock and crash journals, simulator scratch and the virtuoso-bridge checkout on this machine; initial-condition files and Maestro netlists on the simulator host.'
+    && !section.tip.includes('outside the repository') && section.tip.endsWith('Opening it changes nothing.'), JSON.stringify(section));
   mark = seen.length;
   await press('Folders...');
   await settle(mark);
   check('"Folders..." reads the folders once (one GET directories) and sends nothing else', JSON.stringify(names(mark)) === JSON.stringify(['GET directories']), names(mark).join(', '));
+  check('...and the opened section starts with how a folder\'s value works, not with where the folders are again (SIF-79)',
+    (await folderText()).startsWith('Each folder starts at the value GATOR has always used') && !(await folderText()).includes('Where GATOR keeps'), (await folderText()).slice(0, 160));
   let folders = await folderValues();
   check('five folders, each at its value in use: the defaults, and the folder the environment decides', JSON.stringify(folders) === JSON.stringify({ adapter_state: '/fixture/state-from-env',
     local_scratch: '/tmp/gator-work', bridge_checkout: '~/virtuoso-bridge-lite', simulator_ic: '~/.gator/ic', maestro_netlist: '/tmp/gator_maestro_netlist' }), JSON.stringify(folders));
@@ -463,8 +478,18 @@ await runChecks(browser, async () => {
   check('one lab connection, two simultaneously visible session cards, no session selector',
     (await far.evaluate(`${sessionsSelector}.length`)) === 2 && selectorValues.includes('lab') && !selectorValues.includes('lab2')
     && (await far.evaluate(`${WINDOW}.querySelectorAll('select').length`)) === 1
-    && JSON.stringify(await far.evaluate(`[...${sessionsSelector}].map(s => s.querySelector('h3')?.textContent)`)) === JSON.stringify(['Virtuoso 1 (lab)', 'Virtuoso 2 (lab2)']), selectorValues.join(', '));
+    && JSON.stringify(await far.evaluate(`[...${sessionsSelector}].map(s => s.querySelector('h3')?.textContent)`)) === JSON.stringify(['Virtuoso 1 (session lab)', 'Virtuoso 2 (session lab2)']), selectorValues.join(', '));
   check('the window says the work goes to whichever session is free', (await text()).includes('go to whichever session is free'));
+  // branch record SIF-79: one noun for one thing (the hint said "Each Virtuoso window", then "each session"), and a card's
+  // session name says on hover what naming it does - "lab" names the connection too
+  const multiHint = await far.evaluate(`[...${WINDOW}.querySelectorAll(':scope > p.hint')].map(p => p.textContent.replace(/\\s+/g, ' ').trim())`);
+  const idTips = await far.evaluate(`[...${sessionsSelector}].map(s => s.querySelector('h3 .hint')?.title ?? '')`);
+  check('the window says the connection has 2 sessions, "Virtuoso 1 and Virtuoso 2" as the cards are headed, and each card\'s session name says on hover where naming it sends the work (SIF-79)',
+    multiHint.some(t => t.startsWith('This connection has 2 sessions, Virtuoso 1 and Virtuoso 2 below, each a Virtuoso with its own bridge')) && !multiHint.some(t => t.includes('Virtuoso window'))
+    && idTips[0]?.includes('"lab" in the list above sends the work to whichever session is free') && idTips[1]?.includes('names lab2 sends its work to Virtuoso 2 only'), JSON.stringify({ multiHint, idTips }));
+  // branch record SIF-79: a kind the file does not name (Virtuoso 1's) adds no lines, so both cards' steps start level
+  const stepTops = await far.evaluate(`[...${sessionsSelector}].map(s => Math.round(s.querySelector('.step .step-head').getBoundingClientRect().top))`);
+  check('...and both cards\' first steps start at the same height, though only Virtuoso 2\'s kind is named in the file (SIF-79)', stepTops.length === 2 && stepTops[0] === stepTops[1], JSON.stringify(stepTops));
   check('opening both session cards performs no connect or probe', seen.length === mark, names(mark).join(', '));
   const firstBefore = await sessionText('lab');
   mark = seen.length;
@@ -475,6 +500,22 @@ await runChecks(browser, async () => {
     (await sessionText('lab2')).includes('/fixture/second/virtuoso_setup.il')
     && (await sessionText('lab2')).includes('setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")')
     && await sessionText('lab') === firstBefore);
+  // branch record SIF-79: a CIW line breaks after a "/" or between words, never inside a name (break-all split "virtuoso_bri" |
+  // "dge_s2", which read like the box's real line break). The box is narrowed to about 38 characters, so the load line wraps.
+  const ciwBreaks = await far.evaluate(`(() => { const code = ${sessionNode('lab2')}.querySelector('.command code'), text = code.textContent;
+    const first = document.createRange(); first.setStart(code.firstChild, 0); first.setEnd(code.firstChild, 1);
+    code.style.flex = '0 0 ' + Math.ceil(38 * first.getBoundingClientRect().width + 14) + 'px';
+    const nodes = [], walk = document.createTreeWalker(code, NodeFilter.SHOW_TEXT); for (let n; (n = walk.nextNode());) nodes.push(n);
+    const before = []; let top = null, at = 0;
+    for (const node of nodes) for (let i = 0; i < node.length; i++, at++) {
+      const r = document.createRange(); r.setStart(node, i); r.setEnd(node, i + 1); const box = r.getClientRects()[0];
+      if (!box || node.data[i] === '\\n') continue;
+      if (top !== null && box.top > top + 2) before.push(text[at - 1]);
+      top = box.top; }
+    code.style.flex = ''; return { text, before }; })()`);
+  check('a CIW line breaks only after a "/", at a space or at its own line end - never inside a name - and its text is the line Copy copies (SIF-79)',
+    ciwBreaks.text === 'setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")\nload("/fixture/second/virtuoso_setup.il")' && ciwBreaks.before.includes('/')
+    && ciwBreaks.before.every(c => ['/', ' ', '\n'].includes(c)), JSON.stringify(ciwBreaks));
   holdNextCheck = true; mark = seen.length;
   await sessionPress('lab2', 'Test connection'); await settle(mark);
   check('a pending second-session test leaves first-session buttons enabled', !!heldCheck

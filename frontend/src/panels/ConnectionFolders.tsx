@@ -50,8 +50,9 @@ export function ConnectionFolders() {
   const atDefaults = shown.fields.every((f: Json) => !editable(f) || values[f.key] === f.default);
   return (
     <div className="connection-add connection-folders">
-      <p className="hint">Where GATOR keeps the files of the simulator connection outside the repository. Each folder starts at the value GATOR
-        has always used; a changed one is kept in the connection file ({shown.connection_file}) and takes effect when the folder is next used.</p>
+      {/* Where the folders are and what they hold is said once, under the section's head (branch record SIF-79). */}
+      <p className="hint">Each folder starts at the value GATOR has always used; a changed one is kept in the connection file
+        ({shown.connection_file}) and takes effect when the folder is next used.</p>
       {SIDES.map(([side, title]) => <div key={side}>
         <p><b>{title}</b></p>
         {shown.fields.filter((f: Json) => f.side === side).map((f: Json) => (

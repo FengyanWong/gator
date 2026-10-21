@@ -1144,7 +1144,7 @@ trip; for ngspice the built-in test circuit; with a run active the probe does no
 and the button in the column reads "testing..." meanwhile, then the result. Nothing else runs on
 its own: a connection chosen later shows the backend's last result once (a cache read, no probe),
 opening the window checks nothing, and no timer polls (the old panel polled every 15 s). A press -
-Connect SSH, Test connection or + Spectre / license - runs a check as before. `serve` does not
+Connect SSH, Test connection or Full test (Spectre, license) - runs a check as before. `serve` does not
 check at start either (`--connection-check-on-start` brings that one cheap check back). A result
 stays on screen with the clock time of its test ("tested at 21:04:13")
 until the next press - it is the result of that moment, not a live indicator, and it no longer
@@ -1255,7 +1255,7 @@ The run's message, the run's record and Check now say which session and why. A c
 its own name (`lab2`, as queues do) keeps exactly that session: the list then shows it as its own entry, "lab2 - Virtuoso
 2 only", the button says "lab2 (Virtuoso 2 only)" and a warning offers "lab" instead. The button's badge counts the
 sessions whose last test passed ("1 of 2 OK"); with none, it shows the connection's own session's state. Each card names
-its session (`Virtuoso 2 (lab2)`). A cached read never makes a test or Connect still on its way stale, and never puts an
+its session (`Virtuoso 2 (session lab2)`). A cached read never makes a test or Connect still on its way stale, and never puts an
 older result back over a newer one (`checked_utc`); a failed Connect line goes once a later test passes.
 
 ### Folders: where the connection keeps its files (2026-10-03, record 7.168)

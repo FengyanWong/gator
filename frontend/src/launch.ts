@@ -48,11 +48,11 @@ const realQuestion = (report: Json) => `This runs REAL simulations${report?.task
   + `Authorize a total budget of ${report?.requested_max_evaluations != null ? plural(report.requested_max_evaluations, 'candidate evaluation') : 'its candidate evaluations'}?`;
 
 /** The question when the connection test could not say whether parts the run needs work (their state unknown, busy or not
- *  checked): the parts in words, and the button that tests them - "+ Spectre / license" for the Spectre parts, which "Test
- *  connection" leaves out. It read "Connection layers are UNKNOWN: session_readiness, spectre_license. Unknown is not OK.
- *  Proceed anyway?" (branch record SIF-55). */
+ *  checked): the parts in words, and the button that tests them - "Full test (Spectre, license)" for the Spectre parts, which
+ *  "Test connection" leaves out. It read "Connection layers are UNKNOWN: session_readiness, spectre_license. Unknown is not OK.
+ *  Proceed anyway?" (branch record SIF-55); the button's name follows it ("+ Spectre / license" until branch record SIF-79). */
 const connectionQuestion = (uncertain: string[]) => `These parts of the connection are not known to work: ${uncertain.map(layerWords).join(', ')}.\n`
-  + `Cancel, then press ${uncertain.some(layer => layer.startsWith('spectre')) ? '"+ Spectre / license"' : '"Test connection"'} in the Connection window; or OK to go ahead anyway.`;
+  + `Cancel, then press ${uncertain.some(layer => layer.startsWith('spectre')) ? '"Full test (Spectre, license)"' : '"Test connection"'} in the Connection window; or OK to go ahead anyway.`;
 
 /** The backend never starts on a guess: it refuses, creates nothing, and names what it needs - the budget of a REAL
  *  simulation, a model trained on another task, connection layers it could not check. Each question is put to the

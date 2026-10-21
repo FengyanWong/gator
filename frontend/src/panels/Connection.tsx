@@ -1,5 +1,5 @@
 import { useAsyncAction } from '../store';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { CONNECTION_WINDOW } from '../contract';
@@ -11,6 +11,9 @@ import { CONNECTION_STATE as STATE_LABEL, layerWords, stamp, timeOrDateTime as t
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$/;
 const SUGGESTED_NAME: Record<string, string> = { virtuoso_ssh: 'lab', virtuoso_local: 'virtuoso-local', ngspice_local: 'ngspice-local', ngspice_ssh: 'ngspice-ssh' };
+/** A CIW line breaks only after a "/": the box broke a long setup path mid-word ("virtuoso_bri" over "dge_s2/..."), which
+ *  read like one of its real line breaks (branch record SIF-79). The <wbr>s carry no text, so Copy and a selection keep the line. */
+const breakAfterSlash = (text: string) => text.split(/(?<=\/)/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 
 
 /** The connection block of the left column: ONE button (user request 2026-09-21). Pressing it opens the connection
@@ -242,10 +245,10 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         {ciw ? (
           <div>
             <p className="hint">Paste these lines into {multipleSessions ? `Virtuoso ${index + 1}'s` : 'your Virtuoso’s'} CIW, in order, then test this session below.</p>
-            <div className="command"><code>{loadCommand}</code><button onClick={() => copyText(`${id}:load`, loadCommand)}>{copied === 'load' ? 'Copied' : 'Copy'}</button></div>
+            <div className="command"><code>{breakAfterSlash(loadCommand)}</code><button onClick={() => copyText(`${id}:load`, loadCommand)}>{copied === 'load' ? 'Copied' : 'Copy'}</button></div>
             <details><summary className="hint">CIW says "already running", or other trouble</summary>
               <p className="hint">Reload the bridge in this session:</p>
-              <div className="command"><code>{replaceCommand}</code>
+              <div className="command"><code>{breakAfterSlash(replaceCommand)}</code>
                 <button onClick={() => copyText(`${id}:replace`, replaceCommand)}>{copied === 'replace' ? 'Copied' : 'Copy'}</button></div>
               <ul className="steps-list">{ciw.notes.map((n: string) => <li key={n} className="hint">{n}</li>)}</ul>
             </details>
@@ -259,7 +262,10 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         <div className="row">
           <button disabled={!profileId || !!mine} onClick={() => check('interactive')} title="Read-only and zero-cost: one trivial SKILL round trip. No simulation, no budget, no data rows. It never starts anything.">
             {mine === 'interactive' ? 'Testing...' : 'Test connection'}</button>
-          <button disabled={!profileId || !!mine} onClick={() => check('full')} title="Adds Spectre and a license SNAPSHOT (can be slow)">{mine === 'full' ? 'Testing...' : '+ Spectre / license'}</button>
+          {/* Named as the longer test it is: "+ Spectre / license" read like adding something (branch record SIF-79). */}
+          <button disabled={!profileId || !!mine} onClick={() => check('full')}
+            title="Test connection, then also finds Spectre on the simulator host and asks the license server once for free seats (a snapshot: it takes no seat). No simulation, no budget. Can be slow.">
+            {mine === 'full' ? 'Testing...' : 'Full test (Spectre, license)'}</button>
           <button onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Details'}</button>
         </div>
         {result}
@@ -284,15 +290,22 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         everything offline need no connection at all.</p></div>
     </>);
 
+    // A card names its session as one: "lab" read as the connection's name too, which takes its first session's (branch record SIF-79).
     return <section className="connection-session" key={id} data-session-profile={id} aria-label={multipleSessions ? `Virtuoso ${index + 1}` : 'Connection session'}>
-      {multipleSessions && <h3>Virtuoso {index + 1} <span className="hint">({id})</span></h3>}
+      {multipleSessions && <h3>Virtuoso {index + 1} <span className="hint" title={id === group?.profile_id
+        ? `This session's own name in the connection file. The connection is named after its first session: "${id}" in the list above sends the work to whichever session is free.`
+        : `This session's own name in the connection file: a configuration or a queue that names ${id} sends its work to Virtuoso ${index + 1} only.`}>(session {id})</span></h3>}
       <div className="row">
         <span className={`badge state-${overall}`} title="Overall state of the last test">{STATE_LABEL[overall] ?? overall}</span>
         <span className="hint">{status?.checked_utc ? `tested at ${testedAt(status.checked_utc)}${status.stale ? ' - too old to trust, shown as unknown' : ''}` : 'never tested'}</span>
       </div>
-      {entry.kind_label && <p className="hint connection-kind"><b>{entry.kind_label}.</b> {profiles?.kinds?.find((k: Json) => k.kind === entry.kind)?.summary
-        ?? 'Press "Test connection" to see what has to be corrected in the connection file.'}
-        {entry.kind && !entry.kind_declared && ' (This connection was written before kinds existed; it is treated as Virtuoso over SSH unless a test finds Virtuoso on this machine.)'}</p>}
+      {/* A kind the connection file does not name is said on hover, in what it means for the user: the card said "(This
+          connection was written before kinds existed; ...)" in two more lines, so its steps started lower than its sibling's
+          (branch record SIF-79). */}
+      {entry.kind_label && <p className="hint connection-kind"><b title={entry.kind && !entry.kind_declared
+        ? 'The connection file does not say where Virtuoso runs, so this connection is taken as Virtuoso over SSH until a test finds Virtuoso on this machine. Nothing to do.'
+        : undefined}>{entry.kind_label}.</b> {profiles?.kinds?.find((k: Json) => k.kind === entry.kind)?.summary
+        ?? 'Press "Test connection" to see what has to be corrected in the connection file.'}</p>}
       {family === 'ngspice' ? ngspiceSteps : virtuosoSteps}
       {sessionErrors[id] && <p className="error">{sessionErrors[id]}</p>}
       {details}
@@ -353,7 +366,10 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         this backend. Choose one of the connections above, or add one.</p>}
       {created && <p className="ok">Connection "{created.profile_id}" was added{created.backup ? ` (the previous file was kept as ${created.backup})` : ''}. {created.note}</p>}
       {addForm}
-      {multipleSessions && <p className="hint">Each Virtuoso window has its own bridge. Connect each session and load its commands in the matching CIW.</p>}
+      {/* One noun for one thing: it said "Each Virtuoso window", then "each session", beside cards headed "Virtuoso 1" and
+          "Virtuoso 2" (branch record SIF-79). */}
+      {multipleSessions && <p className="hint">This connection has {sessions.length} sessions, {sessions.map((_, i) => `Virtuoso ${i + 1}`).join(', ').replace(/, (?=[^,]*$)/, ' and ')} below,
+        each a Virtuoso with its own bridge: connect each one and paste its lines into that Virtuoso's CIW.</p>}
       {multipleSessions && (pinned
         ? <p className="warn">This configuration names {pinnedLabel} by its own name ({profileId}): runs, Check now and Save as go there, even
           while it is busy. Choose "{group.profile_id}" above to send them to whichever session is free.</p>
@@ -366,9 +382,13 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
           stays outside the chosen-connection part: "Add a connection" uses the bridge checkout folder. */}
       <div className="step folders-step">
         <div className="step-head"><span className="step-no step-sign"><Icon name="folder" /></span> Folders</div>
+        {/* Which folders, said under the head: it read "Folders" over "Folders..." and only the button's tooltip said what they
+            were (branch record SIF-79). The opened section then starts with how a folder's value works, not with this again. */}
+        <p className="hint">Where GATOR keeps its files outside the repository: lock and crash journals, simulator scratch and the virtuoso-bridge
+          checkout on this machine; initial-condition files and Maestro netlists on the simulator host.</p>
         <div className="row">
           <button onClick={() => setFolders(f => !f)}
-            title="The folders GATOR uses outside the repository: the adapter's lock and crash journals, the simulator scratch, the bridge checkout, and two folders on the simulator host. Opening it changes nothing.">
+            title="Shows each folder at its value in use; a change is kept only by Save folders. Opening it changes nothing.">
             {folders ? 'Close "Folders"' : 'Folders...'}</button>
         </div>
         {folders && <ConnectionFolders />}

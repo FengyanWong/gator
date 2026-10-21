@@ -15,7 +15,8 @@
 //     it); another encoder keeps the chosen list;
 //   - a configuration naming a PDK that is not loaded says so;
 //   - "PDK window..." opens the PDK window: the form, the connection it reads through, the loaded PDKs (double click shows
-//     one, with every component, its pins and roles, its parameters); "Load" sends exactly the typed fields, shows that it
+//     one, with every component, its pins and roles, its parameters, and its model files' sizes in a unit - the exact
+//     bytes on hover, branch record SIF-52); "Load" sends exactly the typed fields, shows that it
 //     is reading, then shows the answer and reads the list again; without a connection it cannot be pressed; closing the
 //     Virtuoso window closes it too (2026-09-29). The Virtuoso window is opened as a user opens it since record 7.362: the
 //     Tasks window's "New task: From a Virtuoso cell...";
@@ -37,7 +38,7 @@ const browser = await launchEdge('pdk');
 // ---- FIXTURE: one loaded PDK "fixpdk" with three components; a load answers "fixload" --------------------------------
 const summary = (n, fam) => ({ devices: n, cells: n, by_family: fam, with_problems: [] });
 const entry = (id, n, fam, sha) => ({ pdk_id: id, vocabulary: `pdk:${id}`, sha256: sha, version: `pdk-${id}-${sha.slice(0, 16)}`, loaded_utc: '2026-09-21T21:00:00+00:00',
-  technology_library: id, summary: summary(n, fam), label: `PDK ${id} (${n} components, version ${sha.slice(0, 8)})`, sources: { model_files: [{ path: `/fixture/${id}.scs`, bytes: 10, sha256: sha }] },
+  technology_library: id, summary: summary(n, fam), label: `PDK ${id} (${n} components, version ${sha.slice(0, 8)})`, sources: { model_files: [{ path: `/fixture/${id}.scs`, bytes: 48213337, sha256: sha }] },
   columns: 12, kinds: 8 + n, roles: 10 });
 const DEVICES = [
   { model: 'fx_nch', kind: 'fixpdk:fx_nch', cells: ['nmosfx', 'nmosfx_3'], family: 'mos', polarity: 'n', family_basis: 'FIXTURE inline subcircuit', problems: [],
@@ -169,6 +170,12 @@ await runChecks(browser, async () => {
   const families = await evaluate(`${LIST}.querySelector('.component-what').textContent`);
   check('choosing the device families writes them by name, and the line says they fit any PDK', network?.vocabulary === 'families'
     && /device families of any PDK/.test(families) && /loads with any PDK/.test(families), JSON.stringify(network) + ' / ' + families);
+  // Branch record SIF-52: the line said "The list of a new model since record 7.298.", and the folded help promised more
+  // "on the MOCK backend", which the workbench no longer has.
+  const help = await evaluate(`${LIST}.querySelector('details.component-help').textContent`);
+  check('... it says "A new model uses this list." (no record number), and the help says a Parameters row varies them and each instance\'s property form decides a real run\'s writes',
+    /A new model uses this list\./.test(families) && !/record \d/.test(families) && !/MOCK/.test(help)
+    && /voltages\) by a Parameters row; what a real run may write in Virtuoso is decided\s+by each instance's property form\./.test(help), families + ' / ' + help);
 
   // ---- the window ---------------------------------------------------------------------------------------------------------
   // Since 2026-09-27 the PDK window opens from the Virtuoso window: its "PDK window..." button beside Refresh (the PDK is
@@ -215,6 +222,10 @@ await runChecks(browser, async () => {
     && bjt[3] === 'C collector, B base, E emitter, S bulk' && bjt[4] === 'area = bjt.area, m (count)', JSON.stringify(bjt));
   check('... a parameter kept under another column is shown so (the inductor radius)', shown.rows.some(r => r[1] === 'fx_ind' && r[4].startsWith('r = rad (m)')));
   check('a non-numeric setting is not listed as something the network reads', !shown.rows.find(r => r[1] === 'fx_nch')[4].includes('region'));
+  // Branch record SIF-52: a model file's size in a unit, the exact count on hover (it read "48213337 bytes").
+  const files = await pev(`[...[...document.querySelectorAll('.pdk-details details')].find(d => d.querySelector('summary')?.textContent === 'Model files read')?.querySelectorAll('tbody tr') ?? []]
+    .map(r => [r.cells[1].textContent, r.cells[1].title])`);
+  check('"Model files read" gives each file\'s size in a unit, with the exact bytes on hover', JSON.stringify(files) === '[["46.0 MiB","48213337 bytes"]]', JSON.stringify(files));
   // ---- the ideal parts read with the PDK (record 7.190) -----------------------------------------------------------------------
   const ideal = await pev(`(() => { const w = document.querySelector('.pdk-window'), list = w.querySelector('details.ideal-list');
     return { says: w.querySelector('p.hint').textContent.includes('Each read also brings the ideal parts of analogLib'),

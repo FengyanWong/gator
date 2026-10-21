@@ -5,6 +5,7 @@ import { baselineText, followTaskBaseline } from './TaskSave';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { NGSPICE_WINDOW } from '../contract';
+import { bytes, plural } from '../format';
 
 /** The ngspice window (user request 2026-09-23): a SPICE deck pasted or loaded from a file on the backend machine, checked,
  *  and saved as the task ngspice:<name> - one more entry of the Registered task list, which then runs on an ngspice
@@ -18,6 +19,10 @@ const EXAMPLE = 'examples/circuits/ngspice_ota5_level1.cir';
 const NAME = /^[a-z][a-z0-9_]{1,39}$/;
 /** A Windows path typed on this machine, as the WSL backend sees it (D:\x\y.cir -> /mnt/d/x/y.cir). */
 const backendPath = (text: string) => text.trim().replace(/^([A-Za-z]):[\\/]/, (_, d) => `/mnt/${d.toLowerCase()}/`).replace(/\\/g, '/');
+/** The Check summary's element kinds in words (branch record SIF-52: it read "1 vsource, 1 isource"); nmos and pmos stay as
+ *  the deck's .model lines write them, and a kind this list does not know is shown as sent. */
+const KIND: Record<string, string> = { vsource: 'voltage source', isource: 'current source', resistor: 'resistor', capacitor: 'capacitor',
+  inductor: 'inductor', unknown: 'unknown part' };
 
 /** `button` false (record 7.362): this keeps the window and its work, and the buttons that open it stand elsewhere - in the Tasks
  *  window and on the editors' tab line - calling `openRef.current(from)`; `onBlocked` tells them when the browser refused it. */
@@ -69,7 +74,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged, but
     const file = await api.ngspiceRead(target);
     setText(file.text); setSourcePath(file.path); setPath(file.path); setChecked(null);
     if (!name || (loadedFrom && name === loadedFrom && which === 'example')) setName(which === 'example' ? 'ota5_level1' : (file.path.split('/').pop() ?? '').replace(/\.[^.]*$/, '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z]+/, '') || 'netlist');
-    setMessage({ level: 'ok', text: `Loaded ${file.path} (${file.size} bytes). Check it, then save it as a task.` });
+    setMessage({ level: 'ok', text: `Loaded ${file.path} (${bytes(file.size)}). Check it, then save it as a task.` });
   });
   const check = () => run('check', async () => { setChecked(await api.ngspiceCheck({ text, device_kinds: kinds, source_path: sourcePath })); });
   const save = () => run('save', async () => {
@@ -88,7 +93,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged, but
     <div className="virtuoso-window ngspice-window">
       <h2>ngspice netlist</h2>
       <p className="hint">Paste a SPICE deck, or load one from a file on the backend machine, and save it as a task. It then stands in the
-        Registered task list as <code>ngspice:&lt;name&gt;</code> and runs on an ngspice connection (on this machine or over SSH:
+        Tasks window as <code>ngspice:&lt;name&gt;</code> and runs on an ngspice connection (on this machine or over SSH:
         the Connection window). Opening this window runs nothing; Check reads the deck without keeping it.</p>
       <details className="more hint"><summary>What the deck must contain</summary>
         <ul className="steps-list">
@@ -103,7 +108,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged, but
             is shown, not sized. Parameters written as <code>{'{wn}'}</code> are replaced by the number for that run.</li>
           <li><b>Files</b>: on this machine, relative <code>.include</code> paths are resolved from the folder the deck was loaded from
             (a pasted deck has none: write absolute paths). Over SSH, every path in the deck is a path on that machine.</li>
-          <li><b>Models the deck does not define</b> (a PDK cell as <code>X1 ... sky130_fd_pr__nfet_01v8</code>): declare their kind below,
+          <li><b>Models the deck does not define</b> (a PDK cell as <code>X1 ... my_nfet</code>): declare their kind below,
             or they are shown as unknown and cannot be sized. ngspice simulates them either way.</li>
         </ul></details>
       <label>Task name<input value={name} onChange={e => setName(e.target.value.trim().toLowerCase())} placeholder="lowercase letters, digits, _"
@@ -120,7 +125,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged, but
       <label>Netlist<textarea className="ngspice-text" value={text} onChange={e => { setText(e.target.value); setChecked(null); }} rows={18} spellCheck={false}
         placeholder={'* title line\nvdd vdd 0 dc 1.8\n...\n.ac dec 20 1 1G\n.meas ac gain_db max vdb(out)\n.end'} /></label>
       <details className="more"><summary>Models the deck does not define: their kinds</summary>
-        <label>name=kind pairs<input value={kinds} onChange={e => { setKinds(e.target.value); setChecked(null); }} placeholder="sky130_fd_pr__nfet_01v8=nmos sky130_fd_pr__pfet_01v8=pmos"
+        <label>name=kind pairs<input value={kinds} onChange={e => { setKinds(e.target.value); setChecked(null); }} placeholder="my_nfet=nmos my_pfet=pmos"
           title="Kinds: nmos, pmos, resistor, capacitor, inductor, vsource, isource. For subcircuits or models an included file defines." /></label></details>
       <details className="more"><summary>Labels: class <b>{labels.circuit_class}</b>, PDK <b>{labels.pdk_id}</b></summary>
         <div className="row">
@@ -139,8 +144,9 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged, but
       {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'error' ? 'error' : 'hint'}>{message.text}</p>}
       {checked && (checked.ok === false ? <p className="error">Cannot read the deck: {checked.problem}</p> : (
         <div className="note ngspice-check">
-          <p><b>{checked.title || '(no title line)'}</b>: {checked.devices} elements ({Object.entries(checked.kinds ?? {}).map(([k, n]) => `${n} ${k}`).join(', ')}),
-            {' '}{checked.nets} nets, {checked.sizable.length} values a run can vary, {checked.measurements.length} results.</p>
+          <p><b>{checked.title || '(no title line)'}</b>: {plural(checked.devices, 'element')} ({Object.entries(checked.kinds ?? {})
+            .map(([k, n]) => KIND[k] ? plural(n as number, KIND[k]) : `${n} ${k}`).join(', ')}),
+            {' '}{plural(checked.nets, 'net')}, {plural(checked.sizable.length, 'value a run can vary', 'values a run can vary')}, {plural(checked.measurements.length, 'result')}.</p>
           {checked.problems.length > 0 && <ul className="steps-list">{checked.problems.map((p: string) => <li key={p} className="warn">{p}</li>)}</ul>}
           {checked.measurements.length > 0 && <details className="more" open><summary>Results ({checked.measurements.length}): the Probes rows</summary>
             <table className="grid small"><thead><tr><th>Name</th><th>Analysis</th><th>Unit (a guess: edit the row)</th><th>Statement</th></tr></thead>
@@ -149,8 +155,9 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged, but
           {checked.analyses.length > 0 && <details className="more"><summary>Analyses ({checked.analyses.length})</summary><p>{checked.analyses.map((a: string) => <code key={a}>{a} </code>)}</p></details>}
           {checked.unknown_models.length > 0 && <p className="warn">Shown as unknown (simulated, not sized): {checked.unknown_models.join(', ')}. Declare their kinds above to size them.</p>}
           {checked.includes.length > 0 && <p className="hint">Includes: {checked.includes.map((i: Json) => i.path).join(', ')}{sourcePath ? '' : ' - a pasted deck has no folder: relative paths must be absolute.'}</p>}
-          {checked.diagnostics.length > 0 && <details className="more"><summary>{checked.diagnostics.length} diagnostics</summary>
-            <ul>{checked.diagnostics.map((d: Json, i: number) => <li key={i} className={d.severity}>{d.code}: {d.message}</li>)}</ul></details>}
+          {/* The words first, the code on hover (branch record SIF-52, as SIF-5 did in the editors' Issues column). */}
+          {checked.diagnostics.length > 0 && <details className="more"><summary>{plural(checked.diagnostics.length, 'diagnostic')}</summary>
+            <ul>{checked.diagnostics.map((d: Json, i: number) => <li key={i} className={d.severity} title={`${d.severity}: ${d.code}`}>{d.message}</li>)}</ul></details>}
         </div>))}
     </div>);
   if (openRef) openRef.current = from => { openWindow(from ?? undefined); };

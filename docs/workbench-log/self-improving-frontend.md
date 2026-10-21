@@ -877,3 +877,41 @@ as "0.000001" and 1e-5 as "0.00001" (it keeps an exponent only below 1e-6). "Fou
 "0.000001" / "0.00001", a bare number in m; the commit message stays as pushed. The backend's Notes sentence "Its own
 range was 1e-06 .. 1e-05 m." really is written that way (Python's text), so it stands. No code changed: `tsc` clean,
 `matched_devices_check` 32 (only a comment changed in it).
+
+### SIF-52 The ngspice and PDK windows name no other PDK, and count and size things in words (2026-10-21; from the readability audit)
+
+**Found.** The ngspice window's help ("Models the deck does not define (a PDK cell as X1 ... <name>)") and the placeholder
+of its kinds box gave as examples two device names from another foundry's PDK library, which the house rule does not allow
+(docs/workbench.md named one too). Its Check summary read "2 elements (1 vsource, 1 nmos), 3 nets, 3 values a run can
+vary, 1 results.": the program's kind keys, and no singular. Its diagnostics fold read "1 diagnostics", each line starting
+with its code ("unknown_device: x1: subcircuit ..."), the pattern SIF-5 removed from the editors' Issues column. Load said
+"Loaded /x/ota.cir (2345 bytes).", and the PDK window's "Model files read" gave a model file as "48213337 bytes". The
+window's first paragraph said a saved task "stands in the Registered task list", a name no window carries (the window is
+"Tasks"). In the RL model window, the Components line for "Device families (any PDK)" said "The list of a new model since
+record 7.298.", and the folded "What the component list changes" said a PDK component's parameters "can also be varied
+(...) - on the MOCK backend; a real circuit still writes only what its profile allows": the workbench has had no MOCK task
+since record 7.128, and "profile" is a retired word.
+
+**Changed** (`Ngspice.tsx`, `Pdk.tsx`, `docs/workbench.md`): the examples are neutral, "(a PDK cell as X1 ... my_nfet)"
+and "my_nfet=nmos my_pfet=pmos" (the docs: "a PDK cell such as `my_nfet`"). The Check summary reads "2 elements (1 voltage
+source, 1 nmos), 3 nets, 3 values a run can vary, 1 result.": vsource, isource and unknown read voltage source, current
+source and unknown part (resistor, capacitor, inductor stay), with an s for more than one; nmos and pmos stay as the
+deck's .model lines write them, and a kind the list does not know is shown as sent. Every count there uses `plural`
+(format.ts). The diagnostics fold reads "1 diagnostic", and each line is the message alone, with "warning: unknown_device"
+on hover. Load says "(179 B)" for the example deck (`bytes`, as the Output and Runs views write sizes); "Model files read" writes
+"46.0 MiB" with "48213337 bytes" on hover. The first paragraph says "It then stands in the Tasks window as
+ngspice:<name>". The Components line says "A new model uses this list.", and the help "Its parameters can also be varied
+(lengths, counts, resistances, capacitances, inductances, voltages) by a Parameters row; what a real run may write in
+Virtuoso is decided by each instance's property form.", as docs/workbench.md says under "Varying more than w, l, m, nf, r,
+c, ind, dc". Left for the audit batches that own those files: the same diagnostics fold and "N results:" in the circuit
+column (`CircuitBrowser.tsx`, `Left.tsx`), and "the Registered task list" in Delete task's tooltip and confirmations
+(`Left.tsx`, `taskActions.ts`).
+
+**Checked.** `tsc` clean; `ngspice_window_check` 43 (new: after Example the green line reads "Loaded
+<repo>/examples/circuits/ngspice_ota5_level1.cir (179 B). Check it, then save it as a task."; the kinds box's placeholder
+and the help give the neutral names; the summary line reads exactly as above; a canned diagnostic reads "1 diagnostic",
+its message alone, "warning: unknown_device" on hover; its "2 elements" and "3 values a run can vary" pins unchanged),
+`pdk_check` 39 (new: the device-families line says "A new model uses this list." with no record number, and the help names
+no MOCK backend and says what a Parameters row varies and what decides a real run's writes; the fixture's model file is
+now 48213337 bytes and reads "46.0 MiB" with the exact count on hover; its /device families of any PDK/ and /loads with
+any PDK/ pins unchanged); neither flaky.

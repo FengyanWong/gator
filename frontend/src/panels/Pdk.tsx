@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { signal } from '../signal';
-import { dateTimeOrText as loadedAt } from '../format';
+import { bytes, dateTimeOrText as loadedAt } from '../format';
 import { PDK_WINDOW } from '../contract';
 import { api, gateText, Json, problemText } from '../api';
 import { useNewest } from '../newest';
@@ -68,19 +68,21 @@ export function ComponentList({ value, onChoose }: { value: string; onChoose: (v
           </select></label>
       </div>
       <p className="hint component-what">{value === 'families'
-        ? <>Knows the device families of any PDK: nMOS, pMOS, npn, pnp, diode, varactor, resistor, capacitor, inductor and sources. Each part of the task's PDK takes its family by rule (its bipolars, diodes and varactors once the PDK is loaded); a model trained with this list loads with any PDK. The list of a new model since record 7.298. A PDK's own list appears here once the PDK was read: reading a cell in the Virtuoso window reads its PDK too.</>
+        ? <>Knows the device families of any PDK: nMOS, pMOS, npn, pnp, diode, varactor, resistor, capacitor, inductor and sources. Each part of the task's PDK takes its family by rule (its bipolars, diodes and varactors once the PDK is loaded); a model trained with this list loads with any PDK. A new model uses this list. A PDK's own list appears here once the PDK was read: reading a cell in the Virtuoso window reads its PDK too.</>
         : value === 'standard'
         ? <>Knows MOS, R, C, L and sources; other parts are "unknown". Kept to continue the models trained with it: a new model uses the device families. A PDK's own list appears here once the PDK was read: reading a cell in the Virtuoso window reads its PDK too.</>
         : chosen ? <>Knows all {chosen.summary.devices} components of {chosen.pdk_id}: {byFamily(chosen.summary)}. Other parts keep their standard kinds. A model trained with this list loads only with it.</>
         : null}</p>
       {missing && <p className="warn">PDK {value.slice(4)} is not loaded here. Read it in the Virtuoso window (reading a cell reads its PDK; "PDK window..." reads one by name), or choose another list.</p>}
       {error && <p className="warn">{error}</p>}
+      {/* What a Parameters row may vary and what decides a real run's writes, as docs/workbench.md says (branch record SIF-52:
+          this promised more "on the MOCK backend", and the workbench has no MOCK task since record 7.128). */}
       <details className="component-help"><summary>What the component list changes</summary>
         <p className="hint">The network turns every part of the circuit into a node with a kind, and every pin into a link with a role (drain,
           gate, collector...). It can only tell apart what its list names. With a PDK list, each PDK component has a kind of its own, its pins have
           their real roles, and all its numeric parameters reach the network, each on the scale the PDK declares. Its parameters can also be varied
-          (lengths, counts, resistances, capacitances, inductances, voltages) - on the MOCK backend; a real circuit still writes only what its
-          profile allows. Two consequences: a model trained with one list loads only with that list, and a Parameters row on a parameter outside the
+          (lengths, counts, resistances, capacitances, inductances, voltages) by a Parameters row; what a real run may write in Virtuoso is decided
+          by each instance's property form. Two consequences: a model trained with one list loads only with that list, and a Parameters row on a parameter outside the
           eight standard ones (w, l, m, nf, r, c, ind, dc) can run only with a PDK list - validation says so at the row. The optimizer's own code is
           not changed by a list.</p></details>
     </div>);
@@ -212,6 +214,7 @@ function PdkDetails({ pdk, devices }: { pdk: Json; devices: Json[] }) {
       {(pdk.not_used ?? []).length > 0 && <details><summary>In the model files but placed by no cell ({pdk.not_used.length})</summary>
         <p className="hint mono">{pdk.not_used.join(', ')}</p></details>}
       <details><summary>Model files read</summary>
-        <table className="grid small"><tbody>{files.map((f: Json) => <tr key={f.path}><td className="mono">{f.path}</td><td className="numeric">{f.bytes} bytes</td><td className="mono">{String(f.sha256).slice(0, 16)}</td></tr>)}</tbody></table></details>
+        {/* The size in a unit, the exact count on hover (branch record SIF-52: a model file read "48213337 bytes"). */}
+        <table className="grid small"><tbody>{files.map((f: Json) => <tr key={f.path}><td className="mono">{f.path}</td><td className="numeric" title={`${f.bytes} bytes`}>{bytes(f.bytes)}</td><td className="mono">{String(f.sha256).slice(0, 16)}</td></tr>)}</tbody></table></details>
     </div>);
 }

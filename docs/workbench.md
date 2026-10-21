@@ -864,7 +864,7 @@ What the deck must contain, and what the workbench makes of it (`src/gator_workb
   isource, unknown). The kind of a MOS comes from its `.model` line - in the deck or in the files it includes,
   which are read for their `.model` and `.subckt` lines only (never copied, shown or sent anywhere; up to 48 MB
   of them). A diode, a bipolar, a behavioural source, or an instance of a subcircuit the deck does not define (a
-  PDK cell such as `sky130_fd_pr__nfet_01v8`) is `unknown`, a warning, not an error: ngspice simulates it either
+  PDK cell such as `my_nfet`) is `unknown`, a warning, not an error: ngspice simulates it either
   way, only an unknown device cannot be sized. The window's "Models the deck does not define" box declares kinds
   for those (`name=nmos name2=pmos`), saved with the task.
 * **Sizes a run can vary**: a numeric value of a top-level element (W, L, M, NF of a transistor; the value of an

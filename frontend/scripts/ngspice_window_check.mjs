@@ -6,8 +6,9 @@
 // What it pins: ONE button "From an ngspice netlist..." in the Tasks window's "New task:" row, after "From a Virtuoso
 // cell..." (record 7.362; until then "ngspice netlist..." in the Project column with its text beside it); the window opens
 // (title "GATOR - ngspice netlist"), sends nothing by itself and stays open when the Tasks window that opened it closes;
-// Example loads a deck through /api/ngspice/read (the path under the repository); Check sends the text and shows the
-// summary (elements, results with units, problems); Save sends the name, text, kinds and labels, then the page follows the
+// Example loads a deck through /api/ngspice/read (the path under the repository) and says its size in a unit; Check sends
+// the text and shows the summary (elements by kind in words, counts in the singular for one, results with units, problems,
+// a diagnostic's words with its code on hover - branch record SIF-52); the kinds box and the help name no PDK's devices; Save sends the name, text, kinds and labels, then the page follows the
 // new task (its name on the editors' tab line, marked [ngspice]) and the editors hold its starter rows; a saved ngspice
 // task says under the editors' toolbar that it runs on ngspice and which connection it needs, shows its block in the
 // circuit column (revision, results), has "ngspice netlist..." back to its deck on the tab line and Delete task in the
@@ -28,7 +29,9 @@ const browser = await launchEdge('ngspice');
 const DECK = '* Five-transistor OTA on generic level-1 MOS models\n.model nch nmos level=1\nvdd vdd 0 dc 1.8\nm1 out in 0 0 nch W=4u L=0.5u\n.control\nop\nlet vout_v = v(out)\nprint vout_v\n.endc\n.end\n';
 const CHECK = { ok: true, title: 'Five-transistor OTA on generic level-1 MOS models', devices: 2, nets: 3, kinds: { vsource: 1, nmos: 1 }, sizable: ['m1.l', 'm1.w', 'vdd.dc'],
   measurements: [{ name: 'vout_v', analysis: 'dc', unit: 'V', line: 8, text: 'print vout_v' }], analyses: ['op'], includes: [], unknown_models: [], subckt_uses: {},
-  has_control: true, has_end: true, diagnostics: [], problems: [] };
+  has_control: true, has_end: true, problems: [],
+  // One canned diagnostic (the deck itself has none): the window lists its words, with its severity and code on hover.
+  diagnostics: [{ code: 'unknown_device', severity: 'warning', message: 'FIXTURE: x1: subcircuit my_nfet is not defined in the netlist and its kind is not declared' }] };
 const STARTER = { project: { name: 'fixture_ota', task_name: 'fixture_ota' }, circuit: { source: 'registered_task', task_id: 'ngspice:fixture_ota', circuit_class: 'opamp', pdk_id: 'unspecified' },
   parameters: [{ variable_id: 'm1_w', instance_path: 'm1', parameter_name: 'w', unit: 'um', scale: 'linear', value_type: 'continuous', optimized: true, lower: 2, upper: 8, notes: 'w on line 4' }],
   measurements: [{ measurement_id: 'm_vout_v', analysis: 'dc', result_source: 'backend_profile', source_name: 'vout_v', unit: 'V', notes: 'line 8: print vout_v' }], targets: [] };
@@ -154,6 +157,13 @@ await runChecks(browser, async () => {
   check('Example asked the backend to read the example deck under the repository', !!read && read.body.path === `${meta.repo_root}/examples/circuits/ngspice_ota5_level1.cir`, JSON.stringify(read?.body));
   check('the deck fills the text box and the name is proposed', (await win.evaluate(`${W}.querySelector('textarea.ngspice-text').value`)) === DECK
     && (await win.evaluate(`[...${W}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Task name').querySelector('input').value`)) === 'ota5_level1');
+  // Branch record SIF-52: the size in a unit (it read "(N bytes)"); the fixture's deck is under 1 KiB.
+  const loadedText = await win.evaluate(`${W}.querySelector('p.ok')?.textContent ?? ''`);
+  check('the green line names the file and its size in a unit', loadedText === `Loaded ${read?.body.path} (${DECK.length} B). Check it, then save it as a task.`, loadedText);
+  // Branch record SIF-52: the example names are no PDK's own devices.
+  const neutral = await win.evaluate(`(() => { const w = ${W}, box = [...w.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'name=kind pairs');
+    return { placeholder: box?.querySelector('input')?.placeholder ?? null, help: [...w.querySelectorAll('.steps-list li')].find(l => l.textContent.startsWith('Models the deck does not define'))?.textContent ?? '' }; })()`);
+  check('the kinds box and the help give neutral example names', neutral.placeholder === 'my_nfet=nmos my_pfet=pmos' && neutral.help.includes('(a PDK cell as X1 ... my_nfet)'), JSON.stringify(neutral));
 
   // ---- Check sends the text and shows the summary ----------------------------------------------------------------------------------
   await win.evaluate(`[...${W}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Check').click()`, true);
@@ -164,6 +174,16 @@ await runChecks(browser, async () => {
   const summary = await win.evaluate(`${W}.querySelector('.ngspice-check')?.textContent ?? ''`);
   check('the summary names the title, the elements, the values a run can vary and the results with their units',
     summary.includes(CHECK.title) && summary.includes('2 elements') && summary.includes('3 values a run can vary') && summary.includes('vout_v') && summary.includes('V'), summary.slice(0, 200));
+  // Branch record SIF-52: the kinds in words and one result in the singular (it read "(1 vsource, 1 nmos) ... 1 results.").
+  const first = await win.evaluate(`${W}.querySelector('.ngspice-check p')?.textContent ?? ''`);
+  check('... in words: "2 elements (1 voltage source, 1 nmos), 3 nets, 3 values a run can vary, 1 result."',
+    first === `${CHECK.title}: 2 elements (1 voltage source, 1 nmos), 3 nets, 3 values a run can vary, 1 result.`, first);
+  // Branch record SIF-52 (as SIF-5 in the editors' Issues column): the words, with the code on hover (it read "1 diagnostics",
+  // then "unknown_device: ...").
+  const diagnostics = await win.evaluate(`(() => { const d = [...${W}.querySelectorAll('.ngspice-check details')].find(x => /diagnostic/.test(x.querySelector('summary')?.textContent ?? ''));
+    return d && { summary: d.querySelector('summary').textContent, items: [...d.querySelectorAll('li')].map(l => [l.textContent, l.title]) }; })()`);
+  check('the diagnostics fold says "1 diagnostic" and lists its words, its severity and code on hover', diagnostics?.summary === '1 diagnostic'
+    && JSON.stringify(diagnostics.items) === JSON.stringify([[CHECK.diagnostics[0].message, 'warning: unknown_device']]), JSON.stringify(diagnostics));
   await win.shot(path.join(out, 'ngspice-2-checked.png'), W);
 
   // ---- Save: the task is stored, the page follows it, the editors hold its rows ------------------------------------------------------

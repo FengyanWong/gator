@@ -114,6 +114,8 @@ await runChecks(browser, async () => {
   const CONTINUE = `[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === 'Continue...')`;
   const FORM = `document.querySelector('.continue-form')`, FIELD = `document.querySelector('.continue-form input')`;
   const REFUSAL = `document.querySelector('header .launch-refusal')`;
+  const FIRST_TILE = `[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.querySelector('.key-tile-value')?.textContent ?? null`;
+  const RUN_FOLDER = `[...document.querySelectorAll('.status-grid > table tr')].find(tr => tr.cells[0].textContent === 'Run folder').cells[1]`;
   const look = () => evaluate(`({ main: ${MAIN}?.textContent, mainOff: ${MAIN}?.disabled, abort: ${ABORT}?.textContent, abortOff: ${ABORT}?.disabled, chip: ${CHIP}?.textContent ?? null,
     baselineOff: ${BASELINE}?.disabled, banner: document.querySelector('.banner')?.textContent ?? null, remembered: localStorage.getItem(${JSON.stringify(RUN_KEY)}) })`);
   const mainReads = (label, tries) => until(`${MAIN}?.textContent === ${JSON.stringify(label)}`, tries);
@@ -189,6 +191,20 @@ await runChecks(browser, async () => {
   check('the MOCK notice and the run directory are reported as before', /FIXTURE MOCK DATA/.test(v.banner ?? '') && (v.banner ?? '').includes(DIR), v.banner ?? '');
   check('the header shows the run and its progress', await until(`/^running \\d+ \\/ 60 \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '')`), (await look()).chip ?? '');
   check('the Run status tab shows this run', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})`));
+  // Branch record SIF-54: the facts in words - the connection as the Connection window words it (it printed "not_applicable"),
+  // the jobs at once by Run configuration's name ("none (concurrency 1)"), "Saved to disk" ("Persistence"), "Run folder"
+  // that says it copies, and "none yet" while the run can still find a feasible design.
+  const facts = await evaluate(`Object.fromEntries([...document.querySelectorAll('.status-grid > table tr')].map(tr => [tr.cells[0].textContent, { text: tr.cells[1]?.textContent, title: tr.cells[1]?.title }]))`);
+  check('... its facts in words: Connection "n/a", "none; up to 1 concurrent Spectre job", Saved to disk "-", Run folder "Click to copy"',
+    facts.Connection?.text === 'n/a' && facts['Active workers']?.text === 'none; up to 1 concurrent Spectre job' && facts['Saved to disk']?.text === '-'
+    && facts['Run folder']?.text === DIR && facts['Run folder']?.title === 'Click to copy' && !facts.Persistence && !facts['Run directory'], JSON.stringify(facts).slice(0, 600));
+  check('... "First feasible design: none yet" while the run works', (await evaluate(FIRST_TILE)) === 'none yet', await evaluate(FIRST_TILE));
+  // A click copies the path and says so for 1.5 s (the browser's clipboard stood in for: a headless window may not be focused).
+  await evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: text => { window.__clip = text; return Promise.resolve(); } })`);
+  await evaluate(`${RUN_FOLDER}.click()`, true);
+  check('... a click on the run folder copies it and says "copied", then reads the path alone again', await until(`${RUN_FOLDER}.textContent === ${JSON.stringify(`${DIR} copied`)}`, 20)
+    && (await evaluate('window.__clip')) === DIR && await until(`${RUN_FOLDER}.textContent === ${JSON.stringify(DIR)}`, 40), await evaluate(`${RUN_FOLDER}.textContent`));
+  await evaluate(`delete navigator.clipboard.writeText`);
   await shot('run-2-running.png');
 
   // ---- 3. Pause -> "Pausing..." -> "Resume" -----------------------------------------------------------------------------
@@ -310,6 +326,7 @@ await runChecks(browser, async () => {
   v = await look();
   check('the line under the header says that the run has ended, and how', /^The run has ended \(cancelled\) at \d+ \/ 60/.test(v.banner ?? ''), v.banner ?? '');
   check('Abort is disabled, the baseline simulation is available, the header says how the run ended', v.abortOff === true && v.baselineOff === false && /^cancelled \d+ \/ 60 \[MOCK\]$/.test(v.chip ?? ''), JSON.stringify(v));
+  check('... and Run status\'s "First feasible design" reads "none", not "none yet" (branch record SIF-54)', await until(`${FIRST_TILE} === 'none'`, 40), await evaluate(FIRST_TILE));
   await shot('run-6-ended.png');
 
   // ---- 8. a run that cannot come back is announced BEFORE the pause; Abort on a paused run lets go of it -----------------------

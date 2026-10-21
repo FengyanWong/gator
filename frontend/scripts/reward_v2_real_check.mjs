@@ -45,7 +45,7 @@ try {
   const coverage = status.best_design.conditions_complete == null ? 'unknown' : status.best_design.conditions_complete ? 'complete' : 'partial';
   check('actual real coverage visible', await page.until(`document.querySelector('.status-grid')?.innerText.includes('coverage: ${coverage}')`, 150));
   check('launch accounting visible', await page.evaluate("document.querySelector('.status-grid').innerText.includes('42 confirmed, 0 uncertain, 0 reserved')"));
-  check('clearance visible', await page.evaluate("document.querySelector('.status-grid').innerText.includes('Tightest clearance')"));
+  check('clearance visible', await page.evaluate("document.querySelector('.status-grid').innerText.includes('Tightest margin')"));   // its name since branch record SIF-54
   await page.shot(path.join(dir, 'desktop.png'));
   await page.evaluate("Array.from(document.querySelectorAll('aside.right h3')).find(e => e.textContent === 'Reward and conditions').scrollIntoView()", true);
   await page.shot(path.join(dir, 'reward-controls.png'));

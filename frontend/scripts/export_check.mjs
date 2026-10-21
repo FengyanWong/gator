@@ -75,6 +75,19 @@ await runChecks(browser, async () => {
   check('it saves <run folder>__status.json', !!file, readdirSync(saved).join(', '));
   check('... holding the state, budget, manifest and summary the tab shows, and when it was exported', exported?.state === 'completed' && exported.run_dir === DIR && exported.budget?.charged === status.budget.charged
     && !!exported.manifest && !!exported.summary && /^20\d\d-/.test(exported.exported_utc ?? ''), JSON.stringify(Object.keys(exported ?? {})).slice(0, 200));
+  // Branch record SIF-54, on a real MOCK run's status: what was saved in words, the store's counters in the tooltip (it read
+  // "Persistence: commit 14, flushed 14, 9.5 KiB table data; last save ..."); the reward by name (it began with a bare
+  // "compressed"); "Tightest margin" (it read "Tightest clearance"); "none", not "none yet", once the run has ended.
+  const facts = await evaluate(`Object.fromEntries([...document.querySelectorAll('.status-grid > table tr')].map(tr => [tr.cells[0].textContent, { text: tr.cells[1]?.textContent, title: tr.cells[1]?.title }]))`);
+  check('Run status: "Saved to disk: last save <local time> · <size> of table data", the counters in its tooltip', !facts.Persistence
+    && /^last save \d{4}-\d\d-\d\d \d\d:\d\d:\d\d · [\d.]+ (B|KiB|MiB) of table data$/.test(facts['Saved to disk']?.text ?? '') && /^last save \S+ \(UTC\); commit \d+, flushed \d+$/.test(facts['Saved to disk']?.title ?? ''),
+    JSON.stringify(facts['Saved to disk']));
+  check('... "Executed reward" names the reward, then its settings as the reward block names them', status.summary?.reward?.version !== 'constraint_violation_v2'
+    || /^Constraint violation, version 2; violation shape \w+; worst hard-spec share [\d.]+; objective bonus weight [\d.]+; tightest-margin bonus weight [\d.]+$/.test(facts['Executed reward']?.text ?? ''),
+    facts['Executed reward']?.text);
+  check('... "Tightest margin" beside a best design, never "Tightest clearance"', !!facts['Tightest margin'] === !!status.best_design && !facts['Tightest clearance'], Object.keys(facts).join(', '));
+  check('... the ended run\'s "First feasible design" reads a number or "none", never "none yet"', (await evaluate(`[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.querySelector('.key-tile-value')?.textContent`))
+    === (status.first_feasible ? `at ${status.first_feasible.first_feasible_eval_count} evaluations` : 'none'));
   await shot('export-1-status.png');
 
   // ---- 1 Logs: the whole file, not the newest 200 entries --------------------------------------------------------------------------------------
@@ -108,6 +121,9 @@ await runChecks(browser, async () => {
   // ---- 3 + 4 Data tables: the CSV comes to the browser; so do the research CSVs, as one zip ------------------------------------------------------
   await tab('Data tables'); row = 'Refresh';
   check('Data tables shows the run\'s evaluations', await until(`/^${status.budget.charged} rows/.test${HINT(row)}`, 80), await hint());
+  // In words, the store's commit in the tooltip (branch record SIF-54: "12 rows (snapshot at commit 14); last 12 shown.").
+  check('... "N rows; the last M shown.", with "Snapshot at commit N" in its tooltip', new RegExp(`^${status.budget.charged} rows; the last ${Math.min(25, status.budget.charged)} shown\\.`).test(await hint())
+    && /^Snapshot at commit \d+$/.test(await evaluate(`${button(row)}?.closest('.row').querySelector('.hint')?.title ?? ''`)), await hint());
   await press('Export detailed CSV');
   check('"Export detailed CSV" says what was downloaded and where the copy is kept', await until(`/Downloaded evaluations__seq\\d+\\.csv\\. Also kept in the run folder: exports\\/evaluations__seq\\d+\\.csv/.test${HINT(row)}`, 100), await hint());
   const csvName = /Downloaded (evaluations__seq\d+\.csv)/.exec(await hint())?.[1] ?? 'missing';

@@ -343,6 +343,10 @@ await runChecks(browser, async () => {
   await showRun(RUNS.failed);
   check('the chosen charts are kept after a reload', await until(`(${TITLES})[1] === 'Critic loss'`, 60));
   check('a failed run says so, with its error, and shows its own rows only', await until(`/failed/.test((${TRAINING}).querySelector('.badge').textContent) && /The run failed: FIXTURE/.test((${TRAINING}).innerText) && /32 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60), await head());
+  // Its 32 evaluations never reach the gain of 400: it ended without a passing design, so the tile reads "none", not "none yet"
+  // (branch record SIF-54: "none yet" stood on ended runs too).
+  check('... its "First passing design" reads "none", not "none yet": the run has ended',
+    !RUNS.failed.data.evaluations.some(e => e.all_hard_constraints_satisfied) && await until(`(${KEYS})?.querySelectorAll('.key-tile .key-tile-value')[1]?.textContent === 'none'`, 40), JSON.stringify(await keyTiles()));
   await showRun(RUNS.older);
   check('a backend older than the page (no such route) is said as such', await until(`/older than the page/.test((${TRAINING}).innerText)`, 60), await evaluate(`(${TRAINING}).innerText.slice(0, 200)`));
   await showRun(RUNS.empty);

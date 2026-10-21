@@ -170,7 +170,7 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
       : info?.save_point_code === 'older' && summary.output.resumability === 'full_state'
       ? `model only: the latest save ${summary.output.latest_checkpoint ?? ''} is a full save point written by an older version of the optimizer code - only that version can continue it; Fine-tune and Evaluate only still load its model`
       : `${SAVED_STATE[summary.output.resumability] ?? summary.output.resumability} (${summary.output.completeness} output, latest save ${summary.output.latest_checkpoint ?? 'none'})`) : null],
-    ['Parallel simulations', info?.concurrency ? `${info.concurrency}` : null],
+    ['Concurrent Spectre jobs', info?.concurrency ? `${info.concurrency}` : null],   // Run configuration's name (SIF-54: "Parallel simulations")
     ['Connection', info?.connection_profile_id ?? (info ? 'none (not needed)' : null)],
     ['Data written', info?.bytes_written != null ? bytes(info.bytes_written) : null],
   ];

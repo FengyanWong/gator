@@ -4,7 +4,7 @@ import { createdAt as created, plural, runName, runTaskOrBlank as taskOf, stopWo
 import { si, unitLabel } from '../units';
 import { Icon } from './Icons';
 import { KeyTile } from './fields';
-import { shownLive } from '../runState';
+import { ENDED, shownLive } from '../runState';
 import { TRAINING_CAPS_KEY, TRAINING_COMPARE_KEY } from '../contract';
 import { TrainingChart } from './TrainingChart';
 import { runMode } from './rlModelText';
@@ -295,6 +295,10 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const { evaluations, updates } = own.counts();
   const last = own.lastTime();
   const state: string | undefined = status?.state;
+  // "none yet" only while a run can still pass (branch record SIF-54: an ended run said it too), as Run status's tile: the
+  // shown run by its status, a compared one by its row in the run list - unless its last read found its worker alive.
+  const noPassWord = (dir: string) => { const s: Json = status?.run_dir === dir ? status : rowOf.get(dir);
+    return s && ENDED.includes(s.state) && !s.worker_alive && !comparedState[dir]?.live ? 'none' : 'none yet'; };
   const empty = own.answers > 0 && evaluations === 0 && updates === 0 && !others.length;
   const candidates = runs.filter(r => r.run_dir !== runDir && !others.includes(r.run_dir));
   const unavailable = charts.filter(c => !c.available);
@@ -347,7 +351,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
       {/* One run: its numbers as tiles (record 7.360, user: "make it more compact but keeping the style"); several: one row each. */}
       {keyRows.length === 1 && keyRows[0].numbers ? ((k: NonNullable<(typeof keyRows)[number]['numbers']>) => <div className="key-tiles training-key-tiles">
         <KeyTile label="Evaluations" value={k.evaluations} title="Evaluations recorded so far." />
-        <KeyTile label="First passing design" value={k.firstPass ?? 'none yet'} before={k.firstPass != null ? 'evaluation' : undefined}
+        <KeyTile label="First passing design" value={k.firstPass ?? noPassWord(runDir)} before={k.firstPass != null ? 'evaluation' : undefined}
           title="The evaluation number of the first design that met every hard spec." />
         <KeyTile label={`Passing, last ${RECENT}`} value={!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged}` : 'no verdict'}
           after={k.recent?.judged ? `${Math.round((100 * k.recent.passed) / k.recent.judged)} %` : undefined}
@@ -368,7 +372,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
           <td title={dir}>{others.length ? <span className={`training-chip key-run${i}`}><span className="swatch" />{runLabel(dir)}</span> : runLabel(dir)}</td>
           {!k ? <td colSpan={6} className="hint">Reading...</td> : <>
             <td>{k.evaluations}</td>
-            <td>{k.firstPass != null ? `evaluation ${k.firstPass}` : 'none yet'}</td>
+            <td>{k.firstPass != null ? `evaluation ${k.firstPass}` : noPassWord(dir)}</td>
             <td title={k.recent ? `evaluations ${k.recent.from} to ${k.recent.to}` : undefined}>{!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged} (${Math.round((100 * k.recent.passed) / k.recent.judged)} %)` : 'no verdict'}</td>
             <td>{k.bestMiss != null ? plain(k.bestMiss) : '-'}</td>
             <td>{k.entropy ? `${plain(k.entropy[0])} \u2192 ${plain(k.entropy[1])}` : '-'}</td>

@@ -9,14 +9,12 @@ import { DESIGN_NAME, designName } from '../lineage';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Check, LookFold, Num } from './fields';
-import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_CHOICES, INPUT_NAMES, TRANSFER_TITLE, inputsChoice, newModelChoice, newModelInputs,
-  inputsText } from './rlModelText';
+import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_CHOICES, INPUT_NAMES, REWARD_NAME, TRANSFER_TITLE, inputsChoice, newModelChoice,
+  newModelInputs, inputsText } from './rlModelText';
 import { NoModeNote } from './RunConfiguration';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
 import type { RlModel } from './useRlModel';
 /** The training conditions as Reward and conditions names them (branch record SIF-12): the facts wrote the key ("off"). */
-/** The reward a saved model was trained with, by name (SIF-41). */
-const REWARD_NAME: Record<string, string> = { constraint_violation_v2: 'Constraint violation, version 2' };
 const CONDITIONS: Record<string, string> = { off: 'Nominal only', after_nominal: 'Corners after nominal passes', always: 'Every planned corner' };
 
 /** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the

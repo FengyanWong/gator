@@ -76,6 +76,11 @@ export const RUN_STATE_CLASS: Record<string, string> = { completed: 'ok', runnin
 /** A run state's badge in the Training tab, as a whole class name: an interrupted run counts as failed there (TrainingTab.tsx). */
 export const TRAINING_STATE_CLASS: Record<string, string> = { completed: 'state-ok', failed: 'state-failed', cancelled: 'state-failed', interrupted: 'state-failed',
   running: 'state-busy', starting: 'state-busy', pausing: 'state-busy', stopping: 'state-busy' };
+/** A connection's state in words, as the Connection window and its button word it; the Run status tab too since branch record
+ *  SIF-54 (it printed the key: "not_applicable"). Out of Connection.tsx, so the run tabs need not import that window. */
+export const CONNECTION_STATE: Record<string, string> = {
+  ok: 'OK', failed: 'FAILED', not_ready: 'NOT READY', not_applicable: 'n/a', not_checked: 'not checked', busy: 'BUSY', unknown: 'UNKNOWN',
+};
 
 // ---- numbers (plan-refactoring C10, out of api.ts) ------------------------------------------------------------------------
 /** A size in bytes, in the largest binary unit under its size: 512 B, 1.5 KiB, 2.25 GiB. */

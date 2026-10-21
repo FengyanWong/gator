@@ -959,3 +959,53 @@ incompatible summary pin now reads exactly as above; new: in Evaluate only the s
 "Actions", its tooltip starts "Deterministic: each step takes the policy's mean action" and names Sampled, and it offers
 Deterministic and Sampled with the values deterministic and sampled, deterministic chosen), `network_panel_check` 58,
 `mode_suggestion_check` 20; none flaky.
+
+### SIF-54 Run status says its facts in words: connection, reward, saving, run folder, jobs at once (2026-10-21; from the readability audit)
+
+**Found.** Run status printed the connection's state as the backend's key: "not_applicable 15 h 56 min old" on every MOCK
+or ngspice run ("not_ready", "unknown" elsewhere), and an empty badge (class state-undefined) when a status had no
+connection, while the header's pill and the Connection window say "n/a", "NOT READY". Its "Executed reward" row began with
+a bare "compressed" and never named the reward ("compressed; worst hard-spec share 0.5; objective weight 1; margin weight
+1"), where the RL model window says "Constraint violation, version 2; violation shape compressed" and the reward block
+"Objective bonus weight" and "Tightest-margin bonus weight". "Persistence: commit 812, flushed 812, 793.3 KiB table data;
+last save 2026-10-16 18:21:11" gave the store's sequence counters, with a failure at the end. "Run directory" copied the
+path on a click with no tooltip and nothing to say it had; the Runs window's "Run folder" says "Click to copy" and
+"copied". The jobs at once had three names: "none (concurrency 4)" here, "Parallel simulations 4" in the Runs window's
+Details, "Concurrent Spectre jobs" in Run configuration. "Tightest clearance" was the only place saying "clearance"; the
+Training tab's chart of the same number is "Tightest margin". "First feasible design: none yet" stood on runs that had
+ended, and so did the Training tab's "First passing design". Data tables' tool line read "5800 rows (snapshot at commit
+812); last 25 shown." and "1 rows (snapshot at commit 3); last 1 shown.".
+
+**Changed** (`format.ts`, `Connection.tsx`, `rlModelText.ts`, `RlModelWindow.tsx`, `RunTabs.tsx`, `RunList.tsx`,
+`TrainingTab.tsx`): the Connection window's words for a state moved to format.ts as `CONNECTION_STATE` (Connection.tsx
+imports it under its old name), and Run status's Connection badge uses them: "n/a", "NOT READY", "not checked"; a state
+the list does not know reads with spaces for its underscores, and a status without a connection reads "not reported", no
+badge. The badge's class still carries the key, so its colour is unchanged. Executed reward reads "Constraint violation,
+version 2; violation shape compressed; worst hard-spec share 0.5; objective bonus weight 1; tightest-margin bonus weight
+1": the name from `REWARD_NAME` (moved from RlModelWindow.tsx to rlModelText.ts and shared), the settings by
+`REWARD_NAMES`, as the reward block names them. The saving row is "Saved to disk: last save 2026-10-16 18:21:11 · 793.3
+KiB of table data", with "last save <UTC> (UTC); commit 812, flushed 812" in its tooltip, and "failed: <error> · " first
+when the store failed (the cell stays red then). "Run folder" has "Click to copy" and shows "copied" for 1.5 s after a
+click, as the Runs window's Details do. Active workers reads "none; up to 4 concurrent Spectre jobs" ("up to 1 concurrent
+Spectre job"), and the Runs window's fact is "Concurrent Spectre jobs". The margin row is "Tightest margin". "First
+feasible design" reads "none" once the run has ended (completed, stopped, cancelled or failed, with no worker alive) and
+"none yet" before; the Training tab's "First passing design" tile and table cell follow the same rule, the shown run by
+its status, a compared run by its row in the run list unless its last read found its worker alive. Data tables reads
+"5800 rows; the last 25 shown." ("1 row; ..."), with "Snapshot at commit 812" in the tooltip. Left as they were, as the
+audit's verdict said: the feasible / passing / violation words of the Training tab and the Runs window, chosen by records
+7.215 and 7.360, the Runs window's "First feasibility: not reached" among them. `reward_v2_real_check` (stand-alone, needs
+evidence folders; not run) now looks for "Tightest margin"; `reward_v2_frontend_check`'s pins ("compressed; worst
+hard-spec share 0.5") still hold. The docs quote none of these texts.
+
+**Checked.** `tsc` clean; `run_control_check` 106 (new: on the FIXTURE run the facts read Connection "n/a", Active
+workers "none; up to 1 concurrent Spectre job", Saved to disk "-" and Run folder with "Click to copy", with no
+Persistence or Run directory row; "First feasible design" reads "none yet" while the run works and "none" once it is
+cancelled; a click on the run folder, the clipboard stood in for, copies the path and shows "copied", then the path
+alone again), `export_check` 27 (new, on a real MOCK run's status: "Saved to disk" reads "last save <local time> · 86.0
+KiB of table data" with "commit 12, flushed 12" in its tooltip; Executed reward reads "Constraint violation, version 2;
+violation shape capped; worst hard-spec share 0; objective bonus weight 0; tightest-margin bonus weight 0"; "Tightest
+margin" stands beside the best design; the ended run's tile reads a count or "none"; Data tables reads "12 rows; the last
+12 shown." with "Snapshot at commit N" in its tooltip), `training_tab_check` 91 (new: the failed run, which never passed,
+reads "none" for its first passing design), `run_list_check` 122 (new: Details says "Concurrent Spectre jobs 2", no
+"Parallel simulations"), `connection_panel_check` 81, `model_chooser_check` 79, `dom_identity_check` 56, `save_now_check`
+25, `room_check` 22, `files_tab_check` 20; none flaky.

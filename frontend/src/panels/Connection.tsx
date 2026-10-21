@@ -7,11 +7,8 @@ import { api, Json } from '../api';
 import { connectionProfilesChanged, connectionProfilesShared } from '../shared';
 import { ConnectionFolders } from './ConnectionFolders';
 import { Icon } from './Icons';
-import { timeOrDateTime as testedAt } from '../format';
+import { CONNECTION_STATE as STATE_LABEL, timeOrDateTime as testedAt } from '../format';
 
-const STATE_LABEL: Record<string, string> = {
-  ok: 'OK', failed: 'FAILED', not_ready: 'NOT READY', not_applicable: 'n/a', not_checked: 'not checked', busy: 'BUSY', unknown: 'UNKNOWN',
-};
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$/;
 const SUGGESTED_NAME: Record<string, string> = { virtuoso_ssh: 'lab', virtuoso_local: 'virtuoso-local', ngspice_local: 'ngspice-local', ngspice_ssh: 'ngspice-ssh' };
 

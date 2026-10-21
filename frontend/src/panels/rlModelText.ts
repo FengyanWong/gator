@@ -94,6 +94,8 @@ export const NETWORK_SETTING_LABELS: Record<string, string> = {
 /** The five reward settings a new configuration fixes (store.ts SIMPLE_REWARD), as the reward block names them. */
 export const REWARD_NAMES: Record<string, string> = { violation_shape: 'violation shape', worst_spec_share: 'worst hard-spec share',
   objective_weight: 'objective bonus weight', objective_shape: 'objective shape', margin_weight: 'tightest-margin bonus weight' };
+/** A reward version by name: a saved model's (SIF-41) and a run's executed reward in Run status (SIF-54). */
+export const REWARD_NAME: Record<string, string> = { constraint_violation_v2: 'Constraint violation, version 2' };
 
 /** The Mode, in the RL model window (record 7.265; plan "RL model window": "Mode selection should be merged in to load model.
  *  Scratch mode will ask you to create a new model from the default templates. fine-tune and evaluate load existing ones").

@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
 import { quantity, si } from '../units';
-import { bytes, durationWhole, num, plural, runName, short, sig, stamp, stopWords } from '../format';
+import { bytes, CONNECTION_STATE, durationWhole, num, plural, runName, short, sig, stamp, stopWords } from '../format';
 import { ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
@@ -10,7 +10,7 @@ import { requestTaskSave } from './TaskSave';
 import { ContinueForm } from './ContinueForm';
 import { LaunchRefusal } from './LaunchRefusal';
 import { KeyTile } from './fields';
-import { runMode } from './rlModelText';
+import { REWARD_NAME, REWARD_NAMES, runMode } from './rlModelText';
 
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
@@ -107,10 +107,13 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   useEffect(() => setAsking(false), [runDir]);
   // Continue... of the Runs window (record 7.267): the form opens for the run it was pressed for.
   useEffect(() => { if (ask && ask.runDir === runDir) setAsking(true); }, [ask?.serial]);
+  // The run folder's path was copied by a click, for 1.5 s, as the Runs window says it (branch record SIF-54: it copied unsaid).
+  const [copied, setCopied] = useState(false);
+  useEffect(() => setCopied(false), [runDir]);
   // A run chosen whose answer is still on its way, or whose status cannot be read now, is said as such: this line used
   // to read "No run selected." while the strip below named the run.
   if (!status) return <p className="hint">{!runDir ? 'No run selected.' : error ? `The status of this run could not be read: ${error}` : 'Reading the run...'}</p>;
-  const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection;
+  const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection, saved = status.persistence;
   const firstNominal = b?.first_nominal_feasible;
   const firstCost = (event: Json) => event
     ? `at ${event.first_feasible_eval_count} evaluations charged (dispatch #${event.dispatch_index}, ${event.completed_count} completed, ${event.in_flight_count} in flight, ${event.spectre_launches} launch${event.spectre_launches === 1 ? '' : 'es'})`
@@ -147,7 +150,8 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       <div className="key-tiles">
         <KeyTile label="Spectre launches" value={b.launches} after={`retries ${b.retries} · cache hits ${b.cache_hits}`} />
         <KeyTile label="Learner updates" value={status.learner_updates ?? 0} />
-        <KeyTile label="First feasible design" value={first ? first.first_feasible_eval_count : 'none yet'} before={first ? 'at' : undefined} after={first ? 'evaluations' : undefined} />
+        {/* "none yet" only while the run can still find one (branch record SIF-54: an ended run said it too) */}
+        <KeyTile label="First feasible design" value={first ? first.first_feasible_eval_count : ENDED.includes(status.state) && !status.worker_alive ? 'none' : 'none yet'} before={first ? 'at' : undefined} after={first ? 'evaluations' : undefined} />
         <KeyTile label="Best design" value={!best ? 'none' : best.feasible ? 'feasible' : best.nominal_feasible ? 'nominal only' : 'infeasible'}
           after={best ? `hard violation ${few(best.violation)}` : undefined} />   {/* three digits, as the facts below (SIF-42) */}
       </div>
@@ -160,9 +164,14 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       <tr><td>Budget</td><td>{b ? `${b.charged} charged / ${b.max_evaluations}  (in flight ${b.in_flight}, completed ${b.completed}, failed ${b.failed}, remaining ${b.remaining})` : '-'}</td></tr>
       <tr><td>Spectre launches</td><td>{b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''}  (retries ${b.retries}, cache hits ${b.cache_hits})` : '-'}</td></tr>
       {b && <tr><td>Launch accounting</td><td>{b.confirmed_launches ?? b.launches} confirmed, {b.uncertain_launches ?? 0} uncertain, {b.reserved_launches ?? 0} reserved</td></tr>}
-      <tr><td>Active workers</td><td>{(status.active_workers ?? []).map((w: Json) => `#${w.worker_id}: ${w.phase} attempt ${w.attempt}`).join('; ') || 'none'} (concurrency {status.concurrency})</td></tr>
+      {/* The setting by Run configuration's name (branch record SIF-54: "none (concurrency 4)", the configuration's key). */}
+      <tr><td>Active workers</td><td>{(status.active_workers ?? []).map((w: Json) => `#${w.worker_id}: ${w.phase} attempt ${w.attempt}`).join('; ') || 'none'}{status.concurrency != null
+        ? `; up to ${plural(status.concurrency, 'concurrent Spectre job')}` : ''}</td></tr>
       <tr><td>Learner updates</td><td>{status.learner_updates}</td></tr>
-      {executedReward?.version === 'constraint_violation_v2' && <tr><td>Executed reward</td><td>{executedReward.settings.violation_shape}; worst hard-spec share {few(executedReward.settings.worst_spec_share)}; objective weight {few(executedReward.settings.objective_weight)}; margin weight {few(executedReward.settings.margin_weight)}</td></tr>}
+      {/* Named, and its settings as the reward block names them (branch record SIF-54: it began with a bare "compressed"). */}
+      {executedReward?.version === 'constraint_violation_v2' && <tr><td>Executed reward</td><td>{REWARD_NAME[executedReward.version]}; {REWARD_NAMES.violation_shape} {executedReward.settings.violation_shape};
+        {' '}{REWARD_NAMES.worst_spec_share} {few(executedReward.settings.worst_spec_share)}; {REWARD_NAMES.objective_weight} {few(executedReward.settings.objective_weight)};
+        {' '}{REWARD_NAMES.margin_weight} {few(executedReward.settings.margin_weight)}</td></tr>}
       <tr><td>{hasV2 ? 'First full-plan feasibility' : 'First feasibility (recorded)'}</td><td>{firstCost(first)}</td></tr>
       <tr><td>First nominal feasibility</td><td>{firstNominal ? firstCost(firstNominal) : hasV2 ? 'not observed' : 'unknown (historical run)'}</td></tr>
       <tr><td>Best design</td><td>{best ? `${best.feasible ? best.conditions_complete === true ? 'Full-plan feasible' : 'Feasible (coverage unknown)' : best.nominal_feasible ? 'Nominal feasible only' : 'Infeasible'}${best.reward != null ? `; reward ${few(best.reward)}` : ''}; hard violation ${few(best.violation)}` : 'none'}</td></tr>
@@ -170,14 +179,23 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       {best && <tr><td>Conditions evaluated / planned</td><td>{best.conditions_evaluated ?? 'unknown'} / {best.conditions_planned ?? 'unknown'}</td></tr>}
       {best && <tr><td>{best.worst_metrics ? 'Worst applicable values' : 'Recorded values'}</td><td>{metricKeys.map(k => metric(k, (best.worst_metrics ?? best.metrics)[k])).join('; ')}</td></tr>}
       {best?.nominal_metrics && <tr><td>Nominal values</td><td>{nominalKeys.map(k => metric(k, best.nominal_metrics[k])).join('; ')}</td></tr>}
-      {best && <tr><td>Tightest clearance</td><td>{few(best.clearance_margin)}{best.tightest_clearance_spec ? `, on ${best.tightest_clearance_spec}` : ''}</td></tr>}
-      <tr><td>Connection</td><td><span className={`badge state-${conn?.overall}`}>{conn?.overall}</span>{conn?.age_seconds != null && ` ${durationWhole(conn.age_seconds)} old`}</td></tr>
-      <tr><td>Persistence</td><td className={status.persistence?.failed ? 'error' : ''} title={status.persistence?.last_successful_save ? `last save ${status.persistence.last_successful_save} (UTC)` : undefined}>{status.persistence ? `commit ${status.persistence.last_commit_seq}, flushed ${status.persistence.flushed_seq}, ${bytes(status.persistence.bytes_written)} table data; last save ${stamp(status.persistence.last_successful_save) ?? status.persistence.last_successful_save ?? '-'}` : '-'} {status.persistence?.failed ?? ''}</td></tr>
+      {/* Branch record SIF-54: "Tightest margin", as the Training tab's chart and the reward block's bonus name it (it read
+          "Tightest clearance" here alone); the connection's state in the Connection window's words (it printed the key,
+          "not_applicable", and an empty badge without one); what was saved, with the store's counters in the tooltip (it
+          read "Persistence: commit 812, flushed 812, ...") and a failure first. */}
+      {best && <tr><td>Tightest margin</td><td>{few(best.clearance_margin)}{best.tightest_clearance_spec ? `, on ${best.tightest_clearance_spec}` : ''}</td></tr>}
+      <tr><td>Connection</td><td>{conn?.overall ? <><span className={`badge state-${conn.overall}`}>{CONNECTION_STATE[conn.overall] ?? String(conn.overall).replace(/_/g, ' ')}</span>
+        {conn.age_seconds != null && ` ${durationWhole(conn.age_seconds)} old`}</> : 'not reported'}</td></tr>
+      <tr><td>Saved to disk</td><td className={saved?.failed ? 'error' : ''}
+        title={saved ? `${saved.last_successful_save ? `last save ${saved.last_successful_save} (UTC); ` : ''}commit ${saved.last_commit_seq}, flushed ${saved.flushed_seq}` : undefined}>
+        {saved ? `${saved.failed ? `failed: ${saved.failed} · ` : ''}last save ${stamp(saved.last_successful_save) ?? saved.last_successful_save ?? '-'} · ${bytes(saved.bytes_written)} of table data` : '-'}</td></tr>
       <tr><td>Last checkpoint</td><td title={status.last_checkpoint_utc ? `${status.last_checkpoint_utc} (UTC)` : undefined}>{stamp(status.last_checkpoint_utc) ?? status.last_checkpoint_utc ?? '-'}
         {status.manual_save && <span className={status.manual_save.state === 'saved' ? 'ok' : 'warn'}> - Save now: {status.manual_save.state === 'saved'
           ? `saved at ${status.manual_save.evaluations} evaluations (${status.manual_save.checkpoint_id})`
           : 'requested, waiting for the simulation in flight to finish'}</span>}</td></tr>
-      <tr><td>Run directory</td><td className="path" onClick={() => copy(status.run_dir)}>{status.run_dir}</td></tr>
+      {/* named, and said when copied, as the Runs window's Details do (branch record SIF-54) */}
+      <tr><td>Run folder</td><td className="path" title="Click to copy" onClick={() => copy(status.run_dir)?.then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined)}>
+        {status.run_dir}{copied && <b className="ok"> copied</b>}</td></tr>
       {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
     </tbody></table>
     <div className="row">
@@ -222,7 +240,8 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
       <button onClick={refresh} title="Refresh: Read this table again."><Icon name="refresh" label="Refresh" /></button>
       <button disabled={!!busy} onClick={exportCsv} title="Export detailed CSV: The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded."><Icon name={busy === 'csv' ? 'wait' : 'csv'} label={busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'} /></button>
       <button disabled={!!busy} onClick={exportResearch} title="Export research CSVs: The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip."><Icon name={busy === 'research' ? 'wait' : 'zip'} label={busy === 'research' ? 'Exporting...' : 'Export research CSVs'} /></button>
-      <span className="hint">{data ? `${data.total_rows} rows (snapshot at commit ${data.cutoff_commit_seq}); last ${data.rows.length} shown.` : ''} {error ?? note}</span></div>
+      {/* the store's commit in the tooltip, a row as one (branch record SIF-54: "1 rows (snapshot at commit 3)") */}
+      <span className="hint" title={data ? `Snapshot at commit ${data.cutoff_commit_seq}` : undefined}>{data ? `${plural(data.total_rows, 'row')}; the last ${data.rows.length} shown.` : ''} {error ?? note}</span></div>
     {data && <div className="scroll"><table className="grid small data-table"><thead><tr>{data.columns.map((c: string) => <th key={c} className={numeric.has(c) ? 'num-cell' : undefined}>{c}</th>)}</tr></thead>
       <tbody>{data.rows.map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
         // One line per row (record 7.158): an id ends in "..." - the whole value on hover, a click copies it - a time keeps

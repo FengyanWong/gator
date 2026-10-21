@@ -257,6 +257,8 @@ await runChecks(browser, async () => {
     && /^infeasible · gain_db = 41\.5 · violation 0\.125$/.test(details.facts['Best design']) && details.facts['Best design variables'] === 'input_pair_width = 2.34558 um; load_capacitance = 250 fF' && details.facts['First feasibility'] === 'not reached' && /^full state \(complete output, latest save ckpt-000040\)$/.test(details.facts['Saved state'])
     && details.facts['Model loaded at the start'] === 'none (random weights)' && details.facts['Data written'] === '1.2 MiB' && details.facts['Stop reason'] === 'paused by you (user_pause)', JSON.stringify(details?.facts));
   check('empty facts are left out instead of printed as blanks', !('Error' in (details?.facts ?? {})) && !('Paused between segments' in (details?.facts ?? {})));
+  check('... the jobs at once by Run configuration\'s name: "Concurrent Spectre jobs 2" (branch record SIF-54: "Parallel simulations")',
+    details?.facts['Concurrent Spectre jobs'] === '2' && !('Parallel simulations' in (details?.facts ?? {})), JSON.stringify(details?.facts));
   await pressIn(PAUSED, 'Hide details');
   await pressIn(RESUMED, 'Details'); await sleep(600);
   const resumedDetails = await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('.run-details'); return { count: ${WINDOW}.querySelectorAll('.run-details').length, paused: [...d.querySelectorAll('table.run-facts tr')].find(tr => tr.children[0].textContent === 'Paused between segments')?.children[1].textContent,

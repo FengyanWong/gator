@@ -78,7 +78,7 @@ await runChecks(browser, async () => {
     const b = ${BUTTON(BOX, 'Close')}; return !!b.querySelector('svg.icon') && b.querySelector('.sr-only')?.textContent === 'Close' && b.title.startsWith('Close:'); })()`));
   check('both matched ties are offered, ticked', JSON.stringify(await ticks()) === JSON.stringify([{ checked: true, disabled: false }, { checked: true, disabled: false }]), JSON.stringify(await ticks()));
   check('what each tie changes is said per row', /w_in_b follows w_in_a \(ratio 1\)/.test(await boxText()) && /w_load_b follows w_load_a \(ratio 1\)/.test(await boxText()), await boxText());
-  check('the independent variables are counted', /Independent action variables now: 5\./.test(await boxText()));
+  check('the searched rows are counted', /Searched rows now: 5\./.test(await boxText()), await boxText());
   await shot('matched_devices_box.png', BOX);
 
   await evaluate(`${BOX}.querySelectorAll('tbody input[type=checkbox]')[1].click()`);
@@ -88,7 +88,7 @@ await runChecks(browser, async () => {
   check('Review asks for exactly the ticked ties', await until(`!!${BOX}.querySelector('.confirm')`) && asked.length === 2
     && JSON.stringify(asked[1].apply) === JSON.stringify(FIXTURE.found.suggestions.map(s => s.id)), JSON.stringify(asked[1]?.apply));
   const header = await evaluate(`${BOX}.querySelector('.confirm h4').textContent`);
-  check('the review says 5 -> 3 independent variables', header.includes('5') && header.includes('3') && header.startsWith('Tie 2'), header);
+  check('the review says 2 ties: searched rows 5 -> 3', header.includes('5') && header.includes('3') && header.startsWith('2 ties: searched rows'), header);
   const diffKeys = await evaluate(`[...${BOX}.querySelectorAll('.confirm tbody tr')].map(tr => tr.children.length === 6 ? tr.children[1].textContent : null).filter(Boolean)`);
   check('the diff shows the two follower rows', JSON.stringify([...new Set(diffKeys)]) === '["w_in_b","w_load_b"]', JSON.stringify(diffKeys));
   check('nothing changed before Apply', (await cell(1, 'binding_group')) === '', await cell(1, 'binding_group'));
@@ -98,7 +98,7 @@ await runChecks(browser, async () => {
   check('Apply ties the rows in the editor', await until(`${CELL(1, 'binding_group')}.value === 'w_in_a' && ${CELL(3, 'binding_group')}.value === 'w_load_a'`),
     `${await cell(1, 'binding_group')} / ${await cell(3, 'binding_group')}`);
   check('...says so and how to take it back', /Applied: 2 rows changed\. Undo in the toolbar takes it back\./.test(await boxText()), await boxText());
-  check('...and the page counts 3 independent variables', await until(`/Independent action variables: 3 of 5/.test(${EDITORS}.querySelector('.fact')?.textContent ?? '')`),
+  check('...and the page counts 3 searched rows', await until(`/Searched rows: 3 of 5\\./.test(${EDITORS}.querySelector('.fact')?.textContent ?? '')`),
     await evaluate(`${EDITORS}.querySelector('.fact')?.textContent`));
   // What was found is about the rows before Apply: it goes, and "the rows changed" no longer stands next to "Applied" (7.125).
   check('the answer about the rows before goes: no stale warning next to "Applied" and no review', await until(`!${BUTTON(BOX, 'Review...')}`)

@@ -70,14 +70,16 @@ export function MatchedDevices({ config, setConfig, onClose }: { config: Json; s
               <td>{s.changes.map((c: Json, i: number) => <div key={i} className={c.action === 'skip' ? 'hint' : ''}>{change(c)}</div>)}</td></tr>)}</tbody></table>
           <div className="row"><button disabled={busy || stale || !chosen.length} onClick={review}
             title="Review: the rows with the ticked ties made, as a diff. Nothing changes before Apply.">Review...</button>
-            <span className="hint">Independent action variables now: <b>{answer.independent_before ?? '?'}</b>.</span></div>
+            {/* "Searched rows", as the Parameters fact line and the task's Details say it, where both lines here said
+                "independent action variables" and the heading "Tie 2: ..." read like an order to tie item 2 (branch record SIF-50). */}
+            <span className="hint">Searched rows now: <b>{answer.independent_before ?? '...'}</b>.</span></div>
           {answer.note && <p className="hint">{answer.note}</p>}
         </>}
         {answer.applicable && answer.suggestions.length === 0 && answer.structures.length > 0 &&
           <p className="hint">Nothing to tie: none of these devices has a size among the Parameters rows.</p>}
       </>}
       {shown && !stale && <div className="confirm">
-        <h4>Tie {chosen.length}: independent action variables {shown.independent_before} &rarr; {shown.independent_after}</h4>
+        <h4>{chosen.length} tie{chosen.length === 1 ? '' : 's'}: searched rows {shown.independent_before} &rarr; {shown.independent_after}</h4>
         {shown.problems.map((p: Json, i: number) => <p key={i} className="issue error">{p.level}: {p.message}</p>)}
         <DiffView diff={shown.diff} />
         <button disabled={shown.problems.length > 0} onClick={apply}>Apply</button><button onClick={() => setShown(null)}>Cancel</button></div>}

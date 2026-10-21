@@ -15,6 +15,8 @@ import { requestSaveAs } from './TaskSave';
 
 const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
 const ROW_TABS = Object.keys(TITLES);
+/** The start of a new row's ID (Add), in the tab's own word (branch record SIF-50). */
+const NEW_ID: Record<Section, string> = { parameters: 'parameter', measurements: 'probe', targets: 'spec' };
 /** The sections a whole-configuration import replaces beside the three tables, as the confirmation names them. */
 const IMPORTED_SECTIONS: Record<string, string> = { project: 'project labels', circuit: 'circuit source', run: 'run settings',
   output: 'output settings', research: 'research labels' };
@@ -173,10 +175,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     if (tab === 'measurements') row.result_source = config.measurements?.[0]?.result_source
       ?? (/^(ngspice|synthetic):/.test(String(config.circuit?.task_id ?? '')) ? 'backend_profile' : 'ade_output');
     // A free ID: `rows.length + 1` repeated an existing one after a deletion, and "Delete selected" then removed both rows.
+    // Named as the tab is (probe_3, spec_4), not by the section key (measurement_3, target_4; branch record SIF-50).
     const used = new Set(rows.map(r => r[keyField]));
     let n = rows.length + 1;
-    while (used.has(`${tab.slice(0, -1)}_${n}`)) n += 1;
-    row[keyField] = `${tab.slice(0, -1)}_${n}`;
+    while (used.has(`${NEW_ID[tab]}_${n}`)) n += 1;
+    row[keyField] = `${NEW_ID[tab]}_${n}`;
     // A new spec starts as the simplest equation over the probes: the first probe, in its unit.
     const first = config.measurements?.[0];
     if (tab === 'targets' && first && !row.equation) Object.assign(row, { equation: first.measurement_id ?? '', unit: row.unit || first.unit || '' });
@@ -205,12 +208,17 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         if (!whole && !rowsIn)
           throw new Error(`the file is neither a workbench configuration (from Export JSON) nor ${TITLES[tab]} rows (a list, or an object with "${tab}")`);
         if (!whole && rowsIn!.some((r: Json) => !r || typeof r !== 'object' || !r[keyField]))
-          throw new Error(`every ${TITLES[tab]} row needs its ${keyField}`);
+          throw new Error(`every ${TITLES[tab]} row needs its ${LABELS[tab][keyField]} ("${keyField}" in the file)`);
         const next = migrateConfig(whole ? incoming : { ...config, [tab]: rowsIn });
         const { diff } = await api.diff(config, next);
         const others = Object.keys(IMPORTED_SECTIONS).filter(k => JSON.stringify(config[k] ?? null) !== JSON.stringify(next[k] ?? null));
         setPending({ next, diff, others, rows: whole ? null : { section: tab, value: next[tab] } });
-      } catch (e: any) { setError(`Import failed: ${e.message}`); }
+      } catch (e: any) {
+        // A file that is not JSON is said so, with what to choose, where the browser's parser text stood ("Unexpected token 'a',
+        // "abc" is not valid JSON"); a missing ID names its header, Spec ID, beside the file's key (branch record SIF-50).
+        setError(e instanceof SyntaxError ? 'Import failed: the file is not JSON. Choose a file written by Export JSON, or a list of rows.'
+          : `Import failed: ${e.message}`);
+      }
     };
     const applyImport = (p: NonNullable<typeof pending>) => {
       const { rows } = p;
@@ -454,7 +462,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       const said = [cells ? `Pasted ${cells} cell${cells === 1 ? '' : 's'} into ${changes.size} row${changes.size === 1 ? '' : 's'} (one Undo step).` : 'Nothing pasted.',
         header ? 'The header line was skipped.' : '',
         problems.length ? `Not read, left as they were: ${problems.slice(0, 4).join(', ')}${problems.length > 4 ? ` and ${problems.length - 4} more` : ''}.` : '',
-        kept ? `${kept} cell${kept === 1 ? '' : 's'} that follow another field kept.` : '',
+        kept ? `${kept} cell${kept === 1 ? ' that follows' : 's that follow'} another field kept.` : '',   // as fill down says it (branch record SIF-50)
         beyond ? `${beyond} line${beyond === 1 ? '' : 's'} below the last row left out: Add rows first.` : ''].filter(Boolean).join(' ');
       setNote({ text: said, warn: problems.length + beyond > 0 });
     };
@@ -597,13 +605,20 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       <div className="task-notes" ref={taskNotes} />
       {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)} />}
       {/* The lines above the tables give their fact; what explains it is the line's tooltip (record 7.176, user: "reduce or
-          delete these texts"). */}
-      {tab === 'parameters' && <p className="fact" title={'The initial value is the one read from the circuit. Equal initial values do not imply a binding. '
-        + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>Independent action variables: <b>{validation?.facts?.independent_action_variables ?? '?'}</b> of {rows.length} rows.</p>}
+          delete these texts"). The rows the optimizer changes are "searched", as the task's Details call them (branch record
+          SIF-40), where this line said "Independent action variables" (branch record SIF-50). */}
+      {tab === 'parameters' && <p className="fact" title={'The rows the optimizer changes itself; the others follow a tied row or stay fixed. '
+        + 'The initial value is the one read from the circuit. Equal initial values do not imply a binding. '
+        + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>Searched rows: <b>{validation?.facts?.independent_action_variables ?? '...'}</b> of {rows.length}.</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
         + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns).'}>Probes: {probeIds.length
           ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}
-      {tab === 'targets' && rows.some(r => r.constraint === 'interval' && r.lower === 0) && <p className="hint zero-floor-hint">The margin also measures the distance to 0. If 0 is only a physical floor, choose Margin sides: upper.</p>}
+      {/* The zero-floor hint (reward v2.1 B3) names its rows and goes once their Margin sides is upper: it stayed after the
+          user followed it, named no row, and its column hides behind More columns (branch record SIF-50). */}
+      {tab === 'targets' && (() => {
+        const zero = rows.filter(r => r.constraint === 'interval' && r.lower === 0 && r.margin_sides !== 'upper').map(r => r[keyField]);
+        return zero.length > 0 && <p className="hint zero-floor-hint">{zero.join(', ')}: the margin also measures the distance to 0. If 0 is only a physical floor, set Margin sides to upper (More columns).</p>;
+      })()}
       {error && <p className="error">{error}</p>}
       {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{pending.others.length
         ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>

@@ -781,7 +781,7 @@ A width follows in the ratio the circuit has (a 2:1 mirror stays 2:1); a length,
 the circuit's values are equal. A device of a pair that has no row gets a follower row right after its leader's group; a row
 that already follows the same leader is shown as kept, and one tied elsewhere by you is left alone. The box lists the
 structures in plain sentences and one line per row it would change. **Review...** shows the diff, the count of
-independent action variables before and after, and any validation error; only **Apply** changes the rows, and **Undo** in
+searched rows before and after, and any validation error; only **Apply** changes the rows, and **Undo** in
 the toolbar takes it back. **Matched devices...** stays enabled while the box is open; each press reads the current
 rows again and replaces the previous results and unapplied review. The separate **Find / Find again** button is
 removed. An answer about rows that changed since directs you to the toolbar button. The **Close** control is an ×

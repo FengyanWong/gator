@@ -195,6 +195,19 @@ await runChecks(browser, async () => {
   check('a JSON file with a schema_version that is not a workbench configuration is refused, in words (the page used to go blank on Apply)',
     await until(`/neither a workbench configuration/.test(${EDITORS}.querySelector('.error')?.textContent ?? '') && !document.querySelector('.editors .confirm')`),
     await evaluate(`${EDITORS}.querySelector('.error')?.textContent ?? 'no message'`));
+  // A file that is not JSON is said so, with what to choose, where the browser's parser text stood; a row without its ID names
+  // the header, Spec ID, beside the file's key (branch record SIF-50).
+  const ERROR = `(${EDITORS}.querySelector('.error')?.textContent ?? '')`;
+  const notJson = path.join(out, 'not-json.json');
+  writeFileSync(notJson, 'abc');
+  await setFile(notJson);
+  check('a file that is not JSON is refused in words, with what to choose (branch record SIF-50)',
+    await until(`${ERROR} === 'Import failed: the file is not JSON. Choose a file written by Export JSON, or a list of rows.'`), await evaluate(ERROR));
+  const noIds = path.join(out, 'specs-without-ids.json');
+  writeFileSync(noIds, JSON.stringify([{ ...template, metric_id: '' }]));
+  await setFile(noIds);
+  check('...and a row without its ID is named by its header, Spec ID, beside the file\'s key',
+    await until(`${ERROR} === 'Import failed: every Specs row needs its Spec ID ("metric_id" in the file)'`), await evaluate(ERROR));
 
   // With training corners planned, each spec's "Judged at" matters again, and the column is there. The page's own save comes
   // first: a save still due could land between the write below and the reload and put the configuration without corners back

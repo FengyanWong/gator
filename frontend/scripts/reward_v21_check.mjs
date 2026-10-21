@@ -43,7 +43,8 @@ try {
  check('new reward controls persist', (await page.stored()).run.reward.objective_shape==='compressed' && (await page.stored()).run.reward.nominal_gate_band===.4);
  await page.evaluate("Array.from(document.querySelectorAll('.editors .tabs button')).find(b=>b.textContent.startsWith('Specs')).click()",true);
  check('new columns initially hidden, and since record 7.183 hard and the scale too',await page.evaluate("!document.querySelector('th[data-field=missing_is_failure]') && !document.querySelector('th[data-field=margin_sides]') && !document.querySelector('th[data-field=hard]') && !document.querySelector('th[data-field=normalization_scale]')"));
- check('zero-floor margin hint',await page.evaluate("document.querySelector('.zero-floor-hint').textContent==='The margin also measures the distance to 0. If 0 is only a physical floor, choose Margin sides: upper.'"));
+ // The hint names its rows (the fixture's one interval from 0) and goes once their Margin sides is upper (branch record SIF-50)
+ check('zero-floor margin hint',await page.evaluate("document.querySelector('.zero-floor-hint').textContent==='supply_power_w: the margin also measures the distance to 0. If 0 is only a physical floor, set Margin sides to upper (More columns).'"));
  await page.evaluate("Array.from(document.querySelectorAll('.editors button')).find(b=>b.textContent.startsWith('More columns')).click()",true);
  // "Missing value = failed" is the optimizer's rule for every hard spec since 2026-10-10: no column, the rows keep their value
  check('new optional labels, and no missing-value switch',await page.evaluate("!document.querySelector('th[data-field=missing_is_failure]') && document.querySelector('th[data-field=margin_sides]').textContent==='Margin sides' && document.querySelector('th[data-field=normalization_scale]').textContent==='Scale'"));

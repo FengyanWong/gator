@@ -1,10 +1,12 @@
 // Browser check of the editor columns after the review of 2026-10-03 ("are there any columns redundant?", record 7.172):
 //   - Probes: no result_source and no expression column; `signal` reads "Expression"; a Maestro output's Probe ID is shown,
 //     not typed - it follows the output name typed into source_name, and so do the spec equations that use it, in ONE Undo
-//     step; "Add" makes a probe that measures the way the task's others do (it was backend_profile in a Maestro task);
-//   - Specs: no "target ± tolerance" in the Constraint list and no target or tolerance column; a new spec whose equation
-//     becomes another probe takes that probe's unit while it has no limits; an empty limit reads "no limit", an empty Scale
-//     "auto" (branch record SIF-49);
+//     step; "Add" makes a probe that measures the way the task's others do (it was backend_profile in a Maestro task),
+//     named probe_3 (branch record SIF-50);
+//   - Specs: no "target ± tolerance" in the Constraint list and no target or tolerance column; a new spec (spec_3) whose
+//     equation becomes another probe takes that probe's unit while it has no limits; an empty limit reads "no limit", an
+//     empty Scale "auto" (branch record SIF-49); the zero-floor hint names an interval from 0 and goes once its Margin sides
+//     is upper (branch record SIF-50);
 //   - Parameters: initial_value is not shown; value_type, step, scale and ratio come after "More columns"; on a follower row
 //     (binding_group set) the fields its leader decides are greyed, with why; a word typed into Ratio is refused in words.
 // HERMETIC (lib/harness.mjs): validation is answered with a canned valid report labelled FIXTURE, other reads pass, every
@@ -80,6 +82,8 @@ await runChecks(browser, async () => {
   config = await saved();
   check('"Add" makes a probe that measures the way the task\'s other probes do (a Maestro output)', config.measurements[2]?.result_source === 'ade_output',
     JSON.stringify(config.measurements[2]));
+  check('...named as the tab is: probe_3, not measurement_3 (branch record SIF-50)', config.measurements[2]?.measurement_id === 'probe_3',
+    config.measurements[2]?.measurement_id);
   await evaluate(`${TOOL('Undo')}.click()`);
 
   // ---- Specs --------------------------------------------------------------------------------------------------------
@@ -109,10 +113,27 @@ await runChecks(browser, async () => {
   await until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === 3`);
   config = await saved();
   check('(set-up) a new spec starts as the first probe, in its unit', config.targets[2].equation === 'm_freq' && config.targets[2].unit === 'Hz', JSON.stringify(config.targets[2]));
+  check('...named as the tab is: spec_3, not target_3 (branch record SIF-50)', config.targets[2].metric_id === 'spec_3', config.targets[2].metric_id);
   await typeInto(CELL(2, 'equation'), 'm_vmax');
   config = await saved();
   check('a spec with no limits yet whose equation becomes another probe takes that probe\'s unit', config.targets[2].equation === 'm_vmax' && config.targets[2].unit === 'V',
     JSON.stringify(config.targets[2]));
+  // The zero-floor hint names its rows and goes once their Margin sides is upper: it stayed after the user followed it
+  // (branch record SIF-50).
+  const HINT = `(${EDITORS}.querySelector('.zero-floor-hint')?.textContent ?? '')`;
+  check('(set-up) no zero-floor hint while no interval starts at 0', await evaluate(`!${EDITORS}.querySelector('.zero-floor-hint')`), await evaluate(HINT));
+  await page.setValue(CELL(2, 'constraint'), 'interval|none');
+  await typeInto(CELL(2, 'lower'), '0');
+  await typeInto(CELL(2, 'upper'), '1');
+  check('an interval from 0 is named in the zero-floor hint, with where Margin sides is (branch record SIF-50)',
+    await until(`${HINT} === 'spec_3: the margin also measures the distance to 0. If 0 is only a physical floor, set Margin sides to upper (More columns).'`),
+    `${await evaluate(HINT)} / ${JSON.stringify((await saved()).targets[2])}`);
+  await evaluate(`${MORE}.click()`);
+  await until(`!!${CELL(2, 'margin_sides')}`);
+  await page.setValue(CELL(2, 'margin_sides'), 'upper');
+  check('...and the hint goes once that row\'s Margin sides is upper', await until(`!${EDITORS}.querySelector('.zero-floor-hint')`), await evaluate(HINT));
+  await evaluate(`${MORE}.click()`);
+  await until(`!${CELL(2, 'margin_sides')}`);
 
   // ---- Parameters ---------------------------------------------------------------------------------------------------
   await openTab('Parameters');

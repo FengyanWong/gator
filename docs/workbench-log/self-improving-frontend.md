@@ -793,3 +793,39 @@ tooltip, header tooltip and help line carried the stale sentence. It never did: 
 its own guidance ("How far outside its limit a value counts as a miss of 1. ...") after VALUE_HELP is added, which drops
 it. The list now reads "Specs' Lower, Upper". "Changed" still holds: the Scale cell's own tooltip does end with
 `plainNumberIn`'s sentence. No code changed; nothing to type-check or run.
+
+### SIF-50 The editors say "searched rows", name a new Probe or Spec by its tab, and say what an import needs (2026-10-21; from the readability audit)
+
+**Found.** The fact line over Parameters read "Independent action variables: 7 of 66 rows." ("?" until validation
+answered), while the task's Details call the same rows "searched" (SIF-40: "7 searched, 66 rows"). Matched devices said
+"Independent action variables now: 5." and headed its review "Tie 2: independent action variables 5 -> 3", which reads like
+an order to tie item 2. The Specs hint "The margin also measures the distance to 0. If 0 is only a physical floor, choose
+Margin sides: upper." named no row, pointed at a column hidden behind More columns, and stayed after the row's Margin sides
+was set to upper. Add on Probes gave a row "measurement_3", Add on Specs "target_4": the section keys, where the page says
+Probes and Specs (a Maestro task's new Probe ID is read-only and kept that name until an output name was typed). An import
+of a file that is not JSON showed the browser's parser text ("Import failed: Unexpected token 'a', "abc" is not valid
+JSON"), and a row without its ID read "Import failed: every Specs row needs its metric_id", a key no header shows. A block
+paste over one cell a leader decides said "1 cell that follow another field kept."; fill down already said "that follows".
+
+**Changed** (`Editors.tsx`, `MatchedDevices.tsx`, `docs/workbench.md`): the fact line reads "Searched rows: 7 of 66."
+("..." until validation answers), its tooltip starting "The rows the optimizer changes itself; the others follow a tied row
+or stay fixed."; Matched devices reads "Searched rows now: 5." and "2 ties: searched rows 5 -> 3" ("1 tie: ..."; the arrow drawn as before). The
+zero-floor hint (reward v2.1 B3, kept on purpose) shows only for an interval from 0 whose Margin sides is not upper, and
+reads "supply_power_w: the margin also measures the distance to 0. If 0 is only a physical floor, set Margin sides to upper
+(More columns)." (several rows: their IDs joined by ", "). New rows are named parameter_N, probe_N and spec_N (`NEW_ID`;
+Parameters unchanged). A file that is not JSON reads "Import failed: the file is not JSON. Choose a file written by Export
+JSON, or a list of rows."; a row without its ID "Import failed: every Specs row needs its Spec ID ("metric_id" in the
+file)" (Parameters: its ID, Probes: its Probe ID); every other import error keeps its text. The paste note says "1 cell that
+follows another field kept.", as fill down does. `docs/workbench.md` (Matched devices) says "the count of searched rows
+before and after". `reward_v21_check` pinned the old hint: it now expects the fixture's one interval from 0,
+"supply_power_w: ...", with the new ending (its row 0 is a ">= lower" row, so the hint names supply_power_w, not row 0). It is
+stand-alone and was not run.
+
+**Checked.** `tsc` clean; `matched_devices_check` 30 (its three pins now read "Searched rows now: 5.", a heading that starts
+"2 ties: searched rows", and "Searched rows: 3 of 5."), `editor_columns_check` 22 (new: Add names probe_3 and spec_3; an
+interval from 0 to 1 V is named in the hint with "(More columns)", and the hint goes once that row's Margin sides is upper),
+`spec_equations_check` 34 (new: a file holding "abc" and a Specs row without metric_id are refused in the words above; its
+"neither a workbench configuration" pin unchanged), `typing_check` 47 (parameter_N unchanged), `sheet_check` 44 (the plural
+"2 cells that follow another field kept." unchanged), `find_fill_copy_check` 30 (fill down's "1 cell that follows"
+unchanged); none flaky. The singular paste note has no check of its own: a one-cell block over a follower needs a column
+order the sheet check does not set up, and the text now matches fill down's, which is pinned.

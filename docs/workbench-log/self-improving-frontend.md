@@ -1061,3 +1061,11 @@ did not answer ..." under the pill, with "Click to close" and a pointer, and a c
 `corner_check_check` 37 (its fixture names `spectre_license` now, and the question must read "These parts of the
 connection are not known to work: Spectre license." and point at "+ Spectre / license"), `virtuoso_source_check` 95,
 `working_copy_check` 29, `looks_check` 64; none flaky.
+
+**Review follow-up.** The review found one slip: the pointer rule took every paragraph straight under the pill
+(`header .connection-launcher > p`), and the note "The browser blocked the new window. Allow pop-ups for this page, then
+press the button again." is one too (`Blocked`, a `<p class="error">` in the same section). It showed the hand but had no
+click and no "Click to close", so pressing it did nothing - against what this record set out to do. The closable note
+now has its own class, `connection-note`, and only it gets the pointer; the blocked note keeps the arrow.
+`connection_panel_check` finds the note by that class and has a new check: a plain `<p class="error">` under the pill,
+as the blocked note is drawn, keeps the arrow (the old rule matched it). `tsc` clean; `connection_panel_check` 86.

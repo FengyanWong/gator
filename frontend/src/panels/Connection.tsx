@@ -163,8 +163,9 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
       </button>
       {blocked && <Blocked />}
       {/* The note floats over the row under the header (record 7.182), so a click closes it: it stayed until a later action
-          in the window went well (branch record SIF-55). The next failure shows it again. */}
-      {!popup && (error || (profileId && sessionErrors[profileId])) && <p className="error" title="Click to close"
+          in the window went well (branch record SIF-55). The next failure shows it again. Its own class carries the hand
+          cursor: the pop-up-blocked note above is a paragraph here too, and a click does nothing to it. */}
+      {!popup && (error || (profileId && sessionErrors[profileId])) && <p className="error connection-note" title="Click to close"
         onClick={() => { setError(null); if (profileId) setSessionErrors(errors => ({ ...errors, [profileId]: null })); }}>{error ?? sessionErrors[profileId as string]}</p>}
     </section>
   );

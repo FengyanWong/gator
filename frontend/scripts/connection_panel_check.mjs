@@ -419,13 +419,17 @@ await runChecks(browser, async () => {
   failNextCheck = true;
   await send('Page.reload'); await sleep(300); await loaded('sim');
   await windowTarget(false); far.close();
-  const launcherNote = () => evaluate(`(() => { const p = document.querySelector('header .connection-launcher > p');
+  const launcherNote = () => evaluate(`(() => { const p = document.querySelector('header .connection-launcher > p.connection-note');
     return p && { text: p.textContent, title: p.title, cursor: getComputedStyle(p).cursor }; })()`);
   let note = null;
   for (let i = 0; i < 50 && !(note = await launcherNote()); i++) await sleep(100);
   check('a test with no answer says so in words under the button (not "Failed to fetch"), as a note a click closes', !failNextCheck && !!note
     && note.text.startsWith('The workbench backend did not answer') && note.title === 'Click to close' && note.cursor === 'pointer', JSON.stringify(note));
-  await evaluate(`document.querySelector('header .connection-launcher > p').click()`); await sleep(300);
+  // the pop-up-blocked note is a paragraph there too, with no click: it keeps the arrow (SIF-55 review follow-up)
+  const blockedCursor = await evaluate(`(() => { const s = document.querySelector('header .connection-launcher'), p = document.createElement('p');
+    p.className = 'error'; s.appendChild(p); const c = getComputedStyle(p).cursor; p.remove(); return c; })()`);
+  check('... and only that note shows the hand: the pop-up-blocked note under the pill does not', blockedCursor !== 'pointer', blockedCursor);
+  await evaluate(`document.querySelector('header .connection-launcher > p.connection-note').click()`); await sleep(300);
   check('... and a click closes it', !(await launcherNote()), JSON.stringify(await launcherNote()));
   await openWindow();
 

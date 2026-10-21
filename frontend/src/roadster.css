@@ -72,8 +72,9 @@ header .connection-button-name { position: absolute; width: 1px; height: 1px; ov
 header .connection-button-what { flex: 0 1 auto; font: 13.5px var(--f-body); min-width: 0; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; }
 header .connection-button .badge { flex: none; border: none; background: none; padding: 0; font: 12.5px var(--f-body); letter-spacing: 0; text-transform: lowercase; }
 header .connection-button .badge.state-unknown, header .connection-button .badge.state-not_checked { color: var(--muted); }
-/* the button's note floats under it (record 7.182) and a click closes it (branch record SIF-55) */
-header .connection-launcher > p { cursor: pointer; }
+/* the button's note floats under it (record 7.182) and a click closes it (branch record SIF-55); only that note: the
+   pop-up-blocked note floats there too and has no click */
+header .connection-launcher > p.connection-note { cursor: pointer; }
 /* the run's state as a gear selector shows its gear, then the header's run chip */
 header .run-state { display: flex; align-items: center; gap: 10px; flex: none; }
 /* under 1400 px only the state that holds is shown (record 7.372): the four words took ~300 px of a crowded banner */

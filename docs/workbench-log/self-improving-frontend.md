@@ -1069,3 +1069,36 @@ click and no "Click to close", so pressing it did nothing - against what this re
 now has its own class, `connection-note`, and only it gets the pointer; the blocked note keeps the arrow.
 `connection_panel_check` finds the note by that class and has a new check: a plain `<p class="error">` under the pill,
 as the blocked note is drawn, keeps the arrow (the old rule matched it). `tsc` clean; `connection_panel_check` 86.
+
+### SIF-56 The message line under the header keeps a selection, names the run by its folder, and the first screen says what to do (2026-10-21; from the readability audit)
+
+**Found.** Any click on the message line under the header closed it, and only the pointer said so: no tooltip, no mark.
+Dragging across the line to copy it ends in a click on the line, so selecting an error or a run's path took the line
+away. After Start the line was the absolute path first, the useful words at its end: "Run directory:
+/mnt/d/gator/outputs/real-mscr_ota7t/2026-10-21_09-14-02_scratch_seed0 Virtuoso 2 took it."; after Resume or Continue
+"Continuing in the original run directory: <path>", and after Let go "Left paused, nothing deleted: <path>" - while the
+page's other messages name a run by its folder. If the backend did not answer as the page opened, the whole page was
+"Backend not reachable: Failed to fetch" (the browser's own words), with nothing to press; before that, every page
+opened on "Loading schema...".
+
+**Changed** (`App.tsx`, `panels/RunControl.tsx`, `roadster.css`): a click on the line still closes it, but a click that
+ends a selection of its text keeps it, and the line's tooltip says both: "Click to close (selecting text keeps it).". A
+muted "x" at the end of its first line shows that it closes; it is drawn by CSS (`.banner::after`), so the line's text is
+still the message alone, which the checks read whole (the audit's close button would have put "Close" into it). After
+Start the line reads "Started fixture_task__scratch__seed0__0001." (the MOCK notice before it, the session note after
+it, as before), after Resume or Continue "Continuing <folder> in its own folder.", after Let go "Left paused, nothing
+deleted: <folder>"; each carries the full path as its `title`, first in the line's tooltip, and Run status shows it as
+before. The task's baseline started by Save task adds "It is the task's baseline simulation." ("The task's baseline
+simulation has started." read twice with "Started"). A page whose backend does not answer as it opens reads "The
+workbench could not open. The workbench backend did not answer: it may have stopped (start it again with
+gator_workbench.cli serve), or the connection to it dropped." with a Reload button (`plainError`, as everywhere else; a
+refusal from the backend reads in its own words), and the page opens on "Opening the workbench...". The docs quote none
+of these texts.
+
+**Checked.** `tsc` clean; `run_control_check` 108 (the start check now wants the line "FIXTURE MOCK DATA: nothing was
+started. Started fixture_task__scratch__seed0__0001." and its tooltip "<the path>\nClick to close (selecting text keeps
+it)."; new: after Resume it reads "Continuing <folder> in its own folder.", after Let go "Left paused, nothing deleted:
+<folder>" of that step's own run, each with the path first in its tooltip; the first run failed only on that new Let go
+check, written against the first run's folder instead of the later start it lets go of), `calibration_check` 38,
+`calibration_save_check` 22, `run_list_check` 122, `task_run_check` 31, `launch_recovery_check` 20, `save_now_check` 25,
+`consistency_check` 14, `callouts_check` 8 (the MOCK line keeps its frame with the room for the mark); none flaky.

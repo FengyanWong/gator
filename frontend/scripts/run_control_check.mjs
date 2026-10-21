@@ -117,7 +117,9 @@ await runChecks(browser, async () => {
   const FIRST_TILE = `[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.querySelector('.key-tile-value')?.textContent ?? null`;
   const RUN_FOLDER = `[...document.querySelectorAll('.status-grid > table tr')].find(tr => tr.cells[0].textContent === 'Run folder').cells[1]`;
   const look = () => evaluate(`({ main: ${MAIN}?.textContent, mainOff: ${MAIN}?.disabled, abort: ${ABORT}?.textContent, abortOff: ${ABORT}?.disabled, chip: ${CHIP}?.textContent ?? null,
-    baselineOff: ${BASELINE}?.disabled, banner: document.querySelector('.banner')?.textContent ?? null, remembered: localStorage.getItem(${JSON.stringify(RUN_KEY)}) })`);
+    baselineOff: ${BASELINE}?.disabled, banner: document.querySelector('.banner')?.textContent ?? null, bannerTitle: document.querySelector('.banner')?.title ?? null,
+    remembered: localStorage.getItem(${JSON.stringify(RUN_KEY)}) })`);
+  const FOLDER = DIR.split('/').pop();                                            // the run as the line under the header names it (SIF-56)
   const mainReads = (label, tries) => until(`${MAIN}?.textContent === ${JSON.stringify(label)}`, tries);
   const press = expression => evaluate(`${expression}.click()`);
   const commands = () => log.filter(l => l.name === '/api/runs/command').map(l => l.body.command);
@@ -188,7 +190,11 @@ await runChecks(browser, async () => {
   v = await look();
   check('Abort is enabled, the baseline simulation is not available while the run is active', v.abort === 'Abort' && v.abortOff === false && v.baselineOff === true);
   check('the run is remembered by this browser', v.remembered === DIR, String(v.remembered));
-  check('the MOCK notice and the run directory are reported as before', /FIXTURE MOCK DATA/.test(v.banner ?? '') && (v.banner ?? '').includes(DIR), v.banner ?? '');
+  // Branch record SIF-56: the run by its folder's name ("Run directory: <the full path>" before); the path is the line's
+  // tooltip, over the line's own "click to close".
+  check('the MOCK notice and the run are reported: "Started <its folder>.", the full path in the line\'s tooltip, with how it closes',
+    (v.banner ?? '') === `FIXTURE MOCK DATA: nothing was started. Started ${FOLDER}.` && v.bannerTitle === `${DIR}\nClick to close (selecting text keeps it).`,
+    JSON.stringify([v.banner, v.bannerTitle]));
   check('the header shows the run and its progress', await until(`/^running \\d+ \\/ 60 \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '')`), (await look()).chip ?? '');
   check('the Run status tab shows this run', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})`));
   // Branch record SIF-54: the facts in words - the connection as the Connection window words it (it printed "not_applicable"),
@@ -255,6 +261,9 @@ await runChecks(browser, async () => {
   sim.steps = [{}, {}, {}, { state: 'starting', stop_reason: null }, { state: 'running' }];   // the old "paused" status stays on disk until the new worker writes its own
   await held(); held = null;
   check('after Resume the button reads "Pause" again', await mainReads('Pause') && (await look()).mainOff === false);
+  v = await look();
+  check('... and the line under the header says "Continuing <its folder> in its own folder.", the path in its tooltip (SIF-56)',
+    v.banner === `Continuing ${FOLDER} in its own folder.` && (v.bannerTitle ?? '').startsWith(`${DIR}\n`), JSON.stringify([v.banner, v.bannerTitle]));
   labels = (await seen()).map(s => s[0]);
   check('it never fell back to "Resume" or "Pausing..." while the new worker was starting', labels.slice(5).join(' > ') === 'Resuming... > Pause', labels.slice(5).join(' > '));
   await showNoRun();                                                               // Resume brought the run back under Run status; look away again
@@ -345,6 +354,8 @@ await runChecks(browser, async () => {
   check('"Let go" on a paused run asks first, and says that nothing is deleted', /^Let go of this paused run\?/.test(lastDialog().message) && /Nothing is deleted/.test(lastDialog().message), lastDialog().message);
   v = await look();
   check('it sends NO command; the button reads "Start", the run is no longer remembered', log.length === 0 && v.main === 'Start' && v.mainOff === false && v.remembered === null && v.chip === null, JSON.stringify(v));
+  check('... and the line under the header names it by its folder, the path in its tooltip (SIF-56)',     // this step's run: a later start, its own folder
+    v.banner === `Left paused, nothing deleted: ${sim.dir.split('/').pop()}` && (v.bannerTitle ?? '').startsWith(`${sim.dir}\n`), JSON.stringify([v.banner, v.bannerTitle]));
   check('the run stays on screen under Run status, with its own Continue...', await until(`!!(${CONTINUE}) && !${CONTINUE}.disabled`));
 
   // ---- 9. the Run status tab's Continue works, and the header follows it; the tab has no run commands of its own ------------

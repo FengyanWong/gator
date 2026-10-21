@@ -303,3 +303,11 @@ details.compat-raw > pre { max-height: 12em; overflow: auto; white-space: pre-wr
 /* SIF-43: the Windows menu's "Close all" is an action, not a window: a line sets it apart from the windows listed above it. */
 header .windows-list .windows-close-all { position: relative; margin-top: 6px; }
 header .windows-list .windows-close-all::before { content: ''; position: absolute; left: 2px; right: 2px; top: -6px; border-top: 1px solid var(--line); }
+
+/* SIF-56: the message line under the header closes on a click (its tooltip says so, and that selecting its text keeps it):
+   a muted "x" at the end of its first line shows it. Drawn here, not as an element, so the line's text stays the message
+   alone (the checks read it whole); room is kept for it, under the MOCK line's own padding too. The second `content` keeps
+   the mark out of what a screen reader says, where the browser knows that form. */
+.banner, .banner.mock { position: relative; padding-right: 34px; }
+.banner::after { content: '\00d7'; content: '\00d7' / ''; position: absolute; top: 0; right: 12px; padding-top: inherit;
+  font-size: 16px; line-height: 20px; color: var(--muted); }

@@ -1,5 +1,5 @@
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError, Json, NO_ANSWER, saveJson } from './api';
+import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
 import { setUnitForms } from './units';
 import { rowsFrom, useConfig, useRequest, useTaskSaves } from './store';
 import { CircuitPanel } from './panels/Left';
@@ -115,7 +115,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       // "Fresh" is decided when the page opens (the 0.8 s autosave may have written the default configuration by now).
       const remembered = m.remembered?.concurrency;
       if (remembered && store.fresh) setConfig((c: Json) => ({ ...c, run: { ...c.run, concurrency: remembered } }), false);
-    }).catch(e => setFatal(e.message));
+    }).catch(e => setFatal(plainError(e)));     // said as the rest of the page says it: how to start the backend again (branch record SIF-56)
   }, []);
   const { runs, runsError, readRuns, refreshRuns } = useRunList(config.output.output_root);
 
@@ -150,8 +150,10 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
     setRunDir(started.run_dir); setTab('status'); unfold(); refreshRuns();
     // Which Virtuoso session the run went to, when its connection has more than one (record 7.351).
     const said = [note, started.virtuoso_session?.said].filter(Boolean).map(text => ` ${text}`).join('');
-    setMessage(as === 'resume' ? { level: 'info', text: `Continuing in the original run directory: ${started.run_dir}${said}` }
-      : { level: started.mock ? 'mock' : 'info', text: `${started.mock ? started.mock_notice + ' ' : ''}Run directory: ${started.run_dir}${said}` });
+    // The run by its folder's name, as the other messages name runs; the full path is the line's tooltip, and Run status
+    // shows it (branch record SIF-56: the line led with the absolute path, the words that mattered at its end).
+    setMessage(as === 'resume' ? { level: 'info', text: `Continuing ${folderName(started.run_dir)} in its own folder.${said}`, title: started.run_dir }
+      : { level: started.mock ? 'mock' : 'info', text: `${started.mock ? started.mock_notice + ' ' : ''}Started ${folderName(started.run_dir)}.${said}`, title: started.run_dir });
   };
   // On success the run becomes the header's run and the shown run, in one place, and the message names it (record 7.261);
   // a paused run the header lets go of for it is named too - it stays paused, and Runs continues it.
@@ -164,7 +166,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // or holds a run at rest (record 7.261): it used to replace a paused run without a word, and a live one too. A header that
   // holds no run is free while the page still reads the run list ("checking").
   const adoptBaseline = (started: Json) => {
-    if (!control.dir || control.phase === 'idle' || control.phase === 'paused') { launchedRun(started, 'start', "The task's baseline simulation has started."); return; }
+    if (!control.dir || control.phase === 'idle' || control.phase === 'paused') { launchedRun(started, 'start', "It is the task's baseline simulation."); return; }
     refreshRuns();
     setMessage({ level: 'info', text: `The task's baseline simulation runs as ${folderName(started.run_dir)}; the header keeps its own run. The baseline is under Runs.` });
   };
@@ -187,8 +189,10 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // ---- the Runs window's actions (record 7.267; plan "Load run" and "Existing runs: continued in place"): page/runWindowActions.ts
   const { taskLoad, askContinue, runWindow } = useRunWindowActions({ config, setConfig, runs, taskKey, followTask, loadSerial, setMessage, setRunDir, setTab, unfold });
 
-  if (fatal) return <p className="error">Backend not reachable: {fatal}</p>;
-  if (!schema) return <p>Loading schema...</p>;
+  // Branch record SIF-56: a page whose backend does not answer as it opens says what to do, with Reload; it read the browser's
+  // own "Backend not reachable: Failed to fetch". And the page opens in words, not "Loading schema...".
+  if (fatal) return <p className="error">The workbench could not open. {fatal} <button onClick={() => window.location.reload()}>Reload</button></p>;
+  if (!schema) return <p className="hint">Opening the workbench...</p>;
   return (
     <div className={`layout${folded ? ' bottom-folded' : ''}${circuitShown ? ' circuit-shown' : ''}`} ref={layoutRef} style={bottom.height ? { '--foot': `${bottom.height}px` } as CSSProperties : undefined}>
       <header>
@@ -239,7 +243,11 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           onMessage={setMessage} next={nextLine} />
         {brief.element}
       </header>
-      {message && <div className={`banner ${message.level}`} onClick={() => setMessage(null)}>
+      {/* The message line: a click closes it, a click that ends a selection of its text (to copy it) keeps it, and its tooltip
+          says so, under the full path when the message names a run by its folder (branch record SIF-56: dragging across the
+          line to copy it took it away). The close mark is drawn by CSS (roadster.css), so the line's text is the message alone. */}
+      {message && <div className={`banner ${message.level}`} title={[message.title, 'Click to close (selecting text keeps it).'].filter(Boolean).join('\n')}
+        onClick={() => { if (!window.getSelection()?.toString()) setMessage(null); }}>
         {/* A start refused by the check before every run: its steps say it all (what differs, what to do). */}
         {message.detail?.code === 'consistency' && message.detail.report?.steps ? <CheckSteps result={message.detail.report} refused />
           : <>{message.text}{(message.detail?.code || message.detail?.report) && <details onClick={e => e.stopPropagation()}><summary>Technical details</summary>

@@ -1,6 +1,7 @@
 import { Icon, IconName } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, plainError } from '../api';
+import { folderName } from '../format';
 import { ENDED, type Pending, type Phase, type RunControl } from '../runState';
 
 /** The header's run buttons (user request 2026-09-21): ONE main button that reads Start -> Pause -> Resume, and
@@ -123,7 +124,8 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
         + 'later: press "Runs..." at the bottom, open the run\'s Details, then Continue... (or Show results, then Continue... under Run status).'
         + '\n\nThe main button goes back to Start, for a new run.')) return;
       control.release();
-      onMessage({ level: 'info', text: `Left paused, nothing deleted: ${dir}` });
+      // The run by its folder's name, its full path in the line's tooltip (branch record SIF-56), as after Start.
+      onMessage({ level: 'info', text: `Left paused, nothing deleted: ${folderName(dir!)}`, title: dir });
     } else if (phase === 'running') {
       if (!abortConfirmed(status)) return;
       command('stop', 'abort', 'Aborting: the simulation in flight finishes first, then everything is saved and the run ends.');

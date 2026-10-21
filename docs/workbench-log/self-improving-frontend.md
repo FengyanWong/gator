@@ -1869,3 +1869,39 @@ by hand, so a baseline whose design is feasible read "First full-plan feasibilit
 same form) now go through `plural()`, and the launches beside them too (the same words as before). Not changed: the First
 feasible tile's "at N evaluations" (this entry's "Not changed"). Checked: `tsc` clean, `export_check` 31, `run_list_check` 128,
 `model_chooser_check` 83.
+
+### SIF-77 The Training tab's head names the task and is never cut; its times and passing share in words (2026-10-21; from the real-data survey)
+
+**Found.** On a finished run, the Training tab's head read "tx1-vco-gatv2 · seed 0 · 10-16 16:32" while the tab strip on the
+same row read "2026-10-16 16:32:51 · mscr_vco_lin_c · New model, seed 0 · completed" and the message line "Loaded run
+mscr_vco_lin_c 10-16 16:32": record 7.213 named a run by its experiment whenever it had one, so the name the rest of the page
+uses for the run was missing there, and "tx1-vco-gatv2" appeared nowhere else on screen (survey issue 13). At 1366 px the head
+was cut twice, "tx1-vco-gatv2 · seed 0..." and "800 evaluations · 6024 learner updates · last metri...", and the name's
+tooltip was the folder path, so the cut part could not be read there (issue 19). The counts ended "last metric 18:20:50 · read
+20:53:08": the program's words, with the same line again as the tooltip (issue 32). The Key numbers tile "Passing, last 100"
+read "95 of 96 99 %", and nothing said why the count was not 100: keys.ts leaves out episode starts and designs without a
+verdict (issue 31). Not changed: the head's short date (SIF-59's form, as runTitle); the bare "0" of Best design's worst miss
+and the tile's grey "evaluation" before 35 (the tooltip explains the first, the second is the tile's unit layout); the
+icon-only + and Follow latest buttons (the user's request for icon buttons; both carry labels).
+
+**Changed.** `frontend/src/panels/TrainingTab.tsx`: a run's name (head, chips, legends and the Key numbers rows) starts with
+its task, the experiment in brackets after it only when that has a name of its own (not "experiment" or the task's own name):
+"mscr_vco_lin_c (tx1-vco-gatv2) · seed 0 · 10-16 16:32"; runs of the default experiment read as before. The name's tooltip
+says "Task (experiment, when it has a name of its own) · seed · when the run was made." with the folder on a second line (the
+folder alone until the run list has the run). The counts read "... · last recorded at 18:20:50 · numbers read at 20:53:08"
+(" · live" while the worker lives, as before), and their tooltip says what each time is instead of repeating the line. The
+passing share reads "95 of 96 judged · 99 %" on the tile and "95 of 96 judged (99 %)" in the several-runs table, and both
+tooltips say "... of those judged: episode starts and designs without a verdict (a timeout or a lost link is none) are left
+out." `frontend/src/styles.css`: the head wraps instead of cutting - the name, state and counts wrap onto a second line beside
+the controls, and the controls go below them only when less than 360 px would be left for them; the 34ch cap and the two
+ellipses are gone, and a very long name breaks rather than overflows. `docs/workbench.md` and `docs/functionality-reference.md`:
+how a compared run is named, and the "95 of 96 judged" form.
+
+**Checked.** `tsc` clean. `training_tab_check` 100 (95 before): the head's "last recorded at hh:mm:ss" (was "last metric"),
+the six tiles' "N of M judged · P %", and with the run list the head "fixture_task (tx1-fixture) · seed 1 · 10-05 11:00" with
+"Folder: <dir>" on hover (its fixture runs now carry experiments: a named one on the live and the once run, the default on the
+others, whose chips still read "fixture_task · seed 4 · ..."); new, the live run's counts tooltip says what the time is and
+that a live run is read every 2 s, a completed run's counts end "· numbers read at hh:mm:ss" with that explained on hover, the
+passing tile's tooltip says which designs are left out ("Evaluations 189 to 288."), at 1366 px neither the name nor the counts
+is cut and the controls stay beside them (the head two lines tall), and the shown run's table row reads "76 of 78 judged (97
+%)". `training_data_check` 117, `dom_identity_check` 56. None flaky.

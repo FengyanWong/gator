@@ -85,6 +85,9 @@ const NONE: View = { mode: 'all' };
 const PLAIN = new Set(['', 'share', 'normalized', 'nats']);
 const formatFor = (unit: string) => (v: number) => (PLAIN.has(unit) ? String(+v.toPrecision(4)) : si(v, unit));
 const plain = (v: number) => String(+v.toPrecision(3));
+/** What "Passing, last 100" counts: its "95 of 96" said nothing of why it was not of 100 (branch record SIF-77), so the
+ *  number reads "of 96 judged" and this says which designs are left out (keys.ts: episode starts and those without a verdict). */
+const RECENT_TIP = `Of the designs of the last ${RECENT} evaluations, how many met every hard spec, of those judged: episode starts and designs without a verdict (a timeout or a lost link is none) are left out.`;
 /** A row's phase and its design's status, in words for the line above a chart (branch record SIF-47: an Evaluate-only run
  *  read "frozen_eval" on every chart, an episode start "episode_reset", a design "status invalid_design"). The data keep
  *  the keys: store.ts sorts the rows by them. A phase or status these lists do not know (search, adapt, validation,
@@ -208,13 +211,17 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
     failed: (dir, e) => { setComparedState(state => ({ ...state, [dir]: { error: readError(e), live: false } })); return null; },
   }, requestFrame, [active, othersKey, retry, requestFrame]);
   const rowOf = useMemo(() => new Map(runs.map(r => [r.run_dir, r] as [string, Json])), [runs]);
-  /** A run's name on a compared chart, as the run window and the Compare list show it: its experiment (the task when the
-   *  experiment kept the default name), its seed and when it was made; the start of its folder's id only when two compared
-   *  runs would read the same. Record 7.213: four Spectre runs of one task and seed read alike by folder id alone. */
+  /** A run's name on a compared chart, as the run window and the Compare list show it: its task, its experiment in brackets
+   *  when that has a name of its own, its seed and when it was made; the start of its folder's id only when two compared
+   *  runs would read the same. Record 7.213: four Spectre runs of one task and seed read alike by folder id alone. The task
+   *  first (branch record SIF-77): the head read "tx1-vco-gatv2 · seed 0 · ..." beside a tab strip naming the task. */
   const labels = useMemo(() => {
     const base = (dir: string) => {
-      const row = rowOf.get(dir), experiment = String(row?.experiment ?? '').split('__')[0];
-      return row ? `${experiment && !['experiment', 'None'].includes(experiment) ? experiment : taskOf(row)} \u00b7 seed ${row.seed ?? '?'} \u00b7 ${created(row.created_utc)}` : runName(dir);
+      const row = rowOf.get(dir);
+      if (!row) return runName(dir);
+      const task = taskOf(row), folder = String(row.experiment ?? '').split('__')[0];
+      const experiment = folder && !['experiment', 'None', task].includes(folder) ? folder : '';
+      return `${task && experiment ? `${task} (${experiment})` : task || experiment} \u00b7 seed ${row.seed ?? '?'} \u00b7 ${created(row.created_utc)}`;
     };
     const dirs = runDir ? [runDir, ...others] : others, named = dirs.map(base);
     return new Map(dirs.map((dir, i) => [dir, named.indexOf(named[i]) === named.lastIndexOf(named[i]) ? named[i]
@@ -303,18 +310,23 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const empty = own.answers > 0 && evaluations === 0 && updates === 0 && !others.length;
   const candidates = runs.filter(r => r.run_dir !== runDir && !others.includes(r.run_dir));
   const unavailable = charts.filter(c => !c.available);
+  // its two times in words, said in the tooltip (branch record SIF-77: "last metric 18:20:50 · read 20:53:08", and the
+  // tooltip only repeated the line)
   const counts = own.answers === 0 ? (reading.error ? '' : 'Reading the recorded numbers...')
-    : `${evaluations} evaluation${evaluations === 1 ? '' : 's'} · ${updates} learner update${updates === 1 ? '' : 's'}${last ? ` · last metric ${clock(last)}` : ''}`
-      + (live ? ' · live' : reading.at ? ` · read ${clock(reading.at / 1000)}` : '');
+    : `${evaluations} evaluation${evaluations === 1 ? '' : 's'} · ${updates} learner update${updates === 1 ? '' : 's'}${last ? ` · last recorded at ${clock(last)}` : ''}`
+      + (live ? ' · live' : reading.at ? ` · numbers read at ${clock(reading.at / 1000)}` : '');
+  const countsTip = own.answers === 0 ? undefined : 'Last recorded at: when the run recorded its newest evaluation or learner update. '
+    + (live ? 'Live: this tab reads the run\'s recorded numbers again every 2 s while it works.' : 'Numbers read at: when this tab last read the run\'s recorded numbers.');
   return (<div className="training" style={hidden ? { display: 'none' } : undefined}>
     <div className="row training-head">
-      {/* what is shown on the left (it shortens with an ellipsis), the controls on the right (they never wrap away) */}
+      {/* what is shown on the left (it wraps onto a second line, never cut: branch record SIF-77), the controls on the right
+          (below it only when the window leaves them no room beside it) */}
       <span className="training-what">
         {/* named as its "(shown)" chip and the legends name it (branch record SIF-47: it read the folder, "scratch__seed1__..."
             with the Mode's key); the folder until the run list has the run, the whole path in the tooltip */}
-        <span className="training-run" title={runDir}>{runLabel(runDir)}</span>
+        <span className="training-run" title={rowOf.has(runDir) ? `Task (experiment, when it has a name of its own) · seed · when the run was made.\nFolder: ${runDir}` : runDir}>{runLabel(runDir)}</span>
         {state && <span className={`badge ${STATE_CLASS[state] ?? 'state-unknown'}`}>{state}{status?.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}</span>}
-        <span className="hint training-counts" title={counts}>{counts}</span>
+        <span className="hint training-counts" title={countsTip}>{counts}</span>
       </span>
       <span className="training-controls">
       <button disabled={slots.length >= MAX_CHARTS} onClick={addChart}
@@ -355,8 +367,8 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
         <KeyTile label="First passing design" value={k.firstPass ?? noPassWord(runDir)} before={k.firstPass != null ? 'evaluation' : undefined}
           title="The evaluation number of the first design that met every hard spec." />
         <KeyTile label={`Passing, last ${RECENT}`} value={!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged}` : 'no verdict'}
-          after={k.recent?.judged ? `${Math.round((100 * k.recent.passed) / k.recent.judged)} %` : undefined}
-          title={`Of the designs of the last ${RECENT} evaluations with a verdict (a timeout or a lost link is none), how many met every hard spec.${k.recent ? ` Evaluations ${k.recent.from} to ${k.recent.to}.` : ''}`} />
+          after={k.recent?.judged ? `judged · ${Math.round((100 * k.recent.passed) / k.recent.judged)} %` : undefined}
+          title={`${RECENT_TIP}${k.recent ? ` Evaluations ${k.recent.from} to ${k.recent.to}.` : ''}`} />
         <KeyTile label="Best design's worst miss" value={k.bestMiss != null ? plain(k.bestMiss) : '-'}
           title="The worst-spec miss of the design the run keeps as its best, at the newest evaluation: 0 = it has a design that meets every hard spec." />
         <KeyTile label={'Entropy estimate, first \u2192 last'} value={k.entropy ? `${plain(k.entropy[0])} \u2192 ${plain(k.entropy[1])}` : '-'}
@@ -365,7 +377,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
           title={`The temperature \u03b1 the same way: the mean of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}.`} />
       </div>)(keyRows[0].numbers!) : <table className="grid training-keys-table"><thead><tr><th>Run</th><th title="Evaluations recorded so far.">Evaluations</th>
         <th title="The evaluation number of the first design that met every hard spec.">First passing design</th>
-        <th title={`Of the designs of the last ${RECENT} evaluations with a verdict (a timeout or a lost link is none), how many met every hard spec.`}>Passing, last {RECENT}</th>
+        <th title={RECENT_TIP}>Passing, last {RECENT}</th>
         <th title="The worst-spec miss of the design the run keeps as its best, at the newest evaluation: 0 = it has a design that meets every hard spec.">Best design's worst miss</th>
         <th title={`The policy's entropy estimate (-mean_log_prob): the mean of the learner updates of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}. Fallen far = the policy has settled; level = it still explores.`}>Entropy estimate</th>
         <th title={`The temperature α the same way: the mean of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}.`}>Temperature α</th></tr></thead>
@@ -374,7 +386,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
           {!k ? <td colSpan={6} className="hint">Reading...</td> : <>
             <td>{k.evaluations}</td>
             <td>{k.firstPass != null ? `evaluation ${k.firstPass}` : noPassWord(dir)}</td>
-            <td title={k.recent ? `evaluations ${k.recent.from} to ${k.recent.to}` : undefined}>{!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged} (${Math.round((100 * k.recent.passed) / k.recent.judged)} %)` : 'no verdict'}</td>
+            <td title={k.recent ? `evaluations ${k.recent.from} to ${k.recent.to}` : undefined}>{!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged} judged (${Math.round((100 * k.recent.passed) / k.recent.judged)} %)` : 'no verdict'}</td>
             <td>{k.bestMiss != null ? plain(k.bestMiss) : '-'}</td>
             <td>{k.entropy ? `${plain(k.entropy[0])} \u2192 ${plain(k.entropy[1])}` : '-'}</td>
             <td>{k.alpha ? `${plain(k.alpha[0])} \u2192 ${plain(k.alpha[1])}` : '-'}</td></>}

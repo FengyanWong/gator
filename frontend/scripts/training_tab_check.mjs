@@ -7,7 +7,7 @@
 //   - a hidden Training tab reads and draws nothing; opened, it reads the history in pages, then every 2 s while the run
 //     lives; incoming numbers never change the chosen tab
 //   - charts redraw at most once a second, and not when nothing changed
-//   - the run's name, state and last metric; waiting / completed / failed / not-recorded states in plain words
+//   - the run's name, state, counts and the times in words; waiting / completed / failed / not-recorded states in plain words
 //   - hover values are the recorded values; legend toggles; drag-zoom holds while new results arrive; Follow latest and
 //     Reset zoom; resizing the bottom panel resizes the plots; the chosen charts are kept after a reload
 //   - switching runs keeps them apart; no listener or chart is left behind (window listener count, chart count)
@@ -137,7 +137,9 @@ const RUNS = {
 const byDir = Object.fromEntries(Object.values(RUNS).map(r => [r.dir, r]));
 let listRuns = false;                                 // GET /api/runs lists the runs only for the comparison part
 const runRows = () => ['live', 'failed', 'frozen', 'twin', 'once', 'long'].map((id, i) => ({ run_dir: RUNS[id].dir, run_id: id, task_name: 'fixture_task', mode: RUNS[id].frozen ? 'frozen' : 'scratch',
-  seed: i + 1, state: RUNS[id].state === 'running' ? 'completed' : RUNS[id].state, created_utc: `2026-10-05T1${i}:00:00+00:00`, evaluations: RUNS[id].final + RUNS[id].tail, mock: true }))
+  seed: i + 1, state: RUNS[id].state === 'running' ? 'completed' : RUNS[id].state, created_utc: `2026-10-05T1${i}:00:00+00:00`, evaluations: RUNS[id].final + RUNS[id].tail, mock: true,
+  // an experiment named by the user (live, once) is written after the task; the default name is not (branch record SIF-77)
+  experiment: ['live', 'once'].includes(id) ? 'tx1-fixture__0123456789ab' : 'experiment__0123456789ab' }))
   .map(r => (r.run_id === 'once' ? { ...r, seed: 1, created_utc: '2026-10-05T10:00:00+00:00' } : r));      // reads as the live run but for its folder id
 
 await runChecks(browser, async () => {
@@ -197,9 +199,12 @@ await runChecks(browser, async () => {
   check('the history comes in (two charts drawn)', await until(`document.querySelectorAll('.training .training-plot canvas').length === 2`, 100));
   const head = () => evaluate(`(${TRAINING}).querySelector('.training-head').innerText`);
   // no run list yet (listRuns): the head names the run by its folder; with the list, as its chip (branch record SIF-47, below)
-  check('the head names the run, its state, the counts and the last metric', await until(`/scratch__seed1__live/.test((${TRAINING}).querySelector('.training-run').textContent)
+  check('the head names the run, its state, the counts and when the newest was recorded', await until(`/scratch__seed1__live/.test((${TRAINING}).querySelector('.training-run').textContent)
     && /running/.test((${TRAINING}).querySelector('.badge').textContent) && /165 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)
-    && /last metric \\d\\d:\\d\\d:\\d\\d/.test((${TRAINING}).querySelector('.training-counts').textContent) && /live/.test((${TRAINING}).querySelector('.training-counts').textContent)`), await head());
+    && /last recorded at \\d\\d:\\d\\d:\\d\\d/.test((${TRAINING}).querySelector('.training-counts').textContent) && /live/.test((${TRAINING}).querySelector('.training-counts').textContent)`), await head());
+  // branch record SIF-77: "last metric 18:20:50 · read 20:53:08" were the program's words, the tooltip the same line again
+  const countsTip = () => evaluate(`(${TRAINING}).querySelector('.training-counts').title`);
+  check('...its tooltip says what the time is and that a live run is read every 2 s', /^Last recorded at: when the run recorded its newest evaluation or learner update\. Live: .*every 2 s/.test(await countsTip()), await countsTip());
   // each chart's title is the list it chooses its content in (record 7.205): what it shows = the chosen option's words
   const CHART = i => `[...(${TRAINING}).querySelectorAll('figure.training-chart select.training-chart-choice')][${i}]`;
   const TITLES = `[...(${TRAINING}).querySelectorAll('figure.training-chart select.training-chart-choice')].map(s => s.selectedOptions[0]?.textContent ?? '')`;
@@ -326,6 +331,8 @@ await runChecks(browser, async () => {
   // ---- run completion: one last read, then nothing -------------------------------------------------------------------------------
   RUNS.live.state = 'completed'; RUNS.live.final = 288; RUNS.live.tail = 0;
   check('a completed run: its state and its last results', await until(`/completed/.test((${TRAINING}).querySelector('.badge').textContent) && /288 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 100));
+  check('...when this tab read its numbers, in words (SIF-77: "read 20:53:08"), said in the tooltip', await until(`/ \u00b7 numbers read at \\d\\d:\\d\\d:\\d\\d$/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 20)
+    && /Numbers read at: when this tab last read the run's recorded numbers\./.test(await countsTip()), `${await evaluate(`(${TRAINING}).querySelector('.training-counts').textContent`)} | ${await countsTip()}`);
   const after = reads.length;
   await sleep(5000);
   check('a run at rest is not read again', reads.length === after, `${reads.length - after} reads`);
@@ -339,10 +346,13 @@ await runChecks(browser, async () => {
   const judged288 = RUNS.live.data.evaluations.filter(e => !isStart(e) && e.status === 'ok');
   const firstLive = judged288.find(e => e.all_hard_constraints_satisfied)?.commit_seq;
   const last100 = judged288.filter(e => e.commit_seq > 188 && e.commit_seq <= 288), passed100 = last100.filter(e => e.all_hard_constraints_satisfied).length;
-  const wantKeys = ['288', `evaluation ${firstLive}`, `${passed100} of ${last100.length} ${Math.round(100 * passed100 / last100.length)} %`, '0'];
+  // the passing share says "judged" (branch record SIF-77: "95 of 96" under "last 100" said nothing of why not of 100)
+  const wantKeys = ['288', `evaluation ${firstLive}`, `${passed100} of ${last100.length} judged \u00b7 ${Math.round(100 * passed100 / last100.length)} %`, '0'];
   check('key numbers: open, six tiles with the run\'s recorded first passing design, passing share of the last 100 and best design\'s miss',
     await until(`(${KEYS})?.open && (${KEYS}).querySelectorAll('.key-tile').length === 6`, 40) && JSON.stringify((await keyTiles()).slice(0, 4)) === JSON.stringify(wantKeys)
     && / \u2192 /.test((await keyTiles())[4]) && / \u2192 /.test((await keyTiles())[5]), `${JSON.stringify(await keyTiles())} | want ${JSON.stringify(wantKeys)}`);
+  const passingTip = await evaluate(`[...(${KEYS}).querySelectorAll('.key-tile')][2].title`);
+  check('...its tooltip says which designs are left out: episode starts and those without a verdict', /of those judged: episode starts and designs without a verdict .* are left out\. Evaluations 189 to 288\.$/.test(passingTip), passingTip);
   await evaluate(`(${KEYS}).querySelector('summary').click()`);
   const folded = await until(`!(${KEYS}).open`, 20);
   await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
@@ -402,9 +412,18 @@ await runChecks(browser, async () => {
   await showRun(RUNS.live);
   await until(`/288 evaluations/.test((${TRAINING}).querySelector('.training-counts')?.textContent ?? '')`, 60);
   // branch record SIF-47: the head named the run by its folder ("scratch__seed1__live", the Mode's key) beside chips that say
-  // "fixture_task · seed 1 · ..."; now as its chip, the folder in the tooltip
-  check('with the run list, the head names the run as its chip: task, seed, when it was made', await until(`(${TRAINING}).querySelector('.training-run').textContent === 'fixture_task \u00b7 seed 1 \u00b7 ${madeAt('2026-10-05T10:00:00+00:00')}'
-    && (${TRAINING}).querySelector('.training-run').title === ${JSON.stringify(RUNS.live.dir)}`, 60), await evaluate(`(${TRAINING}).querySelector('.training-run').textContent`));
+  // "fixture_task · seed 1 · ..."; now as its chip, the folder in the tooltip. The task first, its experiment in brackets
+  // (branch record SIF-77: it read "tx1-vco-gatv2 · seed 0 · ..." beside a tab strip that names the task)
+  check('with the run list, the head names the run as its chip: task (experiment), seed, when it was made', await until(`(${TRAINING}).querySelector('.training-run').textContent === 'fixture_task (tx1-fixture) \u00b7 seed 1 \u00b7 ${madeAt('2026-10-05T10:00:00+00:00')}'
+    && (${TRAINING}).querySelector('.training-run').title.endsWith('\\nFolder: ' + ${JSON.stringify(RUNS.live.dir)})`, 60), await evaluate(`(${TRAINING}).querySelector('.training-run').textContent`));
+  // ...and at 1366 px nothing of the head is cut (SIF-77: "tx1-vco-gatv2 · seed 0..." and "last metri..."): its name and
+  // counts wrap beside the controls
+  await page.viewport(1366, 768); await sleep(400);
+  const headFit = await evaluate(`(() => { const t = ${TRAINING}, what = t.querySelector('.training-what').getBoundingClientRect(), controls = t.querySelector('.training-controls').getBoundingClientRect();
+    return { cut: [...t.querySelectorAll('.training-run, .training-counts')].filter(e => e.scrollWidth > e.clientWidth + 1).map(e => e.className),
+      beside: controls.top < what.bottom && controls.left >= what.right - 1, height: Math.round(what.height), text: t.querySelector('.training-what').innerText }; })()`);
+  check('at 1366 px the head\'s name and counts wrap, nothing cut, the controls beside them', !headFit.cut.length && headFit.beside, JSON.stringify(headFit));
+  await page.viewport(1600, 1000); await sleep(300);
   await page.setValue(SECOND, 'critic_loss');
   const COMPARE = `(${TRAINING}).querySelector('select[aria-label="Compare with another run"]')`;
   const choices = await evaluate(`[...(${COMPARE}).options].map(o => o.value)`);
@@ -422,6 +441,9 @@ await runChecks(browser, async () => {
     && await evaluate(`[...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')].map((r, i) => r.cells[0].querySelector('.key-run' + i)?.textContent).join('|')
       === [...(${TRAINING}).querySelectorAll('.training-compared .training-chip')].map(c => c.childNodes[1].textContent).join('|')`),
     await evaluate(`[...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')].map(r => r.textContent).join(' || ')`));
+  const passingCell = `[...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')][0]?.cells[3]?.textContent`;
+  check('...the shown run\'s passing share says how many were judged, as its tile (SIF-77)', await until(`${passingCell} === ${JSON.stringify(`${passed100} of ${last100.length} judged (${Math.round(100 * passed100 / last100.length)} %)`)}`, 40),
+    await evaluate(passingCell));
   // the twin has 306 evaluations; its 306th is an episode start, which a comparison leaves out: its newest point is 305
   check('the newest point of the comparison is the longer run\'s', await until(`/Newest: Evaluation 305/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 40),
     await readout(0));

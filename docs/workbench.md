@@ -1635,7 +1635,8 @@ they are empty.
   title the way the rest of the page writes units (`units.ts`, record 7.208: English letters - "uA", "ohm", "deg").
 * **Key numbers** (record 7.215, the user's choice of "what next"): a table above the charts, one row per run on them
   (each in its chart colour when runs are compared): evaluations recorded, the **first passing design** (its evaluation
-  number), the **passing share of the last 100 evaluations** (designs with a verdict: a timeout or a lost link is none),
+  number), the **passing share of the last 100 evaluations** (designs with a verdict: a timeout or a lost link is none;
+  written "95 of 96 judged", branch record SIF-77),
   the **best design's worst-spec miss** now (0 = it has a passing design), and how the **entropy estimate** and the
   **temperature α** moved - the mean of the learner's updates of the first 50 evaluations it learned at, then of the last
   50 ("6.15 → -8.71": the policy settled; level: it still explores). Episode starts are left out, as on the charts; all
@@ -1656,8 +1657,9 @@ they are empty.
 **Several runs on one chart** (record 7.200, the user's choice of "what next"). **Compare...** (in the controls) lists the
 runs of the run window; a chosen run is drawn on both charts beside the shown one, up to four runs, each in its own colour
 (the shown run in the accent colour), with a line of chips above the charts naming them - × takes one off. A run is
-named as the run window shows it (record 7.213): its experiment (the task's name when the experiment kept the default name
-"experiment"), its seed and when it was made; the start of its folder's id is added only when two compared runs would
+named as the run window shows it (record 7.213): its task, its experiment in brackets when that has a name of its own
+(not the default "experiment"; branch record SIF-77: the experiment alone, "tx1-vco-gatv2", stood beside a tab strip
+naming the task), its seed and when it was made; the start of its folder's id is added only when two compared runs would
 read the same. The runs share one x axis: the evaluation's number in each run's recorded order, or for the learner's
 charts its update count or the evaluations collected (**Learner by**); at an evaluation where one run learned 8 times and
 another once, each keeps its own updates in order and the hover line gives both. A run's designs are one

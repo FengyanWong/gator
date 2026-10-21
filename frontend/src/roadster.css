@@ -350,3 +350,12 @@ table.run-table td .run-so-far { white-space: normal; }
 /* a path shows the copy cursor only where a click copies it, and says so in its tooltip: Output settings' "Resolved" and
    "Mock data root" showed it and copied nothing */
 .path { font-size: 12px; cursor: text; } .path[title="Click to copy"] { cursor: copy; }
+
+/* SIF-65: the Training charts' text at the page's sizes. The tab watched through a whole run kept the old look's sizes on the
+   14 px page: each chart's title 11.5 px, its series keys and the readout line over the plot 11 px (the values SIF-25 set in
+   the text colour among them), the compared runs' chips 11.5 px. The readout keeps its mono font, so its numbers do not
+   jump about under a moving cursor; it is cut at the chart's width, its values first (SIF-7). The key numbers keep their
+   compact 11.5 px (record 7.360, user: "make it more compact but keeping the style"). The axis numbers: TrainingChart.tsx. */
+.training-legend, .training-compared { font-size: 12.5px; }
+.training-chart figcaption { font-size: 13px; }
+.training-readout { font-size: 12px; }

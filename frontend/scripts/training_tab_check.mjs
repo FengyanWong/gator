@@ -158,12 +158,19 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/files') return fulfil(requestId, 200, { files: [{ path: 'FIXTURE/run_manifest.json', bytes: 1234, modified_utc: '2026-10-05T12:00:00+00:00' }], total_bytes: 1234, run_dir: run?.dir });
     return page.readOrRefuse({ requestId, request });
   };
-  // Every redraw of a chart clears its canvas: counted per canvas, with the time.
+  // Every redraw of a chart clears its canvas: counted per canvas, with the time. While window.__axisText is a list, each text
+  // drawn on a plot is noted: its size in px and, right-aligned (the y axis's numbers), where its left end falls on its canvas
+  // (branch record SIF-65).
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const clear = CanvasRenderingContext2D.prototype.clearRect; window.__draws = [];
     CanvasRenderingContext2D.prototype.clearRect = function (...a) { const plot = this.canvas.closest && this.canvas.closest('.training-plot');
       if (plot) { const at = performance.now(); window.__draws.push({ at, plot: [...document.querySelectorAll('.training-plot')].indexOf(plot) });
         queueMicrotask(() => (window.__drawMs ??= []).push(performance.now() - at)); }   // uPlot draws on from here, in one go
       return clear.apply(this, a); };
+    const fill = CanvasRenderingContext2D.prototype.fillText; window.__axisText = null;
+    CanvasRenderingContext2D.prototype.fillText = function (text, x, ...a) { const seen = window.__axisText;
+      if (seen && this.canvas.closest && this.canvas.closest('.training-plot')) seen.push({ text: String(text),
+        px: parseFloat(this.font.split(' ').find(p => p.endsWith('px'))), left: this.textAlign === 'right' ? x - this.measureText(text).width : null });
+      return fill.call(this, text, x, ...a); };
     window.__long = []; try { new PerformanceObserver(l => window.__long.push(...l.getEntries().map(e => e.duration))).observe({ type: 'longtask', buffered: true }); } catch {} })();` });
   await page.intercept(['*/api/runs/*', '*/api/runs', '*/api/runs?*', '*/api/config/validate'], answer, { others: 'read' });
   await page.seed({ config: CONFIG, run: RUNS.live.dir, when: 'once' });
@@ -282,6 +289,16 @@ await runChecks(browser, async () => {
   check('a legend key hides its series and says so', await until(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent)).getAttribute('aria-pressed') === 'false'`), keys);
   await evaluate(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent)).click()`);
   check('pressed again, the series is back', await until(`/Training \\(recorded\\)/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`));
+  // Branch record SIF-65: the charts' text at the page's sizes - a chart's title at 13 px, its keys at 12.5 px, the readout at
+  // 12 px in its mono font (11 to 11.5 px before; the axis numbers with eight charts, below); the key numbers stay compact
+  // (record 7.360)
+  const sizes = await evaluate(`(() => { const t = ${TRAINING}, st = e => getComputedStyle(e), mono = document.createElement('span');
+    mono.style.fontFamily = 'var(--f-mono)'; t.append(mono); const family = st(mono).fontFamily; mono.remove();
+    const r = t.querySelector('.training-readout');
+    return { title: st(t.querySelector('figure.training-chart select.training-chart-choice')).fontSize, key: st(t.querySelector('.training-legend .training-key')).fontSize,
+      readout: [st(r).fontSize, st(r).fontFamily === family, st(r.querySelector('b') ?? r).fontSize], keys: st(t.querySelector('details.training-keys > summary')).fontSize }; })()`);
+  check('...a chart\'s title reads at 13 px, its keys at 12.5 px, the readout and its values at 12 px in the mono font; the key numbers at 11.5 px',
+    JSON.stringify(sizes) === JSON.stringify({ title: '13px', key: '12.5px', readout: ['12px', true, '12px'], keys: '11.5px' }), JSON.stringify(sizes));
   const SECOND = CHART(1);
   await page.setValue(SECOND, 'critic_loss');
   check('a learner chart: critic loss over learner updates', await until(`(${TITLES})[1] === 'Critic loss' && document.querySelectorAll('.training .training-plot canvas').length === 2`));
@@ -395,6 +412,8 @@ await runChecks(browser, async () => {
       + new Date('2026-10-05T13:00:00+00:00').toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }))
     && [...(${TRAINING}).querySelectorAll('.training-legend')].every(l => l.querySelector('.key-run0') && l.querySelector('.key-run1'))`, 60),
     await evaluate(`(${TRAINING}).querySelector('.training-compared')?.innerText`));
+  const chipSize = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-compared .training-chip')].map(c => getComputedStyle(c).fontSize).join(' ')`);
+  check('...its chips read at 12.5 px, as the keys (SIF-65: 11.5 px)', chipSize === '12.5px 12.5px', chipSize);
   check('the compared run is read in pages from its own cursor', reads.filter(r => r.run === 'twin')[0]?.flushes === 0);
   check('key numbers: a row per run, each named and coloured as its chip', await until(`(${TRAINING}).querySelectorAll('details.training-keys tbody tr').length === 2`, 40)
     && await evaluate(`[...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')].map((r, i) => r.cells[0].querySelector('.key-run' + i)?.textContent).join('|')
@@ -492,6 +511,7 @@ await runChecks(browser, async () => {
   await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 2`, 60);
   const listenersBefore = await listeners();
   await evaluate(`(${TRAINING}).querySelector('figure.training-chart canvas').dataset.mark = 'kept'`);    // the first chart's own canvas
+  await evaluate(`window.__axisText = []`);                                 // the text the plots draw while six charts are added
   await evaluate(`(${ADD}).click()`);
   check('Add chart puts a third chart on the page, one the run can draw and not on the page yet', await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 3`, 40)
     && new Set(await evaluate(TITLES)).size === 3, JSON.stringify(await evaluate(TITLES)));
@@ -503,6 +523,15 @@ await runChecks(browser, async () => {
     && (await columns()) === 4 && await evaluate(`(${ADD}).disabled`), `${await figures()} charts`);
   const eight = await evaluate(TITLES);
   check('eight different charts', new Set(eight).size === 8, eight.join(' | '));
+  // Branch record SIF-65: the axis numbers are drawn at 12 px (11 px before), and a y axis's numbers, with their unit too
+  // (the gain chart's "V/V"), still fit its 64 px
+  await until(`(window.__axisText ?? []).some(s => s.left != null && s.text.endsWith(' V/V'))`, 40);
+  const drawn = await evaluate(`(() => { const seen = window.__axisText ?? []; window.__axisText = null;
+    const y = seen.filter(s => s.left != null && s.px !== 10 * devicePixelRatio);          // the markers' words are 10 px
+    return { texts: seen.length, sizes: [...new Set(seen.map(s => s.px))], ratio: devicePixelRatio, y: [...new Set(y.map(s => s.text))],
+      cut: [...new Set(y.filter(s => s.left < 0).map(s => s.text))], widest: y.reduce((a, s) => (a && a.left <= s.left ? a : s), null) }; })()`);
+  check('the axis numbers are drawn at 12 px, and a y axis\'s, with a unit too, fit its 64 px (SIF-65)', drawn.texts > 0 && drawn.sizes.includes(12 * drawn.ratio)
+    && drawn.sizes.every(px => px === 12 * drawn.ratio || px === 10 * drawn.ratio) && drawn.y.some(t => t.endsWith(' V/V')) && !drawn.cut.length, JSON.stringify(drawn));
   await page.setValue(CHART(5), 'spec:gain_vv');
   check('a chart chooses what it shows in its own title', await until(`(${TITLES})[5] === 'gain_vv (V/V)'`, 40));
   await page.shot(path.join(out, 'training-eight.png'), `(${TRAINING})`);

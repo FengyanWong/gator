@@ -1380,3 +1380,26 @@ time; the table still fits its 1500 px window), `output_panel_check` 82 (new: "R
 "Click to copy", and a click copies nothing), `room_check` 27 (new: the run folder says "Click to copy" under the copy
 cursor), `model_chooser_check` 82 (new: the missing model's folder says "Click to copy"; the table still fits 1100 px),
 `task_list_check` 81, `connection_panel_check` 86, `dom_identity_check` 56, `task_run_check` 31; none flaky.
+
+### SIF-65 The Training charts' text at the page's sizes: titles, keys, the readout, the chips and the axis numbers (2026-10-21; from the readability audit)
+
+**Found.** The tab watched through a whole run kept the old look's small sizes on the 14 px page. Each chart's title
+("Step reward", the list it is chosen in) was 11.5 px; its series keys ("Training", "Episode start", "limit") 11 px; the
+readout line over the plot ("Newest: Evaluation 288 · Training (recorded) -0.05199 · ...") 11 px, the values SIF-25 set
+in the text colour among them; the compared runs' chips ("fixture_task · seed 4 · ...") 11.5 px; and the axis numbers
+were drawn at 11 px (`TrainingChart.tsx`), none of them overridden by the Roadster look (record 7.360).
+
+**Changed** (`frontend/src/roadster.css`, one block at its end; `panels/TrainingChart.tsx`): a chart's title reads at
+13 px, its keys and the compared runs' chips at 12.5 px, the readout at 12 px in its mono font (so its numbers do not
+jump about under a moving cursor; it is cut at the chart's width a little sooner, its values first since SIF-7). The axis
+numbers and the x axis's word are drawn at 12 px, a whole number of px: uPlot multiplies the digits before "px" by the
+screen's pixel ratio, so "12.5px" would draw "12.10px" on a screen of twice the pixels. The y axis keeps its 64 px: the
+gain chart's widest number, "400 V/V", ends 12.8 px inside it with eight charts on the page. The key numbers keep their
+compact 11.5 px (record 7.360, user: "make it more compact but keeping the style"); the "Not on this chart: ..." line
+(`.training-missing`, 11 px) was not in the audit's list and is left as it is. No words changed; no check or doc pinned
+the old sizes.
+
+**Checked.** `tsc` clean; `training_tab_check` 95 (new: a chart's title at 13 px, its keys at 12.5 px, the readout and
+its values at 12 px in the mono font, the key numbers still 11.5 px; the compared runs' chips at 12.5 px; every text the
+plots draw while six charts are added is 12 px, the markers' 10 px words aside, and no y axis number, "400 V/V" included, starts left of its canvas - a
+`fillText` watch in the page), `training_data_check` 117, `looks_check` 70; none flaky.

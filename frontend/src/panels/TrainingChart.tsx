@@ -155,7 +155,10 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
   /** The chart's options: the page's colours, our zoom and reset, the markers drawn over the plot. */
   function options(UPlotClass: UPlotClass, data: Built, element: HTMLElement, { width, height }: { width: number; height: number }, label: string): uPlotType.Options {
     const colours = palette(element);
-    const font = `11px ${colours.label}`;
+    // the axis numbers at 12 px, beside the readout's 12 px (branch record SIF-65: 11 px). A whole number: uPlot multiplies the
+    // digits before "px" by the screen's pixel ratio, so "12.5px" would draw "12.10px" on a screen of twice the pixels. The y
+    // axis's 64 px still hold "1.28 GHz".
+    const font = `12px ${colours.label}`;
     const axis = (y: boolean): uPlotType.Axis => ({ stroke: colours.muted, font, labelFont: font, size: y ? 64 : 34,
       grid: { stroke: colours.grid, width: 1 }, ticks: { stroke: colours.line, width: 1, size: 4 },
       ...(y ? { values: (_u: UPlot, splits: number[]) => splits.map(v => latest.current.format(v)) }

@@ -402,3 +402,9 @@ table.editor td.issues { padding: 0 10px; vertical-align: middle; }
 /* the tick boxes in one column: centred with a leader's count beside it ("▸7", "▸31") or without one, each box stood at another
    place (x 47, 50 and 62 px on the VCO's Parameters); at the cell's start the count follows the box */
 table.editor td.sel { text-align: left; }
+
+/* SIF-75: the Runs window's "Started from" link takes three lines at most, its tooltip the whole name: an offline model's name
+   ("Round 3 full archive — CircuitGPS v3 from scratch (offline)") took six lines, its row 120 px, and about six rows were in
+   view. Three lines are the height a row's State (the stop reason under it) and Mode (the design under it) take already, and
+   they keep the word that tells two archives apart ("GraphGPS", "CircuitGPS"). */
+table.run-table td.run-from .run-from-name { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

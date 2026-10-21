@@ -15,7 +15,8 @@
 // started from it, a folded history), every run named a link that shows it here and the task one that opens the Tasks window.
 // Record 7.267: a run's Details have Load run (also the double click), Show results, Continue... and New run like this; Load
 // run brings the model the run ended with, pinned with its network, as one Undo step; a run whose task is gone offers neither.
-// Branch record SIF-64: a working run's "so far" may go under its time, so it does not widen the table.
+// Branch record SIF-64: a working run's "so far" may go under its time, so it does not widen the table. Branch record SIF-75:
+// names break between words or after "_", "-" or ".", never inside one, and "Started from" takes three lines at most.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -64,6 +65,22 @@ const EVALUATED = run(8, { ...LINEAGE, mode: 'frozen', model_label: null, create
   parent: { run_id: 'fixture-run-1', run_dir: `${ROOT}/mock/fixture_exp__0001/runs/fixture_task/scratch__seed1__0001`, checkpoint_id: 'ckpt-000040-final', relation: 'frozen' } });
 const GONE = run(9, { ...LINEAGE, task_key: 'real:fixture_gone', created_utc: '2026-09-16T08:00:00+00:00', started_utc: '2026-09-16T08:00:02+00:00', ended_utc: '2026-09-16T08:01:00+00:00',
   active_seconds: 58, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 10, max_evaluations: 10, resumability: 'full_state', segments: [] });
+// Branch record SIF-75, only in section 8b: names as the user's runs have them - an offline model, a fine-tune of it and a
+// calibration - which broke inside a word in a narrow column, or took six lines in "Started from".
+const ARCHIVE = 'Round 3 full archive — CircuitGPS v3 from scratch';
+const OFFLINE = run(10, { ...LINEAGE, run_kind: 'offline_pretraining', encoder: 'circuit_gps', task_name: ARCHIVE, model_label: ARCHIVE, pretraining_sources: 304,
+  created_utc: '2026-09-15T08:00:00+00:00', started_utc: '2026-09-15T08:00:00+00:00', ended_utc: '2026-09-15T08:00:00+00:00', active_seconds: null, state: 'completed',
+  evaluations: 0, max_evaluations: 0, resumability: 'weights_only', segments: [] });
+const FROM_OFFLINE = run(11, { ...LINEAGE, mode: 'fine_tune', encoder: 'graph_gps', task_name: 'graphgps_ldo1', model_label: 'graphgps_ldo1 (31)', created_utc: '2026-09-15T09:00:00+00:00',
+  started_utc: '2026-09-15T09:00:02+00:00', ended_utc: '2026-09-15T09:40:00+00:00', active_seconds: 2398, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 800, max_evaluations: 800,
+  resumability: 'full_state', segments: [], parent: { run_id: 'fixture-run-10', run_dir: OFFLINE.run_dir, checkpoint_id: 'latest', relation: 'fine_tune' } });
+const CALIBRATION = run(12, { ...LINEAGE, run_kind: 'calibration', task_name: 'agentic_fc_pub.calibration', created_utc: '2026-09-15T10:00:00+00:00', started_utc: '2026-09-15T10:00:02+00:00',
+  ended_utc: '2026-09-15T10:05:00+00:00', active_seconds: 298, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 65, max_evaluations: 65, segments: [] });
+// ... and a fine-tune of a model that is not under this output folder: "Started from" names its run folder, with its hash.
+const ELSEWHERE = run(13, { ...LINEAGE, mode: 'fine_tune', encoder: 'graph_gps', task_name: 'graphgps_ldo1', model_label: 'graphgps_ldo1 (32)', created_utc: '2026-09-15T11:00:00+00:00',
+  started_utc: '2026-09-15T11:00:02+00:00', ended_utc: '2026-09-15T11:40:00+00:00', active_seconds: 2398, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 800, max_evaluations: 800,
+  resumability: 'full_state', segments: [], parent: { run_id: 'fixture-elsewhere', run_dir: '/fixture/elsewhere/offline-network__bd7263396019/runs/general/offline__seed0__bd7263396019',
+    checkpoint_id: 'latest', relation: 'fine_tune' } });
 // The save points this check answers for (POST /api/runs/model): DONE's newest (60) and its save point 40, an RGCN 32/4/2.
 const RGCN = { encoder_type: 'rgcn', hidden_dim: 32, heads: 4, layers: 2, structural_encoding: 'none' };
 const described = (run_dir, checkpoint_id, evaluations) => ({ description: { checkpoint_id, path: `${run_dir}/checkpoints/${checkpoint_id}`, kind: 'final', source_run_id: 'fixture-run-1',
@@ -407,6 +424,32 @@ await runChecks(browser, async () => {
   listed = [];
   await pressTop('Refresh list'); await sleep(900);
   check('an output folder without runs says so instead of showing an empty table', /No run yet under this output folder\./.test(await far.evaluate(`${WINDOW}.innerText`)) && (await table()) === null && !(await far.evaluate(`!!${WINDOW}.querySelector('p.warn')`)));
+
+  // ---- 8b. long names in narrow columns (branch record SIF-75) ---------------------------------------------------------------------
+  // The user's Runs window read "graphgps" over "_ldo1" (Task) and "graphgps_ld" over "o1 (31)" (Saved model), and an offline
+  // model's name took six lines in "Started from". A 1000 px window puts every column at its narrowest, as the user's 549 runs
+  // put them in the 1500 px one.
+  listed = [ELSEWHERE, FROM_OFFLINE, OFFLINE, CALIBRATION];
+  await pressTop('Refresh list'); await sleep(900);
+  await far.viewport(1000, 860); await sleep(400);
+  const names = await far.evaluate(`(() => { const t = ${WINDOW}.querySelector('table.run-table'), heads = [...t.tHead.rows[0].cells].map(h => h.textContent.replace(/[\\u25B2\\u25BC]/g, '').trim());
+    const tops = (node, from, to) => { const r = document.createRange(); if (from == null) r.selectNodeContents(node); else { r.setStart(node, from); r.setEnd(node, to); }
+      return new Set([...r.getClientRects()].filter(q => q.width > 0).map(q => Math.round(q.top))).size; };
+    const broken = [], lines = {};
+    for (const n of ['Task', 'Started from', 'Saved model']) for (const tr of t.tBodies[0].rows) { const td = tr.children[heads.indexOf(n)], walk = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
+      if (n === 'Started from' && tr.title === ${JSON.stringify(ELSEWHERE.run_dir)}) continue;           // its folder's hash may break (below)
+      for (let x; (x = walk.nextNode());) for (const w of x.data.matchAll(/\\S+/g)) if (tops(x, w.index, w.index + w[0].length) > 1) broken.push(n + ': ' + w[0]);
+      if (tr.title === ${JSON.stringify(FROM_OFFLINE.run_dir)}) lines[n] = tops(td); }
+    const link = [...t.tBodies[0].rows].find(tr => tr.title === ${JSON.stringify(FROM_OFFLINE.run_dir)}).querySelector('button.item-link'), shown = link.querySelector('.run-from-name');
+    const th = t.tHead.rows[0].cells[heads.indexOf('Started from')], title = document.createRange(); title.selectNodeContents(th);
+    return { broken, lines, linkLines: Math.round(shown.getBoundingClientRect().height / parseFloat(getComputedStyle(shown).lineHeight)), more: shown.scrollHeight > shown.clientHeight + 1,
+      tip: link.title.split('\\n'), column: Math.round(th.getBoundingClientRect().width), titleNeeds: Math.round(title.getBoundingClientRect().width + parseFloat(getComputedStyle(th).paddingLeft) + parseFloat(getComputedStyle(th).paddingRight)) }; })()`);
+  check('a task, a saved model and the model a run started from break between words or after "_", "-" or ".", never inside a word (branch record SIF-75: "graphgps" over "_ldo1")',
+    names.broken.length === 0 && names.lines.Task >= 2 && names.lines['Saved model'] >= 2, JSON.stringify(names));
+  check('... and "Started from" takes three lines at most, its tooltip the whole name first, then the run (SIF-75: an offline model\'s name took six)',
+    names.linkLines <= 3 && names.more && names.tip[0] === `${ARCHIVE} (offline)` && names.tip[1] === OFFLINE.run_dir, JSON.stringify(names));
+  check('... while a run folder outside this output folder, named with its hash, does not widen "Started from" past its title (SIF-75)', names.column <= names.titleNeeds + 2, JSON.stringify(names));
+  await far.viewport(1500, 860); await sleep(200);
   listed = [PAUSED, RESUMED, DONE, LOST, NEVER, FAILED];
 
   // ---- 9. closing and opening again ------------------------------------------------------------------------------------------------

@@ -1789,3 +1789,35 @@ leader's rows open every tick box in view - with a count, the tied mark or nothi
 `ISSUE_HEAD` covers only `spec_adds_registry_entry` and `basis_not_stated`, and other long first clauses (`spec_name_is_a_probe`,
 `spec_name_is_a_result`, `metric_not_in_registry`) still end in "...", as this entry says. The row now names the two lines and
 says the others are still cut. Docs only: no page changed, so no check was run.
+
+### SIF-75 The Runs window breaks names and links where they read (2026-10-21; from the real-data survey)
+
+**Found.** In the user's Runs window (612 runs, 1500 px) the Task read "graphgps" over "_ldo1" and the Saved model "graphgps_ld"
+over "o1 (31)" (survey issue 6): both cells kept `overflow-wrap: anywhere`, so SIF-27's break after "_" lost to a column narrower
+than "graphgps_" (60 px in a 55 px cell), and the Saved model had no break points at all. "Started from" showed an underlined link
+over four lines ("Round 3 full / archive — / GraphGPS / (offline)") and six ("... CircuitGPS / v3 from / scratch / (offline)"),
+rows 84 to 120 px tall and about six in view (issue 7); its tooltip named only the run folder. Measured on the user's list of
+2026-10-20 (549 runs, answered by a scratch check): 139 task names broken inside a word, 40 links over three lines. Not a
+defect: the lowercase "template CircuitGPS" (the column's documented words).
+
+**Changed.** `frontend/src/panels/RunList.tsx`: Task and Saved model are `wrap-words` cells, so a line breaks only at a space or
+after "-", "_" or "." (`breakAt`, now also in the Saved model and the link) - "graphgps_" over "ldo1 (31)". The "." is new: a
+baseline's or calibration's task ("agentic_fc_pub.calibration") kept whole made the Task column 99 px and the table, with the
+user's 549 runs, 1259 px in its 1234; with it the table is 1234 in 1234 again (1232 at its narrowest). The link's text sits in a
+`.run-from-name`, with the same break points, and its tooltip names the whole name first, then the run folder and "Show the run it
+started from.". Its cell keeps `wrap`: a run that is not under this output folder is named by its folder, whose 12-character hash
+(85 px) would widen the column 11 px and the table past its window; a word the column holds breaks at its break points there too.
+`frontend/src/roadster.css` (SIF-75 block): that text takes three lines at most and ends in "..." - "Round 3 full / archive — /
+CircuitGPS..." - the height a row's State and Mode take already, keeping the word that tells two archives apart. On the same 549
+runs: no word broken in the three columns, rows 67 px (median) and 84 px (90th percentile) as before; the tallest, 120 px (138
+before), are the offline trainings themselves, whose own Task and Saved model hold the archive's name. Not done: the survey's
+tooltip on the Saved model cell (the cell shows the whole name; the row keeps its run folder as tooltip). No doc quotes the
+changed text.
+
+**Checked.** `tsc` clean. `run_list_check` 127 (124 before): new, a section with an offline model, a fine-tune of it
+("graphgps_ldo1", "graphgps_ldo1 (31)"), a calibration ("agentic_fc_pub.calibration") and a fine-tune of a model outside the
+output folder in a 1000 px window, where every column is at its narrowest - no word of Task, Started from or Saved model is split
+over two lines while Task and Saved model take two; the link takes three lines, holds more than it shows and its tooltip starts
+with the whole name; the outside run's folder leaves "Started from" as wide as its title. `dom_identity_check` 56,
+`training_tab_check` 95, `run_control_check` 120, `looks_check` 73, `task_list_check` 88, `task_run_check` 31,
+`reliability_check` 20. None flaky.

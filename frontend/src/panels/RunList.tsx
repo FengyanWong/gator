@@ -18,7 +18,10 @@ import { quantity } from '../units';
 const experimentName = (folder?: string | null) => String(folder ?? '').replace(/__[0-9a-f]{8,}$/, '');
 /** A run's saved state in the saved models' words (branch record SIF-20: "full_state" in the Details). */
 const SAVED_STATE: Record<string, string> = { full_state: 'full state', weights_only: 'weights only' };
-const breakAt = (text: string) => text.split(/(?<=[-_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
+/** Where a name may break: after "-", "_" or "." - and at a space - never inside a word (branch record SIF-75). The "." is a
+ *  baseline's or a calibration's task ("agentic_fc_pub.calibration"): whole, "pub.calibration" made the Task column 99 px and
+ *  the table, with the user's 549 runs, 1259 px in its 1234. */
+const breakAt = (text: string) => text.split(/(?<=[-_.])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 /** A date never breaks at its hyphens (branch record SIF-27): in a narrow column "2026-10-20 13:09:11" goes date over time, not "2026-10-" over "20". */
 const keepDates = (text: string) => text.split(/(\d{4}-\d\d-\d\d)/).map((part, i) => <Fragment key={i}>{i % 2 ? <span className="run-date">{part}</span> : part}</Fragment>);
 
@@ -327,10 +330,16 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
             {/* "so far" may go under the time (roadster.css, branch record SIF-64): on one line it made the table wider than its window */}
             <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && <span className="run-so-far"> so far</span>}</td>
             <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}</td>
-            <td className="wrap" title={r.task_id}>{breakAt(taskOf(r))}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
-            <td className="wrap">{origin.parent ? <button className="item-link" onClick={() => focusRun(origin.parent!)} title={`${origin.parent}\nShow the run it started from.`}>{origin.text}</button> : origin.text}
+            {/* Branch record SIF-75: a task and a saved model break only at a space or after "-", "_" or ".", never inside a word
+                ("graphgps" over "_ldo1", "graphgps_ld" over "o1 (31)"), and so does the model a run started from where the column
+                holds the word; the link takes three lines at most (roadster.css), the whole name first in its tooltip - an offline
+                model's name took six lines, its row 120 px. That cell keeps "wrap": a run that is not under this output folder is
+                named by its folder, whose 12-character hash would otherwise widen the column and the table past its window. */}
+            <td className="wrap-words" title={r.task_id}>{breakAt(taskOf(r))}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
+            <td className="wrap run-from">{origin.parent ? <button className="item-link" onClick={() => focusRun(origin.parent!)} title={`${origin.text}\n${origin.parent}\nShow the run it started from.`}>
+              <span className="run-from-name">{breakAt(origin.text)}</span></button> : origin.text}
               {origin.missing && <span className="hint" title="That run is not under this output folder."> (gone)</span>}</td>
-            <td className="wrap">{r.model_label ?? '-'}</td><td className="numeric">{r.seed}</td>
+            <td className="wrap-words">{breakAt(r.model_label ?? '-')}</td><td className="numeric">{r.seed}</td>
             <td className="numeric">{r.evaluations ?? '-'}{r.max_evaluations != null && ` / ${r.max_evaluations}`}</td>
             <td className="numeric">{r.first_feasible_eval_count != null ? `at ${r.first_feasible_eval_count}` : r.evaluations != null ? 'none' : '-'}</td>
             <td className="wrap-words run-experiment" title={r.experiment}>{breakAt(experimentName(r.experiment))}</td>

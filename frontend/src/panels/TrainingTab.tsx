@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline } from '../api';
-import { createdAt as created, runName, runTaskOrBlank as taskOf, stopWords, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
+import { createdAt as created, plural, runName, runTaskOrBlank as taskOf, stopWords, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
 import { si, unitLabel } from '../units';
 import { Icon } from './Icons';
 import { KeyTile } from './fields';
@@ -73,7 +73,7 @@ const runChoice = (r: Json) => {
   let text = CHOICES.get(r);
   if (text === undefined) {
     // As the run shown is named left of Runs... (branch records SIF-6, SIF-11): dots, the Mode in words, "seed 2".
-    text = `${created(r.created_utc)} · ${taskOf(r)} · ${runMode(r)}, seed ${r.seed} · ${r.state ?? 'not started'}${r.evaluations != null ? ` · ${r.evaluations} evaluations` : ''}${r.mock ? ' · MOCK' : ''}`;
+    text = `${created(r.created_utc)} · ${taskOf(r)} · ${runMode(r)}, seed ${r.seed} · ${r.state ?? 'not started'}${r.evaluations != null ? ` · ${plural(r.evaluations, 'evaluation')}` : ''}${r.mock ? ' · MOCK' : ''}`;
     CHOICES.set(r, text);
   }
   return text;
@@ -85,6 +85,14 @@ const NONE: View = { mode: 'all' };
 const PLAIN = new Set(['', 'share', 'normalized', 'nats']);
 const formatFor = (unit: string) => (v: number) => (PLAIN.has(unit) ? String(+v.toPrecision(4)) : si(v, unit));
 const plain = (v: number) => String(+v.toPrecision(3));
+/** A row's phase and its design's status, in words for the line above a chart (branch record SIF-47: an Evaluate-only run
+ *  read "frozen_eval" on every chart, an episode start "episode_reset", a design "status invalid_design"). The data keep
+ *  the keys: store.ts sorts the rows by them. A phase or status these lists do not know (search, adapt, validation,
+ *  baseline; measurement_error; the learner's initial and online) reads as it is, with spaces for its underscores. */
+const PHASE_WORDS: Record<string, string> = { warmup: 'random warm-up', episode_reset: 'episode start', frozen_eval: 'evaluation (no learning)',
+  preflight: 'pre-flight', llm_warmup: 'AI warm-up', llm_search: 'AI search', llm_rescue: 'AI rescue' };
+const STATUS_WORDS: Record<string, string> = { invalid_design: 'invalid design', nonconverged: 'did not converge', timeout: 'timed out' };
+const inWords = (key: string | undefined, words: Record<string, string> = {}) => (key ? words[key] ?? key.replace(/_/g, ' ') : key);
 
 /** Whether the browser tab itself is in the background: then nothing is read and nothing drawn either. */
 function usePageHidden() {
@@ -274,13 +282,13 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
     if (!own) return '';
     if (axis === 'update') {
       const t = own.updates, phase = own.words.updatePhase.list[t.cols.phase[row]];
-      return `${learnerX === 'evaluation' ? `update ${t.cols.cum[row]}` : `after ${t.cols.collected[row]} evaluations`}${phase ? ` · ${phase} learning` : ''}`;
+      return `${learnerX === 'evaluation' ? `update ${t.cols.cum[row]}` : `after ${t.cols.collected[row]} evaluations`}${phase ? ` · ${inWords(phase)} learning` : ''}`;
     }
     const t = own.evaluations, w = own.words, c = t.cols;
     const status = w.status.list[c.status[row]];
-    return [w.phase.list[c.phase[row]], `episode ${w.episode.list[c.episode[row]] ?? '?'} step ${c.episodeStep[row]}`,
+    return [inWords(w.phase.list[c.phase[row]], PHASE_WORDS), `episode ${w.episode.list[c.episode[row]] ?? '?'} step ${c.episodeStep[row]}`,
       Number.isFinite(c.index[row]) && c.index[row] !== c.k[row] ? `completion index ${c.index[row]}` : '',
-      status && status !== 'ok' ? `status ${status}` : ''].filter(Boolean).join(' · ');
+      status && status !== 'ok' ? `result ${inWords(status, STATUS_WORDS)}` : ''].filter(Boolean).join(' · ');
   };
 
   if (!runDir || !own) return <div className="training" style={hidden ? { display: 'none' } : undefined}><p className="hint">No run selected.</p></div>;
@@ -297,7 +305,9 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
     <div className="row training-head">
       {/* what is shown on the left (it shortens with an ellipsis), the controls on the right (they never wrap away) */}
       <span className="training-what">
-        <span className="training-run" title={runDir}>{runName(runDir)}</span>
+        {/* named as its "(shown)" chip and the legends name it (branch record SIF-47: it read the folder, "scratch__seed1__..."
+            with the Mode's key); the folder until the run list has the run, the whole path in the tooltip */}
+        <span className="training-run" title={runDir}>{runLabel(runDir)}</span>
         {state && <span className={`badge ${STATE_CLASS[state] ?? 'state-unknown'}`}>{state}{status?.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}</span>}
         <span className="hint training-counts" title={counts}>{counts}</span>
       </span>

@@ -701,3 +701,25 @@ run's values differ from the Graph Transformer template". `docs/workbench.md` qu
 window opened from the notice's link; the two "no notice" checks match any notice, where the old exact text would have
 passed for the wrong reason), `module_fold_check` 30 (a budget of 1: "... - the budget is too small for the network to
 learn."), `network_panel_check` 58, `model_chooser_check` 78, `mode_suggestion_check` 20, `room_check` 22; none flaky.
+
+### SIF-47 The Training tab names its run as its chips do, and its readout in words (2026-10-21; from the readability audit)
+
+**Found.** The Training tab's first line named the shown run by its folder, "scratch__seed1__live" (the Mode's key and the
+folder's id), while its "(shown)" chip and the chart legends right under it say "fixture_task · seed 1 · 05/10, 11:00"
+and the tab strip "... · New model, seed 1 · ...". The line above every chart wrote the row's phase and its design's
+status as keys: "Evaluation 81 · episode_reset · episode 0-000017 step 0", "... · warmup · ...", "status invalid_design",
+and an Evaluate-only run read "frozen_eval" on every chart. The Compare list counted "· 1 evaluations"; the "Evaluation
+success rate" chart said "(a frozen run)" and "only a frozen run does", a Mode the page calls Evaluate only.
+
+**Changed** (`TrainingTab.tsx`, `training/catalog.ts`): the head reads "fixture_task · seed 1 · 05/10, 11:00", the name
+its chip and the legends give it (the folder until the run list has the run; the whole path in the tooltip, as before).
+The readout reads "random warm-up", "episode start", "evaluation (no learning)", "pre-flight", "AI warm-up", "AI search",
+"AI rescue" for those phases, and "result invalid design", "result did not converge", "result timed out" for a design that
+was not ok; a phase or status the lists do not know (search, adapt, baseline, measurement_error, the learner's initial and
+online) reads with spaces for its underscores. The rows keep their keys: the charts' categories are worked out from them
+as before. The Compare list "· 1 evaluation" (`plural`); the chart "(an Evaluate-only run)" and "only an Evaluate-only run
+does"; its tooltip's source column keeps the phase key (`frozen_eval`), as the data dictionary names it.
+
+**Checked.** `tsc` clean; `training_tab_check` 90 (its hover line now /search|random warm-up|episode start|baseline/ with
+no key left and a timeout as "result timed out"; new: with the run list the head reads "fixture_task · seed 1 · <made>",
+the folder in its tooltip), `training_data_check` 117, `looks_check` 64; none flaky.

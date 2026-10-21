@@ -66,9 +66,10 @@ export function catalog(store: TrainingStore, context: Context = {}): ChartSpec[
     available: p.first('judged', e, [e.changes], row => !Number.isNaN(p.pass[row])) >= 0, reason: empty ?? 'No evaluation has a verdict on its design yet.' });
   charts.push({ id: 'eval_pass', title: 'Evaluation success rate', unit: 'share', axis: 'evaluation', group: evaluated ? 'Results' : 'Not recorded',
     source: 'evaluations.all_hard_constraints_satisfied (phase frozen_eval or validation)',
-    about: 'Designs of a policy evaluated without training (a frozen run): the share of them so far that met every hard spec.',
+    // the Mode as its button names it (branch record SIF-47: "a frozen run"); `source` keeps the phase's key, as the data dictionary
+    about: 'Designs of a policy evaluated without training (an Evaluate-only run): the share of them so far that met every hard spec.',
     available: evaluated && p.first('evaluated and judged', e, [e.changes], row => p.cat[row] === EVALUATION && !Number.isNaN(p.pass[row])) >= 0,
-    reason: evaluated ? 'No evaluated design has a verdict yet.' : 'This run evaluated no policy apart from training: only a frozen run does. For training designs see "Meets every hard spec".' });
+    reason: evaluated ? 'No evaluated design has a verdict yet.' : 'This run evaluated no policy apart from training: only an Evaluate-only run does. For training designs see "Meets every hard spec".' });
   charts.push({ id: 'episode_return', title: 'Episode return', unit: '', axis: 'evaluation', group: 'Not recorded', source: '-',
     about: 'The sum of an episode\'s rewards.', available: false,
     reason: 'Not recorded: the run records the reward of each evaluation, not of whole episodes. See "Step reward".' });

@@ -184,6 +184,7 @@ await runChecks(browser, async () => {
   check('the tab opens', await until(visible));
   check('the history comes in (two charts drawn)', await until(`document.querySelectorAll('.training .training-plot canvas').length === 2`, 100));
   const head = () => evaluate(`(${TRAINING}).querySelector('.training-head').innerText`);
+  // no run list yet (listRuns): the head names the run by its folder; with the list, as its chip (branch record SIF-47, below)
   check('the head names the run, its state, the counts and the last metric', await until(`/scratch__seed1__live/.test((${TRAINING}).querySelector('.training-run').textContent)
     && /running/.test((${TRAINING}).querySelector('.badge').textContent) && /165 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)
     && /last metric \\d\\d:\\d\\d:\\d\\d/.test((${TRAINING}).querySelector('.training-counts').textContent) && /live/.test((${TRAINING}).querySelector('.training-counts').textContent)`), await head());
@@ -209,7 +210,9 @@ await runChecks(browser, async () => {
   const expected = RUNS.live.data.evaluations[k - 1];
   const want = expected?.reward == null ? null : +expected.reward.toPrecision(4);
   check('hovering shows the evaluation under the pointer with its recorded reward', Number.isFinite(k) && (want === null ? !/Training \(recorded\) -?\d/.test(hovered) : shownValue === want), `${hovered} | recorded ${expected?.reward}`);
-  check('the hover line says the row\'s phase and episode', /search|warmup|episode_reset|baseline/.test(hovered) && /episode 0-\d{6} step \d/.test(hovered));
+  // in words (branch record SIF-47): it read the keys "warmup", "episode_reset" and "status timeout"
+  check('the hover line says the row\'s phase, episode and a design\'s result in words', /search|random warm-up|episode start|baseline/.test(hovered) && !/warmup|episode_reset|status /.test(hovered)
+    && /episode 0-\d{6} step \d/.test(hovered) && (expected?.status === 'timeout' ? / · result timed out$/.test(hovered) : !/ · result /.test(hovered)), hovered);
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w + 40, y: box.y - 40 });
 
   // ---- live: new results arrive; at most one redraw a second; the chosen tab never changes ------------------------------------
@@ -372,6 +375,11 @@ await runChecks(browser, async () => {
   await evaluate(`localStorage.removeItem('gator-workbench-training-compare-v1')`);
   await showRun(RUNS.live);
   await until(`/288 evaluations/.test((${TRAINING}).querySelector('.training-counts')?.textContent ?? '')`, 60);
+  // branch record SIF-47: the head named the run by its folder ("scratch__seed1__live", the Mode's key) beside chips that say
+  // "fixture_task · seed 1 · ..."; now as its chip, the folder in the tooltip
+  check('with the run list, the head names the run as its chip: task, seed, when it was made', await until(`(${TRAINING}).querySelector('.training-run').textContent === 'fixture_task \u00b7 seed 1 \u00b7 '
+    + new Date('2026-10-05T10:00:00+00:00').toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    && (${TRAINING}).querySelector('.training-run').title === ${JSON.stringify(RUNS.live.dir)}`, 60), await evaluate(`(${TRAINING}).querySelector('.training-run').textContent`));
   await page.setValue(SECOND, 'critic_loss');
   const COMPARE = `(${TRAINING}).querySelector('select[aria-label="Compare with another run"]')`;
   const choices = await evaluate(`[...(${COMPARE}).options].map(o => o.value)`);

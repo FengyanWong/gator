@@ -2,6 +2,7 @@ import { CircuitDetails, NativeSchematic, useVirtuosoBrowser } from './CircuitBr
 import { memo, MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json } from '../api';
+import { plural } from '../format';
 import { tasksShared } from '../shared';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
@@ -356,7 +357,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
       {ref.source === 'registered_task' && circuit?.loaded ? (<>
         {circuit.simulator === 'ngspice' && <div className="note">
           <p><b>ngspice netlist task</b>, revision {circuit.circuit?.revision ?? '?'}{circuit.circuit?.title ? <>: <i>{circuit.circuit.title}</i></> : null}.
-            {' '}{(circuit.circuit?.measurements ?? []).length} results: <code>{(circuit.circuit?.measurements ?? []).join(', ')}</code>.</p>
+            {' '}{plural((circuit.circuit?.measurements ?? []).length, 'result')}: <code>{(circuit.circuit?.measurements ?? []).join(', ')}</code>.</p>
           <details className="more"><summary>How it runs</summary>
             <p>Each evaluation writes the chosen sizes into their own places in the deck, runs <code>ngspice -b</code> on it through the ngspice
               connection (on this machine, or over SSH with the deck sent in), and reads the <code>name = value</code> lines it prints. To change

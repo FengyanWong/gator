@@ -252,6 +252,9 @@ await runChecks(browser, async () => {
   await win.click(win.SUMMARY('Hierarchy (')); await sleep(250);
   check('draft: closed by the user, the whole block is one line again: tree, "Instances and parameters" and "Native schematic" are folded', (await far.evaluate(`${WHIER}.open`)) === false
     && await win.shown('Hierarchy (3 instances)') && await far.evaluate(`!${WTREE}.checkVisibility()`) && await win.folded('Instances and parameters') && await win.folded('Native schematic'));
+  // Branch record SIF-62: a size as the editors write it; it read "w=0.000004" under "Parameters (canonical units)".
+  const sizes = await far.evaluate(`(() => { const t = [...${WHIER}.querySelectorAll('table')].find(x => x.tHead); return t ? [t.tHead.textContent, t.tBodies[0].rows[0].cells[2].textContent] : null; })()`);
+  check('draft: "Instances and parameters" writes a size with its unit, "w = 4 um", under "Parameters"', JSON.stringify(sizes) === JSON.stringify(['InstanceKindParameters', 'w = 4 um']), JSON.stringify(sizes));
   await shotWindow('help-4b-draft-hierarchy-closed.png');
 
   // ---- a saved task: its lines under the editors' toolbar, Check now on the tab line, its circuit in the column (record 7.362) ----------
@@ -267,7 +270,7 @@ await runChecks(browser, async () => {
     !!checkNow?.title.includes('no ADE/Maestro window may be open on the copy') && !(await card.present('What the check compares')) && !(await col.present('What the check compares'))
     && !(await card.present('no ADE/Maestro window may be open on the copy')) && !(await col.present('no ADE/Maestro window may be open on the copy')));
   check('saved task: two notes are one closed line', await col.shown('2 notes on this circuit') && await col.folded('FIXTURE NOTE: a second one.'));
-  check('saved task: Hierarchy is back in the column and stays closed, as the user left it', (await evaluate(`${HIERARCHY}.open`)) === false && await col.shown('Hierarchy (1 instances)') && await col.folded('Instances and parameters'));
+  check('saved task: Hierarchy is back in the column and stays closed, as the user left it', (await evaluate(`${HIERARCHY}.open`)) === false && await col.shown('Hierarchy (1 instance)') && await col.folded('Instances and parameters'));
   check('saved task: the window follows it and shows no cell note', await win.shown('follows the task real:ring_a') && !(await win.present('Not optimizable yet')));
   await shotColumn('help-5-generated-profile.png');
   await shotTask('help-5b-task-lines.png');

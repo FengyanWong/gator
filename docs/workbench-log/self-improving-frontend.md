@@ -1282,3 +1282,36 @@ the window's whole text includes the folded "Technical details", where the fixtu
 cellview needs a verified circuit profile". So it tested none of the note's words and wanted the phrase
 `project_help_check` now says must not be in view. It now asks for the note's own "it is not a task yet". A change to that
 check only: `tsc` clean; `virtuoso_source_check` 95; none flaky.
+
+### SIF-62 Device sizes in units and counts in the right number in the circuit column and the graph view (2026-10-21; from the readability audit)
+
+**Found.** The circuit column's "Instances and parameters" table wrote a device's sizes as JavaScript prints them, "w=0.0000012
+l=1.8e-7" (the two spaces between them fold to one), under the heading "Parameters (canonical units)", while the editors
+and the run facts write the same sizes as "1.2 um" and "180 nm" (record 7.208). The circuit graph view did the same for a
+clicked device: "w = 2e-6, l = 1e-7 - sized by wn", under a Sizes table that says "2 um". Counts kept a fixed plural:
+"Hierarchy (1 instances)", "Native schematic ... (1 instances, as read)", "1 diagnostics", and the ngspice task block
+"1 results: vout_v". Each diagnostic began with its snake_case code, "unmapped_terminal_role: The terminal ...", the
+pattern SIF-5 and SIF-52 removed elsewhere. The graph view's state line said "this save point was written at 20" (or "at
+?"), which reads like a clock time though it is the evaluation the save point was written after, and went on "This state
+is LATER than the save point". Its block list was labelled "Layer" over options "block 1", "block 2", while the Selected
+caption and the connection table say "Block"; Fit was the only layout button without a tooltip.
+
+**Changed** (`panels/CircuitBrowser.tsx`, `panels/CircuitGraphView.tsx`, `panels/Left.tsx`): "Instances and parameters"
+has the heading "Parameters" and writes "w = 1.2 um, l = 180 nm, m = 1" (`si` in the unit `kindUnit` gives the parameter,
+4 significant digits; a parameter of no known kind keeps its plain number through `short`, an expression stays as it is);
+the graph view writes the clicked device as "w = 2 um, l = 100 nm - sized by wn", "c = 1 pF". Counts go through format.ts's
+`plural`: "Hierarchy (1 instance)", "(2 instances, as read)", "1 diagnostic", "1 result: vout_v". A diagnostic shows its
+words, with "warning: unmapped_terminal_role" on hover, as the ngspice window does since SIF-52. The state line reads
+"Evaluation 20 of this run (state before it: ok); this save point was written after evaluation 20." (the clause is left
+out when the save point's evaluation is not known), and "This state comes after the save point: the model never saw it
+while training." The block list is labelled "Block" ("Readout" for parameter-group attention, as its options), and Fit
+says "Fit the whole graph in the view". The status word ("ok") and the Native schematic's raw values as Virtuoso wrote
+them ("w=1u") are left as they are. The other parts of these findings were done before: the header's "blocking
+issue(s)" in SIF-45, the ngspice window's counts, kinds and diagnostics in SIF-52, the Connection window's failures in
+SIF-55. No doc quoted the changed words.
+
+**Checked.** `tsc` clean; `project_help_check` 49 ("Hierarchy (1 instance)" for the saved task; new: the draft's
+"Instances and parameters" has the heading "Parameters" and writes "w = 4 um"), `graph_view_check` 66 (new: the state
+line word for word with "written after evaluation 20", the block list labelled "Block", Fit's tooltip; a clicked M1 reads
+"w = 2 um, l = 100 nm - sized by wn"), `ngspice_window_check` 43 (the circuit column now asked for "1 result: vout_v"),
+`circuit_source_check` 15; none flaky.

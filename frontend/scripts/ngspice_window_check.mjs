@@ -213,8 +213,9 @@ await runChecks(browser, async () => {
   check('the tab line gives its revision beside its name', rev === 'rev. 1', rev);
   const shown = await showCircuit(page);
   const column = await evaluate(`${CIRCUIT_PANEL}.textContent`);
+  // "1 result:", counted in the right number (branch record SIF-62: it read "1 results:").
   check('"Show circuit" brings the circuit column with the ngspice task block: its revision and its results', shown
-    && column.includes('ngspice netlist task') && column.includes('revision 1') && column.includes('vout_v'), column.slice(0, 300));
+    && column.includes('ngspice netlist task') && column.includes('revision 1') && column.includes('1 result: vout_v'), column.slice(0, 300));
   check('no Delete task button on the page (the editors\' card, the circuit column)', !(await evaluate(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Delete task')`)));
   await tw.open();
   check('the Tasks window offers deletion beside the current ngspice task name', await tw.window.evaluate(`document.querySelector('.task-window-actions code')?.textContent === 'ngspice:fixture_ota'

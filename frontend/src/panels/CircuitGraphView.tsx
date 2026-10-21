@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, Json } from '../api';
-import { si } from '../units';
+import { kindUnit, si } from '../units';
 import { short } from '../format';
 import { hintedLayout } from './circuitLayout';
 import { useNewest } from '../newest';
@@ -180,7 +180,8 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
               <option value="local">Local port edges</option>
               {!!dense?.global_layers?.length && <option value="global">Global node attention</option>}
               {!!dense?.group_layers?.length && <option value="group">Parameter-group attention</option>}</select></label>
-            <label>Layer<select className="graph-layer" value={layer} onChange={e => setLayer(Number(e.target.value))}>{Array.from({ length: layerCount }, (_, i) => <option key={i} value={i + 1}>{scope === 'group' ? 'readout' : 'block'} {i + 1}</option>)}</select></label>
+            {/* Named as its options and the tables name it (branch record SIF-62): the label said "Layer" over "block 1". */}
+            <label>{scope === 'group' ? 'Readout' : 'Block'}<select className="graph-layer" value={layer} onChange={e => setLayer(Number(e.target.value))}>{Array.from({ length: layerCount }, (_, i) => <option key={i} value={i + 1}>{scope === 'group' ? 'readout' : 'block'} {i + 1}</option>)}</select></label>
             <label>Head<select className="graph-head" value={head} onChange={e => setHead(e.target.value)}><option value="mean">mean of {attention.heads}</option>{Array.from({ length: attention.heads }, (_, i) => <option key={i} value={String(i + 1)}>head {i + 1}</option>)}</select></label>
             {scope === 'local' ? <label>Line thickness shows<select className="graph-direction" value={direction} onChange={e => setDirection(e.target.value)}>{Object.entries(DIRECTIONS).map(([k, text]) => <option key={k} value={k}>{text}</option>)}</select></label>
               : <label>{scope === 'group' ? 'Parameter group' : 'Receiving node'}<select className="graph-query" value={queryId} onChange={e => setQuery(e.target.value)}>
@@ -190,13 +191,14 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
           <button onClick={() => layout('hints')} title="Positions from what the graph says about the circuit: supply on top, ground at the bottom, every node at its place on the current path, paired devices above each other. Fixed rules, no agent.">Circuit hints</button>
           <button onClick={() => layout('layers')} title="The drawing package's own layered layout, which knows nothing about circuits">Layered</button>
           <button onClick={() => layout('spread')} title="Let the nodes push each other apart, starting from where they are">Spread out</button>
-          <button onClick={() => graph.current?.fit(undefined, 24)}>Fit</button>
+          <button onClick={() => graph.current?.fit(undefined, 24)} title="Fit the whole graph in the view">Fit</button>
         </div>
         <div className="graph-body">
           <div ref={canvas} className="graph-canvas" />
           <div className="graph-side">
-            <p className="hint graph-state"><b>Evaluation {view.step.evaluation}</b> of this run (state before it: {view.step.status}); this save point was written at {view.step.saved_at ?? '?'}.
-              {view.step.evaluation > (view.step.saved_at ?? Infinity) ? ' This state is LATER than the save point: the model never saw it while training.' : ''}</p>
+            {/* saved_at is an evaluation count, not a clock time (branch record SIF-62: it read "written at 20", or "at ?"). */}
+            <p className="hint graph-state"><b>Evaluation {view.step.evaluation}</b> of this run (state before it: {view.step.status}){view.step.saved_at != null ? `; this save point was written after evaluation ${view.step.saved_at}` : ''}.
+              {view.step.evaluation > (view.step.saved_at ?? Infinity) ? ' This state comes after the save point: the model never saw it while training.' : ''}</p>
             {generic && <p className="note graph-generic">This graph names no supply and no ground net, so there are no circuit hints for the positions: the drawing package's own layered layout is used.</p>}
             {!attention.available && <p className="note graph-no-attention">{attention.reason}</p>}
             {attention.available && <div className="note graph-reading"><p>{scope === 'local' ? view.reading : dense?.reading}</p>
@@ -219,7 +221,8 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
             <h4>Selected</h4>
             {!picked && <p className="hint graph-picked">Click a device, a net or a line. Nodes can be dragged; the wheel zooms.</p>}
             {(device || net) && <div className="graph-picked"><p><b>{(device ?? net).id}</b> - {device ? `${device.kind} (${device.model})` : `net, ${net.roles.join(' / ')}`}</p>
-              {device && <p className="hint">{Object.entries(device.parameters).map(([k, v]) => `${k} = ${short(v)}`).join(', ') || 'no numeric parameters'}{device.groups.length ? ` - sized by ${device.groups.join(', ')}` : ''}</p>}
+              {/* Sizes as the Sizes table above writes them, "w = 2 um" (branch record SIF-62): short() wrote "w = 2e-6". */}
+              {device && <p className="hint">{Object.entries(device.parameters).map(([k, v]) => `${k} = ${typeof v === 'number' && kindUnit(k) ? si(v, kindUnit(k)) : short(v)}`).join(', ') || 'no numeric parameters'}{device.groups.length ? ` - sized by ${device.groups.join(', ')}` : ''}</p>}
               {scope === 'local' && attention.available && <table className="grid small graph-around"><thead><tr><th>{device ? 'Terminal' : 'Device'}</th><th>{device ? 'Net' : 'Terminal'}</th><th>Attention</th><th>Uniform</th></tr></thead><tbody>
                 {around.map((c: Json) => { const a = attentionOf(c, layer, head, towards); return <tr key={c.id}><td>{device ? c.terminal : c.device}</td><td>{device ? c.net : c.terminal}</td>
                   <td className="numeric">{fixed(a.value)}</td><td className="numeric">{fixed(a.uniform)}</td></tr>; })}

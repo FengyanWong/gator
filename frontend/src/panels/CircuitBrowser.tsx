@@ -1,5 +1,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import { api, gateText, Json, OLDER_BACKEND } from '../api';
+import { kindUnit, si } from '../units';
+import { plural, short } from '../format';
 
 export { gateText };
 
@@ -85,7 +87,7 @@ function Tree({ node, path = '' }: { node: Json; path?: string }) {
 
 export function NativeSchematic({ native, open, setOpen }: { native: Json; open: boolean; setOpen: (v: boolean) => void }) {
   return native && (
-    <details open={open} onToggle={e => setOpen(e.currentTarget.open)}><summary>Native schematic {native.library}/{native.cell} ({native.instance_count} instances, as read)</summary>
+    <details open={open} onToggle={e => setOpen(e.currentTarget.open)}><summary>Native schematic {native.library}/{native.cell} ({plural(native.instance_count, 'instance')}, as read)</summary>
       <p className="warn">Requires confirmation: {native.requires_confirmation.join('; ')}</p>
       <table className="grid small"><tbody>{native.instances.map((i: Json) => <tr key={i.instance_path}><td>{i.instance_path}</td><td>{i.master.library}/{i.master.cell}</td>
         <td>{Object.entries(i.parameters).map(([k, v]: [string, any]) => `${k}=${v.raw}`).join('  ')}</td></tr>)}</tbody></table></details>);
@@ -96,16 +98,21 @@ export function CircuitDetails({ circuit, open, setOpen, children }: { circuit: 
     {circuit.notes?.length > 0 && <details className="more hint"><summary>{circuit.notes.length === 1 ? '1 note' : `${circuit.notes.length} notes`} on this circuit</summary>
       {circuit.notes.map((n: string) => <p key={n}>{n}</p>)}</details>}
     <details className="section" open={open} onToggle={e => setOpen(e.currentTarget.open)}>
-      <summary><h3>Hierarchy ({circuit.summary.device_count} instances)</h3></summary>
+      <summary><h3>Hierarchy ({plural(circuit.summary.device_count, 'instance')})</h3></summary>
       <Tree node={circuit.hierarchy} />
+      {/* A size as the editors write it, "w = 1.2 um, l = 180 nm" (branch record SIF-62, as record 7.208): the raw number read
+          "w=0.0000012  l=1.8e-7" under "Parameters (canonical units)". A parameter of no known kind keeps its plain number. */}
       <details><summary>Instances and parameters</summary>
-        <table className="grid small"><thead><tr><th>Instance</th><th>Kind</th><th>Parameters (canonical units)</th></tr></thead>
+        <table className="grid small"><thead><tr><th>Instance</th><th>Kind</th><th>Parameters</th></tr></thead>
           <tbody>{circuit.summary.devices.map((d: Json) => <tr key={d.instance_path}><td>{d.instance_path}</td><td>{d.kind}</td>
-            <td>{Object.entries(d.parameters).map(([k, v]: [string, any]) => `${k}=${v.value ?? v.expression ?? '?'}`).join('  ')}</td></tr>)}</tbody></table>
+            <td>{Object.entries(d.parameters).map(([k, v]: [string, any]) => `${k} = ${typeof v.value === 'number' ? (kindUnit(k) ? si(v.value, kindUnit(k)) : short(v.value))
+              : v.value ?? v.expression ?? '?'}`).join(', ')}</td></tr>)}</tbody></table>
       </details>
       {children}
     </details>
     {circuit.summary.unknown_devices.length > 0 && <p className="warn">Unmapped devices need confirmation: {circuit.summary.unknown_devices.join(', ')}</p>}
-    {circuit.diagnostics.length > 0 && <details><summary>{circuit.diagnostics.length} diagnostics</summary><ul>{circuit.diagnostics.map((d: Json, i: number) => <li key={i} className={d.severity}>{d.code}: {d.message}</li>)}</ul></details>}
+    {/* The words first, the code on hover (branch record SIF-62, as SIF-52 in the ngspice window). */}
+    {circuit.diagnostics.length > 0 && <details><summary>{plural(circuit.diagnostics.length, 'diagnostic')}</summary><ul>{circuit.diagnostics.map((d: Json, i: number) =>
+      <li key={i} className={d.severity} title={`${d.severity}: ${d.code}`}>{d.message}</li>)}</ul></details>}
   </>);
 }

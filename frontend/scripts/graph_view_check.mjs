@@ -129,6 +129,12 @@ await runChecks(browser, async () => {
     return { title: [...d.querySelectorAll('.hint')].map(h => h.textContent).find(t => / - save point /.test(t)) ?? null, tools: tools.length, cut: cut.map(e => e.value || e.textContent.trim()) }; })()`);
   check('its title names the design ("Graph Transformer 16/2/2"), and every tool has the height of its line - no word cut (branch record SIF-37)',
     head.title?.startsWith('Graph Transformer 16/2/2 - save point ') && head.tools > 4 && head.cut.length === 0, JSON.stringify(head));
+  // Branch record SIF-62: the save point's place is an evaluation count, not a clock time (it read "written at 20"); the block
+  // list is labelled as its options are (it said "Layer" over "block 1"), and Fit says what it does, as the other layout buttons.
+  const words = await evaluate(`(() => { const d = ${DIALOG}; return { state: d.querySelector('.graph-state').innerText.trim(), layer: d.querySelector('select.graph-layer').parentElement.firstChild.textContent,
+    fit: [...d.querySelectorAll('.graph-tools button')].find(b => b.textContent === 'Fit')?.title ?? null }; })()`);
+  check('the state line counts in evaluations, the block list is labelled "Block", and Fit has a tooltip',
+    words.state === 'Evaluation 20 of this run (state before it: ok); this save point was written after evaluation 20.' && words.layer === 'Block' && words.fit === 'Fit the whole graph in the view', JSON.stringify(words));
   const after = await scripts();
   check('the drawing library was loaded only now, as its own file', after.length > before.length, JSON.stringify(after.filter(s => !before.includes(s))));
   let graph = await drawn();
@@ -207,6 +213,9 @@ await runChecks(browser, async () => {
   const around = await evaluate(`[...${DIALOG}.querySelectorAll('table.graph-around tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim()))`);
   check('a clicked device lists what it takes from each connection, with the uniform share', around.map(r => r.join(' ')).join('|') === 'D out 0.400 0.250|G in 0.100 0.250|S 0 0.300 0.250|B 0 0.200 0.250', JSON.stringify(around));
   check('... and the column sums to 1', Math.abs(around.reduce((s, r) => s + Number(r[2]), 0) - 1) < 1e-9);
+  // Branch record SIF-62: its sizes as the Sizes table writes them; short() wrote "w = 2e-6, l = 1e-7".
+  const sized = await evaluate(`${DIALOG}.querySelector('.graph-picked .hint').textContent`);
+  check('... and names its sizes with their units, as the Sizes table does', sized === 'w = 2 um, l = 100 nm - sized by wn', sized);
   await evaluate(`(${CY}.edges().filter(e => e.id().startsWith('c:CL.P#')).emit('tap'), true)`); await sleep(300);
   check('a clicked line shows both directions for every block', (await evaluate(`${DIALOG}.querySelectorAll('table.graph-around tbody tr').length`)) === 4
     && /CL takes from out/.test(await evaluate(`${DIALOG}.querySelector('.graph-picked').innerText`)) && /out takes from CL/.test(await evaluate(`${DIALOG}.querySelector('.graph-picked').innerText`)));

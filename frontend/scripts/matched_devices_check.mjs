@@ -93,7 +93,7 @@ await runChecks(browser, async () => {
   const diffKeys = await evaluate(`[...${BOX}.querySelectorAll('.confirm tbody tr')].map(tr => tr.children.length === 6 ? tr.children[1].textContent : null).filter(Boolean)`);
   check('the diff shows the two follower rows', JSON.stringify([...new Set(diffKeys)]) === '["w_in_b","w_load_b"]', JSON.stringify(diffKeys));
   // Branch record SIF-51: the table read before Apply said "parameters | w_in_b | modified | binding_group | | w_in_a" and
-  // "lower | 1e-06 |": now the tab, the change and the header in the page's words, the program's names in the tooltips.
+  // "lower | 0.000001 |": now the tab, the change and the header in the page's words, the program's names in the tooltips.
   const diffRows = await evaluate(`[...${BOX}.querySelectorAll('.confirm tbody tr')].map(tr => [...tr.children].map(td => td.textContent))`);
   check('the diff names the tab, the change and the header, a width with its unit and a cleared value as "(empty)"',
     JSON.stringify(diffRows.slice(0, 2)) === JSON.stringify([['Parameters', 'w_in_b', 'changed', 'Tied to', '(empty)', 'w_in_a'], ['Lower', '1 um', '(empty)']]),

@@ -845,10 +845,11 @@ has no count; Matched devices reads "?" again, as before SIF-50. "Changed" above
 
 **Found.** The table read just before Apply - the "Confirm import" box after Import JSON, and Matched devices >
 Review... - showed the program's values. Matched devices' review read "parameters | w_in_b | modified | binding_group |
-| w_in_a", then "lower | 1e-06 |" and "upper | 1e-05 |": the section key where the tab says Parameters, "modified", the
-field name where the header says "Tied to", a width as a bare exponent where its cell says "1 um", and a cleared value as an
-empty cell. An import of Specs rows read "targets | extra_0 | added | metric_id", and a Probes or Specs import showed
-"measurements", "normalization_scale", "direction_after_feasible" where the page says Probes, Scale and Objective.
+| w_in_a", then "lower | 0.000001 |" and "upper | 0.00001 |": the section key where the tab says Parameters, "modified",
+the field name where the header says "Tied to", a width as a bare number in m where its cell says "1 um", and a cleared
+value as an empty cell. An import of Specs rows read "targets | extra_0 | added | metric_id", and a Probes or Specs
+import showed "measurements", "normalization_scale", "direction_after_feasible" where the page says Probes, Scale and
+Objective.
 
 **Changed** (`editorRules.ts`, `DiffView.tsx`, `Editors.tsx`, `MatchedDevices.tsx`): the tabs' names (`SECTION_TITLES`)
 and the headers' words (`LABELS`, now holding the five words Editors.tsx set apart: Expression, Judged at, Missing value =
@@ -868,3 +869,11 @@ written by the backend (`src/gator_workbench`), outside this branch's frontend s
 20-row Specs import names Specs (tooltip targets), extra_0 "new", the replaced row "deleted", and "Spec ID" with metric_id
 in its tooltip, no bare metric_id), `sheet_check` 44 (its "binding_group" -> "Tied to" header pin still holds after the
 move), `editor_columns_check` 23, `edit_state_check` 24; none flaky.
+
+**Review follow-up.** The review found one slip, in words only: the code is right. This entry, the commit message and
+three comments (`DiffView.tsx`, `MatchedDevices.tsx`, `matched_devices_check`) said the old table showed "1e-06" and
+"1e-05", a width as a bare exponent. The old DiffView wrote `exact(v)`, which is `String(v)`, and JavaScript writes 1e-6
+as "0.000001" and 1e-5 as "0.00001" (it keeps an exponent only below 1e-6). "Found" above and the three comments now say
+"0.000001" / "0.00001", a bare number in m; the commit message stays as pushed. The backend's Notes sentence "Its own
+range was 1e-06 .. 1e-05 m." really is written that way (Python's text), so it stands. No code changed: `tsc` clean,
+`matched_devices_check` 32 (only a comment changed in it).

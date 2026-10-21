@@ -10,7 +10,7 @@ const CHANGE: Record<string, string> = { added: 'new', removed: 'deleted', modif
 
 /** The table read just before Apply names what the editors show (branch record SIF-51): the tab (Probes, not "measurements"),
  *  the column's header (Tied to, not "binding_group"; the program's names stay in the tooltips), a number with its row's unit
- *  as its cell writes it (1 um, not 1e-06) and "(empty)" where a value is cleared. `unitOf`: the unit of a row in the editors,
+ *  as its cell writes it (1 um, not 0.000001) and "(empty)" where a value is cleared. `unitOf`: the unit of a row in the editors,
  *  by its table and ID; a diff that changes the row's unit itself (an import may) or adds the row carries the unit of each side. */
 export function DiffView({ diff, unitOf }: { diff: Json[]; unitOf?: (section: string, key: string) => string | null }) {
   if (!diff.length) return <p className="hint">No differences.</p>;

@@ -1905,3 +1905,13 @@ that a live run is read every 2 s, a completed run's counts end "· numbers read
 passing tile's tooltip says which designs are left out ("Evaluations 189 to 288."), at 1366 px neither the name nor the counts
 is cut and the controls stay beside them (the head two lines tall), and the shown run's table row reads "76 of 78 judged (97
 %)". `training_data_check` 117, `dom_identity_check` 56. None flaky.
+
+**Review follow-up.** The review of 6dffc50 found two slips, both real. (1) A read that failed set the read time as a good
+one did, so an ended run whose re-read failed (the tab shown again, or Retry read with the backend down) read "numbers read
+at <the failed read's time>" above "The training numbers could not be read: ...". A failed read now keeps the last good
+read's time (`frontend/src/panels/TrainingTab.tsx`, the shown run's read loop). (2) The counts tooltip always began with
+"Last recorded at: ...", also on a live run waiting for its first result, whose line has no such time, and said "Numbers
+read at: ..." on a run at rest before any read had a time. It is now built from the line's own conditions: each sentence
+only when its words are on the line. Checked: `tsc` clean, `training_tab_check` 103 (100 before; new: a re-read that fails
+keeps "numbers read at" the last good read's time and Retry read reads again, and the empty live run's "0 evaluations · 0
+learner updates · live" has the tooltip "Live: ..." alone).

@@ -189,8 +189,9 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   useTrainingReads(() => { const own = store.current; return active && own ? [{ dir: own.runDir, store: own }] : null; }, {
     before: () => setReading(r => (r.busy ? r : { ...r, busy: true })),
     done: () => { setReading({ error: null, at: Date.now(), busy: false }); return liveRef.current; },
-    // a backend started before this tab existed has no such route (FastAPI's own 404 "Not Found"): said as such
-    failed: (_dir, e) => { setReading({ error: readError(e), at: Date.now(), busy: false }); return liveRef.current ? RETRY_MS : null; },
+    // a backend started before this tab existed has no such route (FastAPI's own 404 "Not Found"): said as such. The time
+    // stays the last good read's: the head says "numbers read at" it (branch record SIF-77 review), and nothing was read now.
+    failed: (_dir, e) => { setReading(r => ({ error: readError(e), at: r.at, busy: false })); return liveRef.current ? RETRY_MS : null; },
   }, requestFrame, [active, runDir, live, retry, requestFrame]);
 
   // ---- other runs on the same charts (record 7.200): each its own store, read like the shown one, apart from it
@@ -311,12 +312,13 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const candidates = runs.filter(r => r.run_dir !== runDir && !others.includes(r.run_dir));
   const unavailable = charts.filter(c => !c.available);
   // its two times in words, said in the tooltip (branch record SIF-77: "last metric 18:20:50 · read 20:53:08", and the
-  // tooltip only repeated the line)
+  // tooltip only repeated the line); the tooltip explains only the words the line shows (SIF-77 review)
   const counts = own.answers === 0 ? (reading.error ? '' : 'Reading the recorded numbers...')
     : `${evaluations} evaluation${evaluations === 1 ? '' : 's'} · ${updates} learner update${updates === 1 ? '' : 's'}${last ? ` · last recorded at ${clock(last)}` : ''}`
       + (live ? ' · live' : reading.at ? ` · numbers read at ${clock(reading.at / 1000)}` : '');
-  const countsTip = own.answers === 0 ? undefined : 'Last recorded at: when the run recorded its newest evaluation or learner update. '
-    + (live ? 'Live: this tab reads the run\'s recorded numbers again every 2 s while it works.' : 'Numbers read at: when this tab last read the run\'s recorded numbers.');
+  const countsTip = own.answers === 0 ? undefined : [last ? 'Last recorded at: when the run recorded its newest evaluation or learner update.' : '',
+    live ? 'Live: this tab reads the run\'s recorded numbers again every 2 s while it works.'
+      : reading.at ? 'Numbers read at: when this tab last read the run\'s recorded numbers.' : ''].filter(Boolean).join(' ') || undefined;
   return (<div className="training" style={hidden ? { display: 'none' } : undefined}>
     <div className="row training-head">
       {/* what is shown on the left (it wraps onto a second line, never cut: branch record SIF-77), the controls on the right

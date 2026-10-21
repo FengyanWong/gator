@@ -156,6 +156,7 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/training') {
       if (!run) return fulfil(requestId, 404, { detail: { message: 'Not a run directory' } });
       if (run.older) return fulfil(requestId, 404, { detail: 'Not Found' });                   // a backend without the route
+      if (run.unreadable) return fulfil(requestId, 500, { detail: 'FIXTURE: the journal could not be opened' });   // a read that fails
       if ((run.id === 'long' || run.id === 'longlive') && !run.data) run.data = RUNS.long.data ?? (RUNS.long.data = makeRun(20000));
       const tailCursor = url.searchParams.get('tail_cursor');
       reads.push({ run: run.id, flushes: Number(url.searchParams.get('flushes')), tailCursor, at: Date.now() });
@@ -336,6 +337,17 @@ await runChecks(browser, async () => {
   const after = reads.length;
   await sleep(5000);
   check('a run at rest is not read again', reads.length === after, `${reads.length - after} reads`);
+  // shown again, its re-read fails: the head keeps the last good read's time, as nothing was read now (SIF-77 review: it
+  // said "numbers read at" the failed read's time); Retry read then reads it again
+  const countsLine = () => evaluate(`(${TRAINING}).querySelector('.training-counts').textContent`);
+  const goodRead = (await countsLine()).match(/numbers read at (\d\d:\d\d:\d\d)$/)?.[1];
+  RUNS.live.unreadable = true;
+  await press('Logs'); await press('Training');
+  check('...a re-read that fails keeps the time of the last good read', !!goodRead && await until(`/The training numbers could not be read: FIXTURE/.test((${TRAINING}).innerText)`, 40)
+    && (await countsLine()).endsWith(`numbers read at ${goodRead}`), `${goodRead} -> ${await countsLine()}`);
+  delete RUNS.live.unreadable;
+  await evaluate(`[...(${TRAINING}).querySelectorAll('button')].find(b => b.textContent === 'Retry read').click()`);
+  check('...and Retry read reads it again', await until(`!/could not be read/.test((${TRAINING}).innerText) && /288 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 40));
 
   // ---- key numbers (record 7.215): the recorded values of the run, one row; folded and kept so --------------------------------------
   const KEYS = `(${TRAINING}).querySelector('details.training-keys')`;
@@ -383,6 +395,9 @@ await runChecks(browser, async () => {
   check('a backend older than the page (no such route) is said as such', await until(`/older than the page/.test((${TRAINING}).innerText)`, 60), await evaluate(`(${TRAINING}).innerText.slice(0, 200)`));
   await showRun(RUNS.empty);
   check('a live run with nothing recorded yet is waiting for metrics', await until(`/Waiting for metrics/.test((${TRAINING}).innerText)`, 60));
+  // its counts carry no "last recorded at": their tooltip does not explain one (SIF-77 review)
+  check('...its counts tooltip explains only the words on the line', await until(`/^0 evaluations · 0 learner updates · live$/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 40)
+    && /^Live: .*every 2 s while it works\.$/.test(await countsTip()), `${await evaluate(`(${TRAINING}).querySelector('.training-counts').textContent`)} | ${await countsTip()}`);
   await showRun(RUNS.frozen);
   await until(`/48 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60);
   check('a frozen run: the learner chart says why it is empty', await until(`/frozen run evaluates a saved policy/.test((${TRAINING}).innerText)`, 30));

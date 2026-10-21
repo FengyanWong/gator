@@ -140,7 +140,7 @@ runs then). Run configuration's model line and this line come from the same valu
   **Export status**. Continue waits, and says why, when the run folder holds no save point to go on from - a copy made
   without its save points, or deleted ones (record 7.215: `GET /api/runs/status` names it as `save_point`) - and when
   that save point was written by an older version of the optimizer code: continuing needs exactly that version, while
-  fine-tune and frozen still load its model (record 7.221: `save_point_code` `older`). A run that is live when the page opens - started from another browser or the CLI - is taken into
+  Fine-tune and Evaluate only still load its model (record 7.221: `save_point_code` `older`). A run that is live when the page opens - started from another browser or the CLI - is taken into
   the header, and the message says so; a second run live at the same time as the header's own has no run buttons on this page.
 * **The run brief** (record 7.264; plan [frontend run workflow](plan-frontend-run-workflow.md), "The run brief", added by
   record 7.259 - user: "pressing the green running text on banner will show you small popup window showing the running
@@ -2458,8 +2458,9 @@ chosen. A configuration without any Mode (a task's starter rows, an old file) is
 **Fine-tune** and **Evaluate only** show the saved models table, then **The model in use** - its facts (network,
 components, task, reward, conditions, training, restorable, folder), a note when the configuration on the page is too
 incomplete to compare it with, and its compatibility - then the Mode's own settings: for Fine-tune, Freeze encoder,
-Encoder-only transfer, Reset critic, Continual learning and the name of the model it saves; for Evaluate only, the
-frozen actions (deterministic or sampled); then Advanced. They have no block for a new network: a saved model only loads
+Encoder-only transfer, Reset critic, Continual learning and the name of the model it saves; for Evaluate only,
+Actions - Deterministic (the policy's mean action at each step) or Sampled (drawn from the policy, as in training); then
+Advanced. They have no block for a new network: a saved model only loads
 into the network it was trained with.
 
 Pressing the button again focuses the existing window. It has no close button of its own (record 7.163, user: "delete

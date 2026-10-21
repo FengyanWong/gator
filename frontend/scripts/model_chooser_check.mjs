@@ -312,8 +312,8 @@ await runChecks(browser, async () => {
     ? await evaluate(`(() => { const d = ${RIGHT}.querySelector('details.model-compatibility'); return { open: d.open, summary: d.querySelector('summary').textContent,
         lines: [...d.querySelectorAll('ul.compat-diff > li')].map(li => li.textContent), passed: d.querySelector('details.compat-passed > summary')?.textContent }; })()`) : null;
   incompatibleD = false;
-  check('an incompatible model: its problems first, a "saved {...} != current {...}" pair as the keys that differ (a design by its name), the passing check folded (branch record SIF-36)',
-    compat?.open && compat.summary === 'NOT compatible - there is no fallback to scratch for Fine-tune' && JSON.stringify(compat.lines) === JSON.stringify(['encoder_type GraphGPS → Graph Transformer', 'attention_mode none → local_port_attention'])
+  check('an incompatible model: its problems first, a "saved {...} != current {...}" pair as the keys that differ (a design by its name), the passing check folded (branch record SIF-36); the summary names the Mode and says what incompatible means in the Modes\' own words (branch record SIF-53)',
+    compat?.open && compat.summary === 'NOT compatible for Fine-tune - it cannot be loaded, and a run never falls back to New model' &&JSON.stringify(compat.lines) === JSON.stringify(['encoder_type GraphGPS → Graph Transformer', 'attention_mode none → local_port_attention'])
     && compat.passed === 'The other check passes', JSON.stringify(compat));
   const NAME = `${RIGHT}.querySelector('input.model-rename')`, RENAME = `${RIGHT}.querySelector('button.model-rename-apply')`;
   const note = () => evaluate(`${RIGHT}.querySelector('.model-rename-note')?.textContent ?? ''`);
@@ -400,6 +400,17 @@ await runChecks(browser, async () => {
   check('New model while a Use is on its way lets it go: New model, no saved model, the network as it was, no note', run?.mode === 'scratch' && !run.model_source?.run_dir && sameNet(run.network, GATV2)
     && !(await evaluate(`/The next run fine-tunes/.test(${RIGHT}.innerText)`)), `${JSON.stringify(run?.model_source)} ${JSON.stringify(run?.network)}`);
   check('... and the window stays open: no model was chosen', !(await evaluate(`window.__checkRLWindow.closed`)));
+
+  // ---- Evaluate only's own setting (branch record SIF-53: it read "Frozen actions [deterministic]", the Mode's key, and said
+  // nothing of what the choice does); New model again after, so the real route below is read on its own switch -----------
+  await setMode(networkPage, 'frozen');
+  const ACTIONS = `[...${RIGHT}.querySelectorAll('h3')].find(h => h.textContent === 'Evaluate only: its own settings')?.nextElementSibling`;
+  const actions = await until(`(${ACTIONS})?.tagName === 'LABEL'`, 40) ? await evaluate(`(() => { const l = ${ACTIONS}, s = l.querySelector('select');
+    return { label: l.firstChild.textContent, title: l.title, value: s.value, options: [...s.options].map(o => [o.value, o.textContent]) }; })()`) : null;
+  check('Evaluate only\'s own setting reads "Actions", says on hover what each choice does, and offers Deterministic and Sampled, stored as before (SIF-53)',
+    actions?.label === 'Actions' && /^Deterministic: each step takes the policy's mean action/.test(actions.title) && /Sampled: each step draws an action from the policy/.test(actions.title)
+    && actions.value === 'deterministic' && JSON.stringify(actions.options) === JSON.stringify([['deterministic', 'Deterministic'], ['sampled', 'Sampled']]), JSON.stringify(actions));
+  await setMode(networkPage, 'scratch');
 
   // ---- the REAL route of this backend ---------------------------------------------------------------------------------------------------
   const real = await fetch(new URL('api/runs/models' + (ROOT ? `?output_root=${encodeURIComponent(ROOT)}` : ''), APP));

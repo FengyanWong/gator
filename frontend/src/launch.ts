@@ -49,7 +49,8 @@ const realQuestion = (report: Json) => `This runs REAL simulations${report?.task
 
 /** The backend never starts on a guess: it refuses, creates nothing, and names what it needs - the budget of a REAL
  *  simulation, a model trained on another task, connection layers it could not check. Each question is put to the
- *  user once and the request is repeated with the answers. Returns null when the user said no. */
+ *  user once and the request is repeated with the answers. Returns null when the user said no. A Mode is named as its
+ *  button names it, "Fine-tune" (the question said "fine_tune"; branch record SIF-53). */
 export async function launchWithConsent(send: (flags: Json) => Promise<Json>, options: { real: boolean; authorizeText: string; transfer?: boolean }): Promise<Json | null> {
   const flags: Json = {};
   if (options.real) {
@@ -62,7 +63,7 @@ export async function launchWithConsent(send: (flags: Json) => Promise<Json>, op
       let flag: string | null = null, question = '';
       if (detail.code === 'real_authorization_required')
         [flag, question] = ['authorize_real_simulation', options.real ? options.authorizeText : realQuestion(detail.report)];
-      else if (detail.code === 'confirm_transfer' && options.transfer) [flag, question] = ['confirm_transfer', `${detail.report?.reason}\n\nLoad this model for a NEW task (fine_tune creates a new run with a parent)?`];
+      else if (detail.code === 'confirm_transfer' && options.transfer) [flag, question] = ['confirm_transfer', `${detail.report?.reason}\n\nLoad this model for a NEW task? (Fine-tune makes a new run that starts from this model; the model's own run is not changed.)`];
       else if (detail.code === 'connection_gate_acknowledge') [flag, question] = ['acknowledge_unknown_connection', `Connection layers are UNKNOWN: ${detail.report?.uncertain?.join(', ')}.\nUnknown is not OK. Proceed anyway?`];
       if (!flag || flags[flag]) throw e;                                          // not a question, or already answered
       if (!window.confirm(question)) return null;
@@ -145,7 +146,9 @@ export function continueReadiness({ status, check, phase, held, total }: { statu
     return null;
   }
   if (status.save_point === null) return 'This run folder holds no save point - a copy made without them, or they were deleted - so there is nothing to go on from.';
-  if (status.save_point_code === 'older') return 'This run was saved by an older version of the optimizer code, and continuing it needs exactly that version. Its model still loads in a new run: fine-tune or frozen.';
+  // the page's own words name the Modes as their buttons do (it said "fine-tune or frozen"; branch record SIF-53); the
+  // backend's check, once it answers, gives its own reason, shown as sent
+  if (status.save_point_code === 'older') return 'This run was saved by an older version of the optimizer code, and continuing it needs exactly that version. Its model still loads in a new run: Fine-tune or Evaluate only.';
   return null;
 }
 

@@ -266,8 +266,8 @@ await runChecks(browser, async () => {
   check('a continued run lists its segments: how each began and ended, and how long it worked', JSON.stringify(resumedDetails.segments) === JSON.stringify([
     ['1', 'start', stamp('2026-09-21T10:00:03+00:00'), stamp('2026-09-21T10:10:00+00:00'), 'paused', 'paused by you', '10 min 00 s'],
     ['2', 'resume', stamp('2026-09-21T12:10:00+00:00'), stamp('2026-09-21T12:15:00+00:00'), 'completed', 'budget used up', '5 min 00 s']]) && resumedDetails.paused === '2 h 00 min', JSON.stringify(resumedDetails));
-  check('the details of a run saved by an older version of the optimizer code say why it cannot be continued (7.221)',
-    resumedDetails.saved === 'model only: the latest save ckpt-000040 is a full save point written by an older version of the optimizer code - only that version can continue it; fine-tune and frozen still load its model',
+  check('the details of a run saved by an older version of the optimizer code say why it cannot be continued (7.221), naming the Modes as their buttons do (branch record SIF-53)',
+    resumedDetails.saved === 'model only: the latest save ckpt-000040 is a full save point written by an older version of the optimizer code - only that version can continue it; Fine-tune and Evaluate only still load its model',
     JSON.stringify(resumedDetails.saved));
   await shot('far', '.run-window', 'runs-3-details.png');
   await pressIn(FAILED, 'Details'); await sleep(600);

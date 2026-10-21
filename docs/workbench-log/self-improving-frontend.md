@@ -922,3 +922,40 @@ any PDK/ pins unchanged); neither flaky.
 backend sends its `stat().st_size` (`ngspice_tasks.py`), so the real page's green line reads "(1.3 KiB)"; "Changed" now
 says so. "Checked" stays: it describes the check, whose fixture deck does read "(179 B)". The commit message stays as
 pushed. No code changed: `tsc` clean; no check pins this text, so none was rerun.
+
+### SIF-53 Fixed sentences name the Modes as their buttons do: New model, Fine-tune, Evaluate only (2026-10-21; from the readability audit)
+
+**Found.** Fixed sentences still named the Modes by their keys, although the buttons say New model, Fine-tune and
+Evaluate only (`MODE_NAME`; SIF-21 fixed two tooltips). The question on a Start with a model trained on another task
+ended "Load this model for a NEW task (fine_tune creates a new run with a parent)?". The page's own reason beside
+Continue... for a run saved by older optimizer code ended "Its model still loads in a new run: fine-tune or frozen.", and
+the Runs window's Saved state fact for such a run ended "only that version can continue it; fine-tune and frozen still
+load its model". An incompatible model's line read "NOT compatible - there is no fallback to scratch for Fine-tune" in a
+saved model's Details, and "Compatibility for Fine-tune: NOT compatible - there is no fallback to scratch" under The model
+in use in the RL model window. Under "Evaluate only: its own settings" the one setting was "Frozen actions
+[deterministic]", with "sampled" as the other choice and nothing to say what either does.
+
+**Changed** (`launch.ts`, `RunList.tsx`, `ModelChooser.tsx`, `RlModelWindow.tsx`, `docs/workbench.md`): the question
+reads "Load this model for a NEW task? (Fine-tune makes a new run that starts from this model; the model's own run is not
+changed.)". The page's own Continue reason ends "Its model still loads in a new run: Fine-tune or Evaluate only.", and
+Saved state "only that version can continue it; Fine-tune and Evaluate only still load its model". The Details line reads
+"NOT compatible for Fine-tune - it cannot be loaded, and a run never falls back to New model" (a compatible model still
+reads "Compatible for Fine-tune"), and the RL model window "Compatibility for Fine-tune: NOT compatible - it cannot be
+loaded, and a run never falls back to New model". Evaluate only's setting is "Actions [Deterministic]", with Sampled as
+the other choice, and its tooltip says "Deterministic: each step takes the policy's mean action, so the same state gives
+the same design. Sampled: each step draws an action from the policy, as in training." (the actor's `sample` takes `mu`
+when deterministic, `rsample()` otherwise); the stored values stay `deterministic` and `sampled`, and the model line
+and the header's Next line still write "deterministic actions". docs/workbench.md says the same in its Continue paragraph and its RL model window
+section. Left as it was: "this configuration still says resume" (NO_MODE in `launch.ts`, Run configuration's notice and
+the model line), record 7.267's chosen words, pinned by `mode_suggestion_check`. The backend's own continuation answer
+(`src/gator_workbench/runs.py`, outside this branch's frontend scope) still ends "Its model still loads in a new run:
+fine-tune or frozen.", and the page shows that answer as sent once the check has answered; the page's own sentence is
+shown only before then, or with a backend that has no continuation check. So `run_control_check`'s fixture keeps the
+backend's words (its `OLDER` text and `/fine-tune or frozen/`), and the audit's two updates there were not made.
+
+**Checked.** `tsc` clean; `run_control_check` 102 (its older-code pins unchanged, as said above), `run_list_check` 121
+(the Saved state pin now ends "Fine-tune and Evaluate only still load its model"), `model_chooser_check` 79 (the
+incompatible summary pin now reads exactly as above; new: in Evaluate only the setting under its heading reads
+"Actions", its tooltip starts "Deterministic: each step takes the policy's mean action" and names Sampled, and it offers
+Deterministic and Sampled with the values deterministic and sampled, deterministic chosen), `network_panel_check` 58,
+`mode_suggestion_check` 20; none flaky.

@@ -165,9 +165,10 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     // a save point the summary names but the run folder no longer holds (a copy made without them, deleted ones): said (7.215)
     ['Saved state', summary?.output ? (info?.save_point === null && summary.output.resumability !== 'none'
       ? `none: the run's summary names its save point ${summary.output.latest_checkpoint ?? ''} as ${SAVED_STATE[summary.output.resumability] ?? summary.output.resumability}, but the run folder no longer holds it (a copy made without its save points, or they were deleted); nothing to continue from`
-      // a full save point of an older optimizer source: only that source can continue it (record 7.221)
+      // a full save point of an older optimizer source: only that source can continue it (record 7.221); the Modes as
+      // their buttons name them (it said "fine-tune and frozen"; branch record SIF-53)
       : info?.save_point_code === 'older' && summary.output.resumability === 'full_state'
-      ? `model only: the latest save ${summary.output.latest_checkpoint ?? ''} is a full save point written by an older version of the optimizer code - only that version can continue it; fine-tune and frozen still load its model`
+      ? `model only: the latest save ${summary.output.latest_checkpoint ?? ''} is a full save point written by an older version of the optimizer code - only that version can continue it; Fine-tune and Evaluate only still load its model`
       : `${SAVED_STATE[summary.output.resumability] ?? summary.output.resumability} (${summary.output.completeness} output, latest save ${summary.output.latest_checkpoint ?? 'none'})`) : null],
     ['Parallel simulations', info?.concurrency ? `${info.concurrency}` : null],
     ['Connection', info?.connection_profile_id ?? (info ? 'none (not needed)' : null)],

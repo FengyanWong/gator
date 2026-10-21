@@ -106,8 +106,11 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
     <h4>With the task on the page <span className="hint">- save point {point || 'none'}</span></h4>
     {checkError && <p className="error">{checkError}</p>}
     {checked?.compatibility_unchecked && <p className="hint">{checked.compatibility_unchecked.title}: {checked.compatibility_unchecked.what}</p>}
+    {/* An incompatible model says what that means in the Modes' own words (it said "no fallback to scratch", the key of
+        New model; branch record SIF-53). */}
     {compatibility && <details className="model-compatibility" open={!compatibility.compatible}><summary className={compatibility.compatible ? '' : 'error'}>
-      {compatibility.compatible ? 'Compatible' : 'NOT compatible - there is no fallback to scratch'} for {compatibilityMode(compatibility.mode)}</summary>
+      {compatibility.compatible ? `Compatible for ${compatibilityMode(compatibility.mode)}`
+        : `NOT compatible for ${compatibilityMode(compatibility.mode)} - it cannot be loaded, and a run never falls back to New model`}</summary>
       <CompatibilityList checks={compatibility.checks} /></details>}
     {!checked && !checkError && point && <p className="hint">Checking it against the task on the page...</p>}
     <h4>Relationships</h4>

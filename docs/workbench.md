@@ -791,7 +791,11 @@ and M4) and the VCO (three ring PMOS). Found:
 A width follows in the ratio the circuit has (a 2:1 mirror stays 2:1); a length, finger or multiplier row is tied only where
 the circuit's values are equal. A device of a pair that has no row gets a follower row right after its leader's group; a row
 that already follows the same leader is shown as kept, and one tied elsewhere by you is left alone. The box lists the
-structures in plain sentences and one line per row it would change. **Review...** shows the diff, the count of
+structures in plain sentences (a kind found three times or more in one line, "8 cross-coupled pairs, each gate on the other's
+drain: ...", each sentence in its tooltip; branch record SIF-73) and one line per row it would change. It takes 40 % of the
+editors' card at most and leaves the table its heading and about three rows; on a wide page whose bottom panel is open, an
+answer that leaves the table under about four rows folds the panel to its tab line, as entering a cell does (record 7.372).
+**Review...** shows the diff, the count of
 searched rows before and after, and any validation error; only **Apply** changes the rows, and **Undo** in
 the toolbar takes it back. **Matched devices...** stays enabled while the box is open; each press reads the current
 rows again and replaces the previous results and unapplied review. The separate **Find / Find again** button is

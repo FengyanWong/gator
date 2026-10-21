@@ -9,7 +9,8 @@
 //     is upper (branch record SIF-50);
 //   - Parameters: initial_value is not shown; value_type, step, scale and ratio come after "More columns"; on a follower row
 //     (binding_group set) the fields its leader decides are greyed, with why; a word typed into Ratio is refused in words;
-//     a validation answer without a count reads "Searched rows: ? of N." (review of branch record SIF-50).
+//     a validation answer without a count reads "The optimizer searches ? of N rows." (review of branch record SIF-50; the
+//     words of branch record SIF-73).
 // HERMETIC (lib/harness.mjs): validation is answered with a canned valid report labelled FIXTURE, other reads pass, every
 // other writing request is refused. A temporary browser profile: the user's saved configuration is not touched.
 // Exit code 1 if any check fails.
@@ -142,8 +143,8 @@ await runChecks(browser, async () => {
   // The canned report has no count: an answered validation without one reads "?", not "..." as if still counting (review
   // of branch record SIF-50).
   const FACT = `(${EDITORS}.querySelector('p.fact')?.textContent ?? '')`;
-  check('validation answered without a count: the fact line reads "Searched rows: ? of N."',
-    await until(`/^Searched rows: \\? of \\d+\\.$/.test(${FACT})`), await evaluate(FACT));
+  check('validation answered without a count: the fact line reads "The optimizer searches ? of N rows." (SIF-73)',
+    await until(`/^The optimizer searches \\? of \\d+ rows\\.$/.test(${FACT})`), await evaluate(FACT));
   const before = await fields();
   check('Parameters shows no initial_value, and value_type, step, scale and ratio only after "More columns" (4)',
     !['initial_value', 'value_type', 'step', 'scale', 'ratio'].some(c => before.includes(c)) && /More columns \(4\)/.test(await evaluate(`${MORE}?.textContent ?? ''`)), JSON.stringify(before));

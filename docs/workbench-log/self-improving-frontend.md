@@ -1713,3 +1713,35 @@ the header's "Pause and Abort act on" its run, also when that run is paused and 
 "the one its buttons act on". `tsc` clean. `run_control_check` 120: new, a second Start after the ended run held at
 "Starting...": the chip reads "starting [MOCK]", no task, and Run configuration's line is absent; the link's tooltip is
 checked whole. `save_now_check` 29. None flaky.
+
+### SIF-73 Matched devices in groups, and the table keeps rows in view (2026-10-21; from the real-data survey)
+
+**Found.** With the user's VCO (mscr_vco_lin_c) the Matched devices box listed "DUT/MNX1 and DUT/MNY1 are a cross-coupled
+pair: each gate is on the other's drain." eight times over (MNX1-4, then MPX1-4), so the ties and Review... sat out of
+view (survey issue 15). At 1366 x 768 with a run below and the "Loaded run ..." line under the header, the 353 px card
+showed four of those bullets, a fifth cut in half, and the table's heading row cut in half with no row under it: SIF-22's
+40 % cap was not enough, and record 7.372's fold of the bottom panel only comes with a cell entered, while no cell was in
+view to enter (issue 2). And under the empty Find rows box, "Searched rows: 7 of 66." beside the exactly 7 rows the folded
+followers leave in view read as the result of a search (issue 20).
+
+**Changed.** `frontend/src/panels/MatchedDevices.tsx`: a kind found three times or more is one line - "8 cross-coupled
+pairs, each gate on the other's drain: DUT/MNX1 and DUT/MNY1; DUT/MNX2 and DUT/MNY2; ..." (a mirror as "<reference> into
+<copies>") - with each whole sentence in the line's tooltip; a kind found once or twice, and a kind the page has no words
+for, keeps its sentences in their places. Once an answer is drawn the box calls `onShown`. `frontend/src/panels/Editors.tsx`:
+then, as on a cell entered (one `foldIfCramped` for both), a table left under about four rows on a page wider than 1100 px
+folds the bottom panel to its tab line (record 7.372's rule); a tab or the splitter brings it back as before. The fact line
+reads "The optimizer searches 7 of 66 rows." - SIF-50's word kept, in a sentence that cannot read as a find result; its
+tooltip is unchanged. `frontend/src/roadster.css`: the box (and an import's confirmation in the same place) is capped at
+`min(45vh, 40%, max(72px, calc(100% - 340px)))`, so it leaves the table its heading and about three rows where the card
+has room for both, and keeps its heading and a line where it has not. `docs/workbench.md` (§ Matched devices): the grouped
+line, the cap and the fold. Not done: issue 15's other option, the list folded under the tie table - in one line the ties
+come into view as they are; issue 20's move of the line beside More columns - the new words remove the misreading where it is.
+
+**Checked.** `tsc` clean. `matched_devices_check` 37 (32 before): "The optimizer searches 3 of 5 rows." after Apply; new, an
+answer with eight cross-coupled pairs added (made up in the backend's sentence) lists four lines, the cross-coupled line
+whole with the eight sentences as its tooltip and the three kinds found once as their sentences; at 1366 x 768 with the
+bottom panel open the answer folds the panel and the table shows its heading and two whole rows (this card also has the
+MOCK line: 575 px, the box 230, the table 127); the panel opened again under the open box, the box keeps 72 px and scrolls
+by itself, the table its heading and a whole row (40 % of the 361 px card would leave it none). `editor_columns_check` 23 ("The
+optimizer searches ? of N rows."). `room_check` 27, `looks_check` 72, `callouts_check` 8, `edit_state_check` 24,
+`reliability_check` 20, `spec_equations_check` 35. None flaky.

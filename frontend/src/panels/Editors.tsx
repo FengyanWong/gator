@@ -27,7 +27,8 @@ const MORE_KEY = 'gator-workbench-editor-more-columns';
  *  row said "equation_unit_unchecked"; the whole message and the code stay in its tooltip. */
 const issueHead = (message?: string | null) => String(message ?? '').split(/(?<=[.:;])\s/)[0].replace(/[.:;]$/, '');
 
-/** The table's room under which entering a cell folds the bottom panel (record 7.372): about four rows and the heading. */
+/** The table's room under which entering a cell (record 7.372) or Matched devices' answer (branch record SIF-73) folds the
+ *  bottom panel: about four rows and the heading. */
 const CRAMPED_PX = 200;
 
 /** `taskSlot` / `taskNotes`: where the circuit panel puts "Save task" (right end of the tab line) and its messages (under
@@ -45,7 +46,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void;
     taskHead: (element: HTMLElement | null) => void; taskTools: (element: HTMLElement | null) => void; taskStatus: (element: HTMLElement | null) => void;
     circuitShown: boolean; onCircuit: () => void;
-    /** Called when a cell is entered while the table has room for under about four rows (record 7.372): App folds the bottom panel. */
+    /** Called when a cell is entered, or Matched devices has drawn its answer (branch record SIF-73), while the table has room
+     *  for under about four rows (record 7.372): App folds the bottom panel. */
     onCramped?: () => void }) {
   const [tab, setTab] = useState<Section>('parameters');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -525,6 +527,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return parts.length ? parts.join(', ') : null;
   };
 
+  // The table (`room`, its scroll box) left under about four rows on a wide page whose bottom panel is open: App folds the
+  // panel (record 7.372) - when a cell is entered, and when Matched devices has drawn its answer above the table (branch record
+  // SIF-73: at 1366 x 768 with a message line, its box left the table its heading alone and no cell to enter).
+  const foldIfCramped = (room?: HTMLElement | null) => {
+    if (onCramped && room && window.innerWidth > 1100 && room.clientHeight < CRAMPED_PX && !room.closest('.layout.bottom-folded')) onCramped();
+  };
+
   // Back to the cell after Enter or Esc, as a spreadsheet does.
   const backToCell = () => {
     if (!active || at < 0) return;
@@ -590,16 +599,19 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         {saveAsWhy && <p className="warn">Save as cannot start now: {saveAsWhy}.</p>}
       </div>}
       <div className="task-notes" ref={taskNotes} />
-      {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)} />}
+      {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)}
+        onShown={() => foldIfCramped(table.current?.parentElement)} />}
       {/* The lines above the tables give their fact; what explains it is the line's tooltip (record 7.176, user: "reduce or
           delete these texts"). The rows the optimizer changes are "searched", as the task's Details call them (branch record
-          SIF-40), where this line said "Independent action variables" (branch record SIF-50). "..." only before the first
-          validation answer: App keeps the last answer while the next one is on its way, so a missing count after that means
-          validation could not count (a tie to a row that does not exist, a cycle, a refused configuration) and reads "?". */}
+          SIF-40), where this line said "Independent action variables" (branch record SIF-50). A sentence with the optimizer in
+          it (branch record SIF-73): "Searched rows: 7 of 66." under the empty Find rows box, beside the 7 rows a fold leaves
+          in view, read as the result of a search. "..." only before the first validation answer: App keeps the last answer
+          while the next one is on its way, so a missing count after that means validation could not count (a tie to a row
+          that does not exist, a cycle, a refused configuration) and reads "?". */}
       {tab === 'parameters' && <p className="fact" title={'The rows the optimizer changes itself; the others follow a tied row or stay fixed. '
         + 'The initial value is the one read from the circuit. Equal initial values do not imply a binding. '
-        + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>Searched rows: <b>{validation == null ? '...'
-          : (validation.facts?.independent_action_variables ?? '?')}</b> of {rows.length}.</p>}
+        + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>The optimizer searches <b>{validation == null ? '...'
+          : (validation.facts?.independent_action_variables ?? '?')}</b> of {rows.length} rows.</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
         + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns).'}>Probes: {probeIds.length
           ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}
@@ -618,7 +630,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}</p>}
       <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}
         onFocusCapture={e => {      // a cell entered while the table has room for under about four rows (record 7.372)
-          if (onCramped && window.innerWidth > 1100 && e.currentTarget.clientHeight < CRAMPED_PX && !e.currentTarget.closest('.layout.bottom-folded')) onCramped(); }}>
+          foldIfCramped(e.currentTarget); }}>
         <table className="grid editor" ref={table}>
           <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance ? `${c.name}: ${c.guidance}` : c.name} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody onKeyDown={onTableKey} onPaste={onTablePaste}>{rows.map((row, index) => {

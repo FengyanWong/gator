@@ -1640,7 +1640,7 @@ writes units in English letters.
 
 **Changed** (`format.ts`, `CornerCheck.tsx`, `Pdk.tsx`): the time helpers (timeOrDateTime, dateTimeOrText, dateTimeOrNull,
 dateTime, createdAt) write stamp()'s local form "2026-10-16 14:03:22" (a time of today stays time-only; createdAt gives
-"10-20 10:43" as runTitle does; the unused CREATED / savedAt / WHEN went); the Corner check's heading is the local time with
+"10-20 10:43" as runTitle does; the unused savedAt / WHEN went, and CREATED with the old createdAt); the Corner check's heading is the local time with
 the UTC in its tooltip, its explainer says "27 degC", "125 degC", "-40 degC", and its corner labels go through cornerLabel()
 ("SS, 125 degC, 0.9 V"); the PDK window's Loaded cell carries "<time> (UTC)" as its tooltip.
 
@@ -1649,3 +1649,10 @@ the UTC in its tooltip, its explainer says "27 degC", "125 degC", "-40 degC", an
 0.9 V)"; two new: the explainer in degC with no degree sign, the heading in local time with the UTC tooltip and the grid in
 degC), `working_copy_check` 31, `task_run_check` 31, `pdk_check` 40 (one new: the Loaded cell's local time and UTC tooltip),
 `training_data_check` 117 - 563 checks, none failed.
+
+**Review follow-up (SIF-59).** The review of bb5107b found the section's claim untrue for one helper: `timeOfDay` (the
+Training tab's "last metric ..." and "read ..." times) still used the browser's toLocaleTimeString - "02:03:22 PM" in a
+12-hour browser beside the page's "14:03:22". It now writes hh:mm:ss with stamp()'s getters (an unreadable time gives no
+text, never "Invalid Date"). The log's "the unused CREATED" was wrong: CREATED went with the old createdAt it served. `tsc` clean;
+`training_tab_check` 95, `training_data_check` 117. Before it: the full suite on SIF-1..71 - 54/54 scripts, 2,347 checks, none
+failed, none flaky.

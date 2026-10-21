@@ -39,7 +39,8 @@ export const dateTime = (since: string) => stamp(since) ?? since;
 /** When a run was created, as the Training tab's Compare list and chips write it: "10-20 10:43", as runTitle does (TrainingTab.tsx). */
 export const createdAt = (utc?: string | null) => stamp(utc)?.slice(5, 16) ?? 'unknown time';
 /** A time of day from seconds since 1970, as the Training tab writes it (its `clock`: format.ts has a clock() of its own). */
-export const timeOfDay = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+export const timeOfDay = (seconds: number) => { const d = new Date(seconds * 1000);   // hh:mm:ss as stamp() writes it (review of SIF-59: a 12-hour browser wrote "02:03:22 PM")
+  return Number.isNaN(d.getTime()) ? '' : `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
 /** A run as a message names it: its task and when it was created, "ota7t 10-06 14:02" (the folder's name without a date). */
 export const runTitle = (row: any) => { const d = row.created_utc ? new Date(row.created_utc) : null;
   return d && !Number.isNaN(d.getTime()) ? `${row.task_name ?? folderName(row.run_dir)} ${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}` : folderName(row.run_dir); };

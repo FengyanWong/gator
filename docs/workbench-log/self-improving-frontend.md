@@ -1275,3 +1275,10 @@ view saying "circuit profile"; "To make a task of this cell"; the draft's headli
 not renamed), `task_list_check` 81 (new: with fixture_ota renamed ota_relaxed, Delete task asks "Delete the task
 real:fixture_ota (shown as ota_relaxed)? It leaves the Tasks window, ...", the window says "Current task: ota_relaxed",
 and Cancel sends nothing), `ngspice_window_check` 43, `working_copy_check` 29; none flaky.
+
+**Review follow-up.** The review found one slip, real: a second line of `virtuoso_source_check` was missed. "the limit is
+a neutral note in plain words" still asked the window for "circuit profile", and still passed, but no longer on the note:
+the window's whole text includes the folded "Technical details", where the fixture's backend blocker says "a native
+cellview needs a verified circuit profile". So it tested none of the note's words and wanted the phrase
+`project_help_check` now says must not be in view. It now asks for the note's own "it is not a task yet". A change to that
+check only: `tsc` clean; `virtuoso_source_check` 95; none flaky.

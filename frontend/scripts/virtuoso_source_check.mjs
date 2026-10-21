@@ -472,8 +472,10 @@ await runChecks(browser, async () => {
   await wPress('Refresh'); await quiet();
 
   // ---- the limit is explained in plain words; circuits that already have a task are NOT suggested (user, 2026-09-22) --------
+  // The note's own words, "Why: it is not a task yet" (branch record SIF-61): "circuit profile" would still be found, but only in the
+  // backend's blocker under the folded "Technical details", which wText() reads too.
   check('the limit is a neutral note in plain words, not a red box', (await far.evaluate(`!!${WIN}.querySelector('.note') && !${WIN}.querySelector('.blocker')`))
-    && (await wText()).includes('cannot optimize it yet') && (await wText()).includes('circuit profile'));
+    && (await wText()).includes('cannot optimize it yet') && (await wText()).includes('it is not a task yet'));
   const offered = (await far.evaluate(`[...${WIN}.querySelectorAll('.note button')].map(b => b.textContent)`)).filter(name => name.startsWith('real:'));
   check('the note does not suggest the existing real:* tasks', offered.length === 0 && !(await wText()).includes('have a profile today'), offered.join(', '));
   check('it still offers the way forward for THIS cell', await wHas('Read this cell into the workbench'));

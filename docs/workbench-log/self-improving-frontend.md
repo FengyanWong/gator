@@ -1416,3 +1416,41 @@ runs' `table.grid` at 13.5 px. And "Changed" put the "Not on this chart: ..." li
 styles.css's `.training-missing { font-size: 11px }` and loads after it (`main.tsx`), so it wins. "Changed", "Checked",
 the two comments and the label now say so; the commit message stays as pushed. No code changed: `tsc` clean;
 `training_tab_check` 95 (only a comment and a label changed in it).
+
+### SIF-66 Text no longer cut short: the header's task name, Continue's "New total", the formula bar's name box and the graph view (2026-10-21; from the readability audit)
+
+**Found.** Four places cut their own text or drawing. The header's task name could not shrink: between about 1201 and
+1300 px with a run in the header, the facts' box around it cut it through a letter ("OTA 7T wid"), with no "...", while
+the grey facts and the connection's description beside it ended in "..." (record 7.360). Continue...'s "New total" field
+was 9ch wide, and the look's padding left room for about six characters, so a used-up run's empty field read "more th" of
+"more than 1200". The formula bar's name box was 210 px whatever it held: a column's label and a long Probe or Spec ID
+were cut after about 30 characters ("Output name · m_osc_freque..."), and its tooltip gave the column's format only, so
+the location could not be read in full. And the circuit graph view's drawing had a fixed `calc(92vh - 118px)`, about 1 px
+more than the title and this look's 49 px tool line left: in the RL model window's own 1180 px the tool line takes two
+lines, so the dialog scrolled and cut the bottom of the drawing and its tables.
+
+**Changed** (`frontend/src/roadster.css`, one block at its end; `panels/FormulaBar.tsx`). The task name ends in "..." (its
+tooltip holds the task) and keeps at least 6 characters. The grey facts give way first: their `flex-shrink` is 1000, not
+the audit's 10. Shrinking is weighted by width, so at 10 to 1 a long name (550 px beside 250 px of facts) still took
+about a fifth of the shrinking while the facts showed; at 1000 to 1 it gives up less than a pixel before they are gone. The "New total" field is `15ch` plus its
+padding and border: "more than 12000" and "1,000,000" fit whole. The name box takes its text's width, 210 px at least and
+40 % of the bar at most, and ends a longer location in "...". Its tooltip gives the column's format, then a blank line,
+then the whole location; the format stays first, so `formula_bar_check`'s `startsWith('notes (string')` holds. The
+error line under the bar keeps its 216 px indent, so beside a wider name box it starts a little left of the text box. The
+graph dialog is a column while open: the title, a refusal's line and the tools take their own height, and the drawing
+with its tables takes what is left (`flex: 1 1 0`, no fixed height). The title row and the tool line stand 4 px further
+apart, because a column's margins add up where a block's overlap. cytoscape 3.34 watches its box with a ResizeObserver,
+so the drawing follows when a line above it comes or goes; `CircuitGraphView.tsx` needs no `resize()` call. No words
+changed on the page. `docs/workbench.md` (the banner, the formula bar) and `docs/functionality-reference.md` (Title block,
+Formula bar) now say how the name and the name box give way.
+
+**Checked.** `tsc` clean. `looks_check` 72 (new: at 1210, 1250, 1300 and 1366 px with the FIXTURE run in the header, the
+task's name is never cut by the box around it. The fixture's own name ends in "..." at 1210 px, its facts at 0 px, and is
+whole from 1250 px, its facts at 11 to 83 px. A long stand-in name ends in "..." at every width, and only once the facts
+are at 0 px). `formula_bar_check` 21 (new: the tooltip ends with the whole location after a blank line. In a 1264 px bar,
+"Output name · m_oscillation_frequency_hz" shows whole at 262 px, and a long stand-in stops at 506 px, 40 % of the bar,
+with "..."). `run_control_check` 111 (new: the field has 105 px for text; "more than 12000" takes 98 px in its own font,
+"1,000,000" 55 px). `graph_view_check` 68 (new: at 1180 x 920 the tools take two lines and the dialog does not scroll,
+scrollHeight 844 = clientHeight 844, with the drawing at 711 x 696 px. A refusal's line over the tools takes it to 711 x
+654 px, and the drawn canvas follows. At 1680 x 1050 the tools keep one line and the drawing is 850 px tall, close to
+the fixed height's 848 px). `find_fill_copy_check` 30 and `reliability_check` 20. None flaky.

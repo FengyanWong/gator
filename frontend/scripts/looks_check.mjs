@@ -8,7 +8,8 @@
 //   - text stays readable (each text / background pair of the page's colours at least 4.5 : 1, WCAG AA), and no box is left
 //     light (main page, three bottom tabs, the Runs window);
 //   - the banner of Draft A: the name as a chip with its red pin-1 dot, the task by its own name, the run's state as four words
-//     with one lit, Start round and white, Abort round and red; Output settings folded on a fresh browser;
+//     with one lit, Start round and white, Abort round and red; Output settings folded on a fresh browser; a task name too
+//     long for the header ends in "..." once the facts beside it have given way, never cut through a letter (SIF-66);
 //   - the header draws nothing outside its box; the editors' tabs as one segmented control, the chosen one lit with a red bar;
 //   - the header's title block names the task's revision, the circuit's class and PDK and the RL model label; the version is
 //     one hover away on the chip;
@@ -151,6 +152,22 @@ await runChecks(browser, async () => {
   await page.viewport(1366, 768); await sleep(400);
   const narrow = await evaluate(`[...document.querySelectorAll('header .run-state-strip > span')].filter(x => x.checkVisibility()).map(x => x.textContent)`);
   check('...and at 1366 px the strip shows only the state that holds (the four words took a crowded banner\'s room)', JSON.stringify(narrow) === '["Ended"]', JSON.stringify(narrow));
+  // Branch record SIF-66: the task's name could not shrink, so between about 1201 and 1300 px with a run in the header the
+  // facts' box cut it through a letter ("OTA 7T wid"). Now its own box ends it in "...", once the grey facts have given way.
+  // Measured with the header's own name, then with a long stand-in written into its box (then its own name again).
+  const names = [];
+  for (const width of [1210, 1250, 1300, 1366]) {
+    await page.viewport(width, 768); await sleep(300);
+    names.push(await evaluate(`(() => { const t = document.querySelector('header .tb-task'), d = document.querySelector('header .tb-details'), own = t.textContent;
+      const look = () => ({ sliced: t.getBoundingClientRect().right > t.parentElement.getBoundingClientRect().right + 0.5, cut: t.scrollWidth > t.clientWidth,
+        facts: Math.round(d.getBoundingClientRect().width) });
+      const mine = look(); t.textContent = 'FIXTURE a task whose name is far longer than the header can hold'; const long = look(); t.textContent = own;
+      return { width: ${width}, mine, long, dots: getComputedStyle(t).textOverflow }; })()`));
+  }
+  check('the header\'s task name is never cut through a letter by the box around it, at 1210 to 1366 px with a run in the header',
+    names.every(n => !n.mine.sliced && !n.long.sliced), JSON.stringify(names));
+  check('...a name too long for the header ends in "...", and only once the grey facts beside it have given way',
+    names.some(n => n.long.cut) && names.every(n => n.dots === 'ellipsis' && (!n.long.cut || n.long.facts <= 1) && (!n.mine.cut || n.mine.facts <= 1)), JSON.stringify(names));
   await page.viewport(1680, 1050); await sleep(400);
   check('Output settings starts folded on a fresh browser (record 7.360, user: "by default make output settings collapsible and collapsed")',
     await evaluate(`(() => { const d = [...document.querySelectorAll('.right details.module')].find(x => x.querySelector(':scope > summary h3')?.textContent === 'Output settings'); return !!d && !d.open; })()`));

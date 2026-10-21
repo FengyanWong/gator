@@ -361,3 +361,25 @@ table.run-table td .run-so-far { white-space: normal; }
 .training-legend, .training-compared { font-size: 12.5px; }
 .training-chart figcaption { font-size: 13px; }
 .training-readout { font-size: 12px; }
+
+/* SIF-66: no text cut through a letter, and no dialog that scrolls to show its own parts. The header's task name could not
+   shrink (min-width: auto): between about 1201 and 1300 px with a run in the header, the facts' box (overflow: hidden) cut it
+   through a letter ("OTA 7T wid") while the grey facts and the connection ended in "...". Now it ends in "..." too, its
+   tooltip holding the task; the grey facts give way first: shrinking is weighted by width, so at 1000 to 1 the name gives up
+   less than a pixel before they are gone, and 6 characters of it stay. */
+.tb-task { flex: 0 1 auto; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; }
+.tb-details { flex-shrink: 1000; }
+/* Continue...'s "New total": 9ch less the look's padding left about six characters - the empty field's "more than 1200" read
+   "more th". It holds "more than 12000" and "1,000,000" whole (run_control_check). */
+.continue-form input { width: calc(15ch + 20px); }
+/* The formula bar's name box takes its text's width, 210 px at least and 40 % of the bar at most: at 210 px a column's label
+   and a long Probe or Spec ID were cut after about 30 characters. A longer one keeps its "...", and its tooltip ends with the
+   whole (FormulaBar.tsx). */
+.formula-bar .formula-where { width: auto; min-width: 210px; max-width: 40%; }
+/* The circuit graph view: the drawing and its tables take the height the title and the tool line leave. A fixed 92vh - 118 px
+   left about 1 px under this look's 49 px tools, so a tool line that wraps (the RL model window is 1180 px wide) scrolled the
+   dialog and cut the bottom of the drawing. cytoscape follows its box's size by itself (it watches it with a ResizeObserver):
+   the drawing follows when a line above it comes or goes - a refusal's line, a tool line that wraps again (graph_view_check). */
+dialog.graph-dialog[open] { display: flex; flex-direction: column; }
+dialog.graph-dialog[open] > * { flex: none; }
+dialog.graph-dialog[open] > .graph-body { flex: 1 1 0; min-height: 0; height: auto; }

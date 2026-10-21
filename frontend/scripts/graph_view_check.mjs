@@ -10,7 +10,8 @@
 // thickness follows the attention of the chosen block / head / direction WITHOUT a new request; a receiver with a single
 // connection is drawn dashed (its 1.0 says nothing); supply on top; nothing overlaps or leaves the canvas; the tables
 // beside the picture (sizes now / proposed / tried; the connections of a clicked device, summing to 1); another
-// evaluation = one request; an encoder without attention and a refusal are said in plain words; Abort is red.
+// evaluation = one request; an encoder without attention and a refusal are said in plain words; Abort is red; at the RL
+// model window's 1180 px the tools wrap and the dialog does not scroll, the drawing following its box (branch record SIF-66).
 // Last section, against the REAL route of the backend it runs on (skipped with a note when it has no saved model or is
 // older than the route): the drawn graph equals POST /api/runs/model/graph-view for the first real model.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
@@ -292,6 +293,33 @@ await runChecks(browser, async () => {
     await until(`!${DIALOG}.open`, 30);
   }
   mode = {};
+
+  // ---- branch record SIF-66: at the RL model window's own 1180 px the tool line wraps, and the dialog does not scroll ------------
+  // The drawing had a fixed 92vh - 118 px, about 1 px more than the look's tools left: a wrapped line scrolled the dialog and cut
+  // the bottom of the drawing. Now the drawing and its tables take what the title and the tools leave, and the drawing follows
+  // its box when a line above it comes or goes with no change of window (a refusal's line over the tools).
+  await networkPage.viewport(1180, 920); await sleep(400);
+  await evaluate(`${OPEN}.click()`);
+  await until(`!!(${CY}) && ${CY}.nodes().length > 0`, 80);
+  const LAID = `(() => { const d = ${DIALOG}, c = d.querySelector('.graph-canvas'), drawn = c.querySelector('canvas');
+    const bottoms = new Set([...d.querySelectorAll('.graph-tools input:not([type=checkbox]), .graph-tools select, .graph-tools button')].filter(e => e.checkVisibility())
+      .map(e => Math.round(e.getBoundingClientRect().bottom)));
+    const box = [c.clientWidth, c.clientHeight], shown = [parseFloat(drawn?.style.width), parseFloat(drawn?.style.height)];
+    return { lines: bottoms.size, scroll: d.scrollHeight, client: d.clientHeight, box, shown, follows: Math.abs(box[0] - shown[0]) <= 1 && Math.abs(box[1] - shown[1]) <= 1 }; })()`;
+  await until(`${LAID}.follows`, 30);
+  const laid = await evaluate(LAID);
+  check('at the RL model window\'s 1180 px the tools take two lines and the dialog does not scroll: the drawing takes the height left',
+    laid.lines > 1 && laid.scroll <= laid.client + 1 && laid.box[1] > 400 && laid.follows, JSON.stringify(laid));
+  failNext = { message: 'FIXTURE: This run has no archived evaluation 19 here.' };
+  await evaluate(`[...${DIALOG}.querySelectorAll('button')].find(b => b.textContent === '<').click()`);
+  await until(`!!${DIALOG}.querySelector('.graph-error')`, 50);
+  await until(`(l => l.follows && l.box[1] < ${laid.box[1]})(${LAID})`, 30);
+  const held = await evaluate(LAID);
+  check('...and a refusal\'s line over the tools takes its height from the drawing: no scroll, and the drawing follows its box',
+    held.box[1] < laid.box[1] && held.scroll <= held.client + 1 && held.follows, JSON.stringify([laid, held]));
+  await shot('graph-4-window-width.png', DIALOG);
+  await evaluate(`${DIALOG}.querySelector('button.dialog-close').click()`); await until(`!${DIALOG}.open`, 30);
+  await networkPage.viewport(1680, 1050); await sleep(400);
 
   // ---- the REAL route of this backend -----------------------------------------------------------------------------------------------------------------
   const realModels = await fetch(new URL('api/runs/models' + (ROOT ? `?output_root=${encodeURIComponent(ROOT)}` : ''), APP));

@@ -11,7 +11,8 @@
 // whatever run the bottom tabs show, also across a reload, and never offers a second Start meanwhile - nor, in the Run
 // status tab, a Continue of another run (2026-09-29); a remembered run that is gone is let go of, not polled for ever.
 // Record 7.261 (the launcher, launch.ts): the second button reads "Let go" on a paused run; Continue... opens a budget form
-// (no browser prompt) that refuses a separator typo, a fraction and a total below the evaluations used; a launch carries a
+// (no browser prompt) that refuses a separator typo, a fraction and a total below the evaluations used, its field wide
+// enough for "more than 12000" (branch record SIF-66); a launch carries a
 // request id, and after a reload during a start the page asks what became of it instead of sending it again; a refusal
 // stays beside its action; the backend's continuation check says why Continue cannot go on before the press, with its
 // alternative as a button; a run taken over, or a task's baseline, names the paused run the header lets go of.
@@ -386,6 +387,12 @@ await runChecks(browser, async () => {
   check('a total below (or at) the evaluations used is refused', /cannot be below|must be more than/.test(f.error ?? ''), JSON.stringify(f));
   f = await typed('1,200');
   check('"1,200" reads as 1200: no error, and it allows 1200 minus the used ones', f.error === null && f.allows === `Allows ${1200 - sim.charged} more`, JSON.stringify(f));
+  // branch record SIF-66: the field held about six characters under the look's padding, so a used-up run's empty field read
+  // "more th" of its "more than 1200"; measured in the field's own font against its room for text
+  const room = await evaluate(`(() => { const f = ${FIELD}, s = getComputedStyle(f), c = document.createElement('canvas').getContext('2d');
+    c.font = [s.fontStyle, s.fontWeight, s.fontSize, s.fontFamily].join(' ');
+    return { room: f.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight), words: c.measureText('more than 12000').width, total: c.measureText('1,000,000').width }; })()`);
+  check('"New total" holds "more than 12000" and "1,000,000" whole', room.words <= room.room && room.total <= room.room, JSON.stringify(room));
   await press(`[...document.querySelectorAll('.continue-form button')].find(b => b.textContent === 'Cancel')`);
   check('Cancel closes the form and sends nothing', await until(`!(${FORM})`) && log.length === 0);
   sim.steps = [{}, { state: 'running', stop_reason: null }];

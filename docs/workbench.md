@@ -250,7 +250,8 @@ switch are gone; every panel, button and field stands where it stood.
   (under 1400 px only that one, record 7.372), beside the run chip (its press opens the run brief, record 7.264) and, while
   windows are open, a button with their count (record 7.372); then "Configuration
   valid", Calibration, Save now, the "Next:" line and Start (white) and Abort (red), both round. From 1201 px the banner keeps
-  one line - the task's facts and the connection's description give way with "..." first - and a narrower window wraps it.
+  one line - the task's facts and the connection's description give way with "..." first, then the task's name (branch
+  record SIF-66: it was cut through a letter) - and a narrower window wraps it.
 - Tabs: the chosen tab of every strip is white with a short red bar under its name; the three editors' tabs are one
   segmented control. An editor is told by its tab, not by a colour (the per-editor colours and layer swatches went).
 - Output settings starts folded (user: "by default make output settings collapsible and collapsed so I can see training
@@ -651,7 +652,8 @@ User: "add excel like single cell whole row text edit somewhere for long text ed
 cell". Above each table of Parameters, Probes and Specs stands a formula bar, as in a spreadsheet. A click on a cell (or
 reaching it with Tab) marks the cell and shows, in the bar, where it is - the column and the row's ID, e.g. `notes ·
 input_pair_width` - and its whole value, in a box as wide as the table that grows to a few lines for a long text. The
-column's format is the tooltip of that name.
+column's format is the tooltip of that name, the whole name under it: the name's box takes its text's width, 210 px to 40 %
+of the bar, and ends a longer one in "..." (branch record SIF-66).
 
 Typing in the bar changes nothing until **Enter** (or Tab, or a click elsewhere) writes the text into the cell, as one Undo
 step, and goes back to the cell; **Esc** keeps the cell as it was. A number is read as its cell reads it (plain or with an

@@ -26,7 +26,9 @@ export function FormulaBar({ cell, commit, back }: { cell: BarCell | null; commi
   return (
     <div className="formula">
       <div className="formula-bar">
-        <span className="formula-where" title={cell ? cell.format : 'Click a cell of the table to see its whole value here.'}>{cell ? cell.where : 'No cell chosen'}</span>
+        {/* The box ends a long location in "..." (a column's label and a long Probe or Spec ID; branch record SIF-66): the
+            tooltip gives the column's format, then the whole location. */}
+        <span className="formula-where" title={cell ? `${cell.format}\n\n${cell.where}` : 'Click a cell of the table to see its whole value here.'}>{cell ? cell.where : 'No cell chosen'}</span>
         <textarea rows={1} spellCheck={false} aria-label="Whole value of the chosen cell" disabled={!cell} readOnly={!cell?.editable}
           value={draft ?? cell?.text ?? ''} placeholder={cell ? '' : 'Click a cell to see and edit its whole value here'}
           title={!cell ? undefined : cell.editable ? 'The whole value of the chosen cell. Enter (or Tab, or clicking elsewhere) writes it into the cell; Esc keeps the cell as it was.' : cell.why}

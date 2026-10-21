@@ -3,7 +3,8 @@
 // request is refused - the page may write nothing of its own.
 // What it pins:
 //   - before a cell is chosen the bar says so and takes nothing; a chosen cell is marked and the bar names it (column · row ID),
-//     shows its whole value in a box much wider than the cell, and has the column's format in the tooltip of its name;
+//     shows its whole value in a box much wider than the cell, and has the column's format in the tooltip of its name, then
+//     the whole name; the name's box as wide as its text, 210 px to 40 % of the bar (branch record SIF-66);
 //   - typing in the bar changes nothing until Enter: Enter writes the whole text into the cell as one Undo step and goes back to
 //     the cell; Undo and Redo take it back and again; Esc keeps the cell as it was;
 //   - a number column takes a number as its cell does (2.5e-3), and refuses "abc" in words without changing the cell;
@@ -51,6 +52,17 @@ await runChecks(browser, async () => {
     && await evaluate(`${WHERE}.textContent === ${JSON.stringify(`Notes · ${before.variable_id}`)} && ${BAR}.value === ${JSON.stringify(before.notes ?? '')} && !${BAR}.readOnly`),
     await evaluate(`${WHERE}.textContent + ' | ' + ${BAR}.value`));
   check('the name of the cell carries its column\'s format in its tooltip', await evaluate(`${WHERE}.title.startsWith('notes (string') && ${WHERE}.title.includes('Free text')`), await evaluate(`${WHERE}.title`));
+  // branch record SIF-66: the box was 210 px whatever it held, so a column's label and a long ID were cut after about 30
+  // characters, its tooltip the format only. Now it takes its text's width up to 40 % of the bar, and the tooltip ends with
+  // the whole location. Two stand-in locations are written into the box for the measure, then its own text again.
+  check('...and ends with the whole location, after a blank line', await evaluate(`${WHERE}.title.endsWith(${JSON.stringify(`\n\nNotes · ${before.variable_id}`)})`), await evaluate(`${WHERE}.title`));
+  const fits = await evaluate(`(() => { const w = ${WHERE}, own = w.textContent, bar = w.parentElement.getBoundingClientRect().width;
+    const measure = text => { w.textContent = text; return { width: Math.round(w.getBoundingClientRect().width), whole: w.scrollWidth <= w.clientWidth }; };
+    const middle = measure('Output name · m_oscillation_frequency_hz'), long = measure('FIXTURE Expression · ' + 'a_probe_id_longer_than_the_box_can_hold_'.repeat(3));
+    const short = measure(own); return { bar: Math.round(bar), short, middle, long, dots: getComputedStyle(w).textOverflow }; })()`);
+  check('the name box takes its text\'s width: 210 px at least, a column\'s label and a long ID whole, 40 % of the bar at most and "..." past it',
+    fits.short.width >= 210 && fits.short.whole && fits.middle.width > 210 && fits.middle.whole && Math.abs(fits.long.width - 0.4 * fits.bar) <= 1 && !fits.long.whole
+    && fits.dots === 'ellipsis', JSON.stringify(fits));
   const widths = await evaluate(`({ bar: ${BAR}.getBoundingClientRect().width, cell: ${CELL(0, 'notes')}.getBoundingClientRect().width })`);
   check('the bar is far wider than the cell', widths.bar > 3 * widths.cell, JSON.stringify(widths));
   await typeInBar(LONG);

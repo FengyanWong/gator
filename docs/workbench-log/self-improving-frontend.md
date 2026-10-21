@@ -1315,3 +1315,36 @@ SIF-55. No doc quoted the changed words.
 line word for word with "written after evaluation 20", the block list labelled "Block", Fit's tooltip; a clicked M1 reads
 "w = 2 um, l = 100 nm - sized by wn"), `ngspice_window_check` 43 (the circuit column now asked for "1 result: vout_v"),
 `circuit_source_check` 15; none flaky.
+
+### SIF-63 Small text at the page's sizes: issues, the toolbar's text buttons, the tie toggle, the task chip, and no help cursor without help (2026-10-21; from the readability audit)
+
+**Found.** The words that say what is wrong with a row were the smallest text on the page. `.issue` kept the old look's
+11 px (styles.css), which the Roadster look (record 7.360, "14 px text, readability first") never overrode while it raised
+the hints to 13 px: "warning Unit not checked ..." in the editors' Issues column, the "error: ..." lines under the table
+and in Matched devices, the level cell of the header's blocking list and a saved model's compatibility problems (smaller
+than the 12 px key lines under them) all read at 11 px beside 14 px cells. In the editors' toolbar "More columns (3)" and
+"Matched devices..." were 11.5 px fine print among 14 px buttons and fields. The arrow and count beside a leader row's
+tick box, the only way to open its tied rows, was 11 px text in about 17 x 11 px of a 36 px row (the old padding
+outranked Roadster's). The task chip on the editors' tab line named the task in a 12 px code font, its mark at 11 px,
+while the header shows the same name at 18 px and "rev. 3" beside the chip is 12.5 px. And every grid heading showed the
+help cursor, also the many with no tooltip: a task's Details (ID / Instance / Parameter), the diff view (Section / Row /
+Change), Matched devices, save points (Evaluations / Saved / Kind), the editors' Issues.
+
+**Changed** (`frontend/src/roadster.css`, one block at its end): an issue line reads at 12.5 px wherever it stands (12.5
+rather than 13: SIF-5's 40ch cap on the Issues column grows with the font, about 14 % while a row has an issue);
+"More columns" / "Fewer columns" and "Matched devices..." at the labels' 13 px; the tie toggle at 12.5 px with 4 px
+around it (its mono font and line height kept; the sticky ID column follows the tick-box column's measured width); the
+task chip names the task in its button's own font and 14 px (the key stays in `data-task-key`), its mark at 12.5 px; a
+grid heading with no tooltip shows the plain pointer (`table.grid th:not([title])`) - a sortable heading always carries
+one and keeps the hand, and the calibration table's headings all have theirs and keep the help cursor. The Check now step
+list (`.steps-list`, 11.5 px) is left as it is: it is used in fourteen places, and the Connection and Virtuoso
+windows already set it to 12.5 px. No words changed; no check or doc pinned the old sizes. `frontend/scripts/looks_check.mjs` pins the new ones.
+
+**Checked.** `tsc` clean; `looks_check` 67 (new: an issue line at 12.5 px, the toolbar's text buttons at 13 px, the tie
+toggle at 12.5 px with 4 px padding, the task chip's name in its button's font and size, the "Issues" heading's plain
+pointer beside a titled heading's help cursor), `find_fill_copy_check` 30 (the toolbar still on one line at 1366 x 768,
+idle and while finding), `editor_columns_check` 23, `sheet_check` 44, `unsaved_rows_check` 25, `blocking_issues_check`
+42, `matched_devices_check` 32, `task_list_check` 81, `spec_equations_check` 35, `room_check` 26; and, around the changed
+elements, `model_chooser_check` 81 (the compatibility list), `reward_block_check` 32 ("More columns"), `task_rows_check`
+52, `output_panel_check` 81; none flaky. `css_order_proof.mjs` was not run: it proves that a regrouped stylesheet adds
+nothing, and this change adds rules on purpose.

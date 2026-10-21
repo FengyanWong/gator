@@ -15,6 +15,8 @@
 //   - the splitter above the bottom panel: a drag sets its height, a double click folds it to its tab line and back, a tab press
 //     opens it, the arrow keys and Enter do the same from the keyboard; kept in this browser; hidden on narrow windows;
 //   - the editors share one ink and head colour; the Specs line offers the Probe ids as chips (same text);
+//   - the old look's small sizes no longer outrank the page: issue lines, the toolbar's text buttons, the tied rows' toggle, the
+//     task chip's name; a heading with no tooltip shows no help cursor (branch record SIF-63);
 //   - Data tables: one line per row - ids end in "...", the whole value on hover, a click copies it; no word cut in two;
 //   - Research experiments: the two retired labels dropped from a saved configuration, three labels shown, six folded; no
 //     "Search method" any more (record 7.226; one, as its label, since 7.163);
@@ -290,6 +292,22 @@ await runChecks(browser, async () => {
   // Branch record SIF-9: a text cell that holds more than it shows ends in "..." while it is not being edited.
   const cut = await evaluate(`(() => { const i = document.querySelector('.editors table.editor tbody input:not([type="checkbox"])'); return i ? getComputedStyle(i).textOverflow : null; })()`);
   check('a text cell not being edited ends in "..." where it is cut (SIF-9)', cut === 'ellipsis', String(cut));
+  // Branch record SIF-63: the old look's small sizes no longer outrank the 14 px page - an issue line was 11 px, "More columns"
+  // and "Matched devices..." 11.5 px, the tied rows' toggle 11 px in about 17 x 11 px, the task chip's name a 12 px code font;
+  // and a heading with no tooltip showed the help cursor. An issue line is made for the reading: this task has none.
+  const small = await evaluate(`(() => { const size = e => e ? getComputedStyle(e).fontSize : null;
+    const p = document.createElement('p'); p.className = 'issue warning'; p.textContent = 'warning: a stand-in'; document.querySelector('.editors').appendChild(p);
+    const issue = size(p); p.remove();
+    const tie = document.querySelector('.editors table.editor .tie-toggle'), key = document.querySelector('.task-list-current code.task-list-key'), button = key?.closest('button');
+    const heads = [...document.querySelectorAll('.editors table.editor thead th')], bare = heads.find(th => th.textContent === 'Issues'), titled = heads.find(th => th.title);
+    return { issue, text: [...document.querySelectorAll('section.editors .toolbar button.text')].map(b => [b.textContent, size(b)]), tie: tie && [size(tie), getComputedStyle(tie).paddingTop],
+      key: key && button && [size(key), getComputedStyle(key).fontFamily === getComputedStyle(button).fontFamily, size(button)],
+      cursors: [bare && getComputedStyle(bare).cursor, titled && getComputedStyle(titled).cursor] }; })()`);
+  check('an issue line reads at 12.5 px; the toolbar\'s text buttons ("Matched devices...") at the labels\' 13 px (SIF-63)', small.issue === '12.5px'
+    && small.text.length >= 1 && small.text.every(([, s]) => s === '13px'), JSON.stringify(small));
+  check('...the tied rows\' toggle at 12.5 px with 4 px around it; the task chip names the task in its button\'s font and size, not a code font',
+    JSON.stringify(small.tie) === '["12.5px","4px"]' && !!small.key && small.key[0] === small.key[2] && small.key[1], JSON.stringify(small));
+  check('...and a heading with no tooltip ("Issues") shows the plain pointer; one with a tooltip keeps the help cursor', JSON.stringify(small.cursors) === '["default","help"]', JSON.stringify(small.cursors));
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Specs')).click()`);
   await sleep(300);
   const probes = config.measurements.map(m => m.measurement_id).filter(Boolean);

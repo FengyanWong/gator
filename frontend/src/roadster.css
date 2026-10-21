@@ -311,3 +311,20 @@ header .windows-list .windows-close-all::before { content: ''; position: absolut
 .banner, .banner.mock { position: relative; padding-right: 34px; }
 .banner::after { content: '\00d7'; content: '\00d7' / ''; position: absolute; top: 0; right: 12px; padding-top: inherit;
   font-size: 16px; line-height: 20px; color: var(--muted); }
+
+/* SIF-63: the old look's small sizes that outranked the 14 px page. What is wrong with a row - the Issues column, the lines
+   under the table, Matched devices, the blocking list's level, a saved model's problems - was 11 px, the smallest text on
+   the page, beside 13 px hints; 12.5 px rather than 13 keeps the Issues column's growth small (SIF-5's 40ch cap grows with
+   the font). "More columns" and "Matched devices..." are everyday actions at the labels' 13 px (they were 11.5 px fine
+   print); the toolbar keeps one line at 1366 x 768 (find_fill_copy_check). */
+.issue { font-size: 12.5px; }
+.toolbar button.text { font-size: 13px; }
+/* the leader row's count that opens its tied rows - the only way to - read and hit more easily: it was 11 px text in about
+   17 x 11 px; the mono font and its line height stay */
+table.editor .tie-toggle { font-size: 12.5px; padding: 4px; }
+/* the task chip names the task in its button's words and size, not a 12 px code font (the key stays in data-task-key); its
+   mark at the revision's 12.5 px beside it (it was 11 px) */
+.task-list-current code.task-list-key { font: inherit; } .task-list-current .task-list-mark { font-size: 12.5px; }
+/* a heading with no tooltip shows no help cursor: there is no help to give (Details, diffs, Matched devices, save points,
+   the editors' Issues); a sortable heading always has its tooltip and keeps the hand */
+table.grid th:not([title]) { cursor: default; }

@@ -2086,10 +2086,16 @@ layout choice of its own.
 
 **Changed.** `frontend/src/styles.css` (SIF-82): under `@media (max-width: 1100px)` the run column's module bodies (Run
 configuration and Output settings) are at most 560 px wide, so a label keeps its box near it, the model line its "RL
-model..." button, and the hints, the reward fold and the Limits fold the same width. With the circuit shown, or above
-1100 px, the column is narrower than that and nothing changes.
+model..." button, and the hints, the reward fold and the Limits fold the same width. With the circuit shown between 701 and
+1100 px (two columns), or above 1100 px, the column is narrower than that and nothing changes.
 
 **Checked.** `tsc` clean. `room_check` 28 (27 before): new, at 1100 x 900, with the run column 1069 px wide, "Concurrent
 Spectre jobs" to the right edge of its box and the model line to the right edge of "RL model..." are each 560 px (photographed,
 `room-1b-narrow-sheet.png`); the page goes back to 1680 x 1050 for what follows. `looks_check` 74 and `module_fold_check` 30.
 None flaky.
+
+**Review follow-up.** The review of acd9fae found one slip, in this entry only, and it was real. "Changed" said that with the
+circuit shown the column is always narrower than 560 px. At 700 px and under the layout is one column even with the circuit
+shown (`styles.css`, the `@media (max-width: 700px)` rule), the run column takes the page's width, and at 700 px its module
+body is about 637 px, so the cap does take effect there; that is wanted too. The sentence now names the two-column range
+(701-1100 px). The code was right and is not changed; no check was rerun for a wording fix.

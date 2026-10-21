@@ -279,6 +279,21 @@ await runChecks(browser, async () => {
   check('its runs are still its runs (the links go by the key)', (await cell(OTA.task_key, 8)) === '2');
   check('the Project column\'s button shows the new name, for the same task', await until(`${ROW}.querySelector('.task-list-key')?.textContent === 'ota_relaxed' && ${ROW}.querySelector('.task-list-key')?.dataset.taskKey === 'real:fixture_ota'`, 50),
     await evaluate(`${ROW}.querySelector('.task-list-key')?.textContent`));
+  // Delete task asks about a renamed task by its key AND by the name the window shows beside the button (branch record SIF-61:
+  // it asked "Delete the task real:fixture_ota?" under "Current task: ota_relaxed"). Answered Cancel: nothing goes. Only that
+  // question is answered here; the folder prompts below have their own answers.
+  await far.send('Page.enable');
+  let askedDelete = null;
+  far.on('Page.javascriptDialogOpening', p => {
+    if (askedDelete !== null || !p.message.startsWith('Delete the task')) return;
+    askedDelete = p.message; far.send('Page.handleJavaScriptDialog', { accept: false });
+  });
+  const refusedBefore = refused.length;
+  await far.evaluate(`[...${WINDOW}.querySelectorAll('.task-window-actions button')].find(b => b.textContent.trim() === 'Delete task').click()`, true);
+  for (let i = 0; i < 40 && askedDelete === null; i++) await sleep(50);
+  check('Delete task asks about the renamed task by its shown name too, and Cancel deletes nothing',
+    (askedDelete ?? '').startsWith('Delete the task real:fixture_ota (shown as ota_relaxed)?\n\nIt leaves the Tasks window,') && refused.length === refusedBefore
+    && (await far.evaluate(`${WINDOW}.querySelector('.task-window-actions code')?.textContent`)) === 'ota_relaxed', askedDelete ?? 'no question');
   await far.evaluate(`(() => { const i = ${WINDOW}.querySelector('input.task-filter'); i.focus(); i.select(); })()`);
   await far.send('Input.insertText', { text: 'ota_relaxed' });
   check('the filter finds the task by its new name', await far.until(`${ROWS}.length === 1`, 30) && (await tw.keys()).join() === 'real:fixture_ota', (await tw.keys()).join());

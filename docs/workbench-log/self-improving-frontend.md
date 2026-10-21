@@ -1244,3 +1244,34 @@ before, and the later press threw the other's answer away). `output_panel_check`
 answer held back until after Close, the list stays closed, and Test writability, pressed before and also held, still
 answers ("NOT writable"); with a 403 held back the same way, the list stays closed and shows no error. `tsc` clean;
 `output_panel_check` 81; none flaky.
+
+### SIF-61 A cell becomes a task, the Tasks window is named as such, and a renamed task is asked about by its name (2026-10-21; from the readability audit)
+
+**Found.** The Virtuoso window, the only place where a task is made from a cell, called what the cell lacked a "circuit
+profile". A chosen cell without a task read "Why: it has no circuit profile yet", inside it "the workbench needs a circuit
+profile - a checked description of three things:", then "To start a profile for this cell, read it into the workbench";
+after the read, the headline said "Read from Virtuoso. Not optimizable yet: it has no circuit profile.". That word was left
+over from the "Create profile" button that went on 2026-09-22. Save as, the button that finishes the job, makes a "task",
+as the Tasks window and the tab line's tooltip say. Delete task's tooltip and both its questions (Virtuoso and ngspice)
+said the task "leaves the Registered task list", a list no window is called any more. A renamed task (record 7.302) was
+asked about by its key only: "Delete the task real:fixture_ota?" while the window said "Current task: ota_relaxed" beside
+the button.
+
+**Changed** (`panels/VirtuosoWindow.tsx`, `panels/Left.tsx`, `panels/taskActions.ts`, `docs/workbench.md`): the cell's
+note reads "Why: it is not a task yet", "the workbench needs a task - a checked description of three things:", "To make
+a task of this cell, read it into the workbench ..."; the draft's headline "Read from Virtuoso. Not optimizable yet: Save
+as makes it a task." (the prefix most checks look for is kept). Delete task's tooltip and its two questions say "The task
+leaves the Tasks window" / "It leaves the Tasks window". A renamed task's question names both: "Delete the task
+real:fixture_ota (shown as ota_relaxed)?" (`shownName` from TaskList.tsx, the name the window shows; a task that is not
+renamed is asked about as before, "Delete the task real:ota5_v1?"). The ngspice question does the same, as any registered
+task can be renamed (the audit named only the Virtuoso one). "Switch to real:...?" and "The workbench follows the task
+real:..." keep the key (checks pin them). The ngspice window's own intro already said "Tasks window"; the backend's
+blocker under "Technical details" and the matched-devices note keep their "verified circuit profile" (backend words). The
+docs' example of a folded line now quotes "Why: it is not a task yet".
+
+**Checked.** `tsc` clean; `project_help_check` 48 (the "Why: ..." line, the folded "needs a task" sentence and no word in
+view saying "circuit profile"; "To make a task of this cell"; the draft's headline word for word),
+`virtuoso_source_check` 95 ("To make a task of this cell"; "Delete the task real:ota5_v1?" unchanged for a task that is
+not renamed), `task_list_check` 81 (new: with fixture_ota renamed ota_relaxed, Delete task asks "Delete the task
+real:fixture_ota (shown as ota_relaxed)? It leaves the Tasks window, ...", the window says "Current task: ota_relaxed",
+and Cancel sends nothing), `ngspice_window_check` 43, `working_copy_check` 29; none flaky.

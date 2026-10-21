@@ -927,7 +927,7 @@ window then starts from a blank library. Closing the window loses nothing.
 
 The column and the window keep their explanations folded: a line with a small triangle ("Labels: class
 ..., PDK ..." - the column's circuit class and PDK id boxes are one closed line naming their
-values -, "Why: it has no circuit profile yet", "What the check compares", "2 notes on this circuit", ...)
+values -, "Why: it is not a task yet", "What the check compares", "2 notes on this circuit", ...)
 opens on a click. Headlines, warnings and buttons are always in view.
 
 The **DUT hierarchy / subcircuit** input and its DUT summary value were removed from this line on

@@ -184,15 +184,17 @@ await runChecks(browser, async () => {
   await win.choose('Cell', 'ring_b'); await quiet();                                // a cell without a tb_ of its own: the note asks for one
   check('virtuoso: the three reads happened through fixtures only', JSON.stringify(calls) === JSON.stringify(['libraries', 'cells', 'read']), calls.join(' | '));
   check('browse only: the headline is in view, in the window', await win.shown('Browse only: you can look at this cell here') && !(await col.present('Browse only')) && !(await card.present('Browse only')));
-  check('browse only: what a circuit profile is, is folded under "Why: ..."', await win.shown('Why: it has no circuit profile yet') && await win.folded('a checked description of three things')
-    && await win.folded('which testbench simulates the circuit'));
+  // Called a task, as Save as and the Tasks window call it (branch record SIF-61: "Why: it has no circuit profile yet").
+  check('browse only: what a task is, is folded under "Why: ..."; no word in view says "circuit profile"', await win.shown('Why: it is not a task yet')
+    && await win.folded('the workbench needs a task - a checked description of three things') && await win.folded('which testbench simulates the circuit')
+    && !(await win.shown('circuit profile')));
   // The row of real:* shortcut buttons was removed on the user's request (status record 7.40): one folded sentence points to the column instead.
   const offered = await far.evaluate(`[...${WIN}.querySelectorAll('.note button')].filter(b => b.textContent.startsWith('real:')).length`);
   check('browse only: no shortcut buttons to the existing real tasks; where they are is one folded sentence under "Why: ..."', offered === 0
     && await win.folded('Circuits that already have one are in the Tasks window, under their task.'), `${offered} button(s)`);
   check('browse only: the copy warning is NOT folded: the cell itself is written', await win.shown('Work on a copy, never on your design.') && await win.shown('every run sets device sizes in the cell'));
   check('browse only: "Read this cell into the workbench" stays in view, its explanation is folded', await win.buttonShown('Read this cell into the workbench')
-    && await win.shown('To start a profile for this cell') && await win.shown('choose its Testbench cell above first') && await win.folded('Read-only, no simulation, some seconds'));
+    && await win.shown('To make a task of this cell') && await win.shown('choose its Testbench cell above first') && await win.folded('Read-only, no simulation, some seconds'));
   check('the view remark is one line: "View: schematic"; the reason is folded', await win.shown('View: schematic') && await win.folded('The only view the reader opens'));
   await win.choose('Cell', 'ring_a'); await quiet();
   check('a cell with other views: they are folded too', await win.shown('View: schematic') && await win.folded('maestro, symbol'));
@@ -225,7 +227,7 @@ await runChecks(browser, async () => {
   // ---- the cell read into the workbench (a draft): the read asks whether it is a copy ----------------------------------------------
   await win.click(win.BUTTON('Read this cell into the workbench')); await quiet(); await far.until(`${WIN}.textContent.includes('Not optimizable yet')`);
   check('reading asked once whether the cell is a copy the user made', dialogs.length === 1 && dialogs[0].startsWith(`Work in ${LIBRARY}/ring_a directly?`), dialogs.join(' | '));
-  check('draft: the headline is in view', await win.shown('Read from Virtuoso. Not optimizable yet: it has no circuit profile.'));
+  check('draft: the headline is in view and names the button that makes it a task', await win.shown('Read from Virtuoso. Not optimizable yet: Save as makes it a task.'));
   check('draft: what to do with it is folded under "What you can do with it now"', await win.shown('What you can do with it now') && await win.folded('The workbench holds the export of this cell') && await win.folded('it writes the rows into this cell\'s Maestro view'));
   check('draft: its button stays in view', await win.buttonShown('Read the cell again') && !(await win.buttonShown('Ask the agent to set up')));
   check('draft: the cell is named as worked in directly, in view', await win.shown(`Working in ${LIBRARY}/tb_ring_a directly: you declared it a copy you made`));

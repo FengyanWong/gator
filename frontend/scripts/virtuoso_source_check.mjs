@@ -299,7 +299,7 @@ await runChecks(browser, async () => {
 
   // ---- reading the cell INTO the workbench asks whether it is a copy; no testbench = refused in words ------------------------
   check('the window offers "PDK window..." beside Refresh (the PDK is read with the cell; the window reads one by name)', await wHas('PDK window...'));
-  check('a chosen cell offers "Read this cell into the workbench"', !(await far.evaluate(`${wButton('Read this cell into the workbench')}.disabled`)) && (await wText()).includes('To start a profile for this cell'));
+  check('a chosen cell offers "Read this cell into the workbench"', !(await far.evaluate(`${wButton('Read this cell into the workbench')}.disabled`)) && (await wText()).includes('To make a task of this cell'));
   mark = calls.length; answers.push(false);
   await wPress('Read this cell into the workbench'); await quiet(800);
   const asked = dialogs[dialogs.length - 1]?.message ?? '';

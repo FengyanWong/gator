@@ -276,8 +276,8 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
         currentMark={current ? taskMark(tasks.find(t => t.task_key === current) ?? { kind: 'real', available: true }, showNgspice) : undefined}
         onDelete={current && (deletableName || ngspiceTask) ? (ngspiceTask ? deleteNgspice : deleteProfile) : undefined}
         deleting={profileBusy === 'delete'} deleteDisabled={!!profileBusy}
-        deleteTitle={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Registered task list; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
-          : 'Delete task: Asks once more. The task leaves the Registered task list and its cell can get a new one; its files are kept aside on the backend machine, and runs already made keep their data.'}
+        deleteTitle={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Tasks window; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
+          : 'Delete task: Asks once more. The task leaves the Tasks window and its cell can get a new one; its files are kept aside on the backend machine, and runs already made keep their data.'}
         deleteNotice={profileMessage?.what === 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
         currentText={ref.source !== 'registered_task' ? (virtuosoOn ? (ref.cell ? `(none: ${ref.library}/${ref.cell} is read from Virtuoso)` : '(none: a Virtuoso cell is being chosen)')
           : '(none: the saved source was removed)') : !ref.task_id ? '(choose a task)' : `${ref.task_id} (removed)`}

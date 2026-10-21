@@ -5,6 +5,7 @@ import { api, Json, problemText } from '../api';
 import { connectionProfilesShared, tasksShared } from '../shared';
 import { useAsyncAction, useRequest } from '../store';
 import { gateText } from './CircuitBrowser';
+import { shownName } from './TaskList';
 import type { TaskLoaded } from './taskChoice';
 import type { CircuitReference, TaskRows, TaskSummary, WorkbenchConfig } from '../contracts';
 import { inScope } from '../newest';
@@ -47,8 +48,14 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
   // the files aside and refuses while a run of the task is working. The page then follows the cell the task was saved
   // from, which is free again for a new task.
   const [deleted, setDeleted] = useState<Json>(null);
+  // A renamed task (record 7.302) is asked about by its key and by the name the Tasks window shows it under, beside the
+  // button (branch record SIF-61: "Delete the task real:ota_2?" while the window said "my_ota"); '' for one not renamed.
+  const shownAs = (own: string) => {
+    const shown = shownName(tasks.find(t => t.task_key === ref.task_id), ref.task_id ?? '');
+    return shown !== own ? ` (shown as ${shown})` : '';
+  };
   const deleteProfile = (owner: Window) => {
-    if (!owner.confirm(`Delete the task real:${deletableName}?\n\nIt leaves the Registered task list, and its cell can get a new task. Runs already made `
+    if (!owner.confirm(`Delete the task real:${deletableName}${shownAs(deletableName ?? '')}?\n\nIt leaves the Tasks window, and its cell can get a new task. Runs already made `
       + 'with it keep their data, but a paused one can no longer be resumed. A copy of the task\'s files is kept on the backend machine; the '
       + 'cell in Virtuoso stays as it is, its Maestro test included.'
       + (circuit?.baseline_recorded ? '\n\nIts recorded baseline goes with it: a new task needs a new real baseline simulation.' : ''))) return;
@@ -78,7 +85,7 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
   // is kept aside on the backend machine, and the page follows the first task left (the rows stay unless untouched).
   const ngspiceTask = ref.source === 'registered_task' && /^ngspice:/.test(ref.task_id ?? '') ? String(ref.task_id).slice('ngspice:'.length) : null;
   const deleteNgspice = (owner: Window) => {
-    if (!owner.confirm(`Delete the task ngspice:${ngspiceTask}?\n\nIt leaves the Registered task list. Runs already made with it keep their data, `
+    if (!owner.confirm(`Delete the task ngspice:${ngspiceTask}${shownAs(`ngspice:${ngspiceTask}`)}?\n\nIt leaves the Tasks window. Runs already made with it keep their data, `
       + 'but a paused one can no longer be resumed. Its deck and task file are kept aside on the backend machine.')) return;
     const task = ref.task_id;
     profileAction('delete', async () => {

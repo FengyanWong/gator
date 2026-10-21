@@ -80,11 +80,13 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
       {circuit && taskNote}
       {virtuosoOn && circuit && !circuit.loaded && !taskNote && (
         // Not a fault and nothing to fix in this form: said in plain words. No list of the circuits that already have a
-        // task here (user, 2026-09-22): whoever wants one of those picks it in the Project column.
+        // task here (user, 2026-09-22): whoever wants one of those picks it in the Project column. What the cell lacks is
+        // called a task, as Save as and the Tasks window call it (branch record SIF-61: it said "circuit profile", the word
+        // of the "Create profile" button that went on 2026-09-22).
         <div className="note">
           <p><b>Browse only: you can look at this cell here, but the workbench cannot optimize it yet.</b></p>
-          <details className="more"><summary>Why: it has no <i>circuit profile</i> yet</summary>
-            <p>To optimize a circuit in the real Virtuoso, the workbench needs a circuit profile - a checked description of three things:</p>
+          <details className="more"><summary>Why: it is not a task yet</summary>
+            <p>To optimize a circuit in the real Virtuoso, the workbench needs a task - a checked description of three things:</p>
             <ul className="steps-list">
               <li>which device sizes it may change, within which limits and in which steps (Virtuoso rounds what is typed, so this is tested for each circuit);</li>
               <li>which testbench simulates the circuit, and under which conditions;</li>
@@ -93,7 +95,7 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
             <p>Circuits that already have one are in the Tasks window, under their task.</p>
           </details>
           {copyWarning}
-          <p><b>To start a profile for this cell</b>, read it into the workbench
+          <p><b>To make a task of this cell</b>, read it into the workbench
             {chosen.testbench_cell ? <> through the testbench <code>{chosen.testbench_cell}</code>.</> : <> (choose its <b>Testbench cell</b> above first, if it has one).</>}</p>
           <details className="more"><summary>What reading the cell does</summary>
             <p>Virtuoso exports the netlist and the device sizes are read. Read-only, no simulation, some seconds. Reading asks once whether
@@ -105,7 +107,7 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
         </div>)}
       {virtuosoOn && circuit?.loaded && circuit.native_draft && !taskNote && (
         <div className="note">
-          <p><b>Read from Virtuoso. Not optimizable yet: it has no circuit profile.</b></p>
+          <p><b>Read from Virtuoso. Not optimizable yet: Save as makes it a task.</b></p>
           <details className="more"><summary>What you can do with it now</summary>
             <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled.</p>
             <p>Next: fill Parameters, Probes and Specs - <b>Read setup</b> below takes the outputs and specs of the cell's Maestro test - then press

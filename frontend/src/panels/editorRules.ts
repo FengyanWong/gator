@@ -1,9 +1,37 @@
-// The editors' rules (plan-refactoring C6, out of Editors.tsx): the scale a Specs row is offered, the Specs' limit list, typed
-// numbers, the tooltip of a cell that differs from the saved task, and the fields that follow a change of a row. No React.
+// The editors' rules (plan-refactoring C6, out of Editors.tsx): the tables' names and headers, the scale a Specs row is offered,
+// the Specs' limit list, typed numbers, the tooltip of a cell that differs from the saved task, and the fields that follow a
+// change of a row. No React.
 import type { Json } from '../api';
 import { kindUnit, PREFIX_POWERS as SUFFIX, sameQuantity } from '../units';
 
 export type Section = 'parameters' | 'targets' | 'measurements';
+
+/** The three tables by their tabs' names; key order = tab order. Here since branch record SIF-51, out of Editors.tsx, so the
+ *  import and Matched devices confirmations (DiffView) say Probes and Specs where they said "measurements" and "targets". */
+export const SECTION_TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };
+
+/** The editor tables' headers in plain words (record 7.188); the field names - what the task files, Export JSON and the agent
+ *  use - stay in each header's tooltip, in the formula bar's format note and on the help line a header press opens. The few
+ *  columns that had a word of their own keep it (Expression, Judged at, Missing value = failed, Margin sides, Scale): Editors.tsx
+ *  set those apart until branch record SIF-51, when the confirmations of an import and of Matched devices began to name the
+ *  fields by these words too ("binding_group" read where the header says "Tied to").
+ *  `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a net name
+ *  (review of 2026-10-03). For a profile metric it is a label of what is measured. */
+export const LABELS: Record<string, Record<string, string>> = {
+  parameters: { variable_id: 'ID', instance_path: 'Instance', parameter_name: 'Parameter', initial_value: 'Initial value', unit: 'Unit', optimized: 'Optimized',
+    value_type: 'Value type', lower: 'Lower', upper: 'Upper', step: 'Step', scale: 'Search scale', binding_group: 'Tied to', ratio: 'Ratio', notes: 'Notes' },
+  measurements: { measurement_id: 'Probe ID', analysis: 'Analysis', result_source: 'Result source', source_name: 'Output name', signal: 'Expression',
+    unit: 'Unit', notes: 'Notes' },
+  targets: { metric_id: 'Spec ID', equation: 'Equation', unit: 'Unit', constraint: 'Limit', lower: 'Lower', upper: 'Upper', hard: 'Hard',
+    direction_after_feasible: 'Objective', nominal_only: 'Judged at', missing_is_failure: 'Missing value = failed', margin_sides: 'Margin sides',
+    soft_weight: 'Soft weight', normalization_scale: 'Scale', active: 'Active', basis: 'Basis' },
+};
+/** A field by its header's word, or by its name where no header has one. */
+export const fieldLabel = (section: string, field: string): string => LABELS[section]?.[field] ?? field;
+/** The unit of a row of `config` by its table and ID (`keys`: each table's ID field, schema.section_keys), for a table that
+ *  writes the row's numbers as its cells do (DiffView, branch record SIF-51); null for a row that is not there. */
+export const unitIn = (config: Json, keys: Record<string, string>) => (section: string, key: string): string | null =>
+  (config?.[section] ?? []).find((r: Json) => keys[section] && r[keys[section]] === key)?.unit ?? null;
 
 /** The scale offered while nobody has typed one, or null when the row gives nothing to size it by yet: then the scale stays
  * empty and the backend sizes it from the limits (the size of the threshold, else 1), instead of freezing a bare 1 W or

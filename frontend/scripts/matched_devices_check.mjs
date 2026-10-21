@@ -1,5 +1,6 @@
 // Browser check of "Matched devices..." in the Parameters tab (status record 7.103): the box opens on the press with
-// the structures of the circuit and the ties they suggest, a tie is made only after "Review..." and Apply, Undo
+// the structures of the circuit and the ties they suggest, a tie is made only after "Review..." and Apply, the review's
+// table says what the editors say (the tab, "changed", the header, a width with its unit, "(empty)"; branch record SIF-51), Undo
 // takes it back, an answer about rows that changed since says so, another tab closes the box (it does not come back and
 // ask by itself), and a verified task's rows are shown as fixed.
 // Requests: /api/parameters/matched is answered with fixtures/matched_devices.json - the REAL route's answers for the seeded
@@ -91,6 +92,14 @@ await runChecks(browser, async () => {
   check('the review says 2 ties: searched rows 5 -> 3', header.includes('5') && header.includes('3') && header.startsWith('2 ties: searched rows'), header);
   const diffKeys = await evaluate(`[...${BOX}.querySelectorAll('.confirm tbody tr')].map(tr => tr.children.length === 6 ? tr.children[1].textContent : null).filter(Boolean)`);
   check('the diff shows the two follower rows', JSON.stringify([...new Set(diffKeys)]) === '["w_in_b","w_load_b"]', JSON.stringify(diffKeys));
+  // Branch record SIF-51: the table read before Apply said "parameters | w_in_b | modified | binding_group | | w_in_a" and
+  // "lower | 1e-06 |": now the tab, the change and the header in the page's words, the program's names in the tooltips.
+  const diffRows = await evaluate(`[...${BOX}.querySelectorAll('.confirm tbody tr')].map(tr => [...tr.children].map(td => td.textContent))`);
+  check('the diff names the tab, the change and the header, a width with its unit and a cleared value as "(empty)"',
+    JSON.stringify(diffRows.slice(0, 2)) === JSON.stringify([['Parameters', 'w_in_b', 'changed', 'Tied to', '(empty)', 'w_in_a'], ['Lower', '1 um', '(empty)']]),
+    JSON.stringify(diffRows.slice(0, 2)));
+  check('...with the program\'s names in the tooltips', await evaluate(`(() => { const tds = ${BOX}.querySelector('.confirm tbody tr').children;
+    return tds[0].title === 'parameters' && tds[3].title === 'binding_group'; })()`));
   check('nothing changed before Apply', (await cell(1, 'binding_group')) === '', await cell(1, 'binding_group'));
   await shot('matched_devices_review.png', BOX);
 

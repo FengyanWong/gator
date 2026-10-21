@@ -7,13 +7,13 @@ import { convert, kindUnit, NUMBER_FORMS, quantity, readQuantity, sameQuantity }
 import { MatchedDevices } from './MatchedDevices';
 import { Cell, LimitSelect } from './cells';
 import { DiffView } from './DiffView';
-import { exact, FOLLOWER_IGNORES, limitLabel, QUANTITY, readNumber, type Section, suggestedScale, withFollowers, withSaved } from './editorRules';
+import { exact, FOLLOWER_IGNORES, LABELS, limitLabel, QUANTITY, readNumber, type Section, SECTION_TITLES as TITLES, suggestedScale, unitIn, withFollowers,
+  withSaved } from './editorRules';
 import { type BarCell, FormulaBar } from './FormulaBar';
 import { keep, readKept } from '../kept';
 import { RELOAD_SAVED_REQUEST } from './taskChoice';
 import { requestSaveAs } from './TaskSave';
 
-const TITLES: Record<Section, string> = { parameters: 'Parameters', measurements: 'Probes', targets: 'Specs' };   // key order = tab order
 const ROW_TABS = Object.keys(TITLES);
 /** The start of a new row's ID (Add), in the tab's own word (branch record SIF-50). */
 const NEW_ID: Record<Section, string> = { parameters: 'parameter', measurements: 'probe', targets: 'spec' };
@@ -22,17 +22,6 @@ const IMPORTED_SECTIONS: Record<string, string> = { project: 'project labels', c
   output: 'output settings', research: 'research labels' };
 
 const MORE_KEY = 'gator-workbench-editor-more-columns';
-
-/** The editor tables' headers in plain words (record 7.188); the field names - what the task files, Export JSON and the agent
- *  use - stay in each header's tooltip, in the formula bar's format note and on the help line a header press opens. The few
- *  columns that had a word of their own keep it (Expression, Judged at, Missing value = failed, Margin sides, Scale). */
-const LABELS: Record<string, Record<string, string>> = {
-  parameters: { variable_id: 'ID', instance_path: 'Instance', parameter_name: 'Parameter', initial_value: 'Initial value', unit: 'Unit', optimized: 'Optimized',
-    value_type: 'Value type', lower: 'Lower', upper: 'Upper', step: 'Step', scale: 'Search scale', binding_group: 'Tied to', ratio: 'Ratio', notes: 'Notes' },
-  measurements: { measurement_id: 'Probe ID', analysis: 'Analysis', result_source: 'Result source', source_name: 'Output name', unit: 'Unit', notes: 'Notes' },
-  targets: { metric_id: 'Spec ID', equation: 'Equation', unit: 'Unit', constraint: 'Limit', lower: 'Lower', upper: 'Upper', hard: 'Hard',
-    direction_after_feasible: 'Objective', soft_weight: 'Soft weight', active: 'Active', basis: 'Basis' },
-};
 
 /** An issue in a row by the first clause of its message (branch record SIF-5): "The unit of a formula is not checked", where the
  *  row said "equation_unit_unchecked"; the whole message and the code stay in its tooltip. */
@@ -101,8 +90,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     watched.current.watch.observe(sel);
   });
   useEffect(() => () => watched.current.watch?.disconnect(), []);
-  // `signal` holds a Maestro output's expression (ymax(VT("/OUT")), getData(... ?result "stb")): "signal" read like a
-  // net name (review of 2026-10-03). For a profile metric it is a label of what is measured.
+  // The headers' words are editorRules.ts LABELS, which the import and Matched devices confirmations name the fields by too
+  // (branch record SIF-51).
   // Units in words (record 7.208): only Probes have a Unit column; the values of Parameters and Specs carry theirs. A plain
   // number is in the row's own unit, not in the prefix its cell shows ("2" in a row stored in m showing "1 um" is 2 m): each
   // cell's tooltip names that unit (branch record SIF-49; "the unit the row shows" was left from the Unit column).
@@ -112,13 +101,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const columns: Json[] = schema.editors[tab].map((c: Json) => ({ ...c, label: c.label ?? LABELS[tab]?.[c.name] }))
     .map((c: Json) => c.name === 'unit' ? { ...c, guidance: 'The unit of what this Probe measures, chosen from the list (V, A, Hz, dB, deg...). '
       + 'A Spec on this Probe takes it.' } : QUANTITY[tab]?.includes(c.name) ? { ...c, guidance: (c.guidance ?? '') + VALUE_HELP } : c)
-    .map((c: Json) => tab === 'measurements' && c.name === 'signal' ? { ...c, label: 'Expression' }
-    : tab !== 'targets' ? c : c.name === 'nominal_only'
-    ? { ...c, label: 'Judged at' } : c.name === 'missing_is_failure' ? { ...c, label: 'Missing value = failed' } : c.name === 'margin_sides' ? { ...c, label: 'Margin sides' }
+    .map((c: Json) => tab !== 'targets' ? c
     : c.name === 'constraint' ? { ...c, guidance: c.guidance + ' "then lower / higher is better" is the objective: among the designs that pass '
       + 'every hard spec, the best one is the lowest / highest here (one spec at most); with an Objective bonus weight above 0 (Reward and '
       + 'conditions) the reward also pushes it past the limit.' }
-    : c.name === 'normalization_scale' ? { ...c, label: 'Scale', guidance: 'How far outside its limit a value counts as a miss of 1. Empty: as far as the limit itself. dB rows: 6 (a factor of 2), so with a limit of 30 dB, 24 dB is a miss of 1. Smaller = stricter. Pass or fail depends on the limits only.' } : c);
+    : c.name === 'normalization_scale' ? { ...c, guidance: 'How far outside its limit a value counts as a miss of 1. Empty: as far as the limit itself. dB rows: 6 (a factor of 2), so with a limit of 30 dB, 24 dB is a miss of 1. Smaller = stricter. Pass or fail depends on the limits only.' } : c);
   // Specs shows the objective inside the constraint list (LimitSelect), and "Judged at" only while the run plans training
   // corners: without corners every spec is judged at nominal, so the choice would do nothing. Both keep their values.
   const corners = (config.run?.conditions?.policy ?? 'off') !== 'off';
@@ -626,7 +613,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{pending.others.length
         ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>
         <div className="row"><button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>
-        {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} />}</div>}
+        {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} unitOf={unitIn(config, schema.section_keys ?? {})} />}</div>}
       <FormulaBar cell={activeRow && !inView(activeRow, at) ? null : barCell} commit={commitBar} back={backToCell} />
       {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}</p>}
       <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}

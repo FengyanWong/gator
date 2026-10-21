@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, Json, problemText } from '../api';
 import { DiffView } from './DiffView';
+import { unitIn } from './editorRules';
 import { Icon } from './Icons';
 
 /** "Matched devices..." of the Parameters tab (status record 7.103): the structures the backend reads from the loaded
@@ -83,7 +84,9 @@ export function MatchedDevices({ config, setConfig, onClose }: { config: Json; s
       {shown && !stale && <div className="confirm">
         <h4>{chosen.length} tie{chosen.length === 1 ? '' : 's'}: searched rows {shown.independent_before} &rarr; {shown.independent_after}</h4>
         {shown.problems.map((p: Json, i: number) => <p key={i} className="issue error">{p.level}: {p.message}</p>)}
-        <DiffView diff={shown.diff} />
+        {/* Its ties change Parameters rows only: their numbers are written in the rows' units, as the cells write them (1 um,
+            not 1e-06; branch record SIF-51). */}
+        <DiffView diff={shown.diff} unitOf={unitIn(config, { parameters: 'variable_id' })} />
         <button disabled={shown.problems.length > 0} onClick={apply}>Apply</button><button onClick={() => setShown(null)}>Cancel</button></div>}
       {done && <p className="ok">{done}</p>}
     </div>

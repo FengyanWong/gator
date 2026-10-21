@@ -840,3 +840,31 @@ its line only once its answer is here, so "..." there never meant pending: only 
 has no count; Matched devices reads "?" again, as before SIF-50. "Changed" above now says so. `tsc` clean;
 `editor_columns_check` 23 (new: its canned report has no count, and the line reads "Searched rows: ? of 5."),
 `matched_devices_check` 30; neither flaky. Matched devices' "?" has no pin: its fixture answers always carry a count.
+
+### SIF-51 The import and Matched devices confirmations name the tab, the header and the unit as the editors do (2026-10-21; from the readability audit)
+
+**Found.** The table read just before Apply - the "Confirm import" box after Import JSON, and Matched devices >
+Review... - showed the program's values. Matched devices' review read "parameters | w_in_b | modified | binding_group |
+| w_in_a", then "lower | 1e-06 |" and "upper | 1e-05 |": the section key where the tab says Parameters, "modified", the
+field name where the header says "Tied to", a width as a bare exponent where its cell says "1 um", and a cleared value as an
+empty cell. An import of Specs rows read "targets | extra_0 | added | metric_id", and a Probes or Specs import showed
+"measurements", "normalization_scale", "direction_after_feasible" where the page says Probes, Scale and Objective.
+
+**Changed** (`editorRules.ts`, `DiffView.tsx`, `Editors.tsx`, `MatchedDevices.tsx`): the tabs' names (`SECTION_TITLES`)
+and the headers' words (`LABELS`, now holding the five words Editors.tsx set apart: Expression, Judged at, Missing value =
+failed, Margin sides, Scale) moved from `Editors.tsx` to `editorRules.ts`, so the headers and the confirmations read one
+list; the headers are unchanged (the schema sends no labels of its own). The review now reads "Parameters | w_in_b | changed
+| Tied to | (empty) | w_in_a", "Lower | 1 um | (empty)", and an import "Specs | extra_0 | new | Spec ID | (empty) |
+extra_0", a replaced row "deleted". The tab and the field keep the program's names in their tooltips (parameters,
+binding_group); the row's class stays diff-added / diff-removed, so the colours are unchanged. A number of a field that
+carries its row's unit (Parameters' Lower, Upper, Step, Initial value; Specs' Lower, Upper, Scale) is written as its cell
+writes it, in the row's unit: the one the row has in the editors, or, where the diff adds the row or changes its unit (an
+import may), that side's own. An empty value or empty text reads "(empty)". Other values are written as stored (true, >=,
+the Notes text). Left as it was: Matched devices' note in the follower's Notes, "Its own range was 1e-06 .. 1e-05 m.", is
+written by the backend (`src/gator_workbench`), outside this branch's frontend scope.
+
+**Checked.** `tsc` clean; `matched_devices_check` 32 (new: the review's first rows read exactly as above, with
+"parameters" and "binding_group" in the tooltips; its six-cell Row pin unchanged), `spec_equations_check` 35 (new: a
+20-row Specs import names Specs (tooltip targets), extra_0 "new", the replaced row "deleted", and "Spec ID" with metric_id
+in its tooltip, no bare metric_id), `sheet_check` 44 (its "binding_group" -> "Tied to" header pin still holds after the
+move), `editor_columns_check` 23, `edit_state_check` 24; none flaky.

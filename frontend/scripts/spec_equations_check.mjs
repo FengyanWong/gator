@@ -188,6 +188,15 @@ await runChecks(browser, async () => {
     const b = [...(document.querySelector('.editors .confirm')?.querySelectorAll('button') ?? [])].find(x => x.textContent === 'Apply'); if (!b) return false;
     const r = b.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b; })()`));
   await shot('spec_import_confirm.png');
+  // Branch record SIF-51: the confirmation names the tab, the change and each field as the editors do, where it said
+  // "targets | extra_0 | added | metric_id"; the program's names stay in the tooltips.
+  const imported = await evaluate(`[...document.querySelectorAll('.editors .confirm tbody tr')].map(tr => [...tr.children].map(td => [td.textContent, td.title]))`);
+  const firsts = imported.filter(r => r.length === 6), fieldsOf = imported.map(r => r[r.length - 3]);
+  check('the import confirmation names Specs, a new row and a replaced one, and each field by its header (its name in the tooltip)',
+    firsts.length > 0 && firsts.every(r => r[0][0] === 'Specs' && r[0][1] === 'targets')
+    && firsts.some(r => r[1][0] === 'extra_0' && r[2][0] === 'new') && firsts.some(r => r[1][0] === template.metric_id && r[2][0] === 'deleted')
+    && fieldsOf.some(([text, title]) => text === 'Spec ID' && title === 'metric_id') && !fieldsOf.some(([text]) => text === 'metric_id'),
+    JSON.stringify(imported.slice(0, 3)));
   await evaluate(`[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent === 'Cancel').click()`);
   const foreign = path.join(out, 'gpdk045_conditions.json');
   writeFileSync(foreign, readFileSync(new URL('../../configs/gpdk045_conditions.json', import.meta.url)));

@@ -9,7 +9,7 @@ import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
 import { otherTask, RunButtons, RunChip } from './panels/RunControl';
 import { WindowsMenu } from './panels/WindowsMenu';
-import { RESUMABLE } from './runState';
+import { ENDED, RESUMABLE } from './runState';
 import { CALIBRATION_DESIGNS, useLaunchActions } from './launch';
 import { LaunchRefusal } from './panels/LaunchRefusal';
 import { useRunBrief } from './panels/RunBrief';
@@ -208,8 +208,13 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   // on yet another run, and nothing that told the three apart): the header's run is named by its task when the title names
   // another (its chip and Abort's question); while it works or is paused, the bottom tabs offer it when they show another, and
   // Run configuration says that it is for the next Start.
-  const headerTask = otherTask(runs.find(r => r.run_dir === control.dir), taskKey, taskShown);
-  const headerHeld = !!control.dir && control.phase !== 'idle' && control.phase !== 'checking';
+  // Not while a launch is on its way to another run (review of SIF-72): the chip reads "starting" at once, but the header holds
+  // the run it held before until the backend answers (launchedRun) - an ended run, or a paused one it then lets go of. Start
+  // always makes a new run; a Continue while the header's run has ended is of the run the tabs show. Resume of the header's
+  // paused run is of that run, and keeps it.
+  const launching = control.pending === 'start' || (control.pending === 'resume' && ENDED.includes(control.status?.state));
+  const headerTask = launching ? null : otherTask(runs.find(r => r.run_dir === control.dir), taskKey, taskShown);
+  const headerHeld = !!control.dir && !launching && control.phase !== 'idle' && control.phase !== 'checking';
 
   // ---- the Runs window's actions (record 7.267; plan "Load run" and "Existing runs: continued in place"): page/runWindowActions.ts
   const { taskLoad, askContinue, runWindow } = useRunWindowActions({ config, setConfig, runs, taskKey, followTask, loadSerial, setMessage, setRunDir, setTab, unfold });

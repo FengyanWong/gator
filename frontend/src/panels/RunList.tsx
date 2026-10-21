@@ -354,7 +354,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
         offers the header's run - it showed "... mscr_vco_lin_c · New model, seed 0 · completed" under a header running 270 of 800. */}
     <span className="run-list-current" title={runDir ?? undefined}>{elsewhere && runDir ? 'Shown: ' : ''}{current ? label(current, shownState) : runDir ? folderName(runDir) : 'No run selected'}</span>
     {elsewhere && <span className="run-list-header"><button className="item-link" onClick={() => onChoose(elsewhere)}
-      title={`The header holds another run, the one its Pause and Abort act on: ${elsewhere}\nPress to show it in these tabs.`}>Show the header's run</button></span>}
+      title={`The header holds another run, the one its buttons act on: ${elsewhere}\nPress to show it in these tabs.`}>Show the header's run</button></span>}
     <button className={`run-list-button${popup ? ' open' : ''}`} onClick={() => openWindow()}
       title={popup ? 'The run window is open: press to bring it to the front and read the list again.' : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show; the window then closes.'}>Runs...</button>
     <PopupPortal popup={popup} root={root}>{view}</PopupPortal>

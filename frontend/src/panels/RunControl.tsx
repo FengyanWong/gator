@@ -1,7 +1,7 @@
 import { Icon, IconName } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, plainError } from '../api';
-import { folderName, runTask } from '../format';
+import { folderName, plural, runTask } from '../format';
 import { ENDED, type Pending, type Phase, type RunControl } from '../runState';
 
 /** The header's run buttons (user request 2026-09-21): ONE main button that reads Start -> Pause -> Resume, and
@@ -19,7 +19,8 @@ import { ENDED, type Pending, type Phase, type RunControl } from '../runState';
 
 // The count says what it counts, and the chip leaves the state word to the strip beside it, which lights it (branch record
 // SIF-72: "Running" stood beside "running 292 / 800", a number easy to take for the Training tab's or the next run's).
-const used = (status: Json) => status?.budget ? ` ${status.budget.charged} of ${status.budget.max_evaluations} evaluations` : '';
+// A budget of 1 is allowed (an Evaluate only run): "of 1 evaluation" (review of SIF-72).
+const used = (status: Json) => status?.budget ? ` ${status.budget.charged} of ${plural(status.budget.max_evaluations, 'evaluation')}` : '';
 const WAITING = 'waiting for the simulation in flight';
 function describe(status: Json, phase: Phase, forced: boolean): string {
   const at = status?.budget ? `at${used(status)}` : '';
@@ -60,7 +61,7 @@ async function pauseConfirmed(dir: string): Promise<boolean> {
 // A stopped calibration keeps its completed random designs and can still propose from them. `task`: the run's task when the
 // header's title names another (branch record SIF-72).
 const abortConfirmed = (status: Json, task: string | null) => window.confirm(`Abort this run${task ? ` of ${task}` : ''}?\n\nThe simulation that is running now is allowed to finish, so nothing already paid for is lost and the circuit is put back `
-  + `as it was. Then everything is saved and the run ends.${status?.budget ? `\nUsed so far: ${status.budget.charged} of ${status.budget.max_evaluations} evaluations.` : ''}`
+  + `as it was. Then everything is saved and the run ends.${status?.budget ? `\nUsed so far:${used(status)}.` : ''}`
   + (status?.calibration ? '\n\nCalibration proposes only from the random designs simulated so far '
     + '(at least 16 must give a reward).' : '')
   + '\n\nTo continue this run later, use Pause instead.');
@@ -169,7 +170,7 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
     if (answer?.id === saving && answer.state === 'saved') {
       setSaving(null);
       // the evaluations name the save point, its id in the line's tooltip (branch record SIF-70: the line said both)
-      onMessage({ level: 'info', text: `Saved at ${answer.evaluations} evaluations. The run goes on.`, title: `save point ${answer.checkpoint_id}` });
+      onMessage({ level: 'info', text: `Saved at ${plural(answer.evaluations, 'evaluation')}. The run goes on.`, title: `save point ${answer.checkpoint_id}` });
     } else if (phase !== 'running') setSaving(null);             // paused, aborted or ended meanwhile: that saves everything anyway
   }, [status, phase, saving]);
 

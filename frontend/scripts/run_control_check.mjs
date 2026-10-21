@@ -277,7 +277,8 @@ await runChecks(browser, async () => {
   // Branch record SIF-72: the tab line offers the header's run while the tabs show another (or none), and a press shows it.
   const offer = await evaluate(`({ shown: ${SHOWN_LINE}, link: ${HEADER_LINK}?.textContent ?? null, title: ${HEADER_LINK}?.title ?? '' })`);
   check('with the tabs on no run, the tab line offers the header\'s paused run: "Show the header\'s run", its folder in the tooltip (SIF-72)',
-    offer.shown === 'No run selected' && offer.link === 'Show the header\'s run' && offer.title.endsWith(`act on: ${DIR}\nPress to show it in these tabs.`), JSON.stringify(offer));
+    offer.shown === 'No run selected' && offer.link === 'Show the header\'s run'                     // paused: its buttons read Resume and Let go
+    && offer.title === `The header holds another run, the one its buttons act on: ${DIR}\nPress to show it in these tabs.`, JSON.stringify(offer));
   await press(HEADER_LINK);
   check('... a press shows it under Run status, and the link goes: the tabs show the header\'s run', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})
     && !(${HEADER_LINK}) && !${SHOWN_LINE}.startsWith('Shown:')`, 50), await evaluate(SHOWN_LINE));
@@ -376,7 +377,16 @@ await runChecks(browser, async () => {
   await shot('run-6-ended.png');
 
   // ---- 8. a run that cannot come back is announced BEFORE the pause; Abort on a paused run lets go of it -----------------------
+  // Review of SIF-72: while the new Start is on its way the header still holds the ended run - the chip reads "starting" for
+  // the new one, so it names no task of the ended run, and Run configuration's settings are the ones being started.
+  holdNext = '/api/runs/start';
   await press(MAIN);
+  check('(a new Start after an ended run is on its way: "Starting...")', await mainReads('Starting...'));
+  v = await look();
+  const startingNote = await evaluate(NEXT_NOTE);
+  check('... meanwhile the chip names no task of the ended run, and Run configuration does not say it is for the next Start (review of SIF-72)',
+    /^starting( \[MOCK\])?$/.test(v.chip ?? '') && startingNote === null, JSON.stringify([v.chip, startingNote]));
+  await held(); held = null;
   check('a new Start after an ended run works', await mainReads('Pause'));
   sim.steps = [{ state: 'running' }];
   sim.output = { save_checkpoints: true, save_replay_snapshots: false }; log.length = 0; answers.push(false);

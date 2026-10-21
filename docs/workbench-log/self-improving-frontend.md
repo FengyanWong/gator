@@ -1700,3 +1700,16 @@ and "Abort this run?" as before; "stopped at N of 20000 evaluations [MOCK]". `ca
 64 evaluations [MOCK]"). `run_list_check` 124, `looks_check` 72, `room_check` 27, `reliability_check` 20,
 `launch_recovery_check` 20, `save_now_check` 29, `task_run_check` 31, `dom_identity_check` 56, `mode_suggestion_check` 20.
 None flaky.
+
+**Review follow-up.** The review of 47dc930 found three slips, all real. (1) A Start sets the header's "starting" at once
+(launch.ts), but the header holds the run it held before until the backend answers (`launchedRun` -> `control.take`), so
+for the whole request an ENDED run counted as held: Run configuration said "For the next Start: the run in the header goes
+on ...", the chip read "graphgps_ldo1 · starting" for the new run, and the tab line could offer the ended run. `App.tsx`
+now leaves out a launch on its way to another run: a pending Start (it always makes a new run), and a pending Continue
+while the header's run has ended (it is of the run the tabs show); Resume of the header's paused run keeps it. (2) The
+chip's count wrote "of 1 evaluations" for a budget of 1 (an Evaluate only run, allowed by the schema); `used()` writes it
+with plural(), and so do Abort's "Used so far: ..." and Save now's "Saved at 1 evaluation". (3) The tab line's link said
+the header's "Pause and Abort act on" its run, also when that run is paused and they read Resume and Let go: it reads
+"the one its buttons act on". `tsc` clean. `run_control_check` 120: new, a second Start after the ended run held at
+"Starting...": the chip reads "starting [MOCK]", no task, and Run configuration's line is absent; the link's tooltip is
+checked whole. `save_now_check` 29. None flaky.

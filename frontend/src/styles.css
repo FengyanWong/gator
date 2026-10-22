@@ -140,6 +140,7 @@ table.editor td[data-field="binding_group"] input { min-width: 120px; }
 table.editor td[data-field="unit"] input { min-width: 52px; }
 table.editor td input[type="checkbox"] { min-width: 0; }
 table.editor td.sel input { min-width: 0; margin: 0; }   /* the tick box: it inherited the 84 px minimum of the editor inputs */
+table.editor th.sel input { width: auto; margin: 0; }   /* the header's "tick every row in view" (branch record SIF-96): a box as the rows' */
 /* the Issues column as wide as its reports need: narrow while no row has one */
 table.editor:not(:has(td.issues > .issue)) td.issues { min-width: 0; }
 /* record 7.180 (design advice 4): a tied row folds under its leader - the leader's first cell counts them and opens them; an

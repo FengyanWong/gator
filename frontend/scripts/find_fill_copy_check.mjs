@@ -10,7 +10,11 @@
 //   - Ctrl+C: the cell alone, or the ticked rows in view with a header line; with text chosen inside the box the browser copies
 //     that text as ever; the Copy button takes every row in view; a copied block pasted back skips its header line;
 //   - one write path for typing, pasting and filling: a pasted output name renames its Probe ID and the equations using it;
-//     a pasted limit keeps the objective only where the two still pair.
+//     a pasted limit keeps the objective only where the two still pair;
+//   - Add, Delete selected and the tick boxes (branch record SIF-96): Delete says what went - the rows, one folded away, the
+//     tied rows that now follow nothing, the Specs using a deleted Probe - and gives the focus to the row now in its place, or
+//     to Add; Add clears a Find text the new row does not hold and chooses the new row's ID (a Maestro output's Output name);
+//     the header's box ticks every row in view, half ticked while only some are; Shift+click ticks a span of rows in view.
 // Run: bash frontend/scripts/run_checks.sh --only find_fill_copy_check. About 25 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
@@ -89,6 +93,8 @@ await runChecks(browser, async () => {
   await evaluate(`document.querySelector('section.editors button[title^="Delete selected"]').click()`);
   check('Delete selected takes only the ticked rows in view', await storedUntil(`!c.parameters.some(p => p.variable_id === ${JSON.stringify(last)}) && c.parameters.some(p => p.variable_id === ${JSON.stringify(lead)})`),
     JSON.stringify(await stored(`c.parameters.map(p => p.variable_id)`)));
+  check('...said under the formula bar, and with no row left in view the focus goes to Add (branch record SIF-96)', (await evaluate(NOTE)) === `Deleted 1 row (${last}). Undo takes it back.`
+    && await evaluate(`document.activeElement === document.querySelector('section.editors button[title^="Add:"]')`), `${await evaluate(NOTE)} | ${await evaluate(`document.activeElement?.title`)}`);
   await evaluate(UNDO);
   check('...and Undo brings it back', await storedUntil(`c.parameters.length === ${ids.length}`));
   await evaluate(`${FIND}.focus()`);
@@ -212,6 +218,109 @@ await runChecks(browser, async () => {
   await pasteAt('interval\t1\t7');
   check('...and keeps one that pairs (an interval, then lower is better)', await storedUntil(`c.targets[0].constraint === 'interval' && c.targets[0].direction_after_feasible === 'minimize' && c.targets[0].upper === 7`),
     JSON.stringify(await stored(`c.targets[0]`)));
+
+  // ---- Add, Delete selected and the tick boxes do what they say, in view (branch record SIF-96) ------------------------------------
+  const DELETE = `document.querySelector('section.editors button[title^="Delete selected"]').click()`;
+  const ADD = `document.querySelector('section.editors button[title^="Add:"]').click()`;
+  const HEAD = `document.querySelector('table.editor thead th.sel input')`;
+  const idList = list => `${list.slice(0, 4).join(', ')}${list.length > 4 ? ', ...' : ''}`;
+  const warned = () => evaluate(`!!document.querySelector('.paste-note.warn')`);
+  // a deleted Probe: the Specs whose equation used it are named on the Probes tab, where they are not in view
+  await evaluate(`${TAB('measurements')}.click()`); await sleep(300);
+  const gain = 'm_FIXTURE_gain', usedBy = await stored(`c.targets.filter(t => /(?<![A-Za-z0-9_.])m_FIXTURE_gain(?![A-Za-z0-9_])/.test(t.equation)).map(t => t.metric_id)`);
+  await tick(gain);
+  await evaluate(DELETE);
+  const probeNote = `Deleted 1 row (${gain}). Undo takes it back. ${usedBy.length === 1 ? `Spec ${usedBy[0]} uses` : `${usedBy.length} Specs (${idList(usedBy)}) use`} a deleted Probe.`;
+  check('Delete selected says what went, and names the Specs whose equation used the deleted Probe, as a warning (SIF-96)', usedBy.length > 0
+    && await page.until(`${NOTE} === ${JSON.stringify(probeNote)}`, 30) && await warned(), `${await evaluate(NOTE)} | expected: ${probeNote}`);
+  // the row now in its place takes the focus (a leader's Delete below); with no row left in view, Add does
+  check('...and the focus goes to the tick box of the row now in its place, or to Add when no row is left, not to the page', await evaluate(`document.activeElement
+    === (${ROWS}.find(tr => !tr.hidden)?.querySelector('td.sel input') ?? document.querySelector('section.editors button[title^="Add:"]'))`),
+    await evaluate(`document.activeElement?.outerHTML.slice(0, 100)`));
+  await evaluate(UNDO);
+  check('(set-up) Undo brings the Probe back', await storedUntil(`c.measurements.some(m => m.measurement_id === ${JSON.stringify(gain)})`));
+  // Add with a Find text the new row does not hold: the text goes, and the new Probe - a Maestro output, as the task's others -
+  // comes into view with its Output name chosen, which its ID follows
+  await findText('FIXTURE');
+  const probesBefore = await stored(`c.measurements.length`);
+  await evaluate(ADD);
+  const newProbe = await storedUntil(`c.measurements.length === ${probesBefore + 1}`) ? await stored(`c.measurements[c.measurements.length - 1]`) : null;
+  const probeFocus = await evaluate(`(() => { const a = document.activeElement, tr = a?.closest('tr'); return { field: a?.closest('td')?.dataset.field ?? null, row: tr ? Number(tr.dataset.index) : null, shown: !!tr && !tr.hidden }; })()`);
+  check('Add with a Find text the new row does not hold clears the text and says so (SIF-96)', (await evaluate(`${FIND}.value`)) === ''
+    && (await evaluate(NOTE)) === `Find rows cleared to show the new row, ${newProbe?.measurement_id}.`, `${await evaluate(`${FIND}.value`)} | ${await evaluate(NOTE)}`);
+  check('...and the new Probe, a Maestro output, comes into view with its Output name chosen (its Probe ID follows the name)', newProbe?.result_source === 'ade_output'
+    && JSON.stringify(probeFocus) === JSON.stringify({ field: 'source_name', row: probesBefore, shown: true }), JSON.stringify({ newProbe, probeFocus }));
+  await evaluate(UNDO);
+  check('(set-up) Undo takes the new Probe away', await storedUntil(`c.measurements.length === ${probesBefore}`));
+
+  // the header's box ticks every row in view - never one folded under its leader - and is half ticked while only some are
+  await evaluate(`${TAB('parameters')}.click()`); await sleep(300);
+  const ticked = () => evaluate(`${ROWS}.filter(tr => tr.querySelector('td.sel input').checked).map(tr => tr.querySelector('td[data-field] input').value)`);
+  const head = () => evaluate(`({ checked: ${HEAD}.checked, half: ${HEAD}.indeterminate, label: ${HEAD}.getAttribute('aria-label') })`);
+  const HEAD_AS = (checked, half) => JSON.stringify({ checked, half, label: 'Tick every row in view' });
+  check('(set-up) three rows in view or more, and none ticked', inView.length >= 3 && !(await ticked()).length, JSON.stringify({ inView, ticked: await ticked() }));
+  await evaluate(`${HEAD}.click()`); await sleep(200);
+  check('the tick-box header ticks every row in view, the rows folded under a leader left as they were (SIF-96)', JSON.stringify(await ticked()) === JSON.stringify(inView)
+    && JSON.stringify(await head()) === HEAD_AS(true, false), JSON.stringify({ ticked: await ticked(), head: await head() }));
+  await tick(inView[0], false);
+  check('...is half ticked while only some rows in view are', JSON.stringify(await head()) === HEAD_AS(false, true), JSON.stringify(await head()));
+  await evaluate(`${HEAD}.click()`); await sleep(200);
+  const again = await ticked();
+  await evaluate(`${HEAD}.click()`); await sleep(200);
+  check('...ticks them all again from there, and a second press unticks them all', JSON.stringify(again) === JSON.stringify(inView) && !(await ticked()).length
+    && JSON.stringify(await head()) === HEAD_AS(false, false), JSON.stringify({ again, now: await ticked() }));
+  // Shift+click on a row's box: every row in view from the box clicked last takes its state (a real click, Shift held)
+  const boxAt = id => evaluate(`(() => { const b = ${ROW(id)}.querySelector('td.sel input'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  const shiftClick = async id => { const p = await boxAt(id);
+    for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', clickCount: 1, modifiers: 8 }); await sleep(200); };
+  await page.clickAt(await boxAt(inView[0])); await sleep(200);
+  await shiftClick(inView[inView.length - 1]);
+  check('Shift+click on a row\'s box ticks every row in view from the box clicked last, and no folded row (SIF-96)', JSON.stringify(await ticked()) === JSON.stringify(inView),
+    JSON.stringify(await ticked()));
+  await shiftClick(inView[1]);
+  check('...and Shift+click on a ticked box unticks that span', JSON.stringify(await ticked()) === JSON.stringify([inView[0]]), JSON.stringify(await ticked()));
+  await tick(inView[0], false);
+
+  // a deleted leader: the rows tied to it now follow nothing, and the line says so as a warning
+  const tied = tiedTo(lead), leadAt = ids.indexOf(lead);
+  await tick(lead);
+  await evaluate(DELETE);
+  const leaderNote = `Deleted 1 row (${lead}). Undo takes it back. ${tied.length === 1 ? `${tied[0]} was` : `${tied.length} rows (${idList(tied)}) were`} tied to a deleted row `
+    + `and now follow${tied.length === 1 ? 's' : ''} nothing.`;
+  check('Delete selected on a leader names the rows tied to it, which now follow nothing, as a warning (SIF-96)', await page.until(`${NOTE} === ${JSON.stringify(leaderNote)}`, 30)
+    && await warned(), `${await evaluate(NOTE)} | expected: ${leaderNote}`);
+  // the leader's place: the first row in view from there on - its tied rows, unfolded now that they follow nothing
+  check('...and the focus goes to the tick box of the row now in the leader\'s place', await evaluate(`document.activeElement
+    === ${ROWS}.find(tr => !tr.hidden && Number(tr.dataset.index) >= ${leadAt})?.querySelector('td.sel input')`),
+    await evaluate(`(() => { const a = document.activeElement; return \`\${a?.outerHTML.slice(0, 60)} in row \${a?.closest('tr')?.dataset.index}\`; })()`));
+  await evaluate(UNDO);
+  check('(set-up) Undo brings the leader back', await storedUntil(`c.parameters.length === ${ids.length}`));
+  // a ticked row folded away since is deleted as before (record 7.184), and the line counts it
+  await evaluate(`${ROW(lead)}.querySelector('.tie-toggle').click()`); await sleep(200);
+  await tick(follower);
+  await evaluate(`${ROW(lead)}.querySelector('.tie-toggle').click()`); await sleep(200);
+  await tick(last);
+  await evaluate(DELETE);
+  const foldedNote = `Deleted 2 rows (${ids.filter(id => id === follower || id === last).join(', ')}), 1 of them folded under a leader. Undo takes them back.`;
+  check('a ticked row folded away since is deleted as before, and the line says it was folded (SIF-96)', await page.until(`${NOTE} === ${JSON.stringify(foldedNote)}`, 30)
+    && !(await warned()) && await storedUntil(`!c.parameters.some(p => [${JSON.stringify(follower)}, ${JSON.stringify(last)}].includes(p.variable_id))`),
+    `${await evaluate(NOTE)} | expected: ${foldedNote}`);
+  await evaluate(UNDO);
+  check('(set-up) Undo brings both back', await storedUntil(`c.parameters.length === ${ids.length}`));
+  // Add with a Find text: the new row comes into view with its ID chosen, so its name is typed at once
+  await findText('pair');
+  await evaluate(ADD);
+  const added = await storedUntil(`c.parameters.length === ${ids.length + 1}`) ? await stored(`c.parameters[c.parameters.length - 1].variable_id`) : null;
+  const chosen = await evaluate(`(() => { const a = document.activeElement, s = a?.closest('.scroll')?.getBoundingClientRect(), r = a?.getBoundingClientRect();
+    return { field: a?.closest('td')?.dataset.field ?? null, value: a?.value, all: a?.selectionStart === 0 && a?.selectionEnd === a?.value.length,
+      inBox: !!s && r.top >= Math.max(s.top, 0) - 1 && r.bottom <= Math.min(s.bottom, innerHeight) + 1 && !a.closest('tr').hidden }; })()`);
+  check('Add with a Find text clears it, and the new row comes into view with its ID chosen, to be typed over (SIF-96)', (await evaluate(`${FIND}.value`)) === ''
+    && JSON.stringify(chosen) === JSON.stringify({ field: 'variable_id', value: added, all: true, inBox: true })
+    && (await evaluate(NOTE)) === `Find rows cleared to show the new row, ${added}.`, JSON.stringify({ chosen, added, note: await evaluate(NOTE) }));
+  await page.shot(path.join(out, 'find-4-added.png'), `document.querySelector('.editors')`, { maxHeight: 520 });
+  await evaluate(UNDO);
+  check('(set-up) Undo takes the new row away', await storedUntil(`c.parameters.length === ${ids.length}`));
 
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
   check('no console error', !consoleErrors.length, consoleErrors.slice(0, 3).join(' | '));

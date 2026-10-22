@@ -2713,3 +2713,52 @@ duplicate's Where and its Lower issue go to the last row. 7 of the new checks fa
 unchanged: `editor_columns_check` 23, `task_rows_check` 54, `typing_check` 50, `sheet_check` 45, `find_fill_copy_check`
 30, `spec_equations_check` 36, `looks_check` 75, `unsaved_rows_check` 25, `reward_block_check` 33, `formula_bar_check` 21,
 `matched_devices_check` 37, `callouts_check` 8 (13 scripts, 497 checks, one lane). No flakes.
+
+### SIF-96 Add, Delete and the tick boxes do what they say, in view (2026-10-22; from the usability audit)
+
+**Found.** **Add** put the new row at the end of the table, out of view, and left the focus on the Add button. While
+Find rows held text, the new row ("parameter_67") usually did not match it and was hidden, so Add seemed to do nothing:
+only the tab's count changed (audit finding J2-4). **Delete selected** said nothing at all. It did not say how many rows
+went or which. A deleted leader left its tied rows following nothing, which is a blocking error. A deleted Probe broke
+every Spec equation using it, on a tab not in view. A ticked tied row that was folded away afterwards was deleted
+unseen (J2-3). The tick-box column's header was empty, with no "tick all" and no Shift+click range, so deleting 20 rows
+took 20 ticks (J2-9).
+
+**Changed.** `frontend/src/panels/Editors.tsx`: Add still puts the row at the end. If a Find text does not match the new
+row, the text is cleared, and the line under the formula bar says "Find rows cleared to show the new row, parameter_6.".
+On the render after the press, the new row is scrolled into view and its ID is focused with the text selected, so the name
+can be typed at once. A new Maestro-output Probe gets its Output name focused instead, because its Probe ID is read-only and
+follows that name. Delete selected removes the same rows as before (record 7.184). The line under the formula bar now
+says what went: "Deleted 2 rows (a, b), 1 of them folded under a leader. Undo takes them back." It is amber when it also
+names the rows that were tied to a deleted leader and now follow nothing ("<row> was tied to a deleted row and now
+follows nothing."), or the Specs whose equation uses a deleted Probe ("Spec <id> uses a deleted Probe."). The focus
+then goes to the tick box of the row now in the first deleted row's place. The pressed button turns disabled, which used
+to drop the focus to the page. With no row left in view, the focus goes to Add. It goes to the tick box rather than a
+text cell, so a key typed next edits nothing. The tick-box header holds a box, "Tick every row in view". It ticks or
+unticks every row in view, is half ticked while only some are, and is disabled while no row is in view. A row that a fold
+or Find hides keeps its tick. Shift+click on a row's box gives every row in view, from the box clicked last to this one,
+the new state. Its mouse press chooses no page text. The tooltips of Add, Delete selected and the header box say so.
+`frontend/src/panels/editorRules.ts`: `usesProbe(equation, id)` uses the whole-name rule that the rename of a Maestro
+output uses (`renameInEquation`, now built on the same pattern). `frontend/src/styles.css` and `roadster.css`: the
+header's box takes the rows' size and padding and stands over the row boxes at the cell's start. The column keeps its
+width, which `--sel-w` measures. Nothing here saves, starts a run or writes to Virtuoso. Add and Delete are one Undo step
+each, as before; a focused cell on a cramped page folds the bottom panel as a click there does (record 7.372). Not
+changed: Undo does not clear the line under the formula bar, so "Deleted ..." stays after an Undo, as a paste's or a
+fill's line does. Tied rows are not untied by a Delete (the audit's verdict). `docs/workbench.md` (a bullet after Find
+rows) and `docs/functionality-reference.md` (the toolbar row) say so.
+
+**Checked.** `tsc` clean. `find_fill_copy_check` 50 (30 before). Deleting a ticked row under Find says "Deleted 1 row
+(...). Undo takes it back." and, with no row left in view, focuses Add. A deleted Probe names its Spec, in amber, and
+the focus goes to the row in its place or to Add. Add on Probes with a Find text clears it, says so, and focuses the new
+Maestro-output Probe's Output name. The header box ticks the three rows in view and no folded row, is half ticked after
+one is unticked, ticks all again, then unticks all. A real Shift+click ticks the span, and a Shift+click on a ticked box
+unticks it. A deleted leader names its tied row, in amber, and the focus goes to the tick box in its place. A ticked row
+folded away is deleted as before, and the line says it was folded. Add on Parameters with a Find text focuses the new
+row's ID, its text all selected, within the table's view. `spec_equations_check` 36: Add pressed while a typed cell has
+focus is still its own Undo step, and the focus then moves to the new Spec's ID. Before, the check required the focus to
+stay in the cell. `sheet_check` 45: the dark-pixel test of the sticky heads hides the header's own box while it takes
+its pictures. On the code before the change, 5 of the new checks fail and the script stops at the missing header
+box; the changed `spec_equations_check` assertion fails too. Also run, unchanged: `typing_check` 50,
+`editor_columns_check` 23, `reliability_check` 20, `task_rows_check` 54, `unsaved_rows_check` 25, `formula_bar_check` 21,
+`blocking_issues_check` 60, `matched_devices_check` 37, `looks_check` 75, `edit_state_check` 24, `dom_identity_check` 56,
+`testbench_probes_check` 41, `room_check` 30 (16 scripts, 647 checks, one lane). No flakes.

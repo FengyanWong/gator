@@ -104,8 +104,11 @@ export const FOLLOWER_IGNORES = ['optimized', 'value_type', 'lower', 'upper', 's
 // A Maestro output's Probe ID is m_ + its name, as Save task names it (virtuoso_setup.probe_id); spec equations are rewritten
 // when it follows a renamed output. Equation names are plain identifiers (spec_equations.parse reads them with Python's ast).
 const probeIdOf = (outputName: string) => `m_${outputName}`;
-const renameInEquation = (equation: string, from: string, to: string) =>
-  equation.replace(new RegExp(`(?<![A-Za-z0-9_.])${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, 'g'), to);
+const nameIn = (id: string, flags = '') => new RegExp(`(?<![A-Za-z0-9_.])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, flags);
+const renameInEquation = (equation: string, from: string, to: string) => equation.replace(nameIn(from, 'g'), to);
+/** Whether an equation names the Probe `id` as a whole name, as a rename finds it (branch record SIF-96: Delete selected names
+ *  the Specs whose equation a deleted Probe breaks, on a tab not in view). */
+export const usesProbe = (equation: string, id: string): boolean => !!id && nameIn(id).test(equation);
 
 export const exact = (v: Json) => (v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
 

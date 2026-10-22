@@ -780,6 +780,19 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   Enter goes to the first of them, Esc clears the box, and each table keeps its own text. The keys, a pasted block, Ctrl+D, Ctrl+C, Copy and
   Delete selected work on the rows in view: a ticked row out of view stays ticked and is not deleted, and a chosen cell whose
   row went out of view is let go.
+- **Add, Delete selected and the tick boxes** (branch record SIF-96, from the usability audit). **Add** puts the new row at
+  the end as before, then scrolls it into view and chooses its ID with the text selected, so its name is typed at once; a
+  new Maestro-output Probe gets its Output name chosen instead, since its Probe ID follows the name. A Find text the new row
+  does not hold is cleared, and the line under the formula bar says so ("Find rows cleared to show the new row,
+  parameter_67."). **Delete selected** deletes the same rows as before (the ticked ones; only those in view while Find holds
+  text, and without a Find text also a ticked row since folded under its leader). The line under the formula bar now says
+  what went: "Deleted 3 rows (wn_aux, ...), 1 of them folded under a leader. Undo takes them back." In amber, it adds the
+  rows that were tied to a deleted leader and now follow nothing, and the Specs whose equation uses a deleted Probe, which
+  are on a tab not in view. The focus goes to the tick box of the row now in the first deleted row's place, or to Add when
+  no row is left in view. The tick-box header holds a box, **Tick every row in view**: it ticks or unticks every row in
+  view, is half ticked while only some are, and leaves a row that a fold or Find hides as it was. **Shift+click** on a
+  row's box gives every row in view from the box clicked last the same state. Nothing here saves, runs or writes to
+  Virtuoso; Undo takes an Add or a Delete back as before.
 - **Fill down** (Ctrl+D, record 7.184). In a ticked row, with more rows ticked, the column takes the value of the topmost
   ticked row in view in every ticked row in view; in any other row the cell takes the value of the row above in view. One
   Undo step. A cell that follows another field, or that its leader decides, is kept; an ID is not filled, since each row

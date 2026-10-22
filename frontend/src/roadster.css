@@ -177,7 +177,7 @@ table.grid.model-table td .model-size { display: block; }   /* the size under th
    columns and move the row's Details button from under a double click (run_list_check). */
 .run-window .scroll { scrollbar-gutter: stable; }
 table.editor td input:not([type="checkbox"]), table.editor td select { min-height: 36px; padding: 6px 10px; border-radius: 0; font-size: 14px; }
-table.editor td.sel { padding: 0 8px; }
+table.editor :is(td, th).sel { padding: 0 8px; }
 table.editor td:has(> input[type="checkbox"]) { vertical-align: middle; }   /* a tick box (Optimized) level with the row's text */
 .toolbar { gap: 6px; padding: 8px 0; }
 .toolbar button:has(> svg.icon) { padding: 6px 8px; }   /* the editors' toolbar keeps one line at 1366 x 768 (find_fill_copy_check) */
@@ -409,8 +409,9 @@ table.editor td.issues { padding: 0 10px; vertical-align: middle; }
    the Equation cells (SIF-63 raised the other 11 px text); the line keeps its 1.75 height, so wrapped chips do not touch */
 .spec-probes code.probe-id { font-size: 13px; padding: 1px 6px; }
 /* the tick boxes in one column: centred with a leader's count beside it ("▸7", "▸31") or without one, each box stood at another
-   place (x 47, 50 and 62 px on the VCO's Parameters); at the cell's start the count follows the box */
-table.editor td.sel { text-align: left; }
+   place (x 47, 50 and 62 px on the VCO's Parameters); at the cell's start the count follows the box - and the header's box
+   (branch record SIF-96) stands over them */
+table.editor :is(td, th).sel { text-align: left; }
 
 /* SIF-75: the Runs window's "Started from" link takes three lines at most, its tooltip the whole name: an offline model's name
    ("Round 3 full archive — CircuitGPS v3 from scratch (offline)") took six lines, its row 120 px, and about six rows were in

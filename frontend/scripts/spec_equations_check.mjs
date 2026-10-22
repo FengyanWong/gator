@@ -164,17 +164,19 @@ await runChecks(browser, async () => {
   await evaluate(`${CELL(1, 'lower')}.focus(); ${CELL(1, 'lower')}.select()`);
   for (const ch of '0.5') { await send('Input.insertText', { text: ch }); await sleep(60); }
   const rowsBefore = await evaluate(`${EDITORS}.querySelectorAll('tbody tr').length`);
-  await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Add').click()`);   // at once, focus stays
-  const focusStayed = await evaluate(`document.activeElement === ${CELL(1, 'lower')}`);
+  // at once, pressed while the typed cell has focus; the new row then takes the focus, its Spec ID chosen (branch record SIF-96)
+  const focusStayed = await evaluate(`(() => { const typed = document.activeElement === ${CELL(1, 'lower')};
+    [...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Add').click(); return typed; })()`);
+  const toNewRow = await until(`!!document.activeElement && document.activeElement === ${EDITORS}.querySelectorAll('table.editor tbody tr')[2]?.querySelector('td[data-field="metric_id"] input')`, 30);
   await page.saved();
   const withRow = (await page.stored()).targets;
   await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Undo').click()`);
   await page.saved();
   const undone = (await page.stored()).targets;
   check('a button pressed while a typed cell has focus is its own Undo step: Undo takes the row, the typed 0.5 stays',
-    focusStayed && withRow.length === undone.length + 1 && undone[1].lower === 0.5
+    focusStayed && toNewRow && withRow.length === undone.length + 1 && undone[1].lower === 0.5
     && await evaluate(`${EDITORS}.querySelectorAll('tbody tr').length`) === rowsBefore,
-    `focus stayed ${focusStayed}; rows ${withRow.length} -> ${undone.length}; lower ${undone[1].lower}`);
+    `pressed in the cell ${focusStayed}, then in the new row ${toNewRow}; rows ${withRow.length} -> ${undone.length}; lower ${undone[1].lower}`);
   await evaluate(`${CELL(1, 'lower')}.blur()`);
   await evaluate(`${CELL(1, 'lower')}.focus(); ${CELL(1, 'lower')}.select()`);
   await send('Input.insertText', { text: '0.25' });

@@ -8,7 +8,7 @@ import { MatchedDevices } from './MatchedDevices';
 import { Cell, LimitSelect } from './cells';
 import { DiffView } from './DiffView';
 import { columnOf, drawsColumn, exact, FOLLOWER_IGNORES, LABELS, limitLabel, QUANTITY, readNumber, type Section, SECTION_TITLES as TITLES, suggestedScale,
-  unitIn, withFollowers, withSaved } from './editorRules';
+  unitIn, usesProbe, withFollowers, withSaved } from './editorRules';
 import { type BarCell, FormulaBar } from './FormulaBar';
 import { keep, readKept } from '../kept';
 import { RELOAD_SAVED_REQUEST } from './taskChoice';
@@ -80,6 +80,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // The find box's text, kept per table (record 7.184).
   const [find, setFind] = useState<Record<string, string>>({});
   const table = useRef<HTMLTableElement>(null);
+  // Where the focus goes on the render after Add (the new row, by its ID) or Delete selected (the place of the first row
+  // deleted), and the row whose tick box was clicked last, which Shift+click ticks from (branch record SIF-96).
+  const focusNext = useRef<{ key: string } | { index: number } | null>(null);
+  const lastTicked = useRef<string | null>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
   // The row's ID stays in view beside the tick box while the table scrolls sideways (record 7.182): it sticks at the tick-box
   // column's own width - which a tie toggle widens on Parameters, and a narrower window can change without a new render - and a
   // line marks its edge while columns pass under it.
@@ -180,9 +185,33 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     const first = config.measurements?.[0];
     if (tab === 'targets' && first && !row.equation) Object.assign(row, { equation: first.measurement_id ?? '', unit: row.unit || first.unit || '' });
     if (tab === 'targets' && row.normalization_scale == null) row.normalization_scale = suggestedScale(row);
+    // The new row comes into view with its ID chosen, so its name is typed at once (branch record SIF-96): it went in at the
+    // end, out of view, the focus left on Add, and a Find text it did not hold hid it - Add seemed to do nothing.
+    if (findWords.length && !matchesFind(row)) {
+      setFind(f => ({ ...f, [tab]: '' }));
+      setNote({ text: `Find rows cleared to show the new row, ${row[keyField]}.`, warn: false });
+    }
+    focusNext.current = { key: row[keyField] };
     setConfig((c: Json) => ({ ...c, [tab]: [...(c[tab] ?? []), row] }));
   };
-  const remove = () => { const gone = new Set(selection.map(s => s.key)); setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((r: Json) => !gone.has(r[keyField])) })); };
+  // Delete selected says what went (branch record SIF-96): it said nothing, while a deleted leader left its tied rows following
+  // nothing (a blocking error), a deleted Probe broke the Specs using it on a tab not in view, and a ticked row folded away
+  // since went unseen. Which rows go is as before (record 7.184): the ticked ones, only those in view while Find holds text.
+  const remove = () => {
+    const gone = new Set(selection.map(s => s.key)), going = rows.map((r, i) => ({ r, i })).filter(({ r }) => gone.has(r[keyField]));
+    const names = [...gone].map(String), folded = going.filter(({ r, i }) => leaderOf(r) && !rowsInView.includes(i)).length;
+    const orphans = rows.filter(r => !gone.has(r[keyField]) && gone.has(leaderOf(r))).map(r => String(r[keyField]));
+    const users: string[] = tab !== 'measurements' ? [] : (config.targets ?? [])
+      .filter((t: Json) => typeof t.equation === 'string' && names.some(id => usesProbe(t.equation, id))).map((t: Json) => String(t.metric_id ?? ''));
+    focusNext.current = { index: going[0]?.i ?? 0 };
+    setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((r: Json) => !gone.has(r[keyField])) }));
+    const one = going.length === 1;
+    setNote({ warn: orphans.length + users.length > 0, text: [`Deleted ${plural(going.length, 'row')} (${idList(names)})${!folded ? ''
+        : one ? ', folded under its leader' : `, ${folded} of them folded under a leader`}. Undo takes ${one ? 'it' : 'them'} back.`,
+      !orphans.length ? '' : `${orphans.length === 1 ? `${orphans[0]} was` : `${orphans.length} rows (${idList(orphans)}) were`} tied to a deleted row and now `
+        + `follow${orphans.length === 1 ? 's' : ''} nothing.`,
+      !users.length ? '' : `${users.length === 1 ? `Spec ${users[0]} uses` : `${users.length} Specs (${idList(users)}) use`} a deleted Probe.`].filter(Boolean).join(' ') });
+  };
 
   // JSON import goes through a DIFF CONFIRMATION before it replaces anything. The backend's diff covers the three tables;
   // a whole configuration also replaces the other sections, and the confirmation names each one that changes (it used to
@@ -232,7 +261,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return [...new Set([row, ...tied].map(r => r.instance_path).filter(Boolean))] as string[];
   };
   useEffect(() => () => pointAt([]), [tab]);
-  useEffect(() => { setActive(null); setOpenTies({}); setNote(null); }, [tab]);
+  useEffect(() => { setActive(null); setOpenTies({}); setNote(null); lastTicked.current = null; }, [tab]);
 
   // Why a cell is shown and not typed: it follows another field, or its row's leader decides it (record 7.158 review).
   const fixedOf = (row: Json, c: Json): string | null => tab === 'measurements' && c.name === 'measurement_id' && row.result_source === 'ade_output'
@@ -303,6 +332,38 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const rowsInView = rows.map((_, i) => i).filter(i => inView(rows[i], i));
   const selection = rows.filter(r => selected[r[keyField]] && (!findWords.length || matchesFind(r))).map(r => ({ section: tab, key: r[keyField], fields: [] as string[] }));
   const firstInView = () => (table.current?.querySelector('tbody > tr:not([hidden]) > td[data-field] :is(input, select)') as HTMLElement | null)?.focus();
+  // A tick box ticks its row; with Shift, every row in view from the box clicked last to this one takes its state, and the
+  // header's box ticks or unticks every row in view (branch record SIF-96: deleting 20 rows took 20 ticks). A row that a fold
+  // or Find hides keeps its tick.
+  const tickRow = (key: string, on: boolean, span: boolean) => {
+    const keys = rowsInView.map(i => rows[i][keyField]), from = span && lastTicked.current !== null ? keys.indexOf(lastTicked.current) : -1, to = keys.indexOf(key);
+    const range = from >= 0 && to >= 0 ? keys.slice(Math.min(from, to), Math.max(from, to) + 1) : [key];
+    lastTicked.current = key;
+    setSelected(s => ({ ...s, ...Object.fromEntries(range.map(k => [k, on])) }));
+  };
+  const tickedInView = rowsInView.filter(i => selected[rows[i][keyField]]).length;
+  const tickAll = (on: boolean) => { lastTicked.current = null; setSelected(s => ({ ...s, ...Object.fromEntries(rowsInView.map(i => [rows[i][keyField], on])) })); };
+  // The focus on the render after Add or Delete selected (branch record SIF-96): into the new row's first box that takes typing -
+  // its ID, or a Maestro output's Output name, which its ID follows - with the text chosen; after a Delete, which disabled the
+  // button pressed and let the focus fall to the page, to the tick box of the row now at that place, or to Add when no row is
+  // left in view.
+  useEffect(() => {
+    const next = focusNext.current;
+    focusNext.current = null;
+    if (!next || !table.current) return;
+    if ('key' in next) {
+      const index = rows.findIndex(r => r[keyField] === next.key), idColumn = columns.find(c => c.name === keyField);
+      if (index < 0) return;
+      const tr = table.current.querySelector(`tbody > tr[data-index="${index}"]`);
+      const box = tr?.querySelector<HTMLInputElement>(`td[data-field="${idColumn && fixedOf(rows[index], idColumn) ? 'source_name' : keyField}"] input:not(:disabled)`)
+        ?? tr?.querySelector<HTMLInputElement>(`td[data-field="${keyField}"] input`);
+      if (box) { box.scrollIntoView({ block: 'nearest', inline: 'nearest' }); box.focus(); box.select(); }
+      return;
+    }
+    const shown = [...table.current.querySelectorAll<HTMLElement>('tbody > tr:not([hidden])')];
+    const box = (shown.find(tr => Number(tr.dataset.index) >= next.index) ?? shown[shown.length - 1])?.querySelector<HTMLInputElement>('td.sel input');
+    if (box) { box.scrollIntoView({ block: 'nearest' }); box.focus(); } else addButton.current?.focus();
+  });
 
   // An issue's Where pressed in the header's list (branch record SIF-95): its tab opens, as a tab press opens it, and its row
   // comes into view with the issue's field chosen, which fills the formula bar. A Find text that hides the row is cleared, a
@@ -628,8 +689,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             {circuitShown ? 'Hide circuit' : 'Show circuit'}</button>
           <span className="task-tools" ref={taskTools} /><span className="task-save-slot" ref={taskSlot} /></span></div>
       <div className="toolbar">
-        <button onClick={add} title="Add: A new row at the end, with a free ID."><Icon name="add" label="Add" /></button>
-        <button disabled={!selection.length} onClick={remove} title="Delete selected: The rows whose box is ticked. Undo takes them back."><Icon name="delete" label="Delete selected" /></button>
+        <button ref={addButton} onClick={add} title="Add: A new row at the end, with a free ID, chosen in view so its name can be typed at once."><Icon name="add" label="Add" /></button>
+        <button disabled={!selection.length} onClick={remove} title={'Delete selected: The rows whose box is ticked. Undo takes them back. The line under the formula bar names them, '
+          + 'and the rows tied to them or the Specs using them.'}><Icon name="delete" label="Delete selected" /></button>
         <button disabled={!canUndo} onClick={undo} title="Undo: The last change to the configuration, from any panel - rows, run and output settings, an applied proposal."><Icon name="undo" label="Undo" /></button>
         <button disabled={!canRedo} onClick={redo} title="Redo: The change Undo took back."><Icon name="redo" label="Redo" /></button>
         <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)} title="Export JSON: The whole configuration - the three tables, the circuit, run and output settings, research labels - as one JSON file, downloaded."><Icon name="export" label="Export JSON" /></button>
@@ -703,7 +765,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         onFocusCapture={e => {      // a cell entered while the table has room for under about four rows (record 7.372)
           foldIfCramped(e.currentTarget); }}>
         <table className="grid editor" ref={table}>
-          <thead><tr><th className="sel"></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance ? `${c.name}: ${c.guidance}` : c.name} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
+          <thead><tr><th className="sel"><input type="checkbox" aria-label="Tick every row in view" disabled={!rowsInView.length}
+            checked={tickedInView > 0 && tickedInView === rowsInView.length} onChange={e => tickAll(e.target.checked)}
+            ref={box => { if (box) box.indeterminate = tickedInView > 0 && tickedInView < rowsInView.length; }}
+            title={'Tick every row in view, or untick them: a row that a fold or Find rows hides keeps its tick. '
+              + "Shift+click a row's box to tick or untick every row in view from the box clicked last."} /></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance ? `${c.name}: ${c.guidance}` : c.name} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody onKeyDown={onTableKey} onPaste={onTablePaste}>{rows.map((row, index) => {
             const found = rowIssues(index);
             const point = tab === 'parameters' ? { onMouseEnter: () => pointAt(devicesOf(row)), onMouseLeave: () => pointAt([]),
@@ -716,7 +782,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             return <tr key={index} data-index={index} hidden={!inView(row, index)} {...point}
               className={[found.some((i: Json) => i.level === 'error' || i.level === 'blocker') ? 'has-error' : '', leader ? 'tied' : '',
                 isNew(row) ? 'unsaved-new' : change ? 'unsaved-changed' : ''].filter(Boolean).join(' ') || undefined}>
-              <td className="sel" title={note ?? undefined}><input type="checkbox" checked={!!selected[row[keyField]]} onChange={e => setSelected(s => ({ ...s, [row[keyField]]: e.target.checked }))} />
+              <td className="sel" title={note ?? undefined}><input type="checkbox" checked={!!selected[row[keyField]]}
+                onMouseDown={e => { if (e.shiftKey) e.preventDefault(); /* a Shift+click chooses no page text */ }}
+                onChange={e => tickRow(row[keyField], e.target.checked, (e.nativeEvent as MouseEvent).shiftKey === true)} />
                 {tied > 0 ? <button className={`tie-toggle${tiedNotSaved ? ' unsaved' : ''}`} aria-expanded={open} onClick={() => setOpenTies(o => ({ ...o, [row[keyField]]: !open }))}
                   title={`${tied} tied row${tied === 1 ? '' : 's'} follow${tied === 1 ? 's' : ''} this one: ${open ? 'fold' : 'show'} ${tied === 1 ? 'it' : 'them'}.`
                     + (tiedNotSaved ? ` ${tiedNotSaved} of them ${tiedNotSaved === 1 ? 'is' : 'are'} not saved in the task.` : '')}>{open ? '▾' : '▸'}{tied}</button>

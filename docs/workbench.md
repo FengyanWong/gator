@@ -416,6 +416,17 @@ no splitter.
 is long; hovering shows the whole value and a click copies it. A time keeps its full width, no word is cut in two, and
 a JSON value has a column of bounded width of its own.
 
+**Data tables and Output files follow a live run** (branch record SIF-99). Both were read once, when they opened, and
+went stale without a word while Logs and Training followed the run. Now Data tables reads its table again each time the
+run writes its rows to disk (a flush, every 64 evaluations by default), and Output files reads the run folder again at
+each new save point and once more when the worker ends; a run at rest is read once, as before, and nothing is read on a
+timer. Both count lines end with when they were read ("Read at 14:03:22."), and Refresh shows the hourglass ("Reading...")
+while a read is on its way; the rows on screen stay until the new ones come. Data tables has two lists beside the table
+list: **25 / 100 / 500 rows** and **newest first / oldest first** - the oldest are the table's first rows, in the order
+they were written, so an early evaluation no longer needs the CSV; the defaults are the newest 25, as before. Output files
+has a filter box (every word typed must stand in the file's path, in any case; the count then says "4 of 508 files shown,
+320 MiB in all.") and its column titles sort, as the Runs window's do: File (A to Z at first), Size and Modified.
+
 **A copy says how it went** (branch record SIF-94). Run status's Run folder and best design variables (SIF-98), Output settings' **Copy path** (the word just
 before it) and its Current run paths, and the folders of the RL model window say "copied" where they were clicked, for
 1.5 s, or "could not copy" when the browser refused the clipboard (its tooltip: select the text and copy it with Ctrl+C).

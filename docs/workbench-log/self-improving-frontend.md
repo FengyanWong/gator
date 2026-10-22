@@ -2872,3 +2872,45 @@ copy". The new checks look for an element and a row that the code before the cha
 the value written inline it passes, and so do `run_list_check` and `export_check` again. Also run, unchanged:
 `calibration_check` 38, `run_control_live_check` 23, `dom_identity_check` 56, `save_now_check` 29, `looks_check` 75,
 `task_list_check` 89 (imports `format.ts` into node), `room_check` 30 (11 scripts, one lane). No flakes.
+
+### SIF-99 Data tables and Output files follow a live run, say when they were read, and find rows and files (2026-10-22; from the usability audit)
+
+**Found.** Data tables and Output files read the run once, when the tab opened. Logs, Training and Run status followed
+the run, but these two stayed at that moment during a live run, and their count lines never said when they were read
+(J3-9, J4-10). Refresh kept the old answer until the new one came and showed nothing meanwhile, so a press that found
+nothing new looked the same as a press that did nothing. Data tables always asked for the newest 25 rows, although the
+route reads up to 500 and from either end. Evaluation #120 of 800 meant Export detailed CSV and a spreadsheet (J4-9). A
+run's ~500 output files stood in path order only, with no filter and no sort, in a panel six rows tall (J4-13).
+
+**Changed.** `frontend/src/api.ts`: `api.table(..., tail = true)` sends the route's `tail`. `frontend/src/panels/RunTabs.tsx`:
+`useFollow` reads a tab again when the run's mark moves on for the same run, or when its worker ends. It does not
+re-read on a timer. A run at rest is read once, as before. While the status is not read, nothing counts as a change.
+Data tables' mark is the store's flushed sequence (record 7.280: rows reach the disk every 64 evaluations), so it reads
+again only when there are new rows. Output files' mark is the last save point: each read walks the run's files on the
+9p-mounted D: drive. `useReadAt` keeps the time an answer came, and both count lines end with "Read at 14:03:22.", after
+the sentence the checks pin. Both Refresh buttons show the hourglass and "Reading..." while a read is on its way, and the
+rows on screen stay until the new answer arrives. Data tables has two lists after the table list: "25 / 100 / 500 rows"
+and "newest first / oldest first". Oldest first shows the table's first rows in the order they were written, not
+reversed. The hint reads "the newest|oldest N shown, newest|oldest first"; with the defaults it reads as before. Output
+files has a filter box on its tool line (`input.files-filter`): every typed word must stand in the path, in any case,
+through `useTableView`'s `arrange` as in the Runs window. The count then reads "4 of 7 files shown, 8.2 MiB in all.", and
+the filter clears when the run changes. Its column titles sort by path, size and modified time ("File ▲" at first, as the
+backend lists the files), with the Runs window's marks and `aria-sort`. `frontend/src/panels/BottomPanel.tsx` passes
+Output files whether the worker lives and its last save point. Both change rarely, so the memoised tab is not redrawn at
+each status update (record 7.279). `frontend/src/roadster.css`: the two lists at their own width, the filter box 260 px,
+the hand cursor on the sortable titles. Reads only: nothing here starts, continues or stops a run, saves a task or writes
+to Virtuoso. `docs/workbench.md` (a new paragraph after "One line per row in Data tables") and
+`docs/functionality-reference.md` (Data tables and Output files rows) describe it.
+
+**Checked.** `tsc` clean. `files_tab_check` 42 (24 before). The count line says "Read at hh:mm:ss.". The list opens sorted
+by File, A to Z, marked "File ▲". A press on Size sorts it smallest first, a second press reverses it, and File sorts it
+back. "design" keeps the four design/ files ("4 of 7 files shown, 8.2 MiB in all."), "JOURNAL jsonl" keeps the two
+journal files, and an empty box lists all seven again. The page is then reopened on the same run, now live. Status
+updates with nothing new read neither tab again. A new save point reads the folder once. Data tables asks for limit 25,
+tail true and lists the rows newest on top. A flush reads the table again. While that read is held, Refresh reads
+"Reading..." with the hourglass and the rows stay; then comes the new count. "100 rows" asks for 100, "oldest first"
+sends tail false and lists 1, 2, 3, and both lists sit on the table list's line. Back in Output files, the worker's end
+reads the folder once more, then nothing. `export_check` 35 (33 before), on a real MOCK run: the pinned "12 rows, newest
+first." is followed by "Read at hh:mm:ss.". "oldest first" lists commit_seq 1 to 12 in order and says so. Also run,
+unchanged: `looks_check` 75 (Refresh is still the first button after the table list), `room_check` 30,
+`run_control_live_check` 23, `training_tab_check` 103 (6 scripts, one lane, all passed the first time). No flakes.

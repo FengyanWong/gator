@@ -115,7 +115,10 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
           ask={askContinue && askContinue.serial !== askedContinue.current ? askContinue : null} onAsked={serial => { askedContinue.current = serial; }} />}
         {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
         {tab === 'data' && <DataTab runDir={runDir} status={status} />}
-        {tab === 'files' && <FilesTab runDir={runDir} />}
+        {/* whether the run's worker lives and its last save point: Output files reads a live run again at each save point
+            (branch record SIF-99); null while the shown run's status is not read */}
+        {tab === 'files' && <FilesTab runDir={runDir} alive={status?.run_dir === runDir ? !!status.worker_alive : null}
+          savePoint={status?.run_dir === runDir ? status.last_checkpoint_utc ?? '' : null} />}
         {/* Stays mounted: its recorded numbers and chosen charts survive a look at another tab; hidden - another
             tab, or the panel folded to its tab line - it reads and draws nothing (record 7.193). */}
         <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} runs={runs} />

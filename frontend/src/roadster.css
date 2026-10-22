@@ -300,6 +300,12 @@ table.grid.small.data-table :is(td, th).num-cell { text-align: right; font-varia
 /* SIF-33: Output files - the sizes right-aligned in figures of one width, as Data tables' numbers (SIF-32). */
 table.grid.small.files-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+/* SIF-99: Data tables' rows and order lists at their own width beside the table list; Output files' filter box wide enough
+   for a folder's name and a file's, and its column titles sort, with the hand, as the Runs window's do. */
+.row > select:is(.table-limit, .table-order) { width: auto; flex: none; }
+.row > input.files-filter { width: 260px; flex: none; }
+table.grid.small.files-table th.sortable { cursor: pointer; user-select: none; }
+
 /* SIF-34: a numeric cell is right-aligned, as td.numeric always meant (styles.css) - "table.grid td { text-align: left }"
    outranked it in every grid table: Runs (seed, evaluations), Tasks (revision, sizes), saved models, model facts. */
 table.grid td.numeric, table.grid th.numeric { text-align: right; }   /* and the title over such a column */

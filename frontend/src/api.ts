@@ -139,7 +139,8 @@ export const api = {
   // A run's own configuration, as it started (its effective_config.json): New run like this copies its run settings (record 7.267).
   runConfig: (run_dir: string) => call<WorkbenchConfig>('GET', '/api/runs/download' + q({ run_dir, path: 'effective_config.json' })),
   files: (run_dir: string, signal?: AbortSignal) => call('GET', '/api/runs/files' + q({ run_dir }), undefined, signal),
-  table: (run_dir: string, table: string, limit = 25, signal?: AbortSignal) => call('GET', '/api/runs/table' + q({ run_dir, table, limit }), undefined, signal),
+  // `tail`: the table's newest `limit` rows, or (false) its first ones - Data tables' order choice (branch record SIF-99).
+  table: (run_dir: string, table: string, limit = 25, signal?: AbortSignal, tail = true) => call('GET', '/api/runs/table' + q({ run_dir, table, limit, tail }), undefined, signal),
   logs: (run_dir: string, kind: string, signal?: AbortSignal) => call('GET', '/api/runs/logs' + q({ run_dir, kind, limit: 200 }), undefined, signal),
   // The Training tab (record 7.193): the run's recorded training numbers from flush record `flushes` on, plus the unpublished tail.
   training: (run_dir: string, flushes: number, signal?: AbortSignal, tail_cursor?: string | null) => call('GET', '/api/runs/training' + q({ run_dir, flushes, tail_cursor }), undefined, signal),

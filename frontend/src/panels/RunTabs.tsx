@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
 import { quantity, si, variables } from '../units';
-import { bytes, CONNECTION_STATE, durationWhole, num, plural, runName, short, sig, stamp, stopWords, timeLine, TIME_LINE_HELP } from '../format';
+import { bytes, clock, CONNECTION_STATE, durationWhole, num, plural, runName, short, sig, stamp, stopWords, timeLine, TIME_LINE_HELP } from '../format';
 import { cardLive, ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
@@ -12,6 +12,7 @@ import { LaunchRefusal } from './LaunchRefusal';
 import { KeyTile } from './fields';
 import { useCopied } from './copied';
 import { REWARD_NAME, REWARD_NAMES, runMode } from './rlModelText';
+import { useTableView } from './TableView';
 
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
@@ -250,11 +251,42 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   </div>);
 }
 
-/** `status`: the shown run's status as the page already polls it (App.tsx) - for the steering line only. This tab used to
- *  poll the same file again every 2 s, finished runs too. */
+/** A tab that reads the shown run's files follows the run (branch record SIF-99): it reads again when `mark` - what the run
+ *  has written so far - moves on, or when its worker ends. Data tables and Output files were read once, when they opened,
+ *  and went stale unsaid while Logs and Training followed the run. Not on a timer: a run at rest is still read once, and a
+ *  live one only when there is something new to read. `mark` and `alive` are null while the run's status is not read; that
+ *  is no change. */
+function useFollow(runDir: string | null, mark: string | number | null, alive: boolean | null, refresh: () => void) {
+  const known = useRef({ runDir, mark, alive });
+  useEffect(() => {
+    const was = known.current, same = was.runDir === runDir;
+    known.current = { runDir, mark: mark ?? (same ? was.mark : null), alive: alive ?? (same ? was.alive : null) };
+    if (same && ((mark != null && was.mark != null && mark !== was.mark) || (alive === false && was.alive === true))) refresh();
+  }, [runDir, mark, alive]);
+}
+/** This computer's time of day when the tab's answer came (branch record SIF-99): said on its count line, so a read - pressed
+ *  or made by the run's progress - shows, and an answer that did not change says how old it is. */
+function useReadAt(value: unknown) {
+  const [at, setAt] = useState<string | null>(null);
+  useEffect(() => { if (value) setAt(clock()); }, [value]);
+  return at;
+}
+
+/** `status`: the shown run's status as the page already polls it (App.tsx) - for the steering line, and since branch record
+ *  SIF-99 for when to read the table again. This tab used to poll the same file again every 2 s, finished runs too. */
 export function DataTab({ runDir, status }: { runDir: string | null; status: Json }) {
   const [table, setTable] = useState('evaluations');
-  const { value: data, error, refresh } = useRequest<Json>(signal => api.table(runDir!, table, 25, signal), [runDir, table], { enabled: !!runDir });
+  // How many rows, from which end (branch record SIF-99): always the newest 25, so an earlier evaluation of a run needed the
+  // whole table exported and opened elsewhere. The route reads up to 500, from either end.
+  const [limit, setLimit] = useState(25);
+  const [newest, setNewest] = useState(true);
+  const { value: data, error, refresh, loading } = useRequest<Json>(signal => api.table(runDir!, table, limit, signal, newest), [runDir, table, limit, newest], { enabled: !!runDir });
+  // Read again when the run has published more rows: its tables reach the disk at flushes (record 7.280, every 64
+  // evaluations), so the store's flushed sequence moving on is the moment there is something new (0: none flushed yet).
+  const shown = status?.run_dir === runDir ? status : null;
+  useFollow(runDir, shown ? shown.persistence?.flushed_seq ?? 0 : null, shown ? !!shown.worker_alive : null, refresh);
+  const readAt = useReadAt(data);
+  const end = newest ? 'newest' : 'oldest';
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   useEffect(() => setNote(null), [runDir, table]);
@@ -273,16 +305,24 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
   return (<div>
     <SteeringCheck value={status?.steering} />
     <div className="row"><select className="tab-choice" value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
-      <button onClick={refresh} title="Refresh: Read this table again."><Icon name="refresh" label="Refresh" /></button>
+      <select className="table-limit" aria-label="Rows shown" value={limit} onChange={e => setLimit(Number(e.target.value))}
+        title="Rows shown: How many of the table's rows are read and listed here. Export detailed CSV saves every row.">{[25, 100, 500].map(n => <option key={n} value={n}>{n} rows</option>)}</select>
+      <select className="table-order" aria-label="Order" value={end} onChange={e => setNewest(e.target.value === 'newest')}
+        title="Order: Newest first - the table's newest rows, the newest on top. Oldest first - its first rows, in the order they were written (an early evaluation of the run).">
+        <option value="newest">newest first</option><option value="oldest">oldest first</option></select>
+      {/* the hourglass while a read is on its way (branch record SIF-99: a press that found nothing new looked like one that did nothing) */}
+      <button onClick={refresh} title="Refresh: Read this table again. While the run works it is read again by itself each time the run writes its rows to disk.">
+        <Icon name={loading ? 'wait' : 'refresh'} label={loading ? 'Reading...' : 'Refresh'} /></button>
       <button disabled={!!busy} onClick={exportCsv} title="Export detailed CSV: The whole table, every row and not only the ones shown here. Written to the run folder (exports/) and downloaded."><Icon name={busy === 'csv' ? 'wait' : 'csv'} label={busy === 'csv' ? 'Exporting...' : 'Export detailed CSV'} /></button>
       <button disabled={!!busy} onClick={exportResearch} title="Export research CSVs: The summary tables over every run of this experiment: run summary, success per budget, paired runs, transfer summary, cumulative cost. Written to the experiment's aggregates folder and downloaded as one zip."><Icon name={busy === 'research' ? 'wait' : 'zip'} label={busy === 'research' ? 'Exporting...' : 'Export research CSVs'} /></button>
       {/* the store's commit in the tooltip, a row as one (branch record SIF-54: "1 rows (snapshot at commit 3)"); the newest
           row on top, as Logs lists its lines (branch record SIF-76: the backend sends the tail oldest first, and during a run
-          each new row landed below the fold of a panel six rows tall) */}
+          each new row landed below the fold of a panel six rows tall) - or the first rows in their order; then when it was
+          read (branch record SIF-99) */}
       <span className="hint" title={data ? `Snapshot at commit ${data.cutoff_commit_seq}` : undefined}>{data ? `${plural(data.total_rows, 'row')}${data.rows.length < data.total_rows
-        ? `; the newest ${data.rows.length} shown` : ''}${data.rows.length > 1 ? ', newest first' : ''}.` : ''} {error ?? note}</span></div>
+        ? `; the ${end} ${data.rows.length} shown` : ''}${data.rows.length > 1 ? `, ${end} first` : ''}.${readAt ? ` Read at ${readAt}.` : ''}` : ''} {error ?? note}</span></div>
     {data && <div className="scroll"><table className="grid small data-table"><thead><tr>{data.columns.map((c: string) => <th key={c} className={numeric.has(c) ? 'num-cell' : undefined}>{c}</th>)}</tr></thead>
-      <tbody>{[...data.rows].reverse().map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
+      <tbody>{(newest ? [...data.rows].reverse() : data.rows as Json[]).map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
         // One line per row (record 7.158): an id ends in "..." - the whole value on hover, a click copies it - a time keeps
         // its full width, and no word is cut in two; a long hash used to wrap into a column of letters as tall as a paragraph.
         // A time in this computer's time, as Logs and Output files write it, its UTC value on hover (branch record SIF-76: it
@@ -299,12 +339,31 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
   </div>);
 }
 
-function FilesTabBody({ runDir }: { runDir: string | null }) {
-  const { value: files, error, refresh } = useRequest<Json>(signal => api.files(runDir!, signal), [runDir], { enabled: !!runDir });
+/** Output files' columns, each sorted by a press on its title as the Runs window's are (branch record SIF-99: a run's ~500
+ *  files stood in folder order only, in a panel six rows tall). */
+const FILE_COLUMNS: { key: string; title: string; help: string; numeric?: boolean; value: (f: Json) => string | number | null }[] = [
+  { key: 'path', title: 'File', help: 'File: its path in the run folder.', value: f => f.path },
+  { key: 'bytes', title: 'Size', help: 'Size: what the file holds now.', numeric: true, value: f => f.bytes },
+  { key: 'modified', title: 'Modified', help: "Modified: when the file was last written, in this computer's time.", value: f => { const t = Date.parse(f.modified_utc); return Number.isNaN(t) ? null : t; } }];
+
+/** `alive` and `savePoint`: whether the run's worker lives and its last save point ('' for none yet), null while its status
+ *  is not read. */
+function FilesTabBody({ runDir, alive = null, savePoint = null }: { runDir: string | null; alive?: boolean | null; savePoint?: string | null }) {
+  const { value: files, error, refresh, loading } = useRequest<Json>(signal => api.files(runDir!, signal), [runDir], { enabled: !!runDir });
+  // A live run's folder is read again at each new save point, and once more when its worker ends (branch record SIF-99);
+  // a run at rest is read once, as before: each read walks its ~500 files on the 9p-mounted D: drive.
+  useFollow(runDir, savePoint, alive, refresh);
+  const readAt = useReadAt(files);
+  const view = useTableView('path', false);                         // the backend lists them by path
   const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);          // the file whose download is on its way
-  useEffect(() => setNote(null), [runDir]);
+  useEffect(() => { setNote(null); view.setFilter(''); }, [runDir]);
   if (!runDir) return <p className="hint">No run selected.</p>;
+  const column = FILE_COLUMNS.find(c => c.key === view.sort.key) ?? FILE_COLUMNS[0];
+  const shown: Json[] = files ? view.arrange(files.files as Json[], () => true, f => f.path.toLowerCase(), column.value) : [];
+  // The count says how many the filter leaves (branch record SIF-99), then when the folder was read.
+  const count = !files ? '' : `${view.filter.trim() ? `${shown.length} of ${plural(files.files.length, 'file')} shown, ${bytes(files.total_bytes)} in all`
+    : `${plural(files.files.length, 'file')}, ${bytes(files.total_bytes)}`}.${readAt ? ` Read at ${readAt}.` : ''}`;
   const pack = () => { setNote('Packing...'); downloadPackage(runDir).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.message)); };
   // A copy's word leaves "Packing..." standing (branch record SIF-94 review): that note is the package button's busy state,
   // and a copy said over it took the hourglass away and let a second pack start while the first was still zipping.
@@ -313,14 +372,20 @@ function FilesTabBody({ runDir }: { runDir: string | null }) {
   // like the package and the logs: the browser's own download, named by the backend, and said in the hint.
   const save = (file: string) => { setSaving(file); download(api.downloadUrl(runDir, file), file.split('/').pop() ?? file)
     .then(name => setNote(`Downloaded ${name}.`), e => setNote(e.message)).finally(() => setSaving(null)); };
-  return (<div><div className="row"><button onClick={refresh} title="Refresh: Read the run folder again."><Icon name="refresh" label="Refresh" /></button>
+  return (<div><div className="row"><button onClick={refresh} title="Refresh: Read the run folder again. While the run works it is read again by itself at each new save point.">
+    <Icon name={loading ? 'wait' : 'refresh'} label={loading ? 'Reading...' : 'Refresh'} /></button>
     <button disabled={note === 'Packing...'} onClick={pack} title="Download data-only package (.zip): Every data file of this run in one zip, named after the run; no plots, nothing drawn."><Icon name={note === 'Packing...' ? 'wait' : 'download'} label="Download data-only package (.zip)" /></button>
     {/* The count and the notes alone on the tool line (branch record SIF-48): it ended, on every visit, with a sentence about an
         "Open local folder" button that does not exist; why there is none now sits in Copy run path's tooltip. Copy run path says
         on it how it went, the path itself when the browser refused the clipboard (branch record SIF-94: it copied unsaid). */}
-    <button onClick={() => copy(runDir).then(() => copied('Copied the run path.'), () => copied(`Could not copy: the browser refused the clipboard. The run path: ${runDir}`))} title="Copy run path: The run folder's path, as text, to the clipboard. A browser cannot open a folder itself."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${plural(files.files.length, 'file')}, ${bytes(files.total_bytes)}.`} {error ?? note}</span></div>
-    <div className="scroll"><table className="grid small files-table"><thead><tr><th>File</th><th className="num-cell">Size</th><th>Modified</th><th></th></tr></thead>
-      <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td className="num-cell">{bytes(f.bytes)}</td><td title={`${f.modified_utc} (UTC)`}>{stamp(f.modified_utc) ?? f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
+    <button onClick={() => copy(runDir).then(() => copied('Copied the run path.'), () => copied(`Could not copy: the browser refused the clipboard. The run path: ${runDir}`))} title="Copy run path: The run folder's path, as text, to the clipboard. A browser cannot open a folder itself."><Icon name="copy" label="Copy run path" /></button>
+    <input className="files-filter" aria-label="Filter files" placeholder="Filter: a file or folder name ..." value={view.filter} onChange={e => view.setFilter(e.target.value)}
+      title="Filter files: Only the files whose path holds every word typed here." />
+    <span className="hint">{count} {error ?? note}</span></div>
+    <div className="scroll"><table className="grid small files-table"><thead><tr>{FILE_COLUMNS.map(c => <th key={c.key} className={c.numeric ? 'sortable num-cell' : 'sortable'}
+      title={`${c.help} Press to sort.`} aria-sort={view.sort.key === c.key ? (view.sort.down ? 'descending' : 'ascending') : undefined} onClick={() => view.sortBy(c.key)}>
+      {c.title}{view.sort.key === c.key && <span className="sort-mark">{view.sort.down ? ' ▼' : ' ▲'}</span>}</th>)}<th></th></tr></thead>
+      <tbody>{shown.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td className="num-cell">{bytes(f.bytes)}</td><td title={`${f.modified_utc} (UTC)`}>{stamp(f.modified_utc) ?? f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
         title={`Download ${f.path}: This file as it is now, to the browser's download folder.`}><Icon name={saving === f.path ? 'wait' : 'download'} label={`Download ${f.path}`} /></button></td></tr>)}</tbody></table></div></div>);
 }
 
@@ -370,7 +435,8 @@ function LogsTabBody({ runDir, alive }: { runDir: string | null; alive: boolean 
       <LogLine key={line.key} time={line.time} name={line.name} text={line.text} error={kind === 'errors'} />)}</div></div>);
 }
 
-/** Memoised (record 7.279): their props are the run and whether its worker lives, so a status update - every 1.5 s while
- *  a run works - no longer draws the 200 log lines or the run's ~450 files again; their own reads still do. */
+/** Memoised (record 7.279): their props are the run and whether its worker lives - and Output files' last save point, which
+ *  changes as rarely (branch record SIF-99) - so a status update - every 1.5 s while a run works - no longer draws the 200
+ *  log lines or the run's ~450 files again; their own reads still do. */
 export const LogsTab = memo(LogsTabBody);
 export const FilesTab = memo(FilesTabBody);

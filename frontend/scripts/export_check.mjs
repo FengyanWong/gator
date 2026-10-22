@@ -162,6 +162,16 @@ await runChecks(browser, async () => {
   check('... a time reads this computer\'s "YYYY-MM-DD hh:mm:ss", its UTC value on hover (SIF-76)', !!cells?.text && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(cells.text) && cells.text === cells.local
     && /^20\d\d-\d\d-\d\dT[\d:.]+(\+00:00|Z) \(UTC\)$/.test(cells.title), JSON.stringify(cells));
   check('... the newest row on top (SIF-76)', !!cells?.seqs && cells.seqs.length > 1 && cells.seqs.every((v, i) => i === 0 || v < cells.seqs[i - 1]), JSON.stringify(cells?.seqs));
+  // Branch record SIF-99, on the real backend: the count line says when the table was read; "oldest first" asks for the
+  // table's first rows (tail=false: it always showed the newest 25) and lists them in the order they were written.
+  check('... then when it was read: "Read at hh:mm:ss." (SIF-99)', new RegExp(`^${status.budget.charged} rows${shownRows}, newest first\\. Read at \\d\\d:\\d\\d:\\d\\d\\.`).test(await hint()), await hint());
+  const SEQS = `(t => { const seq = [...t.tHead.rows[0].cells].map(th => th.textContent).indexOf('commit_seq'); return [...t.tBodies[0].rows].map(r => Number(r.cells[seq].textContent)); })(document.querySelector('footer table.data-table'))`;
+  await page.setValue(`document.querySelector('footer select.table-order')`, 'oldest');
+  const oldest = new RegExp(`^${status.budget.charged} rows${shownRows.replace('newest', 'oldest')}, oldest first\\. Read at `);
+  check('"oldest first" lists the table\'s first rows, the oldest on top, and says so (SIF-99)', await until(`${oldest}.test${HINT(row)} && (s => s.length > 1 && s.every((v, i) => i === 0 || v > s[i - 1]))(${SEQS})`, 80),
+    `${await hint()} | ${JSON.stringify(await evaluate(`document.querySelector('footer table.data-table') && ${SEQS}`))}`);
+  await page.setValue(`document.querySelector('footer select.table-order')`, 'newest');
+  await until(`/, newest first\\. Read at /.test${HINT(row)}`, 80);
   await press('Export detailed CSV');
   check('"Export detailed CSV" says what was downloaded and where the copy is kept', await until(`/Downloaded evaluations__seq\\d+\\.csv\\. Also kept in the run folder: exports\\/evaluations__seq\\d+\\.csv/.test${HINT(row)}`, 100), await hint());
   const csvName = /Downloaded (evaluations__seq\d+\.csv)/.exec(await hint())?.[1] ?? 'missing';

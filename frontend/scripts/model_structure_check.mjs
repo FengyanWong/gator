@@ -133,6 +133,11 @@ await runChecks(browser, async () => {
   let rows = await layers();
   check('every layer of both networks is listed, plus a total row each', rows.length === 2 && rows.every((r, i) => r.length === full.parts[i].layers.length + 1), JSON.stringify(rows.map(r => r.length)));
   check('columns: #, section, layer, type, shape, parameters, share, what it does', (await evaluate(`[...${DIALOG}.querySelector('table.structure-layers').tHead.rows[0].cells].map(c => c.textContent).join('|')`)) === '#|Section|Layer|Type|Shape|Parameters|Share|What it does');
+  // Branch record SIF-86, review follow-up: the rule that lets the Details' tables' titles scroll with the saved models box
+  // also matched this table, and its titles scrolled away inside the dialog's own box.
+  const titles = await evaluate(`(() => { const w = ${NETWORK_DOCUMENT}.defaultView;
+    return [...new Set([...${DIALOG}.querySelectorAll('table.structure-layers th')].map(th => { const s = w.getComputedStyle(th); return s.position + ' ' + s.top; }))]; })()`);
+  check('the layer table\'s titles stay at the top of the dialog\'s scroll box (SIF-86 follow-up)', JSON.stringify(titles) === '["sticky 0px"]', JSON.stringify(titles));
   check('a row reads as number, section, path, type, shape, count, share, role', rows[0][0].cells.join('|') === `1|Inputs|encoder.device_values|Linear|32 -> 16|528|${(100 * 528 / full.parts[0].parameters).toFixed(1)} %|FIXTURE: device numbers into the hidden width.`, rows[0][0].cells.join('|'));
   const skip = rows[0].find(r => r.cells[2] === 'encoder.blocks.0.attention.lin_skip');
   check('the never-used layer is marked and says so first', skip.css === 'unused' && skip.cells[7].startsWith('Never used. ') && skip.cells[7].includes('never read by this network'), JSON.stringify(skip));

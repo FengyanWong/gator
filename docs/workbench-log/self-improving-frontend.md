@@ -2259,3 +2259,12 @@ the notice's link opens the window at the soft actor-critic warning (scrolled 55
 `module_fold_check` 30, `network_panel_check` 62, `looks_check` 74, `encoder_models_check` 24, `graph_view_check` 69,
 `model_structure_check` 30, `mode_suggestion_check` 20, `network_inputs_check` 9, `dom_identity_check` 56, `pdk_check`
 40, `reliability_check` 20, `room_check` 28, `task_rows_check` 54, `typing_check` 50. No flakes.
+
+**Review follow-up.** The review of 82a439d found one slip, and it was real. The rule that makes the Details' own table
+titles static, `.rl-networks-window .saved-models .model-details table.grid th`, also matched the Network structure's
+"Full layer table". Its `<dialog>` is rendered inside `.model-details`, and the long `table.structure-layers` scrolls in the
+dialog's own box (`.structure-scroll`). Its column titles (#, Section, Layer, ... What it does) had stayed at that box's top
+(`table.grid th` is sticky) and now scrolled away; "Changed" above did not say so. The rule now leaves that table out
+(`table.grid:not(.structure-layers) th`); the small section tables were static already, and the graph dialog's tables too.
+`tsc` clean; `model_structure_check` 31, one new: the layer table's titles are `sticky`, `top: 0px`.
+`model_chooser_check` 95 (the Details' own titles still static) and `network_panel_check` 62. No flakes.

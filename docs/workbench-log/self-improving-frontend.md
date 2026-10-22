@@ -2099,3 +2099,34 @@ circuit shown the column is always narrower than 560 px. At 700 px and under the
 shown (`styles.css`, the `@media (max-width: 700px)` rule), the run column takes the page's width, and at 700 px its module
 body is about 637 px, so the cap does take effect there; that is wanted too. The sentence now names the two-column range
 (701-1100 px). The code was right and is not changed; no check was rerun for a wording fix.
+
+### SIF-83 Pause and Force abort say when a run cannot come back (2026-10-22; from the usability audit)
+
+**Found.** Two presses in the header ended a run for good without a word (audit findings J3-1 and J3-2). Pause on a run
+searched by Bayesian optimization (one taken over from the command line, or made by "New run like this" from one) asked
+nothing: Pause's question looked only at the run's checkpoint and replay snapshot settings, while the backend never
+continues a Bayesian run ("Bayesian optimization cannot be resumed and holds no trained RL model"). After the pause, Resume
+was greyed out and only its tooltip said why. Force abort, pressed while a pause waits for the simulation in flight, sends
+`cancel`, and the engine then ends the run as `cancelled` rather than `paused`. Neither Resume nor Continue... takes that
+state up, but the question spoke only of the evaluation in flight and the schematic. After an Abort it turns a `stopped`
+end, which Continue... can pick up, into a `cancelled` one, and the question did not say that either.
+
+**Changed.** `frontend/src/panels/RunControl.tsx` (SIF-83): Pause's check reads `run.optimizer` from the run's own
+`effective_config.json`, a file it already fetched. On a Bayesian run Pause asks first: "This run cannot be resumed after a
+pause: it is searched by Bayesian optimization, whose search state lives only in its running process." The two older reasons
+now carry their own "for it", and the question's frame is unchanged. Force abort's question names the phase it is pressed in.
+While a pause waits: "This replaces your Pause: the run ends as cancelled, and a cancelled run cannot be resumed or continued
+(a save point it has written can still start a new run in Fine-tune). To keep it resumable, wait for the pause." Its tooltip
+says the same in short. After an Abort: "The run ends as cancelled instead of stopped, so Continue... can no longer pick it
+up." The rest of the question is word for word as before. Nothing else changed. The same press and the same answer send the
+same command, and "no" sends nothing. Save now stays enabled on a Bayesian run: the backend refuses each press in its own
+clear words, the pattern `save_now_check` pins, and the page's status carries no optimizer to grey it out with.
+`docs/workbench.md` (Abort; Resume) says both.
+
+**Checked.** `tsc` clean. `run_control_check` 128 (122 before). New: while a pause waits, Force abort's tooltip says it
+replaces the Pause; pressed and answered "no", it asks "Force abort?" then "This replaces your Pause: ... cannot be resumed or
+continued ... To keep it resumable, wait for the pause.", and nothing beyond the pause is sent. After an Abort, its question
+says the run ends cancelled instead of stopped and names no Pause. Pause on a run whose configuration says `run.optimizer:
+"bayes"` asks first, and "no" sends nothing. The replay snapshot warning is now matched with its new "... switched off for
+it." tail. The fixture's pausing phase is one status poll longer, so the extra question fits in it. `save_now_check` 29.
+None flaky.

@@ -39,15 +39,18 @@ export const otherTask = (row: Json | undefined, taskKey: string | null, taskSho
   !row || (typeof row.task_key === 'string' ? row.task_key === taskKey : runTask(row) === taskShown) ? null : runTask(row);
 
 /** A pause is only worth the name if the run can come back. Checkpoints or replay snapshots may have been switched off
- *  for THIS run (its own saved configuration counts, not the page's); then a pause simply ends it, and the user is told
- *  before, not after. Any doubt (file unreadable) is no reason to refuse a pause. */
+ *  for THIS run (its own saved configuration counts, not the page's), or the run may be searched by Bayesian optimization,
+ *  which the backend never continues (branch record SIF-83: such a run paused without a word, and only Resume's tooltip
+ *  said why afterwards); then a pause simply ends it, and the user is told before, not after. Any doubt (file unreadable)
+ *  is no reason to refuse a pause. */
 async function cannotResume(dir: string): Promise<string | null> {
   try {
     const response = await fetch(api.downloadUrl(dir, 'effective_config.json'));
     const config = response.ok ? await response.json() : null;
+    if (config?.run?.optimizer === 'bayes') return 'it is searched by Bayesian optimization, whose search state lives only in its running process';
     const output = config?.output;
-    if (output?.save_checkpoints === false) return 'model checkpoints are switched off';
-    if (output?.save_replay_snapshots === false) return 'replay snapshots are switched off';
+    if (output?.save_checkpoints === false) return 'model checkpoints are switched off for it';
+    if (output?.save_replay_snapshots === false) return 'replay snapshots are switched off for it';
   } catch { /* ask nothing */ }
   return null;
 }
@@ -56,7 +59,7 @@ async function cannotResume(dir: string): Promise<string | null> {
  *  of these buttons went on 2026-09-29). */
 async function pauseConfirmed(dir: string): Promise<boolean> {
   const reason = await cannotResume(dir);
-  return !reason || window.confirm(`This run cannot be resumed after a pause: ${reason} for it.\n\nPause anyway? It is saved and simply ends here.`);
+  return !reason || window.confirm(`This run cannot be resumed after a pause: ${reason}.\n\nPause anyway? It is saved and simply ends here.`);
 }
 // A stopped calibration keeps its completed random designs and can still propose from them. `task`: the run's task when the
 // header's title names another (branch record SIF-72).
@@ -65,7 +68,16 @@ const abortConfirmed = (status: Json, task: string | null) => window.confirm(`Ab
   + (status?.calibration ? '\n\nCalibration proposes only from the random designs simulated so far '
     + '(at least 16 must give a reward).' : '')
   + '\n\nTo continue this run later, use Pause instead.');
-const forceAbortConfirmed = () => window.confirm('Force abort?\n\nThis does not wait for the simulation that is running. Its evaluation is recorded as cancelled and still counts against the '
+// A forced abort ends the run as cancelled, which no Resume or Continue... takes up (runState.ts CONTINUABLE), so the
+// question says what is given up beside what the user waits for (branch record SIF-83: pressed while a pause waited, it
+// turned a pause that could be resumed into an end with no way back, and the question did not say so).
+const FORCED_COST: Partial<Record<Phase, string>> = {
+  pausing: 'This replaces your Pause: the run ends as cancelled, and a cancelled run cannot be resumed or continued (a save point it has '
+    + 'written can still start a new run in Fine-tune). To keep it resumable, wait for the pause.\n\n',
+  aborting: 'The run ends as cancelled instead of stopped, so Continue... can no longer pick it up.\n\n',
+};
+const forceAbortConfirmed = (phase: Phase) => window.confirm('Force abort?\n\n' + (FORCED_COST[phase] ?? '')
+  + 'This does not wait for the simulation that is running. Its evaluation is recorded as cancelled and still counts against the '
   + 'budget. On a real circuit a Spectre job that has already started on the server is not stopped, and the schematic can be left with the sizes '
   + 'that were being tried instead of the original ones.\n\nUse this only when the run is stuck.');
 
@@ -146,7 +158,7 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
       if (!abortConfirmed(status, task)) return;
       command('stop', 'abort', 'Aborting: the simulation in flight finishes first, then everything is saved and the run ends.');
     } else {
-      if (!forceAbortConfirmed()) return;
+      if (!forceAbortConfirmed(phase)) return;
       control.setForced(true);
       command('cancel', 'abort', 'Forced abort sent: the evaluation in flight is recorded as cancelled and stays charged.');
     }
@@ -196,6 +208,8 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
     <button className="run-abort" disabled={!(phase === 'running' || phase === 'paused' || (waiting && !forced))} onClick={abort}
       title={phase === 'paused' ? 'Let go: The header lets go of the paused run: nothing is sent and nothing is deleted, the run can still be continued '
           + 'from Runs, and the main button goes back to Start.'
+        : phase === 'pausing' ? 'Force abort: Do not wait for the simulation in flight. This replaces your Pause: the run ends as cancelled and '
+          + 'cannot be resumed. Only for a run that is stuck.'
         : waiting ? 'Force abort: Do not wait for the simulation in flight. Only for a run that is stuck.'
         : 'Abort: End the current run: the simulation in flight finishes, everything is saved, the run ends.'}>
       <Icon name={waiting ? 'force-stop' : phase === 'paused' ? 'close' : 'stop'} label={waiting ? 'Force abort' : phase === 'paused' ? 'Let go' : 'Abort'} /></button>

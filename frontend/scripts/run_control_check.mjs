@@ -16,6 +16,8 @@
 // request id, and after a reload during a start the page asks what became of it instead of sending it again; a refusal
 // stays beside its action; the backend's continuation check says why Continue cannot go on before the press, with its
 // alternative as a button; a run taken over, or a task's baseline, names the paused run the header lets go of.
+// Branch record SIF-83: Pause asks first on a run searched by Bayesian optimization (it cannot come back), and Force abort
+// says what it gives up: a waiting pause (no Resume or Continue... after it), or an abort's "stopped" end.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -28,8 +30,9 @@ const browser = await launchEdge('runcontrol');
 
 // ---- the simulated run (FIXTURE): one status "file" that the page polls, advanced by scripted steps ----------------
 const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed0__0001';
-// `active`: the working time the status gives (null until the run brief reads it, branch record SIF-78).
-const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, beat: 0, steps: [], output: {}, starts: 0, calibration: null, active: null };
+// `active`: the working time the status gives (null until the run brief reads it, branch record SIF-78). `output` and
+// `run`: the run's own effective_config.json, as Pause reads it (`run.optimizer`: branch record SIF-83).
+const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, beat: 0, steps: [], output: {}, run: {}, starts: 0, calibration: null, active: null };
 const listed = () => sim.state ? [{ run_dir: DIR, run_id: 'fixture-run', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: sim.mock, seed: 0,
   created_utc: '2026-09-21T00:00:00+00:00', state: sim.state, experiment: 'fixture_experiment__0001', evaluations: null, first_feasible_eval_count: null, resumability: null }] : [];
 const statusOf = () => {
@@ -102,7 +105,7 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/continuation') return fulfil(requestId, 200, checkOf(url.searchParams.get('run_dir')));
     if (name === '/api/runs/request') { requestLookups.push(url.searchParams.get('request_id')); return fulfil(requestId, 200, requestAnswer ?? { state: 'unknown' }); }
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
-    if (name === '/api/runs/download') return fulfil(requestId, 200, { output: sim.output });
+    if (name === '/api/runs/download') return fulfil(requestId, 200, { output: sim.output, run: sim.run });
     if (['/api/runs/start', '/api/runs/continue', '/api/runs/command'].includes(name)) {
       log.push({ name, body });
       if (refuseNext && refuseNext.name === name) { const refusal = refuseNext; refuseNext = null; return fulfil(requestId, 409, { detail: refusal.detail }); }
@@ -251,7 +254,7 @@ await runChecks(browser, async () => {
   check('... and a single click closes it', await until(`!document.querySelector('.banner')`, 20));
 
   // ---- 3. Pause -> "Pausing..." -> "Resume" -----------------------------------------------------------------------------
-  sim.steps = [{}, {}, { state: 'pausing', stop_reason: 'user_pause' }, {}, { state: 'paused' }, {}, { alive: false }];   // the run answers late, then finishes its files
+  sim.steps = [{}, {}, { state: 'pausing', stop_reason: 'user_pause' }, {}, {}, { state: 'paused' }, {}, { alive: false }];   // the run answers late, then finishes its files
   const before = dialogs.length;
   await press(MAIN);
   check('Pause reads "Pausing..." at once, before the run has answered', await mainReads('Pausing...', 15) && (await look()).mainOff === true);
@@ -259,6 +262,15 @@ await runChecks(browser, async () => {
   v = await look();
   check('while the simulation in flight finishes, Abort reads "Force abort"', v.abort === 'Force abort' && v.abortOff === false && /pausing/.test(v.chip ?? ''), JSON.stringify(v));
   await shot('run-3-pausing.png');
+  // Branch record SIF-83: while a pause waits, Force abort says that it gives the pause up for an end with no way back.
+  const forceTitle = await evaluate(`${ABORT}.title`);
+  check('... its tooltip says it replaces the Pause and the run cannot be resumed (SIF-83)', /This replaces your Pause: the run ends as cancelled and cannot be resumed/.test(forceTitle), forceTitle);
+  answers.push(false);
+  await press(ABORT); await sleep(400);
+  check('... pressed, it asks first and says what it costs: the pause is replaced, the run cannot be resumed or continued, wait to keep it (SIF-83)',
+    /^Force abort\?\n\nThis replaces your Pause: the run ends as cancelled, and a cancelled run cannot be resumed or continued/.test(lastDialog().message ?? '')
+    && /To keep it resumable, wait for the pause\./.test(lastDialog().message ?? '') && /stuck/.test(lastDialog().message ?? ''), lastDialog().message);
+  check('... and "no" sends nothing more than the pause', commands().join() === 'pause' && (await look()).abort === 'Force abort', commands().join());
   check('after the pause the button reads "Resume"', await mainReads('Resume', 150) && (await look()).mainOff === false);
   v = await look();
   check('on the paused run the second button reads "Let go" (7.261), the header says where the run stands (no "paused" beside the strip\'s Paused, SIF-72)',
@@ -396,6 +408,8 @@ await runChecks(browser, async () => {
   answers.push(true);
   await press(ABORT); await sleep(400);
   check('Force abort asks again and says what it costs', /^Force abort\?/.test(lastDialog().message) && /still counts against the\s+budget/.test(lastDialog().message.replace(/\n/g, ' ')) && /stuck/.test(lastDialog().message), lastDialog().message);
+  check('... after an Abort it says the run ends as cancelled, not stopped, and Continue... cannot pick it up; no word of a Pause (SIF-83)',
+    /The run ends as cancelled instead of stopped, so Continue\.\.\. can no longer pick it up/.test(lastDialog().message) && !/Pause/.test(lastDialog().message), lastDialog().message);
   check('it sends ONE forced cancel and cannot be pressed twice', await waitFor(() => commands().length > 1) && commands().join() === 'stop,cancel' && (await look()).abortOff === true, commands().join());
   sim.steps = [{}, { state: 'cancelled', stop_reason: 'user_cancel' }, { alive: false }];
   check('when the run has ended the button reads "Start" again', await mainReads('Start', 150) && (await look()).mainOff === false);
@@ -422,9 +436,15 @@ await runChecks(browser, async () => {
   sim.steps = [{ state: 'running' }];
   sim.output = { save_checkpoints: true, save_replay_snapshots: false }; log.length = 0; answers.push(false);
   await press(MAIN); await sleep(600);
-  check('Pause warns when the run was started without replay snapshots', /cannot be resumed after a pause/.test(lastDialog().message ?? '') && /replay snapshots/.test(lastDialog().message ?? ''), lastDialog().message);
+  check('Pause warns when the run was started without replay snapshots', /cannot be resumed after a pause: replay snapshots are switched off for it\.\n/.test(lastDialog().message ?? ''), lastDialog().message);
   check('answering no sends nothing and the button reads "Pause" again', log.length === 0 && await mainReads('Pause', 20));
-  sim.output = {}; sim.steps = [{ state: 'pausing' }, { state: 'paused', alive: false }];
+  // Branch record SIF-83: a run searched by Bayesian optimization is never continued by the backend: Pause says so first.
+  sim.output = {}; sim.run = { optimizer: 'bayes' }; answers.push(false);
+  await press(MAIN); await sleep(600);
+  check('Pause warns when the run is searched by Bayesian optimization (SIF-83)',
+    /^This run cannot be resumed after a pause: it is searched by Bayesian optimization, whose search state lives only in its running process\.\n\nPause anyway\?/.test(lastDialog().message ?? ''), lastDialog().message);
+  check('... answering no sends nothing there either, the button reads "Pause" again', log.length === 0 && await mainReads('Pause', 20));
+  sim.run = {}; sim.steps = [{ state: 'pausing' }, { state: 'paused', alive: false }];
   await press(MAIN);
   check('(paused again)', await mainReads('Resume', 150));
   log.length = 0; answers.push(true);

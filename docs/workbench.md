@@ -119,7 +119,10 @@ started with." - branch record SIF-72). Run configuration's model line and this 
   everything and ends the run (`stopped`). Only while a pause or an abort is waiting for that simulation the button
   reads **Force abort**: it waits for nothing, the evaluation in flight is recorded as cancelled and stays charged,
   and on a real circuit a Spectre job already running on the server is not stopped and the schematic can be left
-  with the sizes that were being tried. It is for a run that is stuck. A candidate handed out just before a pause or
+  with the sizes that were being tried. It is for a run that is stuck. It ends the run as `cancelled`, which neither
+  Resume nor Continue... takes up, and its question says what that gives up (branch record SIF-83): pressed while a
+  pause waits, it replaces the pause ("To keep it resumable, wait for the pause", also in its tooltip); after an Abort,
+  the run ends cancelled instead of stopped. A candidate handed out just before a pause or
   an abort, and stopped by it before its first simulation, is recorded the same way: cancelled, charged, nothing
   simulated, not counted as a failure of the link.
 * **Let go** on a paused run deletes nothing and sends nothing: the header lets go of the run and returns to Start.
@@ -141,7 +144,8 @@ started with." - branch record SIF-72). Run configuration's model line and this 
   that gets no answer at all (the backend restarting, a failed read on the mounted drive) is asked again every 3 s for a
   minute instead of being taken for a run at rest, which used to show Start on a live run (review of 2026-10-07).
 * A real run asks for the budget again at Resume (what is left of it). A run that was started with checkpoints or
-  replay snapshots switched off cannot come back from a pause; Pause says so before it pauses.
+  replay snapshots switched off, or one searched by Bayesian optimization (its `run.optimizer`, branch record SIF-83),
+  cannot come back from a pause; Pause says so before it pauses.
 * The run commands are in the header only (status record 7.109, 2026-09-29, user decision): the Run status tab's
   copies - Save now, Pause and save, Stop and save, Force cancel - went, as they did what Save now, Pause, Abort and
   Force abort do there. The tab keeps **Continue...** (a paused, stopped or interrupted run, with a new total budget) and

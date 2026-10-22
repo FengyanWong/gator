@@ -3093,3 +3093,20 @@ view stays, with no second read. C's Details, open while C left the list, are cl
 check looks for what the code before did not do. Also run, unchanged: `network_panel_check` 72, `typing_check` 50,
 `graph_view_check` 69, `encoder_models_check` 24, `model_structure_check` 31, `mode_suggestion_check` 20 (7 scripts,
 one lane, all passed the first time). No flakes.
+
+**Review follow-up.** The review of d099dfd found one slip, real. A rename could leave the saved models not read again
+at all, although the comment said "once either way". The page's run list may already hold the new name: the run was
+renamed in another tab, or by a direct `POST /api/runs/model/rename`, and seen here only by the window's read, then renamed
+back here. The run list read after the rename is then the same as the one held, so `useRunList` keeps that array and
+`runsKey` does not change. The new name is in it, so `renamed` did not read either. The row kept the other name beside
+"Renamed to ..." and Rename stayed on. The predicate was the wrong question: the list carrying the new name does not
+mean `runsKey` changes. `renamed` now compares the key of the list it got (`runsKeyOf`, which `runsKey` now uses too) with
+the key last drawn (`shownKey`, a ref). An equal key means nothing will read the saved models, so it reads them. A
+different key means the run list's change will. This is exact also where the reviewer's "had the name before" test would
+read twice: another run of the list changed meanwhile. It is read from a ref, not the closure of the press, so a run list
+read between the press and the answer does not mislead it. `onRenamed` no longer needs the run or the name. Nothing here
+starts, continues or stops a run, saves a task or writes to Virtuoso; Rename, Use and their questions are as before.
+`tsc` clean. `model_chooser_check` 108 (107 before): C renamed elsewhere and shown by Refresh list only, then renamed back
+here, reads the run list and the saved models once, and the row carries its name again. Against the code before, it
+fails with "0 read(s), the run list 1". Also run, unchanged: `encoder_models_check` 24, `graph_view_check` 69,
+`model_structure_check` 31 (4 scripts, one lane, all passed the first time). No flakes.

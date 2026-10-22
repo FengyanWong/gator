@@ -181,6 +181,9 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, netF
   </div>);
 }
 
+/** What of the run list the saved models are read again by: a run that came, went, came to rest, or its model renamed. */
+const runsKeyOf = (runs: Json[]) => runs.map(r => `${r.run_dir}|${r.state}|${r.ended_utc ?? ''}|${r.model_label ?? ''}`).join('\n');
+
 /** `view`: what the table shows, kept while the window is closed (useSavedModelsView, branch record SIF-102). `refreshRuns`:
  *  the page's run list read again (App.tsx), after a rename. */
 export function SavedModels({ source, usable, runs, outputRoot, config, netFields, popup, view, refreshRuns, onUse, usingPoint = null, useError = null }: {
@@ -189,7 +192,9 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
   // Read again when a run of the list changed - came, went, came to rest, or its model was renamed - not at every read of
   // the run list (each read here walks every run's save points on the slow D: drive; record 7.275). A live run's new
   // save points show at Refresh list or once it rests. Refresh list reads every run folder anew (`fresh`, record 7.274).
-  const runsKey = useMemo(() => runs.map(r => `${r.run_dir}|${r.state}|${r.ended_utc ?? ''}|${r.model_label ?? ''}`).join('\n'), [runs]);
+  const runsKey = useMemo(() => runsKeyOf(runs), [runs]);
+  const shownKey = useRef(runsKey);                                     // the runsKey last drawn, for a rename's answer below
+  shownKey.current = runsKey;
   const freshNext = useRef(false);
   const { value: read, error, loading, refresh: load } = useRequest<{ root: string | null; models: Json[] }>(signal => {
     const fresh = freshNext.current, root = outputRoot ?? null;
@@ -233,9 +238,10 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
   const useNewest = (m: Json) => { const p = m.checkpoints?.find((x: Json) => x.is_latest) ?? m.checkpoints?.[m.checkpoints.length - 1]; if (p) onUse(m.run_dir, p.checkpoint_id); };
   // A rename reads the page's run list again (branch record SIF-102): the main page's model line and Next line, Started from
   // and Models trained from it name a model by its run's row, and kept the old name beside "Renamed to ..." until something
-  // else read the runs. A run list that carries the new name reads this list again by itself (runsKey); else it is read here
-  // - once either way.
-  const renamed = (dir: string, label: string) => void refreshRuns().then(listed => { if (!listed.some(r => r.run_dir === dir && r.model_label === label)) load(); });
+  // else read the runs. A run list that changes runsKey reads this list again by itself; else it is read here - once either
+  // way. Judged by the key, not by whether the list carries the new name (SIF-102 review follow-up): a page whose run list
+  // already held that name - a rename in another tab, and back here - keeps its list as it is, and nothing read the models.
+  const renamed = () => void refreshRuns().then(listed => { if (runsKeyOf(listed) === shownKey.current) load(); });
   // The table scrolls in a box of its own (branch record SIF-86: 411 models made it about 20,000 px long, with the model in use
   // and the Mode's settings under it). When the list first arrives the model in use is brought to the middle of the box, if it
   // is out of its view - the box only, never the window. Once per window: a later sort, filter or Refresh list keeps the place.
@@ -293,7 +299,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
             </tr>
             {open === m.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
               <ModelDetails model={m} models={list} runs={runs} byDir={byDir} source={source} usable={usable} config={config} netFields={netFields} from={popup}
-                usingPoint={usingPoint} useError={useError} onUse={onUse} onRenamed={label => renamed(m.run_dir, label)} onSelect={dir => { folders.setFolder('all'); setFilter(''); setOpen(dir); }} /></td></tr>}
+                usingPoint={usingPoint} useError={useError} onUse={onUse} onRenamed={renamed} onSelect={dir => { folders.setFolder('all'); setFilter(''); setOpen(dir); }} /></td></tr>}
           </Fragment>); })}</tbody></table></div>
         {shown.length === 0 && <p className="hint task-folder-empty">{filter || design ? 'No saved model matches the filter in this folder.' : 'This folder is empty. Select models in All models, then use Move to…'}</p>}
       </div></div>}

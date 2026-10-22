@@ -484,6 +484,19 @@ await runChecks(browser, async () => {
   await page.setValue(NAME, C.task_name, { event: 'input' }); await evaluate(`${RENAME}.click()`);
   check('... and back: its own name again, there too', await until(named(C.task_name), 40) && await until(`(${row(C)})?.querySelector('td:nth-child(2) b')?.textContent === ${JSON.stringify(C.task_name)}`, 40),
     await line());
+  // SIF-102 review follow-up: renamed elsewhere (another tab, say) and seen here by Refresh list only, so the page's run list
+  // still holds the old name. Renamed back here, the run list read is the one held - kept as it is, so it changes nothing -
+  // and the saved models were read by nobody: the row kept the other name beside "Renamed to ...".
+  const ELSEWHERE = 'FIXTURE renamed elsewhere';
+  served = served.map(x => x.run_dir === C.run_dir ? { ...x, model_label: ELSEWHERE } : x); labels[C.run_dir] = ELSEWHERE;
+  await until(`!(${button('Refresh list')})?.disabled`, 40); await evaluate(`${button('Refresh list')}.click()`);
+  await until(`(${row(C)})?.querySelector('td:nth-child(2) b')?.textContent === ${JSON.stringify(ELSEWHERE)}`, 40);
+  await until(`${NAME}?.value === ${JSON.stringify(ELSEWHERE)}`, 20);
+  const listsBeforeBack = lists, runsBeforeBack = runReads;
+  await page.setValue(NAME, C.task_name, { event: 'input' }); await evaluate(`${RENAME}.click()`);
+  check('... renamed back here after a rename elsewhere, the page\'s run list unchanged by its read: the saved models are still read again, once (SIF-102 review)',
+    await until(`(${row(C)})?.querySelector('td:nth-child(2) b')?.textContent === ${JSON.stringify(C.task_name)}`, 40)
+    && (await readsReach(listsBeforeBack + 1)) === listsBeforeBack + 1 && runReads > runsBeforeBack, `${lists - listsBeforeBack} read(s), the run list ${runReads - runsBeforeBack}`);
 
   // ---- the models' folders (record 7.263) ------------------------------------------------------------------------------------------
   await networkPage.send('Page.enable');

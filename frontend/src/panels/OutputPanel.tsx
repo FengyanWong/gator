@@ -21,8 +21,8 @@ const pathName = (key: string) => PATH_NAME[key] ?? key.charAt(0).toUpperCase() 
 const EXPERIMENT = /^(.+)__([0-9a-f]{12})$/;
 type Press = 'test' | 'measure' | 'list';
 
-export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, runs }: { config: Json; setConfig: (f: (c: Json) => Json) => void; meta: Json;
-  activeRun: Json; headerWorks: boolean; runs: RunSummary[] }) {
+export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, runs, taskMock }: { config: Json; setConfig: (f: (c: Json) => Json) => void; meta: Json;
+  activeRun: Json; headerWorks: boolean; runs: RunSummary[]; taskMock: boolean | null }) {
   const out = config.output;
   const set = (fields: Json) => setConfig(c => ({ ...c, output: { ...c.output, ...fields } }));
   const root = out.output_root ?? meta?.output_root ?? '';
@@ -81,7 +81,12 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
     for (const r of runs) { const name = String(r.experiment ?? ''); if (EXPERIMENT.test(name)) found.set(name, { runs: (found.get(name)?.runs ?? 0) + 1, mock: !!r.mock }); }
     return [...found];
   }, [runs]);
+  // Branch record SIF-91 review: Start looks for a MOCK task's experiment under <root>/mock and a real task's under the root
+  // itself (runs.py, paths.py data_root), so the list offers the loaded task's kind only - one of the other kind, picked from
+  // it, was refused at Start, after a real run's question. With no task loaded (taskMock null) it offers both.
+  const offered = taskMock === null ? experiments : experiments.filter(([, seen]) => seen.mock === taskMock);
   const named = out.experiment_id ? `${out.experiment_name ?? ''}__${out.experiment_id}` : null;
+  const namedSeen = named ? experiments.find(([name]) => name === named)?.[1] : undefined;
   return (
     <Module id="output" title="Output settings" defaultOpen={false} summary={[out.experiment_name, tail ? `.../${tail}` : 'no output root'].filter(Boolean).join(' - ')}>
       {/* "Copy path" is a sibling of the label, not inside it: a button inside would become what the label's text clicks. */}
@@ -101,8 +106,9 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
       {busy.list && <p className="hint">Reading the folder...</p>}
       {browse && <><p className="hint">{browse.path ? `In ${browse.path}` : 'The allowed roots'} <button className="text-link" onClick={closeList}>Close</button></p>
         <ul className="tree">{browse.parent && <li><button className="text-link" title={`Open ${browse.parent}`} onClick={() => openFolder(browse.parent)}>Up one folder</button></li>}
-        {/* "Use this folder" closes on the listing line too: the same root again changes nothing that would drop a folder on its way */}
-        {browse.entries.map((e: Json) => <li key={e.path}><button className="text-link" title="Open this folder" onClick={() => openFolder(e.path)}>{e.name}</button> <button onClick={() => { set({ output_root: e.path }); closeList(); }}>Use this folder</button></li>)}</ul></>}
+        {/* "Use this folder" closes on the listing line too: the same root again changes nothing that would drop a folder on its way.
+            It locks with the root (branch record SIF-91 review: a list opened before a Start still set the root under the run). */}
+        {browse.entries.map((e: Json) => <li key={e.path}><button className="text-link" title="Open this folder" onClick={() => openFolder(e.path)}>{e.name}</button> <button disabled={locked} onClick={() => { set({ output_root: e.path }); closeList(); }}>Use this folder</button></li>)}</ul></>}
       {/* What the backend found for the root, as one line; the table behind it (record 7.179, design advice 3). Open at once when
           the root cannot be written. */}
       {check && <details className="more output-facts" open={!(check.allowed && check.writable)}><summary>{check.allowed && check.writable ? 'writable' : 'NOT writable'}{testedHere ? ` · tested ${testedHere.at}` : ''} · {bytes(check.free_bytes)} free{check.windows_path ? ` · ${check.windows_path}` : ''}</summary>
@@ -120,11 +126,13 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
         <tr><td>Mock data root</td><td className="path">{check.mock_data_root}</td></tr>
       </tbody></table></details>}
       <div className="row"><label>Experiment name<input value={out.experiment_name ?? ''} onChange={e => set({ experiment_name: e.target.value })} /></label>
-        <label title="Set to append runs to an existing experiment; empty creates a new unique ID. Its list holds the experiments of the runs under the output root: one picked sets the name too.">Experiment ID
+        <label title="Set to append runs to an existing experiment; empty creates a new unique ID. Its list holds the experiments of the runs under the output root, of the loaded task's kind (MOCK or real): one picked sets the name too.">Experiment ID
           <input value={out.experiment_id ?? ''} placeholder="new" list="experiment-ids"
             onChange={e => { const picked = EXPERIMENT.exec(e.target.value); set(picked ? { experiment_name: picked[1], experiment_id: picked[2] } : { experiment_id: e.target.value || null }); }} /></label></div>
-      <datalist id="experiment-ids">{experiments.map(([name, seen]) => <option key={name} value={name} label={`${plural(seen.runs, 'run')}${seen.mock ? ', MOCK' : ''}`} />)}</datalist>
-      {named && runs.length > 0 && !experiments.some(([name]) => name === named) && <p className="hint">No run listed here is in {named}: Start refuses an experiment that is not under the output root.</p>}
+      <datalist id="experiment-ids">{offered.map(([name, seen]) => <option key={name} value={name} label={`${plural(seen.runs, 'run')}${seen.mock ? ', MOCK' : ''}`} />)}</datalist>
+      {named && runs.length > 0 && (!namedSeen ? <p className="hint">No run listed here is in {named}: Start refuses an experiment that is not under the output root.</p>
+        : taskMock !== null && namedSeen.mock !== taskMock && <p className="hint">{named} holds {namedSeen.mock ? 'MOCK' : 'real'} runs: Start of this {taskMock ? 'MOCK' : 'real'} task
+          looks for it {taskMock ? "in the output root's mock/ folder" : 'in the output root itself, not its mock/ folder'} and refuses it.</p>)}
       {/* the run the tabs show, by its folder (branch record SIF-91: these settings are for the next Start since SIF-72) */}
       {paths && <details open><summary>Current run paths</summary>
         <p className="hint" title={activeRun.run_dir}>Of the run shown: {folderName(String(activeRun.run_dir ?? ''))}</p><table className="grid small"><tbody>

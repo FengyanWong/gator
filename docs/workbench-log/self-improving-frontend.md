@@ -2494,3 +2494,20 @@ and an emptied one is new again. `room_check` 29: "Of the run shown: run", the p
 `run_control_check` 155: the output root and Browse are locked with the hint while a Start is on its way, and while
 the header's run works with a paused run shown; they unlock once it is paused. `module_fold_check` 30, `looks_check`
 74, `export_check` 31. No flakes.
+
+**Review follow-up.** The review of 1d7cb67 found two slips, both real. (1) Experiment ID's list offered every
+experiment under the root, MOCK ones included, whatever kind of task was loaded, and the hint looked only at whether the
+name was listed. Start looks for a MOCK task's experiment under `<root>/mock` and a real task's under the root itself
+(`runs.py`, `paths.py` `data_root`; `layout.py` raises `FileNotFoundError`), so an experiment of the other kind, picked
+from the list, was refused at Start, after a real run's question, with no hint. `frontend/src/App.tsx` passes the loaded
+task's kind (`circuit.mock` once loaded, as `shownRun.ts` reads it for the Start question) as `taskMock`.
+`frontend/src/panels/OutputPanel.tsx` offers only that kind's experiments (both before a task is loaded), and one of the
+other kind, typed by hand, says so: "sweep__0123456789ab holds real runs: Start of this MOCK task looks for it in the
+output root's mock/ folder and refuses it." (2) "Use this folder" in a folder list opened while idle stayed on after a
+Start or Resume was sent, or while the header's run worked, and set the root under the run. It is now off with the root
+(`disabled={locked}`). Opening folders in the list still works; it changes nothing. `docs/workbench.md` and
+`docs/functionality-reference.md` say both. Nothing is started, saved or written by this. `tsc` clean.
+`output_panel_check` 95 (92 before): with the MOCK task's circuit read (a registered task, local files) after a reload,
+the list holds only "trial__abcdef012345" ("1 run, MOCK"), the real one typed gets the line above, and the MOCK one
+picked gets no hint. `run_control_check` 157 (155 before): a list opened while idle has "Use this folder" on; once
+Start is on its way it is off, and a press leaves the root as it was. `room_check` 29, `module_fold_check` 30. No flakes.

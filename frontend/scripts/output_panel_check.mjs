@@ -20,7 +20,8 @@
 //   - branch record SIF-91: Test writability reads "Testing..." and Measure "Measuring..." while their answers are on their way
 //     (a held folder listing holds neither), "Reading the folder..." stands above the list while a folder is read, and a test's
 //     answer says when it came ("NOT writable · tested 14:03:22"); Experiment ID offers the experiments of the runs under the
-//     root (GET /api/runs answered here with FIXTURE rows), and one picked sets the experiment name too.
+//     root (GET /api/runs answered here with FIXTURE rows), and one picked sets the experiment name too; with the MOCK task
+//     loaded (its circuit read at the end) only the MOCK ones, and a real one typed says that Start refuses it (SIF-91 review).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -61,6 +62,7 @@ await runChecks(browser, async () => {
   const browsed = [];                                              // the folders the list asked for ('' for the roots)
   let holdBrowse = false, holdTest = false; const held = [];       // answers held back until after Close (branch record SIF-60 review)
   let holdMeasure = false;                                         // Measure's answer held back: "Measuring..." (branch record SIF-91)
+  let readCircuit = false;                                         // the MOCK task's circuit read (a registered task: local files), for its kind (SIF-91 review)
   const answer = params => {
     const { requestId, request } = params, name = new URL(request.url).pathname;
     if (name === '/api/output/browse') { const at = new URL(request.url).searchParams.get('path') ?? ''; browsed.push(at);
@@ -72,7 +74,7 @@ await runChecks(browser, async () => {
       return oldBackend && body.usage ? fulfil(requestId, 422, { detail: [{ type: 'extra_forbidden', loc: ['body', 'usage'], msg: 'Extra inputs are not permitted' }] }) : fulfil(requestId, 200, OUTPUT_CHECK); }
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
     if (name === '/api/runs') return fulfil(requestId, 200, { runs: RUNS });
-    return page.readOrRefuse(params, refused);
+    return page.readOrRefuse(params, refused, { reads: readCircuit && name === '/api/circuit/load' });
   };
   const heldAll = async n => { for (let i = 0; i < 40 && held.length < n; i++) await sleep(100); return held.length === n; };
   const evaluate = expression => page.evaluate(expression, true);
@@ -385,8 +387,10 @@ await runChecks(browser, async () => {
   const FIELD = name => `[...${PANEL}.querySelectorAll('label')].find(l => l.textContent.startsWith(${JSON.stringify(name)}))?.querySelector('input')`;
   const EXP_ID = FIELD('Experiment ID'), EXP_NAME = FIELD('Experiment name');
   const NOT_LISTED = `([...${PANEL}.querySelectorAll('p.hint')].find(p => p.textContent.startsWith('No run listed here'))?.textContent ?? null)`;
-  const offered = await until(`(${EXP_ID})?.list?.options.length >= 2`, 50) ? await evaluate(`[...(${EXP_ID}).list.options].map(o => [o.value, o.label])`) : null;
-  check('Experiment ID offers the experiments of the runs under the root, each once with its runs counted, a MOCK one marked; a run from before the ID adds none (SIF-91)',
+  const OPTIONS = `[...(${EXP_ID}).list.options].map(o => [o.value, o.label])`;
+  let offered = await until(`(${EXP_ID})?.list?.options.length >= 2`, 50) ? await evaluate(OPTIONS) : null;
+  check('Experiment ID offers the experiments of the runs under the root, each once with its runs counted, a MOCK one marked; a run from before the ID adds none;'
+    + ' with no task loaded (its circuit is not read here so far) both kinds (SIF-91)',
     JSON.stringify(offered) === JSON.stringify([['sweep__0123456789ab', '2 runs'], ['trial__abcdef012345', '1 run, MOCK']]), JSON.stringify(offered));
   const experiment = async () => { await page.saved(); return evaluate(`({ id: (${EXP_ID}).value, name: (${EXP_NAME}).value, hint: ${NOT_LISTED},
     stored: (o => [o.experiment_name, o.experiment_id])(JSON.parse(localStorage.getItem('gator-workbench-config-v1')).output) })`); };
@@ -401,6 +405,23 @@ await runChecks(browser, async () => {
   await page.setValue(EXP_ID, '', { event: 'input' });
   exp = await experiment();
   check('...emptied, the ID is new again (none) and the hint goes', JSON.stringify(exp) === JSON.stringify({ id: '', name: 'sweep', hint: null, stored: ['sweep', null] }), JSON.stringify(exp));
+  // Branch record SIF-91 review: Start looks for a MOCK task's experiment under <root>/mock and a real one's under the root
+  // itself, so an experiment of the other kind, picked from the list, was refused at Start (after a real run's question).
+  readCircuit = true;
+  await send('Page.reload');
+  offered = await until(`!!(${PANEL}) && (${EXP_ID})?.list?.options.length === 1`, 150) ? await evaluate(OPTIONS) : null;
+  check('with the MOCK task loaded, Experiment ID offers only the MOCK experiment: Start of a MOCK task looks in the root\'s mock/ folder (SIF-91 review)',
+    JSON.stringify(offered) === JSON.stringify([['trial__abcdef012345', '1 run, MOCK']]), JSON.stringify(offered));
+  const KIND = `([...${PANEL}.querySelectorAll('p.hint')].find(p => / holds (MOCK|real) runs: /.test(p.textContent))?.textContent ?? null)`;
+  const kind = async () => { const seen = await experiment(); return { ...seen, kind: await evaluate(KIND) }; };
+  await page.setValue(EXP_ID, 'sweep__0123456789ab', { event: 'input' });
+  exp = await kind();
+  check('...the real experiment, typed by hand, is set, and says that Start of this MOCK task refuses it (SIF-91 review)', exp.id === '0123456789ab' && exp.hint === null
+    && exp.kind === 'sweep__0123456789ab holds real runs: Start of this MOCK task looks for it in the output root\'s mock/ folder and refuses it.', JSON.stringify(exp));
+  await page.setValue(EXP_ID, 'trial__abcdef012345', { event: 'input' });
+  exp = await kind();
+  check('...the MOCK one picked says nothing against it', JSON.stringify(exp) === JSON.stringify({ id: 'abcdef012345', name: 'trial', hint: null, stored: ['trial', 'abcdef012345'], kind: null }),
+    JSON.stringify(exp));
 
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

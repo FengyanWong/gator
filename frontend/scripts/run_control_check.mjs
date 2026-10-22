@@ -21,7 +21,8 @@
 // cannot come back anyway it advises no waiting (review of SIF-83).
 // Branch record SIF-89: a run that pauses after connection failures, completes or fails with no press says so on the line
 // under the header, and Run status leads with the reason in red, then Continue... and Export status, above its facts.
-// Branch record SIF-91: Output settings' output root locks while the header's run starts or works, whatever run the tabs show.
+// Branch record SIF-91: Output settings' output root locks while the header's run starts or works, whatever run the tabs show;
+// "Use this folder" in a folder list opened before the Start too (SIF-91 review; GET /api/output/browse answered with a FIXTURE).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -111,6 +112,7 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/request') { requestLookups.push(url.searchParams.get('request_id')); return fulfil(requestId, 200, requestAnswer ?? { state: 'unknown' }); }
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
     if (name === '/api/runs/download') return fulfil(requestId, 200, { output: sim.output, run: sim.run });
+    if (name === '/api/output/browse') return fulfil(requestId, 200, { path: null, parent: null, entries: [{ name: '/fixture/elsewhere', path: '/fixture/elsewhere', exists: true }] });
     if (['/api/runs/start', '/api/runs/continue', '/api/runs/command'].includes(name)) {
       log.push({ name, body });
       if (refuseNext && refuseNext.name === name) { const refusal = refuseNext; refuseNext = null; return fulfil(requestId, 409, { detail: refusal.detail }); }
@@ -204,11 +206,22 @@ await runChecks(browser, async () => {
   await evaluate(`window.__seen = [['Start', false]]`);            // the label history below starts from here, as before this step
 
   // ---- 2. Start -> "Starting..." -> "Pause" ----------------------------------------------------------------------------
+  // Branch record SIF-91 review: a folder list opened while idle kept "Use this folder" on after the Start, which set the root
+  // under the run. Opened here first, its button is on.
+  const USE_FOLDER = `[...document.querySelectorAll('aside.right ul.tree button')].find(b => b.textContent === 'Use this folder')`;
+  await press(`[...document.querySelectorAll('aside.right button')].find(b => b.textContent === 'Browse allowed roots...')`);
+  check('(set-up) the folder list is open while idle, "Use this folder" on', await until(`!!(${USE_FOLDER}) && !${USE_FOLDER}.disabled`, 30));
+  const rootBefore = await evaluate(`document.querySelector('#output-root').value`);
   holdNext = '/api/runs/start';
   await press(MAIN);
   check('while the backend is starting the run the button reads "Starting..." and is disabled', await mainReads('Starting...') && (await look()).mainOff === true);
   const lockStarting = await evaluate(ROOT_LOCK);
   check('... and the output root is locked, with its hint, though no run has answered yet (SIF-91)', JSON.stringify(lockStarting) === '{"root":true,"browse":true,"hint":true}', JSON.stringify(lockStarting));
+  await evaluate(`${USE_FOLDER}?.click()`); await sleep(200);
+  const useLock = await evaluate(`({ use: ${USE_FOLDER}?.disabled ?? null, root: document.querySelector('#output-root').value })`);
+  check('... "Use this folder" in the list opened before is off too: a press leaves the root as it was (SIF-91 review)',
+    JSON.stringify(useLock) === JSON.stringify({ use: true, root: rootBefore }), `${JSON.stringify(useLock)} / ${rootBefore}`);
+  await press(`[...document.querySelectorAll('aside.right p.hint button')].find(b => b.textContent === 'Close')`);
   v = await look();
   check('Abort and the baseline simulation are disabled meanwhile', v.abortOff === true && v.baselineOff === true, JSON.stringify(v));
   check('ONE start request was sent, for a full run with the page\'s configuration', log.length === 1 && log[0].name === '/api/runs/start' && log[0].body.calibration_only === false

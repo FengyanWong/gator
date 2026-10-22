@@ -299,7 +299,8 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       </main>
       <aside className="right">
         <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} runHeld={headerHeld} />
-        <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} headerWorks={headerWorks} runs={runs} />
+        <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} headerWorks={headerWorks} runs={runs}
+          taskMock={circuit?.loaded && typeof circuit.mock === 'boolean' ? circuit.mock : null} />
         <ResearchPanel config={config} setConfig={setConfig} />
       </aside>
       <BottomPanel panel={panel} tab={tab} setTab={setTab} cornersUsable={cornersUsable} config={config} setConfig={setConfig} runs={runs} runsError={runsError}

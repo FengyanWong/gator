@@ -457,6 +457,22 @@ await runChecks(browser, async () => {
   sim.steps = [{}, { state: 'running', stop_reason: null, error: null }];
   await press(MAIN);
   check('(Resume: "Pause" again, and the reason has gone from Run status)', await mainReads('Pause', 150) && await until(`!document.querySelector('.status-grid > p.status-error')`, 40));
+  // Review of SIF-89: a worker that dies before the engine's own pause is written (it drains the jobs in flight and saves first)
+  // leaves an `interrupted` run that keeps the stop reason; only what was acknowledged is kept there. Neither "everything is
+  // saved" line may speak then, from `running` or from `pausing`: the chip says the worker is gone.
+  for (const via of ['running', 'pausing']) {
+    await evaluate(`window.__seen = []`);
+    sim.steps = [...(via === 'pausing' ? [{ state: 'pausing' }, {}] : [{}]), { state: 'interrupted', stop_reason: 'infrastructure_failures', error: INFRA, alive: false }];
+    check(`(from ${via}, the worker is gone before the pause is written: "Resume")`,
+      await mainReads('Resume', 150) && (via === 'running' || (await seen()).some(s => s[0] === 'Pausing...')), JSON.stringify(await seen()));
+    await sleep(1500);
+    v = await look();
+    check(`... from ${via}, an interrupted run gets no "Paused ... everything is saved" line, and the chip says the worker is gone (review of SIF-89)`,
+      !/^Paused/.test(v.banner ?? '') && /\(the worker is gone\)( \[MOCK\])?$/.test(v.chip ?? ''), JSON.stringify([v.banner, v.chip]));
+    sim.steps = [{}, {}, {}, { state: 'starting', stop_reason: null, error: null }, { state: 'running' }];
+    await press(MAIN);
+    check(`(Resume of the interrupted run: "Pause" again)`, await mainReads('Pause', 150));
+  }
   sim.steps = [{}, { state: 'completed', stop_reason: 'budget_exhausted', charged: 60 }, {}, { alive: false }];
   check('(the run completes: "Start")', await mainReads('Start', 150));
   line = await lineSays('Completed') && await evaluate(LINE);

@@ -2402,3 +2402,15 @@ The user-pause and user-abort lines pass unchanged. `export_check` 31: on a real
 row that comes right after the run at a glance and before the facts. `looks_check` 74, `room_check` 28,
 `calibration_check` 38, `calibration_save_check` 22, `run_list_check` 129, `save_now_check` 29,
 `launch_recovery_check` 20. No flakes.
+
+**Review follow-up.** The review of 9961caa found one slip, and it is real. The red connection-failure line did not
+check that the run's state was `paused`. After the failures, the engine sets the stop reason and its error, then keeps
+writing `running` while it drains the jobs in flight, cleans up over the dead link and saves. If the worker dies in that
+window, `run_status` turns the run into `interrupted` and keeps the stop reason. The page then said "everything is
+saved" beside a chip that said "(the worker is gone)", but only acknowledged data is kept there. The same was true from
+`pausing`, where the user-pause line ("Paused at ...: everything is saved") spoke for an interrupted run, as it did
+before SIF-89. `frontend/src/panels/RunControl.tsx`: both pause lines now need the state `paused`, so an `interrupted`
+run gets no line, as the entry above says. `describe()` already told the two apart. Nothing else changed. `tsc` clean;
+`run_control_check` 149, six new: from `running` and from `pausing` (through "Pausing..."), a worker gone before the
+pause is written leaves "Resume", no line starting "Paused", and a chip ending "(the worker is gone)". Resume then
+continues the run. `save_now_check` 29, `launch_recovery_check` 20. No flakes.

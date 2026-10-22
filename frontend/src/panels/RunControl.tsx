@@ -221,9 +221,13 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
     if (!same || !status) return;
     const at = status.budget ? ` at${used(status)}` : '';
     const ended = phase === 'idle' && ['running', 'finishing', 'pausing', 'aborting'].includes(was), unasked = was === 'running' || was === 'finishing';
-    if (phase === 'paused' && status.stop_reason === 'infrastructure_failures' && (was === 'running' || was === 'pausing'))
+    // Only a pause the run wrote is "everything is saved": a worker gone before that (the engine drains, cleans up over a dead
+    // link and saves first) leaves an `interrupted` run that keeps its stop reason, where only what was acknowledged is kept;
+    // its chip says "(the worker is gone)" and no line is added (review of SIF-89).
+    const paused = phase === 'paused' && status.state === 'paused';
+    if (paused && status.stop_reason === 'infrastructure_failures' && (was === 'running' || was === 'pausing'))
       onMessage({ level: 'error', text: 'Paused by itself after connection failures; everything is saved. Test the connection (Connection button), then Resume.', title: dir });
-    else if (was === 'pausing' && phase === 'paused') onMessage({ level: 'info', text: `Paused at${used(status)}: everything is saved. Resume continues from exactly there.` });
+    else if (was === 'pausing' && paused) onMessage({ level: 'info', text: `Paused at${used(status)}: everything is saved. Resume continues from exactly there.` });
     else if (ended && status.state === 'failed') onMessage({ level: 'error', text: `The run failed${at}: ${status.error ?? 'see Run status'}`, title: dir });
     else if (ended && unasked && status.state === 'completed')
       onMessage({ level: 'info', text: `Completed${at}${status.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}. Its results are under Run status.`, title: dir });

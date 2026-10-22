@@ -2962,3 +2962,19 @@ gone from the window. The new checks look for a button, a key, a read, a label a
 not have. Also run, unchanged: `task_rows_check` 54, `task_run_check` 39, `ngspice_window_check` 43,
 `circuit_source_check` 17, `testbench_probes_check` 41, `dom_identity_check` 56 (8 scripts, one lane, all passed the
 first time), `project_help_check` 50. Not run: `consistency_check` (it presses Start against its fixture). No flakes.
+
+**Review follow-up.** The review of baaf1e4 found one slip, real. After deleting the task the page followed, the answer
+said "The page now follows its cell <library>/<cell>." and only a change of `ref.task_id` could clear it. Choosing
+another library or cell in the Virtuoso window changes only `circuit.library` and `circuit.cell`; `task_id` stays null.
+So the Tasks window kept saying the page followed the deleted task's cell after the page had moved to another cell
+(the stale line the audit's J6-6 verdict warned of). `taskActions.ts` now keys the answer on `placeOf(ref)`: the task
+key while the page follows a task, otherwise the source and library/cell. `follows` holds the place the delete left
+the page on: the deleted task's cell, the task the ngspice delete moves to, or where the page already was. The line
+goes once the page is anywhere else. A typed PDK id or class leaves it standing, since the page is still on that cell.
+The main page's note (`deletedHere`) already compared library and cell and is unchanged. `docs/workbench.md` and the
+Delete task row of `docs/functionality-reference.md` now say "another task or another cell". Nothing here starts a
+run, saves a task or writes to Virtuoso; the confirmation, the deleting guard and the edits question are as they were.
+`tsc` clean. `virtuoso_source_check` 108 (106 before): after a typed PDK id the window's line still stands, and once
+another library is chosen in the Virtuoso window it is gone. Against the code before, that last check fails. Also run,
+unchanged: `task_rows_check` 54, `ngspice_window_check` 43, `task_list_check` 97 (4 scripts, one lane, all passed the
+first time). No flakes.

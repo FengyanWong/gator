@@ -561,7 +561,7 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 * **Delete task** is inside this window, beside **Current task: <name>**, for a deletable task. It acts on the task the
   page follows; double-click another row to change that task. Confirmation opens in this window, and failures are shown
   beside the action. So is what a delete did (branch record SIF-100): "Task real:<name> deleted; its files are kept in
-  <folder>. The page now follows its cell <library>/<cell>." The line stays until the page follows another task. The module outside has no delete or reload icon. The backend still keeps deleted files aside and
+  <folder>. The page now follows its cell <library>/<cell>." The line stays while the page stays there: it goes once the page follows another task or another cell (chosen in the Virtuoso window). The module outside has no delete or reload icon. The backend still keeps deleted files aside and
   refuses deletion while the task is running.
 
 **Folders** (7.250): the sidebar lists **All tasks**, **Unfiled**, and named folders with task counts.

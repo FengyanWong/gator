@@ -10,6 +10,11 @@ import type { TaskLoaded } from './taskChoice';
 import type { CircuitReference, TaskRows, TaskSummary, WorkbenchConfig } from '../contracts';
 import { inScope } from '../newest';
 
+/** Where the page is, for a delete's answer (branch record SIF-100): the task it follows, or the source and cell otherwise
+ *  (a task's own library and cell come with it, so only its key counts). */
+const placeOf = (c: CircuitReference | undefined) => (c?.source === 'registered_task'
+  ? `task|${c.task_id ?? ''}` : `${c?.source ?? ''}|${c?.library ?? ''}/${c?.cell ?? ''}`);
+
 /** `ref` / `virtuosoOn`: the configuration's circuit and whether the page follows a Virtuoso cell (CircuitPanelBody's). */
 export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, profileId, tasks, setTasks, latest, refreshTasks, chooseTask }: {
   ref: CircuitReference; virtuosoOn: boolean; config: WorkbenchConfig; setConfig: (f: (c: WorkbenchConfig) => WorkbenchConfig, record?: boolean) => void; circuit: Json; profileId: string | null;
@@ -29,10 +34,12 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
   const deletableName = generatedName ?? (ref.source === 'registered_task' && tasks.find(t => t.task_key === ref.task_id)?.generated
     ? String(ref.task_id ?? '').replace(/^real:/, '') : null);
   // A delete's answer outlives the switch the delete itself makes (branch record SIF-100: deleting the task the page followed
-  // said nothing in the Tasks window - this effect wiped the line at once). It goes once the page follows another task than
-  // the one the delete left it on (`follows`), or at the next press.
+  // said nothing in the Tasks window - this effect wiped the line at once). It goes once the page is anywhere else than where
+  // the delete left it (`follows`, a `placeOf`) - another task, or another cell chosen in the Virtuoso window, which leaves
+  // task_id null (SIF-100 review: the line kept saying the page follows the deleted task's cell) - or at the next press.
   useEffect(() => { setTaskCheck(null); setProfileMessage((m: Json) => (m?.what === 'delete' ? m : null)); }, [generatedName]);
-  useEffect(() => { setProfileMessage((m: Json) => (m?.what === 'delete' && m.follows !== (ref.task_id ?? null) ? null : m)); }, [ref.task_id]);
+  const place = placeOf(ref);
+  useEffect(() => { setProfileMessage((m: Json) => (m?.what === 'delete' && m.follows !== place ? null : m)); }, [place]);
   const rowsKey = (c: TaskRows) => JSON.stringify([c.parameters, c.measurements, c.targets]);
   useEffect(() => { setTaskCheck(null); }, [rowsKey(config)]);
   const { busy: profileBusy, run: profileAction } = useAsyncAction((e, what) =>
@@ -74,7 +81,7 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
       // Said in the Tasks window, where the press was, also when the page followed the task (branch record SIF-100): the row
       // and the "Current task" line just went.
       const here = shows(latest.current);
-      setProfileMessage({ level: 'ok', what: 'delete', follows: here ? null : latest.current.circuit?.task_id ?? null,
+      setProfileMessage({ level: 'ok', what: 'delete', follows: placeOf(here ? { source: 'virtuoso', library: gone.library, cell: gone.cell } : latest.current.circuit),
         text: `Task ${task} deleted; its files are kept in ${gone.kept_copy}.` + (here ? ` The page now follows its cell ${gone.library}/${gone.cell}.` : ' The page stays on what was chosen meanwhile.') });
       setConfig(c => (shows(c) ? { ...c, circuit: { ...c.circuit, source: 'virtuoso', task_id: null, library: gone.library, cell: gone.cell, view: 'schematic', testbench_cell: gone.testbench_cell ?? null } } : c));
     });
@@ -100,10 +107,10 @@ export function useTaskActions({ ref, virtuosoOn, config, setConfig, circuit, pr
       const gone = await api.ngspiceDelete(ngspiceTask!);
       const left = await tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; }).catch(() => [] as TaskSummary[]);
       // The first task left is taken only while the page still shows the deleted one (record 7.322): a task chosen while
-      // the deletion ran stays. The answer stands until the page follows another task than that one (`follows`).
+      // the deletion ran stays. The answer stands while the page stays where the delete left it (`follows`).
       const next = left.find(t => t.task_key !== gone.deleted);
       const moves = !!next && latest.current.circuit?.task_id === task;
-      setProfileMessage({ level: 'ok', what: 'delete', follows: moves ? next!.task_key : latest.current.circuit?.task_id ?? null,
+      setProfileMessage({ level: 'ok', what: 'delete', follows: placeOf(moves ? { source: 'registered_task', task_id: next!.task_key } : latest.current.circuit),
         text: `Task ${gone.deleted} deleted; its files are kept in ${gone.kept_copy}.` });
       if (moves) chooseTask(next!.task_key);
     });

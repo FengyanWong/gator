@@ -489,11 +489,17 @@ await runChecks(browser, async () => {
 
   // ---- another library: the cell is forgotten, a typed PDK id is kept -----------------------------------------------
   await type('PDK id', 'my_pdk'); await sleep(300);
+  check('a typed PDK id leaves the Tasks window\'s line about the delete standing: the page is still on that cell (branch record SIF-100)',
+    (await taskWindowText()).includes(DELETED_LINE), (await taskWindowText()).slice(0, 400));
   mark = calls.length;
   await wChoose('Library', 'FIXTURE_OTHER'); await quiet();
   check('another library lists its own cells and reads nothing yet', JSON.stringify(ops(mark)) === JSON.stringify(['cells FIXTURE_OTHER']), ops(mark).join(' | '));
   check('the cell of the old library is forgotten and its schematic is gone', (await wValue('Cell')) === '' && !(await wText()).includes('Native schematic'));
   check('a typed PDK id is not overwritten', (await value('PDK id')) === 'my_pdk', await value('PDK id'));
+  // SIF-100 review: choosing a cell changes only library and cell, not task_id - the line kept saying the page follows
+  // FIXTURE_DESIGNS/ota5_v1.
+  check('... and another library in the Virtuoso window takes that line away: the page no longer follows the deleted task\'s cell (branch record SIF-100)',
+    !(await taskWindowText()).includes('deleted; its files'), (await taskWindowText()).slice(0, 400));
 
   // ---- Refresh repeats the chain, one call after the other -------------------------------------------------------------
   await wChoose('Cell', 'inv'); await quiet();

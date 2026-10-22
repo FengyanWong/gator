@@ -8,7 +8,7 @@
 // The browser profile is new and temporary: the user's saved configuration is not touched.
 // What it pins (user report 2026-09-21: after choosing real:gpdk045_ota5 the Specs tab still showed the MOCK "score"):
 // the rows, task label and PDK / class change atomically; one Undo takes all of it back; edited rows require a decision
-// BEFORE switching, project names stay, failed/late loads cannot replace the current task; an
+// BEFORE switching, asked in the Tasks window (branch record SIF-84), project names stay, failed/late loads cannot replace the current task; an
 // older backend is named as such; a circuit without targets of record says so and gets no invented target. Since status
 // record 7.59: a configuration saved with one of the four removed MOCK tasks says so plainly, and choosing the one MOCK
 // task left (synthetic:gpdk045_ota5) brings its rows and name at once.
@@ -74,7 +74,7 @@ await runChecks(browser, async () => {
   const refused = []; const starters = []; const loads = [];
   const answers = [], dialogs = [], held = [];
   let delayTask = null;
-  answerDialogs(page, answers, dialogs);
+  answerDialogs(page, answers, dialogs, 'main window');
   const answer = params => {
     const { requestId, request } = params, url = new URL(request.url), name = url.pathname, pass = () => page.pass(requestId);
     if (name === '/api/tasks/starter') starters.push(url.searchParams.get('task_key'));
@@ -98,7 +98,8 @@ await runChecks(browser, async () => {
   const BUTTON = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const EDITORS = `document.querySelector('.editors')`;
   // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
-  const tw = taskWindow(page, browser);
+  // Branch record SIF-84: that window asks the edits question itself, answered from the same queue.
+  const tw = taskWindow(page, browser, { onDialog: far => answerDialogs(far, answers, dialogs, 'Tasks window') });
   // The row shows a saved task without its real: prefix since record 7.249; its key is in data-task-key (a placeholder,
   // "synthetic:vco (removed)", has only its text).
   const TASK_KEY = `(${PANEL}.querySelector('.task-row .task-list-key')?.dataset.taskKey ?? ${PANEL}.querySelector('.task-row .task-list-key')?.textContent ?? '')`;
@@ -191,6 +192,8 @@ await runChecks(browser, async () => {
   await until(`!${PANEL}.querySelector('[role="status"]')`);
   check('Cancel keeps the old task selected and its edited rows', (await value('Task')) === 'real:gpdk045_ota5'
     && (await column('lower')).includes('26') && dialogs.at(-1)?.message.includes('unsaved'));
+  // Branch record SIF-84: the main window's question opened behind the Tasks window, which stood still with "loading...".
+  check('... the question was asked in the Tasks window, where the double click was', dialogs.at(-1)?.where === 'Tasks window', JSON.stringify(dialogs.at(-1)));
   check('... and the task window stays open: no task was chosen (record 7.291)', !(await tw.closedAfterChoice(1500)) && !!tw.window);
   answers.push(true);
   await choose('Task', 'synthetic:gpdk045_ota5');
@@ -306,6 +309,8 @@ await runChecks(browser, async () => {
   await evaluate(`${BUTTON(EDITORS, 'Undo')}.click()`);
   check('one Undo brings the saved state back', await until(`${TASK_KEY} === 'synthetic:vco (removed)'`) && (await config()).project.name === 'mock-vco' && (await strip()).startsWith('Parameters (2)'), `${await value('Task')} ${await strip()}`);
   check('every edit-discard prompt was expected', dialogs.every(d => d.planned) && answers.length === 0, JSON.stringify(dialogs));
+  check('... and each was asked in the Tasks window, none in the main window (branch record SIF-84)', dialogs.length > 0 && dialogs.every(d => d.where === 'Tasks window'),
+    JSON.stringify(dialogs.map(d => d.where)));
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.filter(e => !/404|418/.test(e)).length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

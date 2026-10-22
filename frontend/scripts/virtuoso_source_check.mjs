@@ -172,7 +172,8 @@ await runChecks(browser, async () => {
   const statusText = () => evaluate(`${PANEL}.querySelector('.task-status').textContent`);          // the task's own lines, under the toolbar
   const circuitText = () => evaluate(`${CIRCUIT}.textContent`);
   // Since record 7.227 the task is plain text + a "Tasks..." button; a choice is a double click in the task window (harness taskWindow).
-  const tw = taskWindow(page, browser);
+  // Branch record SIF-84: each Tasks window answers its own questions (Delete task; the edits question of its double click).
+  const tw = taskWindow(page, browser, { onDialog });
   const value = label => label === 'Task' ? tw.current() : evaluate(`${FIELD(label)}.value`);
   const choose = (label, v) => label === 'Task' ? tw.choose(v, { tries: 0 }) : page.setValue(`${FIELD(label)}`, v);
   const type = async (label, textToType) => {                                       // the labels sit in a folded line: open it, then type
@@ -404,8 +405,6 @@ await runChecks(browser, async () => {
   // closed the window (record 7.291): it is opened again for Delete.
   check('choosing the task closed the Tasks window (record 7.291)', await tw.closedAfterChoice());
   await tw.open();
-  await tw.window.send('Page.enable');
-  onDialog(tw.window);
   const DELETE = `document.querySelector('.task-window-actions button')`;
   const deleteTask = () => tw.window.evaluate(`${DELETE}.click()`, true);
   const taskWindowText = () => tw.window.evaluate(`document.querySelector('.task-window').textContent`);

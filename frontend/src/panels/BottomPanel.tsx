@@ -7,7 +7,7 @@ import { keep, readKept } from '../kept';
 import type { Refusal, useLauncher } from '../launch';
 import { AgentWindowTab } from './Agent';
 import { CornerCheckTab } from './CornerCheck';
-import { RunListButton } from './RunList';
+import { type RunChoice, RunListButton } from './RunList';
 import { DataTab, FilesTab, LogsTab, StatusTab } from './RunTabs';
 import { TrainingTab } from './TrainingTab';
 
@@ -76,9 +76,10 @@ export function useBottomPanel(runDir: string | null) {
 export type BottomPanelState = ReturnType<typeof useBottomPanel>;
 /** The Runs window's presses, as the page hands them to the Runs button (App.tsx: functions that stay the same). */
 /** `load` and `newLike` answer whether they went through: the Runs window closes once a run is chosen (user request
- *  2026-10-09), and stays open when nothing changed. */
-export type RunWindowActions = { choose: (dir: string | null) => void; load: (row: TaskRunSummary) => Promise<boolean>;
-  newLike: (row: TaskRunSummary) => Promise<boolean>; continueFrom: (row: TaskRunSummary) => void };
+ *  2026-10-09), and stays open when nothing changed, saying why (branch record SIF-84). `owner`: the Runs window, which asks
+ *  the edits question. */
+export type RunWindowActions = { choose: (dir: string | null) => void; load: (row: TaskRunSummary, owner?: Window | null) => Promise<RunChoice>;
+  newLike: (row: TaskRunSummary, owner?: Window | null) => Promise<RunChoice>; continueFrom: (row: TaskRunSummary) => void };
 
 /** The bottom panel: the splitter, the tab line (Agent..., the tabs, the run shown and Runs...) and the tab shown.
  *  `headerDir`: the header's run while it works or is paused, so the tab line can say when it shows another (branch record SIF-72). */

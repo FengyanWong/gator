@@ -13,9 +13,10 @@ import { noRows, sameRows } from './taskRows';
 /** The task load the Tasks window uses, for the Runs window's Load run and New run like this (record 7.267; plan "Load run":
  *  "chooseTask becomes one task load that the Tasks and Runs windows both call"). `change` joins the task's rows in the
  *  ONE change of the draft - one Undo step. Not loaded - the edits question answered Cancel, the task could not be read -
- *  nothing changed, and `why` says so in a sentence. */
+ *  nothing changed, and `why` says so in a sentence. `owner`: the window that holds the press, which asks the edits question
+ *  (branch record SIF-84). */
 export type TaskLoaded = { loaded: true } | { loaded: false; why: string };
-export type TaskLoad = (taskId: string, change?: (c: WorkbenchConfig) => WorkbenchConfig, stale?: () => boolean) => Promise<TaskLoaded>;
+export type TaskLoad = (taskId: string, change?: (c: WorkbenchConfig) => WorkbenchConfig, stale?: () => boolean, owner?: Window | null) => Promise<TaskLoaded>;
 
 /** `request` (the circuit load's) and `followCount` (the testbench probes'): what a task choice lets go. `load`: the circuit
  *  load. `taskLoad`: filled with this task load for the Runs window, as the panel draws (a write during render, as before). */
@@ -36,8 +37,9 @@ export function useTaskChoice({ ref, tasks, latest, setConfig, request, followCo
   const removedMock = ref.source === 'registered_task' && goneMock(ref.task_id);
   // `labels`: the class and PDK id of a task just saved (the ngspice window) - not in the task list read before the save.
   // `change`: what else the same draft change brings (Load run: the run's model; record 7.267). True once loaded.
+  // `owner`: the Tasks or Runs window whose press chose the task (branch record SIF-84); none for the page's own presses.
   const chooseTask = async (taskId: string, labels?: { circuit_class?: string | null; pdk_id?: string | null }, reload = false,
-    change: (c: WorkbenchConfig) => WorkbenchConfig = c => c, stale: () => boolean = () => false): Promise<TaskLoaded> => {
+    change: (c: WorkbenchConfig) => WorkbenchConfig = c => c, stale: () => boolean = () => false, owner?: Window | null): Promise<TaskLoaded> => {
     const before = latest.current, mine = following.next();
     const currentTask = before.circuit.source === 'registered_task' ? before.circuit.task_id : null;
     // `stale`: the caller's own choice was overtaken (record 7.270: a newer Load run), so this load must not land either.
@@ -57,7 +59,12 @@ export function useTaskChoice({ ref, tasks, latest, setConfig, request, followCo
       const now = latest.current, baseline = currentTask === taskId ? starter : previous;
       const untouched = noRows(now) || sameRows(now, starter) || (!!baseline && sameRows(now, baseline))
         || (!reload && !!brought && sameRows(now, brought));
-      if (!untouched && !window.confirm(`${reload ? 'Reload saved values' : `Switch to ${taskId}`}?\n\n`
+      // Asked in the window that holds the press, as the Virtuoso window's copy question is (Left.tsx) - same words, same
+      // answers (branch record SIF-84). The main window's dialog opened behind the Tasks or Runs window, and that window,
+      // drawn by this page's script, stood still with "loading..." until the dialog was found. A window closed meanwhile:
+      // the main window asks.
+      const asker = owner && !owner.closed ? owner : window;
+      if (!untouched && !asker.confirm(`${reload ? 'Reload saved values' : `Switch to ${taskId}`}?\n\n`
         + 'This replaces your unsaved Parameters, Probes and Specs edits.\n'
         + 'OK = discard those edits and load the saved rows.\nCancel = keep the current task and edits. You can save them with Save as first.')) return { loaded: false, why: 'you chose Cancel, so the task and its edits stay as they were' };
       if (!stillHere()) return { loaded: false, why: 'another choice came first' };     // the edits question may have taken a while
@@ -80,6 +87,6 @@ export function useTaskChoice({ ref, tasks, latest, setConfig, request, followCo
       if (mine()) setTaskLoading(null);
     }
   };
-  if (taskLoad) taskLoad.current = (taskId, change, stale) => chooseTask(taskId, undefined, false, change, stale);
+  if (taskLoad) taskLoad.current = (taskId, change, stale, owner) => chooseTask(taskId, undefined, false, change, stale, owner);
   return { taskRows, taskLoading, taskLoadError, removedMock, chooseTask };
 }

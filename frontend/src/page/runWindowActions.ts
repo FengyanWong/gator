@@ -10,6 +10,7 @@ import type { BottomTab } from '../panels/BottomPanel';
 import type { TaskLoad, TaskLoaded } from '../panels/Left';
 import { modelNameAt } from '../panels/ModelChooser';
 import { MODE_NAME } from '../panels/rlModelText';
+import type { RunChoice } from '../panels/RunList';
 import { LOADS, readSavePoint, SavePoint, withSavePoint } from '../savePoint';
 import { tasksShared } from '../shared';
 import { migrateConfig } from '../store';
@@ -56,12 +57,14 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
   };
   /** The run's task, through the Tasks window's task load, with `change` in its one draft change; when it is the page's task
    *  already, `change` alone - the editors stay as they are, edits included. The task-run link (7.212) gives way: this task
-   *  change comes with its run, and the caller decides what the bottom tabs show. */
-  const withRunTask = async (row: TaskRunSummary, change: (c: WorkbenchConfig) => WorkbenchConfig, changes: boolean, stale: () => boolean): Promise<TaskLoaded> => {
+   *  change comes with its run, and the caller decides what the bottom tabs show. `owner`: the Runs window, which asks the
+   *  edits question (branch record SIF-84). */
+  const withRunTask = async (row: TaskRunSummary, change: (c: WorkbenchConfig) => WorkbenchConfig, changes: boolean, stale: () => boolean,
+    owner?: Window | null): Promise<TaskLoaded> => {
     if (stale()) return { loaded: false, why: 'another choice came first' };
     if (taskKey === row.task_key) { if (changes) setConfig(change); return { loaded: true }; }
     const settle = followTask(row.task_key);
-    const result = await (taskLoad.current?.(row.task_key, change, stale) ?? Promise.resolve<TaskLoaded>({ loaded: false, why: 'the task panel is not ready yet' }));
+    const result = await (taskLoad.current?.(row.task_key, change, stale, owner) ?? Promise.resolve<TaskLoaded>({ loaded: false, why: 'the task panel is not ready yet' }));
     settle(result.loaded);
     return result;
   };
@@ -72,45 +75,49 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
   const pointWords = (point: SavePoint) => `save point ${point.evaluations != null ? `at ${plural(point.evaluations, 'evaluation')}` : pointText(point.checkpoint_id)}`;
   const sinceText = (since: string | null, what: string) => since
     ? ` The task was saved again after ${what} began (${dateTime(since)}): the RL model window's check says whether the model still fits.` : '';
+  /** Not done (branch record SIF-84): the page's message, and the same sentence for the Runs window, where the press was -
+   *  the message line is behind it. A newer choice wins silently: nothing said, in either place. */
+  const refuse = (level: 'error' | 'info', text: string): RunChoice => { setMessage({ level, text }); return { loaded: false, why: text }; };
+  const SILENT: RunChoice = { loaded: false };
   /** Load run: its task, the model it ended with (in a Mode that loads one) and its results - one Undo step for the task and
-   *  the model, all or nothing. The header's run is never touched. True once loaded - the Runs window then closes (user
-   *  request 2026-10-09) -, false when nothing changed: Cancel at the edits question, an unreadable model, a newer choice. */
-  const loadRun = async (row: TaskRunSummary): Promise<boolean> => {
+   *  the model, all or nothing. The header's run is never touched. Loaded - the Runs window then closes (user request
+   *  2026-10-09) -, or not, nothing changed: Cancel at the edits question, an unreadable model, a newer choice. `owner`: the
+   *  Runs window, which asks the edits question (branch record SIF-84). */
+  const loadRun = async (row: TaskRunSummary, owner?: Window | null): Promise<RunChoice> => {
     const mine = loadSerial.next(), stale = () => !mine();      // a newer choice wins, silently
     setMessage(null);
     let point: SavePoint | null, since: string | null;
     try { [point, since] = await Promise.all([endModel(row), savedSince(row)]); }
     catch (e: any) {
-      if (!stale()) setMessage({ level: 'error', text: `Run ${runTitle(row)} was not loaded: its model could not be read (${plainError(e)}). Nothing changed.` });
-      return false;
+      return stale() ? SILENT : refuse('error', `Run ${runTitle(row)} was not loaded: its model could not be read (${plainError(e)}). Nothing changed.`);
     }
-    if (stale()) return false;
+    if (stale()) return SILENT;
     const mode = LOADS.includes(config.run.mode) ? config.run.mode : 'fine_tune';
     const same = taskKey === row.task_key;
-    const result = await withRunTask(row, c => (point ? { ...c, run: withSavePoint({ ...c.run, mode: LOADS.includes(c.run.mode) ? c.run.mode : 'fine_tune' }, point) } : c), !!point, stale);
-    if (stale()) return false;
-    if (!result.loaded) { setMessage({ level: 'info', text: `Run ${runTitle(row)} was not loaded: ${result.why}. Nothing changed.` }); return false; }
+    const result = await withRunTask(row, c => (point ? { ...c, run: withSavePoint({ ...c.run, mode: LOADS.includes(c.run.mode) ? c.run.mode : 'fine_tune' }, point) } : c), !!point, stale, owner);
+    if (stale()) return SILENT;
+    if (!result.loaded) return refuse('info', `Run ${runTitle(row)} was not loaded: ${result.why}. Nothing changed.`);
     setRunDir(row.run_dir); setTab('status'); unfold();
     setMessage({ level: 'info', text: `Loaded run ${runTitle(row)}: task ${row.task_key}${same ? ' (already on the page: the editors stay as they were)' : ''}, `
       + (point ? `${MODE_NAME[mode]} from ${nameOf(point)}, ${pointWords(point)}.` : 'the model as it was: this run has no save point and loaded none.')
       + `${sinceText(since, 'this run')} Undo takes it back.` });
-    return true;
+    return { loaded: true };
   };
   /** New run like this: the next run repeats the run - its task, Mode, the save point it started from and its run settings.
-   *  The shown run stays. True once taken (the Runs window then closes), false when nothing changed. */
-  const newRunLike = async (row: TaskRunSummary): Promise<boolean> => {
+   *  The shown run stays. Taken (the Runs window then closes), or not, nothing changed; `owner` as Load run's. */
+  const newRunLike = async (row: TaskRunSummary, owner?: Window | null): Promise<RunChoice> => {
     const mine = loadSerial.next(), stale = () => !mine();
     setMessage(null);
     let settings: RunSettings | null = null;
     try { settings = migrateConfig(await api.runConfig(row.run_dir))?.run ?? null; }
-    catch (e: any) { if (!stale()) setMessage({ level: 'error', text: `New run like ${runTitle(row)}: its configuration could not be read (${e.message}). Nothing changed.` }); return false; }
-    if (stale()) return false;
-    if (!settings) { setMessage({ level: 'error', text: `New run like ${runTitle(row)}: the run has no configuration of its own. Nothing changed.` }); return false; }
+    catch (e: any) { return stale() ? SILENT : refuse('error', `New run like ${runTitle(row)}: its configuration could not be read (${e.message}). Nothing changed.`); }
+    if (stale()) return SILENT;
+    if (!settings) return refuse('error', `New run like ${runTitle(row)}: the run has no configuration of its own. Nothing changed.`);
     // A run continued under the old Mode resume repeats as what it was: a fine-tune of its model, or a new model.
     const mode = settings.mode === 'resume' ? (row.parent?.run_dir ? 'fine_tune' : 'scratch') : settings.mode;
     const from = LOADS.includes(mode) ? row.parent : null;
     const [point, since] = await Promise.all([from?.run_dir && from?.checkpoint_id ? readSavePoint(from.run_dir, from.checkpoint_id).catch(() => null) : Promise.resolve(null), savedSince(row)]);
-    if (stale()) return false;
+    if (stale()) return SILENT;
     const copied = Object.fromEntries(RUN_SETTINGS.filter(k => k in settings).map(k => [k, settings[k]]));
     const search = searchOf(settings);
     const result = await withRunTask(row, c => {
@@ -118,15 +125,15 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
       const run = { ...kept, ...copied, ...search, mode };
       return { ...c, run: point ? withSavePoint(run, point) : { ...run, model_source: { ...(c.run.model_source ?? {}),
         run_dir: from?.run_dir ?? null, checkpoint_id: from?.run_dir ? from.checkpoint_id ?? 'latest' : 'latest' } } };
-    }, true, stale);
-    if (stale()) return false;
-    if (!result.loaded) { setMessage({ level: 'info', text: `New run like ${runTitle(row)}: not taken, ${result.why}. Nothing changed.` }); return false; }
+    }, true, stale, owner);
+    if (stale()) return SILENT;
+    if (!result.loaded) return refuse('info', `New run like ${runTitle(row)}: not taken, ${result.why}. Nothing changed.`);
     setMessage({ level: 'info', text: `The next run repeats ${runTitle(row)}: task ${row.task_key}, ${MODE_NAME[mode] ?? mode}`
       + (search.optimizer === 'bayes' ? ' searched by Bayesian optimization (the network is neither asked nor trained)' : search.optimizer ? ` searched by ${search.optimizer}` : '')
       + (from ? ` from ${point ? `${nameOf(point)} (${pointWords(point)})` : `${folderName(from.run_dir)}'s save point ${from.checkpoint_id} (it could not be read now)`}` : '')
       + `, ${settings.max_evaluations} evaluations, seed ${settings.seed}, with its network, training values, reward, conditions and limits.`
       + `${sinceText(since, 'that run')} A model name already taken gets a number at the start. Undo takes it back.` });
-    return true;
+    return { loaded: true };
   };
   /** Continue... of the Runs window: the run is shown under Run status with its budget form open, where it goes on. */
   const [askContinue, setAskContinue] = useState<{ runDir: string; serial: number } | null>(null);
@@ -137,8 +144,8 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
   runActions.current = { loadRun, newRunLike, continueFrom, setRunDir, unfold };
   const runWindow = useMemo(() => ({
     choose: (dir: string | null) => { runActions.current.setRunDir(dir); if (dir) runActions.current.unfold(); },
-    load: (row: TaskRunSummary) => runActions.current.loadRun(row),
-    newLike: (row: TaskRunSummary) => runActions.current.newRunLike(row),
+    load: (row: TaskRunSummary, owner?: Window | null) => runActions.current.loadRun(row, owner),
+    newLike: (row: TaskRunSummary, owner?: Window | null) => runActions.current.newRunLike(row, owner),
     continueFrom: (row: TaskRunSummary) => runActions.current.continueFrom(row),
   }), []);
   return { taskLoad, askContinue, runWindow };

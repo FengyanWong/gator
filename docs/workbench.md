@@ -480,7 +480,8 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   label follows, the bottom tabs show its newest run, one Undo takes the whole choice back. The row of the task the page
   follows is marked. Then the window closes (record 7.291, user request 2026-10-09: "after selecting one target task,
   model or run, close the pop up window"); it stays open when the edits question is answered Cancel or the task cannot
-  be read.
+  be read. The edits question is asked in the Tasks window itself (branch record SIF-84): asked by the main window, it
+  opened behind the Tasks window, which stood still with "loading..." on the row until the question was found.
 * **Details** opens everything else under the row: what the task is, the cell it runs in and the cell it was saved from,
   its netlist of record, how it is measured, created / saved / baseline times, its state, the run label, its runs - and
   its rows: the Parameters it varies (searched rows with their ranges, follower rows), its Probes and its Specs with
@@ -1442,14 +1443,16 @@ it). The window lists every run under the output folder, newest first, one row p
   bottom tabs show the run - below. Where Load run is not offered, the double click only shows the run. The shown run's
   row is marked (blue, with a bar at its left edge), and the window closes once the run is chosen (record 7.291): after
   Show results and Continue... at once, after Load run and New run like this once they went through - Cancel at the edits
-  question or a model that cannot be read leaves it open, with the reason on the page. **Clear**, **Details**, the
-  folders and the links inside the window keep it open. **Clear** empties the tabs again. Nothing
+  question or a model that cannot be read leaves it open, with the reason on the page and, in the same words, in the
+  window (branch record SIF-84): beside the run's actions while its Details are open, else where the window's count of
+  runs stands (a double click). The next press, a Details toggle, Refresh list or closing the window lets that line go.
+  **Clear**, **Details**, the folders and the links inside the window keep it open. **Clear** empties the tabs again. Nothing
   here stops, starts or deletes anything: the header's Start / Pause / Abort keep acting on their own run.
 * **The actions**, at the top of a run's Details (record 7.267):
   - **Load run** (also the double click) sets three things together, as ONE Undo step for the draft:
     - **its task**, through the Tasks window's task load: the saved rows as they are now, never the run's archive, and
-      unsaved edits are asked about first. When it is already the page's task, the editors stay as they are, edits
-      included.
+      unsaved edits are asked about first - in the Runs window, where the press was (branch record SIF-84). When it is
+      already the page's task, the editors stay as they are, edits included.
     - **the model it ended with**, pinned as "Use this save point" pins one, with its network and component list:
       - a run that trained, its newest save point;
       - an Evaluate-only run, the save point it evaluated (its weights never changed), else its own;

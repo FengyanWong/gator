@@ -141,7 +141,8 @@ function TaskDetails({ task, runs, rows, error, followed, onRenamed }: { task: J
 export function TaskListButton({ tasks, runs, current, currentText, currentMark, ngspiceOffered, loading, onChoose, onRefresh, onRefreshRuns,
   onDelete, deleting, deleteDisabled, deleteTitle, deleteNotice, newTask }: { tasks: Json[]; runs: Json[];
   current: string | null; currentText: string; currentMark?: string; ngspiceOffered: boolean; loading: string | null;
-  onChoose: (taskKey: string) => Promise<{ loaded: boolean }> | void;
+  /** `owner`: this window, which asks the edits question (branch record SIF-84). */
+  onChoose: (taskKey: string, owner?: Window) => Promise<{ loaded: boolean }> | void;
   onRefresh: () => Promise<Json[]>; onRefreshRuns?: () => Promise<Json[]>;
   onDelete?: (owner: Window) => void; deleting?: boolean; deleteDisabled?: boolean; deleteTitle?: string; deleteNotice?: ReactNode;
   /** The ways to a new task (record 7.362: they left the circuit column): drawn in this window, handed the window so that the
@@ -200,9 +201,10 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   const chooseRow = (e: MouseEvent<HTMLTableRowElement>, key: string) => {
     if (deleting || (e.target as HTMLElement).closest('button, input, select, label')) return;
     (popup ?? window).getSelection()?.removeAllRanges();
-    // The window closes once the page follows the task (user request 2026-10-09); a task not loaded leaves it open.
+    // The window closes once the page follows the task (user request 2026-10-09); a task not loaded leaves it open. The
+    // edits question is asked in this window, where the double click was (branch record SIF-84).
     const shown = popup;
-    void Promise.resolve(onChoose(key)).then(r => { if (r?.loaded !== false && shown && !shown.closed) shown.close(); });
+    void Promise.resolve(onChoose(key, popup ?? undefined)).then(r => { if (r?.loaded !== false && shown && !shown.closed) shown.close(); });
   };
 
   const text = (t: Json) => [t.task_key, t.name, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();

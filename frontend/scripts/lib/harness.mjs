@@ -100,11 +100,12 @@ export const NEVER_ASKED = ['the page asked to start, continue, command, connect
 export const NEVER_ASKED_OR_SAVED = ['the page asked to start, continue, command, connect, save settings or open an agent CLI on its own: never',
   /\/api\/(runs\/(start|continue|command)|connection\/(check|connect|profile)|agent\/|circuit\/modify|virtuoso\/|network-settings)/];
 /** The page's confirm/alert dialogs on `session` answered from `answers` in order (true = OK; none left = Cancel), each
- *  recorded in `dialogs` with whether this check planned it. */
-export function answerDialogs(session, answers, dialogs) {
+ *  recorded in `dialogs` with whether this check planned it - and, given `where`, in which window it was asked (branch
+ *  record SIF-84: a pop-up asks its own questions). */
+export function answerDialogs(session, answers, dialogs, where = null) {
   return session.on('Page.javascriptDialogOpening', p => {
     const accept = answers.length ? answers.shift() : null;
-    dialogs.push({ message: p.message, planned: accept !== null });
+    dialogs.push({ message: p.message, planned: accept !== null, ...(where ? { where } : {}) });
     return session.send('Page.handleJavaScriptDialog', { accept: !!accept });
   });
 }
@@ -478,8 +479,9 @@ export async function showCircuit(page) {
  *  closes by itself (user request 2026-10-09): the next call waits for that and opens it anew, and `closedAfterChoice()` says
  *  whether it closed - a choice that did not go through (Cancel at the edits question) leaves it open, and it is used again.
  *  The window reads /api/tasks and /api/runs (GET) when it opens: a hermetic check lets both through or answers them.
- *  `window` = the attached pop-up session. */
-export function taskWindow(page, browser, { width = 1500, height = 760 } = {}) {
+ *  `window` = the attached pop-up session. `onDialog(session)`: given each window this opens, as `browser.popup` gives it -
+ *  the window asks the edits question of its own double click (branch record SIF-84); without it, nothing here answers them. */
+export function taskWindow(page, browser, { width = 1500, height = 760, onDialog = null } = {}) {
   const PANEL = TASK_PANEL;
   const ROW = `${PANEL}.querySelector('.task-row')`;
   const TABLE = `document.querySelector('.task-window table.task-table')`;
@@ -497,6 +499,7 @@ export function taskWindow(page, browser, { width = 1500, height = 760 } = {}) {
     if (far) { far = null; try { await browser.window(TASKS_WINDOW, { present: false, ms: 3000, except: page.target.id }); } catch { /* the old window lingers: attach by title below */ } }
     await page.evaluate(`${ROW}.querySelector('button.task-list-button').click()`, true);
     far = await browser.attach(await browser.window(TASKS_WINDOW, { except: page.target.id }), { errors: page.consoleErrors, prefix: 'task window: ' });
+    if (onDialog) { await far.send('Page.enable'); onDialog(far); }
     await far.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
     for (let i = 0; i < 80 && !(await far.evaluate(`!!(${TABLE}) || !!document.querySelector('.task-window .task-empty, .task-window .task-list-error')`)); i++) await sleep(100);
     await sleep(200);

@@ -61,7 +61,10 @@ await runChecks(browser, async () => {
     if (request.method === 'GET' || (pathname === '/api/output/check' && !body.create)) return send('Fetch.continueRequest', { requestId });   // reads
     return page.readOrRefuse({ requestId, request }, refused);
   };
-  page.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return send('Page.handleJavaScriptDialog', { accept: true }); });
+  // Every question answered OK, on the page and in the Tasks window: that window asks the edits question of its own double
+  // click (branch record SIF-84).
+  const onDialog = session => session.on('Page.javascriptDialogOpening', p => { dialogs.push(p.message); return session.send('Page.handleJavaScriptDialog', { accept: true }); });
+  onDialog(page);
   const PANEL = TASK_PANEL;
   const BUTTON = text => `[...(${PANEL}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const STEPS = `${PANEL}?.querySelector('.check-steps')`;
@@ -101,7 +104,7 @@ await runChecks(browser, async () => {
   check('the reason is folded until asked for', !(await evaluate(`[...${STEPS}.querySelectorAll('details p')].find(p => p.textContent.includes('FIXTURE MN1')).checkVisibility()`)));
   await page.shot(path.join(out, 'consistency-1-check-now.png'));
   // the rows change (the saved rows come back): the result was about the rows before, so it goes
-  const tasks = taskWindow(page, browser);
+  const tasks = taskWindow(page, browser, { onDialog });
   await tasks.choose(TASK);
   await tasks.close();
   for (let i = 0; i < 30 && (await evaluate(`!!(${STEPS})`)); i++) await sleep(100);

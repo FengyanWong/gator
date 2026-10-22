@@ -2146,3 +2146,44 @@ the tooltip names the replaced pause, and the question adds the advice. `tsc` cl
 Bayesian run paused with "yes" waits, Force abort's tooltip ends "... ends as cancelled. Only for a run that is stuck.", its
 question says "It cannot come back either way: it is searched by Bayesian optimization ..." with no "resumable", "continued"
 or "Fine-tune", and "no" sends nothing beyond the pause. `save_now_check` 29. None flaky.
+
+### SIF-84 A question from the Tasks or Runs window is asked in that window, and a refusal is said there (2026-10-22; from the usability audit)
+
+**Found.** Choosing another task from a pop-up while the editors held unsaved edits asked the edits question with the
+main window's `confirm` (audit findings J6-1 and J4-1). That covers a double click in the Tasks window, and Load run, New
+run like this or a double click in the Runs window. The dialog opened behind the pop-up. The pop-up is drawn by the main
+page's script, so it stood still too, with "loading..." on the Tasks window's row, and the press looked dead until the
+user found the dialog in the other window. After Cancel, or a run model that could not be read, the Runs window stayed
+open (by design, record 7.291), but the reason went only to the main page's message line, behind the window.
+
+**Changed.** `frontend/src/panels/taskChoice.ts`: the task load takes the window that holds the press (`owner`) and asks
+the edits question with `owner.confirm`, as the Virtuoso window's copy question already does. A window closed meanwhile
+falls back to the main window. The words, the answers and what each answer does are unchanged. "Reload saved values"
+and the ngspice window's save still ask in the main window. `TaskList.tsx` and `Left.tsx`: the Tasks window's double
+click passes its window. `page/runWindowActions.ts`: Load run and New run like this take the Runs window and pass it on.
+They now answer `{ loaded, why }`, where `why` is exactly the sentence the page's message gets ("Run alpha.baseline 10-05
+18:00 was not loaded: you chose Cancel, so the task and its edits stay as they were. Nothing changed."). A choice
+overtaken by a newer one still says nothing, in either place. The page messages are unchanged. `RunList.tsx`: when a
+Load run or New run like this does not go through, the window keeps its line (`.run-refused`, `role="status"`). The line
+stands beside the run's actions while its Details are open; after a double click it stands where the count of runs
+stood. The next press, a Details toggle, Refresh list or closing the window lets it go. The window's hint says it stays
+open "saying why". `BottomPanel.tsx`: the types only. Nothing new starts, saves, loads or writes. Every question is asked
+on the same press with the same words, and Cancel still changes nothing. `docs/workbench.md` (the Tasks window's double
+click; the Runs window's double click and Load run) and `docs/functionality-reference.md` say where the question is
+asked and where the reason shows. Checks: `lib/harness.mjs` `taskWindow()` takes `onDialog` and gives it every Tasks window
+it opens, and `answerDialogs()` can record which window asked. `task_rows_check` answers the edits question in the Tasks
+window. `virtuoso_source_check` and `consistency_check` give their handlers to the Tasks window. Without this,
+consistency_check's choice after an edit waited on an unanswered dialog until its 120 s limit.
+
+**Checked.** `tsc` clean. `task_run_check` 39, eight of them new, in section 11: with a size row of real:beta edited, a double
+click on real:alpha's run asks "Switch to real:alpha? ..." in the Runs window and nothing in the main window. Cancel
+keeps the window open, and its count line reads the page message's sentence word for word. The task, the edited row and
+the shown run stay. Opening the run's Details brings the count back. Load run, answered Cancel, puts the line beside the
+actions (photographed, `task-run-4-load-cancelled.png`). Answered OK, it loads real:alpha and the window closes.
+`task_rows_check` 54, two new: Cancel's question came from the Tasks window, and every edits question in the check did.
+`run_list_check` 129, one new: a Load run whose model read fails puts the page's sentence beside the run's actions. No step
+there reaches the edits question, because every run it can load has the page's own task. `virtuoso_source_check` 95,
+`consistency_check` 14, `task_list_check` 88, `testbench_probes_check` 41, `project_help_check` 49, `ngspice_window_check`
+43, `circuit_source_check` 15, `dom_identity_check` 56. One flake: `task_list_check` failed twice on its first run, at
+"Rename sends the task's key and the new name, then reads the task list again" and the next step. Rename is untouched
+here, and it passed 88 of 88 alone.

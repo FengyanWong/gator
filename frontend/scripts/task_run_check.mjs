@@ -11,12 +11,13 @@
 // included) unless the header holds another run by then, a run chosen in the run window while the list is read stays, a
 // failed read or an older server (runs without their task) leaves the run shown as it is, the header's own run is never
 // changed, and the run window names each run's registered task. Record 7.267: a run is chosen to be shown with Show results
-// (a double click LOADS it now), and Load run makes the task-run link give way: the loaded run stays shown.
+// (a double click LOADS it now), and Load run makes the task-run link give way: the loaded run stays shown. Branch record
+// SIF-84: Load run's edits question is asked in the Runs window, and a Cancel is said there as well as on the page.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_run_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, RUN_KEY, runChecks, sleep, TASK_PANEL, taskWindow, validConfiguration, workbenchUrl, RUNS_WINDOW } from './lib/harness.mjs';
+import { answerDialogs, check, launchEdge, NEVER_ASKED, outDir, reportRefused, RUN_KEY, runChecks, sleep, TASK_PANEL, taskWindow, validConfiguration, workbenchUrl, RUNS_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -250,6 +251,49 @@ await runChecks(browser, async () => {
 
   check('the header\'s run was never changed by any of this', (await headerRun()) === A1.run_dir, await headerRun());
   check('no question was asked: the rows were untouched at every choice', dialogs.length === 0, JSON.stringify(dialogs));
+
+  // ---- 11. Load run with edited rows (branch record SIF-84): the edits question is asked in the Runs window, where the press
+  // was - the main window's opened behind it, and the Runs window, drawn by the page's script, stood still meanwhile - and a
+  // Cancel is said in the window too, in the page message's words: that message line stands behind the window ----------------
+  const LOWER = `JSON.parse(localStorage.getItem('gator-workbench-config-v1') ?? 'null')?.parameters?.[0]?.lower`;
+  const banner = () => evaluate(`document.querySelector('.banner')?.textContent ?? ''`);
+  await evaluate(`[...${EDITORS}.querySelectorAll(':scope > .tabs > button')].find(b => b.textContent.trim().startsWith('Parameters')).click()`);
+  await page.setValue(`${EDITORS}.querySelector('table.editor tbody tr input.numeric')`, '0.0000007', { event: 'input' });
+  check('(set-up) real:beta\'s size row is edited', await until(`${LOWER} === 7e-7`, 30), String(await evaluate(LOWER)));
+  await openWindow();
+  const runsAnswers = [], runsDialogs = [];
+  await far.send('Page.enable');
+  answerDialogs(far, runsAnswers, runsDialogs, 'Runs window');
+  const REFUSED = `${WINDOW}.querySelector('.run-refused')`;
+  const CANCELLED = /^Run alpha\.baseline \d\d-\d\d \d\d:\d\d was not loaded: you chose Cancel, so the task and its edits stay as they were\. Nothing changed\.$/;
+  runsAnswers.push(false);
+  await doubleClick(A1);
+  const refusedText = (await far.until(`!!(${REFUSED})`, 60)) ? await far.evaluate(`${REFUSED}.textContent`) : '(no line)';
+  check('a double click on another task\'s run asks the edits question in the Runs window, none in the main window',
+    runsDialogs.length === 1 && runsDialogs[0].message.startsWith('Switch to real:alpha?') && runsDialogs[0].message.includes('unsaved') && dialogs.length === 0,
+    JSON.stringify({ runs: runsDialogs, main: dialogs }));
+  check('... Cancel: the window stays open and says why where its count stood, in the page message\'s words', CANCELLED.test(refusedText)
+    && refusedText === await banner() && await far.evaluate(`${REFUSED}.classList.contains('run-count') && ${REFUSED}.getAttribute('role') === 'status'`),
+    `${refusedText} | ${await banner()}`);
+  check('... and nothing changed: real:beta with its edited row, its newest run shown', (await evaluate(TASK_KEY)) === 'real:beta' && (await evaluate(LOWER)) === 7e-7
+    && await evaluate(names(B1)), `${await evaluate(TASK_KEY)} / ${await evaluate(LOWER)} / ${await shown()}`);
+  await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(A1.run_dir)});
+    [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === 'Details').click(); })()`, true);
+  const LOAD = `[...${WINDOW}.querySelectorAll('tr.run-details-row')].find(row => row.previousElementSibling?.title === ${JSON.stringify(A1.run_dir)})?.querySelector('.run-actions button.run-load')`;
+  check('opening the run\'s Details lets the line go: the count is back', await far.until(`!!(${LOAD}) && !(${REFUSED}) && /^3 runs under the output folder/.test(${WINDOW}.querySelector('.run-count').textContent)`, 40),
+    await far.evaluate(`${WINDOW}.querySelector('.run-count')?.textContent ?? ''`));
+  runsAnswers.push(false);
+  await far.evaluate(`${LOAD}.click()`, true);
+  check('Load run, Cancel again: the line stands beside the run\'s actions', await far.until(`!!${WINDOW}.querySelector('tr.run-details-row .run-actions .run-refused')`, 60)
+    && runsDialogs.length === 2 && CANCELLED.test(await far.evaluate(`${REFUSED}.textContent`)), await far.evaluate(`${REFUSED}?.textContent ?? '(no line)'`));
+  await far.shot(path.join(out, 'task-run-4-load-cancelled.png'), `${WINDOW}.querySelector('tr.run-details-row .run-refused').parentElement`, { pad: 8 });
+  runsAnswers.push(true);
+  await far.evaluate(`${LOAD}.click()`, true);
+  let closed = false;
+  try { await browser.window(RUNS_WINDOW, { present: false, ms: 6000, except: page.target.id }); closed = true; } catch { /* still open */ }
+  check('Load run, OK: asked in the Runs window again, the run is loaded and the window closes', closed && runsDialogs.length === 3 && runsDialogs.every(d => d.planned)
+    && await until(`${TASK_KEY} === 'real:alpha'`, 60) && /^Loaded run alpha\.baseline /.test(await banner()), `${closed} / ${runsDialogs.length} / ${await banner()}`);
+  check('the main window asked nothing at all', dialogs.length === 0, JSON.stringify(dialogs));
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.filter(e => !/404|418/.test(e)).length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

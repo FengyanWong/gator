@@ -16,7 +16,8 @@
 // Record 7.267: a run's Details have Load run (also the double click), Show results, Continue... and New run like this; Load
 // run brings the model the run ended with, pinned with its network, as one Undo step; a run whose task is gone offers neither.
 // Branch record SIF-64: a working run's "so far" may go under its time, so it does not widen the table. Branch record SIF-75:
-// names break between words or after "_", "-" or ".", never inside one, and "Started from" takes three lines at most.
+// names break between words or after "_", "-" or ".", never inside one, and "Started from" takes three lines at most. Branch
+// record SIF-84: a Load run that does not go through says why in the window as well (the edits question is task_run_check's).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -568,6 +569,10 @@ await runChecks(browser, async () => {
   check('... nothing changed: no model chosen - not its parent\'s - and the bottom tabs still show the run they showed', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir
     && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`), JSON.stringify(draft?.model_source));
   check('... and the window stays open: no run was loaded (record 7.291)', await windowOpen());
+  // Branch record SIF-84: the page's message line stands behind the window, so the window says it too, beside the run's actions.
+  const refusedLine = (await far.until(`!!${ACTIONS}?.querySelector('.run-refused')`, 40)) ? await far.evaluate(`${ACTIONS}.querySelector('.run-refused').textContent`) : '(no line)';
+  check('... and says why beside the run\'s actions, in the page message\'s words', refusedLine === await banner()
+    && await far.evaluate(`${ACTIONS}.querySelector('.run-refused').getAttribute('role') === 'status'`), `${refusedLine} | ${await banner()}`);
   failModel = null; holdModel = true;
   await openDetails(EVALUATED); await act('Load run');                            // the save point it evaluated is held back
   check('(set-up) an Evaluate-only run\'s Load run waits for its model', await (async () => { for (let i = 0; i < 40 && !heldModel.length; i++) await sleep(100); return heldModel.length === 1; })());

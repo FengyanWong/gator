@@ -272,7 +272,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   const head = taskHead && createPortal(
     <span className="row task-row" title="The task the editors and a run are about; its name opens the Tasks window. A cell read from Virtuoso becomes one of these with Save as.">
       <span className="task-caption">Task</span>
-      <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={key => chooseTask(key)}
+      <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={(key, owner) => chooseTask(key, undefined, false, undefined, undefined, owner)}
         onRefresh={() => tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
         current={current}
         currentMark={current ? taskMark(tasks.find(t => t.task_key === current) ?? { kind: 'real', available: true }, showNgspice) : undefined}

@@ -3414,7 +3414,8 @@ Nothing is saved or written to Virtuoso from the window. A close - its Close, th
 keeps a draft not applied (branch record SIF-87; it used to go with no question): the next **Task file** press reads the
 file again and lays the draft over it, with the line "Your changes from before are kept, not applied yet. Revert drops
 them." **Revert** goes back to the file as read then. A draft applied or reverted is not kept, and another task or cell
-drops it.
+drops it. A kept draft still holds the rows it was typed over: changed in the editors while the window was closed, the
+window says so as above (review of SIF-93).
 
 **Running a task measured by Maestro:** see "Running a task measured by Maestro" below - Save task also has Maestro
 netlist the task's test once. A Maestro-measured task saved before that part is listed as not runnable until it is saved

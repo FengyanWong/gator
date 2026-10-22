@@ -235,16 +235,19 @@ await runChecks(browser, async () => {
   const TOOL = text => `[...document.querySelectorAll('.editors .toolbar button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const FILE_BUTTON = text => `[...document.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const CHANGED = `document.querySelector('.task-file .editors-changed')`;
-  const fileState = () => fileWindow.evaluate(`({ changed: ${CHANGED}?.textContent ?? null, apply: document.querySelector('.task-file .row button.primary')?.textContent.trim(),
-    text: document.querySelector('.task-file textarea')?.value ?? '' })`);
+  const fileState = (win = fileWindow) => win.evaluate(`({ changed: ${CHANGED}?.textContent ?? null, apply: document.querySelector('.task-file .row button.primary')?.textContent.trim(),
+    text: document.querySelector('.task-file textarea')?.value ?? '', kept: document.querySelector('.task-file .kept-draft')?.textContent ?? null })`);
   const short = state => JSON.stringify({ ...state, text: state.text.slice(0, 40) });
   const fileDialogs = [], fileAnswers = [];                                   // questions the file window asks, in that window
-  await fileWindow.send('Page.enable');
-  fileWindow.on('Page.javascriptDialogOpening', p => {
-    const accept = fileAnswers.length ? fileAnswers.shift() : null;
-    fileDialogs.push({ message: p.message, planned: accept !== null });
-    return fileWindow.send('Page.handleJavaScriptDialog', { accept: !!accept });
-  });
+  const answerFileDialogs = async win => {                                    // a window opened again is another target
+    await win.send('Page.enable');
+    win.on('Page.javascriptDialogOpening', p => {
+      const accept = fileAnswers.length ? fileAnswers.shift() : null;
+      fileDialogs.push({ message: p.message, planned: accept !== null });
+      return win.send('Page.handleJavaScriptDialog', { accept: !!accept });
+    });
+  };
+  await answerFileDialogs(fileWindow);
   let state = await fileState();
   check('applied, the file holds the editors\' rows again: no "editors changed" line, Apply as it was (SIF-93)',
     state.changed === null && state.apply === 'Apply to editors', short(state));
@@ -327,9 +330,40 @@ await runChecks(browser, async () => {
   check('none of it changed the editors: the broken draft was never applied', config.measurements[0].analysis === 'tran' && config.targets[0].lower === 1.25e9,
     JSON.stringify({ analysis: config.measurements[0].analysis, lower: config.targets[0].lower }));
 
+  // Review of SIF-93: a draft kept from a closed window was typed over the rows read before the close. Changed in the editors
+  // while it was closed (their Undo), the window opened again lays the draft over a reading of the editors as they are now -
+  // and still says they changed, because its Apply would put the older rows back.
+  again = await reopenFile();
+  const keptOver = JSON.parse(again.text); keptOver.notes = 'kept over';
+  await typeInto(`${POPUP}.document.querySelector('.task-file textarea')`, JSON.stringify(keptOver, null, 2));
+  await popupEval(`[...d.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === 'Close').click()`); await settle(600);
+  await evaluate(`${TOOL('Undo')}.click()`);
+  for (let i = 0; i < 30 && (await stored()).parameters[0].upper !== 1.6; i++) await sleep(100);   // the Apply of upper 1.7 undone
+  again = await reopenFile();
+  const keptWindow = await browser.attach(await browser.window(FILE_TITLE, { except: page.target.id }), { errors: consoleErrors, prefix: 'file window: ' });
+  await answerFileDialogs(keptWindow);
+  state = await fileState(keptWindow);
+  check('a draft kept while the editors changed: the window opened again shows it and says the editors changed since it was typed (review of SIF-93)',
+    again.reads === 'task/file' && state.kept === KEPT_LINE && state.text === JSON.stringify(keptOver, null, 2) && !!state.changed?.startsWith(CHANGED_SAYS), short(state));
+  fileMark = calls.length;
+  await keptWindow.evaluate(`${FILE_BUTTON('Apply to editors')}.click()`); await sleep(300);
+  check('...and its first Apply press sends nothing and changes nothing (review of SIF-93)', (await fileState(keptWindow)).apply === 'Apply anyway'
+    && calls.length === fileMark && (await stored()).parameters[0].upper === 1.6);
+  fileAnswers.push(true);
+  await keptWindow.evaluate(`${FILE_BUTTON('Read again from the editors')}.click()`); await settle(1500);
+  state = await fileState(keptWindow);
+  check('"Read again from the editors" asks about the kept draft, reads the editors as they are now and drops it: the line goes (review of SIF-93)',
+    fileDialogs.at(-1)?.message === 'Read again from the editors? Your changes to this file are dropped.' && fileDialogs.at(-1)?.planned && !fileAnswers.length
+    && calls.slice(fileMark).map(c => c.op).join() === 'task/file' && calls.at(-1).config?.parameters?.[0]?.upper === 1.6
+    && state.changed === null && state.kept === null && state.apply === 'Apply to editors' && !state.text.includes('kept over'), short(state));
+  await keptWindow.evaluate(`${FILE_BUTTON('Close')}.click()`); await settle(600);
+  await evaluate(`${TOOL('Redo')}.click()`);
+  for (let i = 0; i < 30 && (await stored()).parameters[0].upper !== 1.7; i++) await sleep(100);
+
   const updateTask =() => evaluate(`window.dispatchEvent(new CustomEvent('gator-save-task-request', { detail: { task: 'real:ring_osc' } }))`);
 
   // ---- Calibration's explicit update: the next revision of the same task --------------------------------------------------------------------------------
+  again = await reopenFile();                      // open through the save: the task stays, so the window does (review of SIF-93)
   let mark = calls.length;
   await updateTask(); await settle(1500);
   const saveCall = calls.slice(mark).find(c => c.op === 'task/save');
@@ -339,6 +373,27 @@ await runChecks(browser, async () => {
     && saveCall.extras?.analyses?.tran?.stop === '40n' && saveCall.config?.targets?.[0]?.lower === 1.25e9, JSON.stringify(saveCall ?? calls.slice(mark)));
   check('it reports the revision and that the baseline no longer holds, under the toolbar', (await notesText()).includes('Saved real:ring_osc, revision 2.') && (await notesText()).includes('no longer holds'), await notesText());
   check('sent, the file\'s other parts no longer wait: the line naming them goes (SIF-93)', (await pendingText()) === null, await notesText());
+  // Review of SIF-93: an Apply from the window still open counts from what the save sent, not from the file read before the
+  // save - the analyses and notes just saved are not named again; a row changed is applied as ever, and the editors' Undo
+  // takes it back. The save put the backend's rows into the editors, so the window says they changed: Apply anyway.
+  const stillOpen = (await browser.pages()).some(t => t.id !== page.target.id && t.title === FILE_TITLE);
+  if (stillOpen) {                                 // never window.open('', name) for a window gone: it would open a blank one
+    const savedUpper = (await stored()).parameters[0].upper;
+    const afterSave = JSON.parse(again.text);
+    afterSave.maestro.analyses = { tran: { stop: '40n' } }; afterSave.notes = 'tighter'; afterSave.parameters[0].upper = 1.65;
+    await typeInto(`${POPUP}.document.querySelector('.task-file textarea')`, JSON.stringify(afterSave, null, 2));
+    await popupEval(`d.querySelector('.task-file .row button.primary').click()`); await sleep(300);
+    if ((await popupEval(`return d.querySelector('.task-file .row button.primary').textContent.trim()`)) === 'Apply anyway')
+      await popupEval(`d.querySelector('.task-file .row button.primary').click()`);
+    await settle();
+    config = await stored();
+    for (let i = 0; i < 30 && config.parameters[0].upper !== 1.65; i++) { await sleep(100); config = await stored(); }
+    check('applied again after that save, from the window still open: the parts just saved are not named as waiting (review of SIF-93)',
+      config.parameters[0].upper === 1.65 && (await pendingText()) === null, await notesText());
+    await evaluate(`${TOOL('Undo')}.click()`);
+    for (let i = 0; i < 30 && (await stored()).parameters[0].upper !== savedUpper; i++) await sleep(100);
+    await popupEval(`[...d.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === 'Close').click()`); await settle(600);
+  } else check('the task file window stays open through the save of its own task (review of SIF-93)', false);
   await sleep(500);
   check('the open task shows its new revision', (await headText()).includes('rev. 2'), await headText());
 

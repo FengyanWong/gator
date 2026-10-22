@@ -2580,3 +2580,19 @@ Cancel reads nothing and keeps the draft. Apply's first press sends nothing, and
 the editors, the line gone). The waiting parts stay named, every question of the window was planned, and the save sends
 them and takes the toolbar line away. `virtuoso_source_check` 104, `project_help_check` 50, `working_copy_check` 34,
 `calibration_save_check` 22, `unsaved_rows_check` 25. No flakes.
+
+**Review follow-up.** The review of 2331c35 found two slips, both real. (1) A draft kept from a closed window (SIF-87)
+lies over a later reading, so the rows of that reading were compared with the editors. An edit made in the editors while
+the window was closed went unsaid, and the first Apply put the draft's older rows back. `frontend/src/panels/TaskSave.tsx`
+now keeps `keptRows`, the rows the draft was typed over, taken when it is first kept. While such a draft is in the box the
+editors are compared with those. Revert, an Apply or **Read again from the editors** ends the draft, and the reading's
+own rows count again. The review's smaller fix, keeping the old rows in `readFile`, would have kept them through Revert
+and through the read again too, so the line would have stayed. (2) After a save the base of `pending` went back to null.
+The next Apply from the window still open (Calibration's **Apply and save** keeps the task, so the window stays) then
+counted from the file read before that save. It named parts just saved as waiting. A save now leaves the base at the
+text of the last Apply (`lastApplied`), which is what it sent. `docs/workbench.md` says a kept draft keeps its rows.
+Nothing is saved, run or written by this. `tsc` clean. `task_save_check` 91 (87 before): a draft kept while the editors'
+Undo ran shows the line when opened again, and its first Apply sends nothing. **Read again from the editors** asks about
+it, reads once and the line goes. Applied again after Calibration's save from the window still open, no part is named as
+waiting. Each new check fails on the code before its fix. `virtuoso_source_check` 104, `project_help_check` 50,
+`unsaved_rows_check` 25, `calibration_save_check` 22, `edit_state_check` 24. No flakes.

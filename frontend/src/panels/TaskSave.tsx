@@ -98,16 +98,24 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
   // What is typed in it (branch record SIF-87): kept here, so that a close - Close, the window's X, the banner's Close all -
   // keeps a draft not applied for the next "Task file" press, which reads the file again and lays the draft over it.
   const [fileDraft, setFileDraft] = useState<FileDraft | null>(null);
-  const closedFile = () => { setFile(null); setFileDraft(d => (unapplied(d) ? { ...d, kept: true } : null)); };
+  const closedFile = () => { setFile(null); setFileDraft(d => (unapplied(d) ? { ...d, kept: true } : null));
+    // Kept for the first time: the rows it was typed over, which the next reading no longer holds (`keptRows`).
+    if (!fileDraft?.kept) setKeptRows(fileRows); };
   // Branch record SIF-93. The file is a snapshot: `fileRows`, the editors' rows it was read from (or that its last Apply
   // left, taken after that render, so that rows the backend writes out its own way are no change); while the editors
   // differ, the window says an Apply replaces those changes. `pending`: the parts beside the rows that applied files
   // changed since the last save, counted from the first file read since (`fileBase`) - they wait here, unseen, and a
   // reload or another task drops them, so a line under the toolbar names them until a save sends them.
+  // Review of SIF-93: a draft kept from a closed window lies over a later reading, yet was typed over the rows read before
+  // (`keptRows`) - compared with the new reading's rows, an editor change made while it was closed went unsaid and its
+  // Apply put the older rows back. And a save leaves the base at the text of the last Apply (`lastApplied`), what it sent,
+  // not at the file read before it, which named parts just saved as waiting.
   const [fileRows, setFileRows] = useState<string | null>(null);
+  const [keptRows, setKeptRows] = useState<string | null>(null);
   const [applied, setApplied] = useState(0);
   const [pending, setPending] = useState<string[]>([]);
   const fileBase = useRef<string | null>(null);
+  const lastApplied = useRef<string | null>(null);
   const latest = useRef({ config, profileId, library, cell, task, pending });
   latest.current = { config, profileId, library, cell, task, pending };
   const mounted = useRef(false);
@@ -121,7 +129,7 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
   // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go,
   // with what was typed in that file.
   useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setChoice(null); setFrequency(''); setFile(null); setFileDraft(null); fileWindow.popup?.close();
-    setPending([]); fileBase.current = null; setFileRows(null); }, [task, library, cell]);
+    setPending([]); fileBase.current = null; lastApplied.current = null; setFileRows(null); }, [task, library, cell]);
   useLayoutEffect(() => { if (applied) setFileRows(rowsKey(latest.current.config)); }, [applied]);   // before paint: no flash of "changed"
 
   // The save running in the backend, read when Save task appears and then every second while one runs (`own`: this
@@ -180,7 +188,7 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     noteRowsFrom(made.task_key, made.revision);
     setExtras((current: Json) => current === extras ? sent : current); setAskFrequency(false);
     // Sent: the file's other parts no longer wait (branch record SIF-93) - unless a file applied during the save added more.
-    if (latest.current.pending === pending) { setPending([]); fileBase.current = null; }
+    if (latest.current.pending === pending) { setPending([]); fileBase.current = lastApplied.current; }
     const edited = ['parameters', 'measurements', 'targets'].some(key => latest.current.config[key] !== config[key]);
     setMessage({ level: made.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `${savedText(made)}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
     onSaved(made, config);
@@ -263,7 +271,7 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     setConfig(c => ({ ...c, parameters: rows.parameters ?? c.parameters, measurements: rows.measurements ?? c.measurements, targets: rows.targets ?? c.targets }), true);
     setExtras((x: Json) => ({ ...x, ...more }));
     const base = fileBase.current ?? file?.text ?? text;
-    fileBase.current = base;
+    fileBase.current = base; lastApplied.current = text;
     setPending(otherPartsChanged(base, text));
     setApplied(n => n + 1);
   };
@@ -278,7 +286,8 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
   const progress = running ? progressOf(running) : busy === 'save' ? { value: 0, max: 1, text: `Saving real:${taskName} - starting` } : null;
   const waits = running && busy !== 'save' ? `Waits for the save of ${running.task_key} that is running. ` : '';
   const said = askFrequency || message || progress || newer || pending.length > 0;
-  const editorsChanged = !!file?.text && fileRows !== null && rowsKey(config) !== fileRows;
+  const rowsRead = fileDraft?.kept && unapplied(fileDraft) ? keptRows : fileRows;    // the rows under what the box shows
+  const editorsChanged = !!file?.text && rowsRead !== null && rowsKey(config) !== rowsRead;
   return (<>
     {bar && createPortal(
       <div className="task-save">

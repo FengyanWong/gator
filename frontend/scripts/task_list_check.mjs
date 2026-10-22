@@ -207,14 +207,31 @@ await runChecks(browser, async () => {
   check('no question was asked: the rows were untouched', dialogs.length === 0, JSON.stringify(dialogs));
   check('one Undo takes the choice back, and the Task row says so', (await evaluate(`[...${EDITORS}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Undo').click()`), await until(`${ROW}.querySelector('.task-list-key')?.textContent === 'synthetic:gpdk045_ota5'`, 50)));
   check('... and the window marks the MOCK task again', await far.until(`${ROWS}.filter(tr => tr.classList.contains('current')).map(tr => tr.dataset.taskKey).join() === 'synthetic:gpdk045_ota5'`, 30));
-  await tw.choose('real:fixture_ota');
-  await tw.closedAfterChoice();
+  // Branch record SIF-100: a double click was the only way to follow a task - no button, no key - where the Runs window's
+  // Details have Load run. The Details of a task the page does not follow hold "Follow this task"; a row takes Enter.
+  const FOLLOW = `${WINDOW}.querySelector('.task-details button.task-follow')`;
+  const followsOta = () => until(`${ROW}?.querySelector('.task-list-key')?.dataset.taskKey === 'real:fixture_ota' && !${PANEL}.querySelector('[role="status"]')`, 100);
+  await far.evaluate(`[...${ROWS}.find(tr => tr.dataset.taskKey === 'real:fixture_ota').querySelectorAll('button')].find(b => b.textContent.trim() === 'Details').click()`, true);
+  check('the Details of a task the page does not follow offer "Follow this task", saying what it does (branch record SIF-100)', await far.until(`!!(${FOLLOW})`, 50)
+    && (await far.evaluate(`${FOLLOW}.title`)).includes('edits are asked about first'), await far.evaluate(`${FOLLOW}?.title ?? 'no button'`));
+  await far.evaluate(`${FOLLOW}.click()`, true);
+  check('... pressed, the page follows that task and the window closes', await followsOta() && await tw.closedAfterChoice(), await tw.current());
+  far = await tw.open();
+  check('... and the Details of the task the page follows offer none', await far.until(`!!${WINDOW}.querySelector('.task-details')`, 50) && !(await far.evaluate(`!!(${FOLLOW})`)));
+  await press('Hide details');
+  await evaluate(`[...${EDITORS}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Undo').click()`);
+  await far.until(`${ROWS}.filter(tr => tr.classList.contains('current')).map(tr => tr.dataset.taskKey).join() === 'synthetic:gpdk045_ota5'`, 30);
+  await far.evaluate(`${ROWS}.find(tr => tr.dataset.taskKey === 'real:fixture_ota').focus()`);
+  const enter = type => far.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await enter('keyDown'); await enter('keyUp');
+  check('Enter on a task\'s row makes the page follow it too, and the window closes', await followsOta() && await tw.closedAfterChoice(), await tw.current());
   far = await tw.open();
 
   // ---- 5. Details: the facts and the task's rows -----------------------------------------------------------------------------------
+  const reads = count('starter real:fixture_ota');
   await far.evaluate(`[...${ROWS}.find(tr => tr.dataset.taskKey === 'real:fixture_ota').querySelectorAll('button')].find(b => b.textContent.trim() === 'Details').click()`, true);
   const DETAILS = `${WINDOW}.querySelector('.task-details')`;
-  check('Details opens under the row and reads the task\'s rows once (the third read: two choices went before)', await far.until(`!!(${DETAILS}) && !!${DETAILS}.querySelector('table.task-rows-table')`, 50) && count('starter real:fixture_ota') === starters + 3, `${count('starter real:fixture_ota') - starters} read(s)`);
+  check('Details opens under the row and reads the task\'s rows once', await far.until(`!!(${DETAILS}) && !!${DETAILS}.querySelector('table.task-rows-table')`, 50) && count('starter real:fixture_ota') === reads + 1, `${count('starter real:fixture_ota') - reads} read(s)`);
   const details = await far.evaluate(`${DETAILS}.textContent`);
   check('the facts: registered task, cell with testbench, saved from, revision, baseline, state, sizes, results, runs', ['Registered taskfixture_ota', 'Runs inFIXTURE_LIB/fixture_ota with testbench tb_fixture_ota',
     'Revision3', `Baseline recorded${stamp(OTA.baseline_recorded_utc)}`, 'Statebaseline recorded', 'Sizes varied6', 'Results measured6', 'Runs2; newest'].every(t => details.includes(t)) && !(await far.evaluate(`[...${DETAILS}.querySelectorAll('.run-facts tr')].some(tr => tr.children[0].textContent === 'Kind')`)), details.slice(0, 300));
@@ -256,6 +273,13 @@ await runChecks(browser, async () => {
   before = { tasks: count('/api/tasks'), runs: count('/api/runs') };
   await sleep(2500);
   check('nothing in the window updates by itself', count('/api/tasks') === before.tasks && count('/api/runs') === before.runs, JSON.stringify(seen));
+  // Branch record SIF-100: the task's name, pressed while the window is open, only brought it to the front, though its tooltip
+  // says it reads the lists again (as Runs... does).
+  await evaluate(`${ROW}.querySelector('button.task-list-button').click()`, true);
+  check('pressing the task\'s name while the window is open reads the task list again, as its tooltip says, in the same window', await (async () => {
+    for (let i = 0; i < 40 && count('/api/tasks') < before.tasks + 1; i++) await sleep(50);
+    return count('/api/tasks') === before.tasks + 1 && count('/api/runs') === before.runs; })() && (await far.evaluate(`${WINDOW}.textContent.includes('read at')`))
+    && (await evaluate(`${ROW}.querySelector('button.task-list-button').title`)).includes('read the lists again'), JSON.stringify(seen.slice(-3)));
 
   // ---- 8b. rename (record 7.302): the name a task is SHOWN under; its key, and with it every link, stays ---------------------
   const DETAILS_OF = key => `${ROWS}.find(tr => tr.dataset.taskKey === ${JSON.stringify(key)}).nextElementSibling.querySelector('.task-details')`;
@@ -275,7 +299,14 @@ await runChecks(browser, async () => {
     && (await tw.keys()).includes('real:fixture_ota'), await cell(OTA.task_key, 0));
   const renamedFacts = await far.evaluate(`${DETAILS_OF(OTA.task_key)}.textContent`);
   check('the facts name both: the shown name and the internal name its files, cell and runs keep', renamedFacts.includes('Registered taskota_relaxed') && renamedFacts.includes('Internal namefixture_ota - its files, its cell and its runs keep this name'), renamedFacts.slice(0, 260));
-  check('the page follows this task: the note says new runs take the name once it is chosen again', renamedFacts.includes('once the page follows it again'));
+  // Branch record SIF-100: the note sent the user to a double click on the row - which asks to discard edits - before new
+  // runs took the name. The page that follows the task takes its run label at once, with no question.
+  check('the note says new runs of the task are filed under this name, with nothing more to do', renamedFacts.includes('New runs of the task are filed under this name.')
+    && !renamedFacts.includes('once the page follows it again'), renamedFacts.slice(0, 200));
+  const label = () => until(`document.querySelector('header .tb-model .tb-v')?.textContent === 'ota_relaxed'`, 30);
+  check('the page follows this task: its run label is the new name at once (the header\'s RL model fact too), no question asked',
+    await label() && (await page.savedConfig()).project.task_name === 'ota_relaxed' && (await page.stored()).circuit.task_id === 'real:fixture_ota' && dialogs.length === 0,
+    `${(await page.stored()).project.task_name} / ${JSON.stringify(dialogs)}`);
   check('its runs are still its runs (the links go by the key)', (await cell(OTA.task_key, 8)) === '2');
   check('the Project column\'s button shows the new name, for the same task', await until(`${ROW}.querySelector('.task-list-key')?.textContent === 'ota_relaxed' && ${ROW}.querySelector('.task-list-key')?.dataset.taskKey === 'real:fixture_ota'`, 50),
     await evaluate(`${ROW}.querySelector('.task-list-key')?.textContent`));
@@ -321,11 +352,15 @@ await runChecks(browser, async () => {
   check('typing the internal name takes the rename back: one name again, no second line', await far.until(`${ROWS}.find(tr => tr.dataset.taskKey === 'real:fixture_ota').children[1].textContent.trim() === 'fixture_ota'`, 60)
     && !(await far.evaluate(`${DETAILS_OF(OTA.task_key)}.textContent`)).includes('Internal name') && await until(`${ROW}.querySelector('.task-list-key')?.textContent === 'fixture_ota'`, 50), await cell(OTA.task_key, 0));
   check('... and the header\'s title, Next line and Start\'s tooltip go back to it with the button', await until(headNames('fixture_ota'), 50), JSON.stringify(await evaluate(HEAD)));
+  check('... and so does the run label (branch record SIF-100)', await until(`document.querySelector('header .tb-model .tb-v')?.textContent === 'fixture_ota'`, 30)
+    && (await page.savedConfig()).project.task_name === 'fixture_ota', (await page.stored()).project.task_name);
   await far.shot(path.join(out, 'task-list-3b-rename.png'));
   await press('Hide details');
   await openDetails(MOCK.task_key);
   check('a task listed without a shown name (an older server): the Name box is off and Rename says why', await far.until(`!!${DETAILS_OF(MOCK.task_key)}?.querySelector('input.task-rename')`, 50)
     && await far.evaluate(`${DETAILS_OF(MOCK.task_key)}.querySelector('input.task-rename').disabled && ${renameButton(MOCK.task_key)}.disabled && ${renameButton(MOCK.task_key)}.title.includes('older than this page')`));
+  check('... and, as the page follows another task, its Details offer "Follow this task" first on that line (branch record SIF-100)',
+    await far.evaluate(`${DETAILS_OF(MOCK.task_key)}.querySelector('.task-rename-row').firstElementChild?.matches('button.task-follow:not(:disabled)') ?? false`));
   await press('Hide details');
   check('the details are closed again', await far.until(`!${WINDOW}.querySelector('.task-details')`, 20));
 

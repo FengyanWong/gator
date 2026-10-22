@@ -16,14 +16,16 @@ import { OPEN_TASKS, openRunsAt, TasksAt } from '../openAt';
  *  runs (RunList.tsx). Pressing it opens the task window - a browser window of its own, drawn through a portal like the
  *  run window - with every registered task as a table: what it is, which cell it runs in, its saved revision and baseline,
  *  how many sizes and results it has, and its newest run. A double click on a row makes the page follow that task (exactly
- *  what choosing it in the old list did: its rows come into the editors, edits are asked about first); "Details" adds the
- *  rest, the task's rows included. Once the page follows the chosen task the window closes (user request 2026-10-09: "after
- *  selecting one target task, model or run, close the pop up window"); Cancel at the edits question, or a task that cannot
- *  be read, leaves it open.
+ *  what choosing it in the old list did: its rows come into the editors, edits are asked about first) - so do Enter on the
+ *  row and "Follow this task" in its Details (branch record SIF-100); "Details" adds the rest, the task's rows included.
+ *  Once the page follows the chosen task the window closes (user request 2026-10-09: "after selecting one target task,
+ *  model or run, close the pop up window"); Cancel at the edits question, or a task that cannot be read, leaves it open.
  *
- *  Nothing here updates on a timer: the task list is read when the button is pressed and by "Refresh list" (which reads
- *  the run list again too; otherwise the run columns show the page's own run list, read when the page opened and after
- *  every task choice, record 7.212); a task's rows when its details are opened. The window prints when it last read. */
+ *  Nothing here updates on a timer: the task list is read when the button is pressed - also while the window is open
+ *  (branch record SIF-100: that press only brought it to the front, though its tooltip said it read again) - and by
+ *  "Refresh list" (which reads the run list again too; otherwise the run columns show the page's own run list, read when
+ *  the page opened and after every task choice, record 7.212); a task's rows when its details are opened. The window
+ *  prints when it last read. */
 
 /** Display only: saved task keys keep their namespace for selection and run/model links. */
 const taskName = (key: string) => key.replace(/^real:/, '');
@@ -67,8 +69,10 @@ const COLUMNS: Column[] = [
   { key: 'runs', numeric: true, title: 'Runs', help: 'How many runs of the task the output folder holds, Baseline simulations included.', value: (t, runs) => runsOf(runs, t.task_key).count },
 ];
 
-/** Everything else about one task, and its rows (read from the starter route when the details open). */
-function TaskDetails({ task, runs, rows, error, followed, onRenamed }: { task: Json; runs: Json[]; rows: Json; error?: string; followed: boolean; onRenamed: () => void }) {
+/** Everything else about one task, and its rows (read from the starter route when the details open). `onFollow`: what a
+ *  double click on its row does; offered while the page follows another task (branch record SIF-100). */
+function TaskDetails({ task, runs, rows, error, followed, deleting, onFollow, onRenamed }: { task: Json; runs: Json[]; rows: Json; error?: string; followed: boolean;
+  deleting: boolean; onFollow: () => void; onRenamed: (name: string) => void }) {
   const of = runsOf(runs, task.task_key);
   // Rename (record 7.302; user: "add rename functionality to tasks"): the name the task is SHOWN under. Its key, its
   // files, its cell and every run and model that names it stay as they are; typing its own name takes a rename back.
@@ -78,11 +82,12 @@ function TaskDetails({ task, runs, rows, error, followed, onRenamed }: { task: J
   useEffect(() => setName(shownName(task)), [task.task_key, task.name]);
   const typed = name.trim();
   const canRename = !renaming && !!typed && typed !== shownName(task) && 'name' in task;
+  // The task the page follows takes the new run label at once (branch record SIF-100, `onRenamed`): the note sent the user to
+  // a double click on its row, which asked to discard their edits.
   const rename = () => {
     if (!canRename) return;
     setRenaming(true); setRenameNote(null);
-    api.renameTask(task.task_key, typed).then(r => { setRenameNote({ level: 'hint', text: `Renamed to "${r.name}". New runs of the task are filed under this name`
-        + (followed ? ' once the page follows it again: double click its row.' : '.') }); onRenamed(); })
+    api.renameTask(task.task_key, typed).then(r => { setRenameNote({ level: 'hint', text: `Renamed to "${r.name}". New runs of the task are filed under this name.` }); onRenamed(r.name); })
       .catch(e => setRenameNote({ level: 'warn', text: e.message })).finally(() => setRenaming(false));
   };
   const facts: [string, string | null | undefined][] = [
@@ -104,6 +109,8 @@ function TaskDetails({ task, runs, rows, error, followed, onRenamed }: { task: J
     : s.constraint === '>=' ? `>= ${unit(s.lower, s.unit)}` : s.constraint === '<=' ? `<= ${unit(s.upper, s.unit)}` : `${s.constraint ?? ''} ${unit(s.lower ?? s.upper, s.unit)}`.trim();
   return (<div className="run-details task-details">
     <div className="row model-rename-row task-rename-row">
+      {!followed && <button className="task-follow" disabled={deleting} onClick={onFollow}
+        title="Follow this task (also a double click on its row, or Enter on it): its rows come into the editors (edits are asked about first) and the bottom tabs show its newest run; the window then closes. Nothing starts.">Follow this task</button>}
       <label title="The name this task is shown under: a lower-case letter first, then lower-case letters, digits and underscores (2-40 characters). Only the shown name changes: the task's files, its Virtuoso cell and the runs and models made on it keep the internal name. A name another task has is refused. Type the internal name to take a rename back.">Name
         <input className="model-rename task-rename" value={name} maxLength={40} disabled={renaming || !('name' in task)} onChange={e => setName(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); rename(); } }} /></label>
@@ -139,11 +146,13 @@ function TaskDetails({ task, runs, rows, error, followed, onRenamed }: { task: J
 }
 
 export function TaskListButton({ tasks, runs, current, currentText, currentMark, ngspiceOffered, loading, onChoose, onRefresh, onRefreshRuns,
-  onDelete, deleting, deleteDisabled, deleteTitle, deleteNotice, newTask }: { tasks: Json[]; runs: Json[];
+  onRenamed, onDelete, deleting, deleteDisabled, deleteTitle, deleteNotice, newTask }: { tasks: Json[]; runs: Json[];
   current: string | null; currentText: string; currentMark?: string; ngspiceOffered: boolean; loading: string | null;
   /** `owner`: this window, which asks the edits question (branch record SIF-84). */
   onChoose: (taskKey: string, owner?: Window) => Promise<{ loaded: boolean }> | void;
   onRefresh: () => Promise<Json[]>; onRefreshRuns?: () => Promise<Json[]>;
+  /** A task renamed in its Details, with the run label new runs of it now get (branch record SIF-100). */
+  onRenamed?: (taskKey: string, runLabel: string) => void;
   onDelete?: (owner: Window) => void; deleting?: boolean; deleteDisabled?: boolean; deleteTitle?: string; deleteNotice?: ReactNode;
   /** The ways to a new task (record 7.362: they left the circuit column): drawn in this window, handed the window so that the
    *  windows they open are opened by the window holding the click (popupWindow.ts). */
@@ -169,10 +178,17 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
     setReading(true);
     setSelected([]);
     void folders.refresh();
-    Promise.all([onRefresh().then(() => setTasksError(null), e => setTasksError(e.message)), alsoRuns && onRefreshRuns ? onRefreshRuns().catch(() => undefined) : null])
+    const read = onRefresh();
+    Promise.all([read.then(() => setTasksError(null), e => setTasksError(e.message)), alsoRuns && onRefreshRuns ? onRefreshRuns().catch(() => undefined) : null])
       .finally(() => { setReading(false); setReadAt(clock()); });
     if (open) readRows(open);
+    return read;
   };
+  // After a rename the list is read again; the run label is the one the list gives the task (`starter_project`), the label
+  // choosing it again would bring (branch record SIF-100). The typed name when the list cannot be read.
+  const renamedTask = (key: string, name: string) => refresh(false)
+    .then(list => list.find(t => t.task_key === key)?.starter_project?.task_name ?? name, () => name)
+    .then(label => onRenamed?.(key, label));
   useEffect(() => { if (popup) refresh(false); }, [popup]);       // pressing the button is the request to see the current task list
   // Another window's link (record 7.264, openAt.ts): this window opens AT a task - every folder, no filter, its Details open,
   // scrolled to. Following it changes nothing on the page: the task is not chosen.
@@ -196,16 +212,19 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
     if (row) { row.scrollIntoView({ block: 'center' }); setFocus(null); }
   });
   const toggle = (key: string) => { if (open === key) { setOpen(null); return; } setOpen(key); readRows(key); };
-  // A double click on a task's row makes the page follow that task (as a double click chooses a run in the run window). Not
-  // when it lands on the row's "Details" button. The word the double click selected is let go.
-  const chooseRow = (e: MouseEvent<HTMLTableRowElement>, key: string) => {
-    if (deleting || (e.target as HTMLElement).closest('button, input, select, label')) return;
+  // Making the page follow a task: a double click on its row (as a double click chooses a run in the run window), Enter on
+  // the row, or "Follow this task" in its Details (branch record SIF-100: the double click was the only way - no button, no
+  // key - where the Runs window's Details have Load run). The word a double click selected is let go.
+  const follow = (key: string) => {
+    if (deleting) return;
     (popup ?? window).getSelection()?.removeAllRanges();
     // The window closes once the page follows the task (user request 2026-10-09); a task not loaded leaves it open. The
-    // edits question is asked in this window, where the double click was (branch record SIF-84).
+    // edits question is asked in this window, where the press was (branch record SIF-84).
     const shown = popup;
     void Promise.resolve(onChoose(key, popup ?? undefined)).then(r => { if (r?.loaded !== false && shown && !shown.closed) shown.close(); });
   };
+  // Not when the double click lands on the row's buttons or its tick box.
+  const chooseRow = (e: MouseEvent<HTMLTableRowElement>, key: string) => { if (!(e.target as HTMLElement).closest('button, input, select, label')) follow(key); };
 
   const text = (t: Json) => [t.task_key, t.name, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
@@ -230,7 +249,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       </div>}
       {deleteNotice}
       {newTask && <div className="row task-window-new"><span className="hint">New task:</span>{newTask(popup)}</div>}
-      <p className="hint"><b>Double click</b> a task to make the workbench follow it: its Parameters, Probes and Specs come into the editors (edits you made are asked about first) and the bottom tabs show its newest run. Then the window closes; it stays open when you answer Cancel to the edits question or the task cannot be read. The task the page follows is marked. <b>Details</b> shows the rest, the task's rows included.</p>
+      <p className="hint"><b>Double click</b> a task to make the workbench follow it (or press Enter on its row, or <b>Follow this task</b> in its Details): its Parameters, Probes and Specs come into the editors (edits you made are asked about first) and the bottom tabs show its newest run. Then the window closes; it stays open when you answer Cancel to the edits question or the task cannot be read. The task the page follows is marked. <b>Details</b> shows the rest, the task's rows included.</p>
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
           <li>All times are the local time of this computer. Press a column title to sort by it.</li></ul></details>
@@ -244,7 +263,8 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       {tasks.length > 0 && <div className="scroll"><table className="grid run-table task-table">
         <TableHead view={table} columns={COLUMNS} shown={shown} id={t => t.task_key} what="tasks" disabled={folders.busy || !folders.ready} />
         <tbody>{shown.map(t => { const active = t.task_key === current, mark = taskMark(t, ngspiceOffered), of = runsOf(runs, t.task_key); return (<Fragment key={t.task_key}>
-          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} data-task-key={t.task_key} title={renamed(t) ? `${shownName(t)} (internal name ${taskName(t.task_key)})` : taskName(t.task_key)} onDoubleClick={e => chooseRow(e, t.task_key)}>
+          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} data-task-key={t.task_key} title={renamed(t) ? `${shownName(t)} (internal name ${taskName(t.task_key)})` : taskName(t.task_key)} onDoubleClick={e => chooseRow(e, t.task_key)}
+            tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) follow(t.task_key); }}>
             <td className="task-select"><input type="checkbox" aria-label={`Select ${shownName(t)}`} checked={selected.includes(t.task_key)}
               disabled={folders.busy || !folders.ready} onChange={e => table.select(t.task_key, e.target.checked)} /></td>
             <td><code>{shownName(t)}</code>{loading === t.task_key && <span className="hint"> loading...</span>}
@@ -267,7 +287,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
           </tr>
           {open === t.task_key && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
             <TaskDetails task={t} runs={runs} rows={rows?.key === t.task_key ? rows?.value : null} error={rows?.key === t.task_key ? rows?.error : undefined}
-              followed={active} onRenamed={() => refresh(false)} /></td></tr>}
+              followed={active} deleting={!!deleting} onFollow={() => follow(t.task_key)} onRenamed={name => void renamedTask(t.task_key, name)} /></td></tr>}
         </Fragment>); })}</tbody></table></div>}
       {/* Only while there are tasks, as in the Runs window (branch record SIF-68): with none, All tasks told the user to
           select tasks in All tasks, under the line that says why the list is empty. */}
@@ -277,7 +297,9 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   );
 
   return (<>
-    <button className={`task-list-button${popup ? ' open' : ''}`} onClick={() => openPopup()}
+    {/* A press while the window is open reads the list again, as its tooltip says and as Runs... does (branch record
+        SIF-100); opening the window reads it through the effect above. Another window's link (OPEN_TASKS) does not. */}
+    <button className={`task-list-button${popup ? ' open' : ''}`} onClick={() => { if (popup && !popup.closed) refresh(false); openPopup(); }}
       aria-label={current ? `Open Tasks: ${nameOf(current)}` : 'Open Tasks'}
       title={popup ? 'The task window is open: press to bring it to the front and read the lists again.' : 'Opens the task window: every registered task with its cell, revision, baseline, sizes and results, and its newest run. Double click one there to make the workbench follow it; the window then closes.'}>
       <span className="task-list-current" title={current ? nameOf(current) : taskName(currentText)}>{current ? <code className="task-list-key" data-task-key={current}>{nameOf(current)}</code> : <span className="task-list-key">{taskName(currentText)}</span>}

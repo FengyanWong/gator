@@ -271,6 +271,10 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   // Virtuoso cell and an ngspice netlist, are in the Tasks window ("New task"); while the page follows a Virtuoso cell or an
   // ngspice task, the button back to its window is on the tab line too.
   const current = ref.source === 'registered_task' && ref.task_id && !removedMock ? ref.task_id : null;
+  // A rename of the task the page follows (Tasks window, record 7.302) gives its run label at once (branch record SIF-100):
+  // new runs kept the old name until the task was chosen again, which asks to discard edits. No Undo step: a label only.
+  const renamedTask = (key: string, label: string) => setConfig(c => (c.circuit?.source === 'registered_task' && c.circuit.task_id === key
+    && c.project?.task_name !== label ? { ...c, project: { ...c.project, task_name: label } } : c), false);
   const revision: number | null = current ? tasks.find(t => t.task_key === current)?.revision ?? null : null;
   const newTask = showVirtuoso || showNgspice ? (owner: Window) => <>
     {showVirtuoso && <button className="virtuoso-button" onClick={() => openWindow(owner)}
@@ -284,7 +288,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
       <span className="task-caption">Task</span>
       <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={(key, owner) => chooseTask(key, undefined, false, undefined, undefined, owner)}
         onRefresh={() => tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
-        current={current}
+        onRenamed={renamedTask} current={current}
         currentMark={current ? taskMark(tasks.find(t => t.task_key === current) ?? { kind: 'real', available: true }, showNgspice) : undefined}
         onDelete={current && (deletableName || ngspiceTask) ? (ngspiceTask ? deleteNgspice : deleteProfile) : undefined}
         deleting={profileBusy === 'delete'} deleteDisabled={!!profileBusy}

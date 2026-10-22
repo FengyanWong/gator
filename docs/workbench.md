@@ -523,7 +523,9 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 | Newest run | The task's newest run under the output folder: started, state, evaluations, first feasible - the run the bottom tabs show when the task is chosen (record 7.212). A link (record 7.264): it opens the Runs window at that run, with this task's runs only. |
 | Runs | How many runs the task has, Baseline simulations included. A link (record 7.264): it opens the Runs window with this task's runs only ("Only the runs of ..."; **Show every run** takes that back). Neither link chooses the task. |
 
-* **A double click on a row** makes the page follow that task: exactly what choosing it in the old list did - its
+* **A double click on a row** makes the page follow that task - so do **Enter** on the row and **Follow this task** at
+  the start of the Details of a task the page does not follow (branch record SIF-100: a keyboard could not follow a task,
+  and the Runs window's Details have Load run): exactly what choosing it in the old list did - its
   Parameters, Probes and Specs come into the editors (edits you made are asked about first, Cancel keeps them), the run
   label follows, the bottom tabs show its newest run, one Undo takes the whole choice back. The row of the task the page
   follows is marked. Then the window closes (record 7.291, user request 2026-10-09: "after selecting one target task,
@@ -537,8 +539,9 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 * **Rename** (record 7.302, user request 2026-10-10: "add rename functionality to tasks"): the first line of a task's
   Details is a **Name** box with a **Rename** button, as a saved model has. It changes the name the task is SHOWN under -
   in this window, on the task's name on the editors' tab line, in the Runs window's task link ("ldo1_relaxed
-  (real:graphgps_ldo1)") - and the label new runs of the task are filed under (the run label, once the page follows the
-  task again). Nothing else changes: the task's key, its files, its Virtuoso cell and every run and saved model made on
+  (real:graphgps_ldo1)") - and the label new runs of the task are filed under (the run label). The page that follows the
+  task takes the new label at once, with no Undo step (branch record SIF-100: it waited until the task was chosen again,
+  a double click that asks to discard edits). Nothing else changes: the task's key, its files, its Virtuoso cell and every run and saved model made on
   it keep the internal name, so each run still belongs to its task and a model still loads on it; a configuration file
   and the command line name the task by its key as before. A name is a task name (a lower-case letter first, then
   lower-case letters, digits and underscores, 2 to 40 characters); a name another task has, or is shown under, is
@@ -547,7 +550,8 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   Name box is off and the button says so.
 * A press on a column title sorts by it (again: the other way; rows without a value stay last). The filter box narrows
   the list by any word of a row: name, class, cell, a date. Task names sort as displayed; canonical task IDs stay unchanged for selection, saved configurations, runs and models (7.249).
-* **Nothing in the window updates by itself.** The task list is read when the button is pressed and by **Refresh list**
+* **Nothing in the window updates by itself.** The task list is read when the button is pressed - also while the window
+  is open: the press brings it to the front and reads the list again (branch record SIF-100) - and by **Refresh list**
   (which reads the run list again too; otherwise the run columns show the page's own run list - read when the page
   opened and after every task choice). A workbench server started before this was added lists runs without their task:
   the run columns then stay empty and the window says so.
@@ -556,7 +560,8 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   the page leaves those cells empty ("-").
 * **Delete task** is inside this window, beside **Current task: <name>**, for a deletable task. It acts on the task the
   page follows; double-click another row to change that task. Confirmation opens in this window, and failures are shown
-  beside the action. The module outside has no delete or reload icon. The backend still keeps deleted files aside and
+  beside the action. So is what a delete did (branch record SIF-100): "Task real:<name> deleted; its files are kept in
+  <folder>. The page now follows its cell <library>/<cell>." The line stays until the page follows another task. The module outside has no delete or reload icon. The backend still keeps deleted files aside and
   refuses deletion while the task is running.
 
 **Folders** (7.250): the sidebar lists **All tasks**, **Unfiled**, and named folders with task counts.

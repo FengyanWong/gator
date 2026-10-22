@@ -2914,3 +2914,51 @@ reads the folder once more, then nothing. `export_check` 35 (33 before), on a re
 first." is followed by "Read at hh:mm:ss.". "oldest first" lists commit_seq 1 to 12 in order and says so. Also run,
 unchanged: `looks_check` 75 (Refresh is still the first button after the table list), `room_check` 30,
 `run_control_live_check` 23, `training_tab_check` 103 (6 scripts, one lane, all passed the first time). No flakes.
+
+### SIF-100 The Tasks window follows a task from its Details, reads again on a press, says what a delete did, and a rename takes effect (2026-10-22; from the usability audit)
+
+**Found.** In the Tasks window a task could be followed only by a double click on its row. There was no button, the row
+took no key, and a user who had opened Details to look at a task had to find the row again (J6-4); the Runs window's
+Details have Load run. The task's name on the tab line, pressed while the window was open, only brought it to the front,
+although its tooltip says it reads the lists again; Runs... does read again (J6-7). Deleting the task the page followed
+said nothing in the window: the row and the "Current task" line just went. The answer was set only when the page had
+moved on meanwhile, and the [generatedName] reset wiped any line the same press made (J6-6). After a rename of the
+followed task, new runs kept the old name until the task was chosen again. The note sent the user to a double click,
+which asks to discard their edits (J6-14).
+
+**Changed.** `frontend/src/panels/TaskList.tsx`: the double click's body is `follow(key)`. It keeps the delete guard,
+asks the edits question in this window (SIF-84) and closes the window once the task loaded. Three ways reach it: a
+double click on the row (not on its buttons or tick box), Enter on the row (rows take `tabIndex` 0; Enter counts only
+on the row itself), and **Follow this task**, first on the Name line of the Details of a task the page does not follow.
+The window's hint names all three; the sentence the checks pin stays. Pressing the task's name while the window is
+open calls `refresh(false)` before bringing it forward. Another window's link (`OPEN_TASKS`) does not read again, as
+in the Runs window. `refresh` returns the task-list read. After a rename, the run label handed on is the one the list
+then gives the task (`starter_project.task_name`): the label choosing the task again would bring. The typed name is
+used when the list cannot be read. The rename note now reads "New runs of the task are filed under this name." for
+every task. `frontend/src/panels/Left.tsx`: `renamedTask` sets `project.task_name` to that label while the page follows
+the renamed task, with no Undo step (a label only, no rows). `frontend/src/panels/taskActions.ts`: Delete task always
+answers in the window: "Task real:<name> deleted; its files are kept in <folder>. The page now follows its cell
+<library>/<cell>." (or "... The page stays on what was chosen meanwhile."). The answer carries `follows`, the task
+the delete left the page on, and the ngspice delete sets it too. The [generatedName] reset keeps a delete answer. A
+new effect on `ref.task_id` clears it once the page follows another task. The next Check now or Delete press clears it
+as before. `frontend/src/styles.css`: a focus ring inside a focused task row. Nothing here starts, continues or stops
+a run, saves a task or writes to Virtuoso. Following still goes through the same task load and the same edits
+question, Delete through the same confirmation, and a rename through the same route. `docs/workbench.md` (the Tasks
+window's double click, Rename, "Nothing in the window updates by itself" and Delete task) and
+`docs/functionality-reference.md` (Task-name button, Rename task, Delete task rows) describe it.
+
+**Checked.** `tsc` clean. `task_list_check` 97 (89 before). With the page back on the MOCK task, the fixture OTA's
+Details offer "Follow this task", whose tooltip says edits are asked about first. Pressed, it makes the page follow
+the OTA and the window closes; opened again, the followed task's Details offer none. After Undo, Enter on the OTA's
+focused row follows it too, and the window closes. Details reads its rows once (now counted from the press). Pressing
+the task's name with the window open reads `/api/tasks` once more, not the run list. After the rename to "ota_relaxed"
+the note reads "New runs of the task are filed under this name.", without "once the page follows it again". The saved
+configuration's `project.task_name` and the header's RL model fact read "ota_relaxed", with no question asked. Taking
+the rename back brings "fixture_ota" back. The MOCK task's Details start their Name line with an enabled Follow this
+task. `virtuoso_source_check` 106 (104 before): after the delete, the Tasks window reads "Task real:ota5_v1 deleted;
+its files are kept in /fixture/profiles/.deleted/ota5_v1.20260921T000000Z. The page now follows its cell
+FIXTURE_DESIGNS/ota5_v1." The main page's folded note passes unchanged. Once the page follows the MOCK task the line is
+gone from the window. The new checks look for a button, a key, a read, a label and a line that the code before does
+not have. Also run, unchanged: `task_rows_check` 54, `task_run_check` 39, `ngspice_window_check` 43,
+`circuit_source_check` 17, `testbench_probes_check` 41, `dom_identity_check` 56 (8 scripts, one lane, all passed the
+first time), `project_help_check` 50. Not run: `consistency_check` (it presses Start against its fixture). No flakes.

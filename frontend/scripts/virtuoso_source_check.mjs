@@ -479,6 +479,10 @@ await runChecks(browser, async () => {
   check('the task\'s lines under the toolbar say what happened; where the files went is one folded line', shown.includes('Task real:ota5_v1 deleted.')
     && await evaluate(`(() => { const d = [...${PANEL}.querySelectorAll('.task-status details')].find(x => x.querySelector('summary')?.textContent === 'Where its files went');
       return !!d && !d.open && d.textContent.includes('/fixture/profiles/.deleted/ota5_v1'); })()`));
+  // Branch record SIF-100: the Tasks window, where Delete was pressed, said nothing - the row and the "Current task" line just went.
+  const DELETED_LINE = 'Task real:ota5_v1 deleted; its files are kept in /fixture/profiles/.deleted/ota5_v1.20260921T000000Z. The page now follows its cell FIXTURE_DESIGNS/ota5_v1.';
+  check('the Tasks window says it too: the task went, where its files are, what the page follows now (branch record SIF-100)',
+    await tw.window.until(`[...document.querySelectorAll('.task-window p.ok')].some(p => p.textContent === ${JSON.stringify(DELETED_LINE)})`, 30), (await taskWindowText()).slice(0, 400));
   check('the cell offers Save task again', !!(await evaluate(`!!(${TASK_BUTTON('Save as')})`)) && (await wText()).includes('Not optimizable yet') && !(await wText()).includes('already has a registered task'));
   check('the task left the Registered task list', !(await evaluate(`(async () => (await (await fetch('/api/tasks')).json()).tasks.some(t => t.task_key === 'real:ota5_v1'))()`)));
   await shotColumn('virtuoso-2g-profile-deleted.png');
@@ -542,6 +546,10 @@ await runChecks(browser, async () => {
   await choose('Task', 'synthetic:gpdk045_ota5'); await sleep(1200);
   check('choosing a task in the Tasks window makes the page follow it again; "Virtuoso cell..." leaves the tab line', (await stored()).circuit.source === 'registered_task'
     && (await value('Task')) === 'synthetic:gpdk045_ota5' && !(await evaluate(`!!(${LAUNCH})`)));
+  await tw.closedAfterChoice();
+  check('... and the Tasks window\'s line about the deleted task is gone once the page follows another task (branch record SIF-100)',
+    !(await (await tw.open()).evaluate(`document.querySelector('.task-window').textContent`)).includes('deleted; its files'));
+  await tw.close();
 
   check('first-save naming suggests the cell name with numbering', naming[0]?.defaultPrompt === 'ota5_v1_2' && naming.every(p => p.planned), JSON.stringify(naming));
   // The refusal, the save Cancel ended, the one Escape ended, and the one sent with its frequency (no prompt of its own).

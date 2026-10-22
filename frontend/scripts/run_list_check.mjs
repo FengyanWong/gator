@@ -66,6 +66,11 @@ const EVALUATED = run(8, { ...LINEAGE, mode: 'frozen', model_label: null, create
   parent: { run_id: 'fixture-run-1', run_dir: `${ROOT}/mock/fixture_exp__0001/runs/fixture_task/scratch__seed1__0001`, checkpoint_id: 'ckpt-000040-final', relation: 'frozen' } });
 const GONE = run(9, { ...LINEAGE, task_key: 'real:fixture_gone', created_utc: '2026-09-16T08:00:00+00:00', started_utc: '2026-09-16T08:00:02+00:00', ended_utc: '2026-09-16T08:01:00+00:00',
   active_seconds: 58, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 10, max_evaluations: 10, resumability: 'full_state', segments: [] });
+// Branch record SIF-90, only in section 10: a run that failed after a save point. Its "Can continue" reads yes, as the backend
+// lists it, but Run status refuses a failed run, so its Details offer no Continue... and say why.
+const CRASHED = run(14, { ...LINEAGE, encoder: 'rgcn', created_utc: '2026-09-16T12:00:00+00:00', started_utc: '2026-09-16T12:00:02+00:00', ended_utc: '2026-09-16T12:10:00+00:00',
+  active_seconds: 598, state: 'failed', stop_reason: 'error', error: 'FIXTURE: a simulated failure after a save point, nothing real went wrong', evaluations: 30,
+  resumability: 'full_state', segments: [] });
 // Branch record SIF-75, only in section 8b: names as the user's runs have them - an offline model, a fine-tune of it and a
 // calibration - which broke inside a word in a narrow column, or took six lines in "Started from".
 const ARCHIVE = 'Round 3 full archive — CircuitGPS v3 from scratch';
@@ -488,7 +493,7 @@ await runChecks(browser, async () => {
   await undo();
   draft = await runWhen(x => !x?.model_source?.run_dir);
   check('... and one more to New model, no saved model', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir, JSON.stringify(draft));
-  listed = [EVALUATED, PAUSED, RESUMED, DONE, LOST, NEVER, FAILED, GONE];
+  listed = [EVALUATED, PAUSED, RESUMED, DONE, LOST, NEVER, FAILED, CRASHED, GONE];
   await openWindow();
   const openDetails = async rr => { if (!(await windowOpen())) await openWindow(); await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(rr.run_dir)});
     const b = [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === 'Details'); if (b) b.click(); })()`, true);
@@ -498,9 +503,29 @@ await runChecks(browser, async () => {
   const act = label => far.evaluate(`[...${ACTIONS}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}).click()`, true);
   /** Press an action that goes through: true once the window closed after it. */
   const actAndClose = async label => { await act(label); return closedByChoice(); };
-  check('(set-up) the window lists the eight runs', (await table())?.length === 8);
+  check('(set-up) the window lists the nine runs', (await table())?.length === 9);
+  const notContinued = () => far.evaluate(`${ACTIONS}.querySelector('.continue-not')?.textContent ?? null`);
   check('a run\'s Details offer Load run, Show results, Continue... and New run like this', await openDetails(DONE)
-    && JSON.stringify(await actions()) === JSON.stringify(['Load run', 'Show results', 'Continue...', 'New run like this']), JSON.stringify(await actions()));
+    && JSON.stringify(await actions()) === JSON.stringify(['Load run', 'Show results', 'Continue...', 'New run like this']) && await notContinued() === null,
+    JSON.stringify([await actions(), await notContinued()]));
+  // Branch record SIF-90: Continue... only where Run status can go on - a full save point, and a paused, stopped, interrupted
+  // or completed run. A failed or model-only run's press closed the window on a greyed-out budget form.
+  await openDetails(RESUMED);
+  check('a model-only run offers no Continue..., and says why and where its model goes beside the actions (SIF-90)',
+    JSON.stringify(await actions()) === JSON.stringify(['Load run', 'Show results', 'New run like this'])
+    && await notContinued() === 'Continue... is not offered: its save point is model only. Load run brings its model into the next run (Fine-tune or Evaluate only).',
+    JSON.stringify([await actions(), await notContinued()]));
+  check('... while its row still reads "model only" under Can continue', rowOf(await table(), RESUMED)?.['Can continue'] === 'model only');
+  await openDetails(CRASHED);
+  check('a failed run that kept a full save point: no Continue..., and the reason beside the actions (SIF-90)',
+    JSON.stringify(await actions()) === JSON.stringify(['Load run', 'Show results', 'New run like this'])
+    && await notContinued() === 'Continue... is not offered: a failed run cannot be continued. Load run brings its model into the next run (Fine-tune or Evaluate only).',
+    JSON.stringify([await actions(), await notContinued()]));
+  check('... its row still reads "yes" under Can continue, as the backend lists its save point', rowOf(await table(), CRASHED)?.['Can continue'] === 'yes');
+  check('... and Show results lands on Run status with the reason beside the greyed Continue..., not only in its tooltip (SIF-90)', await actAndClose('Show results')
+    && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(CRASHED.run_dir)})`, 40)
+    && await until(`document.querySelector('.status-grid .continue-why')?.textContent === 'A failed run cannot be continued.' && document.querySelector('.status-grid .continue-open').disabled`, 40),
+    await evaluate(`document.querySelector('.status-grid .continue-why')?.textContent ?? '(no reason)'`));
   // a task that is no longer registered
   await openDetails(GONE);
   check('a run whose task is no longer registered: Load run and New run like this are off, and the reason stands beside them',
@@ -511,6 +536,7 @@ await runChecks(browser, async () => {
   check('... and closes the window', await closedByChoice());
   await openDetails(FAILED);
   check('a run that names no registered task: the same, with its own reason', /Not offered: the run names no registered task/.test(await far.evaluate(`${ACTIONS}.querySelector('.run-load-why')?.textContent ?? ''`)));
+  check('... and a run that kept no save point says nothing of Continue... (SIF-90)', !(await actions()).includes('Continue...') && await notContinued() === null, String(await notContinued()));
   // Load run: the model the run ended with, pinned, with its network; one Undo step; the run's results shown
   await openDetails(DONE);
   check('Load run closes the window once the run is loaded', await actAndClose('Load run'));
@@ -597,6 +623,15 @@ await runChecks(browser, async () => {
   check('Continue... shows the run under Run status with its budget form open', await until(`!!document.querySelector('footer form.continue-form')`, 40)
     && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`));
   check('... and continues nothing by itself', !seen.includes('/api/runs/continue'));
+  // Branch record SIF-90: Cancel gives the keyboard back to Continue..., and the window's request opens the form once - Run
+  // status is drawn anew at each return to its tab, and the form opened again every time, after a Cancel too.
+  await evaluate(`[...document.querySelectorAll('footer form.continue-form button')].find(b => b.textContent === 'Cancel').click()`);
+  check('Cancel closes the form and gives the focus back to Continue... (SIF-90)', await until(`!document.querySelector('footer form.continue-form')
+    && document.activeElement === document.querySelector('.status-grid .continue-open')`, 40), await evaluate(`document.activeElement?.outerHTML.slice(0, 90) ?? 'none'`));
+  const bottomTab = text => evaluate(`[...document.querySelectorAll('footer .tabs button')].find(b => b.textContent === ${JSON.stringify(text)}).click()`);
+  await bottomTab('Logs'); await sleep(400); await bottomTab('Run status');
+  check('... and a return to Run status does not open the form again (SIF-90)', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(PAUSED.run_dir)})`, 40)
+    && await sleep(600).then(() => evaluate(`!document.querySelector('footer form.continue-form')`)) && !seen.includes('/api/runs/continue'));
 
   reportRefused(refused);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 400));

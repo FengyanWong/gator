@@ -563,11 +563,20 @@ await runChecks(browser, async () => {
   check('"New total" holds "more than 12000" and "1,000,000" whole', room.words <= room.room && room.total <= room.room, JSON.stringify(room));
   await press(`[...document.querySelectorAll('.continue-form button')].find(b => b.textContent === 'Cancel')`);
   check('Cancel closes the form and sends nothing', await until(`!(${FORM})`) && log.length === 0);
+  // Branch record SIF-90: the focused field went with the form, and the keyboard fell to the top of the page.
+  const focused = `(document.activeElement === document.body ? 'body' : document.activeElement?.outerHTML.slice(0, 90) ?? 'none')`;
+  check('... and gives the keyboard focus back to Continue... (SIF-90)', await until(`document.activeElement === ${CONTINUE}`, 20), await evaluate(focused));
+  await press(CONTINUE); await until(`!!(${FORM})`);
+  await evaluate(`${FIELD}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  check('Escape closes the form the same way: nothing sent, the focus back on Continue... (SIF-90)', await until(`!(${FORM}) && document.activeElement === ${CONTINUE}`, 20) && log.length === 0,
+    await evaluate(focused));
   sim.steps = [{}, { state: 'running', stop_reason: null }];
   await press(CONTINUE); await until(`!!(${FORM})`);
   await press(`document.querySelector('.continue-form button[type=submit]')`);
   check('the form\'s Continue with the run\'s own total continues the run unchanged, and the header takes it: "Pause"', await mainReads('Pause') && log[0]?.name === '/api/runs/continue'
     && log[0]?.body.max_evaluations === null && typeof log[0]?.body.request_id === 'string', JSON.stringify(log[0]));
+  check('... the focus goes to the Run status tab, since Continue... is off while the run goes on (SIF-90)',
+    await until(`document.activeElement?.matches('footer .tabs button.active') && document.activeElement.textContent === 'Run status' && ${CONTINUE}.disabled`, 20), await evaluate(focused));
   check('no browser prompt was used for it', dialogs.length === promptsBefore, JSON.stringify(dialogs.slice(promptsBefore)));
   check('the Run status tab offers no Save now / Pause / Stop / Force cancel of its own: the header has them (2026-09-29)',
     await evaluate(`![...document.querySelectorAll('.status-grid button')].some(b => /Save now|Pause and save|Stop and save|Force cancel/.test(b.textContent))`));

@@ -2414,3 +2414,41 @@ run gets no line, as the entry above says. `describe()` already told the two apa
 `run_control_check` 149, six new: from `running` and from `pausing` (through "Pausing..."), a worker gone before the
 pause is written leaves "Resume", no line starting "Paused", and a chip ending "(the worker is gone)". Resume then
 continues the run. `save_now_check` 29, `launch_recovery_check` 20. No flakes.
+
+### SIF-90 Continue... is offered only where it can go, opens once, and gives focus back (2026-10-22; from the usability audit)
+
+**Found.** The Runs window offered Continue... for any run at rest that kept a save point (audit findings J4-3, J4-2,
+J3-14, J4-15). That included failed and cancelled runs and "model only" runs, which Run status refuses. The press closed
+the window and landed on an open budget form with a greyed-out Continue. For a failed or cancelled run the reason was
+only in a tooltip: the `.continue-why` line was drawn only for a state Continue goes on from. The window's request was
+never used up. Run status is drawn anew at each return to its tab, so the budget form opened again every time the user
+came back to Run status for that run: after a Cancel, and also after the run had been continued and was live, as a
+greyed-out form that took the focus. Cancel or Escape dropped the keyboard focus to the top of the page, because the
+focused field went with the form and Continue... was off while the form was open.
+
+**Changed.** `frontend/src/runState.ts`: `CONTINUE_STATES` (paused, stopped, interrupted, completed) is exported beside
+`CONTINUABLE`. `frontend/src/panels/RunList.tsx`: a run's Details offer Continue... only for a full save point
+(`full_state`) and one of those states. A failed, cancelled or model-only run that kept a save point says why beside the
+actions instead, for example "Continue... is not offered: a failed run cannot be continued. Load run brings its model
+into the next run (Fine-tune or Evaluate only)." The Load run sentence is left out when Load run is off (its own reason
+then says where the model can go). It points to Load run, not New run like this: Load run takes this run's newest save
+point, while New run like this repeats the run from its parent's. The "Can continue" column is unchanged.
+`frontend/src/panels/RunTabs.tsx` (`StatusTab`): the reason beside Continue... also stands for a failed or cancelled run
+whose worker is gone ("A failed run cannot be continued."). The form's request is marked answered as it opens
+(`onAsked`). Cancel, Escape and the form's Continue give the focus back to Continue..., or to the Run status tab button
+when Continue... is off by then (a run that went on). `frontend/src/panels/BottomPanel.tsx`: the panel stays mounted and
+keeps the last request answered, so Run status gets the window's request only once. Typed text is still not kept across
+a tab switch (the audit's optional part, left out). Nothing is sent by any of this: the budget form, its question for a
+real run and the launcher are unchanged. `docs/workbench.md` (the budget form; the Runs window's actions) and
+`docs/functionality-reference.md` (Load run...; Run status) say so. Skipped: J4-15's sortable column titles and the
+Enter key on a run's row. They are keyboard work for batch 27 ("Enter and the keyboard work where the mouse does").
+
+**Checked.** `tsc` clean. `run_list_check` 137 (129 before). A new fixture, a failed run with a full save point, is in
+section 10's list (nine runs). DONE offers Continue... with no `.continue-not` line. RESUMED (model only) and the failed
+run offer Load run, Show results and New run like this, with the lines quoted above. Their rows still read "model only"
+and "yes". Show results of the failed run lands on Run status with "A failed run cannot be continued." beside a
+greyed-out Continue.... A run with no save point says nothing of Continue.... After the window's Continue..., Cancel
+gives the focus to Continue..., and Logs then Run status does not open the form again. Nothing is continued.
+`run_control_check` 152 (149 before): Cancel and Escape give the focus back to Continue... and send nothing; after the
+form's Continue the focus is on the Run status tab and Continue... is off. `export_check` 31, `launch_recovery_check` 20,
+`task_run_check` 39. No flakes.

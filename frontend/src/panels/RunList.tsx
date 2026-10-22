@@ -5,12 +5,12 @@ import { RUNS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { tasksShared } from '../shared';
 import { bytes, clock, durationTenths as span, folderName, plural, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, short, sig, stamp, stopWords } from '../format';
-import { isLive } from '../runState';
+import { CONTINUE_STATES, isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
 import { childrenOf, historyOf, startedFrom } from '../lineage';
 import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
-import { runDesign, runMode } from './rlModelText';
+import { MODE_NAME, runDesign, runMode } from './rlModelText';
 import { quantity } from '../units';
 
 /** An experiment's folder by its name (branch record SIF-4): the folder's hash ("__ae6e1ae24977") only in the tooltip, and a
@@ -45,7 +45,8 @@ const keepDates = (text: string) => text.split(/(\d{4}-\d\d-\d\d)/).map((part, i
  *
  *  Actions (record 7.267, plan "Load run" and "Existing runs: continued in place"), in a run's Details: **Load run** - also a
  *  double click - brings its task into the editors and its model into the next run, and shows its results; **Show results**
- *  only shows them in the bottom tabs; **Continue...** goes on with the run in its own folder (Run status's form); **New run
+ *  only shows them in the bottom tabs; **Continue...** goes on with the run in its own folder (Run status's form; for a paused,
+ *  stopped, interrupted or completed run with a full save point, branch record SIF-90); **New run
  *  like this** makes the next run repeat it. Load run and New run like this need the run's task registered now; the
  *  reason stands beside them when it is not, and a double click then shows the results. The draft changes are App.tsx's.
  *
@@ -262,13 +263,21 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   };
   const actions = (r: Json) => {
     if (!onLoad) return null;
-    const why = loadBlocked(r, tasks), continuable = !isLive(r) && !!onContinue && r.resumability !== 'none' && r.resumability != null;
+    const why = loadBlocked(r, tasks);
+    // Continue... only where Run status can go on (branch record SIF-90): a full save point and a state it continues from. It
+    // was offered for any run at rest that kept a save point, failed, cancelled and model-only ones too: the press closed this
+    // window on a greyed-out budget form. Such a run says why beside the actions, and where its model can still go.
+    const atRest = !isLive(r) && !!onContinue, kept = r.resumability != null && r.resumability !== 'none';
+    const continuable = atRest && r.resumability === 'full_state' && CONTINUE_STATES.includes(r.state);
+    const notContinued = !atRest || !kept || continuable ? null : r.state === 'failed' ? 'a failed run cannot be continued'
+      : r.state === 'cancelled' ? 'a cancelled run cannot be continued' : r.resumability === 'weights_only' ? 'its save point is model only' : null;
     return <div className="row run-actions">
       <button className="run-load" disabled={!!why} onClick={() => chosen(onLoad(r, popup), r)} title={why ?? 'Load run (also a double click on the run): its task comes into the editors - edits are asked about first -, its model becomes the next run\'s model, pinned, and the bottom tabs show its results. One Undo step takes the task and the model back. Nothing starts.'}>Load run</button>
       <button className="run-show" onClick={() => { onChoose(r.run_dir); chosen(); }} title="Show results: the bottom tabs show this run (Run status, Logs, Data tables...). Nothing else changes.">Show results</button>
       {continuable && <button className="run-continue" onClick={() => { onContinue!(r); chosen(); }} title="Continue...: the run goes on in its own folder, from its newest save point, with its own settings - Run status shows it, with the budget form.">Continue...</button>}
       {onNewLike && <button className="run-like" disabled={!!why} onClick={() => chosen(onNewLike(r, popup), r)} title={why ?? 'New run like this: the next run repeats this one - its task (edits are asked about first), Mode, the model it started from, network, training values, reward, conditions, budget, seed and limits. One Undo step. Nothing starts.'}>New run like this</button>}
       {why && <span className="hint run-load-why">{why}</span>}
+      {notContinued && <span className="hint continue-not">Continue... is not offered: {notContinued}.{why ? '' : ` Load run brings its model into the next run (${MODE_NAME.fine_tune} or ${MODE_NAME.frozen}).`}</span>}
       {refused && refused.dir === r.run_dir && <span className="hint run-refused" role="status">{refused.why}</span>}
     </div>;
   };

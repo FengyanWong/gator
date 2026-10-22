@@ -91,6 +91,10 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
   continueShown: (total: number | null) => void; launcher: ReturnType<typeof useLauncher>; fineTuneFrom: (alternative: Json) => void;
   askContinue: { runDir: string; serial: number } | null; headerDir?: string | null }) {
   const { bottom, folded, unfold, toggleBottom, dragBottom, keyBottom } = panel;
+  // A Continue... of the Runs window opens the budget form once (branch record SIF-90): Run status is drawn anew at each
+  // return to its tab, and a request still standing opened the form again every time - after a Cancel, and for a run
+  // that had been continued and was live by then. The panel stays mounted, so the last request answered is kept here.
+  const askedContinue = useRef(0);
   return (
     <footer>
       <div className="splitter" role="separator" aria-orientation="horizontal" tabIndex={0} aria-label="Height of the bottom panel"
@@ -107,7 +111,8 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
       </div>
       <div className="bottom-body">
         {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} check={shownCheck} continueBlocked={continueBlocked} refusal={shownRefusal}
-          onContinue={continueShown} onDismissRefusal={() => launcher.setRefusal(null)} onFineTune={fineTuneFrom} config={config} setConfig={setConfig} ask={askContinue} />}
+          onContinue={continueShown} onDismissRefusal={() => launcher.setRefusal(null)} onFineTune={fineTuneFrom} config={config} setConfig={setConfig}
+          ask={askContinue && askContinue.serial !== askedContinue.current ? askContinue : null} onAsked={serial => { askedContinue.current = serial; }} />}
         {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
         {tab === 'data' && <DataTab runDir={runDir} status={status} />}
         {tab === 'files' && <FilesTab runDir={runDir} />}

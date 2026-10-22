@@ -99,14 +99,25 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
  *  instead of the browser's prompt; `continueBlocked` - why it cannot go now, the backend's continuation check included -
  *  is said beside it before any press, with the backend's `alternative` (a new run that fine-tunes from the save point)
  *  as a button; a refusal of the press stays under it (`refusal`) until the run changes. `check`: that continuation check. */
-export function StatusTab({ status, runDir, error, check, continueBlocked, refusal, onContinue, onDismissRefusal, onFineTune, config, setConfig, ask = null }: {
+export function StatusTab({ status, runDir, error, check, continueBlocked, refusal, onContinue, onDismissRefusal, onFineTune, config, setConfig, ask = null, onAsked }: {
   status: Json; runDir: string | null; error: string | null; check: Json | null; continueBlocked: string | null; refusal: Json | null;
   onContinue: (total: number | null) => void; onDismissRefusal: () => void; onFineTune: (alternative: Json) => void;
-  config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void; ask?: { runDir: string; serial: number } | null }) {
+  config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void; ask?: { runDir: string; serial: number } | null;
+  onAsked?: (serial: number) => void }) {
   const [asking, setAsking] = useState(false);                // the budget form is open
   useEffect(() => setAsking(false), [runDir]);
-  // Continue... of the Runs window (record 7.267): the form opens for the run it was pressed for.
-  useEffect(() => { if (ask && ask.runDir === runDir) setAsking(true); }, [ask?.serial]);
+  // Continue... of the Runs window (record 7.267): the form opens for the run it was pressed for, once - `onAsked` marks the
+  // request answered, so a return to this tab does not open it again (branch record SIF-90).
+  useEffect(() => { if (ask && ask.runDir === runDir) { setAsking(true); onAsked?.(ask.serial); } }, [ask?.serial]);
+  // The form closed by Cancel, Escape or its Continue gives the keyboard back to Continue... (branch record SIF-90): the
+  // focused field went with the form, and focus fell to the page's top. A run that went on has Continue... off by then, so
+  // its tab button takes the focus instead.
+  const continueRef = useRef<HTMLButtonElement>(null);
+  const closeForm = () => {
+    setAsking(false);
+    requestAnimationFrame(() => (continueRef.current && !continueRef.current.disabled ? continueRef.current
+      : document.querySelector<HTMLButtonElement>('footer .tabs button.active'))?.focus());
+  };
   // The run folder's path was copied by a click, for 1.5 s, as the Runs window says it (branch record SIF-54: it copied unsaid).
   const [copied, setCopied] = useState(false);
   useEffect(() => setCopied(false), [runDir]);
@@ -166,17 +177,19 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
         The Error row stays in the table, beside the other facts. */}
     {status.error && <p className="error status-error">{status.error}</p>}
     <div className="row">
-      <button className="continue-open" disabled={!!continueBlocked || asking} onClick={() => setAsking(true)}
+      <button ref={continueRef} className="continue-open" disabled={!!continueBlocked || asking} onClick={() => setAsking(true)}
         title={continueBlocked ? `Continue: ${continueBlocked}` : 'Continue: A paused, stopped or interrupted run - or a completed one, with a higher total - goes on in the '
           + 'same run folder, from its saved state, with its own saved configuration. The form asks for the total first.'}><Icon name="play" label="Continue..." /></button>
-      {resting && continueBlocked && <span className="hint continue-why">{continueBlocked}</span>}
+      {/* a failed or cancelled run says why too (branch record SIF-90): it is no state Continue goes on from, so the reason
+          stood only in the tooltip of a greyed Continue... */}
+      {(resting || (!status.worker_alive && ['failed', 'cancelled'].includes(status.state))) && continueBlocked && <span className="hint continue-why">{continueBlocked}</span>}
       {resting && check?.alternative && <button className="continue-alternative" onClick={() => onFineTune(check.alternative)}
         title={`${check.alternative.label}: The next run on this page loads this run's save point ${check.alternative.checkpoint_id} in Mode Fine-tune, as one Undo step. Nothing starts until Start.`}>{check.alternative.label}</button>}
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
         title="Export status (JSON): Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary."><Icon name="export" label="Export status (JSON)" /></button>
     </div>
     {asking && <ContinueForm used={check?.used ?? b?.charged ?? null} total={check?.total ?? b?.max_evaluations ?? null} blocked={continueBlocked}
-      onContinue={total => { setAsking(false); onContinue(total); }} onCancel={() => setAsking(false)} />}
+      onContinue={total => { closeForm(); onContinue(total); }} onCancel={closeForm} />}
     {refusal && <LaunchRefusal refusal={refusal} onDismiss={onDismissRefusal} />}
     <table className="grid small"><tbody>
       <tr><td>State</td><td title={status.stop_reason ?? undefined}><b>{status.state}</b>{status.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>

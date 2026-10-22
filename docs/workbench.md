@@ -202,10 +202,12 @@ started with." - branch record SIF-72). Run configuration's model line and this 
   - **Continue... opens a budget form** instead of the browser's prompt: "Used 800 · New total [1,200] · Allows 400
     more". Whole numbers only: 1,200 reads as 1200, but 12,00 or a fraction is said to be wrong, and so is a total that
     is not more than the evaluations used. Empty, or the run's own total, = unchanged. A completed run can go on with a
-    higher total too.
+    higher total too. Cancel, Escape or the form's Continue gives the keyboard focus back to Continue... - or to the
+    Run status tab, when the run went on and Continue... is off - instead of the top of the page (branch record SIF-90).
   - **Before the press** the page asks the backend's continuation check (`GET /api/runs/continuation`, read-only:
     the press's own checks on the run's saved configuration, without the run lock or Virtuoso). The reason stands
-    beside Continue..., and the header's Resume waits with it. Where the backend names an alternative - the task was
+    beside Continue..., and the header's Resume waits with it; a failed or cancelled run says "A failed (cancelled) run
+    cannot be continued." there too (branch record SIF-90). Where the backend names an alternative - the task was
     saved again, the save point is from older optimizer code - a button offers it: **Fine-tune from its newest save
     point (a new run)** makes the next run on the page a fine-tune from exactly that save point, as one Undo step.
   - **Taking over is said.** A live run found when the page opens, or a task's baseline simulation started by Save task,
@@ -1495,8 +1497,12 @@ it). The window lists every run under the output folder, newest first, one row p
     save point at 420 evaluations. Undo takes it back." - and says when the task was saved again since the run (the RL model window's check then
     says whether the model still fits).
   - **Show results**: only the bottom tabs show the run, as the double click did until record 7.267.
-  - **Continue...** (a run at rest that kept a save point): Run status shows the run with its budget form open; the run
-    goes on in its own folder from there (record 7.261).
+  - **Continue...** (a paused, stopped, interrupted or completed run with a full save point; branch record SIF-90): Run
+    status shows the run with its budget form open, once - a later return to the Run status tab does not open it again;
+    the run goes on in its own folder from there (record 7.261). A failed or cancelled run, or one whose save point is
+    model only, gets no Continue...: "Continue... is not offered: a failed run cannot be continued. Load run brings its
+    model into the next run (Fine-tune or Evaluate only)." stands beside the actions (without the Load run sentence when
+    Load run is off). Until SIF-90 the press closed the window on a greyed-out budget form. "Can continue" is unchanged.
   - **New run like this**: the next run repeats the run - its task (through the same task load), its Mode, the save
     point it started from (from its lineage, pinned: never the "latest" its configuration may have recorded), its
     network, training values, reward, conditions, budget, seed, limits and the name of the model it saves (numbered at

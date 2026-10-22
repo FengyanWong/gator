@@ -17,6 +17,9 @@ export const LIVE_STATES = ['starting', 'running', 'pausing', 'stopping'];
 export const isLive = (r: Json) => LIVE_STATES.includes(r.state);
 /** The states a run at rest can be continued from (a completed one too, under the conditions of the rules below). */
 const CONTINUABLE = ['paused', 'stopped', 'interrupted'];
+/** The states the Runs window offers Continue... for (branch record SIF-90): these and a completed run, whose budget form
+ *  can raise its total. Run status refuses a failed or cancelled run, so the window no longer sends one there. */
+export const CONTINUE_STATES = [...CONTINUABLE, 'completed'];
 
 // The "live" and "resting" rules, one function each where they are worded differently (plan-refactoring C1: merged only
 // where the expressions were the same token for token; these were not).

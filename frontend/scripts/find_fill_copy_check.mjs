@@ -14,7 +14,8 @@
 //   - Add, Delete selected and the tick boxes (branch record SIF-96): Delete says what went - the rows, one folded away, the
 //     tied rows that now follow nothing, the Specs using a deleted Probe - and gives the focus to the row now in its place, or
 //     to Add; Add clears a Find text the new row does not hold and chooses the new row's ID (a Maestro output's Output name);
-//     the header's box ticks every row in view, half ticked while only some are; Shift+click ticks a span of rows in view.
+//     the header's box ticks every row in view, half ticked while only some are; Shift+click ticks a span of rows in view;
+//   - (branch record SIF-97) Ctrl+Z on Add, where a Delete that left no row in view put the focus, takes it back and says so.
 // Run: bash frontend/scripts/run_checks.sh --only find_fill_copy_check. About 25 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
@@ -95,8 +96,10 @@ await runChecks(browser, async () => {
     JSON.stringify(await stored(`c.parameters.map(p => p.variable_id)`)));
   check('...said under the formula bar, and with no row left in view the focus goes to Add (branch record SIF-96)', (await evaluate(NOTE)) === `Deleted 1 row (${last}). Undo takes it back.`
     && await evaluate(`document.activeElement === document.querySelector('section.editors button[title^="Add:"]')`), `${await evaluate(NOTE)} | ${await evaluate(`document.activeElement?.title`)}`);
-  await evaluate(UNDO);
-  check('...and Undo brings it back', await storedUntil(`c.parameters.length === ${ids.length}`));
+  // Ctrl+Z with the focus on Add, where the Delete left it, is the page's Undo (branch record SIF-97): only a cell took the keys.
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: 2 });
+  check('...and Ctrl+Z there brings it back, the line under the formula bar naming it (SIF-97)', await storedUntil(`c.parameters.length === ${ids.length}`)
+    && (await evaluate(NOTE)) === `Undo: Parameters ${last} added.`, await evaluate(NOTE));
   await evaluate(`${FIND}.focus()`);
   await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await sleep(250);
   check('Esc clears the box, and the folding is back', (await evaluate(`${FIND}.value`)) === '' && !(await evaluate(`document.querySelector('.toolbar .find-count')`))

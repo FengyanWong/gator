@@ -34,7 +34,9 @@ function TaskFixture() {
 
 function HistoryFixture() {
   const s = useConfig();
-  fixture.state = { name: s.config.project.name, canUndo: s.canUndo, canRedo: s.canRedo };
+  // the last Undo or Redo and the names it moved between, which the editors put in words (branch record SIF-97)
+  fixture.state = { name: s.config.project.name, canUndo: s.canUndo, canRedo: s.canRedo,
+    step: s.lastStep && `${s.lastStep.kind} ${s.lastStep.from.project.name} -> ${s.lastStep.to.project.name}` };
   fixture.edit = (name: string, record = true) => s.setConfig((c: Json) => ({ ...c, project: { ...c.project, name } }), record);
   fixture.undo = s.undo; fixture.redo = s.redo;
   return <><input id="name" value={s.config.project.name} onChange={e => { const value = e.target.value; fixture.edit(value); }} />

@@ -16,6 +16,8 @@ import { requestSaveAs } from './TaskSave';
 import { plural } from '../format';
 import { GO_TO_ISSUE, rowOf } from './Issues';
 import { BLOCKING_LEVELS } from '../contract';
+import type { HistoryStep } from '../history';
+import { undoKey } from '../windows';
 
 const ROW_TABS = Object.keys(TITLES);
 /** The start of a new row's ID (Add), in the tab's own word (branch record SIF-50). */
@@ -23,6 +25,35 @@ const NEW_ID: Record<Section, string> = { parameters: 'parameter', measurements:
 /** The sections a whole-configuration import replaces beside the three tables, as the confirmation names them. */
 const IMPORTED_SECTIONS: Record<string, string> = { project: 'project labels', circuit: 'circuit source', run: 'run settings',
   output: 'output settings', research: 'research labels' };
+
+/** What an Undo or Redo changed, in words for the line under the formula bar (branch record SIF-97): Undo is page-wide - rows of
+ *  any tab, a folded tied row, run and output settings, an applied proposal - and took a change back out of view without a
+ *  word, so the next press could go one step further than meant. Per table the rows by ID - row by row while the table keeps
+ *  its length, so a renamed ID is one changed row, with the fields by their headers' words when one row changed in up to
+ *  three; otherwise the rows added and removed - then the other sections by the import confirmation's words. `tables`: the
+ *  tables it changed, in tab order. */
+function stepWords({ kind, from, to }: HistoryStep, keys: Record<string, string>): { text: string; tables: Section[] } {
+  const same = (a: Json, b: Json) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const some = (ids: string[]) => ids.length > 4 ? plural(ids.length, 'row') : ids.join(', ');
+  const tables = (ROW_TABS as Section[]).filter(s => !same(from?.[s] ?? [], to?.[s] ?? []));
+  const parts = tables.map(s => {
+    const was: Json[] = from?.[s] ?? [], now: Json[] = to?.[s] ?? [], id = (r: Json) => String(r?.[keys[s]] ?? '');
+    if (was.length === now.length) {
+      const changed = now.map((r, i) => [r, was[i]]).filter(([r, w]) => !same(r, w));
+      const [r, w] = changed.length === 1 ? changed[0] : [{}, {}];
+      const fields = [...new Set(Object.keys({ ...r, ...w }).filter(f => exact(r[f]) !== exact(w[f])).map(f => LABELS[s]?.[columnOf(s, f)] ?? f))];
+      return `${TITLES[s]} ${some(changed.map(([r]) => id(r)))}${fields.length && fields.length <= 3 ? ` (${fields.join(', ')})` : ''}`;
+    }
+    const before = new Set(was.map(id)), after = new Set(now.map(id));
+    const changed = now.filter(r => before.has(id(r)) && !same(r, was.find(w => id(w) === id(r)))).map(id);
+    const added = now.map(id).filter(i => !before.has(i)), removed = was.map(id).filter(i => !after.has(i));
+    return `${TITLES[s]} ${[changed.length ? some(changed) : '', added.length ? `${some(added)} added` : '', removed.length ? `${some(removed)} removed` : '']
+      .filter(Boolean).join(', ')}`;
+  });
+  const others = Object.keys(IMPORTED_SECTIONS).filter(k => !same(from?.[k], to?.[k])).map(k => IMPORTED_SECTIONS[k]);
+  if (others.length) parts.push(others.join(', '));
+  return { text: parts.length ? `${kind}: ${parts.join('; ')}.` : `${kind} done.`, tables };
+}
 
 const MORE_KEY = 'gator-workbench-editor-more-columns';
 
@@ -48,9 +79,12 @@ const CRAMPED_PX = 200;
  *  the circuit panel names the task (its name opens the Tasks window) and its revision; `taskTools` = the tab line's end, before
  *  Save task (Check now); `taskStatus` = under the toolbar, the task's own lines (loading, blocked, MOCK, the check's result).
  *  "Show circuit" brings the circuit column back beside the rows (`circuitShown`, `onCircuit`: App.tsx). */
-function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, validation, taskSlot, taskNotes, taskHead, taskTools, taskStatus,
+function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, lastStep, validation, taskSlot, taskNotes, taskHead, taskTools, taskStatus,
   circuitShown, onCircuit, onCramped }:
   { schema: Json; config: Json; setConfig: (c: Json | ((c: Json) => Json)) => void; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
+    /** The last Undo or Redo, from any panel or window, until the next change (history.ts): the line under the formula bar
+     *  names what it changed (branch record SIF-97). */
+    lastStep: HistoryStep | null;
     validation: Json;
     taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void;
     taskHead: (element: HTMLElement | null) => void; taskTools: (element: HTMLElement | null) => void; taskStatus: (element: HTMLElement | null) => void;
@@ -76,7 +110,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const [active, setActive] = useState<{ index: number; name: string; key: string } | null>(null);
   // Tied rows opened under their leader, by the leader's ID (record 7.180), and what the last block paste, fill or copy did.
   const [openTies, setOpenTies] = useState<Record<string, boolean>>({});
-  const [note, setNote] = useState<{ text: string; warn: boolean } | null>(null);
+  // `show`: a tab the line offers to show, where an Undo changed rows of a tab not in view (branch record SIF-97).
+  const [note, setNote] = useState<{ text: string; warn: boolean; show?: Section } | null>(null);
   // The find box's text, kept per table (record 7.184).
   const [find, setFind] = useState<Record<string, string>>({});
   const table = useRef<HTMLTableElement>(null);
@@ -262,6 +297,24 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   };
   useEffect(() => () => pointAt([]), [tab]);
   useEffect(() => { setActive(null); setOpenTies({}); setNote(null); lastTicked.current = null; }, [tab]);
+  // Another tab, as its button shows it: a Matched devices box closes, the ticks go.
+  const showTab = (s: Section) => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); };
+  // An Undo or Redo - the toolbar's, the keys', the RL model window's - says what it changed (branch record SIF-97), and offers
+  // the tab of the rows it changed when another is in view: it does not switch by itself, which would let the chosen cell go.
+  useEffect(() => {
+    if (!lastStep) return;
+    const { text, tables } = stepWords(lastStep, schema.section_keys ?? {});
+    setNote({ text, warn: false, show: tables.length && !tables.includes(tab) ? tables[0] : undefined });
+  }, [lastStep]);
+  // Ctrl+Z and Ctrl+Y (Ctrl+Shift+Z) anywhere in the main window (branch record SIF-97): after an Import's or Matched devices'
+  // Apply, a tab press, or a Delete that left no row in view - moments Undo is wanted - the focus was outside the table, whose
+  // cells alone took the keys. A cell handles them first, as before (onTableKey; its preventDefault leaves them be here); a box
+  // that takes typing keeps its own undo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { const step = undoKey(e); if (step) { e.preventDefault(); (step === 'undo' ? undo : redo)(); } };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
 
   // Why a cell is shown and not typed: it follows another field, or its row's leader decides it (record 7.158 review).
   const fixedOf = (row: Json, c: Json): string | null => tab === 'measurements' && c.name === 'measurement_id' && row.result_source === 'ade_output'
@@ -680,7 +733,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
               title="Not saved: press to see what differs from the saved task, with Reload saved values and Save as.">not saved</button>}</span>}
         {(Object.keys(TITLES) as Section[]).map(s => { const notSaved = unsavedTitle(s), blocking = blockingIn(s);
         return <button key={s} data-editor={s} className={[s === tab ? 'active' : '', notSaved ? 'has-unsaved' : '', blocking.length ? 'has-errors' : ''].filter(Boolean).join(' ')}
-          title={[notSaved, blockingTitle(blocking)].filter(Boolean).join('\n') || undefined} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>
+          title={[notSaved, blockingTitle(blocking)].filter(Boolean).join('\n') || undefined} onClick={() => showTab(s)}>
           {TITLES[s]} ({(config[s] ?? []).length}){blocking.length > 0 && <span className="tab-errors" data-errors={blocking.length} aria-hidden="true" />}</button>; })}
         <span className="tab-actions">
           <button className={`circuit-toggle${circuitShown ? ' active' : ''}`} aria-pressed={circuitShown} onClick={onCircuit}
@@ -692,8 +745,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         <button ref={addButton} onClick={add} title="Add: A new row at the end, with a free ID, chosen in view so its name can be typed at once."><Icon name="add" label="Add" /></button>
         <button disabled={!selection.length} onClick={remove} title={'Delete selected: The rows whose box is ticked. Undo takes them back. The line under the formula bar names them, '
           + 'and the rows tied to them or the Specs using them.'}><Icon name="delete" label="Delete selected" /></button>
-        <button disabled={!canUndo} onClick={undo} title="Undo: The last change to the configuration, from any panel - rows, run and output settings, an applied proposal."><Icon name="undo" label="Undo" /></button>
-        <button disabled={!canRedo} onClick={redo} title="Redo: The change Undo took back."><Icon name="redo" label="Redo" /></button>
+        <button disabled={!canUndo} onClick={undo} title={'Undo: The last change to the configuration, from any panel - rows, run and output settings, an applied proposal. '
+          + 'The line under the formula bar names what it took back. Ctrl+Z anywhere on the page, but in a text box.'}><Icon name="undo" label="Undo" /></button>
+        <button disabled={!canRedo} onClick={redo} title="Redo: The change Undo took back. Ctrl+Y or Ctrl+Shift+Z, but in a text box."><Icon name="redo" label="Redo" /></button>
         <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)} title="Export JSON: The whole configuration - the three tables, the circuit, run and output settings, research labels - as one JSON file, downloaded."><Icon name="export" label="Export JSON" /></button>
         <button onClick={() => file.current?.click()} title="Import JSON...: Read a JSON file - a whole configuration, or rows for this tab. You see everything it changes before anything is replaced."><Icon name="import" label="Import JSON..." /></button>
         <input ref={file} type="file" accept="application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importJson(f); }} />
@@ -715,7 +769,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       {changesOpen && savedState === 'not saved' && <div className="unsaved-summary" role="region" aria-label="Rows not saved in the task">
         <p><b>Not saved in the task:</b></p>
         <ul>{(Object.keys(TITLES) as Section[]).map(s => { const said = changesIn(s); return said && <li key={s}>
-          <button className="item-link" onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }} title={`Show ${TITLES[s]}`}>{TITLES[s]}</button>: {said}</li>; })}</ul>
+          <button className="item-link" onClick={() => showTab(s)} title={`Show ${TITLES[s]}`}>{TITLES[s]}</button>: {said}</li>; })}</ul>
         <div className="row">
           <button onClick={() => window.dispatchEvent(new CustomEvent(RELOAD_SAVED_REQUEST))}
             title="Reload saved values: The saved rows of the task come back into the editors. Asks first; Undo takes it back.">Reload saved values</button>
@@ -760,7 +814,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         <div className="row"><button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>
         {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} unitOf={unitIn(config, schema.section_keys ?? {})} />}</div>}
       <FormulaBar cell={activeRow && !inView(activeRow, at) ? null : barCell} commit={commitBar} back={backToCell} />
-      {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}</p>}
+      {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}{note.show && <> <button className="item-link note-show"
+        onClick={() => showTab(note.show!)} title={`Show ${TITLES[note.show]}: the tab of the rows this changed.`}>Show {TITLES[note.show]}</button></>}</p>}
       <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}
         onFocusCapture={e => {      // a cell entered while the table has room for under about four rows (record 7.372)
           foldIfCramped(e.currentTarget); }}>

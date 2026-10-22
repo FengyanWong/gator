@@ -816,6 +816,17 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
 - **Ctrl+Z and Ctrl+Y** (record 7.188). In a cell, Ctrl+Z and Ctrl+Y (or Ctrl+Shift+Z) are the toolbar's Undo and Redo, as
   in a spreadsheet: a cell's typing is one Undo step, so the whole entry goes back at once. The formula bar keeps the
   browser's own undo of its text.
+- **Undo from anywhere, and what it took back** (branch record SIF-97, from the usability audit). The keys are the page's
+  Undo and Redo wherever the focus is in the main window - a tab's button, Add, a Run configuration list, the page itself -
+  not only in a cell: after an Import's or Matched devices' Apply, a tab press or a Delete that left no row in view they did
+  nothing. A box that takes typing (Find rows, the formula bar, a number or a name box) keeps the browser's own undo of its
+  text, a cell handles the keys first as before, and a dialog open over the page (the graph view) is left be. Undo is
+  page-wide and used to say nothing; now the line under the formula bar names what an Undo or Redo changed, from whichever
+  button, key or window it came: "Undo: Specs inl1 (Lower)." - the tab, the row's ID and, when one row changed in up to
+  three fields, their headers - or "Undo: Parameters w3 added.", "Redo: run settings." (the other sections by the import
+  confirmation's words). When it changed rows of a tab not in view, the line offers **Show Specs** (that tab's name); the
+  tab is not switched by itself. Nothing here saves, runs or writes to Virtuoso: the keys do what the toolbar's Undo and
+  Redo did.
 
 Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`.
 
@@ -2553,7 +2564,10 @@ middle of the box if it is out of its view; the box scrolls, never the window.
 
 Pressing the button again focuses the existing window. It has no close button of its own (record 7.163, user: "delete
 the cross button in RL network window"): the browser's close keeps all configuration edits; pending settings saves and model compatibility checks continue in the main page. Undo/Redo also
-work for typing in the window. A blocked popup is explained beside the launcher. Reloading or leaving the workbench closes
+work for typing in the window. Its heading has **Undo** and **Redo** of its own, at the right (branch record SIF-97: every
+Mode button, Use template and Use this save point said "One Undo step", and the only Undo was in the main window's editors);
+they are the page's one history, as the toolbar's, and Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) work anywhere in the window but in a
+text box, which keeps its own undo. The line under the main window's formula bar names what they changed. A blocked popup is explained beside the launcher. Reloading or leaving the workbench closes
 its window.
 
 Settings in the window that need attention leave a notice in Run configuration, including its folded warning/error mark. Since

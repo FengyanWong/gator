@@ -30,3 +30,18 @@ export function typingField(): Element | null {
   if (e?.tagName === 'TEXTAREA') return e;
   return e?.tagName === 'INPUT' && !['checkbox', 'radio', 'file', 'button', 'submit'].includes(e.type) ? e : null;
 }
+
+type KeyPress = { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; defaultPrevented: boolean; target: EventTarget | null };
+/** The page's Undo or Redo a key press asks for, or null (branch record SIF-97): Ctrl+Z (Cmd+Z on a Mac), and Ctrl+Y or
+ *  Ctrl+Shift+Z, wherever the focus is in the main window or the RL model window - they worked in an editor cell only, so
+ *  after an Import's Apply or a tab press nothing happened, and the RL model window had no Undo at all. A box that takes
+ *  typing (the formula bar, Find rows, a number or a name box) keeps the browser's own undo of its text, as the formula bar
+ *  did (record 7.188); a key a cell has handled already, and a dialog open over the page, are left be. Tag names, not
+ *  instanceof: a pop-up window's fields belong to that window. */
+export function undoKey(e: KeyPress): 'undo' | 'redo' | null {
+  if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey || !/^[zy]$/i.test(e.key)) return null;
+  const box = e.target as HTMLElement | null;
+  if (box?.closest?.('dialog[open]') || box?.tagName === 'TEXTAREA' || box?.isContentEditable
+    || (box?.tagName === 'INPUT' && !['checkbox', 'radio', 'file', 'button', 'submit', 'reset', 'range', 'color', 'image'].includes((box as HTMLInputElement).type))) return null;
+  return e.key.toLowerCase() === 'y' || e.shiftKey ? 'redo' : 'undo';
+}

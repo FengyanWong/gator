@@ -294,11 +294,13 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}
-          validation={validation} taskSlot={setTaskSlot} taskNotes={setTaskNotes} taskHead={setTaskHead} taskTools={setTaskTools}
+          lastStep={store.lastStep} validation={validation} taskSlot={setTaskSlot} taskNotes={setTaskNotes} taskHead={setTaskHead} taskTools={setTaskTools}
           taskStatus={setTaskStatus} circuitShown={circuitShown} onCircuit={toggleCircuit} onCramped={panel.foldForRows} />
       </main>
       <aside className="right">
-        <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} runHeld={headerHeld} />
+        {/* The RL model window it holds has Undo and Redo of its own (branch record SIF-97): the page's one history. */}
+        <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} runHeld={headerHeld}
+          undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo} />
         <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} headerWorks={headerWorks} runs={runs}
           taskMock={circuit?.loaded && typeof circuit.mock === 'boolean' ? circuit.mock : null} />
         <ResearchPanel config={config} setConfig={setConfig} />

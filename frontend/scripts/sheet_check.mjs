@@ -18,7 +18,10 @@
 //     tick box on Parameters (whose tick-box column a tie toggle widens) and on Specs (a narrow one), also when that column
 //     changes size with no new render; nothing covers them, and nothing passing under shows through them;
 //   - (record 7.188) the headers in plain words, each field name in its header's tooltip and on the help line a press opens;
-//     Ctrl+Z and Ctrl+Y in a cell are the toolbar's Undo and Redo.
+//     Ctrl+Z and Ctrl+Y in a cell are the toolbar's Undo and Redo;
+//   - (branch record SIF-97) the keys are the page's Undo and Redo wherever the focus is - a tab's button, the page itself -
+//     but in a box that takes typing (Find rows, the formula bar), which keeps its own undo; the line under the formula bar
+//     names what they changed, by tab, row ID and the field's header, and offers the tab when another is in view.
 // Run: bash frontend/scripts/run_checks.sh --only sheet_check. About 20 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
@@ -224,11 +227,38 @@ await runChecks(browser, async () => {
   await page.setValue(BOX(first, 'notes'), 'FIXTURE undo me', { event: 'input', focus: true });
   await page.until(stored(`c.parameters[${first}].notes === 'FIXTURE undo me'`), 30);
   await evaluate(`${BOX(first, 'notes')}.focus()`); await sleep(150);
+  const NOTE = `(document.querySelector('section.editors .paste-note')?.textContent ?? '')`, firstId = await evaluate(`${BOX(first, 'variable_id')}.value`);
   await ctrlKey('z', 90);
   check('Ctrl+Z in a cell is the toolbar\'s Undo: the whole entry goes back, in the cell too', await page.until(stored(`(c.parameters[${first}].notes ?? '') === ${JSON.stringify(noteBefore)}`), 30)
     && (await evaluate(`${BOX(first, 'notes')}.value`)) === noteBefore, await evaluate(`${BOX(first, 'notes')}.value`));
+  check('...and the line under the formula bar names what it took back: the tab, the row and the field (SIF-97)', (await evaluate(NOTE)) === `Undo: Parameters ${firstId} (Notes).`, await evaluate(NOTE));
   await ctrlKey('y', 89);
   check('...and Ctrl+Y redoes it', await page.until(stored(`c.parameters[${first}].notes === 'FIXTURE undo me'`), 30) && (await evaluate(`${BOX(first, 'notes')}.value`)) === 'FIXTURE undo me');
+  check('...said too (SIF-97)', (await evaluate(NOTE)) === `Redo: Parameters ${firstId} (Notes).`, await evaluate(NOTE));
+
+  // ---- the keys outside the table, and what they changed said (branch record SIF-97) -----------------------------------------------
+  await evaluate(`(b => { b.focus(); b.click(); })(${TABS('targets')})`); await sleep(300);
+  check('(set-up) Specs in view, the focus on its tab\'s button', await evaluate(`document.activeElement === ${TABS('targets')} && ${TABS('targets')}.classList.contains('active')`));
+  await ctrlKey('z', 90);
+  check('Ctrl+Z after a tab press is the page\'s Undo: it reaches a row of the tab not in view (SIF-97)',
+    await page.until(stored(`(c.parameters[${first}].notes ?? '') === ${JSON.stringify(noteBefore)}`), 30), await evaluate(stored(`c.parameters[${first}].notes`)));
+  check('...the line names it, with a button to that tab; the tab in view stays (SIF-97)', (await evaluate(NOTE)) === `Undo: Parameters ${firstId} (Notes). Show Parameters`
+    && await evaluate(`${TABS('targets')}.classList.contains('active')`), await evaluate(NOTE));
+  await evaluate(`document.querySelector('section.editors .paste-note button.note-show').click()`); await sleep(300);
+  check('...which shows Parameters, the row taken back in it', await evaluate(`${TABS('parameters')}.classList.contains('active')`) && (await evaluate(`${BOX(first, 'notes')}.value`)) === noteBefore);
+  await evaluate(`document.activeElement?.blur()`);
+  await ctrlKey('y', 89);
+  check('Ctrl+Y with the focus on the page itself is the page\'s Redo, and says so (SIF-97)', await page.until(stored(`c.parameters[${first}].notes === 'FIXTURE undo me'`), 30)
+    && (await evaluate(NOTE)) === `Redo: Parameters ${firstId} (Notes).`, await evaluate(NOTE));
+  const ownUndo = async (box, name) => {
+    await evaluate(`${box}.focus()`); await sleep(100);
+    await ctrlKey('z', 90); await sleep(300);
+    check(`Ctrl+Z in ${name} keeps the box's own undo: the configuration stays, nothing said (SIF-97)`, (await evaluate(`${BOX(first, 'notes')}.value`)) === 'FIXTURE undo me'
+      && (await evaluate(NOTE)) === `Redo: Parameters ${firstId} (Notes).`, `${await evaluate(`${BOX(first, 'notes')}.value`)} | ${await evaluate(NOTE)}`);
+  };
+  await ownUndo(`document.querySelector('section.editors input.find-rows')`, 'the Find rows box');
+  await evaluate(`${BOX(first, 'notes')}.focus()`); await sleep(150);
+  await ownUndo(`document.querySelector('.formula-bar textarea')`, 'the formula bar');
 
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
   check('no console error', !consoleErrors.length, consoleErrors.slice(0, 3).join(' | '));

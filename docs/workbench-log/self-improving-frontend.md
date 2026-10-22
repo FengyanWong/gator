@@ -2762,3 +2762,56 @@ box; the changed `spec_equations_check` assertion fails too. Also run, unchanged
 `editor_columns_check` 23, `reliability_check` 20, `task_rows_check` 54, `unsaved_rows_check` 25, `formula_bar_check` 21,
 `blocking_issues_check` 60, `matched_devices_check` 37, `looks_check` 75, `edit_state_check` 24, `dom_identity_check` 56,
 `testbench_probes_check` 41, `room_check` 30 (16 scripts, 647 checks, one lane). No flakes.
+
+### SIF-97 Undo works from anywhere, and says what it took back (2026-10-22; from the usability audit)
+
+**Found.** Ctrl+Z and Ctrl+Y worked only while the focus was in an editor cell. After an Import's or Matched devices'
+Apply (the box goes away), after a tab press, or after a Delete that left no row in view (the focus on Add), the keys
+did nothing, and those are the moments Undo is wanted (audit finding J2-5). Undo is page-wide (rows on any tab, run and
+output settings, an applied proposal), but it said nothing about what it took back. A change on another tab, in a folded
+tied row or in Run configuration was reverted out of view, and the next press could go one step further than meant
+(J2-15). The RL model window says "One Undo step" on every Mode button, Use template and Use this save point, but it had
+no Undo; the user had to go to the main window's toolbar and come back, and its learning-rate notice said "Undo in the
+main window" (J5-5).
+
+**Changed.** `frontend/src/history.ts`: the history keeps its last Undo or Redo and the two configurations it moved
+between (`lastStep`), until the next recorded change. `frontend/src/windows.ts`: `undoKey` says which step a key press
+asks for: Ctrl+Z (Cmd+Z), and Ctrl+Y or Ctrl+Shift+Z. It gives none in a box that takes typing (Find rows, the formula
+bar, number and name boxes), which keeps the browser's own undo of its text as the formula bar did (record 7.188), for a
+key a cell has already handled, or inside a dialog open over the page. `frontend/src/panels/Editors.tsx`: a key listener
+on the main window's document does the page's Undo and Redo wherever the focus is; a cell still handles the keys first,
+as before. The line under the formula bar names what an Undo or Redo changed, whichever button, key or window it came
+from: "Undo: Parameters w1 (Notes)." gives the tab, the row's ID and, when one row changed in up to three fields, their
+headers. A table whose length changed reads "Undo: Parameters w3 added."; more than four rows read as a count; the other
+sections use the import confirmation's words ("Redo: run settings."). When the rows are on a tab not in view, the line
+offers "Show Parameters" (that tab's name) and the tab is not switched by itself. Switching by itself would let the
+chosen cell go and fight the tab's own reset. The tab buttons, the not-saved list's links and that button share one
+`showTab`. The toolbar's Undo and Redo tooltips name the keys and the line. `frontend/src/panels/RlModelWindow.tsx`, `Right.tsx`,
+`App.tsx`: the window's heading has Undo and Redo icon buttons at its right, titled as the toolbar's and disabled as
+they are. They are the page's one history, and the window's keys work as in the main window, except in its text boxes
+(the model's name, the numbers). The learning-rate notice says "Undo restores the previous value."
+`frontend/src/styles.css`: the two buttons sit together at the heading's right. Nothing here saves, starts a run or
+writes to Virtuoso: the keys and the window's buttons do what the toolbar's Undo and Redo did. The verdict's other part,
+the focus after Delete selected, was done in SIF-96. Not changed: an Undo pressed in the RL model window is named in the
+main window's line, not in the pop-up, which shows its result in its own controls. `docs/workbench.md` (a bullet after
+Ctrl+Z and Ctrl+Y, and the RL model window's paragraph) and `docs/functionality-reference.md` (the toolbar, keys and Mode
+rows) say so.
+
+**Checked.** `tsc` clean. `sheet_check` 54 (45 before): Ctrl+Z in a cell says "Undo: Parameters <id> (Notes).", and
+Ctrl+Y says "Redo: ...". With Specs in view and the focus on its tab button, Ctrl+Z takes the Parameters row back. The
+line names it, with a "Show Parameters" button, and Specs stays in view; the button shows Parameters with the row taken
+back. Ctrl+Y with the focus on the page itself redoes it. Ctrl+Z in Find rows and in the formula bar changes nothing and
+says nothing. `find_fill_copy_check` 50: after a Delete that left no row in view, Ctrl+Z on Add brings the row back, and
+the line says "Undo: Parameters <id> added." (the toolbar's Undo was pressed there before). `network_panel_check` 69
+(62 before): the window's heading holds Undo and Redo and no close button; its Undo takes the last change back, and the
+main window's line says "Undo: run settings."; its Redo brings it again. Ctrl+Z on a Mode button and Ctrl+Shift+Z in
+the window undo and redo; Ctrl+Z in the model's name box leaves the configuration alone. `edit_state_check` 28 (24
+before): the history keeps the last Redo and Undo with the configurations they moved between, keeps them through a Redo
+with nothing to redo, and lets them go at the next edit. On the code before the change, 4 of the new `sheet_check`
+checks fail and the script stops at the missing button; the changed close-button check and the new heading check of
+`network_panel_check` fail and the script stops; and the Ctrl+Z check of `find_fill_copy_check` fails. Also run,
+unchanged: `formula_bar_check` 21, `task_rows_check` 54, `typing_check` 50, `model_chooser_check` 98,
+`spec_equations_check` 36, `matched_devices_check` 37, `crash_panel_check` 11, `mode_suggestion_check` 20,
+`reliability_check` 20, `editor_columns_check` 23, `unsaved_rows_check` 25, `blocking_issues_check` 60, `looks_check` 75,
+`network_inputs_check` 9, `reward_block_check` 33, `circuit_source_check` 17, `testbench_probes_check` 41, `room_check` 30,
+`dom_identity_check` 56 (23 scripts, 917 checks, one lane). No flakes.

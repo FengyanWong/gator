@@ -25,9 +25,15 @@ await runChecks(browser, async () => {
     await expect(`StrictMode Redo restores ${name}`, `fixture.state.name === ${JSON.stringify(name)}`);
   }
   check('redo history is exhausted exactly once', await page.evaluate('!fixture.state.canRedo'));
+  // Branch record SIF-97: the history keeps its last move and the two configurations, for the editors' line to name.
+  check('the last Redo is kept with the configurations it moved between (SIF-97)', await page.evaluate('fixture.state.step === "Redo two -> three"'), await page.evaluate('fixture.state.step'));
+  await page.evaluate('fixture.redo()');
+  check('...and a Redo with nothing to redo keeps it', await page.evaluate('fixture.state.step === "Redo two -> three" && fixture.state.name === "three"'), await page.evaluate('fixture.state.step'));
   await page.evaluate('fixture.undo()'); await page.until('fixture.state.name === "two"');
+  check('...as is an Undo (SIF-97)', await page.evaluate('fixture.state.step === "Undo three -> two"'), await page.evaluate('fixture.state.step'));
   await edit('branch');
   check('an edit after Undo discards the abandoned future', await page.evaluate('!fixture.state.canRedo'));
+  check('...and lets the last Undo go (SIF-97)', await page.evaluate('fixture.state.step === null'), await page.evaluate('fixture.state.step'));
   await page.evaluate('fixture.edit("batch1"); fixture.edit("batch2")'); await page.until('fixture.state.name === "batch2"');
   await page.evaluate('fixture.undo()'); await expect('batched edits retain the intermediate state', 'fixture.state.name === "batch1"');
   await page.evaluate('fixture.undo()'); await expect('batched edits retain the preceding state', 'fixture.state.name === "branch"');

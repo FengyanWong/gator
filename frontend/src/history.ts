@@ -27,7 +27,10 @@ const emptyConfig = (): Json => ({
 /** Changes typed into one field less than this apart are one Undo step (windows.ts typingField says which field). */
 const MERGE_MS = 1500;
 
-type History = { config: Json; past: Json[]; future: Json[]; field: Element | null; at: number };
+/** The last Undo or Redo and the two configurations it moved between, until the next recorded change (branch record SIF-97):
+ *  the editors name what it changed, from whichever panel or window it was pressed in. */
+export type HistoryStep = { kind: 'Undo' | 'Redo'; from: Json; to: Json };
+type History = { config: Json; past: Json[]; future: Json[]; field: Element | null; at: number; step: HistoryStep | null };
 type HistoryAction = { type: 'set'; next: Json | ((c: Json) => Json); record: boolean; field: Element | null; at: number }
   | { type: 'undo' | 'redo' } | { type: 'blur'; field: Element };
 
@@ -41,11 +44,12 @@ function configHistory(state: History, action: HistoryAction): History {
     if (JSON.stringify(config) === JSON.stringify(state.config)) return state;
     const merge = action.field !== null && action.field === state.field && action.at - state.at < MERGE_MS && state.past.length > 0;
     return { config, past: merge ? state.past : [...state.past.slice(-(HISTORY_LIMIT - 1)), state.config],
-      future: [], field: action.field, at: action.at };
+      future: [], field: action.field, at: action.at, step: null };
   }
   const from = action.type === 'undo' ? state.past : state.future;
   if (!from.length) return { ...state, field: null, at: 0 };
   return { config: from[from.length - 1], field: null, at: 0,
+    step: { kind: action.type === 'undo' ? 'Undo' : 'Redo', from: state.config, to: from[from.length - 1] },
     past: action.type === 'undo' ? state.past.slice(0, -1) : [...state.past, state.config],
     future: action.type === 'redo' ? state.future.slice(0, -1) : [...state.future, state.config] };
 }
@@ -58,7 +62,7 @@ export function useConfig() {
   const [fresh] = useState(() => readKept(s => s.getItem(STORAGE_KEY) === null, () => true));
   const [history, dispatch] = useReducer(configHistory, undefined, (): History => {
     const config: Json = readKept(s => migrateConfig(JSON.parse(s.getItem(STORAGE_KEY) || 'null')) ?? emptyConfig(), () => emptyConfig());
-    return { config, past: [], future: [], field: null, at: 0 };
+    return { config, past: [], future: [], field: null, at: 0, step: null };
   });
   const { config } = history;
 
@@ -104,5 +108,6 @@ export function useConfig() {
     return () => window.removeEventListener('pagehide', flush);
   }, []);
 
-  return { config, setConfig, undo, redo, canUndo: history.past.length > 0, canRedo: history.future.length > 0, fresh, saveError, retrySave: save };
+  return { config, setConfig, undo, redo, canUndo: history.past.length > 0, canRedo: history.future.length > 0, lastStep: history.step, fresh, saveError,
+    retrySave: save };
 }

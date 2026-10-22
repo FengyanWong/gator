@@ -59,7 +59,9 @@ await runChecks(browser, async () => {
     try { document.querySelector('.rl-networks-open').click(); } finally { window.open = open; } })()`, true);
   check('a blocked popup explains how to reopen it', await page.until(`document.querySelector('.right .error')?.textContent.includes('blocked the new window')`));
   let networkPage = await openNetworks(page, browser);
-  check('the window has no close button of its own (user, 2026-10-03): the browser closes it', await networkPage.evaluate(`!document.querySelector('.rl-networks-heading button')`));
+  // Its heading holds Undo and Redo since branch record SIF-97, and still no close button.
+  check('the window has no close button of its own (user, 2026-10-03): the browser closes it', await networkPage.evaluate(`[...document.querySelectorAll('.rl-networks-heading button')]
+    .map(b => b.textContent).join('|') === 'Undo|Redo'`), await networkPage.evaluate(`[...document.querySelectorAll('.rl-networks-heading button')].map(b => b.textContent).join('|')`));
   check('opening succeeds after a blocked attempt and clears the message', !await evaluate(`document.querySelector('.right').textContent.includes('blocked the new window')`));
   const originalWindow = networkPage.target.id;
   await evaluate(`document.querySelector('.rl-networks-open').click()`, true);
@@ -192,6 +194,34 @@ await runChecks(browser, async () => {
   await page.setValue(alpha, '0.005', { event: 'input', focus: true });
   await evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
   check('leaving and re-entering the field starts a separate Undo step', await page.until(`${alpha}.value === '0.004'`));
+
+  // ---- the window's own Undo and Redo, and its keys (branch record SIF-97): every Mode, template and save point said "One Undo
+  //      step", and the only Undo was in the main window --------------------------------------------------------------------------
+  const OWN = name => `${NETWORK_DOCUMENT}.querySelector('.rl-networks-heading button[title^="${name}:"]')`;
+  const MAIN_NOTE = `(document.querySelector('section.editors .paste-note')?.textContent ?? '')`;
+  await evaluate(`${alpha}.blur()`);
+  check('the window\'s Undo and Redo stand at its heading, titled as the toolbar\'s; both on, with a change done and one undone', await evaluate(`!!${OWN('Undo')} && !${OWN('Undo')}.disabled && !${OWN('Redo')}.disabled`));
+  await evaluate(`${OWN('Undo')}.click()`);
+  check('the window\'s Undo takes the last change back', await page.until(`${alpha}.value === '0.003'`), await evaluate(`${alpha}.value`));
+  check('...and the main window\'s line names it: run settings', await page.until(`${MAIN_NOTE} === 'Undo: run settings.'`), await evaluate(MAIN_NOTE));
+  await evaluate(`${OWN('Redo')}.click()`);
+  check('the window\'s Redo brings it again', await page.until(`${alpha}.value === '0.004'`), await evaluate(`${alpha}.value`));
+  const windowKey = async (key, shift = false) => {
+    for (const type of ['keyDown', 'keyUp']) await networkPage.send('Input.dispatchKeyEvent', { type, key, code: `Key${key.toUpperCase()}`,
+      windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0), modifiers: shift ? 10 : 2 });
+    await sleep(250);
+  };
+  await evaluate(`${NETWORK_DOCUMENT}.querySelector('.rl-mode.active').focus()`);
+  await windowKey('z');
+  check('Ctrl+Z in the window (on a Mode button) is the page\'s Undo', await page.until(`${alpha}.value === '0.003'`), await evaluate(`${alpha}.value`));
+  await windowKey('z', true);
+  check('...Ctrl+Shift+Z its Redo', await page.until(`${alpha}.value === '0.004'`), await evaluate(`${alpha}.value`));
+  const name = `${NETWORK_DOCUMENT}.querySelector('input.model-label')`;
+  await evaluate(`${name}.focus()`);
+  await windowKey('z');
+  check('...and in a text box of the window (the model\'s name) Ctrl+Z is the box\'s own: the configuration stays', await evaluate(`${alpha}.value === '0.004'`)
+    && (await evaluate(MAIN_NOTE)) === 'Redo: run settings.', `${await evaluate(`${alpha}.value`)} | ${await evaluate(MAIN_NOTE)}`);
+  await evaluate(`${name}.blur()`);
   await page.setValue(alpha, '', { event: 'input' });
 
   check('the network controls and their values are there (SAC is the only search method)', await page.until(`!document.querySelector('.rl-networks-open').disabled && !!${NETWORK_PANEL}.querySelector('.component-list')`) && (await numbers())[0] === String(rgcn.hidden_dim));

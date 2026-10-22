@@ -84,6 +84,7 @@ footer { grid-area: foot; background: var(--panel); border: 1px solid var(--line
 .rl-networks-window { max-width: 1060px; margin: 0 auto; padding: 14px 18px 24px; }
 .rl-networks-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .rl-networks-heading h2 { margin: 0; font-size: 17px; }
+.rl-networks-undo { display: inline-flex; gap: 4px; }   /* the window's Undo and Redo, at the heading's right (branch record SIF-97) */
 .rl-networks-panel { min-width: 0; }
 /* The RL model window (record 7.265): the Mode as three joined buttons at the top, New model's templates, the saved models. */
 .rl-modes { display: flex; margin: 4px 0 2px; } .rl-modes .rl-mode { border-radius: 0; margin: 0 0 0 -1px; }

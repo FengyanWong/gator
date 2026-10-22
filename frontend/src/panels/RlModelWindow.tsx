@@ -15,6 +15,8 @@ import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_
 import { NoModeNote } from './RunConfiguration';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
 import type { RlModel } from './useRlModel';
+import { Icon } from './Icons';
+import { undoKey } from '../windows';
 /** The training conditions as Reward and conditions names them (branch record SIF-12): the facts wrote the key ("off"). */
 const CONDITIONS: Record<string, string> = { off: 'Nominal only', after_nominal: 'Corners after nominal passes', always: 'Every planned corner' };
 /** A saved model's training conditions: the policy, then its plan - nothing more for Nominal only with nothing planned (branch
@@ -103,7 +105,8 @@ function ModelLabelInput({ m }: { m: RlModel }) {
     onChange={e => set({ model_label: e.target.value.trim() ? e.target.value : null })} />;
 }
 
-export function RlModelWindow({ m }: { m: RlModel }) {
+/** `undo`, `redo`, `canUndo`, `canRedo`: the page's one Undo history (branch record SIF-97), as the editors' toolbar has it. */
+export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean }) {
   const { config, runs, run, set, setAdv, setNet, source, adv, net, networkWindow, error, modelLoading, model, netSettings, netMessage, presetRateUpdated,
     netFields, advFields, encoder, entry, offeredEncoders, usesHeads, usesStructure, applyEntry, chooseList, flush, queueSave, editNet, chooseEncoder,
     settingDifferences, differs, originLabel, budget, starved, loads, noMode, label, savedModel, savedNet, archDiffers, suggested, usingPoint, useSavePoint,
@@ -121,11 +124,20 @@ export function RlModelWindow({ m }: { m: RlModel }) {
   const copying = useCopied(networkWindow.popup);
   // The blocks Run configuration's notice can name carry ids (useRlModel's `networkAnchor`): its "RL model..." opens this
   // window at the one its reason is about (branch record SIF-86).
-  return <section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
+  // Undo and Redo of the window's own (branch record SIF-97): every Mode button, Use template and Use this save point said "One
+  // Undo step", and the only Undo was in the main window's editors - Ctrl+Z here did nothing. The same history as the toolbar's,
+  // with its keys wherever the focus is but in a box that takes typing (windows.ts undoKey); the line under the main window's
+  // formula bar names what it took back.
+  const onKey = (e: React.KeyboardEvent) => { const step = undoKey(e); if (step) { e.preventDefault(); (step === 'undo' ? undo : redo)(); } };
+  return <section className="panel rl-networks-panel" aria-labelledby="rl-networks-title" onKeyDown={onKey}>
       {/* No close button of its own (user, 2026-10-03: "delete the cross button in RL network window"): the window's own close
           does it, and the settings are kept either way. Record 7.265: the RL model window - the Mode at the top, then that
           Mode's part: the templates of a new model, or the saved models to fine-tune or evaluate. */}
-      <div className="rl-networks-heading"><h2 id="rl-networks-title">RL model</h2></div>
+      <div className="rl-networks-heading"><h2 id="rl-networks-title">RL model</h2>
+        <span className="rl-networks-undo">
+          <button disabled={!canUndo} onClick={undo} title={'Undo: The last change to the configuration, from any panel or window - a Mode, a template, a save point '
+            + 'chosen here, rows, run and output settings. Ctrl+Z, but in a text box.'}><Icon name="undo" label="Undo" /></button>
+          <button disabled={!canRedo} onClick={redo} title="Redo: The change Undo took back. Ctrl+Y or Ctrl+Shift+Z, but in a text box."><Icon name="redo" label="Redo" /></button></span></div>
       <div className="rl-modes" role="radiogroup" aria-label="Mode">
         {MODES.map(([m, name, help]) => <button key={m} role="radio" aria-checked={run.mode === m} data-mode={m} className={`rl-mode${run.mode === m ? ' active' : ''}`}
           onClick={() => { if (run.mode !== m) chooseMode(m); }} title={`${name}: ${help}. One Undo step.`}>{name}</button>)}
@@ -165,7 +177,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           value back to its preset forgets the saved copy. */}
       {entry && <p className="hint in-use">In use: <b>{settingDifferences.length ? 'current run settings' : originLabel}</b></p>}
       {presetRateUpdated && adv.learning_rate === 0.001 && <p className="hint preset-rate-updated" role="status">
-        Updated the restored starting preset’s learning rate from 0.0003 to 0.001. Undo in the main window restores the previous value.</p>}
+        Updated the restored starting preset’s learning rate from 0.0003 to 0.001. Undo restores the previous value.</p>}
       {/* The template by that word (branch record SIF-57): this box called it "the saved Graph Transformer defaults", with
           "Use saved defaults" / "Save as defaults", in a window whose table and buttons say "template". */}
       {differs && <div className="note network-differences" id="network-differences">

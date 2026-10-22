@@ -194,7 +194,7 @@ await runChecks(browser, async () => {
     && await win.folded('Circuits that already have one are in the Tasks window, under their task.'), `${offered} button(s)`);
   check('browse only: the copy warning is NOT folded: the cell itself is written', await win.shown('Work on a copy, never on your design.') && await win.shown('every run sets device sizes in the cell'));
   check('browse only: "Read this cell into the workbench" stays in view, its explanation is folded', await win.buttonShown('Read this cell into the workbench')
-    && await win.shown('To make a task of this cell') && await win.shown('choose its Testbench cell above first') && await win.folded('Read-only, no simulation, some seconds'));
+    && await win.shown('To make a task of this cell') && await win.shown('choose its Testbench cell above first: a task needs one') && await win.folded('Read-only, no simulation, some seconds'));
   check('the view remark is one line: "View: schematic"; the reason is folded', await win.shown('View: schematic') && await win.folded('The only view the reader opens'));
   await win.choose('Cell', 'ring_a'); await quiet();
   check('a cell with other views: they are folded too', await win.shown('View: schematic') && await win.folded('maestro, symbol'));
@@ -228,7 +228,13 @@ await runChecks(browser, async () => {
   await win.click(win.BUTTON('Read this cell into the workbench')); await quiet(); await far.until(`${WIN}.textContent.includes('Not optimizable yet')`);
   check('reading asked once whether the cell is a copy the user made', dialogs.length === 1 && dialogs[0].startsWith(`Work in ${LIBRARY}/ring_a directly?`), dialogs.join(' | '));
   check('draft: the headline is in view and names the button that makes it a task', await win.shown('Read from Virtuoso. Not optimizable yet: Save as makes it a task.'));
-  check('draft: what to do with it is folded under "What you can do with it now"', await win.shown('What you can do with it now') && await win.folded('The workbench holds the export of this cell') && await win.folded('it writes the rows into this cell\'s Maestro view'));
+  // Branch record SIF-88: the next step stands in view (it was the fold's second paragraph); what the draft is stays folded.
+  check('draft: the next step is in view; what it is is folded under "What you can do with it now"', await win.shown('Next: fill Parameters, Probes and Specs')
+    && await win.shown('it writes the rows into this cell\'s Maestro view') && await win.shown('What you can do with it now') && await win.folded('The workbench holds the export of this cell'));
+  // A read brings no Parameters rows: the empty table says how to fill it, and where the cell's sizes are.
+  check('draft: the empty Parameters table says to add rows and where the cell\'s present sizes are (branch record SIF-88)',
+    await card.shown('No rows yet: add one row per size the optimizer may change (Add, the + above). Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window.'),
+    await evaluate(`${PANEL}.querySelector('.parameters-empty')?.textContent ?? 'none'`));
   check('draft: its button stays in view', await win.buttonShown('Read the cell again') && !(await win.buttonShown('Ask the agent to set up')));
   check('draft: the cell is named as worked in directly, in view', await win.shown(`Working in ${LIBRARY}/tb_ring_a directly: you declared it a copy you made`));
   check('draft: "Then save it as a task:" points to Save task above the editors, the explanation is folded', await win.shown('Then save it as a task:') && await win.shown('What Save as does')

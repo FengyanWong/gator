@@ -620,6 +620,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         + 'The initial value is the one read from the circuit. Equal initial values do not imply a binding. '
         + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>The optimizer searches <b>{validation == null ? '...'
           : (validation.facts?.independent_action_variables ?? '?')}</b> of {plural(rows.length, 'row')}.</p>}
+      {/* An empty Parameters table says how to fill it (branch record SIF-88): a cell read from Virtuoso brings Probes only, and
+          its sizes are in the Virtuoso window. Not while no task or cell is chosen: the task's lines say to choose one. */}
+      {tab === 'parameters' && !rows.length && (config.circuit?.source === 'virtuoso' || (config.circuit?.source === 'registered_task' && !!config.circuit?.task_id))
+        && <p className="hint parameters-empty">No rows yet: add one row per size the optimizer may change (Add, the + above).{config.circuit.source === 'virtuoso'
+          ? " Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window." : ''}</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
         + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns).'}>Probes: {probeIds.length
           ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}

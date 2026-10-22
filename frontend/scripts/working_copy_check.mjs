@@ -145,7 +145,18 @@ await runChecks(browser, async () => {
     && (await blockText()).includes('Not yet the cell the task flow works in') && (await blockText()).includes('Read the cell again'), await blockText());
   check('no "Ask the agent to set up" any more (record 7.226)', !(await far.evaluate(`!!${WBUTTON('Ask the agent to set up')}`)));
   await shot('working-copy-1-none.png');
-  let mark = calls.length; answers.push(true);
+  // Branch record SIF-88: this read declares the cell, which needs a testbench - said before the question, with nothing sent
+  // (the backend refused it only after the user had answered).
+  const TB_BOX = `[...${WIN}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Testbench cell')?.querySelector('select')`;
+  const NO_TB = "Choose the cell's Testbench cell first: a task simulates the testbench and keeps its Maestro test there.";
+  await far.setValue(TB_BOX, ''); await settle();
+  let mark = calls.length;
+  await far.evaluate(`${WBUTTON('Read the cell again')}.click()`, true); await settle();
+  check('without a testbench, reading it again asks nothing, sends nothing and says to choose one (branch record SIF-88)', dialogs.length === 0 && calls.length === mark
+    && (await far.evaluate(`${WIN}.textContent`)).includes(NO_TB), `${dialogs.length} dialog(s) / ${JSON.stringify(calls.slice(mark))}`);
+  await far.setValue(TB_BOX, TB); await settle();
+  check('...and choosing the testbench takes that line away', (await far.evaluate(`${TB_BOX}.value`)) === TB && !(await far.evaluate(`${WIN}.textContent`)).includes(NO_TB));
+  mark = calls.length; answers.push(true);
   await far.evaluate(`${WBUTTON('Read the cell again')}.click()`, true); await settle(1500);
   check('reading it again asks the question and, on OK, reads with work_here - the old copy route is never called', dialogs.length === 1 && dialogs[0].message.startsWith(`Work in ${LIB}/${CELL} directly?`)
     && JSON.stringify(calls.slice(mark).map(c => [c.op, c.library, c.cell, c.testbench, !!c.work_here].join(' '))) === JSON.stringify([`import ${LIB} ${CELL} ${TB} true`]) && !calls.some(c => c.op === 'copy'),

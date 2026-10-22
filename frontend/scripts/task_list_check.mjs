@@ -398,6 +398,9 @@ await runChecks(browser, async () => {
   const START = `document.querySelector('.editors .task-status .task-start')`;
   check('no task yet: the task\'s lines say so and offer Open Tasks and the ways to a new task', await until(`!!(${START})`, 150)
     && (await evaluate(`[...${START}.querySelectorAll('button')].map(b => b.textContent)[0]`)) === 'Open Tasks', await evaluate(`${START}?.innerText ?? 'none'`));
+  // Branch record SIF-88: the title kept the project's task name, the last task's (fixture_ota), over "No task yet".
+  check('...and the header\'s title says no task is chosen (branch record SIF-88)', (await evaluate(`document.querySelector('header .tb-task')?.textContent`)) === 'no task chosen',
+    await evaluate(`document.querySelector('header .tb-task')?.textContent`));
   check('no window is open: the banner lists none', !(await evaluate(`!!document.querySelector('header .windows-button')`)));
   await evaluate(`${START}.querySelector('button.open-tasks').click()`, true);
   check('Open Tasks opens the Tasks window', await browser.window(TASKS_WINDOW, { ms: 8000 }).then(() => true, () => false));

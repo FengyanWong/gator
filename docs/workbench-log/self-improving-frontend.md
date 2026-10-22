@@ -2307,3 +2307,44 @@ draft. `connection_panel_check` 94, two new. A folder typed and not saved, after
 directories, the typed `~/fixture-typed` over the values in use, the kept line, Save folders on. Undo changes sends
 nothing, puts `~/.gator/ic` back and removes the line. `dom_identity_check` 56, `virtuoso_source_check` 95,
 `project_help_check` 49, `ngspice_window_check` 43, `task_list_check` 88. No flakes.
+
+### SIF-88 A cell's first read asks for its testbench before the copy question, and the next step and the title say what the page holds (2026-10-22; from the usability audit)
+
+**Found.** Reading a Virtuoso cell for the first time went wrong in three places (audit findings J1-1, J1-2 and J1-8).
+With Testbench cell = (none), **Read this cell into the workbench** stayed on and the note said to choose a testbench
+"first, if it has one". The press asked the long copy question, and after OK the backend refused at once: "Choose the
+cell's Testbench cell first". The page already knew that, before the question. After a read, Parameters stayed empty
+with only "The optimizer searches 0 of 0 rows.", and the sentence "Next: fill Parameters, Probes and Specs ... then press
+Save as" sat in the closed fold "What you can do with it now". The header's title took `project.task_name` for anything
+but a followed task. A fresh page therefore read "task" with "RL model task", from the empty configuration's name. A cell
+being read kept the name of the last task loaded.
+
+**Changed.** `frontend/src/panels/VirtuosoWindow.tsx`: Read is off until a testbench is chosen. Its tooltip then says
+"Read this cell: Choose the cell's Testbench cell first: a task simulates the testbench and keeps its Maestro test
+there." (`NO_TESTBENCH`), and the note says "first: a task needs one". The next step is a visible `p.hint.next-step`
+under the draft's headline. The fold keeps what the draft is, and the Agent window as a help. `frontend/src/panels/Left.tsx`:
+`importCell` says `NO_TESTBENCH` in the window when a read that declares the cell has no testbench. It does this before
+the copy question and sends nothing. This covers **Read the cell again** on a cell read before the question. The
+backend's own guard stays. The line goes once a testbench is chosen; another step's error stays. `TitleFacts` names a
+followed task as before. A Virtuoso cell is "library/cell (not saved)", or "choosing a Virtuoso cell" before a cell is
+chosen. Any other page reads "no task chosen". The RL model fact falls back to the task's name only for a followed task,
+otherwise "not set". The title's tooltip no longer shows a stale `task_id`. Export JSON's file name still uses
+`task_name`. `frontend/src/panels/Editors.tsx`: an empty Parameters table shows `p.hint.parameters-empty`: "No rows yet:
+add one row per size the optimizer may change (Add, the + above)." For a cell it adds "Once the cell is read, its present
+sizes are under Hierarchy, Instances and parameters, in the Virtuoso window." It is not shown while no task or cell is
+chosen, because the task's lines already say to choose one. The audit's larger option, an "Add to Parameters" button per
+instance parameter, was left out: its rows would start with bounds that hold no real size. Nothing new is sent, and no
+question was added or removed. The copy question still comes before every declaring read, Cancel still reads nothing,
+and no run, save or Virtuoso write changed. `docs/workbench.md` (the title block, Browsing a Virtuoso library) and
+`docs/functionality-reference.md` (Title block, Read this cell) say so.
+
+**Checked.** `tsc` clean. `virtuoso_source_check` 98: Read is off with no testbench and its tooltip and note say why. A
+press then asks nothing and sends nothing. A testbench turns it on, and the question names the testbench. Cancel reads
+nothing, and the dialog count after "Read the cell again" is 2 (it was 3: the refused OK is gone). The header's title is
+"choosing a Virtuoso cell", then "FIXTURE_DESIGNS/ota5_v1 (not saved)", with RL model "not set". `working_copy_check`
+33: on a cell read before the question with the testbench emptied, Read the cell again asks nothing, sends nothing and
+shows the line, and choosing the testbench takes it away. `project_help_check` 50: the next step is in view, the empty
+Parameters line is shown after a read, and the browse note says "first: a task needs one". `circuit_source_check` 17:
+the removed netlist source titles "no task chosen", RL model "not set", and shows no empty-Parameters line.
+`task_list_check` 89: with no task, the title reads "no task chosen". `testbench_probes_check` 41, `looks_check` 74,
+`typing_check` 50, `editor_columns_check` 23. No flakes.

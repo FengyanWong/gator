@@ -354,7 +354,11 @@ first cell was the project name until the user removed that box). They are read-
 the circuit panel puts them in the header. The version and environment line is in the tooltip of the GATOR chip. Since
 record 7.182 the **Connection** button is the block's last cell (user: "move the conection button to the header"). Record
 7.182 also took the task name out (user: "remove the current task name on the header"); Draft A of the Roadster look,
-which the user chose on 2026-10-17, brings it back.
+which the user chose on 2026-10-17, brings it back. Only a followed task is named so (branch record SIF-88): a cell read
+from Virtuoso is "library/cell (not saved)" ("choosing a Virtuoso cell" before a cell is chosen), and a page that follows
+no task reads "no task chosen". The RL model fact falls back to the task's name for a followed task only, and reads "not
+set" otherwise. Until then a fresh page titled itself "task" (the empty configuration's name), and a cell kept the name of
+the last task loaded.
 
 **When the page cannot be drawn** (record 7.188, design advice). A failure while drawing the page used to leave it blank.
 Now a panel names the error and offers the ways out. **Undo the last change** draws the page again from the configuration
@@ -997,7 +1001,10 @@ to say.
   choosing another testbench, press **Read the cell again**. The circuit type decides how each result
   is measured, so editing `signal` does not move it.
 * **Read this cell into the workbench** (first step towards a task for your own cell; explicit press,
-  read-only, some seconds). The first read of a cell ASKS whether it is a copy you made (the workbench makes
+  read-only, some seconds). It is off until a **Testbench cell** is chosen, and its tooltip says why (branch record
+  SIF-88): the first read declares the cell, which needs the testbench, and the backend refuses it before any export.
+  It used to ask the copy question first and then show that refusal; **Read the cell again** on a cell read before the
+  question now says it in the window, with nothing asked or sent. The first read of a cell ASKS whether it is a copy you made (the workbench makes
   no copy of its own since 2026-09-23 - see "The cell the task flow works in" below): Cancel reads nothing,
   OK reads it and makes it the cell the task flow works in. Virtuoso exports the netlist of the testbench
   cell and the device sizes are read. The cell's PDK is read in the same press (since 2026-09-27; see "The
@@ -1008,7 +1015,11 @@ to say.
   **Parameters** = what may vary, **Probes** = what is measured and how, **Specs** = equations over
   those probes and the limits they must meet; **Read setup** takes what the cell's Maestro test already holds) and
   save it with **Save task**, which writes the rows into that cell's Maestro view. (Until 2026-10-06 "Ask the agent
-  to set up" had the Agent tab's agent propose them; record 7.226.) Device types this project has not verified (for example the MIM invented model) are shown
+  to set up" had the Agent tab's agent propose them; record 7.226.) That next step stands in view under the draft's
+  headline (branch record SIF-88; it was folded under "What you can do with it now"). A read brings no Parameters rows,
+  so an empty Parameters table says "No rows yet: add one row per size the optimizer may change (Add, the + above)" and,
+  for a cell, that its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window - not while
+  no task or cell is chosen. Device types this project has not verified (for example the MIM invented model) are shown
   with unnamed pins. Such a cell still cannot run: Start stays disabled (`circuit_profile_missing`) until
   it is saved as a task.
 * **Save task** (at the right end of the editors' tab line since 2026-09-22; the note points there) replaced the

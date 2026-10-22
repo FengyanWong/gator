@@ -74,6 +74,12 @@ await runChecks(browser, async () => {
   check('no task is chosen: the Task row shows the removed source as none, and the task window offers the tasks',
     (await tw.current()) === '(none: the saved source was removed)' && before.includes('synthetic:gpdk045_ota5') && !before.some(k => k === 'virtuoso' || k === 'netlist'),
     JSON.stringify([await tw.current(), before]));
+  // Branch record SIF-88: the header's title gave the project's task name ("fixture") to a page that follows no task, and the
+  // empty Parameters table says how to fill it only while a task or a cell is chosen.
+  const title = await evaluate(`[document.querySelector('header .tb-task')?.textContent, document.querySelector('header .tb-model .tb-v')?.textContent]`);
+  check('the header\'s title says no task is chosen, not the project\'s task name, and no RL model label is set (branch record SIF-88)',
+    JSON.stringify(title) === JSON.stringify(['no task chosen', 'not set']), JSON.stringify(title));
+  check('...and the empty Parameters table adds no "No rows yet" line: nothing is chosen to fill it for', !(await evaluate(`!!${PANEL}.querySelector('.parameters-empty')`)));
   check('there is no Source list any more (the editors\' card, the circuit column)', !(await evaluate(`!!(${FIELD(PANEL, 'Source')}) || !!(${FIELD(COLUMN, 'Source')})`)));
   const note = await lines();
   check('a plain note under the editors\' toolbar says what happened, names the saved file and what to do', note.includes('This configuration was saved with a Spectre netlist file')

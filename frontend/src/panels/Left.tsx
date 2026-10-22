@@ -21,7 +21,7 @@ import { useTaskActions } from './taskActions';
 import { useTestbenchProbes } from './testbenchProbes';
 import { RELOAD_SAVED_REQUEST, type TaskLoad, useTaskChoice } from './taskChoice';
 import { openTasksAt } from '../openAt';
-import { VirtuosoWindow } from './VirtuosoWindow';
+import { NO_TESTBENCH, VirtuosoWindow } from './VirtuosoWindow';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
@@ -84,13 +84,18 @@ const copyQuestion = (r: Json) => `Work in ${r.library}/${r.cell} directly?\n\n`
  *  (Draft A of the Roadster look, which the user chose: the banner names the task) the task as the Task window names it, then
  *  one line of its facts: the circuit's class and PDK labels and the label the RL model is saved under (record 7.159). The
  *  saved task's revision left it in record 7.372: the task's chip on the editors' tab line says it. The task name had left the header on 2026-10-05 (record 7.182); the chosen draft brings it back.
- *  Read-only; the fields themselves stay in their panels. */
+ *  Read-only; the fields themselves stay in their panels.
+ *  Only a followed task gives the project's task name (branch record SIF-88): a fresh page titled itself "task" (the empty
+ *  configuration's name) with "RL model task", and a Virtuoso cell kept the name of the last task loaded. A cell is named as
+ *  the Next line beside Start names it, library/cell. */
 function TitleFacts({ config, task }: { config: Json; task: Json | null }) {
   const ref = config.circuit;
-  const name = ref.source === 'registered_task' && ref.task_id ? shownName(task, ref.task_id) : (config.project.task_name || 'no task chosen');
-  const model = (config.run.model_label ?? '').trim() || config.project.task_name;
+  const followed = ref.source === 'registered_task' && !!ref.task_id;
+  const name = followed ? shownName(task, ref.task_id) : ref.source === 'virtuoso'
+    ? (ref.cell ? `${ref.library}/${ref.cell} (not saved)` : 'choosing a Virtuoso cell') : 'no task chosen';
+  const model = (config.run.model_label ?? '').trim() || (followed ? config.project.task_name : 'not set');
   const fact = (key: string, value: string, extra = '') => <span className={`tb-cell${extra}`}><span className="tb-k">{key}</span><span className="tb-v" title={`${key}: ${value}`}>{value}</span></span>;
-  return <><span className="tb-task" title={ref.task_id ?? name}>{name}</span>
+  return <><span className="tb-task" title={followed ? ref.task_id : name}>{name}</span>
     <span className="tb-details">{fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}
       {fact('RL model', model, ' tb-model')}</span></>;
 }
@@ -202,6 +207,9 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
     && !!circuit.working_copy?.verified;
   const importCell = async () => {
     const declare = !declaredHere;
+    // A first read needs the testbench (the backend's guard stays): said before the question, with nothing sent - also for
+    // "Read the cell again" on a cell read before the question.
+    if (declare && !ref.testbench_cell) { setNativeError(NO_TESTBENCH); return; }
     // Asked in the window that was clicked (the Virtuoso window): the main window's dialog opened behind it.
     if (declare && !(popup ?? window).confirm(copyQuestion(ref))) return;
     setImporting(true); setNativeError(null);
@@ -221,6 +229,8 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
     finally { setImporting(false); }
   };
   useEffect(() => { setPdkStep(null); }, [loadKey]);       // the line is about the cell it was read with
+  // A testbench chosen answers the line (branch record SIF-88); what another step said stays.
+  useEffect(() => { if (ref.testbench_cell) setNativeError(e => (e === NO_TESTBENCH ? null : e)); }, [ref.testbench_cell]);
 
   const { followTestbench, takeTestbenchProbes, followCount, noteHere } = useTestbenchProbes({ ref, latest, setConfig });
 

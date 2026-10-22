@@ -15,7 +15,8 @@
 //     and in that order; no view is asked for; the PDK id is offered from the technology library;
 //   - reading a cell ASKS whether it is a copy the user made (window.confirm): Cancel reads nothing, OK reads it with
 //     `work_here` and the cell becomes the one the flow works in - the window says so; no "Make a working copy" anywhere;
-//     a cell without a testbench is refused in words; reading it again asks nothing;
+//     a cell without a testbench cannot be read - Read is off and says why, nothing asked or sent (branch record SIF-88); the
+//     header's title names the cell, not the last task; reading it again asks nothing;
 //   - Save as (no Save task) from the window's cell, the task then named on the tab line, what happened said under the
 //     toolbar; Check now on the tab line before Save as, what it checks in its tooltip, its result under the toolbar; Delete
 //     task in the Tasks window; a cell that already has a task, a built-in cell; a blocked gate and an older backend are readable.
@@ -280,6 +281,10 @@ await runChecks(browser, async () => {
     && cellOptions.find(o => o.value === 'symbol_only').text.includes('no schematic view') && cellOptions.find(o => o.value === 'ota5_v1')?.disabled === false, JSON.stringify(cellOptions));
   check('the page follows the Virtuoso source now: the task row on the tab line shows none, its text says a cell is being chosen', (await stored())?.circuit?.source === 'virtuoso'
     && ((await value('Task')) ?? '').includes('a Virtuoso cell is being chosen'), await value('Task'));
+  // Branch record SIF-88: the header's title kept the last task's name (here the empty configuration's "task") over a cell.
+  const TITLE = `[document.querySelector('header .tb-task')?.textContent, document.querySelector('header .tb-model .tb-v')?.textContent]`;
+  check('the header\'s title says a cell is being chosen, not the last task\'s name; no RL model label is set (branch record SIF-88)',
+    JSON.stringify(await evaluate(TITLE)) === JSON.stringify(['choosing a Virtuoso cell', 'not set']), JSON.stringify(await evaluate(TITLE)));
   check('following a cell, the tab line offers "Virtuoso cell..." back to its window (record 7.362)', await evaluate(`${LAUNCH}?.textContent.trim() === 'Virtuoso cell...'`));
   check('the PDK id is offered from the technology library (in the circuit column\'s labels line)', (await value('PDK id')) === 'gpdk045' && (await evaluate(`${CIRCUIT}.querySelector('details.labels summary').textContent`)).includes('PDK gpdk045'), await value('PDK id'));
   check('the testbench dropdown offers the cells that have a schematic', JSON.stringify((await wOptions('Testbench cell')).map(o => o.value)) === JSON.stringify(['', 'ota5_v1', 'ota5_tb', 'vco_fixture']), JSON.stringify(await wOptions('Testbench cell')));
@@ -293,26 +298,34 @@ await runChecks(browser, async () => {
   check('the window says which view is read and which others exist', (await wText()).includes('View: schematic') && (await wText()).includes('maestro, symbol'));
   check('the task row on the tab line names the cell; "Virtuoso cell..." stays on the tab line', (await value('Task')) === '(none: FIXTURE_DESIGNS/ota5_v1 is read from Virtuoso)'
     && await evaluate(`!!(${LAUNCH})`), await value('Task'));
+  check('...and so does the header\'s title, as not saved (branch record SIF-88)', JSON.stringify(await evaluate(TITLE)) === JSON.stringify(['FIXTURE_DESIGNS/ota5_v1 (not saved)', 'not set']),
+    JSON.stringify(await evaluate(TITLE)));
   check('browse only, said in the window - not "Blocked"; the copy warning stays in view', (await wText()).includes('Browse only:') && !(await wText()).includes('Blocked:')
     && await wShown('.copy-warning') && (await wText()).includes('Work on a copy, never on your design'));
   check('the warning says why: the cell is written', (await wText()).includes('every run sets device sizes in the cell'));
   await shotWindow('virtuoso-2-cell-read.png');
 
-  // ---- reading the cell INTO the workbench asks whether it is a copy; no testbench = refused in words ------------------------
+  // ---- reading the cell INTO the workbench needs a testbench, then asks whether it is a copy ---------------------------------
   check('the window offers "PDK window..." beside Refresh (the PDK is read with the cell; the window reads one by name)', await wHas('PDK window...'));
-  check('a chosen cell offers "Read this cell into the workbench"', !(await far.evaluate(`${wButton('Read this cell into the workbench')}.disabled`)) && (await wText()).includes('To make a task of this cell'));
+  // Branch record SIF-88: Read asked the copy question, and then the backend refused for the missing testbench (its own guard
+  // and its fixture above stay). Now Read is off until a testbench is chosen; its tooltip and the note say a task needs one.
+  const readButton = await far.evaluate(`(() => { const b = ${wButton('Read this cell into the workbench')}; return b && { disabled: b.disabled, title: b.title }; })()`);
+  check('a chosen cell offers "Read this cell into the workbench", off without a testbench, and says why (branch record SIF-88)', readButton?.disabled === true
+    && readButton.title === 'Read this cell: Choose the cell\'s Testbench cell first: a task simulates the testbench and keeps its Maestro test there.'
+    && (await wText()).includes('To make a task of this cell') && (await wText()).includes('first: a task needs one'), JSON.stringify(readButton));
+  mark = calls.length; const before = dialogs.length;
+  await wPress('Read this cell into the workbench'); await quiet(800);
+  check('...a press then asks nothing and sends nothing', dialogs.length === before && ops(mark).length === 0, `${ops(mark).join(' | ')} / ${dialogs.length - before} dialog(s)`);
+  await wChoose('Testbench cell', 'ota5_tb'); await quiet(600);
+  check('...and a testbench chosen turns it on', await far.evaluate(`!${wButton('Read this cell into the workbench')}.disabled && !${wButton('Read this cell into the workbench')}.title`));
   mark = calls.length; answers.push(false);
   await wPress('Read this cell into the workbench'); await quiet(800);
   const asked = dialogs[dialogs.length - 1]?.message ?? '';
   check('the press asks whether the cell is a copy the user made, and says what is written where', asked.startsWith('Work in FIXTURE_DESIGNS/ota5_v1 directly?')
-    && asked.includes('makes no copy of its own') && asked.includes('sets device sizes in ota5_v1') && asked.includes('COPY you made') && asked.includes('Cancel = read nothing'), asked.slice(0, 160));
+    && asked.includes('makes no copy of its own') && asked.includes('the testbench ota5_tb') && asked.includes('sets device sizes in ota5_v1') && asked.includes('COPY you made')
+    && asked.includes('Cancel = read nothing'), asked.slice(0, 160));
   check('"Cancel" reads nothing', ops(mark).length === 0, ops(mark).join(' | '));
   answers.push(true);
-  await wPress('Read this cell into the workbench'); await quiet();
-  check('"OK" reads the cell with work_here; without a testbench the backend refuses and the window says so', JSON.stringify(ops(mark)) === JSON.stringify(['import FIXTURE_DESIGNS ota5_v1 work_here'])
-    && (await wText()).includes('Choose the cell\'s Testbench cell first') && !(await wText()).includes('Not optimizable yet'), ops(mark).join(' | '));
-  await wChoose('Testbench cell', 'ota5_tb'); await quiet(600);
-  mark = calls.length; answers.push(true);
   await wPress('Read this cell into the workbench'); await quiet();
   check('with the testbench: read through it, with work_here, once', JSON.stringify(ops(mark)) === JSON.stringify(['import FIXTURE_DESIGNS ota5_v1 ota5_tb work_here']), ops(mark).join(' | '));
   check('the cell\'s PDK was read in the same press - with the ideal parts of analogLib -, and the window says so under the buttons',
@@ -327,7 +340,7 @@ await runChecks(browser, async () => {
   mark = calls.length;
   await wPress('Read the cell again'); await quiet();
   check('"Read the cell again" asks nothing and sends no work_here: the cell is declared already', JSON.stringify(ops(mark)) === JSON.stringify(['import FIXTURE_DESIGNS ota5_v1 ota5_tb'])
-    && dialogs.length === 3, `${ops(mark).join(' | ')} / ${dialogs.length} dialog(s)`);
+    && dialogs.length === 2, `${ops(mark).join(' | ')} / ${dialogs.length} dialog(s)`);
   check('a PDK that will not read is said so beside the cell, which is read all the same', (await wText()).includes('its PDK gpdk045 was not: FIXTURE: the model file is not on the host.')
     && (await wText()).includes('Read from Virtuoso. Not optimizable yet'));
   check('no agent CLI was opened by itself', agentRequests === 0, `${agentRequests} request(s)`);

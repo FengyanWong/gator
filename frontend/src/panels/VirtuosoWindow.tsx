@@ -8,6 +8,11 @@ import { WorkingCopy } from './WorkingCopy';
 // before the first save of a cell. The Project column's panel holds what it shows and does; CircuitPanelBody portals it into
 // its pop-up window.
 
+/** Why a first read cannot go without a testbench (branch record SIF-88): the backend refuses it before any export. Read
+ *  is off until one is chosen, and importCell (Left.tsx) says it, before the copy question, should "Read the cell again"
+ *  try a first read without one. */
+export const NO_TESTBENCH = "Choose the cell's Testbench cell first: a task simulates the testbench and keeps its Maestro test there.";
+
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
 
@@ -96,11 +101,12 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
           </details>
           {copyWarning}
           <p><b>To make a task of this cell</b>, read it into the workbench
-            {chosen.testbench_cell ? <> through the testbench <code>{chosen.testbench_cell}</code>.</> : <> (choose its <b>Testbench cell</b> above first, if it has one).</>}</p>
+            {chosen.testbench_cell ? <> through the testbench <code>{chosen.testbench_cell}</code>.</> : <> (choose its <b>Testbench cell</b> above first: a task needs one).</>}</p>
           <details className="more"><summary>What reading the cell does</summary>
             <p>Virtuoso exports the netlist and the device sizes are read. Read-only, no simulation, some seconds. Reading asks once whether
               the cell is a copy you made; "OK" makes it the cell the task flow works in.</p></details>
-          <div className="row"><button className="primary" disabled={!readable} onClick={importCell}>
+          <div className="row"><button className="primary" disabled={!readable || !chosen.testbench_cell} onClick={importCell}
+            title={chosen.testbench_cell ? undefined : `Read this cell: ${NO_TESTBENCH}`}>
             {importing ? 'Reading the cell from Virtuoso...' : 'Read this cell into the workbench'}</button></div>
           <details><summary>Technical details</summary><p>{circuit.blocker}</p>
             {circuit.interface_contract && <pre>{JSON.stringify(circuit.interface_contract, null, 1)}</pre>}</details>
@@ -108,11 +114,13 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
       {virtuosoOn && circuit?.loaded && circuit.native_draft && !taskNote && (
         <div className="note">
           <p><b>Read from Virtuoso. Not optimizable yet: Save as makes it a task.</b></p>
+          {/* The next step in view (branch record SIF-88): it was the second paragraph of the closed fold below, and a read
+              leaves Parameters empty. */}
+          <p className="hint next-step">Next: fill Parameters, Probes and Specs - <b>Read setup</b> below takes the outputs and specs of the cell's Maestro
+            test - then press <b>Save as</b>: it writes the rows into this cell's Maestro view (the copy you declared) and reads it back.</p>
           <details className="more"><summary>What you can do with it now</summary>
-            <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled.</p>
-            <p>Next: fill Parameters, Probes and Specs - <b>Read setup</b> below takes the outputs and specs of the cell's Maestro test - then press
-              <b> Save as</b>: it writes the rows into this cell's Maestro view (the copy you declared) and reads it back. Claude Code or Codex
-              (the Agent window: "Agent..." among the bottom tabs) can help with any of it, from what you describe.</p>
+            <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled. Claude Code
+              or Codex (the Agent window: "Agent..." among the bottom tabs) can help with any of it, from what you describe.</p>
           </details>
           {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
             <p className="warn tb-stale">This cell was read {circuit.circuit?.testbench_cell ? <>through <code>{circuit.circuit.testbench_cell}</code></> : 'without a testbench'}.

@@ -11,6 +11,8 @@
 //   - reads that fail do not end the following; a save the backend no longer knows (started again) ends with a warning.
 // Record 7.362 (the user's Option D): the task's name and revision start the editors' tab line (the bar held them until then),
 // Save as and Task file end it, and Check now stands there too - nothing of the task's in the circuit column.
+// Branch record SIF-87: closing the task file's window (Close or its X) keeps a draft not applied; the next press reads the
+// file again, lays the draft over it and says so, and Revert drops it.
 // Record 7.203 (user: "yes build it", for rows older than the saved task):
 //   - Save task sends which saved revision the rows came from: none before the page knows, then the revision of the
 //     last save or of the rows Reload saved values brought; the check while editing gets it too;
@@ -229,7 +231,41 @@ await runChecks(browser, async () => {
     && config.measurements[0].analysis === 'tran', config.measurements[0].analysis);
   await popupEval(`[...d.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === 'Close').click()`); await settle(600);
 
-  const updateTask = () => evaluate(`window.dispatchEvent(new CustomEvent('gator-save-task-request', { detail: { task: 'real:ring_osc' } }))`);
+  // branch record SIF-87: a close keeps the draft not applied (Close, the window's X - as the banner's Close all closes it). The
+  // next press reads the file again and lays the draft over it, saying so; Revert drops it, and a draft reverted is not kept.
+  const FILE_TITLE = 'GATOR - Task file of ring_osc (revision 1)';
+  const KEPT_LINE = 'Your changes from before are kept, not applied yet. Revert drops them.';
+  const brokenDraft = JSON.stringify(edited, null, 2);
+  const fileShown = () => popupEval(`const revert = [...d.querySelectorAll('.task-file .row button')].find(b => b.textContent.trim() === 'Revert');
+    return { text: d.querySelector('.task-file textarea')?.value ?? '', kept: d.querySelector('.task-file .kept-draft')?.textContent ?? null, revert: revert?.disabled ?? null }`);
+  const reopenFile = async () => {
+    await browser.window(FILE_TITLE, { present: false, except: page.target.id });       // closed: never ask window.open('', name) for it then
+    const mark = calls.length;
+    await press('Task file', true); await settle(1500);
+    return { reads: calls.slice(mark).map(c => c.op).join(), ...(await fileShown()) };
+  };
+  let again = await reopenFile();
+  check('closed with Close before Apply, the draft is kept: Task file reads the file again, shows the draft over it and says so (SIF-87)',
+    again.reads === 'task/file' && again.text === brokenDraft && again.kept === KEPT_LINE && again.revert === false, JSON.stringify({ ...again, text: again.text.slice(0, 60) }));
+  await send('Target.closeTarget', { targetId: (await browser.window(FILE_TITLE, { except: page.target.id })).id });   // the window's own X
+  again = await reopenFile();
+  check('...and so does the window\'s own X, the way the banner\'s Close all closes it (SIF-87)', again.reads === 'task/file' && again.text === brokenDraft && again.kept === KEPT_LINE,
+    JSON.stringify({ ...again, text: again.text.slice(0, 60) }));
+  await popupEval(`[...d.querySelectorAll('.task-file .row button')].find(b => b.textContent.trim() === 'Revert').click()`); await sleep(200);
+  const reverted = await fileShown();
+  check('Revert drops the kept draft: the file as read now, with the rows applied before, and the line goes (SIF-87)',
+    reverted.text.startsWith('{\n  "format": "gator-task-1",') && reverted.text.includes('"lower": 1250000000') && !reverted.text.includes('sometimes')
+    && reverted.kept === null && reverted.revert === true, JSON.stringify({ ...reverted, text: reverted.text.slice(0, 60) }));
+  await popupEval(`[...d.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === 'Close').click()`); await settle(600);
+  again = await reopenFile();
+  check('a draft reverted before the close is not kept: the next press shows the file alone (SIF-87)', again.text === reverted.text && again.kept === null,
+    JSON.stringify({ ...again, text: again.text.slice(0, 60) }));
+  await popupEval(`[...d.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === 'Close').click()`); await settle(600);
+  config = await stored();
+  check('none of it changed the editors: the broken draft was never applied', config.measurements[0].analysis === 'tran' && config.targets[0].lower === 1.25e9,
+    JSON.stringify({ analysis: config.measurements[0].analysis, lower: config.targets[0].lower }));
+
+  const updateTask =() => evaluate(`window.dispatchEvent(new CustomEvent('gator-save-task-request', { detail: { task: 'real:ring_osc' } }))`);
 
   // ---- Calibration's explicit update: the next revision of the same task --------------------------------------------------------------------------------
   let mark = calls.length;

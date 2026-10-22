@@ -17,7 +17,9 @@
 //   * (2026-09-29) a test answer that arrives after another connection was chosen is dropped, not shown under it;
 //   * (record 7.168) "Folders...": the folders of the connection module, read once when opened, each one at its value in use
 //     (a folder an environment variable decides cannot be typed into), saved only by "Save folders" with the changed folders
-//     alone; a refused folder is named and marked; "Use defaults" and "Undo changes" send nothing.
+//     alone; a refused folder is named and marked; "Use defaults" and "Undo changes" send nothing;
+//   * (branch record SIF-87) a folder typed and not saved outlives the window's close: opened again, it lies over the values
+//     in use, said in a line, until Save folders or Undo changes.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/connection_panel_check.mjs)" [screenshot-dir]
 // With GATOR_CONNECTION_LIVE=1 a last section lets the requests THROUGH to the backend: only ever against a scratch
@@ -393,6 +395,25 @@ await runChecks(browser, async () => {
   check('saving the defaults sends the folder that changed back, alone', pressed.length === 1 && JSON.stringify(pressed[0].body) === JSON.stringify({ values: { local_scratch: '/tmp/gator-work' } }),
     JSON.stringify(pressed.map(p => p.body)));
   await shot('window', '.connection-window', 'connection-6b-window-folders.png');
+  // branch record SIF-87: a folder typed and not saved outlives the window's close (its X, as the banner's Close all closes
+  // it): opened again, the section reads the values in use and lays the typing over them, saying so; Undo changes drops it
+  await far.setValue(FOLDER('simulator_ic'), '~/fixture-typed', { event: 'input' });
+  await sleep(200);
+  await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close();
+  mark = seen.length;
+  await openWindow();
+  await settle(mark);
+  folders = await folderValues();
+  const keptLine = () => far.evaluate(`${WINDOW}.querySelector('.connection-folders .kept-draft')?.textContent ?? null`);
+  check('closed before Save folders, the typed folder is kept: the section reads the folders once and shows the typing over them, saying so (SIF-87)',
+    JSON.stringify(names(mark)) === JSON.stringify(['GET directories']) && folders.simulator_ic === '~/fixture-typed' && folders.local_scratch === '/tmp/gator-work'
+    && (await keptLine()) === 'Your changes from before are kept, not saved yet. Undo changes drops them.' && (await disabledButton('Save folders')) === false,
+    `${names(mark).join(', ')} | ${JSON.stringify(folders)} | ${await keptLine()}`);
+  mark = seen.length;
+  await press('Undo changes');
+  await sleep(300);
+  check('"Undo changes" drops the kept typing, and its line, and sends nothing (SIF-87)', seen.length === mark && (await folderValues()).simulator_ic === '~/.gator/ic'
+    && (await keptLine()) === null && (await disabledButton('Save folders')) === true, JSON.stringify(await folderValues()));
   await press('Close "Folders"');
   await sleep(200);
   check('"Close "Folders"" folds the section away', !(await far.evaluate(`!!${WINDOW}.querySelector('.connection-folders')`)));

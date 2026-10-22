@@ -2268,3 +2268,42 @@ dialog's own box (`.structure-scroll`). Its column titles (#, Section, Layer, ..
 (`table.grid:not(.structure-layers) th`); the small section tables were static already, and the graph dialog's tables too.
 `tsc` clean; `model_structure_check` 31, one new: the layer table's titles are `sticky`, `top: 0px`.
 `model_chooser_check` 95 (the Details' own titles still static) and `network_panel_check` 62. No flakes.
+
+### SIF-87 Closing a window keeps what was typed in it (2026-10-22; from the usability audit)
+
+**Found.** The banner's Close all says "Nothing in them is lost; each opens again from its button", but two windows lost
+what was typed in them, with no question (audit findings J7-1 and J6-10). The Task file's draft lived inside its window
+(`TaskFileWindow`), and every close - its Close, the window's X, Close all - unmounted it (`setFile(null)`). The next
+press read the file again from the editors, so hand edits to a long JSON file, or pasted agent text, were gone for good.
+The Connection window's typed folders lived in `ConnectionFolders`, inside the window's portal, so closing the window
+(or Close all) brought back the values in use. The ngspice window keeps its deck outside the window, so the loss was not
+inherent.
+
+**Changed.** `frontend/src/panels/TaskFile.tsx`: the draft is a `FileDraft` (`text`, the `body` it was typed over,
+`applied`, `kept`), held by TaskSave and passed in with its setter. `unapplied()` says whether a draft is worth keeping:
+typed, and not what was applied. The window lays the draft over the file it read and shows "Your changes from before are
+kept, not applied yet. Revert drops them." over the text when the draft came back from a closed window. Revert sets the
+draft to nothing (the file as read at this opening), and a successful Apply marks the draft applied.
+`frontend/src/panels/TaskSave.tsx`: `closedFile()` is the one close path (Close, the X and Close all through the
+pop-up's `pagehide`). It keeps a draft not applied, marked as kept, and drops any other. The next Task file press reads
+the file again, as before, so Revert and the title follow the editors and the revision now. Another task, library or
+cell still drops the draft with the window. `frontend/src/panels/ConnectionFolders.tsx`: the typed folders (`typed`, by
+folder) come from the connection button. The section reads the values in use when it opens, lays the typing over them,
+and says "Your changes from before are kept, not saved yet. Undo changes drops them." while typing from before still
+differs. Save folders and Undo changes clear it. `frontend/src/panels/Connection.tsx` holds `typedFolders`, as
+`Ngspice.tsx` holds its deck, so closing the window or folding the section keeps them. The "Folders..." tooltip now
+says a typed value is shown until saved and that only Save folders writes it. No question was added, and no
+`beforeunload`: TaskSave closes the file window by script on a task change, and the page's `pagehide` closes every
+pop-up. Close all's tooltip is unchanged, and now true for these two windows. Nothing new is sent: the reopened file is
+the same read as before, and the folders are the same GET. Nothing is applied, saved or written without the user's
+press. `docs/workbench.md` (the task file, Folders, Windows) and `docs/functionality-reference.md` (Task file,
+Folders..., Windows) say so.
+
+**Checked.** `tsc` clean. `task_save_check` 76, five of them new. After a refused Apply, Close and a press on Task file
+read the file once and show the broken draft with the kept line, Revert on. The same holds after the window's own X
+(`Target.closeTarget`, as Close all closes it). Revert shows the file as read now (the applied lower 1250000000, no
+"sometimes") and the line goes. A reverted draft is not kept at the next press, and the editors never took the broken
+draft. `connection_panel_check` 94, two new. A folder typed and not saved, after the window's X and a reopen: one GET
+directories, the typed `~/fixture-typed` over the values in use, the kept line, Save folders on. Undo changes sends
+nothing, puts `~/.gator/ic` back and removes the line. `dom_identity_check` 56, `virtuoso_source_check` 95,
+`project_help_check` 49, `ngspice_window_check` 43, `task_list_check` 88. No flakes.

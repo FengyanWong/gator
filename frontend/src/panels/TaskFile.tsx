@@ -1,5 +1,5 @@
 import { useAsyncAction } from '../store';
-import { useEffect, useMemo, useState } from 'react';
+import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json, problemText } from '../api';
 
@@ -22,28 +22,41 @@ function splitHelp(text: string): { help: [string, string][]; body: string } {
   return { help, body: JSON.stringify(rest, null, 2) + '\n' };
 }
 
+/** What is typed in the task file's window (branch record SIF-87). TaskSave keeps it, not the window: kept there, a close -
+ *  the window's Close, its X, the banner's Close all - threw the typing away with no question, and hand edits to a long
+ *  file were lost for good. `body`: the file it was typed over; `applied`: the text last applied to the editors; `kept`:
+ *  brought back from a window closed before, which the window says until it is applied or reverted. */
+export type FileDraft = { text: string; body: string; applied: string | null; kept: boolean };
+/** A draft worth keeping when its window closes: typed, and not what was applied. */
+export const unapplied = (draft: FileDraft | null): draft is FileDraft => !!draft && draft.text !== draft.body && draft.text !== draft.applied;
+
 /** The task file in a window of its own: everything a task is, as one readable file (its own `_help` part explains each
  *  part, shown as a list over the text, `splitHelp`). The person - or someone pasting the agent's text - edits it here; "Apply to editors" checks it with the same
  *  schema as the editors and puts its rows into them. Nothing is saved or written to Virtuoso from here: that is "Save
- *  task". Opened by a press, closed with its own button or the window's. */
-export function TaskFileWindow({ root, text, title, onApply, onClose }: {
-  root: HTMLElement | null; text: string | null; title: string; onApply: (rows: Json, extras: Json) => void; onClose: () => void }) {
+ *  task". Opened by a press, closed with its own button or the window's; `draft` (null: nothing typed) outlives it. */
+export function TaskFileWindow({ root, text, title, draft, setDraft, onApply, onClose }: {
+  root: HTMLElement | null; text: string | null; title: string; draft: FileDraft | null; setDraft: Dispatch<SetStateAction<FileDraft | null>>;
+  onApply: (rows: Json, extras: Json) => void; onClose: () => void }) {
   // The window itself belongs to TaskSave, which opens it INSIDE the click on "Task file" (`popupWindow.ts`): opened here,
   // after the file had arrived, a slow answer came too late for the browser's pop-up rule and the window was blocked -
   // and a second press could not try again, because this component stayed mounted (review of 2026-09-29).
   const file = useMemo(() => splitHelp(text ?? ''), [text]);    // the box holds the file without its _help; Revert goes back to that
-  const [draft, setDraft] = useState(file.body);
+  // A draft kept from a closed window lies over the file as read now: Revert goes back to the editors' rows of this opening.
+  const typed = draft?.text ?? file.body;
+  const keptShown = !!draft?.kept && typed !== file.body && typed !== draft.applied;
   const [problems, setProblems] = useState<string[] | null>(null);
   const [message, setMessage] = useState<Json>(null);
 
-  useEffect(() => { setDraft(file.body); setProblems(null); setMessage(null); }, [file]);
+  useEffect(() => { setProblems(null); setMessage(null); }, [file]);
 
   const { busy, run } = useAsyncAction(e => setMessage({ level: 'error', text: problemText(e) }), () => setMessage(null));
   const apply = () => run('apply', async () => {
-    const checked = await api.taskFileCheck(draft);
+    const sent = typed;
+    const checked = await api.taskFileCheck(sent);
     setProblems(checked.problems);
     if (checked.ok) {
       onApply(checked.rows, checked.extras);
+      setDraft(d => d && { ...d, applied: sent, kept: false });
       setMessage({ level: 'ok', text: 'Applied: the editors now hold these rows. Press "Save as" to store them as a new task; Undo takes them back.' });
     }
   });
@@ -57,10 +70,12 @@ export function TaskFileWindow({ root, text, title, onApply, onClose }: {
         <b> Save as</b>.{file.help.length > 0 && <> <b>What each part is</b>, below, says what each part holds.</>}</p>
       {file.help.length > 0 && <details className="task-file-help" open><summary>What each part is</summary>
         <dl>{file.help.map(([part, says]) => <div key={part}><dt>{part}</dt><dd>{says}</dd></div>)}</dl></details>}
-      <textarea spellCheck={false} value={draft} onChange={e => { setDraft(e.target.value); setProblems(null); setMessage(null); }} />
+      {keptShown && <p className="hint kept-draft">Your changes from before are kept, not applied yet. Revert drops them.</p>}
+      <textarea spellCheck={false} value={typed} onChange={e => { const value = e.target.value; setProblems(null); setMessage(null);
+        setDraft(d => ({ text: value, body: file.body, applied: d?.applied ?? null, kept: d?.kept ?? false })); }} />
       <div className="row">
         <button className="primary" disabled={!!busy} onClick={apply}>{busy ? 'Checking...' : 'Apply to editors'}</button>
-        <button disabled={!!busy || draft === file.body} onClick={() => { setDraft(file.body); setProblems(null); setMessage(null); }}
+        <button disabled={!!busy || typed === file.body} onClick={() => { setDraft(null); setProblems(null); setMessage(null); }}
           title="Back to the file as it was opened: the editors' rows at that moment.">Revert</button>
         <button onClick={onClose}>Close</button>
       </div>

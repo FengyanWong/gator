@@ -52,6 +52,8 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   const [draft, setDraft] = useState<Json>({ kind: 'virtuoso_ssh', name: '', ssh_host: '', bridge_profile: '' });
   const [created, setCreated] = useState<Json>(null);
   const [folders, setFolders] = useState(false);                // the Folders section (record 7.168)
+  // The folders typed there and not saved, by folder: here, outside the window, so that its close keeps them (branch record SIF-87).
+  const [typedFolders, setTypedFolders] = useState<Record<string, string>>({});
 
   // Every error here is said as the rest of the page says it (plainError): a backend that did not answer showed the
   // browser's "Failed to fetch" under the button (branch record SIF-55).
@@ -388,10 +390,10 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
           checkout on this machine; initial-condition files and Maestro netlists on the simulator host.</p>
         <div className="row">
           <button onClick={() => setFolders(f => !f)}
-            title="Shows each folder at its value in use; a change is kept only by Save folders. Opening it changes nothing.">
+            title="Shows each folder at its value in use, or as you typed it and have not saved yet; only Save folders writes a change. Opening it changes nothing.">
             {folders ? 'Close "Folders"' : 'Folders...'}</button>
         </div>
-        {folders && <ConnectionFolders />}
+        {folders && <ConnectionFolders typed={typedFolders} setTyped={setTypedFolders} />}
       </div>
     </div>
   );

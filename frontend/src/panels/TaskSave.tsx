@@ -3,7 +3,7 @@ import { Icon } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, gateText, Json, problemText } from '../api';
-import { TaskFileWindow } from './TaskFile';
+import { FileDraft, TaskFileWindow, unapplied } from './TaskFile';
 import { usePopupWindow } from './popupWindow';
 
 /** "Save as" prompts for a numbered new name (record 7.246). An open task is saved through the existing `as_new`
@@ -92,6 +92,10 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
   const [newer, setNewer] = useState<Json>(null);                             // the save was refused: the rows are older than the task
   const [frequency, setFrequency] = useState('');
   const [file, setFile] = useState<Json>(null);                               // { text, title } while the window is open (text null: reading)
+  // What is typed in it (branch record SIF-87): kept here, so that a close - Close, the window's X, the banner's Close all -
+  // keeps a draft not applied for the next "Task file" press, which reads the file again and lays the draft over it.
+  const [fileDraft, setFileDraft] = useState<FileDraft | null>(null);
+  const closedFile = () => { setFile(null); setFileDraft(d => (unapplied(d) ? { ...d, kept: true } : null)); };
   const latest = useRef({ config, profileId, library, cell, task });
   latest.current = { config, profileId, library, cell, task };
   const mounted = useRef(false);
@@ -101,9 +105,10 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
   // The task file's window. It is opened INSIDE the click on "Task file" - the browser's pop-up rule refuses a window
   // opened later, when the file has arrived - so a blocked window can be tried again with the next press.
   const fileWindow = usePopupWindow('gator-task-file', { title: 'GATOR - Task file', features: 'popup,width=760,height=900',
-    rootId: 'task-file-root', rootClass: 'task-file-window', onClose: () => setFile(null), closeOnUnmount: true });
-  // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go.
-  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setChoice(null); setFrequency(''); setFile(null); fileWindow.popup?.close(); }, [task, library, cell]);
+    rootId: 'task-file-root', rootClass: 'task-file-window', onClose: closedFile, closeOnUnmount: true });
+  // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go,
+  // with what was typed in that file.
+  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setChoice(null); setFrequency(''); setFile(null); setFileDraft(null); fileWindow.popup?.close(); }, [task, library, cell]);
 
   // The save running in the backend, read when Save task appears and then every second while one runs (`own`: this
   // page's press is on its way; `followed`: a save the page did not send, asked about until an answer says it ended -
@@ -263,7 +268,7 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
           </div></div>}
         {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'warn' ? 'warn' : 'error'}>{message.text}</p>}
       </div>, notes)}
-    {file && <TaskFileWindow root={fileWindow.root} text={file.text} title={file.title} onApply={applyFile}
-      onClose={() => { setFile(null); fileWindow.popup?.close(); }} />}
+    {file && <TaskFileWindow root={fileWindow.root} text={file.text} title={file.title} draft={fileDraft} setDraft={setFileDraft} onApply={applyFile}
+      onClose={() => { closedFile(); fileWindow.popup?.close(); }} />}
   </>);
 }

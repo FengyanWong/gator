@@ -311,7 +311,7 @@ the tab line goes back to its window. Under 1101 px the editors come first and t
 - Under 1400 px the run's state shows only the word that holds.
 - With no task yet, the task's lines under the toolbar offer **Open Tasks** and the ways to a new task.
 - **Windows**: while pop-up windows are open, a button in the banner with their count lists them; a press brings one to the
-  front, **Close all** closes them.
+  front, **Close all** closes them. A task file not applied and folders not saved are kept for the next opening (SIF-87).
 
 **Research experiments** (record 7.163; user: "Check the research experiments module and see which should be kept",
 then "Remove both" and "Fold them"). Since record 7.166 its heading looks like the other modules' headings, and its note
@@ -1271,7 +1271,9 @@ User: "I realized the project might be used by others. Add directory settings fo
 module with current setting as default". **Folders...** sits at the foot of the connection window; it is there even
 when no connection is set up. It lists five folders, each filled in with the value in use. Nothing is kept until
 **Save folders** is pressed. **Use defaults** fills the defaults in and **Undo changes** puts back the values in use;
-neither sends anything.
+neither sends anything. What is typed and not saved outlives the window's close and the section's fold (branch record
+SIF-87): opened again, the section reads the values in use and lays the typing over them, with the line "Your changes
+from before are kept, not saved yet. Undo changes drops them."; Save folders and Undo changes clear it.
 
 Since record 7.170 (user: "separate the folders section with other section with similar style", and "if comments can be
 seen floating over name then delete the comment text underneath it") Folders is a section of its own under the steps,
@@ -3363,7 +3365,11 @@ over the text, **What each part is** (open; each part's name in bold, its lines 
 that part, every number as the backend wrote it (branch record SIF-81); **Apply to editors** checks every row with the editors' schema
 and fills the editors (one Undo step) - a broken file is refused with its problems and changes nothing. What the file
 adds beside the rows (analyses, variables, bindings, the rough frequency, notes) is sent with the next save.
-Nothing is saved or written to Virtuoso from the window.
+Nothing is saved or written to Virtuoso from the window. A close - its Close, the window's X, the banner's **Close all** -
+keeps a draft not applied (branch record SIF-87; it used to go with no question): the next **Task file** press reads the
+file again and lays the draft over it, with the line "Your changes from before are kept, not applied yet. Revert drops
+them." **Revert** goes back to the file as read then. A draft applied or reverted is not kept, and another task or cell
+drops it.
 
 **Running a task measured by Maestro:** see "Running a task measured by Maestro" below - Save task also has Maestro
 netlist the task's test once. A Maestro-measured task saved before that part is listed as not runnable until it is saved

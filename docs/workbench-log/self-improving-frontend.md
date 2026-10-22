@@ -3110,3 +3110,53 @@ starts, continues or stops a run, saves a task or writes to Virtuoso; Rename, Us
 here, reads the run list and the saved models once, and the row carries its name again. Against the code before, it
 fails with "0 read(s), the run list 1". Also run, unchanged: `encoder_models_check` 24, `graph_view_check` 69,
 `model_structure_check` 31 (4 scripts, one lane, all passed the first time). No flakes.
+
+### SIF-103 Fine-tune's switches and the saved model's whole reward are in view before Start (2026-10-22; from the usability audit)
+
+**Found.** Fine-tune's own switches - Freeze encoder, Encoder-only transfer, Reset critic, Continual learning - were said
+only in the RL model window's last block, under the saved models table, and that window closes once a save point is
+chosen (record 7.291). The model line, the header's Next line and their tooltip never named them, nor the name typed for
+the model the run saves; Evaluate only's actions were named. They are kept across Modes and runs, and New run like this
+copies them, so a switch left on from an earlier experiment was unseen before Start; checking one tick box meant reopening
+the window and scrolling to its bottom (J5-7). In Fine-tune a reward that differs from the saved model's resets its
+critics, targets and replay, and the compatibility line says only "Different reward/condition contract". The model's facts
+were the one place to compare, and showed four of the reward's six fields: no objective shape, no nominal gate band. So the
+model's reward could not be matched even by hand, and matching it meant typing it field by field into the main page's
+Reward and conditions > Advanced (J5-14).
+
+**Changed.** `frontend/src/panels/rlModelText.ts`: `FINE_TUNE_SWITCHES` lists the four in the window's order, with the
+window's label and a short word. `modelLineText` and `nextModelText` take `adv` and add the switches that are on, in
+Fine-tune only (the backend reads them in no other Mode): "Fine-tune ota7t (2) · save point 420 evaluations · encoder
+frozen · critics reset", "Fine-tune from ota7t (2) @ 420 · encoder frozen · critics reset". The others are "encoders only"
+and "continual". With all off both lines are as before. `networkTitle`, the line's tooltip, adds them by the window's
+labels ("Fine-tune's switches on: Freeze encoder, Reset critic.") and, when a name is typed, "It saves the model as ...,
+with a number if that name is taken." The line is clamped to two lines, so the long form is there. `REWARD_DEFAULTS`
+holds the six reward fields with the backend's `RewardConfig` defaults; `REWARD_NAMES` and `REWARD_HELP` gain the objective
+shape and the gate band. `frontend/src/panels/RlModelWindow.tsx`: the facts of the model in use add **Objective shape**
+("Clipped" / "Compressed", the reward block's option names) and **Nominal gate band**, with the reward block's tooltips. In
+Fine-tune, while the next run's reward differs from the model's in any of the six fields, the Reward row offers **Use this
+model's reward**. Its tooltip names each field that differs ("nominal gate band 0.4 instead of 0.5") and says that the
+training conditions, which Fine-tune also compares, are not changed. A press sets the six as one Undo step and the offer
+goes. `frontend/src/panels/useRlModel.ts` threads `adv` into the three texts and holds `savedReward` (a field a contract
+leaves out as the run takes it), `rewardApart` and `useModelReward`, which takes only the six keys by the reward block's
+own field names (`pick`); `reward` now starts from `REWARD_DEFAULTS`, the same five defaults plus the gate band.
+`frontend/src/panels/RewardConditions.tsx`: Objective shape gets the tooltip it lacked, and the gate band's is the shared
+one, unchanged. `frontend/src/contracts.ts`: a saved model's `reward_settings` type has the two fields. Nothing here
+starts, continues or stops a run, saves a task or writes to Virtuoso; the link changes only the configuration's reward,
+and Undo takes it back. `docs/workbench.md` (the model line, the Next line, the model in use's reward) and the Mode and
+Reward and conditions rows of `docs/functionality-reference.md` describe it.
+`frontend/scripts/model_chooser_check.mjs`: B's save point now holds a reward that differs from the page's in all six
+fields.
+
+**Checked.** `tsc` clean. `model_chooser_check` 116 (108 before). With A in use, Freeze encoder, Reset critic and
+Continual learning ticked and "FIXTURE tuned" typed, the model line reads "Fine-tune FIXTURE_opamp_gt · save point 6
+evaluations · encoder frozen · critics reset · continual" and the Next line "... @ 6 · encoder frozen · critics reset ·
+continual · GT 16/2/1 · N evaluations". The tooltip ends "Fine-tune's switches on: Freeze encoder, Reset critic, Continual
+learning. It saves the model as FIXTURE tuned, with a number if that name is taken." Evaluate only says "deterministic
+actions" and none of them. With all off and the name cleared, both lines and the tooltip read as before. B's facts show
+Objective shape "Compressed" and Nominal gate band "0.4", the shape's tooltip equal to the reward block's. "Use this model's
+reward" is on the Reward row, its tooltip naming the fields that differ. A press stores all six of B's values and the
+offer goes; one Undo brings the page's reward back and the offer with it. Each new check looks for what the code before
+did not do. Also run, unchanged: `looks_check` 75, `network_panel_check` 72, `reward_block_check` 33,
+`mode_suggestion_check` 20, `encoder_models_check` 24, `room_check` 30, `graph_view_check` 69, `model_structure_check`
+31, `network_inputs_check` 9 (10 scripts, one lane, all passed the first time). No flakes.

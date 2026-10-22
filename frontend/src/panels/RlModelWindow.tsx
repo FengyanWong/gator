@@ -10,7 +10,7 @@ import { DESIGN_NAME, designName, pointText } from '../lineage';
 import { LOADS } from '../savePoint';
 import { ComponentList } from './Pdk';
 import { Check, LookFold, Num } from './fields';
-import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_CHOICES, INPUT_NAMES, REWARD_HELP, REWARD_NAME, TRANSFER_TITLE, inputsChoice,
+import { ADVANCED_ROWS, MODE_NAME, MODES, NETWORK_SETTING_LABELS, ORIGIN, INPUT_CHOICES, INPUT_NAMES, REWARD_HELP, REWARD_NAME, REWARD_NAMES, TRANSFER_TITLE, inputsChoice,
   newModelChoice, newModelInputs, inputsText } from './rlModelText';
 import { NoModeNote } from './RunConfiguration';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
@@ -110,7 +110,7 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
   const { config, runs, run, set, setAdv, setNet, source, adv, net, networkWindow, error, modelLoading, model, netSettings, netMessage, presetRateUpdated,
     netFields, advFields, encoder, entry, offeredEncoders, usesHeads, usesStructure, applyEntry, chooseList, flush, queueSave, editNet, chooseEncoder,
     settingDifferences, differs, originLabel, budget, starved, loads, noMode, label, savedModel, savedNet, archDiffers, suggested, usingPoint, useSavePoint,
-    chooseMode } = m;
+    chooseMode, reward, savedReward, rewardApart, useModelReward } = m;
   // A saved model chosen closes this window (user request 2026-10-09: "after selecting one target task, model or run, close
   // the pop up window"); a save point that cannot be read leaves it open, with the reason below.
   const chooseModel = (run_dir: string, checkpoint_id: string) => {
@@ -251,12 +251,21 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
           {/* in words, the stored names in the tooltip (branch record SIF-41: it read "constraint_violation_v2; compressed") */}
           <tr><td>Reward</td><td title={`${model.description.contract?.reward_version ?? 'none recorded'}; ${model.description.contract?.reward_settings?.violation_shape ?? 'capped'}`}>
             {REWARD_NAME[model.description.contract?.reward_version ?? ''] ?? (model.description.contract?.reward_version ? String(model.description.contract.reward_version).replace(/_/g, ' ') : 'Legacy nominal')}; violation
-            shape {model.description.contract?.reward_settings?.violation_shape ?? 'capped'}</td></tr>
+            shape {model.description.contract?.reward_settings?.violation_shape ?? 'capped'}
+            {/* Branch record SIF-103: Fine-tune keeps the critics only with the model's reward, which had to be typed field by
+                field into the main page's Reward and conditions. Shown only while the next run's differs; one Undo step. */}
+            {run.mode === 'fine_tune' && savedReward && rewardApart.length > 0 && <> - <button className="text-link reward-from-model" onClick={useModelReward}
+              title={`Use this model's reward: the next run's reward becomes this model's - ${rewardApart.map(k => `${REWARD_NAMES[k]} ${short(savedReward[k])} instead of ${short(reward[k])}`).join('; ')} - as one Undo step. `
+                + 'Fine-tune keeps the model\'s critics only when the reward and the training conditions both match; the conditions are not changed here (Reward and conditions on the main page).'}>
+              Use this model's reward</button></>}</td></tr>
           {/* The weights by the reward block's names, with its tooltips (branch record SIF-80: "Margin bonus weight" here was
-              "Tightest-margin bonus weight" there, and no row said what it does). */}
+              "Tightest-margin bonus weight" there, and no row said what it does); the objective shape and the gate band too,
+              the two of its six fields the facts left out (branch record SIF-103), the shape by the block's option names. */}
           <tr title={REWARD_HELP.worst_spec_share}><td>Worst hard-spec share</td><td>{short(model.description.contract?.reward_settings?.worst_spec_share ?? 0)}</td></tr>
           <tr title={REWARD_HELP.objective_weight}><td>Objective bonus weight</td><td>{short(model.description.contract?.reward_settings?.objective_weight ?? 0)}</td></tr>
+          <tr title={REWARD_HELP.objective_shape}><td>Objective shape</td><td>{String(model.description.contract?.reward_settings?.objective_shape ?? 'clipped').replace(/^./, c => c.toUpperCase())}</td></tr>
           <tr title={REWARD_HELP.margin_weight}><td>Tightest-margin bonus weight</td><td>{short(model.description.contract?.reward_settings?.margin_weight ?? 0)}</td></tr>
+          <tr title={REWARD_HELP.nominal_gate_band}><td>Nominal gate band</td><td>{short(model.description.contract?.reward_settings?.nominal_gate_band ?? 0.5)}</td></tr>
           <tr><td>Conditions</td><td>{conditionsText(model.description.contract)}</td></tr>
           {model.description.contract?.planned_conditions?.length! > 0 && <tr><td>Saved condition plan</td><td>{model.description.contract!.planned_conditions!.map(c => c.corner.id).join(', ')}</td></tr>}
           <tr><td>Operating points</td><td>{savedNet?.operating_points ? 'on' : 'off'}</td></tr>

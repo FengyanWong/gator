@@ -113,7 +113,8 @@ the lookup after a reload say nothing.
 "Next: mscr_ota7t · Fine-tune from ota7t (2) @ 420 · GT 48/4/4 · 800 evaluations" - the task (a saved task as the
 header's title names it: without its `real:` prefix, a renamed one by its new name - branch record SIF-71; or a Virtuoso
 cell as library/cell), the Mode with its model and save point ("New model", "Evaluate ...
-(deterministic actions)", "no Mode chosen"), the network in short, and the budget. When Start is off, the tooltip adds
+(deterministic actions)", "no Mode chosen"; in Fine-tune its switches that are on, "Fine-tune from ota7t (2) @ 420 ·
+encoder frozen · critics reset" - branch record SIF-103), the network in short, and the budget. When Start is off, the tooltip adds
 why. The line only says: it starts nothing, and it is not shown while a run holds the header (the run chip says what
 runs then, and Run configuration opens with "For the next Start: the run in the header goes on with the settings it was
 started with." - branch record SIF-72). Run configuration's model line and this line come from the same values
@@ -2550,10 +2551,15 @@ networks..." and a **Mode** select stood above it, with the RL model label below
   "show the current network selection next to the RL network button in short"; GT = graph_transformer, `–` where an
   encoder has no heads, then "op. points" and the component list when they are on);
 - "Fine-tune ota7t (2) · save point 420 evaluations" or "Evaluate ota7t (2) · save point 420 evaluations · deterministic
-  actions": the saved model by its name, and the save point the run loads;
+  actions": the saved model by its name, and the save point the run loads. In Fine-tune its own switches that are on
+  follow, in the window's order: "· encoder frozen", "· encoders only", "· critics reset", "· continual" (branch record
+  SIF-103: the window closes once a save point is chosen, and only it said them - kept across Modes and runs, and copied
+  by New run like this, a switch left on went unseen before Start). With all off the line is as before;
 - "Fine-tune · no saved model chosen" until one is chosen.
 
-The tooltip says it in full. Under the line stays the model check's suggestion of another Mode ("Suggested: Fine-tune -
+The tooltip says it in full; in Fine-tune it adds the switches that are on by the window's labels ("Fine-tune's switches
+on: Freeze encoder, Reset critic.") and, when a name is typed for the model it saves, that name ("It saves the model as
+..."), as the line is two lines at most. Under the line stays the model check's suggestion of another Mode ("Suggested: Fine-tune -
 ..."); where the saved model's own run can be continued exactly, it links to that run in the Runs window instead
 ("This model's own run can be continued exactly: open it in Runs"). Budgets, concurrency, seed, the run limits (one
 Limits fold since record 7.179), reward and training conditions stay in Run configuration.
@@ -2594,6 +2600,15 @@ into the network it was trained with. Since branch record SIF-86 the saved model
 60 % of the window's height at most (720 px), its column titles staying at its top - so what follows it is in reach
 with hundreds of models (411 made it about 20,000 px long). When the list arrives, the model in use is brought to the
 middle of the box if it is out of its view; the box scrolls, never the window.
+
+The model in use's reward is shown whole, all six fields its save point holds, by the names and tooltips of Reward and
+conditions: the violation shape on the Reward row, then Worst hard-spec share, Objective bonus weight, Objective shape,
+Tightest-margin bonus weight and Nominal gate band (branch record SIF-103: the objective shape and the gate band were not
+shown, so the reward could not be matched even by hand). Fine-tune compares all six, and the training conditions, with the
+next run's, and keeps the model's critics only when they match; otherwise it resets the critics, their targets and the
+replay. While the next run's reward differs, Fine-tune's Reward row offers **Use this model's reward**: the next run's
+six reward fields become the model's, as one Undo step, its tooltip naming each field that differs. The training
+conditions are left as they are, under Reward and conditions on the main page.
 
 Pressing the button again focuses the existing window. It has no close button of its own (record 7.163, user: "delete
 the cross button in RL network window"): the browser's close keeps all configuration edits; pending settings saves and model compatibility checks continue in the main page. Undo/Redo also

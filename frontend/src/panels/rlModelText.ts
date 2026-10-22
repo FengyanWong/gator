@@ -95,15 +95,23 @@ export const NETWORK_SETTING_LABELS: Record<string, string> = {
   ...Object.fromEntries(ADVANCED_ROWS.flat().map(([name, label]) => [name, label])),
 };
 
-/** The five reward settings a new configuration fixes (store.ts SIMPLE_REWARD), as the reward block names them. */
+/** The five reward settings a new configuration fixes (store.ts SIMPLE_REWARD), as the reward block names them, and the
+ *  nominal gate band, the sixth a saved model's reward holds (branch record SIF-103). */
 export const REWARD_NAMES: Record<string, string> = { violation_shape: 'violation shape', worst_spec_share: 'worst hard-spec share',
-  objective_weight: 'objective bonus weight', objective_shape: 'objective shape', margin_weight: 'tightest-margin bonus weight' };
-/** What three of them do: the reward block's tooltips, and the same rows of a saved model's facts (branch record SIF-80: the
- *  facts had none). */
+  objective_weight: 'objective bonus weight', objective_shape: 'objective shape', margin_weight: 'tightest-margin bonus weight',
+  nominal_gate_band: 'nominal gate band' };
+/** What a run takes for a reward field its configuration leaves out: the backend's RewardConfig defaults. The six keys are
+ *  the whole reward a saved model's contract holds (RewardSettings), and Fine-tune compares all six (branch record SIF-103). */
+export const REWARD_DEFAULTS: Json = { violation_shape: 'capped', worst_spec_share: 0, objective_weight: 0, objective_shape: 'clipped', margin_weight: 0,
+  nominal_gate_band: 0.5 };
+/** What they do: the reward block's tooltips, and the same rows of a saved model's facts (branch record SIF-80: the facts had
+ *  none; SIF-103: the objective shape and the gate band, which the facts did not show). */
 export const REWARD_HELP: Record<string, string> = {
   worst_spec_share: '0 to 1. Mix the weighted mean violation with the worst hard-spec violation. At 1, soft violations do not contribute to the penalty.',
   objective_weight: '0 to 1. Applies only to a complete hard-feasible plan and the single objective selected in Specs. Without an objective row the bonus is 0.',
-  margin_weight: 'Complete hard-feasible plans only. Equality constraints remain mandatory but do not contribute clearance.' };
+  margin_weight: 'Complete hard-feasible plans only. Equality constraints remain mandatory but do not contribute clearance.',
+  objective_shape: 'Clipped stops the objective bonus at one scale; compressed keeps rewarding improvement below 1.',
+  nominal_gate_band: 'Strictly between 0 and 1. Gate-passing designs always rank above gate-failing designs.' };
 /** A reward version by name: a saved model's (SIF-41) and a run's executed reward in Run status (SIF-54). */
 export const REWARD_NAME: Record<string, string> = { constraint_violation_v2: 'Constraint violation, version 2' };
 
@@ -145,30 +153,45 @@ export type NetworkSizes = ReturnType<typeof networkSizes>;
 export const networkShort = (encoder: string, { hidden, heads, layers, components }: NetworkSizes, usesHeads: boolean, net: Json) =>
   [`${designShort({ encoder_type: encoder, architecture_version: net.architecture_version })} ${hidden}/${usesHeads ? heads : '–'}/${layers}`, net.operating_points ? 'op. points' : null,
       inputsChoice(net) === 'transferable2' ? 'transferable 2' : inputsChoice(net) !== 'standard' ? 'transferable' : null, components === 'families' ? 'families' : components ? `${components} parts` : null].filter(Boolean).join(' · ');
+/** Fine-tune's own switches, in the RL model window's order: the key, whether `run` (else `run.advanced`) keeps it, the
+ *  window's label and the model line's word (branch record SIF-103). Only that window said them, and it closes once a save
+ *  point is chosen; kept across Modes and runs and copied by New run like this, a switch left on went unseen before Start. */
+const FINE_TUNE_SWITCHES: [key: string, inRun: boolean, label: string, word: string][] = [
+  ['freeze_encoder', false, 'Freeze encoder', 'encoder frozen'], ['encoder_only_transfer', false, 'Encoder-only transfer', 'encoders only'],
+  ['reset_critic', false, 'Reset critic', 'critics reset'], ['continual_learning', true, 'Continual learning', 'continual']];
+/** The switches that are on, in Fine-tune only: the backend reads them in no other Mode. */
+const switchesOn = (run: Json, adv: Json) => run.mode === 'fine_tune' ? FINE_TUNE_SWITCHES.filter(([key, inRun]) => !!(inRun ? run : adv)?.[key]) : [];
+/** Them on the model line and the Next line: nothing while all are off, so those lines read as before. */
+const switchWords = (run: Json, adv: Json) => switchesOn(run, adv).map(([, , , word]) => ` · ${word}`).join('');
 /** The next run's model in one line, beside the button (record 7.265; plan "RL model window": "New model · Graph Transformer
- *  template · GT 48/4/4", "Fine-tune ota7t (2) · save point 420 evaluations", "Evaluate ... · deterministic actions"). */
-export const modelLineText = ({ run, noMode, source, entry, encoder, netShort, sourceName, pointAt }: { run: Json; noMode: boolean; source: Json;
+ *  template · GT 48/4/4", "Fine-tune ota7t (2) · save point 420 evaluations", "Evaluate ... · deterministic actions"), with
+ *  Fine-tune's switches that are on ("... · encoder frozen · critics reset", branch record SIF-103). */
+export const modelLineText = ({ run, adv, noMode, source, entry, encoder, netShort, sourceName, pointAt }: { run: Json; adv: Json; noMode: boolean; source: Json;
   entry: Json; encoder: string; netShort: string; sourceName: string | null; pointAt: Json }) =>
   run.mode === 'scratch' ? `New model · ${entry?.label ?? encoder} template · ${netShort}`
     : noMode ? 'No Mode chosen: choose one in RL model... (this configuration still says resume)'
     : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} · no saved model chosen`
     : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune'} ${sourceName} · save point ${pointAt != null ? `${pointAt} evaluations` : source.checkpoint_id}`
-      + (run.mode === 'frozen' ? ` · ${run.frozen_action ?? 'deterministic'} actions` : '');
+      + (run.mode === 'frozen' ? ` · ${run.frozen_action ?? 'deterministic'} actions` : switchWords(run, adv));
 /** The same, as the header's "Next" line names it (record 7.269; plan "The draft": "Next: ota7t · Fine-tune from ota7t (2)
- *  @ 420 · GT 48/4/4 · 800 evaluations"). */
-export const nextModelText = ({ run, noMode, source, sourceName, pointAt }: { run: Json; noMode: boolean; source: Json; sourceName: string | null; pointAt: Json }) =>
+ *  @ 420 · GT 48/4/4 · 800 evaluations"), with Fine-tune's switches that are on (branch record SIF-103). */
+export const nextModelText = ({ run, adv, noMode, source, sourceName, pointAt }: { run: Json; adv: Json; noMode: boolean; source: Json; sourceName: string | null; pointAt: Json }) =>
   run.mode === 'scratch' ? 'New model'                 // the network beside it names the template's encoder
     : noMode ? 'no Mode chosen'
     : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} - no saved model chosen`
-    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune from'} ${sourceName} @ ${pointAt ?? source.checkpoint_id}${run.mode === 'frozen' ? ` (${run.frozen_action ?? 'deterministic'} actions)` : ''}`;
+    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune from'} ${sourceName} @ ${pointAt ?? source.checkpoint_id}${run.mode === 'frozen' ? ` (${run.frozen_action ?? 'deterministic'} actions)` : switchWords(run, adv)}`;
 /** That line's tooltip: the network in words, or what a Mode that loads a model still needs. The design by name (branch
- *  record SIF-57: it began "The network in use: graph_transformer"). */
-export const networkTitle = ({ loads, source, run, encoder, hidden, heads, layers, components, usesHeads, net }: { loads: boolean; source: Json; run: Json;
-  encoder: string; usesHeads: boolean; net: Json } & NetworkSizes) =>
-  loads && !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} loads a saved model: choose one in RL model...; the run then uses its network.`
-    : `The network in use: ${designName({ encoder_type: encoder, architecture_version: net.architecture_version })}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
-      + `inputs ${inputsText(net)}; `
-      + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}, save point ${source.checkpoint_id}).` : '.'} RL model... changes it.`;
+ *  record SIF-57: it began "The network in use: graph_transformer"). In Fine-tune also its switches that are on, by the
+ *  window's labels, and the name typed for the model it saves: the line shows two lines at most (branch record SIF-103). */
+export const networkTitle = ({ loads, source, run, adv, encoder, hidden, heads, layers, components, usesHeads, net }: { loads: boolean; source: Json; run: Json;
+  adv: Json; encoder: string; usesHeads: boolean; net: Json } & NetworkSizes) => {
+  if (loads && !source.run_dir) return `${MODE_NAME[run.mode] ?? run.mode} loads a saved model: choose one in RL model...; the run then uses its network.`;
+  const on = switchesOn(run, adv), saves = run.mode === 'fine_tune' ? (run.model_label ?? '').trim() : '';
+  return `The network in use: ${designName({ encoder_type: encoder, architecture_version: net.architecture_version })}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
+    + `inputs ${inputsText(net)}; `
+    + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}, save point ${source.checkpoint_id}).` : '.'} RL model... changes it.`
+    + (on.length ? ` Fine-tune's switches on: ${on.map(([, , label]) => label).join(', ')}.` : '') + (saves ? ` It saves the model as ${saves}, with a number if that name is taken.` : '');
+};
 /** The limits a run seldom changes that are set, for the line of the Limits fold: "42 launches, 1 retry, wall time 24 h 00
  *  min" (branch record SIF-58: "1 launches, 1 retries, 86400 s"). */
 export const limitsText = (run: Json) =>

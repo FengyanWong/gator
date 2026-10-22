@@ -91,7 +91,8 @@ export interface ModelDescription {
     feature_schema?: { version?: string; op_columns?: string[] };
     spec_schema?: { layout?: string };
     reward_version?: string;
-    reward_settings?: { violation_shape?: string; worst_spec_share?: number; objective_weight?: number; margin_weight?: number };
+    reward_settings?: { violation_shape?: string; worst_spec_share?: number; objective_weight?: number; margin_weight?: number;
+      objective_shape?: string; nominal_gate_band?: number };
     condition_policy?: string;
     planned_conditions?: { corner: { id: string } }[];
   };

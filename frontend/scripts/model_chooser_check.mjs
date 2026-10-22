@@ -29,7 +29,10 @@
 // - opened again, the window keeps its view - folder, Design, filter, sort, open Details - and shows the rows of its last read
 //   at once, its one read per open still going; the ticks go, and Details of a model that left the list close; a rename reads
 //   the page's run list again, so the main page's model line and Next line name the model in use by its new name, and the
-//   saved models are read again once (branch record SIF-102).
+//   saved models are read again once (branch record SIF-102);
+// - Fine-tune's switches that are on are named in the model line and the Next line, by the window's labels in the line's
+//   tooltip with the name typed for the model it saves, and not in Evaluate only; the facts show all six reward fields, and
+//   "Use this model's reward" takes them as one Undo step while the next run's reward differs (branch record SIF-103).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -61,7 +64,10 @@ const model = (name, circuit, points, extra = {}) => { const newest = points.fin
   encoder: newest.network.encoder_type, ...extra }; };
 const A = model('FIXTURE_opamp_gt', 'synthetic:gpdk045_ota5', [point('a1', 6, 'periodic', 1), point('a2', 12, 'periodic', 2), point('a3', 18, 'periodic', 3), point('a4', 20, 'final', 4, { is_latest: true })],
   { code: 'older' });                                                     // saved by an older optimizer source (review of branch record SIF-80)
-const B = model('FIXTURE_ldo_gat', 'synthetic:ldo', [point('b1', 8, 'stop', 5, { is_latest: true, network: GATV2 })]);
+// B's reward differs from the page's in each of its six fields (branch record SIF-103: "Use this model's reward").
+const B_REWARD = { violation_shape: 'compressed', worst_spec_share: 0.25, objective_weight: 0.75, objective_shape: 'compressed', margin_weight: 0.5, nominal_gate_band: 0.4 };
+const B = model('FIXTURE_ldo_gat', 'synthetic:ldo', [point('b1', 8, 'stop', 5, { is_latest: true, network: GATV2,
+  contract: { reward_version: 'constraint_violation_v2', reward_settings: B_REWARD } })]);
 const C = model('FIXTURE_weights_only', 'synthetic:vco', [point('c1', 10, 'pause', 6, { is_latest: true, restoration_capability: 'weights_only', missing_components: ['replay_snapshot (disabled in output settings)'],
   contract: { condition_policy: 'off', planned_conditions: [] } })]);                                    // a plan recorded empty (branch record SIF-80)
 const D = model('FIXTURE_real_ota5', 'real:gpdk045_ota5', [point('d1', 30, 'periodic', 7, { is_best_policy: true, network: RGCN }), point('d2', 40, 'final', 8, { is_latest: true, network: RGCN })], { mock: false });
@@ -337,6 +343,34 @@ await runChecks(browser, async () => {
   await evaluate(`document.querySelector('section.editors button[title^="Redo:"]').click()`);
   run = await storedWhen(s => s?.model_source?.checkpoint_id === early);
   check('... and Redo brings it again', run?.model_source?.checkpoint_id === early);
+  // ---- Fine-tune's own switches are said on the main page (branch record SIF-103) -------------------------------------------------
+  // Only the window's last block said them, and it closes once a save point is chosen: kept across Modes and runs, and copied by
+  // New run like this, a switch left on went unseen before Start. The model line and the Next line name those that are on; the
+  // tooltip names them by the window's labels, with the name typed for the model it saves.
+  const SWITCH = text => `[...${RIGHT}.querySelectorAll('label.check')].find(l => l.textContent.startsWith(${JSON.stringify(text)}))?.querySelector('input')`;
+  const LINE_TEXT = `document.querySelector('.rl-networks-row .net-short')?.textContent ?? ''`, LINE_TITLE = `document.querySelector('.rl-networks-row .net-short')?.title ?? ''`;
+  const PLAIN_A = 'Fine-tune FIXTURE_opamp_gt · save point 6 evaluations', ON = ' · encoder frozen · critics reset · continual';
+  const SAID = " Fine-tune's switches on: Freeze encoder, Reset critic, Continual learning. It saves the model as FIXTURE tuned, with a number if that name is taken.";
+  for (const text of ['Freeze encoder', 'Reset critic', 'Continual learning']) await evaluate(`(${SWITCH(text)}).click()`);
+  await page.setValue(`${RIGHT}.querySelector('input.model-label')`, 'FIXTURE tuned', { event: 'input' });
+  run = await storedWhen(s => s?.advanced?.freeze_encoder && s.advanced.reset_critic && s.continual_learning && s.model_label === 'FIXTURE tuned');
+  check('Fine-tune\'s switches that are on are said in the model line, in the window\'s order, and in the header\'s Next line (SIF-103)',
+    !!run && await until(`(${LINE_TEXT}) === ${JSON.stringify(PLAIN_A + ON)}`, 30)
+    && await until(`/^Next: synthetic:gpdk045_ota5 · Fine-tune from FIXTURE_opamp_gt @ 6 · encoder frozen · critics reset · continual · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 30),
+    `${await line()} | ${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)}`);
+  check('... and the line\'s tooltip by the window\'s labels, with the name the model it saves goes by (SIF-103)', (await evaluate(LINE_TITLE)).endsWith(` RL model... changes it.${SAID}`),
+    await evaluate(LINE_TITLE));
+  await setMode(networkPage, 'frozen');
+  check('... in Fine-tune only: Evaluate only, which reads none of them, says its actions as before (SIF-103)',
+    await until(`(${LINE_TEXT}) === 'Evaluate FIXTURE_opamp_gt · save point 6 evaluations · deterministic actions'`, 30)
+    && (await evaluate(LINE_TITLE)).endsWith(' RL model... changes it.'), `${await line()} | ${await evaluate(LINE_TITLE)}`);
+  await setMode(networkPage, 'fine_tune');
+  for (const text of ['Freeze encoder', 'Reset critic', 'Continual learning']) await evaluate(`(${SWITCH(text)}).click()`);
+  await page.setValue(`${RIGHT}.querySelector('input.model-label')`, '', { event: 'input' });
+  run = await storedWhen(s => !s?.advanced?.freeze_encoder && !s?.advanced?.reset_critic && !s?.continual_learning && !s?.model_label);
+  check('... and with every switch off and no name typed, the lines read as before', await until(`(${LINE_TEXT}) === ${JSON.stringify(PLAIN_A)}`, 30)
+    && await until(`/^Next: synthetic:gpdk045_ota5 · Fine-tune from FIXTURE_opamp_gt @ 6 · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 30)
+    && (await evaluate(LINE_TITLE)).endsWith(' RL model... changes it.'), `${await line()} | ${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)} | ${await evaluate(LINE_TITLE)}`);
   await evaluate(`${RIGHT}.querySelector('button.model-use-newer').click()`);
   run = await storedWhen(s => s?.model_source?.checkpoint_id === A.latest);
   check('"Use the newer one" pins the newer save point, and closes the window', run?.model_source?.checkpoint_id === A.latest && await chosenAndReopened()
@@ -386,6 +420,28 @@ await runChecks(browser, async () => {
     facts['Restorable'] === 'full state - the run that saved it can be continued exactly.' && facts['Network inputs'] === 'Standard'
     && facts['Components'] === 'Standard (8 generic kinds) - the network of this run knows the same list.' && !('Margin bonus weight' in facts)
     && rewardTips.every(([tip, block]) => tip.length > 20 && tip === block), JSON.stringify([facts['Restorable'], facts['Network inputs'], facts['Components'], rewardTips]).slice(0, 900));
+  // Branch record SIF-103: the facts showed four of the reward's six fields, so a model's reward could not be matched even by
+  // hand - and Fine-tune keeps its critics only with it. The other two by the reward block's names and tooltips, and a press
+  // that takes all six, as one Undo step, while the next run's reward differs.
+  const factTip = name => evaluate(`[...${RIGHT}.querySelectorAll('table.model-facts tr')].find(r => r.cells[0].textContent === ${JSON.stringify(name)})?.title ?? 'no row'`);
+  const shapeTip = await evaluate(`[...document.querySelectorAll('aside.right label')].find(l => l.textContent.startsWith('Objective shape'))?.title ?? 'no control'`);
+  check('... and the reward\'s two other fields: Objective shape and Nominal gate band, with the reward block\'s tooltips (SIF-103)',
+    facts['Objective shape'] === 'Compressed' && facts['Nominal gate band'] === '0.4' && shapeTip.length > 20 && await factTip('Objective shape') === shapeTip
+    && /^Strictly between 0 and 1\./.test(await factTip('Nominal gate band')), JSON.stringify([facts['Objective shape'], facts['Nominal gate band'], shapeTip]));
+  const rewardBefore = (await stored())?.reward ?? null;
+  const FROM_MODEL = `${RIGHT}.querySelector('button.reward-from-model')`;
+  const fromModel = await evaluate(`(() => { const b = ${FROM_MODEL}; return b && { text: b.textContent.trim(), title: b.title, row: b.closest('tr')?.cells[0].textContent }; })()`);
+  check('"Use this model\'s reward" is offered on the Reward row while the next run\'s reward differs, each field that differs in its tooltip (SIF-103)',
+    fromModel?.text === 'Use this model\'s reward' && fromModel.row === 'Reward' && /worst hard-spec share 0\.25 instead of /.test(fromModel.title)
+    && /nominal gate band 0\.4 instead of /.test(fromModel.title) && /the conditions are not changed here/.test(fromModel.title), JSON.stringify(fromModel));
+  await evaluate(`${FROM_MODEL}.click()`);
+  run = await storedWhen(s => s?.reward?.nominal_gate_band === 0.4);
+  check('... a press makes the next run\'s reward the model\'s, all six fields, and the offer goes', Object.entries(B_REWARD).every(([k, v]) => run?.reward?.[k] === v)
+    && await until(`!${FROM_MODEL}`, 40), JSON.stringify(run?.reward));
+  await undo();
+  run = await storedWhen(s => s?.reward?.nominal_gate_band !== 0.4);
+  check('... as one Undo step: Undo brings the reward back, and the offer with it', JSON.stringify(run?.reward ?? null) === JSON.stringify(rewardBefore)
+    && await until(`!!${FROM_MODEL}`, 40), `${JSON.stringify(run?.reward)} | before ${JSON.stringify(rewardBefore)}`);
   await sleep(1100);
   // A network that arrives from ELSEWHERE while the model is loaded (an imported configuration) is taken back - and that is said.
   check('no note about the network so far', !(await evaluate(`!!${RIGHT}.querySelector('.net-message.warn')`)));

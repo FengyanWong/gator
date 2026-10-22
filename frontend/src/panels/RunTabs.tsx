@@ -296,6 +296,9 @@ function FilesTabBody({ runDir }: { runDir: string | null }) {
   useEffect(() => setNote(null), [runDir]);
   if (!runDir) return <p className="hint">No run selected.</p>;
   const pack = () => { setNote('Packing...'); downloadPackage(runDir).then(name => setNote(`Downloaded ${name}.`), e => setNote(e.message)); };
+  // A copy's word leaves "Packing..." standing (branch record SIF-94 review): that note is the package button's busy state,
+  // and a copy said over it took the hourglass away and let a second pack start while the first was still zipping.
+  const copied = (text: string) => setNote(n => n === 'Packing...' ? n : text);
   // One file (user request 2026-09-26: a button with the download icon in each row, not a "download" text link), saved
   // like the package and the logs: the browser's own download, named by the backend, and said in the hint.
   const save = (file: string) => { setSaving(file); download(api.downloadUrl(runDir, file), file.split('/').pop() ?? file)
@@ -305,7 +308,7 @@ function FilesTabBody({ runDir }: { runDir: string | null }) {
     {/* The count and the notes alone on the tool line (branch record SIF-48): it ended, on every visit, with a sentence about an
         "Open local folder" button that does not exist; why there is none now sits in Copy run path's tooltip. Copy run path says
         on it how it went, the path itself when the browser refused the clipboard (branch record SIF-94: it copied unsaid). */}
-    <button onClick={() => copy(runDir).then(() => setNote('Copied the run path.'), () => setNote(`Could not copy: the browser refused the clipboard. The run path: ${runDir}`))} title="Copy run path: The run folder's path, as text, to the clipboard. A browser cannot open a folder itself."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${plural(files.files.length, 'file')}, ${bytes(files.total_bytes)}.`} {error ?? note}</span></div>
+    <button onClick={() => copy(runDir).then(() => copied('Copied the run path.'), () => copied(`Could not copy: the browser refused the clipboard. The run path: ${runDir}`))} title="Copy run path: The run folder's path, as text, to the clipboard. A browser cannot open a folder itself."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${plural(files.files.length, 'file')}, ${bytes(files.total_bytes)}.`} {error ?? note}</span></div>
     <div className="scroll"><table className="grid small files-table"><thead><tr><th>File</th><th className="num-cell">Size</th><th>Modified</th><th></th></tr></thead>
       <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td className="num-cell">{bytes(f.bytes)}</td><td title={`${f.modified_utc} (UTC)`}>{stamp(f.modified_utc) ?? f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
         title={`Download ${f.path}: This file as it is now, to the browser's download folder.`}><Icon name={saving === f.path ? 'wait' : 'download'} label={`Download ${f.path}`} /></button></td></tr>)}</tbody></table></div></div>);

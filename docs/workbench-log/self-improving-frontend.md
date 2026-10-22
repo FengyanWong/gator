@@ -2634,3 +2634,18 @@ the refusal note with the path. `looks_check` 75 (74 before): "Copied <column>."
 `save_now_check` 29, `task_run_check` 39, `network_panel_check` 62, `reliability_check` 20, `encoder_models_check` 24,
 `graph_view_check` 69, `module_fold_check` 30, `reward_block_check` 33, `pdk_check` 40, `model_structure_check` 31,
 `agent_window_check` 29, `network_inputs_check` 9 (26 scripts, 1,387 checks, one lane). No flakes.
+
+**Review follow-up.** The review of 140ce51 found two slips, both real. (1) In Output files, "Packing..." is the only busy
+state of **Download data-only package**: it disables the button and shows the hourglass. Copy run path's new note
+replaced it, so a copy while a package was still zipping freed the button for a second pack, and the first one's
+"Downloaded <name>." later replaced the copy's note. `frontend/src/panels/RunTabs.tsx`: the copy's notes now leave
+"Packing..." standing. The copy still happens; only its word is not said over the packing. A packing state of its own
+would also have worked, but the note is cleared when the shown run changes, and a separate state would have changed when
+the button is free again. Not changed: a single file's "Downloaded <name>." still replaces "Packing..." when it lands
+during a pack, as it has since 2026-09-26. (2) Output settings' Current run paths keyed their word by the row's name
+alone. A copy, then another run shown within 1.5 s, put " copied" on the new run's path, which was never copied.
+`OutputPanel.tsx` keys it by the row and its path, so another run's row says nothing, as Run status's Run folder does.
+Nothing is saved, run or written by this. `tsc` clean. `files_tab_check` 24 (22 before): with the package request held,
+a copy copies the run path, and the hint still says "Packing...", the button disabled with the hourglass; the package
+answered, the hint says how it went and the button is ready again. `room_check` 30 and `output_panel_check` 98, unchanged.
+No flakes. The second fix has no new check: the checks' fixtures show one run only.

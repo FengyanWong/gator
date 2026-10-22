@@ -29,7 +29,8 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
   const root = out.output_root ?? meta?.output_root ?? '';
   const [browse, setBrowse] = useState<Json>(null);
   // Copy path and a run path cell say "copied" or "could not copy", as Run status's Run folder does (branch record SIF-94:
-  // they copied unsaid). Keyed by what was clicked: the root and a run path can be the same text.
+  // they copied unsaid). Keyed by what was clicked: the root and a run path can be the same text. A run path by its row and
+  // its text (SIF-94 review): by the row alone, another run shown within the 1.5 s said "copied" on a path never copied.
   const copying = useCopied();
   // The header's run working locks it too (branch record SIF-91: only the run the tabs show did).
   const locked = headerWorks || !!activeRun?.worker_alive;
@@ -144,7 +145,7 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
         {/* words, and the save in local time with the UTC in its tooltip, as Run status writes it (branch record SIF-60: the
             rows read "run_dir", "bytes written", "last successful save 2026-10-05T10:21:40+00:00"); a path says that a click
             copies it, as Run status's Run folder does (branch record SIF-64) */}
-        {Object.entries(paths).map(([k, v]) => <tr key={k}><td title={k}>{pathName(k)}</td><td className="path" title="Click to copy" onClick={() => void copying.copyText(String(v), `path:${k}`)}>{String(v)}{copying.word(`path:${k}`)}</td></tr>)}
+        {Object.entries(paths).map(([k, v]) => <tr key={k}><td title={k}>{pathName(k)}</td><td className="path" title="Click to copy" onClick={() => void copying.copyText(String(v), `path:${k}:${String(v)}`)}>{String(v)}{copying.word(`path:${k}:${String(v)}`)}</td></tr>)}
         <tr><td>Bytes written</td><td>{bytes(activeRun?.bytes_written ?? activeRun?.persistence?.bytes_written)}</td></tr>
         <tr><td>Last successful save</td><td title={saved ? `${saved} (UTC)` : undefined}>{stamp(saved) ?? saved ?? '-'}</td></tr>
         <tr><td>Remote Spectre work folder</td><td className="hint">local work/ for this task; final files are written directly here (sync: local)</td></tr>

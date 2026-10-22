@@ -2,7 +2,8 @@
 // right to buttons with icons" - each row ends with an icon button (the download arrow, hourglass while the file is on
 // its way) instead of a "download" text link; the file is saved like the package and the logs (the browser's own
 // download, named by the backend) and the hint says "Downloaded <name>.". Copy run path says "Copied the run path." there,
-// or that the browser refused the clipboard, with the path (branch record SIF-94).
+// or that the browser refused the clipboard, with the path (branch record SIF-94); a copy while the package is packing
+// leaves the package button busy (SIF-94 review).
 // Hermetic, on the shared harness: the run's status and file list are canned (FIXTURE), the download request is held
 // so the busy state can be seen, then answered with a canned body and Content-Disposition; the browser's download
 // folder is a temporary one. GET requests pass, every other writing request is refused. Safe against the live 8765 page.
@@ -38,7 +39,7 @@ await runChecks(browser, async () => {
   const CONFIG = await starterConfig(APP);
   const page = await browser.open({ consoleApi: false });
   const { send, evaluate, fulfil, consoleErrors } = page;
-  const refused = []; const held = []; let listed = 0;
+  const refused = []; const held = []; const packs = []; let listed = 0;
   const answer = ({ requestId, request }) => {
     const url = new URL(request.url), name = url.pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
@@ -47,6 +48,7 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
     if (name === '/api/runs/files') { listed++; return url.searchParams.get('run_dir') === DIR ? fulfil(requestId, 200, FILES) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
     if (name === '/api/runs/download') { held.push({ requestId, run_dir: url.searchParams.get('run_dir'), path: url.searchParams.get('path') }); return; }   // answered by the check itself
+    if (name === '/api/runs/export-package') { packs.push(requestId); return; }                                   // held, then answered by the check
     return page.readOrRefuse({ requestId, request }, refused);
   };
   // The backend's answer: the file's bytes under its own name (support.attachment), or 404 for a file that is gone.
@@ -137,6 +139,23 @@ await runChecks(browser, async () => {
   await evaluate(`(${COPY}).click()`);
   check('... and a copy the browser refuses says so, with the path to select (SIF-94)', await until(`${HINT}.endsWith(${JSON.stringify(`Could not copy: the browser refused the clipboard. The run path: ${DIR}`)})`, 30),
     await evaluate(HINT));
+
+  // SIF-94 review: "Packing..." is the package button's busy state, and the copy's word replaced it, so the hourglass went and a
+  // second pack could start while the first was still zipping. The package request is held; a copy now leaves it standing.
+  const PACK = `[...(${TABLE}).closest('.scroll').previousElementSibling.querySelectorAll('button')].find(b => b.title.startsWith('Download data-only package'))`;
+  const packState = () => evaluate(`(b => ({ disabled: b.disabled, hourglass: b.querySelector('svg.icon path')?.getAttribute('d') === 'M4 2.5h8M4 13.5h8' }))(${PACK})`);
+  await evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: text => { window.__clip = text; return Promise.resolve(); } })`);
+  await evaluate(`window.__clip = null; (${PACK}).click()`);
+  for (let i = 0; i < 50 && !packs.length; i++) await sleep(100);
+  const packing = packs.length === 1 && await until(`${HINT}.endsWith('Packing...')`, 30) ? await packState() : null;
+  await evaluate(`(${COPY}).click()`);
+  const clipped = await until(`window.__clip === ${JSON.stringify(DIR)}`, 30); await sleep(300);
+  const during = { clipped, hint: await evaluate(HINT), button: await packState() };
+  check('a copy while the package is packing copies, and leaves the package button busy: disabled, the hourglass, "Packing..." (SIF-94 review)',
+    !!packing?.disabled && packing.hourglass && clipped && during.hint.endsWith('Packing...') && during.button.disabled && during.button.hourglass, JSON.stringify({ packs: packs.length, packing, during }));
+  if (packs.length) await fulfil(packs.shift(), 404, { detail: 'FIXTURE: Not a run directory' });
+  check('... until the package is answered: the hint says how it went, and the button is ready again', await until(`${HINT}.endsWith('FIXTURE: Not a run directory')`, 30)
+    && !(await packState()).disabled && !(await packState()).hourglass, JSON.stringify({ hint: await evaluate(HINT), button: await packState() }));
   await evaluate(`delete navigator.clipboard.writeText`);
 
   reportRefused(refused, NEVER_ASKED_OR_SAVED);

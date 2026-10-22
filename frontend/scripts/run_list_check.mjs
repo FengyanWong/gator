@@ -20,7 +20,8 @@
 // record SIF-84: a Load run that does not go through says why in the window as well (the edits question is task_run_check's).
 // Branch record SIF-98: a run shown in Run status lists its best design's variables as its Details do, and a click copies them.
 // Branch record SIF-101: Runs... opens the window at the shown run; a link keeps the folder, the filter and the ticks that show
-// its run, else "Back to ..." brings them back; "Go to the shown run" when they hide it.
+// its run, else "Back to ..." brings them back; "Go to the shown run" when they hide it. Its review follow-up: a link to one
+// task's runs lets the ticks go; New folder with runs ticked keeps them.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -377,6 +378,20 @@ await runChecks(browser, async () => {
     && JSON.stringify(await viewLinks()) === JSON.stringify({ shown: 'Go to the shown run', back: null }), JSON.stringify([await filterText(), await viewLinks()]));
   await typeFilter('');
   check('(set-up) every run again, nothing beside the filter', (await table()).length === 6 && JSON.stringify(await viewLinks()) === JSON.stringify({ shown: null, back: null }), JSON.stringify(await viewLinks()));
+  // SIF-101 review follow-up: a link that shows one task's runs only (the Tasks window's newest run) kept the ticks when its run
+  // was in view, then narrowed the view: a ticked run of another task stood hidden, still ticked, and Move to… moved it (7.250).
+  // The list is read first, so the link does not read it again (a read lets the ticks go by itself).
+  const moveBar = () => far.evaluate(`${WINDOW}.querySelector('.task-move-bar .hint:not([role])').textContent`);
+  await pressTop('Refresh list');
+  await far.until(`!${WINDOW}.querySelector('.task-move-bar [role="status"]') && !/Reading the runs/.test(${WINDOW}.querySelector('.run-count')?.textContent ?? '')`, 50);
+  await far.evaluate(`${RUN_ROW(DONE)}.querySelector('input[type="checkbox"]').click()`); await far.evaluate(`${RUN_ROW(LOST)}.querySelector('input[type="checkbox"]').click()`); await sleep(200);
+  check('(set-up) DONE and LOST, a run of no task, ticked among every run', (await moveBar()) === '6 shown · 2 selected', await moveBar());
+  await evaluate(`window.dispatchEvent(new CustomEvent('gator-open-runs', { detail: { run_dir: ${JSON.stringify(DONE.run_dir)}, task_key: ${JSON.stringify(DONE.task_key)} } }))`);
+  check('a link to a task\'s newest run shows that task\'s runs only, DONE\'s Details open, and lets the ticks go: LOST, hidden, cannot be moved (SIF-101 review follow-up)',
+    await detailsOpen(DONE) && await far.until(`!!${WINDOW}.querySelector('.run-only-task')`, 30) && (await table()).length === 3 && (await moveBar()) === '3 shown'
+    && await far.evaluate(`${WINDOW}.querySelector('.task-move-bar select').disabled`), JSON.stringify([await moveBar(), (await table()).length]));
+  await far.evaluate(`${WINDOW}.querySelector('.run-only-task button').click()`); await pressIn(DONE, 'Hide details'); await sleep(200);
+  check('(set-up) every run again, nothing ticked', (await table()).length === 6 && (await moveBar()) === '6 shown', await moveBar());
 
   // ---- 5. filter and sort -------------------------------------------------------------------------------------------------------
   await typeFilter('paused');
@@ -419,12 +434,25 @@ await runChecks(browser, async () => {
   await tick(DONE); await tick(PAUSED); await sleep(200);
   check('ticked runs are counted as selected', /6 shown · 2 selected/.test(await far.evaluate(`${WINDOW}.querySelector('.task-move-bar').textContent`)),
     await far.evaluate(`${WINDOW}.querySelector('.task-move-bar').textContent`));
+  // SIF-101 review follow-up: New folder with runs ticked keeps them, as in the Tasks window. This window did not pass its tick
+  // count, so the new, empty folder opened and the ticks went: tick, New folder, Move to… could not be done in that order.
+  const questions = [];
+  far.on('Page.javascriptDialogOpening', p => { questions.push(p.message); });
+  replies.push({ accept: true, promptText: 'Later' }); await pressFolderButton('New folder'); await settled();
+  const later = Object.keys(runFolders.folders).find(id => runFolders.folders[id] === 'Later');
+  const kept = await far.evaluate(`({ folder: ${WINDOW}.querySelector('.task-folders [aria-current="page"]')?.dataset.folderId, bar: ${WINDOW}.querySelector('.task-move-bar .hint:not([role])').textContent,
+    offered: [...${WINDOW}.querySelectorAll('.task-move-bar select option')].map(o => o.textContent) })`);
+  check('New folder with runs ticked stays in All runs and keeps the ticks; the new folder is in "Move to…" at once (SIF-101 review follow-up)', !!later && kept.folder === 'all'
+    && kept.bar === '6 shown · 2 selected' && kept.offered.includes('Later'), JSON.stringify(kept));
+  check('... and its question says so', questions.at(-1) === 'New folder name - the 2 ticked runs stay ticked; then choose the folder in Move to…', questions.at(-1));
   await moveTo(pilot); await settled();
   check('"Move to..." puts exactly those runs in the folder, by their run folder', JSON.stringify(Object.keys(runFolders.assignments).sort()) === JSON.stringify([DONE.run_dir, PAUSED.run_dir].sort())
     && Object.values(runFolders.assignments).every(id => id === pilot), JSON.stringify(runFolders.assignments));
   check('the counts follow: Pilot 2, Unfiled 4, All runs 6', (await folderText(pilot)) === 'Pilot2' && (await folderText('unfiled')) === 'Unfiled4' && (await folderText('all')) === 'All runs6');
   rows = await table();
   check('in All runs a run in a folder names it under its date', rowOf(rows, DONE).Started === `${stamp(DONE.created_utc)} Pilot` && rowOf(rows, LOST).Started === stamp(LOST.created_utc), JSON.stringify(rowOf(rows, DONE)));
+  await nav(later); await sleep(200); replies.push({ accept: true }); await pressFolderButton('Delete folder'); await settled();
+  check('(set-up) "Later" deleted again', !runFolders.folders[later] && Object.keys(runFolders.folders).length === 1, JSON.stringify(runFolders.folders));
   await nav(pilot); await sleep(200);
   check('the folder shows its runs only', (await table()).map(x => x.folder).sort().join() === [DONE.run_dir, PAUSED.run_dir].sort().join());
   check('a double click there still shows a run in the bottom tabs', await doubleClick(PAUSED)

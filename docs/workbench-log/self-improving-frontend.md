@@ -3027,3 +3027,24 @@ had no Back or Go-to link, opened at the top of the list, and opened "Later". Al
 `dom_identity_check` 56, `training_tab_check` 103, `task_run_check` 39, `looks_check` 75, `network_panel_check` 72 (8
 scripts, one lane, all passed the first time). Not run: `run_control_check` (it presses Start against its fixture). No
 flakes.
+
+**Review follow-up.** The review of 2b61257 found two slips, both real. First, the Runs window never passed its tick
+count to `Folders` (the plan's J6-8 named TaskList, RunList and SavedModels; only TaskList and ModelChooser were changed),
+so there New folder with runs ticked still opened the new, empty folder and let the ticks go, while this entry and the
+Task folders row of `docs/functionality-reference.md` said all three windows kept them. `RunList.tsx` now passes
+`selected={selected.length}`. Second, a lost condition from 7.250. The Tasks window's newest-run link sends a run and its
+task. `focusRun` kept the ticks when the run was in view, and the `OPEN_RUNS` handler then narrowed the view to that
+task. With the window open on every run, its list read under a minute before, runs of two other tasks ticked: the link
+hid them, "3 shown · 2 selected" stood, and Move to… moved the hidden runs. `focusRun` now takes the link's task
+(`ofTask`): when it narrows the view (another task than the one shown, or none shown), the ticks go, as a folder or
+filter change lets them go; the folder and the filter still stay when they show the run. The handler passes
+`at.task_key` instead of setting the task after. Nothing here starts, continues or stops a run, saves a task or writes
+to Virtuoso; a link still chooses nothing. `docs/workbench.md` (the links, the Runs window's folders) and the Links row
+of `docs/functionality-reference.md` say so. `tsc` clean. `run_list_check` 157 (151 before): with DONE and LOST (a run
+of no task) ticked among every run and the list just read, the newest-run link for DONE's task shows its three runs,
+DONE's Details open, "3 shown" and Move to… greyed out; New folder "Later" with DONE and PAUSED ticked keeps All runs
+and both ticks, "Later" is in Move to…, and the question reads "New folder name - the 2 ticked runs stay ticked; then
+choose the folder in Move to…". Against the code before, both fail ("3 shown · 2 selected"; the new folder opened,
+empty). Also run, unchanged: `task_list_check` 100, `model_chooser_check` 98, `dom_identity_check` 56,
+`training_tab_check` 103, `task_run_check` 39, `looks_check` 75 (7 scripts, one lane, all passed the first time). Not
+run: `run_control_check` (it presses Start against its fixture). No flakes.

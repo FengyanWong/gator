@@ -1593,7 +1593,9 @@ lists every run under the output folder, newest first, one row per run:
     time, and nothing brought them back); when they hide it, every folder and no filter are set, and **Back to <folder>
     · "<filter>"** beside the filter brings them back. Following a link
     chooses nothing on the page. The Tasks window and the run brief open this window the same way (at a run, or with one
-    task's runs only).
+    task's runs only). A link that shows one task's runs only - the Tasks window's newest run - lets the ticks go when
+    it narrows the view, as a folder or filter change does, so a ticked run it hides is never moved (SIF-101 review
+    follow-up).
 * **Details** also open everything else the run recorded, under its row: run folder (click to copy) and ids, created /
   worker began / came to rest, working time, time paused, summed simulator job time, stop reason and error, budget
   and Spectre launches, learner updates, first feasibility, best design with its variables, the model it loaded and
@@ -1603,7 +1605,7 @@ lists every run under the output folder, newest first, one row per run:
   narrows the list by any word of a row: task, mode, state, `mock` / `real`, a date.
 * **Folders** (record 7.263; plan [frontend run workflow](plan-frontend-run-workflow.md), build step 2), as in the
   Tasks window: **All runs**, **Unfiled** and named folders with counts on the left, the same New folder, Rename and
-  Delete folder icons. Tick runs (or the header box for every run shown), then **Move to...**; in All runs a run's folder
+  Delete folder icons; New folder with runs ticked keeps the folder shown and the ticks (branch record SIF-101). Tick runs (or the header box for every run shown), then **Move to...**; in All runs a run's folder
   is named under its date. A folder filters the table, and the filter and sorting work inside it. Organization only:
   no run is moved, renamed or deleted on disk, and deleting a folder sends its runs back to Unfiled. Run folders are
   stored by run folder in `run_folders.json`: an assignment of a run that is gone stays in the file and is not counted.

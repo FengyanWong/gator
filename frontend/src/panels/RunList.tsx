@@ -245,10 +245,15 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
     folders.setFolder(folders.name(back.folder) ? back.folder : 'all'); setFilter(back.filter); setOnlyTask(back.onlyTask); setSelected([]); setBack(null);
   };
   /** Show one run in this window: its Details open, scrolled to. Branch record SIF-101: the folder, the filter, the one task and
-   *  the ticks stay when they show it (they were cleared for every link); otherwise every folder and no filter. */
-  const focusRun = (dir: string) => {
+   *  the ticks stay when they show it (they were cleared for every link); otherwise every folder and no filter. `ofTask`: the
+   *  link shows that task's runs only (the Tasks window's newest run). */
+  const focusRun = (dir: string, ofTask?: string) => {
     const row = byDir.get(dir);
     if (!row || !inView(row)) { leaveView(); setOnlyTask(task => (task && row?.task_key !== task ? null : task)); }
+    // A link that narrows the view to one task lets the ticks go, as a folder or filter change does (SIF-101 review
+    // follow-up): a ticked run of another task stayed ticked, hidden, and Move to… moved it (7.250).
+    else if (ofTask && ofTask !== onlyTask) setSelected([]);
+    if (ofTask) setOnlyTask(ofTask);
     setOpen(dir); readDetails(dir); setFocus(dir);
   };
   // Whoever had the list read - this window, or the page when a run was started - the window says when that was.
@@ -314,7 +319,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
     const show = (event: Event) => {
       const at = (event as CustomEvent<RunsAt>).detail ?? {};
       latest.current.openWindow(at.from, true);
-      if (at.run_dir) { latest.current.focusRun(at.run_dir); if (at.task_key) setOnlyTask(at.task_key); }
+      if (at.run_dir) latest.current.focusRun(at.run_dir, at.task_key);
       else if (at.task_key) { latest.current.leaveView(); setOpen(null); setOnlyTask(at.task_key); }
     };
     window.addEventListener(OPEN_RUNS, show);
@@ -381,7 +386,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
         Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Refresh list".</p>}
       {runs.length === 0 && !loading && !runsError && <p className="hint run-empty">No run yet under this output folder. A run appears here as soon as it has been started.</p>}
       <div className="task-browser">
-      <Folders state={folders} keys={runs.map(r => r.run_dir)} popup={popup} onSelect={chooseFolder} />
+      <Folders state={folders} keys={runs.map(r => r.run_dir)} popup={popup} onSelect={chooseFolder} selected={selected.length} />
       <div className="task-folder-content">
       <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
       {onlyTask && <p className="hint run-only-task">Only the runs of <code>{onlyTask}</code>{' '}

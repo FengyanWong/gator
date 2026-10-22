@@ -6,9 +6,10 @@ import { api, gateText, Json, problemText } from '../api';
 import { FileDraft, TaskFileWindow, unapplied } from './TaskFile';
 import { usePopupWindow } from './popupWindow';
 
-/** "Save as" prompts for a numbered new name (record 7.246). An open task is saved through the existing `as_new`
- *  API, with its own DUT/testbench copies; a cell's first save takes the copy the user declared. Calibration's explicit
- *  "Apply and save" still updates its current task. The extras beside the rows live here until either kind of save.
+/** "Save as" prompts for a numbered new name (record 7.246), or the name of a save refused (branch record SIF-92). An
+ *  open task is saved through the existing `as_new` API, with its own DUT/testbench copies; a cell's first save takes the
+ *  copy the user declared. Calibration's explicit "Apply and save" still updates its current task. The extras beside the
+ *  rows live here until either kind of save.
  *  Shown at the right end of the editors' tab line (`bar`), its messages and questions under their toolbar (`notes`) -
  *  user request 2026-09-22: the save sits with the rows it stores. The component stays in the circuit panel, which owns
  *  the cell and the task; two portals put it there.
@@ -176,7 +177,10 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     if (!stillHere()) return;
     const used = new Set<string>((listed.tasks ?? []).flatMap((t: Json) => [String(t.task_key).replace(/^[^:]+:/, ''), ...(typeof t.name === 'string' ? [t.name] : [])]));   // a shown name (record 7.302) is taken too
     if (task) used.add(task);
-    let proposed = numberedName(suggested, used);
+    // After a refused save, the name chosen for it is offered again (branch record SIF-92: the numbered name came back, and
+    // the name typed was lost at each refusal - frequent while a task is set up). Another task or cell clears the choice and
+    // a saved name is in the list, so a choice not in it was not saved. The first proposal stays numbered (record 7.246).
+    let proposed = choice && NAME.test(choice.name) && !used.has(choice.name) ? choice.name : numberedName(suggested, used);
     let problem = '';
     for (;;) {
       const entered = window.prompt(`${problem}Save as: new task name\nUse 2–40 lowercase letters, digits or underscores, starting with a letter.\n`
@@ -233,6 +237,10 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
   };
   const frequencyValue = parseFrequency(frequency);
   const canSave = !!profileId && (task ? true : hasCopy) && !busy && !running;
+  // The rough frequency's question can end without a save (branch record SIF-92): until then only a frequency or another
+  // task or cell ended it, the tab line's Save as staying off. The chosen name stays, for the next Save as to offer. Not
+  // while the save with a frequency is on its way.
+  const stopAsking = () => { if (busy) return; setAskFrequency(false); setFrequency(''); setMessage(null); };
   able.current = { can: canSave && !askFrequency && !!task, why: running ? `the save of ${running.task_key} is still running`
     : busy ? 'a save is under way' : !profileId ? 'no connection is chosen' : askFrequency ? 'the save waits for the rough frequency' : '' };
   const progress = running ? progressOf(running) : busy === 'save' ? { value: 0, max: 1, text: `Saving real:${taskName} - starting` } : null;
@@ -244,7 +252,7 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
         {/* The task and its revision start the tab line (record 7.362): this holds Save as and Task file only. Greyed out
             for want of a connection, its tooltip says so and where to choose one (branch record SIF-68). */}
         <button className="primary" disabled={!canSave || askFrequency} onClick={saveAs}
-          title={'Save as: ' + waits + (!profileId ? 'Not available: no connection is chosen - choose one with the Connection button in the header. ' : '') + 'Asks for a new task name, with the next available numbered name suggested. ' + (task ? 'Stores the rows of Parameters, Probes and Specs as a new task with its own DUT and testbench copies. ' : hasCopy
+          title={'Save as: ' + waits + (!profileId ? 'Not available: no connection is chosen - choose one with the Connection button in the header. ' : '') + 'Asks for a new task name, with the next available numbered name suggested (after a refused save, the name chosen for it). ' + (task ? 'Stores the rows of Parameters, Probes and Specs as a new task with its own DUT and testbench copies. ' : hasCopy
             ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '
             : 'Read the cell in the Virtuoso window first and confirm that it is a copy you made: the task is saved into that cell. ')
             + 'It writes the cell in Virtuoso to match and reads it back, then automatically runs one baseline simulation. Only you can press it.'}>
@@ -254,10 +262,14 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     {notes && said && createPortal(
       <div className="task-save-notes">
         {progress && <div className="task-save-progress" role="status"><progress value={progress.value} max={progress.max} /><span>{progress.text}</span></div>}
-        {askFrequency && <div className="row">
+        {/* A form (branch record SIF-92): Enter in the box saves as the row's Save as does, under the same rule; Escape
+            is Cancel. */}
+        {askFrequency && <form className="row" onSubmit={e => { e.preventDefault(); if (frequencyValue > 0 && canSave) save({ expected_frequency_hz: frequencyValue }); }}
+          onKeyDown={e => { if (e.key === 'Escape') stopAsking(); }}>
           <label title="Rough is enough: it only sizes the transient (60 periods, measured after 20).">Rough oscillation frequency
             <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>
-          <button className="primary" disabled={!(frequencyValue > 0) || !canSave} onClick={() => save({ expected_frequency_hz: frequencyValue })} title="Save as: Keeps the chosen name and saves with this frequency."><Icon name="task" label="Save as" /></button></div>}
+          <button type="submit" className="primary" disabled={!(frequencyValue > 0) || !canSave} title="Save as: Keeps the chosen name and saves with this frequency. Enter in the box does the same."><Icon name="task" label="Save as" /></button>
+          <button type="button" disabled={!!busy} onClick={stopAsking} title="Cancel: Nothing is saved. Save as asks for a name again, with the one you chose suggested.">Cancel</button></form>}
         {newer && <div className="task-save-newer">
           <p className="warn">{newer.message}</p>
           <div className="row">

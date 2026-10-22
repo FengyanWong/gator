@@ -17,8 +17,9 @@
 //     `work_here` and the cell becomes the one the flow works in - the window says so; no "Make a working copy" anywhere;
 //     a cell without a testbench cannot be read - Read is off and says why, nothing asked or sent (branch record SIF-88); the
 //     header's title names the cell, not the last task; reading it again asks nothing;
-//   - Save as (no Save task) from the window's cell, the task then named on the tab line, what happened said under the
-//     toolbar; Check now on the tab line before Save as, what it checks in its tooltip, its result under the toolbar; Delete
+//   - Save as (no Save task) from the window's cell - after a refusal it offers the name refused; the rough frequency's
+//     question takes Enter, Cancel and Escape (branch record SIF-92) -, the task then named on the tab line, what happened
+//     said under the toolbar; Check now on the tab line before Save as, what it checks in its tooltip, its result under the toolbar; Delete
 //     task in the Tasks window; a cell that already has a task, a built-in cell; a blocked gate and an older backend are readable.
 // Needs a configured connection profile (the page selects the active one; reading the profiles probes nothing).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
@@ -356,12 +357,45 @@ await runChecks(browser, async () => {
   names.push('ota5_v1');
   mark = calls.length;
   await evaluate(`${TASK_BUTTON('Save as')}.click()`); await quiet();
+  check('after the refusal, Save as offers the name refused, not a numbered one (branch record SIF-92)', naming[1]?.defaultPrompt === 'refuse_me', JSON.stringify(naming[1]));
   check('the chosen name is sent; the ring oscillator\'s frequency is then asked once', calls.slice(mark).map(c => c.name).join() === 'ota5_v1'
     && (await taskText()).includes('needs a rough expected oscillation frequency') && !!(await evaluate(`!!(${TASK_LABEL('Rough oscillation frequency')})`)), JSON.stringify(calls.slice(mark)));
+  // Branch record SIF-92: the question is a form - Enter in the box saves, Cancel or Escape ends it with nothing saved, the
+  // chosen name kept for the next Save as. The tab line's Save as stays off while it asks.
+  const ROUGH = `${TASK_LABEL('Rough oscillation frequency')}?.closest('form')`;
+  const ROUGH_BUTTON = t => `[...(${ROUGH}?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === ${JSON.stringify(t)})`;
+  const pressKey = async (key, code) => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key, code: key, windowsVirtualKeyCode: code,
+    nativeVirtualKeyCode: code, text: type === 'keyDown' && key === 'Enter' ? '\r' : undefined }); };
+  const asking = await evaluate(`({ save: ${ROUGH_BUTTON('Save as')}?.type, cancel: ${ROUGH_BUTTON('Cancel')}?.type, cancelOff: ${ROUGH_BUTTON('Cancel')}?.disabled,
+    bar: ${TASK_BUTTON('Save as')}.disabled })`);
+  check('the question is a form: its Save as submits, a Cancel stands beside it, and the tab line\'s Save as is off meanwhile', asking.save === 'submit'
+    && asking.cancel === 'button' && asking.cancelOff === false && asking.bar === true, JSON.stringify(asking));
   await typeTask('Rough oscillation frequency', '1.2G'); await sleep(300);
   mark = calls.length;
-  await evaluate(`[...${TASK}.querySelectorAll('.task-notes button')].find(b => b.textContent.trim() === 'Save as').click()`); await quiet();
-  check('1.2G = 1.2e9 Hz is sent with the rows, never as_new', calls.slice(mark).length === 1 && calls[mark].extras?.expected_frequency_hz === 1.2e9 && calls[mark].as_new === false
+  await evaluate(`${ROUGH_BUTTON('Cancel')}.click()`); await sleep(400);
+  check('Cancel ends the question and its message, sends nothing, and the tab line\'s Save as is on again', calls.length === mark && !(await evaluate(`!!(${ROUGH})`))
+    && !(await taskText()).includes('needs a rough expected oscillation frequency') && !(await evaluate(`${TASK_BUTTON('Save as')}.disabled`)), JSON.stringify(calls.slice(mark)));
+  names.push('ota5_v1');
+  await evaluate(`${TASK_BUTTON('Save as')}.click()`); await quiet();
+  check('the next Save as offers the name chosen before Cancel; the question comes again, its box empty', naming[2]?.defaultPrompt === 'ota5_v1'
+    && calls.slice(mark).map(c => c.name).join() === 'ota5_v1' && (await evaluate(`${TASK_LABEL('Rough oscillation frequency')}?.querySelector('input').value`)) === '',
+    `${JSON.stringify(naming[2])} / ${JSON.stringify(calls.slice(mark).map(c => c.name))}`);
+  mark = calls.length;
+  await evaluate(`${TASK_LABEL('Rough oscillation frequency')}.querySelector('input').focus()`);
+  await pressKey('Escape', 27); await sleep(400);
+  check('Escape in the box is Cancel: nothing sent, the question gone, Save as on', calls.length === mark && !(await evaluate(`!!(${ROUGH})`))
+    && !(await evaluate(`${TASK_BUTTON('Save as')}.disabled`)), JSON.stringify(calls.slice(mark)));
+  names.push('ota5_v1');
+  await evaluate(`${TASK_BUTTON('Save as')}.click()`); await quiet();
+  await typeTask('Rough oscillation frequency', 'fast'); await sleep(300);
+  mark = calls.length;
+  await pressKey('Enter', 13); await sleep(600);
+  check('Enter with a frequency that does not read sends nothing (the row\'s Save as is off); the question stays', calls.length === mark && !!(await evaluate(`!!(${ROUGH})`))
+    && (await evaluate(`${ROUGH_BUTTON('Save as')}.disabled`)), JSON.stringify(calls.slice(mark)));
+  await typeTask('Rough oscillation frequency', '1.2G'); await sleep(300);
+  mark = calls.length;
+  await pressKey('Enter', 13); await quiet();
+  check('1.2G and Enter: 1.2e9 Hz is sent with the rows, never as_new', calls.slice(mark).length === 1 && calls[mark].extras?.expected_frequency_hz === 1.2e9 && calls[mark].as_new === false
     && Array.isArray(calls[mark].config?.parameters), JSON.stringify(calls.slice(mark)));
   check('the new task is opened: the task row on the tab line names it', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:ota5_v1', await value('Task'));
   check('the task\'s lines under the toolbar say what happened, in which cell, and what comes first', (await statusText()).includes('Saved the new task real:ota5_v1')
@@ -510,7 +544,8 @@ await runChecks(browser, async () => {
     && (await value('Task')) === 'synthetic:gpdk045_ota5' && !(await evaluate(`!!(${LAUNCH})`)));
 
   check('first-save naming suggests the cell name with numbering', naming[0]?.defaultPrompt === 'ota5_v1_2' && naming.every(p => p.planned), JSON.stringify(naming));
-  check('frequency retry keeps the chosen name without another prompt', naming.length === 2);
+  // The refusal, the save Cancel ended, the one Escape ended, and the one sent with its frequency (no prompt of its own).
+  check('frequency retry keeps the chosen name without another prompt', naming.length === 4, JSON.stringify(naming.map(p => p.defaultPrompt)));
   check('every question on screen was planned by this check', dialogs.every(d => d.planned), JSON.stringify(dialogs.filter(d => !d.planned)));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
   console.log(`INFO  other writing requests the page sent on its own, all refused here: ${[...new Set(page.refused)].join(', ') || 'none'}`);

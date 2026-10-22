@@ -2511,3 +2511,33 @@ Start or Resume was sent, or while the header's run worked, and set the root und
 the list holds only "trial__abcdef012345" ("1 run, MOCK"), the real one typed gets the line above, and the MOCK one
 picked gets no hint. `run_control_check` 157 (155 before): a list opened while idle has "Use this folder" on; once
 Start is on its way it is off, and a press leaves the root as it was. `room_check` 29, `module_fold_check` 30. No flakes.
+
+### SIF-92 Save as keeps a refused name, and the rough-frequency question has Enter and Cancel (2026-10-22; from the usability audit)
+
+**Found.** After the backend refused a save (a range that does not hold the present value, a grid problem), the next
+Save as offered the numbered name again (`<cell>_2`): the name the user had typed was lost at each refusal, and
+refusals are frequent while a task is set up (audit finding J1-9). A ring oscillator's save stops to ask for its rough
+oscillation frequency under the toolbar. That row had no Cancel, Enter in its box did nothing, and the tab line's Save as
+stays off while it asks, so a user who meant another name, or no save, was held there until another task or cell
+(J6-13).
+
+**Changed.** `frontend/src/panels/TaskSave.tsx`: Save as proposes the name chosen for the last save when that save was
+not made - a chosen name that is valid and not in the task list (another task or cell clears the choice, and a saved
+name is listed). Otherwise it proposes the numbered name as before; a cell's first proposal stays `<cell>_2` (record
+7.246). The tab line's tooltip says "(after a refused save, the name chosen for it)"; its frequency wording stays as
+SIF-68 left it. The frequency row is a form. Enter in the box saves as the row's Save as does, under the same rule (a
+frequency that reads, a connection, no save under way); the row's Save as is its submit button. A new **Cancel** (and
+Escape in the box) ends the question, its box and its message: nothing is saved, and the tab line's Save as is on again.
+Cancel is off while the save with a frequency is under way. Cancel keeps the chosen name, unlike the audit's plan
+(`setChoice(null)`): with J1-9 the next Save as offers it, which is what a user who stopped to change the name needs.
+Nothing is saved or written to Virtuoso without the same press as before. `docs/workbench.md` (Saving a task) and
+`docs/functionality-reference.md` (Save as) say so. Not done: focus moving to the box when the question comes, or back
+to Save as after Cancel; that is keyboard work for batch 27.
+
+**Checked.** `tsc` clean. `virtuoso_source_check` 104 (98 before). After the `refuse_me` refusal, the next prompt
+offers "refuse_me". The question is a form whose Save as is a submit button with a Cancel beside it, and the tab line's
+Save as is off. Cancel sends nothing, takes the row and its message away, and turns Save as on. The next prompt offers
+"ota5_v1" and the question comes back with an empty box. Escape in the box does what Cancel does. "fast" and Enter send
+nothing and leave the question. "1.2G" and Enter send 1.2e9 Hz, never as_new. Four prompts in all
+(`ota5_v1_2`, `refuse_me`, `ota5_v1`, `ota5_v1`). `task_save_check` 76, `project_help_check` 50,
+`ngspice_window_check` 43, `calibration_save_check` 22, `unsaved_rows_check` 25. No flakes.

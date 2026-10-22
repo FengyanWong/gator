@@ -3296,12 +3296,17 @@ starting with the original task name plus numbering: `ota` → `ota_2`, then `ot
 A numbered copy continues the sequence when its original is still listed. The first save of an unsaved cell uses
 its cell name with numbering too. Names use 2–40 lowercase letters, digits and underscores, beginning with a letter;
 the suggestion leaves room for its suffix. Invalid or occupied names are explained in the prompt. Cancel writes
-nothing. If the task list cannot be read, the error is shown and no save is sent.
+nothing. If the task list cannot be read, the error is shown and no save is sent. After a save the backend refused
+(a range, the grid, the probes), the next press offers the name chosen for that save, not a numbered one (branch
+record SIF-92); another task or cell, or a name now in the list, brings the numbered name back.
 
 On a saved task, the existing `as_new` API creates a separate task at revision 1, with renamed DUT/testbench copies
 inside its working library; the source task and its recorded baseline remain unchanged. A first save from a cell
 uses the copy the user declared when reading it. The successful new task is selected automatically. The prompt
-explains the copy, and the existing save progress includes that step. A frequency retry retains the chosen name.
+explains the copy, and the existing save progress includes that step. A frequency retry retains the chosen name:
+a ring oscillator's save asks for its rough oscillation frequency under the toolbar, the tab line's Save as off
+meanwhile. Enter in the box, or the row's own Save as, saves with it under the chosen name; **Cancel** (or Escape)
+ends the question with nothing saved, and the next Save as offers that name again (branch record SIF-92).
 
 **Where.** At the right end of the editors' tab line (Parameters | Probes | Specs), beside **Task file**. An open task
 also shows "Task real:<name>, revision N". The former inline **New task name** box is gone: naming happens in the

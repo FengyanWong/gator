@@ -102,6 +102,17 @@ await runChecks(browser, async () => {
   const best = status.best_design;
   check('... the "Best design" tile gives its reward, and the hard violation only while it misses (SIF-76)', !best ? bestTile === 'none'
     : (best.reward == null || / reward -?\d/.test(bestTile ?? '')) && /hard violation/.test(bestTile ?? '') === !best.feasible, `${bestTile} | feasible ${best?.feasible}, reward ${best?.reward}`);
+  // Branch record SIF-98, on the same real MOCK run: the ended run's working time under the bar, apart from the budget's words
+  // above it (no "so far", no time left: it stood in the run brief alone), and the best design's variables, as the Runs
+  // window's Details list them, in their order.
+  const heroTime = await evaluate(`document.querySelector('.status-grid .status-hero-count > .status-hero-time')?.textContent ?? null`);
+  check('... under the bar the ended run\'s working time, "Duration <time>", with no "so far" and no time left (SIF-98)', status.active_seconds == null ? heroTime === null
+    : /^Duration (\d+ s|\d+ min \d\d s|\d+ h \d\d min)$/.test(heroTime ?? ''), `${heroTime} | active_seconds ${status.active_seconds}`);
+  const ids = Array.isArray(best?.variables) ? best.variables.map(v => v.variable_id) : Object.keys(best?.variables ?? {});
+  const literal = text => String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  check('... "Best design variables" names each variable of the best design in its order, "<id> = <value>", "Click to copy" (SIF-98)', !ids.length ? !facts['Best design variables']
+    : new RegExp(`^${ids.map(id => `${literal(id)} = [^;]+`).join('; ')}$`).test(facts['Best design variables']?.text ?? '') && facts['Best design variables'].title === 'Click to copy',
+    `${facts['Best design variables']?.text} | ${ids.join(', ')}`);
   await shot('export-1-status.png');
 
   // ---- 1 Logs: the whole file, not the newest 200 entries --------------------------------------------------------------------------------------

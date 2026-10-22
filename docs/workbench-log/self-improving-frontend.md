@@ -2830,3 +2830,45 @@ differing values and their comparison back, and Ctrl+Y applies the template's va
 before the fix, the Ctrl+Z check fails. Also run, unchanged: `model_chooser_check` 98, `typing_check` 50,
 `encoder_models_check` 24, `model_structure_check` 31, `network_inputs_check` 9 (6 scripts, 284 checks, one lane). No
 flakes.
+
+### SIF-98 The time left and the best design's sizes without opening a window (2026-10-22; from the usability audit)
+
+**Found.** The working time and "about N min left" of a run stood only on its card in the Running now window. Run status
+showed the count and the bar, the header's run chip the count, and its tooltip the run folder. The user always asks for
+that number, and had to open a window each time to read it (J3-5). Run status listed the best design's state, values,
+conditions and margin, but not its variables, the device sizes a sizing run is for, although the same status holds them.
+They were in the Runs window's Details alone: open the window, find the run among hundreds, press Details, or download
+`best_design/parameters.csv` (J4-4).
+
+**Changed.** `frontend/src/format.ts`: `timeLine(working, used, total, live)` is the run brief's line, moved out of
+`RunBrief.tsx` with its wording: "Duration 5 min 01 s so far · about 10 min 02 s left" while the run works, "Duration
+29 min 50 s" at rest, nothing before any working time. `TIME_LINE_HELP` is its tooltip. `frontend/src/panels/RunBrief.tsx`
+uses it, with the same text as before. `frontend/src/panels/RunTabs.tsx`: Run status says the line under the bar
+(`.status-hero-time`), apart from the budget's words above it, live by the brief's rule (`cardLive`), so the two agree
+on one status. Its tooltip says how the time left is worked out. `frontend/src/panels/RunControl.tsx`: the run chip's
+tooltip ends with the line, from the header's own status of that run; the chip's text stays the count.
+`frontend/src/units.ts`: `inUnit`, `pairs` and `variables`, moved from `RunList.tsx` with the same output. A value that
+is not a number is written as `short` writes it, inline: `unit_text_check` imports `units.ts` into node as it is, and
+an import of `format.ts` does not resolve there. `frontend/src/panels/RunList.tsx` imports them. Run status has a "Best
+design variables" row after the best design's values, with the Details' text ("input_pair_width = 2.34558 um;
+load_capacitance = 250 fF"). A click copies it and says "copied" (or "could not copy") for 1.5 s, as the Run folder does.
+`frontend/src/roadster.css`: the time line is in the hint's grey and size, and the row's cell shows the copy cursor. Not
+done: the verdict's optional "searched variables first". The row keeps the Details' order, so the two read alike.
+Display only: nothing here starts, pauses or continues a run, saves a task or writes to Virtuoso. `docs/workbench.md`
+(the header chip, Run status at a glance, a copy says how it went) and `docs/functionality-reference.md` (Run brief and
+Run status rows) describe it.
+
+**Checked.** `tsc` clean. `run_control_check` 160 (158 before): with the live run's status giving 301 s of working time,
+Run status reads "Duration 5 min 01 s so far · about N left" under the bar. The chip's tooltip ends with the same line
+after "(record 7.264).", it ended there while the status gave no working time, and the chip's text is still the count.
+The brief's own time-line checks pass unchanged. `run_list_check` 140 (137 before): the paused run shown in Run status
+lists "input_pair_width = 2.34558 um; load_capacitance = 250 fF" after "Recorded values", titled "Click to copy". A click
+copies that text and says "copied", then reads it alone again. Under the bar it says "Duration 29 min 50 s", with no "so
+far" and no time left. The Details' pinned text passes through the moved helper. `export_check` 33 (31 before): on a real
+MOCK run, the hero's budget words still read "evaluations used · 0 in flight · 0 failed", and the time line under the bar
+reads "Duration 3 s". "Best design variables" names each of the best design's variables in order and says "Click to
+copy". The new checks look for an element and a row that the code before the change does not have, so they fail there.
+`unit_text_check` 14: the first run stopped at the import of `format.ts` from `units.ts` (node: module not found). With
+the value written inline it passes, and so do `run_list_check` and `export_check` again. Also run, unchanged:
+`calibration_check` 38, `run_control_live_check` 23, `dom_identity_check` 56, `save_now_check` 29, `looks_check` 75,
+`task_list_check` 89 (imports `format.ts` into node), `room_check` 30 (11 scripts, one lane). No flakes.

@@ -4,14 +4,14 @@ import { Blocked, PopupPortal } from './popupParts';
 import { RUNS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { tasksShared } from '../shared';
-import { bytes, clock, durationTenths as span, folderName, plural, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, short, sig, stamp, stopWords } from '../format';
+import { bytes, clock, durationTenths as span, folderName, plural, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, sig, stamp, stopWords } from '../format';
 import { CONTINUE_STATES, isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
 import { childrenOf, historyOf, startedFrom } from '../lineage';
 import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
 import { MODE_NAME, runDesign, runMode } from './rlModelText';
-import { quantity } from '../units';
+import { pairs, variables } from '../units';
 
 /** An experiment's folder by its name (branch record SIF-4): the folder's hash ("__ae6e1ae24977") only in the tooltip, and a
  *  line may break after "-" or "_" - the column wrapped "r5-dffr-powermid-bodata-s2_ae6e1a / e24977" between any letters. */
@@ -55,13 +55,6 @@ const keepDates = (text: string) => text.split(/(\d{4}-\d\d-\d\d)/).map((part, i
  *  Cancel at the edits question or a model that cannot be read leaves it open, with the reason on the page and here (branch
  *  record SIF-84). Clear, Details, the folders and the links inside the window keep it open. */
 
-// Values in their units, as the editors and Run status write them (branch record SIF-39: "input_pair_width=2.34558e-6 m"):
-// a result to three digits, a size to six; a ratio without a "1".
-const inUnit = (v: Json, unit: string | null | undefined, digits: number) => typeof v === 'number'
-  ? (unit && unit !== '1' ? quantity(v, unit, digits) : String(Number(v.toPrecision(digits)))) : short(v);
-const pairs = (values: Json, units?: Json) => Object.entries(values ?? {}).map(([k, v]) => `${k} = ${inUnit(v, units?.[k], 3)}`).join('; ');
-// A best design lists its variables as [{ variable_id, value, unit }].
-const variables = (list: Json) => Array.isArray(list) ? list.map((v: Json) => `${v.variable_id} = ${inUnit(v.value, v.unit, 6)}`).join('; ') : pairs(list);
 // `state`: what the page's own status poll says now - the list row keeps the state of its last read ("starting").
 // The run shown, left of Runs...: its start, task, Mode (as the RL model window names it), seed and state, set apart by "·"
 // as the page's other lines are (branch record SIF-6: "2026-10-16 16:32:51 | mscr_vco_lin_c | scratch seed0 | completed").

@@ -1,8 +1,8 @@
 import { Icon, IconName } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, plainError } from '../api';
-import { folderName, plural, runTask, stopWords } from '../format';
-import { ENDED, type Pending, type Phase, type RunControl } from '../runState';
+import { folderName, plural, runTask, stopWords, timeLine } from '../format';
+import { cardLive, ENDED, type Pending, type Phase, type RunControl } from '../runState';
 
 /** The header's run buttons (user request 2026-09-21): ONE main button that reads Start -> Pause -> Resume, and
  *  Abort next to it. Nothing new happens in the backend; the buttons drive what the engine already does:
@@ -123,11 +123,16 @@ export function RunChip({ control, onChip, takeover = null, task = null }: { con
   const { dir, status, phase, forced } = control;
   const now = stateOf(phase, dir ? status : null);
   const note = describe(status, phase, forced);
+  // The working time and the time left at the end of the tooltip, as the run brief's card for this run says them (branch
+  // record SIF-98: they stood only in that window); the chip's text stays the count. The status only when it is this run's,
+  // as the brief takes it.
+  const own = status?.run_dir === dir ? status : null;
+  const time = own ? timeLine(own.active_seconds, own.budget?.charged, own.budget?.max_evaluations, cardLive(own, null)) : null;
   return (<div className="run-state">
     <span className="run-state-strip" role="img" aria-label={`Run state: ${now.toLowerCase()}`}>
       {STATES.map(s => <span key={s} aria-hidden="true" className={s === now ? 'on' : undefined}>{s}</span>)}</span>
     {dir && note && <button className={`run-chip ${phase}`} onClick={onChip}
-      title={`The current run${task ? `, a run of ${task}` : ''}: ${dir}\nPress for the run brief: this run and every other live run, each with Show results and Open in Runs (record 7.264).`}>
+      title={`The current run${task ? `, a run of ${task}` : ''}: ${dir}\nPress for the run brief: this run and every other live run, each with Show results and Open in Runs (record 7.264).${time ? `\n${time}` : ''}`}>
       {task && <><b>{task}</b>{' · '}</>}{note}</button>}
     {dir && takeover?.dir === dir && <span className="run-taken" title={takeover.text}>{takeover.label}</span>}
   </div>);

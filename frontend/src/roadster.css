@@ -194,6 +194,10 @@ table.editor td:has(> input[type="checkbox"]) { vertical-align: middle; }   /* a
 /* how the run stands (branch record SIF-3): red while it runs - the current run - white once completed, grey paused or stopped,
    the error red when it failed; a completed run's red bar read as an error */
 .status-hero-bar.done > span { background: var(--text); } .status-hero-bar.rest > span { background: #8e8e96; } .status-hero-bar.bad > span { background: var(--bad-fill); }
+/* the working time and the time left under the bar, in the hint's grey and size (branch record SIF-98); the best design's
+   sizes copy by a click, as the Run folder does */
+.status-hero-time { color: var(--muted); font-size: 13px; }
+.status-grid td.copy-cell { cursor: copy; }
 /* what went wrong, then Continue... and Export status - with its form or refusal - between the head and the facts (branch
    record SIF-89): the reason close under the bar, the buttons a little apart from the table they used to follow */
 .status-grid > .status-error { margin: -4px 0 8px; overflow-wrap: anywhere; }

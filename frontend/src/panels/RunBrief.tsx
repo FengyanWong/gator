@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, Json } from '../api';
-import { clock, durationWhole as span, folderName, runTask, sig, taskNameOf } from '../format';
+import { clock, durationWhole as span, folderName, runTask, sig, taskNameOf, timeLine, TIME_LINE_HELP } from '../format';
 import { startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { usePopupWindow } from './popupWindow';
@@ -30,8 +30,6 @@ function BriefCard({ dir, row, status, header, byDir, from, onShow }: { dir: str
   const used: number | null = budget?.charged ?? row?.evaluations ?? null, total: number | null = budget?.max_evaluations ?? row?.max_evaluations ?? null;
   const live = cardLive(status, row);
   const working: number | null = status?.active_seconds ?? row?.active_seconds ?? null;
-  // The time left, once the rate is known: working time per evaluation so far, times the evaluations left.
-  const left = live && used && total && working && used > 0 && total > used ? working / used * (total - used) : null;
   const first = status?.first_feasible?.first_feasible_eval_count ?? row?.first_feasible_eval_count ?? null;
   const best = status?.best_design;
   const mock = status?.mock ?? status?.manifest?.mock ?? row?.mock;
@@ -50,9 +48,9 @@ function BriefCard({ dir, row, status, header, byDir, from, onShow }: { dir: str
       <span className="brief-bar"><span style={{ width: `${share}%` }} /></span>
       <span className="brief-count">{used ?? '?'} / {total ?? '?'} evaluations</span></div>
     {/* the working time as the Runs window's Duration names it, "so far" while live (branch record SIF-78: "worked 5 min 01 s"
-        here, "4 min 23 s so far" there, for one number); not "Running for" - the header's card can be a paused or ended run */}
-    <div className="hint brief-time" title="How long the run was actually working. The time it sat paused is not counted.">
-      {[span(working) && `Duration ${span(working)}${live ? ' so far' : ''}`, left != null && `about ${span(left)} left`].filter(Boolean).join(' · ') || 'No working time yet'}</div>
+        here, "4 min 23 s so far" there, for one number); not "Running for" - the header's card can be a paused or ended run.
+        The line is format.ts timeLine, which Run status and the run chip show too (branch record SIF-98). */}
+    <div className="hint brief-time" title={TIME_LINE_HELP}>{timeLine(working, used, total, live) ?? 'No working time yet'}</div>
     <div>{first != null ? `First feasible design at evaluation ${first}` : 'None feasible yet'}
       {/* three digits, as Run status writes it (SIF-44: "reward -0.0370463") */}
       {best ? ` · best so far: ${typeof best.reward === 'number' ? `reward ${sig(best.reward)}` : 'no reward recorded'}${best.feasible ? ', meets every spec' : ''}` : ''}</div>

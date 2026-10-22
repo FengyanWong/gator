@@ -143,7 +143,9 @@ started with." - branch record SIF-72). Run configuration's model line and this 
   it as a small outlined button beside the lit state ("12 of 60 evaluations", "at 12 of 60 evaluations" when paused,
   "completed at 60 of 60 evaluations"; press it for the run brief, below). When the run is of another task than the one
   the title names - a run taken over when the page opened - the chip names that task first ("graphgps_ldo1 · 270 of 800
-  evaluations"), and so does Abort's question (branch record SIF-72). It is not the run chosen
+  evaluations"), and so does Abort's question (branch record SIF-72). Its tooltip ends with the run's working time and,
+  while it works, the time left - "Duration 5 min 01 s so far · about 10 min 02 s left", the run brief's line - so the
+  number is read by hovering, without opening a window (branch record SIF-98). It is not the run chosen
   in the list of the bottom tabs: looking at an older run's data never takes Pause and Abort away from a live run. While
   the header's run works or is paused and the tabs show another, their line says "Shown: ..." and offers "Show the
   header's run" beside it.
@@ -288,7 +290,11 @@ switch are gone; every panel, button and field stands where it stood.
   status opens with the run at a glance: its state, the evaluations used as a large number with a bar, and four numbers
   (Spectre launches, learner updates, the first feasible design, the best design); the table below holds them all. The bar
   is red while the run runs (the current run), white once it completed, grey paused or stopped, the error red when it
-  failed (branch record SIF-3; a completed run's red bar read as an error).
+  failed (branch record SIF-3; a completed run's red bar read as an error). Under the bar stands the run's working time,
+  "Duration 29 min 50 s", with "so far" and the time left while the run works, as the run brief's card says it (branch
+  record SIF-98: it stood only there). Below the best design's values, the table lists its variables - the device sizes -
+  as the Runs window's Details do ("input_pair_width = 2.34558 um; load_capacitance = 250 fF"); a click copies them and
+  says "copied" (branch record SIF-98: they were in the Details alone).
 - The page never scrolls as a whole (SIF-3): the bottom panel's and the run column's scroll areas hold what is placed in
   them - an icon button's screen-reader label at the end of a long Run status had been placed by the footer, below the
   window, and the whole page scrolled about 500 px. Run configuration's model line is in the body font on two lines at
@@ -410,7 +416,7 @@ no splitter.
 is long; hovering shows the whole value and a click copies it. A time keeps its full width, no word is cut in two, and
 a JSON value has a column of bounded width of its own.
 
-**A copy says how it went** (branch record SIF-94). Run status's Run folder, Output settings' **Copy path** (the word just
+**A copy says how it went** (branch record SIF-94). Run status's Run folder and best design variables (SIF-98), Output settings' **Copy path** (the word just
 before it) and its Current run paths, and the folders of the RL model window say "copied" where they were clicked, for
 1.5 s, or "could not copy" when the browser refused the clipboard (its tooltip: select the text and copy it with Ctrl+C).
 Data tables' cells and Output files' **Copy run path** say it on their tool line ("Copied run_id.", "Copied the run

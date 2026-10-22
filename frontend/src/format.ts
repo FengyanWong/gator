@@ -59,6 +59,18 @@ export const durationWhole = (seconds?: number | null) => {
   const t = Math.round(seconds), h = Math.floor(t / 3600);
   return h ? `${h} h ${two(Math.floor(t % 3600 / 60))} min` : t >= 60 ? `${Math.floor(t / 60)} min ${two(t % 60)} s` : `${t} s`;
 };
+/** A run's working time as the Runs window's Duration names it, "so far" while `live`, then - once the rate is known - the
+ *  time left: the working time per evaluation used so far, times the evaluations left (branch record SIF-78): "Duration 5 min
+ *  01 s so far · about 10 min 02 s left"; null before any working time. The run brief's line, out of RunBrief.tsx so Run
+ *  status and the header's run chip say the same (branch record SIF-98: the one number asked for most stood only in that
+ *  window). */
+export const timeLine = (working: number | null | undefined, used: number | null | undefined, total: number | null | undefined, live: boolean): string | null => {
+  const left = live && used && total && working && used > 0 && total > used ? working / used * (total - used) : null;
+  return [durationWhole(working) && `Duration ${durationWhole(working)}${live ? ' so far' : ''}`, left != null && `about ${durationWhole(left)} left`]
+    .filter(Boolean).join(' · ') || null;
+};
+/** What timeLine's working time counts, for its tooltip. */
+export const TIME_LINE_HELP = 'How long the run was actually working. The time it sat paused is not counted.';
 
 // ---- a run's task and state, as the run window and the Training tab word them -------------------------------------------------
 /** A run's task, as the run window names it: its task name, else its task id up to ':', else "unknown task" (RunList.tsx). */

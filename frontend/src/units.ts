@@ -192,3 +192,16 @@ export function readQuantity(text: string, unit: string | null | undefined): { v
  *  One of the page's ways of writing a number with format.ts's `short` (review of 2026-09-23); moved from api.ts (C10). */
 export const si = (value: unknown, unit?: string | null): string =>
   typeof value !== 'number' || !Number.isFinite(value) ? '-' : quantity(value, unit, 4);
+
+// A run's values in their units, as the editors and Run status write them (branch record SIF-39: "input_pair_width=2.34558e-6
+// m"): a result to three digits, a size to six; a ratio without a "1". Out of RunList.tsx, so Run status lists the best
+// design's sizes as the Runs window's Details do (branch record SIF-98).
+/** One value in its unit, to `digits` significant digits; a value that is no number as format.ts `short` writes one, as it
+ *  is (written out here: unit_text_check imports this file into node as it is, where an import of format.ts would not resolve). */
+export const inUnit = (v: Json, unit: string | null | undefined, digits: number) => typeof v === 'number'
+  ? (unit && unit !== '1' ? quantity(v, unit, digits) : String(Number(v.toPrecision(digits)))) : v == null ? '' : String(v);
+/** Results by name: "gain_db = 41.5; ugbw = 1.28 GHz". */
+export const pairs = (values: Json, units?: Json) => Object.entries(values ?? {}).map(([k, v]) => `${k} = ${inUnit(v, units?.[k], 3)}`).join('; ');
+/** A best design's variables, a list of { variable_id, value, unit } as the engine writes it (or a plain map): "input_pair_width
+ *  = 2.34558 um; load_capacitance = 250 fF". */
+export const variables = (list: Json) => Array.isArray(list) ? list.map((v: Json) => `${v.variable_id} = ${inUnit(v.value, v.unit, 6)}`).join('; ') : pairs(list);

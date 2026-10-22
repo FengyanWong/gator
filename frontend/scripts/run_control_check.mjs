@@ -23,6 +23,8 @@
 // under the header, and Run status leads with the reason in red, then Continue... and Export status, above its facts.
 // Branch record SIF-91: Output settings' output root locks while the header's run starts or works, whatever run the tabs show;
 // "Use this folder" in a folder list opened before the Start too (SIF-91 review; GET /api/output/browse answered with a FIXTURE).
+// Branch record SIF-98: Run status, under its bar, and the end of the run chip's tooltip give the run brief's working time and
+// time left.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -395,6 +397,16 @@ await runChecks(browser, async () => {
   elsewhereListed = false;
   await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Show results').click()`);
   check('Show results in the brief shows the run under Run status again', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})`));
+  // Branch record SIF-98: the working time and the time left stood in the brief alone, a window to open for the one number asked
+  // for most. Run status says them under the bar, apart from the budget's words; the chip's tooltip ends with them (its text
+  // stays the count), and added nothing while the status gave no working time.
+  const HERO_TIME = `(document.querySelector('.status-grid .status-hero-count > .status-hero-time')?.textContent ?? '')`;
+  check('... and says under the bar what the brief says: "Duration 5 min 01 s so far · about N left" (SIF-98)',
+    await until(`/^Duration 5 min 01 s so far · about \\d.* left$/.test(${HERO_TIME})`, 50), await evaluate(HERO_TIME));
+  const chipTime = await evaluate(`({ title: ${CHIP}.title, text: ${CHIP}.textContent })`);
+  check('... the header chip\'s tooltip ends with the same line after what it said; its text stays the count; before the working time was known it ended at "(record 7.264)." (SIF-98)',
+    chipTime.title.startsWith(`The current run, a run of fixture_task: ${DIR}\nPress for the run brief:`) && /\(record 7\.264\)\.\nDuration 5 min 01 s so far · about \d.* left$/.test(chipTime.title)
+    && /^fixture_task · \d+ of 60 evaluations \[MOCK\]$/.test(chipTime.text) && chipLook.title.endsWith('(record 7.264).'), JSON.stringify([chipTime, chipLook.title]));
   await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Open in Runs').click()`, true);
   const runsTarget = await browser.window(RUNS_WINDOW).catch(() => null);
   const runsWindow = runsTarget && await browser.attach(runsTarget);

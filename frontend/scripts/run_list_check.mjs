@@ -18,6 +18,7 @@
 // Branch record SIF-64: a working run's "so far" may go under its time, so it does not widen the table. Branch record SIF-75:
 // names break between words or after "_", "-" or ".", never inside one, and "Started from" takes three lines at most. Branch
 // record SIF-84: a Load run that does not go through says why in the window as well (the edits question is task_run_check's).
+// Branch record SIF-98: a run shown in Run status lists its best design's variables as its Details do, and a click copies them.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -394,6 +395,21 @@ await runChecks(browser, async () => {
   // one read "feasible hard violation 0", always 0, and never its reward).
   const bestTile = await evaluate(`[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'Best design')?.querySelector('.key-tile-value')?.textContent ?? null`);
   check('Run status: the "Best design" tile reads "infeasible reward -0.25 · hard violation 0.125" (SIF-76)', bestTile === 'infeasible reward -0.25 · hard violation 0.125', bestTile);
+  // Branch record SIF-98: the best design's sizes in Run status as the Details list them (they stood there alone), after its
+  // values, copied by a click as the Run folder is; and the paused run's working time under the bar, with no "so far" and no
+  // time left.
+  const SIZES = `[...document.querySelectorAll('.status-grid > table tr')].find(tr => tr.cells[0].textContent === 'Best design variables')?.cells[1]`;
+  const SIZES_TEXT = 'input_pair_width = 2.34558 um; load_capacitance = 250 fF';
+  const sizes = await evaluate(`(() => { const c = ${SIZES}; return c ? { text: c.textContent, title: c.title, after: c.parentElement.previousElementSibling?.cells[0].textContent } : null; })()`);
+  check(`Run status lists the best design's variables as the Details do: "${SIZES_TEXT}", after its values, "Click to copy" (SIF-98)`,
+    sizes?.text === SIZES_TEXT && sizes.title === 'Click to copy' && sizes.after === 'Recorded values', JSON.stringify(sizes));
+  await evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: text => { window.__clip = text; return Promise.resolve(); } })`);
+  await evaluate(`${SIZES}.click()`, true);
+  check('... a click copies them and says "copied", then reads them alone again (SIF-98)', await until(`${SIZES}.textContent === ${JSON.stringify(`${SIZES_TEXT} copied`)}`, 20)
+    && (await evaluate('window.__clip')) === SIZES_TEXT && await until(`${SIZES}.textContent === ${JSON.stringify(SIZES_TEXT)}`, 40), await evaluate(`${SIZES}.textContent`));
+  await evaluate(`delete navigator.clipboard.writeText`);
+  const heroTime = await evaluate(`document.querySelector('.status-grid .status-hero-time')?.textContent ?? null`);
+  check('... and under the bar the paused run\'s working time, "Duration 29 min 50 s": no "so far", no time left (SIF-98)', heroTime === 'Duration 29 min 50 s', heroTime);
   await openWindow(); await far.send('Page.enable');
   far.on('Page.javascriptDialogOpening', () => far.send('Page.handleJavaScriptDialog', replies.shift() ?? { accept: false }));
   await nav(pilot); await sleep(200);

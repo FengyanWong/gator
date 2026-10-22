@@ -1,9 +1,9 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
-import { quantity, si } from '../units';
-import { bytes, CONNECTION_STATE, durationWhole, num, plural, runName, short, sig, stamp, stopWords } from '../format';
-import { ENDED, restingShown } from '../runState';
+import { quantity, si, variables } from '../units';
+import { bytes, CONNECTION_STATE, durationWhole, num, plural, runName, short, sig, stamp, stopWords, timeLine, TIME_LINE_HELP } from '../format';
+import { cardLive, ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
 import { requestTaskSave } from './TaskSave';
@@ -148,6 +148,12 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   // Continue... is worth a word while the run is at rest in a state it can go on from: a completed run too, once the
   // backend's continuation check can say whether a higher total is allowed (record 7.261).
   const resting = restingShown(status, check);
+  // The working time and the time left, as the run brief's card says them (branch record SIF-98: they stood only there, a
+  // window to open for the one number asked for most); live by the brief's rule, so the two agree on one status.
+  const time = b ? timeLine(status.active_seconds, b.charged, b.max_evaluations, cardLive(status, null)) : null;
+  // The best design's sizes, as the Runs window's Details list them (branch record SIF-98: the fact a sizing run exists for was
+  // there alone, a window, a run among hundreds and Details away); copied by a click, as the Run folder.
+  const sizes = best?.variables ? variables(best.variables) : '', sizesKey = `best design variables of ${status.run_dir}`;
   return (<div className="status-grid">
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
@@ -161,6 +167,8 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
           evaluations used · {b.in_flight} in flight · {b.failed} failed</span>
         <span className={`status-hero-bar${status.state === 'completed' ? ' done' : ['failed', 'cancelled', 'interrupted'].includes(status.state) ? ' bad'
           : ['paused', 'stopped'].includes(status.state) ? ' rest' : ''}`}><span style={{ width: `${b.max_evaluations ? Math.min(100, (100 * b.charged) / b.max_evaluations) : 0}%` }} /></span>
+        {/* under the bar, apart from the budget's words above it (export_check reads those whole) */}
+        {time && <span className="status-hero-time" title={`${TIME_LINE_HELP} The time left is the working time per evaluation so far, times the evaluations left.`}>{time}</span>}
       </div>
       <div className="key-tiles">
         <KeyTile label="Spectre launches" value={b.launches} after={`retries ${b.retries} · cache hits ${b.cache_hits}`} />
@@ -215,6 +223,8 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       {best && <tr><td>Conditions evaluated / planned</td><td>{best.conditions_evaluated ?? 'unknown'} / {best.conditions_planned ?? 'unknown'}</td></tr>}
       {best && <tr><td>{best.worst_metrics ? 'Worst applicable values' : 'Recorded values'}</td><td>{metricKeys.map(k => metric(k, (best.worst_metrics ?? best.metrics)[k])).join('; ')}</td></tr>}
       {best?.nominal_metrics && <tr><td>Nominal values</td><td>{nominalKeys.map(k => metric(k, best.nominal_metrics[k])).join('; ')}</td></tr>}
+      {sizes && <tr><td>Best design variables</td><td className="copy-cell" title="Click to copy" onClick={() => void copying.copyText(sizes, sizesKey)}>
+        {sizes}{copying.word(sizesKey)}</td></tr>}
       {/* Branch record SIF-54: "Tightest margin", as the Training tab's chart and the reward block's bonus name it (it read
           "Tightest clearance" here alone); the connection's state in the Connection window's words (it printed the key,
           "not_applicable", and an empty badge without one); what was saved, with the store's counters in the tooltip (it

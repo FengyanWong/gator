@@ -99,6 +99,15 @@ main button changes with the run:
 `Starting...`, `Pausing...`, `Resuming...`, `Aborting...` are the waiting states in between. On a real circuit
 `Pausing...` lasts as long as the rest of the simulation that is running.
 
+The line under the header says how a pause or an end came out, also when nobody pressed anything (branch record
+SIF-89; before, a run that completed, failed or paused by itself changed only the chip and the lit state): "Completed
+at 800 of 800 evaluations (budget used up). Its results are under Run status."; in red, "The run failed at 12 of 800
+evaluations: <its error>"; in red, "Paused by itself after connection failures; everything is saved. Test the
+connection (Connection button), then Resume." - never the user's "Resume continues from exactly there", which a pause
+after **Pause after N consecutive infrastructure failures** used to borrow while it saved. A user's Pause and Abort keep
+their own words. Only a change of the run the header already holds is said: taking a run over, letting go of one and
+the lookup after a reload say nothing.
+
 **What Start would start** stands beside it while it reads Start, in one line (record 7.269; plan
 [frontend run workflow](plan-frontend-run-workflow.md), "The draft"), and is the first sentence of its tooltip:
 "Next: mscr_ota7t · Fine-tune from ota7t (2) @ 420 · GT 48/4/4 · 800 evaluations" - the task (a saved task as the
@@ -151,7 +160,9 @@ started with." - branch record SIF-72). Run configuration's model line and this 
 * The run commands are in the header only (status record 7.109, 2026-09-29, user decision): the Run status tab's
   copies - Save now, Pause and save, Stop and save, Force cancel - went, as they did what Save now, Pause, Abort and
   Force abort do there. The tab keeps **Continue...** (a paused, stopped or interrupted run, with a new total budget) and
-  **Export status**. Continue waits, and says why, when the run folder holds no save point to go on from - a copy made
+  **Export status**, in one row right under the run at a glance, above the facts, with the budget form or a refusal under
+  them; a run's error stands in red between the run at a glance and that row, and stays the facts' last row too (branch
+  record SIF-89: both came after about 20 facts, out of sight in a panel that shows about four). Continue waits, and says why, when the run folder holds no save point to go on from - a copy made
   without its save points, or deleted ones (record 7.215: `GET /api/runs/status` names it as `save_point`) - and when
   that save point was written by an older version of the optimizer code: continuing needs exactly that version, while
   Fine-tune and Evaluate only still load its model (record 7.221: `save_point_code` `older`). A run that is live when the page opens - started from another browser or the CLI - is taken into

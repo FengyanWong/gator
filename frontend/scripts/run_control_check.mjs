@@ -19,6 +19,8 @@
 // Branch record SIF-83: Pause asks first on a run searched by Bayesian optimization (it cannot come back), and Force abort
 // says what it gives up: a waiting pause (no Resume or Continue... after it), or an abort's "stopped" end; on a run that
 // cannot come back anyway it advises no waiting (review of SIF-83).
+// Branch record SIF-89: a run that pauses after connection failures, completes or fails with no press says so on the line
+// under the header, and Run status leads with the reason in red, then Continue... and Export status, above its facts.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -32,8 +34,9 @@ const browser = await launchEdge('runcontrol');
 // ---- the simulated run (FIXTURE): one status "file" that the page polls, advanced by scripted steps ----------------
 const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed0__0001';
 // `active`: the working time the status gives (null until the run brief reads it, branch record SIF-78). `output` and
-// `run`: the run's own effective_config.json, as Pause reads it (`run.optimizer`: branch record SIF-83).
-const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, beat: 0, steps: [], output: {}, run: {}, starts: 0, calibration: null, active: null };
+// `run`: the run's own effective_config.json, as Pause reads it (`run.optimizer`: branch record SIF-83). `error`: the
+// status's error, as a run that fails or pauses by itself gives one (branch record SIF-89).
+const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, error: null, beat: 0, steps: [], output: {}, run: {}, starts: 0, calibration: null, active: null };
 const listed = () => sim.state ? [{ run_dir: DIR, run_id: 'fixture-run', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: sim.mock, seed: 0,
   created_utc: '2026-09-21T00:00:00+00:00', state: sim.state, experiment: 'fixture_experiment__0001', evaluations: null, first_feasible_eval_count: null, resumability: null }] : [];
 const statusOf = () => {
@@ -42,7 +45,7 @@ const statusOf = () => {
   else if (sim.alive && sim.state === 'running' && sim.charged < sim.max) sim.charged++;
   const at = new Date(Date.UTC(2026, 8, 21, 0, 0, 0) + 1000 * ++sim.beat).toISOString();
   return { state: sim.state, run_id: 'fixture-run', mode: 'scratch', entry: 'start', provenance: sim.mock ? 'mock' : 'real', mock: sim.mock, worker_alive: sim.alive,
-    run_dir: sim.dir, heartbeat_utc: at, stop_reason: sim.stop_reason, error: null, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: null,
+    run_dir: sim.dir, heartbeat_utc: at, stop_reason: sim.stop_reason, error: sim.error, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: null,
     budget: { max_evaluations: sim.max, max_launches: null, max_retries: 0, charged: sim.charged, reserved: 0, in_flight: sim.alive && sim.state === 'running' ? 1 : 0,
       completed: sim.charged, failed: 0, released: 0, remaining: sim.max - sim.charged, launches: sim.charged, retries: 0, cache_hits: 0, first_feasible: null },
     best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: sim.dir }, connection: { overall: 'not_applicable' }, summary: null, calibration: sim.calibration,
@@ -114,7 +117,7 @@ await runChecks(browser, async () => {
         if (name === '/api/runs/command') return fulfil(requestId, 200, { id: 'fixture', command: body.command });
         // Every Start makes a NEW run folder, as the backend does: the page polls a run that has ended for good only once a
         // minute (App.tsx, 2026-09-22), and a second Start into the same folder would never be seen as running again.
-        Object.assign(sim, { alive: true }, name === '/api/runs/start' ? { state: 'created', charged: 0, stop_reason: null, dir: sim.starts++ ? `${DIR}__${sim.starts}` : DIR } : {});
+        Object.assign(sim, { alive: true }, name === '/api/runs/start' ? { state: 'created', charged: 0, stop_reason: null, error: null, dir: sim.starts++ ? `${DIR}__${sim.starts}` : DIR } : {});
         return fulfil(requestId, 200, started());
       };
       if (holdNext === name) { holdNext = null; held = reply; return Promise.resolve(); }     // keep the request open: the "...ing" label is observable
@@ -421,6 +424,55 @@ await runChecks(browser, async () => {
   check('... and Run configuration no longer says it is for the next Start: the header\'s run has ended (SIF-72)', (await evaluate(NEXT_NOTE)) === null, await evaluate(NEXT_NOTE));
   check('... and Run status\'s "First feasible design" reads "none", not "none yet" (branch record SIF-54)', await until(`${FIRST_TILE} === 'none'`, 40), await evaluate(FIRST_TILE));
   await shot('run-6-ended.png');
+
+  // ---- 7b. a run that pauses, completes or fails with no press says so (branch record SIF-89) ----------------------------------
+  // They changed only the chip and the lit state: a failure's reason was the last row of Run status, Continue... came after all
+  // of its facts, and a pause after connection failures, caught while it saved, read "Resume continues from exactly there" as
+  // if the user had paused. The engine's own pause: stop_reason infrastructure_failures with its error, the worker saving.
+  const INFRA = 'FIXTURE: 3 consecutive infrastructure failures; paused safely. Continuing requires the connection gate to pass again.';
+  const FAILED = 'FIXTURE: 3 consecutive failed evaluations; stopped safely';
+  const LINE = `(() => { const b = document.querySelector('.banner'); return b && { text: b.textContent, red: b.classList.contains('error'), title: b.title }; })()`;
+  const lineSays = start => until(`(document.querySelector('.banner')?.textContent ?? '').startsWith(${JSON.stringify(start)})`, 40);
+  // Run status from its top: the run at a glance, the reason, the row with Continue... and Export status (JSON) last, the facts.
+  const HEAD = `(() => { const g = document.querySelector('.status-grid'), kids = g ? [...g.children] : [], at = s => kids.findIndex(k => k.matches(s));
+    const row = kids.findIndex(k => k.matches('.row') && [...k.querySelectorAll('button')].some(b => b.textContent === 'Continue...'));
+    const body = document.querySelector('.bottom-body'); body.scrollTop = 0;
+    return { hero: at('.status-hero'), error: at('p.status-error'), row, table: at('table'), text: g?.querySelector(':scope > p.status-error')?.textContent ?? null,
+      last: kids[row]?.lastElementChild?.textContent ?? null, inView: row >= 0 && kids[row].getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom,
+      errorRow: [...(g?.querySelectorAll(':scope > table tr') ?? [])].find(tr => tr.cells[0].textContent === 'Error')?.cells[1].textContent ?? null }; })()`;
+  await press(MAIN);
+  check('(a new Start after the ended run: "Pause")', await mainReads('Pause', 150));
+  await evaluate(`window.__seen = []`);                               // the labels from here: the pause passes through "Pausing..."
+  sim.steps = [{ state: 'running' }, {}, { state: 'paused', stop_reason: 'infrastructure_failures', error: INFRA }, {}, { alive: false }];
+  check('(the run pauses by itself, its worker saving first: "Resume")', await mainReads('Resume', 150) && (await seen()).some(s => s[0] === 'Pausing...'), JSON.stringify(await seen()));
+  let line = await lineSays('Paused by itself') && await evaluate(LINE);
+  check('a pause after connection failures says so in red, and what to do first - not "Resume continues from exactly there"; the run\'s path in its tooltip (SIF-89)',
+    line?.text === 'Paused by itself after connection failures; everything is saved. Test the connection (Connection button), then Resume.' && line.red
+    && line.title.startsWith(`${sim.dir}\n`), JSON.stringify(line));
+  let head = await until(`!!document.querySelector('.status-grid > p.status-error')`, 40) && await evaluate(HEAD);
+  check('... Run status says the reason in red right under the run at a glance, then Continue... with Export status (JSON) last, above the facts, in view (SIF-89)',
+    head && head.hero >= 0 && head.error === head.hero + 1 && head.row === head.error + 1 && head.table > head.row && head.text === INFRA
+    && head.last === 'Export status (JSON)' && head.inView && head.errorRow === INFRA, JSON.stringify(head));
+  await page.shot(path.join(out, 'run-6b-paused-by-itself.png'));                 // the whole page: the line and Run status
+  sim.steps = [{}, { state: 'running', stop_reason: null, error: null }];
+  await press(MAIN);
+  check('(Resume: "Pause" again, and the reason has gone from Run status)', await mainReads('Pause', 150) && await until(`!document.querySelector('.status-grid > p.status-error')`, 40));
+  sim.steps = [{}, { state: 'completed', stop_reason: 'budget_exhausted', charged: 60 }, {}, { alive: false }];
+  check('(the run completes: "Start")', await mainReads('Start', 150));
+  line = await lineSays('Completed') && await evaluate(LINE);
+  check('a run that completes says so, how, and where its results are: "Completed at 60 of 60 evaluations (budget used up). Its results are under Run status." (SIF-89)',
+    line?.text === 'Completed at 60 of 60 evaluations (budget used up). Its results are under Run status.' && !line.red && line.title.startsWith(`${sim.dir}\n`), JSON.stringify(line));
+  await press(MAIN);
+  check('(a new Start after the completed run: "Pause")', await mainReads('Pause', 150));
+  sim.steps = [{ state: 'running' }, {}, { state: 'failed', stop_reason: 'consecutive_failures', error: FAILED }, {}, { alive: false }];
+  check('(the run fails: "Start")', await mainReads('Start', 150));
+  line = await lineSays('The run failed') && await evaluate(LINE);
+  check('a run that fails says so in red, with its reason: "The run failed at N of 60 evaluations: <error>" (SIF-89)',
+    new RegExp(`^The run failed at \\d+ of 60 evaluations: ${FAILED.replace(/[.;]/g, '\\$&')}$`).test(line?.text ?? '') && line.red && line.title.startsWith(`${sim.dir}\n`), JSON.stringify(line));
+  head = await until(`document.querySelector('.status-grid > p.status-error')?.textContent === ${JSON.stringify(FAILED)}`, 40) && await evaluate(HEAD);
+  check('... and Run status leads with that reason, then Continue..., above the facts (SIF-89)',
+    head && head.error === head.hero + 1 && head.row === head.error + 1 && head.table > head.row && head.inView, JSON.stringify(head));
+  await page.shot(path.join(out, 'run-6c-failed.png'));
 
   // ---- 8. a run that cannot come back is announced BEFORE the pause; Abort on a paused run lets go of it -----------------------
   // Review of SIF-72: while the new Start is on its way the header still holds the ended run - the chip reads "starting" for

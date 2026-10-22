@@ -189,6 +189,10 @@ table.editor td:has(> input[type="checkbox"]) { vertical-align: middle; }   /* a
 /* how the run stands (branch record SIF-3): red while it runs - the current run - white once completed, grey paused or stopped,
    the error red when it failed; a completed run's red bar read as an error */
 .status-hero-bar.done > span { background: var(--text); } .status-hero-bar.rest > span { background: #8e8e96; } .status-hero-bar.bad > span { background: var(--bad-fill); }
+/* what went wrong, then Continue... and Export status - with its form or refusal - between the head and the facts (branch
+   record SIF-89): the reason close under the bar, the buttons a little apart from the table they used to follow */
+.status-grid > .status-error { margin: -4px 0 8px; overflow-wrap: anywhere; }
+.status-grid > :is(.row, .continue-form, .launch-refusal) { margin-top: 0; margin-bottom: 10px; }
 .key-tiles { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
 .key-tile { display: flex; flex-direction: column; padding: 7px 12px; border-radius: 10px; background: var(--field); }
 .key-tile-label { font-size: 12px; line-height: 1.35; color: var(--muted); }

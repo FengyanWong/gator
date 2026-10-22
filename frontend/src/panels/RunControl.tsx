@@ -1,7 +1,7 @@
 import { Icon, IconName } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, plainError } from '../api';
-import { folderName, plural, runTask } from '../format';
+import { folderName, plural, runTask, stopWords } from '../format';
 import { ENDED, type Pending, type Phase, type RunControl } from '../runState';
 
 /** The header's run buttons (user request 2026-09-21): ONE main button that reads Start -> Pause -> Resume, and
@@ -208,13 +208,27 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
     } else if (phase !== 'running') setSaving(null);             // paused, aborted or ended meanwhile: that saves everything anyway
   }, [status, phase, saving]);
 
-  // The line under the header said "Pausing: ..." / "Aborting: ..."; say so when it has happened.
-  const before = useRef(phase);
+  // The line under the header said "Pausing: ..." / "Aborting: ..."; say so when it has happened. A run that ends or pauses
+  // with no press is said too (branch record SIF-89: a completed or failed run changed only the chip and the lit state, a
+  // failure's reason was the last row of Run status, and a pause after connection failures could read "Resume continues from
+  // exactly there" as if the user had paused, though Resume first needs the connection check to pass). Only a change of the
+  // SAME run counts: taking a run over, letting go of one and a reload's lookup ("checking") say nothing. The run's path is
+  // the new lines' tooltip, as after Start (SIF-56).
+  const before = useRef({ phase, dir });
   useEffect(() => {
-    const was = before.current; before.current = phase;
-    if (was === 'pausing' && phase === 'paused') onMessage({ level: 'info', text: `Paused at${used(status)}: everything is saved. Resume continues from exactly there.` });
-    else if ((was === 'pausing' || was === 'aborting') && phase === 'idle' && status) onMessage({ level: 'info', text: `The run has ended (${status.state}) at${used(status)}: everything it committed is saved.` });
-  }, [phase]);
+    const was = before.current.phase, same = before.current.dir === dir;
+    before.current = { phase, dir };
+    if (!same || !status) return;
+    const at = status.budget ? ` at${used(status)}` : '';
+    const ended = phase === 'idle' && ['running', 'finishing', 'pausing', 'aborting'].includes(was), unasked = was === 'running' || was === 'finishing';
+    if (phase === 'paused' && status.stop_reason === 'infrastructure_failures' && (was === 'running' || was === 'pausing'))
+      onMessage({ level: 'error', text: 'Paused by itself after connection failures; everything is saved. Test the connection (Connection button), then Resume.', title: dir });
+    else if (was === 'pausing' && phase === 'paused') onMessage({ level: 'info', text: `Paused at${used(status)}: everything is saved. Resume continues from exactly there.` });
+    else if (ended && status.state === 'failed') onMessage({ level: 'error', text: `The run failed${at}: ${status.error ?? 'see Run status'}`, title: dir });
+    else if (ended && unasked && status.state === 'completed')
+      onMessage({ level: 'info', text: `Completed${at}${status.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}. Its results are under Run status.`, title: dir });
+    else if (ended && (!unasked || ENDED.includes(status.state))) onMessage({ level: 'info', text: `The run has ended (${status.state}) at${used(status)}: everything it committed is saved.` });
+  }, [phase, dir]);
 
   const main = phase === 'idle' ? onStart : phase === 'running' ? pause : phase === 'paused' ? onResume : undefined;
   const why = phase === 'idle' ? startBlocked : phase === 'paused' ? resumeBlocked : null;

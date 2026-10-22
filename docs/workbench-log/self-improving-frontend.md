@@ -2361,3 +2361,44 @@ as library/cell too, as not saved. `tsc` clean; `working_copy_check` 34, one new
 reads "This cell was read through tb_ring_osc_3stage." and asks for a testbench, without "without one".
 `testbench_probes_check` 41 (the "read it through other_tb" line unchanged), `virtuoso_source_check` 98,
 `project_help_check` 50. No flakes.
+
+### SIF-89 A run that ends says so, and Run status leads with what went wrong and what to do next (2026-10-22; from the usability audit)
+
+**Found.** The line under the header spoke only after the user's own Pause or Abort (audit findings J3-6, J3-7, J4-11).
+A run that completed or failed went running, then finishing, then idle with no line: only the chip and the lit state
+changed. A failed run's reason was the last of about 20 rows in Run status, and the hero above it showed only the stop
+reason. An automatic pause after connection failures (the engine's `infrastructure_failures`, with its error "Continuing
+requires the connection gate to pass again") passes through `pausing` while the worker saves. A poll that caught that
+state made the page say "Paused at ...: everything is saved. Resume continues from exactly there.", as if the user had
+paused, with no word about the connection. The run's next step, Continue... with its reason and the backend's Fine-tune
+alternative, sat under the whole facts table, below the fold of a bottom panel that shows about four rows (survey
+picture 05).
+
+**Changed.** `frontend/src/panels/RunControl.tsx`: the phase effect remembers the run with the phase and speaks only
+when the run is the same. Taking a run over, letting go of one and a reload's lookup ("checking") say nothing. Three
+new lines, each with the run's path in its tooltip as after Start (SIF-56). A pause after connection failures, from
+`running` or `pausing`, says in red "Paused by itself after connection failures; everything is saved. Test the
+connection (Connection button), then Resume." This comes before the user-pause line. A run that completes from
+`running` or `finishing` says "Completed at 60 of 60 evaluations (budget used up). Its results are under Run status.",
+with the stop reason through `stopWords`. A run that fails says in red "The run failed at N of M evaluations: <its
+error>", also after a Pause or an Abort, where it used to read "The run has ended (failed) ...". The user-pause and
+user-abort lines keep their words. The abort line also covers a run stopped or cancelled from elsewhere. Nothing is
+sent: the effect only writes the line. `frontend/src/panels/RunTabs.tsx` (`StatusTab`): the run's error shows as a red
+`p.error.status-error` right under the run at a glance. The table's Error row stays. Under it comes the action row,
+moved whole from below the table: Continue..., its reason, the alternative, and Export status (JSON) still last. The
+budget form and a refusal follow the row, all inside `.status-grid` and before the facts table. The buttons, their
+tooltips and their presses are unchanged. `frontend/src/roadster.css`: the reason sits close under the bar, and the row
+(with its form or refusal) keeps 10 px from the table. `docs/workbench.md` (Start, Pause, Resume, Abort; the run
+commands) and `docs/functionality-reference.md` (Start → Pause → Resume; Run status) say so. An `interrupted` run
+(worker gone) still gets no line: the audit did not ask for one, and the chip already says "(the worker is gone)".
+
+**Checked.** `tsc` clean. `run_control_check` 143 (132 before). The fixture's status now carries `error`. In a new
+section 7b, a run pauses by itself (through "Pausing...") and the line reads the connection words in red with the run's
+path in its tooltip. Run status shows the hero, then the red reason, then the row with Continue... and Export status
+(JSON) last, then the facts with the same Error row. The row is in view at the panel's top. After Resume the reason
+goes. Completing reads "Completed at 60 of 60 evaluations (budget used up). Its results are under Run status." (not
+red). Failing reads "The run failed at N of 60 evaluations: FIXTURE: ..." in red, and Run status leads with that reason.
+The user-pause and user-abort lines pass unchanged. `export_check` 31: on a real MOCK run, Export status (JSON) ends a
+row that comes right after the run at a glance and before the facts. `looks_check` 74, `room_check` 28,
+`calibration_check` 38, `calibration_save_check` 22, `run_list_check` 129, `save_now_check` 29,
+`launch_recovery_check` 20. No flakes.

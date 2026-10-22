@@ -161,6 +161,23 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
           after={best ? [best.reward != null && `reward ${few(best.reward)}`, !best.feasible && `hard violation ${few(best.violation)}`].filter(Boolean).join(' · ') || undefined : undefined} />
       </div>
     </div>}
+    {/* What went wrong and what to do next, under the run at a glance (branch record SIF-89): a failure's reason was the last
+        row of the facts below and Continue... came after all of them, out of sight in a panel that shows about four rows.
+        The Error row stays in the table, beside the other facts. */}
+    {status.error && <p className="error status-error">{status.error}</p>}
+    <div className="row">
+      <button className="continue-open" disabled={!!continueBlocked || asking} onClick={() => setAsking(true)}
+        title={continueBlocked ? `Continue: ${continueBlocked}` : 'Continue: A paused, stopped or interrupted run - or a completed one, with a higher total - goes on in the '
+          + 'same run folder, from its saved state, with its own saved configuration. The form asks for the total first.'}><Icon name="play" label="Continue..." /></button>
+      {resting && continueBlocked && <span className="hint continue-why">{continueBlocked}</span>}
+      {resting && check?.alternative && <button className="continue-alternative" onClick={() => onFineTune(check.alternative)}
+        title={`${check.alternative.label}: The next run on this page loads this run's save point ${check.alternative.checkpoint_id} in Mode Fine-tune, as one Undo step. Nothing starts until Start.`}>{check.alternative.label}</button>}
+      <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
+        title="Export status (JSON): Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary."><Icon name="export" label="Export status (JSON)" /></button>
+    </div>
+    {asking && <ContinueForm used={check?.used ?? b?.charged ?? null} total={check?.total ?? b?.max_evaluations ?? null} blocked={continueBlocked}
+      onContinue={total => { setAsking(false); onContinue(total); }} onCancel={() => setAsking(false)} />}
+    {refusal && <LaunchRefusal refusal={refusal} onDismiss={onDismissRefusal} />}
     <table className="grid small"><tbody>
       <tr><td>State</td><td title={status.stop_reason ?? undefined}><b>{status.state}</b>{status.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}{status.worker_alive ? ' - worker alive' : ''}</td></tr>
       {/* The Mode as the RL model window names it (branch record SIF-14: it wrote the key, "scratch (no weights loaded)"). */}
@@ -206,19 +223,6 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
         {status.run_dir}{copied && <b className="ok"> copied</b>}</td></tr>
       {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
     </tbody></table>
-    <div className="row">
-      <button className="continue-open" disabled={!!continueBlocked || asking} onClick={() => setAsking(true)}
-        title={continueBlocked ? `Continue: ${continueBlocked}` : 'Continue: A paused, stopped or interrupted run - or a completed one, with a higher total - goes on in the '
-          + 'same run folder, from its saved state, with its own saved configuration. The form asks for the total first.'}><Icon name="play" label="Continue..." /></button>
-      {resting && continueBlocked && <span className="hint continue-why">{continueBlocked}</span>}
-      {resting && check?.alternative && <button className="continue-alternative" onClick={() => onFineTune(check.alternative)}
-        title={`${check.alternative.label}: The next run on this page loads this run's save point ${check.alternative.checkpoint_id} in Mode Fine-tune, as one Undo step. Nothing starts until Start.`}>{check.alternative.label}</button>}
-      <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
-        title="Export status (JSON): Everything this tab shows, as it is right now, in one JSON file: state, budget, best design, connection, the run's manifest and summary."><Icon name="export" label="Export status (JSON)" /></button>
-    </div>
-    {asking && <ContinueForm used={check?.used ?? b?.charged ?? null} total={check?.total ?? b?.max_evaluations ?? null} blocked={continueBlocked}
-      onContinue={total => { setAsking(false); onContinue(total); }} onCancel={() => setAsking(false)} />}
-    {refusal && <LaunchRefusal refusal={refusal} onDismiss={onDismissRefusal} />}
   </div>);
 }
 

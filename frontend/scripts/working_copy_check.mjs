@@ -150,6 +150,10 @@ await runChecks(browser, async () => {
   const TB_BOX = `[...${WIN}.querySelectorAll('label')].find(l => l.firstChild?.textContent.trim() === 'Testbench cell')?.querySelector('select')`;
   const NO_TB = "Choose the cell's Testbench cell first: a task simulates the testbench and keeps its Maestro test there.";
   await far.setValue(TB_BOX, ''); await settle();
+  // review of SIF-88: the line on the copy read through TB invited "Read the cell again ... without one", the press refused
+  const stale = await far.evaluate(`${WIN}.querySelector('.tb-stale')?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`);
+  check('without a testbench, the line on the copy read asks for one, not for a read without one (review of SIF-88)', stale.includes(`This cell was read through ${TB}.`)
+    && stale.includes('Choose its Testbench cell above to read it again') && !stale.includes('without one'), stale);
   let mark = calls.length;
   await far.evaluate(`${WBUTTON('Read the cell again')}.click()`, true); await settle();
   check('without a testbench, reading it again asks nothing, sends nothing and says to choose one (branch record SIF-88)', dialogs.length === 0 && calls.length === mark

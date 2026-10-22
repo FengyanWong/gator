@@ -307,7 +307,7 @@ export function useLaunchActions({ control, meta, config, setConfig, configKey, 
   // tooltip, with the reason when Start is disabled"): the task, Run configuration's model and network, the budget. A saved
   // task as the title beside it names it (branch record SIF-71: a renamed task by its new name; it was the key without
   // "real:" for every task, the old name of a renamed one); the key without "real:" until the circuit panel has said. A
-  // Virtuoso cell is library/cell (the title names it by the project's task name instead).
+  // Virtuoso cell is library/cell (the title names it so too, as not saved - branch record SIF-88).
   const [nextModel, setNextModel] = useState<NextModel | null>(null);
   const nextTask: string | null = config.circuit?.source === 'registered_task'
     ? (config.circuit.task_id ? (taskShown ?? String(config.circuit.task_id).replace(/^real:/, '')) : null)

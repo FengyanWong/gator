@@ -2348,3 +2348,16 @@ Parameters line is shown after a read, and the browse note says "first: a task n
 the removed netlist source titles "no task chosen", RL model "not set", and shows no empty-Parameters line.
 `task_list_check` 89: with no task, the title reads "no task chosen". `testbench_probes_check` 41, `looks_check` 74,
 `typing_check` 50, `editor_columns_check` 23. No flakes.
+
+**Review follow-up.** The review of 3ffc72e found two slips, both real. (1) The draft's `p.tb-stale` line still said
+"Press Read the cell again to read it without one" whenever Testbench cell was empty. On a cell read before the question
+(no verified working-copy record), that press declares the cell, and `importCell` now refuses it with `NO_TESTBENCH`: the
+line invited the press that the next line refused. `working_copy_check` makes exactly this state. For such a cell the line
+now says "Choose its Testbench cell above to read it again: that read declares the cell the task flow works in, which
+needs one." A declared cell keeps "to read it without one", since that read is still sent without a question. The
+behaviour is unchanged: the backend refused this press before SIF-88 too. (2) The comment above the Next line in
+`frontend/src/launch.ts` said the title names a Virtuoso cell by the project's task name. It now says the title names it
+as library/cell too, as not saved. `tsc` clean; `working_copy_check` 34, one new: with the testbench emptied, the line
+reads "This cell was read through tb_ring_osc_3stage." and asks for a testbench, without "without one".
+`testbench_probes_check` 41 (the "read it through other_tb" line unchanged), `virtuoso_source_check` 98,
+`project_help_check` 50. No flakes.

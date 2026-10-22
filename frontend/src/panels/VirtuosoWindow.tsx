@@ -122,9 +122,13 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
             <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled. Claude Code
               or Codex (the Agent window: "Agent..." among the bottom tabs) can help with any of it, from what you describe.</p>
           </details>
+          {/* A cell not yet declared is declared by its next read, which needs a testbench (importCell refuses it without one):
+              the line asks for one instead of inviting that press (review of branch record SIF-88). */}
           {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
             <p className="warn tb-stale">This cell was read {circuit.circuit?.testbench_cell ? <>through <code>{circuit.circuit.testbench_cell}</code></> : 'without a testbench'}.
-              Press <b>Read the cell again</b> to read it {ref.testbench_cell ? <>through <code>{ref.testbench_cell}</code></> : 'without one'}: Probes then follow it.</p>)}
+              {ref.testbench_cell || circuit.working_copy?.verified
+                ? <> Press <b>Read the cell again</b> to read it {ref.testbench_cell ? <>through <code>{ref.testbench_cell}</code></> : 'without one'}: Probes then follow it.</>
+                : <> Choose its <b>Testbench cell</b> above to read it again: that read declares the cell the task flow works in, which needs one.</>}</p>)}
           {!circuit.working_copy?.verified && copyWarning}
           <div className="row">
             <button disabled={!readable} onClick={importCell} title="After a change in Virtuoso, or to export through another testbench cell. Read-only.">{importing ? 'Reading...' : 'Read the cell again'}</button>

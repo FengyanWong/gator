@@ -416,3 +416,11 @@ table.run-table td.run-from .run-from-name { display: -webkit-box; -webkit-line-
 .task-file-help dl { max-height: 30vh; overflow: auto; margin: 4px 0 0; font-size: 13px; }
 .task-file-help dl > div { margin: 0 0 4px; padding-left: 1.5em; text-indent: -1.5em; }
 .task-file-help dt { display: inline; font-weight: 600; } .task-file-help dd { display: inline; margin: 0 0 0 0.5em; }
+
+/* SIF-86: the RL model window's saved models scroll in a box of their own, their titles staying at its top: 411 models made
+   the table about 20,000 px long, and the model in use, the Mode's own settings and Advanced came after all of it. The box
+   keeps room for its scroll bar, so its columns keep their width (model_chooser_check: no sideways scroll at 1100 px). A
+   model's Details scroll with its row: their own tables' titles do not stick over the box's. */
+.rl-networks-window .saved-models .task-folder-content .scroll { max-height: min(60vh, 720px); overflow: auto; scrollbar-gutter: stable; }
+.rl-networks-window .saved-models .task-folder-content .scroll > table > thead th { z-index: 1; }
+.rl-networks-window .saved-models .model-details table.grid th { position: static; }

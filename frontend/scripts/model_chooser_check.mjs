@@ -20,14 +20,17 @@
 //   folders; back to New model; the real route;
 // - Details check a save point as Use would load it: read first, then checked with the model's own network in a Mode that
 //   loads it; the pressed Use says "Using..." while its save point is read, and one that cannot be read is said under that
-//   model's save points too (branch record SIF-85).
+//   model's save points too (branch record SIF-85);
+// - the table scrolls in a box of its own with its titles at its top, the model in use brought into its view; Run
+//   configuration's notice opens the window at the block its reason is about, the model line's button at the top (branch
+//   record SIF-86).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks, setMode } from './lib/rl_networks.mjs';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { check, launchEdge, mockStarter, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, NEVER_ASKED_OR_SAVED, outDir, reportRefused, RL_MODEL_WINDOW, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 // Optional: the output folder whose saved models the last section lists (default: the backend's own default root).
@@ -90,13 +93,15 @@ await runChecks(browser, async () => {
   // Use they are about: the Details' read of another one goes through.
   let holdModel = null; const heldModel = [];                                      // record 7.278: a "Use" read held back, answered late
   let failModel = null;                                                            // record 7.291: a "Use" whose save point cannot be read
+  let holdList = false; const heldList = [];                                       // branch record SIF-86: the list held until the window is short
   const modelFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
     if (name === '/api/runs') return fulfil(requestId, 200, { runs: RUNS });
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
-    if (name === '/api/runs/models') { lists++; return canned ? fulfil(requestId, 200, { models: served }) : send('Fetch.continueRequest', { requestId }); }
+    if (name === '/api/runs/models') { lists++; if (holdList) { heldList.push(requestId); return; }
+      return canned ? fulfil(requestId, 200, { models: served }) : send('Fetch.continueRequest', { requestId }); }
     if (name === '/api/runs/model') {
       if (!canned) return send('Fetch.continueRequest', { requestId });
       const body = JSON.parse(request.postData ?? '{}'); asked.push({ run_dir: body.run_dir, checkpoint_id: body.checkpoint_id, network: body.config?.run?.network ?? null,
@@ -261,6 +266,15 @@ await runChecks(browser, async () => {
     return { text: h?.textContent ?? '', title: h?.querySelector('.hint span')?.title ?? null }; })()`);
   check('... "With the task on the page and this model\'s own network" names the save point by its evaluations, its id on hover (SIF-67, SIF-85)',
     withTask.text === 'With the task on the page and this model\'s own network - save point at 20 evaluations' && withTask.title === A.latest, JSON.stringify(withTask));
+  // Branch record SIF-86: the table had no height of its own - 411 models made it about 20,000 px long, with the model in use
+  // and the Mode's settings under it. It scrolls in a box now (A's Details make it longer than the box), its titles at its top.
+  const box = await evaluate(`(() => { const s = ${RIGHT}.querySelector('.task-folder-content .scroll'), w = ${NETWORK_DOCUMENT}.defaultView;
+    const most = Math.min(0.6 * w.innerHeight, 720) + 1, scrolls = s.scrollHeight > s.clientHeight + 40;
+    s.scrollTop = s.scrollHeight; const head = s.querySelector('thead th').getBoundingClientRect().top - s.getBoundingClientRect().top;
+    const inner = [...s.querySelectorAll('.model-details table.grid th')].map(th => w.getComputedStyle(th).position);
+    s.scrollTop = 0; return { height: s.clientHeight, most: Math.round(most), scrolls, head, inner: [...new Set(inner)] }; })()`);
+  check('the table scrolls in a box of its own, 60 % of the window at most, its titles staying at its top; the Details\' own titles scroll with them (SIF-86)',
+    box.height <= box.most && box.scrolls && Math.abs(box.head) <= 2 && JSON.stringify(box.inner) === '["static"]', JSON.stringify(box));
 
   // ---- Use this save point: pinned, with its network, one Undo step -----------------------------------------------------
   const early = A.checkpoints[0].checkpoint_id;
@@ -297,6 +311,20 @@ await runChecks(browser, async () => {
   run = await storedWhen(s => s?.model_source?.checkpoint_id === A.latest);
   check('"Use the newer one" pins the newer save point, and closes the window', run?.model_source?.checkpoint_id === A.latest && await chosenAndReopened()
     && !(await evaluate(`!!${RIGHT}.querySelector('.model-newer')`)), JSON.stringify(run?.model_source));
+  // Branch record SIF-86: the model in use - A, the last row - is brought into the box's view when the list arrives: the box
+  // only, never the window. Seen in a short window, whose box shows a few rows; the list waits until the window is that short.
+  holdList = true;
+  await networkPage.evaluate('window.close()'); await browser.window(RL_MODEL_WINDOW, { present: false });
+  networkPage = await openNetworks(page, browser); await networkPage.viewport(1180, 480);
+  for (let i = 0; i < 50 && !heldList.length; i++) await sleep(100);
+  holdList = false;
+  if (heldList.length) await fulfil(heldList.shift(), 200, { models: served });
+  const INBOX = `(() => { const s = ${RIGHT}.querySelector('.task-folder-content .scroll'), r = (${row(A)})?.getBoundingClientRect(), b = s?.getBoundingClientRect();
+    return { box: s ? s.scrollTop : null, row: r && b ? [Math.round(r.top - b.top - s.querySelector('thead').offsetHeight), Math.round(b.top + s.clientHeight - r.bottom)] : null,
+      window: ${NETWORK_DOCUMENT}.defaultView.scrollY }; })()`;
+  check('the model in use is brought into the box\'s view when the window opens: the box scrolled to it, the window stays at its top (SIF-86)',
+    await until(`(() => { const at = ${INBOX}; return at.box > 0 && !!at.row && at.row[0] >= -1 && at.row[1] >= -1 && at.window === 0; })()`, 40), JSON.stringify(await evaluate(INBOX)));
+  await networkPage.viewport(1180, 920);
 
   // ---- a double click uses a row's newest save point; another network comes in the same step -----------------------------------
   await evaluate(`(${row(B)}).querySelector('td:nth-child(4)').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
@@ -436,9 +464,24 @@ await runChecks(browser, async () => {
   check('no saved model: said in plain words, with what makes a run save one', await until(`/No saved model yet/.test(${RIGHT}.querySelector('.model-empty')?.innerText ?? '')`, 40));
   served = MODELS; await evaluate(`${button('Refresh list')}.click()`); await until(`${ROWS}.length === ${MODELS.length}`, 40);
 
-  // ---- back to New model ------------------------------------------------------------------------------------------------------------
+  // ---- Run configuration's notice opens the window at its reason (branch record SIF-86) -----------------------------------------------
+  // D in use and answered NOT compatible: the notice's reason is the compatibility under "The model in use", which sits under
+  // the saved models table. The notice's "RL model..." opened the window at its top, and the reason had to be searched for.
+  incompatibleD = true;
   await details(D); await until(`!!(${pointRow(D.latest)})`, 30); await usePoint(D.latest); await storedWhen(s => s?.model_source?.run_dir === D.run_dir);
-  await chosenAndReopened();
+  await closedByChoice();
+  const NOTICE = `document.querySelector('p.network-review')`, COMPAT = `${NETWORK_DOCUMENT}.getElementById('net-compat')`;
+  check('(set-up) with D NOT compatible, Run configuration\'s notice says so', await until(`${NOTICE}?.textContent === 'Review the settings in RL model... - the saved model is NOT compatible with this run.'`, 60),
+    await evaluate(`${NOTICE}?.textContent ?? 'no notice'`));
+  networkPage = await openNetworks(page, browser, 'p.network-review button.text-link');
+  const placeOf = `(() => { const w = ${NETWORK_DOCUMENT}.defaultView, r = (${COMPAT})?.querySelector('summary').getBoundingClientRect();
+    return { open: !!(${COMPAT})?.open, window: Math.round(w.scrollY), top: r ? Math.round(r.top) : null, bottom: r ? Math.round(r.bottom) : null, height: w.innerHeight }; })()`;
+  check('the notice\'s "RL model..." opens the window at the compatibility: open, in view, under the saved models (SIF-86)',
+    await until(`(() => { const at = ${placeOf}; return at.open && at.window > 0 && at.top !== null && at.top >= 0 && at.bottom <= at.height; })()`, 40), JSON.stringify(await evaluate(placeOf)));
+  await networkPage.evaluate('window.close()'); await browser.window(RL_MODEL_WINDOW, { present: false });
+  await reopen();
+  check('... and the model line\'s "RL model..." opens it at its top, as before', await until(`!!(${COMPAT})`, 40) && (await evaluate(placeOf)).window === 0, JSON.stringify(await evaluate(placeOf)));
+  incompatibleD = false;
   const beforeScratch = lists;
   await setMode(networkPage, 'scratch'); await sleep(500);
   run = await storedWhen(s => s?.mode === 'scratch');

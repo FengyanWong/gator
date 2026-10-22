@@ -2222,3 +2222,40 @@ its button says "Using..." and is off, and A's other Use buttons stay on. A fail
 be read: ..." straight under A's save points table, and its button reads "Use this save point" again, on.
 `network_panel_check` 62, `graph_view_check` 69, `encoder_models_check` 24, `model_structure_check` 30,
 `mode_suggestion_check` 20. No flakes.
+
+### SIF-86 The saved models scroll in a box of their own, and the notice's link opens the RL model window at its reason (2026-10-22; from the usability audit)
+
+**Found.** In Fine-tune and Evaluate only, the RL model window's saved models table had no height of its own (audit
+finding J5-2). With 411 models at about 46-59 px a row it was about 20,000 px long. "The model in use", its
+compatibility, Fine-tune's own switches, Evaluate only's Actions and Advanced all came after it (record 7.265's order),
+thousands of pixels down. The main page's notice "Review the settings in RL model... - <reason>" (SIF-46) opened the
+window at its top (finding J5-9). The block that says the reason in full was further down, often under the whole table:
+the NOT compatible list, the budget warning, the soft actor-critic warning. The user had to search for it.
+
+**Changed.** `frontend/src/roadster.css`: the saved models table scrolls in a box, `min(60vh, 720px)` high at most,
+with `scrollbar-gutter: stable` so its columns keep their width. Its titles stay at its top, above the rows
+(`z-index: 1`). A model's Details tables have titles that no longer stick over the box's titles. Record 7.265's order
+is kept. `frontend/src/panels/ModelChooser.tsx` (`SavedModels`): when the list first arrives, the model in use is
+scrolled to the middle of the box if it is out of view. Only the box scrolls, never the window, once per window: a later
+sort, filter or Refresh list keeps the place. `frontend/src/panels/useRlModel.ts`: each `networkReason` comes with
+`networkAnchor`, the id of the block that says it, in the same order: `net-unavailable`, `net-compat`,
+`net-check-error`, `net-message`, `net-starved`, `sac-values`, `template-problem`, `network-differences`. `openAt(anchor)`
+opens the window, and once it has drawn, opens the block's folds and scrolls it to the middle, one scroll per press.
+`frontend/src/panels/RlModelWindow.tsx` puts those ids on the blocks. `frontend/src/panels/RunConfiguration.tsx`: the
+notice's "RL model..." calls `openAt`; the model line's own "RL model..." still opens the window at its top.
+`frontend/src/panels/popupWindow.ts`: `styled(win)` waits for a pop-up's copied stylesheets, 2 s at most, so no place is
+measured in the unstyled layout of a window just opened (the check harness waits for them for the same reason, record
+7.178). Nothing else changed: the link opens a window and scrolls it, and starts, saves or chooses nothing.
+`docs/workbench.md` (the Fine-tune paragraph, the notice) and `docs/functionality-reference.md` (RL model..., Saved
+models) say both.
+
+**Checked.** `tsc` clean. `model_chooser_check` 95, five of them new. With A's Details open, the table is a 552 px box in
+a 920 px window, and it scrolls. Scrolled to its end, its titles are at its top (0 px), and the Details' own titles are
+static. In a 480 px window with the list held until then, the model in use (A, the last row) is in the box's view: the
+box scrolled 165 px, the window 0. With D in use and answered NOT compatible, the notice reads "... - the saved model is
+NOT compatible with this run.", and its link opens the window at the open compatibility, in view (window scrolled
+845 px). The model line's button opens it at its top, the compatibility 1,318 px down. `reward_block_check` 33, one new:
+the notice's link opens the window at the soft actor-critic warning (scrolled 557 px, the warning in view).
+`module_fold_check` 30, `network_panel_check` 62, `looks_check` 74, `encoder_models_check` 24, `graph_view_check` 69,
+`model_structure_check` 30, `mode_suggestion_check` 20, `network_inputs_check` 9, `dom_identity_check` 56, `pdk_check`
+40, `reliability_check` 20, `room_check` 28, `task_rows_check` 54, `typing_check` 50. No flakes.

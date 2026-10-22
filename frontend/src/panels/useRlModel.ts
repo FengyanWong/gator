@@ -8,7 +8,7 @@ import { api, Json } from '../api';
 import { modelNameAt } from './ModelChooser';
 import { DESIGN_NAME, designName, ENCODER_SHORT, pointEvaluations, pointText } from '../lineage';
 import { LOADS, NETWORK_FIELDS, networkOf, pick, pointKey, readSavePoint, withSavePoint } from '../savePoint';
-import { usePopupWindow } from './popupWindow';
+import { styled, usePopupWindow } from './popupWindow';
 import { PRESET_RATE_KEY, RL_MODEL_WINDOW } from '../contract';
 import { ADVANCED_ROWS, foldedText, limitsText, modelLineText, networkShort, networkSizes, networkTitle, NextModel, nextModelText, ORIGIN, newModelInputs, takesTemplateInputs } from './rlModelText';
 import { sameScope, useNewest } from '../newest';
@@ -300,23 +300,40 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     || starved || archDiffers || sacSlow.length > 0;
   // Why Run configuration's notice is up, in a few words (branch record SIF-46): it read "Review the settings in RL model."
   // for every one of the reasons above, and the window had to be searched for it. The first that applies, the errors first,
-  // so the words match the notice's colour; the window says each in full.
+  // so the words match the notice's colour; the window says each in full. With each, the id of the block in the window that
+  // says it (branch record SIF-86), where the notice's "RL model..." opens the window.
   const template = designName({ encoder_type: encoder });
-  const networkReason: string | null = !offeredEncoders.includes(encoder) ? `${template} is unavailable`
-    : modelChecked && model?.compatibility?.compatible === false ? 'the saved model is NOT compatible with this run'
-    : error ? 'the saved model could not be checked'
-    : netMessage?.level === 'error' ? netMessage.reason ?? netMessage.text
-    : archDiffers || netMessage?.level === 'warn' ? "the network was taken back to the saved model's"
-    : starved ? 'the budget is too small for the network to learn'
-    : sacSlow.length ? `with ${sacSlow.join(' and ')}, the network learned late or not at all in tests`
-    : run.mode === 'scratch' && entry?.problem ? `the saved ${template} template values could not be used`
-    : run.mode === 'scratch' && differs ? `this run's values differ from the ${template} template`
-    : null;
+  const [networkReason, networkAnchor]: [string | null, string | null] = !offeredEncoders.includes(encoder) ? [`${template} is unavailable`, 'net-unavailable']
+    : modelChecked && model?.compatibility?.compatible === false ? ['the saved model is NOT compatible with this run', 'net-compat']
+    : error ? ['the saved model could not be checked', 'net-check-error']
+    : netMessage?.level === 'error' ? [netMessage.reason ?? netMessage.text, 'net-message']
+    : archDiffers || netMessage?.level === 'warn' ? ["the network was taken back to the saved model's", 'net-message']
+    : starved ? ['the budget is too small for the network to learn', 'net-starved']
+    : sacSlow.length ? [`with ${sacSlow.join(' and ')}, the network learned late or not at all in tests`, 'sac-values']
+    : run.mode === 'scratch' && entry?.problem ? [`the saved ${template} template values could not be used`, 'template-problem']
+    : run.mode === 'scratch' && differs ? [`this run's values differ from the ${template} template`, 'network-differences']
+    : [null, null];
+  // The notice's "RL model..." opens the window AT that block (branch record SIF-86): it opened at the top, and the block was
+  // further down - often under the whole saved models table - to be searched for. Its folds are opened, and it is scrolled to
+  // the middle once the window has drawn and has its styles; one scroll per press. The model line's button opens at the top.
+  const [openingAt, setOpeningAt] = useState<string | null>(null);
+  const openAt = (anchor: string | null) => { if (networkWindow.open() && anchor) setOpeningAt(anchor); };
+  useEffect(() => {
+    const popup = networkWindow.popup, id = openingAt;
+    if (!popup || !id) return;
+    setOpeningAt(null);
+    void styled(popup).then(() => {
+      const block = popup.closed ? null : popup.document.getElementById(id);
+      if (!block) return;
+      for (let fold = block.closest('details'); fold; fold = fold.parentElement?.closest('details') ?? null) fold.open = true;
+      block.scrollIntoView({ block: 'center' });
+    });
+  }, [openingAt, networkWindow.popup]);
   return { config, setConfig, runs, circuit, schema, run, set, setAdv, setNet, source, adv, net, networkWindow, modelChecked,
     error, modelLoading, model, cornerIds, robust, gated, corners, supportsCorners, launchesPerStep, objective, reward, rewardOther,
     toggleCorner, netSettings, netMessage, presetRateUpdated, netFields, advFields, encoder, entry, offeredEncoders, usesHeads, usesStructure, applyEntry,
     chooseList, flush, queueSave, editNet, editAdv, chooseEncoder, settingDifferences, differs, originLabel, budget, sacSlow, starved,
     loads, noMode, label, savedModel, savedNet, archDiffers, suggested, usingPoint, useSavePoint, chooseMode, modelLine, netTitle,
-    limitsSet, folded, networkError, networkWarning, networkReason };
+    limitsSet, folded, networkError, networkWarning, networkReason, networkAnchor, openAt };
 }
 export type RlModel = ReturnType<typeof useRlModel>;

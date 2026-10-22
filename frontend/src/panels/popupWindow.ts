@@ -14,6 +14,13 @@ export function useOpenWindows(): OpenWindow[] { return useSyncExternalStore(sub
 /** What a panel says when the browser refused to open its window. */
 export const BLOCKED = 'The browser blocked the new window. Allow pop-ups for this page, then press the button again.';
 
+/** Resolves once a pop-up's stylesheets have loaded (branch record SIF-86): `open()` copies the page's as links, which a new
+ *  window loads after its first draw, so a place measured before then - a scroll to a block - is measured without the page's
+ *  layout. A sheet that never answers holds it 2 s at most. */
+export const styled = (win: Window): Promise<unknown> => Promise.race([new Promise(done => window.setTimeout(done, 2000)),
+  Promise.all([...win.document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].filter(link => !link.sheet)
+    .map(link => new Promise(done => { link.addEventListener('load', done, { once: true }); link.addEventListener('error', done, { once: true }); })))]);
+
 /** The workbench's pop-up windows (Connection, Virtuoso, PDK, ngspice, Tasks, Runs, the run brief, the RL model window,
  *  the task file, Agent): a NAMED `about:blank` window with the page's own stylesheets copied into it and one root
  *  element to portal React into. The window closes with the page, and when the viewer closes it the panel hears of it.

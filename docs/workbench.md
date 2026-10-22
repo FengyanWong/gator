@@ -2489,7 +2489,10 @@ incomplete to compare it with, and its compatibility - then the Mode's own setti
 Encoder-only transfer, Reset critic, Continual learning and the name of the model it saves; for Evaluate only,
 Actions - Deterministic (the policy's mean action at each step) or Sampled (drawn from the policy, as in training); then
 Advanced. They have no block for a new network: a saved model only loads
-into the network it was trained with.
+into the network it was trained with. Since branch record SIF-86 the saved models table scrolls in a box of its own -
+60 % of the window's height at most (720 px), its column titles staying at its top - so what follows it is in reach
+with hundreds of models (411 made it about 20,000 px long). When the list arrives, the model in use is brought to the
+middle of the box if it is out of its view; the box scrolls, never the window.
 
 Pressing the button again focuses the existing window. It has no close button of its own (record 7.163, user: "delete
 the cross button in RL network window"): the browser's close keeps all configuration edits; pending settings saves and model compatibility checks continue in the main page. Undo/Redo also
@@ -2498,7 +2501,11 @@ its window.
 
 Settings in the window that need attention leave a notice in Run configuration, including its folded warning/error mark. Since
 branch record SIF-46 it says the first reason that applies, and its "RL model..." opens the window ("Review the settings in
-RL model... - the budget is too small for the network to learn.").
+RL model... - the budget is too small for the network to learn."). Since branch record SIF-86 it opens the window at the
+place that says that reason in full, scrolled to the middle with its fold open: the compatibility under The model in use
+(or why it could not be checked), the window's message line, the budget warning, the soft actor-critic warning, the
+differences from the template, or the template that is unavailable or could not be used. The model line's own
+"RL model..." still opens the window at its top.
 Browser checks: `frontend/scripts/network_panel_check.mjs`, `model_chooser_check.mjs`, `mode_suggestion_check.mjs`, `model_structure_check.mjs`,
 `graph_view_check.mjs`, `pdk_check.mjs`, `module_fold_check.mjs`, `typing_check.mjs` and `reliability_check.mjs`.
 

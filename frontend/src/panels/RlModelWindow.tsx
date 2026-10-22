@@ -73,7 +73,7 @@ function AdvancedFields({ m }: { m: RlModel }) {
   // and "updates per evaluation", which no field there carries), and "template", the window's one word for what keeps them
   // (it said "stored per encoder" and "the selected encoder", and no encoder is chosen any more).
   return <>
-    {sacSlow.length > 0 && <p className="warn sac-values">With {sacSlow.join(' and ')}, soft actor-critic learned late or not at all in the tests of 2026-10-05:
+    {sacSlow.length > 0 && <p className="warn sac-values" id="sac-values">With {sacSlow.join(' and ')}, soft actor-critic learned late or not at all in the tests of 2026-10-05:
       with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of 0.2 delayed
       learning to about evaluation 1,000. The tested values are 8 updates per evaluation (Updates per transition), starting temperature 0.01 (Initial
       alpha) and discount 0 (Discount gamma), under Advanced.</p>}
@@ -116,6 +116,8 @@ export function RlModelWindow({ m }: { m: RlModel }) {
   const means = model?.description && restorableMeans(model.description.restoration_capability, model.compatibility?.checks);
   // A save point a Use could not read: its Details say it under its save points too (branch record SIF-85), not only here.
   const useError = netMessage?.level === 'error' && netMessage.point ? { point: netMessage.point, text: netMessage.text } : null;
+  // The blocks Run configuration's notice can name carry ids (useRlModel's `networkAnchor`): its "RL model..." opens this
+  // window at the one its reason is about (branch record SIF-86).
   return <section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
       {/* No close button of its own (user, 2026-10-03: "delete the cross button in RL network window"): the window's own close
           does it, and the settings are kept either way. Record 7.265: the RL model window - the Mode at the top, then that
@@ -132,7 +134,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
       <p className="hint">A new model starts from one template: its network and its training values, kept per template in the backend. Editing a value
         below saves it into that template.</p>
       <TemplatesTable settings={netSettings} encoders={offeredEncoders} current={encoder} runs={runs} onUse={chooseEncoder} />
-      {!offeredEncoders.includes(encoder) && <p className="error">{DESIGN_NAME[encoder] ?? encoder} is unavailable. Choose an available template. Existing models need their matching historical optimizer version.</p>}
+      {!offeredEncoders.includes(encoder) && <p className="error" id="net-unavailable">{DESIGN_NAME[encoder] ?? encoder} is unavailable. Choose an available template. Existing models need their matching historical optimizer version.</p>}
       <h3>The {entry?.label ?? encoder} template, for this run</h3>
       <div className="row template-sizes"><Num label="hidden" value={net.hidden_dim ?? entry?.network?.hidden_dim ?? 32} onChange={v => editNet({ hidden_dim: v })} />
         <Num label="heads" value={net.heads ?? entry?.network?.heads ?? 4} onChange={v => editNet({ heads: v })} disabled={!usesHeads} note={usesHeads ? undefined : 'ignored by this encoder'}
@@ -163,7 +165,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         Updated the restored starting preset’s learning rate from 0.0003 to 0.001. Undo in the main window restores the previous value.</p>}
       {/* The template by that word (branch record SIF-57): this box called it "the saved Graph Transformer defaults", with
           "Use saved defaults" / "Save as defaults", in a window whose table and buttons say "template". */}
-      {differs && <div className="note network-differences">
+      {differs && <div className="note network-differences" id="network-differences">
         <p className="warn">This run's values differ from the {DESIGN_NAME[encoder] ?? encoder} template ({originLabel}).</p>
         <p className="hint">This run uses the values shown in the controls. A template's values are loaded when you use it; they do not replace an existing configuration on page reload.</p>
         <table className="grid small" aria-label="Network settings differences"><thead><tr><th>Setting</th><th>This run</th><th>Template</th></tr></thead><tbody>
@@ -173,7 +175,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         <div className="row pair"><button onClick={() => applyEntry(entry)} title={`Replace this run's network and Advanced values with the ${DESIGN_NAME[encoder] ?? encoder} template's values, as one Undo step.`}>Use the template's values</button>
           <button onClick={() => { queueSave(net, adv); flush(); }} title={`Keep this run's values and save them into the ${DESIGN_NAME[encoder] ?? encoder} template.`}>Save into the template</button></div>
       </div>}
-      {entry?.problem && <p className="warn">{entry.problem}</p>}
+      {entry?.problem && <p className="warn" id="template-problem">{entry.problem}</p>}
       {entry && <details><summary>Where the {DESIGN_NAME[encoder] ?? encoder} values come from</summary>
         <p className="hint">{entry.summary}</p>
         {entry.architecture_reference && <p className="hint">Architecture reference: <a href={entry.architecture_reference.url} target="_blank" rel="noreferrer">{entry.architecture_reference.short}</a>. The starting values are project choices.</p>}
@@ -190,8 +192,8 @@ export function RlModelWindow({ m }: { m: RlModel }) {
         <ModelLabelInput m={m} /></label>
       </>}
       {netMessage && (!netMessage.about || netMessage.about === JSON.stringify([run.mode, source.run_dir, source.checkpoint_id]))
-        && <p className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
-      {starved && <p className="warn">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
+        && <p id="net-message" className={`net-message ${netMessage.level === 'error' ? 'error' : netMessage.level === 'warn' ? 'warn' : 'hint'}`}>{netMessage.text}</p>}
+      {starved && <p className="warn" id="net-starved">Budget {budget} with warm-up {adv.warmup_transitions} and batch size {adv.batch_size}: {budget <= (adv.warmup_transitions ?? 0) ? 'every evaluation is a random warm-up action, so the policy never acts' : 'one batch is never filled, so the network never learns'}.
         Published settings assume thousands of simulations. Lower them under Advanced or raise the budget.</p>}
       {loads && (<>
         <h3>Saved models</h3>
@@ -205,7 +207,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           config={config} netFields={netFields} popup={networkWindow.popup} onUse={chooseModel} usingPoint={usingPoint} useError={useError} />
         {source.run_dir && <><h3>The model in use</h3>
         {modelLoading && <p className="hint" role="status">Checking model compatibility...</p>}
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" id="net-check-error">{error}</p>}
         {model?.description && <table className="grid small model-facts"><tbody>
           {savedNet && <tr className="model-network"><td>Network</td><td><b>{designName(savedNet)}</b>, hidden {savedModel.hidden_dim}, heads {savedModel.heads}{archDiffers || usesHeads ? '' : ' (ignored by this encoder)'}, layers {savedModel.layers}
             <span className="hint"> - this run uses it as it is: a saved model only loads into the network it was trained with.</span></td></tr>}
@@ -245,7 +247,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
           <details><summary>Technical details</summary><pre className="small">{model.compatibility_unchecked.technical}</pre></details></div>}
         {/* The Modes in their buttons' words: "no fallback to scratch" and "Frozen actions" named them by their keys, and
             the choice said nothing of what it does (branch record SIF-53). The stored values stay the same. */}
-        {model?.compatibility && !archDiffers && <details open={!model.compatibility.compatible}><summary className={model.compatibility.compatible ? '' : 'error'}>Compatibility for {compatibilityMode(model.compatibility.mode)}: {model.compatibility.compatible ? 'compatible' : 'NOT compatible - it cannot be loaded, and a run never falls back to New model'}</summary>
+        {model?.compatibility && !archDiffers && <details id="net-compat" open={!model.compatibility.compatible}><summary className={model.compatibility.compatible ? '' : 'error'}>Compatibility for {compatibilityMode(model.compatibility.mode)}: {model.compatibility.compatible ? 'compatible' : 'NOT compatible - it cannot be loaded, and a run never falls back to New model'}</summary>
           <CompatibilityList checks={model.compatibility.checks} /></details>}</>}
         <h3>{run.mode === 'frozen' ? 'Evaluate only' : 'Fine-tune'}: its own settings</h3>
         {run.mode === 'frozen' && <label title="Deterministic: each step takes the policy's mean action, so the same state gives the same design. Sampled: each step draws an action from the policy, as in training.">Actions<select value={run.frozen_action ?? 'deterministic'} onChange={e => set({ frozen_action: e.target.value })}><option value="deterministic">Deterministic</option><option value="sampled">Sampled</option></select></label>}

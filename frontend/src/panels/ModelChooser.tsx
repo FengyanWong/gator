@@ -11,6 +11,7 @@ import { ModelStructure } from './ModelStructure';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
 import { runMode } from './rlModelText';
 import { pointKey, readSavePoint, withSavePoint } from '../savePoint';
+import { styled } from './popupWindow';
 /** When, as the Runs and Tasks windows and the model's facts write it - 2026-10-20 13:09:10 (branch record SIF-17; the table
  *  wrote "20 Oct, 13:09:10"). */
 const when = (utc?: string | null) => stamp(utc) ?? 'unknown time';
@@ -202,6 +203,21 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
   const newer = usable && inUse && newest && pinned && newest.checkpoint_id !== pinned.checkpoint_id && (newest.evaluations ?? 0) > (pinned.evaluations ?? 0) ? newest : null;
   const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
   const useNewest = (m: Json) => { const p = m.checkpoints?.find((x: Json) => x.is_latest) ?? m.checkpoints?.[m.checkpoints.length - 1]; if (p) onUse(m.run_dir, p.checkpoint_id); };
+  // The table scrolls in a box of its own (branch record SIF-86: 411 models made it about 20,000 px long, with the model in use
+  // and the Mode's settings under it). When the list first arrives the model in use is brought to the middle of the box, if it
+  // is out of its view - the box only, never the window. Once per window: a later sort, filter or Refresh list keeps the place.
+  const box = useRef<HTMLDivElement>(null), placed = useRef(false);
+  useEffect(() => {
+    if (placed.current || !models) return;
+    placed.current = true;
+    const at = box.current, row = at?.querySelector<HTMLElement>('tr.model-row.current');
+    if (at && row) void styled(popup ?? window).then(() => {
+      // what the box shows of its rows: under its sticky titles, down to its bottom
+      const head = at.querySelector('thead')?.offsetHeight ?? 0, top = at.getBoundingClientRect().top + head, height = at.clientHeight - head;
+      const r = row.getBoundingClientRect();
+      if (r.top < top || r.bottom > top + height) at.scrollTop += r.top - top - (height - r.height) / 2;
+    });
+  }, [models]);
   return (<div className="saved-models">
     <div className="row"><button onClick={() => { freshNext.current = true; load(); void folders.refresh(); }} disabled={loading}
       title="Refresh list: every run folder is read again from the disk.">Refresh list</button>
@@ -222,7 +238,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
       {popup && <Folders state={folders} keys={list.map(m => m.run_dir)} popup={popup} onSelect={chooseFolder} />}
       <div className="task-folder-content">
         <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
-        <div className="scroll"><table className="grid run-table model-table">
+        <div className="scroll" ref={box}><table className="grid run-table model-table">
           <TableHead view={table} columns={COLUMNS} shown={shown} id={m => m.run_dir} what="models" disabled={folders.busy || !folders.ready} />
           <tbody>{shown.map(m => { const used = m.run_dir === source.run_dir, origin = startedFrom(m, byDir); return (<Fragment key={m.run_dir}>
             <tr className={`model-row${used ? ' current' : ''}`} aria-current={used ? 'true' : undefined} title={m.run_dir}

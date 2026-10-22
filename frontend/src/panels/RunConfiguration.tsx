@@ -18,7 +18,8 @@ export function NoModeNote({ m, from }: { m: RlModel; from: Window | null }) {
 
 /** `runHeld`: the header holds a run that works or is paused (App.tsx). */
 export function RunConfiguration({ m, runHeld = false }: { m: RlModel; runHeld?: boolean }) {
-  const { run, set, source, circuit, networkWindow, loads, netTitle, modelLine, networkError, networkWarning, networkReason, modelChecked, model, limitsSet } = m;
+  const { run, set, source, circuit, networkWindow, loads, netTitle, modelLine, networkError, networkWarning, networkReason, networkAnchor, openAt, modelChecked, model,
+    limitsSet } = m;
   return (<>
       {/* Branch record SIF-72: with a run in the header, this column's Mode and budget stood beside that run's own (New model and
           200 here, Fine-tune and 800 under Run status) with nothing to tell them apart - the "Next:" line beside Start, which says
@@ -31,9 +32,9 @@ export function RunConfiguration({ m, runHeld = false }: { m: RlModel; runHeld?:
       {networkWindow.blocked && <Blocked role="alert" />}
       <NoModeNote m={m} from={null} />
       {/* The notice says why, and its "RL model..." opens the window (branch record SIF-46: it was the same fixed sentence for
-          every reason, its words no link). */}
+          every reason, its words no link) at the block that says it in full (branch record SIF-86). */}
       {(networkError || networkWarning) && <p className={`${networkError ? 'error' : 'warn'} network-review`}>Review the settings in <button className="text-link"
-        title="Open the RL model window, which says this in full." onClick={() => networkWindow.open()}>RL model...</button>{networkReason ? ` - ${networkReason}` : ''}.</p>}
+        title="Open the RL model window at the place that says this in full." onClick={() => openAt(networkAnchor)}>RL model...</button>{networkReason ? ` - ${networkReason}` : ''}.</p>}
       {/* Only while the model is checked: in scratch the last check's suggestion stayed, never asked again (review of 2026-10-01).
           "resume" is no Mode any more (record 7.265): its suggestion is the run itself, a link into the Runs window (Continue...). */}
       {modelChecked && model?.suggestion && model.suggestion.mode !== run.mode && (model.suggestion.mode === 'resume'

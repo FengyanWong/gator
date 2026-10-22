@@ -2,7 +2,7 @@
 // new configuration starts with - since record 7.372 folded behind one line, "Reward: the tested one - <objective>" - the
 // controls in a closed "Advanced" fold, a configuration with other values told how many and which (folded) and offered the
 // tested set on a button; the soft actor-critic values with which the search stays random named in the RL
-// model window, and "Use the template's values" (the starting preset) taking them away; the Specs scale headed "Scale"
+// model window, which Run configuration's notice opens at that warning (branch record SIF-86), and "Use the template's values" (the starting preset) taking them away; the Specs scale headed "Scale"
 // behind "More columns" and suggested as the size of the limit (6 dB for dB).
 // Hermetic: reads go to the scratch backend, every writing request but validation is refused, and a network-settings
 // write is held here (none is expected: there is no GATOR baseline to press since record 7.191).
@@ -99,6 +99,11 @@ await runChecks(browser, async () => {
     await page.until(`${SLOW}?.textContent.startsWith('With 1 update per evaluation and a starting temperature of 0.2, soft actor-critic learned late or not at all')
       && ${SLOW}.textContent.endsWith('The tested values are 8 updates per evaluation (Updates per transition), starting temperature 0.01 (Initial alpha) and discount 0 (Discount gamma), under Advanced.')`),
     await evaluate(`${SLOW}?.textContent`));
+  // Branch record SIF-86: the notice's link opened the window at its top, the warning further down, under the templates.
+  const SLOW_AT = `(() => { const r = (${SLOW})?.getBoundingClientRect(), w = window.__checkRLWindow;
+    return { window: Math.round(w.scrollY), top: r ? Math.round(r.top) : null, bottom: r ? Math.round(r.bottom) : null, height: w.innerHeight }; })()`;
+  check('... and the notice\'s "RL model..." opened the window at that warning: scrolled to it, in view (SIF-86)',
+    await page.until(`(() => { const at = ${SLOW_AT}; return at.window > 0 && at.top !== null && at.top >= 0 && at.bottom <= at.height; })()`, 40), JSON.stringify(await evaluate(SLOW_AT)));
   check('no GATOR baseline button and no word of it (record 7.191)', !(await evaluate(`${NETWORK_PANEL}.textContent.includes('GATOR baseline')
     || [...${NETWORK_PANEL}.querySelectorAll('button')].some(b => ['GATOR baseline', 'Publication preset'].includes(b.textContent.trim()))`)));
   await networkPage.shot(path.join(out, 'reward-3-sac-values.png'), NETWORK_PANEL, { maxHeight: 1100, beyond: true });

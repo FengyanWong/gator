@@ -86,6 +86,20 @@ def _both(pair) -> str:
     return f'{pair[0]} / {pair[1]}'
 
 
+def _seed_groups(mos):
+    """Each device's ordered peers of the same kind, model and source, and its position among them.
+
+    Keep the outer device order: walking whole groups in turn would move interleaved pairs and their explanations.
+    Each group's positions avoid slicing the full remaining device list for every outer device.
+    """
+    groups, positions = {}, {}
+    for name, (kind, model, pins) in mos.items():
+        members = groups.setdefault((kind, model, pins['source']), [])
+        positions[name] = (members, len(members))
+        members.append(name)
+    return positions
+
+
 def recognize(graph) -> list:
     """The structures of `graph` (an analog_optimizer CircuitGraph), in a stable order. Identifiers only."""
     pins = _pins(graph)
@@ -107,9 +121,12 @@ def recognize(graph) -> list:
 
     # Seeds: differential and cross-coupled pairs (same type and model, one source, two gates, two drains).
     seeds = []
-    for i, a in enumerate(order):
+    seed_groups = _seed_groups(mos)
+    for a in order:
         ka, ma, pa = mos[a]
-        for b in order[i + 1:]:
+        members, position = seed_groups[a]
+        for index in range(position + 1, len(members)):
+            b = members[index]
             kb, mb, pb = mos[b]
             if (ka, ma, pa['source']) != (kb, mb, pb['source']) or pa['gate'] == pb['gate'] or pa['drain'] == pb['drain']:
                 continue

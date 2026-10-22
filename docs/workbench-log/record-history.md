@@ -519,3 +519,11 @@ One row per commit, newest last.
 | `705d43d` | 10-17 13:46 | 7.362 | the task's card: the task across the left and the centre, the circuit on request - the user's Option D (session "Frontend workbench layout design") |
 | `8b67d97` | 10-17 13:47 | - | record only: names the commit of record 7.362, and the table rows for ccd1d3f and 705d43d |
 | `a481619` | 10-19 05:08 | 7.372, 7.376, 7.380 | nine page changes; the page's words name its buttons (Save as, not "Save task"); 8765 live again after the PC restarted (session "Frontend workbench layout design") |
+| `8d43a00` | 10-19 05:09 | - | record only: names the commit of records 7.372, 7.376 and 7.380, and the table rows for 8b67d97 and a481619 |
+| `c6f172c` | 10-19 16:49 | 7.363, 7.381, 7.383 | Round 4 offline: the plan (section 7b) and its results - LOADBench does not help the Round 3 models, option 1 neither (session "Training encoders with Zenodo dataset") |
+| `a5d3c5c` | 10-19 16:49 | - | record only: names the commit of records 7.363, 7.381 and 7.383, and the table rows for 8d43a00 and c6f172c |
+| `f6a989e` | 10-19 19:50 | 7.382 | TuRBO against transfer-learned SAC on three tasks (a trained model wins only near its training; TuRBO wins on the amplifier); TuRBO's memory growth fixed with malloc_trim after each proposal |
+| `c2177fa` | 10-19 19:59 | - | record only: names the commit of record 7.382, and the table rows for a5d3c5c and f6a989e |
+| `f87b8ce` | 10-20 13:20 | 7.384 | TuRBO and transfer-learned SAC combined: neither a TuRBO-data model nor a TuRBO warm start helps; three seeds on every row (session "Zenodo dataset encoder performance") |
+| `d6f6d81` | 10-20 13:21 | - | record only: names the commit of record 7.384, and the table rows for c2177fa and f87b8ce |
+| `9f761f7` | 10-20 14:10 | 7.364-7.371, 7.373-7.375, 7.377-7.379 | less work for the same results: streamed CSVs, projected and bounded reads, leaner inventories and ZIP exports, repeated parsing and sorting removed; the log rolled over twice (the user's Codex session) |

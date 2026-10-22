@@ -19,6 +19,7 @@ table files; they return results to the scheduler, which commits them.
 """
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timezone
 import importlib.util
 from pathlib import Path
@@ -262,6 +263,26 @@ def _json_default(value):
 
 
 # ---------------------------------------------------------------------- reading
+def _read_schema(table, columns=None):
+    import pyarrow as pa
+    schema = arrow_schema(table)
+    return schema if columns is None else pa.schema([schema.field(c) for c in columns])
+
+
+def _complete_columns(result, schema, table):
+    """Keep the same historical-column rules for whole parts and streaming batches."""
+    import pyarrow as pa
+    arrays = []
+    for field in schema:
+        if field.name in result.column_names:
+            arrays.append(result[field.name])
+        elif field.nullable:
+            arrays.append(pa.nulls(result.num_rows, type=field.type))
+        else:
+            raise ValueError(f'Historical {table} part lacks required column {field.name}')
+    return arrays
+
+
 class DatasetReader:
     """Read a fixed snapshot: only parts listed by flush records up to `cutoff_seq`."""
     def __init__(self, data_dir, *, cutoff_seq=None):
@@ -276,49 +297,83 @@ class DatasetReader:
         return [self.root / table / f['parts'][table] for f in self.flushes if table in f['parts']]
 
     @staticmethod
-    def _read_part(path, table, columns=None):
+    def _read_part(path, table, columns=None, *, tail_rows=None):
         """Old Parquet parts acquire newly added nullable columns on read only. One open of the part serves its schema
         and its data: the second open cost a Data tab read on the 9p mount 20-40 ms (record 7.286)."""
         import pyarrow as pa
         import pyarrow.parquet as pq
-        schema = arrow_schema(table)
-        if columns is not None:
-            schema = pa.schema([schema.field(c) for c in columns])
+        schema = _read_schema(table, columns)
         with pq.ParquetFile(path) as part:
             present = part.schema_arrow.names
-            result = part.read(columns=[name for name in schema.names if name in present])
-        arrays = []
-        for field in schema:
-            if field.name in result.column_names:
-                arrays.append(result[field.name])
-            elif field.nullable:
-                arrays.append(pa.nulls(result.num_rows, type=field.type))
+            selected = [name for name in schema.names if name in present]
+            if tail_rows is None or tail_rows <= 0 or not len(schema) or part.num_row_groups <= 1:
+                result = part.read(columns=selected)
             else:
-                raise ValueError(f'Historical {table} part lacks required column {field.name}')
-        return pa.Table.from_arrays(arrays, schema=schema)
+                groups, rows = [], 0
+                for index in reversed(range(part.num_row_groups)):
+                    groups.append(index)
+                    rows += part.metadata.row_group(index).num_rows
+                    if rows >= tail_rows:
+                        break
+                # Read selected groups in published order. Keep the direct read when all groups are needed;
+                # streaming the inside of a large group increased both time and native memory in measurement.
+                result = (part.read(columns=selected) if len(groups) == part.num_row_groups else
+                          part.read_row_groups(list(reversed(groups)), columns=selected))
+        result = pa.Table.from_arrays(_complete_columns(result, schema, table), schema=schema)
+        # Slice after filling historical columns: Arrow cannot slice a zero-column result's row count reliably.
+        return result if tail_rows is None else result.slice(max(0, result.num_rows - tail_rows))
 
     def table(self, table, columns=None):
         import pyarrow as pa
-        import pyarrow.parquet as pq
         paths = self.parts(table)
         if not paths:
-            schema = arrow_schema(table)
-            if columns:
-                schema = pa.schema([schema.field(c) for c in columns])
-            return schema.empty_table()
+            return _read_schema(table, columns).empty_table()
         return pa.concat_tables([self._read_part(p, table, columns) for p in paths])
 
     def rows(self, table, columns=None):
         return self.table(table, columns).to_pylist()
 
-    def tail(self, table, limit, columns=None):
-        """The LAST `limit` rows, reading parts from the newest backwards and stopping as soon as it has them. The Data
-        tab used to read every part of a run to show twenty rows (50 ms at 30 parts, seconds on the 9p mount)."""
+    def iter_batches(self, table, columns=None, *, batch_size=1024):
+        """Read the fixed snapshot a bounded number of rows at a time, in part order. Close the iterator if stopping
+        early so that the current Parquet file is released; no later part is opened until it is needed."""
         import pyarrow as pa
         import pyarrow.parquet as pq
+        if batch_size <= 0:
+            raise ValueError('batch_size must be greater than zero')
+        schema = _read_schema(table, columns)
+        for path in self.parts(table):
+            with pq.ParquetFile(path) as part:
+                present = set(part.schema_arrow.names)
+                for field in schema:
+                    if field.name not in present and not field.nullable:
+                        raise ValueError(f'Historical {table} part lacks required column {field.name}')
+                for batch in part.iter_batches(batch_size=batch_size, columns=[c for c in schema.names if c in present]):
+                    yield (pa.RecordBatch.from_arrays(_complete_columns(batch, schema, table), schema=schema)
+                           if len(schema) else batch)
+
+    def head(self, table, limit, columns=None):
+        """The FIRST `limit` rows without materializing the rest of the table."""
+        import pyarrow as pa
+        schema = _read_schema(table, columns)
+        if limit <= 0:
+            return schema.empty_table()
+        taken, have = [], 0
+        with closing(self.iter_batches(table, columns, batch_size=min(limit, 1024))) as batches:
+            for batch in batches:
+                batch = batch.slice(0, limit - have)
+                taken.append(batch)
+                have += batch.num_rows
+                if have >= limit:
+                    break
+        return pa.Table.from_batches(taken, schema=schema)
+
+    def tail(self, table, limit, columns=None):
+        """The LAST `limit` rows: walk parts and row groups backwards, then read only the required groups.
+        Single-group parts keep their direct read path. Each visited part is opened only once."""
+        import pyarrow as pa
         paths, taken, have = self.parts(table), [], 0
         for path in reversed(paths):
-            part = self._read_part(path, table, columns)
+            part = self._read_part(path, table, columns, tail_rows=limit - have)
             taken.append(part)
             have += part.num_rows
             if have >= limit:
@@ -345,13 +400,14 @@ class DatasetReader:
 
     def shown_rows(self, table, limit, tail=True):
         """(column names, rows) of `table` as the page's Data tab shows them: the newest `limit` rows (`tail`) or the first
-        ones, JSON-ready. Only the rows shown are read from disk and turned into Python: `tail` walks the parts from the
-        newest backwards (it read every part of the run, then kept 20). And only the columns shown: the `_json` columns
+        ones, JSON-ready. Only the rows shown are turned into Python: `tail` walks parts from the newest backwards,
+        skips older row groups (a partial row group still needs full decoding). Only the columns
+        shown are read: the `_json` columns
         (a state's graph patch and observation fields, an evaluation's condition results) were read and decoded, then
         dropped - 7.4 MB of a VCO run's states for the 65 KB shown (Astra's review of 7.284, record 7.286)."""
         columns = [c for c in TABLES[table]['columns'] if not c.name.endswith('_json')]
         names = [c.name for c in columns]
-        part = self.tail(table, limit, names) if tail else self.table(table, names).slice(0, limit)
+        part = self.tail(table, limit, names) if tail else self.head(table, limit, names)
         rows = part.to_pylist()
         for row in rows:
             for column in columns:

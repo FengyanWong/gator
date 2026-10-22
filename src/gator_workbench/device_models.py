@@ -132,22 +132,26 @@ def statements(text):
         line = line.rstrip()
         if line.lstrip().startswith('+'):                    # a "+" line continues the statement before it
             if current:
-                current += ' ' + line.lstrip()[1:]
+                part = line.lstrip()[1:]
+                current += ' ' + part
+                depth += part.count('{') - part.count('}')
                 continue
             if lines:
                 lines[-1] += ' ' + line.lstrip()[1:]
                 continue
         if line.endswith('\\'):
-            current += line[:-1] + ' '
+            part = line[:-1]
+            current += part + ' '
+            depth += part.count('{') - part.count('}')
             continue
         current += line
-        depth = current.count('{') - current.count('}')
+        depth += line.count('{') - line.count('}')
         if depth > 0:
             current += '\n'
             continue
         if current.strip():
             lines.append(current.strip())
-        current = ''
+        current, depth = '', 0
     if current.strip():
         lines.append(current.strip())
     return lines

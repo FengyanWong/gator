@@ -130,3 +130,56 @@ def test_the_api_serves_the_table_for_a_chosen_save_point(saved):
     assert client.post('/api/runs/model/structure', json=dict(run_dir=str(layout.run_dir), checkpoint_id='ckpt-none')).status_code == 404
     assert client.post('/api/runs/model/structure', json=dict(run_dir='/etc', checkpoint_id='latest')).status_code == 403
     assert client.post('/api/runs/model/structure', json=dict(run_dir=str(layout.run_dir), extra='x')).status_code == 422
+
+
+@pytest.mark.parametrize('encoder,version', [(name, 1) for name in ENCODERS] +
+                         [('circuit_gps', version) for version in (1, 2, 3)])
+def test_actor_only_rebuild_matches_the_full_builder_without_constructing_a_critic(encoder, version, monkeypatch):
+    from dataclasses import asdict
+    import torch
+    from analog_optimizer.graph.pyg_converter import FeatureSchema
+    from analog_optimizer.models import graph_transformer
+    from analog_optimizer.models.inputs import SpecSchema
+    from gator_workbench import graph_view
+    contract = dict(feature_schema=asdict(FeatureSchema()), spec_schema=asdict(SpecSchema()),
+                    model_config=dict(encoder_type=encoder, architecture_version=version, hidden_dim=8, heads=2, layers=1))
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(37)
+        full = model_structure.rebuild_network(contract)
+        assert list(full) == ['actor', 'critic']
+
+        def unused_critic(*args, **kwargs):
+            pytest.fail('Actor reconstruction must not allocate a critic')
+
+        monkeypatch.setattr(graph_transformer, 'GraphCritic', unused_critic)
+        torch.manual_seed(37)
+        selected = model_structure.rebuild_network(contract, parts=('actor',))
+        assert list(selected) == ['actor']
+        expected = full['actor'].state_dict()
+        assert list(selected['actor'].state_dict()) == list(expected)
+        assert all(torch.equal(tensor, expected[name]) for name, tensor in selected['actor'].state_dict().items())
+        restored = graph_view._actor(dict(contract=contract), dict(actor=expected))
+        assert not restored.training
+        assert all(torch.equal(tensor, expected[name]) for name, tensor in restored.state_dict().items())
+        # The restored viewer owns its parameters; the loaded checkpoint tensors are not borrowed mutable storage.
+        assert all(tensor.data_ptr() != expected[name].data_ptr() for name, tensor in restored.named_parameters())
+
+
+@pytest.mark.parametrize('damage', ['contract', 'missing_tensor', 'wrong_shape'])
+def test_actor_only_rebuild_keeps_contract_and_tensor_checks(saved, damage):
+    from gator_workbench import graph_view
+    directory = ckpt.resolve_checkpoint(saved[1].run_dir, 'latest')
+    meta, weights = model_structure.load_verified(directory)
+    if damage == 'contract':
+        meta['contract']['model_config']['encoder_type'] = 'unknown'
+        message = 'could not be rebuilt'
+    else:
+        weights['actor'] = dict(weights['actor'])
+        name = next(iter(weights['actor']))
+        if damage == 'missing_tensor':
+            del weights['actor'][name]
+        else:
+            weights['actor'][name] = weights['actor'][name].reshape(-1)[:1]
+        message = 'does not hold the same tensors'
+    with pytest.raises(graph_view.GraphViewUnavailable, match=message):
+        graph_view._actor(meta, weights)

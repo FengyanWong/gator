@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import platform
 import socket
+import stat
 import subprocess
 import sys
 from uuid import uuid4
@@ -180,7 +181,15 @@ def build_artifact_manifest(layout: RunLayout, *, run_id, final: bool, dataset_s
     flushed = set()
     for flush in _flushes(layout):
         flushed.update(f'data/{table}/{name}' for table, name in flush['parts'].items())
-    for path in sorted(p for p in layout.run_dir.rglob('*') if p.is_file()):
+    paths = []
+    for directory, dirs, files in os.walk(layout.run_dir):
+        base = Path(directory)
+        if base == layout.run_dir:
+            dirs[:] = [name for name in dirs if name != 'work']
+        paths.extend(base / name for name in files)
+    # Prune simulator scratch before descending, then stat only retained files, once each. rglob visited every work
+    # directory and is_file stat'ed all its files before they were excluded; retained files were stat'ed twice.
+    for path in sorted(paths):
         relative = path.relative_to(layout.run_dir).as_posix()
         top = relative.split('/')[0]
         if TEMP_MARKER in path.name or top in ('work',) or relative == 'artifact_manifest.json':
@@ -197,8 +206,11 @@ def build_artifact_manifest(layout: RunLayout, *, run_id, final: bool, dataset_s
         # 9p mount. They are listed with their size and cite their own checksums instead (review of 2026-09-23).
         own_checksum = top == 'checkpoints' and path.name != 'metadata.json'
         try:
+            info = path.stat()
+            if not stat.S_ISREG(info.st_mode):
+                continue
             entries.append(dict(path=relative, purpose=PURPOSES.get(top, PURPOSES.get(relative, 'run file')),
-                                format=path.suffix.lstrip('.') or 'none', bytes=path.stat().st_size,
+                                format=path.suffix.lstrip('.') or 'none', bytes=info.st_size,
                                 sha256=None if own_checksum else (sha256_file(path) if final or status == 'final' else None),
                                 checksum_in=f'checkpoints/{relative.split("/")[1]}/metadata.json' if own_checksum else None,
                                 write_status=status))

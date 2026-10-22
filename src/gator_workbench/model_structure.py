@@ -92,13 +92,15 @@ def schemas(contract):
             spec_schema_from_dict(contract['spec_schema']))           # a registry or a spec set (record 7.298)
 
 
-def rebuild_network(contract):
-    """The network described by the checkpoint's own contract: {part: module}. Raises when it cannot be built."""
+def rebuild_network(contract, *, parts=('actor', 'critic')):
+    """Build the requested parts of the checkpoint's own contract (actor and critic by default).
+    The graph viewer needs only the actor; omit the unused critic's allocation and initialization there."""
     from analog_optimizer.models.encoders import ModelConfig
     from analog_optimizer.models.graph_transformer import GraphCritic, GroupActor
     features, spec = schemas(contract)
     config = ModelConfig(**contract['model_config'])
-    return dict(actor=GroupActor(features, spec, config), critic=GraphCritic(features, spec, config))
+    factories = dict(actor=GroupActor, critic=GraphCritic)
+    return {part: factories[part](features, spec, config) for part in parts}
 
 
 def _shape_text(module, tensors):

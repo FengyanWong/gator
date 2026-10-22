@@ -87,7 +87,7 @@ def _epoch(value):
 
 
 def _read_part(path, table, columns):
-    """One open per part (DatasetReader._read_part opens it twice): the columns asked for, and a column an older part
+    """One open per part: the columns asked for, and a column an older part
     lacks as nulls - the reader's rule for parts written before the column existed."""
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -110,6 +110,11 @@ def _read_part(path, table, columns):
 def _table_columns(table, objective):
     """pyarrow table -> {column: python list}, timestamps as epoch seconds."""
     import pyarrow as pa
+    if 'aggregation_level' in table.column_names:       # spec rows only (see SPEC_COLUMNS)
+        # Probes and condition rows can dwarf the spec rows; discard them before Python conversion.
+        import pyarrow.compute as pc
+        table = table.filter(pc.and_(pc.equal(table['aggregation_level'], 'aggregate'),
+                                     pc.is_valid(table['hard']))).drop(['aggregation_level'])
     out = {}
     for name in table.column_names:
         column = table[name]
@@ -117,14 +122,12 @@ def _table_columns(table, objective):
             micros = column.cast(pa.int64()).to_pylist()
             out[name] = [None if v is None else v / 1e6 for v in micros]
         elif name == 'best_so_far_metrics':
-            out['best_so_far_objective'] = _objective_values(
-                column.to_pylist(), objective, table['best_so_far_feasible'].to_pylist())
+            feasible = table['best_so_far_feasible']  # the required column is checked even without an objective
+            # No objective means nulls; the nested metric maps and extra feasibility list would be discarded.
+            out['best_so_far_objective'] = ([None] * len(column) if not objective else
+                                            _objective_values(column.to_pylist(), objective, feasible.to_pylist()))
         else:
             out[name] = column.to_pylist()
-    if 'aggregation_level' in out:              # spec rows only (see SPEC_COLUMNS)
-        keep = [i for i, (level, hard) in enumerate(zip(out['aggregation_level'], out['hard']))
-                if level == 'aggregate' and hard is not None]
-        out = {k: [v[i] for i in keep] for k, v in out.items() if k != 'aggregation_level'}
     return out
 
 
@@ -148,10 +151,17 @@ def _objective_values(maps, objective, feasible):
 
 def _rows_columns(rows, columns, objective):
     """Journal rows (dicts, timestamps as ISO text, map columns as key/value pairs) -> the same columns as a part gives."""
+    specs = 'aggregation_level' in columns
+    if specs:
+        if 'hard' not in columns:
+            raise KeyError('hard')
+        columns = tuple(name for name in columns if name != 'aggregation_level')
     out = {name: [] for name in columns if name != 'best_so_far_metrics'}
     if 'best_so_far_metrics' in columns:
         out['best_so_far_objective'] = []
     for row in rows:
+        if specs and (row.get('aggregation_level') != 'aggregate' or row.get('hard') is None):
+            continue
         for name in columns:
             value = row.get(name)
             if name in TIME_COLUMNS:
@@ -160,10 +170,6 @@ def _rows_columns(rows, columns, objective):
                 out['best_so_far_objective'].extend(_objective_values([value], objective, [row.get('best_so_far_feasible')]))
             else:
                 out[name].append(value)
-    if 'aggregation_level' in out:
-        keep = [i for i, (level, hard) in enumerate(zip(out['aggregation_level'], out['hard']))
-                if level == 'aggregate' and hard is not None]
-        out = {k: [v[i] for i in keep] for k, v in out.items() if k != 'aggregation_level'}
     return out
 
 

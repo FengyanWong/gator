@@ -157,6 +157,51 @@ def test_zip_closes_the_spool_if_building_fails(tmp_path, monkeypatch):
     assert spool.closed
 
 
+@pytest.mark.parametrize('parquet_name', [None, 'data/metrics/part-000001.parquet', 'data/metrics/PART-000001.PARQUET'])
+def test_zip_preserves_mixed_file_contents_metadata_and_text_compression(tmp_path, parquet_name):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    originals = {'run_manifest.json': b'{"origin":"synthetic","provenance":"mock"}',
+                 'logs/events.jsonl': ('{"message":"\u03bc\u96fb\u8def","provenance":"mock"}\n' * 1000).encode(),
+                 'exports/metrics.csv': b'evaluation_id,value\n' + b'synthetic,0.123456789\n' * 1000,
+                 'logs/errors.jsonl': b''}
+    if parquet_name:
+        path = tmp_path / parquet_name
+        path.parent.mkdir(parents=True)
+        pq.write_table(pa.table({'evaluation_id': [f'synthetic-{i}' for i in range(2048)],
+                                 'value': [i / 2048 for i in range(2048)]}), path, compression='zstd')
+        originals[parquet_name] = path.read_bytes()
+    members = []
+    for name, contents in originals.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(contents)
+        members.append((str(path), name))
+    before = io.BytesIO()
+    with zipfile.ZipFile(before, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for path, name in members:
+            archive.write(path, name)
+    response = support.zip_download(iter(members), 'synthetic.zip')
+    try:
+        packed = response.stream.read()
+        assert len(packed) == int(response.headers['content-length'])
+        with zipfile.ZipFile(before) as old, zipfile.ZipFile(io.BytesIO(packed)) as new:
+            assert new.testzip() is None
+            assert new.namelist() == list(originals)
+            for name, contents in originals.items():
+                assert new.read(name) == contents
+                was, now = old.getinfo(name), new.getinfo(name)
+                for field in ('filename', 'date_time', 'file_size', 'CRC', 'compress_type', 'external_attr'):
+                    assert getattr(was, field) == getattr(now, field)
+                if name != parquet_name:
+                    assert was.compress_size == now.compress_size
+        if parquet_name is None:
+            assert packed == before.getvalue(), 'research CSV/text packages retain the previous compression'
+    finally:
+        response.stream.close()
+
+
 def test_display_checksum_cache_invalidates_and_never_serves_execution(tmp_path, monkeypatch):
     directory = tmp_path / 'checkpoints' / 'first'
     directory.mkdir(parents=True)

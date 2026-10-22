@@ -15,7 +15,7 @@ from ..vocabulary import run_vocabulary_facts
 from .context import ApiContext
 from .models import (CommandBody, ContinueBody, CornerCheckBody, CornerStopBody, ExportBody, GraphViewBody,
                      ModelStructureBody, RenameModelBody, StartBody)
-from .support import attachment, compatibility_unchecked, fail, file_snapshot, run_files, zip_download
+from .support import attachment, compatibility_unchecked, fail, file_snapshot, package_files, run_files, zip_download
 
 
 # /api/runs/model took any dict: {}, a numeric checkpoint_id or a list as run_dir failed with HTTP 500 (review of 2026-09-29).
@@ -413,8 +413,8 @@ def _export_routes(app: FastAPI, context: ApiContext):
     def export_package(body: ExportBody):
         """Data-only package: JSON, Parquet, CSV, JSONL, netlists. No waveforms, work files or models."""
         path = context.run_path(body.run_dir)
-        members = run_files(path, exclude_roots=('work', 'control', 'waveforms', 'checkpoints'), exclude_dirs=('_quarantine',))
-        return zip_download(((item, relative) for item, relative, _ in members), f'{path.name}__data.zip')
+        members = package_files(path, exclude_roots=('work', 'control', 'waveforms', 'checkpoints'), exclude_dirs=('_quarantine',))
+        return zip_download(members, f'{path.name}__data.zip')
 
     @app.post('/api/aggregates/export')
     def export_aggregates(body: ExportBody):

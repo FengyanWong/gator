@@ -268,12 +268,15 @@ function paint(cy: Json, view: Json, layer: number, head: string, direction: str
   const weights = nodeWeights(view, scope, layer, head, query);
   const peak = Math.max(...weights, 1e-12);
   const queryId = query || view.node_attention?.nodes?.[0];
-  cy.nodes().data({ focus: 0, query: 0 });
-  (view.node_attention?.nodes ?? []).forEach((id: string, i: number) => cy.getElementById(id).data({
-    focus: scope !== 'local' ? 1 : 0, focusWeight: (weights[i] ?? 0) / peak, query: scope === 'global' && id === queryId ? 1 : 0,
-  }));
-  cy.batch(() => view.connections.forEach((c: Json) => {
-    const a = attentionOf(c, scope === 'local' ? layer : 0, head, direction);
-    cy.getElementById(`c:${c.id}`).data({ attention: a.value ?? 0, trivial: a.trivial ? 1 : 0 });      // no attention at all: thin solid lines
-  }));
+  // Nodes and edges change together: flush their style notifications once, including the per-node attention colors.
+  cy.batch(() => {
+    cy.nodes().data({ focus: 0, query: 0 });
+    (view.node_attention?.nodes ?? []).forEach((id: string, i: number) => cy.getElementById(id).data({
+      focus: scope !== 'local' ? 1 : 0, focusWeight: (weights[i] ?? 0) / peak, query: scope === 'global' && id === queryId ? 1 : 0,
+    }));
+    view.connections.forEach((c: Json) => {
+      const a = attentionOf(c, scope === 'local' ? layer : 0, head, direction);
+      cy.getElementById(`c:${c.id}`).data({ attention: a.value ?? 0, trivial: a.trivial ? 1 : 0 });      // no attention at all: thin solid lines
+    });
+  });
 }

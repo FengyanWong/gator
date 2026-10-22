@@ -135,8 +135,12 @@ def numeric_range(value):
 
 def parse_cdf_text(text):
     """The query's lines -> {cells: {name: {...}}, leaves: {cell: [{instance, library, cell, model}]}, layout_only: [..]}."""
+    return _parse_cdf_fields(query_fields(raw.rstrip('\r')) for raw in (text or '').splitlines())
+
+
+def _parse_cdf_fields(lines):
+    """Interpret already split query rows, preserving the stable CELL-first ordering."""
     cells, leaves, layout_only = {}, {}, []
-    lines = [query_fields(raw.rstrip('\r')) for raw in (text or '').splitlines()]
     # Cells first, then what belongs to them: the order of a library's cells (and of the lines) is not guaranteed.
     for parts in sorted(lines, key=lambda parts: parts[0] != 'CELL'):
         tag = parts[0]

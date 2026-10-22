@@ -16,8 +16,8 @@ Mock runs live under a separate root and are excluded from real-experiment aggre
 """
 from __future__ import annotations
 
+from contextlib import closing
 import csv
-import io
 from pathlib import Path
 from statistics import mean, median
 
@@ -131,15 +131,21 @@ def _cell(value):
 
 def _write(directory, name, rows, *, inputs, explanation=None, extra_columns=()):
     columns = [c for c, _ in COLUMNS[name]] + list(extra_columns)
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator='\n')
-    writer.writerow(columns)
-    for row in rows:
-        writer.writerow([_cell(row.get(column)) for column in columns])
     path = Path(directory) / f'{name}.csv'
     temporary = temporary_path(path)
-    temporary.write_text(buffer.getvalue(), encoding='utf8')
-    publish(temporary, path)
+    try:
+        # Keep write_text's default newline translation, including embedded newlines in cells.
+        with temporary.open('x', encoding='utf8') as stream:
+            writer = csv.writer(stream, lineterminator='\n')
+            writer.writerow(columns)
+            for row in rows:
+                writer.writerow([_cell(row.get(column)) for column in columns])
+        publish(temporary, path)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
     write_json(Path(directory) / f'{name}.meta.json', dict(
         table=name, exporter_version=EXPORTER_VERSION, generated_utc=utcnow().isoformat(), rows=len(rows),
         schema=[dict(name=c, description=d) for c, d in COLUMNS[name]]
@@ -154,16 +160,42 @@ def _write(directory, name, rows, *, inputs, explanation=None, extra_columns=())
 def reconstruct_from_tables(run_dir, manifest):
     """Rebuild run statistics from the raw evaluations table when run_summary.json is missing."""
     reader = DatasetReader(Path(run_dir) / 'data')
-    rows = sorted(reader.rows('evaluations'), key=lambda r: r['commit_seq'])
-    first = next((r for r in rows if r['all_hard_constraints_satisfied']), None)
-    charged = max((r['cumulative_evaluations_charged'] for r in rows), default=0)
-    valid = [r for r in rows if r['valid']]
-    best = None
-    feasible = [r for r in valid if r['all_hard_constraints_satisfied']]
-    if feasible:
-        best = feasible[0]
-    elif valid:
+    maxima = dict.fromkeys(('cumulative_evaluations_charged', 'cumulative_launches', 'global_env_step'))
+    columns = [*maxima, 'evaluation_id', 'commit_seq', 'valid', 'all_hard_constraints_satisfied',
+               'normalized_constraint_violation', 'dispatch_index', 'cumulative_completed',
+               'in_flight_at_commit', 'attempts', 'cache_hit']
+    first = feasible = best = None
+    failures = retries = cache_hits = 0
+    unordered_violation = False
+    with closing(reader.iter_batches('evaluations', columns=columns)) as batches:
+        for batch in batches:
+            for row in batch.to_pylist():
+                for column, previous in maxima.items():
+                    maxima[column] = row[column] if previous is None else max(previous, row[column])
+                failures += not row['valid']
+                retries += max(0, row['attempts'] - 1)
+                cache_hits += bool(row['cache_hit'])
+                if row['all_hard_constraints_satisfied']:
+                    if first is None or row['commit_seq'] < first['commit_seq']:
+                        first = row
+                    if row['valid'] and (feasible is None or row['commit_seq'] < feasible['commit_seq']):
+                        feasible = row
+                if row['valid']:
+                    violation = row['normalized_constraint_violation']
+                    if violation is None or violation != violation:
+                        unordered_violation = True
+                    elif best is None or (violation, row['commit_seq']) < (
+                            best['normalized_constraint_violation'], best['commit_seq']):
+                        best = row
+    if feasible is not None:
+        best = feasible
+    elif unordered_violation:
+        # Valid measurements normally have finite violations. Preserve Python min's historical null/NaN
+        # behaviour for malformed archives as well; only those need a projected, ordered fallback.
+        valid = sorted((r for r in reader.rows('evaluations', columns=columns) if r['valid']),
+                       key=lambda r: r['commit_seq'])
         best = min(valid, key=lambda r: r['normalized_constraint_violation'])
+    charged = maxima['cumulative_evaluations_charged'] or 0
     return dict(
         status='interrupted', stop_reason='interrupted', mode=manifest.get('mode'),
         first_feasible=None if first is None else dict(
@@ -171,10 +203,9 @@ def reconstruct_from_tables(run_dir, manifest):
             completed_count=first['cumulative_completed'], in_flight_count=first['in_flight_at_commit'],
             spectre_launches=first['cumulative_launches'], active_seconds=None),
         censoring=dict(status='observed' if first else 'right_censored', observation_limit=charged),
-        totals=dict(candidate_evaluations_charged=charged, spectre_launches=max((r['cumulative_launches'] for r in rows), default=0),
-                    failures=sum(1 for r in rows if not r['valid']), retries=sum(max(0, r['attempts'] - 1) for r in rows),
-                    cache_hits=sum(1 for r in rows if r['cache_hit']), interrupted_evaluations=None,
-                    environment_steps=max((r['global_env_step'] for r in rows), default=0), gradient_updates=None),
+        totals=dict(candidate_evaluations_charged=charged, spectre_launches=maxima['cumulative_launches'] or 0,
+                    failures=failures, retries=retries, cache_hits=cache_hits, interrupted_evaluations=None,
+                    environment_steps=maxima['global_env_step'] or 0, gradient_updates=None),
         time=dict(active_seconds=None, paused_seconds=None, sum_job_runtime_seconds=None),
         best_design=None if best is None else dict(evaluation_id=best['evaluation_id'],
                                                    feasible=best['all_hard_constraints_satisfied'], metrics={},
@@ -305,10 +336,18 @@ def export_aggregates(experiment_dir, *, include_mock=None, budgets=None):
                                   extra_columns=metric_columns)
     # ---- budget_success
     budget_rows = []
+    budget_columns = [name for name, _ in COLUMNS['budget_success']] + [
+        'training_sources', 'circuit_class', 'topology_id', 'generalization_level', 'encoder_type', 'ablation_labels']
     for r in rows:
-        for budget in sorted(set(budgets or r['budget_checkpoints'] or ([r['max_evaluations']] if r['max_evaluations'] else []))):
+        checkpoints = sorted(set(budgets or r['budget_checkpoints'] or ([r['max_evaluations']] if r['max_evaluations'] else [])))
+        if not checkpoints:
+            continue
+        # Only the budget table, its grouped counts and transfer summary consume these copies. Keep the full
+        # run row (including physical metrics and model details) in run_summary without duplicating it per budget.
+        base = {name: r[name] for name in budget_columns if name in r}
+        for budget in checkpoints:
             success, status, cost = budget_outcome(r, budget)
-            budget_rows.append(dict(r, budget=budget, success_within_budget=success, observation_status=status,
+            budget_rows.append(dict(base, budget=budget, success_within_budget=success, observation_status=status,
                                     cost_evaluations=cost, cost_convention=FIRST_FEASIBLE_CONVENTION))
     paths['budget_success'] = _write(directory, 'budget_success', budget_rows, inputs=inputs,
                                      explanation=empty or 'No budget checkpoints are defined for these runs.')
@@ -436,33 +475,39 @@ def _cumulative(rows):
 
 
 def export_table_csv(run_dir, table, *, cutoff_seq=None):
-    """On-demand detailed CSV copy of one raw table into <run>/exports (derived, fixed snapshot)."""
+    """On-demand detailed CSV copy into <run>/exports: stream bounded batches from a fixed snapshot, then publish."""
     import json
     if table not in TABLES:
         raise KeyError(table)
     layout = RunLayout(Path(run_dir))
     reader = DatasetReader(layout.data, cutoff_seq=cutoff_seq)
     columns = [c.name for c in TABLES[table]['columns']]
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator='\n')
-    writer.writerow(columns)
-    count = 0
-    for row in reader.rows(table):
-        cells = []
-        for column in TABLES[table]['columns']:
-            value = row[column.name]
-            if column.type.startswith('map') and value is not None:
-                value = json.dumps(map_to_dict(value), allow_nan=False)
-            elif column.type.startswith('list') and value is not None:
-                value = json.dumps(value, allow_nan=False, default=str)
-            cells.append(_cell(value) if not hasattr(value, 'isoformat') else value.isoformat())
-        writer.writerow(cells)
-        count += 1
     layout.exports.mkdir(parents=True, exist_ok=True)
     path = layout.exports / f'{table}__seq{reader.cutoff_seq}.csv'
     temporary = temporary_path(path)
-    temporary.write_text(buffer.getvalue(), encoding='utf8')
-    publish(temporary, path)
+    count = 0
+    try:
+        with temporary.open('x', encoding='utf8', newline='') as stream, closing(reader.iter_batches(table)) as batches:
+            writer = csv.writer(stream, lineterminator='\n')
+            writer.writerow(columns)
+            for batch in batches:
+                for row in batch.to_pylist():
+                    cells = []
+                    for column in TABLES[table]['columns']:
+                        value = row[column.name]
+                        if column.type.startswith('map') and value is not None:
+                            value = json.dumps(map_to_dict(value), allow_nan=False)
+                        elif column.type.startswith('list') and value is not None:
+                            value = json.dumps(value, allow_nan=False, default=str)
+                        cells.append(_cell(value) if not hasattr(value, 'isoformat') else value.isoformat())
+                    writer.writerow(cells)
+                    count += 1
+        publish(temporary, path)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
     write_json(layout.exports / f'{table}__seq{reader.cutoff_seq}.meta.json', dict(
         table=table, rows=count, cutoff_commit_seq=reader.cutoff_seq, exporter_version=EXPORTER_VERSION,
         generated_utc=utcnow().isoformat(), note='Derived copy. Nested cells are JSON. Parquet stays the source of truth.'))

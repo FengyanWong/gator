@@ -272,6 +272,31 @@ function useReadAt(value: unknown) {
   return at;
 }
 
+/** The table as read, memoised apart from the tool line above it (record 7.379): a status update still redraws the steering
+ *  line and the tool line, but not the table's rows (up to 500 since branch record SIF-99). The rows change with a read's
+ *  answer - Refresh, another table, row count or order, or the run's new rows (branch record SIF-99) - and with the order;
+ *  `onNote` is the tab's note setter, the same at every draw. */
+const DataSnapshot = memo(function DataSnapshot({ data, newest, onNote }: { data: Json; newest: boolean; onNote: (note: string) => void }) {
+  // A column of numbers only (no id) is right-aligned in figures of one width (branch record SIF-32), as a spreadsheet's.
+  const numeric = new Set<string>(data.columns.filter((c: string) => !/_id$/.test(c) && (data.rows as Json[]).some(r => r[c] != null)
+    && (data.rows as Json[]).every(r => r[c] == null || typeof r[c] === 'number')));
+  return (<div className="scroll"><table className="grid small data-table"><thead><tr>{data.columns.map((c: string) => <th key={c} className={numeric.has(c) ? 'num-cell' : undefined}>{c}</th>)}</tr></thead>
+    <tbody>{(newest ? [...data.rows].reverse() : data.rows as Json[]).map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
+      // One line per row (record 7.158): an id ends in "..." - the whole value on hover, a click copies it - a time keeps
+      // its full width, and no word is cut in two; a long hash used to wrap into a column of letters as tall as a paragraph.
+      // A time in this computer's time, as Logs and Output files write it, its UTC value on hover (branch record SIF-76: it
+      // read "2026-10-16T17:17:20.704501+", cut at the panel's edge and an hour off the same moment in Logs).
+      const time = /_(at|utc)$/.test(c), local = time && typeof r[c] === 'string' ? stamp(r[c]) : null;
+      const object = typeof r[c] === 'object' && r[c] !== null, text = object ? JSON.stringify(r[c]) : local ?? num(r[c]);
+      const id = /_id$/.test(c) && text !== '';
+      // A JSON value keeps to one line too (branch record SIF-4): it wrapped into a block 200 px tall. A click's copy is said
+      // on the tool line, or that the browser refused it (branch record SIF-94: it copied unsaid either way).
+      return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : numeric.has(c) ? 'num-cell' : undefined}
+        title={id || object ? `${text}\nClick to copy` : local ? `${r[c]} (UTC)` : undefined}
+        onClick={id || object ? () => copy(text).then(() => onNote(`Copied ${c}.`),
+          () => onNote(`Could not copy ${c}: the browser refused the clipboard; select the cell's text instead.`)) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>);
+});
+
 /** `status`: the shown run's status as the page already polls it (App.tsx) - for the steering line, and since branch record
  *  SIF-99 for when to read the table again. This tab used to poll the same file again every 2 s, finished runs too. */
 export function DataTab({ runDir, status }: { runDir: string | null; status: Json }) {
@@ -299,9 +324,6 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
   const exportResearch = () => exporting('research', async () => {
     const written = await api.exportAggregates(runDir);
     return `Downloaded ${await download(api.aggregatesUrl(runDir), 'aggregates.zip')} (${Object.keys(written.files).length} tables). Also kept in ${written.experiment_dir}/aggregates`; });
-  // A column of numbers only (no id) is right-aligned in figures of one width (branch record SIF-32), as a spreadsheet's.
-  const numeric = new Set<string>((data?.columns ?? []).filter((c: string) => !/_id$/.test(c) && (data.rows as Json[]).some(r => r[c] != null)
-    && (data.rows as Json[]).every(r => r[c] == null || typeof r[c] === 'number')));
   return (<div>
     <SteeringCheck value={status?.steering} />
     <div className="row"><select className="tab-choice" value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
@@ -321,21 +343,7 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
           read (branch record SIF-99) */}
       <span className="hint" title={data ? `Snapshot at commit ${data.cutoff_commit_seq}` : undefined}>{data ? `${plural(data.total_rows, 'row')}${data.rows.length < data.total_rows
         ? `; the ${end} ${data.rows.length} shown` : ''}${data.rows.length > 1 ? `, ${end} first` : ''}.${readAt ? ` Read at ${readAt}.` : ''}` : ''} {error ?? note}</span></div>
-    {data && <div className="scroll"><table className="grid small data-table"><thead><tr>{data.columns.map((c: string) => <th key={c} className={numeric.has(c) ? 'num-cell' : undefined}>{c}</th>)}</tr></thead>
-      <tbody>{(newest ? [...data.rows].reverse() : data.rows as Json[]).map((r: Json, i: number) => <tr key={i}>{data.columns.map((c: string) => {
-        // One line per row (record 7.158): an id ends in "..." - the whole value on hover, a click copies it - a time keeps
-        // its full width, and no word is cut in two; a long hash used to wrap into a column of letters as tall as a paragraph.
-        // A time in this computer's time, as Logs and Output files write it, its UTC value on hover (branch record SIF-76: it
-        // read "2026-10-16T17:17:20.704501+", cut at the panel's edge and an hour off the same moment in Logs).
-        const time = /_(at|utc)$/.test(c), local = time && typeof r[c] === 'string' ? stamp(r[c]) : null;
-        const object = typeof r[c] === 'object' && r[c] !== null, text = object ? JSON.stringify(r[c]) : local ?? num(r[c]);
-        const id = /_id$/.test(c) && text !== '';
-        // A JSON value keeps to one line too (branch record SIF-4): it wrapped into a block 200 px tall. A click's copy is said
-        // on the tool line, or that the browser refused it (branch record SIF-94: it copied unsaid either way).
-        return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : numeric.has(c) ? 'num-cell' : undefined}
-          title={id || object ? `${text}\nClick to copy` : local ? `${r[c]} (UTC)` : undefined}
-          onClick={id || object ? () => copy(text).then(() => setNote(`Copied ${c}.`),
-            () => setNote(`Could not copy ${c}: the browser refused the clipboard; select the cell's text instead.`)) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>}
+    {data && <DataSnapshot data={data} newest={newest} onNote={setNote} />}
   </div>);
 }
 

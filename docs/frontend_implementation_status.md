@@ -29,11 +29,12 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.301-7.323.md`](workbench-log/7.301-7.323.md) | entries 7.301–7.323 |
 | [`7.324-7.335.md`](workbench-log/7.324-7.335.md) | entries 7.324–7.335 |
 | [`7.336-7.352.md`](workbench-log/7.336-7.352.md) | entries 7.336–7.352 |
-| [`7.353-and-later.md`](workbench-log/7.353-and-later.md) | entries 7.353 onwards: the OPEN file |
-| [`self-improving-frontend.md`](workbench-log/self-improving-frontend.md) | the branch `self-improving-frontend`'s own entries, SIF-1 onwards (2026-10-20) |
+| [`7.353-7.364.md`](workbench-log/7.353-7.364.md) | entries 7.353–7.364 |
+| [`7.365-7.375.md`](workbench-log/7.365-7.375.md) | entries 7.365–7.375 |
+| [`7.376-and-later.md`](workbench-log/7.376-and-later.md) | entries 7.376 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md` and `7.336-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md`, `7.336-and-later.md` `7.353-and-later.md` and `7.365-and-later.md` are pointers kept for old links.
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
@@ -41,7 +42,7 @@ the table below: `| 7.N | <short title, at most about 110 characters> |`. A comm
 table in `record-history.md`.
 
 **Rolling the open file over:** when the open file passes entry 7.380 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.353-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+unchanged into `docs/workbench-log/7.376-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
@@ -417,6 +418,25 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.360 | The Roadster look, Draft A of the user's drafts (user: "go with draft A, build it into the workbench"): dark only in red, white and black - Whiteprint, Silicon Night and the look switch deleted (`themes.css`, `theme.ts`); 14 px text, sentence-case headings, roomier rows, cards by tone (`roadster.css`); the banner = the GATOR chip, the task's name (back since 7.182), the run's state as Ready / Running / Paused / Ended, round white Start and red Abort; Output settings folded by default; Run status and the Training tab's key numbers as tiles; browser suite 54/54 (2,153 checks); commit `dd6398a`, live 2026-10-17 02:35 (7.361) |
 | 7.361 | Live (user: "make it live"): the Roadster look's page published and 8765 restarted 02:35 (pid 3193264, the old process's settings without its Codex variables, log `artifacts/local/live-8765-2026-10-17.log`), bringing records 7.351/7.352 and 7.356's `architecture_version` live; no page run was active, the version 3 chain untouched; the connection pill no longer cuts its state word on a long name (the description gives way, the state never; connection_panel_check 81, its control fails without the rule); commit `5edbd37` |
 | 7.362 | The task's card, Option D of the user's preview ("go with D, build it into the workbench"): the task's name, revision and saved state start the editors' tab line, Show circuit / Check now / Save as / Task file end it, the task's own lines stand under the toolbar; the circuit column (labels, picture, notes, hierarchy) folded away until Show circuit, kept in the browser (the table 1264 px wide instead of 952 at 1680, all 10 Parameters columns at 1366); New task (From a Virtuoso cell... / From an ngspice netlist...) in the Tasks window; 12 checks updated, suite 54/54 (2,174 checks); live 2026-10-17 13:32 (no restart); commit `705d43d` |
+| 7.363 | Round 4 planned (user: "write a plan for round 4 ..."): plan section 7b - Round 3's RGCN, GraphGPS and CircuitGPS v3 models trained further on the 304-run pool mixed 1 : 1 with LOADBench (101 SKY130 op-amps), with an own-pool-only control, then Round 3's frozen/adapt arms on the same four tasks (24 runs, <= 13,200 designs); seven pieces to build first; nothing built, trained or run. Revised the same day: all of LOADBench but its 15 test op-amps, two stages (LOADBench on the GPU, then the own-run recipe), a fast batch path; encoders after the speed test |
+| 7.364 | Detailed CSV exports stream bounded batches; first-row previews stop early; identical CSVs, 138 tests passed |
+| 7.365 | Selected replay filters Arrow batches before Python decoding; exact contents, 152 tests; log rolled over |
+| 7.366 | Graph viewer skips unused critic construction; exact responses; missing Arrow compute preload fixed |
+| 7.367 | Missing run summaries use projected batches; exact totals and design selection; 133 tests passed |
+| 7.368 | Training charts filter unused metric rows before Python conversion; exact values; 50 tests passed |
+| 7.369 | Artifact inventories skip simulator scratch and stat retained files once; exact manifests; 78 tests passed |
+| 7.370 | Newest-row previews skip older Parquet row groups; direct single-group reads kept; 133 tests passed |
+| 7.371 | ZIP exports use fast Parquet compression; exact file contents and metadata; 68 tests passed |
 | 7.372 | Nine changes to the page (user: "give improvement ideas of the frontend", then "fix everything"): red for attention only (links white and underlined, chosen buttons outlined in white); the revision only on the tab line; "not saved" opens what differs, table by table, with Reload saved values and Save as; a cell entered with room for under four rows folds the bottom panel; a run taken over is a badge beside the run chip; the reward in one line; under 1400 px only the run state that holds; Open Tasks and New task when no task is chosen; a Windows list in the banner (Close all). Frontend only; live 2026-10-19 (7.380) |
+| 7.373 | Model labels and table sorting avoid repeated work; graph selection uses bounded batches; 165 tests passed |
+| 7.374 | ZIP inventories skip unused stats; circuit summaries trim allocations; graph updates batch; 98 tests passed |
+| 7.375 | Structure seed indexing, reusable layout preparation and bounded unfinished log tails; 141 tests passed |
 | 7.376 | The page's words name its buttons (user: "fix things"): the backend's messages say Save as, not "Save task" (the name before 7.246), and that it makes a new task - rows older than the saved task no longer warn that saving would undo; no message names the Project column, Read setup / Use in editors or Source: Registered task; the summary's Save as says why it cannot start. 536 tests passed in a Linux copy; browser suite passed 2026-10-19; live (7.380) |
+| 7.377 | Aggregate CSV streaming, indexed model paths, bounded folder lists and reused rename patterns; 188 tests passed |
+| 7.378 | Incremental model parsing, direct include discovery, lean chart decoding and memoized PDK details; 270 tests verified |
+| 7.379 | Shared CDF fields, projected budget rows, normalized globals and lighter table rendering; 106 backend tests passed |
 | 7.380 | Live after the PC restarted (user: "make it live" or "commit"): 8765 started 2026-10-19 05:00:54 from the working tree - records 7.372, 7.376 and the uncommitted work of 7.364-7.379; page published; 1,949 tests and the 58-script browser suite passed first |
+| 7.381 | Round 4 offline results (user: "go on, finish rgcn seed 2 then write it up"): LOADBench does not help the Round 3 models - stage 1 learned each op-amp but not unseen ones, stage 2 ends at the control (RGCN 0.00787 vs 0.00788-0.00826, GraphGPS 0.0135 vs 0.0093), the predictor transplant fails the rule fixed in advance (seeds 0-2: 0.00785 / 0.00806 / 0.00776 vs 0.00826 / 0.00792 / 0.00788); no online run; the overnight WSL memory exhaustion and the PC restart recorded |
+| 7.382 | TuRBO against transfer-learned SAC (user: "run TuRBO on the telescopic OTA, amplifier and DFFRX1 for comparison"): a trained model wins only where its training is close to the task (DFFRX1 first pass 40/91/85 vs TuRBO 317/238/331; OTA 79 % early vs 32 %), TuRBO wins on the amplifier (first pass 102/277/186 vs 212/424/423, 441 vs 267 passes); TuRBO memory growth (12-13 GB per run, glibc keeping freed matrices) fixed with malloc_trim after each proposal: 324 MB instead of 4.8 GB over 800 designs, same proposals |
+| 7.383 | Round 4 option 1 (user: "try option 1 after the write-up"): only the RGCN model's per-transistor input layers learn from LOADBench (area R^2 0.59-0.71, power 0.40-0.66 on unseen op-amps), then Round 3's own-run recipe: 0.00801 / 0.00791 / 0.00785 vs the control's 0.00826 / 0.00792 / 0.00788 - does not help either; a cache-driven restart loop (54 stops while loading) fixed |
+| 7.384 | TuRBO and transfer-learned SAC combined (user: "commit 7.382 check the plan then go on on your own"): a model trained offline on two TuRBO runs fine-tunes far worse than one trained on two failing SAC runs (DFFRX1 median 2 passes against 300); a TuRBO warm start from the trained model helps only near its training (DFFRX1 most passes) and hurts elsewhere; three seeds confirm 7.382; every pre-registered rule fails; runtime copies only |

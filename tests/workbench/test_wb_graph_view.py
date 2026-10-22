@@ -168,6 +168,22 @@ def test_the_api_serves_the_view_and_writes_nothing(transformer):
     assert after == before                                                      # nothing drawn or derived is written into the run
 
 
+def test_actor_only_construction_preserves_the_complete_graph_view(transformer, monkeypatch):
+    from analog_optimizer.models import graph_transformer
+    _, _, layout = transformer
+    rebuild = model_structure.rebuild_network
+    with monkeypatch.context() as patch:
+        # The previous viewer built both networks and discarded the critic.
+        patch.setattr(model_structure, 'rebuild_network', lambda contract, **kwargs: rebuild(contract))
+        expected = graph_view.graph_view(layout.run_dir)
+
+    def unused_critic(*args, **kwargs):
+        pytest.fail('The graph viewer must not construct a critic')
+
+    monkeypatch.setattr(graph_transformer, 'GraphCritic', unused_critic)
+    assert graph_view.graph_view(layout.run_dir) == expected
+
+
 # ------------------------------------------------------------------------------ B4: the graph view reads what it shows
 @pytest.mark.usefixtures('bridge_installed')
 def test_the_graph_view_reads_one_transition_part_and_its_state_newest_first(tmp_path, monkeypatch):

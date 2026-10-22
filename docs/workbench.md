@@ -73,6 +73,8 @@ Start-up takes about 2 s before the port opens: the backend imports torch / torc
 in one thread, before it serves anything (`gator_workbench.preload`). Importing them on first use
 let two parallel first requests corrupt the import, and every later static validation then
 answered 500 until a restart.
+The preload list also explicitly includes `pyarrow.compute`, used when selecting archived replay records
+(record 7.366), so this lazy import is covered by the same startup checks.
 
 UI development: `cd frontend && npm run dev` (Vite on 127.0.0.1:5173, proxying `/api`).
 
@@ -452,6 +454,10 @@ Pointing at a Parameters row, or tabbing into it, lights the devices that row si
 to it by `binding_group` (`w_pair` lights M1 and M2). The block folds into its heading line, and the fold is kept in
 this browser (`gator-workbench-circuit-picture-v1`).
 
+The loaded circuit's summary includes details for at most 400 devices. Terminal records are built only for those
+device IDs (7.374), avoiding discarded records for larger circuits. The total device count, truncation flag, nets,
+unknown-device list and structure recognition still describe the full graph.
+
 Browser check: `frontend/scripts/looks_check.mjs` (47 checks, hermetic).
 
 ## What is real and what is mock
@@ -551,6 +557,11 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   Name box is off and the button says so.
 * A press on a column title sorts by it (again: the other way; rows without a value stay last). The filter box narrows
   the list by any word of a row: name, class, cell, a date. Task names sort as displayed; canonical task IDs stay unchanged for selection, saved configurations, runs and models (7.249).
+  The shared Tasks, Runs and saved-model table code derives each row's search text and sort value at most once per
+  arrangement (7.373), including the Tasks columns that count or find the newest run. Values are read again on the
+  next arrangement; filtering, stable ties and missing values last keep the same behavior.
+  The shared Tasks/Runs/Models header builds selected-ID membership once per render (7.379). Its all/partial
+  checkbox state and selection/sort actions retain their behavior; row-body selection checks are unchanged.
 * **Nothing in the window updates by itself.** The task list is read when the button is pressed - also while the window
   is open: the press brings it to the front and reads the list again (branch record SIF-100) - and by **Refresh list**
   (which reads the run list again too; otherwise the run columns show the page's own run list - read when the page
@@ -715,6 +726,8 @@ seven saved MScR tasks showed which columns repeat what another already says:
 - Filled for you: a Maestro output's Probe ID is `m_` + its output name, shown and not typed; it follows a renamed output,
   and so do the spec equations that use it, in one Undo step. A spec whose equation becomes one probe takes that probe's
   unit while it has no limits yet. The Probes column that holds a Maestro output's expression reads **Expression**.
+  A bulk edit compiles each rename pattern once, on its first string equation, and reuses it for that edit (7.377).
+  Chained replacements keep their original order; configurations and patterns are not cached between edits.
 - On a follower row (one with `binding_group`) the fields its leader decides - `optimized`, `value_type`, the bounds,
   `step`, `scale` - are greyed, with why in their tooltip: the written value is the leader's times the ratio.
 
@@ -897,6 +910,11 @@ load of the example OTA go from 7 to 5 independent variables), the MOCK task. A 
 (there is none left since 2026-09-30) fixed its rows: the structures were listed for information and nothing offered.
 The circuit panel's summary carries the same sentences: `circuit_summary` holds them as `structures`.
 
+Seed discovery indexes transistors by kind, model and source, then considers later members of that group in the
+original global natural order (7.375). Electrical rules, explanations, suggestion defaults and applied ties are
+unchanged. Circuits with many unrelated sources avoid impossible pair comparisons; a single shared group still
+requires every pair. `tests/workbench/test_wb_structure_seed_index.py` covers output and suggestion equivalence.
+
 Backend `structures.py` (`recognize`, `plan_ties`, `apply_ties`), route `POST /api/parameters/matched` (`{config, apply}`;
 local files only). Tests: `tests/workbench/test_wb_matched_devices.py` (the circuits of record, hand-made netlists with
 non-M names and unlabelled rails, a folded cascode, a 2:1 bias mirror, kept and foreign ties, the route). Browser check:
@@ -959,6 +977,8 @@ What the deck must contain, and what the workbench makes of it (`src/gator_workb
   over parameters (a whitelist evaluator with ngspice's arithmetic functions, never `eval`), and `.end`. A
   node's name is read without regard to case, as ngspice reads it: `IN` and `in` are one net, under the spelling
   the deck gives first (record 7.322; each spelling used to be a net of its own).
+  The parser normalizes its declared global names once per deck (7.379), then reuses that set for terminal lookup.
+  Port bindings still take precedence, first-used spelling is retained, and the next deck builds a fresh set.
 * **Results**: `.meas` statements, or in a `.control` block `meas ...`, `let x = ...` + `print x`. Their names are the
   Probes rows (`source_name`); a run reads the `name = value` lines ngspice prints (`.meas` names come back in
   lowercase; a failed measurement is missing, never a number). ngspice has no `.meas op`: read operating-point
@@ -1435,6 +1455,9 @@ and `bridge_setup` (`_remote_path`, `_ic_folders`, `maestro_netlist`). The windo
 
 Default root `<repo>/outputs` (remembered; selectable among allowed roots; writability is tested;
 a Windows path is shown only after a token written through Linux was read back through Windows).
+The restricted folder picker scans directory entries and retains only its first 500 visible directory names in
+native path order (7.377), avoiding per-child `Path.stat` calls and a full sorted list. Symlinks and hidden folders
+stay excluded, type-check errors still propagate, and every selected path still passes the same allowlist check.
 
 ```text
 <output_root>/[mock/]<experiment_name>__<experiment_id>/
@@ -1478,6 +1501,11 @@ Mapping to the recommended layout of the specification:
   and the total; a later pass repairs rows an earlier one left stale, and a manifest that is right is not
   rewritten.
 * A part file belongs to the dataset only if `data/_journal/flushes.jsonl` lists it.
+* Artifact inventories skip the run's top-level `work/` directory before traversing it and read each retained
+  file's metadata once (record 7.369). A nested folder named `work` is still included. Relative-path order, sizes,
+  checksums and checkpoint checksum references, published/unlisted part status, and the existing temporary-file
+  and control-lock exclusions stay the same. Directory links are not followed; regular-file links retain their
+  previous behavior, and a file removed during the scan is skipped.
 * The default `best_and_failures` raw-output policy follows the overall selected best design. An improvement only
   within the infeasible or nominal-feasible class cannot replace the output of a better class; the class's design
   record still updates. A new overall best replaces the preceding best's raw output (record 7.321).
@@ -1489,6 +1517,12 @@ Mapping to the recommended layout of the specification:
   cumulative cost streams keep SAC and Bayesian runs separate even when their research labels match. Paired
   rows name both optimizers; a mismatch is an uncontrolled difference. Historical manifests without
   `architecture.optimizer` mean SAC. Re-export an experiment to rebuild its derived CSVs.
+* When `run_summary.json` is missing, research exports reconstruct its available statistics from one published
+  evaluation snapshot. They read only the 13 summary columns in batches of at most 1,024 rows (record 7.367),
+  retaining totals and selected designs instead of loading and sorting the full table. Earliest commit order
+  still decides first feasibility and tied best designs. Unrecorded times and resumability stay unknown, and
+  the result remains interrupted/partial. Malformed valid rows with null/NaN violations retain the historical
+  ordered fallback and its errors; the bounded path applies to ordinary, comparable violation values.
 * When a writer reopens a journal after a crash, it truncates only the incomplete final line before appending.
   Complete corrupt records stop recovery with a persistence error; they never silently hide later records.
   A healthy journal needs only its final byte checked (record 7.174).
@@ -1678,10 +1712,40 @@ the file into its normal download folder, under a name that says which run (or e
 
 A log can be downloaded while the run is still writing it: the download is the file as it was at the moment of the
 press, cut at the last complete line. Parquet stays the source of truth; every CSV is a derived copy.
+Research CSV exports stream each formatted row to a temporary file instead of building another whole CSV string
+(7.377). The six tables keep their bytes, newline translation and metadata; the closed CSV is published before its
+metadata, as before. Failed formatting or writing removes the temporary file. Input row lists and metadata still
+occupy memory; the export does not promise constant total memory or atomic publication of the CSV/metadata pair.
+Budget-checkpoint rows keep only their output columns and the fields needed by the transfer summary (7.379),
+instead of duplicating each run's full metrics and model metadata at every checkpoint. Outcomes, grouping, all
+six exports and the full run-summary rows remain unchanged. Runs without checkpoints create no budget-row base.
+The Data tab's table is a memoized snapshot (7.379): new table reads replace it, while status updates still refresh
+the steering line and toolbar. Existing cells, formatting and copy actions are unchanged.
+The Logs preview scans backward for complete records and discards an unfinished suffix block by block (7.375),
+without retaining all its bytes. Malformed complete lines are skipped for display; the recovery reader still
+rejects them. Complete records may span blocks and still require memory proportional to their length.
+Detailed CSV exports read one published Parquet part at a time in batches of at most 1,024 rows, writing to a
+temporary file instead of holding the whole table and CSV in memory (record 7.364). The completed file is published
+atomically; a failed read or write removes its temporary file and leaves an existing export intact. Column order,
+nested JSON cells, timestamps, nulls and the snapshot cutoff are unchanged. Memory still depends on the size of a
+row and Parquet's decoding buffers. A preview of the first rows stops once it has enough, without opening later
+parts; both first-row and newest-row previews read only the displayed columns.
+Newest-row previews also skip older Parquet row groups within a part (record 7.370). They select the final groups
+that contain the requested rows and read them in their saved order, from one open per visited part. Single-group
+parts and reads that need every group retain the direct reader. Selected groups are still decoded in full, so
+memory depends on their size; this is not a fixed-memory read within a row group. Historical nullable columns,
+required-column errors, snapshot cutoffs and the displayed rows remain unchanged.
 The on-screen log reads backwards only far enough to collect the requested entries, skipping malformed lines and
 an unfinished final line. The journal reader used for recovery still stops at its first malformed record.
 ZIP downloads spill beyond 1 MiB to a temporary file, send 1 MiB chunks, and close the file on completion or
 disconnect. File listings and packages prune excluded work directories before descending into them.
+Parquet members use fast DEFLATE compression (level 1) when packaged; other files retain the default ZIP
+compression (record 7.371). This reduces the compression effort on already-compressed data pages, at the cost of
+slightly larger packages. File contents, names and metadata are preserved; text-only research packages are unchanged.
+Data-only packages collect member paths directly from directory entries (7.374), avoiding the full metadata pass
+needed by the Output files table. The ZIP writer still reads each file's current size, timestamp and permissions
+when packing it. Ordering, exclusions and regular-file symlinks are retained; directory symlinks are not traversed.
+Directory-entry classification may itself need metadata reads, depending on the filesystem and link type.
 Browser check: `frontend/scripts/export_check.mjs` (real MOCK run; needs a scratch backend, refuses port 8765).
 
 ### The Training tab: charts of a run's recorded numbers (2026-10-05, record 7.193, user request)
@@ -1699,6 +1763,15 @@ them. `GET /api/runs/training` (`training_series.py`) reads the run's own tables
 rows, journaled before the next part is written (every 16 evaluations by default), so a live run is drawn up to its newest
 result. The training loop was not touched for it: no event, no file and no simulation was added. Columns keep their
 recorded names (`evaluations.reward`, `learner_updates.actor_loss`, ...): a chart title's tooltip names its source column.
+
+For spec charts, the reader keeps aggregate metric rows whose `hard` flag is recorded, including soft specs
+(`hard=false`). It filters Parquet columns before converting them into Python lists and skips unused journal rows
+before copying their fields (record 7.368). Condition rows and probes with `hard=null` remain outside these charts;
+recorded values, gaps, ordering, spec definitions and page cursors are unchanged.
+
+When no objective is configured, the Arrow formatter creates the same null objective column without decoding
+unused best-design metric maps or a second feasibility list (7.378). The feasibility column remains required;
+configured objectives keep the existing lookup and feasibility rules.
 
 | Chart | Recorded as | Along | What it is |
 |---|---|---|---|
@@ -2663,6 +2736,10 @@ and Models trained from it in the Details; until then they kept the old name unt
 typed into the RL model label box: the default model is the model that carries the label when no run was started under
 it.
 
+When listing older models with repeated labels, numbering remembers the next candidate suffix for each base name
+within that list (7.373). Renamed models still take precedence, other models remain oldest first, and the first free
+number is unchanged. Each new list starts fresh, so removed or renamed models leave their numbers available again.
+
 ### Folding the right column's modules (added 2026-09-21, user request)
 
 "Run configuration" and "Output settings" fold into one line with a click on their heading (the "Research
@@ -2805,6 +2882,8 @@ Record 7.228 adds attention scopes for the two new encoders: **Local port edges*
 weights in a table; they do not add physical connections. The structure table also
 explains the new attention and structural-input layers. All of this remains a
 read-only replay on an archived state, with policy-output equivalence checked.
+Changing the displayed attention updates node colours and edge weights in one drawing batch (7.374), combining
+their style notifications. Attention values, query highlighting, hidden bulk edges and node placement are unchanged.
 
 **Where it is.** RL model window > a saved model's **Details**, in any Mode (in New model under the folded "Saved
 models, to look at"): last in Details are the "Network structure" fold-out and the **Circuit graph view** button, for
@@ -2830,6 +2909,11 @@ at its bulk in a bar. Bulk ties are hidden at first (tick "Bulk connections"; th
 without a supply AND a ground net has no hints: the package's layered layout is used and the view says so. "Layered"
 and "Spread out" remain as buttons; nodes can be dragged.
 
+The shared layout prepares fixed cross-row neighbours and weight totals once for its eight ordering passes, and
+reuses the placed-node keys during final collision checks (7.375). It still reads current coordinates after every
+move. The circuit picture and graph viewer retain identical positions and ordering; the standalone
+`frontend/scripts/circuit_layout_check.mjs` checks this against a supplied earlier source.
+
 **Line thickness is the attention** on that connection for the
 chosen block, head and direction ("what a device takes from its nets" or "what a net takes from its devices");
 a device whose size the policy sets has a blue border and reads `w 1.768 um -> 3.115 um` = now -> proposed.
@@ -2842,6 +2926,13 @@ one forward pass on the CPU. **Nothing is simulated and nothing is written**, so
 MOCK and real runs alike. The evaluation can be chosen (box + Show, `<`, `>`); by default it is the last one the
 save point had seen. Attention is read by forward hooks on the attention layers, without any change under
 `src/analog_optimizer/`; a test compares the policy's output with and without the hooks.
+The viewer builds only the actor from the saved contract (record 7.366), avoiding construction of an unused
+critic. The weight-file checksum, tensor-name/shape checks, weight loading and attention pass are retained.
+The Network structure table still builds both the actor and a critic to verify the layer types it shows.
+Selecting an archived evaluation uses batches of at most 1,024 evaluation numbers for long archives (7.373),
+without making and sorting a Python list of every number. The existing direct read remains for archives whose
+published journal declares at most 4,096 transition rows. The chosen evaluation, available range, count and state
+are unchanged; the transition and state are still selected by single-row reads.
 
 How to read it - and how not to: attention is normalized per RECEIVING node (over all connections arriving at one
 node a head's values sum to 1), so a node with a single connection always shows 1.0; such lines are drawn thin and
@@ -2925,6 +3016,15 @@ name, except where families disagree on its scale (a bipolar `area` factor of 25
 inductor's netlist `r` is its inner RADIUS, so it is `rad`, never the resistance column). What cannot be established
 stays "unknown" and is listed; for GPDK045 nothing was.
 
+Subcircuit path searches index ordered adjacent connections once (7.377), avoiding unrelated edges at each search
+step. Parallel elements, self-loops, path order, existing traversal limits and all family/pin decisions are retained.
+Small direct wrappers also build this index; this is not a promise that every model parses faster.
+
+Include discovery matches each physical line's quoted directive directly (7.378): a comment outside that quoted
+prefix cannot affect the filename, so the preceding character-by-character comment pass is unnecessary. Quoted
+paths, malformed-line behavior and sorted unique includes stay unchanged. In the PDK window, the details table
+uses React memoization while its loaded PDK and derived device list stay the same; new read results update both.
+
 **How a circuit reaches the network.** The task's circuit graph is left exactly as it is: the environment, the backend,
 the replay, the archive and every table keep the graph the simulator saw. Only at the network's input
 (`pdk.learner_class`: the package's `SACLearner` with its `batch` shown the PDK's view) each device whose Spectre model
@@ -2998,6 +3098,9 @@ learner, contract and model are the same.
   parameters, Spectre's `temp` (27 C) and a subckt's implicit `m` (1) by a small arithmetic evaluator - no code is run.
   The numbers are kept beside the record (`pdks/<id>/device_models.json`) and read again when the PDK is loaded again;
   no route returns them and no message shows them (CLAUDE.md: PDK models are never shown).
+  Statement assembly updates brace depth from each appended fragment (7.378), avoiding repeated brace scans of
+  the growing card. Continuation precedence, comments, section handling and extracted numbers are unchanged;
+  string assembly itself remains as before.
 - Read on 2026-10-10 (counts only): gpdk045 14 of 14 MOS models, all four numbers for its 10 transistor models (its 4 MOS
   capacitors: sizes only); a second foundry's 0.18 um PDK (its name is kept out of the repository) 13 of 25 (its 12 RF models lie outside the nominal section the task's wrapper
   includes). Every model a saved task uses - GPDK045's `g45n1svt`, `g45p1svt`, `g45n2svt`, `g45p2svt` and the second PDK's four transistor models - has
@@ -3227,6 +3330,10 @@ procedures - and each rule that is an expression, evaluated on the instance as i
 typeable while "Calculate Parameter" is not `width`). A rule only the open form can decide (GPDK045's
 `gpdk045_mosEditable` reads the form's widgets) is trusted as the form would be. Kept beside the copy as `core_cdf.json`;
 nothing is written, and the query reports whether the cell was modified (it never was).
+
+The workbench tokenizes each query line once and shares those fields between its facts and CDF parsers (7.379).
+Stable CELL-first ordering, duplicate handling and malformed-value error order are retained. The public CDF parser
+still accepts text directly; there is no cache across reads and no change to the bridge query or form-writing rules.
 
 **What Save task accepts.** Widths of single-finger, m = 1 transistors keep the verified width writer (as before, rules of
 format 1). Any other row goes to the form writer (rules of format 2) when the form lets a user type it; otherwise Save task
@@ -3655,6 +3762,14 @@ rows = DatasetReader('<run>/data').rows('evaluations')            # fixed snapsh
 transitions = TrajectoryLoader('<run>').transitions()             # optimizer Transition objects, validated
 ```
 
+For a selected replay sample, pass `candidate_ids={...}` to `transitions` (record 7.365). The loader scans the
+fixed snapshot in bounded Arrow batches and converts only matching transitions and their referenced states into
+Python rows. Commit ordering, replay eligibility, reward-version checks and transition validation are preserved.
+All published parts are still scanned; this reduces Python decoding and memory, not the number of archive parts
+read. Memory depends on the selected records, batch buffers and individual row sizes. A subset does not populate
+the full state cache; later `state_rows()` or `observation(state_id)` calls can still load any archived state.
+`transition_rows(candidate_ids={...})` provides the same selection for raw rows, including ineligible transitions.
+
 ### Offline archive pretraining (2026-10-06, record 7.233)
 
 Since record 7.298 a request may train with the transferable network inputs (`inputs`), each source read through
@@ -3739,7 +3854,9 @@ The general-network experiment's source request and progress are in
 `artifacts/general-network-20261006/`; its baseline gates and launch budget are in `docs/plan-general-network.md`.
 
 `rehearsal.build_snapshot` freezes a bounded selection from that pool's **training** partition, including its original
-LDO relabel decisions, in checksummed compressed JSON using the recording codec. `run.rehearsal` takes a
+LDO relabel decisions, in checksummed compressed JSON using the recording codec. Its source loader decodes only
+selected transitions and referenced states into Python rows (record 7.365); sampling and snapshot contents are
+unchanged. `run.rehearsal` takes a
 `pool_manifest`, its `pool_sha256`, and `fraction` (default 0.5). Only fine_tune and its resume accept it. Runtime checks
 origin, reward, registry, data checksum, training membership and capacity before opening simulator lanes. Each update
 borrows target transitions from the ordinary replay and appends task-balanced source draws. Source transitions never

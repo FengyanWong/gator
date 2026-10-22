@@ -19,6 +19,8 @@
 // names break between words or after "_", "-" or ".", never inside one, and "Started from" takes three lines at most. Branch
 // record SIF-84: a Load run that does not go through says why in the window as well (the edits question is task_run_check's).
 // Branch record SIF-98: a run shown in Run status lists its best design's variables as its Details do, and a click copies them.
+// Branch record SIF-101: Runs... opens the window at the shown run; a link keeps the folder, the filter and the ticks that show
+// its run, else "Back to ..." brings them back; "Go to the shown run" when they hide it.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -339,6 +341,43 @@ await runChecks(browser, async () => {
   check('following the links chose nothing: the bottom tabs show the run they showed', await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(RESUMED.run_dir)})`));
   await pressIn(RESUMED, 'Hide details');
 
+  // ---- 4c. a link keeps the view that shows its run (branch record SIF-101) -----------------------------------------------------
+  // A link set every folder and no filter, and let the ticks go, for every run it named - one the view showed too - and nothing
+  // brought the user's folder and filter back.
+  const RUN_ROW = rr => `[...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(rr.run_dir)})`;
+  const viewLinks = () => far.evaluate(`({ shown: ${WINDOW}.querySelector('.run-go-shown')?.textContent ?? null, back: ${WINDOW}.querySelector('.run-back')?.textContent ?? null })`);
+  const filterText = () => far.evaluate(`${WINDOW}.querySelector('input.run-filter').value`);
+  await typeFilter('budget');
+  check('(set-up) the filter "budget" shows the two runs that used their budget', (await table()).map(x => x.folder).sort().join() === [DONE.run_dir, RESUMED.run_dir].sort().join(),
+    (await table()).map(x => x.folder.slice(-4)).join());
+  await far.evaluate(`${RUN_ROW(RESUMED)}.querySelector('input[type="checkbox"]').click()`); await sleep(200);
+  await far.evaluate(`${RUN_ROW(RESUMED)}.querySelector('button.item-link').click()`);
+  check('a link to a run the filter shows keeps the filter and the ticks: DONE\'s Details open, "budget" and RESUMED\'s tick stay, no "Back to" (SIF-101)',
+    await detailsOpen(DONE) && (await filterText()) === 'budget' && (await table()).length === 2 && await far.evaluate(`${RUN_ROW(RESUMED)}.querySelector('input[type="checkbox"]').checked`)
+    && (await viewLinks()).back === null, JSON.stringify([await filterText(), await viewLinks()]));
+  await pressIn(DONE, 'Hide details');
+  await typeFilter('fine');
+  check('(set-up) the filter "fine" shows RESUMED only, a Fine-tune', (await table()).map(x => x.folder).join() === RESUMED.run_dir);
+  await far.evaluate(`${RUN_ROW(RESUMED)}.querySelector('button.item-link').click()`);
+  check('a link to a run the filter hides shows every run, its Details open, and offers "Back to All runs · "fine"" beside the filter (SIF-101)',
+    await detailsOpen(DONE) && (await filterText()) === '' && (await table()).length === 6 && (await viewLinks()).back === 'Back to All runs · "fine"', JSON.stringify(await viewLinks()));
+  await far.evaluate(`${WINDOW}.querySelector('.run-back').click()`); await sleep(300);
+  check('... which brings the filter back, and goes (SIF-101)', (await filterText()) === 'fine' && (await table()).map(x => x.folder).join() === RESUMED.run_dir
+    && (await viewLinks()).back === null, JSON.stringify([await filterText(), await viewLinks()]));
+  await typeFilter('paused');
+  check('a filter that hides the shown run offers "Go to the shown run" beside it (SIF-101)', (await table()).map(x => x.folder).join() === PAUSED.run_dir
+    && JSON.stringify(await viewLinks()) === JSON.stringify({ shown: 'Go to the shown run', back: null }), JSON.stringify(await viewLinks()));
+  await far.evaluate(`${WINDOW}.querySelector('.run-go-shown').click()`);
+  check('... which shows it, its Details open, every run, and offers "Back to All runs · "paused"" (SIF-101)', await detailsOpen(RESUMED) && (await table()).length === 6
+    && JSON.stringify(await viewLinks()) === JSON.stringify({ shown: null, back: 'Back to All runs · "paused"' }), JSON.stringify(await viewLinks()));
+  check('... and chose nothing: the bottom tabs show the run they showed', await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(RESUMED.run_dir)})`));
+  await pressIn(RESUMED, 'Hide details');
+  await far.evaluate(`${WINDOW}.querySelector('.run-back').click()`); await sleep(300);
+  check('"Back to" brings "paused" back, and with it "Go to the shown run" (SIF-101)', (await filterText()) === 'paused'
+    && JSON.stringify(await viewLinks()) === JSON.stringify({ shown: 'Go to the shown run', back: null }), JSON.stringify([await filterText(), await viewLinks()]));
+  await typeFilter('');
+  check('(set-up) every run again, nothing beside the filter', (await table()).length === 6 && JSON.stringify(await viewLinks()) === JSON.stringify({ shown: null, back: null }), JSON.stringify(await viewLinks()));
+
   // ---- 5. filter and sort -------------------------------------------------------------------------------------------------------
   await typeFilter('paused');
   rows = await table();
@@ -486,7 +525,20 @@ await runChecks(browser, async () => {
   await doubleClick(DONE);
   check('a run chosen there is shown in the workbench', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`));
   check('... and the window closed', await closedByChoice());
+  // Branch record SIF-101: Runs... opens the window at the shown run, its row brought into view - nothing else changes. It opened
+  // at the top of the newest-first list, the user's 600 runs, the shown run only marked somewhere below. Forty newer runs here.
+  const FILLER = Array.from({ length: 40 }, (_, i) => { const t = Date.parse('2026-09-23T00:00:00Z') + i * 3_600_000, at = s => new Date(t + s * 1000).toISOString();
+    return run(100 + i, { ...LINEAGE, created_utc: at(0), started_utc: at(2), ended_utc: at(60), active_seconds: 58, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 60, resumability: 'none', segments: [] }); });
+  listed = [...FILLER.toReversed(), ...listed];
   await openWindow();
+  const placedRow = `(() => { const tr = ${RUN_ROW(DONE)}; if (!tr) return null; const b = tr.getBoundingClientRect(); return { rows: ${WINDOW}.querySelectorAll('table.run-table tbody > tr').length, scrolled: Math.round(scrollY),
+    top: Math.round(b.top), bottom: Math.round(b.bottom), height: innerHeight, marked: tr.getAttribute('aria-current'), details: ${WINDOW}.querySelectorAll('tr.run-details-row').length,
+    folder: ${WINDOW}.querySelector('.task-folders [aria-current="page"]')?.dataset.folderId, filter: ${WINDOW}.querySelector('input.run-filter').value }; })()`;
+  await far.until(`(() => { const p = ${placedRow}; return !!p && p.scrolled > 0 && p.top >= 0 && p.bottom <= p.height; })()`, 40);
+  const placed = await far.evaluate(placedRow);
+  check('Runs... opens the window at the shown run: with 46 runs, DONE the 41st, its row is in view, marked; no Details open, All runs and no filter as they were (SIF-101)',
+    placed?.rows === 46 && placed.scrolled > 0 && placed.top >= 0 && placed.bottom <= placed.height && placed.marked === 'true' && placed.details === 0 && placed.folder === 'all' && placed.filter === '',
+    JSON.stringify(placed));
   await evaluate(`${BUTTON}.click()`, true); await sleep(800);
   check('pressing the button while the window is open opens no second window', (await pages()).filter(t => t.title === RUNS_WINDOW).length === 1);
   await shot('main', 'footer', 'runs-4-footer-with-run.png');

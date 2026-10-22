@@ -20,6 +20,8 @@ export function useTableView(key: string, down: boolean) {
     select: (id: string, checked: boolean) => setSelected(ids => checked ? [...ids.filter(k => k !== id), id] : ids.filter(k => k !== id)),
     /** Moves the ticked rows into folder `id`; the ticks go once they are moved. */
     move: async (folders: FolderView, id: string) => { if (await folders.move(selected, id)) setSelected([]); },
+    /** Whether every word of the filter stands in a row's `text` (lower case). */
+    matches: (text: string) => words.every(w => text.includes(w)),
     /** The rows `keep` keeps and in whose `text` (lower case) every word of the filter stands, sorted by `value`. */
     arrange: <T,>(rows: T[], keep: (row: T) => boolean, text: (row: T) => string, value: (row: T) => string | number | null | undefined): T[] =>
       rows.filter(r => keep(r) && words.every(w => text(r).includes(w))).sort((a, b) => {

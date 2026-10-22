@@ -257,7 +257,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
         the run columns stay empty. Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Refresh list".</p>}
       {tasks.length === 0 && !reading && !tasksError && <p className="hint task-empty">No registered task yet. Save one from a Virtuoso cell or from an ngspice netlist (New task, above).</p>}
       <div className="task-browser">
-      <Folders state={folders} keys={tasks.map(t => t.task_key)} popup={popup} onSelect={chooseFolder} />
+      <Folders state={folders} keys={tasks.map(t => t.task_key)} popup={popup} onSelect={chooseFolder} selected={selected.length} />
       <div className="task-folder-content">
       <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
       {tasks.length > 0 && <div className="scroll"><table className="grid run-table task-table">

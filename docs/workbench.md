@@ -565,7 +565,9 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   refuses deletion while the task is running.
 
 **Folders** (7.250): the sidebar lists **All tasks**, **Unfiled**, and named folders with task counts.
-Use the **New folder** icon (folder with a plus) to create one. **Rename** uses a pencil and **Delete folder**
+Use the **New folder** icon (folder with a plus) to create one; it opens, empty - unless tasks are ticked (branch record
+SIF-101): then the folder shown and the ticks stay, its question says so, and the new folder is in **Move to…** at once,
+so tick, New folder, Move to… works in that order (opening the empty folder let the ticks go). **Rename** uses a pencil and **Delete folder**
 uses a bin; all three retain tooltips and screen-reader labels (7.251). Tick tasks (or the header checkbox for all shown rows), then choose **Move to…**.
 A folder filters the table; search and sorting apply inside it. Changing the filter or folder clears selection, so
 hidden tasks cannot be moved accidentally. In All tasks, a task's folder appears below its name. Double click still
@@ -1508,7 +1510,11 @@ At the right end of the bottom tab strip there is one button, **Runs...**. It re
 its left, as plain text, stands the run that Run status, Logs, Data tables and Output files are showing (start time |
 task | mode and seed | state; "No run selected" when there is none). Pressing the button opens the **run window**, a
 browser window of its own that can stay open next to the workbench (allow pop-ups for the page if the browser blocks
-it). The window lists every run under the output folder, newest first, one row per run:
+it). It opens at the run the tabs show (branch record SIF-101; it opened at the top of the list, the shown run - with the
+user's 600 runs often hundreds of rows down - only marked): once the list is read, that run's row is brought to the
+middle when it is out of view. Nothing else changes: no Details open, the folder and the filter stay. When the folder or
+the filter hide it, **Go to the shown run** stands beside the filter and shows it as a link does (below). The window
+lists every run under the output folder, newest first, one row per run:
 
 | Column | What it says |
 |---|---|
@@ -1582,7 +1588,10 @@ it). The window lists every run under the output folder, newest first, one row p
   - **Saved model**: its name and latest save point. **Runs that started from its model**: links.
   - **History**, folded: the chain of models behind the run, oldest first, from its template or offline sources; a
     parent that is not under the output folder is said, never left out.
-  - Every run named is a link that shows it in this window: selected, scrolled to, its Details open. Following a link
+  - Every run named is a link that shows it in this window: selected, scrolled to, its Details open. The folder, the
+    filter, the one task and the ticks stay when they show the run (branch record SIF-101; a link cleared them every
+    time, and nothing brought them back); when they hide it, every folder and no filter are set, and **Back to <folder>
+    · "<filter>"** beside the filter brings them back. Following a link
     chooses nothing on the page. The Tasks window and the run brief open this window the same way (at a run, or with one
     task's runs only).
 * **Details** also open everything else the run recorded, under its row: run folder (click to copy) and ids, created /

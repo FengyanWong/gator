@@ -2978,3 +2978,52 @@ run, saves a task or writes to Virtuoso; the confirmation, the deleting guard an
 another library is chosen in the Virtuoso window it is gone. Against the code before, that last check fails. Also run,
 unchanged: `task_rows_check` 54, `ngspice_window_check` 43, `task_list_check` 97 (4 scripts, one lane, all passed the
 first time). No flakes.
+
+### SIF-101 Lists keep your place: Runs... opens at the shown run, a link keeps your filter, New folder keeps your ticks (2026-10-22; from the usability audit)
+
+**Found.** Pressing Runs... to act on the run the bottom tabs show opened the window at the top of a newest-first list
+(the user's 617 runs), in whatever folder and filter were left. The shown run was only marked, often hundreds of rows
+down, so repeating it meant finding it by hand (J4-5). Every "Started from", "Runs that started from its model",
+History and recorded-runs link set All runs, cleared the filter and the ticks, and could drop the one-task view - even
+when the run was already in view. A filtered comparison was lost to look at one parent run, and nothing brought it
+back (J4-7). In the Tasks window, tick, New folder, Move to… failed: New folder jumped into the new, empty folder and
+the ticks went with the change of folder (J6-8; the Runs and saved models windows share the component).
+
+**Changed.** `frontend/src/panels/RunList.tsx`: a press of Runs... while the window is closed sets `placeShown`. Once
+the list it read is drawn and the window's styles are in (`styled`, SIF-86), the shown run's row is scrolled to the
+middle - only when it is out of view, so a row in view stays where a click may be aimed at it. Nothing else happens: no
+Details, no folder or filter change, and not through `focus`, which waits for its row and would pull the list to a
+hidden run at a later filter change. A link from another window cancels a pending place; a press while the window is
+open does not place. When the folder, the one task or the filter hide the shown run, **Go to the shown run** stands
+beside the filter and shows it as a link does. `focusRun` now first asks whether the folder, the one task and the
+filter show the run (`inView`, the row text moved above it). When they do, it only opens its Details and scrolls to it:
+folder, filter, one task and ticks stay. When they hide it, `leaveView` keeps the view that was and sets every folder,
+no filter and no ticks as before; **Back to <folder> · "<filter>"** (with "the runs of <task>" when one task was
+shown) beside the filter restores that view, ticks cleared, and goes; it is hidden while the view is the one it names
+and let go when the window closes. A folder deleted meanwhile restores All runs. The Tasks window's "Runs" count link
+(one task's runs only) clears the view through `leaveView` too, so it offers Back as well. The window's hint says it
+opens at the shown run. `frontend/src/panels/Folders.tsx`: `useFolders` has `name(id)` (the title uses it). `Folders`
+takes `selected`, the number of ticked rows. With rows ticked, New folder opens no folder: the folder shown and the ticks
+stay, the new folder is in Move to… at once, and the question reads "New folder name - the 4 ticked tasks stay ticked;
+then choose the folder in Move to…". With none ticked it opens the new folder, empty, as before.
+`frontend/src/panels/TableView.tsx`: `matches(text)`, the filter's test of one row. `TaskList.tsx` and
+`ModelChooser.tsx` pass their tick counts. Nothing here starts, continues or stops a run, saves a task or writes to
+Virtuoso: Load run, New run like this and Continue... are pressed as before, a link still chooses nothing, and ticks
+still clear whenever the folder or filter change, so a hidden row is never moved (7.250). `docs/workbench.md` (the run
+window's opening, the links, the Tasks window's folders) and `docs/functionality-reference.md` (Task folders, Links
+between the windows, Runs...) describe it. Skipped: the optional link on the shown run's name left of Runs... (the
+press now opens at it).
+
+**Checked.** `tsc` clean. `run_list_check` 151 (140 before). With the filter "budget" (DONE and RESUMED) and RESUMED
+ticked, its "Started from" link opens DONE's Details with "budget" and the tick kept and no Back link. With "fine"
+(RESUMED only) the same link shows all six runs, DONE's Details open, and "Back to All runs · "fine"", which brings the
+filter back and goes. "paused" hides the shown run: "Go to the shown run" appears beside the filter, shows RESUMED with
+its Details open and offers "Back to All runs · "paused"", choosing nothing; Back brings "paused" and the Go-to link
+back. With forty newer runs listed, Runs... opens the window with DONE (the 41st of 46) in view and the window scrolled,
+DONE marked, no Details open, All runs and no filter. `task_list_check` 100 (97 before): with four tasks ticked in
+Unfiled, New folder "Later" keeps Unfiled shown and all four ticked, "Later" is in Move to…, and the question says the 4
+ticked tasks stay ticked. Each new check looks for what the code before did not do: it cleared "budget" and the tick,
+had no Back or Go-to link, opened at the top of the list, and opened "Later". Also run, unchanged: `model_chooser_check` 98,
+`dom_identity_check` 56, `training_tab_check` 103, `task_run_check` 39, `looks_check` 75, `network_panel_check` 72 (8
+scripts, one lane, all passed the first time). Not run: `run_control_check` (it presses Start against its fixture). No
+flakes.

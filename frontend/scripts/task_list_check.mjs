@@ -10,7 +10,8 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_list_check.mjs)" [screenshot-dir]
 // Since record 7.362 the task's name, the button that opens the window, starts the editors' tab line. Record 7.372: with no
 // task yet the task's lines under the editors' toolbar offer Open Tasks and the ways to a new task, and the banner lists the
-// windows open (one press brings one to the front; Close all).
+// windows open (one press brings one to the front; Close all). Branch record SIF-101: New folder with tasks ticked keeps
+// them ticked in the folder shown.
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, starterConfig, taskWindow, validConfiguration, workbenchUrl, TASKS_WINDOW, RUNS_WINDOW } from './lib/harness.mjs';
@@ -408,6 +409,21 @@ await runChecks(browser, async () => {
   check('deleting the folder keeps all tasks and puts its members in Unfiled', (await tw.keys()).length === 4 && Object.keys(folderData.assignments).length === 0 && Object.keys(folderData.folders).length === 0);
   await far.evaluate(`${TABLE}.querySelector('thead input[type="checkbox"]').click()`);
   check('select all selects only the shown rows', await far.evaluate(`${ROWS}.every(tr => tr.querySelector('input').checked)`));
+  // Branch record SIF-101: New folder with tasks ticked opens no folder. Opening the new, empty one let the ticks go, so tick,
+  // New folder, Move to… could not be done in that order. The ticks and the folder shown stay; the new one is in Move to….
+  const questions = [];
+  far.on('Page.javascriptDialogOpening', p => { questions.push(p.message); });
+  replies.push({ accept: true, promptText: 'Later' }); await press('New folder'); await settled();
+  const later = Object.keys(folderData.folders).find(id => folderData.folders[id] === 'Later');
+  const kept = await far.evaluate(`({ folder: ${WINDOW}.querySelector('.task-folders [aria-current="page"]')?.dataset.folderId, rows: ${ROWS}.length,
+    ticked: ${ROWS}.filter(tr => tr.querySelector('input').checked).length, offered: [...${WINDOW}.querySelectorAll('.task-move-bar select option')].map(o => o.textContent),
+    move: !${WINDOW}.querySelector('.task-move-bar select').disabled })`);
+  check('New folder with tasks ticked stays in the folder shown and keeps the ticks; the new folder is in "Move to…" at once (SIF-101)', !!later && kept.folder === 'unfiled'
+    && kept.rows === 4 && kept.ticked === 4 && kept.offered.includes('Later') && kept.move, JSON.stringify(kept));
+  check('... and its question says so (SIF-101)', questions.at(-1) === 'New folder name - the 4 ticked tasks stay ticked; then choose the folder in Move to…', questions.at(-1));
+  await nav(later); replies.push({ accept: true }); await press('Delete folder'); await settled();
+  check('(set-up) that folder deleted, Unfiled shown again', !Object.keys(folderData.folders).length && await far.evaluate(`${WINDOW}.querySelector('[data-folder-id="unfiled"]').getAttribute('aria-current') === 'page'`));
+  await far.evaluate(`${TABLE}.querySelector('thead input[type="checkbox"]').click()`);
   await far.evaluate(`${WINDOW}.querySelector('input.task-filter').focus()`); await far.send('Input.insertText', { text: 'ldo' });
   check('changing the filter clears selection so hidden tasks cannot be moved', await far.until(`${ROWS}.length === 1 && ${WINDOW}.querySelector('.task-move-bar select').disabled`, 30));
   refuseFolders = true; await press('Refresh list'); await settled();

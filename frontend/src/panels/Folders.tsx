@@ -50,27 +50,33 @@ export function useFolders(kind: FolderKind) {
   const move = (keys: string[], id: string) => change(() => api.moveToFolder(kind, keys, id === 'unfiled' ? null : id));
   const names = Object.entries(data.folders).sort((a, b) => a[1].localeCompare(b[1]));
   const of = (key: string) => data.assignments[key] ?? 'unfiled';
-  /** The heading of the folder chosen: All, Unfiled or its name. */
-  const title = folder === 'all' ? ALL[kind] : folder === 'unfiled' ? 'Unfiled' : data.folders[folder] ?? ALL[kind];
+  /** A folder's name: All, Unfiled or the user's; undefined for a folder that is gone. */
+  const name = (id: string): string | undefined => id === 'all' ? ALL[kind] : id === 'unfiled' ? 'Unfiled' : data.folders[id];
+  /** The heading of the folder chosen. */
+  const title = name(folder) ?? ALL[kind];
   /** Whether a key is in the folder chosen. */
   const holds = (key: string) => folder === 'all' || of(key) === folder;
-  return { kind, data, folder, setFolder, busy, ready, error, refresh, change, move, names, of, title, holds };
+  return { kind, data, folder, setFolder, busy, ready, error, refresh, change, move, names, of, name, title, holds };
 }
 export type FolderView = ReturnType<typeof useFolders>;
 
 /** The folder list on the left of a window: All, Unfiled and the user's folders with their counts, and the icons that make,
  *  rename and delete one. `keys`: every listed item (counts count listed items: an assignment of a run that is gone is
- *  kept, and not counted). Questions are asked in the window the list is in (`popup`). */
-export function Folders({ state, keys, popup, onSelect }: { state: FolderView; keys: string[]; popup: Window; onSelect: (id: string) => void }) {
+ *  kept, and not counted). Questions are asked in the window the list is in (`popup`). `selected`: how many rows are ticked. */
+export function Folders({ state, keys, popup, onSelect, selected = 0 }: { state: FolderView; keys: string[]; popup: Window; onSelect: (id: string) => void; selected?: number }) {
   const { kind, data, folder, busy, ready, names, of, change } = state;
   const counts = new Map<string, number>();
   keys.forEach(key => counts.set(of(key), (counts.get(of(key)) ?? 0) + 1));
   const currentName = data.folders[folder];
+  // With rows ticked a new folder is not opened (branch record SIF-101): opening it - empty - let the ticks go, so tick, New
+  // folder, Move to… could not be done in that order. The ticks and the folder shown stay; the new folder is in Move to….
   const create = async () => {
-    const name = popup.prompt('New folder name');
+    const one = PLURAL[kind].slice(0, -1);
+    const name = popup.prompt(selected ? `New folder name - ${selected === 1 ? `the ticked ${one} stays` : `the ${selected} ticked ${PLURAL[kind]} stay`} ticked; then choose the folder in Move to…`
+      : 'New folder name');
     if (name == null) return;
     const saved = await change(() => api.createFolder(kind, name));
-    if (saved) onSelect(saved.created_id);
+    if (saved && !selected) onSelect(saved.created_id);
   };
   const rename = async () => {
     const name = popup.prompt('Rename folder', currentName);

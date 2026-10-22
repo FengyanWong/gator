@@ -238,7 +238,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
     {newer && <p className="note model-newer">The model in use has a newer save point: <b>{newer.evaluations} evaluations</b> ({when(newer.created_utc)}); the next run loads the save point
       {' '}<span title={source.checkpoint_id}>{pointText(source.checkpoint_id)}</span>. <button className="model-use-newer" onClick={() => onUse(inUse.run_dir, newer.checkpoint_id)}>Use the newer one</button></p>}
     {list.length > 0 && <div className="task-browser">
-      {popup && <Folders state={folders} keys={list.map(m => m.run_dir)} popup={popup} onSelect={chooseFolder} />}
+      {popup && <Folders state={folders} keys={list.map(m => m.run_dir)} popup={popup} onSelect={chooseFolder} selected={selected.length} />}
       <div className="task-folder-content">
         <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
         <div className="scroll" ref={box}><table className="grid run-table model-table">

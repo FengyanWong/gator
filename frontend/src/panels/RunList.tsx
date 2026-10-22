@@ -1,5 +1,5 @@
 import { Fragment, memo, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { usePopupWindow } from './popupWindow';
+import { styled, usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { RUNS_WINDOW } from '../contract';
 import { api, Json } from '../api';
@@ -24,6 +24,8 @@ const SAVED_STATE: Record<string, string> = { full_state: 'full state', weights_
 const breakAt = (text: string) => text.split(/(?<=[-_.])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 /** A date never breaks at its hyphens (branch record SIF-27): in a narrow column "2026-10-20 13:09:11" goes date over time, not "2026-10-" over "20". */
 const keepDates = (text: string) => text.split(/(\d{4}-\d\d-\d\d)/).map((part, i) => <Fragment key={i}>{i % 2 ? <span className="run-date">{part}</span> : part}</Fragment>);
+/** A run's row in the run window, once it is drawn. */
+const rowIn = (win: Window, dir: string) => [...win.document.querySelectorAll<HTMLTableRowElement>('table.run-table tbody > tr')].find(tr => tr.title === dir);
 
 /** Which run the bottom tabs show (user request 2026-09-21): ONE button at the right end of the bottom tab strip, where
  *  the drop-down list of runs used to be. It only reads "Runs..."; the run that is shown is named as plain text to its
@@ -41,7 +43,9 @@ const keepDates = (text: string) => text.split(/(\d{4}-\d\d-\d\d)/).map((part, i
  *  Relationships (record 7.264, plan "Runs window"): "Started from" and "Saved model" columns, and in Details where the run's
  *  model came from and what came of it, with a folded history. Every run named is a link that shows it here - selected,
  *  scrolled to, its Details open - and its task opens the Tasks window at the task. Other windows open this one AT a run, or
- *  filtered to one task's runs (openAt.ts): following a link changes no draft, no shown run and no running job.
+ *  filtered to one task's runs (openAt.ts): following a link changes no draft, no shown run and no running job. A link
+ *  keeps the folder, the filter and the ticks when they show its run; else "Back to ..." brings them back (branch record
+ *  SIF-101). Pressing Runs... opens the window at the shown run: its row is brought into view, nothing else changes.
  *
  *  Actions (record 7.267, plan "Load run" and "Existing runs: continued in place"), in a run's Details: **Load run** - also a
  *  double click - brings its task into the editors and its model into the next run, and shows its results; **Show results**
@@ -223,10 +227,28 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   const lastRead = useRef(0);
   const refresh = (fresh = false) => { setLoading(true); setSelected([]); setRefused(null); void folders.refresh(); void readTasks(fresh);
     onRefresh(fresh).finally(() => { setLoading(false); lastRead.current = Date.now(); setReadAt(clock()); }); if (open) readDetails(open); };
-  /** Show one run in this window: every folder, no filter, its Details open, scrolled to. */
-  const focusRun = (dir: string) => {
+  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, runMode(r), runDesign(r), r.model_label, `seed${r.seed}`, r.state, r.stop_reason, stopWords(r.stop_reason), r.experiment, r.mock ? 'mock' : 'real', folderName(r.run_dir),
+    folders.data.folders[folders.of(r.run_dir)]].join(' ').toLowerCase();
+  /** Whether the folder, the one task and the filter chosen show a run. */
+  const inView = (r: Json) => folders.holds(r.run_dir) && (!onlyTask || r.task_key === onlyTask) && table.matches(text(r));
+  // The view a link left, for "Back to ..." (branch record SIF-101): a link to a run the view hid set every folder and no
+  // filter, and nothing brought the user's folder and filter back. Let go when the window closes.
+  const [back, setBack] = useState<{ folder: string; filter: string; onlyTask: string | null } | null>(null);
+  useEffect(() => { if (!popup) setBack(null); }, [popup]);
+  /** Every folder, no filter, no ticks; the view that was, kept for "Back to ...". */
+  const leaveView = () => {
+    if (folders.folder !== 'all' || filter || onlyTask) setBack({ folder: folders.folder, filter, onlyTask });
     folders.setFolder('all'); setFilter(''); setSelected([]);
-    setOnlyTask(task => (task && byDir.get(dir)?.task_key !== task ? null : task));
+  };
+  const goBack = () => {
+    if (!back) return;
+    folders.setFolder(folders.name(back.folder) ? back.folder : 'all'); setFilter(back.filter); setOnlyTask(back.onlyTask); setSelected([]); setBack(null);
+  };
+  /** Show one run in this window: its Details open, scrolled to. Branch record SIF-101: the folder, the filter, the one task and
+   *  the ticks stay when they show it (they were cleared for every link); otherwise every folder and no filter. */
+  const focusRun = (dir: string) => {
+    const row = byDir.get(dir);
+    if (!row || !inView(row)) { leaveView(); setOnlyTask(task => (task && row?.task_key !== task ? null : task)); }
     setOpen(dir); readDetails(dir); setFocus(dir);
   };
   // Whoever had the list read - this window, or the page when a run was started - the window says when that was.
@@ -277,39 +299,60 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
 
   // Pressing Runs... is the request to see the current list. A link from another window (`link`) only opens the window at
   // an item: it reads the list again when the window was closed or its list is older than a minute (record 7.275).
+  // Pressing it while the window is closed opens it at the shown run (branch record SIF-101, `placeShown`): the window opened
+  // at the top of a newest-first list, the user's 600 runs, the shown run only marked somewhere below.
+  const placeShown = useRef(false);
   const openWindow = (from?: Window | null, link = false) => {
     if (!link || !popup || Date.now() - lastRead.current > 60_000) refresh();
+    placeShown.current = !link && !!runDir && (!popup || popup.closed);
     openPopup(from);
   };
   // Another window's link (openAt.ts): this window opens AT a run, or with one task's runs only.
-  const latest = useRef({ openWindow, focusRun });
-  latest.current = { openWindow, focusRun };
+  const latest = useRef({ openWindow, focusRun, leaveView });
+  latest.current = { openWindow, focusRun, leaveView };
   useEffect(() => {
     const show = (event: Event) => {
       const at = (event as CustomEvent<RunsAt>).detail ?? {};
       latest.current.openWindow(at.from, true);
       if (at.run_dir) { latest.current.focusRun(at.run_dir); if (at.task_key) setOnlyTask(at.task_key); }
-      else if (at.task_key) { folders.setFolder('all'); setFilter(''); setSelected([]); setOpen(null); setOnlyTask(at.task_key); }
+      else if (at.task_key) { latest.current.leaveView(); setOpen(null); setOnlyTask(at.task_key); }
     };
     window.addEventListener(OPEN_RUNS, show);
     return () => window.removeEventListener(OPEN_RUNS, show);
   }, []);
   useEffect(() => {
     if (!focus || !popup) return;
-    const row = [...popup.document.querySelectorAll<HTMLTableRowElement>('table.run-table tbody > tr')].find(tr => tr.title === focus);
+    const row = rowIn(popup, focus);
     if (row) { row.scrollIntoView({ block: 'center' }); setFocus(null); }
+  });
+  // Once the list the press read is drawn, and the window's styles are in (a place measured before is measured without
+  // them): the shown run's row to the middle, when it is out of view - a row in view stays where a click may be aimed at
+  // it. Only a scroll - no Details, no folder, no filter - and only when the folder and the filter show the run; else "Go
+  // to the shown run" stands beside the filter. Not through `focus`, which waits for its row: a run hidden now would pull
+  // the list to it at a later filter change.
+  useEffect(() => {
+    if (!placeShown.current || !popup || !root || loading) return;
+    placeShown.current = false;
+    const win = popup, dir = runDir;
+    if (dir && shown.some(r => r.run_dir === dir)) void styled(win).then(() => {
+      const row = win.closed ? undefined : rowIn(win, dir), at = row?.getBoundingClientRect();
+      if (row && at && (at.top < 0 || at.bottom > win.innerHeight)) row.scrollIntoView({ block: 'center' });
+    });
   });
   // The click happens in the run window, so ITS clipboard is the one a browser lets this gesture write to.
   const copyPath = (text: string) => (popup ?? window).navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
 
   const current: Json = runs.find(r => r.run_dir === runDir) ?? null;
   const elsewhere = headerDir && headerDir !== runDir ? headerDir : null;          // the header's run, when these tabs show another
-  const text =(r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, runMode(r), runDesign(r), r.model_label, `seed${r.seed}`, r.state, r.stop_reason, stopWords(r.stop_reason), r.experiment, r.mock ? 'mock' : 'real', folderName(r.run_dir),
-    folders.data.folders[folders.of(r.run_dir)]].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
   // Only while the window is open: the page redraws on every status poll, and a closed window needs no sorted list.
   const shown = !popup ? [] : table.arrange(runs, r => folders.holds(r.run_dir) && (!onlyTask || r.task_key === onlyTask), text, r => column.value!(r, byDir));
   const timed = runs.some(r => 'active_seconds' in r);     // an older workbench server lists runs without their times
+  // Branch record SIF-101: the shown run, when the folder, the one task or the filter hide it, and the view a link left,
+  // while it is not the view now - each a link beside the filter.
+  const shownHidden = !!current && !shown.includes(current);
+  const backTo = back && (back.folder !== folders.folder || back.filter !== filter || back.onlyTask !== onlyTask)
+    ? [folders.name(back.folder) ?? folders.name('all'), back.onlyTask && `the runs of ${back.onlyTask}`, back.filter && `"${back.filter}"`].filter(Boolean).join(' · ') : null;
 
   const view = popup && root && (
     <div className="run-window">
@@ -318,6 +361,10 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
         <button onClick={() => refresh(true)} disabled={loading || folders.busy} title="Refresh list: every run folder is read again from the disk.">Refresh list</button>
         <button onClick={() => onChoose(null)} disabled={!runDir} title="The bottom tabs of the workbench show no run. Nothing is stopped or deleted.">Clear</button>
         <input className="run-filter" placeholder="Filter: task, mode, state, mock / real, date ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
+        {shownHidden && <button className="item-link run-go-shown" onClick={() => focusRun(runDir!)}
+          title="The run the bottom tabs show is not in this folder or filter. Show it here: every folder, no filter, its Details open.">Go to the shown run</button>}
+        {backTo && <button className="item-link run-back" onClick={goBack}
+          title="The folder and the filter this window showed before a link cleared them, to show its run.">Back to {backTo}</button>}
         {/* a double click that did not go through says why here, where the count stood (branch record SIF-84) */}
         {refused && open !== refused.dir ? <span className="hint run-count run-refused" role="status">{refused.why}</span>
           : <span className="hint run-count">{loading ? 'Reading the runs...' : runsError ? 'The list could not be read.'
@@ -325,7 +372,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
       </div>
       {runsError && !loading && <p className="error run-list-error">The run list could not be read: {runsError}</p>}
       {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
-      {onLoad ? <p className="hint"><b>Double click</b> a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results (one Undo step takes the task and the model back; nothing starts). A run's <b>Details</b> also offer <b>Show results</b> alone, <b>Continue...</b> and <b>New run like this</b>. The run that is shown is marked; <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. The window closes once a run is loaded, shown, continued or repeated - it stays open, saying why, when that does not go through (Cancel at the edits question, a model that cannot be read), and for <b>Clear</b> and <b>Details</b>.</p>
+      {onLoad ? <p className="hint"><b>Double click</b> a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results (one Undo step takes the task and the model back; nothing starts). A run's <b>Details</b> also offer <b>Show results</b> alone, <b>Continue...</b> and <b>New run like this</b>. The run that is shown is marked, and the window opens at it; <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. The window closes once a run is loaded, shown, continued or repeated - it stays open, saying why, when that does not go through (Cancel at the edits question, a model that cannot be read), and for <b>Clear</b> and <b>Details</b>.</p>
         : <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked, and the window then closes. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none.</p>}
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}

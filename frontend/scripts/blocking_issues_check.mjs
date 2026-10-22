@@ -159,6 +159,51 @@ await runChecks(browser, async () => {
   for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: type === 'keyDown' ? '\r' : undefined });
   check('Enter on the focused button shows the list', await until(`!!(${LIST})`, 30));
 
+  // ---- branch record SIF-95: a row issue's Where goes to its row; each editor tab counts its own blocking issues ---------------
+  // The place was text only: the user switched tab by hand and looked for the row, which the Find box could hide; a tab not in
+  // view never showed its errors, and the header's count names no tab.
+  const EDITOR_TAB = key => `document.querySelector('section.editors > .tabs > button[data-editor="${key}"]')`;
+  const tabMark = key => evaluate(`(() => { const b = ${EDITOR_TAB(key)}, pill = b.querySelector('.tab-errors');
+    return { errors: b.classList.contains('has-errors'), count: pill?.dataset.errors ?? null, text: b.textContent, title: b.title,
+      pill: pill ? [getComputedStyle(pill, '::before').content, getComputedStyle(pill, '::before').backgroundColor] : null }; })()`);
+  const goes = () => evaluate(`[...${LIST}.querySelectorAll('tbody tr')].map(tr => tr.cells[3].querySelector('button.issue-go')?.textContent ?? null)`);
+  check('a row issue\'s Where is a button in the words it had; a run field and the whole configuration stay text',
+    JSON.stringify(await goes()) === JSON.stringify([`parameters[0].lower row ${ROW_KEY}`, null, null]), JSON.stringify(await goes()));
+  const [paramsMark, probesMark] = [await tabMark('parameters'), await tabMark('measurements')];
+  check('the Parameters tab counts its one blocking issue in a red pill, its words unchanged; Probes counts none',
+    paramsMark.errors && paramsMark.count === '1' && paramsMark.text === `Parameters (${CONFIG.parameters.length})` && paramsMark.pill?.[0] === '"1"'
+    && paramsMark.pill?.[1] === 'rgb(208, 16, 44)' && paramsMark.title === '1 blocking issue: FIXTURE. The red button in the header lists it: its Where goes to the row.'
+    && !probesMark.errors && probesMark.count === null && !probesMark.title, JSON.stringify([paramsMark, probesMark]));
+  // Specs broken while Parameters is open, and hidden by a Find text typed on Specs before
+  const SPEC_KEY = CONFIG.targets[0].metric_id, FIND = `document.querySelector('section.editors input.find-rows')`;
+  const specIssue = (code, field, message) => ({ level: 'error', code, path: `targets[0].${field}`, message });
+  fixtures.elsewhere = report([specIssue('equation_unknown_probe', 'equation', 'FIXTURE the equation names a probe that does not exist: m_nope.'),
+    BLOCKING[0], specIssue('range_inverted', 'lower', 'FIXTURE: the lower limit is above the upper one')]);
+  await evaluate(`${EDITOR_TAB('targets')}.click()`); await until(`${EDITOR_TAB('targets')}.classList.contains('active')`, 30);
+  await page.setValue(FIND, 'zzz-no-row', { event: 'input' });
+  const SPEC_ROW = `document.querySelector('section.editors table.editor tbody tr[data-index="0"]')`;
+  check('(a Find text hides the spec)', await until(`${SPEC_ROW}?.hidden === true`, 30));
+  await evaluate(`${EDITOR_TAB('parameters')}.click()`); await until(`${EDITOR_TAB('parameters')}.classList.contains('active')`, 30);
+  await revalidate(fixtures.elsewhere);
+  const specsMark = await tabMark('targets');
+  check('on Parameters, the Specs tab counts the two issues of its spec, its tooltip giving the first',
+    specsMark.errors && specsMark.count === '2' && specsMark.text === `Specs (${CONFIG.targets.length})` && specsMark.title
+      === "2 blocking issues, the first: FIXTURE the equation names a probe that does not exist. The red button in the header lists them: each one's Where goes to its row.",
+    JSON.stringify(specsMark));
+  const WHERE = `document.querySelector('.formula-bar .formula-where')?.textContent`;
+  const focusIn = (index, field) => `document.activeElement?.closest('td[data-field="${field}"]')?.closest('tr')?.dataset.index === '${index}'`;
+  await evaluate(`[...${LIST}.querySelectorAll('button.issue-go')][0].click()`);
+  check('its Where opens Specs, clears the Find text that hid the row and chooses the issue\'s field, which the formula bar names',
+    await until(`${EDITOR_TAB('targets')}.classList.contains('active') && ${FIND}.value === '' && ${SPEC_ROW}?.hidden === false && ${focusIn(0, 'equation')}
+      && ${WHERE} === ${JSON.stringify(`Equation · ${SPEC_KEY}`)}`, 30),
+    JSON.stringify(await evaluate(`({ find: ${FIND}.value, focus: document.activeElement?.outerHTML.slice(0, 80), where: ${WHERE} })`)));
+  check('the list stays open, a checklist (record 7.12)', await evaluate(`!!(${LIST})`));
+  await evaluate(`[...${LIST}.querySelectorAll('button.issue-go')][1].click()`);
+  check('a Parameters issue\'s Where goes back to Parameters, to its row\'s Lower',
+    await until(`${EDITOR_TAB('parameters')}.classList.contains('active') && ${focusIn(0, 'lower')} && ${WHERE} === ${JSON.stringify(`Lower · ${ROW_KEY}`)}`, 30),
+    await evaluate(`${WHERE}`));
+  await shot('issues-4b-go-to.png');
+
   // ---- a configuration the schema rejects: one issue per field, at its row, in plain words (status record 7.56) ------------
   // Before, the page listed ONE issue "(whole configuration)" holding pydantic's list as JSON (user report 2026-09-21).
   await revalidate(fixtures.rejected);

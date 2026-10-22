@@ -14,6 +14,8 @@ import { keep, readKept } from '../kept';
 import { RELOAD_SAVED_REQUEST } from './taskChoice';
 import { requestSaveAs } from './TaskSave';
 import { plural } from '../format';
+import { GO_TO_ISSUE } from './Issues';
+import { BLOCKING_LEVELS } from '../contract';
 
 const ROW_TABS = Object.keys(TITLES);
 /** The start of a new row's ID (Add), in the tab's own word (branch record SIF-50). */
@@ -304,6 +306,44 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const selection = rows.filter(r => selected[r[keyField]] && (!findWords.length || matchesFind(r))).map(r => ({ section: tab, key: r[keyField], fields: [] as string[] }));
   const firstInView = () => (table.current?.querySelector('tbody > tr:not([hidden]) > td[data-field] :is(input, select)') as HTMLElement | null)?.focus();
 
+  // An issue's Where pressed in the header's list (branch record SIF-95): its tab opens, as a tab press opens it, and its row -
+  // found by its ID, as the report's index may name another row since - comes into view with the issue's field chosen, which
+  // fills the formula bar. A Find text that hides the row is cleared, a fold that hides it opened (a row with an error is never
+  // folded away; a report older than the rows may say otherwise). It moves and fills nothing else.
+  const [goTo, setGoTo] = useState<{ section: Section; key: string; field: string | null } | null>(null);
+  useEffect(() => {
+    const go = (e: Event) => {
+      const { section, key, field } = (e as CustomEvent).detail ?? {};
+      if (!ROW_TABS.includes(section)) return;
+      if (section !== tab) { setMatched(0); setSelected({}); setTab(section); }
+      setGoTo({ section, key: String(key ?? ''), field: field ?? null });
+    };
+    window.addEventListener(GO_TO_ISSUE, go);
+    return () => window.removeEventListener(GO_TO_ISSUE, go);
+  }, [tab]);
+  // Declared after the [tab] reset above, which lets the chosen cell go: the cell is chosen after it.
+  useEffect(() => {
+    if (!goTo) return;
+    if (goTo.section !== tab) return setGoTo(null);
+    const index = rows.findIndex(r => String(r[keyField] ?? '') === goTo.key), row = rows[index];
+    if (row && findWords.length && !matchesFind(row)) return setFind(f => ({ ...f, [tab]: '' }));   // the next render goes on
+    const leader = row ? leaderOf(row) : null;
+    if (row && leader && !findWords.length && foldedAway(row, index)) return setOpenTies(o => ({ ...o, [leader]: true }));
+    setGoTo(null);
+    if (!row) return;                                      // gone since the report (Delete, Undo): the tab is shown
+    const name = tab === 'targets' && goTo.field === 'direction_after_feasible' ? 'constraint' : goTo.field ?? keyField;   // the objective is in the Limit list
+    requestAnimationFrame(() => {
+      const tr = table.current?.querySelector<HTMLElement>(`tbody > tr[data-index="${index}"]`);
+      // a column behind More columns, or a field no column shows: the row's ID
+      const cell = tr?.querySelector<HTMLElement>(`td[data-field="${CSS.escape(name)}"]`) ?? tr?.querySelector<HTMLElement>(`td[data-field="${CSS.escape(keyField)}"]`);
+      if (!cell) return;
+      cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const box = cell.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)');
+      // a follower's greyed field takes no focus: the formula bar still names it and says why
+      if (box) box.focus(); else setActive({ index, name: cell.dataset.field ?? name, key: goTo.key });
+    });
+  }, [goTo, tab, rows, find, openTies]);
+
   // Keys as in a spreadsheet (record 7.180, design advice 6): Up and Down go to the same column of the row above or below (folded
   // rows are passed over), Enter to the row below and Shift+Enter above. A list keeps its own keys; the tick box column is left be.
   const moveFrom = (box: HTMLElement, step: 1 | -1) => {
@@ -518,6 +558,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // Beside the task's name (record 7.362): whether the rows are the saved task's - only for a saved task, which validation
   // compares with its file (record 7.222); the tabs' dots say where they differ.
   const savedState = !validation?.unsaved_rows?.sections ? null : (Object.keys(TITLES) as Section[]).some(s => unsavedTitle(s)) ? 'not saved' : 'saved';
+  // Each tab counts its blocking issues in a red mark (branch record SIF-95): the rows show theirs on the tab in view only, so a
+  // Spec that a renamed Probe broke was told on Parameters by the header's count alone, which names no tab. The count is drawn
+  // from an attribute, so the tab's words stay its name and row count; its tooltip gives the first issue after the not-saved line.
+  const blockingIn = (s: Section): Json[] => (validation?.issues ?? []).filter((i: Json) => { const path = String(i.path ?? '');
+    return BLOCKING_LEVELS.includes(i.level) && (path === s || path.startsWith(`${s}[`) || path.startsWith(`${s}.`)); });   // never another table's key
+  const blockingTitle = (found: Json[]): string | null => !found.length ? null : `${plural(found.length, 'blocking issue')}${found.length > 1 ? ', the first' : ''}: `
+    + `${issueHead(found[0].message)}. The red button in the header lists ${found.length > 1 ? "them: each one's Where goes to its row" : 'it: its Where goes to the row'}.`;
   // "not saved" opens what differs, table by table, with Reload saved values and Save as (record 7.372): the tabs' dots said
   // it in their tooltips only.
   const [changesOpen, setChangesOpen] = useState(false);
@@ -554,15 +601,17 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       {/* Another tab closes the Matched devices box: kept "open", coming back to Parameters mounted it again, and mounting
           is its press - it asked the backend with nobody pressing anything, and a reviewed diff was gone.
           Each editor has a colour of its own (record 7.158): its tab, its table's header row, and its ids where another editor shows them.
-          A tab holding rows not saved in the task carries a dot, its tooltip says how many (record 7.222). */}
+          A tab holding rows not saved in the task carries a dot, its tooltip says how many (record 7.222); a tab holding blocking
+          issues, a red count (branch record SIF-95). */}
       <div className="tabs"><span className="task-head" ref={taskHead} />
         {savedState && <span className="task-saved-slot">{savedState === 'saved'
           ? <span className="task-saved" title="The rows of Parameters, Probes and Specs are the saved task's.">saved</span>
           : <button className={`task-saved unsaved${changesOpen ? ' open' : ''}`} aria-expanded={changesOpen} onClick={() => setChangesOpen(o => !o)}
               title="Not saved: press to see what differs from the saved task, with Reload saved values and Save as.">not saved</button>}</span>}
-        {(Object.keys(TITLES) as Section[]).map(s => { const notSaved = unsavedTitle(s);
-        return <button key={s} data-editor={s} className={[s === tab ? 'active' : '', notSaved ? 'has-unsaved' : ''].filter(Boolean).join(' ')}
-          title={notSaved ?? undefined} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>{TITLES[s]} ({(config[s] ?? []).length})</button>; })}
+        {(Object.keys(TITLES) as Section[]).map(s => { const notSaved = unsavedTitle(s), blocking = blockingIn(s);
+        return <button key={s} data-editor={s} className={[s === tab ? 'active' : '', notSaved ? 'has-unsaved' : '', blocking.length ? 'has-errors' : ''].filter(Boolean).join(' ')}
+          title={[notSaved, blockingTitle(blocking)].filter(Boolean).join('\n') || undefined} onClick={() => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); }}>
+          {TITLES[s]} ({(config[s] ?? []).length}){blocking.length > 0 && <span className="tab-errors" data-errors={blocking.length} aria-hidden="true" />}</button>; })}
         <span className="tab-actions">
           <button className={`circuit-toggle${circuitShown ? ' active' : ''}`} aria-pressed={circuitShown} onClick={onCircuit}
             title={circuitShown ? 'Hide circuit: The circuit column folds away and the rows take the width again.'

@@ -3946,7 +3946,11 @@ cannot even read (for example an ID with a `/` in it) is listed the same way, on
 the field and its editor row, what is wrong in plain words (for an ID: which characters, an ID that
 works, and what else must be renamed with it), and the schema's own text under a closed
 "Technical details" line; the editor marks the row (backend `schema.describe_errors`, status record
-7.56). Its browser check is
+7.56). A row's place ("targets[0].equation row inl1") is a button (branch record SIF-95): it opens
+that editor tab and brings the row into view - clearing a Find text that hid it - with the issue's
+field chosen, so the formula bar names it; the list stays open. Each editor tab counts its own
+blocking issues in a small red pill, its tooltip giving the first, so a Spec a renamed Probe broke
+shows on Specs while Parameters is open. Its browser check is
 `frontend/scripts/blocking_issues_check.mjs` (headless Edge against the running workbench; the
 validation is answered with canned FIXTURE reports and every other writing request is refused, so
 it is safe against the live backend; run line in its header).

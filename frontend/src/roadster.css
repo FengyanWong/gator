@@ -129,6 +129,11 @@ header button.run-main svg.icon, header button.run-abort svg.icon { width: 17px;
 .editors > .tabs > button[data-editor]::before { content: none; }
 .editors > .tabs > button[data-editor].active::before { content: ''; position: absolute; left: 50%; bottom: 5px; width: 26px; height: 3px; margin: 0 0 0 -13px;
   border: none; border-radius: 2px; background: var(--accent); }
+/* a tab's blocking issues counted in a small red pill before its not-saved dot (branch record SIF-95): drawn from the attribute,
+   so the tab's words stay its name and row count */
+.editors > .tabs > button[data-editor] > .tab-errors::before { content: attr(data-errors); display: inline-block; box-sizing: border-box; min-width: 17px;
+  margin-left: 6px; padding: 0 5px; border-radius: 9px; background: var(--bad-fill); color: var(--on-bad); font: 600 11px/17px var(--f-label);
+  text-align: center; vertical-align: 1px; }
 
 /* ---- the task on the editors' tab line (record 7.362, the user's Option D): its name as a chip (it opens the Tasks window),
    its revision and whether the rows are saved; Show circuit, Check now, Save as and Task file at the line's end -------------- */

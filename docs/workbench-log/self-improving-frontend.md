@@ -2649,3 +2649,38 @@ Nothing is saved, run or written by this. `tsc` clean. `files_tab_check` 24 (22 
 a copy copies the run path, and the hint still says "Packing...", the button disabled with the hourglass; the package
 answered, the hint says how it went and the button is ready again. `room_check` 30 and `output_panel_check` 98, unchanged.
 No flakes. The second fix has no new check: the checks' fixtures show one run only.
+
+### SIF-95 Blocking issues take you to the row, and each editor tab counts its own (2026-10-22; from the usability audit)
+
+**Found.** The header's blocking-issues list named each issue's place as text only ("targets[3].lower row inl1"). To
+fix one, the user switched tab by hand and looked for the row among 66. The Find box could hide it, because a row with
+an error is never folded away but Find has no such exemption (audit finding J2-1). A tab not in view never showed its
+errors: the rows show theirs on the open tab only. So a Spec that a renamed or deleted Probe broke was told on
+Parameters by the header's count alone, which names no tab (J2-2).
+
+**Changed.** `frontend/src/panels/Issues.tsx`: a row issue's Where (the field and " row <key>") is one button with the
+same words. It sends `GO_TO_ISSUE` with the table, the row's key and the field. A run or output field and the whole
+configuration stay text, and the list stays open (a checklist, record 7.12). `frontend/src/panels/Editors.tsx` listens for
+it. It opens the tab the way a tab press does: Matched devices closes and the ticks go only when the tab changes. It finds
+the row by its ID, not by the report's index, and clears that tab's Find text if the text hides the row. It opens the
+leader's ties if the row is folded (a report older than the rows can leave it so). Then it scrolls the row into view and
+focuses the issue's field, so the formula bar names it. The objective goes to the Limit list. A column behind More
+columns goes to the row's ID, and a follower's greyed field is chosen without focus, so the bar still says why. The
+choice runs after the tab's reset effect, which otherwise let the chosen cell go. Each editor tab counts its blocking
+issues (error and blocker, paths `<table>[...]` or `<table>.`) in a small red pill drawn from an attribute of an empty
+span (`roadster.css` `.tab-errors::before`), so the tab's words, which several checks read, stay its name and row count;
+the button's `::after` was taken by the not-saved dot. Its tooltip gives the first issue after the not-saved line ("2
+blocking issues, the first: ... The red button in the header lists them: each one's Where goes to its row."). Nothing is
+saved, run, validated anew or written to Virtuoso by a press; it moves the view and the focus only.
+`docs/workbench.md` (the blocking-issues paragraph under Tests) and `docs/functionality-reference.md` (N blocking issues;
+the editors' tabs) say so.
+
+**Checked.** `tsc` clean. `blocking_issues_check` 49 (42 before): a row issue's Where is a button with its words as
+before, a run field and the whole configuration stay text; the Parameters tab counts its issue in a red pill (content "1",
+the bad fill) with its words unchanged and the tooltip, Probes none; with a Find text hiding the spec and Parameters
+open, Specs counts its two issues and its tooltip gives the first; the spec issue's Where opens Specs, clears the Find
+text, focuses the row's Equation and the formula bar reads "Equation · score"; the list stays open; a Parameters issue's
+Where goes back to its row's Lower. The new checks fail on the code before the change. Also run, unchanged:
+`task_rows_check` 54, `sheet_check` 45, `find_fill_copy_check` 30, `spec_equations_check` 36, `looks_check` 75,
+`unsaved_rows_check` 25, `editor_columns_check` 23, `formula_bar_check` 21, `matched_devices_check` 37 (10 scripts, 395
+checks, one lane). No flakes.

@@ -2187,3 +2187,38 @@ there reaches the edits question, because every run it can load has the page's o
 43, `circuit_source_check` 15, `dom_identity_check` 56. One flake: `task_list_check` failed twice on its first run, at
 "Rename sends the task's key and the new name, then reads the task list again" and the next step. Rename is untouched
 here, and it passed 88 of 88 alone.
+
+### SIF-85 A saved model's Details judge it as Use would load it, and Use shows that it is working (2026-10-22; from the usability audit)
+
+**Found.** A saved model's Details checked the selected save point against the configuration on the page, with the
+page's network and component list as they were (audit finding J5-1). The backend treats the network and the input
+schema as fatal for Fine-tune and Evaluate only. So every model of another design or size read "NOT compatible for
+Fine-tune - it cannot be loaded, and a run never falls back to New model", open and in red. Yet "Use this save point"
+brings that model's own network and component list with it, and then the model loads. Across 411 saved models, usable
+ones looked unusable. The New model fold for looking judged against the template's network in the same way. Pressing
+"Use this save point" gave no sign of working while the save point was read (finding J5-11). A save point that could
+not be read was said only above the "Saved models" heading, far from the Details row pressed, so the press looked dead.
+
+**Changed.** `frontend/src/panels/ModelChooser.tsx` (`ModelDetails`): the check first reads the save point as Use reads
+it (`readSavePoint`, with the backend's network fields), then sends the page's configuration through `withSavePoint`.
+The configuration carries this model's own network and component list, this save point as the source, and a Mode that
+loads it: the window's Mode, or Fine-tune while New model is chosen. What a model cannot bring still shows as before:
+the task's graph, its specs, MOCK or real data, the save point's version. The heading reads "With the task on the page
+and this model's own network". The pressed button reads "Using..." and is off while its save point is read. The other
+Use buttons and the row's double click stay on, because a newer choice wins (record 7.278). A Use that could not read
+its save point is said again under that model's save points (`p.error.use-error`); the window's own line stays.
+`savePoint.ts`: `readSavePoint` takes a signal, and `pointKey` names one save point as a string.
+`useRlModel.ts`: `usingPoint` holds the save point being read instead of a flag, and the read error carries `point`.
+`RlModelWindow.tsx` passes the network fields, `usingPoint` and that error to `SavedModels`; the suggested model's Use
+is off while any save point is read, as before. Nothing is chosen, saved or started by a look: Details make one more read
+(the save point's description), and the draft stays as it was. `docs/workbench.md` (Details; "Using one is a press")
+and `docs/functionality-reference.md` (Saved models) say both. `model_chooser_check.mjs`: the held and failing reads now
+name the save point of the Use, because the Details' own read has no configuration either.
+
+**Checked.** `tsc` clean. `model_chooser_check` 90, five of them new. In New model, Details read A's save point first, then
+check it as Fine-tune would load it, with A as the source. With the page on a Graph Transformer, D (an RGCN) is
+checked with its RGCN network, and the page keeps its own. The heading carries the new words. While a Use read is held,
+its button says "Using..." and is off, and A's other Use buttons stay on. A failing Use puts "That save point could not
+be read: ..." straight under A's save points table, and its button reads "Use this save point" again, on.
+`network_panel_check` 62, `graph_view_check` 69, `encoder_models_check` 24, `model_structure_check` 30,
+`mode_suggestion_check` 20. No flakes.

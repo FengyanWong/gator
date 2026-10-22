@@ -7,7 +7,7 @@ import { SIMPLE_REWARD, useRequest } from '../store';
 import { api, Json } from '../api';
 import { modelNameAt } from './ModelChooser';
 import { DESIGN_NAME, designName, ENCODER_SHORT, pointEvaluations, pointText } from '../lineage';
-import { LOADS, NETWORK_FIELDS, networkOf, pick, readSavePoint, withSavePoint } from '../savePoint';
+import { LOADS, NETWORK_FIELDS, networkOf, pick, pointKey, readSavePoint, withSavePoint } from '../savePoint';
 import { usePopupWindow } from './popupWindow';
 import { PRESET_RATE_KEY, RL_MODEL_WINDOW } from '../contract';
 import { ADVANCED_ROWS, foldedText, limitsText, modelLineText, networkShort, networkSizes, networkTitle, NextModel, nextModelText, ORIGIN, newModelInputs, takesTemplateInputs } from './rlModelText';
@@ -68,7 +68,9 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   const [netSettings, setNetSettings] = useState<Json>(null);
   // `about`: the Mode and saved model a message is about - it is shown only while they are still the ones chosen.
   // `reason`: an error's few words for Run configuration's notice (branch record SIF-46); the window shows `text`.
-  const [netMessage, setNetMessage] = useState<{ level: string; text: string; about?: string; reason?: string } | null>(null);
+  // `point`: the save point a Use could not read (pointKey), whose Details repeat the error under its save points (branch
+  // record SIF-85).
+  const [netMessage, setNetMessage] = useState<{ level: string; text: string; about?: string; reason?: string; point?: string } | null>(null);
   const [presetRateUpdated, setPresetRateUpdated] = useState(false);
   const pending = useRef<{ encoder: string; body: Json } | null>(null);
   const netRevision = useRef(0);
@@ -247,7 +249,9 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     { enabled: loads && !source.run_dir, delay: 500 });
   // "Use this save point" (record 7.265): the draft's source becomes exactly that save point - a concrete id, never "latest" -
   // and the model's network and component list come with it, as ONE Undo step (they used to follow later, by themselves).
-  const [usingPoint, setUsingPoint] = useState(false);
+  // The save point being read (pointKey), null when none is: its own "Use this save point" says "Using..." (branch record
+  // SIF-85; the press showed nothing until the window closed).
+  const [usingPoint, setUsingPoint] = useState<string | null>(null);
   // Only the newest press lands (record 7.278, Astra's review of 2026-10-08; as Load run's generation number, 7.270): a save
   // point chosen before it and answered later changes nothing, and New model chosen meanwhile lets a pending one go.
   const pointSerial = useNewest();
@@ -257,7 +261,7 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
   // could not be read or a newer choice came first.
   const useSavePoint = (run_dir: string, checkpoint_id: string): Promise<boolean> => {
     const mine = pointSerial.next(), stale = () => !mine();
-    setUsingPoint(true); setNetMessage(null);
+    setUsingPoint(pointKey(run_dir, checkpoint_id)); setNetMessage(null);
     return readSavePoint(run_dir, checkpoint_id, netFields).then(point => {   // savePoint.ts: Load run and New run like this take one the same way
       if (stale()) return false;
       setConfig(c => ({ ...c, run: withSavePoint(c.run, point) }));
@@ -266,13 +270,13 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
         about: JSON.stringify([run.mode, run_dir, point.checkpoint_id]) });
       return true;
     }).catch((e: any) => { if (!stale()) setNetMessage({ level: 'error', text: `That save point could not be read: ${e.message}`,
-      reason: 'the chosen save point could not be read' }); return false; })
-      .finally(() => { if (!stale()) setUsingPoint(false); });
+      reason: 'the chosen save point could not be read', point: pointKey(run_dir, checkpoint_id) }); return false; })
+      .finally(() => { if (!stale()) setUsingPoint(null); });
   };
   // A Mode is one Undo step. New model clears the saved model chosen: scratch never loads one (a source left there is a
   // validation warning), and coming back to Fine-tune asks for the choice again. A save point still on its way is let go too.
   const chooseMode = (mode: string) => {
-    if (mode === 'scratch') { pointSerial.drop(); setUsingPoint(false); }
+    if (mode === 'scratch') { pointSerial.drop(); setUsingPoint(null); }
     setConfig(c => ({ ...c, run: { ...c.run, mode,
       ...(mode === 'scratch' && c.run.model_source?.run_dir ? { model_source: { ...c.run.model_source, run_dir: null, checkpoint_id: 'latest' } } : {}),
       ...(mode === 'scratch' ? { network: { ...(c.run.network ?? {}), ...newModelList({ ...c, run: { ...c.run, mode } }),

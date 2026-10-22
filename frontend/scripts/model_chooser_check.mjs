@@ -17,7 +17,10 @@
 // - a network that arrives from elsewhere while a model is loaded is taken back, and that is said;
 // - an incomplete configuration is a calm note; rename refuses a taken name; the filter; one read per Refresh, no timer;
 //   a model in use that left the list, its folder saying "Click to copy" (branch record SIF-64); an empty folder; the models'
-//   folders; back to New model; the real route.
+//   folders; back to New model; the real route;
+// - Details check a save point as Use would load it: read first, then checked with the model's own network in a Mode that
+//   loads it; the pressed Use says "Using..." while its save point is read, and one that cannot be read is said under that
+//   model's save points too (branch record SIF-85).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -82,7 +85,10 @@ await runChecks(browser, async () => {
   const { send, evaluate, fulfil, consoleErrors } = page;
   const refused = []; const asked = []; const renames = []; let lists = 0, canned = true, served = MODELS;
   let incompatibleD = false;   // branch record SIF-36: D's compatibility answered as a "saved {...} != current {...}" pair
-  let holdModel = false; const heldModel = [];                                     // record 7.278: a "Use" read held back, answered late
+  // A save point's read without a configuration is a Use's - and, since branch record SIF-85, also the read a model's Details
+  // make before their compatibility check, at the save point selected there (its newest). So both name the save point of the
+  // Use they are about: the Details' read of another one goes through.
+  let holdModel = null; const heldModel = [];                                      // record 7.278: a "Use" read held back, answered late
   let failModel = null;                                                            // record 7.291: a "Use" whose save point cannot be read
   const modelFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
   const answer = ({ requestId, request }) => {
@@ -93,9 +99,10 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/models') { lists++; return canned ? fulfil(requestId, 200, { models: served }) : send('Fetch.continueRequest', { requestId }); }
     if (name === '/api/runs/model') {
       if (!canned) return send('Fetch.continueRequest', { requestId });
-      const body = JSON.parse(request.postData ?? '{}'); asked.push({ run_dir: body.run_dir, checkpoint_id: body.checkpoint_id, network: body.config?.run?.network ?? null, withConfig: !!body.config });
-      if (holdModel && !body.config) { heldModel.push({ requestId, body }); return; }
-      if (failModel && failModel === body.run_dir && !body.config) return fulfil(requestId, 503, { detail: 'FIXTURE: the server is busy' });
+      const body = JSON.parse(request.postData ?? '{}'); asked.push({ run_dir: body.run_dir, checkpoint_id: body.checkpoint_id, network: body.config?.run?.network ?? null,
+        mode: body.config?.run?.mode ?? null, source: body.config?.run?.model_source ?? null, withConfig: !!body.config });
+      if (holdModel && holdModel === body.checkpoint_id && !body.config) { heldModel.push({ requestId, body }); return; }
+      if (failModel && failModel === body.checkpoint_id && !body.config) return fulfil(requestId, 503, { detail: 'FIXTURE: the server is busy' });
       const found = describe(body.run_dir, body.checkpoint_id);
       if (found?.compatibility && incompatibleD && body.run_dir === D.run_dir) found.compatibility = { ...found.compatibility, compatible: false, checks: [
         { component: 'network architecture', status: 'incompatible', detail: "saved {'hidden_dim': 48, 'encoder_type': 'graph_gps', 'attention_mode': None} != current {'hidden_dim': 48, 'encoder_type': 'graph_transformer', 'attention_mode': 'local_port_attention'}" },
@@ -175,6 +182,14 @@ await runChecks(browser, async () => {
   check('a model\'s Details offer its structure and circuit graph view, but its "Use this save point" buttons are off in New model',
     await until(`!!${RIGHT}.querySelector('details.structure') && !!${RIGHT}.querySelector('button.graph-open') && !!${RIGHT}.querySelector('button.model-use')`, 40)
     && await evaluate(`[...${RIGHT}.querySelectorAll('button.model-use')].every(b => b.disabled)`));
+  // Branch record SIF-85: Details checked a save point with the page's network and Mode; now as Use would load it - read first,
+  // as Use reads it, then checked in a Mode that loads it (Fine-tune here), with that save point as the source.
+  const looked = await (async () => { for (let i = 0; i < 40 && !asked.some(a => a.run_dir === A.run_dir && a.withConfig); i++) await sleep(100);
+    return asked.filter(a => a.run_dir === A.run_dir); })();
+  const lookCheck = looked.find(a => a.withConfig);
+  check('... and they check it as Use would load it: its save point read first, then checked as Fine-tune would load it, with it as the source (SIF-85)',
+    !!looked[0] && !looked[0].withConfig && looked[0].checkpoint_id === A.latest && lookCheck?.mode === 'fine_tune'
+    && lookCheck.source?.run_dir === A.run_dir && lookCheck.source?.checkpoint_id === A.latest && sameNet(lookCheck.network, NET), JSON.stringify(looked));
   await sleep(1100);
   check('... and looking changed NOTHING in the draft: New model, no saved model chosen', (await stored())?.mode === 'scratch' && !(await stored())?.model_source?.run_dir,
     JSON.stringify((await stored())?.model_source));
@@ -241,11 +256,11 @@ await runChecks(browser, async () => {
   const savedBy = await evaluate(`[...${RIGHT}.querySelectorAll('table.model-relations tr')].find(tr => tr.children[0].textContent === 'Saved by')?.children[1].innerText.replace(/\\s+/g, ' ').trim() ?? ''`);
   check('... "Saved by" names the run\'s Mode as the Mode buttons do: "New model, seed 1, completed", not "scratch" (SIF-44)', / · New model, seed 1, completed$/.test(savedBy), savedBy);
   // Branch record SIF-67: a save point is named by its evaluations, as the table above counts it, its id on hover (it read
-  // "- save point ckpt-00000020-a4").
+  // "- save point ckpt-00000020-a4"). Branch record SIF-85: the heading says the model is checked with its own network.
   const withTask = await evaluate(`(() => { const h = [...${RIGHT}.querySelectorAll('.model-details h4')].find(h => h.textContent.startsWith('With the task on the page'));
     return { text: h?.textContent ?? '', title: h?.querySelector('.hint span')?.title ?? null }; })()`);
-  check('... "With the task on the page" names the save point by its evaluations, its id on hover (SIF-67)',
-    withTask.text === 'With the task on the page - save point at 20 evaluations' && withTask.title === A.latest, JSON.stringify(withTask));
+  check('... "With the task on the page and this model\'s own network" names the save point by its evaluations, its id on hover (SIF-67, SIF-85)',
+    withTask.text === 'With the task on the page and this model\'s own network - save point at 20 evaluations' && withTask.title === A.latest, JSON.stringify(withTask));
 
   // ---- Use this save point: pinned, with its network, one Undo step -----------------------------------------------------
   const early = A.checkpoints[0].checkpoint_id;
@@ -327,12 +342,17 @@ await runChecks(browser, async () => {
   check('... the configuration holds the model\'s network again', sameNet((await storedWhen(s => sameNet(s?.network, GATV2)))?.network, GATV2));
 
   // ---- a save point that cannot be read: said in the window, which stays open (record 7.291) ------------------------------------
-  failModel = A.run_dir;
+  failModel = early;
   await details(A); await until(`!!(${pointRow(early)})`, 30); await usePoint(early);
   check('a save point that cannot be read is said, and the RL model window stays open: nothing was chosen',
     await until(`/That save point could not be read/.test(${RIGHT}.querySelector('.net-message.error')?.textContent ?? '')`, 40)
     && !(await evaluate(`window.__checkRLWindow.closed`)) && (await stored())?.model_source?.run_dir === B.run_dir,
     await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no note'`));
+  // Branch record SIF-85: said only far above the table, the press looked like it did nothing.
+  const useError = await evaluate(`(() => { const p = ${RIGHT}.querySelector('.model-details table.model-points + p.use-error'), b = (${pointRow(early)})?.querySelector('button.model-use');
+    return { text: p?.className === 'error use-error' ? p.textContent : null, button: b?.textContent ?? null, on: b ? !b.disabled : false }; })()`);
+  check('... and said under the save points of the model whose Use was pressed; its button is "Use this save point" again, on (SIF-85)',
+    /^That save point could not be read: .*FIXTURE: the server is busy/.test(useError.text ?? '') && useError.button === 'Use this save point' && useError.on, JSON.stringify(useError));
   failModel = null;
 
   // ---- an incomplete configuration never hides the saved model -------------------------------------------------------------
@@ -351,6 +371,7 @@ await runChecks(browser, async () => {
 
   // ---- a best policy is marked where one exists; rename (record 7.225) --------------------------------------------------------------
   incompatibleD = true;
+  const askedBeforeD = asked.length;
   await details(D);
   check('a run with a selected best policy marks that save point', await until(`/best policy/.test((${pointRow(D.checkpoints[0].checkpoint_id)})?.innerText ?? '')`, 30));
   const compat = await until(`/differ in 2 keys/.test(${RIGHT}.querySelector('details.model-compatibility')?.textContent ?? '')`, 40)
@@ -360,6 +381,12 @@ await runChecks(browser, async () => {
   check('an incompatible model: its problems first, a "saved {...} != current {...}" pair as the keys that differ (a design by its name), the passing check folded (branch record SIF-36); the summary names the Mode and says what incompatible means in the Modes\' own words (branch record SIF-53)',
     compat?.open && compat.summary === 'NOT compatible for Fine-tune - it cannot be loaded, and a run never falls back to New model' &&JSON.stringify(compat.lines) === JSON.stringify(['encoder_type GraphGPS → Graph Transformer', 'attention_mode none → local_port_attention'])
     && compat.passed === 'The other check passes', JSON.stringify(compat));
+  // Branch record SIF-85 (the fixture above only draws an answer): the page holds C, a Graph Transformer, and D is an RGCN -
+  // checked with the page's network, every model of another design read "NOT compatible", although Use brings its own.
+  const askedD = asked.slice(askedBeforeD).filter(a => a.run_dir === D.run_dir), checkD = askedD.find(a => a.withConfig);
+  check('... a model of another design is checked with ITS network (RGCN), not the page\'s (Graph Transformer): its save point read first, as Use reads it (SIF-85)',
+    !!askedD[0] && !askedD[0].withConfig && askedD[0].checkpoint_id === D.latest && sameNet(checkD?.network, RGCN) && checkD.mode === 'fine_tune'
+    && checkD.source?.run_dir === D.run_dir && checkD.source?.checkpoint_id === D.latest && sameNet((await stored())?.network, NET), JSON.stringify(askedD));
   const NAME = `${RIGHT}.querySelector('input.model-rename')`, RENAME = `${RIGHT}.querySelector('button.model-rename-apply')`;
   const note = () => evaluate(`${RIGHT}.querySelector('.model-rename-note')?.textContent ?? ''`);
   check('its Details have a Name box with the model\'s name, and Rename is off while the name is unchanged', (await evaluate(`${NAME}?.value`)) === D.task_name && (await evaluate(`${RENAME}?.disabled`)) === true);
@@ -423,11 +450,17 @@ await runChecks(browser, async () => {
 
   // ---- only the newest "Use this save point" lands (record 7.278, Astra's review of 2026-10-08; as Load run, 7.270) ---------------
   await setMode(networkPage, 'fine_tune'); await until(`${ROWS}.length === ${MODELS.length}`, 40);
-  holdModel = true;
+  holdModel = early;
   await details(A); await until(`!!(${pointRow(early)})`, 30); await usePoint(early);                        // A's read is held back
   const held = async () => { for (let i = 0; i < 40 && !heldModel.length; i++) await sleep(100); return heldModel.length === 1; };
   check('(set-up) the first Use waits for its save point', await held());
-  holdModel = false;
+  // Branch record SIF-85: the press showed nothing until the window closed.
+  const USING = `(() => { const b = (${pointRow(early)})?.querySelector('button.model-use'), others = [...${RIGHT}.querySelectorAll('table.model-points button.model-use')].filter(x => x !== b);
+    return { text: b?.textContent ?? null, off: !!b?.disabled, othersOn: others.length > 0 && others.every(x => !x.disabled) }; })()`;
+  await until(`(${USING}).text === 'Using...'`, 30);
+  const using = await evaluate(USING);
+  check('... meanwhile its button says "Using...", and the other Use buttons stay on: a newer choice wins (SIF-85)', using.text === 'Using...' && using.off && using.othersOn, JSON.stringify(using));
+  holdModel = null;
   await evaluate(`(${row(B)}).querySelector('td:nth-child(4)').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
   run = await storedWhen(s => s?.model_source?.run_dir === B.run_dir);
   check('a second choice meanwhile lands: B, its newest save point, with its network', run?.model_source?.run_dir === B.run_dir && run.model_source.checkpoint_id === B.latest && sameNet(run.network, GATV2), JSON.stringify(run?.model_source));
@@ -437,12 +470,12 @@ await runChecks(browser, async () => {
   check('... and the first, answered late, changes nothing: B and its network stay, the note names B', run?.model_source?.run_dir === B.run_dir && run.model_source.checkpoint_id === B.latest && sameNet(run.network, GATV2)
     && /fine-tunes FIXTURE_ldo_gat from its save point/.test(await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? ''`)),
     `${JSON.stringify(run?.model_source)} | ${await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no note'`)}`);
-  holdModel = true;
+  holdModel = early;
   await details(A); await until(`!!(${pointRow(early)})`, 30); await usePoint(early);                        // held back again
   check('(set-up) a Use waits for its save point while New model is chosen', await held());
   await setMode(networkPage, 'scratch');
   run = await storedWhen(s => s?.mode === 'scratch');
-  holdModel = false; late = heldModel.shift(); await fulfil(late.requestId, 200, describe(late.body.run_dir, late.body.checkpoint_id)); await sleep(800);
+  holdModel = null; late = heldModel.shift(); await fulfil(late.requestId, 200, describe(late.body.run_dir, late.body.checkpoint_id)); await sleep(800);
   run = await stored();
   check('New model while a Use is on its way lets it go: New model, no saved model, the network as it was, no note', run?.mode === 'scratch' && !run.model_source?.run_dir && sameNet(run.network, GATV2)
     && !(await evaluate(`/The next run fine-tunes/.test(${RIGHT}.innerText)`)), `${JSON.stringify(run?.model_source)} ${JSON.stringify(run?.network)}`);

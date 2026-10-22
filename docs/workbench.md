@@ -2566,9 +2566,14 @@ save point: their learner was never trained. Selecting such a saved path returns
 - its **Save points**, newest first: evaluations, time and kind (automatic, Save now, pause, stop, end of the run,
   safety), with the best policy and the newest marked. A click on one selects it for the next part.
 - **Name** and **Rename** (record 7.225);
-- **With the task on the page**: the selected save point checked against the configuration on the page, an inspection;
-  the problems come first, a "saved {...} != current {...}" pair shown as the keys whose values differ, and the checks
-  that pass are folded under one line (branch record SIF-36);
+- **With the task on the page and this model's own network**: the selected save point checked against the configuration
+  on the page as **Use this save point** would load it, an inspection. The save point is read first, as Use reads it,
+  and the check gets the page's task with that model's own network and component list, in Fine-tune or Evaluate only
+  (Fine-tune while New model is chosen). Until branch record SIF-85 it got the page's network, so every model of another
+  design or size read "NOT compatible ... it cannot be loaded", although Use brings its own network. What a model cannot
+  bring - the task's graph, its specs, MOCK or real data - is still checked. The problems come first, a "saved {...} !=
+  current {...}" pair shown as the keys whose values differ, and the checks that pass are folded under one line (branch
+  record SIF-36);
 - **Relationships**: the run that saved it, what it started from, the models trained from it and the runs that loaded
   it - each a link: a model is shown in this table, a run opens the Runs window at it - then its history, folded, oldest
   first, and its folder;
@@ -2576,9 +2581,11 @@ save point: their learner was never trained. Selecting such a saved path returns
 
 **Using one is a press.** **Use this save point** makes exactly that save point the next run's model - a concrete id,
 never "latest" - with the model's network and component list, as ONE Undo step, and says so ("The next run fine-tunes
-... (one Undo step takes it back)"). A double click on a row uses its newest save point the same way. The RL model window
-then closes (record 7.291; as do "Use the newer one" and the suggested model's Use) - a save point that cannot be read
-leaves it open, with the reason. Opened again, the row is marked **in use**, and the model line beside the button names
+... (one Undo step takes it back)"). A double click on a row uses its newest save point the same way. While the save point
+is read, the button pressed says **Using...**; the other Use buttons stay on, and a newer choice wins (record 7.278). The
+RL model window then closes (record 7.291; as do "Use the newer one" and the suggested model's Use) - a save point that
+cannot be read leaves it open, with the reason: above the saved models, and under that model's save points when its
+Details are open (branch record SIF-85). Opened again, the row is marked **in use**, and the model line beside the button names
 it. When the run of the model in use has saved a newer
 save point, "The model in use has a newer save point: ... Use the newer one" offers it; nothing follows by itself. A
 model in use that is no longer listed (outside the output folder, or without a complete save point) is said, with its

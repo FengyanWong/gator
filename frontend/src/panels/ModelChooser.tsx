@@ -10,6 +10,7 @@ import { TableHead, useTableView } from './TableView';
 import { ModelStructure } from './ModelStructure';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
 import { runMode } from './rlModelText';
+import { pointKey, readSavePoint, withSavePoint } from '../savePoint';
 /** When, as the Runs and Tasks windows and the model's facts write it - 2026-10-20 13:09:10 (branch record SIF-17; the table
  *  wrote "20 Oct, 13:09:10"). */
 const when = (utc?: string | null) => stamp(utc) ?? 'unknown time';
@@ -63,16 +64,27 @@ const COLUMNS: Column[] = [
   { key: 'restorable', title: 'Restorable', help: `${Object.entries(RESTORABLE_MEANS).map(([k, means]) => `${RESTORABLE[k]}: ${means}`).join('; ')}. A full save point ${RESTORABLE_OLDER}.`, value: m => RESTORABLE[m.restoration_capability] ?? m.restoration_capability ?? '' },
 ];
 
-/** One model's Details: what can be done with it, and what it is. */
-function ModelDetails({ model, models, runs, byDir, source, usable, config, from, onUse, onRenamed, onSelect }: {
-  model: Json; models: Json[]; runs: Json[]; byDir: Map<string, Json>; source: Json; usable: string | null; config: Json; from: Window | null;
-  onUse: (run_dir: string, checkpoint_id: string) => void; onRenamed: () => void; onSelect: (run_dir: string) => void }) {
+/** A save point a Use could not read, and why (useRlModel's netMessage). */
+type UseError = { point: string; text: string };
+
+/** One model's Details: what can be done with it, and what it is. `usingPoint`: the save point a Use is reading (pointKey). */
+function ModelDetails({ model, models, runs, byDir, source, usable, config, netFields, from, usingPoint, useError, onUse, onRenamed, onSelect }: {
+  model: Json; models: Json[]; runs: Json[]; byDir: Map<string, Json>; source: Json; usable: string | null; config: Json; netFields: string[]; from: Window | null;
+  usingPoint: string | null; useError: UseError | null; onUse: (run_dir: string, checkpoint_id: string) => void; onRenamed: () => void; onSelect: (run_dir: string) => void }) {
   const points: Json[] = [...(model.checkpoints ?? [])].reverse();          // newest first
   const inUse = source.run_dir === model.run_dir;
   const [point, setPoint] = useState<string>(() => (inUse && source.checkpoint_id && source.checkpoint_id !== 'latest' ? source.checkpoint_id : points[0]?.checkpoint_id) ?? '');
-  // The selected save point's compatibility with the draft's task - an inspection: nothing in the draft changes.
-  const { value: checked, error: checkError } = useRequest(signal => api.model(model.run_dir, point, config, signal),
-    [model.run_dir, point, JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, config.run?.mode])], { enabled: !!point, delay: 250 });
+  // The selected save point's compatibility with the draft's task, as "Use this save point" would load it (branch record
+  // SIF-85): the save point is read first, as Use reads it, and the task on the page is checked with this model's own network
+  // and component list (withSavePoint) in a Mode that loads it. It was checked with the page's network, so a model of another
+  // design or size read "NOT compatible - it cannot be loaded" although Use brings its own network. An inspection: nothing in
+  // the draft changes. The page's network stays in the deps: a key the save point does not fix stays the page's, as in Use.
+  const { value: checked, error: checkError } = useRequest(async signal => {
+    const read = await readSavePoint(model.run_dir, point, netFields, signal);
+    return api.model(model.run_dir, point, { ...config, run: withSavePoint({ ...config.run, mode: usable ?? 'fine_tune' }, read) }, signal);
+  }, [model.run_dir, point, usable, netFields.join(), JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, config.run?.network])],
+    { enabled: !!point, delay: 250 });
+  const failed = useError && points.some(p => pointKey(model.run_dir, p.checkpoint_id) === useError.point) ? useError : null;
   const [name, setName] = useState(modelName(model));
   const [renaming, setRenaming] = useState(false);
   const [renameNote, setRenameNote] = useState<{ level: 'hint' | 'warn'; text: string } | null>(null);
@@ -95,14 +107,20 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
   return (<div className="model-details">
     <h4>Save points <span className="hint">- newest first; a save point used is pinned: the run loads exactly it, even when its run saves newer ones</span></h4>
     <table className="grid small model-points"><thead><tr><th>Evaluations</th><th>Saved</th><th>Kind</th><th>Restorable</th><th className="plain"></th></tr></thead>
-      <tbody>{points.map(p => { const used = inUse && source.checkpoint_id === p.checkpoint_id; return (
+      {/* The pressed Use says "Using..." while its save point is read (branch record SIF-85: it showed nothing); the other
+          buttons stay on - a newer choice wins (record 7.278). */}
+      <tbody>{points.map(p => { const used = inUse && source.checkpoint_id === p.checkpoint_id, reading = usingPoint === pointKey(model.run_dir, p.checkpoint_id); return (
         <tr key={p.checkpoint_id} className={p.checkpoint_id === point ? 'current' : ''} title={p.checkpoint_id} onClick={() => setPoint(p.checkpoint_id)}>
           <td className="numeric">{p.evaluations ?? '?'}</td><td>{when(p.created_utc)}</td>
           <td>{KIND[p.kind] ?? p.kind}{p.is_best_policy ? ' · best policy' : ''}{p.is_latest ? ' · newest' : ''}</td>
           <td>{RESTORABLE[p.restoration_capability] ?? p.restoration_capability}</td>
-          <td>{used ? <b className="ok">in use</b> : <button className="model-use" disabled={!usable} onClick={e => { e.stopPropagation(); onUse(model.run_dir, p.checkpoint_id); }}
+          <td>{used ? <b className="ok">in use</b> : <button className="model-use" disabled={!usable || reading} aria-busy={reading || undefined}
+            onClick={e => { e.stopPropagation(); onUse(model.run_dir, p.checkpoint_id); }}
             title={usable ? `Use this save point: the next run ${usable === 'frozen' ? 'evaluates' : 'fine-tunes'} exactly this model, with its network and component list (one Undo step).`
-              : 'Choose Fine-tune or Evaluate only above to use a saved model. In New model the table is for looking only.'}>Use this save point</button>}</td></tr>); })}</tbody></table>
+              : 'Choose Fine-tune or Evaluate only above to use a saved model. In New model the table is for looking only.'}>{reading ? 'Using...' : 'Use this save point'}</button>}</td></tr>); })}</tbody></table>
+    {/* A Use that could not read its save point is said here too, by the button pressed (branch record SIF-85): the window
+        says it far above the table, and the press looked like it did nothing. */}
+    {failed && <p className="error use-error">{failed.text}</p>}
     <div className="row model-rename-row">
       <label title="The name this model is listed under. Every model under the output folder has a name of its own: a name another model carries is refused.">Name
         <input className="model-rename" value={name} maxLength={80} disabled={renaming} onChange={e => setName(e.target.value)}
@@ -111,7 +129,7 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
     {renameNote && <p className={`${renameNote.level === 'warn' ? 'warn' : 'hint'} model-rename-note`}>{renameNote.text}</p>}
     {/* A save point by its evaluations, as the table above counts it; its id on hover (branch record SIF-67: "- save point
         ckpt-00000800-003f07c8", and the same id in Started from, History and the newer save point's note). */}
-    <h4>With the task on the page <span className="hint">- save point <span title={point || undefined}>{pointText(point)}</span></span></h4>
+    <h4>With the task on the page and this model's own network <span className="hint">- save point <span title={point || undefined}>{pointText(point)}</span></span></h4>
     {checkError && <p className="error">{checkError}</p>}
     {checked?.compatibility_unchecked && <p className="hint">{checked.compatibility_unchecked.title}: {checked.compatibility_unchecked.what}</p>}
     {/* An incompatible model says what that means in the Modes' own words (it said "no fallback to scratch", the key of
@@ -145,9 +163,9 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, from
   </div>);
 }
 
-export function SavedModels({ source, usable, runs, outputRoot, config, popup, onUse }: {
-  source: Json; usable: string | null; runs: Json[]; outputRoot?: string | null; config: Json; popup: Window | null;
-  onUse: (run_dir: string, checkpoint_id: string) => void }) {
+export function SavedModels({ source, usable, runs, outputRoot, config, netFields, popup, onUse, usingPoint = null, useError = null }: {
+  source: Json; usable: string | null; runs: Json[]; outputRoot?: string | null; config: Json; netFields: string[]; popup: Window | null;
+  onUse: (run_dir: string, checkpoint_id: string) => void; usingPoint?: string | null; useError?: UseError | null }) {
   // Read again when a run of the list changed - came, went, came to rest, or its model was renamed - not at every read of
   // the run list (each read here walks every run's save points on the slow D: drive; record 7.275). A live run's new
   // save points show at Refresh list or once it rests. Refresh list reads every run folder anew (`fresh`, record 7.274).
@@ -223,8 +241,8 @@ export function SavedModels({ source, usable, runs, outputRoot, config, popup, o
               <td><button className="notes-link" aria-expanded={open === m.run_dir} onClick={() => setOpen(o => (o === m.run_dir ? null : m.run_dir))}>{open === m.run_dir ? 'Hide details' : 'Details'}</button></td>
             </tr>
             {open === m.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
-              <ModelDetails model={m} models={list} runs={runs} byDir={byDir} source={source} usable={usable} config={config} from={popup}
-                onUse={onUse} onRenamed={load} onSelect={dir => { folders.setFolder('all'); setFilter(''); setOpen(dir); }} /></td></tr>}
+              <ModelDetails model={m} models={list} runs={runs} byDir={byDir} source={source} usable={usable} config={config} netFields={netFields} from={popup}
+                usingPoint={usingPoint} useError={useError} onUse={onUse} onRenamed={load} onSelect={dir => { folders.setFolder('all'); setFilter(''); setOpen(dir); }} /></td></tr>}
           </Fragment>); })}</tbody></table></div>
         {shown.length === 0 && <p className="hint task-folder-empty">{filter || design ? 'No saved model matches the filter in this folder.' : 'This folder is empty. Select models in All models, then use Move to…'}</p>}
       </div></div>}

@@ -7,6 +7,10 @@ import type { ModelDescription, NetworkConfig, RunSettings } from './contracts';
  *  saved model this way (record 7.267), so the draft never holds a model without its network. */
 export type SavePoint = { run_dir: string; checkpoint_id: string; network: NetworkConfig | null; vocabulary: string | null; evaluations: number | null };
 
+/** One save point as one string: the one "Use this save point" is reading, or could not read, so that its own button and
+ *  its own Details say it (branch record SIF-85). */
+export const pointKey = (run_dir: string, checkpoint_id: string) => JSON.stringify([run_dir, checkpoint_id]);
+
 /** The Modes that load a saved model. */
 export const LOADS = ['fine_tune', 'frozen'];
 /** The network settings a saved model fixes besides its encoder: the fallback until the backend's own list is read. */
@@ -15,9 +19,10 @@ export const pick = (source: Record<string, unknown> | null | undefined, fields:
   Object.fromEntries(fields.filter(f => source?.[f] !== undefined && source?.[f] !== null).map(f => [f, source![f]]));
 
 /** Reads a save point's description (`POST /api/runs/model`). Rejects when it cannot be read: no such save point, a run
- *  outside the allowed output roots. */
-export async function readSavePoint(run_dir: string, checkpoint_id: string, fields: string[] = NETWORK_FIELDS): Promise<SavePoint> {
-  const answer = await api.model(run_dir, checkpoint_id);
+ *  outside the allowed output roots. `signal`: a saved model's Details read it as Use does, and let the read go when another
+ *  save point is selected (branch record SIF-85). */
+export async function readSavePoint(run_dir: string, checkpoint_id: string, fields: string[] = NETWORK_FIELDS, signal?: AbortSignal): Promise<SavePoint> {
+  const answer = await api.model(run_dir, checkpoint_id, undefined, signal);
   const network = networkOf(answer?.description, fields);
   return { run_dir, checkpoint_id: answer?.description?.checkpoint_id ?? checkpoint_id, network, vocabulary: answer?.vocabulary?.name ?? null,
     evaluations: answer?.description?.counters?.evaluations_committed ?? null };

@@ -263,6 +263,11 @@ await runChecks(browser, async () => {
   await evaluate(`${RUN_FOLDER}.click()`, true);
   check('... a click on the run folder copies it and says "copied", then reads the path alone again', await until(`${RUN_FOLDER}.textContent === ${JSON.stringify(`${DIR} copied`)}`, 20)
     && (await evaluate('window.__clip')) === DIR && await until(`${RUN_FOLDER}.textContent === ${JSON.stringify(DIR)}`, 40), await evaluate(`${RUN_FOLDER}.textContent`));
+  // Branch record SIF-94: a copy the browser refuses says so there, for 1.5 s as well (it was said nowhere).
+  await evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: () => Promise.reject(new DOMException('FIXTURE: Document is not focused.', 'NotAllowedError')) })`);
+  await evaluate(`${RUN_FOLDER}.click()`, true);
+  check('... a copy the browser refuses says "could not copy" there, then the path alone again (SIF-94)', await until(`${RUN_FOLDER}.textContent === ${JSON.stringify(`${DIR} could not copy`)}`, 20)
+    && await until(`${RUN_FOLDER}.textContent === ${JSON.stringify(DIR)}`, 40), await evaluate(`${RUN_FOLDER}.textContent`));
   await evaluate(`delete navigator.clipboard.writeText`);
   await shot('run-2-running.png');
   // Review of branch record SIF-56: a double click on the folder's name in the line takes that word and keeps the line (its

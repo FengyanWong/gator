@@ -2,7 +2,8 @@
 // new model, or the saved models to fine-tune or evaluate. It only draws what useRlModel holds; RunPanel portals it into
 // its pop-up window.
 import { Fragment } from 'react';
-import { copy, Json } from '../api';
+import type { Json } from '../api';
+import { useCopied } from './copied';
 import { folderName, plural, short, stamp, taskNameOf } from '../format';
 import { RESTORABLE, RESTORABLE_MEANS, RESTORABLE_OLDER, SavedModels } from './ModelChooser';
 import { DESIGN_NAME, designName, pointText } from '../lineage';
@@ -116,6 +117,8 @@ export function RlModelWindow({ m }: { m: RlModel }) {
   const means = model?.description && restorableMeans(model.description.restoration_capability, model.compatibility?.checks);
   // A save point a Use could not read: its Details say it under its save points too (branch record SIF-85), not only here.
   const useError = netMessage?.level === 'error' && netMessage.point ? { point: netMessage.point, text: netMessage.text } : null;
+  // The model in use's Folder is clicked in this window, so ITS clipboard takes it, and the cell says how it went (SIF-94).
+  const copying = useCopied(networkWindow.popup);
   // The blocks Run configuration's notice can name carry ids (useRlModel's `networkAnchor`): its "RL model..." opens this
   // window at the one its reason is about (branch record SIF-86).
   return <section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
@@ -240,7 +243,7 @@ export function RlModelWindow({ m }: { m: RlModel }) {
             {' '}{count(model.description.counters.replay_size, 'transition')} in replay</td></tr>
           <tr><td>Restorable</td><td><b>{RESTORABLE[model.description.restoration_capability] ?? model.description.restoration_capability}</b>{model.description.missing_components.length ? ` - missing: ${model.description.missing_components.join(', ')}` : ''}
             {means && <span className="hint">{model.description.missing_components.length ? '; ' : ' - '}{means}.</span>}</td></tr>
-          <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.description.path)}>{model.description.path}</td></tr>
+          <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => void copying.copyText(model.description.path)}>{model.description.path}{copying.word(model.description.path)}</td></tr>
         </tbody></table>}
         {model?.compatibility_unchecked && <div className="note compat-unchecked"><p><b>{model.compatibility_unchecked.title}</b></p>
           <p>{model.compatibility_unchecked.what}</p><p className="hint">{model.compatibility_unchecked.note}</p>

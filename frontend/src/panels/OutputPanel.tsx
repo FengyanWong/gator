@@ -1,7 +1,8 @@
 // The right column's Output settings (plan-refactoring C4, out of Right.tsx).
 import { useEffect, useMemo, useState } from 'react';
 import { useRequest } from '../store';
-import { api, ApiError, copy, Json } from '../api';
+import { api, ApiError, Json } from '../api';
+import { useCopied } from './copied';
 import { bytes, clock, folderName, plural, stamp } from '../format';
 import { OUTPUT_ROOT_ID } from '../contract';
 import { ByteSize, Check, Module, Num } from './fields';
@@ -27,6 +28,9 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
   const set = (fields: Json) => setConfig(c => ({ ...c, output: { ...c.output, ...fields } }));
   const root = out.output_root ?? meta?.output_root ?? '';
   const [browse, setBrowse] = useState<Json>(null);
+  // Copy path and a run path cell say "copied" or "could not copy", as Run status's Run folder does (branch record SIF-94:
+  // they copied unsaid). Keyed by what was clicked: the root and a run path can be the same text.
+  const copying = useCopied();
   // The header's run working locks it too (branch record SIF-91: only the run the tabs show did).
   const locked = headerWorks || !!activeRun?.worker_alive;
   // The root is looked at 0.5 s after the last keystroke, and an answer for text typed before is dropped (useRequest):
@@ -89,9 +93,10 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
   const namedSeen = named ? experiments.find(([name]) => name === named)?.[1] : undefined;
   return (
     <Module id="output" title="Output settings" defaultOpen={false} summary={[out.experiment_name, tail ? `.../${tail}` : 'no output root'].filter(Boolean).join(' - ')}>
-      {/* "Copy path" is a sibling of the label, not inside it: a button inside would become what the label's text clicks. */}
+      {/* "Copy path" is a sibling of the label, not inside it: a button inside would become what the label's text clicks. Its
+          word stands before it, so the button keeps its text and its place at the line's end (branch record SIF-94). */}
       <div className="field-head"><label htmlFor={OUTPUT_ROOT_ID} title="A backend directory inside an allowed root. Not a browser upload folder.">Output root</label>
-        <button className="text-link" title="Copy the output root to the clipboard" onClick={() => copy(root)}>Copy path</button></div>
+        {copying.word('root')}<button className="text-link" title="Copy the output root to the clipboard" onClick={() => void copying.copyText(root, 'root')}>Copy path</button></div>
       <input id={OUTPUT_ROOT_ID} value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} />
       <div className="row"><button disabled={locked} onClick={() => openFolder()}>Browse allowed roots...</button>
         <button disabled={busy.test} onClick={() => { const at = root; if (at) ask('test', () => api.checkOutput(at, true), value => setTested({ root: at, value, at: clock() })); }}>
@@ -139,7 +144,7 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
         {/* words, and the save in local time with the UTC in its tooltip, as Run status writes it (branch record SIF-60: the
             rows read "run_dir", "bytes written", "last successful save 2026-10-05T10:21:40+00:00"); a path says that a click
             copies it, as Run status's Run folder does (branch record SIF-64) */}
-        {Object.entries(paths).map(([k, v]) => <tr key={k}><td title={k}>{pathName(k)}</td><td className="path" title="Click to copy" onClick={() => copy(String(v))}>{String(v)}</td></tr>)}
+        {Object.entries(paths).map(([k, v]) => <tr key={k}><td title={k}>{pathName(k)}</td><td className="path" title="Click to copy" onClick={() => void copying.copyText(String(v), `path:${k}`)}>{String(v)}{copying.word(`path:${k}`)}</td></tr>)}
         <tr><td>Bytes written</td><td>{bytes(activeRun?.bytes_written ?? activeRun?.persistence?.bytes_written)}</td></tr>
         <tr><td>Last successful save</td><td title={saved ? `${saved} (UTC)` : undefined}>{stamp(saved) ?? saved ?? '-'}</td></tr>
         <tr><td>Remote Spectre work folder</td><td className="hint">local work/ for this task; final files are written directly here (sync: local)</td></tr>

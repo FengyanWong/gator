@@ -6,6 +6,7 @@
 // temporary (the user's saved configuration is not touched), and the clipboard is replaced by a recorder in the page.
 // What it pins (user requests 2026-09-21 and 2026-09-22):
 //   - "Copy path" sits at the right end of the "Output root" caption line, as text (no button chrome), and still copies;
+//     it says "copied" for 1.5 s just before it, or "could not copy" when the browser refuses the clipboard (branch record SIF-94);
 //   - "Waveform storage limit" is a number box plus a unit list; the configuration keeps the typed size in whole bytes;
 //     choosing another unit CONVERTS the shown number and saves nothing (1.5 GiB -> 1536 MiB); an empty box is "no limit"
 //     and stays empty; a value from outside is shown exactly, in the unit that reads best;
@@ -145,6 +146,20 @@ await runChecks(browser, async () => {
   check('it is text of the caption\'s size, and still shows the hand pointer', look.size === look.captionSize && look.cursor === 'pointer', JSON.stringify(look));
   await evaluate(`${COPY}.click()`);
   check('pressing it copies the output root', (await until(`window.__copied === ${JSON.stringify(ROOT)}`, 20)), String(await evaluate(`window.__copied`)));
+  // Branch record SIF-94: the press said nothing. "copied" for 1.5 s now, just before the button, which keeps its text and its
+  // place at the line's end; a copy the browser refuses says "could not copy" there instead.
+  await until(`!!${HEAD}.querySelector('.copy-word')`, 20);
+  const said = await evaluate(`(() => { const w = ${HEAD}.querySelector('.copy-word'), c = ${COPY}, s = w && getComputedStyle(w);
+    return w && { text: w.textContent, ok: w.classList.contains('ok'), before: w.nextElementSibling === c, button: c.textContent, size: s.fontSize === getComputedStyle(c).fontSize,
+      atRightEnd: Math.abs(c.getBoundingClientRect().right - ${ROOT_INPUT}.getBoundingClientRect().right) < 2 }; })()`);
+  check('...and says "copied" just before it, at its size, the button keeping its text and its place at the line\'s end (SIF-94)', said?.text === ' copied' && said.ok && said.before
+    && said.button === 'Copy path' && said.size && said.atRightEnd, JSON.stringify(said));
+  check('...for 1.5 s, then the line reads as before', await until(`!${HEAD}.querySelector('.copy-word')`, 40), await evaluate(`${HEAD}.textContent`));
+  await evaluate(`navigator.clipboard.writeText = () => Promise.reject(new DOMException('FIXTURE: Document is not focused.', 'NotAllowedError'))`);
+  await evaluate(`${COPY}.click()`);
+  check('a copy the browser refuses says "could not copy" there instead, and why on hover (SIF-94)', await until(`${HEAD}.querySelector('.copy-word.warn')?.textContent === ' could not copy'`, 20)
+    && /refused the clipboard/.test(await evaluate(`${HEAD}.querySelector('.copy-word').title`)), await evaluate(`${HEAD}.textContent`));
+  await evaluate(`navigator.clipboard.writeText = text => { window.__copied = text; return Promise.resolve(); }`);
   check('the caption still belongs to the path box (a click on it puts the cursor in the box, and copies nothing)', await evaluate(`(() => { window.__copied = null; ${HEAD}.querySelector('label').click();
     return document.activeElement === ${ROOT_INPUT} && window.__copied === null; })()`));
   check('the path box is still editable and full width', await evaluate(`(() => { const b = ${ROOT_INPUT}.getBoundingClientRect(), p = ${PANEL}.getBoundingClientRect(); return !${ROOT_INPUT}.disabled && b.width > p.width - 40; })()`));

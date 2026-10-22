@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRequest } from '../store';
-import { api, copy, Json } from '../api';
+import { api, Json } from '../api';
+import { useCopied } from './copied';
 import { folderName, plural, stamp } from '../format';
 import { childrenOf, designName, ENCODER_SHORT, historyOf, pointText, startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
@@ -74,6 +75,7 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, netF
   usingPoint: string | null; useError: UseError | null; onUse: (run_dir: string, checkpoint_id: string) => void; onRenamed: () => void; onSelect: (run_dir: string) => void }) {
   const points: Json[] = [...(model.checkpoints ?? [])].reverse();          // newest first
   const inUse = source.run_dir === model.run_dir;
+  const copying = useCopied(from);                     // the Folder is clicked in the RL model window: ITS clipboard (SIF-94)
   const [point, setPoint] = useState<string>(() => (inUse && source.checkpoint_id && source.checkpoint_id !== 'latest' ? source.checkpoint_id : points[0]?.checkpoint_id) ?? '');
   // The selected save point's compatibility with the draft's task, as "Use this save point" would load it (branch record
   // SIF-85): the save point is read first, as Use reads it, and the task on the page is checked with this model's own network
@@ -157,7 +159,7 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, netF
           {history.steps.map(s => <li key={s.run_dir}>{s.run_dir === model.run_dir ? <b>this model</b> : link(s.run_dir, s.row?.model_label ?? folderName(s.run_dir))}
             {s.row && <span className="hint">{` · ${s.row.task_key ?? '?'} · ${runMode(s.row) || '?'} · ${s.row.evaluations != null ? plural(s.row.evaluations, 'evaluation') : 'evaluations unknown'}`}</span>}
             {s.checkpoint_id && <span className="hint" title={s.checkpoint_id}>{` - loaded the one above, its save point ${pointText(s.checkpoint_id)}`}</span>}</li>)}</ol></details></td></tr>
-      <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => copy(model.run_dir)}>{model.run_dir}</td></tr>
+      <tr><td>Folder</td><td className="path" title="Click to copy" onClick={() => void copying.copyText(model.run_dir)}>{model.run_dir}{copying.word(model.run_dir)}</td></tr>
     </tbody></table>
     {point && <ModelStructure runDir={model.run_dir} checkpointId={point} label={modelName(model)} />}
     {point && <CircuitGraphView runDir={model.run_dir} checkpointId={point} label={modelName(model)} />}
@@ -182,6 +184,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
   const table = useTableView('saved', true);
   const { filter, setFilter, selected, setSelected } = table;
   const [open, setOpen] = useState<string | null>(null);              // the model whose Details are open
+  const copying = useCopied(popup);                                   // a missing model's folder, by the pop-up's clipboard (SIF-94)
   const byDir = useMemo(() => new Map(runs.map(r => [r.run_dir, r])), [runs]);
   const list = models ?? [];
   const text = (m: Json) => [modelName(m), m.task_name, m.task_id, trainedOn(m), m.circuit_class, designName(m.network), netLabel(m.network), netShort(m.network), m.mode, m.state, m.mock ? 'mock' : 'real',
@@ -231,7 +234,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
     {models && !list.length && !error && <p className="hint model-empty">No saved model yet under this output folder. A run saves one when it is paused, stopped or finished,
       and every N evaluations while it runs ("Model checkpoints" in the output settings must be on).</p>}
     {source.run_dir && models && !inUse && !loading && usable && <p className="warn model-missing">The model in use is not in this list: its run folder is outside the current output
-      folder, or it no longer holds a complete save point. <span className="path" title="Click to copy" onClick={() => copy(source.run_dir)}>{source.run_dir}</span></p>}
+      folder, or it no longer holds a complete save point. <span className="path" title="Click to copy" onClick={() => void copying.copyText(source.run_dir)}>{source.run_dir}{copying.word(source.run_dir)}</span></p>}
     {newer && <p className="note model-newer">The model in use has a newer save point: <b>{newer.evaluations} evaluations</b> ({when(newer.created_utc)}); the next run loads the save point
       {' '}<span title={source.checkpoint_id}>{pointText(source.checkpoint_id)}</span>. <button className="model-use-newer" onClick={() => onUse(inUse.run_dir, newer.checkpoint_id)}>Use the newer one</button></p>}
     {list.length > 0 && <div className="task-browser">

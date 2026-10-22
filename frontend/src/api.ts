@@ -188,7 +188,14 @@ export const downloadPackage = (run_dir: string) => download('/api/runs/export-p
 
 export const saveJson = (name: string, value: Json) => save(name, new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
 
-export const copy = (text: string) => navigator.clipboard?.writeText(text);
+/** Puts text on the clipboard of `from`, the window the click happened in (branch record SIF-94): a browser refuses a write
+ *  from a window that does not have focus, so a click in a pop-up copies through the pop-up's own clipboard, as the
+ *  Connection, Agent and Runs windows do theirs; the main page's when none is given or it has closed. No clipboard here
+ *  rejects too, so every caller can say "could not copy": it returned nothing then, and a refused write went unsaid. */
+export const copy = (text: string, from?: Window | null): Promise<void> => {
+  const at = from && !from.closed ? from : window;
+  return at.navigator.clipboard?.writeText(text) ?? Promise.reject(new Error('no clipboard'));
+};
 // A backend that does not know a route yet answers 404 / 405: it has to be restarted. A blocked connection gate is said
 // with the panel's `gateText`; anything else in the backend's own words.
 export const OLDER_BACKEND = 'This backend is older than the page and cannot do this yet: restart it (gator_workbench.cli serve).';

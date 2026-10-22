@@ -10,6 +10,7 @@ import { requestTaskSave } from './TaskSave';
 import { ContinueForm } from './ContinueForm';
 import { LaunchRefusal } from './LaunchRefusal';
 import { KeyTile } from './fields';
+import { useCopied } from './copied';
 import { REWARD_NAME, REWARD_NAMES, runMode } from './rlModelText';
 
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
@@ -118,9 +119,9 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
     requestAnimationFrame(() => (continueRef.current && !continueRef.current.disabled ? continueRef.current
       : document.querySelector<HTMLButtonElement>('footer .tabs button.active'))?.focus());
   };
-  // The run folder's path was copied by a click, for 1.5 s, as the Runs window says it (branch record SIF-54: it copied unsaid).
-  const [copied, setCopied] = useState(false);
-  useEffect(() => setCopied(false), [runDir]);
+  // The run folder's path was copied by a click, for 1.5 s, as the Runs window says it (branch record SIF-54: it copied unsaid);
+  // a refused copy says "could not copy" (branch record SIF-94). Keyed by the path: another run's folder says nothing.
+  const copying = useCopied();
   // A run chosen whose answer is still on its way, or whose status cannot be read now, is said as such: this line used
   // to read "No run selected." while the strip below named the run.
   if (!status) return <p className="hint">{!runDir ? 'No run selected.' : error ? `The status of this run could not be read: ${error}` : 'Reading the run...'}</p>;
@@ -232,8 +233,8 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
           ? `saved at ${status.manual_save.evaluations} evaluations`
           : 'requested, waiting for the simulation in flight to finish'}</span>}</td></tr>
       {/* named, and said when copied, as the Runs window's Details do (branch record SIF-54) */}
-      <tr><td>Run folder</td><td className="path" title="Click to copy" onClick={() => copy(status.run_dir)?.then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined)}>
-        {status.run_dir}{copied && <b className="ok"> copied</b>}</td></tr>
+      <tr><td>Run folder</td><td className="path" title="Click to copy" onClick={() => void copying.copyText(status.run_dir)}>
+        {status.run_dir}{copying.word(status.run_dir)}</td></tr>
       {status.error && <tr><td>Error</td><td className="error">{status.error}</td></tr>}
     </tbody></table>
   </div>);
@@ -279,10 +280,12 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
         const time = /_(at|utc)$/.test(c), local = time && typeof r[c] === 'string' ? stamp(r[c]) : null;
         const object = typeof r[c] === 'object' && r[c] !== null, text = object ? JSON.stringify(r[c]) : local ?? num(r[c]);
         const id = /_id$/.test(c) && text !== '';
-        // A JSON value keeps to one line too (branch record SIF-4): it wrapped into a block 200 px tall.
+        // A JSON value keeps to one line too (branch record SIF-4): it wrapped into a block 200 px tall. A click's copy is said
+        // on the tool line, or that the browser refused it (branch record SIF-94: it copied unsaid either way).
         return <td key={c} className={id ? 'id-cell' : time ? 'time-cell' : object ? 'json-cell' : numeric.has(c) ? 'num-cell' : undefined}
           title={id || object ? `${text}\nClick to copy` : local ? `${r[c]} (UTC)` : undefined}
-          onClick={id || object ? () => copy(text) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>}
+          onClick={id || object ? () => copy(text).then(() => setNote(`Copied ${c}.`),
+            () => setNote(`Could not copy ${c}: the browser refused the clipboard; select the cell's text instead.`)) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>}
   </div>);
 }
 
@@ -300,8 +303,9 @@ function FilesTabBody({ runDir }: { runDir: string | null }) {
   return (<div><div className="row"><button onClick={refresh} title="Refresh: Read the run folder again."><Icon name="refresh" label="Refresh" /></button>
     <button disabled={note === 'Packing...'} onClick={pack} title="Download data-only package (.zip): Every data file of this run in one zip, named after the run; no plots, nothing drawn."><Icon name={note === 'Packing...' ? 'wait' : 'download'} label="Download data-only package (.zip)" /></button>
     {/* The count and the notes alone on the tool line (branch record SIF-48): it ended, on every visit, with a sentence about an
-        "Open local folder" button that does not exist; why there is none now sits in Copy run path's tooltip. */}
-    <button onClick={() => copy(runDir)} title="Copy run path: The run folder's path, as text, to the clipboard. A browser cannot open a folder itself."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${plural(files.files.length, 'file')}, ${bytes(files.total_bytes)}.`} {error ?? note}</span></div>
+        "Open local folder" button that does not exist; why there is none now sits in Copy run path's tooltip. Copy run path says
+        on it how it went, the path itself when the browser refused the clipboard (branch record SIF-94: it copied unsaid). */}
+    <button onClick={() => copy(runDir).then(() => setNote('Copied the run path.'), () => setNote(`Could not copy: the browser refused the clipboard. The run path: ${runDir}`))} title="Copy run path: The run folder's path, as text, to the clipboard. A browser cannot open a folder itself."><Icon name="copy" label="Copy run path" /></button><span className="hint">{files && `${plural(files.files.length, 'file')}, ${bytes(files.total_bytes)}.`} {error ?? note}</span></div>
     <div className="scroll"><table className="grid small files-table"><thead><tr><th>File</th><th className="num-cell">Size</th><th>Modified</th><th></th></tr></thead>
       <tbody>{files?.files.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td className="num-cell">{bytes(f.bytes)}</td><td title={`${f.modified_utc} (UTC)`}>{stamp(f.modified_utc) ?? f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
         title={`Download ${f.path}: This file as it is now, to the browser's download folder.`}><Icon name={saving === f.path ? 'wait' : 'download'} label={`Download ${f.path}`} /></button></td></tr>)}</tbody></table></div></div>);

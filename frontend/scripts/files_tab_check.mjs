@@ -1,7 +1,8 @@
 // Browser check of the "Output files" tab's per-file download. User request 2026-09-26: "change the downloads on the
 // right to buttons with icons" - each row ends with an icon button (the download arrow, hourglass while the file is on
 // its way) instead of a "download" text link; the file is saved like the package and the logs (the browser's own
-// download, named by the backend) and the hint says "Downloaded <name>.".
+// download, named by the backend) and the hint says "Downloaded <name>.". Copy run path says "Copied the run path." there,
+// or that the browser refused the clipboard, with the path (branch record SIF-94).
 // Hermetic, on the shared harness: the run's status and file list are canned (FIXTURE), the download request is held
 // so the busy state can be seen, then answered with a canned body and Content-Disposition; the browser's download
 // folder is a temporary one. GET requests pass, every other writing request is refused. Safe against the live 8765 page.
@@ -124,6 +125,19 @@ await runChecks(browser, async () => {
   await heldSoon(); await gone();
   check('a file the backend no longer has is said in the hint, in the backend\'s words, and nothing is saved', (await until(`${HINT}.includes('No such file')`, 40)) && !readdirSync(saved).includes('dispatch.jsonl'), await evaluate(HINT));
   check('... and its button is ready again', await until(`!(${BUTTON('journal/dispatch.jsonl')}).disabled`, 30), JSON.stringify(await describe('journal/dispatch.jsonl')));
+
+  // ---- Copy run path says how it went (branch record SIF-94: it copied unsaid) ---------------------------------------------
+  // The browser's clipboard is stood in for: a headless window may not be focused.
+  const COPY = `[...(${TABLE}).closest('.scroll').previousElementSibling.querySelectorAll('button')].find(b => b.title.startsWith('Copy run path'))`;
+  await evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: text => { window.__clip = text; return Promise.resolve(); } })`);
+  await evaluate(`(${COPY}).click()`);
+  check('Copy run path copies the run folder\'s path and says so in the hint (SIF-94)', await until(`${HINT}.endsWith('Copied the run path.')`, 30)
+    && (await evaluate('window.__clip')) === DIR, await evaluate(HINT));
+  await evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: () => Promise.reject(new DOMException('FIXTURE: Document is not focused.', 'NotAllowedError')) })`);
+  await evaluate(`(${COPY}).click()`);
+  check('... and a copy the browser refuses says so, with the path to select (SIF-94)', await until(`${HINT}.endsWith(${JSON.stringify(`Could not copy: the browser refused the clipboard. The run path: ${DIR}`)})`, 30),
+    await evaluate(HINT));
+  await evaluate(`delete navigator.clipboard.writeText`);
 
   reportRefused(refused, NEVER_ASKED_OR_SAVED);
   check('no console exception', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

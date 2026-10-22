@@ -289,6 +289,8 @@ td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space:
 .row.pair > button { flex: 1 1 0; min-width: 0; } p.in-use { margin: 6px 0 0; }
 /* A field whose caption line carries an action at its right end, shown as text (Output root ... Copy path); a number box with a unit list. */
 .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 4px 0 2px; } .field-head label { flex: none; margin: 0; }
+/* The action's "copied" stands just before it, the action keeping its place at the line's end (branch record SIF-94). */
+.field-head .copy-word { margin-left: auto; font-size: 11.5px; }
 button.text-link { border: none; background: none; padding: 0; color: var(--accent); font-size: 11.5px; } button.text-link:hover:not(:disabled) { text-decoration: underline; } button.text-link:active { color: var(--text); }
 /* The suggested Mode in the run panel is the clickable word itself (user request 2026-09-26), at the size of its sentence. */
 button.text-link.mode-suggestion { font-size: inherit; font-weight: 600; }

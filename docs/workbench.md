@@ -410,6 +410,14 @@ no splitter.
 is long; hovering shows the whole value and a click copies it. A time keeps its full width, no word is cut in two, and
 a JSON value has a column of bounded width of its own.
 
+**A copy says how it went** (branch record SIF-94). Run status's Run folder, Output settings' **Copy path** (the word just
+before it) and its Current run paths, and the folders of the RL model window say "copied" where they were clicked, for
+1.5 s, or "could not copy" when the browser refused the clipboard (its tooltip: select the text and copy it with Ctrl+C).
+Data tables' cells and Output files' **Copy run path** say it on their tool line ("Copied run_id.", "Copied the run
+path."; a refused run path is written there, to select). A click in a pop-up window copies through that window's own
+clipboard, as the Connection, Agent and Runs windows did already: a browser refuses a write from a window that does not
+have focus, and the RL model window's folders went through the main page's, failing unsaid.
+
 **Each editor's colour.** Parameters, Probes and Specs each have a colour, used on their tab and on their table's header
 row. The Specs line lists the Probe ids as Probe-coloured chips; its words are the same as before.
 

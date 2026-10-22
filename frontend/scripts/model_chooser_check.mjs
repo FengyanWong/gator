@@ -18,6 +18,8 @@
 // - an incomplete configuration is a calm note; rename refuses a taken name; the filter; one read per Refresh, no timer;
 //   a model in use that left the list, its folder saying "Click to copy" (branch record SIF-64); an empty folder; the models'
 //   folders; back to New model; the real route;
+// - a folder clicked in the window (a model's Details, the model in use, a model that left the list) is copied by the
+//   window's own clipboard, never the main page's, and says "copied" or "could not copy" (branch record SIF-94);
 // - Details check a save point as Use would load it: read first, then checked with the model's own network in a Mode that
 //   loads it; the pressed Use says "Using..." while its save point is read, and one that cannot be read is said under that
 //   model's save points too (branch record SIF-85);
@@ -163,6 +165,16 @@ await runChecks(browser, async () => {
     return until(`${ROWS}.length === ${MODELS.length} || !${RIGHT}.querySelector('.saved-models')`, 60);
   };
   const chosenAndReopened = async () => { const closed = await closedByChoice(); await reopen(); return closed; };
+  // Branch record SIF-94: a folder clicked in this window is copied by ITS clipboard (the main page's refuses a write while the
+  // pop-up has focus, and the copy failed unsaid). Both clipboards are stood in for - a headless window may not be focused -
+  // the main page's recording too, to show that it is not the one written; `refuse`: the pop-up's refuses, as a browser does.
+  const clipboards = (refuse = false) => evaluate(`(() => { window.__mainClip = null; window.__popupClip = null;
+    Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: text => { window.__mainClip = text; return Promise.resolve(); } });
+    Object.defineProperty(window.__checkRLWindow.navigator.clipboard, 'writeText', { configurable: true, value: ${refuse}
+      ? () => Promise.reject(new DOMException('FIXTURE: Document is not focused.', 'NotAllowedError')) : text => { window.__popupClip = text; return Promise.resolve(); } }); })()`);
+  const copiedFrom = async (cell, text, word) => { await clipboards(word !== ' copied'); await evaluate(`(${cell}).click()`);
+    const said = await until(`(${cell})?.textContent === ${JSON.stringify(text + word)}`, 20);
+    return { said, popup: await evaluate('window.__popupClip'), main: await evaluate('window.__mainClip'), text: await evaluate(`(${cell})?.textContent ?? 'no cell'`) }; };
 
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG, when: 'once' });
@@ -260,6 +272,9 @@ await runChecks(browser, async () => {
   check('... and opening Details changed nothing in the draft', !(await stored())?.model_source?.run_dir);
   const savedBy = await evaluate(`[...${RIGHT}.querySelectorAll('table.model-relations tr')].find(tr => tr.children[0].textContent === 'Saved by')?.children[1].innerText.replace(/\\s+/g, ' ').trim() ?? ''`);
   check('... "Saved by" names the run\'s Mode as the Mode buttons do: "New model, seed 1, completed", not "scratch" (SIF-44)', / · New model, seed 1, completed$/.test(savedBy), savedBy);
+  const detailsFolder = await copiedFrom(`[...${RIGHT}.querySelectorAll('table.model-relations tr')].find(tr => tr.children[0].textContent === 'Folder')?.children[1]`, A.run_dir, ' copied');
+  check('... a click on its Folder copies it by this window\'s clipboard, not the main page\'s, and says "copied" (SIF-94)', detailsFolder.said
+    && detailsFolder.popup === A.run_dir && detailsFolder.main === null, JSON.stringify(detailsFolder));
   // Branch record SIF-67: a save point is named by its evaluations, as the table above counts it, its id on hover (it read
   // "- save point ckpt-00000020-a4"). Branch record SIF-85: the heading says the model is checked with its own network.
   const withTask = await evaluate(`(() => { const h = [...${RIGHT}.querySelectorAll('.model-details h4')].find(h => h.textContent.startsWith('With the task on the page'));
@@ -339,6 +354,9 @@ await runChecks(browser, async () => {
   check('... and its facts read plainly: "Saved" in this computer\'s time, Restorable "full state", no zero padding (SIF-2)',
     /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(facts['Saved'] ?? '') && !('Saved (UTC)' in facts) && /^full state/.test(facts['Restorable'] ?? '')
     && !/0{4}$/.test(facts['Worst hard-spec share'] ?? '0') && !/:/.test(facts['Trained on'] ?? ':'), JSON.stringify(facts).slice(0, 400));
+  const factsFolder = await copiedFrom(`[...${RIGHT}.querySelectorAll('table.model-facts tr')].find(r => r.cells[0].textContent === 'Folder')?.cells[1]`, `${B.run_dir}/checkpoints/${B.latest}`, ' copied');
+  check('... a click on its Folder copies it by this window\'s clipboard, not the main page\'s, and says "copied" (SIF-94)', factsFolder.said
+    && factsFolder.popup === `${B.run_dir}/checkpoints/${B.latest}` && factsFolder.main === null, JSON.stringify(factsFolder));
   // Branch record SIF-58: the counters with their nouns ("8 evaluations, 4 updates, replay 8"), what is planned ("unknown
   // planned"), on/off ("enabled"), and the version by what it is the version of ("Schema").
   check('... the counters, the condition plan and the metadata version in words (SIF-58)', facts['Training'] === '8 evaluations, 4 learner updates, 8 transitions in replay'
@@ -460,6 +478,9 @@ await runChecks(browser, async () => {
     && (await evaluate(`${RIGHT}.querySelector('.model-missing').innerText`)).includes(C.run_dir));
   // Branch record SIF-64: a click on the folder copies it, and nothing said so.
   check('...the folder says that a click copies it (SIF-64)', (await evaluate(`${RIGHT}.querySelector('.model-missing .path')?.title`)) === 'Click to copy');
+  const refusedFolder = await copiedFrom(`${RIGHT}.querySelector('.model-missing .path')`, C.run_dir, ' could not copy');
+  check('...and a copy this window\'s clipboard refuses says "could not copy" there, the main page\'s untouched (SIF-94)', refusedFolder.said && refusedFolder.main === null
+    && await until(`(${RIGHT}.querySelector('.model-missing .path'))?.textContent === ${JSON.stringify(C.run_dir)}`, 40), JSON.stringify(refusedFolder));
   served = []; await evaluate(`${button('Refresh list')}.click()`);
   check('no saved model: said in plain words, with what makes a run save one', await until(`/No saved model yet/.test(${RIGHT}.querySelector('.model-empty')?.innerText ?? '')`, 40));
   served = MODELS; await evaluate(`${button('Refresh list')}.click()`); await until(`${ROWS}.length === ${MODELS.length}`, 40);

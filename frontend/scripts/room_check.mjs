@@ -10,7 +10,8 @@
 //   - Output settings: "Always saved" in one line with the whole list in its tooltip; the output root's facts in one line
 //     with the table folded behind it (open when the root cannot be written); with a run shown, its "Current run paths" in
 //     words ("Run folder", "Last successful save" in local time, the UTC in its tooltip; branch record SIF-60), a path saying
-//     "Click to copy" under the copy cursor (SIF-64), and the run they are of by its folder ("Of the run shown: run", SIF-91).
+//     "Click to copy" under the copy cursor (SIF-64) and "copied" once clicked (SIF-94), and the run they are of by its folder
+//     ("Of the run shown: run", SIF-91).
 //   - record 7.372: a cell entered while the table has room for under about four rows (a small screen, the panel open) folds the
 //     bottom panel to its tab line; a tab brings it back; with room for the rows a cell leaves it open.
 // Run: bash frontend/scripts/run_checks.sh --only room_check. About 20 s.
@@ -131,6 +132,16 @@ await runChecks(browser, async () => {
   const pathCursor = runPaths ? await evaluate(`getComputedStyle((${PATHS}).querySelector('tr').cells[1]).cursor`) : null;
   check('...the run folder says that a click copies it, under the copy cursor (SIF-64)', runPaths?.[0].tip === 'Click to copy' && pathCursor === 'copy',
     JSON.stringify([runPaths?.[0].tip, pathCursor]));
+  // Branch record SIF-94: a click copies it and says "copied" there for 1.5 s, as Run status's Run folder does (it copied
+  // unsaid). The browser's clipboard is stood in for: a headless window may not be focused.
+  const FOLDER_CELL = `(${PATHS}).querySelector('tr').cells[1]`;
+  if (runPaths) {
+    await evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: text => { window.__clip = text; return Promise.resolve(); } })`);
+    await evaluate(`${FOLDER_CELL}.click()`);
+  }
+  check('...a click on it copies it and says "copied", then reads the path alone again (SIF-94)', !!runPaths && await page.until(`${FOLDER_CELL}.textContent === ${JSON.stringify(`${RUN} copied`)}`, 20)
+    && (await evaluate('window.__clip')) === RUN && await page.until(`${FOLDER_CELL}.textContent === ${JSON.stringify(RUN)}`, 40), runPaths ? await evaluate(`${FOLDER_CELL}.textContent`) : 'no paths');
+  if (runPaths) await evaluate(`delete navigator.clipboard.writeText`);
   // Branch record SIF-91: the paths are of the run the tabs show, in settings that are for the next Start (SIF-72).
   const ofRun = runPaths ? await evaluate(`(p => p && { text: p.textContent, title: p.title })((${PATHS}).querySelector(':scope > p.hint'))`) : null;
   check('...and name the run they are of by its folder, its path in the tooltip: "Of the run shown: run" (SIF-91)',

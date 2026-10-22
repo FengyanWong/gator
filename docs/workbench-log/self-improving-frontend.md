@@ -2596,3 +2596,41 @@ Undo ran shows the line when opened again, and its first Apply sends nothing. **
 it, reads once and the line goes. Applied again after Calibration's save from the window still open, no part is named as
 waiting. Each new check fails on the code before its fix. `virtuoso_source_check` 104, `project_help_check` 50,
 `unsaved_rows_check` 25, `calibration_save_check` 22, `edit_state_check` 24. No flakes.
+
+### SIF-94 Every copy says "copied", from the window it was clicked in (2026-10-22; from the usability audit)
+
+**Found.** The RL model window's folders (a model's Details, the model in use, a model that left the list) were copied
+through the main page's clipboard. The click happens in the pop-up, and a browser refuses a clipboard write from a window
+that does not have focus. The refusal was dropped, so a failed copy showed only at the paste (audit findings J7-2,
+J5-10). Output settings' **Copy path** and its Current run paths, Output files' **Copy run path** and Data tables' id and
+JSON cells copied without a word either way (J7-2, J4-14), while the Run folder in Run status and in the Runs window said
+"copied" (SIF-54). `copy()` returned nothing where there was no clipboard, and no caller but Run status handled a refusal.
+
+**Changed.** `frontend/src/api.ts`: `copy(text, from)` writes through the clipboard of `from`, the window clicked in (the
+main page's when none is given or it has closed), and always returns a promise; no clipboard rejects too. New
+`frontend/src/panels/copied.tsx`, `useCopied(from)`: `copyText` copies, and `word(key)` puts " copied" (the ok colour) or " could
+not copy" (amber; its tooltip says to select the text and copy it with Ctrl+C) after what was clicked, for 1.5 s, for
+that key only. `ModelChooser.tsx` (Details' Folder; a model that left the list) and `RlModelWindow.tsx` (the model in
+use's Folder) use it with the pop-up. `OutputPanel.tsx`: Copy path's word stands just before it (`styles.css`,
+`roadster.css` `.field-head .copy-word`: pushed to the right, at the caption's size), so the button keeps its text and its
+place at the line's end; a Current run paths cell says it in the cell. `RunTabs.tsx`: Run status's Run folder uses the
+same hook, so a refusal is said there too; a Data tables cell says "Copied <column>." on the tool line, or "Could not copy
+<column>: the browser refused the clipboard; select the cell's text instead."; Copy run path says "Copied the run path."
+or "Could not copy: the browser refused the clipboard. The run path: <path>" (the tab shows the path nowhere else). A
+copy starts, saves and writes nothing. Not changed: the Runs, Connection and Agent windows already copy through their own
+clipboards and say "Copied" on success; a refusal there stays unsaid. `docs/workbench.md` (a paragraph after Data tables'
+one line per row) and `docs/functionality-reference.md` (Output root and Copy path, Saved models, Run status, Data
+tables, Output files) say so.
+
+**Checked.** `tsc` clean. `output_panel_check` 98 (95 before): Copy path says " copied" just before the button, at its
+size, the button keeping its text and its place at the line's end; the word goes after 1.5 s; a refused copy says " could
+not copy" with its tooltip. `model_chooser_check` 98 (95 before): a model's Details Folder and the model in use's Folder
+are written to the pop-up's clipboard, never the main page's, and say "copied"; a refused copy of a missing model's
+folder says "could not copy", then the path alone again. `files_tab_check` 22 (20 before): "Copied the run path.", and
+the refusal note with the path. `looks_check` 75 (74 before): "Copied <column>." for an id cell. `run_control_check` 158
+(157 before): Run status's refused copy says "could not copy". `room_check` 30 (29 before): a Current run paths cell says
+"copied". Also run, unchanged: `export_check` 31, `calibration_check` 38, `calibration_save_check` 22,
+`dom_identity_check` 56, `training_tab_check` 103, `run_list_check` 137, `task_rows_check` 54, `typing_check` 50,
+`save_now_check` 29, `task_run_check` 39, `network_panel_check` 62, `reliability_check` 20, `encoder_models_check` 24,
+`graph_view_check` 69, `module_fold_check` 30, `reward_block_check` 33, `pdk_check` 40, `model_structure_check` 31,
+`agent_window_check` 29, `network_inputs_check` 9 (26 scripts, 1,387 checks, one lane). No flakes.

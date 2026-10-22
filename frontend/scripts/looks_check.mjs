@@ -20,7 +20,8 @@
 //     task chip's name; a heading with no tooltip shows no help cursor (branch record SIF-63); a list table's second lines,
 //     its Details link, the state words and the paths, and the copy cursor only on a path that copies (SIF-64); the Probe
 //     chips (SIF-74);
-//   - Data tables: one line per row - ids end in "...", the whole value on hover, a click copies it; no word cut in two;
+//   - Data tables: one line per row - ids end in "...", the whole value on hover, a click copies it and the tool line says
+//     "Copied <column>." (branch record SIF-94); no word cut in two;
 //   - Research experiments: the two retired labels dropped from a saved configuration, three labels shown, six folded; no
 //     "Search method" any more (record 7.226; one, as its label, since 7.163);
 //   - the circuit picture: folded at first like every block of the Project column, drawn from the loaded circuit; pointing at a
@@ -384,6 +385,10 @@ await runChecks(browser, async () => {
   check('...and keeps to one line, "..." where it is cut, the whole value on hover (SIF-4)', json?.ws === 'nowrap' && json?.over === 'ellipsis' && /^[\[{]/.test(json?.title ?? '') && /Click to copy$/.test(json?.title ?? ''), JSON.stringify(json));
   await evaluate(`document.querySelector('footer table.data-table td.id-cell').click()`);
   check('a click on an id copies the whole value', await evaluate(`window.__copied`) === ID);
+  // Branch record SIF-94: the copy was unsaid; the tool line says it now, by the cell's column.
+  const COPY_NOTE = `(t => [t.closest('.scroll').previousElementSibling.querySelector('.hint').textContent, t.tHead.rows[0].cells[t.querySelector('td.id-cell').cellIndex].textContent])(document.querySelector('footer table.data-table'))`;
+  check('...and the tool line says so, by the column: "Copied <column>." (SIF-94)', await page.until(`(([hint, column]) => hint.endsWith('Copied ' + column + '.'))(${COPY_NOTE})`, 30),
+    JSON.stringify(await evaluate(COPY_NOTE)));
   const number = await evaluate(`(() => { const t = document.querySelector('footer table.data-table'), td = t.querySelector('tbody tr').lastElementChild, th = t.querySelector('thead tr').lastElementChild,
     id = t.querySelector('tbody td.id-cell'); return { td: [td.className, getComputedStyle(td).textAlign, getComputedStyle(td).fontVariantNumeric, td.textContent].join(' '),
       th: [th.className, getComputedStyle(th).textAlign].join(' '), id: getComputedStyle(id).textAlign }; })()`);

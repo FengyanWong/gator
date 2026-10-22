@@ -215,6 +215,10 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const launching = control.pending === 'start' || (control.pending === 'resume' && ENDED.includes(control.status?.state));
   const headerTask = launching ? null : otherTask(runs.find(r => r.run_dir === control.dir), taskKey, taskShown);
   const headerHeld = !!control.dir && !launching && control.phase !== 'idle' && control.phase !== 'checking';
+  // Branch record SIF-91: the output root locks while the header's run works, or a Start or Resume is on its way (the header
+  // then still holds the run before, whose status is not the new one's) - it followed the run the tabs show, so with an ended
+  // run shown the root could be changed under a live run, and the run list moved away from it.
+  const headerWorks = !!control.status?.worker_alive || control.phase === 'starting' || control.phase === 'resuming';
 
   // ---- the Runs window's actions (record 7.267; plan "Load run" and "Existing runs: continued in place"): page/runWindowActions.ts
   const { taskLoad, askContinue, runWindow } = useRunWindowActions({ config, setConfig, runs, taskKey, followTask, loadSerial, setMessage, setRunDir, setTab, unfold });
@@ -295,7 +299,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       </main>
       <aside className="right">
         <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} runHeld={headerHeld} />
-        <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} />
+        <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} headerWorks={headerWorks} runs={runs} />
         <ResearchPanel config={config} setConfig={setConfig} />
       </aside>
       <BottomPanel panel={panel} tab={tab} setTab={setTab} cornersUsable={cornersUsable} config={config} setConfig={setConfig} runs={runs} runsError={runsError}

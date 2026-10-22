@@ -2452,3 +2452,45 @@ gives the focus to Continue..., and Logs then Run status does not open the form 
 `run_control_check` 152 (149 before): Cancel and Escape give the focus back to Continue... and send nothing; after the
 form's Continue the focus is on the Run status tab and Continue... is off. `export_check` 31, `launch_recovery_check` 20,
 `task_run_check` 39. No flakes.
+
+### SIF-91 Output settings lock to the working run, and their presses show they are working (2026-10-22; from the usability audit)
+
+**Found.** The output root's lock ("The run directory is locked while a run is active") followed the run the bottom tabs
+show, not the header's run (audit finding J7-3). With an ended or paused run shown under a live one, the root could be
+changed under the live run, and the page's run list (Runs, Running now, the chip's task name) moved to the new root.
+"Current run paths" listed the shown run's folders without saying which run they were of, inside settings that SIF-72
+calls the next Start's. Test writability, Measure, Browse allowed roots... and a folder of the list showed nothing while
+their answers were on the way, which takes seconds on D: (J7-4). A writable root's tested answer read exactly as the
+automatic look before it, so a successful test changed nothing on screen. Test writability and Measure shared one
+newest-press line, so a Measure press dropped a test on its way, which then never answered. Experiment ID was a bare
+text box (J7-10). An existing ID stood only in the Runs window (the Experiment column's tooltip, a run's Details) as
+"name__<12 hex>", to be split and retyped with the name matched by hand, and a wrong one was found only at Start.
+
+**Changed.** `frontend/src/App.tsx`: `headerWorks` is true while the header's run has a live worker or a Start or Resume
+is on its way (the header still holds the run before then). It goes to `OutputPanel` with the run list.
+`frontend/src/panels/OutputPanel.tsx`: the root and Browse lock while the header's run works, and still while the shown
+run works, as before. The hint is unchanged. "Current run paths" keeps its title and names its run in a line under it:
+"Of the run shown: <folder>", with the path in the tooltip. Test writability, Measure and the folder list each ask on a
+line of their own, with their own busy state. Test writability reads "Testing..." and is off only while its own request
+is out (a folder listing held does not hold it). Measure reads "Measuring..." and takes no second press. "Reading the
+folder..." stands above the list while a folder is read; Close, "Use this folder" and another root let it go. A test's
+answer says when it came, in local time: "writable · tested 14:03:22 · 400.00 GiB free". Experiment ID has a list
+(`<datalist>`) of the experiments of the runs under the root, each once, with its runs counted and a MOCK one marked
+("2 runs", "1 run, MOCK"). A run from before the ID ("__None") adds none. One picked sets Experiment name and Experiment
+ID together. An ID typed by hand is kept as typed. When no listed run is in "<name>__<id>", a hint says "No run listed
+here is in ...: Start refuses an experiment that is not under the output root." Nothing is started, saved or written by
+any of this. `docs/workbench.md` (Room for the tables) and `docs/functionality-reference.md` (Output root; a new
+Experiment name and ID row) say so. Skipped: the audit's optional backend check (`validation.py` flagging a missing
+`<root>/<name>__<id>/experiment.json` before Start). It is backend Python, outside this branch's frontend work, and
+live only after an 8765 restart.
+
+**Checked.** `tsc` clean. `output_panel_check` 92: Measure reads "Measuring...", is off, and a second press asks
+nothing until its held answer comes. With a test and a folder held, Test writability reads "Testing..." and is off, and
+"Reading the folder..." stands above the list. A folder held alone leaves Test writability on. Close takes the hint
+away. The held test then answers "NOT writable · tested hh:mm:ss · ...". A writable test reads "writable · tested
+hh:mm:ss · ... free". Experiment ID offers the FIXTURE run list's two experiments as above (`GET /api/runs` answered
+here); picking one sets "sweep" and "0123456789ab" in the boxes and the configuration, a hand-typed ID gets the hint,
+and an emptied one is new again. `room_check` 29: "Of the run shown: run", the path in its tooltip.
+`run_control_check` 155: the output root and Browse are locked with the hint while a Start is on its way, and while
+the header's run works with a paused run shown; they unlock once it is paused. `module_fold_check` 30, `looks_check`
+74, `export_check` 31. No flakes.

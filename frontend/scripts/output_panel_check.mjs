@@ -16,7 +16,11 @@
 //     a folder by its name, goes "Up one folder", can be closed, and "Use this folder" sets the root (branch record SIF-60);
 //     a folder still on its way when Close is pressed neither opens the list again nor shows its error (SIF-60 review);
 //   - "Replay snapshots" and its warning name Continue... and the Modes, "weights only" in words (branch record SIF-60);
-//   - the facts' "Resolved" path, which a click does not copy, shows no copy cursor (branch record SIF-64).
+//   - the facts' "Resolved" path, which a click does not copy, shows no copy cursor (branch record SIF-64);
+//   - branch record SIF-91: Test writability reads "Testing..." and Measure "Measuring..." while their answers are on their way
+//     (a held folder listing holds neither), "Reading the folder..." stands above the list while a folder is read, and a test's
+//     answer says when it came ("NOT writable · tested 14:03:22"); Experiment ID offers the experiments of the runs under the
+//     root (GET /api/runs answered here with FIXTURE rows), and one picked sets the experiment name too.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -37,6 +41,13 @@ const TOP = '/fixture/roots/one', DEEP = `${TOP}/outputs`;
 const BROWSE = { '': { path: null, parent: null, entries: [{ name: TOP, path: TOP, exists: true }] },
   [TOP]: { path: TOP, parent: null, entries: [{ name: 'outputs', path: DEEP, exists: true }] },
   [DEEP]: { path: DEEP, parent: TOP, entries: [] } };
+// Branch record SIF-91: the run list under the root, as run_index.py names a run's experiment ("<name>__<12 hex>"): two runs of
+// one experiment, a MOCK one, and a run from before the ID ("__None"), which is no experiment to add to. Of another task, at
+// rest: the page neither follows nor takes over any of them.
+const RUN_ROW = (dir, experiment, mock = false) => ({ run_dir: `${ROOT}/${dir}`, run_id: dir, task_key: 'fixture:elsewhere', task_id: 'fixture_elsewhere:0000', mode: 'scratch',
+  mock, seed: 0, created_utc: '2026-10-20T10:00:00+00:00', state: 'completed', experiment, evaluations: 1 });
+const RUNS = [RUN_ROW('sweep__0123456789ab/runs/a', 'sweep__0123456789ab'), RUN_ROW('sweep__0123456789ab/runs/b', 'sweep__0123456789ab'),
+  RUN_ROW('mock/trial__abcdef012345/runs/c', 'trial__abcdef012345', true), RUN_ROW('old__None/runs/d', 'old__None')];
 
 await runChecks(browser, async () => {
   const listed = (await (await fetch(new URL('api/tasks', APP))).json()).tasks.map(t => t.task_key);
@@ -49,6 +60,7 @@ await runChecks(browser, async () => {
   const refused = []; const probes = []; let oldBackend = false;   // oldBackend: answer `usage` as a backend from before record 7.189 does
   const browsed = [];                                              // the folders the list asked for ('' for the roots)
   let holdBrowse = false, holdTest = false; const held = [];       // answers held back until after Close (branch record SIF-60 review)
+  let holdMeasure = false;                                         // Measure's answer held back: "Measuring..." (branch record SIF-91)
   const answer = params => {
     const { requestId, request } = params, name = new URL(request.url).pathname;
     if (name === '/api/output/browse') { const at = new URL(request.url).searchParams.get('path') ?? ''; browsed.push(at);
@@ -56,10 +68,13 @@ await runChecks(browser, async () => {
       return BROWSE[at] ? fulfil(requestId, 200, BROWSE[at]) : fulfil(requestId, 403, { detail: 'FIXTURE: not an allowed folder' }); }
     if (name === '/api/output/check') { const body = JSON.parse(request.postData ?? '{}'); probes.push(body);
       if (holdTest && body.create) { held.push({ requestId, test: true }); return; }
+      if (holdMeasure && body.usage) { held.push({ requestId, measure: true }); return; }
       return oldBackend && body.usage ? fulfil(requestId, 422, { detail: [{ type: 'extra_forbidden', loc: ['body', 'usage'], msg: 'Extra inputs are not permitted' }] }) : fulfil(requestId, 200, OUTPUT_CHECK); }
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
+    if (name === '/api/runs') return fulfil(requestId, 200, { runs: RUNS });
     return page.readOrRefuse(params, refused);
   };
+  const heldAll = async n => { for (let i = 0; i < 40 && held.length < n; i++) await sleep(100); return held.length === n; };
   const evaluate = expression => page.evaluate(expression, true);
   const until = (expression, tries = 60) => page.until(expression, tries);
 
@@ -157,7 +172,17 @@ await runChecks(browser, async () => {
     if (!td) return null; window.__copied = null; td.click(); return { cursor: getComputedStyle(td).cursor, title: td.title, copied: window.__copied }; })()`);
   check('..."Resolved", which a click does not copy, shows the text cursor and no "Click to copy" (SIF-64)', JSON.stringify(resolved) === '{"cursor":"text","title":"","copied":null}', JSON.stringify(resolved));
   const asked = probes.length;
+  // Branch record SIF-91: the press says it works, and a second press meanwhile asks nothing (a disabled button's click()
+  // does nothing, as a click on it does); on D: the walk takes seconds.
+  const MEASURING = `[...${PANEL}.querySelectorAll('details.output-facts button')].find(b => b.textContent === 'Measuring...')`;
+  holdMeasure = true;
   await evaluate(`${MEASURE}.click()`);
+  const measuring = await heldAll(1) && await until(`!!(${MEASURING}) && ${MEASURING}.disabled && !(${MEASURE})`, 20);
+  await evaluate(`${MEASURING}?.click()`); await sleep(300);
+  check('...pressed, it reads "Measuring..." and takes no second press until the size comes (SIF-91)', measuring && held.length === 1 && probes.length - asked === 1,
+    JSON.stringify([measuring, held.length, probes.slice(asked)]));
+  holdMeasure = false;
+  for (const { requestId } of held.splice(0)) await fulfil(requestId, 200, OUTPUT_CHECK);
   check('"Measure" asks for the size once, and shows it', await until(`[...${PANEL}.querySelectorAll('details.output-facts td')].some(td => td.textContent.includes('used here 3.00 GiB'))`, 30)
     && probes.length - asked === 1 && probes.at(-1)?.usage === true && probes.at(-1)?.create === false, JSON.stringify(probes.slice(asked)));
   // a backend from before record 7.189 refuses `usage` (its request body forbids unknown fields): the plain look's size is shown
@@ -316,32 +341,66 @@ await runChecks(browser, async () => {
     `${JSON.stringify(await listing())} / ${await evaluate(`${ROOT_INPUT}.value`)}`);
   // Close lets a folder on its way go (branch record SIF-60 review): its answer, or its error, came after Close and opened
   // the list again. Test writability, pressed before, still answers: it asks on another line than the list.
-  const heldAll = async n => { for (let i = 0; i < 40 && held.length < n; i++) await sleep(100); return held.length === n; };
   const ERRORS = `[...${PANEL}.querySelectorAll('p.error')].map(p => p.textContent).join(' | ')`;
+  const SUMMARY = `(${PANEL}.querySelector('details.output-facts > summary')?.textContent ?? '')`;
+  // Branch record SIF-91: what each press shows while its answer is on its way.
+  const waiting = () => evaluate(`({ test: (b => b && [b.textContent, b.disabled])([...${PANEL}.querySelectorAll('.row button')].find(b => /^Test/.test(b.textContent))),
+    reading: [...${PANEL}.querySelectorAll('p.hint')].some(p => p.textContent === 'Reading the folder...') })`);
   for (const status of [200, 403]) {
     await evaluate(`${BUTTON('Browse allowed roots...')}.click()`); await until(`!!(${TREE})`, 30);
     holdBrowse = true; holdTest = status === 200;
     if (holdTest) await evaluate(`${BUTTON('Test writability')}.click()`);
     await evaluate(`[...${TREE}.querySelectorAll('button.text-link')].find(b => b.textContent === ${JSON.stringify(TOP)}).click()`);
     check(`(set-up) the folder${holdTest ? ' and Test writability are' : ' is'} held back`, await heldAll(holdTest ? 2 : 1), JSON.stringify(held));
+    const wait = await waiting();
+    check(holdTest ? 'meanwhile Test writability reads "Testing..." and is off, and "Reading the folder..." stands above the list (SIF-91)'
+      : '...a folder alone on its way holds no Test writability: it stays on, "Reading the folder..." above the list (SIF-91)',
+    JSON.stringify(wait) === JSON.stringify({ test: holdTest ? ['Testing...', true] : ['Test writability', false], reading: true }), JSON.stringify(wait));
     holdBrowse = holdTest = false;
     await evaluate(`[...${TREE}.previousElementSibling.querySelectorAll('button')].find(b => b.textContent === 'Close').click()`);
     await until(`!(${TREE})`, 30);
+    check('...Close lets the folder go, and "Reading the folder..." with it (SIF-91)', !(await waiting()).reading);
     for (const { requestId, test } of held.splice(0)) await (test ? fulfil(requestId, 200, { ...OUTPUT_CHECK, writable: false, error: 'FIXTURE: held test' })
       : status === 200 ? fulfil(requestId, 200, BROWSE[TOP]) : fulfil(requestId, 403, { detail: 'FIXTURE: not an allowed folder' }));
     await sleep(800);
     check(status === 200 ? 'a folder answered after Close leaves the list closed' : '...and a folder that fails after Close shows no error',
       !(await evaluate(`!!(${TREE})`)) && !(await evaluate(ERRORS)).includes('FIXTURE'), `${JSON.stringify(await listing())} / ${await evaluate(ERRORS)}`);
-    if (status === 200) check('...while Test writability, pressed before Close, still answers ("NOT writable")',
-      (await evaluate(`${PANEL}.querySelector('details.output-facts > summary')?.textContent ?? ''`)).startsWith('NOT writable'),
-      await evaluate(`${PANEL}.querySelector('details.output-facts > summary')?.textContent ?? ''`));
+    if (status === 200) check('...while Test writability, pressed before Close, still answers ("NOT writable"), and says when: "NOT writable · tested hh:mm:ss · ..." (SIF-91)',
+      /^NOT writable · tested \d{1,2}:\d\d:\d\d · /.test(await evaluate(SUMMARY)) && JSON.stringify((await waiting()).test) === '["Test writability",false]',
+      `${await evaluate(SUMMARY)} / ${JSON.stringify(await waiting())}`);
   }
+  // Branch record SIF-91: a writable root's answer read as the look before it, so the press changed nothing on screen.
+  await evaluate(`${BUTTON('Test writability')}.click()`);
+  check('a test that finds the root writable says so, and when: "writable · tested hh:mm:ss · ... free" (SIF-91)',
+    await until(`/^writable · tested \\d{1,2}:\\d\\d:\\d\\d · /.test(${SUMMARY})`, 30), await evaluate(SUMMARY));
   await evaluate(`${BUTTON('Browse allowed roots...')}.click()`); await until(`!!(${TREE})`, 30);
   await evaluate(`[...${TREE}.querySelectorAll('li')].find(li => li.textContent.startsWith(${JSON.stringify(TOP)})).querySelector('button:not(.text-link)').click()`);
   await page.saved();
   check('"Use this folder" sets the output root to it and closes the list', await until(`!(${TREE})`, 30) && (await evaluate(`${ROOT_INPUT}.value`)) === TOP
     && (await evaluate(`JSON.parse(localStorage.getItem('gator-workbench-config-v1')).output.output_root`)) === TOP, await evaluate(`${ROOT_INPUT}.value`));
   check('the list asked only for the folders pressed', JSON.stringify(browsed) === JSON.stringify(['', TOP, DEEP, TOP, '', TOP, '', TOP, '']), JSON.stringify(browsed));
+
+  // ---- Experiment ID: the experiments under the output root; one picked sets the name too (branch record SIF-91) ---------------
+  // The ID stood only in the Runs window (a tooltip, a run's Details), to be retyped and its name matched by hand.
+  const FIELD = name => `[...${PANEL}.querySelectorAll('label')].find(l => l.textContent.startsWith(${JSON.stringify(name)}))?.querySelector('input')`;
+  const EXP_ID = FIELD('Experiment ID'), EXP_NAME = FIELD('Experiment name');
+  const NOT_LISTED = `([...${PANEL}.querySelectorAll('p.hint')].find(p => p.textContent.startsWith('No run listed here'))?.textContent ?? null)`;
+  const offered = await until(`(${EXP_ID})?.list?.options.length >= 2`, 50) ? await evaluate(`[...(${EXP_ID}).list.options].map(o => [o.value, o.label])`) : null;
+  check('Experiment ID offers the experiments of the runs under the root, each once with its runs counted, a MOCK one marked; a run from before the ID adds none (SIF-91)',
+    JSON.stringify(offered) === JSON.stringify([['sweep__0123456789ab', '2 runs'], ['trial__abcdef012345', '1 run, MOCK']]), JSON.stringify(offered));
+  const experiment = async () => { await page.saved(); return evaluate(`({ id: (${EXP_ID}).value, name: (${EXP_NAME}).value, hint: ${NOT_LISTED},
+    stored: (o => [o.experiment_name, o.experiment_id])(JSON.parse(localStorage.getItem('gator-workbench-config-v1')).output) })`); };
+  await page.setValue(EXP_ID, 'sweep__0123456789ab', { event: 'input' });
+  let exp = await experiment();
+  check('...one picked sets the name and the ID together, in the boxes and the configuration: "sweep" and "0123456789ab" (SIF-91)',
+    JSON.stringify(exp) === JSON.stringify({ id: '0123456789ab', name: 'sweep', hint: null, stored: ['sweep', '0123456789ab'] }), JSON.stringify(exp));
+  await page.setValue(EXP_ID, 'ffffffffffff', { event: 'input' });
+  exp = await experiment();
+  check('...an ID typed by hand is kept as typed, and one that no listed run is in says that Start refuses it (SIF-91)', exp.id === 'ffffffffffff' && exp.name === 'sweep'
+    && exp.hint === 'No run listed here is in sweep__ffffffffffff: Start refuses an experiment that is not under the output root.', JSON.stringify(exp));
+  await page.setValue(EXP_ID, '', { event: 'input' });
+  exp = await experiment();
+  check('...emptied, the ID is new again (none) and the hint goes', JSON.stringify(exp) === JSON.stringify({ id: '', name: 'sweep', hint: null, stored: ['sweep', null] }), JSON.stringify(exp));
 
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

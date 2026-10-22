@@ -21,6 +21,7 @@
 // cannot come back anyway it advises no waiting (review of SIF-83).
 // Branch record SIF-89: a run that pauses after connection failures, completes or fails with no press says so on the line
 // under the header, and Run status leads with the reason in red, then Continue... and Export status, above its facts.
+// Branch record SIF-91: Output settings' output root locks while the header's run starts or works, whatever run the tabs show.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -144,6 +145,10 @@ await runChecks(browser, async () => {
     baselineOff: ${BASELINE}?.disabled, banner: document.querySelector('.banner')?.textContent ?? null, bannerTitle: document.querySelector('.banner')?.title ?? null,
     remembered: localStorage.getItem(${JSON.stringify(RUN_KEY)}) })`);
   const FOLDER = DIR.split('/').pop();                                            // the run as the line under the header names it (SIF-56)
+  // Branch record SIF-91: the output root's lock in Output settings (folded, its controls are on the page all the same).
+  const ROOT_LOCK = `({ root: document.querySelector('#output-root')?.disabled ?? null,
+    browse: [...document.querySelectorAll('aside.right button')].find(b => b.textContent === 'Browse allowed roots...')?.disabled ?? null,
+    hint: [...document.querySelectorAll('aside.right p.hint')].some(p => p.textContent.startsWith('The run directory is locked while a run is active.')) })`;
   const mainReads = (label, tries) => until(`${MAIN}?.textContent === ${JSON.stringify(label)}`, tries);
   const press = expression => evaluate(`${expression}.click()`);
   const commands = () => log.filter(l => l.name === '/api/runs/command').map(l => l.body.command);
@@ -202,6 +207,8 @@ await runChecks(browser, async () => {
   holdNext = '/api/runs/start';
   await press(MAIN);
   check('while the backend is starting the run the button reads "Starting..." and is disabled', await mainReads('Starting...') && (await look()).mainOff === true);
+  const lockStarting = await evaluate(ROOT_LOCK);
+  check('... and the output root is locked, with its hint, though no run has answered yet (SIF-91)', JSON.stringify(lockStarting) === '{"root":true,"browse":true,"hint":true}', JSON.stringify(lockStarting));
   v = await look();
   check('Abort and the baseline simulation are disabled meanwhile', v.abortOff === true && v.baselineOff === true, JSON.stringify(v));
   check('ONE start request was sent, for a full run with the page\'s configuration', log.length === 1 && log[0].name === '/api/runs/start' && log[0].body.calibration_only === false
@@ -639,6 +646,11 @@ await runChecks(browser, async () => {
   await showInTabs(OTHER);
   check('(the Run status tab shows another run, a paused one, while the header\'s run is live)', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(OTHER)})`)
     && (await look()).main === 'Pause');
+  // Branch record SIF-91: the lock followed the run the tabs show - with this paused run shown, the root could be changed under
+  // the live one, and the page's run list moved away from it.
+  const lockLive = await evaluate(ROOT_LOCK);
+  check('... the output root and Browse stay locked while the header\'s run works, though the tabs show a paused run (SIF-91)',
+    JSON.stringify(lockLive) === '{"root":true,"browse":true,"hint":true}', JSON.stringify(lockLive));
   // Branch record SIF-72: the survey's tab line named only the run shown ("... · completed") under a header running another.
   const strip = await evaluate(`({ shown: ${SHOWN_LINE}, title: ${HEADER_LINK}?.title ?? null })`);
   check('... the tab line says "Shown:" before it, and offers the header\'s live run beside it, its folder in the tooltip (SIF-72)',
@@ -648,6 +660,7 @@ await runChecks(browser, async () => {
   sim.steps = [{}, { state: 'pausing' }, {}, { state: 'paused', alive: false }];
   await press(MAIN);
   check('(the header\'s run is paused)', await mainReads('Resume', 150));
+  check('... and with no run working the output root can be changed again (SIF-91)', await until(`(${ROOT_LOCK}).root === false && !(${ROOT_LOCK}).hint`, 30), JSON.stringify(await evaluate(ROOT_LOCK)));
   check('once the header\'s run is paused, Continue of the other run is offered again', await until(`!!(${CONTINUE}) && !${CONTINUE}.disabled && ${CONTINUE}.title.startsWith('Continue: A paused')`),
     await evaluate(`${CONTINUE}?.title ?? ''`));
   check('nothing was continued meanwhile', !log.some(l => l.name === '/api/runs/continue'), JSON.stringify(log.map(l => l.name)));

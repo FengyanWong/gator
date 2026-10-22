@@ -1,11 +1,12 @@
 // The right column's Output settings (plan-refactoring C4, out of Right.tsx).
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRequest } from '../store';
 import { api, ApiError, copy, Json } from '../api';
-import { bytes, stamp } from '../format';
+import { bytes, clock, folderName, plural, stamp } from '../format';
 import { OUTPUT_ROOT_ID } from '../contract';
 import { ByteSize, Check, Module, Num } from './fields';
 import { type Newest, useNewest } from '../newest';
+import type { RunSummary } from '../contracts';
 
 type Every = 'evaluations' | 'seconds';
 
@@ -15,33 +16,49 @@ type Every = 'evaluations' | 'seconds';
 const PATH_NAME: Record<string, string> = { run: 'Run folder', run_dir: 'Run folder', raw_data: 'Raw data', data: 'Data folder',
   csv_exports: 'CSV exports', simulator_work: 'Simulator work folder' };
 const pathName = (key: string) => PATH_NAME[key] ?? key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+/** An experiment folder as the run list names it, "<name>__<12 hex>" (layout.py, run_index.py); a run from before the ID
+ *  reads "<name>__None" and is no experiment to add to. */
+const EXPERIMENT = /^(.+)__([0-9a-f]{12})$/;
+type Press = 'test' | 'measure' | 'list';
 
-export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Json; setConfig: (f: (c: Json) => Json) => void; meta: Json; activeRun: Json }) {
+export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, runs }: { config: Json; setConfig: (f: (c: Json) => Json) => void; meta: Json;
+  activeRun: Json; headerWorks: boolean; runs: RunSummary[] }) {
   const out = config.output;
   const set = (fields: Json) => setConfig(c => ({ ...c, output: { ...c.output, ...fields } }));
   const root = out.output_root ?? meta?.output_root ?? '';
   const [browse, setBrowse] = useState<Json>(null);
-  const locked = !!activeRun?.worker_alive;
+  // The header's run working locks it too (branch record SIF-91: only the run the tabs show did).
+  const locked = headerWorks || !!activeRun?.worker_alive;
   // The root is looked at 0.5 s after the last keystroke, and an answer for text typed before is dropped (useRequest):
   // whichever answer came last used to win, a half-typed path's too. A look no longer walks the folder for its size (record
   // 7.189: 0.7 to 2 s of disk work on D: at every page open, for one number in a closed fold): "Measure" asks for it.
   const { value: looked, error: lookError, refresh: retryLook } = useRequest<Json>(signal => api.checkOutput(root, false, signal), [root], { enabled: !!root, delay: 500 });
-  const [tested, setTested] = useState<{ root: string; value: Json } | null>(null);     // "Test writability", for the root it was pressed for
+  // "Test writability", for the root it was pressed for, and when (local time) its answer came (branch record SIF-91: a writable
+  // root's answer read as the look before it, so a press changed nothing on screen)
+  const [tested, setTested] = useState<{ root: string; value: Json; at: string } | null>(null);
   useEffect(() => setTested(null), [root]);                                             // another root: its own look replaces it, as before
   const [sized, setSized] = useState<{ root: string; bytes: number | null } | null>(null);   // "Measure", for the root it was pressed for
-  const check: Json = tested && tested.root === root ? tested.value : looked;
+  const testedHere = tested && tested.root === root ? tested : null;
+  const check: Json = testedHere ? testedHere.value : looked;
   // Browse, a folder of its list and Test writability say what went wrong, as the other panels do (they used to say nothing).
   const [problem, setProblem] = useState<string | null>(null);
   // Only the newest press answers (two quick clicks in the folder list showed whichever came last), and a problem is
   // about the root it was pressed for: another root clears it. The folder list asks on its own line, which Close and "Use
   // this folder" let go: a folder on its way opened the list again after Close, or showed its error there (branch record
   // SIF-60 review); Test writability's and Measure's answers are not dropped with it.
-  const pressed = useNewest(), listing = useNewest();
-  const ask = <T,>(work: () => Promise<T>, done: (value: T) => void, line: Newest = pressed) => { const mine = line.next(); setProblem(null);
-    work().then(v => { if (mine()) done(v); }, e => { if (mine()) setProblem(e.message); }); };
-  useEffect(() => { pressed.drop(); listing.drop(); setProblem(null); }, [root]);
-  const openFolder = (path?: string) => ask(() => api.browse(path), setBrowse, listing);
-  const closeList = () => { listing.drop(); setBrowse(null); };
+  // Branch record SIF-91: each press says while its answer is on its way ("Testing...", "Measuring...", "Reading the
+  // folder..."; on D: one takes seconds, and nothing showed that it ran), on a line of its own - Measure dropped a test on its
+  // way, which then never answered.
+  const tests = useNewest(), measures = useNewest(), listing = useNewest();
+  const line: Record<Press, Newest> = { test: tests, measure: measures, list: listing };
+  const [busy, setBusy] = useState<Record<Press, boolean>>({ test: false, measure: false, list: false });
+  const working = (press: Press, now: boolean) => setBusy(held => (held[press] === now ? held : { ...held, [press]: now }));
+  const ask = <T,>(press: Press, work: () => Promise<T>, done: (value: T) => void) => { const mine = line[press].next(); setProblem(null); working(press, true);
+    work().then(v => { if (mine()) { working(press, false); done(v); } }, e => { if (mine()) { working(press, false); setProblem(e.message); } }); };
+  const letGo = (...presses: Press[]) => presses.forEach(press => { line[press].drop(); working(press, false); });
+  useEffect(() => { letGo('test', 'measure', 'list'); setProblem(null); }, [root]);
+  const openFolder = (path?: string) => ask('list', () => api.browse(path), setBrowse);
+  const closeList = () => { letGo('list'); setBrowse(null); };
   const paths = activeRun?.paths;
   const saved: string | null = activeRun?.persistence?.last_successful_save ?? null;   // ISO in UTC, as the backend writes it
   const tail = String(root).split(/[\\/]/).filter(Boolean).slice(-2).join('/');
@@ -56,6 +73,15 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
   const interval: Json = by === 'seconds' ? seconds : every;
   const setEvery = (unit: Every, v: Json) => set({ checkpoint_every_evaluations: unit === 'evaluations' ? v : null, checkpoint_every_seconds: unit === 'seconds' ? v : null });
   const both = every !== null && seconds !== null;          // only from a file or an older copy of the configuration
+  // Branch record SIF-91: the experiments under the output root, from the run list, are Experiment ID's list, and one picked
+  // sets the name and the ID together - the ID stood only in the Runs window (a tooltip, a run's Details), to be retyped and
+  // its name matched by hand, and a wrong one was found only at Start.
+  const experiments = useMemo(() => {
+    const found = new Map<string, { runs: number; mock: boolean }>();
+    for (const r of runs) { const name = String(r.experiment ?? ''); if (EXPERIMENT.test(name)) found.set(name, { runs: (found.get(name)?.runs ?? 0) + 1, mock: !!r.mock }); }
+    return [...found];
+  }, [runs]);
+  const named = out.experiment_id ? `${out.experiment_name ?? ''}__${out.experiment_id}` : null;
   return (
     <Module id="output" title="Output settings" defaultOpen={false} summary={[out.experiment_name, tail ? `.../${tail}` : 'no output root'].filter(Boolean).join(' - ')}>
       {/* "Copy path" is a sibling of the label, not inside it: a button inside would become what the label's text clicks. */}
@@ -63,37 +89,45 @@ export function OutputPanel({ config, setConfig, meta, activeRun }: { config: Js
         <button className="text-link" title="Copy the output root to the clipboard" onClick={() => copy(root)}>Copy path</button></div>
       <input id={OUTPUT_ROOT_ID} value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} />
       <div className="row"><button disabled={locked} onClick={() => openFolder()}>Browse allowed roots...</button>
-        <button onClick={() => { const at = root; if (at) ask(() => api.checkOutput(at, true), value => setTested({ root: at, value })); }}>Test writability</button></div>
+        <button disabled={busy.test} onClick={() => { const at = root; if (at) ask('test', () => api.checkOutput(at, true), value => setTested({ root: at, value, at: clock() })); }}>
+          {busy.test ? 'Testing...' : 'Test writability'}</button></div>
       {problem && <p className="error">{problem}</p>}
-      {!tested && lookError && <p className="error">{lookError} <button onClick={retryLook}>Retry read</button></p>}
+      {!testedHere && lookError && <p className="error">{lookError} <button onClick={retryLook}>Retry read</button></p>}
       {/* Continue... is where a run goes on since record 7.261; it said "A resumed run" (branch record SIF-60) */}
       {locked && <p className="hint">The run directory is locked while a run is active. A run that is continued writes back to its own folder.</p>}
       {/* The list says which folder it shows and can be closed; a folder's name is a link that opens it (it was a span
           drawn as plain text), ".." reads "Up one folder", "select" "Use this folder" (branch record SIF-60). The backend's
           path is null at the top, where the entries are the allowed roots. */}
+      {busy.list && <p className="hint">Reading the folder...</p>}
       {browse && <><p className="hint">{browse.path ? `In ${browse.path}` : 'The allowed roots'} <button className="text-link" onClick={closeList}>Close</button></p>
         <ul className="tree">{browse.parent && <li><button className="text-link" title={`Open ${browse.parent}`} onClick={() => openFolder(browse.parent)}>Up one folder</button></li>}
         {/* "Use this folder" closes on the listing line too: the same root again changes nothing that would drop a folder on its way */}
         {browse.entries.map((e: Json) => <li key={e.path}><button className="text-link" title="Open this folder" onClick={() => openFolder(e.path)}>{e.name}</button> <button onClick={() => { set({ output_root: e.path }); closeList(); }}>Use this folder</button></li>)}</ul></>}
       {/* What the backend found for the root, as one line; the table behind it (record 7.179, design advice 3). Open at once when
           the root cannot be written. */}
-      {check && <details className="more output-facts" open={!(check.allowed && check.writable)}><summary>{check.allowed && check.writable ? 'writable' : 'NOT writable'} · {bytes(check.free_bytes)} free{check.windows_path ? ` · ${check.windows_path}` : ''}</summary>
+      {check && <details className="more output-facts" open={!(check.allowed && check.writable)}><summary>{check.allowed && check.writable ? 'writable' : 'NOT writable'}{testedHere ? ` · tested ${testedHere.at}` : ''} · {bytes(check.free_bytes)} free{check.windows_path ? ` · ${check.windows_path}` : ''}</summary>
       <table className="grid small"><tbody>
         <tr><td>Resolved</td><td className="path">{check.resolved ?? '-'}</td></tr>
         <tr><td>Allowed / writable</td><td className={check.allowed && check.writable ? '' : 'error'}>{check.allowed ? 'yes' : 'no'} / {check.writable ? 'yes' : 'no'} {check.error ?? ''}</td></tr>
         <tr><td>Backend host</td><td>{check.host} ({check.environment}, {check.filesystem})</td></tr>
         <tr><td>Free space</td><td>{bytes(check.free_bytes)}; used here {sized && sized.root === root ? bytes(sized.bytes)
-          : <button className="text-link" title="Adds up the files under the output root (on D: this takes a while for many runs)."
-              onClick={() => { const at = root; ask(() => api.checkOutput(at, false, undefined, true)
+          : <button className="text-link" disabled={busy.measure} title="Adds up the files under the output root (on D: this takes a while for many runs)."
+              onClick={() => { const at = root; ask('measure', () => api.checkOutput(at, false, undefined, true)
                 // a backend from before record 7.189 refuses `usage` (422), and its plain look still carries the size
                 .catch(e => e instanceof ApiError && e.status === 422 ? api.checkOutput(at, false) : Promise.reject(e)),
-              v => setSized({ root: at, bytes: v.bytes_used ?? null })); }}>Measure</button>}</td></tr>
+              v => setSized({ root: at, bytes: v.bytes_used ?? null })); }}>{busy.measure ? 'Measuring...' : 'Measure'}</button>}</td></tr>
         <tr><td>Windows path</td><td>{check.windows_path ?? <span className="hint">not shown: {check.windows_mapping}</span>}{check.windows_path && <span className="hint"> (verified by read-back)</span>}</td></tr>
         <tr><td>Mock data root</td><td className="path">{check.mock_data_root}</td></tr>
       </tbody></table></details>}
       <div className="row"><label>Experiment name<input value={out.experiment_name ?? ''} onChange={e => set({ experiment_name: e.target.value })} /></label>
-        <label title="Set to append runs to an existing experiment; empty creates a new unique ID.">Experiment ID<input value={out.experiment_id ?? ''} placeholder="new" onChange={e => set({ experiment_id: e.target.value || null })} /></label></div>
-      {paths && <details open><summary>Current run paths</summary><table className="grid small"><tbody>
+        <label title="Set to append runs to an existing experiment; empty creates a new unique ID. Its list holds the experiments of the runs under the output root: one picked sets the name too.">Experiment ID
+          <input value={out.experiment_id ?? ''} placeholder="new" list="experiment-ids"
+            onChange={e => { const picked = EXPERIMENT.exec(e.target.value); set(picked ? { experiment_name: picked[1], experiment_id: picked[2] } : { experiment_id: e.target.value || null }); }} /></label></div>
+      <datalist id="experiment-ids">{experiments.map(([name, seen]) => <option key={name} value={name} label={`${plural(seen.runs, 'run')}${seen.mock ? ', MOCK' : ''}`} />)}</datalist>
+      {named && runs.length > 0 && !experiments.some(([name]) => name === named) && <p className="hint">No run listed here is in {named}: Start refuses an experiment that is not under the output root.</p>}
+      {/* the run the tabs show, by its folder (branch record SIF-91: these settings are for the next Start since SIF-72) */}
+      {paths && <details open><summary>Current run paths</summary>
+        <p className="hint" title={activeRun.run_dir}>Of the run shown: {folderName(String(activeRun.run_dir ?? ''))}</p><table className="grid small"><tbody>
         {/* words, and the save in local time with the UTC in its tooltip, as Run status writes it (branch record SIF-60: the
             rows read "run_dir", "bytes written", "last successful save 2026-10-05T10:21:40+00:00"); a path says that a click
             copies it, as Run status's Run folder does (branch record SIF-64) */}

@@ -346,8 +346,13 @@ closed **Limits** fold whose line names the limits that are set ("Limits - 42 la
 what is always saved is one line with the whole list in its tooltip, and what the backend found for the output root is one
 line ("writable · 270 GiB free · D:\gator\outputs") with its table folded behind it, open at once when the root cannot be
 written. The folder's own size ("used here") is measured on its **Measure** button only (record 7.189): adding up the
-files under the root took 0.7 to 2 s of disk work on D: at every page open, for this one number. Browser checks:
-`frontend/scripts/room_check.mjs`, `frontend/scripts/output_panel_check.mjs`.
+files under the root took 0.7 to 2 s of disk work on D: at every page open, for this one number. Since branch record
+SIF-91 each of these presses says while its answer is on its way ("Testing...", "Measuring...", "Reading the folder..."),
+and a test's answer says when it came ("writable · tested 14:03:22"): a writable root's answer read as the look before it.
+The output root locks while the header's run works or a Start or Resume is on its way (it followed only the run the bottom
+tabs show), and "Current run paths" names the run shown ("Of the run shown: <its folder>"). Experiment ID's list holds the
+experiments of the runs under the root; one picked sets the experiment name with it. Browser checks:
+`frontend/scripts/room_check.mjs`, `frontend/scripts/output_panel_check.mjs`, `frontend/scripts/run_control_check.mjs`.
 
 **Drop-down lists in the page's colours** (record 7.173, user: "fix the color issue of the drag down menu in night mode, it
 is hard to read"): the browser draws a select's open list from its options, and a select in an editor cell (Probes'

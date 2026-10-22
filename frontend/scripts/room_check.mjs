@@ -10,7 +10,7 @@
 //   - Output settings: "Always saved" in one line with the whole list in its tooltip; the output root's facts in one line
 //     with the table folded behind it (open when the root cannot be written); with a run shown, its "Current run paths" in
 //     words ("Run folder", "Last successful save" in local time, the UTC in its tooltip; branch record SIF-60), a path saying
-//     "Click to copy" under the copy cursor (SIF-64).
+//     "Click to copy" under the copy cursor (SIF-64), and the run they are of by its folder ("Of the run shown: run", SIF-91).
 //   - record 7.372: a cell entered while the table has room for under about four rows (a small screen, the panel open) folds the
 //     bottom panel to its tab line; a tab brings it back; with room for the rows a cell leaves it open.
 // Run: bash frontend/scripts/run_checks.sh --only room_check. About 20 s.
@@ -131,6 +131,10 @@ await runChecks(browser, async () => {
   const pathCursor = runPaths ? await evaluate(`getComputedStyle((${PATHS}).querySelector('tr').cells[1]).cursor`) : null;
   check('...the run folder says that a click copies it, under the copy cursor (SIF-64)', runPaths?.[0].tip === 'Click to copy' && pathCursor === 'copy',
     JSON.stringify([runPaths?.[0].tip, pathCursor]));
+  // Branch record SIF-91: the paths are of the run the tabs show, in settings that are for the next Start (SIF-72).
+  const ofRun = runPaths ? await evaluate(`(p => p && { text: p.textContent, title: p.title })((${PATHS}).querySelector(':scope > p.hint'))`) : null;
+  check('...and name the run they are of by its folder, its path in the tooltip: "Of the run shown: run" (SIF-91)',
+    JSON.stringify(ofRun) === JSON.stringify({ text: 'Of the run shown: run', title: RUN }), JSON.stringify(ofRun));
 
   // ---- record 7.372: entering a cell while the table has little room folds the panel; a tab brings it back -------------------------
   const CELL = `document.querySelector('.editors table.editor tbody tr td[data-field] input:not([type="checkbox"])')`;

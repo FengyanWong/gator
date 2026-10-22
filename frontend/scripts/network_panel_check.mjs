@@ -259,10 +259,20 @@ await runChecks(browser, async () => {
     && [...${differences}.querySelectorAll('button')].map(b => b.textContent).join('|') === "Use the template's values|Save into the template" && !/default/i.test(${differences}.textContent)`),
     await evaluate(`${differences}.textContent`));
   await networkPage.shot(path.join(out, 'network-5-restored-differences.png'), NETWORK_PANEL, { maxHeight: 1100, beyond: true });
-  await evaluate(`[...${differences}.querySelectorAll('button')].find(b => b.textContent === "Use the template's values").click()`);
+  // Pressed as a viewer presses it, with the focus on the button, which goes away with the comparison: the focus falls to the
+  // window's page, where the keys below must still reach (review of branch record SIF-97: they did not).
+  await evaluate(`(() => { const b = [...${differences}.querySelectorAll('button')].find(b => b.textContent === "Use the template's values"); b.focus(); b.click(); })()`);
   check('Use the template\'s values updates this run, clears the comparison and does not write preferences', await page.until(`!${differences}`)
     && (await numbers())[0] === String(gt.hidden_dim) && paused.length === 0);
   check('a matching configuration can accurately name the starting preset', await evaluate(`${NETWORK_PANEL}.querySelector('.in-use').textContent === 'In use: starting preset'`));
+  check('...and the pressed button gone, the window\'s focus is on its page', await evaluate(`${NETWORK_DOCUMENT}.activeElement === ${NETWORK_DOCUMENT}.body`),
+    await evaluate(`${NETWORK_DOCUMENT}.activeElement?.outerHTML.slice(0, 80)`));
+  await windowKey('z');
+  check('Ctrl+Z with the focus on the window\'s page takes the template\'s values back (review of SIF-97)', await page.until(`!!${differences}`)
+    && (await numbers())[0] === String(restored.run.network.hidden_dim), JSON.stringify(await numbers()));
+  await windowKey('y');
+  check('...and Ctrl+Y brings them again, with no write', await page.until(`!${differences}`) && (await numbers())[0] === String(gt.hidden_dim) && paused.length === 0,
+    JSON.stringify(await numbers()));
   await evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
   check('Undo restores the differing values and their comparison', await page.until(`!!${differences}`) && (await numbers())[0] === String(restored.run.network.hidden_dim));
   await evaluate(`[...${differences}.querySelectorAll('button')].find(b => b.textContent === 'Save into the template').click()`);

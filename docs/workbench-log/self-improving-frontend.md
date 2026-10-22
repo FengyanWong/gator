@@ -2815,3 +2815,18 @@ unchanged: `formula_bar_check` 21, `task_rows_check` 54, `typing_check` 50, `mod
 `reliability_check` 20, `editor_columns_check` 23, `unsaved_rows_check` 25, `blocking_issues_check` 60, `looks_check` 75,
 `network_inputs_check` 9, `reward_block_check` 33, `circuit_source_check` 17, `testbench_probes_check` 41, `room_check` 30,
 `dom_identity_check` 56 (23 scripts, 917 checks, one lane). No flakes.
+
+**Review follow-up.** The review of f90ff24 found one slip, real. The RL model window's keys were a React `onKeyDown` on
+its section, which `PopupPortal` draws inside a root element in the pop-up's body. A press with the focus on the window's
+page itself has the body as its target and never reaches the section: just after the window opens, after a click on
+blank space, and after Use template or Use the template's values, whose pressed button goes away with the press (it
+becomes "in use", or the comparison closes) and drops the focus to the page. That last one is the J5-5 case of taking a
+wrong template back, and Ctrl+Z did nothing there, while `docs/workbench.md` said the keys work anywhere in the window.
+`RlModelWindow.tsx` now listens on the pop-up's document, as `Editors.tsx` does on the main window's, with the same
+`undoKey` filter, and removes the listener when the window closes. The docs and comments stand as written; they are
+now true. Nothing here saves, starts a run or writes to Virtuoso. `tsc` clean. `network_panel_check` 72 (69 before):
+Use the template's values pressed with the focus on it leaves the focus on the window's page, Ctrl+Z there brings the
+differing values and their comparison back, and Ctrl+Y applies the template's values again with no write. On the code
+before the fix, the Ctrl+Z check fails. Also run, unchanged: `model_chooser_check` 98, `typing_check` 50,
+`encoder_models_check` 24, `model_structure_check` 31, `network_inputs_check` 9 (6 scripts, 284 checks, one lane). No
+flakes.

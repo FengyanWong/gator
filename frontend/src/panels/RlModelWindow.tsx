@@ -1,7 +1,7 @@
 // The RL model window (plan-refactoring C4, out of Right.tsx): the Mode at the top, then that Mode's part - the templates of a
 // new model, or the saved models to fine-tune or evaluate. It only draws what useRlModel holds; RunPanel portals it into
 // its pop-up window.
-import { Fragment } from 'react';
+import { Fragment, useEffect } from 'react';
 import type { Json } from '../api';
 import { useCopied } from './copied';
 import { folderName, plural, short, stamp, taskNameOf } from '../format';
@@ -127,9 +127,19 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
   // Undo and Redo of the window's own (branch record SIF-97): every Mode button, Use template and Use this save point said "One
   // Undo step", and the only Undo was in the main window's editors - Ctrl+Z here did nothing. The same history as the toolbar's,
   // with its keys wherever the focus is but in a box that takes typing (windows.ts undoKey); the line under the main window's
-  // formula bar names what it took back.
-  const onKey = (e: React.KeyboardEvent) => { const step = undoKey(e); if (step) { e.preventDefault(); (step === 'undo' ? undo : redo)(); } };
-  return <section className="panel rl-networks-panel" aria-labelledby="rl-networks-title" onKeyDown={onKey}>
+  // formula bar names what it took back. The keys are heard on the window's document, as the main window's are (review of
+  // branch record SIF-97): a handler on this section missed every press with the focus on the window's page itself - just
+  // opened, after a click on blank space, and after Use template or Use the template's values, whose button goes away as it
+  // is pressed - the very moment a wrong template is taken back.
+  const popup = networkWindow.popup;
+  useEffect(() => {
+    if (!popup) return;
+    const page = popup.document;
+    const onKey = (e: KeyboardEvent) => { const step = undoKey(e); if (step) { e.preventDefault(); (step === 'undo' ? undo : redo)(); } };
+    page.addEventListener('keydown', onKey);
+    return () => page.removeEventListener('keydown', onKey);
+  }, [popup, undo, redo]);
+  return <section className="panel rl-networks-panel" aria-labelledby="rl-networks-title">
       {/* No close button of its own (user, 2026-10-03: "delete the cross button in RL network window"): the window's own close
           does it, and the settings are kept either way. Record 7.265: the RL model window - the Mode at the top, then that
           Mode's part: the templates of a new model, or the saved models to fine-tune or evaluate. */}

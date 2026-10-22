@@ -229,7 +229,7 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
             onClick={() => chooseModel(suggested.run_dir, suggested.description?.checkpoint_id ?? 'latest')}>Use</button></p>}
         {!source.run_dir && <p className="warn model-none-chosen">No saved model is chosen yet: {MODE_NAME[run.mode]} needs one. Use a save point below; this window then closes.</p>}
         <SavedModels source={source} usable={LOADS.includes(run.mode) ? run.mode : null} runs={runs} outputRoot={config.output?.output_root}
-          config={config} netFields={netFields} popup={networkWindow.popup} onUse={chooseModel} usingPoint={usingPoint} useError={useError} />
+          config={config} netFields={netFields} popup={networkWindow.popup} view={m.savedView} refreshRuns={m.refreshRuns} onUse={chooseModel} usingPoint={usingPoint} useError={useError} />
         {source.run_dir && <><h3>The model in use</h3>
         {modelLoading && <p className="hint" role="status">Checking model compatibility...</p>}
         {error && <p className="error" id="net-check-error">{error}</p>}
@@ -293,6 +293,6 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
       </>)}
       {run.mode === 'scratch' && <LookFold summary={<summary>Saved models, to look at <span className="hint">- Fine-tune or Evaluate only above uses one</span></summary>}>
         {() => <SavedModels source={source} usable={null} runs={runs} outputRoot={config.output?.output_root} config={config} netFields={netFields}
-          popup={networkWindow.popup} onUse={chooseModel} />}</LookFold>}
+          popup={networkWindow.popup} view={m.savedView} refreshRuns={m.refreshRuns} onUse={chooseModel} />}</LookFold>}
     </section>;
 }

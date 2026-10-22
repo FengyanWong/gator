@@ -3048,3 +3048,48 @@ choose the folder in Move to…". Against the code before, both fail ("3 shown �
 empty). Also run, unchanged: `task_list_check` 100, `model_chooser_check` 98, `dom_identity_check` 56,
 `training_tab_check` 103, `task_run_check` 39, `looks_check` 75 (7 scripts, one lane, all passed the first time). Not
 run: `run_control_check` (it presses Start against its fixture). No flakes.
+
+### SIF-102 The RL model window keeps its view between opens, and a renamed model is renamed everywhere (2026-10-22; from the usability audit)
+
+**Found.** The RL model window closes after every choice (record 7.291), and the saved models table is drawn inside it,
+so everything it showed went with it. Each reopen started again at every folder, All designs, no filter, Last saved and
+no Details. It also showed "Reading the saved models..." with no row (Refresh list greyed out) until the whole list was
+read again from D:. Comparing models meant typing the filter again and waiting at every open (J5-3). The Runs and Tasks
+windows keep their view at their buttons. Renaming a model in its Details read only the saved models again. The page's
+run list, which is not polled, kept the old `model_label`. The main page's model line ("Fine-tune <old name> · save
+point ..."), the header's Next line, and Started from / Models trained from it all kept the old name, beside "Renamed
+to ..." (J5-12).
+
+**Changed.** `frontend/src/panels/ModelChooser.tsx`: `useSavedModelsView` holds the table's view: the filter, sort and
+ticks (`useTableView`), the folders (`useFolders('models')`), the Design, the model whose Details are open, and the
+last list read with its output folder. `useRlModel` calls it, so it stays mounted while the window is closed, as the
+Runs and Tasks windows keep theirs at their buttons. `SavedModels` takes it as `view` in place of its own state, so one
+table in one window has one view: a reopen, or another Mode, shows the same folder, Design, filter, sort and open
+Details. Until the window's own read answers, it shows the rows of the last read under the same output folder. That
+read still goes once per open, and in New model still only once the fold is opened. The read now carries the output
+folder it was made for, so a kept list is never shown under another folder; after a failed read no kept list is shown.
+At each open the folders are read again and the ticks go, as in the Runs and Tasks windows. Details kept open for a
+model that has left the list close (they would have opened again by themselves). A kept Design is judged only once a
+list is shown. The model in use is brought into the box's view (SIF-86) when the window's own read answers, unless the
+box was scrolled meanwhile. A rename now calls the page's `refreshRuns` (App.tsx -> `RunPanel` in `Right.tsx` ->
+`useRlModel` -> `RlModelWindow` -> `SavedModels`). If the run list now carries the new name, its change reads the saved
+models again by itself (`runsKey`). Otherwise (an older server's run list) they are read once here. `ModelDetails`
+passes the new name to `onRenamed`. `refreshRuns` is stable, so `RunPanel`'s memo holds. Nothing here starts,
+continues or stops a run, saves a task or writes to Virtuoso. Use this save point, the double click and Use the newer
+one choose as before and still close the window. `docs/workbench.md` (choosing which saved model to load, the label's
+Rename, when the list is read) and the Saved models row of `docs/functionality-reference.md` describe it.
+`frontend/scripts/model_chooser_check.mjs`: its `/api/runs` fixture counts its reads. Once `runsFollow` is set, it
+carries the names the renames gave, as the backend's does (`model_label.json`). `reopen` and the read counts wait for
+the window's own read, not for the rows, which now show before it.
+
+**Checked.** `tsc` clean. `model_chooser_check` 107 (98 before). In Fine-tune, the Details of A opened in New model's
+look are still open, with one read. Renaming D with the static run list reads the run list and the saved models once.
+Renaming C, the model in use, with a run list that follows: the model line reads "Fine-tune FIXTURE in use renamed ·
+save point 10 evaluations", the Next line "Fine-tune from FIXTURE in use renamed @ 10". The saved models are read once,
+by the run list that changed, and renaming it back restores both. The folder GT models, Graph Transformer, "opamp",
+sorted by Evaluations, A's Details open and A ticked: after close and reopen, with the read held, all of it is kept
+except the tick. A's row shows at once under "Reading the saved models...", with one read asked. After it answers the
+view stays, with no second read. C's Details, open while C left the list, are closed when C is listed again. Each new
+check looks for what the code before did not do. Also run, unchanged: `network_panel_check` 72, `typing_check` 50,
+`graph_view_check` 69, `encoder_models_check` 24, `model_structure_check` 31, `mode_suggestion_check` 20 (7 scripts,
+one lane, all passed the first time). No flakes.

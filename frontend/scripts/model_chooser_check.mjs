@@ -25,7 +25,11 @@
 //   model's save points too (branch record SIF-85);
 // - the table scrolls in a box of its own with its titles at its top, the model in use brought into its view; Run
 //   configuration's notice opens the window at the block its reason is about, the model line's button at the top (branch
-//   record SIF-86).
+//   record SIF-86);
+// - opened again, the window keeps its view - folder, Design, filter, sort, open Details - and shows the rows of its last read
+//   at once, its one read per open still going; the ticks go, and Details of a model that left the list close; a rename reads
+//   the page's run list again, so the main page's model line and Next line name the model in use by its new name, and the
+//   saved models are read again once (branch record SIF-102).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -89,6 +93,9 @@ await runChecks(browser, async () => {
   const page = await browser.open({ consoleApi: false });
   const { send, evaluate, fulfil, consoleErrors } = page;
   const refused = []; const asked = []; const renames = []; let lists = 0, canned = true, served = MODELS;
+  // Branch record SIF-102: how often the page's run list is read, and - once `runsFollow` - a run list that carries the names
+  // the renames gave, as the backend's does (it reads the run folder's model_label.json). Until then it stays as it was.
+  let runReads = 0, runsFollow = false; const labels = {};
   let incompatibleD = false;   // branch record SIF-36: D's compatibility answered as a "saved {...} != current {...}" pair
   // A save point's read without a configuration is a Use's - and, since branch record SIF-85, also the read a model's Details
   // make before their compatibility check, at the save point selected there (its newest). So both name the save point of the
@@ -100,7 +107,7 @@ await runChecks(browser, async () => {
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
-    if (name === '/api/runs') return fulfil(requestId, 200, { runs: RUNS });
+    if (name === '/api/runs') { runReads++; return fulfil(requestId, 200, { runs: runsFollow ? RUNS.map(r => (labels[r.run_dir] ? { ...r, model_label: labels[r.run_dir] } : r)) : RUNS }); }
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
     if (name === '/api/runs/models') { lists++; if (holdList) { heldList.push(requestId); return; }
       return canned ? fulfil(requestId, 200, { models: served }) : send('Fetch.continueRequest', { requestId }); }
@@ -124,7 +131,7 @@ await runChecks(browser, async () => {
       const mine = served.find(x => x.run_dir === body.run_dir), clash = served.find(x => x.run_dir !== body.run_dir && (x.model_label ?? x.task_name) === body.model_label);
       if (!mine) return fulfil(requestId, 404, { detail: { message: 'FIXTURE: Not a run directory' } });
       if (clash) return fulfil(requestId, 409, { detail: { message: `FIXTURE: A model named "${body.model_label}" exists already under this output folder. Choose another name.`, code: 'name_taken' } });
-      const previous = mine.model_label ?? mine.task_name; served = served.map(x => x === mine ? { ...x, model_label: body.model_label } : x);
+      const previous = mine.model_label ?? mine.task_name; served = served.map(x => x === mine ? { ...x, model_label: body.model_label } : x); labels[body.run_dir] = body.model_label;
       return fulfil(requestId, 200, { run_dir: body.run_dir, model_label: body.model_label, previous });
     }
     if (name.startsWith('/api/model-folders')) {                                     // the models' folders (record 7.263): a store of this check's own
@@ -160,10 +167,14 @@ await runChecks(browser, async () => {
   // model chosen closes the RL model window. What the choice did is looked at in the window opened again: the note, "in use"
   // and a newer save point offered are the page's own state, drawn again.
   const closedByChoice = async () => !!(await until(`!window.__checkRLWindow || window.__checkRLWindow.closed`, 50));
+  // Branch record SIF-102: the rows of the last read show at once, so a reopen is over once the window's own read has answered.
+  const READING = `/^Reading the saved models/.test(${RIGHT}.querySelector('.model-count')?.textContent ?? 'Reading')`;
   const reopen = async () => {
     networkPage = await openNetworks(page, browser); await networkPage.viewport(1180, 920);
-    return until(`${ROWS}.length === ${MODELS.length} || !${RIGHT}.querySelector('.saved-models')`, 60);
+    return until(`(${ROWS}.length === ${MODELS.length} && !${READING}) || !${RIGHT}.querySelector('.saved-models')`, 60);
   };
+  // The saved models' reads once `n` were asked for, and a moment more: a second read would come within it.
+  const readsReach = async (n, tries = 50) => { for (let i = 0; i < tries && lists < n; i++) await sleep(100); await sleep(300); return lists; };
   const chosenAndReopened = async () => { const closed = await closedByChoice(); await reopen(); return closed; };
   // Branch record SIF-94: a folder clicked in this window is copied by ITS clipboard (the main page's refuses a write while the
   // pop-up has focus, and the copy failed unsaid). Both clipboards are stood in for - a headless window may not be focused -
@@ -214,7 +225,11 @@ await runChecks(browser, async () => {
   // ---- Fine-tune: the table, nothing filled in by itself --------------------------------------------------------------
   const listsBefore = lists;
   await setMode(networkPage, 'fine_tune');
-  check('Fine-tune reads the list once and shows a saved models table', (await until(`${ROWS}.length === ${MODELS.length}`, 50)) && lists === listsBefore + 1, `${lists - listsBefore} read(s)`);
+  check('Fine-tune reads the list once and shows a saved models table', (await until(`${ROWS}.length === ${MODELS.length}`, 50)) && (await readsReach(listsBefore + 1)) === listsBefore + 1,
+    `${lists - listsBefore} read(s)`);
+  // Branch record SIF-102: one table in one window - the Details opened in New model's look stay open in Fine-tune's table.
+  check('... in the view New model\'s look left: A\'s Details are still open (SIF-102)', await evaluate(`(${row(A)})?.querySelector('button.notes-link')?.getAttribute('aria-expanded') === 'true'`));
+  await evaluate(`(${row(A)}).querySelector('button.notes-link').click()`);                  // closed, for the table's own checks below
   check('... no block for a new network: no templates, no "The ... template" settings, no "where the values come from"',
     await evaluate(`!${RIGHT}.querySelector('table.template-table') && ![...${RIGHT}.querySelectorAll('h3')].some(h => / template, for this run$/.test(h.textContent)) && ![...${RIGHT}.querySelectorAll('summary')].some(s => /^Where the .+ values come from$/.test(s.textContent.trim()))`));
   check('... the Advanced numbers and Fine-tune\'s own settings are there', await evaluate(`[...${RIGHT}.querySelectorAll('summary')].some(s => /^Advanced/.test(s.textContent.trim()))
@@ -440,14 +455,35 @@ await runChecks(browser, async () => {
   await evaluate(`${RENAME}.click()`);
   check('a name another model carries is refused, and said under the box', await until(`/exists already/.test(${RIGHT}.querySelector('.model-rename-note.warn')?.textContent ?? '')`, 40)
     && renames.length === 1 && renames[0].run_dir === D.run_dir, `${renames.length} request(s): ${await note()}`);
-  const NEW_NAME = 'FIXTURE renamed (2)', listsBeforeRename = lists;
+  const NEW_NAME = 'FIXTURE renamed (2)', listsBeforeRename = lists, runsBeforeRename = runReads;
   await page.setValue(NAME, `  ${NEW_NAME}  `, { event: 'input' }); await evaluate(`${RENAME}.click()`);
-  check('a free name renames the model: the list is read again once and the row carries the new name', await until(`(${row(D)})?.querySelector('td:nth-child(2) b')?.textContent === ${JSON.stringify(NEW_NAME)}`, 40)
-    && lists === listsBeforeRename + 1 && renames[1]?.model_label === NEW_NAME, `${lists - listsBeforeRename} read(s)`);
+  // Branch record SIF-102: a rename reads the page's run list again too; this run list does not carry the new name (as an older
+  // server's), so the saved models are read here - once.
+  check('a free name renames the model: the run list and the saved models are read again, the saved models once, and the row carries the new name',
+    await until(`(${row(D)})?.querySelector('td:nth-child(2) b')?.textContent === ${JSON.stringify(NEW_NAME)}`, 40)
+    && (await readsReach(listsBeforeRename + 1)) === listsBeforeRename + 1 && runReads > runsBeforeRename && renames[1]?.model_label === NEW_NAME,
+    `${lists - listsBeforeRename} read(s), the run list ${runReads - runsBeforeRename}`);
   check('... and the draft still holds the model in use (C)', (await stored())?.model_source?.run_dir === C.run_dir);
   await page.setValue(NAME, D.task_name, { event: 'input' }); await evaluate(`${RENAME}.click()`);
   await until(`(${row(D)})?.querySelector('td:nth-child(2) b')?.textContent === ${JSON.stringify(D.task_name)}`, 40);
   await shot('models-2-details.png');
+  // Branch record SIF-102: the main page names the model in use by its run's row - its model line, the header's Next line - and
+  // kept the old name beside "Renamed to ..." until something else read the runs. From here the run list carries the names
+  // the renames gave, as the backend's does: its change reads the saved models again by itself, and the rename reads them no
+  // second time.
+  runsFollow = true;
+  await details(C); await until(`!!(${pointRow(C.latest)})`, 30);
+  const IN_USE_NAME = 'FIXTURE in use renamed', listsBeforeInUse = lists;
+  const named = name => `(document.querySelector('.rl-networks-row .net-short')?.textContent ?? '').startsWith(${JSON.stringify(`Fine-tune ${name} · `)})
+    && ((${NEXT})?.textContent ?? '').includes(${JSON.stringify(`Fine-tune from ${name} @ 10 `)})`;
+  await page.setValue(NAME, IN_USE_NAME, { event: 'input' }); await evaluate(`${RENAME}.click()`);
+  check('renaming the model in use renames it on the main page: its model line and the header\'s Next line (SIF-102)', await until(named(IN_USE_NAME), 40),
+    `${await line()} | ${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)}`);
+  check('... and the saved models are read again once, by the run list that changed', await until(`(${row(C)})?.querySelector('td:nth-child(2) b')?.textContent === ${JSON.stringify(IN_USE_NAME)}`, 40)
+    && (await readsReach(listsBeforeInUse + 1)) === listsBeforeInUse + 1, `${lists - listsBeforeInUse} read(s)`);
+  await page.setValue(NAME, C.task_name, { event: 'input' }); await evaluate(`${RENAME}.click()`);
+  check('... and back: its own name again, there too', await until(named(C.task_name), 40) && await until(`(${row(C)})?.querySelector('td:nth-child(2) b')?.textContent === ${JSON.stringify(C.task_name)}`, 40),
+    await line());
 
   // ---- the models' folders (record 7.263) ------------------------------------------------------------------------------------------
   await networkPage.send('Page.enable');
@@ -464,6 +500,46 @@ await runChecks(browser, async () => {
   check('"Move to..." puts the ticked model in it, by run folder', await (async () => { for (let i = 0; i < 40 && !modelFolders.assignments[A.run_dir]; i++) await sleep(100); return modelFolders.assignments[A.run_dir] === gt; })()
     && await until(`${RIGHT}.querySelector('.task-folders [data-folder-id="${gt}"]')?.textContent === 'GT models1'`, 30), JSON.stringify(modelFolders.assignments));
 
+  // ---- the window keeps its view between opens (branch record SIF-102) ---------------------------------------------------------------
+  // It closes after every choice (record 7.291), and each reopen started at every folder, All designs, no filter, Last saved and
+  // no Details, with no row until the whole list was read again: the filter was typed again and the read waited for at every open.
+  await evaluate(`${RIGHT}.querySelector('.task-folders [data-folder-id="${gt}"]').click()`); await sleep(200);
+  await page.setValue(DESIGN, 'Graph Transformer', { event: 'change' });
+  await page.setValue(`${RIGHT}.querySelector('input.model-filter')`, 'opamp', { event: 'input' });
+  await evaluate(`[...${RIGHT}.querySelector('table.model-table').tHead.rows[0].cells].find(c => c.textContent.startsWith('Evaluations')).click()`);
+  await details(A); await until(`!!${RIGHT}.querySelector('table.model-points')`, 30);
+  await evaluate(`(${row(A)}).querySelector('td.task-select input').click()`); await sleep(300);
+  const VIEW = `(() => { const a = ${row(A)}, sorted = [...${RIGHT}.querySelector('table.model-table').tHead.rows[0].cells].find(c => c.getAttribute('aria-sort'));
+    return { rows: ${ROWS}.map(r => r.title), folder: ${RIGHT}.querySelector('.task-folders [aria-current="page"]')?.dataset.folderId ?? null, design: (${DESIGN}).value,
+      filter: ${RIGHT}.querySelector('input.model-filter').value, sort: sorted ? sorted.textContent.replace(/[\\u25B2\\u25BC]/g, '').trim() + ' ' + sorted.getAttribute('aria-sort') : null,
+      details: a?.querySelector('button.notes-link')?.getAttribute('aria-expanded') === 'true' && !!${RIGHT}.querySelector('table.model-points'),
+      ticked: !!a?.querySelector('td.task-select input')?.checked, count: ${RIGHT}.querySelector('.model-count')?.textContent ?? '' }; })()`;
+  const sameView = v => JSON.stringify(v.rows) === JSON.stringify([A.run_dir]) && v.folder === gt && v.design === 'Graph Transformer' && v.filter === 'opamp'
+    && v.sort === 'Evaluations descending' && v.details;
+  const viewSet = await evaluate(VIEW);
+  check('(set-up) a view: the folder GT models, Graph Transformer, the filter "opamp", sorted by Evaluations, A\'s Details open and its row ticked',
+    sameView(viewSet) && viewSet.ticked, JSON.stringify(viewSet));
+  holdList = true; const listsBeforeReopen = lists;
+  await networkPage.evaluate('window.close()'); await browser.window(RL_MODEL_WINDOW, { present: false });
+  networkPage = await openNetworks(page, browser); await networkPage.viewport(1180, 920);
+  for (let i = 0; i < 50 && !heldList.length; i++) await sleep(100);
+  await until(`(${VIEW}).rows.length > 0`, 40);
+  const viewKept = await evaluate(VIEW);
+  check('opened again, the window keeps its view: the folder, the Design, the filter, the sort and the open Details; the tick goes (SIF-102)',
+    sameView(viewKept) && !viewKept.ticked, JSON.stringify(viewKept));
+  check('... its rows are those of the last read, shown at once, while its one read is still on its way (SIF-102)', heldList.length === 1 && lists === listsBeforeReopen + 1
+    && /^Reading the saved models/.test(viewKept.count), `${lists - listsBeforeReopen} read(s), ${heldList.length} held: ${viewKept.count}`);
+  holdList = false; await fulfil(heldList.shift(), 200, { models: served });
+  await until(`!${READING}`, 40);
+  const viewRead = await evaluate(VIEW);
+  check('... and when it answers, the view stays, with no second read', sameView(viewRead) && (await readsReach(listsBeforeReopen + 1)) === listsBeforeReopen + 1,
+    `${lists - listsBeforeReopen} read(s): ${JSON.stringify(viewRead)}`);
+  // back to every folder, every design, no filter, Last saved and no Details (a folder chosen closes them), for what follows
+  await evaluate(`${RIGHT}.querySelector('.task-folders [data-folder-id="all"]').click()`); await sleep(200);
+  await page.setValue(DESIGN, '', { event: 'change' });
+  await page.setValue(`${RIGHT}.querySelector('input.model-filter')`, '', { event: 'input' });
+  await evaluate(`[...${RIGHT}.querySelector('table.model-table').tHead.rows[0].cells].find(c => c.textContent.startsWith('Last saved')).click()`); await sleep(300);
+
   // ---- filter, refresh, no timer -----------------------------------------------------------------------------------------------------
   await evaluate(`(() => { const i = ${RIGHT}.querySelector('input.model-filter'); i.focus(); i.select(); })()`); await networkPage.send('Input.insertText', { text: 'ldo gatv2' }); await sleep(300);
   check('the filter keeps the matching models', JSON.stringify((await rows()).map(r => r.dir)) === JSON.stringify([B.run_dir]), JSON.stringify((await rows()).map(r => r.cells[1])));
@@ -471,6 +547,7 @@ await runChecks(browser, async () => {
   check('clearing the filter shows all models again', (await rows()).length === MODELS.length);
   const before = lists; await sleep(2500);
   check('the list is not re-read on a timer', lists === before, `${lists - before} read(s) in 2.5 s`);
+  await details(C); await until(`!!(${pointRow(C.latest)})`, 30);                              // its Details open as it leaves the list (SIF-102)
   served = MODELS.filter(m => m !== C);                                                       // the model in use loses its save points
   await evaluate(`${button('Refresh list')}.click()`);
   check('"Refresh list" reads the list exactly once', (await until(`${ROWS}.length === ${MODELS.length - 1}`, 40)) && lists === before + 1, `${lists - before} read(s)`);
@@ -484,6 +561,10 @@ await runChecks(browser, async () => {
   served = []; await evaluate(`${button('Refresh list')}.click()`);
   check('no saved model: said in plain words, with what makes a run save one', await until(`/No saved model yet/.test(${RIGHT}.querySelector('.model-empty')?.innerText ?? '')`, 40));
   served = MODELS; await evaluate(`${button('Refresh list')}.click()`); await until(`${ROWS}.length === ${MODELS.length}`, 40);
+  // Branch record SIF-102: the open Details are kept between opens, so those of a model that left the list are let go - they
+  // opened by themselves when it was listed again.
+  check('Details of a model that left the list close: listed again, its row\'s Details stay closed (SIF-102)',
+    await evaluate(`(${row(C)})?.querySelector('button.notes-link')?.getAttribute('aria-expanded') === 'false' && !${RIGHT}.querySelector('tr.run-details-row')`));
 
   // ---- Run configuration's notice opens the window at its reason (branch record SIF-86) -----------------------------------------------
   // D in use and answered NOT compatible: the notice's reason is the compatibility under "The model in use", which sits under

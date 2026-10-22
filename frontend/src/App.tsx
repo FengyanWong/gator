@@ -299,7 +299,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       </main>
       <aside className="right">
         {/* The RL model window it holds has Undo and Redo of its own (branch record SIF-97): the page's one history. */}
-        <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} circuit={circuit} onNext={setNextModel} runHeld={headerHeld}
+        <RunPanel schema={schema.json_schema} config={config} setConfig={setConfig} runs={runs} refreshRuns={refreshRuns} circuit={circuit} onNext={setNextModel} runHeld={headerHeld}
           undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo} />
         <OutputPanel config={config} setConfig={setConfig} meta={meta} activeRun={status} headerWorks={headerWorks} runs={runs}
           taskMock={circuit?.loaded && typeof circuit.mock === 'boolean' ? circuit.mock : null} />

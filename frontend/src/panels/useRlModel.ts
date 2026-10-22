@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { SIMPLE_REWARD, useRequest } from '../store';
 import { api, Json } from '../api';
-import { modelNameAt } from './ModelChooser';
+import { modelNameAt, useSavedModelsView } from './ModelChooser';
 import { DESIGN_NAME, designName, ENCODER_SHORT, pointEvaluations, pointText } from '../lineage';
 import { LOADS, NETWORK_FIELDS, networkOf, pick, pointKey, readSavePoint, withSavePoint } from '../savePoint';
 import { styled, usePopupWindow } from './popupWindow';
@@ -15,8 +15,8 @@ import { sameScope, useNewest } from '../newest';
 import { oncePerBrowser } from '../kept';
 import type { ModelReply, NetworkConfig } from '../contracts';
 
-export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[]; circuit: Json; schema: Json;
-  onNext?: (next: NextModel) => void }) {
+export function useRlModel({ config, setConfig, runs, refreshRuns, circuit, schema, onNext }: { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; runs: Json[];
+  refreshRuns: () => Promise<Json[]>; circuit: Json; schema: Json; onNext?: (next: NextModel) => void }) {
   // A configuration without a Mode (a task's starter rows, an old file) is New model, as the backend reads it (schema default).
   const run = config.run.mode ? config.run : { ...config.run, mode: 'scratch' };
   const set = (fields: Json, record = true) => setConfig(c => ({ ...c, run: { ...c.run, ...fields } }), record);
@@ -30,6 +30,9 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
     title: RL_MODEL_WINDOW, features: 'popup,width=1180,height=920',
     rootId: 'rl-networks-root', rootClass: 'rl-networks-window', closeOnUnmount: true,
   });
+  // The saved models table's filter, sort, Design, folder, open Details and last list, kept while the window is closed
+  // (branch record SIF-102): it closes after every choice (record 7.291).
+  const savedView = useSavedModelsView();
 
   // Only a Mode that loads the model asks about it: a model_source left over from fine_tune is ignored in scratch, and
   // was compiled and checked after every edit there all the same (audit 2026-09-30).
@@ -329,7 +332,7 @@ export function useRlModel({ config, setConfig, runs, circuit, schema, onNext }:
       block.scrollIntoView({ block: 'center' });
     });
   }, [openingAt, networkWindow.popup]);
-  return { config, setConfig, runs, circuit, schema, run, set, setAdv, setNet, source, adv, net, networkWindow, modelChecked,
+  return { config, setConfig, runs, refreshRuns, savedView, circuit, schema, run, set, setAdv, setNet, source, adv, net, networkWindow, modelChecked,
     error, modelLoading, model, cornerIds, robust, gated, corners, supportsCorners, launchesPerStep, objective, reward, rewardOther,
     toggleCorner, netSettings, netMessage, presetRateUpdated, netFields, advFields, encoder, entry, offeredEncoders, usesHeads, usesStructure, applyEntry,
     chooseList, flush, queueSave, editNet, editAdv, chooseEncoder, settingDifferences, differs, originLabel, budget, sacSlow, starved,

@@ -2642,7 +2642,9 @@ so the Modes that load a model still start from the newest model saved under the
 record are numbered the same way when they are listed, oldest first. The Runs window shows the name in its **Saved
 model** column. In a saved model's Details (RL model window) a **Name** box and **Rename** give the model a new name (`POST /api/runs/model/rename`, kept in the run folder's `model_label.json`; the manifest
 keeps the name given at the start, and a live run can be renamed too). A name another model under the output folder
-carries is refused and said under the box. A renamed model is offered as "Newest model named ..." when its name is
+carries is refused and said under the box. A rename reads the page's run list again (branch record SIF-102), so the main
+page names the model by its new name at once - the model line beside RL model..., the header's Next line, and Started from
+and Models trained from it in the Details; until then they kept the old name until something else read the runs. A renamed model is offered as "Newest model named ..." when its name is
 typed into the RL model label box: the default model is the model that carries the label when no run was started under
 it.
 
@@ -2670,6 +2672,10 @@ most recently saved first:
 
 Every column sorts; the filter finds any word of a row, its folder's name included; folders (All models, Unfiled and
 your own, with Move to...) work as in the Tasks and Runs windows and are stored in `model_folders.json` (record 7.263).
+The window keeps its view while it is closed, as the Tasks and Runs windows do (branch record SIF-102; it closes after
+every choice, record 7.291): opened again - or in another Mode - it has the same folder, Design, filter, sort and open
+Details, and shows the rows of its last read at once while it reads the list again (once per open; in New model still
+only once the fold is opened). The ticks go at each open, and Details of a model that has left the list close.
 Runs without a save point are not listed. Bayesian runs are excluded even when an older version wrote a
 save point: their learner was never trained. Selecting such a saved path returns a clear refusal (record 7.325).
 
@@ -2707,7 +2713,9 @@ record 7.267).
 
 The list is `GET /api/runs/models`: small metadata files only, read when the table is shown, when a run of the page's run
 list changed (a run came or went, came to rest or was renamed), for another output folder, and by **Refresh list** (every
-run folder read anew, as in the Runs window) - never on a timer. A working run's newer save points show at Refresh list
+run folder read anew, as in the Runs window) - never on a timer. While it is read as the window opens, the rows of the
+last read under the same output folder are shown (branch record SIF-102); the model in use is brought into the box's view
+once that read answers, unless the box was scrolled meanwhile. A working run's newer save points show at Refresh list
 or once it rests; the backend reuses what it read of a run that did not change (record 7.274). Older periodic save points
 are pruned: `output.keep_last_checkpoints` keeps the newest 10 periodic ones by default, and empty keeps every one. Save
 now, pause, stop and final save points, the latest one and a selected best policy are never removed. Models from outside

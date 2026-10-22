@@ -69,10 +69,25 @@ const COLUMNS: Column[] = [
 /** A save point a Use could not read, and why (useRlModel's netMessage). */
 type UseError = { point: string; text: string };
 
+/** What the saved models table shows - its filter and sort, the Design, the folder, the model whose Details are open - and
+ *  the models it read last, with the output folder they are under (branch record SIF-102). useRlModel holds it, and stays
+ *  mounted: the RL model window closes after every choice (record 7.291), and each reopen started again at All designs, no
+ *  filter, Last saved, every folder and no Details, with no row until the whole list was read again. The Runs and Tasks
+ *  windows keep theirs at their buttons. */
+export function useSavedModelsView() {
+  const table = useTableView('saved', true);
+  const folders = useFolders('models');
+  const [design, setDesign] = useState('');                           // one design only, chosen beside Refresh list (SIF-10)
+  const [open, setOpen] = useState<string | null>(null);              // the model whose Details are open
+  const last = useRef<{ root: string | null; models: Json[] } | null>(null);
+  return { table, folders, design, setDesign, open, setOpen, last };
+}
+export type SavedModelsView = ReturnType<typeof useSavedModelsView>;
+
 /** One model's Details: what can be done with it, and what it is. `usingPoint`: the save point a Use is reading (pointKey). */
 function ModelDetails({ model, models, runs, byDir, source, usable, config, netFields, from, usingPoint, useError, onUse, onRenamed, onSelect }: {
   model: Json; models: Json[]; runs: Json[]; byDir: Map<string, Json>; source: Json; usable: string | null; config: Json; netFields: string[]; from: Window | null;
-  usingPoint: string | null; useError: UseError | null; onUse: (run_dir: string, checkpoint_id: string) => void; onRenamed: () => void; onSelect: (run_dir: string) => void }) {
+  usingPoint: string | null; useError: UseError | null; onUse: (run_dir: string, checkpoint_id: string) => void; onRenamed: (label: string) => void; onSelect: (run_dir: string) => void }) {
   const points: Json[] = [...(model.checkpoints ?? [])].reverse();          // newest first
   const inUse = source.run_dir === model.run_dir;
   const copying = useCopied(from);                     // the Folder is clicked in the RL model window: ITS clipboard (SIF-94)
@@ -97,7 +112,7 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, netF
   const rename = () => {
     if (!canRename) return;
     setRenaming(true); setRenameNote(null);
-    api.renameModel(model.run_dir, typed).then(r => { setRenameNote({ level: 'hint', text: `Renamed to "${r.model_label}".` }); onRenamed(); })
+    api.renameModel(model.run_dir, typed).then(r => { setRenameNote({ level: 'hint', text: `Renamed to "${r.model_label}".` }); onRenamed(r.model_label); })
       .catch(e => setRenameNote({ level: 'warn', text: e.message })).finally(() => setRenaming(false));
   };
   const children = childrenOf(model, runs), history = historyOf(byDir.get(model.run_dir) ?? model, byDir);
@@ -166,38 +181,48 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, netF
   </div>);
 }
 
-export function SavedModels({ source, usable, runs, outputRoot, config, netFields, popup, onUse, usingPoint = null, useError = null }: {
+/** `view`: what the table shows, kept while the window is closed (useSavedModelsView, branch record SIF-102). `refreshRuns`:
+ *  the page's run list read again (App.tsx), after a rename. */
+export function SavedModels({ source, usable, runs, outputRoot, config, netFields, popup, view, refreshRuns, onUse, usingPoint = null, useError = null }: {
   source: Json; usable: string | null; runs: Json[]; outputRoot?: string | null; config: Json; netFields: string[]; popup: Window | null;
-  onUse: (run_dir: string, checkpoint_id: string) => void; usingPoint?: string | null; useError?: UseError | null }) {
+  view: SavedModelsView; refreshRuns: () => Promise<Json[]>; onUse: (run_dir: string, checkpoint_id: string) => void; usingPoint?: string | null; useError?: UseError | null }) {
   // Read again when a run of the list changed - came, went, came to rest, or its model was renamed - not at every read of
   // the run list (each read here walks every run's save points on the slow D: drive; record 7.275). A live run's new
   // save points show at Refresh list or once it rests. Refresh list reads every run folder anew (`fresh`, record 7.274).
   const runsKey = useMemo(() => runs.map(r => `${r.run_dir}|${r.state}|${r.ended_utc ?? ''}|${r.model_label ?? ''}`).join('\n'), [runs]);
   const freshNext = useRef(false);
-  const { value: models, error, loading, refresh: load } = useRequest<Json[]>(signal => {
-    const fresh = freshNext.current;
+  const { value: read, error, loading, refresh: load } = useRequest<{ root: string | null; models: Json[] }>(signal => {
+    const fresh = freshNext.current, root = outputRoot ?? null;
     freshNext.current = false;
-    return api.savedModels(outputRoot ?? undefined, signal, fresh).then(r => r.models ?? []);
+    return api.savedModels(root ?? undefined, signal, fresh).then(r => ({ root, models: r.models ?? [] }));
   }, [runsKey, outputRoot], { keepPrevious: true });
-  const folders = useFolders('models');
-  useEffect(() => { void folders.refresh(); }, []);
-  const table = useTableView('saved', true);
+  // The models this window read last, under the same output folder, show at once (branch record SIF-102): a reopen showed
+  // "Reading the saved models..." and no row for as long as its read took on D:. Its one read per open still goes, and
+  // replaces them when it answers.
+  if (read) view.last.current = read;
+  const kept = view.last.current;
+  const models = read?.models ?? (!error && kept?.root === (outputRoot ?? null) ? kept.models : null);
+  const { table, folders, design, setDesign, open, setOpen } = view;
   const { filter, setFilter, selected, setSelected } = table;
-  const [open, setOpen] = useState<string | null>(null);              // the model whose Details are open
+  // The folders are read again at every open, and the ticks let go, as the Runs and Tasks windows' list does at its read.
+  useEffect(() => { void folders.refresh(); setSelected([]); }, []);
+  // Details kept open for a model that has left the list are let go: they would open by themselves were it listed again.
+  useEffect(() => { if (read && open && !read.models.some(m => m.run_dir === open)) setOpen(null); }, [read]);
   const copying = useCopied(popup);                                   // a missing model's folder, by the pop-up's clipboard (SIF-94)
   const byDir = useMemo(() => new Map(runs.map(r => [r.run_dir, r])), [runs]);
   const list = models ?? [];
   const text = (m: Json) => [modelName(m), m.task_name, m.task_id, trainedOn(m), m.circuit_class, designName(m.network), netLabel(m.network), netShort(m.network), m.mode, m.state, m.mock ? 'mock' : 'real',
     `seed${m.seed}`, folders.data.folders[folders.of(m.run_dir)]].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
-  // One design only, chosen beside Refresh list (branch record SIF-10): the designs there are, the most models first.
-  const [design, setDesign] = useState('');
+  // One design only, chosen beside Refresh list (branch record SIF-10): the designs there are, the most models first. A
+  // design no model has any more goes back to All designs - judged on a list, not while none is shown yet (SIF-102: the kept
+  // choice would go at every open whose read had not answered).
   const designs = useMemo(() => {
     const count = new Map<string, number>();
     for (const m of list) { const d = designName(m.network); count.set(d, (count.get(d) ?? 0) + 1); }
     return [...count].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [list]);
-  useEffect(() => { if (design && !designs.some(([d]) => d === design)) setDesign(''); }, [designs]);
+  useEffect(() => { if (design && models && !designs.some(([d]) => d === design)) setDesign(''); }, [designs]);
   const shown = table.arrange(list, m => folders.holds(m.run_dir) && (!design || designName(m.network) === design), text, m => column.value(m, byDir));
   const inUse: Json = list.find(m => m.run_dir === source.run_dir) ?? null;
   // A newer save point of the model in use is offered, never followed by itself (the source is pinned).
@@ -206,21 +231,28 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
   const newer = usable && inUse && newest && pinned && newest.checkpoint_id !== pinned.checkpoint_id && (newest.evaluations ?? 0) > (pinned.evaluations ?? 0) ? newest : null;
   const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
   const useNewest = (m: Json) => { const p = m.checkpoints?.find((x: Json) => x.is_latest) ?? m.checkpoints?.[m.checkpoints.length - 1]; if (p) onUse(m.run_dir, p.checkpoint_id); };
+  // A rename reads the page's run list again (branch record SIF-102): the main page's model line and Next line, Started from
+  // and Models trained from it name a model by its run's row, and kept the old name beside "Renamed to ..." until something
+  // else read the runs. A run list that carries the new name reads this list again by itself (runsKey); else it is read here
+  // - once either way.
+  const renamed = (dir: string, label: string) => void refreshRuns().then(listed => { if (!listed.some(r => r.run_dir === dir && r.model_label === label)) load(); });
   // The table scrolls in a box of its own (branch record SIF-86: 411 models made it about 20,000 px long, with the model in use
   // and the Mode's settings under it). When the list first arrives the model in use is brought to the middle of the box, if it
   // is out of its view - the box only, never the window. Once per window: a later sort, filter or Refresh list keeps the place.
+  // The list of this window's own read (branch record SIF-102): the rows kept from the last read show before it, and a box
+  // the user scrolled meanwhile stays where it was put.
   const box = useRef<HTMLDivElement>(null), placed = useRef(false);
   useEffect(() => {
-    if (placed.current || !models) return;
+    if (placed.current || !read) return;
     placed.current = true;
     const at = box.current, row = at?.querySelector<HTMLElement>('tr.model-row.current');
-    if (at && row) void styled(popup ?? window).then(() => {
+    if (at && row && !at.scrollTop) void styled(popup ?? window).then(() => {
       // what the box shows of its rows: under its sticky titles, down to its bottom
       const head = at.querySelector('thead')?.offsetHeight ?? 0, top = at.getBoundingClientRect().top + head, height = at.clientHeight - head;
       const r = row.getBoundingClientRect();
       if (r.top < top || r.bottom > top + height) at.scrollTop += r.top - top - (height - r.height) / 2;
     });
-  }, [models]);
+  }, [read]);
   return (<div className="saved-models">
     <div className="row"><button onClick={() => { freshNext.current = true; load(); void folders.refresh(); }} disabled={loading}
       title="Refresh list: every run folder is read again from the disk.">Refresh list</button>
@@ -261,7 +293,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
             </tr>
             {open === m.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
               <ModelDetails model={m} models={list} runs={runs} byDir={byDir} source={source} usable={usable} config={config} netFields={netFields} from={popup}
-                usingPoint={usingPoint} useError={useError} onUse={onUse} onRenamed={load} onSelect={dir => { folders.setFolder('all'); setFilter(''); setOpen(dir); }} /></td></tr>}
+                usingPoint={usingPoint} useError={useError} onUse={onUse} onRenamed={label => renamed(m.run_dir, label)} onSelect={dir => { folders.setFolder('all'); setFilter(''); setOpen(dir); }} /></td></tr>}
           </Fragment>); })}</tbody></table></div>
         {shown.length === 0 && <p className="hint task-folder-empty">{filter || design ? 'No saved model matches the filter in this folder.' : 'This folder is empty. Select models in All models, then use Move to…'}</p>}
       </div></div>}

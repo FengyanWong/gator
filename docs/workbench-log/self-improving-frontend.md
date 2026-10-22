@@ -3160,3 +3160,27 @@ offer goes; one Undo brings the page's reward back and the offer with it. Each n
 did not do. Also run, unchanged: `looks_check` 75, `network_panel_check` 72, `reward_block_check` 33,
 `mode_suggestion_check` 20, `encoder_models_check` 24, `room_check` 30, `graph_view_check` 69, `model_structure_check`
 31, `network_inputs_check` 9 (10 scripts, one lane, all passed the first time). No flakes.
+
+### Merged into workbench and live (2026-10-22; the user: "merge it into workbench and make it live")
+
+**Merge.** workbench (48 commits by other sessions since 8b67d97: frontend speed-ups and checks of 7.377/7.379, backend,
+docs, thesis) was merged into this branch in its own worktree: 16 files conflicted (41 hunks), each resolved keeping both
+sides (their features and checks, our wording, names, layout and check expectations); the backend and tests are byte-identical
+to workbench's. docs/frontend_implementation_status.md keeps workbench's version for now: another session has unsaved edits
+in it, and this log's pointer row waits. Merge commit fcc80ed; circuit_layout_check and editor_renames_check (theirs) refused
+the runner's evidence-folder argument - fixed in 8aa7213. On the merged tree: `tsc` clean; vite build; full browser suite at
+one lane - 58 scripts, 2,680 checks passed; an adversarial review of the resolution found nothing lost. workbench was then
+fast-forwarded to 8aa7213 in the shared tree (none of the 116 files it changed had anyone's unsaved edits; theirs stayed as
+they were). workbench is not pushed (166 commits ahead of origin, most of them other sessions').
+
+**Live.** Page: the merged build (index-Pf1CbBhz.js, index-CeHnC5t3.css) copied into frontend/dist/assets beside the old
+assets, index.html last. Server: workbench holds other sessions' backend changes since 2026-10-19, so 8765 was restarted
+with the previous server's 13 environment variables (no CLAUDE/ANTHROPIC/CODEX) - pid 3263967 since 16:45:47.
+A slip: after the first restart (16:28) Windows could not reach 8765 until 16:46 - WSL's localhost relay (wslrelay.exe) held
+stale connections from this branch's own preview server on 5174 (its /api proxy kept sockets to the old server), so new
+connections from Windows hung while WSL's own curl answered. Stopping the preview cleared it; the restart recipe now says to
+stop such a proxy first and to test from Windows after a restart.
+
+**Checked live** (read-only headless Edge on 8765, writes refused): the page draws with the user's VCO task, no console
+error, no refused write; Tasks window, Windows menu and the 1366 px strip as the 2026-10-19 live check expects; pictures in
+artifacts/local/reviews/live-2026-10-22.

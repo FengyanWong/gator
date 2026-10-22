@@ -28,6 +28,15 @@ export const LABELS: Record<string, Record<string, string>> = {
 };
 /** A field by its header's word, or by its name where no header has one. */
 export const fieldLabel = (section: string, field: string): string => LABELS[section]?.[field] ?? field;
+/** The column a field is chosen in: the Specs' objective is in the Limit list (LimitSelect). */
+export const columnOf = (section: string, field: string): string => section === 'targets' && field === 'direction_after_feasible' ? 'constraint' : field;
+/** Whether a table draws a column (More columns shows the advanced ones): never a hidden one (schema.HIDDEN_COLUMNS:
+ *  initial_value, result_source, the Unit of Parameters and Specs), nor the Specs' objective (in the Limit list), and "Judged
+ *  at" only while the run plans training corners - without corners every spec is judged at nominal, so the choice would do
+ *  nothing. They keep their values. Here, out of Editors.tsx, since the review of branch record SIF-95: an issue's Where in the
+ *  header's list says by it which cell it chooses. */
+export const drawsColumn = (section: string, column: Json, config: Json): boolean => !column.hidden && (section !== 'targets'
+  || (column.name !== 'direction_after_feasible' && (column.name !== 'nominal_only' || (config?.run?.conditions?.policy ?? 'off') !== 'off')));
 /** The unit of a row of `config` by its table and ID (`keys`: each table's ID field, schema.section_keys), for a table that
  *  writes the row's numbers as its cells do (DiffView, branch record SIF-51); null for a row that is not there. */
 export const unitIn = (config: Json, keys: Record<string, string>) => (section: string, key: string): string | null =>

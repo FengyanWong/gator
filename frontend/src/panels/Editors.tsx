@@ -7,14 +7,14 @@ import { convert, kindUnit, NUMBER_FORMS, quantity, readQuantity, sameQuantity }
 import { MatchedDevices } from './MatchedDevices';
 import { Cell, LimitSelect } from './cells';
 import { DiffView } from './DiffView';
-import { exact, FOLLOWER_IGNORES, LABELS, limitLabel, QUANTITY, readNumber, type Section, SECTION_TITLES as TITLES, suggestedScale, unitIn, withFollowers,
-  withSaved } from './editorRules';
+import { columnOf, drawsColumn, exact, FOLLOWER_IGNORES, LABELS, limitLabel, QUANTITY, readNumber, type Section, SECTION_TITLES as TITLES, suggestedScale,
+  unitIn, withFollowers, withSaved } from './editorRules';
 import { type BarCell, FormulaBar } from './FormulaBar';
 import { keep, readKept } from '../kept';
 import { RELOAD_SAVED_REQUEST } from './taskChoice';
 import { requestSaveAs } from './TaskSave';
 import { plural } from '../format';
-import { GO_TO_ISSUE } from './Issues';
+import { GO_TO_ISSUE, rowOf } from './Issues';
 import { BLOCKING_LEVELS } from '../contract';
 
 const ROW_TABS = Object.keys(TITLES);
@@ -118,10 +118,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       + 'conditions) the reward also pushes it past the limit.' }
     : c.name === 'normalization_scale' ? { ...c, guidance: 'How far outside its limit a value counts as a miss of 1. Empty: as far as the limit itself. dB rows: 6 (a factor of 2), so with a limit of 30 dB, 24 dB is a miss of 1. Smaller = stricter. Pass or fail depends on the limits only.' } : c);
   // Specs shows the objective inside the constraint list (LimitSelect), and "Judged at" only while the run plans training
-  // corners: without corners every spec is judged at nominal, so the choice would do nothing. Both keep their values.
-  const corners = (config.run?.conditions?.policy ?? 'off') !== 'off';
-  // A hidden column (schema.HIDDEN_COLUMNS: initial_value, result_source) is kept in the rows and never shown.
-  const shown = columns.filter(c => !c.hidden && (tab !== 'targets' || (c.name !== 'direction_after_feasible' && (c.name !== 'nominal_only' || corners))));
+  // corners; a hidden column (schema.HIDDEN_COLUMNS) is kept in the rows and never shown (editorRules.ts drawsColumn).
+  const shown = columns.filter(c => drawsColumn(tab, c, config));
   const hidden = shown.filter(c => c.advanced);
   const visible = shown.filter(c => more || !c.advanced);
   const keyField: string = schema.section_keys[tab];
@@ -306,17 +304,18 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const selection = rows.filter(r => selected[r[keyField]] && (!findWords.length || matchesFind(r))).map(r => ({ section: tab, key: r[keyField], fields: [] as string[] }));
   const firstInView = () => (table.current?.querySelector('tbody > tr:not([hidden]) > td[data-field] :is(input, select)') as HTMLElement | null)?.focus();
 
-  // An issue's Where pressed in the header's list (branch record SIF-95): its tab opens, as a tab press opens it, and its row -
-  // found by its ID, as the report's index may name another row since - comes into view with the issue's field chosen, which
-  // fills the formula bar. A Find text that hides the row is cleared, a fold that hides it opened (a row with an error is never
-  // folded away; a report older than the rows may say otherwise). It moves and fills nothing else.
-  const [goTo, setGoTo] = useState<{ section: Section; key: string; field: string | null } | null>(null);
+  // An issue's Where pressed in the header's list (branch record SIF-95): its tab opens, as a tab press opens it, and its row
+  // comes into view with the issue's field chosen, which fills the formula bar. A Find text that hides the row is cleared, a
+  // fold that hides it opened (a row with an error is never folded away; a report older than the rows may say otherwise), and
+  // More columns for a field behind it - for this page, the kept choice stays (review of SIF-95: the row's ID was chosen while
+  // the Where's tooltip named the Scale). It moves and fills nothing else.
+  const [goTo, setGoTo] = useState<{ section: Section; index: number; key: string; field: string | null } | null>(null);
   useEffect(() => {
     const go = (e: Event) => {
-      const { section, key, field } = (e as CustomEvent).detail ?? {};
+      const { section, index, key, field } = (e as CustomEvent).detail ?? {};
       if (!ROW_TABS.includes(section)) return;
       if (section !== tab) { setMatched(0); setSelected({}); setTab(section); }
-      setGoTo({ section, key: String(key ?? ''), field: field ?? null });
+      setGoTo({ section, index: Number(index ?? -1), key: String(key ?? ''), field: field ?? null });
     };
     window.addEventListener(GO_TO_ISSUE, go);
     return () => window.removeEventListener(GO_TO_ISSUE, go);
@@ -325,16 +324,19 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   useEffect(() => {
     if (!goTo) return;
     if (goTo.section !== tab) return setGoTo(null);
-    const index = rows.findIndex(r => String(r[keyField] ?? '') === goTo.key), row = rows[index];
+    // The report's row while it holds the report's ID, as rowIssues tests it: a duplicate ID is reported on its later row, and
+    // the first row with that ID was chosen instead (review of SIF-95). Else the row with that ID, which Delete or Undo moved.
+    const index = String(rows[goTo.index]?.[keyField] ?? '') === goTo.key ? goTo.index : rows.findIndex(r => String(r[keyField] ?? '') === goTo.key), row = rows[index];
     if (row && findWords.length && !matchesFind(row)) return setFind(f => ({ ...f, [tab]: '' }));   // the next render goes on
     const leader = row ? leaderOf(row) : null;
     if (row && leader && !findWords.length && foldedAway(row, index)) return setOpenTies(o => ({ ...o, [leader]: true }));
+    const name = columnOf(tab, goTo.field ?? keyField);
+    if (row && !more && hidden.some(c => c.name === name)) return setMore(true);
     setGoTo(null);
     if (!row) return;                                      // gone since the report (Delete, Undo): the tab is shown
-    const name = tab === 'targets' && goTo.field === 'direction_after_feasible' ? 'constraint' : goTo.field ?? keyField;   // the objective is in the Limit list
     requestAnimationFrame(() => {
       const tr = table.current?.querySelector<HTMLElement>(`tbody > tr[data-index="${index}"]`);
-      // a column behind More columns, or a field no column shows: the row's ID
+      // a field no column shows (a Unit of Parameters or Specs, Judged at without corners): the row's ID, as the Where says
       const cell = tr?.querySelector<HTMLElement>(`td[data-field="${CSS.escape(name)}"]`) ?? tr?.querySelector<HTMLElement>(`td[data-field="${CSS.escape(keyField)}"]`);
       if (!cell) return;
       cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -342,7 +344,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       // a follower's greyed field takes no focus: the formula bar still names it and says why
       if (box) box.focus(); else setActive({ index, name: cell.dataset.field ?? name, key: goTo.key });
     });
-  }, [goTo, tab, rows, find, openTies]);
+  }, [goTo, tab, rows, find, openTies, more]);
 
   // Keys as in a spreadsheet (record 7.180, design advice 6): Up and Down go to the same column of the row above or below (folded
   // rows are passed over), Enter to the row below and Shift+Enter above. A list keeps its own keys; the tick box column is left be.
@@ -563,8 +565,15 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // from an attribute, so the tab's words stay its name and row count; its tooltip gives the first issue after the not-saved line.
   const blockingIn = (s: Section): Json[] => (validation?.issues ?? []).filter((i: Json) => { const path = String(i.path ?? '');
     return BLOCKING_LEVELS.includes(i.level) && (path === s || path.startsWith(`${s}[`) || path.startsWith(`${s}.`)); });   // never another table's key
-  const blockingTitle = (found: Json[]): string | null => !found.length ? null : `${plural(found.length, 'blocking issue')}${found.length > 1 ? ', the first' : ''}: `
-    + `${issueHead(found[0].message)}. The red button in the header lists ${found.length > 1 ? "them: each one's Where goes to its row" : 'it: its Where goes to the row'}.`;
+  // Only an issue in a row has a Where that goes there (review of SIF-95): one of the table itself (nothing_to_optimize,
+  // binding_graph, no_hard_constraint, task_not_saved: path "parameters") or of a row without an ID is listed as text.
+  const blockingTitle = (found: Json[]): string | null => {
+    if (!found.length) return null;
+    const going = found.filter((i: Json) => rowOf(String(i.path ?? ''), validation?.sent ?? config, schema)).length;
+    return `${plural(found.length, 'blocking issue')}${found.length > 1 ? ', the first' : ''}: ${issueHead(found[0].message)}. The red button in the header lists `
+      + (found.length === 1 ? `it${going ? ': its Where goes to the row' : ''}.`
+        : `them${going === found.length ? ": each one's Where goes to its row" : going ? ': a Where that names a row goes to it' : ''}.`);
+  };
   // "not saved" opens what differs, table by table, with Reload saved values and Save as (record 7.372): the tabs' dots said
   // it in their tooltips only.
   const [changesOpen, setChangesOpen] = useState(false);

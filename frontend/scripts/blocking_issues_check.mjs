@@ -204,6 +204,67 @@ await runChecks(browser, async () => {
     await evaluate(`${WHERE}`));
   await shot('issues-4b-go-to.png');
 
+  // ---- review of SIF-95: a tab's tooltip promises a go-to only for an issue in a row (one of the table itself, path "parameters",
+  // has none); a Where's tooltip names the cell it chooses - the row's ID for a Unit no column shows, the Scale behind More
+  // columns, which the press shows for this page; a duplicate ID goes to the row the report names, not the first with that ID.
+  const tableIssue = (code, table, message) => ({ level: 'error', code, path: table, message });
+  fixtures.tables = report([tableIssue('nothing_to_optimize', 'parameters', 'FIXTURE at least one optimized variable is required.'),
+    specIssue('target_unit_mismatch', 'unit', 'FIXTURE the unit is not the probe\'s.'),
+    { ...specIssue('scale_needed_for_zero_limit', 'normalization_scale', 'FIXTURE a limit of 0 needs a Scale.'), level: 'blocker' },
+    tableIssue('no_hard_constraint', 'targets', 'FIXTURE at least one hard spec is required.')]);
+  await revalidate(fixtures.tables);
+  const goTitles = () => evaluate(`[...${LIST}.querySelectorAll('tbody tr')].map(tr => tr.cells[3].querySelector('button.issue-go')?.title ?? null)`);
+  const [tableParams, tableSpecs] = [await tabMark('parameters'), await tabMark('targets')];
+  check('a tab whose one issue is the table\'s own says the list holds it, and no go-to; its Where is text',
+    tableParams.count === '1' && tableParams.title === '1 blocking issue: FIXTURE at least one optimized variable is required. The red button in the header lists it.'
+    && (await goes())[0] === null, JSON.stringify([tableParams.title, await goes()]));
+  check('a tab with issues in rows and of its own says a Where that names a row goes to it',
+    tableSpecs.count === '3' && tableSpecs.title === '3 blocking issues, the first: FIXTURE the unit is not the probe\'s. The red button in the header lists them: a Where that names a row goes to it.',
+    tableSpecs.title);
+  const MORE = `[...document.querySelectorAll('section.editors .toolbar button.text')].find(b => /^(More|Fewer) columns/.test(b.textContent))`;
+  const activeIn = (index, field) => `(() => { const td = document.querySelector('section.editors table.editor td.active-cell');
+    return td?.dataset.field === '${field}' && td.closest('tr')?.dataset.index === '${index}'; })()`;
+  check('a Where\'s tooltip names the cell it chooses: the Spec ID for the Unit no column shows, the Scale behind More columns',
+    JSON.stringify(await goTitles()) === JSON.stringify([null, `Go to ${SPEC_KEY}: Specs opens with its Spec ID chosen, as no column shows its Unit. The list stays open.`,
+      `Go to ${SPEC_KEY}: Specs opens with its Scale chosen, More columns shown. The list stays open.`, null]), JSON.stringify(await goTitles()));
+  check('(More columns is folded)', (await evaluate(`${MORE}?.textContent ?? ''`)).startsWith('More columns'));
+  await evaluate(`[...${LIST}.querySelectorAll('button.issue-go')][0].click()`);
+  check('the Unit issue\'s Where chooses the Spec ID, as its tooltip says, More columns left folded',
+    await until(`${EDITOR_TAB('targets')}.classList.contains('active') && ${activeIn(0, 'metric_id')} && ${WHERE} === ${JSON.stringify(`Spec ID · ${SPEC_KEY}`)}`, 30)
+      && (await evaluate(`${MORE}.textContent`)).startsWith('More columns'), await evaluate(`${WHERE}`));
+  await evaluate(`[...${LIST}.querySelectorAll('button.issue-go')][1].click()`);
+  check('the Scale issue\'s Where shows More columns and chooses the Scale; the kept More columns choice is not changed',
+    await until(`${activeIn(0, 'normalization_scale')} && ${WHERE} === ${JSON.stringify(`Scale · ${SPEC_KEY}`)} && ${MORE}.textContent === 'Fewer columns'`, 30)
+      && (await evaluate(`(() => { try { return localStorage.getItem('gator-workbench-editor-more-columns'); } catch { return 'unreadable'; } })()`)) === null,
+    JSON.stringify(await evaluate(`({ where: ${WHERE}, more: ${MORE}.textContent })`)));
+  await shot('issues-4c-scale.png');
+  await evaluate(`${MORE}.click()`);
+  check('(Fewer columns folds them again)', await until(`${MORE}.textContent.startsWith('More columns')`, 30));
+  // A duplicate ID typed into the last Parameters row: the report names that row, as validation.py reports a duplicate on its later row.
+  const DUP = CONFIG.parameters.length - 1, DUP_KEY = CONFIG.parameters[DUP].variable_id;
+  const ID_BOX = `document.querySelector('section.editors table.editor tbody tr[data-index="${DUP}"] td[data-field="variable_id"] input')`;
+  fixtures.duplicate = report([{ level: 'error', code: 'duplicate_variable_id', path: `parameters[${DUP}]`, message: `FIXTURE Duplicate variable_id '${ROW_KEY}'` },
+    { level: 'error', code: 'range_inverted', path: `parameters[${DUP}].lower`, message: 'FIXTURE the lower bound is above the upper bound' }]);
+  const typeId = async (value, fixture) => {
+    answerWith = fixture; const before = validations;
+    await page.setValue(ID_BOX, value, { event: 'input' });
+    for (let i = 0; i < 60 && validations === before; i++) await sleep(100);
+    await sleep(300);
+  };
+  await evaluate(`${EDITOR_TAB('parameters')}.click()`); await until(`${EDITOR_TAB('parameters')}.classList.contains('active')`, 30);
+  await typeId(ROW_KEY, fixtures.duplicate);
+  check('(the last row now repeats the first row\'s ID, and the list names it)', JSON.stringify(await goes()) === JSON.stringify([`parameters[${DUP}] row ${ROW_KEY}`,
+    `parameters[${DUP}].lower row ${ROW_KEY}`]), JSON.stringify(await goes()));
+  await evaluate(`[...${LIST}.querySelectorAll('button.issue-go')][0].click()`);
+  check('a duplicate ID\'s Where goes to the row the report names, not the first row with that ID',
+    await until(`${activeIn(DUP, 'variable_id')} && ${WHERE} === ${JSON.stringify(`ID · ${ROW_KEY}`)}`, 30),
+    JSON.stringify(await evaluate(`({ where: ${WHERE}, row: document.querySelector('section.editors td.active-cell')?.closest('tr')?.dataset.index })`)));
+  await evaluate(`[...${LIST}.querySelectorAll('button.issue-go')][1].click()`);
+  check('... and another issue of that row goes to its own Lower', await until(activeIn(DUP, 'lower'), 30),
+    JSON.stringify(await evaluate(`({ where: ${WHERE}, row: document.querySelector('section.editors td.active-cell')?.closest('tr')?.dataset.index })`)));
+  await typeId(DUP_KEY, fixtures.elsewhere);
+  check('(the last row has its own ID again)', (await evaluate(`${ID_BOX}.value`)) === DUP_KEY);
+
   // ---- a configuration the schema rejects: one issue per field, at its row, in plain words (status record 7.56) ------------
   // Before, the page listed ONE issue "(whole configuration)" holding pydantic's list as JSON (user report 2026-09-21).
   await revalidate(fixtures.rejected);

@@ -2684,3 +2684,32 @@ Where goes back to its row's Lower. The new checks fail on the code before the c
 `task_rows_check` 54, `sheet_check` 45, `find_fill_copy_check` 30, `spec_equations_check` 36, `looks_check` 75,
 `unsaved_rows_check` 25, `editor_columns_check` 23, `formula_bar_check` 21, `matched_devices_check` 37 (10 scripts, 395
 checks, one lane). No flakes.
+
+**Review follow-up.** The review of 719e3c5 found three slips, all real. (1) A tab's tooltip promised "its Where goes to
+the row" for every blocking issue it counted, but the tab also counts the table's own issues: `nothing_to_optimize`,
+`binding_graph`, `multiple_preferences`, `no_hard_constraint` and `task_not_saved` sit on the bare path "parameters" or
+"targets". Their Where is text, and so is the Where of a row with an empty ID. An empty Parameters table read "1 blocking
+issue: At least one optimized variable is required. The red button in the header lists it: its Where goes to the row",
+with no row and no button. `Editors.tsx` now counts the issues `rowOf` (now exported from `Issues.tsx`) finds a row for.
+With none it says "lists it." or "lists them." alone, and with some "a Where that names a row goes to it". (2) The
+Where's tooltip named the issue's field, but a field with no column in view chose the row's ID. That covers the Unit of
+Parameters and Specs (hidden since 7.208, the place of `unit_mismatch`, `target_unit_mismatch`, `unknown_unit`,
+`binding_unit_mismatch` and `parameter_unit_not_variable`), Initial value, and Judged at without corners. It also covered
+a column behind More columns, such as the Scale of the blocker `scale_needed_for_zero_limit`. A press on a field behind More
+columns now shows them, for this page only, so the field the tooltip names is chosen. The kept choice is not changed,
+just as a cleared Find text is not. For a field no column shows, the tooltip names the cell that is chosen: "Specs opens
+with its Spec ID chosen, as no column shows its Unit." The rule for which columns a table draws moved to `editorRules.ts`
+(`drawsColumn`, `columnOf`), so the tooltip and the table read the same rule. `docs/workbench.md` and
+`docs/functionality-reference.md` no longer over-claim. (3) The press found its row by ID alone, so a duplicate ID went
+to the first row with that ID. `validation.py` reports `duplicate_variable_id`, `duplicate_measurement_id` and
+`duplicate_metric_id` on the later row, so the press went to the wrong row, and so did any other issue of that row.
+`GO_TO_ISSUE` now carries the report's index too. The press uses that row while it holds the report's ID (the test
+`rowIssues` makes), and finds the row by ID only otherwise. Nothing is saved, run, validated anew or written to Virtuoso
+by a press. `tsc` clean. `blocking_issues_check` 60 (49 before): a tab whose one issue is the table's own says "lists it."
+and its Where is text; a tab with both kinds says a Where that names a row goes to it; the Unit issue's tooltip names the
+Spec ID, which is chosen with More columns left folded; the Scale issue's tooltip names the Scale, and its press shows
+More columns and chooses it, the kept choice unchanged; with the last Parameters row's ID typed as the first's, the
+duplicate's Where and its Lower issue go to the last row. 7 of the new checks fail on the code before the fix. Also run,
+unchanged: `editor_columns_check` 23, `task_rows_check` 54, `typing_check` 50, `sheet_check` 45, `find_fill_copy_check`
+30, `spec_equations_check` 36, `looks_check` 75, `unsaved_rows_check` 25, `reward_block_check` 33, `formula_bar_check` 21,
+`matched_devices_check` 37, `callouts_check` 8 (13 scripts, 497 checks, one lane). No flakes.

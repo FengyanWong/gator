@@ -2541,3 +2541,42 @@ Save as is off. Cancel sends nothing, takes the row and its message away, and tu
 nothing and leave the question. "1.2G" and Enter send 1.2e9 Hz, never as_new. Four prompts in all
 (`ota5_v1_2`, `refuse_me`, `ota5_v1`, `ota5_v1`). `task_save_check` 76, `project_help_check` 50,
 `ngspice_window_check` 43, `calibration_save_check` 22, `unsaved_rows_check` 25. No flakes.
+
+### SIF-93 The task file says when the editors changed and what Apply holds back (2026-10-22; from the usability audit)
+
+**Found.** The Task file window is a snapshot of the editors' rows when it was read. Its hint invites changes "here or
+in the editors", but an edit made in the editors after that was replaced without a word by the next **Apply to editors**,
+which put back the file's older rows (audit findings J2-8, J6-11; a second Task file press only brings the window
+forward, as SIF-87 keeps it). The file's other parts (Maestro analyses, variables, initial conditions, bindings, the rough
+frequency, notes) wait in the page for the next save. Nothing showed they were waiting. Undo did not take them back, and
+a reload or another task dropped them silently. The message "Applied: the editors now hold these rows ... Undo takes them
+back" read as if the whole file were in the editors (J1-10, J6-12).
+
+**Changed.** `frontend/src/panels/TaskSave.tsx` keeps the editors' rows the file was read from. After an Apply, it takes
+them from the rows that Apply left, in a layout effect, so rows the backend writes out its own way are no change and
+nothing flashes. While the editors differ, it tells the window. A new read (`readFile`) serves both Task file and
+**Read again from the editors**. It also keeps `pending`, the parts beside the rows that applied files changed. They are
+counted from the first file read since the last save, because the backend returns every part on every Apply. A line
+under the toolbar names them: "From the task file, not saved yet: Maestro analyses, notes. Save as stores them; a reload
+or another task drops them." A successful save clears the line, unless a file applied during the save added more, and so
+does another task or cell. `frontend/src/panels/TaskFile.tsx` adds `otherPartsChanged`, which compares those parts of two
+files with keys in one order. While the editors changed, the window shows "The editors changed since this file was read:
+Apply replaces those changes too (Undo in the editors takes it back)." with a **Read again from the editors** button. That
+button reads the file of the editors as they are now and drops the draft. If changes typed in the window are not applied,
+it first asks there: "Read again from the editors? Your changes to this file are dropped." Apply then takes two presses:
+the first only turns it into **Apply anyway**, with a tooltip saying what it replaces. "Applied" now says: "the editors
+now hold its rows, and Save as will send its other parts. Undo takes back the rows only." Nothing is saved, run or
+written to Virtuoso by any of this. `docs/workbench.md` (the task file) and `docs/functionality-reference.md` (Task file)
+say so. Not done: keeping the waiting parts across a reload, or making Undo take them back (the audit's larger fix: a
+schema field or browser storage). Also not done: counting them in the not-saved summary and the switch-task question.
+The line and the Applied message now say what happens to them.
+
+**Checked.** `tsc` clean. `task_save_check` 87 (76 before). The Applied message has the new words. After the Apply,
+the window has no "editors changed" line, and the toolbar line names "Maestro analyses, notes". The editors' Undo brings
+the line (photographed, `task-file-editors-changed.png`). The first Apply press sends nothing, changes nothing and reads
+"Apply anyway". **Read again from the editors** with nothing typed since the Apply asks nothing. It sends one read with
+the editors' rows (1.1e9 Hz), and the line goes. With a draft typed and the editors' Redo, it asks in the file window;
+Cancel reads nothing and keeps the draft. Apply's first press sends nothing, and **Apply anyway** applies (upper 1.7 in
+the editors, the line gone). The waiting parts stay named, every question of the window was planned, and the save sends
+them and takes the toolbar line away. `virtuoso_source_check` 104, `project_help_check` 50, `working_copy_check` 34,
+`calibration_save_check` 22, `unsaved_rows_check` 25. No flakes.

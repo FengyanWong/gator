@@ -13,6 +13,10 @@
 // Save as and Task file end it, and Check now stands there too - nothing of the task's in the circuit column.
 // Branch record SIF-87: closing the task file's window (Close or its X) keeps a draft not applied; the next press reads the
 // file again, lays the draft over it and says so, and Revert drops it.
+// Branch record SIF-93: the file is a snapshot of the editors' rows. Changed in the editors since (their Undo, Redo), the
+// window says an Apply replaces that, Apply takes two presses ("Apply anyway"), and "Read again from the editors" reads the
+// file anew, asking first in the window about a draft not applied. The parts beside the rows that an Apply changed are
+// named under the toolbar until a save sends them; the Applied message says Undo takes back the rows only.
 // Record 7.203 (user: "yes build it", for rows older than the saved task):
 //   - Save task sends which saved revision the rows came from: none before the page knows, then the revision of the
 //     last save or of the rows Reload saved values brought; the check while editing gets it too;
@@ -222,7 +226,65 @@ await runChecks(browser, async () => {
   let config = await stored();
   for (let i = 0; i < 30 && config.targets[0].lower !== 1.25e9; i++) { await sleep(100); config = await stored(); }   // the page stores a moment later
   check('"Apply to editors" checks the file and fills the editors', calls.at(-1).op === 'task/file/check' && config.targets[0].lower === 1.25e9, JSON.stringify(config.targets));
-  check('the window says what happened and that nothing is saved yet', (await popupEval(`return d.querySelector('.task-file').textContent`)).includes('Press "Save as" to store them'));
+  check('the window says what happened: the rows in the editors, the other parts sent with Save as, Undo taking back the rows only (SIF-93)',
+    (await popupEval(`return d.querySelector('.task-file').textContent`)).includes('Applied: the editors now hold its rows, and Save as will send its other parts. Undo takes back the rows only.'));
+
+  // branch record SIF-93: the file is a snapshot of the editors' rows; the parts beside the rows wait for the next save.
+  const PENDING_LINE = 'From the task file, not saved yet: Maestro analyses, notes. Save as stores them; a reload or another task drops them.';
+  const pendingText = () => evaluate(`${NOTES}?.querySelector('.task-file-pending')?.textContent ?? null`);
+  const TOOL = text => `[...document.querySelectorAll('.editors .toolbar button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  const FILE_BUTTON = text => `[...document.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+  const CHANGED = `document.querySelector('.task-file .editors-changed')`;
+  const fileState = () => fileWindow.evaluate(`({ changed: ${CHANGED}?.textContent ?? null, apply: document.querySelector('.task-file .row button.primary')?.textContent.trim(),
+    text: document.querySelector('.task-file textarea')?.value ?? '' })`);
+  const short = state => JSON.stringify({ ...state, text: state.text.slice(0, 40) });
+  const fileDialogs = [], fileAnswers = [];                                   // questions the file window asks, in that window
+  await fileWindow.send('Page.enable');
+  fileWindow.on('Page.javascriptDialogOpening', p => {
+    const accept = fileAnswers.length ? fileAnswers.shift() : null;
+    fileDialogs.push({ message: p.message, planned: accept !== null });
+    return fileWindow.send('Page.handleJavaScriptDialog', { accept: !!accept });
+  });
+  let state = await fileState();
+  check('applied, the file holds the editors\' rows again: no "editors changed" line, Apply as it was (SIF-93)',
+    state.changed === null && state.apply === 'Apply to editors', short(state));
+  check('the parts beside the rows that the Apply changed are named under the toolbar, as not saved yet (SIF-93)', (await pendingText()) === PENDING_LINE, await notesText());
+  await evaluate(`${TOOL('Undo')}.click()`);
+  for (let i = 0; i < 30 && (await stored()).targets[0].lower !== 1.1e9; i++) await sleep(100);   // the page stores a moment later
+  const CHANGED_SAYS = 'The editors changed since this file was read: Apply replaces those changes too (Undo in the editors takes it back).';
+  check('changed in the editors since (their Undo), the window says an Apply replaces that and offers to read the file again (SIF-93)',
+    await fileWindow.until(`!!${CHANGED}`, 30) && (state = await fileState()).changed.startsWith(CHANGED_SAYS) && state.changed.includes('Read again from the editors'), short(state));
+  await fileWindow.shot(path.join(out, 'task-file-editors-changed.png'), `document.querySelector('.task-file')`);
+  let fileMark = calls.length;
+  await fileWindow.evaluate(`${FILE_BUTTON('Apply to editors')}.click()`); await sleep(300);
+  state = await fileState(); config = await stored();
+  check('then the first press on Apply sends nothing and changes nothing: it turns into "Apply anyway" (SIF-93)', state.apply === 'Apply anyway' && calls.length === fileMark
+    && config.targets[0].lower === 1.1e9, `${short(state)} ${config.targets[0].lower}`);
+  await fileWindow.evaluate(`${FILE_BUTTON('Read again from the editors')}.click()`); await settle(1500);
+  state = await fileState();
+  check('"Read again from the editors" with nothing typed since the Apply asks nothing: the file of the editors now, the line gone, Apply as it was (SIF-93)',
+    calls.slice(fileMark).map(c => c.op).join() === 'task/file' && calls.at(-1).config?.targets?.[0]?.lower === 1.1e9 && fileDialogs.length === 0
+    && state.text.includes('"lower": 1100000000') && state.changed === null && state.apply === 'Apply to editors', short(state));
+  const wider = JSON.parse(JSON.stringify(edited)); wider.parameters[0].upper = 1.7;
+  await typeInto(`${POPUP}.document.querySelector('.task-file textarea')`, JSON.stringify(wider, null, 2));
+  await evaluate(`${TOOL('Redo')}.click()`);
+  await fileWindow.until(`!!${CHANGED}`, 30);
+  fileMark = calls.length; fileAnswers.push(false);
+  await fileWindow.evaluate(`${FILE_BUTTON('Read again from the editors')}.click()`); await sleep(400);
+  state = await fileState();
+  check('with a draft not applied, it asks first, in the file window; Cancel reads nothing and keeps the draft (SIF-93)',
+    fileDialogs.at(-1)?.message === 'Read again from the editors? Your changes to this file are dropped.' && fileDialogs.at(-1)?.planned && calls.length === fileMark
+    && state.text === JSON.stringify(wider, null, 2) && state.changed !== null, `${JSON.stringify(fileDialogs)} ${short(state)}`);
+  await fileWindow.evaluate(`${FILE_BUTTON('Apply to editors')}.click()`); await sleep(300);
+  check('Apply over the editors\' Redo: the first press sends nothing (SIF-93)', calls.length === fileMark && (await fileState()).apply === 'Apply anyway');
+  await fileWindow.evaluate(`${FILE_BUTTON('Apply anyway')}.click()`); await settle();
+  config = await stored();
+  for (let i = 0; i < 30 && config.parameters[0].upper !== 1.7; i++) { await sleep(100); config = await stored(); }
+  state = await fileState();
+  check('"Apply anyway" applies: the editors hold the file\'s rows, the line goes, Apply as it was (SIF-93)', calls.at(-1).op === 'task/file/check'
+    && config.parameters[0].upper === 1.7 && config.targets[0].lower === 1.25e9 && state.changed === null && state.apply === 'Apply to editors', short(state));
+  check('the parts waiting are still the file\'s analyses and notes (SIF-93)', (await pendingText()) === PENDING_LINE, await notesText());
+  check('every question of the file window was planned (SIF-93)', fileDialogs.every(d => d.planned) && !fileAnswers.length, JSON.stringify(fileDialogs));
   edited.probes[0].analysis = 'sometimes';
   await typeInto(`${POPUP}.document.querySelector('.task-file textarea')`, JSON.stringify(edited, null, 2));
   await popupEval(`[...d.querySelectorAll('.task-file button')].find(b => b.textContent.trim() === 'Apply to editors').click()`); await settle();
@@ -276,6 +338,7 @@ await runChecks(browser, async () => {
   check('Save task sends the rows, the open task and what the file added', !!saveCall && saveCall.task === 'ring_osc' && saveCall.name === 'ring_osc' && !saveCall.as_new
     && saveCall.extras?.analyses?.tran?.stop === '40n' && saveCall.config?.targets?.[0]?.lower === 1.25e9, JSON.stringify(saveCall ?? calls.slice(mark)));
   check('it reports the revision and that the baseline no longer holds, under the toolbar', (await notesText()).includes('Saved real:ring_osc, revision 2.') && (await notesText()).includes('no longer holds'), await notesText());
+  check('sent, the file\'s other parts no longer wait: the line naming them goes (SIF-93)', (await pendingText()) === null, await notesText());
   await sleep(500);
   check('the open task shows its new revision', (await headText()).includes('rev. 2'), await headText());
 

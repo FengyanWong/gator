@@ -3403,7 +3403,13 @@ press tries again; a window already open is brought forward with its draft). The
 over the text, **What each part is** (open; each part's name in bold, its lines hanging in under it), and the text without
 that part, every number as the backend wrote it (branch record SIF-81); **Apply to editors** checks every row with the editors' schema
 and fills the editors (one Undo step) - a broken file is refused with its problems and changes nothing. What the file
-adds beside the rows (analyses, variables, bindings, the rough frequency, notes) is sent with the next save.
+adds beside the rows (analyses, variables, bindings, the rough frequency, notes) is sent with the next save; "Applied"
+says so, and that Undo takes back the rows only. Until a save sends them, a line under the toolbar names the parts an
+Apply changed: "From the task file, not saved yet: Maestro analyses, notes. Save as stores them; a reload or another task
+drops them." (branch record SIF-93). The file is the editors' rows of the moment it was read: when they change in the
+editors after that, the window says "The editors changed since this file was read: Apply replaces those changes too",
+**Apply to editors** takes two presses (the first turns it into **Apply anyway**), and **Read again from the editors**
+reads the file of the editors as they are now - asking first, in the window, when changes typed there are not applied.
 Nothing is saved or written to Virtuoso from the window. A close - its Close, the window's X, the banner's **Close all** -
 keeps a draft not applied (branch record SIF-87; it used to go with no question): the next **Task file** press reads the
 file again and lays the draft over it, with the line "Your changes from before are kept, not applied yet. Revert drops

@@ -1,9 +1,9 @@
 import { noteRowsFrom, noteTaskSaved, rowsFrom, useAsyncAction, useRequest } from '../store';
 import { Icon } from './Icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, gateText, Json, problemText } from '../api';
-import { FileDraft, TaskFileWindow, unapplied } from './TaskFile';
+import { FileDraft, otherPartsChanged, TaskFileWindow, unapplied } from './TaskFile';
 import { usePopupWindow } from './popupWindow';
 
 /** "Save as" prompts for a numbered new name (record 7.246), or the name of a save refused (branch record SIF-92). An
@@ -40,6 +40,8 @@ const numberedName = (original: string, used: Set<string>) => {
   }
 };
 type SaveChoice = { name: string; asNew: boolean };
+/** The editors' three tables as one text: what a task file was read from (branch record SIF-93). */
+const rowsKey = (c: Json) => JSON.stringify([c.parameters, c.measurements, c.targets]);
 /** "Apply and save" (record 7.217): another part of the page asks the open task's Save task to run, as a press on it would.
  *  The save is sent in the render after the request, so a change made in the same click is in it. The answer comes at
  *  once: whether Save task took it, or why not (another task, no Save task on the page, a save already running). */
@@ -97,8 +99,17 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
   // keeps a draft not applied for the next "Task file" press, which reads the file again and lays the draft over it.
   const [fileDraft, setFileDraft] = useState<FileDraft | null>(null);
   const closedFile = () => { setFile(null); setFileDraft(d => (unapplied(d) ? { ...d, kept: true } : null)); };
-  const latest = useRef({ config, profileId, library, cell, task });
-  latest.current = { config, profileId, library, cell, task };
+  // Branch record SIF-93. The file is a snapshot: `fileRows`, the editors' rows it was read from (or that its last Apply
+  // left, taken after that render, so that rows the backend writes out its own way are no change); while the editors
+  // differ, the window says an Apply replaces those changes. `pending`: the parts beside the rows that applied files
+  // changed since the last save, counted from the first file read since (`fileBase`) - they wait here, unseen, and a
+  // reload or another task drops them, so a line under the toolbar names them until a save sends them.
+  const [fileRows, setFileRows] = useState<string | null>(null);
+  const [applied, setApplied] = useState(0);
+  const [pending, setPending] = useState<string[]>([]);
+  const fileBase = useRef<string | null>(null);
+  const latest = useRef({ config, profileId, library, cell, task, pending });
+  latest.current = { config, profileId, library, cell, task, pending };
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [asked, setAsked] = useState(0);                                      // saves asked for by "Apply and save" (record 7.217)
@@ -109,7 +120,9 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     rootId: 'task-file-root', rootClass: 'task-file-window', onClose: closedFile, closeOnUnmount: true });
   // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go,
   // with what was typed in that file.
-  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setChoice(null); setFrequency(''); setFile(null); setFileDraft(null); fileWindow.popup?.close(); }, [task, library, cell]);
+  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setChoice(null); setFrequency(''); setFile(null); setFileDraft(null); fileWindow.popup?.close();
+    setPending([]); fileBase.current = null; setFileRows(null); }, [task, library, cell]);
+  useLayoutEffect(() => { if (applied) setFileRows(rowsKey(latest.current.config)); }, [applied]);   // before paint: no flash of "changed"
 
   // The save running in the backend, read when Save task appears and then every second while one runs (`own`: this
   // page's press is on its way; `followed`: a save the page did not send, asked about until an answer says it ended -
@@ -166,6 +179,8 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     if (!stillHere()) return;
     noteRowsFrom(made.task_key, made.revision);
     setExtras((current: Json) => current === extras ? sent : current); setAskFrequency(false);
+    // Sent: the file's other parts no longer wait (branch record SIF-93) - unless a file applied during the save added more.
+    if (latest.current.pending === pending) { setPending([]); fileBase.current = null; }
     const edited = ['parameters', 'measurements', 'targets'].some(key => latest.current.config[key] !== config[key]);
     setMessage({ level: made.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `${savedText(made)}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
     onSaved(made, config);
@@ -224,16 +239,33 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     const opened = fileWindow.open();
     if (!opened) { setMessage({ level: 'error', text: 'The browser blocked the task file window. Allow pop-ups for this page, then press "Task file" again.' }); return; }
     setFile({ text: null, title: 'Task file' });
-    try {
-      const answer = await api.taskFile({ config, library, cell, task, extras });
-      const title = task ? `Task file of ${task}${answer.revision ? ` (revision ${answer.revision})` : ''}` : `Task file of ${cell} (not saved yet)`;
-      opened.document.title = `GATOR - ${title}`;
-      setFile({ text: answer.text, title });
-    } catch (e: any) { setFile(null); opened.close(); report(e); }
+    try { await readFile(opened); } catch (e: any) { setFile(null); opened.close(); report(e); }
   };
-  const applyFile = (rows: Json, more: Json) => {
+  // The file of the editors as they are now, into the window (`owner`): its title, its text and the rows it was read from.
+  const readFile = async (owner: Window) => {
+    const sent = config;
+    const answer = await api.taskFile({ config: sent, library, cell, task, extras });
+    if (owner.closed || !mounted.current) return false;           // closed meanwhile - another task or cell closes it too
+    const title = task ? `Task file of ${task}${answer.revision ? ` (revision ${answer.revision})` : ''}` : `Task file of ${cell} (not saved yet)`;
+    owner.document.title = `GATOR - ${title}`;
+    setFile({ text: answer.text, title });
+    setFileRows(rowsKey(sent));
+    if (fileBase.current === null) fileBase.current = answer.text;
+    return true;
+  };
+  // "Read again from the editors" in the window (branch record SIF-93; it asked about a draft not applied): the draft goes.
+  // A read that fails keeps the file and the draft, and the window says why.
+  const rereadFile = async () => {
+    const owner = fileWindow.popup;
+    if (owner && !owner.closed && await readFile(owner)) setFileDraft(null);
+  };
+  const applyFile = (rows: Json, more: Json, text: string) => {
     setConfig(c => ({ ...c, parameters: rows.parameters ?? c.parameters, measurements: rows.measurements ?? c.measurements, targets: rows.targets ?? c.targets }), true);
     setExtras((x: Json) => ({ ...x, ...more }));
+    const base = fileBase.current ?? file?.text ?? text;
+    fileBase.current = base;
+    setPending(otherPartsChanged(base, text));
+    setApplied(n => n + 1);
   };
   const frequencyValue = parseFrequency(frequency);
   const canSave = !!profileId && (task ? true : hasCopy) && !busy && !running;
@@ -245,7 +277,8 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     : busy ? 'a save is under way' : !profileId ? 'no connection is chosen' : askFrequency ? 'the save waits for the rough frequency' : '' };
   const progress = running ? progressOf(running) : busy === 'save' ? { value: 0, max: 1, text: `Saving real:${taskName} - starting` } : null;
   const waits = running && busy !== 'save' ? `Waits for the save of ${running.task_key} that is running. ` : '';
-  const said = askFrequency || message || progress || newer;
+  const said = askFrequency || message || progress || newer || pending.length > 0;
+  const editorsChanged = !!file?.text && fileRows !== null && rowsKey(config) !== fileRows;
   return (<>
     {bar && createPortal(
       <div className="task-save">
@@ -278,9 +311,10 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
             <button disabled={!canSave} onClick={() => save({}, true)}
               title="Save anyway: Stores the rows here as the next revision, replacing what was saved since.">Save anyway</button>
           </div></div>}
+        {pending.length > 0 && <p className="warn task-file-pending">From the task file, not saved yet: {pending.join(', ')}. Save as stores them; a reload or another task drops them.</p>}
         {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'warn' ? 'warn' : 'error'}>{message.text}</p>}
       </div>, notes)}
-    {file && <TaskFileWindow root={fileWindow.root} text={file.text} title={file.title} draft={fileDraft} setDraft={setFileDraft} onApply={applyFile}
-      onClose={() => { closedFile(); fileWindow.popup?.close(); }} />}
+    {file && <TaskFileWindow root={fileWindow.root} text={file.text} title={file.title} draft={fileDraft} setDraft={setFileDraft}
+      editorsChanged={editorsChanged} onReread={rereadFile} onApply={applyFile} onClose={() => { closedFile(); fileWindow.popup?.close(); }} />}
   </>);
 }

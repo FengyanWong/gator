@@ -121,8 +121,10 @@ started with." - branch record SIF-72). Run configuration's model line and this 
   and on a real circuit a Spectre job already running on the server is not stopped and the schematic can be left
   with the sizes that were being tried. It is for a run that is stuck. It ends the run as `cancelled`, which neither
   Resume nor Continue... takes up, and its question says what that gives up (branch record SIF-83): pressed while a
-  pause waits, it replaces the pause ("To keep it resumable, wait for the pause", also in its tooltip); after an Abort,
-  the run ends cancelled instead of stopped. A candidate handed out just before a pause or
+  pause waits, it replaces the pause (its tooltip says so too), and the question adds "To keep it resumable, wait for
+  the pause"; after an Abort, the run ends cancelled instead of stopped. On a run that could not come back anyway (one
+  Pause warns about, whoever paused it), the question says only that it ends cancelled instead of paused or stopped,
+  and why it cannot come back either way. A candidate handed out just before a pause or
   an abort, and stopped by it before its first simulation, is recorded the same way: cancelled, charged, nothing
   simulated, not counted as a failure of the link.
 * **Let go** on a paused run deletes nothing and sends nothing: the header lets go of the run and returns to Start.

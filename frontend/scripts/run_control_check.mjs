@@ -17,7 +17,8 @@
 // stays beside its action; the backend's continuation check says why Continue cannot go on before the press, with its
 // alternative as a button; a run taken over, or a task's baseline, names the paused run the header lets go of.
 // Branch record SIF-83: Pause asks first on a run searched by Bayesian optimization (it cannot come back), and Force abort
-// says what it gives up: a waiting pause (no Resume or Continue... after it), or an abort's "stopped" end.
+// says what it gives up: a waiting pause (no Resume or Continue... after it), or an abort's "stopped" end; on a run that
+// cannot come back anyway it advises no waiting (review of SIF-83).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -444,8 +445,21 @@ await runChecks(browser, async () => {
   check('Pause warns when the run is searched by Bayesian optimization (SIF-83)',
     /^This run cannot be resumed after a pause: it is searched by Bayesian optimization, whose search state lives only in its running process\.\n\nPause anyway\?/.test(lastDialog().message ?? ''), lastDialog().message);
   check('... answering no sends nothing there either, the button reads "Pause" again', log.length === 0 && await mainReads('Pause', 20));
-  sim.run = {}; sim.steps = [{ state: 'pausing' }, { state: 'paused', alive: false }];
+  // Review of SIF-83: answered yes, the pause waits, and Force abort no longer advises waiting "to keep it resumable" -
+  // nothing is resumable here - in its question or its tooltip.
+  answers.push(true); sim.steps = [{ state: 'pausing' }, {}, {}, {}, {}, { state: 'paused', alive: false }];
   await press(MAIN);
+  check('(the Bayesian run, Pause answered yes, waits: "Force abort")', await waitFor(() => commands().length > 0) && commands().join() === 'pause'
+    && await until(`${ABORT}.textContent === 'Force abort' && !${ABORT}.disabled`, 60), commands().join());
+  check('... its tooltip says it replaces the Pause, and not that the run cannot be resumed then (review of SIF-83)',
+    await until(`${ABORT}.title.includes('This replaces your Pause: the run ends as cancelled. Only for a run that is stuck.')`, 40), await evaluate(`${ABORT}.title`));
+  answers.push(false);
+  await press(ABORT); await sleep(400);
+  check('... pressed, it says the run cannot come back either way and why, with no advice to wait for the pause (review of SIF-83)',
+    /^Force abort\?\n\nThis replaces your Pause: the run ends as cancelled instead of paused\. It cannot come back either way: it is searched by Bayesian optimization, whose search state lives only in its running process\.\n\n/.test(lastDialog().message ?? '')
+    && !/resumable|continued|Fine-tune/.test(lastDialog().message ?? ''), lastDialog().message);
+  check('... and "no" sends nothing more than the pause', commands().join() === 'pause', commands().join());
+  sim.run = {};
   check('(paused again)', await mainReads('Resume', 150));
   log.length = 0; answers.push(true);
   await press(ABORT); await sleep(400);

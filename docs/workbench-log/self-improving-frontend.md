@@ -2130,3 +2130,19 @@ says the run ends cancelled instead of stopped and names no Pause. Pause on a ru
 "bayes"` asks first, and "no" sends nothing. The replay snapshot warning is now matched with its new "... switched off for
 it." tail. The fixture's pausing phase is one status poll longer, so the extra question fits in it. `save_now_check` 29.
 None flaky.
+
+**Review follow-up.** The review of 175f392 found two slips, both real. (1) Force abort's new words said something false for
+the very run this record is about. On a Bayesian run the user answers Pause's "This run cannot be resumed after a pause", and
+seconds later Force abort said "To keep it resumable, wait for the pause", and its tooltip implied the run could otherwise be
+resumed; after an Abort, "so Continue... can no longer pick it up" implied a stopped Bayesian or checkpoint-less run could be
+continued. The backend's `continuation()` refuses every Bayesian run (`no_rl_model`) and a run with no save point, so waiting
+keeps nothing. Now `RunButtons` reads `cannotResume` once the run waits on a pause or an abort, whoever sent it (this page,
+another one or the command line, where Pause's question was never seen). With a reason, the question says only "This replaces
+your Pause: the run ends as cancelled instead of paused." (after an Abort: "... instead of stopped.") and "It cannot come back
+either way: <reason>.", and the tooltip drops "and cannot be resumed". Until the answer is in, and on any run that can come
+back, the words are as before. The press stays synchronous, so the button still asks once and sends one `cancel`. (2)
+`docs/workbench.md` quoted "To keep it resumable, wait for the pause" as also in the tooltip, which never said it; it now says
+the tooltip names the replaced pause, and the question adds the advice. `tsc` clean; `run_control_check` 132 (128 before): a
+Bayesian run paused with "yes" waits, Force abort's tooltip ends "... ends as cancelled. Only for a run that is stuck.", its
+question says "It cannot come back either way: it is searched by Bayesian optimization ..." with no "resumable", "continued"
+or "Fine-tune", and "no" sends nothing beyond the pause. `save_now_check` 29. None flaky.

@@ -76,7 +76,16 @@ const FORCED_COST: Partial<Record<Phase, string>> = {
     + 'written can still start a new run in Fine-tune). To keep it resumable, wait for the pause.\n\n',
   aborting: 'The run ends as cancelled instead of stopped, so Continue... can no longer pick it up.\n\n',
 };
-const forceAbortConfirmed = (phase: Phase) => window.confirm('Force abort?\n\n' + (FORCED_COST[phase] ?? '')
+// `lost`: why the run could not come back anyway (cannotResume), or null. Then waiting keeps nothing resumable and a stopped
+// end is no more continuable than a cancelled one, so the question says only what changes, and why nothing more is given up
+// (review of branch record SIF-83: a Bayesian run, paused after Pause's own warning, was told to wait "to keep it resumable").
+const FORCED_LOST: Partial<Record<Phase, string>> = {
+  pausing: 'This replaces your Pause: the run ends as cancelled instead of paused.',
+  aborting: 'The run ends as cancelled instead of stopped.',
+};
+const forcedCost = (phase: Phase, lost: string | null) =>
+  lost && FORCED_LOST[phase] ? `${FORCED_LOST[phase]} It cannot come back either way: ${lost}.\n\n` : FORCED_COST[phase] ?? '';
+const forceAbortConfirmed = (phase: Phase, lost: string | null) => window.confirm('Force abort?\n\n' + forcedCost(phase, lost)
   + 'This does not wait for the simulation that is running. Its evaluation is recorded as cancelled and still counts against the '
   + 'budget. On a real circuit a Spectre job that has already started on the server is not stopped, and the schematic can be left with the sizes '
   + 'that were being tried instead of the original ones.\n\nUse this only when the run is stuck.');
@@ -139,6 +148,19 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
       .catch(e => { control.setPending(null); fail(e); });
   };
 
+  // Why the run could not come back anyway (cannotResume), read once it waits on a pause or an abort, whoever sent it: this
+  // page, another one or the command line, where Pause's question was never seen. Force abort's question and tooltip then
+  // promise no way back the run never had (review of branch record SIF-83); until the answer is in, the general words stand.
+  const waiting = phase === 'pausing' || phase === 'aborting';
+  const [lost, setLost] = useState<{ dir: string; reason: string | null } | null>(null);
+  useEffect(() => {
+    if (!dir || !waiting) return;
+    let live = true;
+    cannotResume(dir).then(reason => { if (live) setLost({ dir, reason }); });
+    return () => { live = false; };
+  }, [dir, waiting]);
+  const noWayBack = lost?.dir === dir ? lost.reason : null;
+
   const pause = async () => {
     control.setPending('pause');                                                  // at once: a second press must find "Pausing..."
     if (!(await pauseConfirmed(dir!))) { control.setPending(null); return; }
@@ -158,7 +180,7 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
       if (!abortConfirmed(status, task)) return;
       command('stop', 'abort', 'Aborting: the simulation in flight finishes first, then everything is saved and the run ends.');
     } else {
-      if (!forceAbortConfirmed(phase)) return;
+      if (!forceAbortConfirmed(phase, noWayBack)) return;
       control.setForced(true);
       command('cancel', 'abort', 'Forced abort sent: the evaluation in flight is recorded as cancelled and stays charged.');
     }
@@ -194,7 +216,6 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
     else if ((was === 'pausing' || was === 'aborting') && phase === 'idle' && status) onMessage({ level: 'info', text: `The run has ended (${status.state}) at${used(status)}: everything it committed is saved.` });
   }, [phase]);
 
-  const waiting = phase === 'pausing' || phase === 'aborting';
   const main = phase === 'idle' ? onStart : phase === 'running' ? pause : phase === 'paused' ? onResume : undefined;
   const why = phase === 'idle' ? startBlocked : phase === 'paused' ? resumeBlocked : null;
   const startable = phase === 'idle' || phase === 'checking';           // the main button reads Start
@@ -208,8 +229,8 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
     <button className="run-abort" disabled={!(phase === 'running' || phase === 'paused' || (waiting && !forced))} onClick={abort}
       title={phase === 'paused' ? 'Let go: The header lets go of the paused run: nothing is sent and nothing is deleted, the run can still be continued '
           + 'from Runs, and the main button goes back to Start.'
-        : phase === 'pausing' ? 'Force abort: Do not wait for the simulation in flight. This replaces your Pause: the run ends as cancelled and '
-          + 'cannot be resumed. Only for a run that is stuck.'
+        : phase === 'pausing' ? 'Force abort: Do not wait for the simulation in flight. This replaces your Pause: the run ends as cancelled'
+          + `${noWayBack ? '' : ' and cannot be resumed'}. Only for a run that is stuck.`
         : waiting ? 'Force abort: Do not wait for the simulation in flight. Only for a run that is stuck.'
         : 'Abort: End the current run: the simulation in flight finishes, everything is saved, the run ends.'}>
       <Icon name={waiting ? 'force-stop' : phase === 'paused' ? 'close' : 'stop'} label={waiting ? 'Force abort' : phase === 'paused' ? 'Let go' : 'Abort'} /></button>

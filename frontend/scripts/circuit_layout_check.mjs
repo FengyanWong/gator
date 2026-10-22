@@ -5,7 +5,7 @@
 // WSL: "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/circuit_layout_check.mjs)"
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -37,8 +37,11 @@ function withoutKeptPositionKeys(text) {
   return replaceOne(text, '      for (const id of placedIds) {', '      for (const id of Object.keys(positions)) {');
 }
 const restored = withoutPreparedNeighbors(withoutKeptPositionKeys(source));
-const args = process.argv.slice(2);
-assert.ok(!args.length || args.length === 2 && args[0] === '--before', 'Usage: circuit_layout_check.mjs [--before original.ts]');
+// run_checks.mjs passes every check one argument, the folder for its evidence. This check writes none, so a lone existing
+// folder is set aside: the batch reported the check failed while it passed alone. Any other argument is still refused.
+const given = process.argv.slice(2);
+const args = given.length === 1 && statSync(given[0], { throwIfNoEntry: false })?.isDirectory() ? [] : given;
+assert.ok(!args.length || args.length === 2 && args[0] === '--before', 'Usage: circuit_layout_check.mjs [--before original.ts | <evidence folder>]');
 const beforeSource = args.length ? readFileSync(args[1], 'utf8') : restored;
 assert.equal(restored, beforeSource, 'Restored source matches the separately archived original when supplied');
 const variants = { before: beforeSource, neighborsOnly: withoutKeptPositionKeys(source),

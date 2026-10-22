@@ -5,7 +5,7 @@
 // WSL: "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/editor_renames_check.mjs)"
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -28,8 +28,11 @@ restored = replaceOne(restored,
   'renames.push([String(r.measurement_id), row.measurement_id]);');
 restored = replaceOne(restored, 'renames.reduce((e, rename) => rename(e), t.equation)',
   'renames.reduce((e, [from, to]) => renameInEquation(e, from, to), t.equation)');
-const args = process.argv.slice(2);
-assert.ok(!args.length || args.length === 2 && args[0] === '--before', 'Usage: editor_renames_check.mjs [--before original.ts]');
+// run_checks.mjs passes every check one argument, the folder for its evidence. This check writes none, so a lone existing
+// folder is set aside: the batch reported the check failed while it passed alone. Any other argument is still refused.
+const given = process.argv.slice(2);
+const args = given.length === 1 && statSync(given[0], { throwIfNoEntry: false })?.isDirectory() ? [] : given;
+assert.ok(!args.length || args.length === 2 && args[0] === '--before', 'Usage: editor_renames_check.mjs [--before original.ts | <evidence folder>]');
 const beforeSource = args.length ? readFileSync(args[1], 'utf8') : restored;
 assert.equal(restored, beforeSource, 'Restored oracle matches the independent original when supplied');
 

@@ -23,6 +23,8 @@
 //   - branch record SIF-105: a page opened anew shows Run status and a reload comes back on the Training tab; the Compare list
 //     puts the shown run's task first ("Same task (...)", then "Other tasks"), and its tooltip says so only then: a shown
 //     run the list names no task for keeps the one list (SIF-105 review)
+//   - branch record SIF-115: the × of a compared run and of a chart are named "Remove <run>" and "Remove chart <n>", and
+//     their tooltips start with those words
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -509,6 +511,12 @@ await runChecks(browser, async () => {
   await page.shot(path.join(out, 'training-compare.png'), `(${TRAINING})`);
   await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
   check('the compared runs are kept after a reload', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 3`, 60));
+  // branch record SIF-115: a compared run's × is named "Remove <run>", and its tooltip starts with those words, as every
+  // icon button's does (it read "Remove: take <run> off the charts")
+  const chipX = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-compared .training-chip')].slice(1).map(c => ({ run: c.childNodes[1].textContent,
+    text: c.querySelector('.training-chip-remove')?.textContent, title: c.querySelector('.training-chip-remove')?.title }))`);
+  check('a compared run\'s × is "Remove <run>" for screen readers, its tooltip starting with those words (SIF-115)', chipX.length === 2
+    && chipX.every(x => x.text === `Remove ${x.run}` && x.title === `Remove ${x.run}: take it off the charts`), JSON.stringify(chipX));
   await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
   check('× takes a run off the charts', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2
     && !(${TRAINING}).querySelector('.training-compared').textContent.includes('twin')`, 30));
@@ -590,6 +598,10 @@ await runChecks(browser, async () => {
     && (await columns()) === 4 && await evaluate(`(${ADD}).disabled`), `${await figures()} charts`);
   const eight = await evaluate(TITLES);
   check('eight different charts', new Set(eight).size === 8, eight.join(' | '));
+  // branch record SIF-115: a chart's × the same way, "Remove chart <n>" (its tooltip read "Remove chart: ...")
+  const chartX = await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart .training-chart-remove')].map(b => ({ text: b.textContent, title: b.title }))`);
+  check('a chart\'s × is "Remove chart <n>" for screen readers, its tooltip starting with those words (SIF-115)', chartX.length === 8
+    && chartX.every((x, i) => x.text === `Remove chart ${i + 1}` && x.title === `Remove chart ${i + 1}: take this chart off the page`), JSON.stringify(chartX));
   // Branch record SIF-65: the axis numbers are drawn at 12 px (11 px before), and a y axis's numbers, with their unit too
   // (the gain chart's "V/V"), still fit its 64 px
   await until(`(window.__axisText ?? []).some(s => s.left != null && s.text.endsWith(' V/V'))`, 40);

@@ -3928,3 +3928,52 @@ restored after): the four checks that ask for what is new failed (99 and 114 pas
 `agent_window_check` 33, `callouts_check` 8, `graph_view_check` 69 (Fit as it was) - 9 scripts, 507 checks, one lane,
 all passed the first time. No flakes. `dom_identity_check` was not used as a gate: it compares refactors, and the
 connection window's scene changes by design.
+
+### SIF-115 The Corner check's Check is the play mark, and the Training tab's × say their names (2026-10-24; from the icon audit)
+
+**Found.** The Corner check's Check starts simulations - REAL Spectre ones, after the budget question - but drew a check
+mark, which reads as done or OK, while every other start on the page, the header's Start and Resume and Continue..., is
+the play triangle, and Stop's square takes Check's place while the check works. Since SIF-114 the same check mark also
+said "Copied" in the Connection window, so it meant two things (icon audit ICON-20). In the Training tab, the × on a
+compared run's chip and the × in a chart's title had tooltips that did not start with their names, the rule every icon
+button keeps so that the tooltip names what the screen does not show: "Remove <run>" read "Remove: take <run> off the
+charts", "Remove chart 2" read "Remove chart: take this chart off the page" (ICON-23). And `Icons.tsx` still held the
+tray struck out that Delete task drew until SIF-113, unused since (ICON-19, the drawing's half), while its notes named
+what each drawing stood for when it was first drawn: the check mark "the corner check", the bin Delete selected alone.
+
+**Changed.** `frontend/src/panels/CornerCheck.tsx`: Check draws `play`, the play mark of Start, Resume and Continue...;
+the hourglass while the start is on its way, with "Starting..." for screen readers, as before. Its word, tooltip, place
+and colour are unchanged, and so is what a press does (`launchWithConsent`: for a real circuit the budget question, then
+the connection question; a no sends nothing). `frontend/src/panels/TrainingTab.tsx`: the tooltips read "Remove <run>:
+take it off the charts" and "Remove chart <n>: take this chart off the page"; their labels, classes and presses are as
+they were. `frontend/src/panels/Icons.tsx`: `delete-task` leaves the list of drawings, as SIF-113 said it would. So does
+`load`, the tray with an arrow into it: Load task drew it until record 7.146 made that button "Reload saved values",
+in words, and nothing has drawn it since. The plan did not name it, but a note naming the actions a drawing stands for
+has nothing to name for it; `tsc` proves nothing names either. Each drawing's note now names every button that draws
+it: the play mark Start, Resume, Continue... and Check; the hourglass every "...ing" a button shows; the stop square
+Abort and the Corner check's Stop; the task document Save as, a new task; the plus Add, Add chart and Add to
+Parameters; the bin Delete selected, Delete folder and Delete task; the arrow up Export JSON and Export status (JSON);
+the arrow around Refresh and Refresh list; the two sheets Copy run path, Copy for Excel and the CIW lines' Copy; the
+check mark only Copied; the X Close, Hide, Training's Remove and the header's Let go; the pencil a folder's Rename in
+the Runs, Tasks and RL model windows; the four corners Training's Reset zoom. The file's head names what SIF-112 to
+SIF-114 made icons and the two drawings changed so that one action has one drawing, and its example label "Load task",
+a button that is gone, is "Delete task". Left out: the plan's notes that named Copy path, the Rename of a task or a
+saved model, and the graph view's Fit among these drawings: those buttons keep their words (the audit's `kept`, as
+SIF-112 to SIF-114 say), so no drawing stands for them. Also left out, as the audit's verdict says: Continue...'s
+tooltip starts "Continue:" without the dots, which names it all the same. Nothing here starts, continues or stops a run,
+saves a task or writes to Virtuoso: Check asks as it did. `docs/workbench.md` (the Corner check's buttons; the
+Training tab's two ×) and `docs/functionality-reference.md` (the Training and Corner check rows) say it.
+
+**Checked.** `tsc` clean; `grep -rn delete-task frontend/src` prints nothing. `corner_check_check` 40 (39 before):
+Check draws the play mark (its drawing's line, `M4.5 2.5l8 5.5-8 5.5z`), "Check" for screen readers and at the start of
+its tooltip. `training_tab_check` 110 (108): each compared run's × is "Remove <run>" for screen readers, the run named as
+its chip names it, its tooltip "Remove <run>: take it off the charts"; with eight charts each chart's × is "Remove chart
+1" to "Remove chart 8", its tooltip starting with the same words. A probe run on the code before (both `.tsx` files as
+at HEAD, restored after): the three new checks failed (39 and 108 passed), the Check still drawing the check mark. Also
+run, unchanged: `task_list_check` 105, `ngspice_window_check` 43 and `virtuoso_source_check` 116 (Delete task, the bin,
+by its label), `matched_devices_check` 37 (its X), `connection_panel_check` 101 (the check mark of Copied, by its
+drawing's line), `run_control_check` 164 (the header's play mark and Let go's X), `dom_identity_check` 56 (it records
+the Corner check and the Training tab with a compared run). With `training_tab_check`: 8 scripts, 732 checks, one lane,
+all passed the first time; `corner_check_check` alone, also the first time: the plan's `--only corner_check` names no
+script (`run_checks.mjs` adds `_check` only to a name that does not end in it), so it is called by its whole name. No
+flakes.

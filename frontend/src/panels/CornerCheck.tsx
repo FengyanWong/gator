@@ -98,9 +98,11 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
         {Array.from({ length: plan?.max_designs ?? 3 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</select></label>
       <span className="hint">{plan?.supported ? `${plan.designs.length} design${plan.designs.length > 1 ? 's' : ''} x ${plan.corners.length} corners = ${plan.simulations} ${real
         ? 'REAL Spectre simulations (asks for your authorization first)' : 'MOCK simulations (free)'}` : plan ? 'Nothing to check in this run.' : 'Reading the run...'}</span>
+      {/* Check starts simulations, so it draws the play mark of Start, Resume and Continue..., and Stop's square takes its
+          place while the check works; it drew a check mark, which reads as done (branch record SIF-115) */}
       {live ? <button disabled={busy === 'stop' || status?.state === 'stopping'} onClick={stop}
           title="Stop: The simulation in flight finishes, then the check ends; for a real circuit the recorded widths are written back."><Icon name="stop" label="Stop" /></button>
-        : <button className="primary" disabled={!plan?.supported || !!busy || (!!checkId && !check)} onClick={start} title="Check: Simulate the designs chosen above at every corner of the PDK; the table below fills as results come in."><Icon name={busy === 'start' ? 'wait' : 'check'} label={busy === 'start' ? 'Starting...' : 'Check'} /></button>}
+        : <button className="primary" disabled={!plan?.supported || !!busy || (!!checkId && !check)} onClick={start} title="Check: Simulate the designs chosen above at every corner of the PDK; the table below fills as results come in."><Icon name={busy === 'start' ? 'wait' : 'play'} label={busy === 'start' ? 'Starting...' : 'Check'} /></button>}
       <button onClick={() => { readPlan(); readCheck(); }} title="Refresh: Read the plan and the results again."><Icon name="refresh" label="Refresh" /></button>
     </div>
     {(planError || checkError) && <p className="error">{planError || checkError}</p>}

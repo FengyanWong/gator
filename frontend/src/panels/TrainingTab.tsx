@@ -364,12 +364,13 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
       </span>
     </div>
     {others.length > 0 && <div className="training-compared">
-      {/* the runs on the charts, each in its colour; × takes one off (record 7.200) */}
+      {/* the runs on the charts, each in its colour; × takes one off (record 7.200). Its tooltip starts with its label, as
+          every icon button's does (branch record SIF-115: it read "Remove: take <run> off the charts"). */}
       <span className="training-chip key-run0" title={runDir}><span className="swatch" />{runLabel(runDir)} (shown)</span>
       {others.map((dir, i) => <span key={dir} className={`training-chip key-run${i + 1}`} title={dir}><span className="swatch" />{runLabel(dir)}
         {comparedState[dir]?.live ? ' \u00b7 live' : ''}{comparedState[dir]?.error ? <span className="error"> - {comparedState[dir].error}</span> : null}
         <button type="button" className="training-chip-remove" onClick={() => keepCompare(others.filter(d => d !== dir))}
-          title={`Remove: take ${runLabel(dir)} off the charts`}><Icon name="close" label={`Remove ${runLabel(dir)}`} /></button></span>)}
+          title={`Remove ${runLabel(dir)}: take it off the charts`}><Icon name="close" label={`Remove ${runLabel(dir)}`} /></button></span>)}
     </div>}
     {own.answers > 0 && !empty && <details className="training-keys" open={keysOpen} onToggle={e => setKeysOpen(e.currentTarget.open)}>
       <summary title="Key numbers: what each run on the charts reached, read from its recorded rows (episode starts left out, as on the charts).">Key numbers</summary>
@@ -416,14 +417,15 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
         {slots.map((slot, i) => {
           const spec = specOf(slot.id), made = built[i];
           return <figure key={slot.key} className="training-chart">
-            {/* what this chart shows is chosen in its title; × takes the chart off the page (one always stays) */}
+            {/* what this chart shows is chosen in its title; × takes the chart off the page (one always stays), its tooltip
+                starting with its label, "Remove chart 2" (branch record SIF-115: it read "Remove chart: ...") */}
             <figcaption>
               <select aria-label={`Chart ${i + 1}`} className="training-chart-choice" value={slot.id} onChange={e => choose(slot.key, e.target.value)}
                 title={spec ? `${spec.about} Recorded as ${spec.source}.` : 'This run has no such chart.'}>
                 {!spec && <option value={slot.id} disabled>{chartName(slot.id)} - not in this run</option>}{options(charts)}</select>
               <span className="spacer" />
               <button type="button" className="training-chart-remove" disabled={slots.length <= 1} onClick={() => removeChart(slot.key)}
-                title="Remove chart: take this chart off the page"><Icon name="close" label={`Remove chart ${i + 1}`} /></button>
+                title={`Remove chart ${i + 1}: take this chart off the page`}><Icon name="close" label={`Remove chart ${i + 1}`} /></button>
             </figcaption>
             {!spec ? <p className="hint training-empty">{own.answers > 0 ? `This run has no ${chartName(slot.id)} chart (a spec of another task?). Choose another in the title.` : 'Reading...'}</p>
               : !spec.available ? <p className="hint training-empty">{spec.reason}</p>

@@ -10,7 +10,8 @@
 // verdicts - and stops reading once it has ended; a REAL check asks for the budget first (no = nothing sent), then the
 // connection question, and sends both answers; a finished real check says whether the cell was restored and whether the
 // nominal repeat agreed with the run; an unsupported circuit is a neutral note with Check off; earlier checks are chosen by
-// double click. A check's time is local (its UTC on hover), a temperature reads "27 degC" (branch record SIF-59).
+// double click. A check's time is local (its UTC on hover), a temperature reads "27 degC" (branch record SIF-59). Check
+// draws the play mark of Start, its word for screen readers and at the start of its tooltip (branch record SIF-115).
 // Run (Windows node through WSL interop; node >= 22 for the built-in WebSocket; about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/corner_check_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -130,6 +131,13 @@ await runChecks(browser, async () => {
   let now = await text();
   check('the MOCK notice is shown', now.includes('FIXTURE MOCK: the toy score has its optimum moved'));
   check('Check is on, and reads only "Check"', await evaluate(`!!(${BUTTON('Check')}) && !${BUTTON('Check')}.disabled && ${BUTTON('Check')}.classList.contains('primary')`));
+  // branch record SIF-115: Check starts simulations, so it draws the play mark of Start, Resume and Continue... (Icons.tsx's
+  // `play`); it drew a check mark, which reads as done. Its word stays for screen readers and starts its tooltip.
+  const PLAY = 'M4.5 2.5l8 5.5-8 5.5z';
+  const checkLooks = await evaluate(`(() => { const b = ${BUTTON('Check')};
+    return { drawn: [...b.querySelectorAll('svg.icon path')].map(p => p.getAttribute('d')), label: b.querySelector('.sr-only')?.textContent, title: b.title }; })()`);
+  check('Check draws the play mark of Start, "Check" for screen readers and at the start of its tooltip (SIF-115)', checkLooks.drawn.join('|') === PLAY
+    && checkLooks.label === 'Check' && checkLooks.title.startsWith('Check: Simulate the designs chosen above at every corner'), JSON.stringify(checkLooks));
   const designRows = await evaluate(`[...document.querySelectorAll('table.corner-designs tbody tr')].map(r => r.textContent)`);
   check('the three designs are listed, safest first, with their margin and sizes', designRows.length === 3 && /0\.21.*unity_gain_hz/.test(designRows[0]) && designRows[0].includes('input_pair 4.2 um'), designRows[0]);
   // branch record SIF-59: a corner's temperature in English letters, as units.ts writes one (the backend's label has "\u00b0C")

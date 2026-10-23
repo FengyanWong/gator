@@ -1905,7 +1905,7 @@ they are empty.
 * **Charts** (record 7.205, user: "add multiple charts same page support. more than the current 2"): up to eight on the
   page. Each chart chooses what it shows in its own title (a list that reads as the heading); **Add chart** (+, among the
   controls) adds the first chart the run can draw that is not on the page yet; × in a chart's title takes it off (one
-  always stays). One to three charts stand side by side, four as two by two, more in rows of three or four; when the
+  always stays; its tooltip starts with its name, "Remove chart 2", branch record SIF-115). One to three charts stand side by side, four as two by two, more in rows of three or four; when the
   bottom panel is too short for them all it scrolls (the splitter gives it room). Metrics of different units never share
   a chart. A chart chosen for another run that this one lacks (a spec of another task) says so in its place and keeps the
   choice. Taking one chart off leaves the others' charts as they are, and a chart is only drawn again when its own data,
@@ -1939,7 +1939,8 @@ runs of the run window, the shown run's task first: "Same task (<task>)" holds t
 "Other tasks" the rest, each newest first (branch record SIF-105: one list of every run under the output folder, 612 in the
 user's, the task's other seeds and Modes scattered among them; a shown run the list names no task for keeps the one list).
 A chosen run is drawn on both charts beside the shown one, up to four runs, each in its own colour
-(the shown run in the accent colour), with a line of chips above the charts naming them - × takes one off. A run is
+(the shown run in the accent colour), with a line of chips above the charts naming them - × takes one off (its tooltip
+starts "Remove <run>: ...", the run named as on its chip; branch record SIF-115). A run is
 named as the run window shows it (record 7.213): its task, its experiment in brackets when that has a name of its own
 (not the default "experiment"; branch record SIF-77: the experiment alone, "tx1-vco-gatv2", stood beside a tab strip
 naming the task), its seed and when it was made; the start of its folder's id is added only when two compared runs would
@@ -2045,6 +2046,10 @@ rule, and stay while a saved configuration still asks for corners, so that it ca
 * It runs in a process of its own, like a run's worker, so a page reload or a backend restart does not cut it. **Stop**
   ends it after the simulation in flight. While it works the tab reads its progress every 1.5 s; otherwise nothing
   updates by itself (**Refresh** reads again). Earlier checks of the run are a folded list; a double click shows one.
+* The buttons are icons, their words in their tooltips: **Check** starts simulations, so it is the play mark of the
+  header's Start, Resume and Continue... (an hourglass while the start is on its way), and **Stop**, the stop square,
+  takes its place while the check works; **Refresh** is the arrow around (branch record SIF-115: Check drew a check
+  mark, which reads as done).
 * Files: `<run>/corner_checks/<check_id>/` - `request.json` (the designs, corners and authorization), `status.json`,
   `results.jsonl` (one line per simulation, with every value), `summary.json` (the verdicts), `work/`, `worker.log`.
   API: `GET /api/runs/corner-check/plan` (free, local files only), `POST .../start`, `GET .../status`, `POST .../stop`.

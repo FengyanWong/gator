@@ -3424,3 +3424,44 @@ before did not do. Also run, unchanged: `task_rows_check` 54, `formula_bar_check
 check itself: a name declared twice, then the backend refusing the whole configuration (422, "No task trains at corners")
 once the check's last part plans training corners for the MOCK task, so no row issue could show. The section now runs
 before that part. No flakes.
+
+**Review follow-up.** The review of fa054e6 found four slips, all real. First, Enter in the formula bar wrote a Probe ID and
+went back to its cell inside the same key press, before React drew the write (react-dom 18 runs the nested focus event
+inside the key press's batch, without a render), so the cell was entered with its row as it was before: it held the ID the
+bar had replaced. A slip written in the bar (m_totl, the Specs taken along) and fixed in that cell (m_total, Tab) then took
+no Spec along and said nothing: the Specs stayed on m_totl, broken on the Specs tab, under the line "now use m_totl", and
+typing the old ID back counted as nothing typed. `backToCell` in `frontend/src/panels/Editors.tsx` now lets React draw the
+write first (`flushSync`), then focuses the cell. Second, Ctrl+Z or Ctrl+Y pressed in a Probe's ID cell counted as typing:
+the cell keeps the focus, and leaving it took the Specs naming the ID from before the step along to the ID the step brought
+back. With a Spec typed on an ID no Probe held yet (m_gain), the Probe renamed to it and Ctrl+Z pressed in its cell, leaving
+rewrote that Spec to the old ID, with no Undo step of its own, over the state the Undo had brought back. The toolbar's
+Undo, whose press leaves the cell first, did not. A new effect on `lastStep` makes the cell hold the ID an Undo or Redo
+brings back, as if entered anew. Alone, that would leave an ID typed, undone and redone in the cell without its Specs: the
+Redo brings the typing back as it was before the cell was left. So `onTableKey` first lets a typed ID take its Specs along,
+as leaving the cell does: Ctrl+Z in the cell now does what the toolbar's Undo does, and Ctrl+Y brings the ID back with its
+Specs. Third, a chip pressed into the Equation cell put the ID in with `setRangeText`, which React's change tracking does
+not see. A key that brought the cell back to its text from before the press (the ID chosen and deleted, or deleted as a
+word) changed nothing: the cell showed that text while the configuration, the formula bar and validation kept the ID,
+which came back at the next drawing. `pressProbe` now sets the cell's text through its `value`, which React tracks, with
+the cursor after the ID as before; the formula bar's path, an input event, was right. Fourth, a refused rename's memory
+(`refusedId`) was kept by the row's place alone: once a row above it was deleted, the next ID typed in the row found no
+memory and took no Spec along, again unsaid. `remove` now moves the memory up with its row past the rows deleted above it,
+and drops it with the row; an Undo or Redo finds the row by the row itself in the rows the step brought back. Left as it
+is, not raised: a Spec that followed a typed ID drops the memory, so an Undo back to the refused ID has none, and the next
+ID typed there takes nothing along; keeping memories through such steps is more than this follow-up. Nothing here starts,
+continues or stops a run, saves a task or writes to Virtuoso: the configuration only, in the same Undo steps.
+`docs/workbench.md` (A Probe renamed) names Ctrl+Z in the cell and a moved row. `tsc` clean. `spec_equations_check` 63
+(54 before). m_totl written in the bar, Enter, then m_total typed in the cell it went back to and the cell left: both Specs
+follow. A chip pressed into an emptied Equation cell, the ID then chosen and deleted: the cell and the Spec are empty alike.
+m_total typed m_gain (score_sq named m_gain first), then Ctrl+Z in the cell and the cell left: m_total with score on it,
+score_sq still on m_gain, the line the Undo's. m_x typed, then Ctrl+Z and Ctrl+Y in the cell and the cell left: m_x with
+score on it. A second Probe's m_gain refused as m-gain; with the Probe above deleted and the Delete undone, m.gain typed is
+still said against m_gain; with that Probe deleted again, m_gain2 typed takes score_sq along. On the code before, the
+first of these failed and the rest followed from it; with the bar fixed alone, the chip and Ctrl+Z checks failed (and what
+followed); without the moved memory, the last one failed. Also run, unchanged: `looks_check` 76, `task_rows_check` 54,
+`formula_bar_check` 21, `testbench_probes_check` 41, `ngspice_window_check` 43, `typing_check` 50,
+`find_fill_copy_check` 50, `sheet_check` 54, `editor_columns_check` 23, `unsaved_rows_check` 25,
+`blocking_issues_check` 60, `edit_state_check` 28, `working_copy_check` 34, `editor_renames_check` 8,
+`reliability_check` 20, `project_help_check` 61, `dom_identity_check` 56, `matched_devices_check` 37, `room_check` 31,
+`circuit_source_check` 17, `network_panel_check` 72 (22 scripts, 924 checks, one lane, all passed the first time). No
+flakes.

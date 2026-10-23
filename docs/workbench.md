@@ -882,17 +882,18 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   Probe - left every Spec on the old ID, broken on the Specs tab, which is not in view. Now a Probe ID typed anew takes the
   Specs naming the old one along once its cell is left, or when the formula bar writes it, never per key: a cell writes
   each key, so "m_" or an emptied box would have taken them, and a step through another Probe's ID that Probe's Specs too.
-  They join the ID's own Undo step, so one Undo takes them back with it, and the line under the formula bar names them with
-  **Show Specs**: "2 Specs (inl1, inl2) now use m_f1, the Probe's new ID. Undo takes them back with the ID." They follow only
-  between plain names (letters, digits and _, a letter or _ first, as a renamed output's): an emptied ID, one with "." or
-  "-" (which a formula cannot read), or another Probe's leaves them on the old one, said in amber with why, and the next ID
-  typed in that row takes them along. A block pasted over Probe IDs leaves the Specs as before. The Probe chips on the line
-  above the Specs table ("Probes: m_f1_hz, m_f2_hz, ...") are buttons now: with an Equation cell chosen, a press puts the
-  ID in at the cursor of the cell or the formula bar, in place of the text chosen there, with a space where it would touch
-  the text beside it; the cell or the bar keeps the focus and the cursor follows the ID. It is written as the bar writes,
-  one Undo step, and the bar's own text takes it too, so Enter writes nothing more. With no Equation cell chosen, a press
-  copies the ID ("Copied m_f1_hz."). Nothing here saves, runs or writes to Virtuoso: both change the configuration only,
-  and Undo takes them back.
+  They join the ID's own Undo step, so one Undo takes them back with it - Ctrl+Z pressed in the cell too, where a typed ID
+  takes them along first, as leaving the cell does - and the line under the formula bar names them with **Show Specs**:
+  "2 Specs (inl1, inl2) now use m_f1, the Probe's new ID. Undo takes them back with the ID." They follow only between plain
+  names (letters, digits and _, a letter or _ first, as a renamed output's): an emptied ID, one with "." or "-" (which a
+  formula cannot read), or another Probe's leaves them on the old one, said in amber with why, and the next ID typed in that
+  row takes them along, also after Delete selected or an Undo has moved the row. A block pasted over Probe IDs leaves the
+  Specs as before. The Probe chips on the line above the Specs table ("Probes: m_f1_hz, m_f2_hz, ...") are buttons now:
+  with an Equation cell chosen, a press puts the ID in at the cursor of the cell or the formula bar, in place of the text
+  chosen there, with a space where it would touch the text beside it; the cell or the bar keeps the focus and the cursor
+  follows the ID. It is written as the bar writes, one Undo step, and the bar's own text takes it too, so Enter writes
+  nothing more. With no Equation cell chosen, a press copies the ID ("Copied m_f1_hz."). Nothing here saves, runs or
+  writes to Virtuoso: both change the configuration only, and Undo takes them back.
 
 Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`, `frontend/scripts/spec_equations_check.mjs` (SIF-106).
 

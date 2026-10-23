@@ -1,5 +1,6 @@
 import { Icon } from './Icons';
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { pointAt } from './CircuitPicture';
 import { api, Json, saveJson } from '../api';
 import { migrateConfig } from '../store';
@@ -126,7 +127,8 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const addButton = useRef<HTMLButtonElement>(null);
   // The ID a Probe's ID cell held when it was entered (branch record SIF-106), and the one its Specs name (`from`): left with
   // another ID, they follow it (followProbeId). `refusedId`: a new ID they could not follow - empty, no plain name, another
-  // Probe's - so they still name the one before it, which the next ID typed in that row takes along.
+  // Probe's - so they still name the one before it, which the next ID typed in that row takes along; the row by its place,
+  // which Delete selected, Undo and Redo move it from (remove, the lastStep effect; review of SIF-106).
   const idEntered = useRef<{ index: number; held: string; from: string } | null>(null);
   const refusedId = useRef<{ index: number; from: string; to: string } | null>(null);
   const namedBefore = (index: number, id: string) => refusedId.current?.index === index && refusedId.current.to === id ? refusedId.current.from : id;
@@ -233,6 +235,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       .filter((t: Json) => typeof t.equation === 'string' && names.some(id => usesProbe(t.equation, id))).map((t: Json) => String(t.metric_id ?? ''));
     focusNext.current = { index: going[0]?.i ?? 0 };
     setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((r: Json) => !gone.has(r[keyField])) }));
+    // A refused rename's memory moves up with its row past the rows deleted above it, and goes when the row itself is deleted
+    // (review of SIF-106: kept at the old place, the next ID typed in the row took no Spec along, and said nothing).
+    const refused = refusedId.current;
+    if (tab === 'measurements' && refused) refusedId.current = going.some(({ i }) => i === refused.index) ? null
+      : { ...refused, index: refused.index - going.filter(({ i }) => i < refused.index).length };
     const one = going.length === 1;
     setNote({ warn: orphans.length + users.length > 0, text: [`Deleted ${plural(going.length, 'row')} (${idList(names)})${!folded ? ''
         : one ? ', folded under its leader' : `, ${folded} of them folded under a leader`}. Undo takes ${one ? 'it' : 'them'} back.`,
@@ -320,6 +327,20 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     if (!lastStep) return;
     const { text, tables } = stepWords(lastStep, schema.section_keys ?? {});
     setNote({ text, warn: false, show: tables.length && !tables.includes(tab) ? tables[0] : undefined });
+  }, [lastStep]);
+  // An Undo or Redo moves rows and brings IDs back (review of SIF-106). A refused rename's memory follows its row, found by the
+  // row itself in the rows the step brought back (an Undo of a Delete selected puts rows back above it). A Probe's ID cell the
+  // step was pressed in (Ctrl+Z, Ctrl+Y: onTableKey) holds the ID it brought back, as if entered anew: the ID before the step
+  // counted as typed, and leaving the cell rewrote the Specs the step had brought back, with no Undo step of their own.
+  useEffect(() => {
+    if (!lastStep) return;
+    const refused = refusedId.current, before: Json[] = lastStep.from?.measurements ?? [], after: Json[] = lastStep.to?.measurements ?? [];
+    const moved = refused ? after.indexOf(before[refused.index]) : -1;
+    if (refused && moved >= 0) refusedId.current = { ...refused, index: moved };
+    const entered = idEntered.current;
+    if (!entered || tab !== 'measurements') return;
+    const held = String(rows[entered.index]?.[keyField] ?? '');
+    idEntered.current = { index: entered.index, held, from: namedBefore(entered.index, held) };
   }, [lastStep]);
   // Ctrl+Z and Ctrl+Y (Ctrl+Shift+Z) anywhere in the main window (branch record SIF-97): after an Import's or Matched devices'
   // Apply, a tab press, or a Delete that left no row in view - moments Undo is wanted - the focus was outside the table, whose
@@ -500,6 +521,15 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     // is one Undo step, so the whole entry goes back at once; the formula bar keeps the browser's own undo of its text.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zy]$/i.test(e.key)) {
       e.preventDefault();
+      // In a Probe's ID cell an ID typed there takes its Specs along first, as leaving the cell does - the toolbar's Undo, whose
+      // press leaves the cell, did so already - so the step takes them back with the ID and a Redo brings them back with it;
+      // the cell then holds the ID the step brought back (the lastStep effect; review of SIF-106).
+      const entered = idEntered.current;
+      if (tab === 'measurements' && entered && cell?.dataset.field === keyField && box.closest('tr')?.dataset.index === String(entered.index)) {
+        followProbeId(entered.index);
+        const held = String(rows[entered.index]?.[keyField] ?? '');
+        idEntered.current = { index: entered.index, held, from: namedBefore(entered.index, held) };
+      }
       (e.key.toLowerCase() === 'y' || e.shiftKey ? redo : undo)();
       return;
     }
@@ -736,9 +766,12 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     if (onCramped && room && window.innerWidth > 1100 && room.clientHeight < CRAMPED_PX && !room.closest('.layout.bottom-folded')) onCramped();
   };
 
-  // Back to the cell after Enter or Esc, as a spreadsheet does.
+  // Back to the cell after Enter or Esc, as a spreadsheet does - once the page shows what the bar wrote (flushSync): the focus
+  // went back inside the bar's key press, before React drew the write, so a Probe's ID cell entered there held the ID the bar
+  // had replaced, and a slip written in the bar, fixed in the cell, took no Spec along (review of SIF-106).
   const backToCell = () => {
     if (!active || at < 0) return;
+    flushSync(() => {});
     const cell = table.current?.querySelector(`tbody > tr:nth-child(${at + 1}) > td[data-field="${CSS.escape(active.name)}"]`);
     (cell?.querySelector('input, select') as HTMLElement | null)?.focus();
   };
@@ -763,9 +796,15 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       : focused instanceof HTMLInputElement && focused.closest('td[data-field="equation"]') && focused.closest('tr')?.dataset.index === String(at) ? focused : null;
     const text = box ? box.value : String(equationCell.equation ?? ''), start = box?.selectionStart ?? text.length, end = box?.selectionEnd ?? text.length;
     const put = `${/[^\s(]$/.test(text.slice(0, start)) ? ' ' : ''}${id}${/^[^\s)]/.test(text.slice(end)) ? ' ' : ''}`;
-    if (box) {
+    if (box instanceof HTMLTextAreaElement) {
       box.setRangeText(put, start, end, 'end');                  // the cursor after the ID, where typing goes on
-      if (box instanceof HTMLTextAreaElement) box.dispatchEvent(new Event('input', { bubbles: true }));   // the bar's own text
+      box.dispatchEvent(new Event('input', { bubbles: true }));   // the bar's own text
+    } else if (box) {
+      // The cell's text through its value, which React's change tracking sees (review of SIF-106): setRangeText passed it by,
+      // so a key that brought the text back to what it was before the press - the ID deleted again as a word - changed
+      // nothing, and the Spec kept the ID the cell no longer showed.
+      box.value = text.slice(0, start) + put + text.slice(end);
+      box.setSelectionRange(start + put.length, start + put.length);   // the cursor after the ID, where typing goes on
     }
     commitBar(box ? box.value : text + put);
   };

@@ -294,6 +294,21 @@ await runChecks(browser, async () => {
   check('...and one Undo takes both back', unbarred.measurements[0].measurement_id === 'm_total' && naming(unbarred, 'm_total').length === 2,
     JSON.stringify([unbarred.measurements[0].measurement_id, equations(unbarred)]));
   await evaluate(`${ID}.blur()`);
+  // Review of SIF-106: the cell Enter goes back to holds the ID the bar wrote - it held the one before, so a slip written in the
+  // bar and fixed in the cell left the Specs on the slip, unsaid
+  await evaluate(`${ID}.focus()`);
+  await evaluate(`(() => { const b = ${BAR}; b.focus(); b.select(); })()`);
+  await send('Input.insertText', { text: 'm_totl' });
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  const slip = await settled();
+  check('(set-up) the slip m_totl written in the formula bar takes the Specs along, and Enter goes back to the ID cell', slip.measurements[0].measurement_id === 'm_totl'
+    && naming(slip, 'm_totl').length === 2 && await evaluate(`document.activeElement === ${ID}`), JSON.stringify([slip.measurements[0].measurement_id, equations(slip)]));
+  await retype('m_total');
+  await evaluate(`${ID}.blur()`);
+  const mended = await settled();
+  check('...where m_total typed over the slip takes them along again (review of SIF-106: they stayed on m_totl)', mended.measurements[0].measurement_id === 'm_total'
+    && naming(mended, 'm_total').length === 2 && (await evaluate(NOTE)).startsWith('2 Specs (score, score_sq) now use m_total'),
+    JSON.stringify([mended.measurements[0].measurement_id, equations(mended), await evaluate(NOTE)]));
 
   // the Probe chips: a press as a person's, whose mousedown leaves the focus where it is
   await openTab('Specs');
@@ -336,6 +351,82 @@ await runChecks(browser, async () => {
   check('...and Enter writes nothing more: one Undo takes the bar\'s text and the ID back', (await settled()).targets[1].equation === 'm_total *',
     (await settled()).targets[1].equation);
   await shot('spec_probe_chips.png');
+  // Review of SIF-106: a press sets the cell's text as React tracks it - the ID put into an emptied cell and deleted again left
+  // the cell empty while its Spec kept m_total, which came back at the next drawing
+  await page.setValue(EQ, '', { event: 'input', focus: true });
+  await pressChip();
+  const pressed = await evaluate(`${EQ}.value`);
+  await evaluate(`${EQ}.setSelectionRange(0, ${EQ}.value.length)`);
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+  const emptied = await settled();
+  check('an ID a press put into an emptied Equation cell, chosen and deleted again, leaves the cell and its Spec empty alike (review of SIF-106: the Spec kept it)',
+    pressed === 'm_total' && (await evaluate(`${EQ}.value`)) === '' && emptied.targets[1].equation === '',
+    JSON.stringify({ pressed, cell: await evaluate(`${EQ}.value`), spec: emptied.targets[1].equation }));
+
+  // Review of SIF-106: Ctrl+Z pressed in a Probe's ID cell is no typing. score_sq names m_gain before any Probe holds it; m_total
+  // typed m_gain takes score along; in the cell again, Ctrl+Z brings back m_total with score on it and score_sq on m_gain as
+  // typed - which leaving the cell then rewrote to m_total, with no Undo step of its own
+  const ctrl = async (key, vk) => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key, code: `Key${key.toUpperCase()}`, windowsVirtualKeyCode: vk, modifiers: 2 }); await sleep(250); };
+  await page.setValue(EQ, 'm_gain', { event: 'input', focus: true });
+  await evaluate(`${EQ}.blur()`);
+  await openTab('Probes');
+  await retype('m_gain');
+  await evaluate(`${ID}.blur()`);
+  const gained = await settled();
+  check('(set-up) score_sq names m_gain first; m_total typed m_gain takes score along', gained.measurements[0].measurement_id === 'm_gain'
+    && JSON.stringify(equations(gained)) === '["m_gain","m_gain"]', JSON.stringify(equations(gained)));
+  await evaluate(`${ID}.focus()`);
+  await ctrl('z', 90);
+  const undoneInCell = await settled();
+  await evaluate(`${ID}.blur()`);
+  const leftCell = await settled();
+  check('Ctrl+Z in the ID cell brings back m_total with score on it, and leaving the cell leaves score_sq on m_gain (review of SIF-106: rewritten to m_total)',
+    undoneInCell.measurements[0].measurement_id === 'm_total' && leftCell.measurements[0].measurement_id === 'm_total'
+    && JSON.stringify(equations(leftCell)) === '["m_total","m_gain"]' && (await evaluate(NOTE)).startsWith('Undo: '),
+    JSON.stringify({ equations: equations(leftCell), note: await evaluate(NOTE) }));
+  // ...while an ID typed there, taken back with Ctrl+Z and brought back with Ctrl+Y, still has its Spec along: Ctrl+Z lets it take
+  // the Spec along first, as leaving the cell (and the toolbar's Undo) does, so the Redo brings both back
+  await retype('m_x');
+  await ctrl('z', 90);
+  const typedUndone = await settled();
+  await ctrl('y', 89);
+  await evaluate(`${ID}.blur()`);
+  const redone = await settled();
+  check('...an ID typed in the cell, taken back with Ctrl+Z and brought back with Ctrl+Y there, has score along once the cell is left',
+    typedUndone.measurements[0].measurement_id === 'm_total' && JSON.stringify(equations(typedUndone)) === '["m_total","m_gain"]'
+    && redone.measurements[0].measurement_id === 'm_x' && JSON.stringify(equations(redone)) === '["m_x","m_gain"]', JSON.stringify([equations(typedUndone), equations(redone)]));
+
+  // Review of SIF-106: a refused ID's memory goes with its row when Delete selected and Undo move it. A second Probe takes m_gain,
+  // which score_sq names, and m-gain is refused there; with the row above deleted, the next ID typed in it found no memory at
+  // its new place and left score_sq on m_gain, unsaid
+  const TOOL = name => `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === ${JSON.stringify(name)})`;
+  const rowCount = n => until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === ${n}`, 30);
+  const typeId = async (row, text) => { const box = CELL(row, 'measurement_id'); await evaluate(`${box}.focus(); ${box}.select()`);
+    for (const ch of text) { await send('Input.insertText', { text: ch }); await sleep(40); }
+    await evaluate(`${box}.blur()`); };
+  const tickFirst = async () => { await evaluate(`${EDITORS}.querySelectorAll('table.editor tbody tr')[0].querySelector('td.sel input').click()`); await sleep(150); };
+  await evaluate(`${TOOL('Add')}.click()`);
+  await rowCount(2);
+  await typeId(1, 'm_gain');
+  await typeId(1, 'm-gain');
+  const twoProbes = await settled();
+  check('(set-up) a second Probe takes m_gain, which score_sq names; m-gain typed there leaves score_sq on m_gain, said in amber',
+    JSON.stringify(twoProbes.measurements.map(m => m.measurement_id)) === '["m_x","m-gain"]' && JSON.stringify(equations(twoProbes)) === '["m_x","m_gain"]'
+    && (await evaluate(NOTE)).startsWith('Spec score_sq still uses m_gain: "m-gain" is not letters') && await evaluate(WARNED), await evaluate(NOTE));
+  await tickFirst(); await evaluate(`${TOOL('Delete selected')}.click()`);
+  await rowCount(1);
+  await evaluate(UNDO);
+  await rowCount(2);
+  await typeId(1, 'm.gain');
+  check('...the row above deleted and the Delete undone, an ID typed in the row still says score_sq stays on m_gain: the memory came back with the row',
+    (await evaluate(NOTE)).startsWith('Spec score_sq still uses m_gain: "m.gain" is not letters') && await evaluate(WARNED), await evaluate(NOTE));
+  await tickFirst(); await evaluate(`${TOOL('Delete selected')}.click()`);
+  await rowCount(1);
+  await typeId(0, 'm_gain2');
+  const movedUp = await settled();
+  check('...and with the row above deleted, the next ID typed in the row takes score_sq along from m_gain (review of SIF-106: it stayed, unsaid)',
+    JSON.stringify(movedUp.measurements.map(m => m.measurement_id)) === '["m_gain2"]' && equations(movedUp)[1] === 'm_gain2'
+    && (await evaluate(NOTE)).startsWith("Spec score_sq now uses m_gain2, the Probe's new ID."), JSON.stringify({ equations: equations(movedUp), note: await evaluate(NOTE) }));
 
   // With training corners planned, each spec's "Judged at" matters again, and the column is there. The page's own save comes
   // first: a save still due could land between the write below and the reload and put the configuration without corners back

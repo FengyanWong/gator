@@ -33,10 +33,11 @@ HELP = {
     'what this is': 'The task file: everything this task is, in one place. Edit it here or in the three editors. '
                     '"Apply to editors" checks it and puts the rows into the editors; "Save as" stores them as a new task. '
                     'Nothing is written to Virtuoso or saved until you press "Save as".',
-    'cell': 'The cell the task was read from. Since 2026-09-23 that is the copy you made in Virtuoso and read in the '
-            'Virtuoso window (the workbench makes no copy of its own), so cell and copy name the same cell.',
-    'copy': 'The cell in Virtuoso that the task simulates and writes its Maestro test into. A task saved before '
-            '2026-09-23 names the copy the workbench made then (<library>_GATOR) and keeps running on it.',
+    'cell': 'The Virtuoso cell this task was read from. Shown only: "Apply to editors" does not change it; to use '
+            'another cell, read that cell in the Virtuoso window.',
+    'copy': 'The cell the task simulates and writes its Maestro test into. It is the cell above, except in a task saved '
+            'before 2026-09-23, which keeps running on the copy the workbench made then (<library>_GATOR). Shown only, '
+            'like cell.',
     'measurement': 'kind = maestro: the Maestro outputs of the copy are the probes. kind = ring_oscillator or opamp_ac: '
                    'the two verified circuit types, measured by the workbench. Found from the probes when you save. '
                    'expected_frequency_hz (ring_oscillator only): a rough oscillation frequency; it sizes the transient.',
@@ -47,14 +48,17 @@ HELP = {
                'start voltage, which a circuit that does not start by itself needs - an oscillator stays in its '
                'symmetric DC point without them. They are stored in a small file on the simulator host and registered '
                'with the test, so Maestro\'s own runs and every run of the workbench start the same way.',
-    'parameters': 'Parameters rows: what may vary - instance path as in the circuit (e.g. XU1/MN1), parameter, unit, '
-                  'range, step, grouping. In Virtuoso a run writes any value the property form of the instance lets you '
-                  'type (read with the cell): widths, lengths, finger counts, multipliers, capacitor sides ...',
-    'probes': 'Probes rows: what is measured. result_source ade_output = a Maestro output (source_name = its name, '
-              'signal = its expression); backend_profile = a result of the circuit type; expression = arithmetic over '
-              'other probes.',
-    'specs': 'Specs rows: equation over probe IDs, constraint and limits, plus what only the optimizer uses (hard, '
-             'soft_weight, direction_after_feasible, normalization_scale).',
+    'parameters': 'Parameters rows: what may vary - instance_path (Instance: the path as in the circuit, e.g. XU1/MN1), '
+                  'parameter_name (Parameter), unit, lower and upper (Lower, Upper: the range searched), step, '
+                  'binding_group (Tied to: the row this one follows, times its ratio). In Virtuoso a run writes any '
+                  'value the property form of the instance lets you type (read with the cell): widths, lengths, '
+                  'finger counts, multipliers, capacitor sides ...',
+    'probes': 'Probes rows: what is measured. result_source (Result source): ade_output = a Maestro output '
+              '(source_name = its Output name, signal = its Expression); backend_profile = a result of the circuit '
+              'type; expression = arithmetic over other probes.',
+    'specs': 'Specs rows: equation (Equation) over probe IDs, constraint (Limit) with lower and upper, plus what only '
+             'the optimizer uses: hard (Hard), soft_weight (Soft weight), direction_after_feasible (Objective, chosen '
+             'in the Limit list), normalization_scale (Scale).',
     'notes': 'Free text for your records.',
 }
 

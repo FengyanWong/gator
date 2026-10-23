@@ -7,8 +7,8 @@ import { convert, kindUnit, NUMBER_FORMS, quantity, readQuantity, sameQuantity }
 import { MatchedDevices } from './MatchedDevices';
 import { Cell, LimitSelect } from './cells';
 import { DiffView } from './DiffView';
-import { columnOf, drawsColumn, exact, FOLLOWER_IGNORES, LABELS, limitLabel, newRow, QUANTITY, readNumber, type Section, SECTION_TITLES as TITLES,
-  unitIn, usesProbe, withFollowers, withSaved } from './editorRules';
+import { columnOf, drawsColumn, exact, FOLLOWER_IGNORES, LABELS, limitLabel, newRow, probeRename, QUANTITY, readNumber, renameProbe, type Section,
+  SECTION_TITLES as TITLES, unitIn, usesProbe, withFollowers, withSaved } from './editorRules';
 import { type BarCell, FormulaBar } from './FormulaBar';
 import { keep, readKept } from '../kept';
 import { RELOAD_SAVED_REQUEST } from './taskChoice';
@@ -79,7 +79,10 @@ const CRAMPED_PX = 200;
  *  "Show circuit" brings the circuit column back beside the rows (`circuitShown`, `onCircuit`: App.tsx). */
 function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, lastStep, validation, addsSizes, taskSlot, taskNotes, taskHead, taskTools,
   taskStatus, circuitShown, onCircuit, onCramped }:
-  { schema: Json; config: Json; setConfig: (c: Json | ((c: Json) => Json)) => void; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
+  { schema: Json; config: Json; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
+    /** history.ts useConfig's: `record` false changes the configuration without an Undo step of its own, so the change joins
+     *  the last one - the Specs that follow a typed Probe ID join its typing (branch record SIF-106). */
+    setConfig: (c: Json | ((c: Json) => Json), record?: boolean) => void;
     /** The last Undo or Redo, from any panel or window, until the next change (history.ts): the line under the formula bar
      *  names what it changed (branch record SIF-97). */
     lastStep: HistoryStep | null;
@@ -121,6 +124,12 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const focusNext = useRef<{ key: string } | { index: number } | null>(null);
   const lastTicked = useRef<string | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
+  // The ID a Probe's ID cell held when it was entered (branch record SIF-106), and the one its Specs name (`from`): left with
+  // another ID, they follow it (followProbeId). `refusedId`: a new ID they could not follow - empty, no plain name, another
+  // Probe's - so they still name the one before it, which the next ID typed in that row takes along.
+  const idEntered = useRef<{ index: number; held: string; from: string } | null>(null);
+  const refusedId = useRef<{ index: number; from: string; to: string } | null>(null);
+  const namedBefore = (index: number, id: string) => refusedId.current?.index === index && refusedId.current.to === id ? refusedId.current.from : id;
   // The row's ID stays in view beside the tick box while the table scrolls sideways (record 7.182): it sticks at the tick-box
   // column's own width - which a tie toggle widens on Parameters, and a narrower window can change without a new render - and a
   // line marks its edge while columns pass under it.
@@ -230,6 +239,28 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       !orphans.length ? '' : `${orphans.length === 1 ? `${orphans[0]} was` : `${orphans.length} rows (${idList(orphans)}) were`} tied to a deleted row and now `
         + `follow${orphans.length === 1 ? 's' : ''} nothing.`,
       !users.length ? '' : `${users.length === 1 ? `Spec ${users[0]} uses` : `${users.length} Specs (${idList(users)}) use`} a deleted Probe.`].filter(Boolean).join(' ') });
+  };
+  // A Probe ID typed anew takes the Specs naming the old one along (branch record SIF-106; editorRules.ts probeRename says when):
+  // as Delete selected does for a deleted Probe, the line under the formula bar names them - they are on a tab not in view -
+  // with Show Specs, in amber when they cannot follow, and why.
+  const sayRename = (index: number, from: string, to: string, { specs, refused }: { specs: string[]; refused: string | null }) => {
+    if (refused) refusedId.current = { index, from, to };
+    else if (refusedId.current?.index === index) refusedId.current = null;
+    if (!specs.length) return;
+    const one = specs.length === 1, named = one ? `Spec ${specs[0]}` : `${specs.length} Specs (${idList(specs)})`;
+    setNote({ warn: !!refused, show: 'targets', text: refused
+      ? `${named} still use${one ? 's' : ''} ${from}: ${refused}. Another ID typed there takes ${one ? 'it' : 'them'} along; Undo takes this one back.`
+      : `${named} now use${one ? 's' : ''} ${to}, the Probe's new ID. Undo takes ${one ? 'it' : 'them'} back with the ID.` });
+  };
+  // Leaving a Probe's ID cell with an ID typed in it. The cell wrote each key, as an Undo step of its typing; the Specs join
+  // that step (record false), so one Undo takes them back with the typed ID.
+  const followProbeId = (index: number) => {
+    const entered = idEntered.current, to = String(rows[index]?.[keyField] ?? '');
+    idEntered.current = null;
+    if (entered?.index !== index || to === entered.held) return;              // nothing typed: a refusal still stands
+    const rename = probeRename(config, index, entered.from, to);
+    if (rename.specs.length && !rename.refused) setConfig((c: Json) => renameProbe(c, entered.from, to), false);
+    sayRename(index, entered.from, to, rename);
   };
 
   // JSON import goes through a DIFF CONFIRMATION before it replaces anything. The backend's diff covers the three tables;
@@ -347,7 +378,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       else { try { value = JSON.parse(text); } catch { return 'Not JSON: a list is written as ["a", "b"].'; } }
     } else value = text === '' && c.nullable ? null : text;
     const before = activeRow[c.name] === undefined ? c.default : activeRow[c.name];
-    if (JSON.stringify(value) !== JSON.stringify(before)) update(at, c.name, value);
+    if (JSON.stringify(value) === JSON.stringify(before)) return null;
+    // A Probe ID written here takes the Specs naming the old one along in the same Undo step (branch record SIF-106).
+    const probeId = tab === 'measurements' && c.name === keyField, from = probeId ? namedBefore(at, String(before ?? '')) : '', to = String(value ?? '');
+    const rename = probeId ? probeRename(config, at, from, to) : null;
+    if (rename?.specs.length && !rename.refused) setConfig((cfg: Json) => renameProbe(withFollowers(tab, cfg, new Map([[at, { [c.name]: value }]])), from, to));
+    else update(at, c.name, value);
+    if (rename) sayRename(at, from, to, rename);
     return null;
   };
   // Tied rows (record 7.180, design advice 4): a Parameters row whose binding_group names a row of the table follows that leader -
@@ -595,6 +632,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         });
       });
       if (changes.size) setConfig((cfg: Json) => withFollowers(tab, cfg, changes));
+      // A block pasted over Probe IDs is no typed rename: leaving the cell it was pasted in does not take that one row's Specs
+      // along, as if only it had changed (branch record SIF-106).
+      const entered = idEntered.current, pastedId = entered ? changes.get(entered.index)?.[keyField] : undefined;
+      if (entered && pastedId !== undefined) idEntered.current = { index: entered.index, held: String(pastedId ?? ''), from: String(pastedId ?? '') };
       const said = [cells ? `Pasted ${cells} cell${cells === 1 ? '' : 's'} into ${changes.size} row${changes.size === 1 ? '' : 's'} (one Undo step).` : 'Nothing pasted.',
         header ? 'The header line was skipped.' : '',
         problems.length ? `Not read, left as they were: ${problems.slice(0, 4).join(', ')}${problems.length > 4 ? ` and ${problems.length - 4} more` : ''}.` : '',
@@ -602,9 +643,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         beyond ? `${beyond} line${beyond === 1 ? '' : 's'} below the last row left out: Add rows first.` : ''].filter(Boolean).join(' ');
       setNote({ text: said, warn: problems.length + beyond > 0 });
     };
-    return { shortText, fillDown, copyOut, onTablePaste };
+    return { shortText, fillDown, copyOut, onTablePaste, toClipboard };
   }
-  const { shortText, fillDown, copyOut, onTablePaste } = sheetEdits();
+  const { shortText, fillDown, copyOut, onTablePaste, toClipboard } = sheetEdits();
 
   // Rows not saved in the task (record 7.222, user: "In the parameter probe and spec windows, highlight the rows that are
   // unsaved"): validation compares the rows with the saved task's file, as the check before a run does, and names per table
@@ -702,6 +743,32 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     (cell?.querySelector('input, select') as HTMLElement | null)?.focus();
   };
   const probeIds: string[] = (config.measurements ?? []).map((m: Json) => m.measurement_id).filter(Boolean);
+  // The formula bar's cell: none while Find hides the chosen cell's row.
+  const shownCell = activeRow && !inView(activeRow, at) ? null : barCell;
+  // The Specs line's Probe chips put their ID into the chosen Equation cell (branch record SIF-106): each ID (m_supply_power_w,
+  // m_f1_hz ...) was typed by hand, letter by letter, under the line that lists them, and a slip showed as an unknown probe
+  // only after validation. A press keeps the focus where it is (its mousedown), so the cell or the formula bar keeps its
+  // cursor: the ID takes the place of the text chosen there - at the end with neither in focus - with a space where it would
+  // touch the text beside it, and is written as the bar writes, one Undo step. The bar's own text takes it too, so leaving
+  // the bar writes nothing more. With no Equation cell chosen the press copies the ID.
+  const equationCell = tab === 'targets' && shownCell?.editable && activeColumn?.name === 'equation' ? activeRow : null;
+  const pressProbe = (id: string) => {
+    if (!equationCell) {
+      const copied = toClipboard(id);
+      return setNote(copied ? { text: `Copied ${id}. With an Equation cell chosen, a press puts the ID in at the cursor.`, warn: false }
+        : { text: `The browser did not let the page copy ${id}: choose an Equation cell, and a press puts the ID in at the cursor.`, warn: true });
+    }
+    const focused = document.activeElement;
+    const box = focused instanceof HTMLTextAreaElement && focused.closest('.formula-bar') ? focused
+      : focused instanceof HTMLInputElement && focused.closest('td[data-field="equation"]') && focused.closest('tr')?.dataset.index === String(at) ? focused : null;
+    const text = box ? box.value : String(equationCell.equation ?? ''), start = box?.selectionStart ?? text.length, end = box?.selectionEnd ?? text.length;
+    const put = `${/[^\s(]$/.test(text.slice(0, start)) ? ' ' : ''}${id}${/^[^\s)]/.test(text.slice(end)) ? ' ' : ''}`;
+    if (box) {
+      box.setRangeText(put, start, end, 'end');                  // the cursor after the ID, where typing goes on
+      if (box instanceof HTMLTextAreaElement) box.dispatchEvent(new Event('input', { bubbles: true }));   // the bar's own text
+    }
+    commitBar(box ? box.value : text + put);
+  };
 
   return (
     <section className="panel editors" data-editor={tab}>
@@ -787,8 +854,12 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
           ? ` Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window${addsSizes
             ? ': the + after a size adds it as a row' : ''}.` : ''}</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
-        + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns).'}>Probes: {probeIds.length
-          ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}
+        + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns). '
+        + 'A Probe pressed goes into the chosen Equation cell at the cursor; with none chosen, it is copied.'}>Probes: {probeIds.length
+          ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<button type="button" className="chip-insert" onMouseDown={e => e.preventDefault()}
+              onClick={() => pressProbe(id)} title={equationCell ? `${id}: Puts this Probe ID into the Equation of ${equationCell[keyField]} - at the cursor, or at its end - as one Undo step.`
+                : `${id}: Copies this Probe ID. With an Equation cell chosen, a press puts it in at the cursor instead.`}><code className="probe-id">{id}</code></button></Fragment>)
+          : 'none yet - fill in the Probes tab first'}</p>}
       {/* The zero-floor hint (reward v2.1 B3) names its rows and goes once their Margin sides is upper: it stayed after the
           user followed it, named no row, and its column hides behind More columns (branch record SIF-50). */}
       {tab === 'targets' && (() => {
@@ -800,7 +871,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>
         <div className="row"><button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>
         {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} unitOf={unitIn(config, schema.section_keys ?? {})} />}</div>}
-      <FormulaBar cell={activeRow && !inView(activeRow, at) ? null : barCell} commit={commitBar} back={backToCell} />
+      <FormulaBar cell={shownCell} commit={commitBar} back={backToCell} />
       {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}{note.show && <> <button className="item-link note-show"
         onClick={() => showTab(note.show!)} title={`Show ${TITLES[note.show]}: the tab of the rows this changed.`}>Show {TITLES[note.show]}</button></>}</p>}
       <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}
@@ -835,8 +906,12 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                   starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,
                   not absent, and stays empty. */}
               {visible.map(c => { const saved = change ? savedIn(row, c.name) : null;
+                // a Probe ID typed in its cell (a Maestro output's follows its Output name): the Specs follow it on leaving (SIF-106)
+                const typedId = tab === 'measurements' && c.name === keyField && !fixedOf(row, c);
                 return <td key={c.name} data-field={c.name} className={[at === index && active?.name === c.name ? 'active-cell' : '', saved !== null ? 'unsaved-cell' : ''].filter(Boolean).join(' ') || undefined}
-                onFocus={() => setActive({ index, name: c.name, key: String(row[keyField] ?? '') })}>{tab === 'targets' && c.name === 'constraint'
+                onFocus={() => { const held = String(row[keyField] ?? ''); setActive({ index, name: c.name, key: held });
+                  if (typedId) idEntered.current = { index, held, from: namedBefore(index, held) }; }}
+                onBlur={typedId ? () => followProbeId(index) : undefined}>{tab === 'targets' && c.name === 'constraint'
                 ? <LimitSelect row={row} title={withSaved(saved, c.guidance)} onChange={fields => patch(index, fields)} />
                 : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
                     fixed={fixedOf(row, c)} off={offOf(row, c)} unit={QUANTITY[tab]?.includes(c.name) ? effectiveUnit(row) : undefined}

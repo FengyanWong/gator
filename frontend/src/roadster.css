@@ -418,6 +418,12 @@ table.editor td.issues { padding: 0 10px; vertical-align: middle; }
 /* the Specs tab's Probe chips - the names an Equation is typed with - were the old look's 11 px beside the 14 px "Probes:" and
    the Equation cells (SIF-63 raised the other 11 px text); the line keeps its 1.75 height, so wrapped chips do not touch */
 .spec-probes code.probe-id { font-size: 13px; padding: 1px 6px; }
+/* SIF-106: each chip is a button now (a press puts its ID into the chosen Equation cell, or copies it), drawn as the chip it
+   was - none of a button's frame, fill or padding, the line's font - so the line reads and measures as before; a hover rings
+   the chip in the Probe colour, the keyboard's focus with the page's ring */
+.spec-probes button.chip-insert, .spec-probes button.chip-insert:hover:not(:disabled) { border: none; border-radius: 0; background: none; padding: 0;
+  font: inherit; color: inherit; cursor: pointer; }
+.spec-probes button.chip-insert:hover code.probe-id { border-color: var(--probe); }
 /* the tick boxes in one column: centred with a leader's count beside it ("▸7", "▸31") or without one, each box stood at another
    place (x 47, 50 and 62 px on the VCO's Parameters); at the cell's start the count follows the box - and the header's box
    (branch record SIF-96) stands over them */

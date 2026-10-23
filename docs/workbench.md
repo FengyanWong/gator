@@ -449,7 +449,8 @@ clipboard, as the Connection, Agent and Runs windows did already: a browser refu
 have focus, and the RL model window's folders went through the main page's, failing unsaid.
 
 **Each editor's colour.** Parameters, Probes and Specs each have a colour, used on their tab and on their table's header
-row. The Specs line lists the Probe ids as Probe-coloured chips; its words are the same as before.
+row. The Specs line lists the Probe ids as Probe-coloured chips; its words are the same as before. Since branch record
+SIF-106 each chip is a button, drawn as before: a press puts the ID into the chosen Equation cell, or copies it.
 
 **The circuit picture.** A second on-screen picture by user decision, on the graph view's terms (drawn in the browser,
 nothing written). In the circuit column (**Show circuit** on the editors' tab line, record 7.362), the circuit appears as a small node-link drawing in the
@@ -756,7 +757,8 @@ exponent, 2.5e-3; a word is refused in words and the cell stays). A list (analys
 that follows another field (a Maestro output's Probe ID, a follower's bounds) are shown in the bar and not typed there: its
 tooltip says why, and for a list names its choices. Typing in the cell shows at once in the bar. The bar writes through the
 same path as the cell, so what follows a cell follows a typed bar too (a renamed output's Probe ID and the equations using
-it; a spec's unit from its one Probe). Browser check: `frontend/scripts/formula_bar_check.mjs`.
+it; a spec's unit from its one Probe; since branch record SIF-106 the equations using a Probe ID written there, in the same
+Undo step). Browser check: `frontend/scripts/formula_bar_check.mjs`.
 
 ### Tied rows, spreadsheet keys and a pasted block (2026-10-05, record 7.180)
 
@@ -875,8 +877,24 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   confirmation's words). When it changed rows of a tab not in view, the line offers **Show Specs** (that tab's name); the
   tab is not switched by itself. Nothing here saves, runs or writes to Virtuoso: the keys do what the toolbar's Undo and
   Redo did.
+- **A Probe renamed, and the Probe chips** (branch record SIF-106, from the usability audit). A Maestro output's Probe ID
+  follows its output name with the spec equations that use it, but an ID typed in its own cell - an ngspice or MOCK task's
+  Probe - left every Spec on the old ID, broken on the Specs tab, which is not in view. Now a Probe ID typed anew takes the
+  Specs naming the old one along once its cell is left, or when the formula bar writes it, never per key: a cell writes
+  each key, so "m_" or an emptied box would have taken them, and a step through another Probe's ID that Probe's Specs too.
+  They join the ID's own Undo step, so one Undo takes them back with it, and the line under the formula bar names them with
+  **Show Specs**: "2 Specs (inl1, inl2) now use m_f1, the Probe's new ID. Undo takes them back with the ID." They follow only
+  between plain names (letters, digits and _, a letter or _ first, as a renamed output's): an emptied ID, one with "." or
+  "-" (which a formula cannot read), or another Probe's leaves them on the old one, said in amber with why, and the next ID
+  typed in that row takes them along. A block pasted over Probe IDs leaves the Specs as before. The Probe chips on the line
+  above the Specs table ("Probes: m_f1_hz, m_f2_hz, ...") are buttons now: with an Equation cell chosen, a press puts the
+  ID in at the cursor of the cell or the formula bar, in place of the text chosen there, with a space where it would touch
+  the text beside it; the cell or the bar keeps the focus and the cursor follows the ID. It is written as the bar writes,
+  one Undo step, and the bar's own text takes it too, so Enter writes nothing more. With no Equation cell chosen, a press
+  copies the ID ("Copied m_f1_hz."). Nothing here saves, runs or writes to Virtuoso: both change the configuration only,
+  and Undo takes them back.
 
-Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`.
+Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`, `frontend/scripts/spec_equations_check.mjs` (SIF-106).
 
 ### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)
 

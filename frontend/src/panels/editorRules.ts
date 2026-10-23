@@ -160,6 +160,41 @@ export function withFollowers(tab: Section, c: Json, changes: Map<number, Json>)
   return next;
 }
 
+/** What a Probe ID typed anew does to the Specs naming the old one (branch record SIF-106): a Maestro output's ID takes them
+ *  along with its output name (withFollowers above), but an ID typed in its own cell - an ngspice or MOCK task's Probe - left
+ *  them on the old one, broken on the Specs tab, out of view. The editors ask once the cell is left or the formula bar writes
+ *  the ID, never per key: a cell writes each key, so "m_" or an emptied box would have taken them, and a step through another
+ *  Probe's ID that Probe's Specs too. Only between plain names, as a renamed output's: a formula reads no other (an ID with
+ *  "." or "-" is a whole equation alone, spec_equations.py). `specs`: the Specs (their IDs) naming `from` (Probe `index`'s ID
+ *  before); none when nothing is lost - the same ID, an old one that is no plain name, or one another Probe still holds.
+ *  `refused`: why they stay on it, in words, or null when they follow. */
+export function probeRename(c: Json, index: number, from: string, to: string): { specs: string[]; refused: string | null } {
+  const plain = /^[A-Za-z_][A-Za-z0-9_]*$/;
+  const others = (c.measurements ?? []).filter((_: Json, i: number) => i !== index).map((m: Json) => m?.measurement_id);
+  const specs: string[] = from === to || !plain.test(from) || others.includes(from) ? []
+    : (c.targets ?? []).filter((t: Json) => typeof t?.equation === 'string' && usesProbe(t.equation, from)).map((t: Json) => String(t.metric_id ?? ''));
+  const refused = !specs.length ? null : !to ? 'the Probe ID is empty'
+    : !plain.test(to) ? `"${to}" is not letters, digits and _ alone, with a letter or _ first`
+    : others.includes(to) ? `${to} is another Probe's ID` : null;
+  return { specs, refused };
+}
+
+/** `c` with every Spec equation that names the Probe `from` as a whole name naming `to` instead, as withFollowers rewrites
+ *  them for a renamed output (branch record SIF-106); a Spec that does not name it stays the same row, and `c` itself when
+ *  none does. */
+export function renameProbe(c: Json, from: string, to: string): Json {
+  const rename = equationRenamer(from, to);
+  let renamed = false;
+  const targets = (c.targets ?? []).map((t: Json) => {
+    if (typeof t?.equation !== 'string') return t;
+    const equation = rename(t.equation);
+    if (equation === t.equation) return t;
+    renamed = true;
+    return { ...t, equation };
+  });
+  return renamed ? { ...c, targets } : c;
+}
+
 /** The start of a new row's ID (Add), in the tab's own word (branch record SIF-50). */
 const NEW_ID: Record<Section, string> = { parameters: 'parameter', measurements: 'probe', targets: 'spec' };
 /** The row Add puts at the end of a table of `config` (`schema`: /api/schema, its columns and each table's ID field). Here, out

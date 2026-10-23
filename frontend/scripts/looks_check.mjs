@@ -351,12 +351,17 @@ await runChecks(browser, async () => {
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Specs')).click()`);
   await sleep(300);
   const probes = config.measurements.map(m => m.measurement_id).filter(Boolean);
-  const chips = await evaluate(`(() => { const p = document.querySelector('.fact.spec-probes'), chip = p.querySelector('code.probe-id');
-    return { ids: [...p.querySelectorAll('code.probe-id')].map(c => c.textContent), text: p.textContent, size: chip && [getComputedStyle(chip).fontSize, getComputedStyle(p).fontSize] }; })()`);
+  const chips = await evaluate(`(() => { const p = document.querySelector('.fact.spec-probes'), chip = p.querySelector('code.probe-id'), button = chip?.parentElement, s = button && getComputedStyle(button);
+    return { ids: [...p.querySelectorAll('code.probe-id')].map(c => c.textContent), text: p.textContent, size: chip && [getComputedStyle(chip).fontSize, getComputedStyle(p).fontSize],
+      button: s && [button.tagName, button.className, s.borderTopWidth, s.paddingLeft, s.paddingTop, s.backgroundColor, s.fontSize, s.cursor] }; })()`);
   check('the Specs line offers the Probe ids as chips', JSON.stringify(chips.ids) === JSON.stringify(probes), JSON.stringify(chips.ids));
   check('...the line reads "Probes:" and the ids, a comma between them (its explanation in the tooltip, record 7.176)', chips.text === `Probes: ${probes.join(', ')}`, chips.text.slice(0, 160));
   // Branch record SIF-74: the chips, the names an Equation is typed with, were the old look's 11 px beside the 14 px line.
   check('...the chips at 13 px in their mono font beside the 14 px line (SIF-74)', JSON.stringify(chips.size) === '["13px","14px"]', JSON.stringify(chips.size));
+  // Branch record SIF-106: each chip is a button (a press puts the ID into the chosen Equation cell, or copies it), drawn as the
+  // chip it was: no frame, fill or padding of a button, the line's 14 px, a pointer over it.
+  check('...each chip a button with no frame, fill or padding of its own, at the line\'s size, a pointer over it (SIF-106)',
+    JSON.stringify(chips.button) === JSON.stringify(['BUTTON', 'chip-insert', '0px', '0px', '0px', 'rgba(0, 0, 0, 0)', '14px', 'pointer']), JSON.stringify(chips.button));
   check('the Specs table header row takes the Specs colour', await evaluate(`document.querySelector('.editors').dataset.editor === 'targets'`));
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Parameters')).click()`);
 

@@ -5,6 +5,9 @@
 // simulation), every other writing request is refused here - so it is safe on any backend, but it needs one that KNOWS
 // equations (restarted after 7.52, or a scratch one).
 // The browser profile is new and temporary: the user's saved configuration is not touched.
+// Branch record SIF-106: a Probe ID typed anew takes the Specs naming it along once its cell is left or the formula bar
+// writes it, and the Specs line's Probe chips put their ID into the chosen Equation cell; a chip's copy is answered here, so
+// the system clipboard is not touched.
 // Run (Windows node through WSL interop; node >= 22):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/spec_equations_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -227,6 +230,112 @@ await runChecks(browser, async () => {
   await setFile(noIds);
   check('...and a row without its ID is named by its header, Spec ID, beside the file\'s key',
     await until(`${ERROR} === 'Import failed: every Specs row needs its Spec ID ("metric_id" in the file)'`), await evaluate(ERROR));
+
+  // ---- branch record SIF-106: a Probe ID typed anew takes the Specs naming it along, once the cell is left or the formula bar
+  //      writes it - never per key; a refused ID says why. The Specs line's Probe chips put their ID into the chosen Equation
+  //      cell, at the cursor, as one Undo step, and copy it with none chosen ------------------------------------------------
+  await send('Emulation.setFocusEmulationEnabled', { enabled: true });   // focus and blur as in a window that has the focus
+  const NOTE = `(${EDITORS}.querySelector('.paste-note')?.textContent ?? '')`, WARNED = `!!${EDITORS}.querySelector('.paste-note.warn')`;
+  const UNDO = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Undo').click()`;
+  const BAR = `document.querySelector('.formula-bar textarea')`;
+  const settled = async () => { await page.saved(); return page.stored(); };
+  const naming = (c, id) => c.targets.filter(t => new RegExp(`(?<![A-Za-z0-9_.])${id}(?![A-Za-z0-9_])`).test(t.equation)).map(t => t.metric_id);
+  const equations = c => c.targets.map(t => t.equation);
+  const start = await settled(), users = naming(start, 'm_score');
+  const ID = CELL(0, 'measurement_id'), retype = async text => { await evaluate(`${ID}.focus(); ${ID}.select()`);
+    for (const ch of text) { await send('Input.insertText', { text: ch }); await sleep(40); } };
+  await openTab('Probes');
+  check('(set-up) the MOCK Probe m_score is measured by its backend, its ID typed in its cell, and two Specs use it', start.measurements[0].result_source === 'backend_profile'
+    && await evaluate(`!${ID}.readOnly`) && JSON.stringify(users) === '["score","score_sq"]', JSON.stringify({ users, probe: start.measurements[0] }));
+  await retype('m_total');
+  const typing = await settled();
+  check('while the ID is typed key by key the Specs keep m_score: no rename per key (no "m_t" in an equation)', typing.measurements[0].measurement_id === 'm_total'
+    && JSON.stringify(equations(typing)) === JSON.stringify(equations(start)), JSON.stringify(equations(typing)));
+  await evaluate(`${ID}.blur()`);
+  const followed = await settled(), said = `2 Specs (score, score_sq) now use m_total, the Probe's new ID. Undo takes them back with the ID.`;
+  check('leaving the cell takes the Specs along (m_score ** 2 becomes m_total ** 2)', JSON.stringify(equations(followed))
+    === JSON.stringify(equations(start).map(e => e.replace(/\bm_score\b/g, 'm_total'))) && naming(followed, 'm_score').length === 0, JSON.stringify(equations(followed)));
+  check('...and the line under the formula bar names them, with Show Specs', await page.until(`${NOTE} === ${JSON.stringify(`${said} Show Specs`)}`, 20)
+    && !(await evaluate(WARNED)), await evaluate(NOTE));
+  await evaluate(UNDO);
+  const back = await settled();
+  check('one Undo takes the Specs back with the typed ID', back.measurements[0].measurement_id === 'm_score'
+    && JSON.stringify(equations(back)) === JSON.stringify(equations(start)), JSON.stringify([back.measurements[0].measurement_id, equations(back)]));
+  await retype('m-total');
+  await evaluate(`${ID}.blur()`);
+  const kept = await settled();
+  check('an ID no equation can use leaves the Specs on m_score and says why, in amber', kept.measurements[0].measurement_id === 'm-total'
+    && JSON.stringify(equations(kept)) === JSON.stringify(equations(start)) && await page.until(`${NOTE} === ${JSON.stringify('2 Specs (score, score_sq) still use m_score: "m-total" '
+      + 'is not letters, digits and _ alone, with a letter or _ first. Another ID typed there takes them along; Undo takes this one back. Show Specs')}`, 20)
+    && await evaluate(WARNED), await evaluate(NOTE));
+  await evaluate(`${EDITORS}.querySelector('.paste-note button.note-show').click()`);
+  check('...its Show Specs opens Specs, where the backend finds the probe unknown', await until(`${EDITORS}.dataset.editor === 'targets'`, 20)
+    && (await issuesUntil(0, ['error: equation_unknown_probe']))[0], JSON.stringify(await issues(0)));
+  await openTab('Probes');
+  await retype('m_total');
+  await evaluate(`${ID}.blur()`);
+  const fixed = await settled();
+  check('...and the next ID typed takes them along from m_score', fixed.measurements[0].measurement_id === 'm_total' && naming(fixed, 'm_total').length === 2
+    && (await evaluate(NOTE)).startsWith('2 Specs (score, score_sq) now use m_total'), JSON.stringify(equations(fixed)));
+  await openTab('Specs');
+  check('...which the backend finds again', (await issuesUntil(0, [], ['equation_unknown_probe']))[0] && (await issuesUntil(1, [], ['equation_unknown_probe']))[0],
+    JSON.stringify([await issues(0), await issues(1)]));
+  // the formula bar: Enter writes the ID with the Specs, one Undo step
+  await openTab('Probes');
+  await evaluate(`${ID}.focus()`);
+  await evaluate(`(() => { const b = ${BAR}; b.focus(); b.select(); })()`);
+  await send('Input.insertText', { text: 'm_sum' });
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  const barred = await settled();
+  check('an ID written in the formula bar takes the Specs along too', barred.measurements[0].measurement_id === 'm_sum' && naming(barred, 'm_sum').length === 2
+    && (await evaluate(NOTE)).startsWith('2 Specs (score, score_sq) now use m_sum'), JSON.stringify([barred.measurements[0].measurement_id, equations(barred)]));
+  await evaluate(UNDO);
+  const unbarred = await settled();
+  check('...and one Undo takes both back', unbarred.measurements[0].measurement_id === 'm_total' && naming(unbarred, 'm_total').length === 2,
+    JSON.stringify([unbarred.measurements[0].measurement_id, equations(unbarred)]));
+  await evaluate(`${ID}.blur()`);
+
+  // the Probe chips: a press as a person's, whose mousedown leaves the focus where it is
+  await openTab('Specs');
+  await evaluate(`(() => { const own = document.execCommand.bind(document); document.execCommand = (command, ...rest) => { if (command !== 'copy') return own(command, ...rest);
+    const data = new DataTransfer(); (document.activeElement || document.body).dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }));
+    window.__copied = data.getData('text/plain'); return true; }; })()`);      // the copy answered here: the system clipboard untouched
+  const CHIP = `${EDITORS}.querySelector('.spec-probes button.chip-insert')`;
+  const pressChip = async () => {
+    const at = await evaluate(`(() => { const r = ${CHIP}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await page.clickAt(at); await sleep(200);
+  };
+  check('each Probe chip is a button holding its code, the line still "Probes: m_total"', await evaluate(`${CHIP}?.querySelector('code.probe-id')?.textContent === 'm_total'`)
+    && (await evaluate(`${EDITORS}.querySelector('.spec-probes').textContent`)) === 'Probes: m_total'
+    && (await evaluate(`${CHIP}.title`)).startsWith('m_total: Copies this Probe ID.'), await evaluate(`${CHIP}?.outerHTML ?? 'no chip button'`));
+  await pressChip();
+  check('with no Equation cell chosen a press copies the ID and says how to put it in', (await evaluate('window.__copied')) === 'm_total'
+    && (await evaluate(NOTE)) === 'Copied m_total. With an Equation cell chosen, a press puts the ID in at the cursor.', `${await evaluate('window.__copied')} | ${await evaluate(NOTE)}`);
+  const EQ = CELL(1, 'equation');
+  await page.setValue(EQ, 'm_total *', { event: 'input', focus: true });
+  await evaluate(`${EQ}.setSelectionRange(9, 9)`);
+  check('(set-up) an Equation cell chosen: the chip says where its press puts the ID',
+    (await evaluate(`${CHIP}.title`)) === 'm_total: Puts this Probe ID into the Equation of score_sq - at the cursor, or at its end - as one Undo step.', await evaluate(`${CHIP}.title`));
+  await pressChip();
+  const inCell = await evaluate(`({ value: ${EQ}.value, focused: document.activeElement === ${EQ}, at: ${EQ}.selectionStart })`);
+  check('a press puts the ID in at the cell\'s cursor, a space before it, the cell keeping the focus with the cursor after it',
+    JSON.stringify(inCell) === JSON.stringify({ value: 'm_total * m_total', focused: true, at: 17 }) && (await settled()).targets[1].equation === 'm_total * m_total', JSON.stringify(inCell));
+  await evaluate(UNDO);
+  check('...as one Undo step of its own: Undo takes the ID back and leaves what was typed', (await settled()).targets[1].equation === 'm_total *',
+    (await settled()).targets[1].equation);
+  await evaluate(`(() => { const b = ${BAR}; b.focus(); b.select(); })()`);
+  await send('Input.insertText', { text: '( + m_total) / 2' });
+  await evaluate(`${BAR}.setSelectionRange(1, 1)`);
+  await pressChip();
+  const inBar = await evaluate(`({ value: ${BAR}.value, focused: document.activeElement === ${BAR}, at: ${BAR}.selectionStart })`);
+  check('in the formula bar: the ID at its cursor, written with what the bar holds, the bar keeping the focus',
+    JSON.stringify(inBar) === JSON.stringify({ value: '(m_total + m_total) / 2', focused: true, at: 8 }) && (await settled()).targets[1].equation === '(m_total + m_total) / 2',
+    JSON.stringify(inBar));
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  await evaluate(UNDO);
+  check('...and Enter writes nothing more: one Undo takes the bar\'s text and the ID back', (await settled()).targets[1].equation === 'm_total *',
+    (await settled()).targets[1].equation);
+  await shot('spec_probe_chips.png');
 
   // With training corners planned, each spec's "Judged at" matters again, and the column is there. The page's own save comes
   // first: a save still due could land between the write below and the reload and put the configuration without corners back

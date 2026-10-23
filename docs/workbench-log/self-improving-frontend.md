@@ -3363,3 +3363,64 @@ list does not hold (the calibration run, with the list read) gets the one list, 
 clause - the code before failed that. Also run, unchanged: `dom_identity_check` 56 (2 scripts, 164 checks, one lane, all
 passed the first time). The review's other points were found sound (Show table only shows the run, the lifted choices,
 the kept tab): nothing to change. Nothing here starts a run, saves a task or writes to Virtuoso.
+
+### SIF-106 A renamed Probe takes its Specs along, and a Probe chip puts its ID into the Equation (2026-10-23; from the usability audit)
+
+**Found.** Two audit findings on the Specs' equations. A Maestro output's Probe ID follows its Output name, and the spec
+equations using it follow too (records 7.172, 7.184). But a Probe ID typed in its own cell - an ngspice or MOCK task's
+Probe, any Probe its backend measures - left every Spec on the old ID (J2-11). Each one broke with
+`equation_unknown_probe` on the Specs tab, which is not in view. The audit's first fix, a rename in `withFollowers`, was
+unsafe: a cell writes each key, so an emptied box would have lost the chain, and a step through another Probe's ID would
+have taken that Probe's Specs too. The Probe IDs were also listed as chips just above the Specs table, but as plain text
+(J2-14). Each one (m_supply_power_w, m_f1_hz ...) was typed into an Equation by hand, and a slip showed as an unknown
+probe only after validation.
+
+**Changed.** `frontend/src/panels/editorRules.ts`: `probeRename(c, index, from, to)` says whether the Specs naming the old
+ID follow a new one, and if not, why. They follow only between plain names (letters, digits and _, a letter or _ first),
+as a renamed output's do: the backend reads an ID with "." or "-" only as a whole equation. They do not follow to an ID
+another Probe holds, nor from one another Probe still holds (a duplicate). `renameProbe(c, from, to)` rewrites the
+equations with the renamer of record 7.377 (`equationRenamer`, unchanged; `editor_renames_check` pins its text).
+`frontend/src/panels/Editors.tsx`: a Probes ID cell that takes typing (not a Maestro output's, which follows its Output
+name) remembers the ID it held when it was entered. When it is left with another ID, the Specs naming the old one follow
+(`followProbeId`); never per key. They join the ID's own Undo step through `setConfig(..., false)` (history.ts: a change
+with no step of its own), so one Undo takes them back with the typed ID. The plan's fallback note ("Undo once takes back
+the Specs, twice the ID too") was not needed. An ID written in the formula bar is written with its Specs in one step
+(`commitBar`). The line under the formula bar names them, with Show Specs: "2 Specs (score, score_sq) now use m_total, the
+Probe's new ID. Undo takes them back with the ID." Where they cannot follow - an emptied ID, one with "." or "-", another
+Probe's - it says so in amber: "2 Specs (score, score_sq) still use m_score: "m-total" is not letters, digits and _ alone,
+with a letter or _ first. Another ID typed there takes them along; Undo takes this one back." The next ID typed in that
+row does take them along from the old one (`refusedId`); the plan had no such note, and without it a second try left the
+Specs broken without a word. A block pasted over Probe IDs leaves the Specs as before: following the one row the paste
+started in would have been a partial rename. The Specs line's chips are buttons now: each `code.probe-id` sits in a
+`button.chip-insert` whose mousedown leaves the focus where it is. With an Equation cell chosen, a press puts the ID at
+the cursor of the cell or of the formula bar, in place of the text chosen there, with a space where it would touch the
+text beside it. The cell or the bar keeps the focus, with the cursor after the ID. With the focus elsewhere the ID goes at
+the end of the chosen Equation. It is written through `commitBar`, one Undo step; in the bar, the bar's own text takes it
+too, so Enter writes nothing more. With no Equation cell chosen, a press copies the ID: "Copied m_total. With an Equation
+cell chosen, a press puts the ID in at the cursor." Each chip's tooltip says which press it is, and the line's tooltip
+says it too. `frontend/src/roadster.css`: `.chip-insert` drops a button's frame, fill and padding and takes the line's
+font, so the line reads and measures as before; a hover rings the chip in the Probe colour. Nothing here starts,
+continues or stops a run, saves a task or writes to Virtuoso: both change the configuration only (or copy an ID), and
+Undo takes them back. `docs/workbench.md` (a new bullet under Tied rows, spreadsheet keys and a pasted block; the formula
+bar; each editor's colour) and `docs/functionality-reference.md` (a new row, A Probe renamed, the Probe chips; the tabs'
+and the formula bar's rows) describe it.
+
+**Checked.** `tsc` clean. `spec_equations_check` 54 (36 before), on the MOCK task's m_score and the two Specs using it.
+While m_total is typed key by key the equations keep m_score. Leaving the cell gives m_total and m_total ** 2, with the
+line above and Show Specs, and one Undo takes back the ID and both Specs. "m-total" leaves them on m_score with the amber
+line; its Show Specs opens Specs, where the backend reports `equation_unknown_probe`. m_total typed next takes them along
+from m_score, and the backend reports nothing unknown. m_sum written in the formula bar takes them along; one Undo
+takes both back. The chip is a button holding its code, and the line still reads "Probes: m_total". With no cell chosen
+a press copies m_total (the copy is answered in the page) and says so. In the cell "m_total *" a press gives "m_total *
+m_total": the cell keeps the focus, the cursor is after the ID, and one Undo leaves "m_total *". In the bar,
+"( + m_total) / 2" with the cursor after "(" gives "(m_total + m_total) / 2", written with the bar keeping the focus;
+Enter writes nothing more. New picture: `spec_probe_chips.png`. `looks_check` 76 (75): the chip is a button with no
+border, padding or fill of its own, at the line's 14 px, the code still 13 px. Each new check looks for what the code
+before did not do. Also run, unchanged: `task_rows_check` 54, `formula_bar_check` 21, `testbench_probes_check` 41,
+`ngspice_window_check` 43, `typing_check` 50, `find_fill_copy_check` 50, `sheet_check` 54, `editor_columns_check` 23,
+`unsaved_rows_check` 25, `blocking_issues_check` 60, `edit_state_check` 28, `working_copy_check` 34,
+`editor_renames_check` 8, `reliability_check` 20, `project_help_check` 61, `dom_identity_check` 56,
+`matched_devices_check` 37 (19 scripts, 795 checks, one lane, all passed). The new section's first runs failed on the
+check itself: a name declared twice, then the backend refusing the whole configuration (422, "No task trains at corners")
+once the check's last part plans training corners for the MOCK task, so no row issue could show. The section now runs
+before that part. No flakes.

@@ -4,11 +4,13 @@ import { lowerBound, prep, START, upperBound } from './prep.ts';
 
 // ------------------------------------------------------------------------------------------------------ a run's key numbers
 /** The line of numbers the Training tab writes for each run on its charts (record 7.215, the user's choice "Key numbers in
- *  the tab"), all read from the recorded rows - nothing estimated, and episode starts left out as on the charts. null: the
- *  run has no such number (yet). With a thinned history (memory bound) the first passing design is the first one kept. */
+ *  the tab"), all read from the recorded rows - nothing estimated, and episode starts left out as on the charts (one that
+ *  passed before the first passing design is named apart, startPassed). null: the run has no such number (yet). With a
+ *  thinned history (memory bound) the first passing design is the first one kept. */
 export interface KeyNumbers {
   evaluations: number;                                       // recorded evaluations, as the head counts them
   firstPass: number | null;                                  // the evaluation number of the first design meeting every hard spec
+  startPassed: number | null;                                // the evaluation number of an episode start that met them all before firstPass (or with none)
   recent: { passed: number; judged: number; from: number; to: number } | null;   // designs of the last RECENT evaluations with a verdict
   bestMiss: number | null;                                   // the best design so far: its worst-spec miss at the newest evaluation
   entropy: [number, number] | null;                          // the entropy estimate: mean of the updates of the first and of the last ENDS evaluations
@@ -21,6 +23,10 @@ export function keyNumbers(store: TrainingStore, context: Context = {}): KeyNumb
   let firstPass: number | null = null, recent: KeyNumbers['recent'] = null, bestMiss: number | null = null;
   const first = p.first('first passing design', t, [t.changes], row => p.cat[row] !== START && p.pass[row] === 1);
   if (first >= 0) firstPass = k[first];
+  // An episode start that passed before it (branch record SIF-116): Run status's first feasible design counts the starts, and
+  // its "at 4 evaluations" beside "evaluation 35" here read as a contradiction. Rows ascend with the evaluation number.
+  const firstStart = p.first('first passing episode start', t, [t.changes], row => p.cat[row] === START && p.pass[row] === 1);
+  const startPassed = firstStart >= 0 && (first < 0 || firstStart < first) ? k[firstStart] : null;
   if (n) {
     const to = k[n - 1], from = Math.max(k[0], to - RECENT + 1);
     let passed = 0, judged = 0;
@@ -48,5 +54,5 @@ export function keyNumbers(store: TrainingStore, context: Context = {}): KeyNumb
       entropy = ends('logp', -1); alpha = ends('alpha', 1);
     }
   }
-  return { evaluations: store.counts().evaluations, firstPass, recent, bestMiss, entropy, alpha };
+  return { evaluations: store.counts().evaluations, firstPass, startPassed, recent, bestMiss, entropy, alpha };
 }

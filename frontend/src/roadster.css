@@ -207,6 +207,10 @@ table.editor td:has(> input[type="checkbox"]) { vertical-align: middle; }   /* a
 .key-tile-label { font-size: 12px; line-height: 1.35; color: var(--muted); }
 .key-tile-value { font: 600 17px/1.3 var(--f-label); white-space: nowrap; } .key-tile-value .unit { font: 400 13px var(--f-body); color: #8e8e96; }
 details.training-keys .key-tiles { margin: 6px 0 2px; }
+/* a line under a key number, in the label's grey (branch record SIF-116: an episode start that passed before Training's first
+   passing design); in the key-numbers table under the cell's value, at the table's size */
+.key-tile-note { font-size: 12px; line-height: 1.35; color: var(--muted); white-space: nowrap; }
+details.training-keys td .key-tile-note { display: block; font-size: inherit; }
 
 /* ---- red stays for attention (record 7.372): text links are white and underlined, a chosen or pressed button is outlined in
    white, and Save as and the sort marks lose their red - red is left for Abort, errors, the tab bars, focus, the active cell

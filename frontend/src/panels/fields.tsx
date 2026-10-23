@@ -92,10 +92,12 @@ export function Module({ id, title, summary, children, defaultOpen = true }: { i
 }
 
 /** One number with its label (record 7.360, the Roadster look's key numbers): the label in grey above, the number in the
- *  label face, words before or after it (a unit, "of 200") in grey beside it. */
-export const KeyTile = ({ label, value, before, after, title }: { label: string; value: ReactNode; before?: string; after?: string; title?: string }) => (
+ *  label face, words before or after it (a unit, "of 200") in grey beside it; `note`, a line in grey under it, for what the
+ *  number is to be read with (branch record SIF-116: an episode start that passed before Training's first passing design). */
+export const KeyTile = ({ label, value, before, after, note, title }: { label: string; value: ReactNode; before?: string; after?: string; note?: string; title?: string }) => (
   <span className="key-tile" title={title}><span className="key-tile-label">{label}</span>
-    <span className="key-tile-value">{before && <span className="unit">{before} </span>}{value}{after && <span className="unit"> {after}</span>}</span></span>);
+    <span className="key-tile-value">{before && <span className="unit">{before} </span>}{value}{after && <span className="unit"> {after}</span>}</span>
+    {note && <span className="key-tile-note">{note}</span>}</span>);
 
 export const Check = ({ label, value, onChange, title, disabled }: { label: string; value: boolean; onChange: (v: boolean) => void; title?: string; disabled?: boolean }) => (
   <label className="check" title={title}><input type="checkbox" checked={!!value} disabled={disabled} onChange={e => onChange(e.target.checked)} />{label}</label>);

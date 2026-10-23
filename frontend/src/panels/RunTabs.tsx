@@ -95,6 +95,14 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
   </div>;
 }
 
+/** What "First feasible design" counts (branch record SIF-116): the evaluations used when the first design meeting every hard
+ *  spec came back (budget.py mark_first_feasible: those charged, in flight included), the design an episode starts from
+ *  among them. Beside the Training tab's "First passing design", an evaluation number that leaves episode starts out, its
+ *  "at 4 evaluations" for one run read as a contradiction. */
+const FIRST_FEASIBLE_TIP = 'The evaluations used by the time the first design that met every hard spec came back: every design sent to the simulator '
+  + 'by then counts, those still in flight too, and so does the design an episode starts from. The facts below give its dispatch number. The Training '
+  + 'tab\'s "First passing design" is an evaluation number instead, and leaves episode starts out.';
+
 /** The run the bottom tabs show. Its run commands live in the header only (Save now, Pause, Abort, Force abort): the
  *  four copies this tab had went on 2026-09-29 (user: fewer duplicate buttons). Continue... stays - it sets a new budget
  *  and also continues a stopped run, which the header cannot. Record 7.261 (the launcher): it opens the budget form
@@ -174,8 +182,11 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       <div className="key-tiles">
         <KeyTile label="Spectre launches" value={b.launches} after={`retries ${b.retries} · cache hits ${b.cache_hits}`} />
         <KeyTile label="Learner updates" value={status.learner_updates ?? 0} />
-        {/* "none yet" only while the run can still find one (branch record SIF-54: an ended run said it too) */}
-        <KeyTile label="First feasible design" value={first ? first.first_feasible_eval_count : ENDED.includes(status.state) && !status.worker_alive ? 'none' : 'none yet'} before={first ? 'at' : undefined} after={first ? 'evaluations' : undefined} />
+        {/* "none yet" only while the run can still find one (branch record SIF-54: an ended run said it too). What it counts, in
+            its words - "at 4 evaluations used", as the facts below - and in its tooltip (branch record SIF-116); one as one
+            (SIF-76 review): the noun is plural()'s, its number the tile's value */}
+        <KeyTile label="First feasible design" value={first ? first.first_feasible_eval_count : ENDED.includes(status.state) && !status.worker_alive ? 'none' : 'none yet'} before={first ? 'at' : undefined}
+          after={first ? `${plural(first.first_feasible_eval_count, 'evaluation').replace(/^\S+ /, '')} used` : undefined} title={FIRST_FEASIBLE_TIP} />
         {/* Its reward, and the hard violation only while it misses (branch record SIF-76: a feasible one read "feasible hard
             violation 0", always 0, and no reward); three digits, as the facts below (SIF-42) */}
         <KeyTile label="Best design" value={!best ? 'none' : best.feasible ? 'feasible' : best.nominal_feasible ? 'nominal only' : 'infeasible'}

@@ -25,6 +25,9 @@
 //     run the list names no task for keeps the one list (SIF-105 review)
 //   - branch record SIF-115: the × of a compared run and of a chart are named "Remove <run>" and "Remove chart <n>", and
 //     their tooltips start with those words
+//   - branch record SIF-116: "First passing design" says in its tooltip (and its column's) that episode starts are left
+//     out and that Run status counts them; an episode start that passed before it is named under its number, as a tile and
+//     in the table of several runs - and nothing is, when the starts passed only after it
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -60,14 +63,15 @@ const madeAt = utc => { const d = new Date(utc); return `${two(d.getMonth() + 1)
 const reward = k => -0.3 * Math.exp(-k / 150) - 0.01 * (1 + Math.sin(k));              // a learning curve with noise
 const gain = k => (k % 37 === 0 ? null : 350 + 120 * (1 - Math.exp(-k / 120)) + 5 * Math.cos(k));
 /** A run of `n` evaluations (every 5th an episode start, every 41st a timeout) with 8 learner updates each after a warm-up;
- *  its one spec `gain_vv` in V/V unless `spec` and `unit` say otherwise. */
-function makeRun(n, { updatesPer = 8, frozen = false, calibration = false, spec = 'gain_vv', unit = 'V/V' } = {}) {
+ *  its one spec `gain_vv` in V/V unless `spec` and `unit` say otherwise. `startsPass`: its episode starts meet the spec from
+ *  the first one on, before any design the run proposes (branch record SIF-116). */
+function makeRun(n, { updatesPer = 8, frozen = false, calibration = false, spec = 'gain_vv', unit = 'V/V', startsPass = false } = {}) {
   const evaluations = [], updates = [], specs = [];
   let cum = 0;
   for (let k = 1; k <= n; k++) {
     const start = (k - 1) % 5 === 0, timeout = k % 41 === 0;
     const phase = start ? (k === 1 ? 'baseline' : 'episode_reset') : frozen ? 'frozen_eval' : k < 9 || calibration ? 'warmup' : 'search';
-    const value = gain(k), met = value !== null && value >= 400;
+    const value = start && startsPass ? 410 : gain(k), met = value !== null && value >= 400;
     evaluations.push({ commit_seq: k, completion_index: k, global_env_step: k - Math.ceil(k / 5), episode_id: `0-${String(Math.ceil(k / 5)).padStart(6, '0')}`,
       episode_step: (k - 1) % 5, phase, action_source: start ? 'reset' : phase === 'warmup' ? 'random_warmup' : 'sac_policy', status: timeout ? 'timeout' : 'ok',
       policy_version: null, reward: start || timeout ? null : reward(k), valid: !timeout && value !== null, all_hard_constraints_satisfied: met,
@@ -138,6 +142,8 @@ const RUNS = {
   longlive: { dir: base + 'scratch__seed10__longlive', id: 'longlive', state: 'running', final: 19008, tail: 2, data: null },
   // learns once per evaluation (as the SAC defaults before record 7.183 did); its spec's unit written with a Greek letter
   once: { dir: base + 'scratch__seed9__once', id: 'once', state: 'completed', final: 288, tail: 0, data: makeRun(288, { updatesPer: 1, spec: 'i_bias', unit: '\u00b5A' }) },
+  // its episode starts pass from the baseline on, its proposed designs from evaluation 62 (branch record SIF-116)
+  startfirst: { dir: base + 'scratch__seed12__startfirst', id: 'startfirst', state: 'completed', final: 80, tail: 0, data: makeRun(80, { startsPass: true }) },
 };
 const byDir = Object.fromEntries(Object.values(RUNS).map(r => [r.dir, r]));
 let listRuns = false;                                 // GET /api/runs lists the runs only for the comparison part
@@ -377,6 +383,13 @@ await runChecks(browser, async () => {
     && / \u2192 /.test((await keyTiles())[4]) && / \u2192 /.test((await keyTiles())[5]), `${JSON.stringify(await keyTiles())} | want ${JSON.stringify(wantKeys)}`);
   const passingTip = await evaluate(`[...(${KEYS}).querySelectorAll('.key-tile')][2].title`);
   check('...its tooltip says which designs are left out: episode starts and those without a verdict', /of those judged: episode starts and designs without a verdict .* are left out\. Evaluations 189 to 288\.$/.test(passingTip), passingTip);
+  // Branch record SIF-116: for one run Run status read "First feasible design at 4 evaluations" and this tile "evaluation 35",
+  // and neither said how it counts. The tooltip says what the tile leaves out and what Run status counts. This run's episode
+  // starts pass only after its first proposed design (71, after 62): nothing stands under the number.
+  const firstTile = await evaluate(`(() => { const t = [...(${KEYS}).querySelectorAll('.key-tile')][1]; return { title: t.title, note: t.querySelector('.key-tile-note')?.textContent ?? null }; })()`);
+  check('..."First passing design": its tooltip says episode starts are left out and Run status counts them, and what it counts; no line under it here (SIF-116)',
+    /^The evaluation number of the first design the run proposed that met every hard spec\. Episode starts .* are left out, as on the charts\. Run status's "First feasible design" counts them too, and gives the evaluations used .*, those still in flight included\.$/.test(firstTile.title)
+    && firstTile.note === null && RUNS.live.data.evaluations.find(e => isStart(e) && e.status === 'ok' && e.all_hard_constraints_satisfied).commit_seq > firstLive, JSON.stringify(firstTile));
   await evaluate(`(${KEYS}).querySelector('summary').click()`);
   const folded = await until(`!(${KEYS}).open`, 20);
   await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150);
@@ -406,6 +419,32 @@ await runChecks(browser, async () => {
   // (branch record SIF-54: "none yet" stood on ended runs too).
   check('... its "First passing design" reads "none", not "none yet": the run has ended',
     !RUNS.failed.data.evaluations.some(e => e.all_hard_constraints_satisfied) && await until(`(${KEYS})?.querySelectorAll('.key-tile .key-tile-value')[1]?.textContent === 'none'`, 40), JSON.stringify(await keyTiles()));
+  // Branch record SIF-116: a run whose episode starts passed before any design it proposed, as the survey's run, whose first
+  // feasible design was the design its episode started from. The tile names the start under its number; the table of several
+  // runs names it under the run's own number, and under no other.
+  const startRows = RUNS.startfirst.data.evaluations, passing = e => e.status === 'ok' && e.all_hard_constraints_satisfied;
+  const proposedFirst = startRows.find(e => !isStart(e) && passing(e))?.commit_seq, startFirst = startRows.find(e => isStart(e) && passing(e))?.commit_seq;
+  const startNote = `an episode start passed first, at evaluation ${startFirst}`;
+  listRuns = true;                                           // Compare... lists the runs, for the table below
+  await showRun(RUNS.startfirst);
+  const firstTileNow = `(() => { const t = [...((${KEYS})?.querySelectorAll('.key-tile') ?? [])][1];
+    return t ? { value: t.querySelector('.key-tile-value').textContent, note: t.querySelector('.key-tile-note')?.textContent ?? null, title: t.title } : null; })()`;
+  check('an episode start that passed before the first proposed design is named under "First passing design" (SIF-116)', startFirst === 1 && proposedFirst === 62
+    && await until(`JSON.stringify(${firstTileNow}) === ${JSON.stringify(JSON.stringify({ value: `evaluation ${proposedFirst}`, note: startNote, title: firstTile.title }))}`, 60),
+    JSON.stringify(await evaluate(firstTileNow)));
+  await page.shot(path.join(out, 'training-start-first.png'), `(${KEYS})`);
+  const COMPARE_LIST = `(${TRAINING}).querySelector('select[aria-label="Compare with another run"]')`;
+  await until(`[...(${COMPARE_LIST}).options].some(o => o.value === ${JSON.stringify(RUNS.failed.dir)})`, 60);
+  await page.setValue(COMPARE_LIST, RUNS.failed.dir);
+  const firstCells = `[...((${KEYS})?.querySelectorAll('tbody tr') ?? [])].map(r => ({ value: r.cells[2]?.firstChild?.textContent ?? null, note: r.cells[2]?.querySelector('.key-tile-note')?.textContent ?? null }))`;
+  check('...in the table of several runs under its own number, not the compared run\'s; the column\'s tooltip is the tile\'s (SIF-116)',
+    await until(`JSON.stringify(${firstCells}) === ${JSON.stringify(JSON.stringify([{ value: `evaluation ${proposedFirst}`, note: startNote }, { value: 'none', note: null }]))}`, 60)
+    && (await evaluate(`[...(${KEYS}).querySelectorAll('thead th')].find(th => th.textContent === 'First passing design')?.title`)) === firstTile.title,
+    JSON.stringify(await evaluate(firstCells)));
+  await page.shot(path.join(out, 'training-start-first-table.png'), `(${KEYS})`);
+  await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
+  await until(`!(${TRAINING}).querySelector('.training-compared')`, 30);
+  listRuns = false;
   await showRun(RUNS.older);
   check('a backend older than the page (no such route) is said as such', await until(`/older than the page/.test((${TRAINING}).innerText)`, 60), await evaluate(`(${TRAINING}).innerText.slice(0, 200)`));
   await showRun(RUNS.empty);

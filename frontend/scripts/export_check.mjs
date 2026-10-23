@@ -91,8 +91,11 @@ await runChecks(browser, async () => {
     || /^Constraint violation, version 2; violation shape \w+; worst hard-spec share [\d.]+; objective bonus weight [\d.]+; tightest-margin bonus weight [\d.]+$/.test(facts['Executed reward']?.text ?? ''),
     facts['Executed reward']?.text);
   check('... "Tightest margin" beside a best design, never "Tightest clearance"', !!facts['Tightest margin'] === !!status.best_design && !facts['Tightest clearance'], Object.keys(facts).join(', '));
-  check('... the ended run\'s "First feasible design" reads a number or "none", never "none yet"', (await evaluate(`[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.querySelector('.key-tile-value')?.textContent`))
-    === (status.first_feasible ? `at ${status.first_feasible.first_feasible_eval_count} evaluations` : 'none'));
+  // ...the evaluations USED by then, as the facts row says it, one as one (branch record SIF-116: "at 4 evaluations")
+  const firstFeasible = await evaluate(`[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.querySelector('.key-tile-value')?.textContent`);
+  const firstUsed = status.first_feasible?.first_feasible_eval_count;
+  check('... the ended run\'s "First feasible design" reads "at <n> evaluations used" or "none", never "none yet"', firstFeasible
+    === (status.first_feasible ? `at ${firstUsed} ${firstUsed === 1 ? 'evaluation' : 'evaluations'} used` : 'none'), `${firstFeasible} | ${JSON.stringify(status.first_feasible ?? null)}`);
   // Branch record SIF-76: the budget "used", as the Continue... form and the Abort question count it (it read "charged" here
   // alone), what counts in the tooltip; the best design's reward in its tile, and its hard violation only while it misses
   // (a feasible one read "feasible hard violation 0", always 0, and no reward).

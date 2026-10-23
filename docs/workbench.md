@@ -297,7 +297,12 @@ switch are gone; every panel, button and field stands where it stood.
   tab directly"), its line naming the experiment and the end of the output root; a fold or unfold is kept in this browser.
 - The Training tab shows one run's key numbers as six compact tiles (two runs or more: the table, a row each), and Run
   status opens with the run at a glance: its state, the evaluations used as a large number with a bar, and four numbers
-  (Spectre launches, learner updates, the first feasible design, the best design); the table below holds them all. The bar
+  (Spectre launches, learner updates, the first feasible design, the best design); the table below holds them all. The
+  first feasible design reads "at 4 evaluations used": the evaluations used by the time it came back, those still in
+  flight and the design an episode starts from included, as its tooltip says - the Training tab's first passing design
+  is an evaluation number that leaves episode starts out (branch record SIF-116: for one run "at 4 evaluations" here and
+  "evaluation 35" there read as a contradiction; that run's first feasible design was the design its episode started
+  from). The bar
   is red while the run runs (the current run), white once it completed, grey paused or stopped, the error red when it
   failed (branch record SIF-3; a completed run's red bar read as an error). Under the bar stands the run's working time,
   "Duration 29 min 50 s", with "so far" and the time left while the run works, as the run brief's card says it (branch
@@ -1920,7 +1925,11 @@ they are empty.
   the **best design's worst-spec miss** now (0 = it has a passing design), and how the **entropy estimate** and the
   **temperature α** moved - the mean of the learner's updates of the first 50 evaluations it learned at, then of the last
   50 ("6.15 → -8.71": the policy settled; level: it still explores). Episode starts are left out, as on the charts; all
-  of it is read from the recorded rows. It folds to its one line, and stays as left in this browser.
+  of it is read from the recorded rows. The first passing design's tooltip (and its column's) says so, and that Run
+  status's "First feasible design" counts the episode starts, as the evaluations used by then, those in flight included;
+  an episode start that passed before any design the run proposed is named under the number, "an episode start passed
+  first, at evaluation 1", as a tile and in the table (branch record SIF-116). It folds to its one line, and stays as
+  left in this browser.
 * **Learner by** (record 7.213, the user's choice of "what next": "Learner charts by evaluations"): **update** (the
   default) draws the learner's charts along its update count; **evaluation** along the evaluations collected, so that runs
   learning 1 and 8 times per evaluation line up with each other and with the evaluation charts. By evaluation the

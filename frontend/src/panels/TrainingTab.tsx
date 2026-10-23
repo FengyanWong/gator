@@ -88,6 +88,14 @@ const plain = (v: number) => String(+v.toPrecision(3));
 /** What "Passing, last 100" counts: its "95 of 96" said nothing of why it was not of 100 (branch record SIF-77), so the
  *  number reads "of 96 judged" and this says which designs are left out (keys.ts: episode starts and those without a verdict). */
 const RECENT_TIP = `Of the designs of the last ${RECENT} evaluations, how many met every hard spec, of those judged: episode starts and designs without a verdict (a timeout or a lost link is none) are left out.`;
+/** What "First passing design" counts (branch record SIF-116): for one run Run status read "First feasible design at 4
+ *  evaluations" and this tab "evaluation 35", and neither said how it counts. Run status gives the evaluations used when that
+ *  design came back, those in flight included, and counts episode starts; this gives an evaluation number and leaves them
+ *  out (keys.ts), as the charts do. An episode start that passed before any design the run proposed is said under the number. */
+const FIRST_PASS_TIP = 'The evaluation number of the first design the run proposed that met every hard spec. Episode starts (the design each episode '
+  + 'begins from) are left out, as on the charts. Run status\'s "First feasible design" counts them too, and gives the evaluations used by the time '
+  + 'that design came back, those still in flight included.';
+const startPassedWords = (evaluation: number) => `an episode start passed first, at evaluation ${evaluation}`;
 /** A row's phase and its design's status, in words for the line above a chart (branch record SIF-47: an Evaluate-only run
  *  read "frozen_eval" on every chart, an episode start "episode_reset", a design "status invalid_design"). The data keep
  *  the keys: store.ts sorts the rows by them. A phase or status these lists do not know (search, adapt, validation,
@@ -378,7 +386,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
       {keyRows.length === 1 && keyRows[0].numbers ? ((k: NonNullable<(typeof keyRows)[number]['numbers']>) => <div className="key-tiles training-key-tiles">
         <KeyTile label="Evaluations" value={k.evaluations} title="Evaluations recorded so far." />
         <KeyTile label="First passing design" value={k.firstPass ?? noPassWord(runDir)} before={k.firstPass != null ? 'evaluation' : undefined}
-          title="The evaluation number of the first design that met every hard spec." />
+          note={k.startPassed != null ? startPassedWords(k.startPassed) : undefined} title={FIRST_PASS_TIP} />
         <KeyTile label={`Passing, last ${RECENT}`} value={!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged}` : 'no verdict'}
           after={k.recent?.judged ? `judged · ${Math.round((100 * k.recent.passed) / k.recent.judged)} %` : undefined}
           title={`${RECENT_TIP}${k.recent ? ` Evaluations ${k.recent.from} to ${k.recent.to}.` : ''}`} />
@@ -389,7 +397,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
         <KeyTile label={'Temperature \u03b1, first \u2192 last'} value={k.alpha ? `${plain(k.alpha[0])} \u2192 ${plain(k.alpha[1])}` : '-'}
           title={`The temperature \u03b1 the same way: the mean of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}.`} />
       </div>)(keyRows[0].numbers!) : <table className="grid training-keys-table"><thead><tr><th>Run</th><th title="Evaluations recorded so far.">Evaluations</th>
-        <th title="The evaluation number of the first design that met every hard spec.">First passing design</th>
+        <th title={FIRST_PASS_TIP}>First passing design</th>
         <th title={RECENT_TIP}>Passing, last {RECENT}</th>
         <th title="The worst-spec miss of the design the run keeps as its best, at the newest evaluation: 0 = it has a design that meets every hard spec.">Best design's worst miss</th>
         <th title={`The policy's entropy estimate (-mean_log_prob): the mean of the learner updates of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}. Fallen far = the policy has settled; level = it still explores.`}>Entropy estimate</th>
@@ -398,7 +406,8 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
           <td title={dir}>{others.length ? <span className={`training-chip key-run${i}`}><span className="swatch" />{runLabel(dir)}</span> : runLabel(dir)}</td>
           {!k ? <td colSpan={6} className="hint">Reading...</td> : <>
             <td>{k.evaluations}</td>
-            <td>{k.firstPass != null ? `evaluation ${k.firstPass}` : noPassWord(dir)}</td>
+            <td>{k.firstPass != null ? `evaluation ${k.firstPass}` : noPassWord(dir)}
+              {k.startPassed != null && <span className="key-tile-note">{startPassedWords(k.startPassed)}</span>}</td>
             <td title={k.recent ? `evaluations ${k.recent.from} to ${k.recent.to}` : undefined}>{!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged} judged (${Math.round((100 * k.recent.passed) / k.recent.judged)} %)` : 'no verdict'}</td>
             <td>{k.bestMiss != null ? plain(k.bestMiss) : '-'}</td>
             <td>{k.entropy ? `${plain(k.entropy[0])} \u2192 ${plain(k.entropy[1])}` : '-'}</td>

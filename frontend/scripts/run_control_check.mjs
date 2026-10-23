@@ -25,7 +25,8 @@
 // "Use this folder" in a folder list opened before the Start too (SIF-91 review; GET /api/output/browse answered with a FIXTURE).
 // Branch record SIF-98: Run status, under its bar, and the end of the run chip's tooltip give the run brief's working time and
 // time left. Branch record SIF-110: the run brief's Show results closes the brief, as the Runs window's closes that window;
-// Open in Runs keeps it open.
+// Open in Runs keeps it open. Branch record SIF-116: Run status's "First feasible design" says what it counts, in its tooltip
+// and in its words ("at 4 evaluations used", "at 1 evaluation used").
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -40,8 +41,9 @@ const browser = await launchEdge('runcontrol');
 const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__scratch__seed0__0001';
 // `active`: the working time the status gives (null until the run brief reads it, branch record SIF-78). `output` and
 // `run`: the run's own effective_config.json, as Pause reads it (`run.optimizer`: branch record SIF-83). `error`: the
-// status's error, as a run that fails or pauses by itself gives one (branch record SIF-89).
-const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, error: null, beat: 0, steps: [], output: {}, run: {}, starts: 0, calibration: null, active: null };
+// status's error, as a run that fails or pauses by itself gives one (branch record SIF-89). `first`: its first feasible
+// design, as budget.py records it (branch record SIF-116).
+const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, error: null, beat: 0, steps: [], output: {}, run: {}, starts: 0, calibration: null, active: null, first: null };
 const listed = () => sim.state ? [{ run_dir: DIR, run_id: 'fixture-run', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: sim.mock, seed: 0,
   created_utc: '2026-09-21T00:00:00+00:00', state: sim.state, experiment: 'fixture_experiment__0001', evaluations: null, first_feasible_eval_count: null, resumability: null }] : [];
 const statusOf = () => {
@@ -50,7 +52,7 @@ const statusOf = () => {
   else if (sim.alive && sim.state === 'running' && sim.charged < sim.max) sim.charged++;
   const at = new Date(Date.UTC(2026, 8, 21, 0, 0, 0) + 1000 * ++sim.beat).toISOString();
   return { state: sim.state, run_id: 'fixture-run', mode: 'scratch', entry: 'start', provenance: sim.mock ? 'mock' : 'real', mock: sim.mock, worker_alive: sim.alive,
-    run_dir: sim.dir, heartbeat_utc: at, stop_reason: sim.stop_reason, error: sim.error, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: null,
+    run_dir: sim.dir, heartbeat_utc: at, stop_reason: sim.stop_reason, error: sim.error, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: sim.first,
     budget: { max_evaluations: sim.max, max_launches: null, max_retries: 0, charged: sim.charged, reserved: 0, in_flight: sim.alive && sim.state === 'running' ? 1 : 0,
       completed: sim.charged, failed: 0, released: 0, remaining: sim.max - sim.charged, launches: sim.charged, retries: 0, cache_hits: 0, first_feasible: null },
     best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: sim.dir }, connection: { overall: 'not_applicable' }, summary: null, calibration: sim.calibration,
@@ -141,7 +143,9 @@ await runChecks(browser, async () => {
   const CONTINUE = `[...document.querySelectorAll('.status-grid button')].find(b => b.textContent === 'Continue...')`;
   const FORM = `document.querySelector('.continue-form')`, FIELD = `document.querySelector('.continue-form input')`;
   const REFUSAL = `document.querySelector('header .launch-refusal')`;
-  const FIRST_TILE = `[...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.querySelector('.key-tile-value')?.textContent ?? null`;
+  // In brackets, as NEXT_NOTE below (branch record SIF-116): `${FIRST_TILE} === 'none'` read `text ?? (null === 'none')`, the
+  // tile's text whatever it was, so a wait for a word was over at once
+  const FIRST_TILE = `([...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.querySelector('.key-tile-value')?.textContent ?? null)`;
   const RUN_FOLDER = `[...document.querySelectorAll('.status-grid > table tr')].find(tr => tr.cells[0].textContent === 'Run folder').cells[1]`;
   // Branch record SIF-72: Run configuration's line while the header holds a run, and the tab line's link to the header's run.
   const NEXT_NOTE = `(document.querySelector('aside.right .next-start-note')?.textContent ?? null)`;
@@ -261,6 +265,22 @@ await runChecks(browser, async () => {
     facts.Connection?.text === 'n/a' && facts['Active workers']?.text === 'none; up to 1 concurrent Spectre job' && facts['Saved to disk']?.text === '-'
     && facts['Run folder']?.text === DIR && facts['Run folder']?.title === 'Click to copy' && !facts.Persistence && !facts['Run directory'], JSON.stringify(facts).slice(0, 600));
   check('... "First feasible design: none yet" while the run works', (await evaluate(FIRST_TILE)) === 'none yet', await evaluate(FIRST_TILE));
+  // Branch record SIF-116: for one run the tile read "at 4 evaluations" beside the Training tab's "First passing design evaluation
+  // 35", and neither said how it counts. Its tooltip says it, and so do its words once there is one: the evaluations USED, as the
+  // facts row says it - one as one.
+  const FIRST_TIP = `([...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'First feasible design')?.title ?? null)`;
+  const FIRST_ROW = `([...document.querySelectorAll('.status-grid > table tr')].find(tr => tr.cells[0].textContent === 'First feasibility (recorded)')?.cells[1]?.textContent ?? null)`;
+  const firstTip = await evaluate(FIRST_TIP);
+  check('... its tooltip: the evaluations used when it came back, in flight and episode starts included; Training\'s is an evaluation number (SIF-116)',
+    /^The evaluations used by the time the first design that met every hard spec came back: every design sent to the simulator by then counts, those still in flight too, and so does the design an episode starts from\. .*"First passing design" is an evaluation number instead, and leaves episode starts out\.$/.test(firstTip ?? ''), firstTip);
+  sim.first = { first_feasible_eval_count: 4, dispatch_index: 1, completed_count: 1, in_flight_count: 3, spectre_launches: 4 };
+  check('... once there is one: "at 4 evaluations used", as the facts row counts it (SIF-116)', await until(`${FIRST_TILE} === 'at 4 evaluations used'`, 60)
+    && (await evaluate(FIRST_ROW)) === 'at 4 evaluations used (dispatch #1, 1 completed, 3 in flight, 4 launches)', `${await evaluate(FIRST_TILE)} | ${await evaluate(FIRST_ROW)}`);
+  await page.shot(path.join(out, 'run-2-first-feasible.png'), `document.querySelector('.status-grid .status-hero')`);
+  sim.first = { first_feasible_eval_count: 1, dispatch_index: 1, completed_count: 1, in_flight_count: 0, spectre_launches: 1 };
+  check('... one as one: "at 1 evaluation used" (SIF-116)', await until(`${FIRST_TILE} === 'at 1 evaluation used'`, 60), await evaluate(FIRST_TILE));
+  sim.first = null;                                          // the run as before, for the steps below
+  await until(`${FIRST_TILE} === 'none yet'`, 60);
   // A click copies the path and says so for 1.5 s (the browser's clipboard stood in for: a headless window may not be focused).
   await evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: text => { window.__clip = text; return Promise.resolve(); } })`);
   await evaluate(`${RUN_FOLDER}.click()`, true);

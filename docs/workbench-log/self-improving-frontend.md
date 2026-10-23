@@ -3999,3 +3999,60 @@ word, so it now speaks of the starts drawn as icons (the audit's ICON-20 says "e
 the hourglass lists, which were right: Starting..., Pausing..., Resuming..., Aborting..., Finishing..., Reading...,
 Exporting..., Deleting... and a download being made. The commit message makes none of these claims and stays as pushed.
 No code changed: `tsc` clean; no check reads these texts (the scripts name `docs/` only in comments), so none was rerun.
+
+### SIF-116 Training's first passing design and Run status's first feasible design say how they count (2026-10-24; from the survey of 2026-10-23)
+
+**Found.** For one run of mscr_vco_lin_c (seed 0, 10-16 16:32) Run status read "First feasible design at 4 evaluations"
+and the Training tab's key numbers "First passing design evaluation 35" (the survey's S10-1, pictures
+`05-bottom-run-status.png` and `05-bottom-training.png`). Both were right, and neither said how it counts, so the two read
+as a contradiction. Run status gives `first_feasible_eval_count`, the evaluations used when the first feasible design came
+back (`budget.py` `mark_first_feasible`: those charged at that moment, in flight included): 4 = 1 completed + 3 in flight,
+and that design was dispatch #1, the one the episode started from. The Training tab gives an evaluation number and leaves
+the designs episodes start from out, as its charts do (`keys.ts`): its 35 was the first design the run proposed. Run
+status's "at 4 evaluations" also looked like an evaluation number, and read "at 1 evaluations" for a baseline feasible at
+once: the facts row below it says "at 1 evaluation used" since the review of SIF-76, the tile had kept the old words.
+
+**Changed.** `frontend/src/panels/training/keys.ts`: the key numbers carry `startPassed`, the evaluation number of the
+first episode start that met every hard spec when it came before the first passing design (or no design the run proposed
+has passed yet), else null; kept up to date as rows arrive by the run's shared preparation (`Prep.first`), as `firstPass`
+is, which is unchanged. `frontend/src/panels/TrainingTab.tsx`: the "First passing design" tile and its column in the
+table of several runs share one tooltip, "The evaluation number of the first design the run proposed that met every hard
+spec. Episode starts (the design each episode begins from) are left out, as on the charts. Run status's "First feasible
+design" counts them too, and gives the evaluations used by the time that design came back, those still in flight
+included." (it read "The evaluation number of the first design that met every hard spec."). When an episode start passed
+first, a grey line under the number says so, "an episode start passed first, at evaluation 1": in the tile, and in the
+table under that run's own number. `frontend/src/panels/fields.tsx`: `KeyTile` takes that line as `note`;
+`frontend/src/roadster.css` `.key-tile-note` sets it at 12 px in the label's grey, in the table at the table's size under
+the value. `frontend/src/panels/RunTabs.tsx`: the "First feasible design" tile reads "at 4 evaluations used", as the facts
+row ("at 4 evaluations used (dispatch #1, 1 completed, 3 in flight, 4 launches)") and the budget's "evaluations used"
+beside it count, and "at 1 evaluation used" for one (`plural()`); its tooltip: "The evaluations used by the time the first
+design that met every hard spec came back: every design sent to the simulator by then counts, those still in flight too,
+and so does the design an episode starts from. The facts below give its dispatch number. The Training tab's "First passing
+design" is an evaluation number instead, and leaves episode starts out." The plan asked for the tooltip alone; "used" is
+this record's, since "at 4 evaluations" beside the Training tab's new "at evaluation 1" would still read as two evaluation
+numbers until a hover. Left as they are: the run brief's card ("First feasible design at evaluation 4", `RunBrief.tsx`)
+and the Tasks window's newest run ("first feasible at evaluation 34", `TaskList.tsx`, SIF-68) write the same count as an
+evaluation number too; they are outside this batch's files, for a later one. Nothing here starts, continues or stops a
+run, saves a task or writes to Virtuoso. `docs/workbench.md` (Run status at a glance; Key numbers) and
+`docs/functionality-reference.md` (the Run status and Training rows) say it.
+
+**Checked.** `tsc` clean. `training_data_check` 120 (117 before): `startPassed` is 1 for the baseline that passed before
+the first proposed design (122), still 1 with no proposed design passed yet, null when the starts passed only after it and
+for an empty run; the random runs' "kept up to date = derived at once" compare it too (against the builders before 7.221,
+given `--reference`, only where both modules have it). `training_tab_check` 113 (110): the live run's tile says in its
+tooltip what it leaves out and what Run status counts, with no line under its number (its starts pass from 71, after 62);
+a new fixture run whose episode starts pass from the baseline on shows "evaluation 62" with "an episode start passed
+first, at evaluation 1" under it, and compared with the failed run, the table names it under that run's number only, the
+column's tooltip the tile's (pictures `training-start-first.png`, `training-start-first-table.png`). `run_control_check`
+167 (164): the tile's tooltip; with a first feasible design in the fixture's status, "at 4 evaluations used" beside the
+facts row's "at 4 evaluations used (dispatch #1, 1 completed, 3 in flight, 4 launches)", and "at 1 evaluation used". Its
+first run failed the "at 4" step: `FIRST_TILE` ended in `?? null`, so `${FIRST_TILE} === 'x'` read `text ?? (null ===
+'x')` and a wait for a word was over at once, the tile still "none yet". It is in brackets now, as `NEXT_NOTE` is, which
+also makes SIF-54's check that the ended run reads "none" a real one: it passed whatever the tile said, and passes now
+because the tile says "none". `export_check` 37 (on a real MOCK run: "at <n> evaluations used", or "none"). A probe run on
+the code before (the five source files as at HEAD, restored after): the new or changed checks failed, 3 in
+`run_control_check` ("at 4 evaluations", "at 1 evaluations", no tooltip), 3 in `training_tab_check` (no line, the old
+tooltip) and 4 in `training_data_check`; the rest passed. Also run, unchanged: `dom_identity_check` 56, `run_list_check`
+168, `looks_check` 76, `save_now_check` 29, `room_check` 31. 9 scripts, 797 checks, one lane: all passed the first time
+but `run_control_check`'s "at 4" step above, which passed after the fix (with `training_tab_check` again, 113), and once
+more alone, 167, after its picture of the tile (`run-2-first-feasible.png`) was framed on the run at a glance. No flakes.

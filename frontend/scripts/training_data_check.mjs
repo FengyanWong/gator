@@ -11,7 +11,8 @@
 //   - learner charts by evaluation (record 7.213): x = evaluations collected, the updates after one evaluation share its x,
 //     the mean is over the last N evaluations, compared runs learning 8 and 1 times per evaluation share the slots of an x
 //   - key numbers (record 7.215): first passing design, passing share of the last 100 evaluations, best design's miss,
-//     entropy and temperature at the start and the end - the recorded values, episode starts and no-verdict rows left out
+//     entropy and temperature at the start and the end - the recorded values, episode starts and no-verdict rows left out;
+//     an episode start that passed before the first passing design is named apart (branch record SIF-116)
 //   - shared chart preparation (record 7.221): a store kept up to date over many answers draws exactly what a new store fed
 //     the same answers at once draws (random runs: pages, flushes, journal rewrites, spec values joining earlier pages,
 //     learner restarts, resumes, thinning, missing metrics), and - given the trainingData.ts before 7.221 - exactly what the
@@ -391,6 +392,12 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
   const firstPass = rows.find(r => design(r) && r.all_hard_constraints_satisfied).commit_seq;
   const last = rows.filter(r => r.commit_seq > 300 - RECENT && design(r));
   check('first passing design: the first design that met every hard spec, episode starts left out', k.firstPass === firstPass && firstPass === 122, String(k.firstPass));
+  // branch record SIF-116: Run status's first feasible design counts the episode starts, so a start that passed before it is named
+  check('...and the episode start that passed before it: the baseline, evaluation 1 (SIF-116)', k.startPassed === 1, String(k.startPassed));
+  const later = new TrainingStore('/fixture/keys-later');
+  later.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: rows.map(r => (r.phase === 'search' ? r : { ...r, all_hard_constraints_satisfied: r.commit_seq > firstPass })) }) }));
+  const l = keyNumbers(later);
+  check('...none when the episode starts passed only after the first passing design', l.firstPass === firstPass && l.startPassed === null, JSON.stringify([l.firstPass, l.startPassed]));
   check(`passing of the last ${RECENT} evaluations: designs with a verdict only (no episode start, no timeout)`,
     same(k.recent, { passed: last.filter(r => r.all_hard_constraints_satisfied).length, judged: last.length, from: 201, to: 300 }), JSON.stringify(k.recent));
   check('the best design\'s miss at the newest evaluation, and the recorded count', k.bestMiss === 0 && k.evaluations === 300);
@@ -405,7 +412,8 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
   const n = keyNumbers(none);
   check('no passing design yet, no learner: said as none, not as 0', n.firstPass === null && n.entropy === null && n.alpha === null && n.recent.passed === 0 && n.recent.from === 1,
     JSON.stringify(n));
-  check('an empty run: nothing but the count', same(keyNumbers(new TrainingStore('/fixture/empty')), { evaluations: 0, firstPass: null, recent: null, bestMiss: null, entropy: null, alpha: null }));
+  check('...its passing episode start still named, the baseline at evaluation 1 (SIF-116)', n.startPassed === 1, String(n.startPassed));
+  check('an empty run: nothing but the count', same(keyNumbers(new TrainingStore('/fixture/empty')), { evaluations: 0, firstPass: null, startPassed: null, recent: null, bestMiss: null, entropy: null, alpha: null }));
 }
 
 // ---- 10. shared chart preparation (record 7.221) ------------------------------------------------------------------------------
@@ -458,7 +466,10 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
     for (const { store, other, module } of pairs) {
       for (const context of [{}, { calibration: true }]) {
         note('catalog', differ(catalog(store, context), module.catalog(other, context)));
-        note('key numbers', differ(keyNumbers(store, context), module.keyNumbers(other, context)));
+        // startPassed came after the builders before 7.221 (branch record SIF-116): compared where both modules give it
+        const mine = keyNumbers(store, context), theirs = module.keyNumbers(other, context);
+        if (!('startPassed' in theirs)) delete mine.startPassed;
+        note('key numbers', differ(mine, theirs));
       }
       for (const id of [...catalog(store).map(c => c.id), 'no_such_chart']) for (let c = 0; c < 2; c++) {
         const smoothing = [0, 10, 20, 50][Math.floor(rnd() * 4)], learnerX = rnd() < 0.5 ? 'update' : 'evaluation', buckets = [16, 20, 40, 800][Math.floor(rnd() * 4)];

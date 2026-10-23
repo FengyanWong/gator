@@ -7,7 +7,7 @@
 // line says when the folder was read; and both run-data tabs follow a live run - Output files reads the folder again at a
 // new save point and when the worker ends, Data tables reads its table again at a flush (the hourglass on Refresh while it
 // reads, its rows kept), and nothing is read again at a status update with nothing new; Data tables' rows and order lists
-// go into its request (limit, tail).
+// go into its request (limit, tail). Branch record SIF-109: the column titles take Tab, Enter and Space.
 // Hermetic, on the shared harness: the run's status and file list are canned (FIXTURE), the download request is held
 // so the busy state can be seen, then answered with a canned body and Content-Disposition; the browser's download
 // folder is a temporary one. GET requests pass, every other writing request is refused. Safe against the live 8765 page.
@@ -129,6 +129,19 @@ await runChecks(browser, async () => {
   check('a press on Size sorts by it, the smallest first; a second press the other way, "Size ▼" (SIF-99)', smallFirst && bigFirst && (await heads())[1][0] === 'Size ▼', JSON.stringify({ names: await names(), heads: await heads() }));
   await evaluate(`(${TABLE}).querySelector('thead tr').cells[0].click()`);
   check('... and a press on File sorts by path again', await until(`JSON.stringify(${ROWS}.map(r => r.cells[0].textContent)) === ${JSON.stringify(JSON.stringify(byPath))}`, 30), JSON.stringify(await names()));
+  // Branch record SIF-109: the titles take Tab, Enter and Space, as the Tasks, Runs and saved models tables' do; only a click
+  // could press them.
+  const SIZE_TITLE = `(${TABLE}).querySelector('thead tr').cells[1]`;
+  const keyOnSize = async (key, code, keyCode) => { await evaluate(`${SIZE_TITLE}.focus()`);
+    for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key, code, windowsVirtualKeyCode: keyCode }); };
+  await keyOnSize('Enter', 'Enter', 13);
+  const keySmall = await until(`JSON.stringify(${ROWS}.map(r => r.cells[0].textContent)) === ${JSON.stringify(JSON.stringify(bySize))}`, 30);
+  await keyOnSize(' ', 'Space', 32);
+  const keyBig = await until(`JSON.stringify(${ROWS}.map(r => r.cells[0].textContent)) === ${JSON.stringify(JSON.stringify([...bySize].reverse()))}`, 30);
+  check('Size is in the Tab order: Enter on it sorts the smallest first, then Space the other way (branch record SIF-109)', keySmall && keyBig
+    && await evaluate(`${SIZE_TITLE}.tabIndex === 0 && document.activeElement === ${SIZE_TITLE}`), JSON.stringify({ names: await names(), heads: await heads() }));
+  await evaluate(`(${TABLE}).querySelector('thead tr').cells[0].click()`);
+  await until(`JSON.stringify(${ROWS}.map(r => r.cells[0].textContent)) === ${JSON.stringify(JSON.stringify(byPath))}`, 30);
   check('the tool line has a filter box, empty', await evaluate(`${FILTER}?.value === '' && ${FILTER}.closest('.row') === (${TABLE}).closest('.scroll').previousElementSibling`));
   await page.setValue(FILTER, 'design', { event: 'input' });
   check('typing "design" keeps the four files under design/; the count says "4 of 7 files shown, 8.2 MiB in all." (SIF-99)', await until(`${ROWS}.length === 4`, 30)

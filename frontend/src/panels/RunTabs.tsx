@@ -12,7 +12,7 @@ import { LaunchRefusal } from './LaunchRefusal';
 import { KeyTile } from './fields';
 import { useCopied } from './copied';
 import { REWARD_NAME, REWARD_NAMES, runMode } from './rlModelText';
-import { useTableView } from './TableView';
+import { sortKeys, useTableView } from './TableView';
 
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
 const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'transitions', 'states'];
@@ -396,8 +396,10 @@ function FilesTabBody({ runDir, alive = null, savePoint = null }: { runDir: stri
     <input className="files-filter" aria-label="Filter files" placeholder="Filter: a file or folder name ..." value={view.filter} onChange={e => view.setFilter(e.target.value)}
       title="Filter files: Only the files whose path holds every word typed here." />
     <span className="hint">{count} {error ?? note}</span></div>
+    {/* The column titles take Tab, Enter and Space, as the Tasks, Runs and saved models tables' do (branch record SIF-109). */}
     <div className="scroll"><table className="grid small files-table"><thead><tr>{FILE_COLUMNS.map(c => <th key={c.key} className={c.numeric ? 'sortable num-cell' : 'sortable'}
-      title={`${c.help} Press to sort.`} aria-sort={view.sort.key === c.key ? (view.sort.down ? 'descending' : 'ascending') : undefined} onClick={() => view.sortBy(c.key)}>
+      title={`${c.help} Press to sort.`} aria-sort={view.sort.key === c.key ? (view.sort.down ? 'descending' : 'ascending') : undefined} onClick={() => view.sortBy(c.key)}
+      {...sortKeys(view, c.key)}>
       {c.title}{view.sort.key === c.key && <span className="sort-mark">{view.sort.down ? ' ▼' : ' ▲'}</span>}</th>)}<th></th></tr></thead>
       <tbody>{shown.map((f: Json) => <tr key={f.path}><td>{f.path}</td><td className="num-cell">{bytes(f.bytes)}</td><td title={`${f.modified_utc} (UTC)`}>{stamp(f.modified_utc) ?? f.modified_utc.slice(0, 19)}</td><td><button disabled={saving === f.path} onClick={() => save(f.path)}
         title={`Download ${f.path}: This file as it is now, to the browser's download folder.`}><Icon name={saving === f.path ? 'wait' : 'download'} label={`Download ${f.path}`} /></button></td></tr>)}</tbody></table></div></div>);

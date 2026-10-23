@@ -336,6 +336,9 @@ the tab line goes back to its window. Under 1101 px the editors come first and t
 - With no task yet, the task's lines under the toolbar offer **Open Tasks** and the ways to a new task.
 - **Windows**: while pop-up windows are open, a button in the banner with their count lists them; a press brings one to the
   front, **Close all** closes them. A task file not applied and folders not saved are kept for the next opening (SIF-87).
+  The list is plain buttons in the Tab order (branch record SIF-109: marked as a menu, it promised arrow keys it never
+  had). **Esc** closes it and gives the focus back to the button, and after **Close all**, which takes the button away, the
+  focus goes to the run chip, else the Connection button: it fell to the page, and the next Tab began at its top.
 
 **Research experiments** (record 7.163; user: "Check the research experiments module and see which should be kept",
 then "Remove both" and "Fold them"). Since record 7.166 its heading looks like the other modules' headings, and its note
@@ -438,7 +441,8 @@ while a read is on its way; the rows on screen stay until the new ones come. Dat
 list: **25 / 100 / 500 rows** and **newest first / oldest first** - the oldest are the table's first rows, in the order
 they were written, so an early evaluation no longer needs the CSV; the defaults are the newest 25, as before. Output files
 has a filter box (every word typed must stand in the file's path, in any case; the count then says "4 of 508 files shown,
-320 MiB in all.") and its column titles sort, as the Runs window's do: File (A to Z at first), Size and Modified.
+320 MiB in all.") and its column titles sort, as the Runs window's do: File (A to Z at first), Size and Modified - by a
+press, or by Enter or Space on a title reached with Tab (branch record SIF-109).
 
 **A copy says how it went** (branch record SIF-94). Run status's Run folder and best design variables (SIF-98), Output settings' **Copy path** (the word just
 before it) and its Current run paths, and the folders of the RL model window say "copied" where they were clicked, for
@@ -566,7 +570,8 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   refused. Typing the internal name takes a rename back. The names are kept in the settings folder
   (`task_names.json`); deleting a task forgets its shown name. A server older than this page lists no shown names: the
   Name box is off and the button says so.
-* A press on a column title sorts by it (again: the other way; rows without a value stay last). The filter box narrows
+* A press on a column title sorts by it (again: the other way; rows without a value stay last); the titles are in the Tab
+  order, and Enter or Space presses one (branch record SIF-109: only a click could). The filter box narrows
   the list by any word of a row: name, class, cell, a date. Task names sort as displayed; canonical task IDs stay unchanged for selection, saved configurations, runs and models (7.249).
   The shared Tasks, Runs and saved-model table code derives each row's search text and sort value at most once per
   arrangement (7.373), including the Tasks columns that count or find the newest run. Values are read again on the
@@ -1306,7 +1311,8 @@ With no connection yet, the connection window opens with its **Add a connection*
 `~/.virtuoso-bridge/.env` and the bridge's site-packages on the backend host (the name it suggests for
 "Virtuoso over SSH", the preselected kind, is `lab`), and **Create connection** writes
 the profile (`kind`, `env_file`, `profile` - `null` unless a bridge profile is named - and
-`bridge_site_packages`). The env file is located, never read; the browser sends only names; connections that
+`bridge_site_packages`). Enter in the name box is **Create connection** too, when it can be pressed (branch record
+SIF-109; not in Bridge profile, typed before the name). The env file is located, never read; the browser sends only names; connections that
 exist are never changed (see "Changed promise" below). Real-simulation tasks also need `library`,
 `model_file` and the per-circuit `circuits` entries shown above, added by hand.
 
@@ -1628,7 +1634,8 @@ lists every run under the output folder, newest first, one row per run:
 | Can continue | yes (full saved state), model only (usable for fine_tune / frozen), no. "no" also when the run folder no longer holds the save point its summary names - a copy made without its save points, deleted ones (record 7.215); Details says so under "Saved state". "model only" also for a full save point written by an older version of the optimizer code, which only that version can continue (record 7.221); Details says so too. |
 
 * **A double click on a row** is **Load run** (record 7.267; plan [frontend run workflow](plan-frontend-run-workflow.md),
-  "Load run"): the run's task comes into the editors, the model it ended with becomes the next run's model, and the
+  "Load run"), and so is **Enter** on the row, as in the Tasks window (branch record SIF-109: the double click was the
+  only way; Enter on one of the row's buttons presses that button alone): the run's task comes into the editors, the model it ended with becomes the next run's model, and the
   bottom tabs show the run - below. Where Load run is not offered, the double click only shows the run. The shown run's
   row is marked (blue, with a bar at its left edge), and the window closes once the run is chosen (record 7.291): after
   Show results and Continue... at once, after Load run and New run like this once they went through - Cancel at the edits
@@ -1698,7 +1705,8 @@ lists every run under the output folder, newest first, one row per run:
   and Spectre launches, learner updates, first feasibility, best design with its variables, the model it loaded and
   its last save, what can be restored, parallel simulations, connection, bytes written - and one line per
   **segment** (each Start or Resume: when it began and ended, how it ended, how long it worked).
-* A press on a column title sorts by it (again: the other way; rows without a value stay last). The filter box
+* A press on a column title sorts by it (again: the other way; rows without a value stay last); the titles are in the Tab
+  order, and Enter or Space presses one (branch record SIF-109). The filter box
   narrows the list by any word of a row: task, mode, state, `mock` / `real`, a date.
 * **Folders** (record 7.263; plan [frontend run workflow](plan-frontend-run-workflow.md), build step 2), as in the
   Tasks window: **All runs**, **Unfiled** and named folders with counts on the left, the same New folder, Rename and
@@ -3051,7 +3059,7 @@ reads the cell's PDK in the same press - the technology library its design libra
 connection and gate - and a line under the window's buttons says what came of it ("PDK gpdk045 read with the cell: 54
 components (version ...)", or why it was not read; a PDK that will not read never fails the cell). The window's button
 **PDK window...** opens the PDK window to read one by name (another library, another model file) and to see what was
-read. The CHOICE is in the RL model window: in New model, under the template's sizes, **Components** (standard /
+read; its **Load** reads, and so does Enter in either box when Load can be pressed (branch record SIF-109). The CHOICE is in the RL model window: in New model, under the template's sizes, **Components** (standard /
 every loaded PDK) - a network setting like the encoder; the window says when the chosen PDK is not loaded on this
 machine and points to the Virtuoso window. In Fine-tune and Evaluate only the list comes with the saved model, as its
 network does ("Use this save point"), and the model's facts gain a "Components" row. Saved as `run.network.vocabulary` =

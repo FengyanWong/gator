@@ -19,7 +19,8 @@
 //     (a folder an environment variable decides cannot be typed into), saved only by "Save folders" with the changed folders
 //     alone; a refused folder is named and marked; "Use defaults" and "Undo changes" send nothing;
 //   * (branch record SIF-87) a folder typed and not saved outlives the window's close: opened again, it lies over the values
-//     in use, said in a line, until Save folders or Undo changes.
+//     in use, said in a line, until Save folders or Undo changes;
+//   * (branch record SIF-109) Enter in the new connection's name adds it, as "Create connection" does; a refused name sends nothing.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/connection_panel_check.mjs)" [screenshot-dir]
 // With GATOR_CONNECTION_LIVE=1 a last section lets the requests THROUGH to the backend: only ever against a scratch
@@ -582,6 +583,27 @@ await runChecks(browser, async () => {
     && (await far.evaluate(`${WINDOW}.querySelector('select').value`)) === 'lab' && !(await text()).includes('by its own name'), await evaluate(`${BUTTON}.textContent`));
   activeProfile = 'lab';
   await shot('window', '.connection-window', 'connection-9-session-named.png');
+
+  // ---- Enter in the new connection's name (branch record SIF-109) ---------------------------------------------------------
+  // Enter there did nothing - only "Create connection" added it -, while the ngspice window's path box reads its file on
+  // Enter. A name the form refuses still sends nothing.
+  const NAME_BOX = `${WINDOW}.querySelector('.connection-add input')`;
+  const enterInName = async () => { await far.evaluate(`${NAME_BOX}.focus()`);
+    for (const type of ['keyDown', 'keyUp']) await far.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); };
+  await press('Add a connection...');
+  await far.until(`!!${WINDOW}.querySelector('.connection-add select')`, 50);       // the setup is read again after the reloads above
+  await choose('.connection-add select', 'ngspice_local'); await sleep(200);
+  await far.setValue(NAME_BOX, 'lab', { event: 'input' }); await sleep(200);
+  mark = seen.length;
+  await enterInName(); await sleep(800);
+  check('Enter in the name of a connection that exists already sends nothing (branch record SIF-109)', seen.length === mark
+    && (await far.evaluate(`${WINDOW}.querySelector('.connection-add').innerText`)).includes('A connection with this name already exists.'), names(mark).join(', '));
+  await far.setValue(NAME_BOX, 'sim-enter', { event: 'input' }); await sleep(200);
+  mark = seen.length;
+  await enterInName(); await settle(mark);
+  pressed = seen.slice(mark).filter(s => s.method === 'POST');
+  check('... in a free name it adds the connection, as "Create connection" does: one request with the name and the kind (SIF-109)', pressed.length === 1 && pressed[0].name === 'profile'
+    && JSON.stringify(pressed[0].body) === JSON.stringify({ profile_id: 'sim-enter', kind: 'ngspice_local' }) && (await text()).includes('Connection "sim-enter" was added'), JSON.stringify(pressed.map(p => p.body)));
 
   // ---- LIVE (scratch backend only): the real routes, the real probe process, the real ngspice or its real absence ------
   if (LIVE) {

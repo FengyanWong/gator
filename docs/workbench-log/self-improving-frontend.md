@@ -3600,3 +3600,57 @@ did not have; the two that no button stands by another line pin where it must no
 `working_copy_check` 34 (its gate refusal still names the header's button), `looks_check` 76, `editor_columns_check` 29
 (SIF-107's `.line-act`), `callouts_check` 8 (11 scripts, 586 checks, one lane, all passed the first time). Not run, by
 the rules: `test_wb_readiness.py` (no backend change). No flakes.
+
+### SIF-109 Enter and the keyboard work where the mouse does (2026-10-23; from the usability audit)
+
+**Found.** Three audit findings about the keyboard. Enter did nothing in the Add a connection form or in the PDK
+window's two boxes: the user typed the new connection's name, or a library, and had to click Create connection or Load,
+while the ngspice window's path box reads its file on Enter and a task's or a model's rename takes Enter (J1-12). The
+column titles that sort the Tasks, Runs and saved models tables were heading cells only a click could press: Tab went
+past them, and Enter or Space did nothing; a run could be chosen from its row by a double click alone (J4-15; its third
+part, the focus after the Continue form, was SIF-90's). The banner's Windows list was marked as a menu, with none of a
+menu's arrow keys; Esc closed it with the focus in it, and Close all took the whole button away: either way the focus
+fell to the page, and the next Tab began at its top (J7-12). A window's name, pressed, moves the focus into that window,
+as it should: the verdict's correction.
+
+**Changed.** `frontend/src/panels/Connection.tsx`: Enter in the name box is Create connection when that button can be
+pressed (`canCreate`). Only there: an Enter in Bridge profile, typed before the name, would add the connection under the
+suggested name. `frontend/src/panels/Pdk.tsx`: Enter in either box is Load; the key and the button share one condition
+(`canLoad`), so a library name or a path that Load refuses sends nothing, nor does a window without a connection.
+`frontend/src/panels/TableView.tsx`: `sortKeys` puts a sortable title in the Tab order (`tabIndex` 0) and sorts by it on
+Enter or Space, as a press does; Space's scroll of the window is prevented. The click stays on the `th` itself, where the
+checks press it (a button inside would not get that click); `aria-sort` was there already. `TableHead` - the Tasks, Runs
+and saved models tables - takes it, and so do the Output files titles (`RunTabs.tsx`), sortable the same way since SIF-99:
+not in the audit's list, but the one table left out would have been the odd one. `frontend/src/panels/RunList.tsx`:
+`showRow` holds what the double click does, and a run's row takes Enter (`tabIndex` 0), as a task's row does since
+SIF-100: Load run where it is offered, its edits question asked in the Runs window as for the double click, else the run
+is shown; the window closes as it does. Enter counts on the row itself only: on Details or a link it presses that alone,
+on the tick box nothing. The window's hint and Load run's tooltip name Enter. `frontend/src/panels/WindowsMenu.tsx`: the
+list is plain buttons in a labelled group, no `menu` or `menuitem`, so Tab goes through it and nothing promises arrow
+keys. Esc gives the focus back to the Windows button when it was in the list; a focus elsewhere stays where it is. Close
+all puts the focus on the Windows button, and once the last window has gone, and the button with it, on the banner's
+control before it: the run chip, else the Connection button. Each window goes at its own pagehide, not at the press, so
+the move waits for the list to empty (the plan's one animation frame could come before); a window that stays open keeps
+the button, with the focus on it. `frontend/src/styles.css`: a run row's and a sortable title's focus ring inside them,
+as a task row's (SIF-100). Nothing here starts, continues or stops a run, saves a task or writes to Virtuoso: Enter on a
+row is Load run or the run shown, with the question they asked; Create connection adds a connection and never changes
+one, and Load reads, as their buttons did - a key only where its button can be pressed. `docs/workbench.md` (the Windows
+bullet, Output files, the Tasks and Runs windows' sorting, the Runs window's double click, Create connection, the PDK
+window) and `docs/functionality-reference.md` (the Windows, Task-name button, Add a connection, PDK window, Runs..., Load
+run and Output files rows) describe it. Left: the PDK window's loaded PDKs and the saved models' rows still answer a
+double click alone (a saved model's Details have Use; a loaded PDK has no other way in) - not among the audit's findings.
+
+**Checked.** `tsc` clean. `run_list_check` 162 (157 before): a column title is in the Tab order; Enter on "Duration"
+sorts the longest run first, then Space the shortest, its default prevented; Enter on a row's Details opens them alone,
+the run not chosen and the window open; the row is in the Tab order, and Enter on it shows the run (one that names no
+task) and closes the window. `task_list_check` 103 (100): the Windows list is a group, with no menu roles; Esc in it
+closes it, the focus back on the Windows button; after Close all the focus is on the banner's control before it (the
+Connection button: no run is held there). `connection_panel_check` 96 (94): Enter in a name in use sends nothing; in a
+free one it sends one request with the name and the kind, and the window says the connection was added. `pdk_check` 44
+(42): Enter in the library box, holding a name Load refuses, sends nothing; Enter in the model file box loads, with both
+typed fields. `files_tab_check` 43 (42): Size is in the Tab order; Enter sorts the smallest first, then Space the other
+way. Each new check of a key's effect looks for what the code before did not have; the two that a refused value sends
+nothing pin the shared condition. Also run, unchanged: `model_chooser_check` 120, `run_control_check` 160,
+`dom_identity_check` 56, `training_tab_check` 108, `virtuoso_source_check` 112, `export_check` 37, `corner_check_check`
+39, `looks_check` 76, `network_panel_check` 72, `task_run_check` 39, `reliability_check` 20, `agent_window_check` 33,
+`callouts_check` 8 (18 scripts, 1,328 checks, one lane, all passed the first time). No flakes.

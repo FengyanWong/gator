@@ -275,12 +275,13 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   };
   // A double click on a run's row loads the run (record 7.267, plan "Load run"; it only showed the run until then, user
   // request 2026-09-21: no "Show" column) - or shows it, where Load run is not offered. Not when it lands on the row's
-  // "Details" button: that only opens and closes the details. The word the double click selected is let go.
-  const showRun = (e: MouseEvent<HTMLTableRowElement>, row: Json) => {
-    if ((e.target as HTMLElement).closest('button, input, select, label')) return;
+  // "Details" button: that only opens and closes the details. The word the double click selected is let go. Enter on the
+  // row does the same (branch record SIF-109), as on a row of the Tasks window (SIF-100): the double click was the only way.
+  const showRow = (row: Json) => {
     (popup ?? window).getSelection()?.removeAllRanges();
     if (onLoad && !loadBlocked(row, tasks)) chosen(onLoad(row, popup), row); else { onChoose(row.run_dir); chosen(); }
   };
+  const showRun = (e: MouseEvent<HTMLTableRowElement>, row: Json) => { if (!(e.target as HTMLElement).closest('button, input, select, label')) showRow(row); };
   const actions = (r: Json) => {
     if (!onLoad) return null;
     const why = loadBlocked(r, tasks);
@@ -292,7 +293,7 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
     const notContinued = !atRest || !kept || continuable ? null : r.state === 'failed' ? 'a failed run cannot be continued'
       : r.state === 'cancelled' ? 'a cancelled run cannot be continued' : r.resumability === 'weights_only' ? 'its save point is model only' : null;
     return <div className="row run-actions">
-      <button className="run-load" disabled={!!why} onClick={() => chosen(onLoad(r, popup), r)} title={why ?? 'Load run (also a double click on the run): its task comes into the editors - edits are asked about first -, its model becomes the next run\'s model, pinned, and the bottom tabs show its results. One Undo step takes the task and the model back. Nothing starts.'}>Load run</button>
+      <button className="run-load" disabled={!!why} onClick={() => chosen(onLoad(r, popup), r)} title={why ?? 'Load run (also a double click on the run, or Enter on its row): its task comes into the editors - edits are asked about first -, its model becomes the next run\'s model, pinned, and the bottom tabs show its results. One Undo step takes the task and the model back. Nothing starts.'}>Load run</button>
       <button className="run-show" onClick={() => { onChoose(r.run_dir); chosen(); }} title="Show results: the bottom tabs show this run (Run status, Logs, Data tables...). Nothing else changes.">Show results</button>
       {continuable && <button className="run-continue" onClick={() => { onContinue!(r); chosen(); }} title="Continue...: the run goes on in its own folder, from its newest save point, with its own settings - Run status shows it, with the budget form.">Continue...</button>}
       {onNewLike && <button className="run-like" disabled={!!why} onClick={() => chosen(onNewLike(r, popup), r)} title={why ?? 'New run like this: the next run repeats this one - its task (edits are asked about first), Mode, the model it started from, network, training values, reward, conditions, budget, seed and limits. One Undo step. Nothing starts.'}>New run like this</button>}
@@ -377,8 +378,8 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
       </div>
       {runsError && !loading && <p className="error run-list-error">The run list could not be read: {runsError}</p>}
       {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
-      {onLoad ? <p className="hint"><b>Double click</b> a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results (one Undo step takes the task and the model back; nothing starts). A run's <b>Details</b> also offer <b>Show results</b> alone, <b>Continue...</b> and <b>New run like this</b>. The run that is shown is marked, and the window opens at it; <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. The window closes once a run is loaded, shown, continued or repeated - it stays open, saying why, when that does not go through (Cancel at the edits question, a model that cannot be read), and for <b>Clear</b> and <b>Details</b>.</p>
-        : <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked, and the window then closes. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none.</p>}
+      {onLoad ? <p className="hint"><b>Double click</b> a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results (one Undo step takes the task and the model back; nothing starts). <b>Enter</b> on a run's row does the same. A run's <b>Details</b> also offer <b>Show results</b> alone, <b>Continue...</b> and <b>New run like this</b>. The run that is shown is marked, and the window opens at it; <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. The window closes once a run is loaded, shown, continued or repeated - it stays open, saying why, when that does not go through (Cancel at the edits question, a model that cannot be read), and for <b>Clear</b> and <b>Details</b>.</p>
+        : <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked, and the window then closes. <b>Enter</b> on a run's row does the same. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none.</p>}
       <details className="more"><summary>What the columns mean</summary>
         <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
           <li>All times are the local time of this computer. Press a column title to sort by it. "Details" shows everything else the run recorded.</li></ul></details>
@@ -394,7 +395,8 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
       {runs.length > 0 && <div className="scroll"><table className="grid run-table">
         <TableHead view={table} columns={COLUMNS} shown={shown} id={r => r.run_dir} what="runs" disabled={folders.busy || !folders.ready} />
         <tbody>{shown.map(r => { const active = r.run_dir === runDir, end = finished(r), origin = startedFrom(r, byDir); return (<Fragment key={r.run_dir}>
-          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={r.run_dir} onDoubleClick={e => showRun(e, r)}>
+          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={r.run_dir} onDoubleClick={e => showRun(e, r)}
+            tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) showRow(r); }}>
             <td className="task-select"><input type="checkbox" aria-label={`Select ${folderName(r.run_dir)}`} checked={selected.includes(r.run_dir)}
               disabled={folders.busy || !folders.ready} onChange={e => table.select(r.run_dir, e.target.checked)} /></td>
             <td className="wrap-words">{keepDates(stamp(r.created_utc) ?? '-')}{folders.folder === 'all' && folders.data.folders[folders.of(r.run_dir)]

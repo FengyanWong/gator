@@ -17,7 +17,8 @@
 //   - "PDK window..." opens the PDK window: the form, the connection it reads through, the loaded PDKs (double click shows
 //     one, with every component, its pins and roles, its parameters, and its model files' sizes in a unit - the exact
 //     bytes on hover, branch record SIF-52); "Load" sends exactly the typed fields, shows that it
-//     is reading, then shows the answer and reads the list again; without a connection it cannot be pressed; closing the
+//     is reading, then shows the answer and reads the list again - so does Enter in either box, never while a box holds what
+//     Load refuses (branch record SIF-109); without a connection it cannot be pressed; closing the
 //     Virtuoso window closes it too (2026-09-29). The Virtuoso window is opened as a user opens it since record 7.362: the
 //     Tasks window's "New task: From a Virtuoso cell..."; without a connection it says to choose one, with Connection...
 //     beside the words, which opens the Connection window from it (branch record SIF-108);
@@ -274,6 +275,23 @@ await runChecks(browser, async () => {
     counts: [...document.querySelectorAll('.pdk-list tbody tr')].map(r => r.cells[2].textContent) })`);
   check('a PDK answered without ideal parts (an older server, a PDK loaded before) says that they were not read', /not read with this PDK/.test(older.none ?? '') && !older.head
     && JSON.stringify(older.counts) === '["3","not read"]', JSON.stringify(older));
+  // Branch record SIF-109: Enter in either box loads when Load can be pressed - it did nothing, while the ngspice window's path
+  // box reads on Enter. A box holding what Load refuses sends nothing.
+  const typeIn = async (index, text) => { await pev(`(() => { const i = document.querySelectorAll('.pdk-form input')[${index}]; i.focus(); i.select(); })()`);
+    await popup.send('Input.insertText', { text }); await sleep(200); };
+  const enterIn = async index => { await pev(`document.querySelectorAll('.pdk-form input')[${index}].focus()`);
+    for (const type of ['keyDown', 'keyUp']) await popup.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); };
+  await typeIn(0, 'fix load'); await enterIn(0); await sleep(500);
+  check('Enter in the library box while it holds what Load refuses sends nothing (branch record SIF-109)', loadBodies.length === 1
+    && /A plain Cadence library name/.test(await pev(`document.querySelector('.pdk-window p.error')?.textContent ?? ''`)), JSON.stringify(loadBodies));
+  await typeIn(0, 'fixload'); await typeIn(1, '/fixture/models/fx.scs');
+  holdLoad = null;
+  await enterIn(1);
+  for (let i = 0; i < 50 && !holdLoad; i++) await sleep(100);
+  holdLoad?.();
+  check('... Enter in the model file box loads, as Load does: the typed fields are sent (SIF-109)',
+    JSON.stringify(loadBodies.slice(1)) === JSON.stringify([{ profile_id: 'fixture-link', technology_library: 'fixload', model_file: '/fixture/models/fx.scs' }]), JSON.stringify(loadBodies));
+  await popup.until(`document.querySelector('button.pdk-load')?.textContent === 'Load'`, 60);
   await until(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`, 30);
   check('the newly loaded PDK can be chosen in the RL model window at once', await evaluate(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`));
   await sleep(300);

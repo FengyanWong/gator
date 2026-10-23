@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 import type { FolderView } from './Folders';
 
 /** A column title of the Tasks, Runs and saved models tables: its key, its words and its tooltip. */
@@ -50,6 +50,14 @@ export function useTableView(key: string, down: boolean) {
 }
 export type TableView = ReturnType<typeof useTableView>;
 
+/** A sortable column title in the keyboard's reach (branch record SIF-109): Tab reaches it, and Enter or Space sorts as a
+ *  press does - it was a heading cell only a click could press. Space's default, a scroll of the window, is prevented. The
+ *  click stays on the cell itself, where the checks press it. */
+export const sortKeys = (view: TableView, key: string) => ({
+  tabIndex: 0,
+  onKeyDown: (e: KeyboardEvent<HTMLTableCellElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); view.sortBy(key); } },
+});
+
 /** The header row: the box that ticks every row shown (half ticked while only some are), the column titles that sort,
  *  and the empty title over the Details buttons. `what`: the rows' name in the box's label ("runs"). */
 export function TableHead<T>({ view, columns, shown, id, what, disabled }: {
@@ -61,7 +69,7 @@ export function TableHead<T>({ view, columns, shown, id, what, disabled }: {
       checked={shown.length > 0 && every} ref={input => { if (input) input.indeterminate = view.selected.length > 0 && !every; }}
       onChange={e => view.setSelected(e.target.checked ? shown.map(id) : [])} /></th>
     {columns.map(c => <th key={c.key} className={c.numeric ? 'sortable numeric' : 'sortable'} title={`${c.help} Press to sort.`}
-      aria-sort={view.sort.key === c.key ? (view.sort.down ? 'descending' : 'ascending') : undefined} onClick={() => view.sortBy(c.key)}>
+      aria-sort={view.sort.key === c.key ? (view.sort.down ? 'descending' : 'ascending') : undefined} onClick={() => view.sortBy(c.key)} {...sortKeys(view, c.key)}>
       {c.title}{view.sort.key === c.key && <span className="sort-mark">{view.sort.down ? ' ▼' : ' ▲'}</span>}</th>)}
     <th className="plain"></th></tr></thead>);
 }

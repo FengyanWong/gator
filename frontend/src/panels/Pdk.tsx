@@ -1,5 +1,5 @@
 import { useAsyncAction } from '../store';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { type KeyboardEvent, memo, useEffect, useMemo, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { signal } from '../signal';
@@ -121,6 +121,10 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
   });
   const libraryProblem = library.trim() && !/^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$/.test(library.trim()) ? 'A plain Cadence library name.' : null;
   const fileProblem = modelFile.trim() && !/^\/[A-Za-z0-9_./+\-]+$/.test(modelFile.trim()) ? 'An absolute path on the simulator host (letters, digits, / . _ - +).' : null;
+  // Enter in either box is Load, when Load can be pressed (branch record SIF-109): it did nothing, while the ngspice window's
+  // path box reads its file on Enter. One condition for both, so a key never reads what the button would refuse.
+  const canLoad = !busy && !!profileId && !libraryProblem && !fileProblem;
+  const loadOnEnter = (e: KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter' && canLoad) { e.preventDefault(); load(); } };
   const devices: Json[] = useMemo(() => (shown?.devices ?? []).slice().sort((a: Json, b: Json) =>
     FAMILY_ORDER.indexOf(familyOf(a)) - FAMILY_ORDER.indexOf(familyOf(b)) || a.model.localeCompare(b.model)), [shown]);   // sorted once per PDK shown, not per redraw
   return (
@@ -138,9 +142,9 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
           pin's role from the primitive terminal the pin reaches. A parameter's scale comes from its declared unit, else from the PDK's default
           value. Nothing is guessed from a name; what cannot be established is listed as "unknown".</p></details>
       <div className="row pdk-form">
-        <label>Technology library<input value={library} placeholder="empty = the connection's design library's" onChange={e => setLibrary(e.target.value)} /></label>
-        <label>Model file on the simulator host<input value={modelFile} placeholder="empty = the connection's model file" onChange={e => setModelFile(e.target.value)} /></label>
-        <button className="pdk-load" disabled={!!busy || !profileId || !!libraryProblem || !!fileProblem} onClick={load}
+        <label>Technology library<input value={library} placeholder="empty = the connection's design library's" onChange={e => setLibrary(e.target.value)} onKeyDown={loadOnEnter} /></label>
+        <label>Model file on the simulator host<input value={modelFile} placeholder="empty = the connection's model file" onChange={e => setModelFile(e.target.value)} onKeyDown={loadOnEnter} /></label>
+        <button className="pdk-load" disabled={!canLoad} onClick={load}
           title="Read-only and zero-cost: one query of the library's description, and the model files downloaded, scanned and deleted.">{busy ? 'Reading...' : 'Load'}</button>
       </div>
       <p className="hint">Through connection <b>{profileId ?? '(none chosen)'}</b>.{busy ? ' Reading the description and the model files - usually well under a minute.' : ''}</p>

@@ -589,6 +589,9 @@ table.task-table .task-select, table.run-table .task-select { width: 28px; text-
 table.task-table .task-select input, table.run-table .task-select input { margin: 0; }
 /* A task's row takes Enter (branch record SIF-100): its focus ring inside the row, where the table's scroll box cannot cut it. */
 table.task-table tbody > tr[data-task-key]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* A run's row takes Enter too, and a sortable column title Enter and Space (branch record SIF-109): their focus rings inside
+   them, as a task row's, where the table's scroll box cannot cut them. */
+table.run-table tbody > tr:focus-visible, table.grid th.sortable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .task-details h4 { margin: 10px 0 3px; } table.task-rows-table { width: auto; } table.task-rows-table td, table.task-rows-table th { padding: 2px 8px; }
 table.run-relations td:first-child { white-space: nowrap; width: 1%; } .run-relations details.more { display: inline-block; margin: 0; } .run-only-task { margin: 0 0 6px; }
 /* The run brief (record 7.264): a small window, one card per run - the header's first. */

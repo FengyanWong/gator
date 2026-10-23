@@ -21,7 +21,8 @@
 // Branch record SIF-98: a run shown in Run status lists its best design's variables as its Details do, and a click copies them.
 // Branch record SIF-101: Runs... opens the window at the shown run; a link keeps the folder, the filter and the ticks that show
 // its run, else "Back to ..." brings them back; "Go to the shown run" when they hide it. Its review follow-up: a link to one
-// task's runs lets the ticks go; New folder with runs ticked keeps them.
+// task's runs lets the ticks go; New folder with runs ticked keeps them. Branch record SIF-109: a column title takes Tab, Enter
+// and Space; a run's row takes Enter, which does what its double click does.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -413,6 +414,22 @@ await runChecks(browser, async () => {
   rows = await table();
   check('pressing "Finished" sorts the run that finished last first', rows[0].folder === PAUSED.run_dir && rows[1].folder === RESUMED.run_dir, rows.map(x => x.Finished).join(' | '));
   await pressTitle('Started'); await sleep(300);
+  // Branch record SIF-109: a column title is in the Tab order, and Enter or Space sorts as a press does - only a click could
+  // press it. Space's default, a scroll of the window, is prevented (seen by a listener after the page's own).
+  const TITLE = title => `[...${WINDOW}.querySelectorAll('table.run-table thead th')].find(h => h.textContent.replace(/[\\u25B2\\u25BC]/g, '').trim() === ${JSON.stringify(title)})`;
+  const keyOn = async (expression, key, code, keyCode, text) => { await far.evaluate(`(${expression}).focus()`);
+    for (const type of ['keyDown', 'keyUp']) await far.send('Input.dispatchKeyEvent', { type, key, code, windowsVirtualKeyCode: keyCode, ...(type === 'keyDown' && text ? { text } : {}) }); };
+  await far.evaluate(`window.__spaceKept = null; document.addEventListener('keydown', e => { if (e.key === ' ') window.__spaceKept = e.defaultPrevented; })`);
+  await keyOn(TITLE('Duration'), 'Enter', 'Enter', 13); await sleep(300);
+  rows = await table();
+  check('a column title is in the Tab order, and Enter on it sorts as a press does: "Duration", the longest run first (branch record SIF-109)',
+    await far.evaluate(`${TITLE('Duration')}.tabIndex === 0 && document.activeElement === ${TITLE('Duration')}`) && rows[0].folder === PAUSED.run_dir && rows[rows.length - 1].folder === NEVER.run_dir,
+    rows.map(x => x.Duration).join(' | '));
+  await keyOn(TITLE('Duration'), ' ', 'Space', 32, ' '); await sleep(300);
+  rows = await table();
+  check('... and Space on it the other way, the shortest first, without scrolling the window (SIF-109)', rows[0].folder === DONE.run_dir && rows[rows.length - 1].folder === NEVER.run_dir
+    && (await far.evaluate('window.__spaceKept')) === true, `${rows.map(x => x.Duration).join(' | ')} | default prevented: ${await far.evaluate('window.__spaceKept')}`);
+  await pressTitle('Started'); await sleep(300);
 
   // ---- 5b. folders (record 7.263): the Tasks window's folders, for runs ----------------------------------------------------------
   await far.send('Page.enable');
@@ -550,6 +567,22 @@ await runChecks(browser, async () => {
   check('after the window is closed the strip button is no longer marked as open', await until(`!${BUTTON}.classList.contains('open')`) && (await strip()).text === 'Runs...', JSON.stringify(await strip()));
   await openWindow();
   check('pressing the button again opens the window again, with the current list', (await table())?.length === 6);
+  // Branch record SIF-109: a run's row takes Enter, as a row of the Tasks window does (SIF-100) - the double click was the only
+  // way to choose a run from its row. Enter on one of the row's buttons presses that button alone. FAILED names no registered
+  // task, so its Enter shows it (Load run is not offered) and the draft keeps its Undo steps for section 10.
+  const shownFailed = () => evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(FAILED.run_dir)})`);
+  const enterOn = async expression => { await far.evaluate(`(${expression}).focus()`);
+    await far.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' });
+    await far.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }).catch(() => undefined); };   // the window may have closed
+  await enterOn(`[...${RUN_ROW(FAILED)}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Details')`);
+  check('Enter on a row\'s Details button opens its Details alone: the run is not chosen, the window stays open (branch record SIF-109)',
+    await far.until(`!!${RUN_ROW(FAILED)}.nextElementSibling?.classList.contains('run-details-row')`, 30) && !(await shownFailed()) && await windowOpen());
+  await pressIn(FAILED, 'Hide details');
+  check('... the row itself is in the Tab order', await far.evaluate(`${RUN_ROW(FAILED)}.tabIndex === 0`));
+  await enterOn(RUN_ROW(FAILED));
+  check('... and Enter on the row does what its double click does: the run is shown in the workbench and the window closes (SIF-109)',
+    await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(FAILED.run_dir)})`) && await closedByChoice());
+  await openWindow();
   await doubleClick(DONE);
   check('a run chosen there is shown in the workbench', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DONE.run_dir)})`));
   check('... and the window closed', await closedByChoice());

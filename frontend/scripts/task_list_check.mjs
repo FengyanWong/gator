@@ -11,7 +11,8 @@
 // Since record 7.362 the task's name, the button that opens the window, starts the editors' tab line. Record 7.372: with no
 // task yet the task's lines under the editors' toolbar offer Open Tasks and the ways to a new task, and the banner lists the
 // windows open (one press brings one to the front; Close all). Branch record SIF-101: New folder with tasks ticked keeps
-// them ticked in the folder shown.
+// them ticked in the folder shown. Branch record SIF-109: that list is plain buttons; Esc gives the focus back to its button,
+// and after Close all the focus goes to the banner's control before it.
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, starterConfig, taskWindow, validConfiguration, workbenchUrl, TASKS_WINDOW, RUNS_WINDOW } from './lib/harness.mjs';
@@ -459,8 +460,23 @@ await runChecks(browser, async () => {
   await evaluate(`document.querySelector('header .windows-button').click()`);
   check('its list names it, with Close all', await until(`[...document.querySelectorAll('header .windows-list button')].map(b => b.textContent).join() === 'Tasks,Close all'`, 30),
     await evaluate(`[...document.querySelectorAll('header .windows-list button')].map(b => b.textContent).join()`));
+  // Branch record SIF-109: plain buttons in the Tab order - marked as a menu, the list promised the arrow keys a menu has, and
+  // had none. Esc in the list and Close all dropped the focus to the page, and the next Tab began at its top.
+  check('...the list is a group of plain buttons, not a menu (branch record SIF-109)', await evaluate(`document.querySelector('header .windows-list').getAttribute('role') === 'group'
+    && !document.querySelector('header [role="menu"], header [role="menuitem"]')`), await evaluate(`document.querySelector('header .windows-list').outerHTML.slice(0, 160)`));
+  await send('Page.bringToFront');                                                // the Tasks window had the focus
+  await evaluate(`[...document.querySelectorAll('header .windows-list button')].find(b => b.textContent === 'Tasks').focus()`);
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  check('...Esc in the list closes it and gives the focus back to the Windows button (SIF-109)', await until(`!document.querySelector('header .windows-list')`, 30)
+    && await evaluate(`document.activeElement === document.querySelector('header .windows-button')`), await evaluate(`document.activeElement?.outerHTML.slice(0, 120) ?? 'none'`));
+  await evaluate(`document.querySelector('header .windows-button').click()`);
+  await until(`!!document.querySelector('header .windows-list')`, 30);
   await evaluate(`[...document.querySelectorAll('header .windows-list button')].find(b => b.textContent === 'Close all').click()`);
   check('"Close all" closes it, and the button goes', await until(`!document.querySelector('header .windows-button')`, 40));
+  // The banner's control before the button: the run chip, else the Connection button - here, as no run is held (run: null).
+  check('...and the focus goes to the banner\'s control before it, the Connection button with no run held, not to the page (SIF-109)',
+    await until(`!document.querySelector('header .run-chip') && document.activeElement === document.querySelector('header .connection-button')`, 30),
+    await evaluate(`document.activeElement?.outerHTML.slice(0, 120) ?? 'none'`));
   reportRefused(refused, NEVER_ASKED);
   check('no console errors', consoleErrors.filter(e => !/404|418/.test(e)).length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

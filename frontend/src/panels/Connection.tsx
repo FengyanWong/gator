@@ -343,8 +343,12 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
             <select value={host} onChange={e => setDraft((d: Json) => ({ ...d, ssh_host: e.target.value }))}>{kindSetup.ssh_hosts.map((h: string) => <option key={h}>{h}</option>)}</select></label>}
           {kindSetup.family === 'virtuoso' && <label title="Only needed when the bridge env file holds several machines as named profiles (VB_REMOTE_HOST_<name>). Empty = the bridge's default profile.">Bridge profile (optional)
             <input value={draft.bridge_profile} placeholder="empty = the bridge's default" onChange={e => setDraft((d: Json) => ({ ...d, bridge_profile: e.target.value }))} /></label>}
+          {/* Enter in the name is Create connection, as the ngspice window's path box reads its file on Enter (branch record
+              SIF-109): it did nothing. Only here, the last box before the button: an Enter in Bridge profile, typed first,
+              would add the connection under the suggested name. */}
           <label>Name of the new connection
-            <input value={name} onChange={e => setDraft((d: Json) => ({ ...d, name: e.target.value }))} /></label>
+            <input value={name} onChange={e => setDraft((d: Json) => ({ ...d, name: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter' && canCreate) { e.preventDefault(); create(); } }} /></label>
           {nameProblem && <p className="error">{nameProblem}</p>}
           <p className="hint">{kindSetup.note}</p>
         </>}

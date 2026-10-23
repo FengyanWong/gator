@@ -20,7 +20,7 @@ Completion means the run reached its configured budget or stopping condition; co
 | Round 1, Steps 4 / 5 / 6 | 12 runs + 3 probes / 2 runs + 1 probe / 4 runs + 4 probes complete |
 | Round 2 | All 24 repeats complete: 15,893 charged attempts and 15,889 simulator launches, including the retained four-attempt BGR preparation failure (section 7) |
 | Round 3, offline | GraphGPS, fresh CircuitGPS v2 and RGCN complete and qualified; RGCN's 12 online arms are admitted |
-| Round 3, online | Seed 0: all 36 arms complete (2026-10-16 02:32 Europe/London; 22,800 evaluations, no failed run); results record owed; seeds 1-2 remain proposed |
+| Round 3, online | Seed 0: all 36 arms complete (2026-10-16 02:32 Europe/London; 22,800 evaluations, no failed run; numbers in the thesis audit, record 7.385); seeds 1 and 2: all 72 runs complete 2026-10-22 10:39 (45,600 evaluations; two runs resumed in the same run from their save points; folder online-seeds12-2026-10-20; dispatch and incidents record 7.385, audited results record 7.388) |
 | Round 4 | Done offline 2026-10-17 to 2026-10-19 (sections 7b.7-7b.8, records 7.363, 7.381 and 7.383): LOADBench did not help the Round 3 models - stage 1 + stage 2, the predictor transplant (option C) and the pretrained input layers (option 1) all end at the control's error; online test not run |
 | Journal | J0 protocol/test split not frozen; J1 online comparison, J2-J5 and manuscript milestones remain outstanding |
 

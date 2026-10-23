@@ -19,7 +19,8 @@
 //     bytes on hover, branch record SIF-52); "Load" sends exactly the typed fields, shows that it
 //     is reading, then shows the answer and reads the list again; without a connection it cannot be pressed; closing the
 //     Virtuoso window closes it too (2026-09-29). The Virtuoso window is opened as a user opens it since record 7.362: the
-//     Tasks window's "New task: From a Virtuoso cell...";
+//     Tasks window's "New task: From a Virtuoso cell..."; without a connection it says to choose one, with Connection...
+//     beside the words, which opens the Connection window from it (branch record SIF-108);
 //   - the ideal parts read with a PDK (record 7.190: analogLib's sources, ideal R / C / L, probes, controlled sources): the
 //     window says that every read brings them, the list has their count, a shown PDK names how many were read and which have
 //     a kind of their own, their list is folded and shows both pin orders of one component; a PDK answered without them (an
@@ -29,7 +30,7 @@
 // Exit code 1 if any check fails.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
-import { check, launchEdge, mockStarter, newTaskFrom, outDir, runChecks, sleep, validConfiguration, workbenchUrl, VIRTUOSO_WINDOW, PDK_WINDOW } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, newTaskFrom, outDir, runChecks, sleep, validConfiguration, workbenchUrl, CONNECTION_WINDOW, VIRTUOSO_WINDOW, PDK_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -301,6 +302,23 @@ await runChecks(browser, async () => {
     await second.until(`!!document.querySelector('.pdk-window')`, 40);
     const none = await second.evaluate(`({ disabled: document.querySelector('button.pdk-load')?.disabled, warn: document.querySelector('.pdk-window .warn')?.textContent ?? '' })`);
     check('without a connection, Load cannot be pressed and the window says what to do', none.disabled === true && /Choose a connection first/.test(none.warn), JSON.stringify(none));
+    // Branch record SIF-108: without a connection the Virtuoso window says to choose one there and carries the button to the
+    // Connection window beside its words (it said 'Press "Connection" in the workbench'); the press opens that window from
+    // the Virtuoso window, which holds the click.
+    const LINE = `document.querySelector('.virtuoso-window .line-act.no-connection')`;
+    const noLink = await virtuoso.evaluate(`(() => { const l = ${LINE}; return l && { text: l.querySelector('p.warn')?.textContent.replace(/\\s+/g, ' ') ?? '',
+      buttons: [...l.querySelectorAll('button')].map(b => b.textContent.trim()), title: l.querySelector('button')?.title ?? '' }; })()`);
+    check('... the Virtuoso window says to choose a Virtuoso connection, which lists its libraries there, with Connection... beside its words (branch record SIF-108)',
+      noLink?.text === 'No connection is chosen: choose a Virtuoso connection in the Connection window. Choosing one lists its libraries here.'
+      && JSON.stringify(noLink.buttons) === '["Connection..."]' && noLink.title.startsWith('Connection: Opens the Connection window'), JSON.stringify(noLink));
+    await virtuoso.evaluate(`${LINE}.querySelector('button').click()`, true);
+    const linkWindow = await browser.window(CONNECTION_WINDOW, { ms: 10000 }).catch(() => null);
+    const link = linkWindow && await browser.attach(linkWindow, { errors: consoleErrors, prefix: 'Connection window: ' });
+    const opened = link && await link.until(`!!document.querySelector('.connection-window h2')`, 50)
+      && await link.evaluate(`({ heading: document.querySelector('.connection-window h2').textContent, opener: window.opener?.document.title ?? null })`);
+    check('... its press opens the Connection window, from the Virtuoso window (the window that holds the click)', opened?.heading === 'Connection' && opened.opener === VIRTUOSO_WINDOW,
+      JSON.stringify(opened));
+    if (link) { link.close(); await send('Target.closeTarget', { targetId: linkWindow.id }).catch(() => undefined); }
     // The PDK window belongs to the Virtuoso window it was opened from (review of 2026-09-29): closing that one closes it too,
     // instead of leaving it blank, with nothing left to draw it.
     second.close();

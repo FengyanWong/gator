@@ -15,10 +15,13 @@
 //   - "What's missing?" fills the lower part of the SAME window (no second window) with the verdict, the items, whose step
 //     each is and what to do; pressed again it works the list out again from the configuration as it is then;
 //   - "Agent..." pressed while the window is open brings it to the front and looks for the CLIs again, no second window; a
-//     reload of the page closes the window, and a window opened anew starts clean.
+//     reload of the page closes the window, and a window opened anew starts clean;
+//   - an item whose step is in another window carries the button to it after what to do: the connection Connection..., a
+//     circuit not read Open Tasks; each opens its window from the Agent window and asks nothing (branch record SIF-108).
 // Run: bash frontend/scripts/run_checks.sh --only agent_window_check. About 12 s.
 import path from 'node:path';
-import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, AGENT_WINDOW } from './lib/harness.mjs';
+import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, AGENT_WINDOW, CONNECTION_WINDOW,
+  TASKS_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -28,7 +31,23 @@ const CLIS = (codex = true) => ({ directory: FOLDER, launch: 'off', note: 'FIXTU
   { cli: 'claude', name: 'Claude Code', available: true, executable: '/home/fixture/.local/bin/claude', codex_home: null, note: null, command: `cd ${FOLDER} && claude` },
   { cli: 'codex', name: 'Codex', available: codex, executable: codex ? '/fixture/codex' : null, codex_home: codex ? '/fixture/.codex' : null,
     note: codex ? null : 'Codex is not installed for this user: no `codex` on the PATH, and no Codex app build was found.', command: `cd ${FOLDER} && codex` }] });
-const READINESS = round => ({ ready: false, note: 'FIXTURE: computed by the backend; no model was called, nothing was probed.',
+// Branch record SIF-108: the third and fourth answers hold an item whose step is in another window - a real circuit's connection
+// never tested (a start would test it), then no circuit read at all (no connection item then: only a real circuit has one).
+const ELSEWHERE = [
+  { ready: true, note: 'FIXTURE: computed by the backend; no model was called, nothing was probed.',
+    next: { id: 'start', title: 'Start', status: 'done', who: 'you', detail: 'Nothing blocks a start.', action: '' }, items: [
+      { id: 'circuit', title: 'Circuit', status: 'done', who: 'you', detail: 'REAL circuit read: 7 devices.', action: '' },
+      { id: 'output', title: 'Output folder', status: 'done', who: 'you', detail: 'Writable.', action: '' },
+      { id: 'connection', title: 'Connection', status: 'unknown', who: 'you', detail: 'unknown (never tested in this backend session).',
+        action: 'FIXTURE: open the Connection window, then press "Test connection" in it.' },
+      { id: 'authorization', title: 'Real simulation budget', status: 'at_start', who: 'you', detail: 'Pressing Start asks you to authorize 10 real evaluation(s). Only you can.', action: '' },
+      { id: 'start', title: 'Start', status: 'done', who: 'you', detail: 'Nothing blocks a start.', action: '' }] },
+  { ready: false, note: 'FIXTURE: computed by the backend; no model was called, nothing was probed.',
+    next: { id: 'circuit', title: 'Circuit', status: 'missing', who: 'you', detail: 'FIXTURE: no circuit could be read.', action: '' }, items: [
+      { id: 'circuit', title: 'Circuit', status: 'missing', who: 'you', detail: 'FIXTURE: no circuit could be read.', action: 'FIXTURE: open a task in the Tasks window, or make one there.' },
+      { id: 'output', title: 'Output folder', status: 'done', who: 'you', detail: 'Writable.', action: '' },
+      { id: 'start', title: 'Start', status: 'missing', who: 'you', detail: '1 item(s) above still block a start.', action: '' }] }];
+const READINESS = round => round > 2 ? ELSEWHERE[round - 3] : ({ ready: false, note: 'FIXTURE: computed by the backend; no model was called, nothing was probed.',
   next: { id: 'targets', title: 'Specs', status: 'missing', who: 'agent', detail: 'No active hard constraint yet.', action: 'Write each requirement in the "Specs" tab.' },
   items: [
     { id: 'circuit', title: 'Circuit', status: 'done', who: 'you', detail: 'Synthetic (MOCK) circuit read: 7 devices.', action: '' },
@@ -151,6 +170,42 @@ await runChecks(browser, async () => {
   check('"Agent..." pressed again: the one window comes to the front, the CLIs are looked for again, what it showed stays',
     await agentWindows() === 1 && seen.filter(s => s.name === '/api/agent/clis').length === 2
     && await far.evaluate(`!!${LIST} && ${LIST}.textContent.includes('(round 2)') && !!${WINDOW}.querySelector('.agent-said')`), JSON.stringify(seen.map(s => s.name)));
+
+  // ---- an item whose step is in another window carries the button to it (branch record SIF-108) -------------------------------------
+  // The checklist pointed at places in words only ("Press "Connection" (left)"), and nothing led there. Each button opens its
+  // window from the Agent window, which holds the click (popupWindow.ts): the new window's opener says so.
+  const ITEM = title => `[...${LIST}.querySelectorAll('ul.checklist li')].find(li => li.querySelector('b')?.textContent === ${JSON.stringify(title)})`;
+  const opensFrom = async (title, heading) => {
+    const found = await browser.window(title, { ms: 10000, except: page.target.id }).catch(() => null);
+    const session = found && await browser.attach(found, { errors: consoleErrors, prefix: `${title}: ` });
+    const seenThere = session && await session.until(`!!document.querySelector('h2')`, 50)
+      && await session.evaluate(`({ heading: document.querySelector('h2').textContent, opener: window.opener?.document.title ?? null })`);
+    if (session) { session.close(); await send('Target.closeTarget', { targetId: found.id }).catch(() => undefined); }
+    return !!seenThere && seenThere.heading === heading && seenThere.opener === AGENT_WINDOW ? true : JSON.stringify(seenThere);
+  };
+  await far.evaluate(`${BUTTON("What's missing?")}.click()`);
+  check('a real circuit whose connection was never tested: its item carries Connection... after what to do, its tooltip saying what it opens; no other item has a button',
+    await far.until(`${LIST}?.querySelectorAll('ul.checklist li').length === 5`)
+    && await far.evaluate(`(() => { const li = ${ITEM('Connection')}, b = li?.querySelectorAll('.check-action button') ?? [];
+      return b.length === 1 && b[0].textContent === 'Connection...' && b[0].title.startsWith('Connection: Opens the Connection window') && b[0].title.endsWith('Opening it checks nothing.')
+        && li.querySelector('.check-action').textContent.startsWith('FIXTURE: open the Connection window') && ${LIST}.querySelectorAll('ul.checklist button').length === 1; })()`),
+    await far.evaluate(`${LIST}?.textContent.slice(0, 400) ?? '(no list)'`));
+  await far.shot(path.join(out, 'agent-5-connection-button.png'), LIST);
+  let before = seen.length;
+  await far.evaluate(`${ITEM('Connection')}.querySelector('.check-action button').click()`, true);
+  const connectionOpened = await opensFrom(CONNECTION_WINDOW, 'Connection');
+  check('...its press opens the Connection window from the Agent window; nothing is asked of the agent routes, the list stays', connectionOpened === true && seen.length === before
+    && await far.evaluate(`!!(${ITEM('Connection')})`), String(connectionOpened));
+  await far.evaluate(`${BUTTON("What's missing?")}.click()`);
+  check('no circuit read: its item carries Open Tasks after what to do, its tooltip saying where it leads; no other item has a button',
+    await far.until(`!!(${ITEM('Circuit')})?.querySelector('.check-action button')`)
+    && await far.evaluate(`(() => { const b = ${ITEM('Circuit')}.querySelectorAll('.check-action button');
+      return b.length === 1 && b[0].textContent === 'Open Tasks' && b[0].title.startsWith('Open Tasks: every registered task, in the Tasks window')
+        && ${LIST}.querySelectorAll('ul.checklist button').length === 1; })()`), await far.evaluate(`${LIST}?.textContent.slice(0, 400) ?? '(no list)'`));
+  before = seen.length;
+  await far.evaluate(`${ITEM('Circuit')}.querySelector('.check-action button').click()`, true);
+  const tasksOpened = await opensFrom(TASKS_WINDOW, 'Tasks');
+  check('...its press opens the Tasks window from the Agent window; nothing is asked of the agent routes', tasksOpened === true && seen.length === before, String(tasksOpened));
 
   // ---- a CLI the backend did not find; a window opened anew starts clean ----------------------------------------------------------
   codex = false;

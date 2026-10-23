@@ -3540,3 +3540,63 @@ it back. The rows from before it come in as "1 changed row", an Undo while the b
 Apply says "Imported: nothing changed.", the Redo still there. On the code before, those three Apply lines failed. Also
 run, unchanged: `spec_equations_check` 69, `model_chooser_check` 120, `editor_columns_check` 29 (4 scripts, 280 checks,
 one lane, all passed the first time). No flakes.
+
+### SIF-108 A line that sends you to the Connection or Tasks window carries the button to it (2026-10-23; from the usability audit)
+
+**Found.** Two audit findings: directions with no way there. The Virtuoso window with no connection said "Press
+"Connection" in the workbench and choose a Virtuoso connection: the libraries are read from that Virtuoso.", and with the
+link down the gate's refusal said "... Bring the link up in the Connection window (the "Connection" button in the
+workbench), then try again." (J1-5). Neither had a button: the user went back to the main window, opened Connection,
+connected and came back, and "try again" named no press - nothing reads again by itself after a refusal; Refresh does.
+The Agent window's What's missing? list gave each item's step in plain text (J7-8), and three steps point at places that
+have gone: "Choose the circuit under "Circuit source" (left)" (record 7.362 took it away; the circuit column is hidden by
+default), "Press "Connection" (left)" (in the header since record 7.182) and "Raise "Max evaluations"" (the field reads
+Evaluation budget). No control led to any of them.
+
+**Changed.** `frontend/src/openAt.ts`: `OPEN_CONNECTION` and `openConnection(from)`, one page-wide event, as the Runs and
+Tasks windows have. `frontend/src/panels/Connection.tsx`: the header's Connection button listens for it and opens its
+window from `from`, the window that holds the click (`popupWindow.ts`), as it opens it from the page; opening it checks
+nothing. `frontend/src/panels/VirtuosoWindow.tsx`: with no connection the line reads "No connection is chosen: choose a
+Virtuoso connection in the Connection window. Choosing one lists its libraries here." with **Connection...** at its end.
+Choosing one does list them, as the chain follows the connection (the verdict's correction of the finding). A refusal by
+the connection gate carries the same button. The chain's refusal ends "Bring the link up in the Connection window, then
+press Refresh."; a refused Read says "then try again", as Refresh does not read the cell; an ngspice connection keeps the
+backend's "choose one in the Connection window". `frontend/src/api.ts`: `gateText` takes `then`; a window that puts its
+own button beside the words leaves out "(the "Connection" button in the workbench)", and every other panel words it as
+before. `frontend/src/panels/CircuitBrowser.tsx` keeps the words of the last refusal by the gate (`gateSaid`) and tells
+the window when they are what it shows (`nativeGated`): another line - an older backend, SIF-88's testbench line - has no
+button, and the button goes with the refusal. Nothing reads again by itself once the link is up: the verdict found that
+part of the audit's fix against the design (explicit reads, `CircuitBrowser.tsx`), and Refresh stays the press.
+`frontend/src/roadster.css`: SIF-107's `.line-act` keeps the button beside the words in the Virtuoso window too.
+`frontend/src/panels/Agent.tsx`: an item whose step is in another window carries the button to it after what to do
+(`GO_TO`): the connection **Connection...**, a circuit not read **Open Tasks** (`openTasksAt`, the Tasks window as it
+is), each opened from the Agent window, its tooltip saying where it leads. The audit asked for the buttons to be put to
+the user first, as record 7.109 took out buttons that repeat another (the Virtuoso window's Open among them). They were
+not asked, on the user's "go on on your own": each opens a window and does nothing else, as record 7.372's Open Tasks
+does on the "No task yet" line, and the header's Connection stays the way in from the page. Should the user count them
+as repeats, taking the buttons out leaves the new words standing. Nothing here starts, continues or stops a run, saves a
+task or writes to Virtuoso: the buttons open a window, which checks nothing. `docs/workbench.md` (the Virtuoso window,
+the Connection button, What is missing before the run can start) and `docs/functionality-reference.md` (the Connection,
+Library → cell → schematic and What's missing? rows) describe it. Skipped: the three stale steps' words, in
+`src/gator_workbench/readiness.py` (the plan's circuit "Open a task in the Tasks window, or make one there: New task.",
+connection "Press "Connection" in the header: ...", run "Raise "Evaluation budget" under Run configuration, ..."): backend
+Python, outside this branch's frontend work, live only after an 8765 restart, with `test_wb_readiness.py` to run beside
+it. Until then the buttons stand beside the old words. Also left: the audit's optional button on the output folder's
+item, and two lines that name the header's button without one of their own, the PDK window's "Choose a connection
+first" and the working-copy block's gate refusal.
+
+**Checked.** `tsc` clean. `virtuoso_source_check` 112 (108 before): with the link down the line reads "Virtuoso cannot be
+reached (tunnel). Bring the link up in the Connection window, then press Refresh." with Connection... to its right, the
+tooltip saying what it opens; the press opens the Connection window, whose opener is the Virtuoso window, and reads
+nothing from Virtuoso; Refresh with the link back takes the line and its button away; an older backend's line has no
+button. The picture `virtuoso-3-link-down.png` shows the button. `pdk_check` 42 (40): without a connection the Virtuoso
+window's line has the new words and Connection..., whose press opens the Connection window from it.
+`agent_window_check` 33 (29): a real circuit's connection never tested carries Connection... after its step, no other
+item a button, and the press opens the Connection window from the Agent window, asking the agent routes nothing; with no
+circuit read, the circuit's item carries Open Tasks, whose press opens the Tasks window from the Agent window. New
+picture: `agent-5-connection-button.png`. Each new check of a line, a button or a press looks for what the code before
+did not have; the two that no button stands by another line pin where it must not be. Also run, unchanged:
+`connection_panel_check` 94, `dom_identity_check` 56, `testbench_probes_check` 41, `project_help_check` 61,
+`working_copy_check` 34 (its gate refusal still names the header's button), `looks_check` 76, `editor_columns_check` 29
+(SIF-107's `.line-act`), `callouts_check` 8 (11 scripts, 586 checks, one lane, all passed the first time). Not run, by
+the rules: `test_wb_readiness.py` (no backend change). No flakes.

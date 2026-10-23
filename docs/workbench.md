@@ -1091,6 +1091,15 @@ the page follow the Virtuoso cell instead of the task: the task's place on the t
 **Virtuoso cell...** on the tab line opens the window again. Choosing a task makes the page follow the task again, and the
 window then starts from a blank library. Closing the window loses nothing.
 
+A line of the window that sends you to the Connection window carries **Connection...** at its end (branch record SIF-108),
+which opens that window from this one, as the header's Connection button does; opening it checks nothing. With no connection
+chosen the window says "No connection is chosen: choose a Virtuoso connection in the Connection window. Choosing one lists
+its libraries here." - choosing one does, as the chain follows the connection. When the connection gate refuses a step, the
+line says why and what then: "Virtuoso cannot be reached (tunnel). Bring the link up in the Connection window, then press
+Refresh." (after a refused read, "then try again"; an ngspice connection is told to choose a Virtuoso one). Nothing reads
+again by itself once the link is up: Refresh stays the press that does. Another failure, such as an older backend, carries
+no button.
+
 The column and the window keep their explanations folded: a line with a small triangle ("Labels: class
 ..., PDK ..." - the column's circuit class and PDK id boxes are one closed line naming their
 values -, "Why: it is not a task yet", "What the check compares", "2 notes on this circuit", ...)
@@ -1332,7 +1341,9 @@ everything described above (allow pop-ups for the page if the browser blocks it;
 says so). Opening the window checks nothing; every rule above about button presses still holds.
 Closing the window loses nothing, and the button opens it again. Since record 7.182 the button is the last cell of the
 header's title block (user: "move the conection button to the header"), in view whatever the columns show; the left
-column has none.
+column has none. A line in another window that sends you here - the Virtuoso window without a connection or with the
+link down, the connection's item of "What's missing?" - carries **Connection...**, which opens this same window from
+the window it was pressed in (branch record SIF-108, `openAt.ts` `openConnection`); it checks nothing either.
 
 A profile now says WHAT it connects to and HOW, with `"kind"`:
 
@@ -3994,6 +4005,13 @@ can help" for the three tables) and what to do; for the tables that includes Rel
 Claude Code or Codex (the Agent window) can draft the rows from your description. It is worked out when the button is
 pressed, from the configuration on the page, and never by itself: press it again after a change (it fills the list anew; a
 window opened anew starts without it).
+
+An item whose step is in another window carries the button to it after what to do (branch record SIF-108): the connection
+**Connection...** (the Connection window), a circuit not read **Open Tasks** (the Tasks window, as it is). Each opens its
+window from the Agent window, as the header's Connection button and the "No task yet" line's Open Tasks open them from
+the page; opening it checks and changes nothing. The words of each line are the backend's: three of them still point at
+the page before records 7.182 and 7.362 (a "Circuit source" and a Connection button on the left, "Max evaluations" for
+the Evaluation budget), to be put right in `readiness.py`.
 
 Rows that are there but differ from the saved task - an edit, an applied calibration, an older page - are your press: the
 line gives the issue whole, its last sentence included (Save task, or Reload saved values), and says where the two buttons

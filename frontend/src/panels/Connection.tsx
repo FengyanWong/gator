@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { CONNECTION_WINDOW } from '../contract';
+import { ConnectionAt, OPEN_CONNECTION } from '../openAt';
 import { api, Json, plainError } from '../api';
 import { connectionProfilesChanged, connectionProfilesShared } from '../shared';
 import { ConnectionFolders } from './ConnectionFolders';
@@ -48,6 +49,15 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
   // While `popup` is set, the connection window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openWindow } = usePopupWindow('gator-connection',
     { title: CONNECTION_WINDOW, features: `popup,width=${multipleSessions ? 1100 : 660},height=920`, rootId: 'connection-root' });
+  // A message in another window that sends the user here carries a button to this window (branch record SIF-108, openAt.ts):
+  // the window opens from the window that holds that click, as this button opens it from the page. Opening it checks nothing.
+  const opener = useRef(openWindow);
+  opener.current = openWindow;
+  useEffect(() => {
+    const show = (event: Event) => { opener.current((event as CustomEvent<ConnectionAt>).detail?.from); };
+    window.addEventListener(OPEN_CONNECTION, show);
+    return () => window.removeEventListener(OPEN_CONNECTION, show);
+  }, []);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Json>({ kind: 'virtuoso_ssh', name: '', ssh_host: '', bridge_profile: '' });
   const [created, setCreated] = useState<Json>(null);

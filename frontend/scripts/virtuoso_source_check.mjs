@@ -20,13 +20,15 @@
 //   - Save as (no Save task) from the window's cell - after a refusal it offers the name refused; the rough frequency's
 //     question takes Enter, Cancel and Escape (branch record SIF-92) -, the task then named on the tab line, what happened
 //     said under the toolbar; Check now on the tab line before Save as, what it checks in its tooltip, its result under the toolbar; Delete
-//     task in the Tasks window; a cell that already has a task, a built-in cell; a blocked gate and an older backend are readable.
+//     task in the Tasks window; a cell that already has a task, a built-in cell; a blocked gate and an older backend are readable;
+//     the gate's refusal ends with "then press Refresh" and carries Connection..., which opens the Connection window from the
+//     Virtuoso window; an older backend's line carries none (branch record SIF-108).
 // Needs a configured connection profile (the page selects the active one; reading the profiles probes nothing).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, CIRCUIT_PANEL, launchEdge, MOCK_PAGE_CONFIG, outDir, runChecks, showCircuit, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
+import { check, CIRCUIT_PANEL, CONNECTION_WINDOW, launchEdge, MOCK_PAGE_CONFIG, outDir, runChecks, showCircuit, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -513,16 +515,36 @@ await runChecks(browser, async () => {
   await wPress('Refresh'); await quiet();
   check('a blocked gate stops the chain at the first step', JSON.stringify(ops(mark)) === JSON.stringify(['libraries']), ops(mark).join(' | '));
   check('and says what to do', (await wText()).includes('Virtuoso cannot be reached (tunnel)') && (await wText()).includes('Connection window'));
+  // Branch record SIF-108: the refusal ends with the press that reads again here, and carries the button to the Connection
+  // window beside its words - the workbench's own button was another window away. The press opens that window from this one.
+  const GATE_LINE = `${WIN}.querySelector('.line-act.native-gate')`;
+  const gateLine = await far.evaluate(`(() => { const l = ${GATE_LINE}, b = l?.querySelector('button'), p = l?.querySelector('p.error');
+    return l && { text: p?.textContent ?? '', buttons: [...l.querySelectorAll('button')].map(x => x.textContent.trim()), title: b?.title ?? '',
+      beside: !!b && !!p && b.getBoundingClientRect().top < p.getBoundingClientRect().bottom && b.getBoundingClientRect().left > p.getBoundingClientRect().left }; })()`);
+  check('... it ends "Bring the link up in the Connection window, then press Refresh.", with Connection... beside its words, the tooltip saying what it opens (branch record SIF-108)',
+    gateLine?.text === 'Virtuoso cannot be reached (tunnel). Bring the link up in the Connection window, then press Refresh.' && JSON.stringify(gateLine.buttons) === '["Connection..."]'
+    && gateLine.title.startsWith('Connection: Opens the Connection window') && gateLine.title.endsWith('Opening it checks nothing.') && gateLine.beside, JSON.stringify(gateLine));
+  mark = calls.length;
+  await far.evaluate(`${GATE_LINE}.querySelector('button').click()`, true);
+  const linkWindow = await browser.window(CONNECTION_WINDOW, { ms: 10000, except: page.target.id }).catch(() => null);
+  const link = linkWindow && await browser.attach(linkWindow, { errors: consoleErrors, prefix: 'Connection window: ' });
+  const opened = link && await link.until(`!!document.querySelector('.connection-window h2')`, 50)
+    && await link.evaluate(`({ heading: document.querySelector('.connection-window h2').textContent, opener: window.opener?.document.title ?? null })`);
+  check('... its press opens the Connection window, from the Virtuoso window (the window that holds the click); nothing is read from Virtuoso',
+    opened?.heading === 'Connection' && opened.opener === VIRTUOSO_WINDOW && calls.length === mark, JSON.stringify(opened));
+  if (link) { link.close(); await send('Target.closeTarget', { targetId: linkWindow.id }).catch(() => undefined); }
   check('the configured library stays visible while nothing can be listed', (await wValue('Library')) === 'FIXTURE_OTHER');
   await shotWindow('virtuoso-3-link-down.png');
   mode = 'ok'; mark = calls.length;
   await wPress('Refresh'); await quiet();
   check('after the link is back, Refresh recovers everything', ops(mark).length === 3 && (await wText()).includes('Native schematic FIXTURE_OTHER/inv') && !(await wText()).includes('cannot be reached'), ops(mark).join(' | '));
+  check('... and the refusal goes with its Connection... (branch record SIF-108)', await far.evaluate(`!${GATE_LINE} && !${WIN}.querySelector('button.open-connection')`));
 
   // ---- an older backend (no /api/virtuoso/cells): named as the reason; the typed-cell fallback went on 2026-09-29 --------------
   mode = 'outdated'; mark = calls.length;
   await wPress('Refresh'); await quiet();
   check('an older backend is named as the reason', (await wText()).includes('older than the page'));
+  check('... with no Connection... beside it: no refusal of the gate (branch record SIF-108)', await far.evaluate(`!${WIN}.querySelector('button.open-connection')`));
   check('no typed Cell box and no "Read native schematic" (the fallback went)', (await far.evaluate(`${wField('Cell')}?.tagName ?? ''`)) !== 'INPUT' && !(await wHas('Read native schematic')));
   mode = 'ok';
   await wPress('Refresh'); await quiet();

@@ -172,7 +172,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
   // simulation records the task's reference by itself (status record 7.78) - so the task is read again: local files, free.
   useEffect(() => { if (taskEpoch && offered && ref.source === 'registered_task') load(ref); }, [taskEpoch]);
 
-  const { native, libraries, cells, chosenCell, listing, nativeError, setNativeError, nativeProblem, setRefresh } =
+  const { native, libraries, cells, chosenCell, listing, nativeError, nativeGated, setNativeError, nativeProblem, setRefresh } =
     useVirtuosoBrowser(!!popup, profileId, chosen, setConfig);
   // Save task (TaskSave.tsx): the editors' rows become the task real:<name>, which runs in the cell that was read. After a
   // first save the column switches to the task; after saving the open task again it is loaded again (its baseline may no
@@ -427,7 +427,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
   useEffect(() => onTaskName?.(shownTask), [shownTask]);
   return <>{column}{head}{tools}{status}{taskSave}{firstSave}{titleFacts}{ngspiceWindow}<PopupPortal popup={popup} root={root}><VirtuosoWindow profileId={profileId} virtuosoOn={virtuosoOn} offered={offered}
     circuitRef={ref} chosen={chosen} libraries={libraries} cells={cells} chosenCell={chosenCell} listing={listing} importing={importing} patch={patch} setRefresh={setRefresh}
-    pdkStep={pdkStep} nativeError={nativeError} error={error} circuit={circuit} taskNote={taskNote} importCell={importCell} config={config} setConfig={setConfig}
+    pdkStep={pdkStep} nativeError={nativeError} nativeGated={nativeGated} error={error} circuit={circuit} taskNote={taskNote} importCell={importCell} config={config} setConfig={setConfig}
     noteHere={noteHere} takeTestbenchProbes={takeTestbenchProbes} circuitInfo={circuitInfo} nativeSchematic={nativeSchematic} /></PopupPortal></>;
 }
 

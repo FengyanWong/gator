@@ -4,6 +4,7 @@ import { clock } from '../format';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { AGENT_WINDOW } from '../contract';
+import { openConnection, openTasksAt } from '../openAt';
 
 /** The Agent window (record 7.253; the user: "make the agent tab pop out window only (no tab view)", then "make it still a
  *  tab style but not button style"): "Agent...", first in the bottom panel's tab line and drawn as a tab, opens it - there is
@@ -20,11 +21,23 @@ const MARK: Record<string, [string, string]> = { done: ['✔', 'ok'], missing: [
   not_applicable: ['–', 'hint'], at_start: ['▶', 'hint'] };
 const CLIS: { cli: 'claude' | 'codex'; name: string }[] = [{ cli: 'claude', name: 'Claude Code' }, { cli: 'codex', name: 'Codex' }];
 
+/** An item whose step is in another window carries the button to that window beside what to do (branch record SIF-108): the
+ *  connection the Connection window, a circuit not read yet the Tasks window. It opens from the Agent window, which holds the
+ *  click (popupWindow.ts), as the header's Connection button and the "No task yet" line's Open Tasks open them from the page;
+ *  opening it checks and changes nothing, and the list is worked out again only by "What's missing?". */
+const GO_TO: Record<string, { label: string; title: string; open: (from: Window | null) => void }> = {
+  connection: { label: 'Connection...', open: from => openConnection(from),
+    title: 'Connection: Opens the Connection window, as the Connection button in the workbench\'s header does: choose a connection there, connect and test it. Opening it checks nothing.' },
+  circuit: { label: 'Open Tasks', open: from => openTasksAt({ from }),
+    title: 'Open Tasks: every registered task, in the Tasks window; a double click makes the page follow one, and New task there makes one.' },
+};
+
 /** The start checklist: each item, whose step it is, and what to do about it. */
 function Checklist({ items }: { items: Json[] }) {
-  return <ul className="checklist">{items.map((c, i) => { const [mark, css] = MARK[c.status] ?? MARK.unknown; return <li key={i} className={`check-${c.status}`}>
+  return <ul className="checklist">{items.map((c, i) => { const [mark, css] = MARK[c.status] ?? MARK.unknown, go = GO_TO[c.id]; return <li key={i} className={`check-${c.status}`}>
     <span className={`check-mark ${css}`}>{mark}</span><b>{c.title}</b>{c.status !== 'done' && c.status !== 'not_applicable' && <span className="check-who">{c.who === 'agent' ? 'an agent can help' : 'yours'}</span>}
-    <span className="check-detail"> {c.detail}</span>{c.action && c.status !== 'done' && <div className="check-action">{c.action}</div>}</li>; })}</ul>;
+    <span className="check-detail"> {c.detail}</span>{c.action && c.status !== 'done' && <div className="check-action">{c.action}
+      {go && <> <button className="check-go" onClick={e => go.open(e.currentTarget.ownerDocument.defaultView)} title={go.title}>{go.label}</button></>}</div>}</li>; })}</ul>;
 }
 
 export function AgentWindowTab({ config }: { config: Json }) {

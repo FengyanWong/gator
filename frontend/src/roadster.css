@@ -455,8 +455,9 @@ table.run-table td.run-from .run-from-name { display: -webkit-box; -webkit-line-
 /* SIF-107: a line over the editor table with its action at the end - the zero-floor hint's "Set Margin sides to upper", a
    failed import's close mark - keeps the action beside its words, which wrap in their own width. The action is not inside
    their paragraph, whose words the checks read whole. The close mark is drawn as the launch refusal's: no frame or fill
-   of its own, the hover's fill. */
-.editors > .line-act { display: flex; align-items: baseline; gap: 4px 10px; }
-.editors > .line-act > p { flex: 0 1 auto; min-width: 0; }
-.editors > .line-act > button { flex: none; } .editors > .line-act > button.line-close { align-self: center; }
+   of its own, the hover's fill. SIF-108: so does a line of the Virtuoso window that sends the user to the Connection
+   window (no connection chosen, the gate's refusal), with Connection... at its end. */
+.editors > .line-act, .virtuoso-window > .line-act { display: flex; align-items: baseline; gap: 4px 10px; }
+.editors > .line-act > p, .virtuoso-window > .line-act > p { flex: 0 1 auto; min-width: 0; }
+.editors > .line-act > button, .virtuoso-window > .line-act > button { flex: none; } .editors > .line-act > button.line-close { align-self: center; }
 button.line-close { border: none; background: none; }

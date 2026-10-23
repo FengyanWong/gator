@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Json } from '../api';
+import { openConnection } from '../openAt';
 import { namedTestbench } from './CircuitBrowser';
 import { PdkWindowButton } from './Pdk';
 import { WorkingCopy } from './WorkingCopy';
@@ -16,11 +17,12 @@ export const NO_TESTBENCH = "Choose the cell's Testbench cell first: a task simu
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
 
+/** `nativeGated`: `nativeError` is the connection gate's refusal (CircuitBrowser.tsx), so the line carries Connection... */
 export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref, chosen, libraries, cells, chosenCell, listing, importing, patch, setRefresh,
-  pdkStep, nativeError, error, circuit, taskNote, importCell, config, setConfig, noteHere, takeTestbenchProbes, circuitInfo, nativeSchematic }: {
+  pdkStep, nativeError, nativeGated, error, circuit, taskNote, importCell, config, setConfig, noteHere, takeTestbenchProbes, circuitInfo, nativeSchematic }: {
   profileId: string | null; virtuosoOn: boolean; offered: boolean; circuitRef: Json; chosen: Json; libraries: string[] | null; cells: Json; chosenCell: Json;
   listing: string | null; importing: boolean; patch: (fields: Json, follow?: 'choice' | 'press' | null) => void; setRefresh: (f: (n: number) => number) => void;
-  pdkStep: Json; nativeError: string | null; error: string | null; circuit: Json; taskNote: ReactNode; importCell: () => void; config: Json;
+  pdkStep: Json; nativeError: string | null; nativeGated: boolean; error: string | null; circuit: Json; taskNote: ReactNode; importCell: () => void; config: Json;
   setConfig: (f: (c: Json) => Json, record?: boolean) => void; noteHere: Json; takeTestbenchProbes: () => void; circuitInfo: ReactNode;
   nativeSchematic: ReactNode }) {
   const namedHere = namedTestbench(cells, chosen.cell);
@@ -31,12 +33,19 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
     <p className="warn copy-warning"><b>Work on a copy, never on your design.</b> The workbench makes no copy of its own: saving a task writes the
       Maestro test into the testbench, and every run sets device sizes in the cell (put back when the run ends). Copy the cell and its testbench
       in Virtuoso first, choose the copy above, and confirm when Read asks.</p>);
+  // A line that sends the user to the Connection window carries the button to it (branch record SIF-108): no connection chosen,
+  // or the gate refused a step. The window opens from this one, which holds the click (popupWindow.ts), as the header's
+  // Connection button opens it from the page; opening it checks nothing. Choosing a connection there lists its libraries here
+  // (the chain follows the connection); after the link came up, Refresh stays the press that reads again.
+  const toConnection = <button className="open-connection" onClick={e => openConnection(e.currentTarget.ownerDocument.defaultView)}
+    title="Connection: Opens the Connection window, as the Connection button in the workbench's header does: choose a connection there, connect and test it. Opening it checks nothing.">Connection...</button>;
   return (
     <div className="virtuoso-window">
       <h2>Virtuoso cell</h2>
       <p className="hint">Read a cell from Virtuoso into the workbench, set it up and save it as a task. Choosing lists what Virtuoso has (read-only,
         no simulation); nothing is read on its own.</p>
-      {!profileId && <p className="warn">Press "Connection" in the workbench and choose a Virtuoso connection: the libraries are read from that Virtuoso.</p>}
+      {!profileId && <div className="line-act no-connection"><p className="warn">No connection is chosen: choose a Virtuoso connection in the Connection window.
+        Choosing one lists its libraries here.</p>{toConnection}</div>}
       {!virtuosoOn && offered && <p className="hint follows-task">The workbench follows the task <code>{ref.task_id}</code> now. Choosing a library here makes it follow the
         cell instead; the task is one choice away in the Tasks window.</p>}
       <label>Library
@@ -80,7 +89,8 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
         : pdkStep.state === 'not_read' ? <>The cell was read; its PDK <b>{pdkStep.technology_library}</b> was not: {pdkStep.reason} "PDK window..." reads it by name.</>
         : <>No PDK read with the cell: {pdkStep.reason}</>}</p>}
       {cells?.truncated && <p className="hint">Only the first {cells.cells.length} cells are listed.</p>}
-      {nativeError && <p className="error">{nativeError}</p>}
+      {nativeError && (nativeGated ? <div className="line-act native-gate"><p className="error">{nativeError}</p>{toConnection}</div>
+        : <p className="error">{nativeError}</p>)}
       {virtuosoOn && error && <p className="error">{error}</p>}
       {circuit && taskNote}
       {virtuosoOn && circuit && !circuit.loaded && !taskNote && (

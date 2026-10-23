@@ -217,6 +217,9 @@ export function schemaProblem(e: any): string | null {
 export const NO_ANSWER = 'The workbench backend did not answer: it may have stopped (start it again with gator_workbench.cli serve), or the connection to it dropped.';
 export const plainError = (e: any): string => e instanceof ApiError ? schemaProblem(e) ?? e.message : e instanceof TypeError ? NO_ANSWER : String(e?.message ?? e);
 /** The connection gate refused a Virtuoso read or write: ONE wording for every panel (Save task and the working cell used
- *  a copy without the connection-kind case, and told an ngspice connection to "bring the link up"). */
-export const gateText = (gate: Json) => gate.blocking?.includes('connection_kind') ? (gate.next_steps?.[0] ?? 'This kind of connection cannot do that.')
-  : `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). Bring the link up in the Connection window (the "Connection" button in the workbench), then try again.`;
+ *  a copy without the connection-kind case, and told an ngspice connection to "bring the link up"). `then`: what to press
+ *  once the link is up, said by a window that puts its own Connection... button beside the words (branch record SIF-108: the
+ *  Virtuoso window, whose chain is read again by Refresh); the words then do not send the user to the workbench's button. */
+export const gateText = (gate: Json, then?: string) => gate.blocking?.includes('connection_kind') ? (gate.next_steps?.[0] ?? 'This kind of connection cannot do that.')
+  : `Virtuoso cannot be reached (${[...(gate.blocking ?? []), ...(gate.uncertain ?? [])].join(', ') || gate.status}). Bring the link up in the Connection window${
+    then ? `, ${then}` : ' (the "Connection" button in the workbench), then try again'}.`;

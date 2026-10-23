@@ -23,20 +23,26 @@ export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, c
   const cells: Json = cellList && cellList.profile === profileId ? cellList : null;   // { library, technology_library, cells: [{ name, views, has_schematic }] }
   const [listing, setListing] = useState<string | null>(null);            // what is being fetched from Virtuoso right now
   const [nativeError, setNativeError] = useState<string | null>(null);    // what the last failed step says
+  // The words of the last refusal by the connection gate (branch record SIF-108): while the window shows them, its
+  // Connection... button stands beside them. Whatever is said next - another failure, NO_TESTBENCH, nothing - takes it away.
+  const [gateSaid, setGateSaid] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);                              // repeats the whole chain
   // The window: libraries -> cells -> schematic follow each other without a button (user request 2026-09-20). Each step
   // starts from an explicit choice (opening the window, a library, a cell), waits for the step before it, and is a
   // gated, read-only, zero-cost bridge call. Refresh repeats the chain, e.g. after the link came up.
   const browsing = enabled && !!profileId;
-  const nativeProblem = (e: any) => {
+  // `then`: what to press once the link is up - Refresh after a step of the chain below, the read's own button again after a
+  // read (Left.tsx importCell) - said beside the window's Connection... button (branch record SIF-108).
+  const nativeProblem = (e: any, then = 'then try again') => {
     const gate = e.detail?.gate, outdated = e.status === 404 || e.status === 405 || (e.status === 422 && /work_here/.test(e.message ?? ''));
-    setNativeError(outdated ? OLDER_BACKEND : gate ? gateText(gate) : e.message);
+    const said = outdated ? OLDER_BACKEND : gate ? gateText(gate, then) : e.message;
+    setNativeError(said); setGateSaid(gate && !outdated ? said : null);
   };
   const nativeStep = (step: string, call: () => Promise<Json>, done: (answer: Json) => void) => {
     let live = true;
     setListing(step); setNativeError(null);
     call().then(answer => { if (live) done(answer); })
-      .catch((e: any) => { if (live) nativeProblem(e); })
+      .catch((e: any) => { if (live) nativeProblem(e, 'then press Refresh'); })
       .finally(() => { if (live) setListing(current => (current === step ? null : current)); });
     return () => { live = false; setListing(current => (current === step ? null : current)); };
   };
@@ -77,7 +83,8 @@ export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, c
     const timer = setTimeout(() => { stop = nativeStep('schematic', () => api.nativeRead(profileId!, chosen.library, chosen.cell), setNative); }, wait);
     return () => { clearTimeout(timer); stop?.(); };
   }, [browsing, profileId, chosen.library, chosen.cell, !!chosenCell?.has_schematic]);
-  return { native, libraries, cells, chosenCell, listing, nativeError, setNativeError, nativeProblem, setRefresh };
+  const nativeGated = !!nativeError && nativeError === gateSaid;
+  return { native, libraries, cells, chosenCell, listing, nativeError, nativeGated, setNativeError, nativeProblem, setRefresh };
 }
 
 function Tree({ node, path = '' }: { node: Json; path?: string }) {

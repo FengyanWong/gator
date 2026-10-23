@@ -115,8 +115,10 @@ the lookup after a reload say nothing.
 "Next: mscr_ota7t · Fine-tune from ota7t (2) @ 420 · GT 48/4/4 · 800 evaluations" - the task (a saved task as the
 header's title names it: without its `real:` prefix, a renamed one by its new name - branch record SIF-71; or a Virtuoso
 cell as library/cell), the Mode with its model and save point ("New model", "Evaluate ...
-(deterministic actions)", "no Mode chosen"; in Fine-tune its switches that are on, "Fine-tune from ota7t (2) @ 420 ·
-encoder frozen · critics reset" - branch record SIF-103), the network in short, and the budget. When Start is off, the tooltip adds
+(deterministic actions)", "no Mode chosen"; the switches that are on, "Fine-tune from ota7t (2) @ 420 · encoder frozen ·
+critics reset" - branch record SIF-103 - and "· continual" in Evaluate only too), the network in short, and the budget.
+The line is two lines at most, so with a task's and a model's names those words seldom show in it: its tooltip and
+Start's say them whole, and Run configuration says them on a line of their own (review of SIF-103). When Start is off, the tooltip adds
 why. The line only says: it starts nothing, and it is not shown while a run holds the header (the run chip says what
 runs then, and Run configuration opens with "For the next Start: the run in the header goes on with the settings it was
 started with." - branch record SIF-72). Run configuration's model line and this line come from the same values
@@ -2624,15 +2626,20 @@ networks..." and a **Mode** select stood above it, with the RL model label below
   "show the current network selection next to the RL network button in short"; GT = graph_transformer, `–` where an
   encoder has no heads, then "op. points" and the component list when they are on);
 - "Fine-tune ota7t (2) · save point 420 evaluations" or "Evaluate ota7t (2) · save point 420 evaluations · deterministic
-  actions": the saved model by its name, and the save point the run loads. In Fine-tune its own switches that are on
-  follow, in the window's order: "· encoder frozen", "· encoders only", "· critics reset", "· continual" (branch record
-  SIF-103: the window closes once a save point is chosen, and only it said them - kept across Modes and runs, and copied
-  by New run like this, a switch left on went unseen before Start). With all off the line is as before;
+  actions": the saved model by its name, and the save point the run loads;
 - "Fine-tune · no saved model chosen" until one is chosen.
 
-The tooltip says it in full; in Fine-tune it adds the switches that are on by the window's labels ("Fine-tune's switches
-on: Freeze encoder, Reset critic.") and, when a name is typed for the model it saves, that name ("It saves the model as
-..."), as the line is two lines at most. Under the line stays the model check's suggestion of another Mode ("Suggested: Fine-tune -
+The switches that are on have a line of their own under it, by the window's labels in its order: "Switches on: Freeze
+encoder, Reset critic, Continual learning." - Fine-tune's four (Freeze encoder, Encoder-only transfer, Reset critic,
+Continual learning), and in Evaluate only Continual learning, which its run reads too (branch record SIF-103: the window
+closes once a save point is chosen, and only it said them - kept across Modes and runs, and copied by New run like this, a
+switch left on went unseen before Start). With all off there is no such line. They were first said at the end of the model
+line, which is two lines at most and is full with a saved model's name and save point, so they were hidden (review of
+SIF-103). The line's tooltip says where they are ticked. In another Mode Fine-tune's other three refuse the start, a
+blocking issue that names them.
+
+The model line's tooltip says it in full and, in Fine-tune, when a name is typed for the model it saves, that name ("It
+saves the model as ..."). Under the line stays the model check's suggestion of another Mode ("Suggested: Fine-tune -
 ..."); where the saved model's own run can be continued exactly, it links to that run in the Runs window instead
 ("This model's own run can be continued exactly: open it in Runs"). Budgets, concurrency, seed, the run limits (one
 Limits fold since record 7.179), reward and training conditions stay in Run configuration.
@@ -2667,8 +2674,10 @@ chosen. A configuration without any Mode (a task's starter rows, an old file) is
 components, task, reward, conditions, training, restorable, folder), a note when the configuration on the page is too
 incomplete to compare it with, and its compatibility - then the Mode's own settings: for Fine-tune, Freeze encoder,
 Encoder-only transfer, Reset critic, Continual learning and the name of the model it saves; for Evaluate only,
-Actions - Deterministic (the policy's mean action at each step) or Sampled (drawn from the policy, as in training); then
-Advanced. They have no block for a new network: a saved model only loads
+Actions - Deterministic (the policy's mean action at each step) or Sampled (drawn from the policy, as in training) - and
+Continual learning; then Advanced. Continual learning decides in both Modes whether a saved model that was itself
+fine-tuned on a test task (Split "Test" under Research experiments) loads; off, such a source is refused (review of
+branch record SIF-103: Evaluate only had no box for it, so one left on from a Fine-tune was unseen there). They have no block for a new network: a saved model only loads
 into the network it was trained with. Since branch record SIF-86 the saved models table scrolls in a box of its own -
 60 % of the window's height at most (720 px), its column titles staying at its top - so what follows it is in reach
 with hundreds of models (411 made it about 20,000 px long). When the list arrives, the model in use is brought to the

@@ -81,6 +81,8 @@ footer { grid-area: foot; background: var(--panel); border: 1px solid var(--line
 /* The network in use, in short, then the button (user, 2026-10-03): the words on the left, the short button at the right end. */
 .rl-networks-row { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; } .rl-networks-row .rl-networks-open { margin: 0; flex: none; }
 .rl-networks-row .net-short { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; } .rl-networks-row .net-code { font-family: var(--f-mono); }
+/* The switches that are on, under that line and close to it, whole (review of branch record SIF-103) */
+.model-switches { margin: 0 0 6px; }
 .rl-networks-window { max-width: 1060px; margin: 0 auto; padding: 14px 18px 24px; }
 .rl-networks-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .rl-networks-heading h2 { margin: 0; font-size: 17px; }

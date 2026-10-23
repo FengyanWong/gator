@@ -154,43 +154,55 @@ export const networkShort = (encoder: string, { hidden, heads, layers, component
   [`${designShort({ encoder_type: encoder, architecture_version: net.architecture_version })} ${hidden}/${usesHeads ? heads : '–'}/${layers}`, net.operating_points ? 'op. points' : null,
       inputsChoice(net) === 'transferable2' ? 'transferable 2' : inputsChoice(net) !== 'standard' ? 'transferable' : null, components === 'families' ? 'families' : components ? `${components} parts` : null].filter(Boolean).join(' · ');
 /** Fine-tune's own switches, in the RL model window's order: the key, whether `run` (else `run.advanced`) keeps it, the
- *  window's label and the model line's word (branch record SIF-103). Only that window said them, and it closes once a save
+ *  window's label and the Next line's word (branch record SIF-103). Only that window said them, and it closes once a save
  *  point is chosen; kept across Modes and runs and copied by New run like this, a switch left on went unseen before Start. */
 const FINE_TUNE_SWITCHES: [key: string, inRun: boolean, label: string, word: string][] = [
   ['freeze_encoder', false, 'Freeze encoder', 'encoder frozen'], ['encoder_only_transfer', false, 'Encoder-only transfer', 'encoders only'],
   ['reset_critic', false, 'Reset critic', 'critics reset'], ['continual_learning', true, 'Continual learning', 'continual']];
-/** The switches that are on, in Fine-tune only: the backend reads them in no other Mode. */
-const switchesOn = (run: Json, adv: Json) => run.mode === 'fine_tune' ? FINE_TUNE_SWITCHES.filter(([key, inRun]) => !!(inRun ? run : adv)?.[key]) : [];
-/** Them on the model line and the Next line: nothing while all are off, so those lines read as before. */
+/** The switches that are on, in a Mode whose run takes them: Fine-tune all four, Evaluate only Continual learning - there too
+ *  it decides whether a source itself fine-tuned on a test task loads or is refused (runs.py `_source_model`; review of
+ *  branch record SIF-103: "the backend reads them in no other Mode" was wrong for it). In another Mode the other three
+ *  refuse the start, a blocking issue that names them (validation.py `fine_tune_only_option`). */
+const switchesOn = (run: Json, adv: Json) => FINE_TUNE_SWITCHES.filter(([key, inRun]) =>
+  (run.mode === 'fine_tune' || (run.mode === 'frozen' && key === 'continual_learning')) && !!(inRun ? run : adv)?.[key]);
+/** Them on the Next line: nothing while all are off, so it reads as before. */
 const switchWords = (run: Json, adv: Json) => switchesOn(run, adv).map(([, , , word]) => ` · ${word}`).join('');
+/** Them on a line of their own under the model line, by the window's labels; null while all are off (review of branch record
+ *  SIF-103: said at the end of the model line, which is cut at two lines, they were hidden - a saved model's name and its
+ *  save point fill those two lines at 1366 and at 1680 px). */
+export const switchesText = (run: Json, adv: Json) => {
+  const on = switchesOn(run, adv);
+  return on.length ? `Switches on: ${on.map(([, , label]) => label).join(', ')}.` : null;
+};
 /** The next run's model in one line, beside the button (record 7.265; plan "RL model window": "New model · Graph Transformer
- *  template · GT 48/4/4", "Fine-tune ota7t (2) · save point 420 evaluations", "Evaluate ... · deterministic actions"), with
- *  Fine-tune's switches that are on ("... · encoder frozen · critics reset", branch record SIF-103). */
-export const modelLineText = ({ run, adv, noMode, source, entry, encoder, netShort, sourceName, pointAt }: { run: Json; adv: Json; noMode: boolean; source: Json;
+ *  template · GT 48/4/4", "Fine-tune ota7t (2) · save point 420 evaluations", "Evaluate ... · deterministic actions"). The
+ *  switches that are on have a line of their own (`switchesText`). */
+export const modelLineText = ({ run, noMode, source, entry, encoder, netShort, sourceName, pointAt }: { run: Json; noMode: boolean; source: Json;
   entry: Json; encoder: string; netShort: string; sourceName: string | null; pointAt: Json }) =>
   run.mode === 'scratch' ? `New model · ${entry?.label ?? encoder} template · ${netShort}`
     : noMode ? 'No Mode chosen: choose one in RL model... (this configuration still says resume)'
     : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} · no saved model chosen`
     : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune'} ${sourceName} · save point ${pointAt != null ? `${pointAt} evaluations` : source.checkpoint_id}`
-      + (run.mode === 'frozen' ? ` · ${run.frozen_action ?? 'deterministic'} actions` : switchWords(run, adv));
+      + (run.mode === 'frozen' ? ` · ${run.frozen_action ?? 'deterministic'} actions` : '');
 /** The same, as the header's "Next" line names it (record 7.269; plan "The draft": "Next: ota7t · Fine-tune from ota7t (2)
- *  @ 420 · GT 48/4/4 · 800 evaluations"), with Fine-tune's switches that are on (branch record SIF-103). */
+ *  @ 420 · GT 48/4/4 · 800 evaluations"), with the switches that are on (branch record SIF-103). That line too is cut at two
+ *  lines, and seldom shows them; its tooltip and Start's, which begins with it, say them whole. */
 export const nextModelText = ({ run, adv, noMode, source, sourceName, pointAt }: { run: Json; adv: Json; noMode: boolean; source: Json; sourceName: string | null; pointAt: Json }) =>
   run.mode === 'scratch' ? 'New model'                 // the network beside it names the template's encoder
     : noMode ? 'no Mode chosen'
     : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} - no saved model chosen`
-    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune from'} ${sourceName} @ ${pointAt ?? source.checkpoint_id}${run.mode === 'frozen' ? ` (${run.frozen_action ?? 'deterministic'} actions)` : switchWords(run, adv)}`;
+    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune from'} ${sourceName} @ ${pointAt ?? source.checkpoint_id}${run.mode === 'frozen' ? ` (${run.frozen_action ?? 'deterministic'} actions)` : ''}${switchWords(run, adv)}`;
 /** That line's tooltip: the network in words, or what a Mode that loads a model still needs. The design by name (branch
- *  record SIF-57: it began "The network in use: graph_transformer"). In Fine-tune also its switches that are on, by the
- *  window's labels, and the name typed for the model it saves: the line shows two lines at most (branch record SIF-103). */
-export const networkTitle = ({ loads, source, run, adv, encoder, hidden, heads, layers, components, usesHeads, net }: { loads: boolean; source: Json; run: Json;
-  adv: Json; encoder: string; usesHeads: boolean; net: Json } & NetworkSizes) => {
+ *  record SIF-57: it began "The network in use: graph_transformer"). In Fine-tune also the name typed for the model it saves
+ *  (branch record SIF-103). */
+export const networkTitle = ({ loads, source, run, encoder, hidden, heads, layers, components, usesHeads, net }: { loads: boolean; source: Json; run: Json;
+  encoder: string; usesHeads: boolean; net: Json } & NetworkSizes) => {
   if (loads && !source.run_dir) return `${MODE_NAME[run.mode] ?? run.mode} loads a saved model: choose one in RL model...; the run then uses its network.`;
-  const on = switchesOn(run, adv), saves = run.mode === 'fine_tune' ? (run.model_label ?? '').trim() : '';
+  const saves = run.mode === 'fine_tune' ? (run.model_label ?? '').trim() : '';
   return `The network in use: ${designName({ encoder_type: encoder, architecture_version: net.architecture_version })}, hidden ${hidden}, ${usesHeads ? `heads ${heads}` : 'no attention heads'}, layers ${layers}; nominal operating points ${net.operating_points ? 'on' : 'off'}; `
     + `inputs ${inputsText(net)}; `
     + `components ${components ?? 'standard'}${loads ? `. It is the network of the saved model this run loads (${source.run_dir}, save point ${source.checkpoint_id}).` : '.'} RL model... changes it.`
-    + (on.length ? ` Fine-tune's switches on: ${on.map(([, , label]) => label).join(', ')}.` : '') + (saves ? ` It saves the model as ${saves}, with a number if that name is taken.` : '');
+    + (saves ? ` It saves the model as ${saves}, with a number if that name is taken.` : '');
 };
 /** The limits a run seldom changes that are set, for the line of the Limits fold: "42 launches, 1 retry, wall time 24 h 00
  *  min" (branch record SIF-58: "1 launches, 1 retries, 86400 s"). */

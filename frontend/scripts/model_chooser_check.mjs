@@ -30,8 +30,9 @@
 //   at once, its one read per open still going; the ticks go, and Details of a model that left the list close; a rename reads
 //   the page's run list again, so the main page's model line and Next line name the model in use by its new name, and the
 //   saved models are read again once (branch record SIF-102);
-// - Fine-tune's switches that are on are named in the model line and the Next line, by the window's labels in the line's
-//   tooltip with the name typed for the model it saves, and not in Evaluate only; the facts show all six reward fields, and
+// - Fine-tune's switches that are on have a line of their own under the model line, by the window's labels, in view and
+//   whole, and the Next line names them; the model line's tooltip names the model it saves; Evaluate only says Continual
+//   learning, which its run reads too, and has its box (review of SIF-103); the facts show all six reward fields, and
 //   "Use this model's reward" takes them as one Undo step while the next run's reward differs (branch record SIF-103).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
@@ -345,30 +346,58 @@ await runChecks(browser, async () => {
   check('... and Redo brings it again', run?.model_source?.checkpoint_id === early);
   // ---- Fine-tune's own switches are said on the main page (branch record SIF-103) -------------------------------------------------
   // Only the window's last block said them, and it closes once a save point is chosen: kept across Modes and runs, and copied by
-  // New run like this, a switch left on went unseen before Start. The model line and the Next line name those that are on; the
-  // tooltip names them by the window's labels, with the name typed for the model it saves.
+  // New run like this, a switch left on went unseen before Start. Those that are on have a line of their own under the model line,
+  // by the window's labels; the header's Next line names them too, and the model line's tooltip the name typed for the model it
+  // saves. Review of SIF-103: said at the end of the model line and the Next line, both cut at two lines, they were hidden - here
+  // too, at 1,680 px (the model line needed 53 px and showed 35, the Next line 81 and 33) - while a textContent check passed.
   const SWITCH = text => `[...${RIGHT}.querySelectorAll('label.check')].find(l => l.textContent.startsWith(${JSON.stringify(text)}))?.querySelector('input')`;
   const LINE_TEXT = `document.querySelector('.rl-networks-row .net-short')?.textContent ?? ''`, LINE_TITLE = `document.querySelector('.rl-networks-row .net-short')?.title ?? ''`;
-  const PLAIN_A = 'Fine-tune FIXTURE_opamp_gt · save point 6 evaluations', ON = ' · encoder frozen · critics reset · continual';
-  const SAID = " Fine-tune's switches on: Freeze encoder, Reset critic, Continual learning. It saves the model as FIXTURE tuned, with a number if that name is taken.";
+  const SWITCHES = `document.querySelector('.model-switches')`, LINE = `document.querySelector('.rl-networks-row .net-short')`;
+  // In view, whole: drawn, inside the visible part of its column, and nothing of it cut (a clamped line has more to scroll than it shows).
+  const inView = element => `(() => { const e = ${element}; if (!e || !e.getClientRects().length) return false;
+    const r = e.getBoundingClientRect(), column = e.closest('aside')?.getBoundingClientRect() ?? { top: 0, bottom: innerHeight };
+    return r.top >= column.top - 1 && r.bottom <= Math.min(column.bottom, innerHeight) + 1 && e.scrollHeight <= e.clientHeight + 1; })()`;
+  const measured = element => evaluate(`(() => { const e = ${element}; return e ? \`\${e.textContent} (\${e.scrollHeight} px of \${e.clientHeight})\` : 'no line'; })()`);
+  const PLAIN_A = 'Fine-tune FIXTURE_opamp_gt · save point 6 evaluations';
+  const SAID = ' It saves the model as FIXTURE tuned, with a number if that name is taken.';
   for (const text of ['Freeze encoder', 'Reset critic', 'Continual learning']) await evaluate(`(${SWITCH(text)}).click()`);
   await page.setValue(`${RIGHT}.querySelector('input.model-label')`, 'FIXTURE tuned', { event: 'input' });
   run = await storedWhen(s => s?.advanced?.freeze_encoder && s.advanced.reset_critic && s.continual_learning && s.model_label === 'FIXTURE tuned');
-  check('Fine-tune\'s switches that are on are said in the model line, in the window\'s order, and in the header\'s Next line (SIF-103)',
-    !!run && await until(`(${LINE_TEXT}) === ${JSON.stringify(PLAIN_A + ON)}`, 30)
-    && await until(`/^Next: synthetic:gpdk045_ota5 · Fine-tune from FIXTURE_opamp_gt @ 6 · encoder frozen · critics reset · continual · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 30),
-    `${await line()} | ${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)}`);
-  check('... and the line\'s tooltip by the window\'s labels, with the name the model it saves goes by (SIF-103)', (await evaluate(LINE_TITLE)).endsWith(` RL model... changes it.${SAID}`),
+  check('Fine-tune\'s switches that are on have a line of their own under the model line, by the window\'s labels in its order, in view and whole; the model line whole too (SIF-103 and its review)',
+    !!run && await until(`(${SWITCHES})?.textContent === 'Switches on: Freeze encoder, Reset critic, Continual learning.'`, 30)
+    && await evaluate(`!!(${SWITCHES}).previousElementSibling?.classList.contains('rl-networks-row')`) && await evaluate(inView(SWITCHES))
+    && /^Ticked in the RL model window, under "Fine-tune: its own settings"\./.test(await evaluate(`(${SWITCHES}).title`))
+    && await evaluate(`(${LINE_TEXT}) === ${JSON.stringify(PLAIN_A)}`) && await evaluate(inView(LINE)),
+    `${await measured(SWITCHES)} | ${await measured(LINE)}`);
+  await page.shot(path.join(out, 'models-1b-switches.png'), `(${SWITCHES}).closest('section.panel')`, { scale: 1.2, maxHeight: 400 });
+  check('... the header\'s Next line names them, and Start\'s tooltip, which begins with it, says them whole (SIF-103)',
+    await until(`/^Next: synthetic:gpdk045_ota5 · Fine-tune from FIXTURE_opamp_gt @ 6 · encoder frozen · critics reset · continual · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 30)
+    && (await startTitle()).startsWith(`Start: ${await evaluate(`(${NEXT}).textContent`)}. `), `${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)} | ${await startTitle()}`);
+  check('... and the model line\'s tooltip the name the model it saves goes by (SIF-103)', (await evaluate(LINE_TITLE)).endsWith(` RL model... changes it.${SAID}`),
     await evaluate(LINE_TITLE));
+  // Review of SIF-103: Evaluate only reads Continual learning too - runs.py `_source_model` refuses there as well a source itself
+  // fine-tuned on a test task unless it is on - and had no box for it. Fine-tune's other three are not its own.
   await setMode(networkPage, 'frozen');
-  check('... in Fine-tune only: Evaluate only, which reads none of them, says its actions as before (SIF-103)',
-    await until(`(${LINE_TEXT}) === 'Evaluate FIXTURE_opamp_gt · save point 6 evaluations · deterministic actions'`, 30)
-    && (await evaluate(LINE_TITLE)).endsWith(' RL model... changes it.'), `${await line()} | ${await evaluate(LINE_TITLE)}`);
+  check('Evaluate only says Continual learning, which its run reads too, in view, and not Fine-tune\'s other three; its model line as before (review of SIF-103)',
+    await until(`(${SWITCHES})?.textContent === 'Switches on: Continual learning.'`, 30) && await evaluate(inView(SWITCHES))
+    && await evaluate(`(${LINE_TEXT}) === 'Evaluate FIXTURE_opamp_gt · save point 6 evaluations · deterministic actions'`)
+    && await until(`/^Next: synthetic:gpdk045_ota5 · Evaluate FIXTURE_opamp_gt @ 6 \\(deterministic actions\\) · continual · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 30)
+    && (await evaluate(LINE_TITLE)).endsWith(' RL model... changes it.'), `${await measured(SWITCHES)} | ${await line()} | ${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)}`);
+  const CONTINUAL = SWITCH('Continual learning');
+  const continual = await evaluate(`(() => { const box = ${CONTINUAL}, after = [...${RIGHT}.querySelectorAll('h3')].find(h => h.textContent === 'Evaluate only: its own settings')?.nextElementSibling;
+    return { ticked: !!box?.checked, afterActions: !!box && after?.nextElementSibling === box.closest('label'), title: box?.closest('label').title ?? '', others: !!(${SWITCH('Freeze encoder')}) }; })()`);
+  check('... and its own settings have the box, ticked, after Actions, saying what it decides; Fine-tune\'s other three are not there (review of SIF-103)',
+    continual.ticked && continual.afterActions && /^Off: a saved model that was itself fine-tuned on a test task .* is refused/.test(continual.title) && !continual.others, JSON.stringify(continual));
+  await evaluate(`(${CONTINUAL}).click()`);
+  run = await storedWhen(s => s?.continual_learning === false);
+  check('... unticked there, it is off, and the line goes with the Next line\'s word (review of SIF-103)', run?.continual_learning === false && await until(`!(${SWITCHES})`, 30)
+    && await until(`/^Next: synthetic:gpdk045_ota5 · Evaluate FIXTURE_opamp_gt @ 6 \\(deterministic actions\\) · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 30),
+    `${JSON.stringify(run?.continual_learning)} | ${await measured(SWITCHES)} | ${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)}`);
   await setMode(networkPage, 'fine_tune');
-  for (const text of ['Freeze encoder', 'Reset critic', 'Continual learning']) await evaluate(`(${SWITCH(text)}).click()`);
+  for (const text of ['Freeze encoder', 'Reset critic']) await evaluate(`(${SWITCH(text)}).click()`);
   await page.setValue(`${RIGHT}.querySelector('input.model-label')`, '', { event: 'input' });
   run = await storedWhen(s => !s?.advanced?.freeze_encoder && !s?.advanced?.reset_critic && !s?.continual_learning && !s?.model_label);
-  check('... and with every switch off and no name typed, the lines read as before', await until(`(${LINE_TEXT}) === ${JSON.stringify(PLAIN_A)}`, 30)
+  check('... and with every switch off and no name typed, no line of switches, and the lines read as before', await until(`(${LINE_TEXT}) === ${JSON.stringify(PLAIN_A)} && !(${SWITCHES})`, 30)
     && await until(`/^Next: synthetic:gpdk045_ota5 · Fine-tune from FIXTURE_opamp_gt @ 6 · GT 16\\/2\\/1 · \\d+ evaluations$/.test((${NEXT})?.textContent ?? '')`, 30)
     && (await evaluate(LINE_TITLE)).endsWith(' RL model... changes it.'), `${await line()} | ${await evaluate(`(${NEXT})?.textContent ?? 'no line'`)} | ${await evaluate(LINE_TITLE)}`);
   await evaluate(`${RIGHT}.querySelector('button.model-use-newer').click()`);

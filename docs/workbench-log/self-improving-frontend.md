@@ -3161,6 +3161,38 @@ did not do. Also run, unchanged: `looks_check` 75, `network_panel_check` 72, `re
 `mode_suggestion_check` 20, `encoder_models_check` 24, `room_check` 30, `graph_view_check` 69, `model_structure_check`
 31, `network_inputs_check` 9 (10 scripts, one lane, all passed the first time). No flakes.
 
+**Review follow-up.** The review of 9d820b9 found two slips, both real. First, the switches were said at the end of two
+lines that are cut at two lines, so in real use they were hidden. A saved model's name and save point fill the model line
+(about 200 px wide; "Fine-tune mscr_vco_lin_c (6) · / save point 800 evaluations" at 1366 px), and the task's and the
+model's names fill the header's Next line (200 px at most). In this check's own fixture at 1,680 px, with three switches
+on, the model line needed 53 px and showed 35, the Next line 81 and 33; the check read `textContent`, so it passed. The
+switches that are on now have a line of their own under the model line, never cut, by the window's labels: "Switches on:
+Freeze encoder, Reset critic, Continual learning." (`switchesText` in `rlModelText.ts`; a `p.hint.model-switches` in
+`RunConfiguration.tsx`, whose tooltip says where they are ticked; 6 px under the model line in `styles.css`). The model
+line reads as before SIF-103, so its save point keeps its room; its tooltip no longer lists them and still names the model
+the run saves. The Next line keeps its words: Start's tooltip begins with it and says them whole, and the docs no longer
+say the header line shows them. Second, "the backend reads them in no other Mode" was wrong for Continual learning:
+`runs.py` `_source_model` reads `run.continual_learning` in Evaluate only too, where it decides whether a source that was
+itself fine-tuned on a test task loads or is refused (code `continual_learning`). Evaluate only had no box for it, and
+SIF-103 left it out there on that claim, so one left on from a Fine-tune went unseen before Start, and could not be ticked
+in that Mode when the refusal asks for it. `switchesOn` now takes Continual learning in Evaluate only: the line says it,
+and the Next line adds "· continual". `RlModelWindow.tsx` shows the box in Evaluate only's own settings too, after
+Actions, with a tooltip in both Modes (off: such a source is refused; on: it is loaded, as continual learning). The
+comment, the docs and the check's label are corrected. Fine-tune's other three stay its own: in another Mode they refuse
+the start with a blocking issue that names them (`validation.py` `fine_tune_only_option`). Nothing here starts, continues
+or stops a run, saves a task or writes to Virtuoso; the box changes only the configuration, and Undo takes it back.
+`docs/workbench.md` (the Next line, the model line, the Modes' own settings) and the Mode row of
+`docs/functionality-reference.md` say so. `tsc` clean. `model_chooser_check` 119 (116 before). With three switches on in
+Fine-tune, the line under the model line reads them in full and in view (38 px of 38), and the model line is whole (35 px
+of 35); the Next line and Start's tooltip name them. In Evaluate only the line reads "Switches on: Continual learning.",
+and the Next line adds "· continual"; the box is there, ticked, after Actions, without the other three; unticked there,
+the line and the word go. Against the code before, there is no such line and Evaluate only says nothing. New picture:
+`models-1b-switches.png`. Also run, unchanged: `dom_identity_check` 56, `task_rows_check` 54, `typing_check` 50,
+`task_list_check` 100, `looks_check` 75, `network_panel_check` 72, `reliability_check` 20, `room_check` 30,
+`graph_view_check` 69, `module_fold_check` 30, `reward_block_check` 33, `pdk_check` 40, `encoder_models_check` 24,
+`model_structure_check` 31, `mode_suggestion_check` 20, `network_inputs_check` 9 (17 scripts with `model_chooser_check`,
+832 checks, one lane, all passed the first time). No flakes.
+
 ### Merged into workbench and live (2026-10-22; the user: "merge it into workbench and make it live")
 
 **Merge.** workbench (48 commits by other sessions since 8b67d97: frontend speed-ups and checks of 7.377/7.379, backend,

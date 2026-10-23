@@ -11,7 +11,7 @@ import { LOADS, NETWORK_FIELDS, networkOf, pick, pointKey, readSavePoint, withSa
 import { styled, usePopupWindow } from './popupWindow';
 import { PRESET_RATE_KEY, RL_MODEL_WINDOW } from '../contract';
 import { ADVANCED_ROWS, foldedText, limitsText, modelLineText, networkShort, networkSizes, networkTitle, NextModel, nextModelText, ORIGIN, newModelInputs, REWARD_DEFAULTS,
-  takesTemplateInputs } from './rlModelText';
+  switchesText, takesTemplateInputs } from './rlModelText';
 import { sameScope, useNewest } from '../newest';
 import { oncePerBrowser } from '../kept';
 import type { ModelReply, NetworkConfig } from '../contracts';
@@ -292,10 +292,11 @@ export function useRlModel({ config, setConfig, runs, refreshRuns, circuit, sche
   const netShort = networkShort(encoder, sizes, usesHeads, net);
   const sourceName = source.run_dir ? nameOf(source.run_dir) : null;
   const pointAt = model?.description?.counters?.evaluations_committed ?? pointEvaluations(source.checkpoint_id);
-  const modelLine = modelLineText({ run, adv, noMode, source, entry, encoder, netShort, sourceName, pointAt });
+  const modelLine = modelLineText({ run, noMode, source, entry, encoder, netShort, sourceName, pointAt });
+  const switchesLine = switchesText(run, adv);   // under the model line (review of branch record SIF-103)
   const nextModel = nextModelText({ run, adv, noMode, source, sourceName, pointAt });
   useEffect(() => onNext?.({ model: nextModel, network: netShort }), [nextModel, netShort]);
-  const netTitle = networkTitle({ loads, source, run, adv, encoder, ...sizes, usesHeads, net });
+  const netTitle = networkTitle({ loads, source, run, encoder, ...sizes, usesHeads, net });
   // The model in use's reward, all six fields (a field its contract leaves out as the run takes it), and those the next run's
   // differs in (branch record SIF-103). Fine-tune keeps the model's critics only with the same reward and conditions; matching
   // it meant typing it field by field into Reward and conditions' Advanced, and the facts showed four of the six.
@@ -344,7 +345,7 @@ export function useRlModel({ config, setConfig, runs, refreshRuns, circuit, sche
     error, modelLoading, model, cornerIds, robust, gated, corners, supportsCorners, launchesPerStep, objective, reward, rewardOther,
     toggleCorner, netSettings, netMessage, presetRateUpdated, netFields, advFields, encoder, entry, offeredEncoders, usesHeads, usesStructure, applyEntry,
     chooseList, flush, queueSave, editNet, editAdv, chooseEncoder, settingDifferences, differs, originLabel, budget, sacSlow, starved,
-    loads, noMode, label, savedModel, savedNet, archDiffers, suggested, usingPoint, useSavePoint, chooseMode, modelLine, netTitle,
+    loads, noMode, label, savedModel, savedNet, archDiffers, suggested, usingPoint, useSavePoint, chooseMode, modelLine, switchesLine, netTitle,
     limitsSet, folded, networkError, networkWarning, networkReason, networkAnchor, openAt, savedReward, rewardApart, useModelReward };
 }
 export type RlModel = ReturnType<typeof useRlModel>;

@@ -294,10 +294,15 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
           <Check label="Encoder-only transfer" value={adv.encoder_only_transfer} onChange={v => setAdv({ encoder_only_transfer: v })}
             title="Only the encoders' weights are loaded; the actor and critic heads start from new random weights." />
           <Check label="Reset critic" value={adv.reset_critic} onChange={v => setAdv({ reset_critic: v })}
-            title="The critics and their target copies start from new random weights; the actor keeps its loaded ones." />
-          <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })} />
-          <label title={`The name the model this run saves goes by. Empty: the task's run label (${config.project.task_name}); a name taken already gets a number.`}>Name of the model it saves
-            <ModelLabelInput m={m} /></label></>}
+            title="The critics and their target copies start from new random weights; the actor keeps its loaded ones." /></>}
+        {/* In Evaluate only too (review of branch record SIF-103): its run reads it as Fine-tune's does - runs.py `_source_model`
+            refuses a source itself fine-tuned on a test task unless it is on - and this Mode had no box, so one left on from a
+            Fine-tune was unseen and could not be unticked here, nor ticked when the refusal asks for it. */}
+        <Check label="Continual learning (inherit weights fine-tuned on a previous test task)" value={run.continual_learning} onChange={v => set({ continual_learning: v })}
+          title={'Off: a saved model that was itself fine-tuned on a test task (Split "Test" under Research experiments, Transfer study) is refused, '
+            + 'so each test task starts from the fixed source model. On: it is loaded, as continual learning.'} />
+        {run.mode === 'fine_tune' && <label title={`The name the model this run saves goes by. Empty: the task's run label (${config.project.task_name}); a name taken already gets a number.`}>Name of the model it saves
+          <ModelLabelInput m={m} /></label>}
         <AdvancedFields m={m} />
       </>)}
       {run.mode === 'scratch' && <LookFold summary={<summary>Saved models, to look at <span className="hint">- Fine-tune or Evaluate only above uses one</span></summary>}>

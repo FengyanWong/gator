@@ -18,7 +18,7 @@ export function NoModeNote({ m, from }: { m: RlModel; from: Window | null }) {
 
 /** `runHeld`: the header holds a run that works or is paused (App.tsx). */
 export function RunConfiguration({ m, runHeld = false }: { m: RlModel; runHeld?: boolean }) {
-  const { run, set, source, circuit, networkWindow, loads, netTitle, modelLine, networkError, networkWarning, networkReason, networkAnchor, openAt, modelChecked, model,
+  const { run, set, source, circuit, networkWindow, loads, netTitle, modelLine, switchesLine, networkError, networkWarning, networkReason, networkAnchor, openAt, modelChecked, model,
     limitsSet } = m;
   return (<>
       {/* Branch record SIF-72: with a run in the header, this column's Mode and budget stood beside that run's own (New model and
@@ -29,6 +29,10 @@ export function RunConfiguration({ m, runHeld = false }: { m: RlModel; runHeld?:
       <div className="rl-networks-row"><span className={`hint net-short${loads && !source.run_dir ? '' : ' net-code'}`} title={netTitle}>{modelLine}</span>
         <button className="rl-networks-open" title="Open the RL model window: the Mode (New model, Fine-tune, Evaluate only), the templates of a new model, and the saved models."
           onClick={() => networkWindow.open()}>RL model...</button></div>
+      {/* The Mode's switches that are on, on a line of their own that is never cut (review of branch record SIF-103): at the
+          end of the line above, two lines at most, they were hidden once a saved model's name and save point filled it. */}
+      {switchesLine && <p className="hint model-switches" title={`Ticked in the RL model window, under "${MODE_NAME[run.mode] ?? run.mode}: its own settings". `
+        + 'They stay on, across Modes and runs, until unticked there.'}>{switchesLine}</p>}
       {networkWindow.blocked && <Blocked role="alert" />}
       <NoModeNote m={m} from={null} />
       {/* The notice says why, and its "RL model..." opens the window (branch record SIF-46: it was the same fixed sentence for

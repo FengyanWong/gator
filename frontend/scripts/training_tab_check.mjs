@@ -21,7 +21,8 @@
 //     results arrive, its newest values the recorded ones; the cost of its changed frames said (INFO); switching runs in
 //     the run window and taking a compared run off give their rows back (JS heap and typed arrays after a collection)
 //   - branch record SIF-105: a page opened anew shows Run status and a reload comes back on the Training tab; the Compare list
-//     puts the shown run's task first ("Same task (...)", then "Other tasks")
+//     puts the shown run's task first ("Same task (...)", then "Other tasks"), and its tooltip says so only then: a shown
+//     run the list names no task for keeps the one list (SIF-105 review)
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -460,6 +461,8 @@ await runChecks(browser, async () => {
   const groups = await evaluate(`[...(${COMPARE}).querySelectorAll('optgroup')].map(g => ({ label: g.label, runs: [...g.children].map(o => o.value) }))`);
   check('...the shown run\'s task first: "Same task (fixture_task)" with its other runs, then "Other tasks" (SIF-105)', JSON.stringify(groups) === JSON.stringify([
     { label: 'Same task (fixture_task)', runs: ['failed', 'frozen', 'twin', 'once', 'long'].map(id => RUNS[id].dir) }, { label: 'Other tasks', runs: [OTHER_TASK_RUN] }]), JSON.stringify(groups));
+  const compareTip = await evaluate(`(${COMPARE}).title`);
+  check('...and its tooltip says so (SIF-105 review: only over the groups)', compareTip.endsWith('(the list of the run window, Runs..., the shown run\'s task first).'), compareTip);
   const twinReads = () => reads.filter(r => r.run === 'twin').length;
   await page.setValue(COMPARE, RUNS.twin.dir);
   check('a compared run gets its chip and its own colour on both charts, its whole name in the legend', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2
@@ -557,6 +560,13 @@ await runChecks(browser, async () => {
   await until(`/288 evaluations/.test((${TRAINING}).querySelector('.training-counts')?.textContent ?? '')`, 60);
   const unitTitle = await evaluate(`[...(${CHART(0)}).options].find(o => o.value === 'spec:i_bias')?.textContent ?? ''`);
   check('a chart title writes its unit in English letters, as the rest of the page', unitTitle === 'i_bias (uA)', unitTitle);
+  // SIF-105 review: a shown run the run list names no task for (here one it does not list) keeps the one list, and the
+  // tooltip said "the shown run's task first" over it too
+  await showRun(RUNS.calibration);
+  const flatListed = await until(`(${TRAINING})?.querySelector('select[aria-label="Compare with another run"]')?.options.length === ${runRows().length + 1}`, 60);
+  const flat = await evaluate(`({ groups: (${COMPARE})?.querySelectorAll('optgroup').length, title: (${COMPARE})?.title })`);
+  check('a shown run the run list names no task for: Compare keeps the one list, its tooltip not saying the task comes first (SIF-105 review)',
+    flatListed && flat.groups === 0 && flat.title?.endsWith('(the list of the run window, Runs...).'), JSON.stringify(flat));
   await showRun(RUNS.live);
   await until(`/288 evaluations/.test((${TRAINING}).querySelector('.training-counts')?.textContent ?? '')`, 60);
   listRuns = false;

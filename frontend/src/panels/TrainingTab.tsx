@@ -312,7 +312,8 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const candidates = runs.filter(r => r.run_dir !== runDir && !others.includes(r.run_dir));
   // The shown run's task first (branch record SIF-105): the list held every run under the output root newest first (612 in
   // the user's folder), and the runs worth comparing - the task's other seeds and Modes - stood scattered among them. By the
-  // registered task's key; a shown run the list has no key for (an older backend) keeps the one list.
+  // registered task's key; a shown run the list has no key for (not listed, or a row without one) keeps the one list, and
+  // the tooltip says "the shown run's task first" only over the groups (SIF-105 review: it said so over the one list too).
   const shownRow = rowOf.get(runDir), task: string | null = shownRow?.task_key ?? null;
   const sameTask = task ? candidates.filter(r => r.task_key === task) : [], otherTasks = task ? candidates.filter(r => r.task_key !== task) : [];
   const compareOption = (r: Json) => <option key={r.run_dir} value={r.run_dir}>{runChoice(r)}</option>;
@@ -350,7 +351,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
           <option value="update">update</option><option value="evaluation">evaluation</option></select></label>
       <select aria-label="Compare with another run" className="training-compare" value="" disabled={others.length >= COMPARE_MAX - 1 || !candidates.length}
         onChange={e => { if (e.target.value) keepCompare([...others, e.target.value]); }}
-        title={`Compare: draw up to ${COMPARE_MAX - 1} other runs on the same charts, each in its own colour (the list of the run window, Runs..., the shown run's task first).`}>
+        title={`Compare: draw up to ${COMPARE_MAX - 1} other runs on the same charts, each in its own colour (the list of the run window, Runs...${task ? ', the shown run\'s task first' : ''}).`}>
         <option value="">Compare...</option>
         {!task ? candidates.map(compareOption) : <>
           {sameTask.length > 0 && <optgroup label={`Same task (${taskOf(shownRow) || task})`}>{sameTask.map(compareOption)}</optgroup>}

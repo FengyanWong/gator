@@ -3352,3 +3352,14 @@ tab and choices that reset. Also run, unchanged: `calibration_save_check` 22 (th
 `run_control_check` 160, `dom_identity_check` 56, `files_tab_check` 42, `corner_check_check` 39, `looks_check` 75,
 `reliability_check` 20, `matched_devices_check` 37, `request_lifecycle_check` 25 (13 scripts, 695 checks, one lane, all
 passed the first time). No flakes.
+
+**Review follow-up.** The review of 08e822d found one slip, real: the Compare select's tooltip always ended "the shown
+run's task first", but a shown run the run list names no task for keeps the one list, with nothing put first - a run the
+list does not hold (outside the listed output folder, or before the list is read) or a row without a `task_key`
+(`run_index.py` takes it from the manifest's `circuit.task_key`). `frontend/src/panels/TrainingTab.tsx` now adds the
+clause only with the groups (`task`); over the one list the tooltip ends "(the list of the run window, Runs...)." `tsc`
+clean. `training_tab_check` 108 (106 before): over the groups the tooltip says the task comes first, and a shown run the
+list does not hold (the calibration run, with the list read) gets the one list, no groups and a tooltip without the
+clause - the code before failed that. Also run, unchanged: `dom_identity_check` 56 (2 scripts, 164 checks, one lane, all
+passed the first time). The review's other points were found sound (Show table only shows the run, the lifted choices,
+the kept tab): nothing to change. Nothing here starts a run, saves a task or writes to Virtuoso.

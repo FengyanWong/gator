@@ -53,7 +53,7 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
                            f"{'Synthetic (MOCK)' if mock else 'REAL'} circuit read: {len(task.base_graph.devices)} devices."))
     else:
         items.append(_item('circuit', 'Circuit', 'missing', 'you', str(task_blocker or 'No circuit could be read.')[:400],
-                           'Choose the circuit under "Circuit source" (left) and load it.'))
+                           'Open a task in the Tasks window, or make one there with "New task".'))
 
     # 2-4. the three tables
     items += _table_items(config, by_section, profile)
@@ -70,7 +70,8 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     detail = f"Mode {mode}, budget {budget} evaluation{'' if budget == 1 else 's'}, concurrency {run.get('concurrency', 1)}."
     if starving:
         items.append(_item('run', 'Run configuration', 'warning', 'you', detail + ' ' + _say(starving),
-                           'Raise "Max evaluations" or lower batch size / warm-up under Advanced in the RL model window: as set, '
+                           'Raise "Evaluation budget" under Run configuration, or lower batch size / warm-up under Advanced in '
+                           'the RL model window: as set, '
                            'the run would not learn.'))
     else:
         items.append(_item('run', 'Run configuration', 'done', 'you', detail))
@@ -173,7 +174,8 @@ def _connection_items(mock, run, connection, budget) -> list:
     if mock is False:
         if not run.get('connection_profile_id'):
             items.append(_item('connection', 'Connection', 'missing', 'you', 'No connection is selected.',
-                               'Press "Connection" (left): in its window choose a Virtuoso connection, connect, then "Test connection".'))
+                               'Press the connection button in the header: in its window choose a Virtuoso connection, '
+                               'connect, then "Test connection".'))
         else:
             overall = (connection or {}).get('overall', 'unknown')
             layers = ', '.join(f"{layer.get('layer')} {layer.get('state')}" for layer in (connection or {}).get('layers') or [])
@@ -181,7 +183,8 @@ def _connection_items(mock, run, connection, budget) -> list:
             age = (connection or {}).get('age_seconds')
             when = 'never tested in this backend session' if age is None else f'last test {round(age)} s ago'
             items.append(_item('connection', 'Connection', status, 'you', f'{overall} ({when}). {layers}'.strip(),
-                               '' if status == 'done' else 'Press "Connection" (left), then "Test connection" in its window. A '
+                               '' if status == 'done' else 'Press the connection button in the header, then "Test connection" '
+                               'in its window. A '
                                'start tests again by itself and asks you to acknowledge layers that stay unknown.'))
         items.append(_item('authorization', 'Real simulation budget', 'at_start', 'you',
                            f'Pressing Start asks you to authorize {budget} real evaluation(s). Only you can.'))

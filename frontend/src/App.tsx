@@ -3,6 +3,7 @@ import { api, ApiError, Json, NO_ANSWER, plainError, saveJson } from './api';
 import { setUnitForms } from './units';
 import { rowsFrom, useConfig, useRequest, useTaskSaves } from './store';
 import { CircuitPanel } from './panels/Left';
+import { sizesAddable } from './panels/CircuitBrowser';
 import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
@@ -294,7 +295,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
       </aside>
       <main>
         <Editors schema={schema} config={config} setConfig={setConfig} undo={store.undo} redo={store.redo} canUndo={store.canUndo} canRedo={store.canRedo}
-          lastStep={store.lastStep} validation={validation} taskSlot={setTaskSlot} taskNotes={setTaskNotes} taskHead={setTaskHead} taskTools={setTaskTools}
+          lastStep={store.lastStep} validation={validation} addsSizes={sizesAddable(config, circuit)} taskSlot={setTaskSlot} taskNotes={setTaskNotes} taskHead={setTaskHead} taskTools={setTaskTools}
           taskStatus={setTaskStatus} circuitShown={circuitShown} onCircuit={toggleCircuit} onCramped={panel.foldForRows} />
       </main>
       <aside className="right">

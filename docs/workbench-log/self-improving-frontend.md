@@ -3267,3 +3267,34 @@ line now. New picture: `help-4c-draft-size-added.png`. Also run, unchanged: `vir
 `testbench_probes_check` 41, `find_fill_copy_check` 50, `typing_check` 50 (Add's free IDs), `spec_equations_check` 36,
 `working_copy_check` 34, `reliability_check` 20, `circuit_source_check` 17, `editor_columns_check` 23 (Add's Probe and
 Spec), `edit_state_check` 28 (11 scripts, 465 checks, one lane, all passed). No flakes.
+
+**Review follow-up.** The review of 3a5289e found two slips, both real. First, the press stored the present size as the
+row's `initial_value`, which no row made in the page had carried: Add leaves it empty, meaning the value the circuit has,
+and Save task empties it. Nobody can see or type it (a hidden column, `schema.py` HIDDEN_COLUMNS), yet validation compares
+a stated one with the circuit (`initial_differs_from_circuit`); `withFollowers` changes only a row's unit when its
+Parameter changes, and a read leaves Parameters alone. So after the + on XU1/M1 w (4 um) and a valid Lower and Upper,
+typing the Parameter again (l), or Read the cell again after w was changed in Virtuoso, marked the row "Configuration says
+4 um but the circuit has 180 nm" (or 5 um), with "as no column shows its Initial value" in the Issues list. Typed bounds
+could not clear it and the size's + stayed off: only Delete and a new press helped, so "validation marks the row until they
+are typed" was untrue after those steps. The press (`adding` in `frontend/src/panels/Left.tsx`) now gives the row Add makes
+with the instance, the parameter and the parameter's unit, and no initial value; the present size stays in the +'s tooltip
+and the line under the table, for the range. `withFollowers` is left as it is. With nothing stated, a new Parameter or a
+new read finds nothing stale. Clearing a stated value when the Parameter changes would touch the rows that do carry one (a
+built-in task's own rows): typing the old name back would then leave a hidden difference from the saved rows, which
+`sameRows` counts (the phantom edits of record 7.223), while such a row now heals when its name comes back. A range that
+leaves out the present size is now refused by Save as alone, as for every row typed by hand (the stated value had also
+marked it in the editors, `initial_out_of_bounds`). Second, the empty Parameters line ended "the + after a size adds it as
+a row" on every page that follows a Virtuoso cell. But a cell that has a task already gets no +, and the window still shows
+its Hierarchy once an earlier read of it loads (the load names the task). `sizesAddable` in
+`frontend/src/panels/CircuitBrowser.tsx` (a Virtuoso cell with no task yet) now decides both: the circuit panel gives the
+press by it, and `App.tsx` hands it to the editors as `addsSizes`, so the line names the + only where there is one.
+Nothing here starts, continues or stops a run, saves a task or writes to Virtuoso; the press still changes only the
+configuration, as one Undo step. `docs/workbench.md` (Read this cell into the workbench) and the Hierarchy and Read rows
+of `docs/functionality-reference.md` say so. `tsc` clean. `project_help_check` 61 (58 before): the stored row has
+initial_value null, unit m. A new fixture cell, ring_c, was read before and has a task: the window shows its size under
+the note that names the task, without a button, and the empty Parameters line ends "...in the Virtuoso window." Back on
+ring_a the + is on and the line names it again. On the code before, the stored row had 4e-6 and the line named the + on
+ring_c too. Also run, unchanged: `virtuoso_source_check` 108, `testbench_probes_check` 41, `find_fill_copy_check` 50,
+`typing_check` 50, `working_copy_check` 34, `spec_equations_check` 36, `reliability_check` 20, `circuit_source_check`
+17, `editor_columns_check` 23, `edit_state_check` 28, `editor_renames_check` 8 (12 scripts, 476 checks, one lane, all
+passed the first time). No flakes.

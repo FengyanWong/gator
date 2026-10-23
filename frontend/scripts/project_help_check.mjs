@@ -29,13 +29,17 @@ const consoleErrors = [];
 
 // ---- canned answers ------------------------------------------------------------------------------------------
 const LIBRARY = 'FIXTURE_DESIGNS', CELLS = [{ name: 'ring_a', views: ['maestro', 'schematic', 'symbol'], has_schematic: true }, { name: 'ring_b', views: ['schematic'], has_schematic: true },
-  { name: 'tb_ring_a', views: ['schematic'], has_schematic: true }];
+  { name: 'ring_c', views: ['schematic'], has_schematic: true }, { name: 'tb_ring_a', views: ['schematic'], has_schematic: true }];
+// ring_c was read before and has a task already (review of branch record SIF-104): choosing it loads its export, under the note
+// that names the task.
+const TASKED = new Map([[`${LIBRARY}/ring_c`, 'real:fixture_ring_c']]);
 const schematic = (library, cell) => ({ source: 'virtuoso', library, cell, origin: 'FIXTURE', instance_count: 2, nets: ['in', 'out'],
   instances: ['M0', 'M1'].map(name => ({ instance_path: name, master: { library: 'gpdk045', cell: 'nmos1v', view: 'symbol' }, terminals: [], parameters: { w: { raw: '1u' } } })),
   requires_confirmation: ['FIXTURE'], note: 'FIXTURE' });
 const NOTE = 'FIXTURE NOTE: read from Virtuoso (canned answer).';
-const imported = new Map();                                                         // "library/cell" -> the testbench it was read through
-const draft = (library, cell) => ({ loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [], profile_task: null,
+const imported = new Map([[`${LIBRARY}/ring_c`, null]]);                             // "library/cell" -> the testbench it was read through
+const draft = (library, cell) => ({ loaded: true, task_key: `virtuoso:${library}/${cell}`, mock: false, native_draft: true, complete: true, diagnostics: [],
+  profile_task: TASKED.get(`${library}/${cell}`) ?? null, profile_task_generated: TASKED.has(`${library}/${cell}`) || null,
   circuit: { library, cell, native_draft: true, testbench_cell: imported.get(`${library}/${cell}`) ?? null }, hierarchy: { XU1: { M1: {}, M2: {} }, V0: {} },
   working_copy: { declared: true, verified: true, problems: [], created_utc: '2026-09-23T10:00:00+00:00', copy: { library, cell, testbench: `tb_${cell}`, path: null }, original: { library, cell, testbench: `tb_${cell}` } },
   analysis_context: null, evaluation_backend: null, max_concurrency: 1,
@@ -274,9 +278,9 @@ await runChecks(browser, async () => {
   await shotWindow('help-4b-draft-hierarchy-closed.png');
 
   // ---- a size of the cell becomes a Parameters row with one press (branch record SIF-104) ------------------------------------------
-  // Every row was typed by hand from the read-only table above. The + after a size adds the row Add makes, with the instance, the
-  // parameter and the present value; its Lower and Upper are left to be typed. It is an icon, so the size reads as before ("w = 4
-  // um" above, with it there); the main window's Undo takes the row back, and the + and its line follow the row.
+  // Every row was typed by hand from the read-only table above. The + after a size adds the row Add makes, with the instance and
+  // the parameter; its Lower and Upper are left to be typed. It is an icon, so the size reads as before ("w = 4 um" above, with it
+  // there); the main window's Undo takes the row back, and the + and its line follow the row.
   await win.click(win.SUMMARY('Hierarchy (')); await win.click(win.SUMMARY('Instances and parameters')); await sleep(250);
   const SIZE = `${WHIER}.querySelector('table tbody td .size')`, PLUS = `${SIZE}?.querySelector('button.add-size')`;
   const plus = () => far.evaluate(`(() => { const b = ${PLUS}; return b ? { label: b.getAttribute('aria-label'), title: b.title, on: !b.disabled, shown: b.checkVisibility(),
@@ -296,8 +300,10 @@ await runChecks(browser, async () => {
       && !added.empty, JSON.stringify(added));
   await until(`JSON.parse(localStorage.getItem(${JSON.stringify(CONFIG_KEY)}) ?? 'null')?.parameters?.length === 1`);
   const stored = (await page.stored()).parameters[0];
-  check('...the row Add makes, with the present size as its initial value in the parameter\'s unit (4e-6 m), and no bounds',
-    stored.variable_id === 'parameter_1' && stored.initial_value === 4e-6 && stored.unit === 'm' && stored.lower === null && stored.upper === null && stored.step === null
+  // No initial value (review of SIF-104): the present value it stated was checked against the circuit, hidden and never typed,
+  // and went stale once the Parameter was typed again or the cell read again after a change in Virtuoso.
+  check('...the row Add makes, in the parameter\'s unit (m), with no bounds and no initial value: the value the circuit has, as on every row made in the page',
+    stored.variable_id === 'parameter_1' && stored.initial_value === null && stored.unit === 'm' && stored.lower === null && stored.upper === null && stored.step === null
       && stored.optimized === true && stored.value_type === 'continuous' && stored.binding_group === null && stored.ratio === 1, JSON.stringify(stored));
   const taken = await plus();
   check('...the window names the row and what to type, and the + is off, naming the row', await win.shown('Added parameter_1 (XU1/M1 w = 4 um): type its Lower and Upper in '
@@ -311,6 +317,21 @@ await runChecks(browser, async () => {
   check('one Undo in the workbench takes the row back and says so; the + is on again and its line is gone', back?.on === true && !(await win.present('Added parameter_1'))
     && await card.shown('Undo: Parameters parameter_1 removed.') && await evaluate(`!!${PANEL}.querySelector('.parameters-empty')`), JSON.stringify(back));
   await win.click(win.SUMMARY('Instances and parameters')); await win.click(win.SUMMARY('Hierarchy (')); await sleep(250);   // closed again, as the user left it
+
+  // ---- a cell that has a task already: no + after its sizes, and the editors name none (review of branch record SIF-104) --------
+  // Read before and saved as a task: the window shows its Hierarchy under the note that names the task, without the press (Save
+  // as makes no second task of it), and the empty Parameters line still ended "the + after a size adds it as a row".
+  const EMPTY = `${PANEL}.querySelector('.parameters-empty')?.textContent ?? 'none'`;
+  await win.choose('Cell', 'ring_c'); await quiet(); await far.until(`${WIN}.textContent.includes('This cell already has a registered task')`);
+  const tasked = await far.evaluate(`(() => { const t = [...(${WHIER}?.querySelectorAll('table') ?? [])].find(x => x.tHead); return t ? { sizes: t.querySelectorAll('.size').length,
+    buttons: t.querySelectorAll('button').length } : null; })()`);
+  check('a cell read before that has a task already: its sizes in the window have no "Add to Parameters" (branch record SIF-104)',
+    tasked?.sizes > 0 && tasked.buttons === 0 && await win.shown('real:fixture_ring_c'), JSON.stringify(tasked));
+  check('...and the empty Parameters line names no + after a size (review of SIF-104)', (await evaluate(EMPTY)) === 'No rows yet: add one row per size the optimizer may '
+    + 'change (Add, the + above). Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window.', await evaluate(EMPTY));
+  await win.choose('Cell', 'ring_a'); await quiet(); await far.until(`${WIN}.textContent.includes('Not optimizable yet')`);
+  check('...back on the cell without a task, the + is there and the line names it again', (await plus())?.on === true
+    && (await evaluate(EMPTY)).endsWith('in the Virtuoso window: the + after a size adds it as a row.'), await evaluate(EMPTY));
 
   // ---- a saved task: its lines under the editors' toolbar, Check now on the tab line, its circuit in the column (record 7.362) ----------
   await evaluate(`${TASK_BUTTON('Save as')}.click()`, true); await quiet(); await until(`!!${PANEL}.querySelector('.tabs .task-tools button.check-now')`);

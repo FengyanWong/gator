@@ -1,4 +1,4 @@
-import { CircuitDetails, NativeSchematic, type SizeAdding, useVirtuosoBrowser } from './CircuitBrowser';
+import { CircuitDetails, NativeSchematic, type SizeAdding, sizesAddable, useVirtuosoBrowser } from './CircuitBrowser';
 import { memo, MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json } from '../api';
@@ -264,14 +264,18 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
   // What was read straight from Virtuoso. It is a line of the Hierarchy block; while no circuit is loaded (browse only)
   // there is no such block and it stands alone at the end of the window.
   const nativeSchematic = <NativeSchematic native={native} open={nativeOpen} setOpen={setNativeOpen} />;
-  // "Add to Parameters" after a size of the cell read (branch record SIF-104): the row Add makes, with the instance, the
-  // parameter and its present value in the parameter's unit, as one Undo step. Only for a draft that Save as can make a task of:
-  // a cell that has a task already gets none (taskNote), and a task's own rows come from the task.
-  const adding: SizeAdding | undefined = schema && virtuosoOn && circuit?.loaded && circuit.native_draft && !taskNote ? {
+  // "Add to Parameters" after a size of the cell read (branch record SIF-104): the row Add makes, with the instance and the
+  // parameter, in the parameter's unit, as one Undo step. Only for a draft that Save as can make a task of (sizesAddable): a
+  // cell that has a task already gets none (taskNote), and a task's own rows come from the task. Its initial value stays empty
+  // - the value the circuit has - as on every row made in the page (review of SIF-104): a stated one is checked against the
+  // circuit and can be neither seen nor typed, so once the Parameter was typed again, or the cell read again after a change in
+  // Virtuoso, the present value the press gave it marked the row ("Configuration says 4 um but the circuit has 180 nm") until
+  // the row was deleted.
+  const adding: SizeAdding | undefined = schema && sizesAddable(config, circuit) && circuit?.loaded && circuit.native_draft ? {
     rows: config.parameters ?? [],
-    add: (instance_path, parameter_name, value) => {
+    add: (instance_path, parameter_name) => {
       const base = newRow('parameters', latest.current, schema);
-      const row = { ...base, instance_path, parameter_name, initial_value: value, unit: kindUnit(parameter_name) ?? base.unit };
+      const row = { ...base, instance_path, parameter_name, unit: kindUnit(parameter_name) ?? base.unit };
       setConfig(c => ({ ...c, parameters: [...(c.parameters ?? []), row] }));
       return String(row.variable_id);
     } } : undefined;

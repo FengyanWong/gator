@@ -1119,11 +1119,14 @@ to say.
   for a cell, that its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window - not while
   no task or cell is chosen. There each size with a number has a **+** after it, **Add to Parameters** (branch record
   SIF-104; every row was typed by hand until then): a press adds the row **Add** makes - a free ID, the same defaults -
-  with the instance, the parameter and the present value (in the parameter's unit, as its initial value) filled in, as one
-  Undo step of the workbench. Lower and Upper stay empty, so the row is marked until you type them: a range that holds
-  the present size. A line under the table names the row while it is there, and the **+** of a size that is a Parameters
-  row already is off, its tooltip naming the row. Only a cell read here has them, not a task's Hierarchy; Save task still
-  accepts only rows a real run can write. Device types this project has not verified (for example the MIM invented model) are shown
+  with the instance and the parameter filled in, in the parameter's unit, as one Undo step of the workbench. Like every
+  row made in the page it states no initial value - the value the circuit has - so typing its Parameter again, or reading
+  the cell again after a change in Virtuoso, leaves nothing stale in it (review of SIF-104). Lower and Upper stay empty,
+  so the row is marked until you type them: a range that holds the present size, which the **+** and the line under the
+  table name (Save task refuses a range without it). That line names the row while it is there, and the **+** of a size
+  that is a Parameters row already is off, its tooltip naming the row. Only a cell read here that has no task yet has
+  them - not a task's Hierarchy, nor a cell whose task exists (its note names the task), and then the empty Parameters
+  line names no **+**; Save task still accepts only rows a real run can write. Device types this project has not verified (for example the MIM invented model) are shown
   with unnamed pins. Such a cell still cannot run: Start stays disabled (`circuit_profile_missing`) until
   it is saved as a task.
 * **Save task** (at the right end of the editors' tab line since 2026-09-22; the note points there) replaced the

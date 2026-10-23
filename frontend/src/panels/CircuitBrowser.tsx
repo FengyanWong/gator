@@ -101,7 +101,12 @@ const sizeValue = (name: string, v: Json): string => typeof v.value === 'number'
 
 /** "Add to Parameters" in the Instances table (branch record SIF-104), given by the circuit panel for a Virtuoso draft that Save
  *  as can make a task of: the Parameters rows as they are, and the press, which appends the row and gives its ID. */
-export type SizeAdding = { rows: Json[]; add: (instance_path: string, parameter_name: string, value: number) => string };
+export type SizeAdding = { rows: Json[]; add: (instance_path: string, parameter_name: string) => string };
+/** Whether the sizes of the cell the page follows have "Add to Parameters", or will once it is read (branch record SIF-104): a
+ *  cell read from Virtuoso that has no task yet. A cell with a task gets none (Left.tsx: its note names the task). The circuit
+ *  panel gives the press by it, and the editors' empty Parameters line names the + by it, so the two cannot differ (review of
+ *  SIF-104: the line named a + that a cell with a task does not have). */
+export const sizesAddable = (config: Json, circuit: Json): boolean => config?.circuit?.source === 'virtuoso' && !circuit?.profile_task;
 
 export function CircuitDetails({ circuit, open, setOpen, adding, children }: { circuit: Json; open: boolean; setOpen: (v: boolean) => void; adding?: SizeAdding;
   children: ReactNode }) {
@@ -122,7 +127,8 @@ export function CircuitDetails({ circuit, open, setOpen, adding, children }: { c
       {/* Each size with a number has an "Add to Parameters" after it in a Virtuoso draft (branch record SIF-104): every row was
           typed by hand from this read-only table, in another window. The button is an icon, its words its label and tooltip,
           so the table reads as before; a size that is a row already has it off, naming the row. The row's Lower and Upper
-          are left empty: validation marks it until they are typed, and Save as still takes only rows a real run can write. */}
+          are left empty: validation marks it until they are typed, and Save as still takes only rows a real run can write.
+          The present size is in the button's words and the line under the table, not in the row (Left.tsx). */}
       <details><summary>Instances and parameters</summary>
         <table className="grid small"><thead><tr><th>Instance</th><th>Kind</th><th>Parameters</th></tr></thead>
           <tbody>{circuit.summary.devices.map((d: Json) => <tr key={d.instance_path}><td>{d.instance_path}</td><td>{d.kind}</td>
@@ -130,7 +136,7 @@ export function CircuitDetails({ circuit, open, setOpen, adding, children }: { c
               const value = sizeValue(k, v), row = rowOf.get(`${d.instance_path}\n${k}`);
               return <Fragment key={k}>{i > 0 && ', '}<span className="size">{`${k} = ${value}`}{adding && typeof v.value === 'number'
                 && <button className="add-size" aria-label="Add to Parameters" disabled={row !== undefined} onClick={() => {
-                  const id = adding.add(d.instance_path, k, v.value);
+                  const id = adding.add(d.instance_path, k);
                   setAdded({ cell: circuit.task_key, id, instance_path: d.instance_path, name: k,
                     text: `Added ${id} (${d.instance_path} ${k} = ${value}): type its Lower and Upper in Parameters, in the workbench.` });
                 }} title={row !== undefined ? `Add to Parameters: ${d.instance_path} ${k} is already the Parameters row ${row}.`

@@ -164,7 +164,7 @@ export function withFollowers(tab: Section, c: Json, changes: Map<number, Json>)
 const NEW_ID: Record<Section, string> = { parameters: 'parameter', measurements: 'probe', targets: 'spec' };
 /** The row Add puts at the end of a table of `config` (`schema`: /api/schema, its columns and each table's ID field). Here, out
  *  of Editors.tsx, since branch record SIF-104: the Virtuoso window's "Add to Parameters" makes this row too, with a size's
- *  instance, parameter and present value, so the two cannot differ. */
+ *  instance and parameter, so the two cannot differ. */
 export function newRow(tab: Section, config: Json, schema: Json): Json {
   const row: Json = {}, keyField: string = schema.section_keys[tab], rows: Json[] = config[tab] ?? [];
   // A required field without a default comes as `default: null` from the schema: that means "none", not null - a new

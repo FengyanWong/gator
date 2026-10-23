@@ -77,13 +77,16 @@ const CRAMPED_PX = 200;
  *  the circuit panel names the task (its name opens the Tasks window) and its revision; `taskTools` = the tab line's end, before
  *  Save task (Check now); `taskStatus` = under the toolbar, the task's own lines (loading, blocked, MOCK, the check's result).
  *  "Show circuit" brings the circuit column back beside the rows (`circuitShown`, `onCircuit`: App.tsx). */
-function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, lastStep, validation, taskSlot, taskNotes, taskHead, taskTools, taskStatus,
-  circuitShown, onCircuit, onCramped }:
+function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, lastStep, validation, addsSizes, taskSlot, taskNotes, taskHead, taskTools,
+  taskStatus, circuitShown, onCircuit, onCramped }:
   { schema: Json; config: Json; setConfig: (c: Json | ((c: Json) => Json)) => void; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
     /** The last Undo or Redo, from any panel or window, until the next change (history.ts): the line under the formula bar
      *  names what it changed (branch record SIF-97). */
     lastStep: HistoryStep | null;
     validation: Json;
+    /** Whether the cell's sizes have the + "Add to Parameters" in the Virtuoso window, or will once it is read (CircuitBrowser.tsx
+     *  sizesAddable): the empty Parameters line names the + only then (review of branch record SIF-104). */
+    addsSizes: boolean;
     taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void;
     taskHead: (element: HTMLElement | null) => void; taskTools: (element: HTMLElement | null) => void; taskStatus: (element: HTMLElement | null) => void;
     circuitShown: boolean; onCircuit: () => void;
@@ -776,11 +779,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>The optimizer searches <b>{validation == null ? '...'
           : (validation.facts?.independent_action_variables ?? '?')}</b> of {plural(rows.length, 'row')}.</p>}
       {/* An empty Parameters table says how to fill it (branch record SIF-88): a cell read from Virtuoso brings Probes only, and
-          its sizes are in the Virtuoso window, where the + after each one adds it as a row (branch record SIF-104). Not while no
-          task or cell is chosen: the task's lines say to choose one. */}
+          its sizes are in the Virtuoso window, where the + after each one adds it as a row (branch record SIF-104) - named only
+          where there is one: a cell that has a task already shows its sizes without (addsSizes, review of SIF-104). Not while
+          no task or cell is chosen: the task's lines say to choose one. */}
       {tab === 'parameters' && !rows.length && (config.circuit?.source === 'virtuoso' || (config.circuit?.source === 'registered_task' && !!config.circuit?.task_id))
         && <p className="hint parameters-empty">No rows yet: add one row per size the optimizer may change (Add, the + above).{config.circuit.source === 'virtuoso'
-          ? " Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window: the + after a size adds it as a row." : ''}</p>}
+          ? ` Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window${addsSizes
+            ? ': the + after a size adds it as a row' : ''}.` : ''}</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
         + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns).'}>Probes: {probeIds.length
           ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}

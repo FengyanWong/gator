@@ -3775,3 +3775,48 @@ the server on 8765.
 **Checked.** `tests/workbench/test_wb_task_save.py`, `test_wb_readiness.py`, `test_wb_agent_cli.py`: 39 passed (no
 test pins these words; `task_save_check` serves its own help text). Made on a side branch (sif-help-text, 43f4960 and
 00b9b42) while the usability run held this worktree, then cherry-picked.
+
+### SIF-112 The blocking-issues list and the calibration line close with an X (2026-10-23; from the icon audit)
+
+**Found.** Under the header, one action - take this away, nothing else changes - had three looks. A refused Start's
+line ends with an X (LaunchRefusal), Matched devices' box with an X at its head's end, the message line with an x; but
+the list the red "N blocking issues" button opens ended its head line with the word "Hide", and the line a calibration
+that proposes nothing leaves ("Calibration finished: nothing is proposed. ...") with "OK", which reads as a dialog's
+confirm although it only takes the line away (icon audit MAIN-5 / ICON-13, MAIN-9). The audit's first batch also made
+Output settings' "Copy path" the copy icon (MAIN-1) and put down, in one CSS block, what the icon buttons of all four
+batches need on lines laid out for words.
+
+**Changed.** `frontend/src/panels/Issues.tsx`: the list's Hide is the close mark, the `close` drawing in a button framed
+as Matched devices' X; its word stays for screen readers and the checks (`.sr-only`: the button's text is still "Hide"),
+and its tooltip reads "Hide: The list folds away; the red "1 blocking issue" button in the header shows it again." - the
+button named in its words, as the Start and Calibration tooltips name it (SIF-45). `frontend/src/App.tsx`: the
+calibration line's OK is the same X with "Close" as its word - what an X is called, and what the refusal line's X in
+this place is called; no check or code looked for "OK" - drawn without a frame or fill by `button.line-close`, the close
+mark SIF-107 made after the refusal line's (the plan's new `button.calibration-close` rule would have repeated it). Its
+tooltip: "Close: This line goes. The run's numbers stay under Run status." A press does what OK did,
+`answerCalibration('no')`, which with nothing proposed only keeps the run as answered in this browser: nothing applied,
+no message. `frontend/src/roadster.css`: the one block for every batch of the audit, at the file's end. Measured in
+headless Edge under the page's two stylesheets (a scratch probe, the icon's middle against the words'), the plan's rule
+for the issue list - the button alone centred - put the X 6 px under the head's words: a flex line's baseline-aligned
+words keep to its top while the 31 px button makes it taller. On their shared baseline it stood 2 px over them. The head
+now centres its parts (`.issue-list-head { align-items: center }`): the X within 0.7 px of the words, the bold count and
+the hint within 0.3 px of one baseline, and at 600 and 700 px, where both wrap to two lines, all three stay centred. The
+plan's rule for Running now's Refresh, the second batch's, measured best (0.5 px; 1.5 px on the baseline) and is in the
+block; it matches no button until that batch lands. Left out, as the audit's list of buttons that keep their words
+(`kept`) says: Copy path (ICON-11: record 7.41 made it plain text at the user's request, "make it plain text no button
+style", and record 7.125 kept it so as the user's choice) and the graph view's Fit (ICON-16, the third batch's WIN-10).
+So the block has neither the plan's `button.text-link:has(> svg.icon)` nor its `.graph-tools` rule, and `OutputPanel.tsx`
+and `output_panel_check` are unchanged. Nothing here starts, continues or stops a run, saves a task or writes to
+Virtuoso. `docs/workbench.md` (the calibration line; the blocking-issues paragraph) and
+`docs/functionality-reference.md` (the Calibration ready and N blocking issues rows) say it.
+
+**Checked.** `tsc` clean. `blocking_issues_check` 62 (60 before): Hide is the close mark at the head's end, "Hide" for
+screen readers and at the start of a tooltip that names the header's "1 blocking issue" button; its X centred on the
+head's words within 1 px (0 px; in the probe the plan's rule was 5.4 px off by this measure, the baseline 2.7 px).
+`calibration_check` 48 (45 before; real MOCK runs on the check's scratch backend): the second run's status with FIXTURE
+values, a calibration that proposed nothing and that this browser has not answered - the line says why, with one
+button, an X without a frame or fill, "Close" for screen readers and at the start of its tooltip; a press takes the line
+away, the stored configuration and the message line unchanged, the run kept as answered. New picture:
+`calibration-0d-nothing-proposed.png`. Each new check looks for what the code before did not have (Hide and OK had no
+drawing and no `.sr-only` label). Also run, unchanged: `calibration_save_check` 22, `callouts_check` 8,
+`reliability_check` 20, `run_control_check` 162 (6 scripts, 322 checks, one lane, all passed the first time). No flakes.

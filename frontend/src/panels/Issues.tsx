@@ -3,6 +3,7 @@ import type { Json } from '../api';
 import { BLOCKING_ISSUES_ID, BLOCKING_LEVELS } from '../contract';
 import { plural } from '../format';
 import { columnOf, drawsColumn, fieldLabel, type Section, SECTION_TITLES } from './editorRules';
+import { Icon } from './Icons';
 
 const BLOCKING = BLOCKING_LEVELS;
 
@@ -51,7 +52,10 @@ export function ValidationStatus({ validation, config, schema }: { validation: J
     {open && <div id={BLOCKING_ISSUES_ID} className="issue-list" role="region" aria-label="Blocking issues">
       <div className="issue-list-head"><b>{count}</b>
         <span className="hint">Start and Calibration stay disabled until all of them are resolved. The list follows every edit.</span>
-        <span className="spacer" /><button onClick={() => setOpen(false)}>Hide</button></div>
+        {/* Hide is the close mark at the head's end (branch record SIF-112), as Matched devices' and the refusal line's; the
+            header's button, named in its words, shows the list again */}
+        <span className="spacer" /><button onClick={() => setOpen(false)}
+          title={`Hide: The list folds away; the red "${count}" button in the header shows it again.`}><Icon name="close" label="Hide" /></button></div>
       <div className="issue-list-body"><table className="grid small">
         <thead><tr><th title="Order of the validation report">#</th>
           <th title="error: the configuration is inconsistent. blocker: consistent, but the current backend cannot execute it.">Level</th>

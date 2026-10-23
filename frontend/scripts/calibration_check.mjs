@@ -7,7 +7,8 @@
 // block's button does, and the next run asks again. And a run of another task than the page holds (record 7.214, its status
 // changed by the check): the block shows the run's own Scales and Initial alpha, never the page's row of the same ID.
 // Branch record SIF-105: the line's "Show table" while the table is out of view (another tab, the panel folded, the tabs on
-// another run), never while it is in view.
+// another run), never while it is in view. Branch record SIF-112: a calibration that proposes nothing says why on the line,
+// whose one button is the close mark (an X, "OK" before).
 // Record 7.217: an Initial alpha is proposed only when it differs from the one the run had by a factor of 2 or more - the
 // second run here starts from the first run's applied value, so whether it proposes one follows that rule ("Apply and
 // save", for a task saved from a Virtuoso cell, is in calibration_save_check.mjs).
@@ -178,13 +179,14 @@ await runChecks(browser, async () => {
   // ---- a run of another task than the page holds (record 7.214) -----------------------------------------------------------------
   // The second run's status as it is, except FIXTURE values: it calibrated another task, whose row "score" has the same ID and
   // limits as the page's row, and the run had Scale 2 and Initial alpha 0.02. Nothing of the page's rows may stand in its table.
-  const OTHER = 'synthetic:another_task';
-  let foreign = true;
+  const OTHER = 'synthetic:another_task', NOTHING = 'FIXTURE: the random designs give no proposal.';
+  let foreign = true, nothing = false;   // nothing: the same run's calibration proposed nothing (the last part, SIF-112)
   await page.intercept(['*/api/runs/status*'], async params => {
-    if (!foreign) return page.pass(params.requestId);
+    if (!foreign && !nothing) return page.pass(params.requestId);
     const real = await (await fetch(params.request.url)).json();
     const fixture = real.calibration?.result;
-    if (fixture) { fixture.task_key = OTHER; fixture.rows[0].scale_stated = 2; Object.assign(fixture.initial_alpha, { used: 0.02, proposed: 0.045, note: null }); }
+    if (fixture && foreign) { fixture.task_key = OTHER; fixture.rows[0].scale_stated = 2; Object.assign(fixture.initial_alpha, { used: 0.02, proposed: 0.045, note: null }); }
+    if (fixture && nothing) Object.assign(fixture, { status: 'not_calibrated', reason: NOTHING, rows: [], initial_alpha: { ...fixture.initial_alpha, proposed: null, note: null } });
     return page.fulfil(params.requestId, 200, real);
   });
   await send('Page.reload');
@@ -203,6 +205,29 @@ await runChecks(browser, async () => {
   await send('Page.reload');
   check('the same run of the page\'s own task shows the page\'s Scale again', await until(`!!(${APPLY}) && !${BLOCK}.querySelector('.other-task')
     && [...${BLOCK}.querySelectorAll('thead th')].some(th => th.textContent === 'Scale now')`, 200), await evaluate(`${BLOCK}?.textContent.slice(0, 300)`));
+
+  // ---- a calibration that proposes nothing (branch record SIF-112) ------------------------------------------------------------
+  // The second run's status as it is, except FIXTURE values: its calibration proposed nothing, and this browser has not answered
+  // it. The line says why, and its one button - "OK" until SIF-112 - is the close mark: an X without a frame or fill, as the
+  // refusal line's in this place, "Close" for screen readers and at the start of its tooltip. A press only takes the line away.
+  nothing = true;
+  await evaluate(`localStorage.removeItem('gator-workbench-calibration-answered-v1')`);
+  await send('Page.reload');
+  const CLOSE = `${READY}?.querySelector('button')`, ANSWERED = `localStorage.getItem('gator-workbench-calibration-answered-v1')`;
+  check('a calibration that proposes nothing: the line says so and why, with one button', await until(`(${READY}?.querySelector('span')?.textContent ?? '')
+    === ${JSON.stringify(`Calibration finished: nothing is proposed. ${NOTHING}`)}`, 200) && (await evaluate(`${READY}.querySelectorAll('button').length`)) === 1, await evaluate(`${READY}?.textContent`));
+  const close = await evaluate(`(() => { const b = ${CLOSE}, s = getComputedStyle(b); return { icon: !!b.querySelector('svg.icon'), text: b.textContent,
+    label: b.querySelector('.sr-only')?.textContent ?? null, title: b.title, border: s.borderTopStyle, fill: s.backgroundColor }; })()`);
+  check('...the close mark: an X without a frame or fill, "Close" for screen readers and at the start of its tooltip (SIF-112)', close.icon && close.text === 'Close'
+    && close.label === 'Close' && close.title === "Close: This line goes. The run's numbers stay under Run status." && close.border === 'none' && close.fill === 'rgba(0, 0, 0, 0)',
+    JSON.stringify(close));
+  await page.shot(path.join(out, 'calibration-0d-nothing-proposed.png'), `document.querySelector('header')`, { pad: 4 });
+  const [held, said] = [JSON.stringify(await stored()), await evaluate(BANNER)];
+  await evaluate(`${CLOSE}.click()`);
+  check('...its press takes the line away and changes nothing, says nothing, and keeps the answer for that run', await until(`!(${READY})`, 30)
+    && JSON.stringify(await stored()) === held && (await evaluate(BANNER)) === said && (await evaluate(ANSWERED)) === dir2,
+    JSON.stringify({ banner: await evaluate(BANNER), answered: await evaluate(ANSWERED) }));
+  nothing = false;
 
   check('no error in the page console', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));
 });

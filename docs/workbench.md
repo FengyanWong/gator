@@ -2249,7 +2249,8 @@ panel open; it changes nothing else (branch record SIF-105: the line said "The t
 run had ended nothing on the page led there but the run brief or the Runs window). The line belongs to the run
 the header holds. It goes when it is answered (kept in this browser, so a reload does not ask again), when the page
 already holds the values, and when the next run starts; the next Baseline simulation asks again. A calibration that
-proposes nothing says why on the same line. Nothing is applied by itself.
+proposes nothing says why on the same line, whose one button, an X (Close; "OK" until branch record SIF-112), takes it
+away and changes nothing. Nothing is applied by itself.
 
 - **What it costs.** 64 candidate evaluations at any lane count. Each is a real simulation on a real task. The
   budget question states 64. Passing a spec or an invalid random design does not add a baseline/reset evaluation.
@@ -4249,7 +4250,8 @@ start script for real with a fake CLI), and the suite runs with `GATOR_AGENT_CLI
 
 The header shows blocking issues as a red button, "N blocking issues": a press lists every one of
 them in full (level, code, field and editor row, message), including those that belong to no editor
-tab; the list follows each validation and closes when nothing blocks. A configuration the schema
+tab; the list follows each validation and closes when nothing blocks. The X at the end of its head
+line (Hide, branch record SIF-112) closes it, as a second press of the button does. A configuration the schema
 cannot even read (for example an ID with a `/` in it) is listed the same way, one issue per field:
 the field and its editor row, what is wrong in plain words (for an ID: which characters, an ID that
 works, and what else must be renamed with it), and the schema's own text under a closed

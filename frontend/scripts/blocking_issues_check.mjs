@@ -140,7 +140,17 @@ await runChecks(browser, async () => {
   await evaluate(`${BUTTON}.click()`);
   check('a second press hides the list', await until(`!(${LIST})`, 30) && (await evaluate(`${BUTTON}.getAttribute('aria-expanded')`)) === 'false');
   await evaluate(`${BUTTON}.click()`); await until(`!!(${LIST})`, 30);
-  await evaluate(`[...${LIST}.querySelectorAll('button')].find(b => b.textContent === 'Hide').click()`);
+  // Branch record SIF-112: Hide is the close mark (an X) at the head's end, as Matched devices' - its word for screen readers
+  // and at the start of its tooltip, which names the header's button - centred on the head's words: on their baseline it
+  // stood 2 px over them, centred alone 6 px under them.
+  const HIDE = `[...${LIST}.querySelectorAll('button')].find(b => b.textContent === 'Hide')`;
+  const hide = await evaluate(`(() => { const b = ${HIDE}, count = ${LIST}.querySelector('.issue-list-head > b').getBoundingClientRect(), icon = b?.querySelector('svg.icon')?.getBoundingClientRect();
+    return b && { label: b.querySelector('.sr-only')?.textContent ?? null, title: b.title, last: b === b.parentElement.lastElementChild,
+      offset: icon ? Math.round(((icon.top + icon.bottom) / 2 - (count.top + count.bottom) / 2) * 10) / 10 : null }; })()`);
+  check('"Hide" is the close mark at the head\'s end, its word for screen readers and its tooltip naming the header\'s button (SIF-112)', hide?.label === 'Hide' && hide.last
+    && hide.title === 'Hide: The list folds away; the red "1 blocking issue" button in the header shows it again.', JSON.stringify(hide));
+  check('...its X centred on the head\'s words (within 1 px)', typeof hide?.offset === 'number' && Math.abs(hide.offset) <= 1, JSON.stringify(hide));
+  await evaluate(`${HIDE}.click()`);
   check('"Hide" closes it too', await until(`!(${LIST})`, 30));
 
   // ---- nothing blocks: no button, no list; a later problem does not open the list by itself -------------------------

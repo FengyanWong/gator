@@ -8,6 +8,7 @@ import { ConnectionButton } from './panels/Connection';
 import { CheckSteps } from './panels/Consistency';
 import { Editors } from './panels/Editors';
 import { ValidationStatus } from './panels/Issues';
+import { Icon } from './panels/Icons';
 import { otherTask, RunButtons, RunChip } from './panels/RunControl';
 import { WindowsMenu } from './panels/WindowsMenu';
 import { ENDED, RESUMABLE } from './runState';
@@ -271,7 +272,9 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
                 : <button onClick={() => answerCalibration('apply')} title={`Apply calibration: Writes ${calibrationOffer.what} into the page, as one Undo step. Nothing is simulated and no task is saved.${calibrationOffer.afterwards}`}>Apply calibration</button>}
               <button onClick={() => answerCalibration('no')} title="Not now: Leaves everything as it is. The proposals stay under Run status of this run, with its Apply buttons.">Not now</button></>
             : <><span><b>Calibration finished:</b> nothing is proposed. {calibrated.reason}</span>
-              <button onClick={() => answerCalibration('no')} title="Closes this line. The run's numbers stay under Run status.">OK</button></>}
+              {/* Its one button only takes the line away - nothing to apply, no message - so it is the close mark (branch record
+                  SIF-112: it read "OK"), drawn as the refusal line's X in this place (.line-close: no frame or fill of its own). */}
+              <button className="line-close" onClick={() => answerCalibration('no')} title="Close: This line goes. The run's numbers stay under Run status."><Icon name="close" label="Close" /></button></>}
         </div>}
         <span className="spacer" />
         <ValidationStatus validation={validation} config={config} schema={schema} />

@@ -3932,8 +3932,9 @@ connection window's scene changes by design.
 ### SIF-115 The Corner check's Check is the play mark, and the Training tab's × say their names (2026-10-24; from the icon audit)
 
 **Found.** The Corner check's Check starts simulations - REAL Spectre ones, after the budget question - but drew a check
-mark, which reads as done or OK, while every other start on the page, the header's Start and Resume and Continue..., is
-the play triangle, and Stop's square takes Check's place while the check works. Since SIF-114 the same check mark also
+mark, which reads as done or OK, while the page's other starts drawn as icons, the header's Start and Resume and Run
+status's Continue..., are the play triangle (the header's Calibration, which starts a run too, keeps its word), and
+Stop's square takes Check's place while the check works. Since SIF-114 the same check mark also
 said "Copied" in the Connection window, so it meant two things (icon audit ICON-20). In the Training tab, the × on a
 compared run's chip and the × in a chart's title had tooltips that did not start with their names, the rule every icon
 button keeps so that the tooltip names what the screen does not show: "Remove <run>" read "Remove: take <run> off the
@@ -3947,10 +3948,13 @@ and colour are unchanged, and so is what a press does (`launchWithConsent`: for 
 the connection question; a no sends nothing). `frontend/src/panels/TrainingTab.tsx`: the tooltips read "Remove <run>:
 take it off the charts" and "Remove chart <n>: take this chart off the page"; their labels, classes and presses are as
 they were. `frontend/src/panels/Icons.tsx`: `delete-task` leaves the list of drawings, as SIF-113 said it would. So does
-`load`, the tray with an arrow into it: Load task drew it until record 7.146 made that button "Reload saved values",
-in words, and nothing has drawn it since. The plan did not name it, but a note naming the actions a drawing stands for
-has nothing to name for it; `tsc` proves nothing names either. Each drawing's note now names every button that draws
-it: the play mark Start, Resume, Continue... and Check; the hourglass every "...ing" a button shows; the stop square
+`load`, the tray with an arrow into it: Load task, named Reload saved values from record 7.146, drew it until record
+7.260 removed that button, and nothing has drawn it since. The plan kept it (the `IconName` list it gives after the
+change still holds `load`), and the audit's ICON-24 calls taking it out a separate cleanup; but a note naming the
+actions a drawing stands for has nothing to name for it, and `tsc` proves nothing names either. Each drawing's note now
+names every button that draws it: the play mark Start, Resume, Continue... and Check; the hourglass Starting...,
+Pausing..., Resuming..., Aborting..., Finishing..., Reading..., Exporting..., Deleting... and a download being made
+(Save now's and Save as's Saving... keep the floppy and the task document); the stop square
 Abort and the Corner check's Stop; the task document Save as, a new task; the plus Add, Add chart and Add to
 Parameters; the bin Delete selected, Delete folder and Delete task; the arrow up Export JSON and Export status (JSON);
 the arrow around Refresh and Refresh list; the two sheets Copy run path, Copy for Excel and the CIW lines' Copy; the
@@ -3977,3 +3981,21 @@ the Corner check and the Training tab with a compared run). With `training_tab_c
 all passed the first time; `corner_check_check` alone, also the first time: the plan's `--only corner_check` names no
 script (`run_checks.mjs` adds `_check` only to a name that does not end in it), so it is called by its whole name. No
 flakes.
+
+**Review follow-up.** The review of 95a9d69 found three slips, all real, in words only: the code is right. (1) "Changed"
+said Load task drew `load` until record 7.146 made that button "Reload saved values", in words. Record 7.146 (d8b8c4f)
+renamed it and kept it an icon, `<Icon name="load" label="Reload saved values" />`; record 7.260 (6fa7d6b, 2026-10-07)
+removed the button, as `docs/workbench.md` says ("The separate Load task / Reload saved values icon was removed in
+7.260"), and no later commit draws the tray (`git log -G` over `frontend/src`). And the plan did name it: its `IconName`
+list after the change still holds `load`, and the audit's ICON-24 calls taking it out a separate cleanup. "Changed" now
+says both; the drawing stays out, as nothing names it (`tsc`). (2) "Found" and the Corner check's bullet in
+`docs/workbench.md` put Continue... in the header, whose run buttons are Save now, Start / Pause / Resume and Abort /
+Force abort / Let go (`RunControl.tsx`): the play mark Continue... is the Run status tab's (`RunTabs.tsx`), and its
+form's Continue is `ContinueForm.tsx`'s. Both now say "the header's Start and Resume and Run status's Continue...".
+"Found" also called them every other start on the page, but the header's Calibration starts a run too and keeps its
+word, so it now speaks of the starts drawn as icons (the audit's ICON-20 says "every other start" as well).
+(3) "Changed" gave the hourglass to every "...ing" a button shows, but Save now's "Saving..." keeps the floppy
+(`RunControl.tsx`) and Save as's the task document (`TaskSave.tsx`). It now lists the labels that `Icons.tsx`'s note on
+the hourglass lists, which were right: Starting..., Pausing..., Resuming..., Aborting..., Finishing..., Reading...,
+Exporting..., Deleting... and a download being made. The commit message makes none of these claims and stays as pushed.
+No code changed: `tsc` clean; no check reads these texts (the scripts name `docs/` only in comments), so none was rerun.

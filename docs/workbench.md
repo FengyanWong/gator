@@ -2047,9 +2047,9 @@ rule, and stay while a saved configuration still asks for corners, so that it ca
   ends it after the simulation in flight. While it works the tab reads its progress every 1.5 s; otherwise nothing
   updates by itself (**Refresh** reads again). Earlier checks of the run are a folded list; a double click shows one.
 * The buttons are icons, their words in their tooltips: **Check** starts simulations, so it is the play mark of the
-  header's Start, Resume and Continue... (an hourglass while the start is on its way), and **Stop**, the stop square,
-  takes its place while the check works; **Refresh** is the arrow around (branch record SIF-115: Check drew a check
-  mark, which reads as done).
+  header's Start and Resume and Run status's Continue... (an hourglass while the start is on its way), and **Stop**, the
+  stop square, takes its place while the check works; **Refresh** is the arrow around (branch record SIF-115: Check drew
+  a check mark, which reads as done).
 * Files: `<run>/corner_checks/<check_id>/` - `request.json` (the designs, corners and authorization), `status.json`,
   `results.jsonl` (one line per simulation, with every value), `summary.json` (the verdicts), `work/`, `worker.log`.
   API: `GET /api/runs/corner-check/plan` (free, local files only), `POST .../start`, `GET .../status`, `POST .../stop`.

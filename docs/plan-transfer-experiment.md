@@ -1933,3 +1933,31 @@ Progress checklist: `[x] existing Round 1 arms complete (14 October)` · `[x] ar
 `[ ] results/analysis frozen` · `[ ] manuscript approved` · `[ ] submitted` · `[ ] accepted` · `[ ] online`.
 Update completion dates only when the corresponding evidence exists. This plan edit creates no scheduled reminder
 or background experiment launcher.
+
+## 16. Matched archived-data comparison: TuRBO transfer, Pareto MOBO and RL
+
+Added 2026-10-21 at the user's request; **plan only**. The implementation handoff is
+[plan-bo-mobo-rl-archive-comparison.md](plan-bo-mobo-rl-archive-comparison.md).
+
+It specifies a bounded same-circuit archive-reuse study on the published LDO, published amplifier and DFFRX1:
+TuRBO with archived observations, constrained qLogNEHVI, and GraphGPS-SAC adapted/frozen from the same source
+bundle, with cold TuRBO as a fixed-target control. Separate fixed-target and Pareto panels use 800 new-call caps;
+four-goal portfolios share that cap. Archive-known solutions count at zero new calls. All transfer methods use
+the same at-most-600-design source training bundle per circuit and fresh compatible models.
+
+Three paired replicates give 81 analysis cells and 72 distinct searches (identical MOBO trajectories serve both
+panels), at most 57,600 search launches, 15 shared qualification launches and 216 finalist confirmations:
+**57,831 nominal launches maximum**, subject to verification of each bench's invocation count. Seed 0 across the
+complete matrix is capped at 19,287 including its qualification/confirmations. Optional controls have a separate
+budget in the handoff. No simulation is authorized or launched by this plan.
+
+Refined the same day from the chat **Compare random forest calibration** (record 7.387). The comparison now
+explicitly asks whether SAC adds value over matched transfer BO and separates graph representation from policy
+learning. An archive-only RF diagnostic adds no simulations; reward Calibration, measured functioning and target
+feasibility remain distinct, and standalone Calibration rows cannot bypass replay/source eligibility. Optional
+Panel A extensions are graph-prior TuRBO (7,227 extra launches) and a common RF-screen wrapper for all four transfer
+arms (28,908 extra). Primary plus both extensions is at most 93,966 launches, excluding the separate cold controls.
+These extensions require frozen recipes and their own elected budget; the primary 57,831 ceiling is unchanged.
+
+This development study leaves the active Round 3 queue and sections 14-15's prospective journal protocol intact.
+It can guide optimizer choice for compatible archive reuse; it cannot establish unseen-topology/PDK transfer.

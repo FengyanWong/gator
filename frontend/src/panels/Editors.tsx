@@ -317,10 +317,14 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       setConfig(rows ? (c: Json) => ({ ...c, [rows.section]: rows.value }) : p.next);
       // Apply says what it did, as Matched devices' Apply and the task file's do (branch record SIF-107): the box went without
       // a word, also when a whole configuration replaced the run and output settings out of view. Rows write their table
-      // alone, and when applied after a tab press offer it.
+      // alone, and when applied after a tab press offer it. Whether it changed anything is decided now, as history.ts decides
+      // whether it is an Undo step: by what Apply writes against what is there (review of SIF-107). The box's diff matched
+      // rows by ID when the file was read, so the same rows in another order, or an edit made in that table while the box
+      // was open, counted no row while Apply rewrote the table: the line said "nothing changed", without its Undo.
+      const changed = JSON.stringify(rows ? { ...config, [rows.section]: rows.value } : p.next) !== JSON.stringify(config);
       const what = [p.diff.length ? plural(p.diff.length, 'changed row') : '',
         !rows && p.others.length ? `replaced the ${p.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''].filter(Boolean).join('; ');
-      setNote({ warn: false, text: what ? `Imported: ${what}. Undo takes it back.` : 'Imported: nothing changed.',
+      setNote({ warn: false, text: changed ? `Imported${what ? `: ${what}` : ''}. Undo takes it back.` : 'Imported: nothing changed.',
         show: rows && rows.section !== tab ? rows.section : undefined });
       closeImport();
     };

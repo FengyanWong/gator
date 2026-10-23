@@ -16,7 +16,9 @@
 //     pins that model's save point (a concrete id), one Undo step;
 //   - "Stop after N consecutive failed evaluations" (the Limits fold, "Failure limits" until record 7.179) shows the engine's limit of 5 and takes a typed one;
 //   - "Import JSON..." of one table's rows writes that table alone: an edit made while its box was open stays; Apply says
-//     what it changed and gives the focus back to Import JSON... (branch record SIF-107).
+//     what it changed and gives the focus back to Import JSON... (branch record SIF-107); whether it changed anything is
+//     decided at Apply: rows in another order, or written over an edit made in their table meanwhile, are a change with its
+//     Undo, and a file the table came back to meanwhile is none (review of SIF-107).
 // A throwaway headless Edge over the DevTools protocol (lib/harness.mjs). HERMETIC: validation, the default model and the
 // model list are answered here with canned data labelled FIXTURE; other reads pass; every other writing request is
 // refused. The browser profile is new and temporary: the user's saved configuration is not touched. So it is safe on the
@@ -299,6 +301,59 @@ await runChecks(browser, async () => {
   check('...says so under the formula bar, with Undo and Show Parameters, and gives the focus back to Import JSON... (branch record SIF-107)',
     await until(`${IMPORT_NOTE} === ${JSON.stringify(IMPORTED)}`, 20) && await evaluate(`document.activeElement === ${TOOL('Import JSON...')}`),
     await evaluate(`${IMPORT_NOTE} + ' / ' + (document.activeElement?.outerHTML.slice(0, 80) ?? 'none')`));
+  // Review of SIF-107: whether Apply changed anything is decided at Apply, against the rows as they are then. The box's diff
+  // matches rows by ID when the file is read: the same rows in another order counted no row, and an edit made in that table
+  // while the box was open was written over, both an Undo step, under "Imported: nothing changed." without its Undo; a file
+  // the table had come back to while the box was open said "Imported: 1 changed row. Undo takes it back.", which changed nothing.
+  await openTab('Parameters');
+  const before = (await saved()).parameters, order = list => list.map(r => r.variable_id).join(', ');
+  const HEAD = `(${EDITORS}.querySelector('.confirm h4')?.textContent ?? '')`, BOX = `(${EDITORS}.querySelector('.confirm')?.textContent ?? '')`;
+  const importRows = async (name, list) => {
+    const chosen = path.join(path.dirname(rowsFile), name);
+    writeFileSync(chosen, JSON.stringify(list));
+    await until(`!(${APPLY})`, 20);
+    await evaluate(`${TOOL('Import JSON...')}.focus()`);
+    await send('DOM.setFileInputFiles', { nodeId, files: [chosen] });
+    return until(`!!(${APPLY})`, 60);
+  };
+  check('(set-up) Parameters has rows to put in another order, and they come in the box as no change: "0 changed rows", "No differences."',
+    before.length >= 2 && await importRows('reordered.json', [...before].reverse()) && (await evaluate(HEAD)).startsWith('Confirm import: 0 changed rows')
+    && (await evaluate(BOX)).includes('No differences.'), `${before.length} rows / ${await evaluate(HEAD)}`);
+  await evaluate(`${APPLY}.click()`);
+  config = await saved();
+  check('Apply puts the rows in the file\'s order and says "Imported. Undo takes it back." - not "Imported: nothing changed." (review of SIF-107)',
+    order(config.parameters) === order([...before].reverse()) && await until(`${IMPORT_NOTE} === 'Imported. Undo takes it back.'`, 20),
+    `${order(config.parameters)} / ${await evaluate(IMPORT_NOTE)}`);
+  await evaluate(`${TOOL('Undo')}.click()`);
+  config = await saved();
+  check('...and one Undo takes it back: the rows in their order before', order(config.parameters) === order(before), order(config.parameters));
+  await importRows('same.json', before);
+  await evaluate(`${APPLY}.click()`);
+  check('the same rows in the same order: "Imported: nothing changed.", and no Undo step - the Redo of the order is still there',
+    await until(`${IMPORT_NOTE} === 'Imported: nothing changed.'`, 20) && !(await evaluate(`${TOOL('Redo')}.disabled`)),
+    `${await evaluate(IMPORT_NOTE)} / Redo ${await evaluate(`${TOOL('Redo')}.disabled ? 'off' : 'on'`)}`);
+  check('(set-up) the same rows again wait in the box', await importRows('same-again.json', before) && (await evaluate(HEAD)).startsWith('Confirm import: 0 changed rows'),
+    await evaluate(HEAD));
+  const typed = before[0].upper === 3 ? 4 : 3;
+  await focusAll(CELL(0, 'upper')); await typeKeys(String(typed)); await blur(CELL(0, 'upper'));
+  config = await saved();
+  check('(set-up) an edit in that table while the box is open: the first row\'s Upper typed', config.parameters[0].upper === typed, String(config.parameters[0].upper));
+  await evaluate(`${APPLY}.click()`);
+  config = await saved();
+  check('Apply writes the file\'s rows over that edit and says "Imported. Undo takes it back." - not "Imported: nothing changed." (review of SIF-107)',
+    config.parameters[0].upper === before[0].upper && await until(`${IMPORT_NOTE} === 'Imported. Undo takes it back.'`, 20),
+    `${config.parameters[0].upper} / ${await evaluate(IMPORT_NOTE)}`);
+  await evaluate(`${TOOL('Undo')}.click()`);
+  config = await saved();
+  check('...and one Undo brings the edit back', config.parameters[0].upper === typed, String(config.parameters[0].upper));
+  check('(set-up) the rows from before the edit wait in the box as one changed row', await importRows('before-edit.json', before)
+    && (await evaluate(HEAD)).startsWith('Confirm import: 1 changed row'), await evaluate(HEAD));
+  await evaluate(`${TOOL('Undo')}.click()`);                                       // the table is back to the file's rows meanwhile
+  config = await saved();
+  check('(set-up) Undo while the box is open takes the edit back', config.parameters[0].upper === before[0].upper, String(config.parameters[0].upper));
+  await evaluate(`${APPLY}.click()`);
+  check('Apply then changes nothing and says "Imported: nothing changed." - not "1 changed row. Undo takes it back." (review of SIF-107)',
+    await until(`${IMPORT_NOTE} === 'Imported: nothing changed.'`, 20) && !(await evaluate(`${TOOL('Redo')}.disabled`)), await evaluate(IMPORT_NOTE));
 
   // ---- (f) the stop rule's own field (decision of 2026-09-29): it had none, so its limit of 5 could not be seen or changed ------------
   const STOP_AFTER = LABELLED('.right', 'Stop after N consecutive failed evaluations');

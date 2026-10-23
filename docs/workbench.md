@@ -900,9 +900,13 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   Apply used to close the box without a word, also when a whole configuration replaced the run and output settings out of
   view; now the line under the formula bar says "Imported: 3 changed rows. Undo takes it back." or "Imported: replaced the
   run settings. Undo takes it back.", as Matched devices' Apply does, and rows applied after a tab press offer their table
-  (**Show Specs**). Apply, Cancel or Esc pressed in the box gives the focus back to Import JSON...: it fell to the page
-  with the box. A failed import's red line has a close mark and goes with a tab press: it named the tab it was tried on
-  and stayed on every tab until the next import. Nothing is imported without Apply, as before.
+  (**Show Specs**). Whether Apply changed anything is decided when it is pressed, against the rows as they are then (review
+  of SIF-107; the box's count matches rows by ID as the file was read): a file that changes nothing says "Imported:
+  nothing changed." and makes no Undo step, while rows that only come in another order, or that write over an edit made
+  in their table while the box was open, say "Imported. Undo takes it back.". Apply, Cancel or Esc pressed in the box
+  gives the focus back to Import JSON...: it fell to the page with the box. A failed import's red line has a close mark
+  and goes with a tab press: it named the tab it was tried on and stayed on every tab until the next import. Nothing is
+  imported without Apply, as before.
 
 Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`, `frontend/scripts/spec_equations_check.mjs` (SIF-106, SIF-107), `frontend/scripts/typing_check.mjs` (SIF-107).
 

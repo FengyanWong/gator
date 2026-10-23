@@ -3518,3 +3518,25 @@ for what the code before did not have. Also run, unchanged: `task_rows_check` 54
 `edit_state_check` 28 (17 scripts, 853 checks, one lane, all passed the first time; the checks of the import box ran
 again once the box took `tabIndex`, `typing_check` once more with its tab press). Not run, by the rules:
 `reward_v21_check`, which pins the hint's words; they are unchanged. No flakes.
+
+**Review follow-up.** The review of b602d87 found one slip; it is real. Apply's line took "Imported: nothing changed." from
+the diff the backend sent when the file was read. That diff matches rows by ID (`structured_diff`), so it ignores row
+order and any edit made after the box opened, while history.ts makes Apply an Undo step whenever the configuration's JSON
+changes. The same rows in another order came in as "0 changed rows" and "No differences."; Apply put the table in the
+file's order, one Undo step, yet said "Imported: nothing changed." without its Undo. So did the table's own rows applied
+over an edit made in that table while the box was open (rows write their whole table). The other way round, rows the
+table came back to while the box was open (an Undo pressed meanwhile) said "Imported: 1 changed row. Undo takes it back."
+while Apply changed nothing and made no step, so Undo would have taken back an earlier change. `applyImport` in
+`frontend/src/panels/Editors.tsx` now decides at Apply, as history.ts does: what Apply writes against the configuration as
+it is then. Nothing different: "Imported: nothing changed."; a change the diff counted no row or section for: "Imported.
+Undo takes it back."; the other lines as before. Left as it is: the box's own "0 changed rows" and "No differences." for
+rows in another order, the backend's diff by ID. Nothing here starts, continues or stops a run, saves a task or writes to
+Virtuoso: Apply writes what it wrote before, and only its line's words change. `docs/workbench.md` (Import JSON says what
+it did) names the two lines. `tsc` clean. `typing_check` 62 (51 before), on three Parameters rows: the same rows reversed
+come in as "0 changed rows", and Apply puts them in that order with "Imported. Undo takes it back."; one Undo brings the
+order back. The same rows in the same order say "Imported: nothing changed." and leave the Redo there. An Upper typed
+while the table's own rows wait in the box is written over by Apply, with "Imported. Undo takes it back."; one Undo brings
+it back. The rows from before it come in as "1 changed row", an Undo while the box is open takes the typed value back, and
+Apply says "Imported: nothing changed.", the Redo still there. On the code before, those three Apply lines failed. Also
+run, unchanged: `spec_equations_check` 69, `model_chooser_check` 120, `editor_columns_check` 29 (4 scripts, 280 checks,
+one lane, all passed the first time). No flakes.

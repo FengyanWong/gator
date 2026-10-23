@@ -23,7 +23,8 @@
 // its run, else "Back to ..." brings them back; "Go to the shown run" when they hide it. Its review follow-up: a link to one
 // task's runs lets the ticks go; New folder with runs ticked keeps them. Branch record SIF-109: a column title takes Tab, Enter
 // and Space; a run's row takes Enter, which does what its double click does. Branch record SIF-110: the window opens again at
-// the size and place it was left at (popupWindow.ts, every pop-up window), on this screen and at most its size.
+// the size and place it was left at (popupWindow.ts, every pop-up window), on this screen and at most its size. Its review
+// follow-up: at any page zoom - its outer size and corner are kept too, and set with resizeTo and moveTo.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -566,42 +567,60 @@ await runChecks(browser, async () => {
   // ---- 9. closing and opening again ------------------------------------------------------------------------------------------------
   // Branch record SIF-110: the window opens again at the size and place it was left at. Every opening asked for 1500 x 860, and
   // since record 7.291 a choice closes the window, so a size the user gave it was lost at each choice. A headless window ignores
-  // the size it asks for: checked here are what the page keeps and what it asks window.open for (wrapped for one press, as
-  // lib/rl_networks.mjs does).
+  // the size window.open asks for, and a resizeTo or moveTo said at once after it: checked here are what the page keeps and what
+  // it asks for - window.open's features, then the window's resizeTo and moveTo, wrapped for one press (window.open as
+  // lib/rl_networks.mjs wraps it). Its review: kept as its page's size alone, in CSS px, a window whose page zoom is not 100 %
+  // opened smaller (or larger) at every opening; its outer size and corner, which zoom does not change, are kept and set too.
   const PLACE_KEY = WINDOW_PLACE_KEY_PREFIX + 'gator-runs', PLACE = `JSON.parse(localStorage.getItem(${JSON.stringify(PLACE_KEY)}) ?? 'null')`;
   const closeWindow = async () => { await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close(); };   // the user closes the window with its own X
-  const reopened = async () => {             // presses Runs... and returns what the page asked window.open for
-    await evaluate(`(() => { const open = window.open; window.open = function (...args) { window.open = open; window.__asked = args[2]; return open.apply(this, args); }; })()`);
+  const reopened = async () => {             // presses Runs... and returns what the page asked window.open for, then what it set on the window
+    await evaluate(`(() => { const open = window.open; window.__set = []; window.open = function (...args) { window.open = open; window.__asked = args[2]; const opened = open.apply(this, args);
+      for (const call of ['resizeTo', 'moveTo']) { const set = opened[call]; opened[call] = (...at) => { window.__set.push(call + '(' + at.join(', ') + ')'); return set.apply(opened, at); }; }
+      return opened; }; })()`);
     await openWindow();
-    return evaluate(`window.__asked ?? null`);
+    return evaluate(`[window.__asked ?? null, ...window.__set].join(' ')`);
   };
-  // The size and place given: 700 x 500 at (40, 30), inside the headless screen (800 x 600).
-  await far.send('Emulation.setDeviceMetricsOverride', { width: 700, height: 500, deviceScaleFactor: 1, mobile: false, screenWidth: 800, screenHeight: 600, positionX: 40, positionY: 30 });
-  check('a size given to the window is kept once the resize comes to rest: its page\'s size and its corner, with the size it opened at (SIF-110)',
-    await until(`(p => p?.w === 700 && p.h === 500 && p.x === 40 && p.y === 30 && p.of === 'popup,width=1500,height=860')(${PLACE})`, 30), JSON.stringify(await evaluate(PLACE)));
+  // The size and place given: 700 x 500 at (40, 30), inside the headless screen (800 x 600) - the window's own bounds, which a
+  // headless window takes from Browser.setWindowBounds, the harness's emulated 1500 x 860 let go first.
+  await far.send('Emulation.clearDeviceMetricsOverride');
+  await send('Browser.setWindowBounds', { windowId: (await send('Browser.getWindowForTarget', { targetId: farPage.id })).windowId, bounds: { left: 40, top: 30, width: 700, height: 500 } });
+  await far.until(`outerWidth === 700 && outerHeight === 500 && screenX === 40 && screenY === 30`, 30);
+  const given = await far.evaluate(`({ w: innerWidth, h: innerHeight })`);         // its page: the window less its frame
+  check('a size given to the window is kept once the resize comes to rest: its outer size and corner, its page\'s size, with the size it opened at (SIF-110 and its review)',
+    given.w < 700 && given.h < 500 && await until(`(p => p?.ow === 700 && p.oh === 500 && p.x === 40 && p.y === 30 && p.w === ${given.w} && p.h === ${given.h}
+      && p.of === 'popup,width=1500,height=860')(${PLACE})`, 30), JSON.stringify([given, await evaluate(PLACE)]));
+  // Its page zoomed to 125 %, as Edge's default zoom or Ctrl + in the window does: innerWidth and innerHeight in CSS px, 1 / 1.25 of
+  // what they were, while the outer size and the corner stay screen px. A headless page cannot be zoomed: the window's own two
+  // numbers are replaced ([Replaceable]), as zoom changes them - a headed Edge, probed for the review, shrank 700 x 500 to 561 x 400.
+  const zoomed = { w: Math.round(given.w / 1.25), h: Math.round(given.h / 1.25) };
+  await far.evaluate(`innerWidth = ${zoomed.w}; innerHeight = ${zoomed.h}; true`);
   await evaluate(`localStorage.removeItem(${JSON.stringify(PLACE_KEY)})`);        // so that what follows is what closing kept
   await closeWindow();
   check('after the window is closed the strip button is no longer marked as open', await until(`!${BUTTON}.classList.contains('open')`) && (await strip()).text === 'Runs...', JSON.stringify(await strip()));
   const left = await evaluate(PLACE);
-  check('... and closing it kept its size and place (SIF-110)', left?.w === 700 && left.h === 500 && left.x === 40 && left.y === 30, JSON.stringify(left));
+  check('... and closing it kept its size and place: at 125 % zoom the outer size and corner it was given, its page\'s size in CSS px (SIF-110 and its review)',
+    left?.ow === 700 && left.oh === 500 && left.x === 40 && left.y === 30 && left.w === zoomed.w && left.h === zoomed.h, JSON.stringify(left));
   const screenNow = await evaluate(`({ left: screen.availLeft, top: screen.availTop, width: screen.availWidth, height: screen.availHeight })`);
   const onScreen = (at, from, room) => Math.max(from, Math.min(at, from + room));
   let asked = await reopened();
   check('pressing the button again opens the window again, with the current list', (await table())?.length === 6);
   const back = { width: Math.min(700, screenNow.width), height: Math.min(500, screenNow.height) };
-  check('... at the size and place it was left at (SIF-110)', asked === `popup,width=${back.width},height=${back.height},left=${onScreen(left.x, screenNow.left, screenNow.width - back.width)}`
-    + `,top=${onScreen(left.y, screenNow.top, screenNow.height - back.height)}`, `${asked} ${JSON.stringify(screenNow)}`);
+  const corner = `${onScreen(40, screenNow.left, screenNow.width - back.width)}, ${onScreen(30, screenNow.top, screenNow.height - back.height)}`;
+  check('... at the size and place it was left at: window.open asks for its page\'s size at its corner, then resizeTo and moveTo set the outer size and corner the zoom did not change (SIF-110 and its review)',
+    asked === `popup,width=${Math.min(zoomed.w, screenNow.width)},height=${Math.min(zoomed.h, screenNow.height)},left=${corner.replace(', ', ',top=')}`
+      + ` resizeTo(${back.width}, ${back.height}) moveTo(${corner})`, `${asked} ${JSON.stringify(screenNow)}`);
   // A place kept on a screen that is gone (a second monitor) comes onto this one, and a size at most this screen's.
   await closeWindow(); await until(`!${BUTTON}.classList.contains('open')`);
-  await evaluate(`localStorage.setItem(${JSON.stringify(PLACE_KEY)}, ${JSON.stringify(JSON.stringify({ of: 'popup,width=1500,height=860', w: 300, h: 99999, x: 50000, y: -50000 }))})`);
+  await evaluate(`localStorage.setItem(${JSON.stringify(PLACE_KEY)}, ${JSON.stringify(JSON.stringify({ of: 'popup,width=1500,height=860', w: 300, h: 99999, x: 50000, y: -50000, ow: 316, oh: 99999 }))})`);
   asked = await reopened();
-  check('... a place kept off this screen opens on it, at its right edge and its top, the height at most the screen\'s (SIF-110)',
-    asked === `popup,width=300,height=${screenNow.height},left=${screenNow.left + screenNow.width - 300},top=${screenNow.top}`, `${asked} ${JSON.stringify(screenNow)}`);
+  const edge = `${screenNow.left + screenNow.width - 316}, ${screenNow.top}`;
+  check('... a place kept off this screen opens on it, at its right edge (by its outer width) and its top, the height at most the screen\'s (SIF-110)',
+    asked === `popup,width=300,height=${screenNow.height},left=${edge.replace(', ', ',top=')} resizeTo(316, ${screenNow.height}) moveTo(${edge})`, `${asked} ${JSON.stringify(screenNow)}`);
   // A size kept for other features is not used: the Connection window opens wider for a connection of two Virtuoso sessions.
   await closeWindow(); await until(`!${BUTTON}.classList.contains('open')`);
-  await evaluate(`localStorage.setItem(${JSON.stringify(PLACE_KEY)}, ${JSON.stringify(JSON.stringify({ of: 'popup,width=1400,height=860', w: 300, h: 200, x: 0, y: 0 }))})`);
+  await evaluate(`localStorage.setItem(${JSON.stringify(PLACE_KEY)}, ${JSON.stringify(JSON.stringify({ of: 'popup,width=1400,height=860', w: 300, h: 200, x: 0, y: 0, ow: 316, oh: 270 }))})`);
   asked = await reopened();
-  check('... and a size kept for another first size is not used: the window asks for its own (SIF-110)', asked === 'popup,width=1500,height=860', asked);
+  check('... and a size kept for another first size is not used: the window asks for its own and nothing is set on it (SIF-110)', asked === 'popup,width=1500,height=860', asked);
   // Branch record SIF-109: a run's row takes Enter, as a row of the Tasks window does (SIF-100) - the double click was the only
   // way to choose a run from its row. Enter on one of the row's buttons presses that button alone. FAILED names no registered
   // task, so its Enter shows it (Load run is not offered) and the draft keeps its Undo steps for section 10.

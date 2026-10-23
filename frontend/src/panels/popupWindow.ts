@@ -23,23 +23,30 @@ export const styled = (win: Window): Promise<unknown> => Promise.race([new Promi
   Promise.all([...win.document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].filter(link => !link.sheet)
     .map(link => new Promise(done => { link.addEventListener('load', done, { once: true }); link.addEventListener('error', done, { once: true }); })))]);
 
-/** A window's size and place as the viewer left it (branch record SIF-110), kept in this browser under its name: the size of
- *  its page, which `width` and `height` ask `open()` for (innerWidth x innerHeight: kept as the outer size, the window would
- *  grow by its frame at every opening), its outer corner on the screen, which `left` and `top` ask for, and `of`, the
- *  features it was opened with. */
-type Place = { of: string; w: number; h: number; x: number; y: number };
+/** A window's size and place as the viewer left it (branch record SIF-110), kept in this browser under its name: its outer
+ *  size `ow` x `oh` and its outer corner `x`, `y` on the screen, which resizeTo and moveTo set once it is open; the size of
+ *  its page `w` x `h`, which `width` and `height` ask `open()` for; and `of`, the features it was opened with. The review of
+ *  SIF-110: the page's size is in its CSS px, which shrink as the window's page zoom grows (Edge's default page zoom set
+ *  above 100 %, or Ctrl + in the window), while `open()` takes screen px - kept alone, it opened such a window smaller at
+ *  every opening, larger under 100 %. The outer size and corner are screen px at any zoom; the page's size, asked for
+ *  first, opens a window at 100 % zoom at its size at once (asked for as `width`, the outer size would grow the window by
+ *  its frame). */
+type Place = { of: string; w: number; h: number; x: number; y: number; ow: number; oh: number };
 
-/** `features` with the size and place this window was left at, when it opens with the same features: the Connection window
- *  is wider for a connection of two Virtuoso sessions, and a size left for one is not given to the other. At most the
- *  screen's size, and on the screen of the window that opens it: a place kept on a second screen may be on no screen now.
- *  Nothing kept, or storage blocked: `features` as they are. */
-function placed(name: string, features: string, screen: Screen): string {
+/** How this window opens again, when it opens with the same features (the Connection window is wider for a connection of
+ *  two Virtuoso sessions, and a size left for one is not given to the other): `features` with its page's size and its
+ *  corner, and `outer`, its outer size and corner. At most the screen's size, and on the screen of the window that opens
+ *  it: a place kept on a second screen may be on no screen now. Nothing kept, a place kept without its outer size (before
+ *  the review of SIF-110), or storage blocked: `features` as they are. */
+function placed(name: string, features: string, screen: Screen): { features: string; outer?: { w: number; h: number; x: number; y: number } } {
   const kept = readKept<Place | null>(storage => JSON.parse(storage.getItem(WINDOW_PLACE_KEY_PREFIX + name) ?? 'null'), () => null);
-  if (kept?.of !== features || ![kept.w, kept.h, kept.x, kept.y].every(Number.isFinite)) return features;
+  if (kept?.of !== features || ![kept.w, kept.h, kept.x, kept.y, kept.ow, kept.oh].every(Number.isFinite)) return { features };
   const { availLeft = 0, availTop = 0, availWidth, availHeight } = screen as Screen & { availLeft?: number; availTop?: number };
-  const w = Math.min(kept.w, availWidth), h = Math.min(kept.h, availHeight);
+  const w = Math.min(kept.ow, availWidth), h = Math.min(kept.oh, availHeight);
   const x = Math.max(availLeft, Math.min(kept.x, availLeft + availWidth - w)), y = Math.max(availTop, Math.min(kept.y, availTop + availHeight - h));
-  return [...features.split(',').filter(feature => !/^\s*(width|height|left|top)\s*=/.test(feature)), `width=${w}`, `height=${h}`, `left=${x}`, `top=${y}`].join(',');
+  const sized = [...features.split(',').filter(feature => !/^\s*(width|height|left|top)\s*=/.test(feature)),
+    `width=${Math.min(kept.w, availWidth)}`, `height=${Math.min(kept.h, availHeight)}`, `left=${x}`, `top=${y}`];
+  return { features: sized.join(','), outer: { w, h, x, y } };
 }
 
 /** The workbench's pop-up windows (Connection, Virtuoso, PDK, ngspice, Tasks, Runs, the run brief, the RL model window,
@@ -67,8 +74,12 @@ export function usePopupWindow(name: string, options: {
     if (popup && !popup.closed) { popup.focus(); return popup; }
     const { title, features, rootId, rootClass } = latest.current;
     const via = from && typeof (from as Window).open === 'function' && 'closed' in (from as Window) && !(from as Window).closed ? from as Window : window;
-    const opened = via.open('', name, placed(name, features, via.screen));
+    const place = placed(name, features, via.screen);
+    const opened = via.open('', name, place.features);
     if (!opened) { setBlocked(true); return null; }
+    // Its outer size and corner, which the page's size asked for gives only at 100 % zoom (`Place`). Edge takes both from a
+    // window just opened; a headless one ignores them, as it ignores the size asked for.
+    if (place.outer) { opened.resizeTo(place.outer.w, place.outer.h); opened.moveTo(place.outer.x, place.outer.y); }
     const doc = opened.document;
     doc.title = title;
     doc.head.querySelectorAll('link, style').forEach(node => node.remove());            // a window of that name may be reused
@@ -92,11 +103,12 @@ export function usePopupWindow(name: string, options: {
     openNow.set(name, { name, title: latest.current.title, window: popup }); openChanged();
     // Its size and place are kept as the viewer leaves them (branch record SIF-110: each opening asked for the same size, and
     // since record 7.291 a choice closes the Tasks, Runs and RL model windows): once a resize has come to rest, and as the
-    // window goes - a move fires no event. A window that is going may answer nothing: kept only with a size it can open at.
+    // window goes - a move fires no event. A window that is going may answer nothing: kept only with an outer size it can open
+    // at (100 px, the least a window opens at) and a page.
     const of = latest.current.features;
     const remember = () => keep(storage => {
-      const place: Place = { of, w: popup.innerWidth, h: popup.innerHeight, x: popup.screenX, y: popup.screenY };
-      if (place.w >= 100 && place.h >= 100) storage.setItem(WINDOW_PLACE_KEY_PREFIX + name, JSON.stringify(place));
+      const place: Place = { of, w: popup.innerWidth, h: popup.innerHeight, x: popup.screenX, y: popup.screenY, ow: popup.outerWidth, oh: popup.outerHeight };
+      if (place.ow >= 100 && place.oh >= 100 && place.w > 0 && place.h > 0) storage.setItem(WINDOW_PLACE_KEY_PREFIX + name, JSON.stringify(place));
     });
     let resting = 0;
     const resized = () => { window.clearTimeout(resting); resting = window.setTimeout(remember, 300); };

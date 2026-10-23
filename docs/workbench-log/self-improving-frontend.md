@@ -3707,3 +3707,42 @@ check that opens a pop-up window: `dom_identity_check` 56, `connection_panel_che
 checks, one lane, all passed the first time). `run_list_check`'s new checks were then made stricter - the first version's
 1200 x 700 came back as the headless screen's 800 x 600, at the corner (0, 0) -, and one run of it stopped at the check's
 own fault (an emulated window position needs an emulated screen around it); with one it passed, 167. No flakes.
+
+**Review follow-up.** The review of 1c3b584 found one slip; it is real. The size kept was the page's, innerWidth x
+innerHeight, in its CSS px, which shrink as the window's page zoom grows (innerWidth = the page's width / zoom), while
+window.open's `width` and `height` are screen px, as are `left` and `top`, screenX and screenY and the screen's sizes,
+which zoom leaves alone. At a page zoom of 125 % - Edge's default page zoom set so, or Ctrl + in the pop-up - each opening
+asked for the last size / 1.25: the window came back a fifth smaller every time, one step per choice in the Tasks, Runs
+and RL model windows (record 7.291), down to the 100 px guard; under 100 % it grew to the screen's size. Before SIF-110
+each window opened at its fixed size. A probe of a headed Edge with a throwaway profile whose default page zoom was 125 %
+(a script in the session's scratchpad, not a check) showed it: asked for 700 x 500, the page measured 561 x 400; asked
+for that, 449 x 320, then 360 x 256 and 289 x 205, while outerWidth and screenX read the same at 100 % and at 125 %. At
+100 %, on this screen's 150 % scaling, the page even came back a pixel wider at each opening (701, 702, 703, 704).
+`frontend/src/panels/popupWindow.ts`, the review's fix: `Place` keeps the window's outer size (`ow` x `oh`, outerWidth x
+outerHeight) beside its corner and its page's size; `placed` still gives window.open the page's size and the corner - a
+window at 100 % zoom opens at its size at once - and now `outer`, the outer size and corner, which `open()` sets with
+resizeTo and moveTo right after window.open. The outer size is not asked for as `width`: the window would grow by its
+frame at every opening, as the record said. The corner is kept on the screen by the outer width (by the page's, a window
+kept at the screen's right edge reached past it by its frame). A place is kept only with an outer size of 100 px or more
+and a page size; one kept before, without the outer size, is not used. In the same probe, asked for the page's size and
+then resized and moved, the window came back at 716 x 570 at (40, 30) at every opening, at 125 % as at 100 %: a headed
+Edge takes resizeTo and moveTo said at once after window.open (within 150 ms); a headless one ignores both, as it ignores
+window.open's size. At a zoom other than 100 % the window shows at its page's size first, then takes its own. Nothing
+here starts, continues or stops a run, saves a task or writes to Virtuoso: a window's size and place are the browser's
+alone. `docs/workbench.md` (the paragraph on window sizes) and `docs/functionality-reference.md` (the Windows row) say it
+holds at any zoom, and how. `tsc` clean. `run_list_check` 167 (four checks rewritten): the Runs window, its emulated 1500
+x 860 let go and given 700 x 500 at (40, 30) through Browser.setWindowBounds, which a headless window takes, keeps that
+outer size and corner and its page's 678 x 411 once the resize rests; with its page's two numbers set to what 125 % makes
+of them (542 x 329: a headless page cannot be zoomed, and innerWidth and innerHeight are [Replaceable]) and the window
+closed, the outer size and corner kept are unchanged and the page's size is 542 x 329; the next press asks window.open
+for "popup,width=542,height=329,left=40,top=30", then resizeTo(700, 500) and moveTo(40, 30) (the window's two wrapped
+for the press, as window.open is); a place kept off the screen comes to its right edge by its outer width, 316
+("left=484", then resizeTo(316, 600) and moveTo(484, 0)); a size kept for other first features asks for its own and sets
+nothing. On the code before, the first four failed (163 passed). Also run, unchanged - every other check that opens a
+pop-up window: `run_control_check` 162, `dom_identity_check` 56, `training_tab_check` 108, `connection_panel_check` 96,
+`virtuoso_source_check` 112, `task_save_check` 91, `testbench_probes_check` 41, `task_rows_check` 54,
+`model_chooser_check` 120, `typing_check` 62, `project_help_check` 61, `working_copy_check` 34, `task_list_check` 103,
+`ngspice_window_check` 43, `looks_check` 76, `network_panel_check` 72, `task_run_check` 39, `reliability_check` 20,
+`graph_view_check` 69, `pdk_check` 44, `reward_block_check` 33, `circuit_source_check` 17, `encoder_models_check` 24,
+`model_structure_check` 31, `consistency_check` 14, `agent_window_check` 33, `network_inputs_check` 9 (28 scripts with
+`run_list_check`, 1,791 checks, one lane, all passed the first time). No flakes.

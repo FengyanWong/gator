@@ -348,7 +348,12 @@ Tasks, Runs and RL model windows, so a size given to one was lost at each choice
 browser per window (`gator-workbench-window-<name>`) once a resize comes to rest and as the window closes - a move fires
 no event. A window opens on the screen of the window it is opened from, at most that screen's size: a place kept on a
 second screen may be on no screen now. A size kept for another first size is not used: the Connection window opens wider
-for a connection of two Virtuoso sessions.
+for a connection of two Virtuoso sessions. This holds at any page zoom (the review of SIF-110): the window's outer size
+and corner are kept, which zoom does not change, and set with resizeTo and moveTo once it is open. The size of its page,
+asked for when it opens, is in the page's CSS px, which shrink as its zoom grows - kept alone, it opened a window whose
+page is at 125 % (Edge's default page zoom set so, or Ctrl + in the window) a fifth smaller at every opening, and one
+under 100 % larger. At 100 % zoom the window opens at its size at once; at another zoom it opens at its page's size and
+then takes its own.
 
 **Research experiments** (record 7.163; user: "Check the research experiments module and see which should be kept",
 then "Remove both" and "Fold them"). Since record 7.166 its heading looks like the other modules' headings, and its note

@@ -3746,3 +3746,32 @@ pop-up window: `run_control_check` 162, `dom_identity_check` 56, `training_tab_c
 `graph_view_check` 69, `pdk_check` 44, `reward_block_check` 33, `circuit_source_check` 17, `encoder_models_check` 24,
 `model_structure_check` 31, `consistency_check` 14, `agent_window_check` 33, `network_inputs_check` 9 (28 scripts with
 `run_list_check`, 1,791 checks, one lane, all passed the first time). No flakes.
+
+### SIF-111 The task file's help and the readiness checklist name what is on the page (2026-10-23; backend words held back by SIF-81 and SIF-108)
+
+**Found.** Two lots of words the page shows come from the backend, which the frontend records leave alone. The task
+file's own help (`task_files.py` HELP, shown as "What each part is" since SIF-81) named Parameters keys that exist
+nowhere - "range" and "grouping" (the file says lower/upper and binding_group, the editor Lower, Upper and Tied to) -
+gave the Probes and Specs keys without the editor headers a reader knows them by, and told the cell and copy parts by
+a code change of 2026-09-23 instead of what matters: `task_files.parse()` reads neither, so editing them there changes
+nothing (survey of 2026-10-21, issues 26 and 27; issue 8, the escaped quotes, went with SIF-81). The Agent window's
+readiness checklist (`readiness.py`) sent the user to 'Choose the circuit under "Circuit source" (left)', a control
+removed in 7.362, to 'Press "Connection" (left)' for the button in the header, and to 'Raise "Max evaluations"' for the
+field called Evaluation budget (usability audit J7-8, left out of SIF-108 as backend text).
+
+**Changed** (`src/gator_workbench/task_files.py`, `src/gator_workbench/readiness.py`; words only). The help gives each
+key with its editor header: instance_path (Instance), parameter_name (Parameter), lower and upper (Lower, Upper),
+binding_group (Tied to: the row this one follows, times its ratio); result_source (Result source), source_name (Output
+name), signal (Expression); equation, constraint (Limit), hard, soft_weight, direction_after_feasible (Objective, chosen
+in the Limit list), normalization_scale (Scale). cell: the cell the task was read from, shown only - "Apply to editors"
+does not change it; read another cell in the Virtuoso window. copy: the cell above, except in a task saved before
+2026-09-23 (its <library>_GATOR copy), shown only. The JSON examples of the maestro part stay: they show what to type.
+The checklist says "Open a task in the Tasks window, or make one there with "New task"", "Press the connection button in
+the header" (the button shows the connection's name; "Connection" is its label) and "Raise "Evaluation budget" under Run
+configuration". No page code reads these words (SIF-108's buttons go by item id). A task saved from now on carries the
+new help in its file; older files keep theirs, which the page reads but never applies. Live only after a restart of
+the server on 8765.
+
+**Checked.** `tests/workbench/test_wb_task_save.py`, `test_wb_readiness.py`, `test_wb_agent_cli.py`: 39 passed (no
+test pins these words; `task_save_check` serves its own help text). Made on a side branch (sif-help-text, 43f4960 and
+00b9b42) while the usability run held this worktree, then cherry-picked.

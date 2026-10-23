@@ -527,3 +527,5 @@ One row per commit, newest last.
 | `f87b8ce` | 10-20 13:20 | 7.384 | TuRBO and transfer-learned SAC combined: neither a TuRBO-data model nor a TuRBO warm start helps; three seeds on every row (session "Zenodo dataset encoder performance") |
 | `d6f6d81` | 10-20 13:21 | - | record only: names the commit of record 7.384, and the table rows for c2177fa and f87b8ce |
 | `9f761f7` | 10-20 14:10 | 7.364-7.371, 7.373-7.375, 7.377-7.379 | less work for the same results: streamed CSVs, projected and bounded reads, leaner inventories and ZIP exports, repeated parsing and sorting removed; the log rolled over twice (the user's Codex session) |
+| `694d9a1` | 10-20 14:10 | - | record only: names the commit of Codex's records 7.364-7.379, and the table rows for d6f6d81 and 9f761f7 |
+| `286deaf` | 10-23 11:45 | 7.385, 7.388 | Round 3 seeds 1 and 2: the seed-0 matrix twice more, 72 real runs, two same-run resumes (7.385); all 72 complete, audited with seed 0, feasible designs per arm for seeds 0/1/2 (7.388) (session "Training encoders with Zenodo dataset") |

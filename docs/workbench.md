@@ -1112,7 +1112,9 @@ cell...**, in the Project column) opens the **Virtuoso window**, a browser windo
 that is up; allow pop-ups if the browser blocks it). There is nothing to press: opening the window lists
 the libraries, choosing a library lists its cells, choosing a cell reads its schematic. Each step is a
 gated, read-only, zero-cost bridge call and waits for the one before it. **Refresh** repeats the chain, for
-example after the link came up or the design changed in Virtuoso. A library chosen in the window makes
+example after the link came up or the design changed in Virtuoso. It is the refresh icon (an arrow around) before
+**PDK window...**, as in the list windows and the bottom tabs; its word is read out to a screen reader and starts its
+tooltip, so the lines below that say "then press Refresh" still name it (branch record SIF-114). A library chosen in the window makes
 the page follow the Virtuoso cell instead of the task: the task's place on the tab line then names the cell, and
 **Virtuoso cell...** on the tab line opens the window again. Choosing a task makes the page follow the task again, and the
 window then starts from a blank library. Closing the window loses nothing.
@@ -1322,7 +1324,9 @@ The left panel walks through the three steps of bringing the link up:
 2. **Load in the Virtuoso CIW** - the panel shows the `load("...virtuoso_setup.il")` line the
    bridge saved in its state, with a Copy button, plus the `RBStop()` + `load(...)` pair for a CIW
    that answers "already running". Loading it stays a manual step in your own Virtuoso; the
-   workbench never sends it to the CIW.
+   workbench never sends it to the CIW. Each Copy is the copy icon (two sheets) at the top right of its
+   lines, its word for screen readers and at the start of its tooltip; for 1.5 s after a copy that went
+   through it is a check mark, "Copied", and a copy the browser refuses leaves it as it was (branch record SIF-114).
 3. **Test connection** - the zero-cost check above. The answer is one plain sentence (for example
    "SSH is connected, but the Virtuoso CIW does not answer - load the command below...") with the
    next step; **Details** lists every layer.

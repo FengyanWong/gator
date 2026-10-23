@@ -21,6 +21,8 @@
 //   * (branch record SIF-87) a folder typed and not saved outlives the window's close: opened again, it lies over the values
 //     in use, said in a line, until Save folders or Undo changes;
 //   * (branch record SIF-109) Enter in the new connection's name adds it, as "Create connection" does; a refused name sends nothing.
+//   * (branch record SIF-114) the Copy beside each CIW block is the copy icon, its word for screen readers and at the start of
+//     its tooltip; a copy that went through shows the check mark, "Copied", for 1.5 s, a refused one does not.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/connection_panel_check.mjs)" [screenshot-dir]
 // With GATOR_CONNECTION_LIVE=1 a last section lets the requests THROUGH to the backend: only ever against a scratch
@@ -225,6 +227,34 @@ await runChecks(browser, async () => {
   await sleep(QUIET_MS);
   check(`still no request ${QUIET_MS / 1000} s after the test`, seen.length === mark, names(mark).join(', '));
   check('the shown result did not change by itself', (await hint()) === testedHint && (await badge()) === 'OK', `${await badge()} | ${await hint()}`);
+
+  // ---- the CIW lines' Copy (branch record SIF-114, the icon audit) -------------------------------------------------------------
+  // The copy icon, as Output files' Copy run path - its word for screen readers and at the start of its tooltip - where the word
+  // stood, at the code box's top; for 1.5 s after a copy that went through, the check mark with "Copied". The window's clipboard
+  // is stood in for: a headless window may not be focused.
+  const DRAWN = { copy: 'M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2', check: 'M3 8.5l3.2 3.2L13 4.5' };
+  const ciwCopies = () => far.evaluate(`[...${WINDOW}.querySelectorAll('.command > button')].map(b => ({ text: b.textContent,
+    label: b.querySelector('.sr-only')?.textContent ?? null, title: b.title, drawing: b.querySelector('svg.icon path')?.getAttribute('d') ?? null }))`);
+  const copies = await ciwCopies();
+  const copyPlace = await far.evaluate(`(() => { const b = ${WINDOW}.querySelector('.command > button').getBoundingClientRect(), c = ${WINDOW}.querySelector('.command > code').getBoundingClientRect();
+    return { top: Math.round(b.top - c.top), gap: Math.round(b.left - c.right), width: Math.round(b.width), height: Math.round(b.height) }; })()`);
+  check('the Copy beside each CIW block - the load lines and, folded, the reload lines - is the copy icon, "Copy" for screen readers and at the start of its tooltip (SIF-114)',
+    copies.length === 2 && copies.every(c => c.text === 'Copy' && c.label === 'Copy' && c.drawing === DRAWN.copy && c.title === 'Copy: These lines to the clipboard, to paste into the Virtuoso CIW.'),
+    JSON.stringify(copies));
+  check('...beside the code box, at its top', copyPlace.top === 0 && copyPlace.gap >= 0 && copyPlace.gap <= 8, JSON.stringify(copyPlace));
+  await far.evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: text => { window.__clip = text; return Promise.resolve(); } })`);
+  mark = seen.length;
+  await far.evaluate(`${WINDOW}.querySelector('.command > button').click()`, true); await sleep(300);
+  const copiedNow = await ciwCopies(), clip = await far.evaluate('window.__clip ?? null');
+  check('... a press puts the load lines on the clipboard and shows the check mark, "Copied" for screen readers, its tooltip unchanged; the reload lines\' Copy stays; nothing is sent',
+    clip === `setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")\nload("${SETUP}")` && copiedNow[0]?.text === 'Copied' && copiedNow[0].label === 'Copied' && copiedNow[0].drawing === DRAWN.check
+    && copiedNow[0].title === copies[0].title && JSON.stringify(copiedNow[1]) === JSON.stringify(copies[1]) && seen.length === mark, JSON.stringify({ clip, copiedNow, sent: names(mark) }));
+  await sleep(1500);
+  check('... and 1.5 s later the copy icon and "Copy" again', JSON.stringify(await ciwCopies()) === JSON.stringify(copies), JSON.stringify(await ciwCopies()));
+  await far.evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: () => Promise.reject(new DOMException('FIXTURE: Document is not focused.', 'NotAllowedError')) })`);
+  await far.evaluate(`${WINDOW}.querySelector('.command > button').click()`, true); await sleep(300);
+  check('... a copy the browser refuses shows no check mark: Copy stays', JSON.stringify(await ciwCopies()) === JSON.stringify(copies), JSON.stringify(await ciwCopies()));
+  await far.evaluate(`delete navigator.clipboard.writeText`);
 
   // ---- the other three kinds: own steps, own words ---------------------------------------------------------------------
   const select = async id => { const before = seen.length; await choose('select', id); await settle(before); return seen.slice(before); };

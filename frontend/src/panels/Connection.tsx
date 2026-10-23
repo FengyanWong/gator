@@ -204,6 +204,12 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     const ciw = connected?.details?.ciw ?? status?.ciw ?? null;
     const loadCommand = ciw ? `setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")\n${ciw.load}` : '';
     const replaceCommand = ciw ? `setShellEnvVar("RB_NONCE_CACHE_MAX" "32768")\n${ciw.replace_running_daemon.join('\n')}` : '';
+    // The CIW lines' Copy is the copy icon, as Output files' Copy run path (branch record SIF-114): its word for screen readers
+    // and at the start of its tooltip. The 1.5 s "Copied" of a copy that went through is the check mark: the word changes, the
+    // tooltip stays the action's, as Save now's does while it saves.
+    const copyButton = (part: 'load' | 'replace', text: string) => (
+      <button onClick={() => copyText(`${id}:${part}`, text)} title="Copy: These lines to the clipboard, to paste into the Virtuoso CIW.">
+        <Icon name={copied === part ? 'check' : 'copy'} label={copied === part ? 'Copied' : 'Copy'} /></button>);
     const linkUp = local ? !!ciw : status?.layers?.some((l: Json) => l.layer === 'tunnel' && l.state === 'ok');
     // Each part and reason in words, its key in the tooltip: the table listed "session_readiness | UNKNOWN | never_checked"
     // (branch record SIF-55). The state badges keep the words the button's pill shows.
@@ -257,11 +263,10 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
         {ciw ? (
           <div>
             <p className="hint">Paste these lines into {multipleSessions ? `Virtuoso ${index + 1}'s` : 'your Virtuoso’s'} CIW, in order, then test this session below.</p>
-            <div className="command"><code>{breakAfterSlash(loadCommand)}</code><button onClick={() => copyText(`${id}:load`, loadCommand)}>{copied === 'load' ? 'Copied' : 'Copy'}</button></div>
+            <div className="command"><code>{breakAfterSlash(loadCommand)}</code>{copyButton('load', loadCommand)}</div>
             <details><summary className="hint">CIW says "already running", or other trouble</summary>
               <p className="hint">Reload the bridge in this session:</p>
-              <div className="command"><code>{breakAfterSlash(replaceCommand)}</code>
-                <button onClick={() => copyText(`${id}:replace`, replaceCommand)}>{copied === 'replace' ? 'Copied' : 'Copy'}</button></div>
+              <div className="command"><code>{breakAfterSlash(replaceCommand)}</code>{copyButton('replace', replaceCommand)}</div>
               <ul className="steps-list">{ciw.notes.map((n: string) => <li key={n} className="hint">{n}</li>)}</ul>
             </details>
           </div>

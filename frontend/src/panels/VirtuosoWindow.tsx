@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Json } from '../api';
 import { openConnection } from '../openAt';
 import { namedTestbench } from './CircuitBrowser';
+import { Icon } from './Icons';
 import { PdkWindowButton } from './Pdk';
 import { WorkingCopy } from './WorkingCopy';
 
@@ -79,7 +80,10 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
       </label>
       {namedHere && chosen.testbench_cell === namedHere && <p className="hint tb-named">Found by its name: <code>tb_</code> + the cell's name.</p>}
       <div className="row">
-        <button disabled={!profileId || !!listing} onClick={() => setRefresh(n => n + 1)} title="Reads the libraries, the cells and the schematic again, e.g. after the link came up or the design changed in Virtuoso. Read-only and zero-cost.">Refresh</button>
+        {/* Refresh is the refresh icon, as the list windows' and the bottom tabs' (branch record SIF-114): its word for screen
+            readers and at the start of its tooltip, so the lines that say "then press Refresh" still name it; while it reads,
+            it is greyed out and the hint beside it says so. "PDK window..." opens a window and keeps its words. */}
+        <button disabled={!profileId || !!listing} onClick={() => setRefresh(n => n + 1)} title="Refresh: Reads the libraries, the cells and the schematic again, e.g. after the link came up or the design changed in Virtuoso. Read-only and zero-cost."><Icon name="refresh" label="Refresh" /></button>
         {listing && <span className="hint">Reading the {listing} from Virtuoso...</span>}
         <PdkWindowButton profileId={profileId} circuitPdk={ref.pdk_id} />
       </div>

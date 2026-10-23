@@ -23,7 +23,8 @@
 //     task in the Tasks window - the waste bin, the hourglass while its delete is on its way (branch record SIF-113); a cell
 //     that already has a task, a built-in cell; a blocked gate and an older backend are readable;
 //     the gate's refusal ends with "then press Refresh" and carries Connection..., which opens the Connection window from the
-//     Virtuoso window; an older backend's line carries none (branch record SIF-108).
+//     Virtuoso window; an older backend's line carries none (branch record SIF-108); Refresh is the refresh icon, "Refresh" for
+//     screen readers and at the start of its tooltip, on the line of "PDK window..." (branch record SIF-114).
 // Needs a configured connection profile (the page selects the active one; reading the profiles probes nothing).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
@@ -526,6 +527,18 @@ await runChecks(browser, async () => {
 
   // ---- Refresh repeats the chain, one call after the other -------------------------------------------------------------
   await wChoose('Cell', 'inv'); await quiet();
+  // Branch record SIF-114 (the icon audit): Refresh is the refresh icon, as the list windows' and the bottom tabs' - its word for
+  // screen readers and at the start of its tooltip, so the refusal's "then press Refresh" (below) still names it -, on the line
+  // of "PDK window...", which keeps its words.
+  const refreshLook = await far.evaluate(`(() => { const b = ${wButton('Refresh')}, i = b?.querySelector('svg.icon'), p = ${wButton('PDK window...')};
+    const middle = e => { const r = e.getBoundingClientRect(); return (r.top + r.bottom) / 2; };
+    return b && { label: b.querySelector('.sr-only')?.textContent ?? null, title: b.title, drawing: i?.querySelector('path')?.getAttribute('d') ?? null,
+      offset: i && p ? Math.round((middle(i) - middle(p)) * 10) / 10 : null,
+      before: !!p && b.parentElement === p.parentElement && b.getBoundingClientRect().right < p.getBoundingClientRect().left }; })()`);
+  check('Refresh is the refresh icon, "Refresh" for screen readers and at the start of its tooltip (SIF-114)', refreshLook?.label === 'Refresh'
+    && refreshLook.drawing === 'M13 8A5 5 0 1 1 11.6 4.5' && refreshLook.title.startsWith('Refresh: Reads the libraries, the cells and the schematic again'), JSON.stringify(refreshLook));
+  check('...before "PDK window..." on its line, the icon\'s middle within 2 px of the words\'', refreshLook?.before === true && typeof refreshLook.offset === 'number'
+    && Math.abs(refreshLook.offset) <= 2, JSON.stringify(refreshLook));
   mark = calls.length; overlap = false;
   await wPress('Refresh'); await quiet();
   check('Refresh reads libraries, cells and schematic again, in that order', JSON.stringify(ops(mark)) === JSON.stringify(['libraries', 'cells FIXTURE_OTHER', 'read FIXTURE_OTHER inv']), ops(mark).join(' | '));

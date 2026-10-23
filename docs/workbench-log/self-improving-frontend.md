@@ -3884,3 +3884,47 @@ Only the check changes; the page and what each press does are as SIF-113 left th
 `virtuoso_source_check` 114, all passed the first time (one lane). Two probe runs, `TaskList.tsx` changed for each and
 restored after: the code before (the tray throughout) failed both SIF-113 checks of Delete task (112 passed); a bin that
 stands still while the delete is on its way failed this one alone (113 passed). No flakes.
+
+### SIF-114 The Virtuoso window's Refresh is the refresh icon, and the CIW lines' Copy the copy icon (2026-10-23; from the icon audit)
+
+**Found.** Two more actions with a plain meaning still had a look of their own. The Virtuoso window's Refresh - read the
+libraries, the cells and the schematic again, read-only and zero-cost - was the word "Refresh", where the list windows
+(SIF-113), the bottom tabs and the Corner check draw the refresh icon, and its tooltip started "Reads the libraries...",
+not with its word. In the Connection window's step 2, "Load the bridge in the Virtuoso CIW", each block of CIW lines - the
+load lines, and the reload lines in the "already running" fold - had a word button "Copy" without a tooltip, where Output
+files' Copy run path, the same action, is the copy icon (icon audit WIN-3 / ICON-3, WIN-4 / WIN-5 / ICON-9).
+
+**Changed.** `frontend/src/panels/VirtuosoWindow.tsx`: Refresh is the `refresh` drawing, its word in `.sr-only` - the
+button's text is still "Refresh", by which the checks press it - and at the start of its tooltip, now "Refresh: Reads the
+libraries, the cells and the schematic again, ...", so the gate's refusal "... then press Refresh." still names it. While
+a read is on its way it is greyed out and the hint beside it says "Reading the ... from Virtuoso...": icon and word stay,
+as Refresh list's do (SIF-113). "PDK window..." beside it opens a window and keeps its words. No CSS: on the window's
+line, whose parts keep to its foot, the 31 px icon button stands before the 34 px "PDK window...", the icon's middle
+1.3 px under the words'. `frontend/src/panels/Connection.tsx`: both Copy buttons come from one `copyButton` of the session
+card - the `copy` drawing, "Copy" for screen readers, the tooltip "Copy: These lines to the clipboard, to paste into the
+Virtuoso CIW." - where the word stood, at the code box's top. The 1.5 s "Copied" after a copy that went through is the
+`check` drawing with "Copied" as its word; the tooltip stays the action's, as Save now's does while it saves. What a press
+does is unchanged (`copyText`: the window's own clipboard; a refused copy shows nothing, as before). The check mark also
+draws the Corner check's Check until the audit's fourth batch makes that the play mark (ICON-20), as the plan orders;
+that batch also brings `Icons.tsx`'s notes on each drawing up to date, as SIF-112 and SIF-113 left them. Left out: the
+graph view's Fit (WIN-10). The audit's list of buttons that keep their words holds it (ICON-16: three letters, so no room
+is saved, and the four-corner drawing reads as "full screen" there, as if it enlarged the dialog); SIF-112 left out the
+CSS it would have needed for that reason. The Add-a-connection form's Refresh (WIN-9 / ICON-1) and the Agent window's
+Copy link (WIN-14 / ICON-10) keep their words too, as the plan says. Nothing here starts, continues or stops a run, saves
+a task or writes to Virtuoso: Refresh reads as it did, gated, and Copy writes only to the browser's clipboard.
+`docs/workbench.md` (the Virtuoso window's Refresh; Connecting from the panel, step 2) and
+`docs/functionality-reference.md` (the CIW commands with Copy and Library → cell → schematic rows) say it.
+
+**Checked.** `tsc` clean. `connection_panel_check` 101 (96 before): the Copy of each CIW block is the copy icon (its
+drawing's line), "Copy" for screen readers and at the start of its tooltip, at the code box's top, 6 px to its right;
+a press - the window's clipboard stood in for - puts the load lines on the clipboard and shows the check mark with
+"Copied", the tooltip and the reload lines' Copy unchanged, nothing sent; 1.5 s later the copy icon and "Copy" again; a
+copy the browser refuses shows no check mark. `virtuoso_source_check` 116 (114): Refresh is the refresh icon (its
+drawing's line), "Refresh" for screen readers and at the start of the new tooltip, before "PDK window..." on its line,
+the icon's middle within 2 px of the words' (1.3 px). A probe run on the code before (both `.tsx` files as at HEAD,
+restored after): the four checks that ask for what is new failed (99 and 114 passed); the place, the return after
+1.5 s and the refused copy pass on both, as they pin what was already so. Also run, unchanged: `testbench_probes_check`
+41 and `project_help_check` 61 (both press Refresh by its word), `pdk_check` 44, `working_copy_check` 34,
+`agent_window_check` 33, `callouts_check` 8, `graph_view_check` 69 (Fit as it was) - 9 scripts, 507 checks, one lane,
+all passed the first time. No flakes. `dom_identity_check` was not used as a gate: it compares refactors, and the
+connection window's scene changes by design.

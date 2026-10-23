@@ -1,8 +1,10 @@
-import { CircuitDetails, NativeSchematic, useVirtuosoBrowser } from './CircuitBrowser';
+import { CircuitDetails, NativeSchematic, type SizeAdding, useVirtuosoBrowser } from './CircuitBrowser';
 import { memo, MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json } from '../api';
 import { plural } from '../format';
+import { kindUnit } from '../units';
+import { newRow } from './editorRules';
 import { tasksShared } from '../shared';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
@@ -102,9 +104,11 @@ function TitleFacts({ config, task }: { config: Json; task: Json | null }) {
 
 export type { TaskLoad, TaskLoaded } from './taskChoice';
 
-function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, taskSlot, taskNotes, taskHead = null, taskTools = null, taskStatus = null,
+/** `schema`: /api/schema, for the row a size of a Virtuoso draft becomes (branch record SIF-104: Add's own, editorRules.ts newRow);
+ *  without it the sizes have no "Add to Parameters". */
+function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, schema = null, taskSlot, taskNotes, taskHead = null, taskTools = null, taskStatus = null,
   titleSlot = null, taskEpoch = 0, runs = [], refreshRuns, taskLoad, onTaskName }:
-  { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null;
+  { config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; circuit: Json; setCircuit: (c: Json) => void; profileId: string | null; schema?: Json;
     taskSlot: HTMLElement | null; taskNotes: HTMLElement | null; taskHead?: HTMLElement | null; taskTools?: HTMLElement | null; taskStatus?: HTMLElement | null;
     titleSlot?: HTMLElement | null; taskEpoch?: number; runs?: Json[]; refreshRuns?: () => Promise<Json[]>; taskLoad?: MutableRefObject<TaskLoad | null>;
     onTaskName?: (name: string | null) => void }) {
@@ -260,7 +264,18 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, t
   // What was read straight from Virtuoso. It is a line of the Hierarchy block; while no circuit is loaded (browse only)
   // there is no such block and it stands alone at the end of the window.
   const nativeSchematic = <NativeSchematic native={native} open={nativeOpen} setOpen={setNativeOpen} />;
-  const circuitInfo = <CircuitDetails circuit={circuit} open={hierarchyOpen} setOpen={setHierarchyOpen}>
+  // "Add to Parameters" after a size of the cell read (branch record SIF-104): the row Add makes, with the instance, the
+  // parameter and its present value in the parameter's unit, as one Undo step. Only for a draft that Save as can make a task of:
+  // a cell that has a task already gets none (taskNote), and a task's own rows come from the task.
+  const adding: SizeAdding | undefined = schema && virtuosoOn && circuit?.loaded && circuit.native_draft && !taskNote ? {
+    rows: config.parameters ?? [],
+    add: (instance_path, parameter_name, value) => {
+      const base = newRow('parameters', latest.current, schema);
+      const row = { ...base, instance_path, parameter_name, initial_value: value, unit: kindUnit(parameter_name) ?? base.unit };
+      setConfig(c => ({ ...c, parameters: [...(c.parameters ?? []), row] }));
+      return String(row.variable_id);
+    } } : undefined;
+  const circuitInfo = <CircuitDetails circuit={circuit} open={hierarchyOpen} setOpen={setHierarchyOpen} adding={adding}>
     {virtuosoOn && nativeSchematic}</CircuitDetails>;
 
   // ---- the task on the editors' tab line, its own lines under the toolbar, and the circuit column (record 7.362) -----------

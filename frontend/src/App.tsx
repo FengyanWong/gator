@@ -288,7 +288,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           : <>{message.text}{(message.detail?.code || message.detail?.report) && <details title="" onClick={e => e.stopPropagation()}><summary>Technical details</summary>
             <pre>{[message.detail.code && `code: ${message.detail.code}`, message.detail.report && JSON.stringify(message.detail.report, null, 1)].filter(Boolean).join('\n')}</pre></details>}</>}</div>}
       <aside className="left">
-        <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId}
+        <CircuitPanel config={config} setConfig={setConfig} circuit={circuit} setCircuit={setCircuit} profileId={profileId} schema={schema}
           taskSlot={taskSlot} taskNotes={taskNotes} taskHead={taskHead} taskTools={taskTools} taskStatus={taskStatus} titleSlot={titleSlot}
           taskEpoch={taskEpoch} runs={runs} refreshRuns={refreshRuns} taskLoad={taskLoad} onTaskName={setTaskShown} />
       </aside>

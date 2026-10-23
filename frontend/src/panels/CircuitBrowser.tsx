@@ -1,7 +1,8 @@
-import { ReactNode, useEffect, useRef, useState } from 'react';
+import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { api, gateText, Json, OLDER_BACKEND } from '../api';
 import { kindUnit, si } from '../units';
 import { plural, short } from '../format';
+import { Icon } from './Icons';
 
 export { gateText };
 
@@ -93,20 +94,50 @@ export function NativeSchematic({ native, open, setOpen }: { native: Json; open:
         <td>{Object.entries(i.parameters).map(([k, v]: [string, any]) => `${k}=${v.raw}`).join('  ')}</td></tr>)}</tbody></table></details>);
 }
 
-export function CircuitDetails({ circuit, open, setOpen, children }: { circuit: Json; open: boolean; setOpen: (v: boolean) => void; children: ReactNode }) {
-  return circuit?.loaded && (<>
+/** A size's value as the editors write it, "1.2 um" (branch record SIF-62, as record 7.208): the raw number read "w=0.0000012"
+ *  under "Parameters (canonical units)". A parameter of no known kind keeps its plain number; one not resolved, its text. */
+const sizeValue = (name: string, v: Json): string => typeof v.value === 'number' ? (kindUnit(name) ? si(v.value, kindUnit(name)) : short(v.value))
+  : v.value ?? v.expression ?? '?';
+
+/** "Add to Parameters" in the Instances table (branch record SIF-104), given by the circuit panel for a Virtuoso draft that Save
+ *  as can make a task of: the Parameters rows as they are, and the press, which appends the row and gives its ID. */
+export type SizeAdding = { rows: Json[]; add: (instance_path: string, parameter_name: string, value: number) => string };
+
+export function CircuitDetails({ circuit, open, setOpen, adding, children }: { circuit: Json; open: boolean; setOpen: (v: boolean) => void; adding?: SizeAdding;
+  children: ReactNode }) {
+  // The last size added here, named under the table while its row is there - Undo, a rename or Delete takes the line with the
+  // row - and while this cell is the one shown.
+  const [added, setAdded] = useState<{ cell: string; id: string; instance_path: string; name: string; text: string } | null>(null);
+  if (!circuit?.loaded) return null;
+  // The row each instance's parameter already is, by both (one look-up per size, not a search of the rows per size).
+  const rowOf = new Map<string, string>((adding?.rows ?? []).map((r: Json) => [`${r.instance_path}\n${r.parameter_name}`, String(r.variable_id || '(no ID yet)')]));
+  const line = added && added.cell === circuit.task_key && (adding?.rows ?? []).some((r: Json) => r.variable_id === added.id
+    && r.instance_path === added.instance_path && r.parameter_name === added.name) ? added.text : null;
+  return (<>
     {circuit.notes?.length > 0 && <details className="more hint"><summary>{circuit.notes.length === 1 ? '1 note' : `${circuit.notes.length} notes`} on this circuit</summary>
       {circuit.notes.map((n: string) => <p key={n}>{n}</p>)}</details>}
     <details className="section" open={open} onToggle={e => setOpen(e.currentTarget.open)}>
       <summary><h3>Hierarchy ({plural(circuit.summary.device_count, 'instance')})</h3></summary>
       <Tree node={circuit.hierarchy} />
-      {/* A size as the editors write it, "w = 1.2 um, l = 180 nm" (branch record SIF-62, as record 7.208): the raw number read
-          "w=0.0000012  l=1.8e-7" under "Parameters (canonical units)". A parameter of no known kind keeps its plain number. */}
+      {/* Each size with a number has an "Add to Parameters" after it in a Virtuoso draft (branch record SIF-104): every row was
+          typed by hand from this read-only table, in another window. The button is an icon, its words its label and tooltip,
+          so the table reads as before; a size that is a row already has it off, naming the row. The row's Lower and Upper
+          are left empty: validation marks it until they are typed, and Save as still takes only rows a real run can write. */}
       <details><summary>Instances and parameters</summary>
         <table className="grid small"><thead><tr><th>Instance</th><th>Kind</th><th>Parameters</th></tr></thead>
           <tbody>{circuit.summary.devices.map((d: Json) => <tr key={d.instance_path}><td>{d.instance_path}</td><td>{d.kind}</td>
-            <td>{Object.entries(d.parameters).map(([k, v]: [string, any]) => `${k} = ${typeof v.value === 'number' ? (kindUnit(k) ? si(v.value, kindUnit(k)) : short(v.value))
-              : v.value ?? v.expression ?? '?'}`).join(', ')}</td></tr>)}</tbody></table>
+            <td>{Object.entries(d.parameters).map(([k, v]: [string, any], i) => {
+              const value = sizeValue(k, v), row = rowOf.get(`${d.instance_path}\n${k}`);
+              return <Fragment key={k}>{i > 0 && ', '}<span className="size">{`${k} = ${value}`}{adding && typeof v.value === 'number'
+                && <button className="add-size" aria-label="Add to Parameters" disabled={row !== undefined} onClick={() => {
+                  const id = adding.add(d.instance_path, k, v.value);
+                  setAdded({ cell: circuit.task_key, id, instance_path: d.instance_path, name: k,
+                    text: `Added ${id} (${d.instance_path} ${k} = ${value}): type its Lower and Upper in Parameters, in the workbench.` });
+                }} title={row !== undefined ? `Add to Parameters: ${d.instance_path} ${k} is already the Parameters row ${row}.`
+                  : `Add to Parameters: A new row for ${d.instance_path} ${k} at the end of Parameters. Type its Lower and Upper there, a range `
+                    + `that holds the present ${value}; the workbench's Undo takes it back.`}><Icon name="add" /></button>}</span></Fragment>;
+            })}</td></tr>)}</tbody></table>
+        {line && <p className="hint size-added" role="status">{line}</p>}
       </details>
       {children}
     </details>

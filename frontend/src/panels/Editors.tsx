@@ -7,7 +7,7 @@ import { convert, kindUnit, NUMBER_FORMS, quantity, readQuantity, sameQuantity }
 import { MatchedDevices } from './MatchedDevices';
 import { Cell, LimitSelect } from './cells';
 import { DiffView } from './DiffView';
-import { columnOf, drawsColumn, exact, FOLLOWER_IGNORES, LABELS, limitLabel, QUANTITY, readNumber, type Section, SECTION_TITLES as TITLES, suggestedScale,
+import { columnOf, drawsColumn, exact, FOLLOWER_IGNORES, LABELS, limitLabel, newRow, QUANTITY, readNumber, type Section, SECTION_TITLES as TITLES,
   unitIn, usesProbe, withFollowers, withSaved } from './editorRules';
 import { type BarCell, FormulaBar } from './FormulaBar';
 import { keep, readKept } from '../kept';
@@ -20,8 +20,6 @@ import type { HistoryStep } from '../history';
 import { undoKey } from '../windows';
 
 const ROW_TABS = Object.keys(TITLES);
-/** The start of a new row's ID (Add), in the tab's own word (branch record SIF-50). */
-const NEW_ID: Record<Section, string> = { parameters: 'parameter', measurements: 'probe', targets: 'spec' };
 /** The sections a whole-configuration import replaces beside the three tables, as the confirmation names them. */
 const IMPORTED_SECTIONS: Record<string, string> = { project: 'project labels', circuit: 'circuit source', run: 'run settings',
   output: 'output settings', research: 'research labels' };
@@ -200,26 +198,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     patch(index, moved);
   };
   const add = () => {
-    const row: Json = {};
-    // A required field without a default comes as `default: null` from the schema: that means "none", not null - a new
-    // Specs row used to get constraint = null and normalization_scale = null, and the whole configuration failed validation.
-    for (const c of columns) row[c.name] = c.default !== undefined && (c.default !== null || c.nullable) ? c.default
-      : c.nullable ? null : c.options ? c.options[0] : c.type === 'number' ? 1 : c.type === 'boolean' ? false : '';
-    // A new probe measures the way the task's other probes do - a task measures one way, Save task refuses a mix - where it
-    // used to take result_source's default, backend_profile, in a Maestro task too (review of 2026-10-03). The first probe of a
-    // task: ngspice and MOCK tasks read their backend's metrics, every other task reads Maestro outputs.
-    if (tab === 'measurements') row.result_source = config.measurements?.[0]?.result_source
-      ?? (/^(ngspice|synthetic):/.test(String(config.circuit?.task_id ?? '')) ? 'backend_profile' : 'ade_output');
-    // A free ID: `rows.length + 1` repeated an existing one after a deletion, and "Delete selected" then removed both rows.
-    // Named as the tab is (probe_3, spec_4), not by the section key (measurement_3, target_4; branch record SIF-50).
-    const used = new Set(rows.map(r => r[keyField]));
-    let n = rows.length + 1;
-    while (used.has(`${NEW_ID[tab]}_${n}`)) n += 1;
-    row[keyField] = `${NEW_ID[tab]}_${n}`;
-    // A new spec starts as the simplest equation over the probes: the first probe, in its unit.
-    const first = config.measurements?.[0];
-    if (tab === 'targets' && first && !row.equation) Object.assign(row, { equation: first.measurement_id ?? '', unit: row.unit || first.unit || '' });
-    if (tab === 'targets' && row.normalization_scale == null) row.normalization_scale = suggestedScale(row);
+    // Its defaults, its free ID, a Probe's way of measuring and a Spec's first equation: editorRules.ts newRow, which the
+    // Virtuoso window's "Add to Parameters" makes its rows with too (branch record SIF-104).
+    const row = newRow(tab, config, schema);
     // The new row comes into view with its ID chosen, so its name is typed at once (branch record SIF-96): it went in at the
     // end, out of view, the focus left on Add, and a Find text it did not hold hid it - Add seemed to do nothing.
     if (findWords.length && !matchesFind(row)) {
@@ -795,10 +776,11 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
         + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>The optimizer searches <b>{validation == null ? '...'
           : (validation.facts?.independent_action_variables ?? '?')}</b> of {plural(rows.length, 'row')}.</p>}
       {/* An empty Parameters table says how to fill it (branch record SIF-88): a cell read from Virtuoso brings Probes only, and
-          its sizes are in the Virtuoso window. Not while no task or cell is chosen: the task's lines say to choose one. */}
+          its sizes are in the Virtuoso window, where the + after each one adds it as a row (branch record SIF-104). Not while no
+          task or cell is chosen: the task's lines say to choose one. */}
       {tab === 'parameters' && !rows.length && (config.circuit?.source === 'virtuoso' || (config.circuit?.source === 'registered_task' && !!config.circuit?.task_id))
         && <p className="hint parameters-empty">No rows yet: add one row per size the optimizer may change (Add, the + above).{config.circuit.source === 'virtuoso'
-          ? " Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window." : ''}</p>}
+          ? " Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window: the + after a size adds it as a row." : ''}</p>}
       {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
         + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns).'}>Probes: {probeIds.length
           ? probeIds.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<code className="probe-id">{id}</code></Fragment>) : 'none yet - fill in the Probes tab first'}</p>}

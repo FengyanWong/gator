@@ -19,7 +19,8 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/project_help_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, CIRCUIT_PANEL, CIRCUIT_SHOWN_KEY, launchEdge, outDir, reportRefused, runChecks, showCircuit, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
+import { check, CIRCUIT_PANEL, CIRCUIT_SHOWN_KEY, CONFIG_KEY, launchEdge, outDir, reportRefused, runChecks, showCircuit, sleep, TASK_PANEL, taskWindow, VIRTUOSO_WINDOW,
+  workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -174,6 +175,10 @@ await runChecks(browser, async () => {
     && await evaluate(`${TREE}.checkVisibility()`) && await col.shown('Instances and parameters') && (await col.isOpen('Instances and parameters')) === false);
   await col.click(col.SUMMARY('Instances and parameters')); await sleep(200);
   check('opening the inner line leaves the block open (an inner toggle is not taken for the block\'s own)', (await evaluate(`${HIERARCHY}.open`)) === true && (await col.isOpen('Instances and parameters')) === true);
+  // Branch record SIF-104: "Add to Parameters" is a Virtuoso draft's; a task's rows come from the task.
+  const taskSizes = await evaluate(`(() => { const t = [...${HIERARCHY}.querySelectorAll('table')].find(x => x.tHead); return t ? { sizes: t.querySelectorAll('.size').length,
+    buttons: t.querySelectorAll('button').length } : null; })()`);
+  check('a task\'s sizes have no "Add to Parameters" button (branch record SIF-104)', taskSizes?.sizes > 0 && taskSizes.buttons === 0, JSON.stringify(taskSizes));
   await col.click(col.SUMMARY('Instances and parameters')); await sleep(200);
   await shotColumn('help-1b-hierarchy-open.png');                                   // left open: the later states must find it as the user left it
 
@@ -231,9 +236,12 @@ await runChecks(browser, async () => {
   // Branch record SIF-88: the next step stands in view (it was the fold's second paragraph); what the draft is stays folded.
   check('draft: the next step is in view; what it is is folded under "What you can do with it now"', await win.shown('Next: fill Parameters, Probes and Specs')
     && await win.shown('it writes the rows into this cell\'s Maestro view') && await win.shown('What you can do with it now') && await win.folded('The workbench holds the export of this cell'));
-  // A read brings no Parameters rows: the empty table says how to fill it, and where the cell's sizes are.
-  check('draft: the empty Parameters table says to add rows and where the cell\'s present sizes are (branch record SIF-88)',
-    await card.shown('No rows yet: add one row per size the optimizer may change (Add, the + above). Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window.'),
+  check('draft: the next step names the + after each size, which adds it to Parameters (branch record SIF-104)',
+    await win.shown('the + after a size under Hierarchy, Instances and parameters (at the end of this window) adds it to Parameters'));
+  // A read brings no Parameters rows: the empty table says how to fill it, and where the cell's sizes are - each with its +
+  // (branch record SIF-104).
+  check('draft: the empty Parameters table says to add rows and where the cell\'s present sizes are, with their + (branch records SIF-88, SIF-104)',
+    await card.shown('No rows yet: add one row per size the optimizer may change (Add, the + above). Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window: the + after a size adds it as a row.'),
     await evaluate(`${PANEL}.querySelector('.parameters-empty')?.textContent ?? 'none'`));
   check('draft: its button stays in view', await win.buttonShown('Read the cell again') && !(await win.buttonShown('Ask the agent to set up')));
   check('draft: the cell is named as worked in directly, in view', await win.shown(`Working in ${LIBRARY}/tb_ring_a directly: you declared it a copy you made`));
@@ -256,12 +264,53 @@ await runChecks(browser, async () => {
     && await far.evaluate(`${WTREE}.checkVisibility()`) && await far.evaluate(`${WHIER}.contains(${NATIVE})`) && await win.shown('Native schematic') && (await far.evaluate(`${NATIVE}.open`)) === false
     && !(await col.present('Hierarchy (')));
   await win.click(win.SUMMARY('Hierarchy (')); await sleep(250);
+  // Its own line, by its summary: the next step names "Instances and parameters" in view (branch record SIF-104).
   check('draft: closed by the user, the whole block is one line again: tree, "Instances and parameters" and "Native schematic" are folded', (await far.evaluate(`${WHIER}.open`)) === false
-    && await win.shown('Hierarchy (3 instances)') && await far.evaluate(`!${WTREE}.checkVisibility()`) && await win.folded('Instances and parameters') && await win.folded('Native schematic'));
+    && await win.shown('Hierarchy (3 instances)') && await far.evaluate(`!${WTREE}.checkVisibility()`)
+    && await far.evaluate(`!!${win.SUMMARY('Instances and parameters')} && !${win.SUMMARY('Instances and parameters')}.checkVisibility()`) && await win.folded('Native schematic'));
   // Branch record SIF-62: a size as the editors write it; it read "w=0.000004" under "Parameters (canonical units)".
   const sizes = await far.evaluate(`(() => { const t = [...${WHIER}.querySelectorAll('table')].find(x => x.tHead); return t ? [t.tHead.textContent, t.tBodies[0].rows[0].cells[2].textContent] : null; })()`);
   check('draft: "Instances and parameters" writes a size with its unit, "w = 4 um", under "Parameters"', JSON.stringify(sizes) === JSON.stringify(['InstanceKindParameters', 'w = 4 um']), JSON.stringify(sizes));
   await shotWindow('help-4b-draft-hierarchy-closed.png');
+
+  // ---- a size of the cell becomes a Parameters row with one press (branch record SIF-104) ------------------------------------------
+  // Every row was typed by hand from the read-only table above. The + after a size adds the row Add makes, with the instance, the
+  // parameter and the present value; its Lower and Upper are left to be typed. It is an icon, so the size reads as before ("w = 4
+  // um" above, with it there); the main window's Undo takes the row back, and the + and its line follow the row.
+  await win.click(win.SUMMARY('Hierarchy (')); await win.click(win.SUMMARY('Instances and parameters')); await sleep(250);
+  const SIZE = `${WHIER}.querySelector('table tbody td .size')`, PLUS = `${SIZE}?.querySelector('button.add-size')`;
+  const plus = () => far.evaluate(`(() => { const b = ${PLUS}; return b ? { label: b.getAttribute('aria-label'), title: b.title, on: !b.disabled, shown: b.checkVisibility(),
+    words: b.textContent, size: ${SIZE}.textContent } : null; })()`);
+  const PROWS = `${PANEL}.querySelectorAll('table.editor tbody tr')`;
+  const free = await plus();
+  check('draft: the size has an "Add to Parameters" button after it, an icon whose words are its label and tooltip: the size reads "w = 4 um" as before',
+    free?.label === 'Add to Parameters' && free.on && free.shown && free.words === '' && free.size === 'w = 4 um' && free.title === 'Add to Parameters: A new row for '
+      + 'XU1/M1 w at the end of Parameters. Type its Lower and Upper there, a range that holds the present 4 um; the workbench\'s Undo takes it back.', JSON.stringify(free));
+  await win.click(PLUS);
+  await until(`${PROWS}.length === 1`);
+  const added = await evaluate(`(() => { const tr = ${PANEL}.querySelector('table.editor tbody tr'), v = f => tr?.querySelector('td[data-field="' + f + '"] input')?.value ?? null;
+    return { id: v('variable_id'), instance: v('instance_path'), parameter: v('parameter_name'), lower: v('lower'), upper: v('upper'),
+      tab: ${PANEL}.querySelector('.tabs button[data-editor="parameters"]')?.textContent.trim(), empty: !!${PANEL}.querySelector('.parameters-empty') }; })()`);
+  check('a press adds a Parameters row: a free ID, the instance and the parameter filled in, Lower and Upper empty; the empty table\'s line goes',
+    added.id === 'parameter_1' && added.instance === 'XU1/M1' && added.parameter === 'w' && added.lower === '' && added.upper === '' && added.tab === 'Parameters (1)'
+      && !added.empty, JSON.stringify(added));
+  await until(`JSON.parse(localStorage.getItem(${JSON.stringify(CONFIG_KEY)}) ?? 'null')?.parameters?.length === 1`);
+  const stored = (await page.stored()).parameters[0];
+  check('...the row Add makes, with the present size as its initial value in the parameter\'s unit (4e-6 m), and no bounds',
+    stored.variable_id === 'parameter_1' && stored.initial_value === 4e-6 && stored.unit === 'm' && stored.lower === null && stored.upper === null && stored.step === null
+      && stored.optimized === true && stored.value_type === 'continuous' && stored.binding_group === null && stored.ratio === 1, JSON.stringify(stored));
+  const taken = await plus();
+  check('...the window names the row and what to type, and the + is off, naming the row', await win.shown('Added parameter_1 (XU1/M1 w = 4 um): type its Lower and Upper in '
+    + 'Parameters, in the workbench.') && taken?.on === false && taken.title === 'Add to Parameters: XU1/M1 w is already the Parameters row parameter_1.', JSON.stringify(taken));
+  check('...validation marks the row until its Lower and Upper are typed', await until(`!!${PANEL}.querySelector('table.editor tbody tr.has-error [data-code="missing_bounds"]')`),
+    await evaluate(`${PANEL}.querySelector('table.editor tbody tr td.issues')?.textContent ?? 'no row'`));
+  await shotWindow('help-4c-draft-size-added.png');
+  await evaluate(`[...${PANEL}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Undo').click()`);
+  await until(`${PROWS}.length === 0`); await sleep(200);
+  const back = await plus();
+  check('one Undo in the workbench takes the row back and says so; the + is on again and its line is gone', back?.on === true && !(await win.present('Added parameter_1'))
+    && await card.shown('Undo: Parameters parameter_1 removed.') && await evaluate(`!!${PANEL}.querySelector('.parameters-empty')`), JSON.stringify(back));
+  await win.click(win.SUMMARY('Instances and parameters')); await win.click(win.SUMMARY('Hierarchy (')); await sleep(250);   // closed again, as the user left it
 
   // ---- a saved task: its lines under the editors' toolbar, Check now on the tab line, its circuit in the column (record 7.362) ----------
   await evaluate(`${TASK_BUTTON('Save as')}.click()`, true); await quiet(); await until(`!!${PANEL}.querySelector('.tabs .task-tools button.check-now')`);

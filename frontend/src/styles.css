@@ -329,6 +329,11 @@ button.run-main { font-weight: 600; }
 button:has(> svg.icon) { display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; line-height: 1; } svg.icon { flex: none; }
 /* An icon button in a table row (the per-file download of Output files) keeps the row as low as its text. */
 table.grid td > button:has(> svg.icon) { padding: 1px 6px; vertical-align: middle; }
+/* "Add to Parameters" after a size of a cell read (branch record SIF-104): a small + that stays with its size when the line
+   wraps and keeps the row as low as its text; its words are its label and tooltip. Off (faded) for a size that is a row. A
+   size without one (a task's, an expression) still wraps as before. */
+table.grid .size:has(> button.add-size) { white-space: nowrap; }
+table.grid td button.add-size { margin-left: 4px; padding: 1px 3px; border-radius: 5px; vertical-align: -1px; } button.add-size svg.icon { width: 11px; height: 11px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* Abort is RED (user request 2026-09-21): solid, like the main button is solid blue; faded while there is nothing to abort. */
 button.run-abort { background: var(--bad-fill); color: var(--on-bad); border-color: var(--bad-fill); font-weight: 600; } button.run-abort:hover:not(:disabled) { background: var(--bad-strong); border-color: var(--bad-strong); }

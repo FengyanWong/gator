@@ -115,8 +115,9 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
         <div className="note">
           <p><b>Read from Virtuoso. Not optimizable yet: Save as makes it a task.</b></p>
           {/* The next step in view (branch record SIF-88): it was the second paragraph of the closed fold below, and a read
-              leaves Parameters empty. */}
-          <p className="hint next-step">Next: fill Parameters, Probes and Specs - <b>Read setup</b> below takes the outputs and specs of the cell's Maestro
+              leaves Parameters empty. It names the + of each size in the Hierarchy at the window's end (branch record SIF-104). */}
+          <p className="hint next-step">Next: fill Parameters, Probes and Specs - the <b>+</b> after a size under <b>Hierarchy</b>, Instances and parameters
+            (at the end of this window) adds it to Parameters, and <b>Read setup</b> below takes the outputs and specs of the cell's Maestro
             test - then press <b>Save as</b>: it writes the rows into this cell's Maestro view (the copy you declared) and reads it back.</p>
           <details className="more"><summary>What you can do with it now</summary>
             <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled. Claude Code

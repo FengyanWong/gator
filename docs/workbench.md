@@ -1117,7 +1117,13 @@ to say.
   headline (branch record SIF-88; it was folded under "What you can do with it now"). A read brings no Parameters rows,
   so an empty Parameters table says "No rows yet: add one row per size the optimizer may change (Add, the + above)" and,
   for a cell, that its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window - not while
-  no task or cell is chosen. Device types this project has not verified (for example the MIM invented model) are shown
+  no task or cell is chosen. There each size with a number has a **+** after it, **Add to Parameters** (branch record
+  SIF-104; every row was typed by hand until then): a press adds the row **Add** makes - a free ID, the same defaults -
+  with the instance, the parameter and the present value (in the parameter's unit, as its initial value) filled in, as one
+  Undo step of the workbench. Lower and Upper stay empty, so the row is marked until you type them: a range that holds
+  the present size. A line under the table names the row while it is there, and the **+** of a size that is a Parameters
+  row already is off, its tooltip naming the row. Only a cell read here has them, not a task's Hierarchy; Save task still
+  accepts only rows a real run can write. Device types this project has not verified (for example the MIM invented model) are shown
   with unnamed pins. Such a cell still cannot run: Start stays disabled (`circuit_profile_missing`) until
   it is saved as a task.
 * **Save task** (at the right end of the editors' tab line since 2026-09-22; the note points there) replaced the

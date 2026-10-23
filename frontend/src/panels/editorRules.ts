@@ -1,6 +1,6 @@
 // The editors' rules (plan-refactoring C6, out of Editors.tsx): the tables' names and headers, the scale a Specs row is offered,
-// the Specs' limit list, typed numbers, the tooltip of a cell that differs from the saved task, and the fields that follow a
-// change of a row. No React.
+// the Specs' limit list, typed numbers, the tooltip of a cell that differs from the saved task, the fields that follow a
+// change of a row, and the row Add makes. No React.
 import type { Json } from '../api';
 import { kindUnit, PREFIX_POWERS as SUFFIX, sameQuantity } from '../units';
 
@@ -158,4 +158,33 @@ export function withFollowers(tab: Section, c: Json, changes: Map<number, Json>)
     return { ...moved, normalization_scale: followScale(t, moved) };                  // as a unit typed in the Spec did
   });
   return next;
+}
+
+/** The start of a new row's ID (Add), in the tab's own word (branch record SIF-50). */
+const NEW_ID: Record<Section, string> = { parameters: 'parameter', measurements: 'probe', targets: 'spec' };
+/** The row Add puts at the end of a table of `config` (`schema`: /api/schema, its columns and each table's ID field). Here, out
+ *  of Editors.tsx, since branch record SIF-104: the Virtuoso window's "Add to Parameters" makes this row too, with a size's
+ *  instance, parameter and present value, so the two cannot differ. */
+export function newRow(tab: Section, config: Json, schema: Json): Json {
+  const row: Json = {}, keyField: string = schema.section_keys[tab], rows: Json[] = config[tab] ?? [];
+  // A required field without a default comes as `default: null` from the schema: that means "none", not null - a new
+  // Specs row used to get constraint = null and normalization_scale = null, and the whole configuration failed validation.
+  for (const c of schema.editors[tab] as Json[]) row[c.name] = c.default !== undefined && (c.default !== null || c.nullable) ? c.default
+    : c.nullable ? null : c.options ? c.options[0] : c.type === 'number' ? 1 : c.type === 'boolean' ? false : '';
+  // A new probe measures the way the task's other probes do - a task measures one way, Save task refuses a mix - where it
+  // used to take result_source's default, backend_profile, in a Maestro task too (review of 2026-10-03). The first probe of a
+  // task: ngspice and MOCK tasks read their backend's metrics, every other task reads Maestro outputs.
+  if (tab === 'measurements') row.result_source = config.measurements?.[0]?.result_source
+    ?? (/^(ngspice|synthetic):/.test(String(config.circuit?.task_id ?? '')) ? 'backend_profile' : 'ade_output');
+  // A free ID: `rows.length + 1` repeated an existing one after a deletion, and "Delete selected" then removed both rows.
+  // Named as the tab is (probe_3, spec_4), not by the section key (measurement_3, target_4; branch record SIF-50).
+  const used = new Set(rows.map(r => r[keyField]));
+  let n = rows.length + 1;
+  while (used.has(`${NEW_ID[tab]}_${n}`)) n += 1;
+  row[keyField] = `${NEW_ID[tab]}_${n}`;
+  // A new spec starts as the simplest equation over the probes: the first probe, in its unit.
+  const first = config.measurements?.[0];
+  if (tab === 'targets' && first && !row.equation) Object.assign(row, { equation: first.measurement_id ?? '', unit: row.unit || first.unit || '' });
+  if (tab === 'targets' && row.normalization_scale == null) row.normalization_scale = suggestedScale(row);
+  return row;
 }

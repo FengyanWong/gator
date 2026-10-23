@@ -3216,3 +3216,54 @@ stop such a proxy first and to test from Windows after a restart.
 **Checked live** (read-only headless Edge on 8765, writes refused): the page draws with the user's VCO task, no console
 error, no refused write; Tasks window, Windows menu and the 1366 px strip as the 2026-10-19 live check expects; pictures in
 artifacts/local/reviews/live-2026-10-22.
+
+### SIF-104 A cell's size becomes a Parameters row with one press (2026-10-23; from the usability audit)
+
+**Found.** After a cell was read from Virtuoso, every Parameters row had to be typed by hand (audit finding J1-2, the part
+SIF-88 left out). A read fills Probes only. Add gave a blank row whose Instance and Parameter are free text, and the present
+sizes a range must contain were only in the read-only "Instances and parameters" table, under Hierarchy in the Virtuoso
+window: another window. Copying each instance path and parameter name across was the slowest step of turning a cell into a
+task, and a mistyped one was found only by validation or Save as. SIF-88 gave the empty table a line, and left the button per
+size out because its rows would start with bounds that hold no real size. This batch takes it with the bounds left empty for
+the user, as the audit's refined fix says.
+
+**Changed.** `frontend/src/panels/editorRules.ts`: `newRow(tab, config, schema)` holds the row Add makes: every field at its
+schema default, a free ID in the tab's word, a Probe's way of measuring, a Spec's first equation and scale. It moved out of
+`add` in `frontend/src/panels/Editors.tsx` with its comments, and Add uses it, so the two cannot differ. It takes the
+configuration, not only the rows (the plan's `newRow(tab, rows, schema)`), because Add also reads the task and the Probes.
+`frontend/src/panels/CircuitBrowser.tsx`: `CircuitDetails` takes `adding` (`SizeAdding`: the Parameters rows and the press).
+With it, each size with a number in "Instances and parameters" has an icon button after it, labelled "Add to Parameters",
+with the tooltip "Add to Parameters: A new row for XU1/M1 w at the end of Parameters. Type its Lower and Upper there, a range
+that holds the present 4 um; the workbench's Undo takes it back." The icon adds no text, so the table still reads "w = 4 um".
+A size that is a Parameters row already (same instance and parameter) has it off: "Add to Parameters: XU1/M1 w is already the
+Parameters row parameter_1." A line under the table names the last row added while that row is there and the cell is shown:
+"Added parameter_1 (XU1/M1 w = 4 um): type its Lower and Upper in Parameters, in the workbench." Undo, a rename or a Delete of
+the row takes the line with it. A size that is no number (an expression) gets no button. Each size is a `span.size`;
+`frontend/src/styles.css` keeps a size with its + on one line and the + small (11 px), and a size without one wraps as before.
+`frontend/src/panels/Left.tsx` gives `adding` only to a Virtuoso draft that Save as can make a task of: not to a cell that
+has a task already, nor to a task's Hierarchy in the circuit column. The press appends the row `newRow` makes with
+`instance_path`, `parameter_name`, `initial_value` (the present value) and `unit` (the parameter kind's: m for w and l), as
+one Undo step. Lower and Upper stay empty, so validation marks the row ("An optimized independent variable needs both
+bounds") until they are typed. Save as still accepts only rows a real run can write, with a range that holds the present
+value. `frontend/src/App.tsx` passes the schema to the circuit panel (an optional prop: the edit_state fixture renders the
+panel without one, and then no size has the button). The draft's next-step line (`frontend/src/panels/VirtuosoWindow.tsx`)
+now says "the + after a size under Hierarchy, Instances and parameters (at the end of this window) adds it to Parameters".
+The empty Parameters line in the editors ends "...in the Virtuoso window: the + after a size adds it as a row." Nothing here
+starts, continues or stops a run, saves a task or writes to Virtuoso: the press changes only the configuration, and the
+workbench's Undo takes it back. `docs/workbench.md` (Read this cell into the workbench) and `docs/functionality-reference.md`
+(the Hierarchy block, Read this cell, the toolbar's Add) describe it. `frontend/scripts/project_help_check.mjs`: the empty
+line's new words, and the window's test that "Instances and parameters" is folded now reads its summary line, because the
+next step names it in view.
+
+**Checked.** `tsc` clean. `project_help_check` 58 (50 before). A task's 97 sizes in the circuit column have no button. The
+draft's next step names the +, and the empty Parameters line ends with it. The size "w = 4 um" has the button: labelled
+"Add to Parameters", no text of its own, the tooltip above, the cell's text unchanged. A press gives Parameters (1) with
+parameter_1, XU1/M1, w, Lower and Upper empty, and the empty line goes. It is stored with initial_value 4e-6, unit m, no
+bounds or step, optimized, continuous, untied, ratio 1. The window names the row, the button is off with the row's name, and
+the row is marked `missing_bounds`. One Undo in the workbench takes the row back and says "Undo: Parameters parameter_1
+removed."; the button is on again and the line has gone. Each new check looks for what the code before did not do. Its first
+run failed one old test: the next step's words meet the window's old "folded" text test in view. That test reads the summary
+line now. New picture: `help-4c-draft-size-added.png`. Also run, unchanged: `virtuoso_source_check` 108,
+`testbench_probes_check` 41, `find_fill_copy_check` 50, `typing_check` 50 (Add's free IDs), `spec_equations_check` 36,
+`working_copy_check` 34, `reliability_check` 20, `circuit_source_check` 17, `editor_columns_check` 23 (Add's Probe and
+Spec), `edit_state_check` 28 (11 scripts, 465 checks, one lane, all passed). No flakes.

@@ -3820,3 +3820,55 @@ away, the stored configuration and the message line unchanged, the run kept as a
 `calibration-0d-nothing-proposed.png`. Each new check looks for what the code before did not have (Hide and OK had no
 drawing and no `.sr-only` label). Also run, unchanged: `calibration_save_check` 22, `callouts_check` 8,
 `reliability_check` 20, `run_control_check` 162 (6 scripts, 322 checks, one lane, all passed the first time). No flakes.
+
+### SIF-113 The list windows read again with the refresh icon, and Delete task is a waste bin (2026-10-23; from the icon audit)
+
+**Found.** One action - read the list again - had two looks a few centimetres apart. The bottom tabs' Data tables and
+Output files and the Corner check draw it as the refresh icon, an arrow around; the Runs, Tasks and RL model windows
+started their tool lines with the words "Refresh list" - in the Runs and Tasks windows above the Folders' icons for a
+new folder, a rename and a delete - and Running now had "Refresh" beside its heading (icon audit BOT-1 / ICON-4, WIN-1 /
+ICON-5, WIN-2 / ICON-6, BOT-2 / ICON-2). The Tasks window's Refresh list had no tooltip at all. Delete task, already an
+icon, was a tray struck out - the tray of Load task and Export JSON - so it read as "unload", while Delete folder in the
+same window and the editors' Delete selected are a waste bin; and its drawing stood still while its delete was on its
+way, where other icon buttons show the hourglass (ICON-19, the drawing's half).
+
+**Changed.** `frontend/src/panels/RunList.tsx`, `TaskList.tsx`, `ModelChooser.tsx`: Refresh list is the `refresh`
+drawing, its words in `.sr-only` - the button's text is still "Refresh list" - and at the start of its tooltip: in the
+Runs and RL model windows "Refresh list: every run folder is read again from the disk." as before, in the Tasks window
+the new "Refresh list: the tasks, their folders and the run list are read again." (what `refresh(true)` reads). Icon and
+words stay while the list is read, as the audit's verdict asks: the button is greyed out, and the count on its line says
+"Reading the runs..." (the tasks, the saved models). The lines that send the user to the button - "Press Refresh list to
+retry", an older server's "press "Refresh list"", Move to…'s "... press Refresh list." - stay word for word: the tooltip
+starts with those words. `frontend/src/panels/RunBrief.tsx`: Running now's Refresh is the same icon, "Refresh" for
+screen readers and at the start of its tooltip, with nothing beside the drawing (`run_control_check` finds it by its
+exact text), centred on the heading by the rule SIF-112 put in roadster.css's icon block for it: no CSS is added. The RL
+model window's line keeps its parts at their foot, so its icon button stands beside the Design list as the bottom tabs'
+icon buttons stand beside theirs; the Runs and Tasks windows centre their lines. `TaskList.tsx`: Delete task draws the
+waste bin (`delete`), and while its delete is on its way the hourglass (`wait`), "Deleting..." for screen readers as
+before; its tooltip (`Left.tsx`) is unchanged, and it still asks once more. The struck-out tray, now unused, leaves
+`Icons.tsx` with the audit's fourth batch, as the plan orders. Left out: the Rename in a task's and a saved model's
+Details (WIN-6, WIN-7). The audit's list of buttons that keep their words holds them (ICON-17): Rename applies the name
+typed in the box beside it - a commit, which keeps its words -, a pencil beside a box that can be typed in reads as
+"edit" (the Folders' pencil starts a rename in a prompt, another action), and its busy "Renaming..." is in the words.
+Nothing here starts, continues or stops a run, saves a task or writes to Virtuoso: each press does what it did.
+`docs/workbench.md` (the run brief; the Tasks window's Refresh list and Delete task; the Runs window; the saved models)
+and `docs/functionality-reference.md` (the Task-name button, Delete task, Saved models, Run brief and Runs... rows) say
+it.
+
+**Checked.** `tsc` clean. `run_control_check` 164 (162 before): Running now's Refresh is the icon, "Refresh" for screen
+readers and at the start of its tooltip, its middle 0.3 px from the heading's. `run_list_check` 168 (167) and
+`model_chooser_check` 121 (120): Refresh list is the icon, its words for screen readers - the text still exactly
+"Refresh list" - and its tooltip as before. `task_list_check` 105 (103): Refresh list the icon, with the new tooltip;
+Delete task the waste bin - the drawing of the editors' Delete selected -, "Delete task" for screen readers and at the
+start of its tooltip. `virtuoso_source_check` 114 (112): Delete task the editors' bin; while its delete is on its way -
+the check's fixture holds the answer until it has looked - greyed out, "Deleting..." and another drawing than the bin
+(the log shows the hourglass's). Each new check looks for what the code before did not have (no drawing, no `.sr-only`
+label, no tooltip on the Tasks window's button, the tray, a drawing that stood still). Also run, unchanged:
+`ngspice_window_check` 43, `graph_view_check` 69, `model_structure_check` 31 (8 scripts, 815 checks, one lane, all
+passed the first time); and every other check that opens the Tasks, Runs, RL model or Running now window:
+`training_tab_check` 108, `testbench_probes_check` 41, `task_rows_check` 54, `typing_check` 62, `project_help_check` 61,
+`reliability_check` 20, `looks_check` 76, `network_panel_check` 72, `task_run_check` 39, `pdk_check` 44,
+`reward_block_check` 33, `circuit_source_check` 17, `encoder_models_check` 24, `agent_window_check` 33,
+`consistency_check` 14, `network_inputs_check` 9 (16 scripts, 707 checks, one lane). One flake: `reward_block_check`
+stopped after 23 checks in that batch - "the DevTools session closed (its window went away)", in the RL model window's
+network settings after "Use the template's values", away from the saved models - and passed alone at once (33).

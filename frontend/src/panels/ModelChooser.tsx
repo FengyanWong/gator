@@ -7,6 +7,7 @@ import { childrenOf, designName, ENCODER_SHORT, historyOf, pointText, startedFro
 import { openRunsAt } from '../openAt';
 import { CircuitGraphView } from './CircuitGraphView';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
+import { Icon } from './Icons';
 import { TableHead, useTableView } from './TableView';
 import { ModelStructure } from './ModelStructure';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
@@ -260,8 +261,10 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
     });
   }, [read]);
   return (<div className="saved-models">
+    {/* Refresh list is the refresh icon, as in the Runs and Tasks windows (branch record SIF-113), its words for screen readers
+        and at the start of its tooltip; while it reads, the count at the line's end says so */}
     <div className="row"><button onClick={() => { freshNext.current = true; load(); void folders.refresh(); }} disabled={loading}
-      title="Refresh list: every run folder is read again from the disk.">Refresh list</button>
+      title="Refresh list: every run folder is read again from the disk."><Icon name="refresh" label="Refresh list" /></button>
       <select className="model-design-filter" value={design} aria-label="Design" onChange={e => { setDesign(e.target.value); setSelected([]); }}
         title="Design: the saved models of one network design only, with how many there are of each.">
         <option value="">All designs</option>{designs.map(([d, n]) => <option key={d} value={d}>{d} ({n})</option>)}</select>

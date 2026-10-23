@@ -235,7 +235,10 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
     <div className="run-window task-window">
       <h2>Tasks</h2>
       <div className="row">
-        <button onClick={() => refresh(true)} disabled={reading || folders.busy}>Refresh list</button>
+        {/* Refresh list is the refresh icon, as in the Runs and RL model windows (branch record SIF-113): its words for screen
+            readers and at the start of the tooltip it had none of; while it reads, the count beside it says so */}
+        <button onClick={() => refresh(true)} disabled={reading || folders.busy}
+          title="Refresh list: the tasks, their folders and the run list are read again."><Icon name="refresh" label="Refresh list" /></button>
         <input className="run-filter task-filter" placeholder="Filter: name, class, cell, a date ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
         <span className="hint run-count task-count">{reading ? 'Reading the tasks...' : tasksError ? 'The task list could not be read.'
           : `${tasks.length} registered task${tasks.length === 1 ? '' : 's'}${readAt ? `, read at ${readAt}` : ''}. Nothing here updates by itself.`}</span>
@@ -244,8 +247,10 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
       {current && onDelete && <div className="row task-window-actions">
         <span className="hint">Current task: <code>{nameOf(current)}</code></span>
+        {/* The waste bin, as Delete folder in this window and Delete selected in the editors (branch record SIF-113: a
+            struck-out tray, which read as "unload"); the hourglass while the delete is on its way, as other icon buttons wait */}
         <button disabled={deleteDisabled} onClick={() => onDelete(popup)} title={deleteTitle}>
-          <Icon name="delete-task" label={deleting ? 'Deleting...' : 'Delete task'} /></button>
+          <Icon name={deleting ? 'wait' : 'delete'} label={deleting ? 'Deleting...' : 'Delete task'} /></button>
       </div>}
       {deleteNotice}
       {newTask && <div className="row task-window-new"><span className="hint">New task:</span>{newTask(popup)}</div>}

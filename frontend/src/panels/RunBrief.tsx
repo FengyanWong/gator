@@ -5,6 +5,7 @@ import { startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
+import { Icon } from './Icons';
 import { runMode } from './rlModelText';
 import { RUNNING_WINDOW } from '../contract';
 import { cardLive, isLive, type RunControl } from '../runState';
@@ -87,8 +88,11 @@ export function useRunBrief({ control, runs, onRefreshRuns, onShow }: { control:
   const byDir = new Map(runs.map(r => [r.run_dir, r]));
   const view = popup && root && (
     <div className="run-brief">
+      {/* Refresh is the refresh icon, as the bottom tabs' and the list windows' (branch record SIF-113), its word for screen
+          readers and at the start of its tooltip; "Reading..." beside it says when it reads. Centred on the heading by
+          roadster.css's icon block: on the head line's baseline an icon alone stands high. */}
       <div className="row brief-head"><h2>Running now</h2>
-        <button onClick={() => void read()} disabled={reading} title="Refresh: read the run list and the other live runs again.">Refresh</button>
+        <button onClick={() => void read()} disabled={reading} title="Refresh: read the run list and the other live runs again."><Icon name="refresh" label="Refresh" /></button>
         <span className="hint">{reading ? 'Reading...' : readAt ? `read at ${readAt}` : ''}</span></div>
       {control.dir ? <BriefCard dir={control.dir} row={byDir.get(control.dir) ?? null} status={control.status?.run_dir === control.dir ? control.status : null}
           header byDir={byDir} from={popup} onShow={onShow} />

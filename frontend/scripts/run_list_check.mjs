@@ -24,7 +24,8 @@
 // task's runs lets the ticks go; New folder with runs ticked keeps them. Branch record SIF-109: a column title takes Tab, Enter
 // and Space; a run's row takes Enter, which does what its double click does. Branch record SIF-110: the window opens again at
 // the size and place it was left at (popupWindow.ts, every pop-up window), on this screen and at most its size. Its review
-// follow-up: at any page zoom - its outer size and corner are kept too, and set with resizeTo and moveTo.
+// follow-up: at any page zoom - its outer size and corner are kept too, and set with resizeTo and moveTo. Branch record
+// SIF-113: Refresh list is the refresh icon, its words for screen readers and at the start of its tooltip.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -511,6 +512,12 @@ await runChecks(browser, async () => {
   const quiet = lists(); await sleep(4000);
   check('with the window open the list is not read on a timer', lists() === quiet, `${lists() - quiet} request(s) in 4 s`);
   listed = [LIVE, ...listed];
+  // Branch record SIF-113 (the icon audit): Refresh list is the refresh icon, as in the Tasks and RL model windows - its words
+  // for screen readers and at the start of its tooltip, so the lines that say "press Refresh list" still name it.
+  const refreshList = await far.evaluate(`(() => { const b = [...${WINDOW}.querySelectorAll('.row button')].find(b => b.textContent === 'Refresh list');
+    return b && { icon: !!b.querySelector('svg.icon'), label: b.querySelector('.sr-only')?.textContent ?? null, title: b.title }; })()`);
+  check('"Refresh list" is the refresh icon, its words for screen readers and at the start of its tooltip (SIF-113)', !!refreshList?.icon && refreshList.label === 'Refresh list'
+    && refreshList.title === 'Refresh list: every run folder is read again from the disk.', JSON.stringify(refreshList));
   check('"Refresh list" is there', await pressTop('Refresh list'));
   check('it reads the list once', await (async () => { for (let i = 0; i < 40 && lists() === quiet; i++) await sleep(100); await sleep(500); return lists() === quiet + 1; })(), `${lists() - quiet} request(s)`);
   rows = await table();

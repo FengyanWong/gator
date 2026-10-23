@@ -7,6 +7,7 @@ import { tasksShared } from '../shared';
 import { bytes, clock, durationTenths as span, folderName, plural, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, sig, stamp, stopWords } from '../format';
 import { CONTINUE_STATES, isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
+import { Icon } from './Icons';
 import { TableHead, useTableView } from './TableView';
 import { childrenOf, historyOf, startedFrom } from '../lineage';
 import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
@@ -364,7 +365,9 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
     <div className="run-window">
       <h2>Runs</h2>
       <div className="row">
-        <button onClick={() => refresh(true)} disabled={loading || folders.busy} title="Refresh list: every run folder is read again from the disk.">Refresh list</button>
+        {/* Refresh list is the refresh icon, as in the Tasks and RL model windows and the bottom tabs (branch record SIF-113),
+            its words for screen readers and at the start of its tooltip; while it reads, the count beside it says so */}
+        <button onClick={() => refresh(true)} disabled={loading || folders.busy} title="Refresh list: every run folder is read again from the disk."><Icon name="refresh" label="Refresh list" /></button>
         <button onClick={() => onChoose(null)} disabled={!runDir} title="The bottom tabs of the workbench show no run. Nothing is stopped or deleted.">Clear</button>
         <input className="run-filter" placeholder="Filter: task, mode, state, mock / real, date ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
         {shownHidden && <button className="item-link run-go-shown" onClick={() => focusRun(runDir!)}

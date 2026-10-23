@@ -186,7 +186,9 @@ started with." - branch record SIF-72). Run configuration's model line and this 
     Show results then closes the window, as Show results in the Runs window closes that one (record 7.291; branch record
     SIF-110: the brief stayed over the page, the tabs it had just changed behind it); Refresh and Open in Runs keep it open.
   - It only shows, and has no timer of its own. The header's card follows the header's status reads; the other cards
-    are read when the window opens and by **Refresh**, with the time they were read.
+    are read when the window opens and by **Refresh**, with the time they were read. Refresh is the refresh icon (an
+    arrow around) beside the heading, as in the bottom tabs and the list windows - its word for screen readers and at the
+    start of its tooltip (branch record SIF-113).
 * **One launcher** (record 7.261, `frontend/src/launch.ts`; plan [frontend run workflow](plan-frontend-run-workflow.md),
   build step 1). Start, Calibration, Resume and Continue... go one way:
   - **Each says why it cannot go**, in its tooltip, before any press: the header's run is live or still being looked
@@ -597,11 +599,15 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
   is open: the press brings it to the front and reads the list again (branch record SIF-100) - and by **Refresh list**
   (which reads the run list again too; otherwise the run columns show the page's own run list - read when the page
   opened and after every task choice). A workbench server started before this was added lists runs without their task:
-  the run columns then stay empty and the window says so.
+  the run columns then stay empty and the window says so. Refresh list is the refresh icon (an arrow around) at the start
+  of the window's tool line, as in the Runs and RL model windows; its words are read out to a screen reader and start its
+  tooltip - which it lacked -, so the lines that say "press Refresh list" still name it (branch record SIF-113).
 * The task row's facts (`testbench`, `saved_utc`, `created_utc`, `baseline_recorded_utc`, `status`, `variables`,
   `results`) come with `GET /api/tasks`, all from the task's own entry file - no other file is read. A server older than
   the page leaves those cells empty ("-").
-* **Delete task** is inside this window, beside **Current task: <name>**, for a deletable task. It acts on the task the
+* **Delete task** is inside this window, beside **Current task: <name>**, for a deletable task. It is the waste bin, as
+  Delete folder in this window and Delete selected in the editors, and the hourglass while its delete is on its way
+  (branch record SIF-113: it was a tray struck out, which read as "unload"). It acts on the task the
   page follows; double-click another row to change that task. Confirmation opens in this window, and failures are shown
   beside the action. So is what a delete did (branch record SIF-100): "Task real:<name> deleted; its files are kept in
   <folder>. The page now follows its cell <library>/<cell>." The line stays while the page stays there: it goes once the page follows another task or another cell (chosen in the Virtuoso window). The module outside has no delete or reload icon. The backend still keeps deleted files aside and
@@ -1733,7 +1739,8 @@ lists every run under the output folder, newest first, one row per run:
   output roots), `PATCH/DELETE /api/run-folders/{folder_id}`; the saved models' folders the same under
   `/api/model-folders`, used by the RL model window's saved models table (record 7.265).
 * **Nothing in the window updates by itself.** The list is read when the button is pressed and by **Refresh list**
-  (the window says when it was read); a run's details are read when they are opened. A working run therefore shows
+  (the window says when it was read; the refresh icon at the start of the tool line, its words for screen readers and at
+  the start of its tooltip - branch record SIF-113); a run's details are read when they are opened. A working run therefore shows
   its state and duration as of that time. A link from another window (the Tasks window, the run brief, a model's
   Relationships) only opens this window at its run: the list is read again only when the window was closed or its list
   is more than a minute old (record 7.275).
@@ -2907,7 +2914,8 @@ record 7.267).
 
 The list is `GET /api/runs/models`: small metadata files only, read when the table is shown, when a run of the page's run
 list changed (a run came or went, came to rest or was renamed), for another output folder, and by **Refresh list** (every
-run folder read anew, as in the Runs window) - never on a timer. While it is read as the window opens, the rows of the
+run folder read anew, as in the Runs window; the refresh icon before the Design list, branch record SIF-113) - never on a
+timer. While it is read as the window opens, the rows of the
 last read under the same output folder are shown (branch record SIF-102); the model in use is brought into the box's view
 once that read answers, unless the box was scrolled meanwhile. A working run's newer save points show at Refresh list
 or once it rests; the backend reuses what it read of a run that did not change (record 7.274). Older periodic save points

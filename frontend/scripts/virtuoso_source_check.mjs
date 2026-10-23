@@ -20,7 +20,8 @@
 //   - Save as (no Save task) from the window's cell - after a refusal it offers the name refused; the rough frequency's
 //     question takes Enter, Cancel and Escape (branch record SIF-92) -, the task then named on the tab line, what happened
 //     said under the toolbar; Check now on the tab line before Save as, what it checks in its tooltip, its result under the toolbar; Delete
-//     task in the Tasks window; a cell that already has a task, a built-in cell; a blocked gate and an older backend are readable;
+//     task in the Tasks window - the waste bin, the hourglass while its delete is on its way (branch record SIF-113); a cell
+//     that already has a task, a built-in cell; a blocked gate and an older backend are readable;
 //     the gate's refusal ends with "then press Refresh" and carries Connection..., which opens the Connection window from the
 //     Virtuoso window; an older backend's line carries none (branch record SIF-108).
 // Needs a configured connection profile (the page selects the active one; reading the profiles probes nothing).
@@ -76,6 +77,7 @@ await runChecks(browser, async () => {
   const { send, evaluate, fulfil } = page;
   const calls = []; let mode = 'ok'; let inFlight = 0, overlap = false;
   let agentRequests = 0; let baselineRecorded = false; let deleteRefused = true;
+  let holdDelete = null;                                    // a delete answered once this resolves: its button is looked at meanwhile (SIF-113)
   const dialogs = []; const answers = [];                                           // confirm(): answered as planned; an unplanned one is refused and reported
   const answer = async ({ requestId, request }) => {
     const pathname = new URL(request.url).pathname;
@@ -115,6 +117,7 @@ await runChecks(browser, async () => {
         .map(([step, title]) => ({ step, ok: true, title, detail: `FIXTURE: ${step} passed` })) });
     if (op === 'profile/delete') {
       if (deleteRefused) return fulfil(requestId, 409, { detail: { message: `Run fixture-run-2 of real:${body.name} is working right now: abort it or let it finish first`, code: 'delete_refused' } });
+      await holdDelete;
       created.delete(`FIXTURE_DESIGNS/${body.name}`); baselineRecorded = false;
       return fulfil(requestId, 200, { deleted: `real:${body.name}`, name: body.name, library: 'FIXTURE_DESIGNS', cell: body.name, testbench_cell: 'ota5_tb', baseline_recorded: true,
         kept_copy: `/fixture/profiles/.deleted/${body.name}.20260921T000000Z` });
@@ -460,6 +463,11 @@ await runChecks(browser, async () => {
   check('the task\'s card has neither Delete task nor Reload saved values', !(await evaluate(`!!${BUTTON('Delete task')} || !!${BUTTON('Reload saved values')}`)));
   check('Delete task is in the Tasks window beside its target name', await tw.window.evaluate(`!!${DELETE} && ${DELETE}.textContent.trim() === 'Delete task'
     && document.querySelector('.task-window-actions code').textContent === 'ota5_v1'`));
+  // Branch record SIF-113 (the icon audit): it is the waste bin, the drawing of the editors' Delete selected - a tray struck out
+  // until then, which read as "unload".
+  const bin = await evaluate(`[...document.querySelectorAll('section.editors .toolbar button')].find(b => b.textContent === 'Delete selected')?.querySelector('svg.icon')?.innerHTML ?? null`);
+  const DRAWING = `${DELETE}?.querySelector('svg.icon')?.innerHTML ?? null`;
+  check('...the waste bin, as the editors\' Delete selected (SIF-113)', !!bin && (await tw.window.evaluate(DRAWING)) === bin, await tw.window.evaluate(DRAWING));
   mark = calls.length; answers.push(false);
   await deleteTask(); await quiet(800);
   const askedDelete = dialogs[dialogs.length - 1]?.message ?? '';
@@ -471,7 +479,16 @@ await runChecks(browser, async () => {
   check('a refusal is shown in the Tasks window and the task stays', JSON.stringify(ops(mark)) === JSON.stringify(['profile/delete ota5_v1']) && (await taskWindowText()).includes('is working right now')
     && (await value('Task')) === 'real:ota5_v1', ops(mark).join(' | '));
   deleteRefused = false; mark = calls.length; answers.push(true);
-  await deleteTask(); await quiet();
+  // Branch record SIF-113: while the delete is on its way the button waits - greyed out, "Deleting..." for screen readers and
+  // the hourglass, as other icon buttons' presses do; the tray stood still until the answer came. The answer waits for the look.
+  let answerDelete; holdDelete = new Promise(go => { answerDelete = go; });
+  await deleteTask();
+  const waiting = await tw.window.until(`${DELETE}?.textContent === 'Deleting...' && ${DELETE}.disabled`, 50);
+  const [waitText, waitDrawing] = [await tw.window.evaluate(`${DELETE}?.textContent ?? null`), await tw.window.evaluate(DRAWING)];
+  answerDelete(); holdDelete = null;
+  check('while the delete is on its way, Delete task waits: greyed out, "Deleting..." for screen readers, the hourglass for the bin (SIF-113)',
+    waiting && !!waitDrawing && waitDrawing !== bin, `${waitText} / ${waitDrawing}`);
+  await quiet();
   shown = await statusText();
   check('deleting is one request', JSON.stringify(ops(mark).filter(o => o.startsWith('profile'))) === JSON.stringify(['profile/delete ota5_v1']), ops(mark).join(' | '));
   check('the page goes back to the cell the task was saved from: the tab line names it, the window shows it', (await stored()).circuit.source === 'virtuoso'

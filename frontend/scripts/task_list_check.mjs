@@ -12,7 +12,8 @@
 // task yet the task's lines under the editors' toolbar offer Open Tasks and the ways to a new task, and the banner lists the
 // windows open (one press brings one to the front; Close all). Branch record SIF-101: New folder with tasks ticked keeps
 // them ticked in the folder shown. Branch record SIF-109: that list is plain buttons; Esc gives the focus back to its button,
-// and after Close all the focus goes to the banner's control before it.
+// and after Close all the focus goes to the banner's control before it. Branch record SIF-113: Refresh list is the refresh
+// icon and Delete task the waste bin, their words for screen readers and at the start of their tooltips.
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, starterConfig, taskWindow, validConfiguration, workbenchUrl, TASKS_WINDOW, RUNS_WINDOW } from './lib/harness.mjs';
@@ -259,6 +260,12 @@ await runChecks(browser, async () => {
   check('... and again the other way', await far.until(`${ROWS}.map(tr => tr.dataset.taskKey).join() === 'real:fixture_ota,ngspice:fixture_div,real:fixture_ldo,synthetic:gpdk045_ota5'`, 30), (await tw.keys()).join());
 
   // ---- 7. Refresh list reads both lists; an older server is said --------------------------------------------------------------------
+  // Branch record SIF-113 (the icon audit): Refresh list is the refresh icon, as in the Runs and RL model windows - its words for
+  // screen readers and at the start of the tooltip it had none of, so "Press Refresh list to retry" still names it.
+  const refreshList = await far.evaluate(`(() => { const b = [...${WINDOW}.querySelectorAll('.row button')].find(b => b.textContent === 'Refresh list');
+    return b && { icon: !!b.querySelector('svg.icon'), label: b.querySelector('.sr-only')?.textContent ?? null, title: b.title }; })()`);
+  check('"Refresh list" is the refresh icon, its words for screen readers and at the start of its tooltip (SIF-113)', !!refreshList?.icon && refreshList.label === 'Refresh list'
+    && refreshList.title === 'Refresh list: the tasks, their folders and the run list are read again.', JSON.stringify(refreshList));
   let before = { tasks: count('/api/tasks'), runs: count('/api/runs') };
   await press('Refresh list');
   check('"Refresh list" reads the task list and the run list again', await far.until(`${WINDOW}.textContent.includes('read at')`, 30) && (await (async () => { for (let i = 0; i < 40 && (count('/api/tasks') < before.tasks + 1 || count('/api/runs') < before.runs + 1); i++) await sleep(50);
@@ -329,6 +336,13 @@ await runChecks(browser, async () => {
     askedDelete = p.message; far.send('Page.handleJavaScriptDialog', { accept: false });
   });
   const refusedBefore = refused.length;
+  // Branch record SIF-113 (the icon audit): Delete task is the waste bin, the drawing of Delete selected in the editors (and of
+  // Delete folder in this window) - it was a tray struck out, which read as "unload" - its words still for screen readers.
+  const bin = await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent === 'Delete selected')?.querySelector('svg.icon')?.innerHTML ?? null`);
+  const deleteButton = await far.evaluate(`(() => { const b = [...${WINDOW}.querySelectorAll('.task-window-actions button')].find(b => b.textContent === 'Delete task');
+    return b && { drawing: b.querySelector('svg.icon')?.innerHTML ?? null, label: b.querySelector('.sr-only')?.textContent ?? null, title: b.title }; })()`);
+  check('Delete task is the waste bin, as Delete selected in the editors, its words for screen readers and at the start of its tooltip (SIF-113)',
+    !!bin && deleteButton?.drawing === bin && deleteButton.label === 'Delete task' && deleteButton.title.startsWith('Delete task: '), JSON.stringify(deleteButton));
   await far.evaluate(`[...${WINDOW}.querySelectorAll('.task-window-actions button')].find(b => b.textContent.trim() === 'Delete task').click()`, true);
   for (let i = 0; i < 40 && askedDelete === null; i++) await sleep(50);
   check('Delete task asks about the renamed task by its shown name too, and Cancel deletes nothing',

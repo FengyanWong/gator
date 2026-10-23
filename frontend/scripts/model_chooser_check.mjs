@@ -16,7 +16,8 @@
 //   Undo step; a double click on a row uses its newest save point; a newer save point is offered, never followed;
 // - a network that arrives from elsewhere while a model is loaded is taken back, and that is said; the import that brought it
 //   says it replaced the run settings (branch record SIF-107);
-// - an incomplete configuration is a calm note; rename refuses a taken name; the filter; one read per Refresh, no timer;
+// - an incomplete configuration is a calm note; rename refuses a taken name; the filter; one read per Refresh list - the
+//   refresh icon, its words for screen readers and in its tooltip (branch record SIF-113) -, no timer;
 //   a model in use that left the list, its folder saying "Click to copy" (branch record SIF-64); an empty folder; the models'
 //   folders; back to New model; the real route;
 // - a folder clicked in the window (a model's Details, the model in use, a model that left the list) is copied by the
@@ -653,6 +654,12 @@ await runChecks(browser, async () => {
   check('the list is not re-read on a timer', lists === before, `${lists - before} read(s) in 2.5 s`);
   await details(C); await until(`!!(${pointRow(C.latest)})`, 30);                              // its Details open as it leaves the list (SIF-102)
   served = MODELS.filter(m => m !== C);                                                       // the model in use loses its save points
+  // Branch record SIF-113 (the icon audit): Refresh list is the refresh icon, as in the Runs and Tasks windows - its words for
+  // screen readers and at the start of its tooltip, so "Press Refresh list to retry" still names it.
+  const refreshList = await evaluate(`(() => { const b = ${button('Refresh list')}; return b && { icon: !!b.querySelector('svg.icon'), text: b.textContent,
+    label: b.querySelector('.sr-only')?.textContent ?? null, title: b.title }; })()`);
+  check('"Refresh list" is the refresh icon, its words for screen readers and at the start of its tooltip (SIF-113)', !!refreshList?.icon && refreshList.text === 'Refresh list'
+    && refreshList.label === 'Refresh list' && refreshList.title === 'Refresh list: every run folder is read again from the disk.', JSON.stringify(refreshList));
   await evaluate(`${button('Refresh list')}.click()`);
   check('"Refresh list" reads the list exactly once', (await until(`${ROWS}.length === ${MODELS.length - 1}`, 40)) && lists === before + 1, `${lists - before} read(s)`);
   check('a model in use that left the list is said in plain words, with its folder', await until(`!!${RIGHT}.querySelector('.model-missing')`, 30)

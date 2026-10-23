@@ -384,6 +384,16 @@ await runChecks(browser, async () => {
     await brief.until(`/^Duration 5 min 01 s so far · about \\d.* left$/.test(${TIME})`, 50), await brief.evaluate(TIME));
   await brief.shot(path.join(out, 'run-4b-brief.png'), `document.querySelector('.run-brief')`);
   check('opening it changed nothing: the bottom tabs show what they showed', (await evaluate(`document.querySelector('footer .tabs .run-list-current')?.textContent ?? ''`)) === tabsBefore);
+  // Branch record SIF-113 (the icon audit): Refresh is the refresh icon, as the bottom tabs' Refresh and the list windows' - its
+  // word for screen readers and at the start of its tooltip - centred on the heading: the head line sets its words on one
+  // baseline, where an icon alone stands high (roadster.css, the icon block of SIF-112).
+  const briefRefresh = await brief.evaluate(`(() => { const b = [...document.querySelectorAll('.run-brief .brief-head button')].find(b => b.textContent === 'Refresh'),
+    h = document.querySelector('.run-brief .brief-head h2').getBoundingClientRect(), icon = b?.querySelector('svg.icon')?.getBoundingClientRect();
+    return b && { label: b.querySelector('.sr-only')?.textContent ?? null, title: b.title,
+      offset: icon ? Math.round(((icon.top + icon.bottom) / 2 - (h.top + h.bottom) / 2) * 10) / 10 : null }; })()`);
+  check('"Refresh" is the refresh icon, its word for screen readers and at the start of its tooltip (SIF-113)', briefRefresh?.label === 'Refresh'
+    && briefRefresh.title === 'Refresh: read the run list and the other live runs again.' && briefRefresh.offset !== null, JSON.stringify(briefRefresh));
+  check('...its icon centred on the heading "Running now" (within 1 px)', typeof briefRefresh?.offset === 'number' && Math.abs(briefRefresh.offset) <= 1, JSON.stringify(briefRefresh));
   // Branch record SIF-78: a REAL run's card says so after the line's " · " - a bare grey "real" after "model graphgps_ldo1 (31)"
   // read as part of the model's name.
   elsewhereListed = true;

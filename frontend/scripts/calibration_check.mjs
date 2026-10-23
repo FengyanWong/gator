@@ -6,6 +6,8 @@
 // (record 7.204, "Calibration ready"): Not now changes nothing and is remembered, Apply calibration there does what the
 // block's button does, and the next run asks again. And a run of another task than the page holds (record 7.214, its status
 // changed by the check): the block shows the run's own Scales and Initial alpha, never the page's row of the same ID.
+// Branch record SIF-105: the line's "Show table" while the table is out of view (another tab, the panel folded, the tabs on
+// another run), never while it is in view.
 // Record 7.217: an Initial alpha is proposed only when it differs from the one the run had by a factor of 2 or more - the
 // second run here starts from the first run's applied value, so whether it proposes one follows that rule ("Apply and
 // save", for a task saved from a Virtuoso cell, is in calibration_save_check.mjs).
@@ -135,6 +137,30 @@ await runChecks(browser, async () => {
   check('its line comes up, although the first run\'s was answered', await until(`!!(${readyButton('Apply calibration')})`, 150)
     && (await evaluate(`${READY}.querySelector('span').textContent`)).startsWith(`Calibration ready for synthetic:gpdk045_ota5: ${values2}. Proposed from 64 random designs`), await evaluate(`${READY}?.textContent`));
   check('a task that is not saved from a Virtuoso cell keeps the one button: no Apply and save', await evaluate(`!(${readyButton('Apply and save')}) && !(${readyButton('Apply only')})`));
+
+  // ---- Show table (branch record SIF-105): the line says the table is under Run status; out of view, nothing led there ----------
+  const SHOW = readyButton('Show table'), ACTIVE = `document.querySelector('footer .tabs > button.active')?.textContent`;
+  const FOLDED = `document.querySelector('.layout').classList.contains('bottom-folded')`, SHOWN = `JSON.parse(localStorage.getItem('gator-workbench-shown-run-v1') ?? 'null')?.run`;
+  check('with the table in view - Run status of this run, the panel open - the line has no "Show table" (SIF-105)', await evaluate(`!(${SHOW})`)
+    && (await evaluate(ACTIVE)) === 'Run status' && (await evaluate(SHOWN)) === dir2, JSON.stringify([await evaluate(ACTIVE), await evaluate(SHOWN)]));
+  await evaluate(`[...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent === 'Logs').click()`);
+  check('...with Logs shown it offers it, saying what it shows', await until(`!!(${SHOW})`, 30) && (await evaluate(`${SHOW}.title`))
+    === 'Show table: Shows this calibration run under Run status, with its table of proposals and its Apply buttons. Nothing is applied.', await evaluate(`${SHOW}?.title`));
+  await evaluate(`${SHOW}.click()`);
+  check('...a press shows Run status with the table, and the button goes', await until(`${ACTIVE} === 'Run status' && !!(${APPLY}) && !(${SHOW})`, 30), await evaluate(ACTIVE));
+  await evaluate(`document.querySelector('.splitter').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+  check('...with the panel folded it offers it too', await until(`${FOLDED} && !!(${SHOW})`, 30));
+  await evaluate(`${SHOW}.click()`);
+  check('...and the press opens the panel on the table', await until(`!${FOLDED} && !!(${APPLY}) && !(${SHOW})`, 30));
+  // The tabs on another run - the first calibration, kept as the run shown beside the header's second one, as after a choice
+  // in Runs... - once the page is loaded again.
+  await evaluate(`localStorage.setItem('gator-workbench-shown-run-v1', ${JSON.stringify(JSON.stringify({ run: dir, header: dir2 }))})`);
+  await send('Page.reload');
+  check('...with the tabs on another run it offers it too', await until(`!!(${SHOW})`, 200) && (await evaluate(SHOWN)) === dir, await evaluate(SHOWN));
+  await page.shot(path.join(out, 'calibration-0c-show-table.png'), `document.querySelector('header')`, { pad: 4 });
+  await evaluate(`${SHOW}.click()`);
+  check('...and the press shows this run\'s table', await until(`${SHOWN} === ${JSON.stringify(dir2)} && ${ACTIVE} === 'Run status' && !!(${APPLY}) && !${APPLY}.disabled && !(${SHOW})`, 60),
+    JSON.stringify([await evaluate(SHOWN), await evaluate(ACTIVE)]));
   await evaluate(`${readyButton('Apply calibration')}.click()`);
   config = await stored();
   check('"Apply calibration" in the line writes what is proposed', config.targets[0].normalization_scale === scale2 && config.run.advanced.initial_alpha === (alpha2 ?? alpha),

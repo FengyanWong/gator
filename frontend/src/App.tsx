@@ -21,7 +21,7 @@ import { folderName } from './format';
 import { APPLY_AND_SAVE } from './panels/calibrationPlan';
 import { TASK_BASELINE_STARTED } from './panels/TaskSave';
 import { CrashPanel } from './panels/CrashPanel';
-import { BottomPanel, type BottomTab, useBottomPanel } from './panels/BottomPanel';
+import { BottomPanel, useBottomPanel, useBottomTab } from './panels/BottomPanel';
 import { useCalibrationOffer } from './page/calibrationOffer';
 import { useRunWindowActions } from './page/runWindowActions';
 import { shownRun, useRunList, useShownRun } from './page/shownRun';
@@ -80,7 +80,7 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
   const [meta, setMeta] = useState<Json>(null);
   const [circuit, setCircuit] = useState<Json>(null);
   const [runDir, setRunDir] = useState<string | null>(shownRun);
-  const [tab, setTab] = useState<BottomTab>('status');
+  const [tab, setTab] = useBottomTab();                                             // kept for a reload (branch record SIF-105)
   const panel = useBottomPanel(runDir);
   const { bottom, folded, unfold, layoutRef } = panel;
   const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null);            // the header's title block: the circuit panel puts the task's facts there
@@ -260,6 +260,11 @@ function Page({ store }: { store: ReturnType<typeof useConfig> }) {
           {calibrated.status === 'calibrated'
             ? <><span><b>Calibration ready</b>{calibrated.task_key ? ` for ${calibrated.task_key}` : ''}: {calibrationOffer.values}. <span className="hint">Proposed
                 from {calibrated.designs?.scored} random designs; nothing has changed yet. The table is under Run status.</span></span>
+              {/* Show table (branch record SIF-105): the line said where the table is and nothing led there once the tabs showed
+                  another run or tab, or the panel was folded - the tab line's link to the header's run goes when the run ends.
+                  Not while the table is in view. */}
+              {(runDir !== control.dir || tab !== 'status' || folded) && <button onClick={() => { setRunDir(control.dir); setTab('status'); unfold(); }}
+                title="Show table: Shows this calibration run under Run status, with its table of proposals and its Apply buttons. Nothing is applied.">Show table</button>}
               {calibrationOffer.saves
                 ? <><button className="primary" onClick={() => answerCalibration('save')} title={`Apply and save: Writes ${calibrationOffer.what} into the page, as one Undo step, ${APPLY_AND_SAVE}`}>Apply and save</button>
                     <button onClick={() => answerCalibration('apply')} title={`Apply only: Writes ${calibrationOffer.what} into the page, as one Undo step. Nothing is simulated and no task is saved.${calibrationOffer.afterwards}`}>Apply only</button></>

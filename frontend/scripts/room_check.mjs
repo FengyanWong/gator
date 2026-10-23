@@ -2,7 +2,8 @@
 // advice 1-3). Hermetic: reads pass to the backend under test, every writing request is refused.
 // What it pins:
 //   - with no run shown the bottom panel starts folded to its tab line and the editors take the room; a tab press opens it, a
-//     reload with no run folds it again, the splitter's double click opens and folds it; with a run remembered it opens as kept;
+//     reload with no run folds it again (on the tab it showed, branch record SIF-105), the splitter's double click opens and
+//     folds it; with a run remembered it opens as kept;
 //   - Run configuration as a property sheet: a number's label and its box on one line, the box at the right; the run limits
 //     (launches, retries, wall time and the two failure rules) in one closed "Limits" fold whose line names the limits set,
 //     counted and the wall time in hours ("42 launches, 1 retry, wall time 24 h 00 min", branch record SIF-58); at 1100 px,
@@ -59,6 +60,9 @@ await runChecks(browser, async () => {
   await send('Page.reload');
   await page.until(`!!document.querySelector('footer .tabs')`, 200); await sleep(600);
   check('a reload with no run folds it again (the press opened it for that page)', await evaluate(FOLDED));
+  // Branch record SIF-105: the tab is kept for a reload in this browser tab, as the height and the fold are (it went back to Run status).
+  const kept = await evaluate(`document.querySelector('footer .tabs > button.active')?.textContent`);
+  check('...on the tab it showed: Logs (SIF-105)', kept === 'Logs', kept);
   await evaluate(`document.querySelector('.splitter').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
   check('the splitter\'s double click opens it', await page.until(`!(${FOLDED})`, 30));
   await evaluate(`document.querySelector('.splitter').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);

@@ -417,6 +417,14 @@ run selected"; opened by hand it stays open for that page. The height and the fo
 editors always keep the window height less 280 px. Windows narrower than 1100 px keep their own stacked layout and have
 no splitter.
 
+**The bottom panel keeps its tab and its choices** (branch record SIF-105). Data tables and Logs are drawn only while their
+tab is chosen, and a look at Run status put them back to the newest 25 evaluations and to the events log; the tab itself
+went back to Run status at every reload, while the height, the fold and the Training tab's charts were kept. Now the panel
+holds Data tables' table, rows and order and Logs' events or errors for as long as the page is open, whichever run it
+shows, and the tab is kept in this browser tab (`sessionStorage`, `gator-workbench-bottom-tab-v1`): a reload comes back on
+it, and a page opened anew starts on Run status. Corner check is not brought back by a reload: it is offered only where
+corners can be used, which the page learns after it opens.
+
 **One line per row in Data tables.** An id (a column ending in `_id`) is written in Consolas and ends in "..." when it
 is long; hovering shows the whole value and a click copies it. A time keeps its full width, no word is cut in two, and
 a JSON value has a column of bounded width of its own.
@@ -1850,7 +1858,10 @@ they are empty.
 * The plots follow the bottom panel's height (the splitter) and the window's width.
 
 **Several runs on one chart** (record 7.200, the user's choice of "what next"). **Compare...** (in the controls) lists the
-runs of the run window; a chosen run is drawn on both charts beside the shown one, up to four runs, each in its own colour
+runs of the run window, the shown run's task first: "Same task (<task>)" holds the other runs of its registered task, then
+"Other tasks" the rest, each newest first (branch record SIF-105: one list of every run under the output folder, 612 in the
+user's, the task's other seeds and Modes scattered among them; a shown run the list names no task for keeps the one list).
+A chosen run is drawn on both charts beside the shown one, up to four runs, each in its own colour
 (the shown run in the accent colour), with a line of chips above the charts naming them - × takes one off. A run is
 named as the run window shows it (record 7.213): its task, its experiment in brackets when that has a name of its own
 (not the default "experiment"; branch record SIF-77: the experiment alone, "tx1-vco-gatv2", stood beside a tab strip
@@ -2163,7 +2174,10 @@ of its own under the header reads, for example, *Calibration ready for real:mscr
 11 MHz · pm_deg 9.6 deg · ibias_a 280 uA*, with **Apply and save**, **Apply only** and **Not now** (a task not saved
 from a cell: **Apply calibration** and **Not now**). The buttons there do what those in Run status do - the same code,
 one Undo step - and the page then says what was applied and that the save is running, or why it could not start.
-Not now changes nothing; the proposals stay in Run status. The line belongs to the run
+Not now changes nothing; the proposals stay in Run status. While that table is out of view - the bottom tabs on another
+run or another tab, or the panel folded - the line also has **Show table**, which shows Run status of this run with the
+panel open; it changes nothing else (branch record SIF-105: the line said "The table is under Run status", and once the
+run had ended nothing on the page led there but the run brief or the Runs window). The line belongs to the run
 the header holds. It goes when it is answered (kept in this browser, so a reload does not ask again), when the page
 already holds the values, and when the next run starts; the next Baseline simulation asks again. A calibration that
 proposes nothing says why on the same line. Nothing is applied by itself.

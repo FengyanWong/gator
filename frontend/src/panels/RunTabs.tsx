@@ -297,14 +297,20 @@ const DataSnapshot = memo(function DataSnapshot({ data, newest, onNote }: { data
           () => onNote(`Could not copy ${c}: the browser refused the clipboard; select the cell's text instead.`)) : undefined}>{text}</td>; })}</tr>)}</tbody></table></div>);
 });
 
+/** What Data tables shows: the table, how many rows and from which end (branch record SIF-99: always the newest 25, so an
+ *  earlier evaluation of a run needed the whole table exported and opened elsewhere; the route reads up to 500, from either
+ *  end). Held by the bottom panel since branch record SIF-105: the tab is drawn only while chosen, and a look at another
+ *  tab put it back to the newest 25 evaluations. */
+export type DataChoice = { table: string; limit: number; newest: boolean };
+export const DATA_CHOICE: DataChoice = { table: 'evaluations', limit: 25, newest: true };
+
 /** `status`: the shown run's status as the page already polls it (App.tsx) - for the steering line, and since branch record
- *  SIF-99 for when to read the table again. This tab used to poll the same file again every 2 s, finished runs too. */
-export function DataTab({ runDir, status }: { runDir: string | null; status: Json }) {
-  const [table, setTable] = useState('evaluations');
-  // How many rows, from which end (branch record SIF-99): always the newest 25, so an earlier evaluation of a run needed the
-  // whole table exported and opened elsewhere. The route reads up to 500, from either end.
-  const [limit, setLimit] = useState(25);
-  const [newest, setNewest] = useState(true);
+ *  SIF-99 for when to read the table again. This tab used to poll the same file again every 2 s, finished runs too.
+ *  `choice`: what it shows, kept by the bottom panel (branch record SIF-105). */
+export function DataTab({ runDir, status, choice, setChoice }: { runDir: string | null; status: Json; choice: DataChoice;
+  setChoice: (change: (choice: DataChoice) => DataChoice) => void }) {
+  const { table, limit, newest } = choice;
+  const choose = (change: Partial<DataChoice>) => setChoice(now => ({ ...now, ...change }));
   const { value: data, error, refresh, loading } = useRequest<Json>(signal => api.table(runDir!, table, limit, signal, newest), [runDir, table, limit, newest], { enabled: !!runDir });
   // Read again when the run has published more rows: its tables reach the disk at flushes (record 7.280, every 64
   // evaluations), so the store's flushed sequence moving on is the moment there is something new (0: none flushed yet).
@@ -326,10 +332,10 @@ export function DataTab({ runDir, status }: { runDir: string | null; status: Jso
     return `Downloaded ${await download(api.aggregatesUrl(runDir), 'aggregates.zip')} (${Object.keys(written.files).length} tables). Also kept in ${written.experiment_dir}/aggregates`; });
   return (<div>
     <SteeringCheck value={status?.steering} />
-    <div className="row"><select className="tab-choice" value={table} onChange={e => setTable(e.target.value)}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
-      <select className="table-limit" aria-label="Rows shown" value={limit} onChange={e => setLimit(Number(e.target.value))}
+    <div className="row"><select className="tab-choice" value={table} onChange={e => choose({ table: e.target.value })}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
+      <select className="table-limit" aria-label="Rows shown" value={limit} onChange={e => choose({ limit: Number(e.target.value) })}
         title="Rows shown: How many of the table's rows are read and listed here. Export detailed CSV saves every row.">{[25, 100, 500].map(n => <option key={n} value={n}>{n} rows</option>)}</select>
-      <select className="table-order" aria-label="Order" value={end} onChange={e => setNewest(e.target.value === 'newest')}
+      <select className="table-order" aria-label="Order" value={end} onChange={e => choose({ newest: e.target.value === 'newest' })}
         title="Order: Newest first - the table's newest rows, the newest on top. Oldest first - its first rows, in the order they were written (an early evaluation of the run).">
         <option value="newest">newest first</option><option value="oldest">oldest first</option></select>
       {/* the hourglass while a read is on its way (branch record SIF-99: a press that found nothing new looked like one that did nothing) */}
@@ -415,8 +421,9 @@ const LogLine = memo(function LogLine({ time, name, text, error }: { time: strin
   return <div className={error ? 'error' : ''}><b>{time} {name}</b> {text}</div>;
 });
 
-function LogsTabBody({ runDir, alive }: { runDir: string | null; alive: boolean }) {
-  const [kind, setKind] = useState('events');
+/** `kind`: the log shown, events or errors, kept by the bottom panel (branch record SIF-105: the tab is drawn only while
+ *  chosen, and the errors log went back to events at every return). */
+function LogsTabBody({ runDir, alive, kind, setKind }: { runDir: string | null; alive: boolean; kind: string; setKind: (kind: string) => void }) {
   const [note, setNote] = useState<string | null>(null);
   // Read every 2 s while the worker lives; a run at rest is read once (when the tab opens, and once more when its worker
   // ends) - it used to be re-read every minute for as long as the tab stayed open.
@@ -444,7 +451,8 @@ function LogsTabBody({ runDir, alive }: { runDir: string | null; alive: boolean 
 }
 
 /** Memoised (record 7.279): their props are the run and whether its worker lives - and Output files' last save point, which
- *  changes as rarely (branch record SIF-99) - so a status update - every 1.5 s while a run works - no longer draws the 200
- *  log lines or the run's ~450 files again; their own reads still do. */
+ *  changes as rarely (branch record SIF-99), and the log chosen, whose setter stays the same (SIF-105) - so a status
+ *  update - every 1.5 s while a run works - no longer draws the 200 log lines or the run's ~450 files again; their own reads
+ *  still do. */
 export const LogsTab = memo(LogsTabBody);
 export const FilesTab = memo(FilesTabBody);

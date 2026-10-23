@@ -8,6 +8,8 @@
 //   3 Data tables: "Export detailed CSV" downloads the CSV at once (whole table), and keeps the copy in the run folder
 //   4 Data tables: "Export research CSVs" downloads the experiment's aggregates as one zip (they lie above the run folder)
 //   5 Output files: the data-only package is named after ITS run, not "run__data.zip" for every run
+// and, since branch record SIF-105, that Logs and Data tables keep their choices (the errors log; the table and its order)
+// while another tab is looked at.
 // It starts one small run on the synthetic MOCK task (free, no bridge, no Virtuoso) and writes exports, so it REFUSES
 // the default backend: give it a SCRATCH backend and a scratch output root, e.g.
 //   S=<empty scratch dir>; mkdir -p $S/settings $S/out
@@ -186,6 +188,17 @@ await runChecks(browser, async () => {
   check('the browser saved <experiment>__aggregates.zip with the six tables and their descriptions', research.length === 12
     && ['run_summary', 'budget_success', 'budget_success_grouped', 'paired_runs', 'transfer_summary', 'cumulative_cost'].every(t => research.includes(`${t}.csv`) && research.includes(`${t}.meta.json`)), research.join(', '));
   await shot('export-3-data.png');
+  // Branch record SIF-105: each tab keeps its choice while another is looked at. Both were drawn anew at each return, Logs on
+  // events and Data tables on the newest 25 evaluations.
+  const CHOSEN = `[...document.querySelectorAll(['tab-choice', 'table-limit', 'table-order'].map(c => 'footer .bottom-body select.' + c).join(', '))].map(s => s.value)`;
+  await page.setValue(`document.querySelector('footer select.tab-choice')`, 'parameters');
+  await page.setValue(`document.querySelector('footer select.table-order')`, 'oldest');
+  await tab('Logs');
+  check('back in Logs, the errors log is still the one shown (SIF-105)', await until(`JSON.stringify(${CHOSEN}) === '["errors"]' && !!(${button('Download full log (errors.jsonl)')})`, 40),
+    JSON.stringify(await evaluate(CHOSEN)));
+  await tab('Data tables');
+  check('...and back in Data tables, its parameters table, 25 rows, oldest first (SIF-105)', await until(`JSON.stringify(${CHOSEN}) === '["parameters","25","oldest"]'
+    && !!document.querySelector('footer table.data-table') && / oldest first\\. Read at /.test(${HINT(row)})`, 80), `${JSON.stringify(await evaluate(CHOSEN))} | ${await hint()}`);
 
   // ---- 5 Output files: the package is named after its run ---------------------------------------------------------------------------------------------
   await tab('Output files'); row = 'Refresh';

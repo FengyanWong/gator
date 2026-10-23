@@ -16,6 +16,9 @@ export const LAUNCH_KEY = 'gator-workbench-launch-v1';
 export const CALIBRATION_ANSWERED_KEY = 'gator-workbench-calibration-answered-v1';
 /** The bottom panel's height and fold (App.tsx, record 7.158). */
 export const BOTTOM_KEY = 'gator-workbench-bottom-v1';
+/** The bottom panel's tab, kept in THIS TAB (sessionStorage): a reload comes back on it (BottomPanel.tsx useBottomTab,
+ *  branch record SIF-105). */
+export const BOTTOM_TAB_KEY = 'gator-workbench-bottom-tab-v1';
 /** A right-column module folded or open: this prefix + the module's id (Right.tsx Module). */
 export const MODULE_KEY_PREFIX = 'gator-workbench-module-';
 /** The circuit picture's fold in the circuit column (CircuitPicture.tsx). */

@@ -1,20 +1,31 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import type { Json } from '../api';
 import type { TaskRunSummary } from '../contracts';
-import { BOTTOM_KEY } from '../contract';
-import { keep, readKept } from '../kept';
+import { BOTTOM_KEY, BOTTOM_TAB_KEY } from '../contract';
+import { keep, keepInTab, readKept, readKeptInTab } from '../kept';
 import type { Refusal, useLauncher } from '../launch';
 import { AgentWindowTab } from './Agent';
 import { CornerCheckTab } from './CornerCheck';
 import { type RunChoice, RunListButton } from './RunList';
-import { DataTab, FilesTab, LogsTab, StatusTab } from './RunTabs';
+import { DATA_CHOICE, type DataChoice, DataTab, FilesTab, LogsTab, StatusTab } from './RunTabs';
 import { TrainingTab } from './TrainingTab';
 
 // The bottom panel (plan-refactoring C5, out of App.tsx): its height and fold, kept in this browser, the splitter above it,
-// its tab line and the tab it shows. The page holds the tab and the run shown; useBottomPanel holds the rest.
+// its tab line and the tab it shows. The page holds the tab (useBottomTab) and the run shown; useBottomPanel holds the rest.
 
 export type BottomTab = 'status' | 'logs' | 'data' | 'files' | 'training' | 'corners';
+/** The tabs a reload comes back on. Not Corner check: it is offered only where corners can be used, which the page learns
+ *  after it opens (page/shownRun.ts shows Run status meanwhile). */
+const KEPT_TABS: BottomTab[] = ['status', 'logs', 'data', 'files', 'training'];
+/** The tab the panel shows (branch record SIF-105): it went back to Run status at every reload, while the panel's height and
+ *  fold and the Training tab's charts were kept. Kept in THIS browser tab (sessionStorage): a reload comes back on it, and a
+ *  page opened anew starts on Run status, as before. */
+export function useBottomTab() {
+  const [tab, setTab] = useState<BottomTab>(() => readKeptInTab(s => KEPT_TABS.find(t => t === s.getItem(BOTTOM_TAB_KEY)) ?? 'status', () => 'status'));
+  useEffect(() => keepInTab(s => s.setItem(BOTTOM_TAB_KEY, tab)), [tab]);   // blocked storage: a reload shows Run status
+  return [tab, setTab] as const;
+}
 /** The bottom panel's height (record 7.158): dragged at its top edge, folded to its tab line with a double click there.
  *  Kept in this browser, like the folded modules; null = the default third of the window. */
 type Bottom = { height: number | null; folded: boolean };
@@ -95,6 +106,11 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
   // return to its tab, and a request still standing opened the form again every time - after a Cancel, and for a run
   // that had been continued and was live by then. The panel stays mounted, so the last request answered is kept here.
   const askedContinue = useRef(0);
+  // Data tables' table, rows and order and the log Logs shows (branch record SIF-105): those tabs are drawn only while
+  // chosen, and a look at another tab put them back to the newest 25 evaluations and to events. Held here, they last while
+  // the page is open, for every run shown, as the table did while its tab stayed open.
+  const [dataChoice, setDataChoice] = useState<DataChoice>(DATA_CHOICE);
+  const [logKind, setLogKind] = useState('events');
   return (
     <footer>
       <div className="splitter" role="separator" aria-orientation="horizontal" tabIndex={0} aria-label="Height of the bottom panel"
@@ -113,8 +129,8 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
         {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} check={shownCheck} continueBlocked={continueBlocked} refusal={shownRefusal}
           onContinue={continueShown} onDismissRefusal={() => launcher.setRefusal(null)} onFineTune={fineTuneFrom} config={config} setConfig={setConfig}
           ask={askContinue && askContinue.serial !== askedContinue.current ? askContinue : null} onAsked={serial => { askedContinue.current = serial; }} />}
-        {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} />}
-        {tab === 'data' && <DataTab runDir={runDir} status={status} />}
+        {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} kind={logKind} setKind={setLogKind} />}
+        {tab === 'data' && <DataTab runDir={runDir} status={status} choice={dataChoice} setChoice={setDataChoice} />}
         {/* whether the run's worker lives and its last save point: Output files reads a live run again at each save point
             (branch record SIF-99); null while the shown run's status is not read */}
         {tab === 'files' && <FilesTab runDir={runDir} alive={status?.run_dir === runDir ? !!status.worker_alive : null}

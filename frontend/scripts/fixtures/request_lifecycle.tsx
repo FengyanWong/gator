@@ -3,7 +3,7 @@ import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api } from '../../src/api';
 import { useRequest } from '../../src/store';
-import { DataTab, FilesTab, LogsTab, StatusTab } from '../../src/panels/RunTabs';
+import { DATA_CHOICE, DataTab, FilesTab, LogsTab, StatusTab } from '../../src/panels/RunTabs';
 
 const pending: any[] = [], downloads: string[] = [];
 function read(kind: string, run: string, signal?: AbortSignal) {
@@ -35,11 +35,14 @@ function Poll({ run, interval, timeout, controls }: { run: string; interval: num
 function Fixture() {
   const [run, setRun] = useState('A'), [tab, setTab] = useState('poll'), [interval, setInterval] = useState(50);
   const [timeout, setTimeoutMs] = useState(30000);
+  // the table and the log chosen, held above the tabs as the bottom panel holds them (branch record SIF-105)
+  const [choice, setChoice] = useState(DATA_CHOICE), [kind, setKind] = useState('events');
   return <><select id="run" value={run} onChange={e => setRun(e.target.value)}><option>A</option><option>B</option></select>
     <select id="tab" value={tab} onChange={e => setTab(e.target.value)}>{['poll', 'data', 'files', 'status', 'logs'].map(t => <option key={t}>{t}</option>)}</select>
     <input id="interval" type="number" value={interval} onChange={e => setInterval(Number(e.target.value))} />
     <input id="timeout" type="number" value={timeout} onChange={e => setTimeoutMs(Number(e.target.value))} />
-    <div id="panel">{tab === 'data' ? <DataTab runDir={run} status={null} /> : tab === 'files' ? <FilesTab runDir={run} /> : tab === 'logs' ? <LogsTab runDir={run} alive={false} />
+    <div id="panel">{tab === 'data' ? <DataTab runDir={run} status={null} choice={choice} setChoice={setChoice} /> : tab === 'files' ? <FilesTab runDir={run} />
+      : tab === 'logs' ? <LogsTab runDir={run} alive={false} kind={kind} setKind={setKind} />
       : <Poll run={run} interval={interval} timeout={timeout} controls={tab === 'status'} />}</div></>;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode><Fixture /></StrictMode>);

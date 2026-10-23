@@ -20,6 +20,8 @@
 //   - shared chart preparation (record 7.221): a long live run (19,000 evaluations, ~121,000 learner updates) drawn on as
 //     results arrive, its newest values the recorded ones; the cost of its changed frames said (INFO); switching runs in
 //     the run window and taking a compared run off give their rows back (JS heap and typed arrays after a collection)
+//   - branch record SIF-105: a page opened anew shows Run status and a reload comes back on the Training tab; the Compare list
+//     puts the shown run's task first ("Same task (...)", then "Other tasks")
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -136,11 +138,16 @@ const RUNS = {
 };
 const byDir = Object.fromEntries(Object.values(RUNS).map(r => [r.dir, r]));
 let listRuns = false;                                 // GET /api/runs lists the runs only for the comparison part
-const runRows = () => ['live', 'failed', 'frozen', 'twin', 'once', 'long'].map((id, i) => ({ run_dir: RUNS[id].dir, run_id: id, task_name: 'fixture_task', mode: RUNS[id].frozen ? 'frozen' : 'scratch',
-  seed: i + 1, state: RUNS[id].state === 'running' ? 'completed' : RUNS[id].state, created_utc: `2026-10-05T1${i}:00:00+00:00`, evaluations: RUNS[id].final + RUNS[id].tail, mock: true,
+// A run of another task, listed only (branch record SIF-105: the Compare list puts the shown run's task first).
+const OTHER_TASK_RUN = base + 'scratch__seed11__other';
+const runRows = () => ['live', 'failed', 'frozen', 'twin', 'once', 'long'].map((id, i) => ({ run_dir: RUNS[id].dir, run_id: id, task_name: 'fixture_task', task_key: 'synthetic:fixture_task',
+  mode: RUNS[id].frozen ? 'frozen' : 'scratch', seed: i + 1, state: RUNS[id].state === 'running' ? 'completed' : RUNS[id].state, created_utc: `2026-10-05T1${i}:00:00+00:00`,
+  evaluations: RUNS[id].final + RUNS[id].tail, mock: true,
   // an experiment named by the user (live, once) is written after the task; the default name is not (branch record SIF-77)
   experiment: ['live', 'once'].includes(id) ? 'tx1-fixture__0123456789ab' : 'experiment__0123456789ab' }))
-  .map(r => (r.run_id === 'once' ? { ...r, seed: 1, created_utc: '2026-10-05T10:00:00+00:00' } : r));      // reads as the live run but for its folder id
+  .map(r => (r.run_id === 'once' ? { ...r, seed: 1, created_utc: '2026-10-05T10:00:00+00:00' } : r))       // reads as the live run but for its folder id
+  .concat([{ run_dir: OTHER_TASK_RUN, run_id: 'other', task_name: 'other_task', task_key: 'synthetic:other_task', mode: 'scratch', seed: 11, state: 'completed',
+    created_utc: '2026-10-05T16:00:00+00:00', evaluations: 12, mock: true, experiment: 'experiment__0123456789ab' }]);
 
 await runChecks(browser, async () => {
   const CONFIG = await starterConfig(APP);
@@ -193,6 +200,8 @@ await runChecks(browser, async () => {
   check('while another tab is shown the Training tab reads nothing', reads.length === 0, `${reads.length} reads`);
   const press = label => evaluate(`(() => { const b = [...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent === ${JSON.stringify(label)}); b.click(); return !!b; })()`);
   const activeTab = () => evaluate(`document.querySelector('footer .tabs > button.active')?.textContent`);
+  // Branch record SIF-105: only a reload of this browser tab comes back on another tab (below); a page opened anew does not.
+  check('a page opened anew shows Run status', (await activeTab()) === 'Run status', await activeTab());
 
   // ---- open: the history in pages, then charts ------------------------------------------------------------------------------
   await press('Training');
@@ -367,7 +376,10 @@ await runChecks(browser, async () => {
   check('...its tooltip says which designs are left out: episode starts and those without a verdict', /of those judged: episode starts and designs without a verdict .* are left out\. Evaluations 189 to 288\.$/.test(passingTip), passingTip);
   await evaluate(`(${KEYS}).querySelector('summary').click()`);
   const folded = await until(`!(${KEYS}).open`, 20);
-  await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
+  await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150);
+  // Branch record SIF-105: a reload went back to Run status, while the panel's height and fold and these charts were kept.
+  check('a reload comes back on the Training tab it showed, shown without a press (SIF-105)', (await activeTab()) === 'Training' && await until(visible, 80), await activeTab());
+  await press('Training');
   check('folded, the key numbers stay folded after a reload', folded && await until(`!!(${KEYS}) && !(${KEYS}).open`, 80));
   await evaluate(`(${KEYS}).querySelector('summary').click()`);
   check('...and open again with a click', await until(`(${KEYS}).open && (${KEYS}).querySelectorAll('.key-tile').length === 6`, 40));
@@ -443,6 +455,11 @@ await runChecks(browser, async () => {
   const COMPARE = `(${TRAINING}).querySelector('select[aria-label="Compare with another run"]')`;
   const choices = await evaluate(`[...(${COMPARE}).options].map(o => o.value)`);
   check('Compare lists the other runs, not the shown one', choices.includes(RUNS.twin.dir) && choices.includes(RUNS.failed.dir) && !choices.includes(RUNS.live.dir), choices.length + ' choices');
+  // Branch record SIF-105: the shown run's task first. It was one list of every run under the output root, newest first (612
+  // in the user's folder), the task's other seeds and Modes scattered among them.
+  const groups = await evaluate(`[...(${COMPARE}).querySelectorAll('optgroup')].map(g => ({ label: g.label, runs: [...g.children].map(o => o.value) }))`);
+  check('...the shown run\'s task first: "Same task (fixture_task)" with its other runs, then "Other tasks" (SIF-105)', JSON.stringify(groups) === JSON.stringify([
+    { label: 'Same task (fixture_task)', runs: ['failed', 'frozen', 'twin', 'once', 'long'].map(id => RUNS[id].dir) }, { label: 'Other tasks', runs: [OTHER_TASK_RUN] }]), JSON.stringify(groups));
   const twinReads = () => reads.filter(r => r.run === 'twin').length;
   await page.setValue(COMPARE, RUNS.twin.dir);
   check('a compared run gets its chip and its own colour on both charts, its whole name in the legend', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2

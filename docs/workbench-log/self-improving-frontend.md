@@ -3298,3 +3298,57 @@ ring_c too. Also run, unchanged: `virtuoso_source_check` 108, `testbench_probes_
 `typing_check` 50, `working_copy_check` 34, `spec_equations_check` 36, `reliability_check` 20, `circuit_source_check`
 17, `editor_columns_check` 23, `edit_state_check` 28, `editor_renames_check` 8 (12 scripts, 476 checks, one lane, all
 passed the first time). No flakes.
+
+### SIF-105 The bottom panel keeps its tab and choices, Calibration ready shows its table, and Compare lists the task's runs first (2026-10-23; from the usability audit)
+
+**Found.** Four audit findings. Data tables and Logs are drawn only while their tab is chosen, and their choices lived
+inside them (J4-8, J7-7): a glance at Run status put Data tables back on the newest 25 evaluations, whatever table, row
+count and order had been chosen (the last two since SIF-99), and Logs back on events. The bottom tab itself went back to
+Run status at every reload, although the panel's height and fold, the module folds, the circuit column, the shown run
+and the Training tab's charts were all kept. The "Calibration ready" line said "The table is under Run status" and
+offered no way there (J3-11): once the calibration had ended the tab line's "Show the header's run" was gone, so with
+the tabs on another run the table was the run chip, Running now and Show results away, or the Runs window, and a folded
+panel stayed folded. Training's Compare... was one native list of every run under the output folder, newest first: 612
+with the user's data, the task's other seeds and Modes scattered among them (J4-12).
+
+**Changed.** `frontend/src/panels/RunTabs.tsx`: `DataChoice`, the table, the row count and the order (`DATA_CHOICE`:
+evaluations, 25, newest first, the old defaults); `DataTab` takes `choice` and `setChoice`, `LogsTab` `kind` and
+`setKind`, in place of their own state. `frontend/src/panels/BottomPanel.tsx` holds both (`dataChoice`, `logKind`): the
+panel stays mounted, so a choice lasts while the page is open, whichever run is shown, as the table did while its tab
+stayed open. The plan named the table alone; the row count and the order are choices of the same kind that reset the
+same way, so they are held with it. LogsTab stays memoised (its setter never changes). `useBottomTab` there keeps the
+tab in this browser tab (`sessionStorage`, `BOTTOM_TAB_KEY` = `gator-workbench-bottom-tab-v1` in
+`frontend/src/contract.ts`): a reload comes back on it, and a page opened anew starts on Run status, as before. Corner
+check is not brought back: whether corners can be used is known only after the page opens, and `page/shownRun.ts` turns
+that tab to Run status at once. `frontend/src/App.tsx` takes the tab from it. The Calibration ready line with proposals
+has **Show table** after its words while the table is out of view: the tabs on another run, on another tab, or the panel
+folded. The press does what the run brief's Show results does - the header's calibration run in the tabs, Run status,
+the panel open - and nothing else; its tooltip: "Show table: Shows this calibration run under Run status, with its table
+of proposals and its Apply buttons. Nothing is applied." The plan's condition had the run and the fold only; with the
+tab kept now, Logs over the table is a likely case, so another tab counts too. With the table in view the line's buttons
+are as before (`calibration_save_check` pins them exactly). The line that proposes nothing keeps its OK alone.
+`frontend/src/panels/TrainingTab.tsx`: the Compare list groups the runs by the run list's `task_key`: "Same task
+(<task>)" first, then "Other tasks", each newest first, an empty group left out; a shown run with no key in the list (an
+older backend, a run not listed) keeps the one list. Its tooltip ends "the shown run's task first".
+`frontend/scripts/fixtures/request_lifecycle.tsx` holds the table and the log above the tabs, as the panel does. Nothing
+here starts, continues or stops a run, saves a task or writes to Virtuoso: the choices, the tab and Show table change
+only what the bottom panel shows. `docs/workbench.md` (the bottom panel, Several runs on one chart, the Calibration
+ready paragraph) and `docs/functionality-reference.md` (the Splitter, Logs, Data tables, Training and Calibration ready
+rows) describe it. Skipped: the audit's two optional parts, a link from the tab line to an ended header run (J3-11; Show
+table covers the calibration line) and "Compare in Training" in the Runs window (J4-12: the mounted Training tab reads
+its compared runs once, so it needs an event of its own; the verdict leaves it for later).
+
+**Checked.** `tsc` clean. `calibration_check` 45 (38 before; real MOCK runs on the check's scratch backend): with the
+table in view the line has no Show table; on Logs it has, with its tooltip; the press shows Run status with the table
+and the button goes; with the panel folded it is offered and the press opens the panel; with the tabs on the first
+calibration run (kept as the shown run, after a reload) it is offered, and the press shows the second run's table, its
+Apply on. New picture: `calibration-0c-show-table.png`. `export_check` 37 (35; a real MOCK run): back in Logs the errors
+log is still shown, back in Data tables its parameters table, 25 rows, oldest first ("60 rows; the oldest 25 shown,
+oldest first."). `training_tab_check` 106 (103): a page opened anew shows Run status, a reload comes back on Training
+without a press, and Compare lists "Same task (fixture_task)" with the task's five other runs, then "Other tasks" with a
+listed run of another task (the fixture's rows carry a `task_key` now). `room_check` 31 (30): a reload with no run folds
+the panel on the tab it showed, Logs. Each new check tests what the code before did not do: no Show table, no groups, a
+tab and choices that reset. Also run, unchanged: `calibration_save_check` 22 (the line's buttons exactly as before),
+`run_control_check` 160, `dom_identity_check` 56, `files_tab_check` 42, `corner_check_check` 39, `looks_check` 75,
+`reliability_check` 20, `matched_devices_check` 37, `request_lifecycle_check` 25 (13 scripts, 695 checks, one lane, all
+passed the first time). No flakes.

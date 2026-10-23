@@ -3872,3 +3872,15 @@ passed the first time); and every other check that opens the Tasks, Runs, RL mod
 `consistency_check` 14, `network_inputs_check` 9 (16 scripts, 707 checks, one lane). One flake: `reward_block_check`
 stopped after 23 checks in that batch - "the DevTools session closed (its window went away)", in the RL model window's
 network settings after "Use the template's values", away from the saved models - and passed alone at once (33).
+
+**Review follow-up.** The review of 6f8fe39 found one slip; it is real. `virtuoso_source_check`'s new check of Delete
+task while its delete is on its way named the hourglass but asked only for another drawing than the bin, and the tray of
+the code before, which stood still until the answer came, is another drawing too: the check passed on the code it was to
+tell apart, so what is said above - each new check looks for what the code before did not have, "a drawing that stood
+still" among it - was not true of it, and a busy drawing such as the refresh arrow would have passed as well.
+`frontend/scripts/virtuoso_source_check.mjs` now asks for the hourglass itself, by its first line (`M4 2.5h8M4 13.5h8`,
+as `files_tab_check` tells it), and for the bin just before the press: the hourglass for the bin, as the check says.
+Only the check changes; the page and what each press does are as SIF-113 left them. `tsc` clean.
+`virtuoso_source_check` 114, all passed the first time (one lane). Two probe runs, `TaskList.tsx` changed for each and
+restored after: the code before (the tray throughout) failed both SIF-113 checks of Delete task (112 passed); a bin that
+stands still while the delete is on its way failed this one alone (113 passed). No flakes.

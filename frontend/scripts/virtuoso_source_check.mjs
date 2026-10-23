@@ -481,13 +481,17 @@ await runChecks(browser, async () => {
   deleteRefused = false; mark = calls.length; answers.push(true);
   // Branch record SIF-113: while the delete is on its way the button waits - greyed out, "Deleting..." for screen readers and
   // the hourglass, as other icon buttons' presses do; the tray stood still until the answer came. The answer waits for the look.
+  // SIF-113 review: "another drawing than the bin" passed on that tray too. The hourglass is told by its first line, as
+  // files_tab_check tells it, and the bin it stands for is read just before the press.
+  const drawnBefore = await tw.window.evaluate(DRAWING);
   let answerDelete; holdDelete = new Promise(go => { answerDelete = go; });
   await deleteTask();
   const waiting = await tw.window.until(`${DELETE}?.textContent === 'Deleting...' && ${DELETE}.disabled`, 50);
   const [waitText, waitDrawing] = [await tw.window.evaluate(`${DELETE}?.textContent ?? null`), await tw.window.evaluate(DRAWING)];
+  const hourglass = await tw.window.evaluate(`${DELETE}?.querySelector('svg.icon path')?.getAttribute('d') === 'M4 2.5h8M4 13.5h8'`);
   answerDelete(); holdDelete = null;
   check('while the delete is on its way, Delete task waits: greyed out, "Deleting..." for screen readers, the hourglass for the bin (SIF-113)',
-    waiting && !!waitDrawing && waitDrawing !== bin, `${waitText} / ${waitDrawing}`);
+    waiting && drawnBefore === bin && hourglass, `${drawnBefore === bin ? 'the bin' : drawnBefore} -> ${waitText} / ${waitDrawing}`);
   await quiet();
   shown = await statusText();
   check('deleting is one request', JSON.stringify(ops(mark).filter(o => o.startsWith('profile'))) === JSON.stringify(['profile/delete ota5_v1']), ops(mark).join(' | '));

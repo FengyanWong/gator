@@ -13,9 +13,10 @@ import { cardLive, isLive, type RunControl } from '../runState';
  *  banner will show you small popup window showing the running runs brief"). The header's run chip opens a small window of
  *  its own, "Running now": a card for the header's run, in any state, then one for every other live run under the output
  *  folder (another browser tab, the command line, a task's baseline). It only shows. Show results puts a run in the bottom
- *  tabs - what the chip's press did until then - and Open in Runs opens the Runs window at it; the header's buttons stay the
- *  only run controls. No timer of its own: the header's card follows the header's status poll, and the other cards are read
- *  when the window opens and by Refresh, with the time they were read. */
+ *  tabs - what the chip's press did until then - and closes the window, as the Runs window's Show results does (branch
+ *  record SIF-110); Open in Runs opens the Runs window at it; the header's buttons stay the only run controls. No timer of
+ *  its own: the header's card follows the header's status poll, and the other cards are read when the window opens and by
+ *  Refresh, with the time they were read. */
 
 const ago = (utc?: string | null) => {
   const at = utc ? Date.parse(utc) : NaN;
@@ -55,8 +56,11 @@ function BriefCard({ dir, row, status, header, byDir, from, onShow }: { dir: str
       {/* three digits, as Run status writes it (SIF-44: "reward -0.0370463") */}
       {best ? ` · best so far: ${typeof best.reward === 'number' ? `reward ${sig(best.reward)}` : 'no reward recorded'}${best.feasible ? ', meets every spec' : ''}` : ''}</div>
     <div className="hint">{origin === '-' ? 'No model loaded' : `Started from ${origin}`} · last save point {ago(status?.last_checkpoint_utc) ?? 'none yet'}</div>
+    {/* Show results closes the window, as Show results in the Runs window closes that one (record 7.291, user request
+        2026-10-09: "after selecting one target task, model or run, close the pop up window"; branch record SIF-110: this one
+        stayed over the page, the tabs it had just changed behind it). Refresh and Open in Runs keep it open. */}
     <div className="row">
-      <button onClick={() => onShow(dir)} title="Show results: the bottom tabs show this run (Run status, Logs, Data tables...). Nothing else changes.">Show results</button>
+      <button onClick={() => { onShow(dir); from.close(); }} title="Show results: the bottom tabs show this run (Run status, Logs, Data tables...). Nothing else changes. The window then closes.">Show results</button>
       <button onClick={() => openRunsAt({ run_dir: dir, from })} title="Open in Runs: the Runs window opens at this run, its Details open.">Open in Runs</button>
     </div>
   </section>;

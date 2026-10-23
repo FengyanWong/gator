@@ -183,6 +183,8 @@ started with." - branch record SIF-72). Run configuration's model line and this 
     so far; where the model came from and the last save point.
   - Its two buttons: **Show results** (the bottom tabs show the run - what pressing the run text did until then) and
     **Open in Runs** (the Runs window at the run, its Details open). It has no run controls: the header keeps them.
+    Show results then closes the window, as Show results in the Runs window closes that one (record 7.291; branch record
+    SIF-110: the brief stayed over the page, the tabs it had just changed behind it); Refresh and Open in Runs keep it open.
   - It only shows, and has no timer of its own. The header's card follows the header's status reads; the other cards
     are read when the window opens and by **Refresh**, with the time they were read.
 * **One launcher** (record 7.261, `frontend/src/launch.ts`; plan [frontend run workflow](plan-frontend-run-workflow.md),
@@ -339,6 +341,14 @@ the tab line goes back to its window. Under 1101 px the editors come first and t
   The list is plain buttons in the Tab order (branch record SIF-109: marked as a menu, it promised arrow keys it never
   had). **Esc** closes it and gives the focus back to the button, and after **Close all**, which takes the button away, the
   focus goes to the run chip, else the Connection button: it fell to the page, and the next Tab began at its top.
+
+**Each pop-up window opens again at the size and place it was left at** (branch record SIF-110, `popupWindow.ts`). Every
+opening asked for the window's first size (Runs 1500 x 860, Tasks 1500 x 760), and since record 7.291 a choice closes the
+Tasks, Runs and RL model windows, so a size given to one was lost at each choice. The size and place are kept in this
+browser per window (`gator-workbench-window-<name>`) once a resize comes to rest and as the window closes - a move fires
+no event. A window opens on the screen of the window it is opened from, at most that screen's size: a place kept on a
+second screen may be on no screen now. A size kept for another first size is not used: the Connection window opens wider
+for a connection of two Virtuoso sessions.
 
 **Research experiments** (record 7.163; user: "Check the research experiments module and see which should be kept",
 then "Remove both" and "Fold them"). Since record 7.166 its heading looks like the other modules' headings, and its note

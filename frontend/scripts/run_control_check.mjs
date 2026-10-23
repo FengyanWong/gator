@@ -24,7 +24,8 @@
 // Branch record SIF-91: Output settings' output root locks while the header's run starts or works, whatever run the tabs show;
 // "Use this folder" in a folder list opened before the Start too (SIF-91 review; GET /api/output/browse answered with a FIXTURE).
 // Branch record SIF-98: Run status, under its bar, and the end of the run chip's tooltip give the run brief's working time and
-// time left.
+// time left. Branch record SIF-110: the run brief's Show results closes the brief, as the Runs window's closes that window;
+// Open in Runs keeps it open.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -395,8 +396,15 @@ await runChecks(browser, async () => {
     real?.title === 'fixture_task · New model · no model saved · real data' && !real.badge && real.time === 'Duration 2 min 05 s so far · about 4 min 10 s left', JSON.stringify(real));
   await brief.shot(path.join(out, 'run-4c-brief-real.png'), `document.querySelector('.run-brief')`);
   elsewhereListed = false;
-  await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Show results').click()`);
+  const SHOW = `[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Show results')`;
+  const showTitle = await brief.evaluate(`${SHOW}.title`);
+  await brief.evaluate(`${SHOW}.click()`).catch(() => undefined);                 // the window closes itself
   check('Show results in the brief shows the run under Run status again', await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(DIR)})`));
+  // Branch record SIF-110: and the brief closes, as Show results closes the Runs window (record 7.291) - it stayed over the page,
+  // the tabs it had just changed behind it. Open in Runs, below, keeps it open.
+  check('... and the brief closes, as Show results in the Runs window closes that one (record 7.291); its tooltip says so (SIF-110)',
+    await browser.window(RUNNING_WINDOW, { present: false }).then(() => true, () => false) && showTitle.endsWith('Nothing else changes. The window then closes.'), showTitle);
+  brief.close();
   // Branch record SIF-98: the working time and the time left stood in the brief alone, a window to open for the one number asked
   // for most. Run status says them under the bar, apart from the budget's words; the chip's tooltip ends with them (its text
   // stays the count), and added nothing while the status gave no working time.
@@ -407,13 +415,19 @@ await runChecks(browser, async () => {
   check('... the header chip\'s tooltip ends with the same line after what it said; its text stays the count; before the working time was known it ended at "(record 7.264)." (SIF-98)',
     chipTime.title.startsWith(`The current run, a run of fixture_task: ${DIR}\nPress for the run brief:`) && /\(record 7\.264\)\.\nDuration 5 min 01 s so far · about \d.* left$/.test(chipTime.title)
     && /^fixture_task · \d+ of 60 evaluations \[MOCK\]$/.test(chipTime.text) && chipLook.title.endsWith('(record 7.264).'), JSON.stringify([chipTime, chipLook.title]));
-  await brief.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Open in Runs').click()`, true);
+  // The chip opens the brief again (it closed after Show results, SIF-110) for Open in Runs.
+  await evaluate(`${CHIP}.click()`, true);
+  const againTarget = await browser.window(RUNNING_WINDOW).catch(() => null);
+  const again = againTarget && await browser.attach(againTarget);
+  await again?.until(`!!document.querySelector('.brief-card')`, 50);
+  await again?.evaluate(`[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Open in Runs').click()`, true);
   const runsTarget = await browser.window(RUNS_WINDOW).catch(() => null);
   const runsWindow = runsTarget && await browser.attach(runsTarget);
   check('Open in Runs opens the Runs window at the run: its Details open', !!runsWindow && await runsWindow.until(`(() => { const tr = [...document.querySelectorAll('table.run-table tbody > tr')]
     .find(tr => tr.title === ${JSON.stringify(DIR)}); return !!tr && tr.querySelector('button.notes-link')?.getAttribute('aria-expanded') === 'true'; })()`, 60));
+  check('... and the brief stays open: only its Show results closes it (SIF-110)', !!again && !!(await browser.window(RUNNING_WINDOW, { ms: 500 }).catch(() => null)));
   runsWindow?.close(); if (runsTarget) await send('Target.closeTarget', { targetId: runsTarget.id });
-  brief.close(); await send('Target.closeTarget', { targetId: briefTarget.id });
+  again?.close(); if (againTarget) await send('Target.closeTarget', { targetId: againTarget.id });
   sim.active = null;
 
   // ---- 6. a reload: the live run is still the header's run, and "Start" is never offered meanwhile ---------------------------

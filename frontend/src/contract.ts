@@ -21,6 +21,9 @@ export const BOTTOM_KEY = 'gator-workbench-bottom-v1';
 export const BOTTOM_TAB_KEY = 'gator-workbench-bottom-tab-v1';
 /** A right-column module folded or open: this prefix + the module's id (Right.tsx Module). */
 export const MODULE_KEY_PREFIX = 'gator-workbench-module-';
+/** A pop-up window's size and place as the viewer left it: this prefix + the window's name (popupWindow.ts, branch record
+ *  SIF-110). */
+export const WINDOW_PLACE_KEY_PREFIX = 'gator-workbench-window-';
 /** The circuit picture's fold in the circuit column (CircuitPicture.tsx). */
 export const CIRCUIT_PICTURE_KEY = 'gator-workbench-circuit-picture-v1';
 /** The circuit column shown beside the task's rows (App.tsx, record 7.362): 'shown', or nothing - folded away, the default. */

@@ -22,12 +22,13 @@
 // Branch record SIF-101: Runs... opens the window at the shown run; a link keeps the folder, the filter and the ticks that show
 // its run, else "Back to ..." brings them back; "Go to the shown run" when they hide it. Its review follow-up: a link to one
 // task's runs lets the ticks go; New folder with runs ticked keeps them. Branch record SIF-109: a column title takes Tab, Enter
-// and Space; a run's row takes Enter, which does what its double click does.
+// and Space; a run's row takes Enter, which does what its double click does. Branch record SIF-110: the window opens again at
+// the size and place it was left at (popupWindow.ts, every pop-up window), on this screen and at most its size.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, RUNS_WINDOW, TASKS_WINDOW } from './lib/harness.mjs';
+import { check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl, RUNS_WINDOW, TASKS_WINDOW, WINDOW_PLACE_KEY_PREFIX } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -563,10 +564,44 @@ await runChecks(browser, async () => {
   listed = [PAUSED, RESUMED, DONE, LOST, NEVER, FAILED];
 
   // ---- 9. closing and opening again ------------------------------------------------------------------------------------------------
-  await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close();   // the user closes the window with its own X
+  // Branch record SIF-110: the window opens again at the size and place it was left at. Every opening asked for 1500 x 860, and
+  // since record 7.291 a choice closes the window, so a size the user gave it was lost at each choice. A headless window ignores
+  // the size it asks for: checked here are what the page keeps and what it asks window.open for (wrapped for one press, as
+  // lib/rl_networks.mjs does).
+  const PLACE_KEY = WINDOW_PLACE_KEY_PREFIX + 'gator-runs', PLACE = `JSON.parse(localStorage.getItem(${JSON.stringify(PLACE_KEY)}) ?? 'null')`;
+  const closeWindow = async () => { await send('Target.closeTarget', { targetId: farPage.id }); await windowTarget(false); far.close(); };   // the user closes the window with its own X
+  const reopened = async () => {             // presses Runs... and returns what the page asked window.open for
+    await evaluate(`(() => { const open = window.open; window.open = function (...args) { window.open = open; window.__asked = args[2]; return open.apply(this, args); }; })()`);
+    await openWindow();
+    return evaluate(`window.__asked ?? null`);
+  };
+  // The size and place given: 700 x 500 at (40, 30), inside the headless screen (800 x 600).
+  await far.send('Emulation.setDeviceMetricsOverride', { width: 700, height: 500, deviceScaleFactor: 1, mobile: false, screenWidth: 800, screenHeight: 600, positionX: 40, positionY: 30 });
+  check('a size given to the window is kept once the resize comes to rest: its page\'s size and its corner, with the size it opened at (SIF-110)',
+    await until(`(p => p?.w === 700 && p.h === 500 && p.x === 40 && p.y === 30 && p.of === 'popup,width=1500,height=860')(${PLACE})`, 30), JSON.stringify(await evaluate(PLACE)));
+  await evaluate(`localStorage.removeItem(${JSON.stringify(PLACE_KEY)})`);        // so that what follows is what closing kept
+  await closeWindow();
   check('after the window is closed the strip button is no longer marked as open', await until(`!${BUTTON}.classList.contains('open')`) && (await strip()).text === 'Runs...', JSON.stringify(await strip()));
-  await openWindow();
+  const left = await evaluate(PLACE);
+  check('... and closing it kept its size and place (SIF-110)', left?.w === 700 && left.h === 500 && left.x === 40 && left.y === 30, JSON.stringify(left));
+  const screenNow = await evaluate(`({ left: screen.availLeft, top: screen.availTop, width: screen.availWidth, height: screen.availHeight })`);
+  const onScreen = (at, from, room) => Math.max(from, Math.min(at, from + room));
+  let asked = await reopened();
   check('pressing the button again opens the window again, with the current list', (await table())?.length === 6);
+  const back = { width: Math.min(700, screenNow.width), height: Math.min(500, screenNow.height) };
+  check('... at the size and place it was left at (SIF-110)', asked === `popup,width=${back.width},height=${back.height},left=${onScreen(left.x, screenNow.left, screenNow.width - back.width)}`
+    + `,top=${onScreen(left.y, screenNow.top, screenNow.height - back.height)}`, `${asked} ${JSON.stringify(screenNow)}`);
+  // A place kept on a screen that is gone (a second monitor) comes onto this one, and a size at most this screen's.
+  await closeWindow(); await until(`!${BUTTON}.classList.contains('open')`);
+  await evaluate(`localStorage.setItem(${JSON.stringify(PLACE_KEY)}, ${JSON.stringify(JSON.stringify({ of: 'popup,width=1500,height=860', w: 300, h: 99999, x: 50000, y: -50000 }))})`);
+  asked = await reopened();
+  check('... a place kept off this screen opens on it, at its right edge and its top, the height at most the screen\'s (SIF-110)',
+    asked === `popup,width=300,height=${screenNow.height},left=${screenNow.left + screenNow.width - 300},top=${screenNow.top}`, `${asked} ${JSON.stringify(screenNow)}`);
+  // A size kept for other features is not used: the Connection window opens wider for a connection of two Virtuoso sessions.
+  await closeWindow(); await until(`!${BUTTON}.classList.contains('open')`);
+  await evaluate(`localStorage.setItem(${JSON.stringify(PLACE_KEY)}, ${JSON.stringify(JSON.stringify({ of: 'popup,width=1400,height=860', w: 300, h: 200, x: 0, y: 0 }))})`);
+  asked = await reopened();
+  check('... and a size kept for another first size is not used: the window asks for its own (SIF-110)', asked === 'popup,width=1500,height=860', asked);
   // Branch record SIF-109: a run's row takes Enter, as a row of the Tasks window does (SIF-100) - the double click was the only
   // way to choose a run from its row. Enter on one of the row's buttons presses that button alone. FAILED names no registered
   // task, so its Enter shows it (Load run is not offered) and the draft keeps its Undo steps for section 10.

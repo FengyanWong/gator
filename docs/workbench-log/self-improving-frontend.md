@@ -3654,3 +3654,56 @@ nothing pin the shared condition. Also run, unchanged: `model_chooser_check` 120
 `dom_identity_check` 56, `training_tab_check` 108, `virtuoso_source_check` 112, `export_check` 37, `corner_check_check`
 39, `looks_check` 76, `network_panel_check` 72, `task_run_check` 39, `reliability_check` 20, `agent_window_check` 33,
 `callouts_check` 8 (18 scripts, 1,328 checks, one lane, all passed the first time). No flakes.
+
+### SIF-110 Show results in Running now closes it, and a window opens again where you left it (2026-10-23; from the usability audit)
+
+**Found.** Two audit findings about the pop-up windows. Show results in the Runs window closes that window (record
+7.291), but the same button in the run brief, "Running now", left its window over the page: the user closed it by hand
+to see the tabs it had just changed, and two buttons with one name did two things (J7-11). Every window opened at the size
+its code gives it - Runs 1500 x 860, Tasks 1500 x 760, the RL model window 1180 x 920, the Virtuoso and ngspice windows
+980 high - in the place the browser chose, so a size or place the user gave one was lost at every opening; since record
+7.291 closes the Tasks, Runs and RL model windows after each choice, they are opened, and sized again, often (J7-14). Not
+so: that the Runs and Tasks windows open larger than a 1366 x 768 screen - the browser fits a window to the screen (the
+verdict's correction).
+
+**Changed.** `frontend/src/panels/RunBrief.tsx`: a card's Show results shows the run, then closes the brief, as Show
+results in the Runs window closes that one (RunList's `chosen`); its tooltip ends "The window then closes.". Refresh and
+Open in Runs keep it open. The audit asked for this to be put to the user first: record 7.291 named the Tasks, Runs and RL
+model windows only, and the brief can stand open as a watch on live runs. It was not asked, on the user's "go on on your
+own", as SIF-108 did: the press shows the run as before, the brief shows nothing that is lost when it closes, and the run
+chip opens it again with one press, at the size and place it was left at (below). Should the user want it to stay open,
+the one click handler goes back. `frontend/src/panels/popupWindow.ts`: every pop-up window - Connection, Virtuoso, PDK,
+ngspice, Tasks, Runs, the brief, the RL model window, the task file, Agent - keeps its size and place in this browser,
+under `gator-workbench-window-<name>` (`frontend/src/contract.ts` `WINDOW_PLACE_KEY_PREFIX`; `kept.ts` `keep`, so blocked
+storage stops nothing): once a resize has come to rest (300 ms), and as the window goes - its own pagehide, the page
+leaving, and the PDK and ngspice windows' close when their panel goes -, since a move fires no event. `placed` gives the
+next opening that size and place: `width` and `height` from the window's innerWidth and innerHeight, `left` and `top` from
+screenX and screenY. The audit's fix kept outerWidth and outerHeight, but window.open's width and height are the size of
+the page inside the window: the window would have grown by its frame at every opening. The size is at most the screen's,
+and the corner is moved onto the screen of the window the press was in: a place kept on a second screen may be on no
+screen now. A size kept for other first features is not used: the Connection window opens 1100 wide for a connection of
+two Virtuoso sessions and 660 for one, and a size left at 660 would cramp the two. Nothing kept, a value that is not one,
+or a closing window that answers no size (under 100 px): the window's own features, as before. Nothing here starts,
+continues or stops a run, saves a task or writes to Virtuoso: Show results in the brief does what it did, and a window's
+size and place are the browser's alone. `docs/workbench.md` (the run brief; a paragraph of the page's look and layout,
+after the changes of record 7.372) and `docs/functionality-reference.md` (the Windows and Run brief rows) describe it.
+
+**Checked.** `tsc` clean. `run_control_check` 162 (160 before): after Show results in the brief the run is under Run
+status and the brief has closed, its tooltip ending "The window then closes."; the chip opens it again, and its Open in
+Runs opens the Runs window at the run with the brief still open. `run_list_check` 167 (162): the Runs window given 700 x
+500 at (40, 30) by device emulation keeps that size and corner once the resize comes to rest, and again as it closes (the
+kept value taken away first); the next press of Runs... asks window.open for "popup,width=700,height=500,left=40,top=30";
+a place kept at (50000, -50000), 99999 high, opens at the screen's right edge and top, as high as the screen (800 x 600,
+headless); a size kept for other first features is not used ("popup,width=1500,height=860"). A headless window ignores the
+size it asks for, so the checks look at what the page keeps and what it asks window.open for (wrapped for one press, as
+`lib/rl_networks.mjs` does); each check's browser profile is new and windows are found by their title, so a kept size
+changes no other check. Each new check looks for what the code before did not have. Also run, unchanged - every other
+check that opens a pop-up window: `dom_identity_check` 56, `connection_panel_check` 96, `virtuoso_source_check` 112,
+`task_save_check` 91, `model_chooser_check` 120, `ngspice_window_check` 43, `task_list_check` 103, `pdk_check` 44,
+`agent_window_check` 33, `training_tab_check` 108, `testbench_probes_check` 41, `typing_check` 62, `task_rows_check` 54,
+`project_help_check` 61, `working_copy_check` 34, `looks_check` 76, `network_panel_check` 72, `task_run_check` 39,
+`reliability_check` 20, `graph_view_check` 69, `reward_block_check` 33, `circuit_source_check` 17,
+`encoder_models_check` 24, `model_structure_check` 31, `consistency_check` 14, `network_inputs_check` 9 (28 scripts, 1,791
+checks, one lane, all passed the first time). `run_list_check`'s new checks were then made stricter - the first version's
+1200 x 700 came back as the headless screen's 800 x 600, at the corner (0, 0) -, and one run of it stopped at the check's
+own fault (an emulated window position needs an emulated screen around it); with one it passed, 167. No flakes.

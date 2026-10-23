@@ -14,7 +14,8 @@
 // - a click only inspects (Details: save points newest first, compatibility, rename, relationships);
 // - "Use this save point" pins exactly that save point - a concrete id, never "latest" - with the model's network, as ONE
 //   Undo step; a double click on a row uses its newest save point; a newer save point is offered, never followed;
-// - a network that arrives from elsewhere while a model is loaded is taken back, and that is said;
+// - a network that arrives from elsewhere while a model is loaded is taken back, and that is said; the import that brought it
+//   says it replaced the run settings (branch record SIF-107);
 // - an incomplete configuration is a calm note; rename refuses a taken name; the filter; one read per Refresh, no timer;
 //   a model in use that left the list, its folder saying "Click to copy" (branch record SIF-64); an empty folder; the models'
 //   folders; back to New model; the real route;
@@ -483,6 +484,11 @@ await runChecks(browser, async () => {
   const APPLY = `[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent.trim() === 'Apply')`;
   check('(set-up) a configuration with another network is imported through "Import JSON..."', await until(`!!(${APPLY})`, 60));
   await evaluate(`${APPLY}.click()`);
+  // Branch record SIF-107: Apply says what it changed - a whole configuration may replace settings out of view, here the run
+  // settings alone - where the box went without a word.
+  const IMPORT_NOTE = `(document.querySelector('.editors .paste-note')?.textContent ?? '')`;
+  check('the import\'s Apply says it replaced the run settings, with Undo (branch record SIF-107)',
+    await until(`${IMPORT_NOTE} === 'Imported: replaced the run settings. Undo takes it back.'`, 20), await evaluate(IMPORT_NOTE));
   check('a network from elsewhere is taken back while the model is loaded, and that is SAID', await until(`/The network stays GATv2 16\\/2\\/1: this run loads a saved model/.test(${RIGHT}.querySelector('.net-message.warn')?.textContent ?? '')`, 60),
     await evaluate(`${RIGHT}.querySelector('.net-message')?.textContent ?? 'no message'`));
   check('... the configuration holds the model\'s network again', sameNet((await storedWhen(s => sameNet(s?.network, GATV2)))?.network, GATV2));

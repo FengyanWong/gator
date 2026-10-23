@@ -6,17 +6,20 @@
 //   - Specs: no "target ± tolerance" in the Constraint list and no target or tolerance column; a new spec (spec_3) whose
 //     equation becomes another probe takes that probe's unit while it has no limits; an empty limit reads "no limit", an
 //     empty Scale "auto" (branch record SIF-49); the zero-floor hint names an interval from 0 and goes once its Margin sides
-//     is upper (branch record SIF-50);
+//     is upper (branch record SIF-50); its button beside it sets Margin sides to upper on every row it names, one Undo step
+//     (branch record SIF-107);
 //   - Parameters: initial_value is not shown; value_type, step, scale and ratio come after "More columns"; on a follower row
 //     (binding_group set) the fields its leader decides are greyed, with why; a word typed into Ratio is refused in words;
 //     a validation answer without a count reads "The optimizer searches ? of N rows." (review of branch record SIF-50; the
 //     words of branch record SIF-73).
 // HERMETIC (lib/harness.mjs): validation is answered with a canned valid report labelled FIXTURE, other reads pass, every
 // other writing request is refused. A temporary browser profile: the user's saved configuration is not touched.
-// Exit code 1 if any check fails.
-import { check, launchEdge, mockStarter, reportRefused, runChecks, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+// Exit code 1 if any check fails. Picture: zero_floor_button.png, in the folder given as the first argument.
+import path from 'node:path';
+import { check, launchEdge, mockStarter, outDir, reportRefused, runChecks, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
+const out = outDir();
 const browser = await launchEdge('editorcolumns');
 const VALID = validConfiguration({ mock: true });
 // Two Maestro outputs (FIXTURE): what a task saved from a cell holds.
@@ -130,12 +133,47 @@ await runChecks(browser, async () => {
   check('an interval from 0 is named in the zero-floor hint, with where Margin sides is (branch record SIF-50)',
     await until(`${HINT} === 'spec_3: the margin also measures the distance to 0. If 0 is only a physical floor, set Margin sides to upper (More columns).'`),
     `${await evaluate(HINT)} / ${JSON.stringify((await saved()).targets[2])}`);
+  // Branch record SIF-107: a button beside the hint - not inside its words - sets Margin sides to upper on the rows it names,
+  // as one Undo step: the column is behind More columns, so each named row was shown, scrolled to and changed by hand.
+  const SET_UPPER = `${EDITORS}.querySelector('.zero-floor > button.zero-floor-set')`;
+  const SAID = `(${EDITORS}.querySelector('.paste-note')?.textContent ?? '')`, SIDES = c => JSON.stringify(c.targets.map(t => t.margin_sides ?? null));
+  check('beside the hint a button "Set Margin sides to upper" says what it sets (branch record SIF-107)',
+    await evaluate(`${SET_UPPER}?.textContent === 'Set Margin sides to upper' && !${EDITORS}.querySelector('.zero-floor-hint button')
+      && /^Set Margin sides to upper: spec_3 then counts only the upper limit .*feasibility still checks both limits/.test(${SET_UPPER}.title)`),
+    await evaluate(`${SET_UPPER}?.outerHTML.slice(0, 300) ?? 'no button'`));
+  const sidesBefore = (await saved()).targets.map(t => t.margin_sides ?? null);
+  await evaluate(`${SET_UPPER}.click()`);
+  config = await saved();
+  check('...a press sets it on spec_3 alone, the hint goes, and the line under the formula bar says so', config.targets[2].margin_sides === 'upper'
+    && JSON.stringify(config.targets.slice(0, 2).map(t => t.margin_sides ?? null)) === JSON.stringify(sidesBefore.slice(0, 2))
+    && await until(`!${EDITORS}.querySelector('.zero-floor')`) && await evaluate(`${SAID} === 'Margin sides set to upper on spec_3. Undo takes it back.'`),
+    `${SIDES(config)} / ${await evaluate(SAID)}`);
+  await evaluate(`${TOOL('Undo')}.click()`);
+  config = await saved();
+  check('...and one Undo takes it back, the hint with it', (config.targets[2].margin_sides ?? null) === sidesBefore[2] && await until(`${HINT}.startsWith('spec_3: ')`),
+    `${SIDES(config)} / ${await evaluate(HINT)}`);
   await evaluate(`${MORE}.click()`);
   await until(`!!${CELL(2, 'margin_sides')}`);
   await page.setValue(CELL(2, 'margin_sides'), 'upper');
   check('...and the hint goes once that row\'s Margin sides is upper', await until(`!${EDITORS}.querySelector('.zero-floor-hint')`), await evaluate(HINT));
   await evaluate(`${MORE}.click()`);
   await until(`!${CELL(2, 'margin_sides')}`);
+  // Several rows: the button counts them and sets them all, one Undo step (branch record SIF-107).
+  await evaluate(`${TOOL('Undo')}.click()`);                // spec_3's Margin sides back: named again
+  await page.setValue(CELL(1, 'constraint'), 'interval|none');
+  await typeInto(CELL(1, 'lower'), '0');
+  await typeInto(CELL(1, 'upper'), '1');
+  check('(set-up) two intervals from 0 are named, and the button reads "Set Margin sides to upper on all 2"', await until(`${HINT}.startsWith('half_freq, spec_3: ')`)
+    && await evaluate(`${SET_UPPER}?.textContent === 'Set Margin sides to upper on all 2'`), `${await evaluate(HINT)} / ${await evaluate(`${SET_UPPER}?.textContent ?? 'no button'`)}`);
+  await page.shot(path.join(out, 'zero_floor_button.png'), EDITORS, { maxHeight: 420 });
+  await evaluate(`${SET_UPPER}.click()`);
+  config = await saved();
+  check('...a press sets both and names them', config.targets[1].margin_sides === 'upper' && config.targets[2].margin_sides === 'upper'
+    && await evaluate(`${SAID} === 'Margin sides set to upper on half_freq, spec_3. Undo takes it back.'`), `${SIDES(config)} / ${await evaluate(SAID)}`);
+  await evaluate(`${TOOL('Undo')}.click()`);
+  config = await saved();
+  check('...and one Undo takes both back', config.targets[1].margin_sides !== 'upper' && config.targets[2].margin_sides !== 'upper'
+    && await until(`${HINT}.startsWith('half_freq, spec_3: ')`), SIDES(config));
 
   // ---- Parameters ---------------------------------------------------------------------------------------------------
   await openTab('Parameters');

@@ -894,8 +894,17 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   follows the ID. It is written as the bar writes, one Undo step, and the bar's own text takes it too, so Enter writes
   nothing more. With no Equation cell chosen, a press copies the ID ("Copied m_f1_hz."). Nothing here saves, runs or
   writes to Virtuoso: both change the configuration only, and Undo takes them back.
+- **Import JSON says what it did** (branch record SIF-107, from the usability audit). The confirmation opens with Apply in
+  focus - when the file chooser left the focus on Import JSON... or the page; a cell entered while the diff was on its way
+  keeps it, so a key meant for the cell never presses Apply - and Esc in it is Cancel, also after a click on its words.
+  Apply used to close the box without a word, also when a whole configuration replaced the run and output settings out of
+  view; now the line under the formula bar says "Imported: 3 changed rows. Undo takes it back." or "Imported: replaced the
+  run settings. Undo takes it back.", as Matched devices' Apply does, and rows applied after a tab press offer their table
+  (**Show Specs**). Apply, Cancel or Esc pressed in the box gives the focus back to Import JSON...: it fell to the page
+  with the box. A failed import's red line has a close mark and goes with a tab press: it named the tab it was tried on
+  and stayed on every tab until the next import. Nothing is imported without Apply, as before.
 
-Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`, `frontend/scripts/spec_equations_check.mjs` (SIF-106).
+Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`, `frontend/scripts/spec_equations_check.mjs` (SIF-106, SIF-107), `frontend/scripts/typing_check.mjs` (SIF-107).
 
 ### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)
 
@@ -2041,7 +2050,10 @@ whose random designs often lose a value needs that limit raised. Wrong units, a 
 candidate and infrastructure faults stay errors. A spec computed by an equation is missing only
 when a probe it reads is missing; the other equation specs keep their values (record 7.112). **Margin sides** selects
 the limits counted by clearance and Corner check ranking; feasibility still checks all limits. The zero-floor hint
-explains the upper-only choice. A new row, and an edit of its unit, limits or constraint, suggests a scale:
+explains the upper-only choice, and its **Set Margin sides to upper** (on all N, for several rows) sets it on the rows the
+hint names with one press, one Undo step - the column is behind More columns (branch record SIF-107). Whether 0 is only a
+physical floor is the user's call: nothing sets it without that press.
+A new row, and an edit of its unit, limits or constraint, suggests a scale:
 6 dB for a dB row, else the size of the limit - which is what an empty scale means too (until record 7.183: 3 dB,
 10 degrees, half an interval; a row still holding one of those follows its next edit). The suggestion follows later
 edits until you type a scale of your own; a row with nothing to size it by yet (no dB/deg unit or limit)

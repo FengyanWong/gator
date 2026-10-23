@@ -3465,3 +3465,56 @@ followed); without the moved memory, the last one failed. Also run, unchanged: `
 `reliability_check` 20, `project_help_check` 61, `dom_identity_check` 56, `matched_devices_check` 37, `room_check` 31,
 `circuit_source_check` 17, `network_panel_check` 72 (22 scripts, 924 checks, one lane, all passed the first time). No
 flakes.
+
+### SIF-107 Import JSON says what it did, and the zero-floor hint sets Margin sides with one press (2026-10-23; from the usability audit)
+
+**Found.** Two audit findings in the editors. After Import JSON...'s Apply the confirmation simply went, and the focus
+with it: nothing said what had changed, even when a whole configuration had replaced the run and output settings out of
+view, while Matched devices' Apply and the task file both say "Applied ... Undo takes it back" (J2-10). The confirmation
+ignored Esc, and a failed import's red line stayed across tab presses until the next import: "every Specs row needs its
+Spec ID" stood over the Probes table. The zero-floor hint of Specs names its rows and the fix, "set Margin sides to upper
+(More columns)", but that column is behind More columns: the user showed it, scrolled right and changed each named row's
+list by hand (J2-12).
+
+**Changed.** `frontend/src/panels/Editors.tsx`. Apply writes the line under the formula bar, as Matched devices' Apply
+does: "Imported: 20 changed rows. Undo takes it back."; a whole configuration adds the sections it replaced, in the
+confirmation's words ("Imported: replaced the run settings. Undo takes it back."); a file that changed nothing says
+"Imported: nothing changed.", where "Undo takes it back" would have pointed at an earlier change (the plan's text read "0
+changed rows; replaced ..." there). Rows write their table alone, so their line names no other section; rows applied
+after a tab press offer their table with Show Specs, as an Undo's line does (SIF-97). The box opens with Apply in focus,
+so Enter applies and Esc cancels at once - but only where the file chooser left the focus, on Import JSON... or the page
+(`applyButton`, an effect on `pending`). The plan's `autoFocus` would also have taken the focus from a cell entered while
+the diff was on its way, and an Enter typed there would have pressed Apply. Esc in the box is Cancel, also after a click
+on its words: the box takes that click's focus (`tabIndex` -1), which fell to the page. Apply, Cancel and Esc pressed in
+the box give the focus back to Import JSON... (`closeImport`, `importButton`), where it fell to the page with the box; a
+focus put elsewhere while the box was open stays there. Apply and Cancel have tooltips; Cancel's names Esc. A failed
+import's line (`div.import-error`) has a close mark beside its words, and the tab reset clears it with the chosen cell
+and the line under the formula bar. The zero-floor hint keeps its words; beside them, not inside (`div.zero-floor`, so
+the paragraph's text that `editor_columns_check` and `reward_v21_check` pin stays whole), a button reads "Set Margin
+sides to upper", or "... on all 2" for several rows. A press sets `margin_sides: 'upper'` on every row the hint names,
+through `withFollowers` as one Undo step - the rows by the hint's own test, not by ID, so a duplicated ID cannot take a
+row the hint did not name - and says "Margin sides set to upper on half_freq, spec_3. Undo takes it back."; the hint then
+goes by itself. Its tooltip says what that does: only the upper limit counts in the tightest-margin bonus and the Corner
+check ranking, while feasibility still checks both limits. Whether 0 is only a physical floor stays the user's call:
+nothing sets it without the press. `frontend/src/roadster.css`: `.line-act` keeps a line's action beside its words, which
+wrap in their own width; `button.line-close` is drawn as the launch refusal's close mark. Nothing here starts, continues
+or stops a run, saves a task or writes to Virtuoso: an import still changes nothing before Apply, and each change is one
+Undo step. `docs/workbench.md` (a new bullet under Tied rows, spreadsheet keys and a pasted block; the Margin sides
+paragraph) and `docs/functionality-reference.md` (the Import JSON and Specs columns rows) describe it.
+
+**Checked.** `tsc` clean. `spec_equations_check` 69 (63 before): the 20-row box opens with Apply in focus; Esc closes it
+with nothing imported and the focus on Import JSON...; a Specs cell in focus keeps it when the box opens and after
+Cancel; after a click on the box's heading Esc still cancels it; the failed import's line has a close mark whose press
+takes the line away, and a tab press takes it away too. New picture: `spec_import_error.png`. `editor_columns_check` 29
+(23): beside the hint, not inside it, "Set Margin sides to upper" with its tooltip; a press sets spec_3 alone, the hint
+goes and the line says so; one Undo brings it back with the hint; with half_freq an interval from 0 too the button reads
+"... on all 2", a press sets both and one Undo takes both back. New picture: `zero_floor_button.png`. `typing_check` 51
+(50): a Parameters rows import applied with Probes shown still writes Parameters, says "Imported: N changed rows. Undo
+takes it back." with Show Parameters, and the focus is back on Import JSON.... `model_chooser_check` 120 (119): the whole
+configuration with another network says "Imported: replaced the run settings. Undo takes it back.". Each new check looks
+for what the code before did not have. Also run, unchanged: `task_rows_check` 54, `looks_check` 76, `dom_identity_check`
+56, `find_fill_copy_check` 50, `sheet_check` 54, `unsaved_rows_check` 25, `blocking_issues_check` 60,
+`network_panel_check` 72, `reliability_check` 20, `room_check` 31, `formula_bar_check` 21, `matched_devices_check` 37,
+`edit_state_check` 28 (17 scripts, 853 checks, one lane, all passed the first time; the checks of the import box ran
+again once the box took `tabIndex`, `typing_check` once more with its tab press). Not run, by the rules:
+`reward_v21_check`, which pins the hint's words; they are unchanged. No flakes.

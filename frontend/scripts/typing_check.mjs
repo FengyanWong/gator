@@ -15,7 +15,8 @@
 //     record 7.265 not when Fine-tune is chosen either - the newest model under the RL model label is offered, and its Use
 //     pins that model's save point (a concrete id), one Undo step;
 //   - "Stop after N consecutive failed evaluations" (the Limits fold, "Failure limits" until record 7.179) shows the engine's limit of 5 and takes a typed one;
-//   - "Import JSON..." of one table's rows writes that table alone: an edit made while its box was open stays.
+//   - "Import JSON..." of one table's rows writes that table alone: an edit made while its box was open stays; Apply says
+//     what it changed and gives the focus back to Import JSON... (branch record SIF-107).
 // A throwaway headless Edge over the DevTools protocol (lib/harness.mjs). HERMETIC: validation, the default model and the
 // model list are answered here with canned data labelled FIXTURE; other reads pass; every other writing request is
 // refused. The browser profile is new and temporary: the user's saved configuration is not touched. So it is safe on the
@@ -276,6 +277,7 @@ await runChecks(browser, async () => {
   writeFileSync(rowsFile, JSON.stringify(importedRows));                            // a list of rows: no schema_version, so rows only
   const { root } = await send('DOM.getDocument', { depth: 1 });
   const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector: '.editors input[type=file]' });
+  await evaluate(`${TOOL('Import JSON...')}.focus()`);                               // where a press of it leaves the focus
   await send('DOM.setFileInputFiles', { nodeId, files: [rowsFile] });
   const APPLY = `[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent.trim() === 'Apply')`;
   check('(set-up) rows for the Parameters tab wait in the confirmation box', await until(`!!(${APPLY})`, 60));
@@ -283,11 +285,20 @@ await runChecks(browser, async () => {
   // the project name box until record 7.159).
   await page.setValue(LABELLED('.right', 'Random seed'), '23', { event: 'input' });
   await sleep(300);
+  await openTab('Probes');                                   // another tab shown meanwhile: the rows are still Parameters'
   await evaluate(`${APPLY}.click()`);
   config = await saved();
   check('Apply writes the imported Parameters rows and keeps an edit made while the box was open', config.run.seed === 23
     && config.parameters.length === importedRows.length && config.parameters.every(r => r.notes === 'FIXTURE imported'),
     JSON.stringify({ seed: config.run.seed, notes: config.parameters.map(r => r.notes) }));
+  // Branch record SIF-107: Apply says what it changed, with Undo, as Matched devices' Apply does - the box went without a word -
+  // offers the tab of the rows when another is shown, and gives the focus back to Import JSON..., where the press began: it
+  // fell to the page with the box.
+  const IMPORTED = `Imported: ${importedRows.length} changed row${importedRows.length === 1 ? '' : 's'}. Undo takes it back. Show Parameters`;
+  const IMPORT_NOTE = `(${EDITORS}.querySelector('.paste-note')?.textContent ?? '')`;
+  check('...says so under the formula bar, with Undo and Show Parameters, and gives the focus back to Import JSON... (branch record SIF-107)',
+    await until(`${IMPORT_NOTE} === ${JSON.stringify(IMPORTED)}`, 20) && await evaluate(`document.activeElement === ${TOOL('Import JSON...')}`),
+    await evaluate(`${IMPORT_NOTE} + ' / ' + (document.activeElement?.outerHTML.slice(0, 80) ?? 'none')`));
 
   // ---- (f) the stop rule's own field (decision of 2026-09-29): it had none, so its limit of 5 could not be seen or changed ------------
   const STOP_AFTER = LABELLED('.right', 'Stop after N consecutive failed evaluations');

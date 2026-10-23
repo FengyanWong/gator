@@ -110,6 +110,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const [matched, setMatched] = useState(0);               // each toolbar press opens a fresh read; zero closes the box
   const [error, setError] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
+  // Import JSON..., its confirmation and the confirmation's Apply: the box opens with Apply in focus and gives the focus back
+  // to Import JSON... when it goes (branch record SIF-107).
+  const importButton = useRef<HTMLButtonElement>(null), importBox = useRef<HTMLDivElement>(null), applyButton = useRef<HTMLButtonElement>(null);
   // The chosen cell of the formula bar (record 7.175): its row by position, checked by the row's ID (a Delete or an Undo moves
   // rows; while the ID itself is being typed, the position holds).
   const [active, setActive] = useState<{ index: number; name: string; key: string } | null>(null);
@@ -302,14 +305,35 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
           : `Import failed: ${e.message}`);
       }
     };
+    // The box goes with the focus back on Import JSON... when it was in the box or nowhere (branch record SIF-107): the button
+    // pressed went with the box and let it fall to the page. A focus put elsewhere while the box was open stays there.
+    const closeImport = () => {
+      const now = document.activeElement;
+      if (!now || now === document.body || importBox.current?.contains(now)) importButton.current?.focus();
+      setPending(null);
+    };
     const applyImport = (p: NonNullable<typeof pending>) => {
       const { rows } = p;
       setConfig(rows ? (c: Json) => ({ ...c, [rows.section]: rows.value }) : p.next);
-      setPending(null);
+      // Apply says what it did, as Matched devices' Apply and the task file's do (branch record SIF-107): the box went without
+      // a word, also when a whole configuration replaced the run and output settings out of view. Rows write their table
+      // alone, and when applied after a tab press offer it.
+      const what = [p.diff.length ? plural(p.diff.length, 'changed row') : '',
+        !rows && p.others.length ? `replaced the ${p.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''].filter(Boolean).join('; ');
+      setNote({ warn: false, text: what ? `Imported: ${what}. Undo takes it back.` : 'Imported: nothing changed.',
+        show: rows && rows.section !== tab ? rows.section : undefined });
+      closeImport();
     };
-    return { importJson, applyImport };
+    return { importJson, applyImport, closeImport };
   }
-  const { importJson, applyImport } = jsonImport();
+  const { importJson, applyImport, closeImport } = jsonImport();
+  // The confirmation opens with Apply in focus, so Enter applies and Esc cancels at once (branch record SIF-107) - only where the
+  // file chooser left the focus, on Import JSON... or the page: a cell entered while the diff was on its way keeps it, and a
+  // key meant for the cell never presses Apply.
+  useEffect(() => {
+    const now = document.activeElement;
+    if (pending && (!now || now === document.body || now === importButton.current)) applyButton.current?.focus();
+  }, [pending]);
   // A Parameters row under the pointer (or the keyboard) lights the devices it sizes in the circuit picture of the Project
   // column: its own and those of the rows tied to it (binding_group), so w_pair lights M1 and its follower's M2 (record 7.158).
   const devicesOf = (row: Json): string[] => {
@@ -318,7 +342,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     return [...new Set([row, ...tied].map(r => r.instance_path).filter(Boolean))] as string[];
   };
   useEffect(() => () => pointAt([]), [tab]);
-  useEffect(() => { setActive(null); setOpenTies({}); setNote(null); lastTicked.current = null; }, [tab]);
+  // A failed import's line goes too (branch record SIF-107): it named the tab it was tried on, and stayed on every tab until
+  // the next import.
+  useEffect(() => { setActive(null); setOpenTies({}); setNote(null); setError(null); lastTicked.current = null; }, [tab]);
   // Another tab, as its button shows it: a Matched devices box closes, the ticks go.
   const showTab = (s: Section) => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); };
   // An Undo or Redo - the toolbar's, the keys', the RL model window's - says what it changed (branch record SIF-97), and offers
@@ -808,6 +834,16 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     }
     commitBar(box ? box.value : text + put);
   };
+  // An interval from 0 whose margin also measures the distance to 0 (reward v2.1 B3): the zero-floor hint names it, and its
+  // button sets Margin sides to upper on every such row, as one Undo step (branch record SIF-107) - the column is behind More
+  // columns, so each named row was shown, scrolled to and changed by hand. Whether 0 is only a physical floor is the user's
+  // call: only a press sets it.
+  const zeroFloor = (r: Json) => r.constraint === 'interval' && r.lower === 0 && r.margin_sides !== 'upper';
+  const upperOnZero = (zero: string[]) => {
+    setConfig((c: Json) => withFollowers('targets', c, new Map((c.targets ?? []).flatMap((r: Json, i: number): [number, Json][] =>
+      zeroFloor(r) ? [[i, { margin_sides: 'upper' }]] : []))));
+    setNote({ warn: false, text: `Margin sides set to upper on ${zero.join(', ')}. Undo takes it back.` });
+  };
 
   return (
     <section className="panel editors" data-editor={tab}>
@@ -839,7 +875,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
           + 'The line under the formula bar names what it took back. Ctrl+Z anywhere on the page, but in a text box.'}><Icon name="undo" label="Undo" /></button>
         <button disabled={!canRedo} onClick={redo} title="Redo: The change Undo took back. Ctrl+Y or Ctrl+Shift+Z, but in a text box."><Icon name="redo" label="Redo" /></button>
         <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)} title="Export JSON: The whole configuration - the three tables, the circuit, run and output settings, research labels - as one JSON file, downloaded."><Icon name="export" label="Export JSON" /></button>
-        <button onClick={() => file.current?.click()} title="Import JSON...: Read a JSON file - a whole configuration, or rows for this tab. You see everything it changes before anything is replaced."><Icon name="import" label="Import JSON..." /></button>
+        <button ref={importButton} onClick={() => file.current?.click()} title="Import JSON...: Read a JSON file - a whole configuration, or rows for this tab. You see everything it changes before anything is replaced."><Icon name="import" label="Import JSON..." /></button>
         <input ref={file} type="file" accept="application/json" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importJson(f); }} />
         <button onClick={() => copyOut(null)} title={'Copy for Excel: the ticked rows in view - or every row in view when none is ticked - every column in view, '
           + 'a header line first, as tab-separated lines. In a cell, Ctrl+C copies the ticked rows the same way, or the cell alone; Ctrl+D fills down.'}><Icon name="copy" label="Copy for Excel" /></button>
@@ -900,15 +936,26 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                 : `${id}: Copies this Probe ID. With an Equation cell chosen, a press puts it in at the cursor instead.`}><code className="probe-id">{id}</code></button></Fragment>)
           : 'none yet - fill in the Probes tab first'}</p>}
       {/* The zero-floor hint (reward v2.1 B3) names its rows and goes once their Margin sides is upper: it stayed after the
-          user followed it, named no row, and its column hides behind More columns (branch record SIF-50). */}
+          user followed it, named no row, and its column hides behind More columns (branch record SIF-50). Its button sets
+          them with one press (branch record SIF-107), beside the hint's words, not inside them; the hint then goes by itself. */}
       {tab === 'targets' && (() => {
-        const zero = rows.filter(r => r.constraint === 'interval' && r.lower === 0 && r.margin_sides !== 'upper').map(r => r[keyField]);
-        return zero.length > 0 && <p className="hint zero-floor-hint">{zero.join(', ')}: the margin also measures the distance to 0. If 0 is only a physical floor, set Margin sides to upper (More columns).</p>;
+        const zero: string[] = rows.filter(zeroFloor).map(r => r[keyField]);
+        return zero.length > 0 && <div className="line-act zero-floor"><p className="hint zero-floor-hint">{zero.join(', ')}: the margin also measures the distance to 0. If 0 is only a physical floor, set Margin sides to upper (More columns).</p>
+          <button type="button" className="text-link zero-floor-set" onClick={() => upperOnZero(zero)}
+            title={`Set Margin sides to upper: ${zero.join(', ')} then count${zero.length === 1 ? 's' : ''} only the upper limit in the tightest-margin bonus and the Corner check ranking; `
+              + 'feasibility still checks both limits. One Undo step.'}>{zero.length === 1 ? 'Set Margin sides to upper' : `Set Margin sides to upper on all ${zero.length}`}</button></div>;
       })()}
-      {error && <p className="error">{error}</p>}
-      {pending && <div className="confirm"><h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{pending.others.length
+      {/* A failed import's line has a close mark, and a tab press takes it away too (branch record SIF-107); its words stand
+          alone in their paragraph. */}
+      {error && <div className="line-act import-error"><p className="error">{error}</p>
+        <button className="line-close" onClick={() => setError(null)} title="Close: This message goes; nothing else changes."><Icon name="close" label="Close" /></button></div>}
+      {/* Esc in the box is Cancel (branch record SIF-107); a click on its words gives the box the focus, which fell to the page,
+          so Esc works after one too. */}
+      {pending && <div className="confirm" ref={importBox} tabIndex={-1} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); closeImport(); } }}>
+        <h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{pending.others.length
         ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>
-        <div className="row"><button onClick={() => applyImport(pending)}>Apply</button><button onClick={() => setPending(null)}>Cancel</button></div>
+        <div className="row"><button ref={applyButton} onClick={() => applyImport(pending)} title="Apply: The changes listed here are made, as one Undo step.">Apply</button>
+          <button onClick={closeImport} title="Cancel: Nothing is imported. Esc does the same.">Cancel</button></div>
         {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} unitOf={unitIn(config, schema.section_keys ?? {})} />}</div>}
       <FormulaBar cell={shownCell} commit={commitBar} back={backToCell} />
       {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}{note.show && <> <button className="item-link note-show"

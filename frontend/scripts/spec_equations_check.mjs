@@ -8,6 +8,9 @@
 // Branch record SIF-106: a Probe ID typed anew takes the Specs naming it along once its cell is left or the formula bar
 // writes it, and the Specs line's Probe chips put their ID into the chosen Equation cell; a chip's copy is answered here, so
 // the system clipboard is not touched.
+// Branch record SIF-107: the import confirmation opens with Apply in focus, Esc is Cancel (also after a click on its words)
+// with the focus back on Import JSON..., a cell in focus keeps it; a failed import's line has a close mark and goes with a
+// tab press.
 // Run (Windows node through WSL interop; node >= 22):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/spec_equations_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -200,6 +203,12 @@ await runChecks(browser, async () => {
   check('a 20-row import confirmation keeps Apply within reach (the box scrolls by itself)', await until(`(() => {
     const b = [...(document.querySelector('.editors .confirm')?.querySelectorAll('button') ?? [])].find(x => x.textContent === 'Apply'); if (!b) return false;
     const r = b.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b; })()`));
+  // Branch record SIF-107: the box opens with Apply in focus - where the file chooser left it on the page - so Enter applies
+  // and Esc cancels at once.
+  const APPLY_BUTTON = `[...(document.querySelector('.editors .confirm')?.querySelectorAll('button') ?? [])].find(x => x.textContent === 'Apply')`;
+  const IMPORT_BUTTON = `[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Import JSON...')`;
+  const FOCUSED = `(document.activeElement?.outerHTML.slice(0, 90) ?? 'none')`;
+  check('...and opens with Apply in focus (branch record SIF-107)', await until(`document.activeElement === ${APPLY_BUTTON}`, 20), await evaluate(FOCUSED));
   await shot('spec_import_confirm.png');
   // Branch record SIF-51: the confirmation names the tab, the change and each field as the editors do, where it said
   // "targets | extra_0 | added | metric_id"; the program's names stay in the tooltips.
@@ -210,7 +219,29 @@ await runChecks(browser, async () => {
     && firsts.some(r => r[1][0] === 'extra_0' && r[2][0] === 'new') && firsts.some(r => r[1][0] === template.metric_id && r[2][0] === 'deleted')
     && fieldsOf.some(([text, title]) => text === 'Spec ID' && title === 'metric_id') && !fieldsOf.some(([text]) => text === 'metric_id'),
     JSON.stringify(imported.slice(0, 3)));
+  // Esc in the box is Cancel, with the focus back on Import JSON... (it fell to the page with the box); a cell in focus when
+  // the box opens keeps it - a key meant for the cell never presses Apply - also after Cancel (branch record SIF-107).
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  check('Esc in the box is Cancel: the box goes, nothing is imported, the focus is back on Import JSON... (branch record SIF-107)',
+    await until(`!document.querySelector('.editors .confirm') && document.activeElement === ${IMPORT_BUTTON}`, 20)
+    && !(await page.stored()).targets.some(t => t.metric_id === 'extra_0'), await evaluate(FOCUSED));
+  await evaluate(`${CELL(1, 'lower')}.focus()`);
+  await setFile(many);
+  const reopened = await until(`!!(${APPLY_BUTTON})`);
+  await sleep(300);                                          // the box's effects have run
+  const cellKept = await evaluate(`document.activeElement === ${CELL(1, 'lower')}`);
   await evaluate(`[...document.querySelectorAll('.editors .confirm button')].find(b => b.textContent === 'Cancel').click()`);
+  check('a cell in focus keeps it when the box opens, and after Cancel', reopened && cellKept
+    && await until(`!document.querySelector('.editors .confirm') && document.activeElement === ${CELL(1, 'lower')}`, 20),
+    `reopened ${reopened}, kept ${cellKept}, now ${await evaluate(FOCUSED)}`);
+  // A click on the box's words gives it the focus - it fell to the page - so Esc still cancels.
+  await setFile(many);
+  await until(`!!(${APPLY_BUTTON})`);
+  await page.clickAt(await evaluate(`(() => { const r = document.querySelector('.editors .confirm h4').getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; })()`));
+  const boxFocused = await evaluate(`document.activeElement === document.querySelector('.editors .confirm')`);
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  check('...and after a click on the box\'s words Esc still cancels it, the focus back on Import JSON...', boxFocused
+    && await until(`!document.querySelector('.editors .confirm') && document.activeElement === ${IMPORT_BUTTON}`, 20), `box focused ${boxFocused}, now ${await evaluate(FOCUSED)}`);
   const foreign = path.join(out, 'gpdk045_conditions.json');
   writeFileSync(foreign, readFileSync(new URL('../../configs/gpdk045_conditions.json', import.meta.url)));
   await setFile(foreign);
@@ -230,6 +261,19 @@ await runChecks(browser, async () => {
   await setFile(noIds);
   check('...and a row without its ID is named by its header, Spec ID, beside the file\'s key',
     await until(`${ERROR} === 'Import failed: every Specs row needs its Spec ID ("metric_id" in the file)'`), await evaluate(ERROR));
+  // Branch record SIF-107: the failed import's line has a close mark, and a tab press takes it away too - it stayed until the
+  // next import, on every tab.
+  const CLOSE_MARK = `${EDITORS}.querySelector('.import-error > button.line-close')`, ERROR_LINE = `!!${EDITORS}.querySelector('.import-error')`;
+  const closeTitle = await evaluate(`${CLOSE_MARK}?.title ?? null`);
+  await shot('spec_import_error.png');
+  await evaluate(`${CLOSE_MARK}?.click()`);
+  check('the failed import\'s line has a close mark, and a press takes the line away (branch record SIF-107)',
+    /^Close: /.test(closeTitle ?? '') && await until(`!(${ERROR_LINE})`, 20), String(closeTitle));
+  await setFile(noIds);
+  const failedAgain = await until(ERROR_LINE);
+  await openTab('Probes');
+  check('...and a tab press takes it away too', failedAgain && await until(`!(${ERROR_LINE})`, 20), await evaluate(ERROR));
+  await openTab('Specs');
 
   // ---- branch record SIF-106: a Probe ID typed anew takes the Specs naming it along, once the cell is left or the formula bar
   //      writes it - never per key; a refused ID says why. The Specs line's Probe chips put their ID into the chosen Equation

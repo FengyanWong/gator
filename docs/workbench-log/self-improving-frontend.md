@@ -5302,3 +5302,72 @@ reward_v2/v21 ones are never run here), all passed the first time, no flake: `ca
 `request_lifecycle_check` 25, `circuit_layout_check` 4, `editor_renames_check` 8, `graph_paint_check` 6,
 `network_inputs_check` 9, `table_view_check` 10, `unit_text_check` 14. In all 58 scripts, 2,953 checks: the 2,942 of
 SIF-132 and its review follow-up, and the 11 new ones.
+
+### SIF-134 Every Training key shows its line's colour, the line over a comparison names each run by its swatch, and a mean of zeros reads 0 (2026-10-24; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found the Training tab's keys in other
+colours than their lines, a comparison's values each repeating its run's whole name, and a mean of zeros in e-notation.
+With three runs compared, the chips, the Step reward legend and the Key numbers rows gave seed 1 a red square and both
+seed 4 and seed 3 the same white one, while seed 3's line (the frozen run, evaluations 1 to 48) was drawn blue and no key
+on the page was blue (S12-3, `training-compare.png`): styles.css keyed `.key-run1` with `--probe` and `.key-run2` with
+`--spec`, both #f4f4f5 since record 7.360, and `.key-run3` with the amber `--unresolved`, while TrainingChart.tsx draws
+the runs in `--series-1` to `--series-4` - red, #e8e8ec, blue, violet. One run had the same fault: the gradient norms
+draw Policy in `--series-3`, blue, under a white `.key-other1` (`--probe`). On a comparison every value in the line over
+a chart came after its run's whole name, which the swatched keys just above already give - "fixture_task (tx1-fixture) ·
+seed 1 · 10-05 11:00 · live (recorded) -0.04543 · ... · once: mean of last 50 -0.0651", four lines over each chart
+(S12-14, `training-learner-by-evaluation.png`); at 1366 px with eight charts "-0.05374", "0.01204" and "2.558e-17" each
+stood alone on a line under its "...: mean of last 50", and the plots were strips (`training-eight-compared-1366.png`).
+compare.ts named each compared series "<run> (recorded)" or "<run>: mean of last N", and the line wrote the name before
+each value. And Worst spec miss (normalized) read "Training (recorded) 0 · Training: mean of last 50 2.558e-17" (S12-18,
+`training-eight.png`): the running mean of the last N (prep.ts) adds each value and takes off the one leaving, and a
+window of zeros kept the rounding remainder of the values that had left it, which a normalized number prints as it is. A
+real run reaches it as soon as every design meets its specs.
+
+**Changed.** `frontend/src/styles.css`: the keys take the chart's own tokens - `.key-run0` to `.key-run3` `--series-1` to
+`--series-4`, `.key-other1` `--series-3`, and `.key-training` / `.key-other0` and `.key-evaluation` `--series-1` and
+`--series-2` (the same red as before; the evaluation white a shade greyer, #e8e8ec as its line). A run's chip, its legend
+keys, its Key numbers row (TrainingTab.tsx) and its swatches in the line over a chart use these classes, so all show the
+colour its lines are drawn in. `frontend/src/panels/training/catalog.ts`: a series may carry `short`, its own words
+without the run's name; `frontend/src/panels/training/compare.ts` gives every compared series its words - "recorded",
+"mean of last 50" ("mean of last 50 evaluations" by evaluation), "each design" and "share so far" on the evaluation
+success rate, none for a single line or a series without smoothing. A learner chart of two columns names the column as
+one run's chart does, "Critics (recorded)" and "Policy: mean of last 50" (the plan's "Critics recorded" read as a verb
+beside "Critics: mean of ..."). The labels stay whole: the legend keys, the series groups and the chart's layout key read
+them. `frontend/src/panels/TrainingChart.tsx`: in the line over a chart a compared run's value follows its run's swatch
+(`span.readout-run.key-run<n>`, the series' whole name its tooltip and, as an image, its name for a screen reader) and the
+series' words: "Newest: Evaluation 322 · [swatch] recorded -0.05506 · [swatch] mean of last 50 -0.05374". One run's line
+is as before. `frontend/src/roadster.css` sets the swatch as the keys' 10 px square in the line's text.
+`frontend/src/panels/training/prep.ts`: a running mean's state counts the values in its window that are not 0 (`nz`; the
+checkpoints carry it, so a zoomed chart that starts from one gets the same numbers), and a window that holds only zeros
+sums to 0 - the mean of the last N, and the mean over the updates of the last N evaluations. An empty window (no update
+for N evaluations, by evaluation) keeps its sum as before: with the plan's `if (!state.nz)` it was reset too, and the
+means after it then differed from the builders before record 7.221 in the 16th digit (`--reference`, below).
+`frontend/src/panels/training/series.ts`: `smooth` and `smoothOver` the same, so they stay the charts' numbers (only the
+checks use them). Only colours, words and a value shown change: nothing is read, saved or run that was not, and nothing
+starts, continues or stops a run, saves a task or writes to Virtuoso. `docs/workbench.md` (the charts' colours,
+Smoothing, Several runs on one chart) and `docs/functionality-reference.md` (the Training row) say it. Seen, not changed:
+after a learner restart one run's gradient norms put the "abandoned at a restart" group between Critics and Policy, so
+Policy takes the first colour again - drawn and keyed alike, but as red as Critics.
+
+**Checked.** `tsc` clean. `training_data_check` 124 (120 before), new: a window of zeros after 0.1 and 0.2 reads exactly
+0 - the mean of the last 2 of Worst spec miss, the mean over the last 2 evaluations of a learner chart, `smooth` and
+`smoothOver` - and the means before it are as before; the same worked out from a checkpoint (every 2 positions, a zoomed
+view); the compared series' words, one column's and two columns'. Run alone on copies: with the training code at HEAD the
+4 fail and the 120 pass; with checkpoints that drop the count, the checkpoint check fails and 4 random runs with it. Its
+`--reference` mode (the trainingData.ts of c170802) fails at HEAD already, on two catalog sentences SIF-47 reworded; with
+those two aligned in a scratch copy of the reference all 124 pass. `training_tab_check` 139 (135), new: one run's
+gradient norms - the Critics and Policy keys in `--series-1` and `--series-3`, each among the colours the plot strokes
+its lines in (a stroke hook beside the check's clearRect and fillText ones); a comparison's line - each value after its
+run's swatch, the swatch's tooltip and name the series' whole name, then "recorded" or "mean of last 50", no run's name
+in the line; three runs - every chip, legend key, Key numbers row and swatch in a line in its token, and the Step
+reward's three keys among its strokes, red, #e8e8ec and blue; eight charts at 1366 px with one compared run - each line
+on two lines at most, each part whole, every plot over 60 px (64 and 81 px; `training-eight-compared-1366.png`).
+Rewritten, as they found a value by its run's name: the hover values of the shown and the compared run, and the
+once-per-evaluation run's value by evaluation and its absence by update, now found by the swatch's tooltip. The SIF-120
+review's check at 1366 px now has two compared runs: with one, no plot is left only its 60 px any more; with the frozen
+run beside it the learner charts' "Not on this chart" grows their rows to 242 px, two plots stand at 60 px, every plot
+inside its card, the second row's titles and × in reach. With the seven sources at HEAD (put back by their checksums) 7
+fail - the 4 new and the 3 rewritten - and 132 pass. One lane, after the memory guard, on a build of this tree, all
+passed the first time: `training_tab_check` 139, `training_data_check` 124, `dom_identity_check` 56,
+`corner_check_check` 42, `looks_check` 81 (its SIF-129 stylesheet check included). The other scripts were not run: none
+draws the Training tab or uses these classes. In all 5 scripts, 442 checks.

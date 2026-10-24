@@ -14,6 +14,7 @@ export interface ChartSpec {
 }
 export interface Series { label: string; role: 'raw' | 'smooth' | 'line' | 'limit' | 'superseded'; category: Category | null; values: (number | null | undefined)[]; step?: boolean;
   run?: number;            // compared runs (record 7.200): the run's place in the comparison, which picks its colour
+  short?: string;          // a compared run's series in its own words, without the run's name (branch record SIF-134)
   dash?: boolean }         // the second of two columns of one run (gradient norms: the policy's)
 export interface Marker { x: number; label: string; kind: 'resume' | 'restart' }
 export interface Built { axis: Axis; x: number[]; rows: number[]; series: Series[]; markers: Marker[]; thinnedTo: number | null; extent: [number, number] | null;

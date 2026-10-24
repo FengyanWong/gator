@@ -517,14 +517,18 @@ button.training-chart-remove { border: none; background: none; padding: 0 1px; l
 button.training-key { border: none; background: none; padding: 0 2px; display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
 button.training-key.off { opacity: .45; text-decoration: line-through; }
 .training-key .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--muted); }
-.key-training .swatch, .key-other0 .swatch { background: var(--accent); } .key-evaluation .swatch { background: var(--spec); }
-.key-other1 .swatch { background: var(--probe); } .key-limit .swatch { background: var(--warn); }
+/* a key in its line's colour, the chart's tokens (TrainingChart.tsx palette), as the runs' keys below (branch record SIF-134:
+   since record 7.360 --probe and --spec are white, so the gradient norms' Policy, drawn blue, had a white key) */
+.key-training .swatch, .key-other0 .swatch { background: var(--series-1); } .key-evaluation .swatch { background: var(--series-2); }
+.key-other1 .swatch { background: var(--series-3); } .key-limit .swatch { background: var(--warn); }
 .key-superseded .swatch, .key-start .swatch { background: var(--muted); }
 .training-compared { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin: 0 0 2px; }
 .training-chip { display: inline-flex; align-items: center; gap: 4px; } .training-chip .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--muted); }
 button.training-chip-remove { border: none; background: none; padding: 0 1px; line-height: 1; color: var(--muted); } button.training-chip-remove svg.icon { width: 11px; height: 11px; }
 .training-head select.training-compare { max-width: 150px; } .training-missing { margin: 0; font-size: 11px; }
-.key-run0 .swatch { background: var(--accent); } .key-run1 .swatch { background: var(--probe); } .key-run2 .swatch { background: var(--spec); } .key-run3 .swatch { background: var(--unresolved); }
+/* a run's chip, legend key, Key numbers row and swatches in the line over a chart in its lines' colour (SIF-134: the second
+   compared run, drawn blue, was keyed white like the first, and a third, drawn violet, amber) */
+.key-run0 .swatch { background: var(--series-1); } .key-run1 .swatch { background: var(--series-2); } .key-run2 .swatch { background: var(--series-3); } .key-run3 .swatch { background: var(--series-4); }
 /* the key numbers of the runs on the charts (record 7.215): a small table that folds to its one line */
 .training-keys { margin: 0 0 2px; font-size: 11.5px; } .training-keys summary { cursor: pointer; }
 .training-keys table.grid { width: auto; max-width: 100%; margin: 2px 0 0; } .training-keys table.grid th { position: static; }

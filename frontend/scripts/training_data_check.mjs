@@ -4,7 +4,8 @@
 //   - every value a series carries equals the value of its recorded row; a missing value is a gap (null), never 0;
 //     a row of another category is `undefined` (uPlot draws across it, not a gap)
 //   - the journal tail is replaced by every answer: a bundle flushed later is never counted twice; a late answer is ignored
-//   - smoothing = a trailing mean of the last N recorded values; gaps are kept
+//   - smoothing = a trailing mean of the last N recorded values; gaps are kept; a window of zeros reads 0, not the rounding
+//     remainder of a running sum (branch record SIF-134); a compared run's series carry their own words without its name
 //   - thinning for the screen (decimate) keeps every pixel column's first/last row and each series' extremes and first gap
 //   - learner counter resets (resume from an older save point): the abandoned updates are a series of their own
 //   - the memory bound thins the oldest half, keeps every spike, and keeps evaluation numbers and order intact
@@ -146,6 +147,30 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
   check('trailing mean of the last 2 recorded values; a gap stays a gap; another category stays undefined',
     same(smooth(raw, 2), [1, 1.5, null, 2.5, undefined, 3.5, 7]));
   check('a window larger than the data is the mean so far', same(smooth([2, 4, 6], 50), [2, 3, 4]));
+  // Branch record SIF-134: a window of only zeros reads 0. The running sum adds each value and takes off the one leaving, and
+  // 0.1 + 0.2 - 0.1 - 0.2 leaves 2.8e-17: "Worst spec miss" read "mean of last 50 2.558e-17" once every design met its specs.
+  // The chart's mean of the last N, its mean over the updates of the last N evaluations, and smooth / smoothOver the same.
+  const zeros = new TrainingStore('/fixture/zeros'), seq = [0.1, 0.2, 0, 0];
+  zeros.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: seq.map((v, i) => evaluation(i + 1, { normalized_constraint_violation: v })),
+    updates: seq.map((v, i) => update(i + 1, { evaluations_collected: i + 1, actor_loss: v })) }) }));
+  const last = valuesOf(build(zeros, 'violation', 2, { mode: 'all' }, 800), 'Training: mean of last 2');
+  const over = valuesOf(build(zeros, 'actor_loss', 2, { mode: 'all' }, 800, {}, 'evaluation'), 'Actor loss: mean of last 2 evaluations');
+  check('a window of only zeros after other values reads exactly 0: the mean of the last N, and over the last N evaluations; the means before it as before (SIF-134)',
+    same(last, [0.1, 0.15000000000000002, 0.10000000000000002, 0]) && Object.is(last[3], 0) && same(over, last) && Object.is(over[3], 0)
+    && same(smooth(seq, 2), last) && Object.is(smooth(seq, 2)[3], 0) && same(smoothOver([1, 2, 3, 4], seq, 2), last) && Object.is(smoothOver([1, 2, 3, 4], seq, 2)[3], 0),
+    JSON.stringify({ last, over, smooth: smooth(seq, 2), smoothOver: smoothOver([1, 2, 3, 4], seq, 2) }));
+  // ...and so when a zoomed chart works the window out from a checkpoint (every 2 positions here): the checkpoint keeps how
+  // many of its values are not 0
+  data.setSpacing(2);
+  const zoomed = new TrainingStore('/fixture/zeros-checkpoint');
+  zoomed.apply(answer({ served: 1, total: 1, final: chunk({ evaluations: seq.map((v, i) => evaluation(i + 1, { normalized_constraint_violation: v })),
+    updates: seq.map((v, i) => update(i + 1, { evaluations_collected: i + 1, actor_loss: v })) }) }));
+  build(zoomed, 'violation', 2, { mode: 'all' }, 800); build(zoomed, 'actor_loss', 2, { mode: 'all' }, 800, {}, 'evaluation');   // the checkpoints
+  const lastZoomed = valuesOf(build(zoomed, 'violation', 2, { mode: 'fixed', min: 3.5, max: 4 }, 800), 'Training: mean of last 2');
+  const overZoomed = valuesOf(build(zoomed, 'actor_loss', 2, { mode: 'fixed', min: 3.5, max: 4 }, 800, {}, 'evaluation'), 'Actor loss: mean of last 2 evaluations');
+  data.setSpacing(4096);
+  check('...also worked out from a checkpoint, as a zoomed chart does (SIF-134)', same(lastZoomed, last.slice(2)) && Object.is(lastZoomed.at(-1), 0)
+    && same(overZoomed, last.slice(2)) && Object.is(overZoomed.at(-1), 0), JSON.stringify({ last: lastZoomed, over: overZoomed }));
 }
 
 // ---- 4. thinning for the screen keeps extremes, gaps and the edges -------------------------------------------------------
@@ -244,6 +269,9 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
   check('smoothing per run: its own recorded values under its own mean', same(smoothed.series.map(x => x.label), ['A (recorded)', 'A: mean of last 2', 'B (recorded)', 'B: mean of last 2'])
     && [0.102, (0.102 + 0.103) / 2, (0.103 + 0.104) / 2, (0.104 + 0.105) / 2].every((want, i) => Math.abs(smoothed.series[3].values[i] - want) < 1e-12),   // a running mean: rounding at 1e-17
     JSON.stringify(smoothed.series[3].values.slice(0, 4)));
+  // branch record SIF-134: the line over a comparison names a value's run by its swatch, then the series' own words (`short`)
+  check('...each series\' own words without its run\'s name, for the line over the chart (SIF-134)', same(smoothed.series.map(x => x.short), ['recorded', 'mean of last 2', 'recorded', 'mean of last 2'])
+    && same(built.series.filter(x => x.run != null).map(x => x.short), ['', '']), JSON.stringify([smoothed.series.map(x => x.short), built.series.map(x => x.short)]));
   // learner charts: abandoned updates after a restart left out; two columns of one run, the second dashed
   const ups = [...Array.from({ length: 6 }, (_, i) => update(i + 1)), ...Array.from({ length: 4 }, (_, i) => update(i + 4, { critic_loss: 9 }))];
   const e = run('/e', 3, k => k, { updates: ups }), f = run('/f', 3, k => k, { updates: [update(1), update(2)] });
@@ -252,6 +280,11 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
     && same(learner.series[0].values, [1, 1 / 2, 1 / 3, 9, 9, 9, 9]) && same(learner.series[1].values, [1, 1 / 2, undefined, undefined, undefined, undefined, undefined]), JSON.stringify(learner.series.map(x => x.values)));
   const grads = buildCompare([{ store: e, label: 'E' }, { store: f, label: 'F' }], 'grad_norm', 0, { mode: 'all' }, 800);
   check('two columns of one run: named, the second dashed', same(grads.series.map(x => [x.label, !!x.dash, x.run]), [['E / Critics', false, 0], ['E / Policy', true, 0], ['F / Critics', false, 1], ['F / Policy', true, 1]]));
+  const gradsSmoothed = buildCompare([{ store: e, label: 'E' }, { store: f, label: 'F' }], 'grad_norm', 2, { mode: 'all' }, 800, 'evaluation');
+  const columnWords = ['Critics (recorded)', 'Critics: mean of last 2 evaluations', 'Policy (recorded)', 'Policy: mean of last 2 evaluations'];
+  check('...their own words name the column, as one run\'s chart does; one column\'s say only what the series is (SIF-134)', same(grads.series.map(x => x.short), ['Critics', 'Policy', 'Critics', 'Policy'])
+    && same(gradsSmoothed.series.map(x => x.short), [...columnWords, ...columnWords]) && same(learner.series.map(x => x.short), ['', '']),
+    JSON.stringify([grads.series.map(x => x.short), gradsSmoothed.series.map(x => x.short), learner.series.map(x => x.short)]));
 }
 
 // ---- audit regressions: feasible objective and bounded, incremental live rows -----------------------------------------
@@ -487,8 +520,11 @@ const valuesOf = (built, label) => built.series.find(s => s.label === label)?.va
       const mine = chosen.map((p, i) => ({ store: p.store, label: `R${i}`, context: i ? undefined : context }));
       const theirs = chosen.map((p, i) => ({ store: p.other, label: `R${i}`, context: i ? undefined : context }));
       const view = viewFor(rnd, module.buildCompare(theirs, id, smoothing, { mode: 'all' }, buckets, learnerX).extent);
-      note(`${chosen.length} runs compared on ${id} smoothing ${smoothing} ${JSON.stringify(view)} width ${buckets} by ${learnerX}`,
-        differ(buildCompare(mine, id, smoothing, view, buckets, learnerX), module.buildCompare(theirs, id, smoothing, view, buckets, learnerX)));
+      // a compared series' own words (`short`) came after the builders before 7.221 (branch record SIF-134): compared where both
+      // modules give them
+      const ours = buildCompare(mine, id, smoothing, view, buckets, learnerX), theirsBuilt = module.buildCompare(theirs, id, smoothing, view, buckets, learnerX);
+      if (!theirsBuilt.series.some(s => 'short' in s)) for (const s of ours.series) delete s.short;
+      note(`${chosen.length} runs compared on ${id} smoothing ${smoothing} ${JSON.stringify(view)} width ${buckets} by ${learnerX}`, differ(ours, theirsBuilt));
     }
     return [count, first];
   };

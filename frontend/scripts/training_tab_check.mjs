@@ -43,6 +43,9 @@
 //     all the same
 //   - branch record SIF-127: Logs, its panel folded to its tab line, reads the live run's log no more (it read it every 2 s
 //     out of sight) and reads it at once when opened again; at 1000 px, where a folded panel's body stays in view, it reads on
+//   - branch record SIF-134: every key in the colour its lines are drawn in (the plot's own strokes): compared runs' chips,
+//     legend keys, Key numbers rows and the swatches in the line over a chart, and one run's gradient norms; on a comparison
+//     that line names each value's run by its swatch (the whole name its tooltip), then "recorded" or "mean of last 50"
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -216,7 +219,8 @@ await runChecks(browser, async () => {
   const waitFor = async (test, ms = 6000) => { for (let t = 0; t < ms && !test(); t += 50) await sleep(50); return test(); };
   // Every redraw of a chart clears its canvas: counted per canvas, with the time. While window.__axisText is a list, each text
   // drawn on a plot is noted: its size in px and, right-aligned (the y axis's numbers), where its left end falls on its canvas
-  // (branch record SIF-65).
+  // (branch record SIF-65). While window.__strokes is a list, the colour of each line drawn on a plot, with the plot's place
+  // (branch record SIF-134: a key in its line's colour).
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const clear = CanvasRenderingContext2D.prototype.clearRect; window.__draws = [];
     CanvasRenderingContext2D.prototype.clearRect = function (...a) { const plot = this.canvas.closest && this.canvas.closest('.training-plot');
       if (plot) { const at = performance.now(); window.__draws.push({ at, plot: [...document.querySelectorAll('.training-plot')].indexOf(plot) });
@@ -227,6 +231,10 @@ await runChecks(browser, async () => {
       if (seen && this.canvas.closest && this.canvas.closest('.training-plot')) seen.push({ text: String(text),
         px: parseFloat(this.font.split(' ').find(p => p.endsWith('px'))), left: this.textAlign === 'right' ? x - this.measureText(text).width : null });
       return fill.call(this, text, x, ...a); };
+    const stroke = CanvasRenderingContext2D.prototype.stroke; window.__strokes = null;
+    CanvasRenderingContext2D.prototype.stroke = function (...a) { const seen = window.__strokes, plot = seen && this.canvas.closest && this.canvas.closest('.training-plot');
+      if (plot) seen.push({ plot: [...document.querySelectorAll('.training-plot')].indexOf(plot), colour: String(this.strokeStyle) });
+      return stroke.apply(this, a); };
     window.__long = []; try { new PerformanceObserver(l => window.__long.push(...l.getEntries().map(e => e.duration))).observe({ type: 'longtask', buffered: true }); } catch {} })();` });
   await page.intercept(['*/api/runs/*', '*/api/runs', '*/api/runs?*', '*/api/config/validate'], answer, { others: 'read' });
   await page.seed({ config: CONFIG, run: RUNS.live.dir, when: 'once' });
@@ -269,6 +277,33 @@ await runChecks(browser, async () => {
   // ---- hover: the recorded values -----------------------------------------------------------------------------------------
   const plotBox = (i = 0) => evaluate(`(() => { const r = [...(${TRAINING}).querySelectorAll('.training-plot .u-over')][${i}].getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; })()`);
   const readout = (i = 0) => evaluate(`[...(${TRAINING}).querySelectorAll('.training-readout')][${i}].textContent`);
+  // Branch record SIF-134: the swatches on the tab - a run's chip, a legend key, a Key numbers row, a swatch in the line over a
+  // chart - each with its key, its colour and the colour of the token its lines are drawn in (TrainingChart.tsx: a run's
+  // --series-1 to --series-4 by its place, one run's training and evaluation designs the first two, its learner columns the
+  // first and the third), as #rrggbb; the line over chart i in its parts - a run's swatch (its key, tooltip, role and name for
+  // a screen reader), the words, the value; and the colours of the lines chart i draws as one of its keys is switched off and on
+  const SWATCHES = `(() => { const t = ${TRAINING}, hex = c => '#' + c.match(/\\d+/g).slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join('');
+    const tone = name => { const e = document.createElement('span'); e.style.background = 'var(' + name + ')'; t.append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return hex(c); };
+    const TOKENS = { run0: '--series-1', run1: '--series-2', run2: '--series-3', run3: '--series-4', training: '--series-1', evaluation: '--series-2', other0: '--series-1', other1: '--series-3' };
+    return [...t.querySelectorAll('.swatch')].map(s => { const holder = s.parentElement, key = /(?:^| )key-(\\w+)/.exec(holder.className)?.[1] ?? null;
+      return { where: holder.classList.contains('readout-run') ? 'readout' : holder.classList.contains('training-key') ? 'legend' : holder.closest('details.training-keys') ? 'key numbers' : 'chip',
+        chart: [...t.querySelectorAll('figure.training-chart')].indexOf(holder.closest('figure.training-chart')), key, colour: hex(getComputedStyle(s).backgroundColor),
+        token: TOKENS[key] ? tone(TOKENS[key]) : null }; }); })()`;
+  const PARTS = i => `[...[...(${TRAINING}).querySelectorAll('.training-readout')][${i}].querySelectorAll('.readout-part')].map(p => { const run = p.querySelector('.readout-run'), b = p.querySelector('b');
+    return { run: run ? Number(/key-run(\\d)/.exec(run.className)?.[1]) : null, title: run?.title ?? null, role: run?.getAttribute('role') ?? null, name: run?.getAttribute('aria-label') ?? null,
+      words: p.textContent.slice(0, p.textContent.length - (b?.textContent.length ?? 0)).trim(), value: b?.textContent ?? null }; })`;
+  const readoutParts = (i = 0) => evaluate(PARTS(i));
+  const valueAt = (i, title) => `((${PARTS(i)}).find(p => p.title === ${JSON.stringify(title)})?.value ?? null)`;   // the value of that swatch's series
+  const drawnColours = async (i, key) => {
+    const KEY = `[...(${TRAINING}).querySelectorAll('.training-legend')][${i}].querySelector('.training-key.key-${key}')`;
+    await evaluate(`window.__strokes = []`);
+    await evaluate(`(${KEY}).click()`); await until(`(${KEY}).getAttribute('aria-pressed') === 'false'`, 20);
+    await evaluate(`(${KEY}).click()`); await until(`(${KEY}).getAttribute('aria-pressed') === 'true'`, 20);
+    await sleep(300);
+    const colours = await evaluate(`[...new Set((window.__strokes ?? []).filter(s => s.plot === ${i}).map(s => s.colour))]`);
+    await evaluate(`window.__strokes = null`);
+    return colours;
+  };
   let box = await plotBox(0);
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w * 0.5, y: box.y + box.h * 0.5 });
   await sleep(300);
@@ -502,6 +537,17 @@ await runChecks(browser, async () => {
   check('the readout\'s numbers stand out: the x and each value in the text colour, the words muted (branch record SIF-25)',
     await evaluate(`(() => { const r = [...(${TRAINING}).querySelectorAll('.training-readout')][0], b = [...r.querySelectorAll('b')];
       return b.length === 3 && /^\\d+$/.test(b[0].textContent) && b.every(x => getComputedStyle(x).color !== getComputedStyle(r).color); })()`), await readout(0));
+  // Branch record SIF-134: a key in its line's colour. The gradient norms draw the policy's, the second learner column, in the
+  // third series colour (blue), and its key was white (--probe, white since record 7.360); the critics' red, as before
+  await page.setValue(SECOND, 'grad_norm');
+  const gradsShown = await until(`(${TITLES})[1] === 'Gradient norms before clipping' && document.querySelectorAll('.training .training-plot canvas').length === 2
+    && [...[...(${TRAINING}).querySelectorAll('.training-legend')][1].querySelectorAll('.training-key')].map(b => b.textContent).join('|') === 'Critics|Policy'`, 60);
+  const gradLines = await drawnColours(1, 'other1'), gradKeys = (await evaluate(SWATCHES)).filter(s => s.chart === 1 && s.where === 'legend');
+  check('one run\'s gradient norms: the critics keyed in the first series colour, the policy in the third - the colours their lines are drawn in (SIF-134: the policy\'s, drawn blue, was white)',
+    gradsShown && JSON.stringify(gradKeys.map(s => s.key)) === '["other0","other1"]' && gradKeys.every(s => s.colour === s.token && gradLines.includes(s.colour))
+    && gradKeys[0].colour !== gradKeys[1].colour, JSON.stringify({ keys: gradKeys, lines: gradLines }));
+  await page.setValue(SECOND, 'critic_loss');
+  await until(`(${TITLES})[1] === 'Critic loss' && document.querySelectorAll('.training .training-plot canvas').length === 2`, 60);
   await page.shot(path.join(out, 'training-critic-smoothed.png'), `(${TRAINING})`);
 
   // ---- resizing the bottom panel ---------------------------------------------------------------------------------------------
@@ -706,8 +752,17 @@ await runChecks(browser, async () => {
   const both = await readout(0), at = Number(/^Evaluation (\d+)/.exec(both)?.[1]), wantShown = RUNS.live.data.evaluations[at - 1]?.reward, wantTwin = RUNS.twin.data.evaluations[at - 1]?.reward;
   const shownLabel = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip')][0].textContent.replace(' (shown)', '')`);
   const twinLabel = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip')][1].childNodes[1].textContent`);
-  const comparedValue = new RegExp(`${shownLabel.replace(/[.*+?^$()|[\]\\]/g, '\\$&')} \\(recorded\\) (-?[\\d.e-]+)`).exec(both)?.[1];
-  check('hovering a comparison: each run\'s recorded value at that evaluation', wantShown == null || comparedValue === String(+wantShown.toPrecision(4)), `${both} | shown ${wantShown}, twin ${wantTwin} (${twinLabel})`);
+  // a value is found by its run's swatch, whose tooltip is the series' whole name (branch record SIF-134: by the run's name in the line)
+  const hoveredParts = await readoutParts(0), recordedOf = label => hoveredParts.find(p => p.title === `${label} (recorded)`)?.value ?? null;
+  check('hovering a comparison: each run\'s recorded value at that evaluation', (wantShown == null || recordedOf(shownLabel) === String(+wantShown.toPrecision(4)))
+    && (wantTwin == null || recordedOf(twinLabel) === String(+wantTwin.toPrecision(4))), `${both} | shown ${wantShown}, twin ${wantTwin} (${twinLabel}) | ${JSON.stringify(hoveredParts)}`);
+  // Branch record SIF-134: the line names each value's run by its swatch, in the run's colour (below), and says only what the
+  // series is: each value repeated its run's whole name, which the keys over it give - four lines over a chart, a strip of plot
+  const smoothingNow = await evaluate(`(${SMOOTH}).value`), names = [shownLabel, twinLabel], runParts = hoveredParts.filter(p => p.run !== null);
+  check('...each value named by its run\'s swatch - the whole name its tooltip and its name for a screen reader - then "recorded" or "mean of last 50"; no run\'s name in the line (SIF-134)',
+    runParts.length >= 2 && JSON.stringify([...new Set(runParts.map(p => p.run))].sort()) === '[0,1]' && runParts.every(p => p.role === 'img' && p.name === p.title
+      && ((p.words === 'recorded' && p.title === `${names[p.run]} (recorded)`) || (p.words === `mean of last ${smoothingNow}` && p.title === `${names[p.run]}: mean of last ${smoothingNow}`)))
+    && !names.some(name => both.includes(name)), JSON.stringify({ text: both, parts: hoveredParts }));
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w + 40, y: box.y - 40 });
   RUNS.twin.alive = false;
   await sleep(2500);
@@ -717,6 +772,17 @@ await runChecks(browser, async () => {
   await page.setValue(COMPARE, RUNS.frozen.dir);
   check('a run that cannot be drawn on a chart is named there, with the reason', await until(`/Not on this chart: .*frozen run evaluates a saved policy/.test([...(${TRAINING}).querySelectorAll('figure.training-chart')][1].textContent)`, 60),
     await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart')][1].querySelector('.training-missing')?.textContent ?? ''`));
+  // Branch record SIF-134: each run's chip, legend keys, Key numbers row and swatches in the lines over the charts in the colour
+  // its lines are drawn in, --series-1 to --series-4 by its place: the second and third runs' keys were white (--probe and
+  // --spec, white since record 7.360), so the frozen run here, drawn blue on the step reward, had a white key
+  await until(`!![...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelector('.training-key.key-run2')`, 40);
+  const compareLines = await drawnColours(0, 'run2'), runKeys = (await evaluate(SWATCHES)).filter(s => /^run\d$/.test(s.key ?? ''));
+  const stepKeys = runKeys.filter(s => s.where === 'legend' && s.chart === 0);
+  check('...each run\'s chip, legend keys, Key numbers row and swatches in the lines over the charts in its lines\' colour: the shown run red, then white, then blue (SIF-134)',
+    runKeys.every(s => s.colour === s.token) && ['chip', 'legend', 'key numbers', 'readout'].every(where => runKeys.some(s => s.where === where))
+    && JSON.stringify(runKeys.filter(s => s.where === 'chip').map(s => s.key)) === '["run0","run1","run2"]' && stepKeys.length === 3
+    && stepKeys.every(s => compareLines.includes(s.colour)) && new Set(stepKeys.map(s => s.colour)).size === 3,
+    JSON.stringify({ wrong: runKeys.filter(s => s.colour !== s.token), step: stepKeys, lines: compareLines }));
   await page.shot(path.join(out, 'training-compare.png'), `(${TRAINING})`);
   await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
   check('the compared runs are kept after a reload', await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 3`, 60));
@@ -755,14 +821,16 @@ await runChecks(browser, async () => {
   const liveChip = await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip')][0].textContent`);
   check('two compared runs that would read alike (task, seed, time) are told apart by their folder ids', / \u00b7 once$/.test(onceLabel) && / \u00b7 live \(shown\)$/.test(liveChip)
     && onceLabel.replace(/ \u00b7 once$/, '') === liveChip.replace(/ \u00b7 live \(shown\)$/, ''), `${liveChip} | ${onceLabel}`);
-  const at288 = new RegExp(`^Newest: Evaluation 288 .*${onceLabel.replace(/[.*+?^$()|[\]\\]/g, '\\$&')} \\(recorded\\) ${p4(onceAt288.critic_loss).replace('.', '\\.')}( |$)`);
+  // each run's value found by its swatch, whose tooltip is the series' whole name (branch record SIF-134: by the run's name in the line)
+  const liveLabel = liveChip.replace(/ \(shown\)$/, ''), onceRecorded = valueAt(1, `${onceLabel} (recorded)`), liveRecorded = valueAt(1, `${liveLabel} (recorded)`);
   check('compared by evaluation, a run learning once per evaluation ends at the same x, each run\'s recorded value there',
-    await until(`${at288}.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent) && /\\(recorded\\) ${p4(liveLast.critic_loss).replace('.', '\\.')} /.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)`, 60),
-    await readout(1));
+    await until(`/^Newest: Evaluation 288 /.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)
+      && ${onceRecorded} === ${JSON.stringify(p4(onceAt288.critic_loss))} && ${liveRecorded} === ${JSON.stringify(p4(liveLast.critic_loss))}`, 60),
+    `${await readout(1)} | ${JSON.stringify(await readoutParts(1))}`);
   await page.setValue(LEARNER_X, 'update');
   check('compared by update the same two runs end far apart (the newest x is the 8-per-evaluation run\'s count)',
     await until(`/^Newest: Learner update ${liveLast.cumulative_updates} /.test([...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent)
-      && ![...(${TRAINING}).querySelectorAll('.training-readout')][1].textContent.includes(${JSON.stringify(onceLabel + ' (recorded)')})`, 40)
+      && ${onceRecorded} === null && ${liveRecorded} !== null`, 40)
     && liveLast.cumulative_updates > 4 * onceLast.cumulative_updates, `${await readout(1)} | once ends at update ${onceLast.cumulative_updates}`);
   await page.setValue(LEARNER_X, 'evaluation');
   await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
@@ -852,9 +920,12 @@ await runChecks(browser, async () => {
   // ("fixture_task (tx1-fixture) · seed 1 · 10-05 11:00 (recorded) ...") in both, at 1366 px - and its row grows to hold them.
   // The legend kept its lines and the plot stopped at 60 px, so the plot ran out of its 170 px card (29 px here) onto the
   // chart below, whose title and × its canvas covered (the plot and its canvas are positioned, the title is not) and whose
-  // clicks it took. Eight charts at 1366 px with a compared run, the keys and lines leaving a plot only its 60 px: every plot
+  // clicks it took. Eight charts at 1366 px with compared runs, the keys and lines leaving a plot only its 60 px: every plot
   // inside its card, and on the second row the pointer finds each chart's title and × where they stand. Then two charts and
-  // one run again.
+  // one run again. Branch record SIF-134: with one compared run the line over a chart names it by its swatch and takes two
+  // lines at most - it took four, a value alone on a line under its name, and left the plots strips -, so every plot keeps
+  // more than its 60 px; a second compared run (three keys of whole names, the learner charts' "Not on this chart") leaves a
+  // plot its 60 px again, for the SIF-120 review's check.
   listRuns = true;                                          // Compare... lists the runs, read as the page loads
   for (let i = 0; i < 8 && (await figures()) < 8; i++) { await evaluate(`(${ADD}).click()`); await sleep(150); }
   await page.viewport(1366, 1000);
@@ -864,25 +935,35 @@ await runChecks(browser, async () => {
   await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2 && (${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 8
     && /^Newest: Evaluation 322 /.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 60);
   await sleep(1500);                                        // every chart drawn with the compared run's values
-  const cards = await evaluate(`(() => { const grid = (${TRAINING}).querySelector('.training-charts'), figures = [...grid.querySelectorAll('figure.training-chart')];
+  const CARDS = `(() => { const grid = (${TRAINING}).querySelector('.training-charts'), figures = [...grid.querySelectorAll('figure.training-chart')];
     const first = Math.min(...figures.map(f => f.getBoundingClientRect().top)), lower = figures.filter(f => f.getBoundingClientRect().top > first + 1);
     const scrolled = [grid, grid.closest('.bottom-body'), document.scrollingElement].filter(Boolean).map(e => [e, e.scrollTop]);
     lower[0]?.querySelector('figcaption').scrollIntoView({ block: 'start' });           // the second row's titles in view
     const found = e => { const b = e.getBoundingClientRect(), at = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
       return !at ? 'nothing' : at === e || e.contains(at) ? true : (at.className?.baseVal ?? at.className) + ' of chart ' + (figures.indexOf(at.closest('figure.training-chart')) + 1); };
     const seen = figures.map(f => { const s = getComputedStyle(f), card = f.getBoundingClientRect(), plot = f.querySelector('.training-plot')?.getBoundingClientRect(), r = f.querySelector('.training-readout');
-      return { lines: r ? Math.round(r.offsetHeight / parseFloat(getComputedStyle(r).lineHeight)) : null, legend: r ? Math.round(r.parentNode.getBoundingClientRect().height) : null,
+      const line = r ? parseFloat(getComputedStyle(r).lineHeight) : 1;
+      return { lines: r ? Math.round(r.offsetHeight / line) : null, legend: r ? Math.round(r.parentNode.getBoundingClientRect().height) : null,
+        broken: r ? [...r.querySelectorAll('.readout-part')].filter(p => Math.round(p.getBoundingClientRect().height / line) !== 1).length : null,
         card: Math.round(card.height), plot: plot ? Math.round(plot.height) : null,
         out: plot ? Math.round((plot.bottom - card.bottom + parseFloat(s.borderBottomWidth) + parseFloat(s.paddingBottom)) * 10) / 10 : null,
         found: lower.includes(f) ? [found(f.querySelector('select.training-chart-choice')), found(f.querySelector('.training-chart-remove'))] : null }; });
     scrolled.forEach(([e, top]) => { e.scrollTop = top; });
-    return seen; })()`);
-  const secondRow = cards.filter(c => c.found);
-  check('eight charts at 1366 px with a compared run, a plot left only its 60 px: every plot inside its card and 60 px or more, the second row\'s titles and × found by the pointer (SIF-120 review)',
-    cards.length === 8 && cards.some(c => c.plot !== null && c.plot <= 61) && cards.every(c => c.out === null || (c.out <= 0.5 && c.plot >= 60))
-    && secondRow.length === 4 && secondRow.every(c => c.found.every(f => f === true)), JSON.stringify(cards));
+    return seen; })()`;
+  const cards = await evaluate(CARDS);
+  check('eight charts at 1366 px with a compared run: the line over each on two lines at most, each part whole on one, every plot more than its 60 px high and inside its card (SIF-134: four lines, the plots strips)',
+    cards.length === 8 && cards.every(c => c.plot !== null && c.lines <= 2 && c.broken === 0 && c.plot > 61 && c.out <= 0.5), JSON.stringify(cards));
   await page.shot(path.join(out, 'training-eight-compared-1366.png'), `(${TRAINING})`);
-  await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
+  await page.setValue(COMPARE, RUNS.frozen.dir);
+  await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 3 && (${TRAINING}).querySelectorAll('.training-missing').length > 0`, 60);
+  await sleep(1500);                                        // every chart drawn with both compared runs
+  const crowded = await evaluate(CARDS), secondRow = crowded.filter(c => c.found);
+  check('eight charts at 1366 px with two compared runs, a plot left only its 60 px: every plot inside its card and 60 px or more, the second row\'s titles and × found by the pointer (SIF-120 review)',
+    crowded.length === 8 && crowded.some(c => c.plot !== null && c.plot <= 61) && crowded.every(c => c.out === null || (c.out <= 0.5 && c.plot >= 60))
+    && secondRow.length === 4 && secondRow.every(c => c.found.every(f => f === true)), JSON.stringify(crowded));
+  for (let i = 0; i < 3 && await evaluate(`!!(${TRAINING}).querySelector('.training-chip-remove')`); i++) {
+    await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`); await sleep(300);
+  }
   await until(`!(${TRAINING}).querySelector('.training-compared')`, 30);
   listRuns = false;
   while ((await figures()) > 2) { await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart .training-chart-remove')].at(-1).click()`); await sleep(150); }

@@ -22,17 +22,20 @@ export function updateBranches(table: Table): { superseded: Uint8Array; restarts
 }
 
 /** A trailing mean over the last `window` recorded values of one series (its own positions only; a gap neither counts
- *  nor resets the window). At a gap the mean is a gap too, so a missing value stays visible on the smoothed line. */
+ *  nor resets the window). At a gap the mean is a gap too, so a missing value stays visible on the smoothed line. A window
+ *  of zeros is 0, not the rounding remainder of the values that left it (`nz`: the values in it that are not 0; branch
+ *  record SIF-134, as the charts' running means in prep.ts). */
 export function smooth(values: (number | null | undefined)[], window: number): (number | null | undefined)[] {
   const out: (number | null | undefined)[] = new Array(values.length);
   const ring: number[] = [];
-  let sum = 0;
+  let sum = 0, nz = 0;
   for (let i = 0; i < values.length; i++) {
     const v = values[i];
     if (v === undefined) { out[i] = undefined; continue; }
     if (v === null) { out[i] = null; continue; }
-    ring.push(v); sum += v;
-    if (ring.length > window) sum -= ring.shift()!;
+    ring.push(v); sum += v; if (v !== 0) nz += 1;
+    if (ring.length > window) { const gone = ring.shift()!; sum -= gone; if (gone !== 0) nz -= 1; }
+    if (!nz) sum = 0;
     out[i] = sum / ring.length;
   }
   return out;
@@ -43,11 +46,12 @@ export function smooth(values: (number | null | undefined)[], window: number): (
  *  7.213). A row is in the window of every later row up to `width` x units on, and of the rows at its own x after it. */
 export function smoothOver(x: ArrayLike<number>, values: (number | null | undefined)[], width: number): (number | null | undefined)[] {
   const out: (number | null | undefined)[] = new Array(values.length);
-  let lo = 0, sum = 0, count = 0;
+  let lo = 0, sum = 0, count = 0, nz = 0;
   for (let i = 0; i < values.length; i++) {
     const v = values[i];
-    if (typeof v === 'number') { sum += v; count += 1; }
-    while (x[lo] <= x[i] - width) { const w = values[lo]; if (typeof w === 'number') { sum -= w; count -= 1; } lo++; }
+    if (typeof v === 'number') { sum += v; count += 1; if (v !== 0) nz += 1; }
+    while (x[lo] <= x[i] - width) { const w = values[lo]; if (typeof w === 'number') { sum -= w; count -= 1; if (w !== 0) nz -= 1; } lo++; }
+    if (!nz && count) sum = 0;                               // a window of zeros (SIF-134, as smooth); an empty one as before
     out[i] = v === undefined ? undefined : v === null ? null : sum / count;
   }
   return out;

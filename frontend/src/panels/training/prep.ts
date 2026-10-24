@@ -15,7 +15,9 @@ import type { LearnerX } from './build.ts';
  * mean starts from its checkpoint before them (every SPACING positions), because a mean of the last N evaluations can
  * reach far back and a share so far reaches the first row. Everything is computed with the same operations in the same
  * order as before, so the values drawn are the same numbers: training_data_check.mjs compares these charts with the
- * builders before this record and a store kept up to date with one that derives everything at once. */
+ * builders before this record and a store kept up to date with one that derives everything at once. Since branch record
+ * SIF-134 a mean over a window of only zeros is 0, where those builders kept a rounding remainder - and carried it into the
+ * means after it, which may differ from theirs in the last digit (State, below). */
 export const TRAINING = 0, EVALUATION = 1, START = 2;                 // the categories by number
 export const CODE: Record<Category, number> = { training: TRAINING, evaluation: EVALUATION, start: START };
 let SPACING = 4096;            // positions between two checkpoints of a running mean
@@ -128,9 +130,11 @@ export class Index {
 }
 
 type MeanKind = 'last' | 'over' | 'share';      // smooth (the last N values), smoothOver (the last N x units), the share so far
-/** A running mean before position `pos`: the sum and count of its values; `lo` its first position (over); `ring` its values
- *  from `head` on, the oldest first (last). */
-interface State { pos: number; sum: number; count: number; lo: number; ring: Float64Array | null; head: number }
+/** A running mean before position `pos`: the sum and count of its values, `nz` how many of them are not 0; `lo` its first
+ *  position (over); `ring` its values from `head` on, the oldest first (last). A window of zeros sums to 0 (branch record
+ *  SIF-134): the additions and subtractions of the values that left it can leave a rounding remainder - "Worst spec miss"
+ *  read "mean of last 50 2.558e-17" once every design met its specs. */
+interface State { pos: number; sum: number; count: number; nz: number; lo: number; ring: Float64Array | null; head: number }
 const copyState = (s: State): State => ({ ...s, ring: s.ring && s.ring.slice() });
 
 /** A running mean, or the share so far, of one series from position `start` on - smooth, smoothOver and the share of
@@ -149,7 +153,7 @@ class Running {
   private seen: number;
   constructor(kind: MeanKind, window: number, start: number, index: Index) {
     this.kind = kind; this.window = window; this.start = start; this.index = index;
-    this.points = [{ pos: start, sum: 0, count: 0, lo: start, ring: kind === 'last' ? new Float64Array(window + 1) : null, head: 0 }];
+    this.points = [{ pos: start, sum: 0, count: 0, nz: 0, lo: start, ring: kind === 'last' ? new Float64Array(window + 1) : null, head: 0 }];
     this.done = start; this.seen = index.changes.stamp;
   }
   bytes() { return [...this.points, ...(this.end ? [this.end] : [])].reduce((sum, point) => sum + 48 + (point.ring?.byteLength ?? 0), 0); }
@@ -188,20 +192,22 @@ class Running {
       if (kind === 'last') {                       // smooth: ring.push(v); sum += v; past the window sum -= ring.shift()
         if (recorded === 2) {
           const ring = state.ring!, size = window + 1;
-          ring[(state.head + state.count) % size] = v; state.count += 1; state.sum += v;
-          if (state.count > window) { state.sum -= ring[state.head]; state.head = (state.head + 1) % size; state.count -= 1; }
+          ring[(state.head + state.count) % size] = v; state.count += 1; state.sum += v; if (v !== 0) state.nz += 1;
+          if (state.count > window) { const gone = ring[state.head]; state.sum -= gone; if (gone !== 0) state.nz -= 1; state.head = (state.head + 1) % size; state.count -= 1; }
+          if (!state.nz) state.sum = 0;            // only zeros in the window (SIF-134)
           mean = state.sum / state.count;
         }
       } else if (kind === 'share') {               // judged += 1, passed += v, passed / judged
         if (recorded === 2) { state.count += 1; state.sum += v; mean = state.sum / state.count; }
       } else {                                     // smoothOver: the value in, then out what is `window` x units behind
-        if (recorded === 2) { state.sum += v; state.count += 1; }
+        if (recorded === 2) { state.sum += v; state.count += 1; if (v !== 0) state.nz += 1; }
         const limit = xs[pos] - window;
         while (state.lo < len && xs[state.lo] <= limit) {
           const i = state.lo - base, gone = i < kinds.length ? null : fill(state.lo, state.lo + 1);
-          if ((gone ? gone.kinds[0] : kinds[i]) === 2) { state.sum -= gone ? gone.nums[0] : nums[i]; state.count -= 1; }
+          if ((gone ? gone.kinds[0] : kinds[i]) === 2) { const w = gone ? gone.nums[0] : nums[i]; state.sum -= w; state.count -= 1; if (w !== 0) state.nz -= 1; }
           state.lo += 1;
         }
+        if (!state.nz && state.count) state.sum = 0;   // only zeros in the window (SIF-134); an empty one keeps its sum, as before
         if (recorded === 2) mean = state.sum / state.count;
       }
       if (out && pos >= outFrom) { out.kinds[pos - outFrom] = recorded; out.nums[pos - outFrom] = mean; }

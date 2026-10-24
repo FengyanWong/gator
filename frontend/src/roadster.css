@@ -529,6 +529,11 @@ button.line-close { border: none; background: none; }
    tall as its tallest chart needs, 170 px at least, and the rows share any room left as before. */
 .training-charts { grid-auto-rows: minmax(min-content, 1fr); }
 .training-chart { min-height: 170px; }
+/* SIF-134: on a comparison the line names each value's run by its swatch, the square of the run's keys and chips (its
+   colour: styles.css .key-run*), not by its whole name again: "fixture_task (tx1-fixture) · seed 1 · 10-05 11:00 · live
+   (recorded) -0.04543 · ..." took four lines over a chart at the bottom panel's height. The keys' 10 px square, set in the
+   line's text. */
+.training-readout .readout-run .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 
 /* SIF-130: a field's placeholder reads at 4.5 : 1 or more on the ground it is drawn on. The page set none, and the browser's
    own #757575 read at 3.85 : 1 in a field (#18181b) and 4.06 on a zebra row (#121215): "Find rows", the windows' Filter

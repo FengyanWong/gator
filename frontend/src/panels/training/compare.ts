@@ -121,12 +121,13 @@ function evaluationPart(run: CompareRun, r: number, id: string, smoothing: numbe
   const index = p.rows(single ? null : allowed.filter(c => c !== 'start').map(c => CODE[c]));
   const raw = valuesFill(p, index, value, null), key = `${index.key}|${id}`;
   const full = index.before(store.thinnedEvaluations);       // rows of a thinned stretch among the kept ones: no mean over them
-  if (single) return { index, series: [{ meta: { label, role: 'line', category: null, run: r, step: true, values: [] }, fill: raw }] };
-  if (cumulative) return { index, series: [{ meta: { label: `${label} (each design)`, role: 'raw', category: null, run: r, values: [] }, fill: raw },
-    { meta: { label: `${label}: share so far`, role: 'smooth', category: null, run: r, values: [] }, fill: p.meanFill(key, 'share', 0, full, index, raw) }] };
-  if (smoothing > 0) return { index, series: [{ meta: { label: `${label} (recorded)`, role: 'raw', category: null, run: r, values: [] }, fill: raw },
-    { meta: { label: `${label}: mean of last ${smoothing}`, role: 'smooth', category: null, run: r, values: [] }, fill: p.meanFill(key, 'last', smoothing, full, index, raw) }] };
-  return { index, series: [{ meta: { label, role: 'raw', category: null, run: r, values: [] }, fill: raw }] };
+  // `short`: the words after the run's swatch in the line over the chart, which names a run by its colour (branch record SIF-134)
+  if (single) return { index, series: [{ meta: { label, short: '', role: 'line', category: null, run: r, step: true, values: [] }, fill: raw }] };
+  if (cumulative) return { index, series: [{ meta: { label: `${label} (each design)`, short: 'each design', role: 'raw', category: null, run: r, values: [] }, fill: raw },
+    { meta: { label: `${label}: share so far`, short: 'share so far', role: 'smooth', category: null, run: r, values: [] }, fill: p.meanFill(key, 'share', 0, full, index, raw) }] };
+  if (smoothing > 0) return { index, series: [{ meta: { label: `${label} (recorded)`, short: 'recorded', role: 'raw', category: null, run: r, values: [] }, fill: raw },
+    { meta: { label: `${label}: mean of last ${smoothing}`, short: `mean of last ${smoothing}`, role: 'smooth', category: null, run: r, values: [] }, fill: p.meanFill(key, 'last', smoothing, full, index, raw) }] };
+  return { index, series: [{ meta: { label, short: '', role: 'raw', category: null, run: r, values: [] }, fill: raw }] };
 }
 
 /** One run's series of a learner chart in a comparison: its updates on the line it went on (abandoned ones left out). */
@@ -138,11 +139,13 @@ function learnerPart(run: CompareRun, r: number, id: string, smoothing: number, 
   columns.forEach(([column, name], c) => {
     const sign = id === 'entropy' ? -1 : 1, values = learnerFill(p, index, column, sign, 'all');
     const named = columns.length > 1 ? `${label} / ${name}` : label;      // the run's name stays whole in its legend key
+    const own = columns.length > 1 ? name : '';                             // after the run's swatch, as one run's chart names it (SIF-134)
     if (smoothing > 0) {
-      series.push({ meta: { label: `${named} (recorded)`, role: 'raw', category: null, run: r, dash: c > 0, values: [] }, fill: values });
-      series.push({ meta: { label: `${named}: ${meanLabel(smoothing, learnerX)}`, role: 'smooth', category: null, run: r, dash: c > 0, values: [] },
+      series.push({ meta: { label: `${named} (recorded)`, short: own ? `${own} (recorded)` : 'recorded', role: 'raw', category: null, run: r, dash: c > 0, values: [] }, fill: values });
+      series.push({ meta: { label: `${named}: ${meanLabel(smoothing, learnerX)}`, short: own ? `${own}: ${meanLabel(smoothing, learnerX)}` : meanLabel(smoothing, learnerX),
+        role: 'smooth', category: null, run: r, dash: c > 0, values: [] },
         fill: p.meanFill(`${index.key}|${column}|${sign}`, learnerX === 'evaluation' ? 'over' : 'last', smoothing, from, index, values) });
-    } else series.push({ meta: { label: named, role: 'raw', category: null, run: r, dash: c > 0, values: [] }, fill: values });
+    } else series.push({ meta: { label: named, short: own, role: 'raw', category: null, run: r, dash: c > 0, values: [] }, fill: values });
   });
   return { index, series };
 }

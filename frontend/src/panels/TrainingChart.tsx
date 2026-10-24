@@ -108,14 +108,14 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
     // the row under the pointer, and only the values recorded AT it (a row has one category: the other series have none there).
     // Rows that share its x count as it: compared runs learning 8 and 1 times per evaluation have 8 and 1 rows at one x (7.213).
     const index = hovering ? Math.min(data.x.length - 1, Math.max(0, u.posToIdx(u.cursor.left!))) : data.x.length - 1;
-    const parts: [string, string][] = [];
+    const parts: [Series, string][] = [];
     data.series.forEach((series, i) => {
       if (series.role === 'limit' || !u.series[i + 1]?.show) return;
       let value = series.values[index];
       for (let j = index - 1; value === undefined && j >= 0 && data.x[j] === data.x[index]; j--) value = series.values[j];
       for (let j = index + 1; value === undefined && j < data.x.length && data.x[j] === data.x[index]; j++) value = series.values[j];
       if (value === undefined) return;
-      parts.push([series.label, value === null ? 'no value' : latest.current.format(value)]);
+      parts.push([series, value === null ? 'no value' : latest.current.format(value)]);
     });
     const row = data.rows[index];      // -1 on a comparison: several runs' rows share an x, none of them is named
     // The values first, then the row's phase and episode (branch record SIF-7: the line was cut at the chart's width, and the
@@ -128,7 +128,23 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
     const doc = element.ownerDocument;
     const value = (text: string) => { const b = doc.createElement('b'); b.textContent = text; return b; };
     const part = (...children: (Node | string)[]) => { const span = doc.createElement('span'); span.className = 'readout-part'; span.append(...children); return span; };
-    const pieces = [part(`${hovering ? '' : 'Newest: '}${xLabel} `, value(String(data.x[index]))), ...parts.map(([label, text]) => part(`${label} `, value(text)))];
+    // A compared run's value is named by its run's swatch - the colour of its line and of its keys above - and the series' own
+    // words (branch record SIF-134): each value repeated the run's whole name, which the keys already give, so a comparison's
+    // line took four lines at the bottom panel's height and left the plot a strip. The whole name is the swatch's tooltip,
+    // and its name for a screen reader.
+    const swatch = (series: Series) => {
+      const key = doc.createElement('span'), square = doc.createElement('span');
+      key.className = `readout-run key-run${series.run! % 4}`; key.title = series.label;
+      key.setAttribute('role', 'img'); key.setAttribute('aria-label', series.label);
+      square.className = 'swatch'; key.append(square);
+      return key;
+    };
+    const named = ([series, text]: [Series, string]) => {
+      if (series.run == null) return part(`${series.label} `, value(text));
+      const words = series.short ?? series.label;
+      return part(swatch(series), ...(words ? [`${words} `] : []), value(text));
+    };
+    const pieces = [part(`${hovering ? '' : 'Newest: '}${xLabel} `, value(String(data.x[index]))), ...parts.map(named)];
     if (row != null && row >= 0) pieces.push(...latest.current.describe(row).split(' · ').filter(Boolean).map(fact => part(fact)));
     element.replaceChildren(...pieces.flatMap((piece, i) => (i ? [' · ', piece] : [piece])));
     // A row with fewer values must not shorten the line under a moving pointer (SIF-120): the plot under it would grow and

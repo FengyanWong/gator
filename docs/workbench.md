@@ -315,7 +315,10 @@ switch are gone; every panel, button and field stands where it stood.
   most (it was cut to one line in a monospace font); its tooltip keeps the whole.
 - Every pop-up window takes these colours from the page's stylesheet, which it copies when it opens. The Training charts
   draw the shown run in red, then white, blue and violet for compared runs (`--series-1` to `--series-4`); limits stay
-  amber. The browser draws its own parts dark too (`color-scheme: dark`): scroll bars and the open list of a drop-down.
+  amber. A run's chip, legend keys and Key numbers row take the colour of its lines, as do one run's series keys (branch
+  record SIF-134: the keys used `--probe` and `--spec`, both white since 7.360, so a second compared run drawn blue was
+  keyed white, and the gradient norms' Policy too). The browser draws its own parts dark too (`color-scheme: dark`):
+  scroll bars and the open list of a drop-down.
 
 **The task's card** (record 7.362; from a preview of four arrangements the user chose Option D: "go with D, build it into
 the workbench"). The task stretches across the left and the centre. Its name starts the editors' tab line - the button that
@@ -1997,7 +2000,9 @@ they are empty.
   choice. Taking one chart off leaves the others' charts as they are, and a chart is only drawn again when its own data,
   zoom or width changed.
   **Smoothing**: off, or the mean of the last 10 / 20 / 50 / 100 / 200 recorded values of each series (default 20); the
-  recorded values stay as faint points under the line, and a gap stays a gap in both. A chart's unit is written in its
+  recorded values stay as faint points under the line, and a gap stays a gap in both. A mean over only zeros is 0 (branch
+  record SIF-134: a running sum's rounding remainder read "mean of last 50 2.558e-17" on Worst spec miss once every design
+  met its specs). A chart's unit is written in its
   title the way the rest of the page writes units (`units.ts`, record 7.208: English letters - "uA", "ohm", "deg").
 * **Key numbers** (record 7.215, the user's choice of "what next"): a table above the charts, one row per run on them
   (each in its chart colour when runs are compared): evaluations recorded, the **first passing design** (its evaluation
@@ -2036,7 +2041,9 @@ runs of the run window, the shown run's task first: "Same task (<task>)" holds t
 user's, the task's other seeds and Modes scattered among them; a shown run the list names no task for keeps the one list).
 A chosen run is drawn on both charts beside the shown one, up to four runs, each in its own colour
 (the shown run in the accent colour), with a line of chips above the charts naming them - × takes one off (its tooltip
-starts "Remove <run>: ...", the run named as on its chip; branch record SIF-115). A run is
+starts "Remove <run>: ...", the run named as on its chip; branch record SIF-115). Its chip, its legend keys and its Key
+numbers row are in the colour of its lines (branch record SIF-134: the second compared run, drawn blue, was keyed white,
+and a third, drawn violet, amber). A run is
 named as the run window shows it (record 7.213): its task, its experiment in brackets when that has a name of its own
 (not the default "experiment"; branch record SIF-77: the experiment alone, "tx1-vco-gatv2", stood beside a tab strip
 naming the task), its seed and when it was made; the start of its folder's id is added only when two compared runs would
@@ -2044,7 +2051,11 @@ read the same. The runs share one x axis: the evaluation's number in each run's 
 charts its update count or the evaluations collected (**Learner by**); at an evaluation where one run learned 8 times and
 another once, each keeps its own updates in order and the hover line gives both. A run's designs are one
 series (a training run's training designs, a frozen run's evaluated ones); episode starts are left out, so are a
-learner's updates abandoned at a restart. The hover line gives each run's recorded value at that evaluation. A run that
+learner's updates abandoned at a restart. The hover line gives each run's recorded value at that evaluation, each value
+after its run's swatch (the square of its keys, in its colour) and what the series is - "recorded -0.04543 · mean of
+last 50 -0.0651" -, the series' whole name in the swatch's tooltip (branch record SIF-134: each value repeated its run's
+whole name, which the keys above give, so with one compared run the line took four lines over a chart and left the plot
+a strip). A run that
 cannot be drawn on a chart (it has no such spec, the spec's unit differs, it records no learner updates) is named on that
 chart with the reason; a spec's limits are the shown run's. Each compared run is read like the shown one - its history in
 pages, then every 2 s while its worker lives (the answer of `/api/runs/training` says so since 7.200: `state`,

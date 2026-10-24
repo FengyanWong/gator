@@ -4411,3 +4411,65 @@ One lane, after the memory guard: `pdk_check` 46, `network_panel_check` 74, `cor
 `run_list_check` 170, `task_list_check` 105, `reliability_check` 20, `graph_view_check` 69, `reward_block_check` 34,
 `encoder_models_check` 24, `model_structure_check` 33 (12 scripts, 799 checks, one run), all passed the first time. No
 flakes.
+
+### SIF-122 A tick or a Details press in the Runs window draws only the rows it changes (2026-10-24; from the performance audit)
+
+**Found.** While the Runs window was open, each tick, Details press, its "copied" note, sort, filter keystroke or folder
+change drew every row of its table again (the performance audit's REN-1, confirmed): with the user's 549 runs some 15,000
+to 38,000 React parts each time, more with every run made, and a Details press drew twice - as its Details opened, and
+again when the run's status arrived. The memo of record 7.279 (`RunListButton`) kept the page's status polls out of the
+window, not the window's own presses. Measured below with 549 runs: 9.7 ms of script per tick, 20 to 21 ms per Details
+press.
+
+**Changed.** `frontend/src/panels/RunList.tsx`: a run's row of the table is `RunRow`, memoised. Its props: the run; whether
+it is the shown run, ticked, its Details open; its folder's name in All runs ('' elsewhere, where none is drawn); whether
+its tick box is greyed out (the folders being read or saved); the run list's lookup that "Started from" reads; and one
+ref, `rowAct`, through which its double click, Enter, tick, "Started from" link and Details reach the window's functions of
+the latest render, as `latest` beside it does for the links from other windows. A row is drawn again only when one of them
+changes: a tick draws its row, a Details press the rows whose Details open and close, the run's status arriving and the
+"copied" none; a sort moves the rows without drawing them, a filter draws only the rows it brings in. The row's markup
+moved over unchanged but for those props; its Details row stays where it was, in the parent, drawn with every render as
+before. Not done, as the audit's verdict said: no deferred filter (the rows and "No run matches" would trail the input by
+a render) and no change to the sorting (cheap). Nothing here starts, continues or stops a run, saves a task or writes to
+Virtuoso: every press calls the function it called, with the same questions and the same requests.
+`docs/workbench.md` (The run window) and `docs/functionality-reference.md` (Runs...) say it.
+`frontend/scripts/run_list_check.mjs`: the checks below; its run folders can hold a save back (`holdFolders`).
+
+**Checked.** `tsc` clean. `run_list_check` 177 (170 before). New, section 3b, which rows React drew again, read from the
+props it keeps on each row element (`__reactProps$...`; a row drawn again carries new ones): a tick draws only its row, a
+Details press only that row (also once its status is read), another run's Details the two rows whose Details close and
+open, the "copied" beside its run folder none. Two inputs a memoised row could miss: in 4c, the filter that lets the ticks
+go unticks the box of a ticked row it still shows; in 5b, while a Move to... is saved (held back by the check) every row's
+box is greyed out, and none once it is saved. A probe run of the new check on the build before failed exactly the four
+draw checks (all six rows drawn again each time; 173 passed). One lane, after the memory guard: `run_control_check` 171,
+`dom_identity_check` 56 (recording), `training_tab_check` 123, `run_list_check` 177, `task_list_check` 104 of 105,
+`task_run_check` 39, `looks_check` 76, `reliability_check` 20. `task_list_check` failed "the row shows the new name with
+the internal name under it, under the same key" - the Tasks window's rename: its row was read before the list the rename
+reads again was drawn (the line's info, read a moment later, shows the expected text) - and passed 105 alone: a flake, in
+code this record does not touch. DOM identity: `dom_identity_check` replayed that recording on the build before (the reference, 56 passed) and on
+the build after with `--compare`: 53 of its 56 files identical byte for byte, every file of the runs scene (the window,
+the Details, requests.txt, storage.json) and of the eight other scenes among them. The three others, of the tabs scene,
+which never opens the window, differ in six lines: the sizes uPlot gives the second Training chart from its plot's height,
+100 px against 101 (twice). That height is not this code's: the same build draws either - the tabs scene alone, three
+times each, drew 101, 100, 101 px on the build before and 101, 101, 100 on the build after (two runs of the build before
+differ in the same six lines), and the recordings of today's earlier records 100, 101 and 100 - since the chart keeps a
+size within 1 px of the last it took (`TrainingChart.tsx`) and its readout's tallest height (SIF-120), so the order of
+the page's first layouts decides it. With the same height the tabs scenes of the two builds are identical byte for byte
+(two such pairs).
+
+**Measured.** A throwaway check (`tmp-measure-runs_check.mjs`, deleted before this commit) run by `run_checks.sh --lanes 1
+--build <dist>` on both builds (HEAD 1390ba6 and this change, each built into a temp folder) behind the scratch backend:
+`/api/runs` answered with 549 canned runs shaped like the user's (seven tasks, five designs, fine-tunes of earlier runs,
+baselines and calibrations, every state at rest), `/api/runs/status` for each, `/api/run-folders` empty. Headless Edge,
+the Runs window 1500 x 860, no run shown. After a warm-up (four ticks, two Details presses) and a garbage collection, CDP
+`Performance.getMetrics` (training_tab_check's `metrics()`) of the page and of the window before and after 20 ticks, then
+10 Details presses (each opening a row's Details and closing the last one's), two frames after each action was drawn (a
+press once its status was drawn), three rounds; per action, the median of the rounds. The window's script runs in the
+page's realm, so the page's ScriptDuration holds it (the window's own: 0.01 to 0.03 ms per action); TaskDuration is the
+renderer thread's (both sessions read the same). Also the page's own clock: performance.now() around a click and React's
+flush. Meanwhile the page by itself took 0.2 to 0.5 ms of task time per second. Two runs of each build, before -> after:
+a tick's script 9.71 and 9.67 ms -> 0.73 and 0.80 ms, its task time 16.2 and 16.1 -> 5.6 and 5.8 ms; a Details press's
+script 20.1 and 20.9 -> 2.3 and 2.2 ms, its task time 70.0 and 71.8 -> 51.2 and 53.1 ms; by the page's clock a tick 9.3 and
+9.5 -> 0.9 and 1.0 ms, a press's first drawing 10.0 and 10.2 -> 1.4 and 1.5 ms. What stays: a tick's other 5 ms of task
+time (its style and layout 0.06 and 0.1 ms; the frame drawn), and a Details press's 12 ms of style and 8 to 10 ms of
+layout, its Details laid into a table of 549 rows. The audit expected 20 to 50 ms per tick before; this machine took 9.7.

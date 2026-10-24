@@ -1775,6 +1775,11 @@ lists every run under the output folder, newest first, one row per run:
   its state and duration as of that time. A link from another window (the Tasks window, the run brief, a model's
   Relationships) only opens this window at its run: the list is read again only when the window was closed or its list
   is more than a minute old (record 7.275).
+* **A press draws only the rows it changes** (branch record SIF-122): a tick, a Details press, its "copied", a sort, the
+  filter or a folder change draw again only the rows whose own cells change - a tick its row, Details the rows whose
+  Details open and close - where each drew every row of the table again. With 549 runs in a headless Edge that was about
+  10 ms of script per tick and 20 ms per Details press (under 1 and about 2 ms since). What the window shows, and what it
+  reads and asks, are the same.
 * **The backend keeps what it read of each run** (record 7.274): a run folder is read again when it changed - every file
   the list reads is written whole, a temporary file renamed over the old one, which changes its folder - when its save
   points changed (a new one arrives complete, then `latest.json` is replaced); the lock of a run whose status says it

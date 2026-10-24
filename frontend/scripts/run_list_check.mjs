@@ -26,7 +26,9 @@
 // the size and place it was left at (popupWindow.ts, every pop-up window), on this screen and at most its size. Its review
 // follow-up: at any page zoom - its outer size and corner are kept too, and set with resizeTo and moveTo. Branch record
 // SIF-113: Refresh list is the refresh icon, its words for screen readers and at the start of its tooltip. Branch record
-// SIF-117: the table and the Details write a count as the whole page does, from 10,000 up in groups of three.
+// SIF-117: the table and the Details write a count as the whole page does, from 10,000 up in groups of three. Branch record
+// SIF-122: a tick, a Details press and its "copied" draw only the rows whose own props changed; a row's tick box still follows
+// a filter that lets the ticks go, and is greyed out while a folder move is saved.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -126,6 +128,7 @@ await runChecks(browser, async () => {
   const { send, evaluate, until, fulfil, consoleErrors } = page;
   const refused = []; const seen = [];
   const runFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
+  let holdFolders = false; const heldFolders = [];                              // branch record SIF-122: a folder save held back
   // RESUMED's own configuration as it started (record 7.267, New run like this): a fine-tune of DONE, its recorded source still "latest".
   let failModel = null, holdModel = false; const heldModel = [];               // record 7.270: see the /api/runs/model answer
   const recorded = { [RESUMED.run_dir]: { ...CONFIG, run: { ...CONFIG.run, mode: 'fine_tune', model_label: 'fixture (2)', max_evaluations: 40, seed: 2, max_retries: 1,
@@ -136,6 +139,7 @@ await runChecks(browser, async () => {
     const url = new URL(request.url), name = url.pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, validReport);
     if (name.startsWith('/api/run-folders')) {                                   // the runs' folders (7.263): a store of this check's own
+      if (holdFolders && request.method !== 'GET') { heldFolders.push({ requestId, request }); return; }
       const body = JSON.parse(request.postData ?? '{}');
       if (request.method === 'POST') { const id = String(++folderSerial).padStart(32, '0'); runFolders.folders[id] = body.name.trim(); return fulfil(requestId, 200, { ...runFolders, created_id: id }); }
       if (request.method === 'PUT') body.run_dirs.forEach(dir => { if (body.folder_id) runFolders.assignments[dir] = body.folder_id; else delete runFolders.assignments[dir]; });
@@ -282,6 +286,37 @@ await runChecks(browser, async () => {
     && await evaluate(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(RESUMED.run_dir)})`) && await windowOpen());
   await pressIn(DONE, 'Hide details');                                          // however the two presses left that run's details: closed for what follows
 
+  // ---- 3b. a row is drawn again only when its own props change (branch record SIF-122) ------------------------------------------
+  // A tick, a Details press or its "copied" drew every row of the table again: with the user's 549 runs about 10 ms of script per
+  // tick and 20 ms per Details press. React keeps the props it last drew an element with on the element (a key "__reactProps$..."):
+  // a row drawn again carries new ones, a row left alone the ones it had.
+  const MAIN_ROWS = `[...${WINDOW}.querySelector('table.run-table').tBodies[0].rows].filter(tr => !tr.classList.contains('run-details-row'))`;
+  const markRows = () => far.evaluate(`(() => { const rows = ${MAIN_ROWS}, key = Object.keys(rows[0] ?? {}).find(k => k.startsWith('__reactProps$'));
+    window.__drawn = key ? { key, props: new Map(rows.map(tr => [tr, tr[key]])) } : null; return !!key; })()`);
+  const redrawn = () => far.evaluate(`window.__drawn ? ${MAIN_ROWS}.filter(tr => tr[window.__drawn.key] !== window.__drawn.props.get(tr)).map(tr => tr.title).sort() : null`);
+  const ROW_BOX = rr => `${MAIN_ROWS}.find(tr => tr.title === ${JSON.stringify(rr.run_dir)}).querySelector('input[type="checkbox"]')`;
+  const ticked = (rr, on) => far.until(`${ROW_BOX(rr)}.checked === ${on} && ${WINDOW}.querySelector('.task-move-bar .hint:not([role])').textContent === ${JSON.stringify(on ? '6 shown · 1 selected' : '6 shown')}`, 30);
+  const detailsRead = rr => far.until(`(() => { const d = [...${WINDOW}.querySelectorAll('tr.run-details-row')].find(row => row.previousElementSibling?.title === ${JSON.stringify(rr.run_dir)});
+    return !!d && !!d.querySelector('table.run-facts') && !/Reading the run.s details/.test(d.textContent); })()`, 40);
+  check('(set-up) the rows can be ticked and carry the props React drew them with', await far.until(`!${ROW_BOX(DONE)}.disabled`, 30) && await markRows());
+  await far.evaluate(`${ROW_BOX(DONE)}.click()`);
+  check('a tick draws only its own row again: the five others keep what they were drawn with (branch record SIF-122)', await ticked(DONE, true)
+    && JSON.stringify(await redrawn()) === JSON.stringify([DONE.run_dir]), JSON.stringify(await redrawn()));
+  await far.evaluate(`${ROW_BOX(DONE)}.click()`); await ticked(DONE, false);
+  await markRows(); await pressIn(LOST, 'Details');
+  check('a Details press draws only that row again, also once its details are read (SIF-122)', await detailsRead(LOST)
+    && JSON.stringify(await redrawn()) === JSON.stringify([LOST.run_dir]), JSON.stringify(await redrawn()));
+  await markRows(); await pressIn(NEVER, 'Details');
+  check('... another run\'s Details the two rows whose Details close and open (SIF-122)', await detailsRead(NEVER)
+    && JSON.stringify(await redrawn()) === JSON.stringify([LOST.run_dir, NEVER.run_dir].sort()), JSON.stringify(await redrawn()));
+  await far.evaluate(`Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: text => { window.__clip = text; return Promise.resolve(); } })`);
+  await markRows(); await far.evaluate(`${WINDOW}.querySelector('tr.run-details-row table.run-facts td.path').click()`, true);
+  check('... and the "copied" beside its run folder none (SIF-122)', await far.until(`/ copied$/.test(${WINDOW}.querySelector('tr.run-details-row td.path')?.textContent ?? '')`, 30)
+    && (await far.evaluate('window.__clip')) === NEVER.run_dir && JSON.stringify(await redrawn()) === '[]', `${await far.evaluate('window.__clip ?? null')} | ${JSON.stringify(await redrawn())}`);
+  await far.evaluate(`delete navigator.clipboard.writeText`);
+  await far.until(`!/ copied$/.test(${WINDOW}.querySelector('tr.run-details-row td.path')?.textContent ?? '')`, 40);   // it goes after 1.5 s
+  await pressIn(NEVER, 'Hide details');
+
   // ---- 4. "Details": everything else the run recorded ----------------------------------------------------------------------
   const before = statusFor(PAUSED);
   await pressIn(PAUSED, 'Details');
@@ -370,6 +405,8 @@ await runChecks(browser, async () => {
   await pressIn(DONE, 'Hide details');
   await typeFilter('fine');
   check('(set-up) the filter "fine" shows RESUMED only, a Fine-tune', (await table()).map(x => x.folder).join() === RESUMED.run_dir);
+  check('... and the new filter let the tick go: RESUMED\'s box is unticked (SIF-122: a row is drawn again when its tick changes)',
+    await far.evaluate(`!${RUN_ROW(RESUMED)}.querySelector('input[type="checkbox"]').checked`) && (await far.evaluate(`${WINDOW}.querySelector('.task-move-bar .hint:not([role])').textContent`)) === '1 shown');
   await far.evaluate(`${RUN_ROW(RESUMED)}.querySelector('button.item-link').click()`);
   check('a link to a run the filter hides shows every run, its Details open, and offers "Back to All runs · "fine"" beside the filter (SIF-101)',
     await detailsOpen(DONE) && (await filterText()) === '' && (await table()).length === 6 && (await viewLinks()).back === 'Back to All runs · "fine"', JSON.stringify(await viewLinks()));
@@ -472,7 +509,16 @@ await runChecks(browser, async () => {
   check('New folder with runs ticked stays in All runs and keeps the ticks; the new folder is in "Move to…" at once (SIF-101 review follow-up)', !!later && kept.folder === 'all'
     && kept.bar === '6 shown · 2 selected' && kept.offered.includes('Later'), JSON.stringify(kept));
   check('... and its question says so', questions.at(-1) === 'New folder name - the 2 ticked runs stay ticked; then choose the folder in Move to…', questions.at(-1));
-  await moveTo(pilot); await settled();
+  // Branch record SIF-122: while the move is saved every row's tick box is greyed out, and takes ticks again once it is saved - a
+  // row is drawn again only when its own props change, so the folders' state must be among them.
+  holdFolders = true; await moveTo(pilot);
+  for (let i = 0; i < 60 && !heldFolders.length; i++) await sleep(50);
+  const boxesOff = await far.evaluate(`${MAIN_ROWS}.map(tr => tr.querySelector('input[type="checkbox"]').disabled)`);
+  holdFolders = false; if (heldFolders.length) await answer(heldFolders.shift());
+  await settled();
+  const boxesOn = await far.evaluate(`${MAIN_ROWS}.map(tr => tr.querySelector('input[type="checkbox"]').disabled)`);
+  check('while "Move to..." is saved every row\'s tick box is greyed out, and none once it is saved (SIF-122)', boxesOff.length === 6 && boxesOff.every(Boolean)
+    && boxesOn.length === 6 && boxesOn.every(off => !off), JSON.stringify([boxesOff, boxesOn]));
   check('"Move to..." puts exactly those runs in the folder, by their run folder', JSON.stringify(Object.keys(runFolders.assignments).sort()) === JSON.stringify([DONE.run_dir, PAUSED.run_dir].sort())
     && Object.values(runFolders.assignments).every(id => id === pilot), JSON.stringify(runFolders.assignments));
   check('the counts follow: Pilot 2, Unfiled 4, All runs 6', (await folderText(pilot)) === 'Pilot2' && (await folderText('unfiled')) === 'Unfiled4' && (await folderText('all')) === 'All runs6');

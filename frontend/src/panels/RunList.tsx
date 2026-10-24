@@ -1,4 +1,4 @@
-import { Fragment, memo, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, MouseEvent, MutableRefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { styled, usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { RUNS_WINDOW } from '../contract';
@@ -201,6 +201,44 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
  *  overtaken by a newer choice, the page message's sentence saying why. */
 export type RunChoice = { loaded: boolean; why?: string };
 
+/** What a run's row asks of the window when it is pressed (branch record SIF-122): the window's functions of its latest render. */
+type RowAct = { showRun: (e: MouseEvent<HTMLTableRowElement>, row: Json) => void; showRow: (row: Json) => void; toggle: (dir: string) => void;
+  focusRun: (dir: string) => void; select: (id: string, checked: boolean) => void };
+
+// One run's row of the table (branch record SIF-122): a tick, a Details press, its "copied" note or a folder change draws only the
+// rows whose props changed - each drew every row again, the user's 549 runs; the DOM is the same. Its presses go through `act`.
+const RunRow = memo(function RunRow({ r, active, checked, isOpen, folderLabel, disabled, byDir, act }: { r: Json; active: boolean; checked: boolean;
+  isOpen: boolean; folderLabel: string; disabled: boolean; byDir: Map<string, Json>; act: MutableRefObject<RowAct> }) {
+  const end = finished(r), origin = startedFrom(r, byDir);
+  return (
+    <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={r.run_dir} onDoubleClick={e => act.current.showRun(e, r)}
+      tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) act.current.showRow(r); }}>
+      <td className="task-select"><input type="checkbox" aria-label={`Select ${folderName(r.run_dir)}`} checked={checked}
+        disabled={disabled} onChange={e => act.current.select(r.run_dir, e.target.checked)} /></td>
+      <td className="wrap-words">{keepDates(stamp(r.created_utc) ?? '-')}{folderLabel && <div className="hint task-folder-label">{folderLabel}</div>}</td>
+      <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{keepDates(end.text)}</td>
+      {/* "so far" may go under the time (roadster.css, branch record SIF-64): on one line it made the table wider than its window */}
+      <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && <span className="run-so-far"> so far</span>}</td>
+      <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}</td>
+      {/* Branch record SIF-75: a task and a saved model break only at a space or after "-", "_" or ".", never inside a word
+          ("graphgps" over "_ldo1", "graphgps_ld" over "o1 (31)"), and so does the model a run started from where the column
+          holds the word; the link takes three lines at most (roadster.css), the whole name first in its tooltip - an offline
+          model's name took six lines, its row 120 px. That cell keeps "wrap": a run that is not under this output folder is
+          named by its folder, whose 12-character hash would otherwise widen the column and the table past its window. */}
+      <td className="wrap-words" title={r.task_id}>{breakAt(taskOf(r))}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
+      <td className="wrap run-from">{origin.parent ? <button className="item-link" onClick={() => act.current.focusRun(origin.parent!)} title={`${origin.text}\n${origin.parent}\nShow the run it started from.`}>
+        <span className="run-from-name">{breakAt(origin.text)}</span></button> : origin.text}
+        {origin.missing && <span className="hint" title="That run is not under this output folder."> (gone)</span>}</td>
+      <td className="wrap-words">{breakAt(r.model_label ?? '-')}</td><td className="numeric">{r.seed}</td>
+      <td className="numeric">{r.evaluations != null ? count(r.evaluations) : '-'}{r.max_evaluations != null && ` / ${count(r.max_evaluations)}`}</td>
+      <td className="numeric">{r.first_feasible_eval_count != null ? `at ${count(r.first_feasible_eval_count)}` : r.evaluations != null ? 'none' : '-'}</td>
+      <td className="wrap-words run-experiment" title={r.experiment}>{breakAt(experimentName(r.experiment))}</td>
+      <td>{r.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>
+      <td>{RESUME[r.resumability] ?? '-'}</td>
+      <td><button className="notes-link" aria-expanded={isOpen} onClick={() => act.current.toggle(r.run_dir)}>{isOpen ? 'Hide details' : 'Details'}</button></td>
+    </tr>);
+});
+
 /** `headerDir`: the header's run while it works or is paused (App.tsx); when the tabs show another, the line says so.
  *  `onLoad` and `onNewLike` get this window: it asks the edits question (branch record SIF-84). */
 function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRefresh, onLoad, onNewLike, onContinue, headerDir = null }: { runs: Json[]; runsError: string | null; runDir: string | null;
@@ -319,6 +357,10 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   // Another window's link (openAt.ts): this window opens AT a run, or with one task's runs only.
   const latest = useRef({ openWindow, focusRun, leaveView });
   latest.current = { openWindow, focusRun, leaveView };
+  // The rows' presses, one object for every row and every render (branch record SIF-122): a row is drawn again only when its own
+  // props change, and a press still reaches the functions of the latest render.
+  const rowAct = useRef<RowAct>({ showRun, showRow, toggle, focusRun, select: table.select });
+  rowAct.current = { showRun, showRow, toggle, focusRun, select: table.select };
   useEffect(() => {
     const show = (event: Event) => {
       const at = (event as CustomEvent<RunsAt>).detail ?? {};
@@ -399,38 +441,14 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
         <button className="item-link" onClick={() => setOnlyTask(null)}>Show every run</button></p>}
       {runs.length > 0 && <div className="scroll"><table className="grid run-table">
         <TableHead view={table} columns={COLUMNS} shown={shown} id={r => r.run_dir} what="runs" disabled={folders.busy || !folders.ready} />
-        <tbody>{shown.map(r => { const active = r.run_dir === runDir, end = finished(r), origin = startedFrom(r, byDir); return (<Fragment key={r.run_dir}>
-          <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} title={r.run_dir} onDoubleClick={e => showRun(e, r)}
-            tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) showRow(r); }}>
-            <td className="task-select"><input type="checkbox" aria-label={`Select ${folderName(r.run_dir)}`} checked={selected.includes(r.run_dir)}
-              disabled={folders.busy || !folders.ready} onChange={e => table.select(r.run_dir, e.target.checked)} /></td>
-            <td className="wrap-words">{keepDates(stamp(r.created_utc) ?? '-')}{folders.folder === 'all' && folders.data.folders[folders.of(r.run_dir)]
-              && <div className="hint task-folder-label">{folders.data.folders[folders.of(r.run_dir)]}</div>}</td>
-            <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{keepDates(end.text)}</td>
-            {/* "so far" may go under the time (roadster.css, branch record SIF-64): on one line it made the table wider than its window */}
-            <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && <span className="run-so-far"> so far</span>}</td>
-            <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}</td>
-            {/* Branch record SIF-75: a task and a saved model break only at a space or after "-", "_" or ".", never inside a word
-                ("graphgps" over "_ldo1", "graphgps_ld" over "o1 (31)"), and so does the model a run started from where the column
-                holds the word; the link takes three lines at most (roadster.css), the whole name first in its tooltip - an offline
-                model's name took six lines, its row 120 px. That cell keeps "wrap": a run that is not under this output folder is
-                named by its folder, whose 12-character hash would otherwise widen the column and the table past its window. */}
-            <td className="wrap-words" title={r.task_id}>{breakAt(taskOf(r))}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
-            <td className="wrap run-from">{origin.parent ? <button className="item-link" onClick={() => focusRun(origin.parent!)} title={`${origin.text}\n${origin.parent}\nShow the run it started from.`}>
-              <span className="run-from-name">{breakAt(origin.text)}</span></button> : origin.text}
-              {origin.missing && <span className="hint" title="That run is not under this output folder."> (gone)</span>}</td>
-            <td className="wrap-words">{breakAt(r.model_label ?? '-')}</td><td className="numeric">{r.seed}</td>
-            <td className="numeric">{r.evaluations != null ? count(r.evaluations) : '-'}{r.max_evaluations != null && ` / ${count(r.max_evaluations)}`}</td>
-            <td className="numeric">{r.first_feasible_eval_count != null ? `at ${count(r.first_feasible_eval_count)}` : r.evaluations != null ? 'none' : '-'}</td>
-            <td className="wrap-words run-experiment" title={r.experiment}>{breakAt(experimentName(r.experiment))}</td>
-            <td>{r.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>
-            <td>{RESUME[r.resumability] ?? '-'}</td>
-            <td><button className="notes-link" aria-expanded={open === r.run_dir} onClick={() => toggle(r.run_dir)}>{open === r.run_dir ? 'Hide details' : 'Details'}</button></td>
-          </tr>
+        {/* RunRow draws a run's row; its Details stay here, outside the memo, drawn with the window as before (branch record SIF-122) */}
+        <tbody>{shown.map(r => <Fragment key={r.run_dir}>
+          <RunRow r={r} active={r.run_dir === runDir} checked={selected.includes(r.run_dir)} isOpen={open === r.run_dir}
+            folderLabel={folders.folder === 'all' ? (folders.data.folders[folders.of(r.run_dir)] ?? '') : ''} disabled={folders.busy || !folders.ready} byDir={byDir} act={rowAct} />
           {open === r.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
             <RunDetails row={r} info={info?.dir === r.run_dir ? info?.value : null} error={info?.dir === r.run_dir ? info?.error : undefined} onCopy={copyPath} copied={copied}
               actions={actions(r)} relations={<Relationships row={r} info={info?.dir === r.run_dir ? info?.value : null} runs={runs} byDir={byDir} tasks={tasks} from={popup} onFocus={focusRun} />} /></td></tr>}
-        </Fragment>); })}</tbody></table></div>}
+        </Fragment>)}</tbody></table></div>}
       {runs.length > 0 && shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No run matches the filter in this folder.' : 'This folder is empty. Select runs in All runs, then use Move to…'}</p>}
       </div></div>
     </div>

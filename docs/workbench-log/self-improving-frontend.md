@@ -5080,3 +5080,23 @@ runs (58; the three reward_v2/v21 ones are never run here), one lane, after the 
 `training_data_check` 120, `crash_panel_check` 11, `edit_state_check` 28, `callouts_check` 8, `circuit_layout_check` 4,
 `network_inputs_check` 9, `request_lifecycle_check` 25, `editor_renames_check` 8, `graph_paint_check` 6,
 `table_view_check` 10, `unit_text_check` 14.
+
+### Merged into workbench and live again (2026-10-24; the user: "merge it into workbench and make it live")
+
+**Merge.** SIF-104..129 at 190d303 (full browser suite 58 scripts, 2,911 checks passed) with workbench at eb7425b: records
+and thesis of 10-22..10-23 and record 7.389 (the final save skipped when a run never prepared), which its session committed on
+the user's word after asking this branch to hold git writes in the shared tree for a few minutes. This branch's worktree was
+busy with SIF-130/131, so the merge was built without a worktree: a private index (`git read-tree -m` of the base b57d1fd,
+190d303 and eb7425b); the two files both sides changed, docs/workbench.md and docs/functionality-reference.md, merged line by
+line with `git merge-file` (no conflict; each side's changed lines checked present); `write-tree`, `commit-tree`: 7d78d3a.
+Against 190d303 it adds exactly workbench's files, against workbench exactly this branch's 75. workbench was fast-forwarded to
+it in the shared tree (clean at that moment). 0d5ae76 merges 7d78d3a back into this branch after SIF-130/131. Not pushed
+(workbench).
+
+**Live.** Page: the 190d303 build (its frontend is 7d78d3a's: workbench changed no frontend file) - index-BWcjvxn2.js,
+index-BHqElxol.css - beside the old assets, index.html last. Server: restarted for SIF-111's backend words and 7.389 - pid
+656409 since 15:21:56, the same 13 environment variables; the branch's preview on 5174 had been stopped first, and Windows
+reached the new server at once. A read-only live check: no console errors, no refused writes. Then, after the full browser
+suite on 0d5ae76 (58 scripts, 2,923 checks passed), the page of SIF-130/131 - index-Cy1uZffg.js, index-C80G9LnF.css - at
+16:10 (frontend only, no restart). docs/frontend_implementation_status.md now has this log's pointer row (owed since
+2026-10-22, when another session was editing that file).

@@ -2363,8 +2363,9 @@ away and changes nothing. Nothing is applied by itself.
 - **Stopped among the random designs** (Abort): proposes from the completed designs if at least 16 gave a reward.
   Calibration does not record or replace the task's starting-design reference.
 - **What is not proposed, and said in the table instead:**
-  - a row fewer than 8 random designs miss (or fewer than one in eight): too few to name a typical miss (a window
-    whose Scale is wider than half of it is proposed half its width instead, below);
+  - a row fewer than 8 random designs miss (or fewer than one in eight): too few for their typical miss to set the Scale
+    (the table still shows that miss beside the note; a window whose Scale is wider than half of it is proposed half its
+    width instead, below);
   - the row that carries the objective: its Scale also measures the objective bonus, so it is left as it is (in the
     test it made no measurable difference whether that row was calibrated too);
   - any Scale while the reward uses the capped shape: a typical miss at 1 would sit on the cap. The calibration is

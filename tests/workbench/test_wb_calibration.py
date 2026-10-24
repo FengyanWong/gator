@@ -123,7 +123,7 @@ def test_a_window_most_designs_are_inside_gets_at_most_half_its_width(tmp_path):
     # few designs miss it and the Scale is wider than half the window: half the window, said with what the Scale in use does
     few = vout(empty, [1.52] * 2 + [1.2] * 30)
     assert few['proposed_scale'] == 0.02 and few['limited'] == 'window' and few['misses'] == 2
-    assert few['note'].startswith('2 of 32 random designs miss this row: too few to name a typical miss. Half the window is proposed: with the Scale in use (1.22 V)')
+    assert few['note'].startswith('2 of 32 random designs miss this row: too few for their typical miss to set the Scale. Half the window is proposed: with the Scale in use (1.22 V)')
     assert 'counts as 0.016 of a Scale away from its limits' in few['note']
     # ... but a Scale already inside half the window stays, and so does the row that carries the objective
     typed = vout(window_rows(tmp_path, scale=0.01), [1.52] * 2 + [1.2] * 30)
@@ -134,7 +134,7 @@ def test_a_window_most_designs_are_inside_gets_at_most_half_its_width(tmp_path):
     config = window_rows(tmp_path)
     rows_ = calibration.calibrate(config, *recorded(config, dict(vout_v=[1.52] * 16 + [1.2] * 16, gain_db=[40.0] * 2 + [60.0] * 30, power_w=[100e-6] * 32)))['rows']
     gain = next(row for row in rows_ if row['metric_id'] == 'gain_db')
-    assert gain['proposed_scale'] is None and gain['note'] == '2 of 32 random designs miss this row: too few to name a typical miss. Its Scale stays as it is.'
+    assert gain['proposed_scale'] is None and gain['note'] == '2 of 32 random designs miss this row: too few for their typical miss to set the Scale. Its Scale stays as it is.'
 
 
 def test_the_initial_alpha_is_proposed_only_when_it_differs_by_a_factor_of_two(tmp_path):

@@ -47,6 +47,15 @@ await runChecks(browser, async () => {
     return ${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].children[at].querySelector('input, select'); })()`;
   const stored = page.savedConfig;
   const cells = () => evaluate(`[...(${BLOCK}?.querySelectorAll('table tbody tr') ?? [])].map(tr => [...tr.children].map(td => td.textContent.trim()))`);
+  // Branch record SIF-136: with the Calibration ready line open the header wrapped its first row - the Next line, Start and Abort
+  // went to a second one at the left, Save now stayed at the right end. The title block, Save now, the Next line, Start and
+  // Abort: one vertical centre, above the line when it is open.
+  const oneRow = async () => {
+    const row = await evaluate(`(() => { const mid = s => { const r = document.querySelector(s)?.getBoundingClientRect(); return r ? Math.round(r.top + r.height / 2) : null; };
+      return { at: ['header .title-block', 'header button.run-save', 'header span.next-run', 'header button.run-main', 'header button.run-abort'].map(mid),
+        line: ${READY} ? Math.round(${READY}.getBoundingClientRect().top) : null }; })()`);
+    return { ...row, ok: row.at.every(y => y !== null && Math.abs(y - row.at[0]) <= 2 && (row.line === null || y < row.line)) };
+  };
 
   await page.trackSaves();
   await page.seed({ config: CONFIG, when: 'once' });
@@ -59,6 +68,8 @@ await runChecks(browser, async () => {
   const title = await evaluate(`${BASELINE}.title`);
   check('its tooltip says random designs only and that nothing changes by itself',
     /64 random designs over the Parameters ranges/.test(title) && /nothing changes by itself/.test(title) && /No starting-design baseline/.test(title), title);
+  const row0 = await oneRow();
+  check('the title block, Save now, the Next line, Start and Abort share one row (SIF-136)', row0.ok && row0.line === null, JSON.stringify(row0));
   await page.shot(path.join(out, 'calibration-0-header.png'), `document.querySelector('header')`, { pad: 4 });
 
   // ---- the run: the baseline, then 64 random designs ------------------------------------------------------------------------
@@ -80,6 +91,8 @@ await runChecks(browser, async () => {
   check('when the run has ended, a line under the header says the calibration is ready, with the values and both buttons', await until(`!!(${READY})`, 100)
     && (await evaluate(`${READY}.querySelector('span').textContent`)).startsWith(`Calibration ready for synthetic:gpdk045_ota5: score ${scale} \u00b7 Initial alpha ${alpha}. Proposed from 64 random designs; nothing has changed yet.`)
     && await evaluate(`!!(${readyButton('Apply calibration')}) && !!(${readyButton('Not now')})`), await evaluate(`${READY}?.textContent`));
+  const rowB = await oneRow();
+  check('...and above it the title block, Save now, the Next line, Start and Abort keep one row (SIF-136: three went to a second row)', rowB.ok && rowB.line !== null, JSON.stringify(rowB));
   await page.shot(path.join(out, 'calibration-0b-ready-line.png'), `document.querySelector('header')`, { pad: 4 });
   await evaluate(`${readyButton('Not now')}.click()`);
   check('"Not now" closes the line, changes nothing and says where the proposals stay', await until(`!(${READY})`, 30)
@@ -158,6 +171,8 @@ await runChecks(browser, async () => {
   await evaluate(`localStorage.setItem('gator-workbench-shown-run-v1', ${JSON.stringify(JSON.stringify({ run: dir, header: dir2 }))})`);
   await send('Page.reload');
   check('...with the tabs on another run it offers it too', await until(`!!(${SHOW})`, 200) && (await evaluate(SHOWN)) === dir, await evaluate(SHOWN));
+  const rowC = await oneRow();
+  check('...the header\'s first row whole above the line with Show table (SIF-136)', rowC.ok && rowC.line !== null, JSON.stringify(rowC));
   await page.shot(path.join(out, 'calibration-0c-show-table.png'), `document.querySelector('header')`, { pad: 4 });
   await evaluate(`${SHOW}.click()`);
   check('...and the press shows this run\'s table', await until(`${SHOWN} === ${JSON.stringify(dir2)} && ${ACTIVE} === 'Run status' && !!(${APPLY}) && !${APPLY}.disabled && !(${SHOW})`, 60),
@@ -221,6 +236,8 @@ await runChecks(browser, async () => {
   check('...the close mark: an X without a frame or fill, "Close" for screen readers and at the start of its tooltip (SIF-112)', close.icon && close.text === 'Close'
     && close.label === 'Close' && close.title === "Close: This line goes. The run's numbers stay under Run status." && close.border === 'none' && close.fill === 'rgba(0, 0, 0, 0)',
     JSON.stringify(close));
+  const rowD = await oneRow();
+  check('...and the header\'s first row whole above it (SIF-136)', rowD.ok && rowD.line !== null, JSON.stringify(rowD));
   await page.shot(path.join(out, 'calibration-0d-nothing-proposed.png'), `document.querySelector('header')`, { pad: 4 });
   const [held, said] = [JSON.stringify(await stored()), await evaluate(BANNER)];
   await evaluate(`${CLOSE}.click()`);

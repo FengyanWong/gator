@@ -165,6 +165,14 @@ await runChecks(browser, async () => {
     JSON.stringify(banner.states) === '["Ready","Running","Paused","Ended"]' && JSON.stringify(banner.lit) === '["Ended"]' && banner.said === 'Run state: ended', JSON.stringify(banner));
   check('...and Start round and white, Abort round and red (red Abort: the user\'s request of 2026-09-21)',
     banner.main?.[0] === '50%' && banner.main[1] === 'rgb(244, 244, 245)' && banner.abort?.[0] === '50%' && banner.abort[1] === 'rgb(208, 16, 44)', JSON.stringify([banner.main, banner.abort]));
+  // Branch record SIF-136: with no connection the pill read "none s..." - its subject for screen readers only, no state word.
+  const pill = await evaluate(`(() => { const b = document.querySelector('header button.connection-button'), w = b.querySelector('.connection-button-what'), g = b.querySelector('.badge');
+    const r = b.getBoundingClientRect(), q = g?.getBoundingClientRect();
+    return { text: b.innerText.replace(/\\s+/g, ' ').trim(), whole: w.scrollWidth <= w.clientWidth, badge: g?.textContent ?? null, inside: !!q && q.left >= r.left && q.right <= r.right - 13.5,
+      named: b.querySelectorAll('.connection-button-name').length, title: g?.title ?? null }; })()`);
+  check('...with no connection the pill reads "Connection" and its state "not set up", both whole at 1680 px, the word said once (SIF-136: "none s...")',
+    pill.text === 'Connection not set up' && pill.whole && pill.badge === 'not set up' && pill.inside && pill.named === 0
+    && (pill.title ?? '').startsWith('No connection is set up yet: press to add one.'), JSON.stringify(pill));
   // Record 7.372: the banner's facts leave the revision to the tab line's task chip; under 1400 px only the state that holds shows.
   check('the banner\'s facts name the class, the PDK and the RL model - not the revision, which the tab line\'s task chip says',
     await evaluate(`(() => { const d = document.querySelector('header .tb-details'); return !!d && !d.querySelector('.tb-rev') && !/revision/.test(d.textContent); })()`));
@@ -214,12 +222,17 @@ await runChecks(browser, async () => {
         return { sliced: box.right > t.parentElement.getBoundingClientRect().right + 0.5, cut: box.width < whole - 0.005, lost: +(whole - box.width).toFixed(3),
           facts: Math.round(d.getBoundingClientRect().width) }; };
       const mine = look(); t.textContent = 'FIXTURE a task whose name is far longer than the header can hold'; const long = look(); t.textContent = own;
-      return { width: ${width}, mine, long, dots: getComputedStyle(t).textOverflow }; })()`));
+      const b = document.querySelector('header button.connection-button'), g = b.querySelector('.badge'), r = b.getBoundingClientRect(), q = g?.getBoundingClientRect();
+      const pill = { badge: g?.textContent ?? null, inside: !!q && q.left >= r.left && q.right <= r.right - 13.5, clear: r.right <= document.querySelector('header .run-state').getBoundingClientRect().left + 0.5 };
+      return { width: ${width}, mine, long, dots: getComputedStyle(t).textOverflow, pill }; })()`));
   }
   check('the header\'s task name is never cut through a letter by the box around it, at 1210 to 1366 px with a run in the header',
     names.every(n => !n.mine.sliced && !n.long.sliced), JSON.stringify(names));
   check('...a name too long for the header ends in "...", and only once the grey facts beside it have given way',
     names.some(n => n.long.cut) && names.every(n => n.dots === 'ellipsis' && (!n.long.cut || n.long.facts === 0) && (!n.mine.cut || n.mine.facts === 0)), JSON.stringify(names));
+  // Branch record SIF-136: the pill with no connection keeps its state word whole inside it, never over the run's state
+  check('...and the connection pill keeps its state "not set up" whole inside it, clear of the run\'s state, at 1210 to 1366 px (SIF-136)',
+    names.every(n => n.pill.badge === 'not set up' && n.pill.inside && n.pill.clear), JSON.stringify(names.map(n => ({ width: n.width, ...n.pill }))));
   await page.viewport(1680, 1050); await sleep(400);
   check('Output settings starts folded on a fresh browser (record 7.360, user: "by default make output settings collapsible and collapsed")',
     await evaluate(`(() => { const d = [...document.querySelectorAll('.right details.module')].find(x => x.querySelector(':scope > summary h3')?.textContent === 'Output settings'); return !!d && !d.open; })()`));

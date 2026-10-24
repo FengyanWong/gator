@@ -166,15 +166,23 @@ export function ConnectionButton({ profileId, setProfileId }: { profileId: strin
     setDraft((d: Json) => ({ ...d, name: '', bridge_profile: '' }));
   });
 
+  // No connection (branch record SIF-136): the pill reads "Connection" and, where a connection's state stands, why there is
+  // none - "not set up" (the connection file has none) or "none chosen" (this configuration names none). It read "none set up
+  // yet" or "none selected" with the word "Connection" for screen readers only, and the header cut that to "none s...". The
+  // word stands in for the hidden name (a screen reader would hear it twice); the state word never gives way (roadster.css).
+  const none = profileId ? null : profiles && profiles.profiles.length === 0 ? 'not set up' : 'none chosen';
   const launcher = (
     <section className="panel connection-launcher">
       <button className="connection-button" onClick={openWindow}
         title={popup ? 'The connection window is open: press to bring it to the front.' : 'Opens the connection window: choose or add a connection (Virtuoso or ngspice, on this machine or over SSH), connect and test it. Opening it checks nothing.'}>
-        <span className="connection-button-name">Connection</span>
-        <span className="connection-button-what">{profileId ? `${pinned ? `${profileId} (${pinnedLabel} only)` : group?.profile_id ?? profileId}${entry?.kind_label ? ` - ${entry.kind_label}` : ''}${multipleSessions && !pinned ? ` (${sessions.length} sessions)` : ''}` : profiles && profiles.profiles.length === 0 ? 'none set up yet' : 'none selected'}{popup ? ' (window open)' : ''}</span>
-        {profileId && (mine !== null
+        {!none && <span className="connection-button-name">Connection</span>}
+        <span className={`connection-button-what${none ? ' bare' : ''}`}>{none ? 'Connection' : `${pinned ? `${profileId} (${pinnedLabel} only)` : group?.profile_id ?? profileId}${entry?.kind_label ? ` - ${entry.kind_label}` : ''}${multipleSessions && !pinned ? ` (${sessions.length} sessions)` : ''}`}{popup ? ' (window open)' : ''}</span>
+        {none ? <span className="badge state-unknown" title={none === 'not set up'
+            ? 'No connection is set up yet: press to add one. Manual editing, JSON import/export, data export and mock runs work without one.'
+            : 'This configuration names no connection: press to choose or add one. Manual editing, JSON import/export, data export and mock runs work without one.'}>{none}</span>
+          : mine !== null
           ? <span className="badge state-not_checked" title="The connection is being tested">testing...</span>
-          : <span className={`badge state-${overall}`} title={multipleSessions && !pinned ? 'Sessions that passed their last test: runs go to whichever session is free. Each session is in Connection.' : status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{overallText}</span>)}
+          : <span className={`badge state-${overall}`} title={multipleSessions && !pinned ? 'Sessions that passed their last test: runs go to whichever session is free. Each session is in Connection.' : status?.checked_utc ? `Last test: ${testedAt(status.checked_utc)}` : 'Never tested'}>{overallText}</span>}
       </button>
       {blocked && <Blocked />}
       {/* The note floats over the row under the header (record 7.182), so a click closes it: it stayed until a later action

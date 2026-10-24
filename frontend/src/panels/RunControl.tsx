@@ -243,7 +243,9 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
   const main = phase === 'idle' ? onStart : phase === 'running' ? pause : phase === 'paused' ? onResume : undefined;
   const why = phase === 'idle' ? startBlocked : phase === 'paused' ? resumeBlocked : null;
   const startable = phase === 'idle' || phase === 'checking';           // the main button reads Start
-  return (<>
+  // One group in the header (branch record SIF-136): as four of its parts they wrapped apart, and with Calibration ready open
+  // at 1680 px Abort stood alone on a second row, under the GATOR chip. The header now wraps them as one.
+  return (<span className="run-buttons">
     <button className="run-save" disabled={phase !== 'running' || !!saving} onClick={saveNow}
       title={phase === 'running' ? 'Save now: The model is saved now, without pausing: the simulation in flight finishes first (with several in parallel, all of them), the model is written as a new save point, '
         + 'and the run goes on by itself. The save point appears in the saved model\'s Details in the RL model window, where it can be used.'
@@ -258,5 +260,5 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
         : waiting ? 'Force abort: Do not wait for the simulation in flight. Only for a run that is stuck.'
         : 'Abort: End the current run: the simulation in flight finishes, everything is saved, the run ends.'}>
       <Icon name={waiting ? 'force-stop' : phase === 'paused' ? 'close' : 'stop'} label={waiting ? 'Force abort' : phase === 'paused' ? 'Let go' : 'Abort'} /></button>
-  </>);
+  </span>);
 }

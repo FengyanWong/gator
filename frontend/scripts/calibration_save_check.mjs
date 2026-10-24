@@ -126,6 +126,13 @@ await runChecks(browser, async () => {
   check('the tooltip says what the press does: Apply, then the save - the cell is written, nothing is simulated',
     saveTitle.startsWith('Apply and save: Writes the Scale of 1 Specs row into the page, as one Undo step, then saves the task:') && /the cell in Virtuoso is written to match and read back/.test(saveTitle)
     && /no simulation/.test(saveTitle) && /A change of Scale alone keeps the recorded baseline/.test(saveTitle), saveTitle);
+  // Branch record SIF-136: with the line open the header wrapped its first row, and Abort stood alone on a second one under
+  // the GATOR chip. The title block, Save now, the Next line, Start and Abort keep one row (one vertical centre) above the line.
+  const row = await evaluate(`(() => { const mid = s => { const r = document.querySelector(s)?.getBoundingClientRect(); return r ? Math.round(r.top + r.height / 2) : null; };
+    return { at: ['header .title-block', 'header button.run-save', 'header span.next-run', 'header button.run-main', 'header button.run-abort'].map(mid),
+      line: Math.round(${READY}.getBoundingClientRect().top) }; })()`);
+  check('...and the header keeps one first row above it: the title block, Save now, the Next line, Start and Abort (SIF-136: Abort alone on a second row)',
+    row.at.every(y => y !== null && Math.abs(y - row.at[0]) <= 2 && y < row.line), JSON.stringify(row));
   await page.shot(path.join(out, 'calibration-save-0-line.png'), `document.querySelector('header')`, { pad: 4 });
 
   // ---- the block in Run status --------------------------------------------------------------------------------------------------

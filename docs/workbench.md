@@ -290,7 +290,14 @@ switch are gone; every panel, button and field stands where it stood.
   windows are open, a button with their count (record 7.372); then "Configuration
   valid", Calibration, Save now, the "Next:" line and Start (white) and Abort (red), both round. From 1201 px the banner keeps
   one line - the task's facts and the connection's description give way with "..." first, then the task's name (branch
-  record SIF-66: it was cut through a letter) - and a narrower window wraps it.
+  record SIF-66: it was cut through a letter) - and a narrower window wraps it. Save now, the "Next:" line, Start and Abort
+  wrap as one group, and while a full-width line is open under the banner (blocking issues, a refusal, a settings problem,
+  Calibration ready) its first row stays as on one line, the title block's facts giving way first (branch record SIF-136:
+  with Calibration ready open at 1680 px, Abort stood alone on a second row under the chip). With no connection the pill
+  reads "Connection" and, where a connection's state stands, "not set up" (the connection file has none) or "none chosen"
+  (the configuration names none), a word that never gives way; from 1201 px the pill and the task's facts share the room
+  beside the chip equally, so the grey facts give way first, then the task's name and the word "Connection" together
+  (SIF-136: it read "none set up yet" or "none selected", cut to "none s...", its subject for screen readers only).
 - Tabs: the chosen tab of every strip is white with a short red bar under its name; the three editors' tabs are one
   segmented control. An editor is told by its tab, not by a colour (the per-editor colours and layer swatches went).
 - Output settings starts folded (user: "by default make output settings collapsible and collapsed so I can see training
@@ -1469,7 +1476,11 @@ Closing the window loses nothing, and the button opens it again. Since record 7.
 header's title block (user: "move the conection button to the header"), in view whatever the columns show; the left
 column has none. A line in another window that sends you here - the Virtuoso window without a connection or with the
 link down, the connection's item of "What's missing?" - carries **Connection...**, which opens this same window from
-the window it was pressed in (branch record SIF-108, `openAt.ts` `openConnection`); it checks nothing either.
+the window it was pressed in (branch record SIF-108, `openAt.ts` `openConnection`); it checks nothing either. With no
+connection the button reads "Connection" and, where a connection's state stands, "not set up" (the connection file has
+none) or "none chosen" (the configuration names none), its tooltip saying what works without one (branch record SIF-136;
+it read "none set up yet" or "none selected", the word "Connection" for screen readers only, and the header cut it to
+"none s...").
 
 A profile now says WHAT it connects to and HOW, with `"kind"`:
 
@@ -3003,7 +3014,8 @@ number is unchanged. Each new list starts fresh, so removed or renamed models le
 experiments" panel below them already did). Both start open; the choice is kept in this browser. A folded module is
 only put out of view, not switched off: its settings stay in force and keep working. Its line says the main values
 (Mode, evaluation budget and network; experiment name and the end of the output root), and carries a mark - "warning
-inside" or "error inside" - while something in it asks for attention, also when that appears while it is folded.
+inside" or "error inside" - while something in it asks for attention, also when that appears while it is folded. A budget
+of 1 reads "1 evaluation" there and on the header's Next line (branch record SIF-136: "1 evaluations").
 Browser check: `frontend/scripts/module_fold_check.mjs` (fixtures only; safe against the live backend).
 
 ### Choosing which saved model to load (added 2026-09-21, user request; a table since 2026-10-07, record 7.265)

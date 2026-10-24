@@ -133,6 +133,10 @@ await runChecks(browser, async () => {
   await clickHeading(RUN);
   run = await state(RUN);
   check('folded, the line carries the mark "warning inside"', !run.open && run.attention === 'warning inside' && /\bwarn\b/.test(run.kind), JSON.stringify(run));
+  // Branch record SIF-136: the folded line and the header's Next line read "1 evaluations"
+  const nextLine = await evaluate(`document.querySelector('header span.next-run')?.textContent ?? null`);
+  check('... and it counts the budget of 1 as "1 evaluation", as the header\'s Next line does (SIF-136)',
+    (run.line ?? '').startsWith('New model - 1 evaluation - ') && / · 1 evaluation$/.test(nextLine ?? ''), JSON.stringify([run.line, nextLine]));
   const amber = await evaluate(`getComputedStyle(${fold(RUN)}.querySelector('.module-attention')).backgroundColor`);
   await shot('fold-2-run-folded-warning.png');
   await clickHeading(RUN); await type(BUDGET_BOX, String(BUDGET)); await until(`!${RUN}.querySelector('.module-body p.warn')`, 30); await clickHeading(RUN);

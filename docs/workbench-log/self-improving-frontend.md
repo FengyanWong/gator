@@ -5483,3 +5483,99 @@ time: `dom_identity_check` 56, `testbench_probes_check` 43, `spec_equations_chec
 `editor_columns_check` 45, `looks_check` 81, `unsaved_rows_check` 28, `formula_bar_check` 21, `matched_devices_check`
 37, `crash_panel_check` 11, `edit_state_check` 28; and `blocking_issues_check` 65 again once its new picture showed the
 table. In all 16 scripts, 797 checks; no flakes.
+
+### SIF-136 The header keeps Start and Abort on its first row, the connection pill says what is missing, and a budget of 1 reads "1 evaluation" (2026-10-24; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found the header's run buttons broken
+apart, a connection pill with nothing readable left in it, and "1 evaluations". With Calibration ready open at 1680 px
+the header's first row ended with the Next line and Start, and Abort stood alone on a second row under the GATOR chip,
+above the line (S12-7, `calibration-save-0-line.png`); in `calibration-0b`, `0c` and `0d` the Next line, Start and Abort
+dropped to a second row at the left while Save now stayed at the right end of the first. roadster.css lets the header
+wrap while a full-width line is open under it (blocking issues, a refusal, a settings problem, Calibration ready), and
+its items then broke into rows at their full widths before the task's facts gave way: the title block at its full width
+pushed the last ones down. RunButtons returned a fragment, so Save now, the Next line, Start and Abort were four items
+of the header, free to part; at 640 px Save now ended one row and the Next line, Start and Abort began the next.
+Calibration ready always comes with a held calibration run, so at 1680 px this happened at every calibration's end. With
+no connection the pill's only words were "none set up yet" or "none selected" - the word "Connection" for screen readers
+only, and no state word - and the header cut them to "none s..." at 1680 px (S12-17, `looks-roadster.png`) and to "none
+set u..." at 1366 px (S12-27, `matched_devices_1366_folded.png`). And with a budget of 1 the folded Run configuration
+line read "New model - 1 evaluations - Graph Transformer 4..." (S12-23, `fold-2-run-folded-warning.png`): `foldedText`
+and the header's Next line wrote "evaluations" after any count, and the schema allows a budget of 1.
+
+**Changed.** `frontend/src/panels/RunControl.tsx`: RunButtons draws Save now, the Next line, Start (Pause, Resume) and
+Abort (Force abort, Let go) in one `span.run-buttons` - the same buttons, with the same handlers and the same questions.
+`frontend/src/roadster.css`: the group is a row of its own, its parts 14 px apart as the header's items are, its buttons
+never shrink, and in it only the Next line gives way, as it did beside them (to its longest word, 130 px here, where it
+went to 120 px and cut that word); the header wraps the group whole, so Start and Abort are never apart. The Next line
+is at most its basis, 200 px (220 before): the group is as wide as its parts can be, and the other 20 px stood empty at
+its end. From 1201 px, while a full-width line is open, the title block and the group grow from no width, each up to its
+own, the title block by four shares to the group's one, and the room left goes to the spacer's auto margin: the first
+row stands as on one line. A probe (a throwaway check, not kept) measured the header at 1210 to 1680 px with and without
+a line open, a connection and a run: the title block and the group were as wide with a line open as without one (522,
+407 and 251 px of title block at 1680, 1366 and 1210 px with a run held and no connection), all on the first row. Two
+changes from the plan. Its `flex: 1 1 0` on the title block alone left the spacer growing beside it, and the two split
+the room: at 1680 px the title block had 226 px, "synthetic:gpdk045_ota5" cut to 79 px, beside 226 px of nothing. And
+its group at `flex: none` held the Next line at 200 px on the one-line banner too, where it gave way to 120 px before;
+with the title block's zero basis alone, the group never gave way while a line was open, and the title block had 182 px
+at 1210 px against 251 px on one line. `frontend/src/panels/Connection.tsx`: with no connection the pill reads
+"Connection" (the hidden name left out, so that a screen reader hears it once) and, where a connection's state stands,
+"not set up" (the connection file has none) or "none chosen" (the configuration names none), in the muted colour of a
+state not known, its tooltip saying what to press and what works without one. With a connection nothing changes.
+`roadster.css`: the state word never gives way, as a connection's state never does (record 7.361); from 1201 px the
+task's facts and the pill share the room beside the chip equally, each from no width up to its own, so the grey facts
+give way first, then the task's name and the word "Connection" together, with "..."; and the pill keeps 108 px, the room
+of its longer state word ("none chosen", 70.5 px, with the gap and the padding). A change from the plan: its `flex:
+none` on the word alone let the pill shrink under its words - at 1680 px the pill was 91 px wide, its 160 px of words
+running past its end -, and a pill held at its full width took the task's name to 4 px at 1440 px and put the pill over
+the run's state at 1210 px. In the probe, with a run held: at 1680 px "Connection not set up" whole beside the whole
+task name; at 1366 px "Conne... not set up" beside "synthetic:gpdk0..." (145 px each); at 1440 and 1210 px "not set up"
+beside what is left of the name; without a run, at 1210 to 1680 px, the pill whole. `frontend/src/panels/rlModelText.ts`
+(`foldedText`) and `frontend/src/launch.ts` (the Next line): the budget through `plural`, "1 evaluation". Only where the
+header's parts stand, and words: nothing is read, saved or run that was not, every question is asked as before, and
+nothing starts, continues or stops a run, saves a task or writes to Virtuoso. `docs/workbench.md` (the banner in The
+page's look and layout; "Connection": one button...; Folding the right column's modules) and
+`docs/functionality-reference.md` (the Title block, Start → Pause → Resume, One button, a window, four kinds and Folding
+the module rows) say it. Seen, not changed: with a connection, at 1210 to 1440 px with a run held, the pill is narrower
+than its state word, which runs past its end over the run's state ("unknown" over "Ready"), as before this record - the
+plan leaves the connected pill as it is. And more counts are written "evaluations" after any number: the model line's
+"save point N evaluations" (rlModelText.ts), the Continue... form's "All N evaluations are used" and "N evaluations are
+used already" (launch.ts), the Runs window's load message (runWindowActions.ts), the RL model window's newer save point
+(ModelChooser.tsx), the run brief's progress tooltip (RunBrief.tsx) and Run status's "saved at N evaluations"
+(RunTabs.tsx).
+
+**Checked.** `tsc` clean. `calibration_save_check` 23 (22 before), new: with Calibration ready open at 1680 px the title
+block, Save now, the Next line, Start and Abort have one vertical centre, above the line. `calibration_check` 52 (48):
+the same in its four header pictures - before the run, Calibration ready, Show table, nothing proposed.
+`blocking_issues_check` 66 (65): with the list open, the title block, the issues button, Save now, the Next line, Start
+and Abort on one row above it. `reliability_check` 22 (20): at 960 and 640 px Save now, the Next line, Start and Abort
+on one row, inside the window. `looks_check` 83 (81): with no connection the pill reads "Connection not set up" at 1680
+px, the word whole and said once, the state inside the pill with its tooltip; at 1210 to 1366 px the state word whole
+inside the pill, clear of the run's state. `matched_devices_check` 38 (37): "Connection" and "not set up" whole at 1366
+px. `run_control_check` 172 (171): after a pause for connection failures, the button its line names reads "Connection
+not set up" in full. `module_fold_check` 31 (30): a budget of 1 reads "1 evaluation" on the folded line and on the
+header's Next line. `testbench_probes_check` and `virtuoso_source_check` wait for the pill to name a connection - not
+"Connection" with "not set up" or "none chosen" - instead of stripping its old empty words. A probe run of the new
+checks on the five sources as at HEAD (put back by their checksums) failed 10 of the 13 new checks: 3 of
+`calibration_check` (0b, 0c, 0d), 2 of `looks_check`, and 1 each of `calibration_save_check`, `reliability_check` (640
+px), `module_fold_check`, `matched_devices_check` and `run_control_check`; the header before the run, the issue list's
+header at 1680 px and the 960 px header held before too. One lane, after the memory guard, on a build of this tree: the
+ten scripts above first, all passed but one check of `run_control_check` (below); then every script the runner runs (58;
+the three reward_v2/v21 ones are never run here), all passed the first time but two: `calibration_check` 52,
+`export_check` 37, `run_control_live_check` 23, `training_tab_check` 139, `dom_identity_check` 56,
+`connection_panel_check` 101, `virtuoso_source_check` 123, `run_list_check` 177, `task_save_check` 93,
+`testbench_probes_check` 43, `spec_equations_check` 88, `model_chooser_check` 139, `output_panel_check` 98,
+`task_rows_check` 57, `typing_check` 62, `find_fill_copy_check` 50, `sheet_check` 63, `project_help_check` 62,
+`files_tab_check` 43, `working_copy_check` 35, `launch_recovery_check` 20, `blocking_issues_check` 66,
+`corner_check_check` 42, `task_list_check` 105, `editor_columns_check` 45, `looks_check` 83, `network_panel_check` 74,
+`ngspice_window_check` 43, `unsaved_rows_check` 28, `calibration_save_check` 23, `save_now_check` 29, `pdk_check` 46,
+`reliability_check` 22, `room_check` 31, `graph_view_check` 69, `module_fold_check` 31, `reward_block_check` 34,
+`circuit_source_check` 17, `encoder_models_check` 24, `formula_bar_check` 21, `matched_devices_check` 38,
+`model_structure_check` 33, `mode_suggestion_check` 20, `agent_window_check` 33, `consistency_check` 14,
+`training_data_check` 124, `crash_panel_check` 11, `edit_state_check` 28, `callouts_check` 8, `network_inputs_check` 9,
+`request_lifecycle_check` 25, `circuit_layout_check` 4, `editor_renames_check` 8, `graph_paint_check` 6,
+`table_view_check` 10, `unit_text_check` 14. `run_control_check` failed 1 of 172 in both runs - "... the focus goes to
+the Run status tab, since Continue... is off while the run goes on (SIF-90)", the focus on the page's body: Run status's
+Continue... form, which this record does not touch, gives the focus back a frame after it closes, a race with the status
+read that turns Continue... off, as in SIF-132's full run - and passed all 172 run alone, twice: a flake.
+`task_run_check` stopped after 10 of its 39 checks when the Runs window's DevTools session closed under it, and passed
+all 39 run alone: a flake. In all 58 scripts, 2,990 checks: the 2,977 of SIF-135 and its follow-up, and the 13 new ones.

@@ -310,12 +310,12 @@ export function useLaunchActions({ control, meta, config, setConfig, configKey, 
   // task as the title beside it names it (branch record SIF-71: a renamed task by its new name; it was the key without
   // "real:" for every task, the old name of a renamed one); the key without "real:" until the circuit panel has said. A
   // Virtuoso cell is library/cell (the title names it so too, as not saved - branch record SIF-88). The budget as the header's
-  // run chip counts it (branch record SIF-117).
+  // run chip counts it (branch record SIF-117), a budget of 1 as "1 evaluation" (branch record SIF-136).
   const [nextModel, setNextModel] = useState<NextModel | null>(null);
   const nextTask: string | null = config.circuit?.source === 'registered_task'
     ? (config.circuit.task_id ? (taskShown ?? String(config.circuit.task_id).replace(/^real:/, '')) : null)
     : config.circuit?.cell ? `${config.circuit.library}/${config.circuit.cell}` : null;
-  const nextLine = nextModel ? `Next: ${nextTask ?? 'no task chosen'} · ${nextModel.model} · ${nextModel.network} · ${count(config.run.max_evaluations)} evaluations` : null;
+  const nextLine = nextModel ? `Next: ${nextTask ?? 'no task chosen'} · ${nextModel.model} · ${nextModel.network} · ${plural(config.run.max_evaluations, 'evaluation')}` : null;
   const resumeBlocked = control.phase === 'paused'
     ? continueReadiness({ status: control.status, check: heldCheck, phase: control.phase, held: true, total: 'unchanged' }) : null;
   const continueBlocked = continueReadiness({ status, check: shownCheck, phase: control.phase, held: control.dir === runDir, total: 'form' });

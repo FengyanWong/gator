@@ -241,8 +241,10 @@ await runChecks(browser, async () => {
   await page.seed({ config: MOCK_PAGE_CONFIG, when: 'once' });           // on the MOCK stand-in (record 7.128)
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!${PANEL}?.querySelector('.task-row button.task-list-button')`)); i++) await sleep(100);
-  // The connection in use is named on the header's one "Connection" button (its window is not needed here).
-  for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('header button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
+  // The connection in use is named on the header's one "Connection" button (its window is not needed here); with none the
+  // button reads "Connection" and "not set up" or "none chosen" (branch record SIF-136).
+  for (let i = 0; i < 60 && !(await evaluate(`(b => { const what = b?.querySelector('.connection-button-what')?.textContent.replace(' (window open)', '') ?? '';
+    return /\\S/.test(what) && what !== 'Connection' && !['not set up', 'none chosen'].includes(b.querySelector('.badge')?.textContent); })(document.querySelector('header button.connection-button'))`)); i++) await sleep(100);
   await sleep(800);
   check('nothing is read from Virtuoso when the page opens', calls.length === 0, ops().join(' | '));
 

@@ -121,7 +121,9 @@ await runChecks(browser, async () => {
   await send('Page.navigate', { url: APP });
   for (let i = 0; i < 100 && !(await evaluate(`!!(${PANEL})`)); i++) await sleep(100);
   for (let i = 0; i < 100 && !(await evaluate(`!!${PANEL}.querySelector('button.task-list-button')`)); i++) await sleep(100);
-  for (let i = 0; i < 60 && !(await evaluate(`/\\S/.test(document.querySelector('header button.connection-button .connection-button-what')?.textContent.replace(/none (selected|set up yet)/, '') ?? '')`)); i++) await sleep(100);
+  // until the pill names the connection: with none it reads "Connection" and "not set up" or "none chosen" (branch record SIF-136)
+  for (let i = 0; i < 60 && !(await evaluate(`(b => { const what = b?.querySelector('.connection-button-what')?.textContent.replace(' (window open)', '') ?? '';
+    return /\\S/.test(what) && what !== 'Connection' && !['not set up', 'none chosen'].includes(b.querySelector('.badge')?.textContent); })(document.querySelector('header button.connection-button'))`)); i++) await sleep(100);
   await sleep(800);
 
   // ---- a registered task's rows first: the MOCK starter (its Probe m_score, its target score) -------------------------

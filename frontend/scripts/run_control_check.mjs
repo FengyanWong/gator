@@ -569,6 +569,10 @@ await runChecks(browser, async () => {
   check('... Run status says the reason in red right under the run at a glance, then Continue... with Export status (JSON) last, above the facts, in view (SIF-89)',
     head && head.hero >= 0 && head.error === head.hero + 1 && head.row === head.error + 1 && head.table > head.row && head.text === INFRA
     && head.last === 'Export status (JSON)' && head.inView && head.errorRow === INFRA, JSON.stringify(head));
+  // Branch record SIF-136: the button the line names reads "Connection" on the header, and with none its state (it read "none set u...")
+  const named = await evaluate(`(() => { const b = document.querySelector('header button.connection-button'), w = b.querySelector('.connection-button-what');
+    return { text: b.innerText.replace(/\\s+/g, ' ').trim(), whole: w.scrollWidth <= w.clientWidth }; })()`);
+  check('... and the header\'s button it names reads "Connection" and its state, "not set up", in full (SIF-136)', named.text === 'Connection not set up' && named.whole, JSON.stringify(named));
   await page.shot(path.join(out, 'run-6b-paused-by-itself.png'));                 // the whole page: the line and Run status
   sim.steps = [{}, { state: 'running', stop_reason: null, error: null }];
   await press(MAIN);

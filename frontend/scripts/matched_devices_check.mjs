@@ -183,6 +183,12 @@ await runChecks(browser, async () => {
     !!before && await until(FOLDED, 30), JSON.stringify(before));
   const folded = await evaluate(ROOM);
   check('...and the table shows its heading and whole rows (this card also has the MOCK line)', folded.headInView && folded.rows >= 2, JSON.stringify(folded));
+  // Branch record SIF-136: at 1366 px the header's pill with no connection read "none set u...", nothing said what was not set up
+  const pill = await evaluate(`(() => { const b = document.querySelector('header button.connection-button'), w = b.querySelector('.connection-button-what'), g = b.querySelector('.badge');
+    const r = b.getBoundingClientRect(), q = g?.getBoundingClientRect();
+    return { what: w.textContent, whole: w.scrollWidth <= w.clientWidth, badge: g?.textContent ?? null, inside: !!q && q.left >= r.left && q.right <= r.right - 13.5 }; })()`);
+  check('the header\'s pill reads "Connection" and its state "not set up", both whole at 1366 px (SIF-136: "none set u...")',
+    pill.what === 'Connection' && pill.whole && pill.badge === 'not set up' && pill.inside, JSON.stringify(pill));
   await page.shot(path.join(out, 'matched_devices_1366_folded.png'));
   // Opened again with the box open, the card is as small as before: 40 % of it left the table no row, its heading cut.
   await evaluate(LOGS);

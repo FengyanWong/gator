@@ -127,6 +127,12 @@ await runChecks(browser, async () => {
     return { inside: l.top >= h.top && l.bottom <= h.bottom + 1, width: l.width, headerWidth: h.width, headerHeight: h.height, mainTop: m.top, headerBottom: h.bottom, overflowX: document.documentElement.scrollWidth > window.innerWidth }; })()`);
   check('the list is a full-width second line of the header', box.inside && box.width > box.headerWidth - 40 && box.headerHeight > heightClosed + 40, JSON.stringify(box));
   check('it pushes the editors down instead of covering them', box.mainTop >= box.headerBottom && !box.overflowX, JSON.stringify(box));
+  // Branch record SIF-136: with a full-width line open the header wrapped its first row (with Calibration ready, Abort alone)
+  const firstRow = await evaluate(`(() => { const parts = ['header .title-block', 'header button.issues-button', 'header button.run-save', 'header span.next-run', 'header button.run-main', 'header button.run-abort']
+      .map(s => document.querySelector(s)).filter(Boolean).map(e => { const r = e.getBoundingClientRect(); return Math.round(r.top + r.height / 2); });
+    return { at: parts, list: Math.round(${LIST}.getBoundingClientRect().top) }; })()`);
+  check('...and above it the title block, the issues button, Save now, Start and Abort keep one row (SIF-136)',
+    firstRow.at.length >= 5 && firstRow.at.every(y => Math.abs(y - firstRow.at[0]) <= 2 && y < firstRow.list), JSON.stringify(firstRow));
   await shot('issues-2-open.png');
 
   // ---- it follows the next validation while it is open ---------------------------------------------------------

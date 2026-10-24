@@ -210,8 +210,9 @@ export const limitsText = (run: Json) =>
   [run.max_spectre_launches != null ? plural(run.max_spectre_launches, 'launch', 'launches') : null,
     (run.max_retries ?? 0) > 0 ? plural(run.max_retries, 'retry', 'retries') : null,
     run.max_wall_seconds != null ? `wall time ${durationWhole(run.max_wall_seconds) ?? `${run.max_wall_seconds} s`}` : null].filter(Boolean) as string[];
-/** Run configuration folded into one line: the Mode, the model label, the budget and the network. */
+/** Run configuration folded into one line: the Mode, the model label, the budget and the network. A budget of 1 is "1
+ *  evaluation" (branch record SIF-136: "1 evaluations"). */
 export const foldedText = (run: Json, budget: number, encoder: string, net: Json) =>
-  [MODE_NAME[run.mode] ?? run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${count(budget)} evaluations` : null,
+  [MODE_NAME[run.mode] ?? run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? plural(budget, 'evaluation') : null,
     `${designName({ encoder_type: encoder, architecture_version: net.architecture_version })} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,   // the design by name (SIF-12)
     net.vocabulary === 'families' ? 'device families' : net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');

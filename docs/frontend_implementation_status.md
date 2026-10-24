@@ -31,18 +31,19 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.336-7.352.md`](workbench-log/7.336-7.352.md) | entries 7.336–7.352 |
 | [`7.353-7.364.md`](workbench-log/7.353-7.364.md) | entries 7.353–7.364 |
 | [`7.365-7.375.md`](workbench-log/7.365-7.375.md) | entries 7.365–7.375 |
-| [`7.376-and-later.md`](workbench-log/7.376-and-later.md) | entries 7.376 onwards: the OPEN file |
+| [`7.376-7.388.md`](workbench-log/7.376-7.388.md) | entries 7.376–7.388 |
+| [`7.389-and-later.md`](workbench-log/7.389-and-later.md) | entries 7.389 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md`, `7.336-and-later.md` `7.353-and-later.md` and `7.365-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md`, `7.336-and-later.md`, `7.353-and-later.md`, `7.365-and-later.md` and `7.376-and-later.md` are pointers kept for old links.
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.380 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.376-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.410 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.389-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
@@ -444,3 +445,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.386 | Plan only: matched archive/budget TuRBO transfer, Pareto MOBO and SAC comparison; fixed-target/Pareto panels, 57,831-launch ceiling |
 | 7.387 | Plan refined from Compare random forest calibration: matched-transfer-BO decision rule, archive-only RF diagnostics, optional graph-prior TuRBO (+7,227) and common RF-screen (+28,908); primary ceiling unchanged |
 | 7.388 | Round 3 seeds 1 and 2 results: 72 runs complete (45,600 designs, two same-run resumes), audited with seed 0 - all 36 blocks complete, parity passes, seed 0 unchanged; feasible designs per arm for seeds 0/1/2 |
+| 7.389 | Final save skipped when a run stops while being prepared: only the original error; log rolled over |

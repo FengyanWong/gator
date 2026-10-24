@@ -8,7 +8,8 @@ import sys
 import pytest
 
 from gator_workbench import runs
-from gator_workbench.storage.atomic import read_jsonl
+from gator_workbench.engine_finalization import SAVE_SKIPPED_NOTE
+from gator_workbench.storage.atomic import read_json, read_jsonl, write_json
 from helpers import REPO, make_config, roots_for, rows, run_prepared, summary
 
 pytestmark = pytest.mark.xdist_group('test_wb_crash_counters')
@@ -112,3 +113,25 @@ def test_a_run_that_stops_at_its_first_passing_design_stops_when_that_design_cam
     assert result['stop_reason'] == 'first_feasible' and result['first_feasible']['evaluation_id'] == passing['evaluation_id']
     real = [row for row in rows(layout, 'evaluations') if row['status'] != 'interrupted']
     assert len(real) == 5                                             # nothing was simulated after the resume
+
+
+def test_a_resume_refused_for_an_unresolved_launch_reports_only_that_reason(tmp_path):
+    """A real backend's launch that was in flight when the worker was killed stays an unresolved lease, and a resume
+    refuses to open any lane until it is reconciled - before the run has opened its save points. The final save still
+    ran and added "final save failed: AttributeError: 'RunEngine' object has no attribute 'checkpoints'" to that reason
+    (seen 2026-10-23 on killed ngspice runs). Now it is skipped, the summary says why, and the save points the run
+    already had stay as they were."""
+    config, layout = crashed_run(tmp_path, script={}, crash_after=5)
+    saves = layout.run_dir / 'checkpoints'
+    before = {path.name: path.stat().st_mtime_ns for path in saves.iterdir()}
+    # what the engine writes for a real launch it cannot confirm; the MOCK backend launches nothing and writes none
+    write_json(layout.data / '_journal' / 'unresolved-launch-leases.json',
+               {'fixture-evaluation': dict(allowance=1, state='unresolved')})
+    assert resume(config, layout, tmp_path) == 'failed'
+    reason = 'RuntimeError: Unresolved physical launch intents/leases must be reconciled before resume; no lanes opened'
+    status, result = read_json(layout.status), summary(layout)
+    assert status['error'] == result['error'] == reason and result['stop_reason'] == 'exception'
+    assert [row['error'] for row in read_jsonl(layout.logs / 'errors.jsonl')] == ['exception']
+    output = result['output']
+    assert output['persistence_ok'] and output['latest_checkpoint'] is None and output['note'] == SAVE_SKIPPED_NOTE
+    assert {path.name: path.stat().st_mtime_ns for path in saves.iterdir()} == before

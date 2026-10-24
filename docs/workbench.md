@@ -1532,6 +1532,11 @@ Mapping to the recommended layout of the specification:
   Until then the save point's older counts stood: a row of failures that a success had ended still counted, so
   one more failure stopped the run; a first passing design found after the save point was forgotten. The
   `resumed` event says what was counted (`counters_after_checkpoint`).
+* A Continue that stops while the run is being prepared - refused for a launch a crash left unresolved,
+  say - writes no save point at its end (record 7.389): the save points are opened last in the preparation,
+  and the final save used to run anyway and add "final save failed: AttributeError ..." to the reason. Its
+  status and summary now give the reason alone, the summary's `output.note` says that no save point was
+  written, and the save points already in the run folder stay as they were.
 
 Three things that are deliberately not the same:
 `latest` (most recently safely saved state) / `best_policy` (only by an explicit validation-set

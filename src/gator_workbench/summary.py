@@ -109,7 +109,9 @@ def build_run_summary(engine, final_state, checkpoint, persistence_ok):
                     resumability=checkpoint['restoration_capability'] if checkpoint else 'none',
                     latest_checkpoint=None if not checkpoint else checkpoint['checkpoint_id'],
                     transition_archive=engine.archive, replay_snapshots=engine.config.output.save_replay_snapshots,
-                    data_cursor=engine.dataset.cursor()),
+                    data_cursor=engine.dataset.cursor(),
+                    # why no save point was written at the end, when the run never opened them (engine_finalization)
+                    **({'note': engine.final_save_note} if getattr(engine, 'final_save_note', None) else {})),
         termination=dict(state=final_state, reason=engine.stop_reason, forced=engine.forced,
                          normal_completion=complete, in_flight_lost=counters['interrupted_evaluations']),
         segments=len(manifest['segments']), concurrency=engine.config.run.concurrency, research=manifest['research'])

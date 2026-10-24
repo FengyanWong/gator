@@ -22,7 +22,7 @@ Completion means the run reached its configured budget or stopping condition; co
 | Round 3, offline | GraphGPS, fresh CircuitGPS v2 and RGCN complete and qualified; RGCN's 12 online arms are admitted |
 | Round 3, online | Seed 0: all 36 arms complete (2026-10-16 02:32 Europe/London; 22,800 evaluations, no failed run; numbers in the thesis audit, record 7.385); seeds 1 and 2: all 72 runs complete 2026-10-22 10:39 (45,600 evaluations; two runs resumed in the same run from their save points; folder online-seeds12-2026-10-20; dispatch and incidents record 7.385, audited results record 7.388) |
 | Round 4 | Done offline 2026-10-17 to 2026-10-19 (sections 7b.7-7b.8, records 7.363, 7.381 and 7.383): LOADBench did not help the Round 3 models - stage 1 + stage 2, the predictor transplant (option C) and the pretrained input layers (option 1) all end at the control's error; online test not run |
-| Journal | J0 protocol/test split not frozen; J1 online comparison, J2-J5 and manuscript milestones remain outstanding |
+| Journal | Dropped (user, 2026-10-23: "I am not publishing"): no journal experiment J0-J5 and no manuscript milestone will be run; sections 14-15 are kept for reference only |
 
 Evidence: `artifacts/local/reviews/transfer-experiment-2026-10-10/plan-status-audit-2026-10-14.json`, the RGCN
 `completed-comparison.json` and `dual-session-2026-10-14/completion-verification.json`, and Round 3's `pair-status.json`.
@@ -1585,6 +1585,9 @@ a record entry, in `artifacts/local/reviews/transfer-experiment-2026-10-10/`; th
 
 ## 14. Journal experiments
 
+**Dropped on 2026-10-23** (user: "we are not doing journal experiments right? I am not publishing"): nothing in this section
+will be run. It is kept for reference only.
+
 Added 2026-10-13 (Europe/London), user: "add the experiments needed for a journal paper to my experiment plan
 and make a timeline to publish by next august". This section defines proposed research work. It does not dispatch
 simulations, alter the running models, change optimizer code, submit a manuscript or authorize publication fees.
@@ -1867,6 +1870,8 @@ schedule-oriented alternative; its stated 4-6 week publication target is not a g
 Check the then-current fees and whether the venue satisfies the user's institutional requirement before selection.
 
 ## 15. Timeline to August 2027 publication
+
+**Dropped on 2026-10-23** with section 14: there is no publication target. Kept for reference only.
 
 All dates use Europe/London. Since the user specified a month, use **31 August 2027** as the planning endpoint.
 Assume the desired outcome is an **accepted, publicly available online journal article** by then; a preprint,

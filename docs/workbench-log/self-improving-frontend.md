@@ -4143,3 +4143,25 @@ whole, Seed not right-aligned) - and its `reward_block_check` lost its window af
 closed"); on the code after, `run_list_check`, `reward_block_check`, `model_chooser_check` and `model_structure_check`
 passed again together (170, 34, 122, 33). `training_tab_check` and `run_control_live_check` were left out of the probe:
 their changed pins wait a minute each for "20,000", which the code before never writes. No flakes on the code after.
+
+**Review follow-up.** The review of 0b49f9c found one slip; it is real. Three counts of the run at a glance in Run
+status, the total after "/", those in flight and those failed, were bare values, which React draws as nothing when the
+status does not give one, and are `count(...)` now, which writes what is not a number as `String()` does: the word
+"undefined". An offline-trained model's status gives its budget as the evaluations used and the launches alone
+(`{charged: 0, launches: 0}`, `src/gator_workbench/offline_publish.py`, passed on as it is by `runs.status_view`), so
+Show results on such a model in the Runs window read "0 / undefined" and "evaluations used · undefined in flight ·
+undefined failed" (before SIF-117: "0 / " and blanks). That went against the plan's "non-numbers as today", and the
+commit's other new counts drawn that way had their guard ("?" in the run brief, the Continue... form, the saved models
+and the Runs window). No check gave a budget like that: `run_list_check` gives every run a whole one, and
+`run_control_check`'s run working elsewhere, whose budget has two fields, is read only by its card.
+`frontend/src/panels/RunTabs.tsx` now writes a count the status does not give as "?", as the run brief writes one: "0 /
+?" and "evaluations used · ? in flight · ? failed". The evaluations used keep no guard: every status with a budget gives
+them (`budget.py`'s snapshot and the offline publisher). Left as they are, since they wrote "undefined" for that model
+before SIF-117 too (the value inside a string): the Spectre launches tile's retries and cache hits, the facts' Budget
+and Spectre launches rows, and the Runs window's Details' Budget and Spectre launches. Nothing here starts, continues or
+stops a run. `tsc` clean. `run_control_check` 171 (170): its live MOCK fixture run gives that budget of two counts for a
+moment (`sim.budget`), and the run at a glance reads "0 / ?" and "evaluations used · ? in flight · ? failed". Also run,
+unchanged: `export_check` 37, `run_list_check` 170, `room_check` 31, `looks_check` 76, `save_now_check` 29,
+`calibration_check` 48 (seven scripts, one lane, after the memory guard), all passed the first time. A probe run on the
+code before (`RunTabs.tsx` as at 0b49f9c, restored after, its sum compared) failed the new check alone (170 passed): "0
+/ undefined | evaluations used · undefined in flight · undefined failed". No flakes.

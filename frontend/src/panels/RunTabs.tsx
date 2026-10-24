@@ -170,13 +170,15 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
     {status.calibration && <Calibration value={status.calibration} live={!!status.worker_alive || !ENDED.includes(status.state)} config={config} setConfig={setConfig} />}
     {/* The run at a glance (record 7.360, the Roadster look): how far it is, then four numbers; the table below holds them all.
         Its counts and the table's as the page writes every count, from 10,000 up in groups of three (branch record SIF-117:
-        "Learner updates 6024" here beside the RL model window's "6,024 learner updates" for the same model). */}
+        "Learner updates 6024" here beside the RL model window's "6,024 learner updates" for the same model); a count the
+        status does not give is "?", as the run brief writes one (SIF-117 review: an offline-trained model's status gives its
+        budget as the evaluations used and the launches alone, and the others read "0 / undefined", "undefined in flight"). */}
     {b && <div className="status-hero">
       <div className="status-hero-count">
         <span className="status-hero-state" title={status.stop_reason ?? undefined}>{status.state}{status.stop_reason ? ` · ${stopWords(status.stop_reason)}` : ''}</span>
-        <span className="status-hero-number">{count(b.charged)}<span className="of"> / {count(b.max_evaluations)}</span></span>
+        <span className="status-hero-number">{count(b.charged)}<span className="of"> / {b.max_evaluations != null ? count(b.max_evaluations) : '?'}</span></span>
         <span className="hint" title="A design counts against the budget once it is sent to the simulator, whether it then completes, fails or is cancelled.">
-          evaluations used · {count(b.in_flight)} in flight · {count(b.failed)} failed</span>
+          evaluations used · {b.in_flight != null ? count(b.in_flight) : '?'} in flight · {b.failed != null ? count(b.failed) : '?'} failed</span>
         <span className={`status-hero-bar${status.state === 'completed' ? ' done' : ['failed', 'cancelled', 'interrupted'].includes(status.state) ? ' bad'
           : ['paused', 'stopped'].includes(status.state) ? ' rest' : ''}`}><span style={{ width: `${b.max_evaluations ? Math.min(100, (100 * b.charged) / b.max_evaluations) : 0}%` }} /></span>
         {/* under the bar, apart from the budget's words above it (export_check reads those whole) */}

@@ -44,9 +44,10 @@ const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__s
 // `active`: the working time the status gives (null until the run brief reads it, branch record SIF-78). `output` and
 // `run`: the run's own effective_config.json, as Pause reads it (`run.optimizer`: branch record SIF-83). `error`: the
 // status's error, as a run that fails or pauses by itself gives one (branch record SIF-89). `first`: its first feasible
-// design, as budget.py records it (branch record SIF-116). `updates`: its learner updates (branch record SIF-117).
+// design, as budget.py records it (branch record SIF-116). `updates`: its learner updates (branch record SIF-117). `budget`:
+// a budget the status gives as it is, in place of the one counted from `charged` and `max` (SIF-117 review).
 const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, error: null, beat: 0, steps: [], output: {}, run: {}, starts: 0, calibration: null, active: null, first: null,
-  updates: 0 };
+  updates: 0, budget: null };
 const listed = () => sim.state ? [{ run_dir: DIR, run_id: 'fixture-run', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: sim.mock, seed: 0,
   created_utc: '2026-09-21T00:00:00+00:00', state: sim.state, experiment: 'fixture_experiment__0001', evaluations: null, first_feasible_eval_count: null, resumability: null }] : [];
 const statusOf = () => {
@@ -56,7 +57,7 @@ const statusOf = () => {
   const at = new Date(Date.UTC(2026, 8, 21, 0, 0, 0) + 1000 * ++sim.beat).toISOString();
   return { state: sim.state, run_id: 'fixture-run', mode: 'scratch', entry: 'start', provenance: sim.mock ? 'mock' : 'real', mock: sim.mock, worker_alive: sim.alive,
     run_dir: sim.dir, heartbeat_utc: at, stop_reason: sim.stop_reason, error: sim.error, active_workers: [], concurrency: 1, learner_updates: sim.updates, first_feasible: sim.first,
-    budget: { max_evaluations: sim.max, max_launches: null, max_retries: 0, charged: sim.charged, reserved: 0, in_flight: sim.alive && sim.state === 'running' ? 1 : 0,
+    budget: sim.budget ?? { max_evaluations: sim.max, max_launches: null, max_retries: 0, charged: sim.charged, reserved: 0, in_flight: sim.alive && sim.state === 'running' ? 1 : 0,
       completed: sim.charged, failed: 0, released: 0, remaining: sim.max - sim.charged, launches: sim.charged, retries: 0, cache_hits: 0, first_feasible: null },
     best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: sim.dir }, connection: { overall: 'not_applicable' }, summary: null, calibration: sim.calibration,
     active_seconds: sim.active,
@@ -303,6 +304,15 @@ await runChecks(browser, async () => {
     await until(`/^12,3\\d\\d \\/ 20,000$/.test(${HERO}) && /^fixture_task · 12,3\\d\\d of 20,000 evaluations \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '')`, 60)
     && /^12,3\d\d used \/ 20,000 {2}\(in flight 1, completed 12,3\d\d, failed 0, remaining 76\d\d\)$/.test(await evaluate(BUDGET_ROW)),
     `${await evaluate(HERO)} | ${await evaluate(BUDGET_ROW)} | ${await evaluate(`${CHIP}?.textContent`)}`);
+  // SIF-117 review: an offline-trained model's status gives its budget as the evaluations used and the launches alone
+  // ({ charged: 0, launches: 0 }, as offline_publish.py writes it), and the run at a glance read "0 / undefined" and
+  // "evaluations used · undefined in flight · undefined failed" where it had read nothing. A count the status does not give
+  // is "?", as the run brief writes one; the run at a glance writes it so in any state, so the live run gives it a moment.
+  const HERO_WORDS = `(document.querySelector('.status-grid .status-hero-count > .hint')?.textContent ?? '')`;
+  sim.budget = { charged: 0, launches: 0 };
+  check('... a budget of the evaluations used and the launches alone, as an offline-trained model\'s status gives one: "0 / ?", "evaluations used · ? in flight · ? failed", no "undefined" (SIF-117 review)',
+    await until(`${HERO} === '0 / ?' && ${HERO_WORDS} === 'evaluations used · ? in flight · ? failed'`, 60), `${await evaluate(HERO)} | ${await evaluate(HERO_WORDS)}`);
+  sim.budget = null;
   Object.assign(sim, { updates: 0, charged: before117.charged, max: before117.max });
   sim.first = null;                                          // the run as before, for the steps below
   await until(`${FIRST_TILE} === 'none yet'`, 60);

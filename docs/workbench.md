@@ -1959,7 +1959,12 @@ they are empty.
   had, and the hover line names the update under the pointer. Changing it lets go of the learner charts' zoom (it was in
   the other unit). Kept in this browser with the chart choices.
 * **Hover**: the line above a chart says the evaluation (or update) under the pointer, its phase, episode and status, and
-  the recorded value - without a pointer, the newest one. **Legend keys** switch a series off and on.
+  the recorded value - without a pointer, the newest one. **Legend keys** switch a series off and on. The line is in the
+  page's font, its figures of one width, and is never cut (branch record SIF-120: in the numbers' monospace font it was cut
+  at the chart's width, "... · search · episo..."): where the chart is too narrow it wraps between its parts - the x, a
+  series with its value, a fact of the row - each kept whole, the keys level with its first line, and the plot gives it
+  the room (down to 60 px). While the pointer moves it keeps the most lines it has taken at that width, so the plot does
+  not grow and shrink as the pointer crosses rows with fewer values.
 * **Zoom**: drag across a chart. A zoomed chart holds still while new results arrive (**Follow latest** goes off).
   **Follow latest** slides back to the newest results with the same zoom width; **Reset zoom** (or a double click on a
   chart) shows the whole run.

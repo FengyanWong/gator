@@ -4282,3 +4282,52 @@ of 105, `blocking_issues_check` 62, `callouts_check` 8, `ngspice_window_check` 4
 `task_list_check`'s check of a renamed task's row failed once in the Tasks window, which has no editor table, the row's
 text it printed being the expected "ota_relaxedinternal name fixture_ota"; alone, after the memory guard, it passed (105).
 The widths above were measured with a temporary script, not kept.
+
+### SIF-120 The line over a Training chart reads in the page's font and is never cut (2026-10-24; from the survey of 2026-10-23)
+
+**Found.** On the user's VCO run at 1680 px the line over each Training chart read, in the dense monospace font of the
+numbers, "Newest: Evaluation 800 · Training (recorded) 0.06274 · Training: mean of last 20 0.05706 · search · episo..."
+(the survey's S10-5, picture `05-bottom-training.png`): words in a code font read slowly, and the line was cut at the
+chart's width, so its end was lost - at 1366 px a value too (SIF-7 had put the values first; SIF-65 kept the mono font
+so that the numbers would not jump about under a moving pointer). Measured while building it: where the line took two
+lines, the legend over the plot had to give way to the plot's 110 px minimum, down to its own 18 px (styles.css), so
+the second line ran over the top of the plot - by 7 px with two charts at 1366 px, by 43 px with eight; on the code
+before, with eight charts at 1600 px, six of the cut one-line readouts already ran 9 px into their plots, where the line
+stood on a row of its own under the keys.
+
+**Changed.** `frontend/src/panels/TrainingChart.tsx`: the line is built of parts - the x, each series with its value, each
+fact of the row ("search", "episode 1-000189 step 4") - each a `span.readout-part`, with " · " between them as before, so
+its text is the same (every check reads it); the tooltip that repeated the whole line goes, as nothing is cut now. The
+line keeps the most lines it has taken at its width, as a minimum height (`steady`), until its width or the chart's
+series change: a row with fewer values (an episode start's one line beside a training row's two) does not shorten it
+under a moving pointer, so the plot under it does not grow and shrink as the pointer crosses rows.
+`frontend/src/roadster.css` (SIF-120, at the end; SIF-65's comment says so now): the line in the body font (12 px, as
+SIF-65 set), every figure of one width (`tabular-nums`), so a value does not jump about under the pointer, what the mono
+font did; it wraps instead of being cut, between its parts, each an inline box kept whole while it fits a line (a longer
+one wraps inside its box), so a value never starts a line apart from its name; the series keys stand level with its
+first line (centred, they sat between its two); the legend keeps all its lines (`flex: none`) and the plot gives way,
+down to the 60 px in which a chart is still drawn (it was 110). Colours, weights and the order of the series are as
+before. Measured: at 1600 px with two charts (and so at the user's 1680) the line fits on one line and nothing changed
+(the plots 120 px); at 1366 px it takes two lines and the plots are 103 px (120 before, with the line cut), where the
+Step reward chart of the check's run drew no y number ("-0.2" at 120 px) and Meets every hard spec kept its "0" and "1"
+- a taller bottom panel (the splitter) gives them the room back; with eight charts at 1600 px the lines take two or three
+lines and the plots are 67 to 87 px (at 1366 px down to 60, and the one chart whose line takes four lines ends 6 px below
+its box). The cost of a frame of eight live charts stayed as it was (24 to 26 ms; 25.7 with the code before, 23 to 28 in
+today's earlier runs). Nothing here starts, continues or stops a run, saves a task or writes to Virtuoso.
+`docs/workbench.md` (The Training tab: Hover) and `docs/functionality-reference.md` (the Training row) say it.
+
+**Checked.** `tsc` clean. `training_tab_check` 120 (115 before; SIF-65's size check now asks for the body font and tabular
+figures): new, at 1366 x 1000 the newest line takes two lines, every part whole, inside the line's box and above the
+plot, the row's facts last ("· search · episode 0-000055 step 3") and the key level with its first line; "111111",
+"000000" and "888888" as wide; hovered at 41 places across the plot (41 rows), nothing is cut, each part whole and
+nothing over the plot; 8 of them were rows of one line, and the line kept its two, the plot its height (picture
+`training-readout-1366.png`); with eight charts each chart's line is whole on its two or three lines, none over its
+plot, every plot 60 px or more. A probe run on the code before (`TrainingChart.tsx` and `roadster.css` as at HEAD,
+restored after, their sums compared) failed five of the six new checks (the mono font; the line cut to one line; the
+hovered lines cut; no line wrapped to keep; with eight charts each line cut and six running 9 px into their plots);
+the figures' check passes there too, as the mono font's figures were of one width as well. One lane, after the memory
+guard: `training_tab_check` 120, `dom_identity_check` 56, `files_tab_check` 43, `corner_check_check` 40,
+`looks_check` 76, `training_data_check` 120, in one run, all passed; no flakes. The plot heights and y numbers above
+were measured with temporary scripts, not kept (one of them, a copy of `training_tab_check`, once counted three draws of
+one chart within a second at its start, six in all, as every run of the check counts). After comments in `roadster.css`
+and the check changed, `tsc` clean and `training_tab_check` 120 again.

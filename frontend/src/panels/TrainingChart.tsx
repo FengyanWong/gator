@@ -81,6 +81,7 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
   const [off, setOff] = useState<Set<string>>(() => new Set());     // series groups switched off on the toggles
   const offRef = useRef(off);
   offRef.current = off;
+  const steady = useRef({ width: -1, height: 0 });                  // the readout's tallest at its width (branch record SIF-120)
 
   // The plot follows its box. A hidden tab measures 0 x 0: kept as it was, so nothing is drawn into nothing.
   useEffect(() => {
@@ -117,15 +118,26 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
       parts.push([series.label, value === null ? 'no value' : latest.current.format(value)]);
     });
     const row = data.rows[index];      // -1 on a comparison: several runs' rows share an x, none of them is named
-    // The values first, then the row's phase and episode (branch record SIF-7): the line is cut at the chart's width, and the
-    // values came last - "Newest: Evaluation 800 · search · episode 1-000189 step 4 · Training (recorded) 0.06274 · Training: me...".
+    // The values first, then the row's phase and episode (branch record SIF-7: the line was cut at the chart's width, and the
+    // values came last - "Newest: Evaluation 800 · search · episode 1-000189 step 4 · Training (recorded) 0.06274 · Training: me...").
     // The numbers in the text colour, the words muted (branch record SIF-25): the eye finds a value; the line's text is the same.
-    const value = (text: string) => { const b = element.ownerDocument.createElement('b'); b.textContent = text; return b; };
-    const nodes: (Node | string)[] = [`${hovering ? '' : 'Newest: '}${xLabel} `, value(String(data.x[index]))];
-    parts.forEach(([label, text]) => nodes.push(` · ${label} `, value(text)));
-    if (row != null && row >= 0) nodes.push(` · ${latest.current.describe(row)}`);
-    element.replaceChildren(...nodes);
-    element.title = element.textContent ?? '';
+    // It wraps rather than being cut (branch record SIF-120: at 1680 px it still lost the row's facts, "... · search · episo...",
+    // at 1366 px a value too): each part - the x, a series with its value, a fact of the row - is a box of its own
+    // (roadster.css), so the line breaks between them and a value never starts a line apart from its name. Its text is the
+    // same, so it needs no tooltip to show the whole any more.
+    const doc = element.ownerDocument;
+    const value = (text: string) => { const b = doc.createElement('b'); b.textContent = text; return b; };
+    const part = (...children: (Node | string)[]) => { const span = doc.createElement('span'); span.className = 'readout-part'; span.append(...children); return span; };
+    const pieces = [part(`${hovering ? '' : 'Newest: '}${xLabel} `, value(String(data.x[index]))), ...parts.map(([label, text]) => part(`${label} `, value(text)))];
+    if (row != null && row >= 0) pieces.push(...latest.current.describe(row).split(' · ').filter(Boolean).map(fact => part(fact)));
+    element.replaceChildren(...pieces.flatMap((piece, i) => (i ? [' · ', piece] : [piece])));
+    // A row with fewer values must not shorten the line under a moving pointer (SIF-120): the plot under it would grow and
+    // shrink as the pointer crossed the rows - a training row's two lines, an episode start's one. The line keeps the most
+    // lines it has taken at its width, until its width or the chart's series change.
+    const width = element.clientWidth;
+    if (width !== steady.current.width) { steady.current = { width, height: 0 }; element.style.minHeight = ''; }
+    const height = element.offsetHeight;
+    if (height > steady.current.height) { steady.current.height = height; element.style.minHeight = `${height}px`; }
   };
 
   const layoutKey = useMemo(() => (built ? `${built.axis}|${built.unit}|${built.series.map(s => `${s.role}:${s.label}:${s.category}`).join('|')}` : ''), [built]);
@@ -141,6 +153,7 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
         plot.current?.destroy();
         plot.current = new UPlotClass(options(UPlotClass, built, box.current, size, xLabel), data, box.current);
         layout.current = layoutKey;
+        steady.current = { width: -1, height: 0 };                     // other series: the readout measures its lines anew
         built.series.forEach((s, i) => { if (offRef.current.has(groupOf(s))) plot.current!.setSeries(i + 1, { show: false }); });
       } else {
         if (plot.current.width !== size.width || plot.current.height !== size.height) plot.current.setSize(size);

@@ -30,6 +30,8 @@
 //     in the table of several runs - and nothing is, when the starts passed only after it
 //   - branch record SIF-117: the counts line and the "Evaluations" key number write a count as the whole page does, from
 //     10,000 up in groups of three ("20,000 evaluations") and plain below ("1792 learner updates")
+//   - branch record SIF-120: the line over a chart in the body font, its figures of one width; at 1366 px it wraps between
+//     its parts, each whole and nothing cut, and keeps its height while the pointer crosses rows of fewer lines
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -321,15 +323,61 @@ await runChecks(browser, async () => {
   await evaluate(`[...[...(${TRAINING}).querySelectorAll('.training-legend')][0].querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent)).click()`);
   check('pressed again, the series is back', await until(`/Training \\(recorded\\)/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`));
   // Branch record SIF-65: the charts' text at the page's sizes - a chart's title at 13 px, its keys at 12.5 px, the readout at
-  // 12 px in its mono font (11 to 11.5 px before; the axis numbers with eight charts, below); the "Key numbers" line keeps its
-  // 11.5 px (the numbers under it are record 7.360's tiles, or a table.grid for several runs)
-  const sizes = await evaluate(`(() => { const t = ${TRAINING}, st = e => getComputedStyle(e), mono = document.createElement('span');
-    mono.style.fontFamily = 'var(--f-mono)'; t.append(mono); const family = st(mono).fontFamily; mono.remove();
+  // 12 px (11 to 11.5 px before; the axis numbers with eight charts, below); the "Key numbers" line keeps its 11.5 px (the
+  // numbers under it are record 7.360's tiles, or a table.grid for several runs). Branch record SIF-120: the readout in the
+  // body font with figures of one width (it was the mono font, slow to read)
+  const sizes = await evaluate(`(() => { const t = ${TRAINING}, st = e => getComputedStyle(e), body = document.createElement('span');
+    body.style.fontFamily = 'var(--f-body)'; t.append(body); const family = st(body).fontFamily; body.remove();
     const r = t.querySelector('.training-readout');
     return { title: st(t.querySelector('figure.training-chart select.training-chart-choice')).fontSize, key: st(t.querySelector('.training-legend .training-key')).fontSize,
-      readout: [st(r).fontSize, st(r).fontFamily === family, st(r.querySelector('b') ?? r).fontSize], keys: st(t.querySelector('details.training-keys > summary')).fontSize }; })()`);
-  check('...a chart\'s title reads at 13 px, its keys at 12.5 px, the readout and its values at 12 px in the mono font; the "Key numbers" line at 11.5 px',
-    JSON.stringify(sizes) === JSON.stringify({ title: '13px', key: '12.5px', readout: ['12px', true, '12px'], keys: '11.5px' }), JSON.stringify(sizes));
+      readout: [st(r).fontSize, st(r).fontFamily === family, st(r).fontVariantNumeric, st(r.querySelector('b') ?? r).fontSize], keys: st(t.querySelector('details.training-keys > summary')).fontSize }; })()`);
+  check('...a chart\'s title reads at 13 px, its keys at 12.5 px, the readout and its values at 12 px in the body font, figures tabular (SIF-120); the "Key numbers" line at 11.5 px',
+    JSON.stringify(sizes) === JSON.stringify({ title: '13px', key: '12.5px', readout: ['12px', true, 'tabular-nums', '12px'], keys: '11.5px' }), JSON.stringify(sizes));
+  // Branch record SIF-120: nothing of the readout is cut. At 1680 px the user's line ended "... · search · episo...", at 1366 px
+  // a value sooner. At 1366 px it wraps between its parts - the x, a series with its value, a fact of the row - each whole on
+  // one line and inside the line's box; its figures take one width (a value does not jump about under the pointer, what the
+  // mono font did); and under a moving pointer it keeps its height, so the plot under it does not grow and shrink as the
+  // pointer crosses rows - a training row's two lines, an episode start's one. Its second line does not run over the plot: the
+  // legend gave way down to one line's height, and a second line ran 7 px into the plot here. The window's height leaves the
+  // plots in view.
+  await page.viewport(1366, 1000); await sleep(600);
+  const READOUT = `[...(${TRAINING}).querySelectorAll('.training-readout')][0]`;
+  const fitOf = `(() => { const r = ${READOUT}, box = r.getBoundingClientRect(), line = parseFloat(getComputedStyle(r).lineHeight);
+    const parts = [...r.querySelectorAll('.readout-part')].map(p => p.getBoundingClientRect());
+    return { text: r.textContent, lines: Math.round(r.offsetHeight / line), natural: Math.round((Math.max(...parts.map(p => p.bottom)) - box.top) / line),
+      cut: r.scrollWidth > r.clientWidth + 1 || r.scrollHeight > r.clientHeight + 1,
+      outside: parts.filter(p => p.left < box.left - 0.5 || p.right > box.right + 0.5 || p.bottom > box.bottom + 0.5).length,
+      broken: parts.filter(p => Math.round(p.height / line) !== 1).length, parts: parts.length,
+      key: (k => Math.round(((k.top + k.bottom) / 2 - box.top - line / 2) * 10) / 10)(r.parentNode.querySelector('.training-key').getBoundingClientRect()),
+      over: Math.round(Math.max(...[...r.parentNode.querySelectorAll('.training-legend > *, .readout-part')].map(e => e.getBoundingClientRect().bottom))
+        - r.closest('.training-plot-area').querySelector('.training-plot').getBoundingClientRect().top),
+      plot: Math.round([...(${TRAINING}).querySelectorAll('.training-plot canvas')][0].getBoundingClientRect().height) }; })()`;
+  const newest1366 = await evaluate(fitOf), last274 = RUNS.live.data.evaluations[273];
+  check('at 1366 px the newest line wraps rather than being cut: every part whole and in view, above the plot, the row\'s facts last, the key level with its first line (SIF-120)',
+    newest1366.natural >= 2 && !newest1366.cut && !newest1366.outside && !newest1366.broken && newest1366.over <= 0 && Math.abs(newest1366.key) <= 2
+    && newest1366.text.startsWith('Newest: Evaluation 274 · Training (recorded) ')
+    && newest1366.text.endsWith(` · search · episode ${last274.episode_id} step ${last274.episode_step}`), JSON.stringify(newest1366));
+  const digitWidths = await evaluate(`(() => { const r = ${READOUT}, w = ['111111', '000000', '888888'].map(text => { const b = document.createElement('b'); b.textContent = text; r.append(b);
+    const width = b.getBoundingClientRect().width; b.remove(); return Math.round(width * 10) / 10; }); return w; })()`);
+  check('...its figures take one width: "111111", "000000" and "888888" as wide (SIF-120)', digitWidths.every(w => w === digitWidths[0]) && digitWidths[0] > 0, JSON.stringify(digitWidths));
+  box = await plotBox(0);
+  const sweep = [];
+  for (let i = 0; i <= 40; i++) {
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w * (0.02 + 0.96 * i / 40), y: box.y + box.h * 0.6 });
+    await sleep(70);
+    sweep.push(await evaluate(fitOf));
+  }
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + box.w + 40, y: box.y - 40 });
+  const swept = { most: Math.max(...sweep.map(s => s.natural)), fewer: sweep.filter(s => s.natural < s.lines).length, cut: sweep.filter(s => s.cut || s.outside || s.broken || s.over > 0).length,
+    shrank: sweep.filter((s, i) => i && s.lines < sweep[i - 1].lines).length, grew: sweep.filter((s, i) => i && s.plot > sweep[i - 1].plot).length,
+    plots: [...new Set(sweep.map(s => s.plot))], rows: new Set(sweep.map(s => s.text)).size };
+  check('...hovered row by row nothing is cut, each part whole, nothing over the plot (SIF-120)', sweep.every(s => /^Evaluation \d+ · /.test(s.text)) && swept.rows > 20 && !swept.cut,
+    JSON.stringify({ ...swept, samples: sweep.filter(s => s.cut || s.outside || s.broken || s.over > 0).slice(0, 2) }));
+  check('...and it keeps its height as the pointer crosses rows of fewer lines: never fewer lines, the plot\'s height changed once at most (SIF-120)',
+    swept.most >= 2 && swept.fewer > 0 && !swept.shrank && !swept.grew && swept.plots.length <= 2,
+    JSON.stringify({ ...swept, lines: sweep.map(s => `${s.natural}/${s.lines}`).join(' ') }));
+  await page.shot(path.join(out, 'training-readout-1366.png'), `[...(${TRAINING}).querySelectorAll('figure.training-chart')][0]`);
+  await page.viewport(1600, 1000); await sleep(400);
   const SECOND = CHART(1);
   await page.setValue(SECOND, 'critic_loss');
   check('a learner chart: critic loss over learner updates', await until(`(${TITLES})[1] === 'Critic loss' && document.querySelectorAll('.training .training-plot canvas').length === 2`));
@@ -645,6 +693,16 @@ await runChecks(browser, async () => {
     && (await columns()) === 4 && await evaluate(`(${ADD}).disabled`), `${await figures()} charts`);
   const eight = await evaluate(TITLES);
   check('eight different charts', new Set(eight).size === 8, eight.join(' | '));
+  // Branch record SIF-120: four to a row, the line over each chart takes two or three lines, and none runs over its plot - the
+  // legend gave way down to one line's height, so wrapped lines ran into the plot (43 px at 1366 px), and the cut one-line
+  // readouts before ran 9 px into six of these eight; the plots give way instead, to no less than the 60 px in which a chart
+  // is drawn
+  const legends = await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart')].map(f => { const r = f.querySelector('.training-readout'),
+    plot = f.querySelector('.training-plot').getBoundingClientRect(), legend = [...f.querySelectorAll('.training-legend > *, .readout-part')].map(e => e.getBoundingClientRect());
+    return { lines: Math.round(r.offsetHeight / parseFloat(getComputedStyle(r).lineHeight)), over: Math.round(Math.max(...legend.map(e => e.bottom)) - plot.top),
+      plot: Math.round(plot.height), cut: r.scrollWidth > r.clientWidth + 1 || !/^Newest: /.test(r.textContent) }; })`);
+  check('...each chart\'s line over it whole, on two lines or more where it needs them, none over its plot; the plots 60 px high or more (SIF-120)',
+    legends.length === 8 && legends.some(l => l.lines >= 2) && legends.every(l => l.over <= 0 && l.plot >= 60 && !l.cut), JSON.stringify(legends));
   // branch record SIF-115: a chart's × the same way, "Remove chart <n>" (its tooltip read "Remove chart: ...")
   const chartX = await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart .training-chart-remove')].map(b => ({ text: b.textContent, title: b.title }))`);
   check('a chart\'s × is "Remove chart <n>" for screen readers, its tooltip starting with those words (SIF-115)', chartX.length === 8

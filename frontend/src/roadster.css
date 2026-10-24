@@ -392,11 +392,12 @@ table.run-table td .run-so-far { white-space: normal; }
 
 /* SIF-65: the Training charts' text at the page's sizes. The tab watched through a whole run kept the old look's sizes on the
    14 px page: each chart's title 11.5 px, its series keys and the readout line over the plot 11 px (the values SIF-25 set in
-   the text colour among them), the compared runs' chips 11.5 px. The readout keeps its mono font, so its numbers do not
-   jump about under a moving cursor; it is cut at the chart's width, its values first (SIF-7). The "Key numbers" line keeps
-   its 11.5 px (styles.css); the numbers under it already read at this look's sizes: one run's tiles at 12 px labels and 17 px
-   values (record 7.360, user: "make it more compact but keeping the style"), several runs' table at 13.5 px (table.grid).
-   The axis numbers: TrainingChart.tsx. */
+   the text colour among them), the compared runs' chips 11.5 px. The readout kept its mono font, so its numbers did not
+   jump about under a moving cursor, and was cut at the chart's width, its values first (SIF-7); SIF-120 (at the end) puts
+   its words in the body font, its figures of one width, and wraps it. The "Key numbers" line keeps its 11.5 px
+   (styles.css); the numbers under it already read at this look's sizes: one run's tiles at 12 px labels and 17 px values
+   (record 7.360, user: "make it more compact but keeping the style"), several runs' table at 13.5 px (table.grid). The
+   axis numbers: TrainingChart.tsx. */
 .training-legend, .training-compared { font-size: 12.5px; }
 .training-chart figcaption { font-size: 13px; }
 .training-readout { font-size: 12px; }
@@ -496,3 +497,20 @@ button.line-close { border: none; background: none; }
 /* Running now's Refresh as an icon (the audit's second batch): centred, with the h2's own 6 px bottom margin, so the icon's
    middle meets the heading's (0.5 px; 1.5 px on the baseline) and the "read at" hint keeps the heading's baseline */
 .run-brief .brief-head > button:has(> svg.icon) { align-self: center; margin-bottom: 6px; }
+
+/* SIF-120: the line over each Training chart reads as the page does, and nothing of it is cut. Its words were in the
+   numbers' mono font, slow to read, and it was cut at the chart's width: on the user's VCO at 1680 px "Newest: Evaluation
+   800 · Training (recorded) 0.06274 · Training: mean of last 20 0.05706 · search · episo...". Now its words are in the
+   body font and every figure has one width (tabular), so a value under a moving pointer does not jump about - what the
+   mono font did (SIF-65) -, and the line wraps instead: between its parts - the x, a series with its value, a fact of the
+   row - each a box kept whole while it fits a line (TrainingChart.tsx makes them, and keeps the line's height under a
+   moving pointer). A part longer than the line wraps inside its box. Colours, the values' weight and order as before. The
+   series keys stand level with the line's first line: centred, they sat between its two. The keys and the line keep all
+   their lines and the plot gives way, down to the 60 px in which it is still drawn (TrainingChart.tsx): the legend gave
+   way to the plot's 110 px, down to its own 18 px (styles.css), so a wrapped line ran over the plot's top - by 7 px with
+   two charts at 1366 px, by 43 px with eight -, as the cut line already did where it stood under the keys (9 px, eight
+   charts at 1600 px). */
+.training-readout { font: 12px/1.4 var(--f-body); font-variant-numeric: tabular-nums; white-space: normal; overflow-wrap: anywhere; }
+.training-readout .readout-part { display: inline-block; max-width: 100%; }
+.training-legend { align-items: baseline; flex: none; }
+.training-plot { min-height: 60px; }

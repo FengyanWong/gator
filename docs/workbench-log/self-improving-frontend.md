@@ -4543,3 +4543,60 @@ Details open and 12 keys in the Parameters cell 0.3, 0.35, 0.4 and 0.45 s apart 
 then 2.5 s: that model's save point read and checked 12 and 12 times -> once and once, in both runs; the model in use's
 own check went once in both builds. What stays per key: the rest of the window and of the page drawn (1.3 to 1.5 ms by
 the page's clock) and the frame. The audit expected 15 to 25 ms per key before; this machine took 5.8 and 10.
+
+### SIF-124 The RL model window, opened again, shows its saved models at once: so since SIF-102, measured here (2026-10-24; from the performance audit)
+
+**Found.** The performance audit's NET-1 (confirmed), its batch 3: each opening of the RL model window mounts the saved
+models table anew - so do New model -> Fine-tune and each opening of New model's "Saved models, to look at" - and the
+audit found it empty, "Reading the saved models..." and no row, for as long as `GET /api/runs/models` took: about 1 to 2 s
+with the user's 411 saved models and 549 run folders on D: (about 1 MB of JSON), even when nothing had changed since the
+last opening. Its plan: keep the last list at module level, keyed by the output folder and the run list's key, and show
+it while the one read per opening goes. The audit read `ModelChooser.tsx` as it was at 0e8d941 (the review of SIF-80,
+2026-10-22 00:13): its line numbers - the read at 156 to 159, the folders at 161, the list at 167, the notes at 194 to
+199 - are that file's. SIF-102 (d099dfd and its review follow-up c91693d, the same morning) had done it already:
+`useSavedModelsView` keeps the last list read, with the output folder it was read for, in `useRlModel`, and both of the
+window's saved models tables take that view (`view={m.savedView}` in `RlModelWindow.tsx`: Fine-tune and Evaluate only,
+and New model's fold). So each of those mounts shows the rows of the last read under the same output folder at once, and
+its one read still goes and replaces them; `model_chooser_check` pins it since SIF-102 ("its rows are those of the last
+read, shown at once, while its one read is still on its way"). Measured below with the read held 1.5 s: opened again,
+the first row is there 44 ms after the press, drawn by the press's own update; 1.58 s with the kept rows switched off.
+
+**Changed.** Nothing in the code: what the batch is for is there. Its plan's parts, against SIF-102's code: a
+module-level copy would live no longer - `useRlModel` is mounted with Run configuration from the moment the page has
+opened until it is left (`App.tsx`); a key with the run list's key (`runsKey`) would bring the empty table back at exactly
+the openings after a run came, went, came to rest or a model was renamed, which show the kept rows at once since SIF-102
+- it would undo part of it; a constant empty list (`NO_MODELS`) would keep nothing more stable - the kept rows are
+`models` itself, the same array until the read answers, and an empty list is made only while no row is shown, where the
+Design list's memo is over nothing; and, as the plan says, no read is skipped: one read per opening stays. One difference
+from the plan stays as SIF-102 made it: when the last read under the output folder found no model, "No saved model yet
+under this output folder" shows while the next read goes, as kept rows would; "The model in use is not in this list"
+waits for the read (`!loading`), and the count says "Reading the saved models..." until it answers. Nothing here starts,
+continues or stops a run, saves a task or writes to Virtuoso. `docs/workbench.md` (Choosing which saved model to load:
+the view kept, the rows of the last read shown while it is read again) and `docs/functionality-reference.md` (Saved
+models) say it since SIF-102; this record is the only file changed.
+
+**Checked.** `tsc` clean. `model_chooser_check` 139, five runs (the batch asked for five, to watch the two read counts
+that kept rows could race), one lane, after the memory guard, on a build of HEAD 3311a27: all passed, each with "opening
+it reads the list once", "Fine-tune reads the list once", "... its rows are those of the last read, shown at once, while
+its one read is still on its way", "... and when it answers, the view stays, with no second read", "the list is not
+re-read on a timer" and "Refresh list reads the list exactly once". No code changed, so no other check was run. No
+flakes.
+
+**Measured.** A throwaway check (`tmp-measure-reopen_check.mjs`) and build script (`tmp-measure-build.mjs`), both deleted
+before this commit, run by `run_checks.sh --lanes 1 --build <dist>` on two builds of HEAD 3311a27, each built into a temp
+folder: as it is, and with SIF-102's kept rows switched off by a transform at build time (`read?.models ?? null`: no row
+until the window's own read answers, the window as the audit saw it; the source untouched). Behind the scratch backend:
+`/api/runs/models` answered with 411 canned saved models shaped like the user's (seven tasks, five designs, 1 to 10 save
+points - 2256 in all -, a third fine-tuned from an older one; 1.34 MB of JSON), each read held 1.5 s to stand in for the
+walk of the run folders on D:; `/api/runs` with their runs, `/api/runs/model` for the model in use. Headless Edge,
+Fine-tune with a model in use. The time is the page's own clock: `performance.now()` before the click on "RL model...",
+and a MutationObserver on the window's document for the first `tr.model-row`. Per run, eight openings - the first, then
+seven again, each closed once its read was answered and drawn - then, in the window, three rounds of New model's fold
+opened and of New model -> Fine-tune with the fold closed. Two runs of each build, as it is -> kept rows off: the first
+opening 1601 and 1605 ms -> 1601 and 1600 ms (no list read yet: no difference); opened again, median 45.7 and 43.9 ms
+(min 43.3, max 48.7), drawn by the click's own update 7 of 7 -> median 1586 and 1578 ms (min 1565, max 1589); the fold
+opened 11.4 and 10.9 ms -> 1539 and 1555 ms; New model -> Fine-tune 12.3 and 12.9 ms -> 1539 and 1557 ms. One read per
+mount in every case, each answered and drawn; no console errors. What the 44 ms is: a new browser window, its style
+sheets copied, and React drawing it with its 411 rows; the fold's and the Mode's 11 to 13 ms are the table alone. Two
+runs of a first version of the check, which waited for the count's words only, gave the same: opened again, median 42.8
+and 44.4 ms -> 1581 and 1584 ms. The batch expected about 1.5 s before and under 100 ms after.

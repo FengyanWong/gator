@@ -308,6 +308,12 @@ table.editor td input.numeric { min-width: calc(11ch + 20px); }
 table.editor td[data-field="instance_path"] input { min-width: calc(14ch + 20px); }
 table.editor td[data-field="notes"] input { min-width: 0; }
 table.editor td[data-field="binding_group"] input { min-width: 110px; }
+/* SIF-131: and the table does not scroll sideways there. The VCO's leaders count up to "▸31" in their first cell - the tick
+   box's column grows to hold it, 62 px - and the table was 2 px too wide again, while its ID column kept the 140 px of
+   record 7.180 (styles.css, as Probes and Specs still do) for IDs of 7 characters. A Parameters ID keeps 12 widths of "0",
+   about 12 characters as Tied to holds them, and the 16 px a tied row's ID is indented by (styles.css): 117 px. Its natural
+   size is 12 too (cells.tsx), so the room it gave goes to Notes, at 1366 px and in a wider window. */
+table.editor td[data-field="variable_id"] input { min-width: calc(12ch + 26px); }
 
 /* SIF-32: Data tables - a column of numbers is right-aligned in figures of one width, its title too. */
 table.grid.small.data-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; }

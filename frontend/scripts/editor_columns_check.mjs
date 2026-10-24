@@ -14,13 +14,17 @@
 //     words of branch record SIF-73);
 //   - Parameters with rows like the user's VCO, their tied rows open: at 1366 x 768 every instance path of up to 12
 //     characters is whole and nothing else is cut but Notes, which gives way first; at 1680 x 1050 Instance takes its
-//     natural 14 characters and Notes the room; the table does not scroll sideways, nor the page (branch record SIF-119).
-// HERMETIC (lib/harness.mjs): validation is answered with a canned valid report labelled FIXTURE, other reads pass, every
-// other writing request is refused. A temporary browser profile: the user's saved configuration is not touched.
-// Exit code 1 if any check fails. Pictures: zero_floor_button.png, parameters_1366.png, in the folder given as the first
-// argument.
+//     natural 14 characters and Notes the room; the table does not scroll sideways, nor the page (branch record SIF-119);
+//   - and as the user had them, a leader counting "▸31" and the Matched devices box open over the folded rows: at 1366 x 768
+//     the table does not scroll sideways either, and IDs of 12 characters are whole, a tied row's too; at 1680 x 1050 an
+//     ID and Tied to take their natural 12 characters, no wider than Instance; with the circuit shown the ID is no wider
+//     than Instance either, nothing is cut but Notes and nothing scrolls sideways (branch record SIF-131).
+// HERMETIC (lib/harness.mjs): validation and Matched devices are answered with canned answers labelled FIXTURE, other reads
+// pass, every other writing request is refused. A temporary browser profile: the user's saved configuration is not touched.
+// Exit code 1 if any check fails. Pictures: zero_floor_button.png, parameters_matched_1366.png, parameters_1366.png, in the
+// folder given as the first argument.
 import path from 'node:path';
-import { check, launchEdge, mockStarter, outDir, reportRefused, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, outDir, reportRefused, runChecks, showCircuit, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -33,8 +37,10 @@ const PROBES = [
 const SPECS = [
   { metric_id: 'freq', equation: 'm_freq', unit: 'Hz', constraint: '>=', lower: 1e9, upper: null, normalization_scale: 1e8 },
   { metric_id: 'half_freq', equation: 'm_freq / 2', unit: 'Hz', constraint: '>=', lower: 5e8, upper: null, normalization_scale: 1e8 }];
-// Parameters rows like the user's VCO (FIXTURE, made up here): its leaders and their notes, four of them with seven tied rows
-// each, and instance paths of 6 to 12 characters - DUT/MNA1 is the VCO's own, DUT/XBUF/MP4 the widest 12 (branch record SIF-119).
+// Parameters rows like the user's VCO (FIXTURE, made up here): its seven leaders and their notes, the four widths with seven
+// tied rows each and the length with 31 - the VCO's 66 rows, so that a leader's first cell counts "▸31" (branch record
+// SIF-131) - and three leaders more: instance paths of 6 to 12 characters - DUT/MNA1 is the VCO's own, DUT/XBUF/MP4 the
+// widest 12 (branch record SIF-119) - and IDs of 12, a tied row's too, indented (wn_tail_bias, wn_mirror_f1; SIF-131).
 const VCO_ROW = (variable_id, instance_path, parameter_name, lower, upper, notes, more = {}) => ({ variable_id, instance_path, parameter_name,
   unit: parameter_name === 'r' ? 'ohm' : 'm', optimized: true, value_type: 'continuous', scale: 'linear', lower, upper, notes: `${notes} (FIXTURE)`, ...more });
 const VCO_LEADERS = [
@@ -45,10 +51,24 @@ const VCO_LEADERS = [
   VCO_ROW('l', 'DUT/MNA1', 'l', 45e-9, 120e-9, 'channel length of all 32 transistors'),
   VCO_ROW('r1_r', 'DUT/R1', 'r', 2000, 3250, 'R1 (VIN -> CTRL); the paper gives 2.5 kohm'),
   VCO_ROW('r2_r', 'DUT/R2', 'r', 300, 1500, 'R2 (CTRL -> VSS); starts at the paper value'),
-  VCO_ROW('wn_tail', 'DUT/I3/MNT12', 'w', 1e-6, 8e-6, 'tail NMOS of the bias'),
+  VCO_ROW('wn_tail_bias', 'DUT/I3/MNT12', 'w', 1e-6, 8e-6, 'tail NMOS of the bias'),
+  VCO_ROW('wn_mirror', 'DUT/I3/MNT11', 'w', 1e-6, 8e-6, 'bias mirror NMOS'),
   VCO_ROW('wp_buf', 'DUT/XBUF/MP4', 'w', 1e-6, 8e-6, 'output buffer PMOS')];
+const FOLLOW = (variable_id, instance_path, parameter_name, lead) => VCO_ROW(variable_id, instance_path, parameter_name, null, null, `follows ${lead}`,
+  { binding_group: lead, ratio: 1 });
+const TRANSISTORS = ['MNA', 'MPA', 'MNX', 'MPX'].flatMap(device => [1, 2, 3, 4, 5, 6, 7, 8].map(n => `DUT/${device}${n}`));
 const VCO = [...VCO_LEADERS, ...[['wn_main', 'MNA'], ['wp_main', 'MPA'], ['wn_aux', 'MNX'], ['wp_aux', 'MPX']].flatMap(([lead, device]) =>
-  [2, 3, 4, 5, 6, 7, 8].map(n => VCO_ROW(`${lead}_f${n - 1}`, `DUT/${device}${n}`, 'w', null, null, `follows ${lead}`, { binding_group: lead, ratio: 1 })))];
+  [2, 3, 4, 5, 6, 7, 8].map(n => FOLLOW(`${lead}_f${n - 1}`, `DUT/${device}${n}`, 'w', lead))),
+  ...TRANSISTORS.slice(1).map((device, n) => FOLLOW(`l_f${n + 1}`, device, 'l', 'l')), FOLLOW('wn_mirror_f1', 'DUT/I3/MNT13', 'w', 'wn_mirror')];
+// The Matched devices answer for these rows (FIXTURE, made up in the backend's words, structures.py): the VCO's eight
+// cross-coupled pairs, each already tied - what the user's box held open over the table (branch record SIF-131).
+const PAIRS = ['MNX', 'MPX'].flatMap(device => [1, 3, 5, 7].map(n => [`DUT/${device}${n}`, `DUT/${device}${n + 1}`]));
+const PAIR_TEXT = ([a, b]) => `${a} and ${b} are a cross-coupled pair: each gate is on the other's drain.`;
+const MATCHED = { applicable: true, independent_before: VCO_LEADERS.length, note: 'FIXTURE: pairs made up for this check.',
+  structures: PAIRS.map(devices => ({ kind: 'cross_coupled_pair', devices, text: PAIR_TEXT(devices) })),
+  suggestions: PAIRS.map(devices => { const follower = VCO.find(r => r.instance_path === devices[1] && r.parameter_name === 'w');
+    return { id: `cross_coupled_pair:${devices.join('+')}`, kind: 'cross_coupled_pair', devices, text: PAIR_TEXT(devices), default: false, note: '', acts: false,
+      changes: [{ device: devices[1], parameter: 'w', variable_id: follower.variable_id, action: 'skip', reason: `already follows ${follower.binding_group}` }] }; }) };
 
 await runChecks(browser, async () => {
   const starter = await mockStarter(APP);
@@ -61,6 +81,7 @@ await runChecks(browser, async () => {
   await page.intercept(['*/api/*'], params => {
     const name = new URL(params.request.url).pathname;
     if (name === '/api/config/validate') return page.fulfil(params.requestId, 200, VALID);
+    if (name === '/api/parameters/matched') return page.fulfil(params.requestId, 200, MATCHED);   // asks only: nothing is tied before Apply
     return page.readOrRefuse(params, refused, { reads: true });
   });
   await page.trackSaves();
@@ -226,33 +247,56 @@ await runChecks(browser, async () => {
     await evaluate(NOTE));
   await evaluate(`${MORE}.click()`);
 
-  // ---- Parameters at 1366 x 768 and 1680 x 1050: an instance path whole (branch record SIF-119) -----------------------------
+  // ---- Parameters at 1366 x 768 and 1680 x 1050: an instance path whole (branch record SIF-119), an ID as wide as its values
+  // and nothing scrolls sideways (branch record SIF-131) ----------------------------------------------------------------------
   // The user's VCO at 1366 x 768 read "DUT/M..." in every Instance (DUT/MNA1): there the table stands at its columns' minimum
-  // widths, and Instance had the 84 px of every text box. Rows like the VCO's, their tied rows open, so that the table box
-  // scrolls up and down beside a scroll bar as it did on the user's page (the bar takes 15 px of the table's room).
+  // widths, and Instance had the 84 px of every text box (SIF-119). The table still scrolled sideways by a few px: its leaders
+  // count up to "▸31" in their first cell, and the ID kept 140 px for IDs of 7 characters (SIF-131). Rows like the VCO's, so
+  // that the table box scrolls up and down beside a scroll bar as it did on the user's page (the bar takes 15 px of the
+  // table's room): first as the user had them, the tied rows folded and the Matched devices box open over them, then the tied
+  // rows open.
   await page.seed({ config: { ...CONFIG, parameters: VCO }, when: 'always' });
+  await page.viewport(1366, 768);
   await send('Page.navigate', { url: APP });
   await until(`!!${EDITORS}?.querySelector('table.editor tbody tr')`, 150);
   await openTab('Parameters');
   check('(set-up) the page opens again on rows like the VCO\'s, the tied rows folded under their leaders',
     await until(`${EDITORS}.querySelectorAll('table.editor tbody tr:not([hidden])').length === ${VCO_LEADERS.length}`));
-  await evaluate(`${EDITORS}.querySelectorAll('table.editor .tie-toggle[aria-expanded="false"]').forEach(b => b.click())`);
-  await until(`${EDITORS}.querySelectorAll('table.editor tbody tr:not([hidden])').length === ${VCO.length}`);
   const fit = () => evaluate(`(() => { const box = ${EDITORS}.querySelector('.scroll'), table = box.querySelector('table.editor');
     const width = f => Math.round(table.querySelector(\`thead th[data-field="\${f}"]\`).getBoundingClientRect().width);
     const boxes = [...table.querySelectorAll('tbody tr:not([hidden]) td[data-field] input:not([type="checkbox"])')];
-    const paths = boxes.filter(i => i.closest('td').dataset.field === 'instance_path');
-    return { rows: paths.length, longest: Math.max(...paths.map(i => i.value.length)), size: paths[0]?.size,
+    const of = field => boxes.filter(i => i.closest('td').dataset.field === field), paths = of('instance_path'), ids = of('variable_id');
+    const longest = list => Math.max(0, ...list.map(i => i.value.length));
+    return { rows: paths.length, longest: longest(paths), size: paths[0]?.size, ids: longest(ids), tiedIds: longest(ids.filter(i => i.closest('tr.tied'))),
+      idSize: ids[0]?.size, tiedToSize: of('binding_group')[0]?.size,
+      counts: [...new Set([...table.querySelectorAll('tbody tr:not([hidden]) .tie-toggle')].map(b => b.textContent))],
       cut: [...new Set(boxes.filter(i => i.scrollWidth > i.clientWidth).map(i => i.closest('td').dataset.field))],
-      widths: Object.fromEntries(['variable_id', 'instance_path', 'binding_group', 'notes'].map(f => [f, width(f)])),
+      widths: { tick: Math.round(table.querySelector('thead th.sel').getBoundingClientRect().width),
+        ...Object.fromEntries(['variable_id', 'instance_path', 'binding_group', 'notes'].map(f => [f, width(f)])) },
       bar: box.offsetWidth - box.clientWidth, sideways: box.scrollWidth - box.clientWidth,
       page: document.documentElement.scrollWidth - document.documentElement.clientWidth }; })()`);
-  await page.viewport(1366, 768); await sleep(500);
+  const BOX = `${EDITORS}.querySelector('.matched-devices')`;
+  await evaluate(`${TOOL('Matched devices...')}.click()`);
+  check('(set-up) at 1366 x 768 Matched devices opens over the leaders with the eight pairs of the VCO',
+    await until(`${BOX}?.querySelectorAll('tbody tr').length === ${PAIRS.length}`), await evaluate(`${BOX}?.textContent.slice(0, 200) ?? 'no box'`));
+  await sleep(500);
+  const asked = await fit();
+  check('(set-up) ...a leader counts "▸31" in its first cell, and the rows scroll up and down beside a scroll bar',
+    asked.counts.includes('▸31') && asked.bar > 0, JSON.stringify(asked));
+  check('with Matched devices open neither the table nor the page scrolls sideways, and nothing is cut but Notes (branch record SIF-131)',
+    asked.sideways <= 0 && asked.page <= 0 && asked.cut.every(f => f === 'notes'), JSON.stringify(asked));
+  await page.shot(path.join(out, 'parameters_matched_1366.png'), EDITORS, { maxHeight: 640 });
+  await evaluate(`${BOX}.querySelector('button[title^="Close"]').click()`);   // the rows stay as they are
+  await until(`!${BOX}`);
+  await evaluate(`${EDITORS}.querySelectorAll('table.editor .tie-toggle[aria-expanded="false"]').forEach(b => b.click())`);
+  await until(`${EDITORS}.querySelectorAll('table.editor tbody tr:not([hidden])').length === ${VCO.length}`);
+  await sleep(300);
   const narrow = await fit();
-  check('(set-up) at 1366 x 768 the 37 rows, the tied ones open, scroll up and down beside a scroll bar; the longest path has 12 characters',
-    narrow.rows === VCO.length && narrow.bar > 0 && narrow.longest === 12, JSON.stringify(narrow));
-  check('at 1366 x 768 every Instance is whole, and nothing else is cut but Notes (branch record SIF-119)', narrow.cut.every(f => f === 'notes'), JSON.stringify(narrow));
-  check('...Notes gives way first, narrower than Instance now, and neither the table nor the page scrolls sideways',
+  check(`(set-up) at 1366 x 768 the ${VCO.length} rows, the tied ones open, scroll up and down beside a scroll bar; the longest path has 12 characters, `
+    + 'and so has the longest ID, a tied row\'s too', narrow.rows === VCO.length && narrow.bar > 0 && narrow.longest === 12 && narrow.ids === 12 && narrow.tiedIds === 12,
+    JSON.stringify(narrow));
+  check('at 1366 x 768 every ID and Instance is whole, and nothing else is cut but Notes (branch record SIF-119, SIF-131)', narrow.cut.every(f => f === 'notes'), JSON.stringify(narrow));
+  check('...Notes gives way first, narrower than Instance now, and neither the table nor the page scrolls sideways (the Matched devices box closed)',
     narrow.widths.notes < narrow.widths.instance_path && narrow.sideways <= 0 && narrow.page <= 0, JSON.stringify(narrow));
   await page.shot(path.join(out, 'parameters_1366.png'), EDITORS, { maxHeight: 420 });
   await page.viewport(1680, 1050); await sleep(500);
@@ -260,5 +304,12 @@ await runChecks(browser, async () => {
   check('at 1680 x 1050 Instance takes its natural 14 characters and Notes the room: nothing cut but Notes, no sideways scroll',
     wide.size === 14 && wide.widths.notes > wide.widths.instance_path && wide.cut.every(f => f === 'notes') && wide.sideways <= 0 && wide.page <= 0,
     JSON.stringify(wide));
+  check('...and an ID and Tied to their natural 12 characters, neither wider than Instance (branch record SIF-131: 183 and 175 px for IDs of 7)',
+    wide.idSize === 12 && wide.tiedToSize === 12 && Math.max(wide.widths.variable_id, wide.widths.binding_group) <= wide.widths.instance_path, JSON.stringify(wide));
+  check('(set-up) "Show circuit" brings the circuit column beside the rows', await showCircuit(page));
+  await sleep(500);
+  const beside = await fit();
+  check('at 1680 x 1050 with the circuit shown nothing is cut but Notes, no sideways scroll, and the ID is no wider than Instance: Notes has its room (SIF-131)',
+    beside.cut.every(f => f === 'notes') && beside.sideways <= 0 && beside.page <= 0 && beside.widths.variable_id <= beside.widths.instance_path, JSON.stringify(beside));
   reportRefused(refused);
 });

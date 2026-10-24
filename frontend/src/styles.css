@@ -137,9 +137,10 @@ table.editor thead th:is(.sel, [data-field="variable_id"], [data-field="measurem
 .scroll.scrolled-x > table.editor :is(th, td):is([data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"])::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: 100%; width: 5px; border-left: 1px solid var(--rule); pointer-events: none;
   background: linear-gradient(to right, rgb(0 0 0 / .1), transparent); }
-/* record 7.180 (design advice: content-sized columns): an ID wide enough to read, a leader's name too (roadster.css, branch
-   record SIF-119), a unit narrow; the other columns keep the 84 px every editor box has. */
-table.editor td[data-field="variable_id"] input, table.editor td[data-field="measurement_id"] input, table.editor td[data-field="metric_id"] input { min-width: 140px; }
+/* record 7.180 (design advice: content-sized columns): an ID wide enough to read - a Parameters ID about its 12 characters
+   and a leader's name too (roadster.css, branch records SIF-119 and SIF-131) -, a unit narrow; the other columns keep the
+   84 px every editor box has. */
+table.editor td[data-field="measurement_id"] input, table.editor td[data-field="metric_id"] input { min-width: 140px; }
 table.editor td[data-field="unit"] input { min-width: 52px; }
 table.editor td input[type="checkbox"] { min-width: 0; }
 table.editor td.sel input { min-width: 0; margin: 0; }   /* the tick box: it inherited the 84 px minimum of the editor inputs */

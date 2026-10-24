@@ -5015,3 +5015,68 @@ scripts, 1,312 checks: the two changed and every check that renders a box with a
 bar, the Specs bounds, the windows' Filter boxes, the Connection, PDK, ngspice and Output settings fields) - all passed
 the first time, no flake. Two comment-only edits (`roadster.css`, `looks_check.mjs`) came after that build;
 `looks_check` 81 and `unsaved_rows_check` 28 again on the final tree.
+
+### SIF-131 The Parameters ID is as wide as its values, and at 1366 px the table no longer scrolls sideways (2026-10-24; from the survey of 2026-10-24)
+
+**Found.** On the user's VCO (mscr_vco_lin_c) at 1366 x 768 the Parameters table still needed a sideways scroll bar a
+few px wide after SIF-119, with the Matched devices box open and the rows scrolling beside a scroll bar; at 1680 x 1050
+with the circuit shown, Notes had about 60 px ("main...", "auxili...") while ID had about 140 px for IDs of 7 characters
+and the empty Tied to about 115 (the survey's S11-1, pictures `12-page-1366.png` and `03-circuit-shown.png`). The survey
+put it down to `TEXT_SIZE` (`cells.tsx`), which has no entry for `variable_id`, so that the ID box kept the 20
+characters of a plain box, and to SIF-119's fixture, which had no follower count of two figures. Measured on rows made
+like the VCO's (the check's, below) on the code before: the VCO's leaders count their tied rows up to "▸31" beside their
+tick box, where SIF-119's fixture counted "▸7", and the tick box's column grows to 62 px to hold it. At 1366 px the
+table stands at its columns' minimums - ID at record 7.180's 140 px (141 with its line), Instance 127, Tied to 111,
+Notes 55, beside the 15 px scroll bar - and was 2 px wider than its box, the tied rows folded under the Matched devices
+box or open. At 1680 x 1050 ID had 183 px, Tied to 175 (a leader's ID on a tied row, empty on a leader's), Instance 140,
+Notes 218; with the circuit shown ID 141, Tied to 111 and Notes 55, the width of its heading.
+
+**Changed.** `frontend/src/roadster.css` (SIF-131, after SIF-119's rules): a Parameters ID keeps 12 widths of "0" -
+about 12 characters, as Tied to's 110 px holds a leader's ID - and the 16 px a tied row's ID is indented by:
+`calc(12ch + 26px)`, 117 px, where it kept 140. Probes and Specs keep their 140 px (a Probe ID such as m_supply_power_w
+is longer). `frontend/src/styles.css`: the Parameters ID leaves record 7.180's 140 px rule, since a `styles.css` value
+that `roadster.css` overrides goes from there (SIF-129); its comment says where the ID's width is now.
+`frontend/src/panels/cells.tsx`: `TEXT_SIZE` gives `variable_id` and `binding_group` (Tied to, which holds a leader's
+ID) a natural size of 12, about their minimum, where a plain box has 20, so that a wider window gives the room to Notes.
+Measured after: at 1366 x 768 with the Matched devices box open over the folded rows, ID 118 px, Instance 128, Tied to
+112, Notes 70 and no sideways scroll; the tied rows open (70 rows), ID 119 and the rest the same; IDs of 12 characters
+whole, a tied row's indented one too, and paths of 12. At 1680 x 1050 ID 144 px, Tied to 137, Instance 151, Notes 248;
+with the circuit shown ID 119, Tied to 113, Instance 128 and Notes 71 (55 before). The page never scrolls sideways. Only
+column widths change: what each cell shows, and what the page reads, writes and asks, is the same; nothing starts,
+continues or stops a run, saves a task or writes to Virtuoso. `docs/workbench.md` (Tied rows, spreadsheet keys and a
+pasted block: Column widths) and `docs/functionality-reference.md` (the Tied rows, keys and pasting a block row) say it.
+Left, with why: the finding's "let Tied to keep its 110 px only where it holds a value, if that can be done without a
+layout jump" - only a tied row holds one, so each time a leader's tied rows opened or folded the column would move
+between its heading's width and 110 px, and every column after it with it: the jump the finding rules out. Tied to's
+natural size of 12 (above) gives Notes the room in a wider window instead. And the plan's "the ID cell keeps room for
+the follower expander": the "▸31" button is in the tick box's column, which grows to hold it; the ID cell's own extra is
+a tied row's indent, which its 117 px holds.
+
+**Checked.** `tsc` clean. `editor_columns_check` 40 (34 before). Its rows like the VCO's are made as the user's are
+now - the four widths with seven tied rows each and the length `l` with 31 (`l_f1` ... `l_f31`, so that a leader counts
+"▸31"), and two leaders more for IDs of 12 characters, one of them with a tied row (`wn_tail_bias`, `wn_mirror_f1`): 70
+rows - and Matched devices is answered with the VCO's eight cross-coupled pairs, each already tied (FIXTURE: nothing can
+be applied). New: at 1366 x 768 as the user had it - the tied rows folded, a leader counting "▸31", the Matched devices
+box open, the rows beside a scroll bar - neither the table nor the page scrolls sideways and nothing is cut but Notes
+(picture `parameters_matched_1366.png`); with the box closed and the tied rows open the longest ID has 12 characters, a
+tied row's too, and every ID and Instance is whole; at 1680 x 1050 the ID and Tied to boxes have their natural 12
+characters and neither column is wider than Instance; with the circuit shown nothing is cut but Notes, nothing scrolls
+sideways and the ID is no wider than Instance. A probe run of the final check on the code before (`cells.tsx`,
+`roadster.css` and `styles.css` as at HEAD, restored after, their sums compared) failed four checks - the table 2 px too
+wide with the box open and with it closed (SIF-119's check, on these rows), the natural sizes 20 (ID 183 px, Tied to
+175), and with the circuit shown ID 141 px beside Instance's 127 - and passed the set-ups. Every check script the runner
+runs (58; the three reward_v2/v21 ones are never run here), one lane, after the memory guard, on a build of this tree:
+2923 checks passed the first time, no flake - `calibration_check` 48, `export_check` 37, `run_control_live_check` 23,
+`run_control_check` 171, `training_tab_check` 135, `dom_identity_check` 56, `connection_panel_check` 101,
+`virtuoso_source_check` 116, `run_list_check` 177, `task_save_check` 91, `testbench_probes_check` 41,
+`model_chooser_check` 139, `output_panel_check` 98, `spec_equations_check` 75, `task_rows_check` 54, `typing_check` 62,
+`find_fill_copy_check` 50, `sheet_check` 54, `project_help_check` 61, `files_tab_check` 43, `launch_recovery_check` 20,
+`working_copy_check` 34, `corner_check_check` 42, `task_list_check` 105, `blocking_issues_check` 62,
+`editor_columns_check` 40, `network_panel_check` 74, `ngspice_window_check` 43, `unsaved_rows_check` 28,
+`calibration_save_check` 22, `looks_check` 81, `save_now_check` 29, `task_run_check` 39, `pdk_check` 46,
+`reliability_check` 20, `room_check` 31, `graph_view_check` 69, `module_fold_check` 30, `reward_block_check` 34,
+`circuit_source_check` 17, `encoder_models_check` 24, `formula_bar_check` 21, `matched_devices_check` 37,
+`model_structure_check` 33, `mode_suggestion_check` 20, `agent_window_check` 33, `consistency_check` 14,
+`training_data_check` 120, `crash_panel_check` 11, `edit_state_check` 28, `callouts_check` 8, `circuit_layout_check` 4,
+`network_inputs_check` 9, `request_lifecycle_check` 25, `editor_renames_check` 8, `graph_paint_check` 6,
+`table_view_check` 10, `unit_text_check` 14.

@@ -2,12 +2,15 @@ import { useRequest } from '../store';
 import { useRef, useState } from 'react';
 import { api, Json } from '../api';
 import { designName, pointText } from '../lineage';
+import { count } from '../format';
 
 // The structure of the chosen saved RL model as TABLES (no plot, no library): a short summary in the narrow run panel
 // and the full layer-by-layer table in a wide dialog. Read only when the fold-out is opened (/api/runs/model/structure:
 // tensor-only, checksum first). Layer types and the "never used" flag are shown only when the backend could rebuild
 // the network and found exactly the saved tensors.
-const n = (value: unknown) => typeof value === 'number' ? value.toLocaleString('en-US') : '?';
+// A parameter count as the page writes every count (branch record SIF-117: here and in the model's facts it was grouped from
+// 1,000 up): 52,416, but 1544.
+const n = (value: unknown) => typeof value === 'number' ? count(value) : '?';
 const share = (value: unknown) => typeof value === 'number' ? `${(100 * value).toFixed(1)} %` : '';
 
 // `checkpointId` = the RESOLVED save point of the model described above it (null while that model is still being read).

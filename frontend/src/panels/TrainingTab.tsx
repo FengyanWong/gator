@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline } from '../api';
-import { createdAt as created, plural, runName, runTaskOrBlank as taskOf, stopWords, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
+import { count, createdAt as created, plural, runName, runTaskOrBlank as taskOf, stopWords, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
 import { si, unitLabel } from '../units';
 import { Icon } from './Icons';
 import { KeyTile } from './fields';
@@ -327,9 +327,10 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const compareOption = (r: Json) => <option key={r.run_dir} value={r.run_dir}>{runChoice(r)}</option>;
   const unavailable = charts.filter(c => !c.available);
   // its two times in words, said in the tooltip (branch record SIF-77: "last metric 18:20:50 · read 20:53:08", and the
-  // tooltip only repeated the line); the tooltip explains only the words the line shows (SIF-77 review)
+  // tooltip only repeated the line); the tooltip explains only the words the line shows (SIF-77 review). Its counts as the page
+  // writes every count (branch record SIF-117: the RL model window read "6,024 learner updates" for this line's 6024).
   const counts = own.answers === 0 ? (reading.error ? '' : 'Reading the recorded numbers...')
-    : `${evaluations} evaluation${evaluations === 1 ? '' : 's'} · ${updates} learner update${updates === 1 ? '' : 's'}${last ? ` · last recorded at ${clock(last)}` : ''}`
+    : `${plural(evaluations, 'evaluation')} · ${plural(updates, 'learner update')}${last ? ` · last recorded at ${clock(last)}` : ''}`
       + (live ? ' · live' : reading.at ? ` · numbers read at ${clock(reading.at / 1000)}` : '');
   const countsTip = own.answers === 0 ? undefined : [last ? 'Last recorded at: when the run recorded its newest evaluation or learner update.' : '',
     live ? 'Live: this tab reads the run\'s recorded numbers again every 2 s while it works.'
@@ -384,7 +385,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
       <summary title="Key numbers: what each run on the charts reached, read from its recorded rows (episode starts left out, as on the charts).">Key numbers</summary>
       {/* One run: its numbers as tiles (record 7.360, user: "make it more compact but keeping the style"); several: one row each. */}
       {keyRows.length === 1 && keyRows[0].numbers ? ((k: NonNullable<(typeof keyRows)[number]['numbers']>) => <div className="key-tiles training-key-tiles">
-        <KeyTile label="Evaluations" value={k.evaluations} title="Evaluations recorded so far." />
+        <KeyTile label="Evaluations" value={count(k.evaluations)} title="Evaluations recorded so far." />
         <KeyTile label="First passing design" value={k.firstPass ?? noPassWord(runDir)} before={k.firstPass != null ? 'evaluation' : undefined}
           note={k.startPassed != null ? startPassedWords(k.startPassed) : undefined} title={FIRST_PASS_TIP} />
         <KeyTile label={`Passing, last ${RECENT}`} value={!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged}` : 'no verdict'}
@@ -405,7 +406,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
         <tbody>{keyRows.map(({ dir, numbers: k }, i) => <tr key={dir}>
           <td title={dir}>{others.length ? <span className={`training-chip key-run${i}`}><span className="swatch" />{runLabel(dir)}</span> : runLabel(dir)}</td>
           {!k ? <td colSpan={6} className="hint">Reading...</td> : <>
-            <td>{k.evaluations}</td>
+            <td>{count(k.evaluations)}</td>
             <td>{k.firstPass != null ? `evaluation ${k.firstPass}` : noPassWord(dir)}
               {k.startPassed != null && <span className="key-tile-note">{startPassedWords(k.startPassed)}</span>}</td>
             <td title={k.recent ? `evaluations ${k.recent.from} to ${k.recent.to}` : undefined}>{!k.recent ? '-' : k.recent.judged ? `${k.recent.passed} of ${k.recent.judged} judged (${Math.round((100 * k.recent.passed) / k.recent.judged)} %)` : 'no verdict'}</td>

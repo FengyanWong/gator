@@ -111,9 +111,20 @@ export const stopWords = (reason?: string | null) => (reason ? STOP_WORDS[reason
 /** A number for reading, not for a table's column: three significant digits, no padding - 0.037, -0.0248, 12.3 (branch record
  *  SIF-2: the reward spread was written 0.0370463). */
 export const sig = (v: number) => String(Number(v.toPrecision(3)));
+// One formatter for every count: toLocaleString makes a new one per call (record 7.279), and counts are written at every
+// status update.
+const GROUPED = new Intl.NumberFormat('en-US');
+/** A count as the whole page writes it (branch record SIF-117): a whole number from 10,000 up in groups of three - "12,000
+ *  evaluations", "52,416 parameters" - and a smaller one plain, "6024", as the page wrote every count but two. The RL model
+ *  window's facts and the network structure grouped from 1,000 up, so one model's learner updates read "6,024" there and
+ *  "6024" in the Training tab and Run status. A number that names one thing (evaluation 35, dispatch #4, a seed, a place on
+ *  a chart's axis), a quantity in its unit and a number in a box one types into are no counts and stay as they are.
+ *  Anything else as String() writes it. */
+export const count = (n: number) => Number.isInteger(n) && Math.abs(n) >= 10000 ? GROUPED.format(n) : String(n);
 /** A count with its noun in the right number: "1 blocking issue", "3 blocking issues"; `many` for a plural that is not the
- *  word with an s ("launches"). The header's button read "1 blocking issue(s)" (branch record SIF-45; out of ModelChooser). */
-export const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
+ *  word with an s ("launches"). The header's button read "1 blocking issue(s)" (branch record SIF-45; out of ModelChooser).
+ *  The number as `count` writes it (branch record SIF-117). */
+export const plural = (n: number, word: string, many = `${word}s`) => `${count(n)} ${n === 1 ? word : many}`;
 /** A task's name from a task id as a model or a run records it: "mscr_vco_lin_c:4fd0a8f9303827bd" (the name and its definition's
  *  hash) or "real:mscr_vco_lin_c" -> "mscr_vco_lin_c" (branch record SIF-2). */
 export const taskNameOf = (id?: string | null) => String(id ?? '').replace(/^(real|ngspice|synthetic):/, '').split(':')[0] || 'unknown task';

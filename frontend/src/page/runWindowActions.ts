@@ -3,7 +3,7 @@
 // (plan-refactoring C5).
 import { useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, plainError } from '../api';
-import { dateTime, folderName, plural, runTitle } from '../format';
+import { count, dateTime, folderName, plural, runTitle } from '../format';
 import { pointText } from '../lineage';
 import type { Newest } from '../newest';
 import type { BottomTab } from '../panels/BottomPanel';
@@ -131,7 +131,7 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
     setMessage({ level: 'info', text: `The next run repeats ${runTitle(row)}: task ${row.task_key}, ${MODE_NAME[mode] ?? mode}`
       + (search.optimizer === 'bayes' ? ' searched by Bayesian optimization (the network is neither asked nor trained)' : search.optimizer ? ` searched by ${search.optimizer}` : '')
       + (from ? ` from ${point ? `${nameOf(point)} (${pointWords(point)})` : `${folderName(from.run_dir)}'s save point ${from.checkpoint_id} (it could not be read now)`}` : '')
-      + `, ${settings.max_evaluations} evaluations, seed ${settings.seed}, with its network, training values, reward, conditions and limits.`
+      + `, ${count(settings.max_evaluations)} evaluations, seed ${settings.seed}, with its network, training values, reward, conditions and limits.`   // a count as the page writes one (branch record SIF-117)
       + `${sinceText(since, 'that run')} A model name already taken gets a number at the start. Undo takes it back.` });
     return { loaded: true };
   };

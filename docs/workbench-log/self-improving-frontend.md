@@ -4056,3 +4056,90 @@ tooltip) and 4 in `training_data_check`; the rest passed. Also run, unchanged: `
 168, `looks_check` 76, `save_now_check` 29, `room_check` 31. 9 scripts, 797 checks, one lane: all passed the first time
 but `run_control_check`'s "at 4" step above, which passed after the fix (with `training_tab_check` again, 113), and once
 more alone, 167, after its picture of the tile (`run-2-first-feasible.png`) was framed on the run at a glance. No flakes.
+
+### SIF-117 Counts are written one way, in groups of three from 10,000 up (2026-10-24; from the survey of 2026-10-23)
+
+**Found.** For one model the RL model window's facts read "Training 800 evaluations, 6,024 learner updates, 760
+transitions in replay", while the Training tab's head read "800 evaluations · 6024 learner updates" and Run status's
+tile "Learner updates 6024": one number, written two ways (the survey's S10-2, pictures `05-bottom-training.png`,
+`05-bottom-run-status.png` and `06-rl-model.png`). The model's facts (`RlModelWindow.tsx` `count`, branch record SIF-58)
+and its network structure (`ModelStructure.tsx` `n`) grouped every count from 1,000 up with `toLocaleString('en-US')`;
+everywhere else the page wrote counts as bare digits. So a model trained for 12,000 evaluations read "12,000" in those
+two places and "12000" in the header's run chip, Run status, the Training tab and the Runs window. The warning on the
+starting values, in the same window as the facts, wrote "1,500 evaluations" and "evaluation 1,000".
+
+**Changed.** `frontend/src/format.ts`: `count(n)` writes a whole number from 10,000 up in groups of three with the en-US
+separator ("12,000") and anything else as `String()` does ("6024"); one `Intl.NumberFormat` serves every call, as record
+7.279 taught for dates. `plural()` writes its number with `count`, so every count with its noun follows: the questions
+before a real or ngspice run starts, a save point "at 12,000 evaluations", the run chip's total, the Training tab's
+Compare list, Data tables' rows, the Limits line's launches. The places that wrote a count of evaluations, learner
+updates, launches, transitions or parameters as bare digits use `count` too, or `plural` where the words come out the
+same (all under `frontend/src`, the panels in `panels/`): in `RlModelWindow.tsx` the facts' Training row (its `count` is
+`plural` now, with "?" for a counter not recorded), and the warning reads "1500 evaluations" and "evaluation 1000"; in
+`ModelStructure.tsx` every parameter count, in the summary, the section tables and the layer table; in `RunTabs.tsx`
+(Run status) the evaluations used and the budget at a glance with those in flight and failed, the tiles' Spectre
+launches, retries, cache hits, learner updates and first feasible design, and in the facts the Budget, Spectre launches,
+Launch accounting and Learner updates rows, the first feasibility's completed and in-flight counts and Save now's "saved
+at"; in `TrainingTab.tsx` the head's counts and the "Evaluations" key number, as a tile and in the table of several
+runs; in `RunControl.tsx` the run chip's evaluations used, before its total ("12,345 of 20,000 evaluations"); in
+`RunBrief.tsx` the card's count and its tooltip; in `ContinueForm.tsx` Used and Allows; in `launch.ts` the MOCK
+question, the numbers of the question before a run goes on, the budget form's messages, "All N evaluations are used" and
+the Next line's budget; in `RunList.tsx` (the Runs window) the Evaluations and First feasible columns, Details' Budget,
+Spectre launches, Learner updates and First feasibility, and the evaluations in the history and in an offline model's
+recorded runs; in `TaskList.tsx` the newest run's evaluations; in `ModelChooser.tsx` the Evaluations of the saved models
+and of the save points, and the newer save point; in `page/runWindowActions.ts` the budget in New run like this's line;
+in `rlModelText.ts` the model line's save point, the Next line's "@" and the folded line's budget; in `lineage.ts`
+Started from's "@ 12,000"; in `RewardConditions.tsx` the launch cap; in `CornerCheck.tsx` the feasible evaluations and
+designs. The plan named Run status and the Training tab beside the two windows; the run chip, the run brief, the Runs
+and Tasks windows, the questions and the RL model window's other lines write the same counts, and `plural` alone would
+have put "12345 of 20,000 evaluations" in the chip. Left as they are, since they are no counts: a number that names one
+thing (an evaluation number - the Training tab's first passing design, the run brief's and the Tasks window's "first
+feasible at evaluation N", which SIF-116 left for a later batch, a chart's axis and the line above it -, a dispatch
+number, an update number, a seed, a save point's id), a quantity in its unit, and a number in a box one types into: the
+Continue... form's field and its "more than 12000", and Output settings' warning, which quotes the two checkpoint
+intervals as they were typed. No word changed: where a noun was fixed ("N evaluations") it stays fixed. Nothing here
+starts, continues or stops a run, saves a task or writes to Virtuoso: the questions before a run ask as they did, with
+the same numbers. `docs/workbench.md` (One way of writing a count, after One way of writing a quantity) and
+`docs/functionality-reference.md` (its row) say it.
+
+**Checked.** `tsc` clean. Every check script the runner runs (58; the three reward_v2/v21 ones are never run here), one
+lane, in two batches after the memory guard. New assertions: `model_structure_check` 33 (31 before): the fixture's
+summary reads "9021 trained parameters = actor 3018 + 2 critics x 3001 + 1" with no separator anywhere in the fold-out
+(the section table "1544"), and the second save point's "17,973 trained parameters = actor 6002 + 2 critics x 5985 + 1"
+and "2 target copies of the critics (11,970)"; its expected texts are built with the page's rule (they used
+`toLocaleString`). `model_chooser_check` 122 (121): the model in use, whose newest save point now carries a long run's
+counters (FIXTURE), reads "40 evaluations, 6024 learner updates, 12,000 transitions in replay". `run_control_check` 170
+(167): Run status's "Learner updates" tile and row read "6024", then "96,000"; the first feasible design "at 12,001
+evaluations used" and its row "(dispatch #12001, 11,998 completed, 3 in flight, 12,001 launches)"; at 12,3xx of 20,000
+the run at a glance, the Budget row ("... remaining 76xx") and the header's run chip ("fixture_task · 12,3xx of 20,000
+evaluations [MOCK]"). `run_list_check` 170 (168): a long run's Evaluations "12,345 / 20,000" and First feasible "at
+10,240", and its Details' Budget, Spectre launches, "96,000" learner updates and First feasibility. `training_tab_check`
+115 (113): "288 evaluations · 1792 learner updates" plain; the long run's "20,000 evaluations · 127,952 learner updates"
+and its key number "20,000"; its pins "20000", "19010" and the compared table's "20000" read "20,000" and "19,010".
+`reward_block_check` 34 (33): the warning's "1500 evaluations" and "evaluation 1000", no separator in it.
+`run_control_live_check` 23: the header's chip on a real MOCK run reads "N of 20,000 evaluations" (its five pins said
+20000). Also run, unchanged: `calibration_check` 48, `export_check` 37, `dom_identity_check` 56, `typing_check` 62,
+`project_help_check` 61, `working_copy_check` 34, `launch_recovery_check` 20, `corner_check_check` 40, `task_list_check`
+105, `looks_check` 76, `network_panel_check` 72, `save_now_check` 29, `task_run_check` 39, `room_check` 31,
+`graph_view_check` 69, `encoder_models_check` 24, `mode_suggestion_check` 20, `agent_window_check` 33,
+`connection_panel_check` 101, `virtuoso_source_check` 116, `task_save_check` 91, `testbench_probes_check` 41,
+`output_panel_check` 98, `task_rows_check` 54, `spec_equations_check` 69, `find_fill_copy_check` 50, `sheet_check` 54,
+`files_tab_check` 43, `calibration_save_check` 22, `consistency_check` 14, `blocking_issues_check` 62,
+`ngspice_window_check` 43, `unsaved_rows_check` 25, `editor_columns_check` 29, `reliability_check` 20,
+`module_fold_check` 30, `pdk_check` 44, `circuit_source_check` 17, `network_inputs_check` 9, `formula_bar_check` 21,
+`matched_devices_check` 37, `training_data_check` 120, `crash_panel_check` 11, `edit_state_check` 28, `callouts_check`
+8, `request_lifecycle_check` 25, `circuit_layout_check` 4, `editor_renames_check` 8, `graph_paint_check` 6,
+`table_view_check` 10, `unit_text_check` 14. All passed the first time but `training_tab_check`, twice: first it did not
+load (its new check declared a `hovered` the script already had), then its new check read the key number "3568" - the
+key numbers follow the charts' frames, a moment after the counts line - and now waits for "20,000" (it also gave up
+asserting the hovered evaluation, which nothing here changed); alone after that, 115. Reward and conditions' launch cap
+is drawn only by the reward_v2 checks, which are not run. A probe run on the code before (the 17 source files as at
+HEAD, restored after, their sums compared): `model_structure_check` failed 6 (the summary, its plain line, the target
+copies, the section table's "1,544", the total row, the 17,973 line), `model_chooser_check` 1 ("6,024 learner updates"),
+`run_control_check` 2 ("96000", "12353 / 20000"; its "6024" passes there too: Run status wrote it plain),
+`run_list_check` its 2 and `reward_block_check` its 1 ("1,500"). That run's `run_list_check` also failed three checks of
+the Runs window's first look - the pop-up showed without its styles ("New modelGraph Transformer", the dates not kept
+whole, Seed not right-aligned) - and its `reward_block_check` lost its window after 24 checks ("the DevTools session
+closed"); on the code after, `run_list_check`, `reward_block_check`, `model_chooser_check` and `model_structure_check`
+passed again together (170, 34, 122, 33). `training_tab_check` and `run_control_live_check` were left out of the probe:
+their changed pins wait a minute each for "20,000", which the code before never writes. No flakes on the code after.

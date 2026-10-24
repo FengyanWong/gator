@@ -17,7 +17,7 @@ import { useRequest } from './store';
 import { restingFor, type RunControl } from './runState';
 import { BLOCKING_LEVELS, LAUNCH_KEY } from './contract';
 import { keepInTab, readKeptInTab } from './kept';
-import { folderName, layerWords, plural } from './format';
+import { count, folderName, layerWords, plural } from './format';
 import type { NextModel } from './panels/rlModelText';
 
 export type Action = 'start' | 'calibration' | 'resume' | 'continue';
@@ -84,30 +84,32 @@ export async function launchWithConsent(send: (flags: Json) => Promise<Json>, op
  *  (1,200 - also with a space, an underscore or an apostrophe); a separator elsewhere (12,00) is a typo and is said, never
  *  guessed. Empty = the run's own total, unless that is used up. The total has to be more than the evaluations used: one
  *  equal to them would end the run at once. `value` null with no error = unchanged. (Number("1,200") is not a number: the
- *  browser's prompt silently kept the budget then.) */
+ *  browser's prompt silently kept the budget then.) Its messages write the counts as the form and Run status do (branch
+ *  record SIF-117). */
 export function parseTotal(text: string, used: number | null, total: number | null): { value: number | null; error: string | null } {
   const plain = text.trim();
   if (!plain) return used != null && total != null && used >= total
-    ? { value: null, error: `All ${total} evaluations are used: type a new total above ${used}.` } : { value: null, error: null };
+    ? { value: null, error: `All ${count(total)} evaluations are used: type a new total above ${count(used)}.` } : { value: null, error: null };
   const grouped = /^\d{1,3}([,\s_']\d{3})+$/.test(plain);
   if (!/^\d+$/.test(plain) && !grouped) return { value: null, error: /^\d*\.\d+$/.test(plain) ? 'Whole evaluations only: a total has no fractions.'
     : /^[\d,\s_'.]+$/.test(plain) ? 'A separator belongs between groups of three digits: write 1,200 or 1200.'
     : 'Type the new total as a whole number, for example 1200.' };
   const value = Number(plain.replace(/[,\s_']/g, ''));
   if (used != null && value <= used) return { value: null, error: value === used
-    ? `${used} evaluations are used already: the new total must be more than that.` : `The total cannot be below the ${used} evaluations already used.` };
+    ? `${count(used)} evaluations are used already: the new total must be more than that.` : `The total cannot be below the ${count(used)} evaluations already used.` };
   return { value, error: null };
 }
 
 /** The question before a run goes on (Resume, Continue...), with the numbers of the budget form: the evaluations the save
- *  point has used, the new total, and how many more that allows. A MOCK run asks nothing. */
+ *  point has used, the new total, and how many more that allows. A MOCK run asks nothing. The counts as the form and Run
+ *  status write them (branch record SIF-117). */
 export function continueConsent(status: Json, check: Json | null, newTotal: number | null): { real: boolean; authorizeText: string } {
   const real = (status?.mock ?? status?.manifest?.mock) === false;
   const used: number | null = check?.used ?? status?.budget?.charged ?? null;
   const total: number | null = newTotal ?? check?.total ?? status?.budget?.max_evaluations ?? null;
   const left = used != null && total != null ? Math.max(0, total - used) : null;
   return { real, authorizeText: (real ? 'This continues REAL simulations (Virtuoso/Spectre, or ngspice for an ngspice netlist task).\n' : 'This continues the synthetic run.\n')
-    + (left === null ? 'Authorize the rest of its evaluation budget?' : `Authorize up to ${left} more candidate evaluation${left === 1 ? '' : 's'}? (${used} of ${total} are used.)`) };
+    + (left === null ? 'Authorize the rest of its evaluation budget?' : `Authorize up to ${count(left)} more candidate evaluation${left === 1 ? '' : 's'}? (${count(used!)} of ${count(total!)} are used.)`) };
 }
 
 // ---- readiness: why each action cannot run now, or null ------------------------------------------------------------------------
@@ -149,7 +151,7 @@ export function continueReadiness({ status, check, phase, held, total }: { statu
     return 'Another run is live in the header: pause it or let it finish first (a second live run would have no Pause or Abort on this page).';
   if (check) {
     if (!check.eligible) return check.reason ?? 'The backend says this run cannot be continued.';
-    if (total === 'unchanged' && check.exhausted) return `All ${check.total} evaluations are used: raise the total with Continue... under Run status.`;
+    if (total === 'unchanged' && check.exhausted) return `All ${count(check.total)} evaluations are used: raise the total with Continue... under Run status.`;
     return null;
   }
   if (status.save_point === null) return 'This run folder holds no save point - a copy made without them, or they were deleted - so there is nothing to go on from.';
@@ -307,12 +309,13 @@ export function useLaunchActions({ control, meta, config, setConfig, configKey, 
   // tooltip, with the reason when Start is disabled"): the task, Run configuration's model and network, the budget. A saved
   // task as the title beside it names it (branch record SIF-71: a renamed task by its new name; it was the key without
   // "real:" for every task, the old name of a renamed one); the key without "real:" until the circuit panel has said. A
-  // Virtuoso cell is library/cell (the title names it so too, as not saved - branch record SIF-88).
+  // Virtuoso cell is library/cell (the title names it so too, as not saved - branch record SIF-88). The budget as the header's
+  // run chip counts it (branch record SIF-117).
   const [nextModel, setNextModel] = useState<NextModel | null>(null);
   const nextTask: string | null = config.circuit?.source === 'registered_task'
     ? (config.circuit.task_id ? (taskShown ?? String(config.circuit.task_id).replace(/^real:/, '')) : null)
     : config.circuit?.cell ? `${config.circuit.library}/${config.circuit.cell}` : null;
-  const nextLine = nextModel ? `Next: ${nextTask ?? 'no task chosen'} · ${nextModel.model} · ${nextModel.network} · ${config.run.max_evaluations} evaluations` : null;
+  const nextLine = nextModel ? `Next: ${nextTask ?? 'no task chosen'} · ${nextModel.model} · ${nextModel.network} · ${count(config.run.max_evaluations)} evaluations` : null;
   const resumeBlocked = control.phase === 'paused'
     ? continueReadiness({ status: control.status, check: heldCheck, phase: control.phase, held: true, total: 'unchanged' }) : null;
   const continueBlocked = continueReadiness({ status, check: shownCheck, phase: control.phase, held: control.dir === runDir, total: 'form' });
@@ -331,7 +334,7 @@ export function useLaunchActions({ control, meta, config, setConfig, configKey, 
     const calibrationText = calibration_only ? `\n(${calibration_designs} random designs for calibration; no starting-design baseline.)` : '';
     launcher.go(calibration_only ? 'calibration' : 'start', configKey, null,
       flags => api.start({ config, calibration_only, ...(calibration_designs ? { calibration_designs } : {}), ...flags }), { real: !!isReal, transfer: true,
-        authorizeText: (!isReal ? `Start ${budget} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${plural(budget, 'candidate evaluation')}?`
+        authorizeText: (!isReal ? `Start ${count(budget)} synthetic MOCK evaluations?` : circuit?.simulator === 'ngspice' ? `This starts ngspice simulations of the task (no license; every one is counted as a real evaluation).\nRun a budget of ${plural(budget, 'candidate evaluation')}?`
           : `This starts REAL Virtuoso/Spectre simulations.\nAuthorize a budget of ${plural(budget, 'candidate evaluation')}?`) + calibrationText },
       'Not started: you answered no, so nothing was created.');
   };

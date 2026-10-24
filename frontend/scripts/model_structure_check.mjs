@@ -9,7 +9,8 @@
 // never-used weights are said only when there are some; section tables fit the narrow panel; "Full layer table" opens a
 // WIDE dialog with every layer (type, shape, parameters, share, what it does), the never-used row marked, a total row;
 // another save point re-reads it; types that could not be verified are not shown; an error is said; TABLES ONLY - no
-// canvas, svg or image anywhere in it.
+// canvas, svg or image anywhere in it. Branch record SIF-117: the counts as the page writes every count, from 10,000 up in
+// groups of three and plain below (they were grouped from 1,000 up here and in the model's facts alone).
 // Last section, against the REAL routes of the backend it runs on (skipped with a note when it has no saved model or is
 // older than the route): the page's numbers equal POST /api/runs/model/structure for the first real model.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
@@ -28,6 +29,8 @@ const browser = await launchEdge('structure');
 // ---- canned answers ------------------------------------------------------------------------------------------
 const NET = { encoder_type: 'graph_transformer', hidden_dim: 16, heads: 2, layers: 1 };
 const RUN = '/fixture/outputs/mock/fx__1/runs/FIXTURE_structure/scratch_seed1__r1';
+/** A count as the page writes it (branch record SIF-117): from 10,000 up in groups of three, a smaller one plain. */
+const counted = n => n >= 10000 ? n.toLocaleString('en-US') : String(n);
 const point = (tag, evaluations, kind, latest) => ({ checkpoint_id: `ckpt-${String(evaluations).padStart(8, '0')}-${tag}`, kind, created_utc: `2026-09-21T10:0${evaluations % 10}:00+00:00`, mode: 'scratch',
   evaluations, learner_updates: evaluations - 4, replay_size: evaluations, restoration_capability: 'full_state', missing_components: [], network: NET, is_latest: latest, is_best_policy: false });
 const POINTS = [point('early', 6, 'periodic', false), point('final', 20, 'final', true)];
@@ -112,12 +115,16 @@ await runChecks(browser, async () => {
   await until(`!!${FOLD}.querySelector('table.structure-sections')`, 50);
   const full = structure(POINTS[1].checkpoint_id);
   let text = await foldText();
-  check('the summary says what is trained, in plain words and with separators', text.includes(`${full.totals.trained.toLocaleString('en-US')} trained parameters = actor ${full.totals.actor.toLocaleString('en-US')} + 2 critics x ${full.totals.critic_each.toLocaleString('en-US')} + 1 (entropy temperature)`), text.slice(0, 160));
-  check('... and what else is saved (the 2 target copies)', text.includes(`2 target copies of the critics (${full.totals.target_copies.toLocaleString('en-US')})`));
-  check('never-used weights are said, with their number per network', text.includes(`${full.totals.never_used.toLocaleString('en-US')} of the trained parameters are never used (272 in each of the 3 trained networks)`) && /lin_skip/.test(text));
+  check('the summary says what is trained, in plain words, its counts as the page writes them', text.includes(`${counted(full.totals.trained)} trained parameters = actor ${counted(full.totals.actor)} + 2 critics x ${counted(full.totals.critic_each)} + 1 (entropy temperature)`), text.slice(0, 160));
+  // Branch record SIF-117: one model's 6024 learner updates read "6,024" in its facts and "6024" in Run status; this fold-out
+  // grouped from 1,000 up as well.
+  check('... a count under 10,000 plain: "9021 trained parameters = actor 3018 + 2 critics x 3001", no separator anywhere in it (SIF-117)',
+    text.includes('9021 trained parameters = actor 3018 + 2 critics x 3001 + 1') && !/\d,\d{3}/.test(text), text.slice(0, 160));
+  check('... and what else is saved (the 2 target copies)', text.includes(`2 target copies of the critics (${counted(full.totals.target_copies)})`));
+  check('never-used weights are said, with their number per network', text.includes(`${counted(full.totals.never_used)} of the trained parameters are never used (272 in each of the 3 trained networks)`) && /lin_skip/.test(text));
   let tables = await sections();
   check('one section table per network: section, layers, parameters, share', tables.length === 2 && tables[0].map(r => r[0]).join('|') === 'Inputs|Block 1 (272 never used)|Read-out|Output'
-    && tables[0][1].slice(1).join('|') === `2|1,544|${(100 * 1544 / full.parts[0].parameters).toFixed(1)} %`, JSON.stringify(tables[0]));
+    && tables[0][1].slice(1).join('|') === `2|1544|${(100 * 1544 / full.parts[0].parameters).toFixed(1)} %`, JSON.stringify(tables[0]));
   check('it fits the narrow panel', !(await evaluate(`${RIGHT}.scrollWidth > ${RIGHT}.clientWidth + 1`)) && await evaluate(`[...${FOLD}.querySelectorAll('table')].every(t => t.scrollWidth <= ${FOLD}.clientWidth + 1)`));
   await evaluate(`${FOLD}.scrollIntoView({ block: 'start' })`); await shot('structure-1-summary.png', RIGHT);
 
@@ -142,7 +149,7 @@ await runChecks(browser, async () => {
   const skip = rows[0].find(r => r.cells[2] === 'encoder.blocks.0.attention.lin_skip');
   check('the never-used layer is marked and says so first', skip.css === 'unused' && skip.cells[7].startsWith('Never used. ') && skip.cells[7].includes('never read by this network'), JSON.stringify(skip));
   check('no other row is marked', rows.flat().filter(r => r.css === 'unused').length === 2);
-  check('the total row equals the network', rows[0][rows[0].length - 1].cells[5] === full.parts[0].parameters.toLocaleString('en-US') && rows[1][rows[1].length - 1].cells[5] === full.parts[1].parameters.toLocaleString('en-US'));
+  check('the total row equals the network', rows[0][rows[0].length - 1].cells[5] === counted(full.parts[0].parameters) && rows[1][rows[1].length - 1].cells[5] === counted(full.parts[1].parameters));
   check('the actor ends in 2 outputs per group, the critic in 1 number', rows[0][rows[0].length - 2].cells[4] === '16 -> 2' && rows[1][rows[1].length - 2].cells[4] === '16 -> 1');
   check('TABLES ONLY: no canvas, svg or image in the fold-out or the dialog', (await evaluate(`${FOLD}.querySelectorAll('canvas, svg, img').length + ${DIALOG}.querySelectorAll('canvas, svg, img').length`)) === 0);
   await shot('structure-2-dialog.png', DIALOG);
@@ -154,7 +161,11 @@ await runChecks(browser, async () => {
   await evaluate(`[...${RIGHT}.querySelectorAll('table.model-points tbody tr')].find(r => r.title === ${JSON.stringify(POINTS[0].checkpoint_id)}).click()`);   // inspect another save point
   check('choosing another save point re-reads the structure for exactly that one', (await waitAsked(2)) === 2 && lastAsked().checkpoint_id === POINTS[0].checkpoint_id, JSON.stringify(lastAsked()));
   const other = structure(POINTS[0].checkpoint_id, mode);
-  check('... and the numbers follow', await until(`${FOLD}.innerText.includes(${JSON.stringify(other.totals.trained.toLocaleString('en-US') + ' trained parameters')})`, 50), (await foldText()).slice(0, 80));
+  check('... and the numbers follow', await until(`${FOLD}.innerText.includes(${JSON.stringify(counted(other.totals.trained) + ' trained parameters')})`, 50), (await foldText()).slice(0, 80));
+  // Branch record SIF-117: from 10,000 up in groups of three, beside the counts under it, plain
+  text = await foldText();
+  check('... a count from 10,000 up in groups of three, the ones under it plain: "17,973 trained parameters = actor 6002 + 2 critics x 5985", "target copies of the critics (11,970)" (SIF-117)',
+    text.includes('17,973 trained parameters = actor 6002 + 2 critics x 5985 + 1') && text.includes('2 target copies of the critics (11,970)'), text.slice(0, 200));
   check('no never-used note when there is none', !/never used/.test(await foldText()));
 
   // ---- types that could not be verified are not shown; an error is said ------------------------------------------------------------------
@@ -184,7 +195,7 @@ await runChecks(browser, async () => {
     check('against the real routes: the first real model\'s Details can be opened', (await until(`!!(${ROW(first.run_dir)})`, 300))
       && (await evaluate(`((${ROW(first.run_dir)}).querySelector('button.notes-link').click(), true)`)) && await until(`!!${RIGHT}.querySelector('table.model-points')`, 40), first.run_dir);
     await until(`!!(${FOLD}) && !${FOLD}.open`, 50); await toggle();
-    const words = `${expected.totals.trained.toLocaleString('en-US')} trained parameters = actor ${expected.totals.actor.toLocaleString('en-US')} + 2 critics x ${expected.totals.critic_each.toLocaleString('en-US')}`;
+    const words = `${counted(expected.totals.trained)} trained parameters = actor ${counted(expected.totals.actor)} + 2 critics x ${counted(expected.totals.critic_each)}`;
     check(`... its summary equals the real route (${words})`, await until(`${FOLD}.innerText.includes(${JSON.stringify(words)})`, 80), (await foldText()).slice(0, 140));
     check('... the displayed type verification matches the backend', expected.types_verified
       ? !/Layer types are not shown/.test(await foldText())

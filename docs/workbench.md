@@ -835,6 +835,17 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
     (four significant digits there), and the check's messages do: "osc_frequency_hz: lower 1.3 GHz here, 1.1 GHz saved".
     The page and the backend use one unit table (`units.py`, sent with `/api/schema`); `unit_text_check.mjs` checks that
     both write the same 34 cases alike. Copy and Ctrl+D fill still carry the stored numbers, which Excel reads.
+- **One way of writing a count** (branch record SIF-117). A count - evaluations, learner updates, Spectre launches,
+  transitions, parameters, rows - is written in groups of three from 10,000 up (`12,000 evaluations`, `52,416
+  parameters`) and plain below (`6024 learner updates`), wherever the page writes one: Run status, the header's run chip
+  and Next line, the run brief, the Continue... form and the questions before a run starts or goes on, the Training tab,
+  the Corner check, the Runs and Tasks windows, Reward and conditions' launch cap, and the RL model window's model line,
+  saved models, facts and network structure (`format.ts` `count`; `plural` writes its number so). Until then a saved
+  model's facts and its network structure grouped from 1,000 up and every other place wrote counts plain, so one model's
+  learner updates read `6,024` in the RL model window and `6024` in the Training tab and Run status. A number that names
+  one thing stays as it is - evaluation 35 (the Training tab's first passing design, a chart's axis and the line above
+  it), dispatch #4, a seed - and so does a number in a box one types into (Evaluation budget, the Continue... form's New
+  total).
 - **Rows not saved in the task** (record 7.222, user: "In the parameter probe and spec windows, highlight the rows that
   are unsaved"). For a saved task (`real:<name>`), every row of Parameters, Probes and Specs that differs from what **Save
   task** stored is marked: a changed row is tinted amber with a bar at its start, the cells that changed a darker amber; a

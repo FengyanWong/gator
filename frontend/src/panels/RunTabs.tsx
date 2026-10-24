@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
 import { quantity, si, variables } from '../units';
-import { bytes, clock, CONNECTION_STATE, durationWhole, num, plural, runName, short, sig, stamp, stopWords, timeLine, TIME_LINE_HELP } from '../format';
+import { bytes, clock, CONNECTION_STATE, count, durationWhole, num, plural, runName, short, sig, stamp, stopWords, timeLine, TIME_LINE_HELP } from '../format';
 import { cardLive, ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
@@ -137,9 +137,10 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   const b = status.budget, best = status.best_design, first = status.first_feasible, conn = status.connection, saved = status.persistence;
   const firstNominal = b?.first_nominal_feasible;
   // "used", as the Continue... form and the Abort question count the budget (branch record SIF-76: here alone it read "charged");
-  // one as one (SIF-76 review: a baseline feasible at once read "at 1 evaluations used")
+  // one as one (SIF-76 review: a baseline feasible at once read "at 1 evaluations used"); the counts as the page writes them,
+  // the dispatch number as it is: it names one design (branch record SIF-117)
   const firstCost = (event: Json) => event
-    ? `at ${plural(event.first_feasible_eval_count, 'evaluation')} used (dispatch #${event.dispatch_index}, ${event.completed_count} completed, ${event.in_flight_count} in flight, ${plural(event.spectre_launches, 'launch', 'launches')})`
+    ? `at ${plural(event.first_feasible_eval_count, 'evaluation')} used (dispatch #${event.dispatch_index}, ${count(event.completed_count)} completed, ${count(event.in_flight_count)} in flight, ${plural(event.spectre_launches, 'launch', 'launches')})`
     : 'not observed';
   const executedReward = status.summary?.reward;
   // The facts below in the page's words (branch record SIF-38): a number to three digits, a value in its unit as the editors
@@ -167,25 +168,27 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
     <SteeringCheck value={status.steering} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
     {status.calibration && <Calibration value={status.calibration} live={!!status.worker_alive || !ENDED.includes(status.state)} config={config} setConfig={setConfig} />}
-    {/* The run at a glance (record 7.360, the Roadster look): how far it is, then four numbers; the table below holds them all. */}
+    {/* The run at a glance (record 7.360, the Roadster look): how far it is, then four numbers; the table below holds them all.
+        Its counts and the table's as the page writes every count, from 10,000 up in groups of three (branch record SIF-117:
+        "Learner updates 6024" here beside the RL model window's "6,024 learner updates" for the same model). */}
     {b && <div className="status-hero">
       <div className="status-hero-count">
         <span className="status-hero-state" title={status.stop_reason ?? undefined}>{status.state}{status.stop_reason ? ` · ${stopWords(status.stop_reason)}` : ''}</span>
-        <span className="status-hero-number">{b.charged}<span className="of"> / {b.max_evaluations}</span></span>
+        <span className="status-hero-number">{count(b.charged)}<span className="of"> / {count(b.max_evaluations)}</span></span>
         <span className="hint" title="A design counts against the budget once it is sent to the simulator, whether it then completes, fails or is cancelled.">
-          evaluations used · {b.in_flight} in flight · {b.failed} failed</span>
+          evaluations used · {count(b.in_flight)} in flight · {count(b.failed)} failed</span>
         <span className={`status-hero-bar${status.state === 'completed' ? ' done' : ['failed', 'cancelled', 'interrupted'].includes(status.state) ? ' bad'
           : ['paused', 'stopped'].includes(status.state) ? ' rest' : ''}`}><span style={{ width: `${b.max_evaluations ? Math.min(100, (100 * b.charged) / b.max_evaluations) : 0}%` }} /></span>
         {/* under the bar, apart from the budget's words above it (export_check reads those whole) */}
         {time && <span className="status-hero-time" title={`${TIME_LINE_HELP} The time left is the working time per evaluation so far, times the evaluations left.`}>{time}</span>}
       </div>
       <div className="key-tiles">
-        <KeyTile label="Spectre launches" value={b.launches} after={`retries ${b.retries} · cache hits ${b.cache_hits}`} />
-        <KeyTile label="Learner updates" value={status.learner_updates ?? 0} />
+        <KeyTile label="Spectre launches" value={count(b.launches)} after={`retries ${count(b.retries)} · cache hits ${count(b.cache_hits)}`} />
+        <KeyTile label="Learner updates" value={count(status.learner_updates ?? 0)} />
         {/* "none yet" only while the run can still find one (branch record SIF-54: an ended run said it too). What it counts, in
             its words - "at 4 evaluations used", as the facts below - and in its tooltip (branch record SIF-116); one as one
             (SIF-76 review): the noun is plural()'s, its number the tile's value */}
-        <KeyTile label="First feasible design" value={first ? first.first_feasible_eval_count : ENDED.includes(status.state) && !status.worker_alive ? 'none' : 'none yet'} before={first ? 'at' : undefined}
+        <KeyTile label="First feasible design" value={first ? count(first.first_feasible_eval_count) : ENDED.includes(status.state) && !status.worker_alive ? 'none' : 'none yet'} before={first ? 'at' : undefined}
           after={first ? `${plural(first.first_feasible_eval_count, 'evaluation').replace(/^\S+ /, '')} used` : undefined} title={FIRST_FEASIBLE_TIP} />
         {/* Its reward, and the hard violation only while it misses (branch record SIF-76: a feasible one read "feasible hard
             violation 0", always 0, and no reward); three digits, as the facts below (SIF-42) */}
@@ -217,13 +220,13 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       {/* The Mode as the RL model window names it (branch record SIF-14: it wrote the key, "scratch (no weights loaded)"). */}
       <tr><td>Mode / model</td><td>{modeWords}{status.manifest?.source_model?.run_id ? ` - from run ${status.manifest.source_model.run_id.slice(0, 12)}, save point ${status.manifest.source_model.checkpoint_id}`
         : ['Baseline', 'Calibration'].includes(modeWords) ? '' : ' - no weights loaded'}</td></tr>
-      <tr><td>Budget</td><td>{b ? `${b.charged} used / ${b.max_evaluations}  (in flight ${b.in_flight}, completed ${b.completed}, failed ${b.failed}, remaining ${b.remaining})` : '-'}</td></tr>
-      <tr><td>Spectre launches</td><td>{b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''}  (retries ${b.retries}, cache hits ${b.cache_hits})` : '-'}</td></tr>
-      {b && <tr><td>Launch accounting</td><td>{b.confirmed_launches ?? b.launches} confirmed, {b.uncertain_launches ?? 0} uncertain, {b.reserved_launches ?? 0} reserved</td></tr>}
+      <tr><td>Budget</td><td>{b ? `${count(b.charged)} used / ${count(b.max_evaluations)}  (in flight ${count(b.in_flight)}, completed ${count(b.completed)}, failed ${count(b.failed)}, remaining ${count(b.remaining)})` : '-'}</td></tr>
+      <tr><td>Spectre launches</td><td>{b ? `${count(b.launches)}${b.max_launches ? ' / ' + count(b.max_launches) : ''}  (retries ${count(b.retries)}, cache hits ${count(b.cache_hits)})` : '-'}</td></tr>
+      {b && <tr><td>Launch accounting</td><td>{count(b.confirmed_launches ?? b.launches)} confirmed, {count(b.uncertain_launches ?? 0)} uncertain, {count(b.reserved_launches ?? 0)} reserved</td></tr>}
       {/* The setting by Run configuration's name (branch record SIF-54: "none (concurrency 4)", the configuration's key). */}
       <tr><td>Active workers</td><td>{(status.active_workers ?? []).map((w: Json) => `#${w.worker_id}: ${w.phase} attempt ${w.attempt}`).join('; ') || 'none'}{status.concurrency != null
         ? `; up to ${plural(status.concurrency, 'concurrent Spectre job')}` : ''}</td></tr>
-      <tr><td>Learner updates</td><td>{status.learner_updates}</td></tr>
+      <tr><td>Learner updates</td><td>{status.learner_updates != null && count(status.learner_updates)}</td></tr>
       {/* Named, and its settings as the reward block names them (branch record SIF-54: it began with a bare "compressed"). */}
       {executedReward?.version === 'constraint_violation_v2' && <tr><td>Executed reward</td><td>{REWARD_NAME[executedReward.version]}; {REWARD_NAMES.violation_shape} {executedReward.settings.violation_shape};
         {' '}{REWARD_NAMES.worst_spec_share} {few(executedReward.settings.worst_spec_share)}; {REWARD_NAMES.objective_weight} {few(executedReward.settings.objective_weight)};
@@ -252,7 +255,7 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       <tr><td>Last save point</td><td title={status.last_checkpoint_utc ? `${status.last_checkpoint_utc} (UTC)` : undefined}>{stamp(status.last_checkpoint_utc) ?? status.last_checkpoint_utc ?? '-'}
         {status.manual_save && <span className={status.manual_save.state === 'saved' ? 'ok' : 'warn'}
           title={status.manual_save.state === 'saved' ? `save point ${status.manual_save.checkpoint_id}` : undefined}> - Save now: {status.manual_save.state === 'saved'
-          ? `saved at ${status.manual_save.evaluations} evaluations`
+          ? `saved at ${count(status.manual_save.evaluations)} evaluations`
           : 'requested, waiting for the simulation in flight to finish'}</span>}</td></tr>
       {/* named, and said when copied, as the Runs window's Details do (branch record SIF-54) */}
       <tr><td>Run folder</td><td className="path" title="Click to copy" onClick={() => void copying.copyText(status.run_dir)}>

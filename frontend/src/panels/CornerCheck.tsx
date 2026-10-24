@@ -2,7 +2,7 @@ import { Icon } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, Json } from '../api';
 import { si } from '../units';
-import { stamp } from '../format';
+import { plural, stamp } from '../format';
 import { launchWithConsent } from '../launch';
 import { useRequest } from '../store';
 
@@ -161,8 +161,8 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
         <tbody>{plan.designs.map((d: Json, i: number) => <tr key={d.evaluation_id}><td>{i + 1}</td>
           <td title={d.evaluation_id}>{d.label ?? d.evaluation_id.slice(0, 8)} {d.completion_index != null && <span className="hint">(evaluation #{d.completion_index})</span>}</td>
           <td>{d.min_margin == null ? '-' : String(+d.min_margin.toPrecision(3))} <span className="hint">({d.tightest_spec})</span></td><td>{variables(d)}</td></tr>)}</tbody></table>
-      <p className="hint">This run has {plan.counts.feasible} feasible evaluation{plan.counts.feasible === 1 ? '' : 's'}, {plan.counts.distinct} different
-        design{plan.counts.distinct === 1 ? '' : 's'}. Corners: {plan.corners.map((c: Json) => `${c.id} (${cornerLabel(c)})`).join(' · ')}.</p>
+      {/* the counts as the page writes them (branch record SIF-117) */}
+      <p className="hint">This run has {plural(plan.counts.feasible, 'feasible evaluation')}, {plural(plan.counts.distinct, 'different design')}. Corners: {plan.corners.map((c: Json) => `${c.id} (${cornerLabel(c)})`).join(' · ')}.</p>
     </>}
     {(plan?.checks?.length ?? 0) > 1 && <details className="more"><summary>Earlier checks of this run ({plan.checks.length})</summary>
       <p className="hint">Double click a row to show that check.</p>

@@ -1,7 +1,7 @@
 // The RL model's words (plan-refactoring C4, out of Right.tsx): the Modes, the encoders' settings and the reward fields as
 // the panel names them, and the lines it writes about the next run's model - pure functions of the configuration.
 import type { Json } from '../api';
-import { durationWhole, plural } from '../format';
+import { count, durationWhole, plural } from '../format';
 import { designName, designShort } from '../lineage';
 
 // Settings stored per encoder in the backend (src/gator_workbench/network_presets.py). The lists are
@@ -182,8 +182,8 @@ export const modelLineText = ({ run, noMode, source, entry, encoder, netShort, s
   run.mode === 'scratch' ? `New model · ${entry?.label ?? encoder} template · ${netShort}`
     : noMode ? 'No Mode chosen: choose one in RL model... (this configuration still says resume)'
     : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} · no saved model chosen`
-    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune'} ${sourceName} · save point ${pointAt != null ? `${pointAt} evaluations` : source.checkpoint_id}`
-      + (run.mode === 'frozen' ? ` · ${run.frozen_action ?? 'deterministic'} actions` : '');
+    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune'} ${sourceName} · save point ${pointAt != null ? `${count(pointAt)} evaluations` : source.checkpoint_id}`
+      + (run.mode === 'frozen' ? ` · ${run.frozen_action ?? 'deterministic'} actions` : '');   // the count as the model's facts write it (branch record SIF-117)
 /** The same, as the header's "Next" line names it (record 7.269; plan "The draft": "Next: ota7t · Fine-tune from ota7t (2)
  *  @ 420 · GT 48/4/4 · 800 evaluations"), with the switches that are on (branch record SIF-103). That line too is cut at two
  *  lines, and seldom shows them; its tooltip and Start's, which begins with it, say them whole. */
@@ -191,7 +191,7 @@ export const nextModelText = ({ run, adv, noMode, source, sourceName, pointAt }:
   run.mode === 'scratch' ? 'New model'                 // the network beside it names the template's encoder
     : noMode ? 'no Mode chosen'
     : !source.run_dir ? `${MODE_NAME[run.mode] ?? run.mode} - no saved model chosen`
-    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune from'} ${sourceName} @ ${pointAt ?? source.checkpoint_id}${run.mode === 'frozen' ? ` (${run.frozen_action ?? 'deterministic'} actions)` : ''}${switchWords(run, adv)}`;
+    : `${run.mode === 'frozen' ? 'Evaluate' : 'Fine-tune from'} ${sourceName} @ ${pointAt != null ? count(pointAt) : source.checkpoint_id}${run.mode === 'frozen' ? ` (${run.frozen_action ?? 'deterministic'} actions)` : ''}${switchWords(run, adv)}`;
 /** That line's tooltip: the network in words, or what a Mode that loads a model still needs. The design by name (branch
  *  record SIF-57: it began "The network in use: graph_transformer"). In Fine-tune also the name typed for the model it saves
  *  (branch record SIF-103). */
@@ -212,6 +212,6 @@ export const limitsText = (run: Json) =>
     run.max_wall_seconds != null ? `wall time ${durationWhole(run.max_wall_seconds) ?? `${run.max_wall_seconds} s`}` : null].filter(Boolean) as string[];
 /** Run configuration folded into one line: the Mode, the model label, the budget and the network. */
 export const foldedText = (run: Json, budget: number, encoder: string, net: Json) =>
-  [MODE_NAME[run.mode] ?? run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${budget} evaluations` : null,
+  [MODE_NAME[run.mode] ?? run.mode, run.model_label?.trim() ? `model ${run.model_label.trim()}` : null, typeof budget === 'number' ? `${count(budget)} evaluations` : null,
     `${designName({ encoder_type: encoder, architecture_version: net.architecture_version })} ${net.hidden_dim ?? '?'}/${net.heads ?? '?'}/${net.layers ?? '?'}`,   // the design by name (SIF-12)
     net.vocabulary === 'families' ? 'device families' : net.vocabulary && net.vocabulary !== 'standard' ? `knows ${net.vocabulary.slice(4)}` : null].filter(Boolean).join(' - ');

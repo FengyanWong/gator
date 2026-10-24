@@ -25,7 +25,8 @@
 // and Space; a run's row takes Enter, which does what its double click does. Branch record SIF-110: the window opens again at
 // the size and place it was left at (popupWindow.ts, every pop-up window), on this screen and at most its size. Its review
 // follow-up: at any page zoom - its outer size and corner are kept too, and set with resizeTo and moveTo. Branch record
-// SIF-113: Refresh list is the refresh icon, its words for screen readers and at the start of its tooltip.
+// SIF-113: Refresh list is the refresh icon, its words for screen readers and at the start of its tooltip. Branch record
+// SIF-117: the table and the Details write a count as the whole page does, from 10,000 up in groups of three.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -91,6 +92,12 @@ const FROM_OFFLINE = run(11, { ...LINEAGE, mode: 'fine_tune', encoder: 'graph_gp
 const CALIBRATION = run(12, { ...LINEAGE, run_kind: 'calibration', task_name: 'agentic_fc_pub.calibration', created_utc: '2026-09-15T10:00:00+00:00', started_utc: '2026-09-15T10:00:02+00:00',
   ended_utc: '2026-09-15T10:05:00+00:00', active_seconds: 298, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 65, max_evaluations: 65, segments: [] });
 // ... and a fine-tune of a model that is not under this output folder: "Started from" names its run folder, with its hash.
+// Branch record SIF-117, only in section 8c: a long run, its counts past 10,000 (`updates`: its learner updates, `first`: its
+// first feasible design as budget.py records it).
+const LONG = run(15, { ...LINEAGE, encoder: 'graph_transformer', model_label: 'fixture (15)', created_utc: '2026-09-14T08:00:00+00:00', started_utc: '2026-09-14T08:00:02+00:00',
+  ended_utc: '2026-09-14T20:00:00+00:00', active_seconds: 43000, state: 'stopped', stop_reason: 'user_stop', evaluations: 12345, max_evaluations: 20000,
+  first_feasible_eval_count: 10240, resumability: 'full_state', segments: [], updates: 96000,
+  first: { first_feasible_eval_count: 10240, dispatch_index: 10240, completed_count: 10236, in_flight_count: 4, spectre_launches: 10240 } });
 const ELSEWHERE = run(13, { ...LINEAGE, mode: 'fine_tune', encoder: 'graph_gps', task_name: 'graphgps_ldo1', model_label: 'graphgps_ldo1 (32)', created_utc: '2026-09-15T11:00:00+00:00',
   started_utc: '2026-09-15T11:00:02+00:00', ended_utc: '2026-09-15T11:40:00+00:00', active_seconds: 2398, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 800, max_evaluations: 800,
   resumability: 'full_state', segments: [], parent: { run_id: 'fixture-elsewhere', run_dir: '/fixture/elsewhere/offline-network__bd7263396019/runs/general/offline__seed0__bd7263396019',
@@ -102,7 +109,7 @@ const described = (run_dir, checkpoint_id, evaluations) => ({ description: { che
   restoration_capability: 'full_state', restorable_components: [], missing_components: [], contract: { model_config: RGCN, sac_config: {} }, file_problems: [] },
   vocabulary: { name: 'standard', label: 'standard (8 generic kinds)', loaded: true }, compatibility: { mode: 'fine_tune', compatible: true, checks: [], checkpoint_id, source_run_id: 'fixture-run-1' } });
 const statusOf = r => ({ state: r.state, run_id: r.run_id, mode: r.mode, entry: 'start', provenance: r.mock ? 'mock' : 'real', mock: r.mock, worker_alive: r.state === 'running', run_dir: r.run_dir,
-  heartbeat_utc: r.last_seen_utc ?? r.ended_utc, stop_reason: r.stop_reason, error: r.error, active_workers: [], concurrency: 2, threads_per_job: 1, learner_updates: 36, first_feasible: null,
+  heartbeat_utc: r.last_seen_utc ?? r.ended_utc, stop_reason: r.stop_reason, error: r.error, active_workers: [], concurrency: 2, threads_per_job: 1, learner_updates: r.updates ?? 36, first_feasible: r.first ?? null,
   budget: { max_evaluations: r.max_evaluations, max_launches: null, max_retries: 0, charged: r.evaluations ?? 0, reserved: 0, in_flight: 0, completed: (r.evaluations ?? 0) - 1, failed: 1, released: 0,
     remaining: r.max_evaluations - (r.evaluations ?? 0), launches: r.evaluations ?? 0, retries: 0, cache_hits: 0, first_feasible: null },
   best_design: { evaluation_id: 'fixture', feasible: false, metrics: { gain_db: 41.5 }, violation: 0.125, reward: -0.25, variables: [{ variable_id: 'input_pair_width', value: 2.3455777695373655e-6, unit: 'm', optimized: true }, { variable_id: 'load_capacitance', value: 2.5e-13, unit: 'F', optimized: true }] }, persistence: null,   // a LIST, as the engine writes it
@@ -569,7 +576,22 @@ await runChecks(browser, async () => {
     names.linkLines <= 3 && names.more && names.tip[0] === `${ARCHIVE} (offline)` && names.tip[1] === OFFLINE.run_dir, JSON.stringify(names));
   check('... while a run folder outside this output folder, named with its hash, does not widen "Started from" past its title (SIF-75)', names.column <= names.titleNeeds + 2, JSON.stringify(names));
   await far.viewport(1500, 860); await sleep(200);
+
+  // ---- 8c. counts as the page writes them (branch record SIF-117) ------------------------------------------------------------------
+  // One model's 6024 learner updates read "6,024" in the RL model window and "6024" in Run status. Every count is written from
+  // 10,000 up in groups of three and plain below - in this window's table and Details too; a dispatch number names one design.
+  listed = [LONG];
+  await pressTop('Refresh list'); await sleep(900);
+  r = rowOf(await table() ?? [], LONG);
+  await pressIn(LONG, 'Details'); await sleep(600);
+  const longFacts = await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('.run-details'); return d ? Object.fromEntries([...d.querySelectorAll('table.run-facts tr')].map(tr => [tr.children[0].textContent, tr.children[1].textContent])) : null; })()`);
+  check('a long run\'s counts in groups of three: Evaluations "12,345 / 20,000", First feasible "at 10,240" (SIF-117)', r?.Evaluations === '12,345 / 20,000' && r['First feasible'] === 'at 10,240', JSON.stringify(r));
+  check('... and in its Details: "12,345 used / 20,000 (... remaining 7655)", "12,345 (retries 0, cache hits 0)" launches, "96,000" learner updates, "at 10,240 evaluations used (10,236 completed, 10,240 launches)" (SIF-117)',
+    longFacts?.Budget === '12,345 used / 20,000 (completed 12,344, failed 1, in flight 0, remaining 7655)' && longFacts['Spectre launches'] === '12,345 (retries 0, cache hits 0)'
+    && longFacts['Learner updates'] === '96,000' && longFacts['First feasibility'] === 'at 10,240 evaluations used (10,236 completed, 10,240 launches)', JSON.stringify(longFacts));
+  await pressIn(LONG, 'Hide details');
   listed = [PAUSED, RESUMED, DONE, LOST, NEVER, FAILED];
+  await pressTop('Refresh list'); await sleep(900);
 
   // ---- 9. closing and opening again ------------------------------------------------------------------------------------------------
   // Branch record SIF-110: the window opens again at the size and place it was left at. Every opening asked for 1500 x 860, and

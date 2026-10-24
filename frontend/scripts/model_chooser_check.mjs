@@ -35,7 +35,9 @@
 // - Fine-tune's switches that are on have a line of their own under the model line, by the window's labels, in view and
 //   whole, and the Next line names them; the model line's tooltip names the model it saves; Evaluate only says Continual
 //   learning, which its run reads too, and has its box (review of SIF-103); the facts show all six reward fields, and
-//   "Use this model's reward" takes them as one Undo step while the next run's reward differs (branch record SIF-103).
+//   "Use this model's reward" takes them as one Undo step while the next run's reward differs (branch record SIF-103);
+// - the model's counters as the page writes every count: from 10,000 up in groups of three, plain below (branch record
+//   SIF-117: "6,024 learner updates" here, "6024" in the Training tab and Run status).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -73,7 +75,9 @@ const B = model('FIXTURE_ldo_gat', 'synthetic:ldo', [point('b1', 8, 'stop', 5, {
   contract: { reward_version: 'constraint_violation_v2', reward_settings: B_REWARD } })]);
 const C = model('FIXTURE_weights_only', 'synthetic:vco', [point('c1', 10, 'pause', 6, { is_latest: true, restoration_capability: 'weights_only', missing_components: ['replay_snapshot (disabled in output settings)'],
   contract: { condition_policy: 'off', planned_conditions: [] } })]);                                    // a plan recorded empty (branch record SIF-80)
-const D = model('FIXTURE_real_ota5', 'real:gpdk045_ota5', [point('d1', 30, 'periodic', 7, { is_best_policy: true, network: RGCN }), point('d2', 40, 'final', 8, { is_latest: true, network: RGCN })], { mock: false });
+// D's newest save point carries a long run's learner updates and replay (FIXTURE), for the counters' two forms (SIF-117).
+const D = model('FIXTURE_real_ota5', 'real:gpdk045_ota5', [point('d1', 30, 'periodic', 7, { is_best_policy: true, network: RGCN }),
+  point('d2', 40, 'final', 8, { is_latest: true, network: RGCN, learner_updates: 6024, replay_size: 12000 })], { mock: false });
 const FILLERS = ['e', 'f', 'g'].map((t, n) => model(`FIXTURE_filler_${t}`, 'synthetic:gpdk045_ota5', [point(`${t}1`, 5 + n, 'final', 9 + n, { is_latest: true })]));
 const MODELS = [A, B, C, D, ...FILLERS].sort((x, y) => (x.saved_utc < y.saved_utc ? 1 : -1));            // newest save first, as the backend sends it
 const describe = (run_dir, checkpoint_id) => {
@@ -694,6 +698,11 @@ await runChecks(browser, async () => {
   await networkPage.evaluate('window.close()'); await browser.window(RL_MODEL_WINDOW, { present: false });
   await reopen();
   check('... and the model line\'s "RL model..." opens it at its top, as before', await until(`!!(${COMPAT})`, 40) && (await evaluate(placeOf)).window === 0, JSON.stringify(await evaluate(placeOf)));
+  // Branch record SIF-117: for one model this row read "6,024 learner updates" and the Training tab and Run status "6024":
+  // the page writes every count from 10,000 up in groups of three, and plain below.
+  const TRAINING_FACT = `([...${RIGHT}.querySelectorAll('table.model-facts tr')].find(r => r.cells[0].textContent === 'Training')?.cells[1].textContent ?? null)`;
+  check('D\'s counters as the page writes counts: "40 evaluations, 6024 learner updates, 12,000 transitions in replay" (SIF-117)',
+    await until(`${TRAINING_FACT} === '40 evaluations, 6024 learner updates, 12,000 transitions in replay'`, 40), await evaluate(TRAINING_FACT));
   incompatibleD = false;
   const beforeScratch = lists;
   await setMode(networkPage, 'scratch'); await sleep(500);

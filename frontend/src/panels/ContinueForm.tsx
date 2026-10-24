@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { parseTotal } from '../launch';
+import { count } from '../format';
 import { Icon } from './Icons';
 
 /** The budget form of Continue... (record 7.261; plan "Existing runs: continued in place"), instead of the browser's
@@ -24,11 +25,12 @@ export function ContinueForm({ used, total, blocked, onContinue, onCancel }: { u
     setPressed(true);
     if (!parsed.error && !blocked) onContinue(parsed.value === total ? null : parsed.value);     // the run's own total = unchanged
   };
+  // Used and Allows as Run status writes its counts (branch record SIF-117); the field and its hint keep the digits one types.
   return <form className="continue-form" onSubmit={submit} onKeyDown={e => { if (e.key === 'Escape') onCancel(); }}>
-    <span>Used <b>{used ?? '?'}</b></span>
+    <span>Used <b>{used != null ? count(used) : '?'}</b></span>
     <label>New total <input ref={field} inputMode="numeric" value={text} aria-invalid={!!error} placeholder={used != null ? `more than ${used}` : ''}
       onChange={e => setText(e.target.value)} title="The new total budget of evaluations: whole evaluations, more than the ones used. Empty = unchanged." /></label>
-    <span className="continue-allows">{more != null ? `Allows ${more} more` : ''}</span>
+    <span className="continue-allows">{more != null ? `Allows ${count(more)} more` : ''}</span>
     <button type="submit" className="primary" disabled={!!blocked}
       title={blocked ? `Continue: ${blocked}` : 'Continue: The run goes on in its own folder from its saved state, with its own saved configuration and this total.'}>
       <Icon name="play" label="Continue" /></button>

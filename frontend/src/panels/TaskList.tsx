@@ -4,7 +4,7 @@ import { Blocked, PopupPortal } from './popupParts';
 import { TASKS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { si } from '../units';
-import { clock, stamp } from '../format';
+import { clock, plural, stamp } from '../format';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { TableHead, useTableView } from './TableView';
 import { Icon } from './Icons';
@@ -52,8 +52,9 @@ const namePart = (text: string) => <span className="name-part">{text.split(/(?<=
 const cellName = (text: string) => { const at = text.indexOf('/'); return at < 0 ? text : <>{text.slice(0, at + 1)}{namePart(text.slice(at + 1))}</>; };
 /** "2026-10-09 22:35": in a narrow window the time goes under the date; the date never breaks at its hyphens. */
 const dateTime = (utc?: string | null) => { const text = minute(utc); if (!text) return null; const [day, time] = text.split(' '); return <><span className="task-date">{day}</span> {time}</>; };
-/** "first feasible at evaluation 34" (branch record SIF-68): a bare "at 34" after a clock time read like a time. */
-const newestText = (r: Json | null) => !r ? 'none' : `${minute(r.created_utc) ?? '?'} · ${r.state ?? 'not started'} · ${r.evaluations ?? 0} evaluation${r.evaluations === 1 ? '' : 's'}`
+/** "first feasible at evaluation 34" (branch record SIF-68): a bare "at 34" after a clock time read like a time. Its
+ *  evaluations as the page writes a count (branch record SIF-117). */
+const newestText = (r: Json | null) => !r ? 'none' : `${minute(r.created_utc) ?? '?'} · ${r.state ?? 'not started'} · ${plural(r.evaluations ?? 0, 'evaluation')}`
   + (r.first_feasible_eval_count != null ? ` · first feasible at evaluation ${r.first_feasible_eval_count}` : r.evaluations ? ' · none feasible' : '');
 
 type Column = { key: string; title: string; help: string; numeric?: boolean; value: (t: Json, runs: Json[]) => string | number | null };

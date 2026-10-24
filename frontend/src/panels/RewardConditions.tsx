@@ -1,6 +1,7 @@
 // Run configuration's reward and training conditions (plan-refactoring C4, out of Right.tsx). It only draws what useRlModel holds.
 import { SIMPLE_REWARD } from '../store';
 import type { Json } from '../api';
+import { count } from '../format';
 import { Check, Num } from './fields';
 import { REWARD_HELP, REWARD_NAMES } from './rlModelText';
 import type { RlModel } from './useRlModel';
@@ -25,7 +26,8 @@ export function RewardConditions({ m }: { m: RlModel }) {
       <table className="grid small reward-costs"><tbody>
         <tr><td>Launches / step</td><td>{gated ? `1 per design that fails nominal, 1 + ${corners.length} per design that passes` : launchesPerStep}</td></tr>
         <tr><td>Launches / reset</td><td>1</td></tr>
-        <tr><td>Launch cap</td><td>{run.max_spectre_launches ?? (robust ? 'Required' : 'Not set')}</td></tr>
+        {/* the cap as the Limits fold's line counts it (branch record SIF-117) */}
+        <tr><td>Launch cap</td><td>{run.max_spectre_launches != null ? count(run.max_spectre_launches) : robust ? 'Required' : 'Not set'}</td></tr>
       </tbody></table></>}
       {/* Each refusal says what to change, by the control's own name (branch record SIF-48): the first named the OTA7 task,
           deleted in record 7.128 with the last corner deck (task_registry.py CORNER_TASKS), and the other two named fields

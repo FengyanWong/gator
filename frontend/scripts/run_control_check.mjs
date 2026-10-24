@@ -26,7 +26,9 @@
 // Branch record SIF-98: Run status, under its bar, and the end of the run chip's tooltip give the run brief's working time and
 // time left. Branch record SIF-110: the run brief's Show results closes the brief, as the Runs window's closes that window;
 // Open in Runs keeps it open. Branch record SIF-116: Run status's "First feasible design" says what it counts, in its tooltip
-// and in its words ("at 4 evaluations used", "at 1 evaluation used").
+// and in its words ("at 4 evaluations used", "at 1 evaluation used"). Branch record SIF-117: Run status writes its counts as the
+// whole page does, from 10,000 up in groups of three and plain below ("Learner updates 6024", "96,000"), a dispatch number
+// as it is.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -42,8 +44,9 @@ const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__s
 // `active`: the working time the status gives (null until the run brief reads it, branch record SIF-78). `output` and
 // `run`: the run's own effective_config.json, as Pause reads it (`run.optimizer`: branch record SIF-83). `error`: the
 // status's error, as a run that fails or pauses by itself gives one (branch record SIF-89). `first`: its first feasible
-// design, as budget.py records it (branch record SIF-116).
-const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, error: null, beat: 0, steps: [], output: {}, run: {}, starts: 0, calibration: null, active: null, first: null };
+// design, as budget.py records it (branch record SIF-116). `updates`: its learner updates (branch record SIF-117).
+const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, error: null, beat: 0, steps: [], output: {}, run: {}, starts: 0, calibration: null, active: null, first: null,
+  updates: 0 };
 const listed = () => sim.state ? [{ run_dir: DIR, run_id: 'fixture-run', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: sim.mock, seed: 0,
   created_utc: '2026-09-21T00:00:00+00:00', state: sim.state, experiment: 'fixture_experiment__0001', evaluations: null, first_feasible_eval_count: null, resumability: null }] : [];
 const statusOf = () => {
@@ -52,7 +55,7 @@ const statusOf = () => {
   else if (sim.alive && sim.state === 'running' && sim.charged < sim.max) sim.charged++;
   const at = new Date(Date.UTC(2026, 8, 21, 0, 0, 0) + 1000 * ++sim.beat).toISOString();
   return { state: sim.state, run_id: 'fixture-run', mode: 'scratch', entry: 'start', provenance: sim.mock ? 'mock' : 'real', mock: sim.mock, worker_alive: sim.alive,
-    run_dir: sim.dir, heartbeat_utc: at, stop_reason: sim.stop_reason, error: sim.error, active_workers: [], concurrency: 1, learner_updates: 0, first_feasible: sim.first,
+    run_dir: sim.dir, heartbeat_utc: at, stop_reason: sim.stop_reason, error: sim.error, active_workers: [], concurrency: 1, learner_updates: sim.updates, first_feasible: sim.first,
     budget: { max_evaluations: sim.max, max_launches: null, max_retries: 0, charged: sim.charged, reserved: 0, in_flight: sim.alive && sim.state === 'running' ? 1 : 0,
       completed: sim.charged, failed: 0, released: 0, remaining: sim.max - sim.charged, launches: sim.charged, retries: 0, cache_hits: 0, first_feasible: null },
     best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: sim.dir }, connection: { overall: 'not_applicable' }, summary: null, calibration: sim.calibration,
@@ -279,6 +282,28 @@ await runChecks(browser, async () => {
   await page.shot(path.join(out, 'run-2-first-feasible.png'), `document.querySelector('.status-grid .status-hero')`);
   sim.first = { first_feasible_eval_count: 1, dispatch_index: 1, completed_count: 1, in_flight_count: 0, spectre_launches: 1 };
   check('... one as one: "at 1 evaluation used" (SIF-116)', await until(`${FIRST_TILE} === 'at 1 evaluation used'`, 60), await evaluate(FIRST_TILE));
+  // Branch record SIF-117: one model's 6024 learner updates read "6024" here and "6,024" in the RL model window's facts. Run
+  // status - and the header's run chip - write a count as the whole page does: plain under 10,000, in groups of three from
+  // 10,000 up; a dispatch number names one design and stays as it is.
+  const UPDATES_TILE = `([...document.querySelectorAll('.status-grid .key-tile')].find(t => t.querySelector('.key-tile-label')?.textContent === 'Learner updates')?.querySelector('.key-tile-value')?.textContent ?? null)`;
+  const UPDATES_ROW = `([...document.querySelectorAll('.status-grid > table tr')].find(tr => tr.cells[0].textContent === 'Learner updates')?.cells[1]?.textContent ?? null)`;
+  const BUDGET_ROW = `([...document.querySelectorAll('.status-grid > table tr')].find(tr => tr.cells[0].textContent === 'Budget')?.cells[1]?.textContent ?? '')`;
+  const HERO = `(document.querySelector('.status-grid .status-hero-number')?.textContent ?? '')`;
+  sim.updates = 6024;
+  check('... "Learner updates 6024": a count under 10,000 plain, in the tile and in the facts (SIF-117)', await until(`${UPDATES_TILE} === '6024' && ${UPDATES_ROW} === '6024'`, 60),
+    `${await evaluate(UPDATES_TILE)} | ${await evaluate(UPDATES_ROW)}`);
+  const before117 = { charged: sim.charged, max: sim.max };
+  Object.assign(sim, { updates: 96000, charged: 12345, max: 20000,
+    first: { first_feasible_eval_count: 12001, dispatch_index: 12001, completed_count: 11998, in_flight_count: 3, spectre_launches: 12001 } });
+  check('... from 10,000 up in groups of three: "96,000", "at 12,001 evaluations used (dispatch #12001, 11,998 completed, 3 in flight, 12,001 launches)" (SIF-117)',
+    await until(`${UPDATES_TILE} === '96,000' && ${UPDATES_ROW} === '96,000' && ${FIRST_TILE} === 'at 12,001 evaluations used'`, 60)
+    && (await evaluate(FIRST_ROW)) === 'at 12,001 evaluations used (dispatch #12001, 11,998 completed, 3 in flight, 12,001 launches)',
+    `${await evaluate(UPDATES_TILE)} | ${await evaluate(UPDATES_ROW)} | ${await evaluate(FIRST_TILE)} | ${await evaluate(FIRST_ROW)}`);
+  check('... the budget too: "12,3xx / 20,000" at a glance, "12,3xx used / 20,000 (... remaining 76xx)" in the facts, the header\'s chip "12,3xx of 20,000 evaluations" (SIF-117)',
+    await until(`/^12,3\\d\\d \\/ 20,000$/.test(${HERO}) && /^fixture_task · 12,3\\d\\d of 20,000 evaluations \\[MOCK\\]$/.test(${CHIP}?.textContent ?? '')`, 60)
+    && /^12,3\d\d used \/ 20,000 {2}\(in flight 1, completed 12,3\d\d, failed 0, remaining 76\d\d\)$/.test(await evaluate(BUDGET_ROW)),
+    `${await evaluate(HERO)} | ${await evaluate(BUDGET_ROW)} | ${await evaluate(`${CHIP}?.textContent`)}`);
+  Object.assign(sim, { updates: 0, charged: before117.charged, max: before117.max });
   sim.first = null;                                          // the run as before, for the steps below
   await until(`${FIRST_TILE} === 'none yet'`, 60);
   // A click copies the path and says so for 1.5 s (the browser's clipboard stood in for: a headless window may not be focused).

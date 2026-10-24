@@ -28,6 +28,8 @@
 //   - branch record SIF-116: "First passing design" says in its tooltip (and its column's) that episode starts are left
 //     out and that Run status counts them; an episode start that passed before it is named under its number, as a tile and
 //     in the table of several runs - and nothing is, when the starts passed only after it
+//   - branch record SIF-117: the counts line and the "Evaluations" key number write a count as the whole page does, from
+//     10,000 up in groups of three ("20,000 evaluations") and plain below ("1792 learner updates")
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -352,6 +354,12 @@ await runChecks(browser, async () => {
   check('a completed run: its state and its last results', await until(`/completed/.test((${TRAINING}).querySelector('.badge').textContent) && /288 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 100));
   check('...when this tab read its numbers, in words (SIF-77: "read 20:53:08"), said in the tooltip', await until(`/ \u00b7 numbers read at \\d\\d:\\d\\d:\\d\\d$/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 20)
     && /Numbers read at: when this tab last read the run's recorded numbers\./.test(await countsTip()), `${await evaluate(`(${TRAINING}).querySelector('.training-counts').textContent`)} | ${await countsTip()}`);
+  // Branch record SIF-117: one model's 6024 learner updates read "6,024" in the RL model window and "6024" here; the page
+  // writes a count under 10,000 plain (and from 10,000 up in groups of three: the long run below)
+  const liveUpdates = RUNS.live.data.prefix[288];
+  check(`...its counts under 10,000 plain: "288 evaluations \u00b7 ${liveUpdates} learner updates" (SIF-117)`, liveUpdates >= 1000
+    && (await evaluate(`(${TRAINING}).querySelector('.training-counts').textContent`)).startsWith(`288 evaluations \u00b7 ${liveUpdates} learner updates \u00b7 `),
+    await evaluate(`(${TRAINING}).querySelector('.training-counts').textContent`));
   const after = reads.length;
   await sleep(5000);
   check('a run at rest is not read again', reads.length === after, `${reads.length - after} reads`);
@@ -466,7 +474,7 @@ await runChecks(browser, async () => {
     const started = Date.now(), first = reads.length;
     await evaluate(`window.__long && (window.__long.length = 0)`);
     await showRun(RUNS.long);
-    const loaded = await until(`/20000 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100);
+    const loaded = await until(`/20,000 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100);   // grouped since SIF-117
     return { loaded, seconds: (Date.now() - started) / 1000, pages: reads.length - first };
   };
   await page.setValue(CHART(0), 'reward');
@@ -676,6 +684,13 @@ await runChecks(browser, async () => {
   const hoverOk = await until(`/^Evaluation \\d+/.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 30, 20);
   const longTasks = await evaluate('window.__long ? window.__long.filter(d => d > 1000).length : -1');
   check('the page stays responsive with the long history drawn', ping < 500 && hoverOk && Date.now() - hoverStart < 1500, `ping ${ping} ms, hover ${Date.now() - hoverStart} ms, ${longTasks} tasks over 1 s`);
+  // Branch record SIF-117: its counts from 10,000 up in groups of three, as the RL model window and Run status write them. The
+  // key numbers follow the charts' preparation of the rows, a moment after the counts line (its first try read "3568").
+  const longCounts = await evaluate(`(${TRAINING}).querySelector('.training-counts').textContent`);
+  const longKey = await until(`[...(${KEYS}).querySelectorAll('.key-tile .key-tile-value')][0]?.textContent === '20,000'`, 300);
+  check(`...its counts in groups of three: "20,000 evaluations · ${RUNS.long.data.updates.length.toLocaleString('en-US')} learner updates", and the key number "20,000" (SIF-117)`,
+    longCounts.startsWith(`20,000 evaluations · ${RUNS.long.data.updates.length.toLocaleString('en-US')} learner updates · `) && longKey,
+    `${longCounts} | ${JSON.stringify(await keyTiles())}`);
   const heap = await evaluate('performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1');
   console.log(`INFO  long history: ${long.seconds.toFixed(1)} s to load, JS heap ${heap} MB`);
   const bound = await loadLong({ evaluations: 5000, updates: 20000 });
@@ -697,7 +712,7 @@ await runChecks(browser, async () => {
   const mb = v => `${v.toFixed(1)} MB`;
   const countsText = () => evaluate(`(${TRAINING})?.querySelector('.training-counts')?.textContent ?? ''`);
   await showRun(RUNS.longlive);
-  check('a long live run loads: 19,008 evaluations published, the journal read on', await until(`/19010 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100),
+  check('a long live run loads: 19,008 evaluations published, the journal read on', await until(`/19,010 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100),
     await countsText());
   for (let i = 0; i < 8 && (await figures()) < 8; i++) { await evaluate(`(${ADD}).click()`); await sleep(150); }
   check('eight charts of the long live run are drawn', await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 8`, 100));
@@ -755,7 +770,7 @@ await runChecks(browser, async () => {
   await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 8`, 60); await sleep(500);
   const start = await heapNow(), rounds = [];
   for (let round = 0; round < 4; round++) {
-    const went = await pickRun(RUNS.long) && await until(`/20000 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100)
+    const went = await pickRun(RUNS.long) && await until(`/20,000 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 600, 100)
       && await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 8`, 60);
     const withLong = await heapNow();
     const back = await pickRun(RUNS.live) && await until(`/288 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 100);
@@ -770,7 +785,7 @@ await runChecks(browser, async () => {
   const alone = await heapNow();
   await page.setValue(COMPARE, RUNS.long.dir);
   const compared = await until(`[...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')].length === 2
-    && /^20000$/.test([...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')][1]?.cells[1]?.textContent ?? '')`, 600, 100);
+    && /^20,000$/.test([...(${TRAINING}).querySelectorAll('details.training-keys tbody tr')][1]?.cells[1]?.textContent ?? '')`, 600, 100);   // a count in the table too (SIF-117)
   await sleep(1500);
   const withCompared = await heapNow();
   await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);

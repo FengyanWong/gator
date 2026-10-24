@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRequest } from '../store';
 import { api, Json } from '../api';
 import { useCopied } from './copied';
-import { folderName, plural, stamp } from '../format';
+import { count, folderName, plural, stamp } from '../format';
 import { childrenOf, designName, ENCODER_SHORT, historyOf, pointText, startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { CircuitGraphView } from './CircuitGraphView';
@@ -127,10 +127,11 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, netF
     <h4>Save points <span className="hint">- newest first; a save point used is pinned: the run loads exactly it, even when its run saves newer ones</span></h4>
     <table className="grid small model-points"><thead><tr><th>Evaluations</th><th>Saved</th><th>Kind</th><th>Restorable</th><th className="plain"></th></tr></thead>
       {/* The pressed Use says "Using..." while its save point is read (branch record SIF-85: it showed nothing); the other
-          buttons stay on - a newer choice wins (record 7.278). */}
+          buttons stay on - a newer choice wins (record 7.278). The evaluations here and in the table of models as the model's
+          facts count them (branch record SIF-117). */}
       <tbody>{points.map(p => { const used = inUse && source.checkpoint_id === p.checkpoint_id, reading = usingPoint === pointKey(model.run_dir, p.checkpoint_id); return (
         <tr key={p.checkpoint_id} className={p.checkpoint_id === point ? 'current' : ''} title={p.checkpoint_id} onClick={() => setPoint(p.checkpoint_id)}>
-          <td className="numeric">{p.evaluations ?? '?'}</td><td>{when(p.created_utc)}</td>
+          <td className="numeric">{p.evaluations != null ? count(p.evaluations) : '?'}</td><td>{when(p.created_utc)}</td>
           <td>{KIND[p.kind] ?? p.kind}{p.is_best_policy ? ' · best policy' : ''}{p.is_latest ? ' · newest' : ''}</td>
           <td>{RESTORABLE[p.restoration_capability] ?? p.restoration_capability}</td>
           <td>{used ? <b className="ok">in use</b> : <button className="model-use" disabled={!usable || reading} aria-busy={reading || undefined}
@@ -276,7 +277,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
       and every N evaluations while it runs ("Model checkpoints" in the output settings must be on).</p>}
     {source.run_dir && models && !inUse && !loading && usable && <p className="warn model-missing">The model in use is not in this list: its run folder is outside the current output
       folder, or it no longer holds a complete save point. <span className="path" title="Click to copy" onClick={() => void copying.copyText(source.run_dir)}>{source.run_dir}{copying.word(source.run_dir)}</span></p>}
-    {newer && <p className="note model-newer">The model in use has a newer save point: <b>{newer.evaluations} evaluations</b> ({when(newer.created_utc)}); the next run loads the save point
+    {newer && <p className="note model-newer">The model in use has a newer save point: <b>{count(newer.evaluations)} evaluations</b> ({when(newer.created_utc)}); the next run loads the save point
       {' '}<span title={source.checkpoint_id}>{pointText(source.checkpoint_id)}</span>. <button className="model-use-newer" onClick={() => onUse(inUse.run_dir, newer.checkpoint_id)}>Use the newer one</button></p>}
     {list.length > 0 && <div className="task-browser">
       {popup && <Folders state={folders} keys={list.map(m => m.run_dir)} popup={popup} onSelect={chooseFolder} selected={selected.length} />}
@@ -294,7 +295,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
                 {folders.folder === 'all' && folders.data.folders[folders.of(m.run_dir)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(m.run_dir)]}</div>}</td>
               <td className="wrap-words" title={m.run_kind === 'offline_pretraining' ? undefined : String(trainedKey(m))}>{breakable(trainedOn(m))}</td>
               <td className="wrap-words model-net" title={netLabel(m.network)}>{designName(m.network)}{' '}<span className="hint model-size">{sizeLabel(m.network)}</span></td>
-              <td className="numeric">{m.trained_evaluations ?? '?'}</td><td className="numeric">{m.checkpoints?.length ?? 0}</td>
+              <td className="numeric">{m.trained_evaluations != null ? count(m.trained_evaluations) : '?'}</td><td className="numeric">{m.checkpoints?.length ?? 0}</td>
               <td className="wrap-words">{when(m.saved_utc)}</td><td className="wrap">{origin.text}</td>
               <td>{m.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>
               <td>{RESTORABLE[m.restoration_capability] ?? m.restoration_capability}</td>

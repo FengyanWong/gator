@@ -1,7 +1,7 @@
 import { Icon, IconName } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, plainError } from '../api';
-import { folderName, plural, runTask, stopWords, timeLine } from '../format';
+import { count, folderName, plural, runTask, stopWords, timeLine } from '../format';
 import { cardLive, ENDED, type Pending, type Phase, type RunControl } from '../runState';
 
 /** The header's run buttons (user request 2026-09-21): ONE main button that reads Start -> Pause -> Resume, and
@@ -19,8 +19,9 @@ import { cardLive, ENDED, type Pending, type Phase, type RunControl } from '../r
 
 // The count says what it counts, and the chip leaves the state word to the strip beside it, which lights it (branch record
 // SIF-72: "Running" stood beside "running 292 / 800", a number easy to take for the Training tab's or the next run's).
-// A budget of 1 is allowed (an Evaluate only run): "of 1 evaluation" (review of SIF-72).
-const used = (status: Json) => status?.budget ? ` ${status.budget.charged} of ${plural(status.budget.max_evaluations, 'evaluation')}` : '';
+// A budget of 1 is allowed (an Evaluate only run): "of 1 evaluation" (review of SIF-72). Both counts as the page writes
+// them, "12,345 of 20,000 evaluations" (branch record SIF-117).
+const used = (status: Json) => status?.budget ? ` ${count(status.budget.charged)} of ${plural(status.budget.max_evaluations, 'evaluation')}` : '';
 const WAITING = 'waiting for the simulation in flight';
 function describe(status: Json, phase: Phase, forced: boolean): string {
   const at = status?.budget ? `at${used(status)}` : '';

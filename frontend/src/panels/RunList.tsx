@@ -4,7 +4,7 @@ import { Blocked, PopupPortal } from './popupParts';
 import { RUNS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { tasksShared } from '../shared';
-import { bytes, clock, durationTenths as span, folderName, plural, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, sig, stamp, stopWords } from '../format';
+import { bytes, clock, count, durationTenths as span, folderName, plural, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, sig, stamp, stopWords } from '../format';
 import { CONTINUE_STATES, isLive } from '../runState';
 import { FolderMoveBar, Folders, useFolders } from './Folders';
 import { Icon } from './Icons';
@@ -109,8 +109,9 @@ function Relationships({ row, info, runs, byDir, tasks, from, onFocus }: { row: 
     ? <button className="item-link" onClick={() => onFocus(dir)} title={`${dir}\nShow this run here: selected, its Details open.`}>{text}</button>
     : <span title={dir}>{text} <span className="hint">(not under this output folder)</span></span>;
   // A run's Mode in words here too, as its Mode column (branch record SIF-44: "· scratch ·", "2026-10-20 13:09:11 fine_tune").
+  // Its evaluations, and every count of this window, as the page writes counts (branch record SIF-117).
   const stepText = (s: Json) => `${s?.task_key ?? (s ? taskOf(s) : '?')} · ${s ? runMode(s) || '?' : '?'} · ${s?.evaluations != null
-    ? `${s.evaluations} evaluation${s.evaluations === 1 ? '' : 's'}` : 'evaluations unknown'}${s?.model_label ? ` · ${s.model_label}` : ''}`;
+    ? plural(s.evaluations, 'evaluation') : 'evaluations unknown'}${s?.model_label ? ` · ${s.model_label}` : ''}`;
   return (<table className="grid small run-relations"><tbody>
     <tr><td>Task</td><td>{row.task_key ? <button className="item-link" onClick={() => openTasksAt({ task_key: row.task_key, from })}
         title="Open the Tasks window at this task.">{task && typeof task.name === 'string' && task.name !== row.task_key.replace(/^[^:]+:/, '') ? `${task.name} (${row.task_key})` : row.task_key}</button> : taskOf(row)}
@@ -121,7 +122,7 @@ function Relationships({ row, info, runs, byDir, tasks, from, onFocus }: { row: 
     <tr><td>Started from</td><td>{row.run_kind === 'offline_pretraining'
         ? <>trained offline on {row.pretraining_sources ?? sources.length} recorded runs
             {sources.length > 0 && <details className="more"><summary>the recorded runs</summary><ul className="steps-list">{sources.map((s: Json) =>
-              <li key={s.run_dir}>{runLink(s.run_dir, `${s.task ?? '?'} · ${s.evaluations ?? '?'} evaluations · ${folderName(s.run_dir)}`)}</li>)}</ul></details>}</>
+              <li key={s.run_dir}>{runLink(s.run_dir, `${s.task ?? '?'} · ${s.evaluations != null ? count(s.evaluations) : '?'} evaluations · ${folderName(s.run_dir)}`)}</li>)}</ul></details>}</>
         : origin.parent ? <>{runLink(origin.parent, origin.text)}{row.parent?.checkpoint_id
             && <span className="hint">{` (${row.parent.relation === 'frozen' ? 'evaluated' : 'fine-tuned'} from its save point ${row.parent.checkpoint_id})`}</span>}</>
         : origin.text === '-' ? <span className="hint">no model: {row.run_kind === 'calibration' ? 'a calibration' : 'a baseline simulation'} loads none</span>
@@ -157,10 +158,11 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     ['Summed simulator job time', summary?.time?.sum_job_runtime_seconds != null ? `${span(summary.time.sum_job_runtime_seconds)} (parallel jobs added up: not elapsed time)` : null],
     ['Stop reason', row.stop_reason ? `${stopWords(row.stop_reason)} (${row.stop_reason})` : null], ['Error', row.error],   // words, the key beside them (SIF-16)
     // "used", as Run status, the Continue... form and the Abort question count the budget (SIF-76: "charged")
-    ['Budget', b ? `${b.charged} used / ${b.max_evaluations} (completed ${b.completed}, failed ${b.failed}, in flight ${b.in_flight}, remaining ${b.remaining})` : null],
-    ['Spectre launches', b ? `${b.launches}${b.max_launches ? ' / ' + b.max_launches : ''} (retries ${b.retries}, cache hits ${b.cache_hits})` : null],
-    ['Learner updates', info ? String(info.learner_updates ?? 0) : null],
-    ['First feasibility', info ? (first ? `at ${plural(first.first_feasible_eval_count, 'evaluation')} used (${first.completed_count} completed, ${plural(first.spectre_launches, 'launch', 'launches')})` : 'not reached') : null],   // one as one (SIF-76 review)
+    // the counts as Run status writes them (branch record SIF-117)
+    ['Budget', b ? `${count(b.charged)} used / ${count(b.max_evaluations)} (completed ${count(b.completed)}, failed ${count(b.failed)}, in flight ${count(b.in_flight)}, remaining ${count(b.remaining)})` : null],
+    ['Spectre launches', b ? `${count(b.launches)}${b.max_launches ? ' / ' + count(b.max_launches) : ''} (retries ${count(b.retries)}, cache hits ${count(b.cache_hits)})` : null],
+    ['Learner updates', info ? count(info.learner_updates ?? 0) : null],
+    ['First feasibility', info ? (first ? `at ${plural(first.first_feasible_eval_count, 'evaluation')} used (${count(first.completed_count)} completed, ${plural(first.spectre_launches, 'launch', 'launches')})` : 'not reached') : null],   // one as one (SIF-76 review)
     ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics, best.metric_units)} · violation ${typeof best.violation === 'number' ? sig(best.violation) : '-'}` : 'none') : null],   // not shouted (SIF-19); three digits (SIF-44)
     ['Best design variables', best?.variables ? variables(best.variables) : null],
     ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}` : 'none (random weights)') : null],
@@ -418,8 +420,8 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
               <span className="run-from-name">{breakAt(origin.text)}</span></button> : origin.text}
               {origin.missing && <span className="hint" title="That run is not under this output folder."> (gone)</span>}</td>
             <td className="wrap-words">{breakAt(r.model_label ?? '-')}</td><td className="numeric">{r.seed}</td>
-            <td className="numeric">{r.evaluations ?? '-'}{r.max_evaluations != null && ` / ${r.max_evaluations}`}</td>
-            <td className="numeric">{r.first_feasible_eval_count != null ? `at ${r.first_feasible_eval_count}` : r.evaluations != null ? 'none' : '-'}</td>
+            <td className="numeric">{r.evaluations != null ? count(r.evaluations) : '-'}{r.max_evaluations != null && ` / ${count(r.max_evaluations)}`}</td>
+            <td className="numeric">{r.first_feasible_eval_count != null ? `at ${count(r.first_feasible_eval_count)}` : r.evaluations != null ? 'none' : '-'}</td>
             <td className="wrap-words run-experiment" title={r.experiment}>{breakAt(experimentName(r.experiment))}</td>
             <td>{r.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>
             <td>{RESUME[r.resumability] ?? '-'}</td>

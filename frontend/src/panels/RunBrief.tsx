@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, Json } from '../api';
-import { clock, durationWhole as span, folderName, runTask, sig, taskNameOf, timeLine, TIME_LINE_HELP } from '../format';
+import { clock, count, durationWhole as span, folderName, runTask, sig, taskNameOf, timeLine, TIME_LINE_HELP } from '../format';
 import { startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { usePopupWindow } from './popupWindow';
@@ -46,9 +46,10 @@ function BriefCard({ dir, row, status, header, byDir, from, onShow }: { dir: str
       <span> · {runMode(row ?? { mode: status?.mode, run_kind: status?.manifest?.run_kind }) || 'Mode unknown'} · {row?.model_label ? `model ${row.model_label}` : 'no model saved'}</span>
       {mock ? <>{' '}<span className="badge model-tag mock-tag">MOCK</span></> : <span className="hint brief-data"> · real data</span>}</div>
     <div className="hint brief-where">{header ? "In this page's header" : "Not in this page's header"} · {status?.state ?? row?.state ?? 'unknown state'}</div>
-    <div className="brief-progress" title={used != null && total ? `${used} of ${total} evaluations` : undefined}>
+    {/* the counts as the header's run chip writes them (branch record SIF-117) */}
+    <div className="brief-progress" title={used != null && total ? `${count(used)} of ${count(total)} evaluations` : undefined}>
       <span className="brief-bar"><span style={{ width: `${share}%` }} /></span>
-      <span className="brief-count">{used ?? '?'} / {total ?? '?'} evaluations</span></div>
+      <span className="brief-count">{used != null ? count(used) : '?'} / {total != null ? count(total) : '?'} evaluations</span></div>
     {/* the working time as the Runs window's Duration names it, "so far" while live (branch record SIF-78: "worked 5 min 01 s"
         here, "4 min 23 s so far" there, for one number); not "Running for" - the header's card can be a paused or ended run.
         The line is format.ts timeLine, which Run status and the run chip show too (branch record SIF-98). */}

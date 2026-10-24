@@ -5,7 +5,7 @@
 // or encoder labels.
 
 import { Json } from './api';
-import { folderName, plural } from './format';
+import { count, folderName, plural } from './format';
 
 /** The encoders' short names, as Run configuration writes them (GraphGPS, not "GPS", since branch record SIF-1). */
 export const ENCODER_SHORT: Record<string, string> = { graph_transformer: 'GT', rgcn: 'RGCN', gatv2: 'GATv2', graph_gps: 'GraphGPS', group_cross_attention: 'Group attention', circuit_gps: 'CircuitGPS' };
@@ -34,7 +34,8 @@ export type Origin = { text: string; parent?: string; missing?: boolean; at?: nu
 
 /** "Started from" (the plan's column): "template GT" for a new model, "ota7t (2) @ 420" for a run that loaded a saved
  *  model (a link to that run), "offline: 22 runs" for an offline model, "-" for a baseline or a calibration. A parent
- *  that is not under this output folder is named by its folder and marked `missing`, never left out. */
+ *  that is not under this output folder is named by its folder and marked `missing`, never left out. The save point's
+ *  evaluations as the page writes a count, "@ 12,000" (branch record SIF-117). */
 export function startedFrom(run: Json, byDir: Map<string, Json>): Origin {
   if (run.run_kind === 'offline_pretraining') return { text: `offline: ${run.pretraining_sources ?? '?'} runs` };
   const parent = run.parent;
@@ -42,7 +43,7 @@ export function startedFrom(run: Json, byDir: Map<string, Json>): Origin {
     const from = byDir.get(parent.run_dir);
     const offline = from?.run_kind === 'offline_pretraining';
     const at = offline ? null : pointEvaluations(parent.checkpoint_id);
-    return { text: `${from?.model_label ?? folderName(parent.run_dir)}${offline ? ' (offline)' : at != null ? ` @ ${at}` : ''}`,
+    return { text: `${from?.model_label ?? folderName(parent.run_dir)}${offline ? ' (offline)' : at != null ? ` @ ${count(at)}` : ''}`,
       parent: parent.run_dir, missing: !from, at };
   }
   if (run.run_kind === 'baseline_preflight' || run.run_kind === 'calibration') return { text: '-' };

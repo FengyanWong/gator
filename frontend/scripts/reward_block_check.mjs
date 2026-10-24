@@ -3,7 +3,8 @@
 // controls in a closed "Advanced" fold, a configuration with other values told how many and which (folded) and offered the
 // tested set on a button; the soft actor-critic values with which the search stays random named in the RL
 // model window, which Run configuration's notice opens at that warning (branch record SIF-86), and "Use the template's values" (the starting preset) taking them away; the Specs scale headed "Scale"
-// behind "More columns" and suggested as the size of the limit (6 dB for dB).
+// behind "More columns" and suggested as the size of the limit (6 dB for dB). The warning's numbers plain, as the page writes
+// numbers under 10,000 (branch record SIF-117).
 // Hermetic: reads go to the scratch backend, every writing request but validation is refused, and a network-settings
 // write is held here (none is expected: there is no GATOR baseline to press since record 7.191).
 // Run (Windows node through WSL interop):
@@ -99,6 +100,11 @@ await runChecks(browser, async () => {
     await page.until(`${SLOW}?.textContent.startsWith('With 1 update per evaluation and a starting temperature of 0.2, soft actor-critic learned late or not at all')
       && ${SLOW}.textContent.endsWith('The tested values are 8 updates per evaluation (Updates per transition), starting temperature 0.01 (Initial alpha) and discount 0 (Discount gamma), under Advanced.')`),
     await evaluate(`${SLOW}?.textContent`));
+  // Branch record SIF-117: its numbers as the page writes numbers under 10,000, plain (it read "1,500 evaluations" and
+  // "evaluation 1,000" beside the facts' counts)
+  check('... its numbers plain: "a uniform random search for 1500 evaluations", "about evaluation 1000" (SIF-117)',
+    await page.until(`${SLOW}?.textContent.includes('stayed a uniform random search for 1500 evaluations,') && ${SLOW}.textContent.includes('learning to about evaluation 1000.')
+      && !/\\d,\\d{3}/.test(${SLOW}.textContent)`), await evaluate(`${SLOW}?.textContent`));
   // Branch record SIF-86: the notice's link opened the window at its top, the warning further down, under the templates.
   const SLOW_AT = `(() => { const r = (${SLOW})?.getBoundingClientRect(), w = window.__checkRLWindow;
     return { window: Math.round(w.scrollY), top: r ? Math.round(r.top) : null, bottom: r ? Math.round(r.bottom) : null, height: w.innerHeight }; })()`;

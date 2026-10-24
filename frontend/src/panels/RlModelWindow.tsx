@@ -29,9 +29,10 @@ const conditionsText = (contract: Json) => {
 /** A setting's value in the differences table: RWSE as the saved models table writes it (SIF-8), a switch as on/off (branch
  *  record SIF-57: "rwse", "true"). */
 const settingValue = (v: Json) => v === 'rwse' ? 'RWSE' : typeof v === 'boolean' ? (v ? 'on' : 'off') : String(v);
-/** A saved model's counter in its facts, grouped as the warning below writes "1,500", with its noun in the right number
- *  (branch record SIF-58: "Training 12000 evaluations, 96000 updates, replay 12000"); '?' where a model recorded none. */
-const count = (n: Json, word: string) => `${typeof n === 'number' ? n.toLocaleString('en-US') : '?'} ${n === 1 ? word : `${word}s`}`;
+/** A saved model's counter in its facts, with its noun in the right number (branch record SIF-58: "Training 12000 evaluations,
+ *  96000 updates, replay 12000"); '?' where a model recorded none. Written as every count of the page (branch record SIF-117:
+ *  grouped from 1,000 up here, its 6,024 learner updates read 6024 in the Training tab and Run status). */
+const count = (n: Json, word: string) => typeof n === 'number' ? plural(n, word) : `? ${word}s`;
 /** What the model in use's Restorable allows (review of branch record SIF-80): a full save point is continued exactly only by
  *  the optimizer source that wrote it (record 7.221). The compatibility's digest check says whether it did - a warning when it
  *  did not, then the Runs window's words; no meaning while no compatibility is known (still checking, or not checked). */
@@ -74,11 +75,12 @@ function AdvancedFields({ m }: { m: RlModel }) {
   const { adv, setAdv, editAdv, entry, encoder, schema, sacSlow } = m;
   // Branch record SIF-57: the tested values with the labels of their fields below (the warning named "starting temperature"
   // and "updates per evaluation", which no field there carries), and "template", the window's one word for what keeps them
-  // (it said "stored per encoder" and "the selected encoder", and no encoder is chosen any more).
+  // (it said "stored per encoder" and "the selected encoder", and no encoder is chosen any more). Its 1500 and 1000 plain, as
+  // the page writes numbers under 10,000 (branch record SIF-117: "1,500", "1,000").
   return <>
     {sacSlow.length > 0 && <p className="warn sac-values" id="sac-values">With {sacSlow.join(' and ')}, soft actor-critic learned late or not at all in the tests of 2026-10-05:
-      with 1 update per evaluation the designs stayed a uniform random search for 1,500 evaluations, and a starting temperature of 0.2 delayed
-      learning to about evaluation 1,000. The tested values are 8 updates per evaluation (Updates per transition), starting temperature 0.01 (Initial
+      with 1 update per evaluation the designs stayed a uniform random search for 1500 evaluations, and a starting temperature of 0.2 delayed
+      learning to about evaluation 1000. The tested values are 8 updates per evaluation (Updates per transition), starting temperature 0.01 (Initial
       alpha) and discount 0 (Discount gamma), under Advanced.</p>}
     <details className="rl-advanced"><summary>Advanced (kept with the template, like the network sizes)</summary>
       <p className="hint">Alpha learning rate and the tick box below belong to this configuration; the other settings belong to the {DESIGN_NAME[encoder] ?? encoder} template. The algorithm stays soft actor-critic; only its numbers change.</p>

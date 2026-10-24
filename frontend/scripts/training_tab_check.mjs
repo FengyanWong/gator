@@ -34,6 +34,9 @@
 //     its parts, each whole and nothing cut, and keeps its height while the pointer crosses rows of fewer lines; a key that
 //     switches a series off gives that height back, and a row grows to hold its charts' lines - eight charts at 1366 px with
 //     a compared run, every plot inside its card, the second row's titles and × in reach (SIF-120 review)
+//   - branch record SIF-125: what draws the tab again, read from the props React keeps on its elements while the run's status
+//     and Training reads are held back: a read of a live run draws it once, as its answer comes (not also as it starts); a key
+//     typed in the editors draws the bottom panel, not the tab nor its Compare list; a status answer the tab, not its list
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -169,8 +172,12 @@ await runChecks(browser, async () => {
   const page = await browser.open({ consoleApi: false, width: 1600, height: 1000 });
   const { send, evaluate, fulfil, consoleErrors } = page;
   const reads = [];                                         // every /api/runs/training request: { run, flushes, at }
-  const answer = ({ requestId, request }) => {
-    const url = new URL(request.url), name = url.pathname, run = byDir[url.searchParams.get('run_dir')];
+  // A request of a path in `holding` waits unanswered in `heldBack` until `release` answers it as usual (branch record SIF-125:
+  // the run's status and its Training reads held back - each poll waits for its answer - so that nothing else draws the page)
+  const holding = new Set(), heldBack = [];
+  const answer = params => {
+    const { requestId, request } = params, url = new URL(request.url), name = url.pathname, run = byDir[url.searchParams.get('run_dir')];
+    if (holding.has(name)) { heldBack.push(params); return; }
     if (name === '/api/config/validate') return fulfil(requestId, 200, validConfiguration({ mock: true }));
     if (name === '/api/runs') return fulfil(requestId, 200, { runs: listRuns ? runRows() : [] });
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
@@ -188,6 +195,9 @@ await runChecks(browser, async () => {
     if (name === '/api/runs/files') return fulfil(requestId, 200, { files: [{ path: 'FIXTURE/run_manifest.json', bytes: 1234, modified_utc: '2026-10-05T12:00:00+00:00' }], total_bytes: 1234, run_dir: run?.dir });
     return page.readOrRefuse({ requestId, request });
   };
+  const heldOf = name => heldBack.filter(p => new URL(p.request.url).pathname === name).length;
+  const release = name => { holding.delete(name); for (const p of heldBack.filter(q => new URL(q.request.url).pathname === name)) { heldBack.splice(heldBack.indexOf(p), 1); answer(p); } };
+  const waitFor = async (test, ms = 6000) => { for (let t = 0; t < ms && !test(); t += 50) await sleep(50); return test(); };
   // Every redraw of a chart clears its canvas: counted per canvas, with the time. While window.__axisText is a list, each text
   // drawn on a plot is noted: its size in px and, right-aligned (the y axis's numbers), where its left end falls on its canvas
   // (branch record SIF-65).
@@ -268,6 +278,48 @@ await runChecks(browser, async () => {
   const quiet = await evaluate('window.__draws.length');
   await sleep(4500);                                                        // two more reads that bring nothing new
   check('nothing new, no redraw', (await evaluate('window.__draws.length')) === quiet, `${(await evaluate('window.__draws.length')) - quiet} redraws`);
+
+  // ---- what draws the tab again (branch record SIF-125) ---------------------------------------------------------------------
+  // A key typed in the editors drew the whole tab again, hidden or not; each status answer drew its Compare list of every run
+  // anew (548 options with the user's 549 runs); each 2 s read of a live run drew the tab twice, as it started and as its
+  // answer came. React keeps the props it last drew an element with on the element (a key "__reactProps$...", as run_list_check
+  // reads its rows since SIF-122), and an element drawn with a handler made anew carries new ones: the bottom panel's splitter
+  // at every drawing of the panel, the head's Add chart button at every drawing of the tab, the Compare list only with the list.
+  const ADD_BUTTON = `[...(${TRAINING}).querySelectorAll('.training-head button')].find(b => b.textContent === 'Add chart')`;
+  const mark = name => evaluate(`(() => { const of = el => el?.[Object.keys(el).find(k => k.startsWith('__reactProps$'))];
+    const seen = { panel: of(document.querySelector('footer .splitter')), add: of(${ADD_BUTTON}), compare: of((${TRAINING}).querySelector('select[aria-label="Compare with another run"]')) };
+    (window.__marks ??= {})[${JSON.stringify(name)}] = seen; return !!(seen.panel && seen.add && seen.compare); })()`);
+  const same = (a, b, part) => evaluate(`window.__marks[${JSON.stringify(a)}].${part} === window.__marks[${JSON.stringify(b)}].${part}`);
+  holding.add('/api/runs/status'); holding.add('/api/runs/training');
+  const heldBoth = await waitFor(() => heldOf('/api/runs/status') > 0 && heldOf('/api/runs/training') > 0);
+  await sleep(400);
+  check('(set-up) the run\'s status and its Training read held back; the panel, the head and the Compare list carry the props React drew them with', heldBoth && await mark('held'));
+  release('/api/runs/training'); await sleep(400); await mark('answered');
+  holding.add('/api/runs/training');
+  const nextRead = await waitFor(() => heldOf('/api/runs/training') > 0);
+  await sleep(400); await mark('next');
+  check('a read of the live run draws the tab once, as its answer comes: nothing as the next read starts (SIF-125)',
+    nextRead && !(await same('held', 'answered', 'add')) && await same('answered', 'next', 'add'), `next read held: ${nextRead}`);
+  // "5" typed after the number of a Parameters cell, then Backspace: the configuration changes twice and is as it was
+  const EDITORS = `document.querySelector('section.editors')`;
+  await evaluate(`[...${EDITORS}.querySelectorAll('.tabs > button')].find(b => b.textContent.trim().startsWith('Parameters'))?.click()`);
+  const CELL = `(() => { const at = [...${EDITORS}.querySelectorAll('table.editor thead th')].map(h => h.dataset.field ?? h.textContent.replace(' *', '').trim()).indexOf('upper');
+    return ${EDITORS}.querySelectorAll('table.editor tbody tr')[0]?.children[at]?.querySelector('input'); })()`;
+  const cellText = await evaluate(`(() => { const i = ${CELL}; i.focus(); const n = /^[-+]?[\\d.]+(e[-+]?\\d+)?/.exec(i.value)?.[0].length ?? i.value.length;
+    i.setSelectionRange(n, n); return i.value; })()`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: '5', text: '5', unmodifiedText: '5' }); await send('Input.dispatchKeyEvent', { type: 'keyUp', key: '5' });
+  const typed = await until(`${CELL}.value !== ${JSON.stringify(cellText)}`, 20);
+  await sleep(800);                                                      // its validation (0.5 s after the key) answered
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+  const restored = await until(`${CELL}.value === ${JSON.stringify(cellText)}`, 20);
+  await sleep(800); await mark('typed');
+  await evaluate(`${CELL}.blur()`);
+  const foldedNow = await evaluate(`document.querySelector('.layout').classList.contains('bottom-folded')`);
+  check('a key typed in the editors draws the bottom panel again, but not the Training tab, nor its Compare list (SIF-125)', typed && restored && !foldedNow
+    && !(await same('next', 'typed', 'panel')) && await same('next', 'typed', 'add') && await same('next', 'typed', 'compare'), `${cellText}: typed ${typed}, restored ${restored}, panel folded ${foldedNow}`);
+  release('/api/runs/status'); await sleep(600); await mark('status');
+  check('a status answer draws the tab again, but not its Compare list (SIF-125)', !(await same('typed', 'status', 'add')) && await same('typed', 'status', 'compare'));
+  release('/api/runs/training');
   await press('Logs');
   const readsHidden = reads.length;
   RUNS.live.final = 240; RUNS.live.tail = 1;

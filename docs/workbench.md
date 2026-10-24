@@ -2013,7 +2013,12 @@ later polls fetch only new rows (7.201). Even one large bundle can span pages; i
 evaluation. A new flush or journal replacement resets the provisional rows before they are loaded again, without
 double-counting. More pages are fetched immediately,
 then every 2 s while the run's worker lives, once more when it ends, and never for a run at rest. A chart is redrawn at
-most once a second and only when something changed; the chart objects are reused. New numbers never change the chosen
+most once a second and only when something changed; the chart objects are reused. The tab around the charts is drawn
+again only when what it shows can change (branch record SIF-125): a key typed in the editors drew all of it, hidden too;
+a status answer of a live run (every 1.5 s) drew its Compare list anew, an option per run (548 with the user's 549); and
+each 2 s read of a live run drew the tab twice, as the read started and as its answer came. With 549 runs in a headless
+Edge that was about 0.4 ms more script per key, and 68 ms of script in a minute of a live run instead of 41; what the
+tab shows, reads and keeps is the same. New numbers never change the chosen
 tab. Another run starts from nothing (runs are never mixed); a run continued after a pause or a crash gets a dashed
 "continued" line where its new segment began. Since record 7.221 an answer reads the run's configuration and manifest
 once each, and its flush log only from where the previous answer stopped, after checking that it is still the same

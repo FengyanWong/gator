@@ -4600,3 +4600,80 @@ mount in every case, each answered and drawn; no console errors. What the 44 ms 
 sheets copied, and React drawing it with its 411 rows; the fold's and the Mode's 11 to 13 ms are the table alone. Two
 runs of a first version of the check, which waited for the count's words only, gave the same: opened again, median 42.8
 and 44.4 ms -> 1581 and 1584 ms. The batch expected about 1.5 s before and under 100 ms after.
+
+### SIF-125 Typing no longer draws the Training tab again, nor a status answer its Compare list, and a live read draws it once (2026-10-24; from the performance audit)
+
+**Found.** The performance audit's batch 4 (LEAK-2, NET-4 and LEAK-3, confirmed). The Training tab stays mounted while
+another tab is shown or the panel is folded (hidden by a style, record 7.193), and the bottom panel takes the page's
+configuration: so each key typed in the editors, and each answer of its validation, drew the whole tab again, hidden or
+not - and with it its Compare list, made anew from the run list (an option per run: 548 with the user's 549 runs), and
+each chart's list of choices, once per chart. Each status answer of a live run (every 1.5 s) did the same. And each 2 s
+read of a live run drew the tab twice: as the read started, for a "busy" mark that nothing showed, and again as its
+answer came. Measured below with 549 runs: about 0.4 ms of script per key went to the tab, shown or hidden, and a minute
+of a live run took 68 ms of script where 41 do now. The audit read `TrainingTab.tsx` as it was at d19e4ad (the review of
+SIF-77, 2026-10-21 23:27): its line numbers are that file's, and its Compare list the one list before SIF-105 grouped it.
+
+**Changed.** `frontend/src/panels/TrainingTab.tsx`: the tab's body is `TrainingTabBody`, and `TrainingTab` is it
+memoised (`memo`): drawn again only when one of its props changes - whether it is hidden, the run shown, that run's
+status, the run list, which stays the same array until it changes (`page/shownRun.ts`). A key typed changes none of
+them; all else the tab shows is its own state, and the unit forms its chart titles use are set before the panel is
+first drawn (`App.tsx`). The Compare list - the select with SIF-105's "Same task (...)" and "Other tasks" groups, its
+tooltip and its greying - is made in a `useMemo` over the run list, the shown run and the compared runs (`othersKey`,
+which `others` goes with; `keepCompare` only sets the list and keeps it), above the tab's early return: a status answer
+draws the tab, not the list. The choices in the charts' titles are one memoised list of elements (`chartOptions`), made
+with the run's charts and shared by every chart's title. The read loop's `before` and the reading state's `busy` are
+gone; the answer's own update (`done`) is as it was, so the counts line, "numbers read at" and its tooltip, the error
+line and Retry read are drawn when they were. What the tab shows, reads and keeps is the same, and nothing here starts,
+continues or stops a run, saves a task or writes to Virtuoso. Nothing of the batch was left out. `docs/workbench.md`
+(The Training tab: When it reads, when it draws) and `docs/functionality-reference.md` (Training: Cost) say it.
+`frontend/scripts/training_tab_check.mjs`: the checks below; a request of a given path can be held back and answered
+later (`holding`, `release`).
+
+**Checked.** `tsc` clean. `training_tab_check` 127 (123 before). New, with the run's status and its Training reads held
+back - each poll waits for its answer - so that nothing else draws the page, read from the props React keeps on each
+element (`__reactProps$...`, as run_list_check reads its rows since SIF-122; an element drawn with a handler made anew
+carries new ones): a read of the live run draws the tab as its answer comes (the head's Add chart button carries new
+props) and nothing as the next read starts; a key typed in a Parameters cell ("5" after its number, then Backspace)
+draws the bottom panel again (its splitter) but neither the tab nor its Compare list; a status answer draws the tab but
+not its Compare list. A probe run of the new check on the build before failed exactly these three (124 passed). One
+lane, after the memory guard, on a build of this tree: `run_control_check` 171, `training_tab_check` 127,
+`dom_identity_check` 56 (recording), `run_list_check` 177, `typing_check` 62, `files_tab_check` 43, `task_list_check`
+105, `looks_check` 76, `task_run_check` 39, `reliability_check` 20, `room_check` 31, `matched_devices_check` 37,
+`training_data_check` 120, `agent_window_check` 33, `calibration_check` 48, `export_check` 37, `run_control_live_check`
+23 (17 scripts, 1205 checks, one run: every check that reads the bottom panel, where the tab is mounted, `typing_check`,
+and `run_control_live_check`, whose live MOCK run the page follows), and `corner_check_check` 42 - all passed the first
+time. One flake, before that run:
+the first run of the new `training_tab_check` on the build after failed "a chart redraws at most once a second while
+results arrive" - 6 redraws in its window, 3 of one chart within a second. Every run of both builds drew the same 6
+there (3 per chart); the check allows 2 of a chart in any second, and once a frame drawn late put 3 in one. It passed in
+the four runs since, one of them on the build before. DOM identity: `dom_identity_check` recorded against the scratch
+backend (56 passed), replayed on the build before (the reference, 56 passed) and on the build after with `--compare`
+(112 passed): all 56 files identical byte for byte - each step's page and window in the ten scenes, requests.txt and
+storage.json - among them the tabs scene's Training tab with a compared run.
+
+**Measured.** A throwaway check (`tmp-measure-training_check.mjs`) and build script (`tmp-measure-build.mjs`), both
+deleted before this commit, run by `run_checks.sh --lanes 1 --build <dist>` on builds of HEAD 39e8e30 and of this
+change, each built into a temp folder, behind the scratch backend: `/api/runs` answered with 549 canned runs shaped like
+the user's (SIF-122's: seven tasks, five designs, fine-tunes, baselines and calibrations), the shown one - the newest - a
+MOCK run of 400 evaluations and 2512 learner updates whose `/api/runs/status` and `/api/runs/training` are canned as
+training_tab_check answers them; no run compared, so the Compare list held the other 548 (78 of its task, 470 of other
+tasks). Headless Edge 1600 x 1100, the Training tab open with its two charts. After a garbage collection, CDP
+`Performance.getMetrics` (training_tab_check's `metrics()`) around 20 keys (`Input.dispatchKeyEvent`: "5" after the
+number of a Parameters cell, then Backspace, so that each key changes the configuration), two frames after each and
+1.2 s after the last (its validation, 0.5 s on, answered), three rounds, per key the median; the same with Run status
+shown and the Training tab hidden; the page's own clock - performance.now() around an input event made in the page and
+React's flush - over 60 keys each; then, after a reload with the run's status turned live (a status answer every 1.5 s,
+a Training read every 2 s, nothing new recorded) and 6 s to settle, 60 s measured. Two runs of each build, before ->
+after: a key with the Training tab shown 2.01 and 2.05 ms of script -> 1.62 and 1.71 ms, its task time 5.23 and 5.37 ->
+4.98 and 5.11 ms, by the page's clock 1.40 and 1.50 -> 1.10 and 1.10 ms; with the tab hidden 1.98 and 2.03 -> 1.62 and
+1.53 ms of script, 5.18 and 5.11 -> 4.67 and 4.69 ms of task time, 1.40 and 1.50 -> 1.10 and 1.15 ms by the page's clock;
+the live minute (40 status answers and 30 Training reads in every run) 68.7 and 67.7 ms of script -> 40.3 and 41.3 ms,
+1.72 and 1.69 -> 1.01 and 1.03 ms per status answer with the reads' share, its task time 119.8 and 118.5 -> 84.5 and
+90.1 ms, no style or layout work in either (nothing on screen changed). Drawings, counted on two more builds of the same
+trees with a counter at the top of the tab's and of the bottom panel's body put in by a transform at build time (the
+source untouched; one run each): per key the tab 1.1 -> 0 times, the bottom panel 1.1 and 1.1 (the keys and their
+validation answers); in the live minute the tab 99 -> 68 times and the bottom panel 39 and 40, one per status answer, so
+the tab's own drawings per read 2.00 -> 0.93 (28 for 30 reads: two answers were drawn in one render with a status
+answer). What stays per key: the page and the bottom panel drawn (1.1 ms by the page's clock) and the frame; per status
+answer the tab drawn once for its status, without its Compare list. The audit expected 0.5 to 1.5 ms less per key; this
+machine gave 0.4.

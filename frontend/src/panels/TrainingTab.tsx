@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline } from '../api';
 import { count, createdAt as created, plural, runName, runTaskOrBlank as taskOf, stopWords, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
 import { si, unitLabel } from '../units';
@@ -117,9 +117,9 @@ function usePageHidden() {
 }
 
 /** What a read loop of the Training tab does besides reading (plan-refactoring C10: the shown run's loop and the compared
- *  runs' loop were one loop with these differences). `before`: at the start of each read. `done`: an answer applied - whether
- *  to read again in POLL_MS. `failed`: a read failed (not cancelled) - how long until it is tried again, or null for never. */
-type ReadLoop = { before?: () => void; done: (dir: string, answer: Answer) => boolean; failed: (dir: string, e: any) => number | null };
+ *  runs' loop were one loop with these differences). `done`: an answer applied - whether to read again in POLL_MS.
+ *  `failed`: a read failed (not cancelled) - how long until it is tried again, or null for never. */
+type ReadLoop = { done: (dir: string, answer: Answer) => boolean; failed: (dir: string, e: any) => number | null };
 /** Reads each run's recorded numbers that are new since its last answer - the history in pages, then again while `done`
  *  says so - for as long as the effect stands (`deps`). `runs()` is asked when it starts: the runs to read, or null for none. */
 function useTrainingReads(runs: () => { dir: string; store: TrainingStore }[] | null, loop: ReadLoop, requestFrame: () => void, deps: unknown[]) {
@@ -130,7 +130,6 @@ function useTrainingReads(runs: () => { dir: string; store: TrainingStore }[] | 
     const timers: number[] = [], controller = new AbortController();
     for (const { dir, store: run } of list) {
       const read = async () => {
-        loop.before?.();
         try {
           const answer: Answer = await readWithDeadline(signal => api.training(dir, run.flushes, signal, run.tailCursor), controller.signal, 60000);
           if (!alive) return;
@@ -150,7 +149,7 @@ function useTrainingReads(runs: () => { dir: string; store: TrainingStore }[] | 
   }, deps);
 }
 
-export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean; runDir: string | null; status: Json; runs: Json[] }) {
+function TrainingTabBody({ hidden, runDir, status, runs }: { hidden: boolean; runDir: string | null; status: Json; runs: Json[] }) {
   const pageHidden = usePageHidden();
   const active = !hidden && !pageHidden && !!runDir;
   const live = shownLive(status, runDir);
@@ -165,7 +164,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   }, [slots, smoothing, learnerX, keysOpen]);
   const store = useRef<TrainingStore | null>(null);
   const [frame, setFrame] = useState(0);                         // one more each time the charts take the store's rows
-  const [reading, setReading] = useState<{ error: string | null; at: number | null; busy: boolean }>({ error: null, at: null, busy: false });
+  const [reading, setReading] = useState<{ error: string | null; at: number | null }>({ error: null, at: null });
   const [views, setViews] = useState<Record<number, View>>({});           // by chart key; none = the whole run
   const [widths, setWidths] = useState<Record<number, number>>({});
   const [retry, setRetry] = useState(0);
@@ -173,7 +172,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   // Another run: its own store, whole charts, the zoom let go. The previous run's rows are dropped with its store.
   if (runDir && store.current?.runDir !== runDir) store.current = new TrainingStore(runDir);
   if (!runDir && store.current) store.current = null;
-  useEffect(() => { setViews({}); setReading({ error: null, at: null, busy: false }); }, [runDir]);
+  useEffect(() => { setViews({}); setReading({ error: null, at: null }); }, [runDir]);
 
   // ---- drawing: at most once a second, only when something changed, never while hidden (then caught up when shown)
   const activeRef = useRef(active);
@@ -194,12 +193,13 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   // ---- reading: what is new since the last answer; again every 2 s while the run is live; nothing while hidden
   const liveRef = useRef(live);
   liveRef.current = live;
+  // Nothing is noted as a read starts (branch record SIF-125): a "busy" mark that nothing showed drew the whole tab once more
+  // at every 2 s read of a live run. The answer's own update below draws what it brings.
   useTrainingReads(() => { const own = store.current; return active && own ? [{ dir: own.runDir, store: own }] : null; }, {
-    before: () => setReading(r => (r.busy ? r : { ...r, busy: true })),
-    done: () => { setReading({ error: null, at: Date.now(), busy: false }); return liveRef.current; },
+    done: () => { setReading({ error: null, at: Date.now() }); return liveRef.current; },
     // a backend started before this tab existed has no such route (FastAPI's own 404 "Not Found"): said as such. The time
     // stays the last good read's: the head says "numbers read at" it (branch record SIF-77 review), and nothing was read now.
-    failed: (_dir, e) => { setReading(r => ({ error: readError(e), at: r.at, busy: false })); return liveRef.current ? RETRY_MS : null; },
+    failed: (_dir, e) => { setReading(r => ({ error: readError(e), at: r.at })); return liveRef.current ? RETRY_MS : null; },
   }, requestFrame, [active, runDir, live, retry, requestFrame]);
 
   // ---- other runs on the same charts (record 7.200): each its own store, read like the shown one, apart from it
@@ -237,12 +237,36 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
       : `${named[i]} \u00b7 ${(runName(dir).split('__').pop() ?? '').slice(0, 6)}`]));
   }, [rowOf, runDir, othersKey]);
   const runLabel = (dir: string) => labels.get(dir) ?? runName(dir);
+  // The Compare list, made again only when the runs, the shown run or the compared ones change (branch record SIF-125): each
+  // status answer of a live run (every 1.5 s) and each key typed in the editors made it anew, an option per run - 548 with
+  // the user's 549 - hidden or not. `others` goes with othersKey; keepCompare only sets the list and keeps it.
+  const compareSelect = useMemo(() => {
+    if (!runDir) return null;                                                 // no run shown: no list
+    const candidates = runs.filter(r => r.run_dir !== runDir && !others.includes(r.run_dir));
+    // The shown run's task first (branch record SIF-105): the list held every run under the output root newest first (612 in
+    // the user's folder), and the runs worth comparing - the task's other seeds and Modes - stood scattered among them. By the
+    // registered task's key; a shown run the list has no key for (not listed, or a row without one) keeps the one list, and
+    // the tooltip says "the shown run's task first" only over the groups (SIF-105 review: it said so over the one list too).
+    const shownRow = rowOf.get(runDir), task: string | null = shownRow?.task_key ?? null;
+    const sameTask = task ? candidates.filter(r => r.task_key === task) : [], otherTasks = task ? candidates.filter(r => r.task_key !== task) : [];
+    const compareOption = (r: Json) => <option key={r.run_dir} value={r.run_dir}>{runChoice(r)}</option>;
+    return <select aria-label="Compare with another run" className="training-compare" value="" disabled={others.length >= COMPARE_MAX - 1 || !candidates.length}
+      onChange={e => { if (e.target.value) keepCompare([...others, e.target.value]); }}
+      title={`Compare: draw up to ${COMPARE_MAX - 1} other runs on the same charts, each in its own colour (the list of the run window, Runs...${task ? ', the shown run\'s task first' : ''}).`}>
+      <option value="">Compare...</option>
+      {!task ? candidates.map(compareOption) : <>
+        {sameTask.length > 0 && <optgroup label={`Same task (${taskOf(shownRow) || task})`}>{sameTask.map(compareOption)}</optgroup>}
+        {otherTasks.length > 0 && <optgroup label="Other tasks">{otherTasks.map(compareOption)}</optgroup>}</>}</select>;
+  }, [runs, rowOf, runDir, othersKey]);
 
   const own = store.current;
   // a baseline run that calibrates (record 7.197): its random designs are not training, and nothing learns
   const calibration = !!status?.calibration;
   const context: Context = useMemo(() => ({ calibration }), [calibration]);
   const charts = useMemo(() => (own ? catalog(own, context) : []), [own, frame, context]);
+  // the choices in every chart's title, made once per change of the run's charts (branch record SIF-125: once per chart at
+  // every drawing of the tab); one list of elements serves every chart's title
+  const chartOptions = useMemo(() => options(charts), [charts]);
   // the key numbers of every run on the charts, the shown one first (record 7.215); again with each frame
   const keyRows = useMemo(() => (own && runDir ? [{ dir: runDir, store: own, context }, ...others.map(dir => ({ dir, store: compared.current.get(dir), context: {} }))]
     .map(({ dir, store: run, context: known }) => ({ dir, numbers: run && run.answers > 0 ? keyNumbers(run, known) : null })) : []), [own, runDir, frame, othersKey, context]);
@@ -317,14 +341,6 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
   const noPassWord = (dir: string) => { const s: Json = status?.run_dir === dir ? status : rowOf.get(dir);
     return s && ENDED.includes(s.state) && !s.worker_alive && !(others.includes(dir) && comparedState[dir]?.live) ? 'none' : 'none yet'; };
   const empty = own.answers > 0 && evaluations === 0 && updates === 0 && !others.length;
-  const candidates = runs.filter(r => r.run_dir !== runDir && !others.includes(r.run_dir));
-  // The shown run's task first (branch record SIF-105): the list held every run under the output root newest first (612 in
-  // the user's folder), and the runs worth comparing - the task's other seeds and Modes - stood scattered among them. By the
-  // registered task's key; a shown run the list has no key for (not listed, or a row without one) keeps the one list, and
-  // the tooltip says "the shown run's task first" only over the groups (SIF-105 review: it said so over the one list too).
-  const shownRow = rowOf.get(runDir), task: string | null = shownRow?.task_key ?? null;
-  const sameTask = task ? candidates.filter(r => r.task_key === task) : [], otherTasks = task ? candidates.filter(r => r.task_key !== task) : [];
-  const compareOption = (r: Json) => <option key={r.run_dir} value={r.run_dir}>{runChoice(r)}</option>;
   const unavailable = charts.filter(c => !c.available);
   // its two times in words, said in the tooltip (branch record SIF-77: "last metric 18:20:50 · read 20:53:08", and the
   // tooltip only repeated the line); the tooltip explains only the words the line shows (SIF-77 review). Its counts as the page
@@ -358,13 +374,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
         + (learnerShown ? '' : ' No learner chart is on the page now.')}>Learner by <select aria-label="Learner charts by" value={learnerX}
           onChange={e => chooseLearnerX(e.target.value === 'evaluation' ? 'evaluation' : 'update')}>
           <option value="update">update</option><option value="evaluation">evaluation</option></select></label>
-      <select aria-label="Compare with another run" className="training-compare" value="" disabled={others.length >= COMPARE_MAX - 1 || !candidates.length}
-        onChange={e => { if (e.target.value) keepCompare([...others, e.target.value]); }}
-        title={`Compare: draw up to ${COMPARE_MAX - 1} other runs on the same charts, each in its own colour (the list of the run window, Runs...${task ? ', the shown run\'s task first' : ''}).`}>
-        <option value="">Compare...</option>
-        {!task ? candidates.map(compareOption) : <>
-          {sameTask.length > 0 && <optgroup label={`Same task (${taskOf(shownRow) || task})`}>{sameTask.map(compareOption)}</optgroup>}
-          {otherTasks.length > 0 && <optgroup label="Other tasks">{otherTasks.map(compareOption)}</optgroup>}</>}</select>
+      {compareSelect}
       <button aria-pressed={following} disabled={!shown.length} onClick={follow}
         title={following ? 'Follow latest: on - the charts keep the newest results in view. Press to hold them where they are.' : 'Follow latest: off - you zoomed in, so new results do not move the charts. Press to slide back to the newest results, keeping the zoom width.'}>
         <Icon name="follow" label="Follow latest" /></button>
@@ -432,7 +442,7 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
             <figcaption>
               <select aria-label={`Chart ${i + 1}`} className="training-chart-choice" value={slot.id} onChange={e => choose(slot.key, e.target.value)}
                 title={spec ? `${spec.about} Recorded as ${spec.source}.` : 'This run has no such chart.'}>
-                {!spec && <option value={slot.id} disabled>{chartName(slot.id)} - not in this run</option>}{options(charts)}</select>
+                {!spec && <option value={slot.id} disabled>{chartName(slot.id)} - not in this run</option>}{chartOptions}</select>
               <span className="spacer" />
               <button type="button" className="training-chart-remove" disabled={slots.length <= 1} onClick={() => removeChart(slot.key)}
                 title={`Remove chart ${i + 1}: take this chart off the page`}><Icon name="close" label={`Remove chart ${i + 1}`} /></button>
@@ -449,6 +459,11 @@ export function TrainingTab({ hidden, runDir, status, runs }: { hidden: boolean;
       </div>}
   </div>);
 }
+/** Drawn again only when its own props change (branch record SIF-125): the bottom panel takes the page's configuration, so a
+ *  key typed in the editors drew the whole tab again - its Compare list of every run and each chart's choices - hidden or not.
+ *  Typing changes none of these: the run list is the same array until it changes (page/shownRun.ts), and the status is the
+ *  last answer's. Everything else the tab shows is its own state. */
+export const TrainingTab = memo(TrainingTabBody);
 
 /** The chart choices, grouped; one the run cannot draw stays choosable and says why in its place. */
 function options(charts: ChartSpec[]) {

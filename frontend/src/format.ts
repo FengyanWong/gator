@@ -112,11 +112,15 @@ export const STOP_WORDS: Record<string, string> = { budget_exhausted: 'budget us
 export const stopWords = (reason?: string | null) => (reason ? STOP_WORDS[reason] ?? reason.replace(/_/g, ' ') : '');
 /** Where a failed run wrote what went wrong, by its stop reason (branch record SIF-137: the line under the header and Run
  *  status named no place, and every real failure ends there). A run stopped by its failed evaluations wrote each one's
- *  status and diagnostics into the evaluations table and nothing into the errors log, which holds what raised: a crash, an
- *  evaluation that raised, a save that failed (engine.py `_log_error`). A full disk and a launch not confirmed are said by
- *  the run's error alone: null. */
+ *  status and diagnostics into the evaluations table and nothing into the errors log. The errors log holds what raised,
+ *  and only these reasons say a run ended by it: a crash, an evaluation that raised, the tables' save that failed, a save
+ *  point that does not fit (engine.py `_log_error`). Any other failed run is said by its error alone: null (review of
+ *  SIF-137: "the rest" sent to an empty errors log a start that failed - no stop reason, the worker wrote its status
+ *  before the engine opened its logs, the traceback is in logs/worker.log - and a run whose lanes or schematic were not
+ *  restored at its end, its stop reason still "budget used up"; also a full disk and a launch not confirmed). */
+const LOGGED_FAILURES = ['exception', 'evaluation_exception', 'persistence_failure', 'checkpoint_incompatible'];
 export const failedWhere = (reason?: string | null): 'evaluations' | 'errors' | null => reason === 'consecutive_failures' ? 'evaluations'
-  : reason === 'insufficient_storage' || reason === 'unresolved_launch_intent' ? null : 'errors';
+  : reason && LOGGED_FAILURES.includes(reason) ? 'errors' : null;
 /** That place in words, the same under the header and in Run status. */
 export const FAILED_WHERE: Record<'evaluations' | 'errors', string> = {
   evaluations: 'Why each evaluation failed is in Data tables (evaluations: status and diagnostics).',

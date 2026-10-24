@@ -124,6 +124,9 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
     setTab(where === 'errors' ? 'logs' : 'data'); unfold();
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('footer .tabs button.active')?.focus());
   };
+  // The shown run's line of the run list: Run status promises Load run only where the Runs window offers it (review of
+  // SIF-137). Looked up only while Run status is shown.
+  const shownRow = tab === 'status' ? runs.find(r => r.run_dir === runDir) ?? null : null;
   return (
     <footer>
       <div className="splitter" role="separator" aria-orientation="horizontal" tabIndex={0} aria-label="Height of the bottom panel"
@@ -142,7 +145,7 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
         {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} check={shownCheck} continueBlocked={continueBlocked} refusal={shownRefusal}
           onContinue={continueShown} onDismissRefusal={() => launcher.setRefusal(null)} onFineTune={fineTuneFrom} config={config} setConfig={setConfig}
           ask={askContinue && askContinue.serial !== askedContinue.current ? askContinue : null} onAsked={serial => { askedContinue.current = serial; }}
-          onShowCause={showCause} />}
+          onShowCause={showCause} row={shownRow} />}
         {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} kind={logKind} setKind={setLogKind} hidden={bodyHidden} />}
         {tab === 'data' && <DataTab runDir={runDir} status={status} choice={dataChoice} setChoice={setDataChoice} />}
         {/* whether the run's worker lives and its last save point: Output files reads a live run again at each save point

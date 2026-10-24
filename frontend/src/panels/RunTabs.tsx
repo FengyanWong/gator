@@ -5,6 +5,7 @@ import { quantity, si, variables } from '../units';
 import { bytes, clock, CONNECTION_STATE, count, durationWhole, FAILED_WHERE, failedWhere, num, plural, runName, short, sig, stamp, stopWords, timeLine, TIME_LINE_HELP } from '../format';
 import { cardLive, ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
+import { tasksShared } from '../shared';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
 import { requestTaskSave } from './TaskSave';
 import { ContinueForm } from './ContinueForm';
@@ -12,6 +13,7 @@ import { LaunchRefusal } from './LaunchRefusal';
 import { KeyTile } from './fields';
 import { useCopied } from './copied';
 import { MODE_NAME, REWARD_NAME, REWARD_NAMES, runMode, runTrains } from './rlModelText';
+import { loadBlocked } from './RunList';
 import { sortKeys, useTableView } from './TableView';
 
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
@@ -23,15 +25,19 @@ const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learn
 // Baseline, a Calibration and an Evaluate only run make no learner update and read "no update yet" to their end, and an
 // ended run said "yet" too, as "First feasible design" did before SIF-54. An ended run's verdict - the backend's words, as
 // they are - read in present-tense orange with nothing to act on: it is said as what it was at the end, with what gives
-// the next run room to learn.
+// the next run room to learn. No bonus says "no update" only while the engine counted none (`learner_updates`, the Learner
+// updates tile's number; review of SIF-137): updates made and not in the tables - the Learner-update log off in Output
+// settings, a latest update whose temperature or log-probability is not finite (reward_diagnostics.py), or rows not yet
+// flushed - left no bonus either, and read "no update was made" beside a tile of thousands.
 const ROOM_TO_LEARN = 'A larger Evaluation budget, or the Initial alpha a Calibration proposes, gives the next run room to learn.';
 function SteeringCheck({ status }: { status: Json }) {
   const value = status?.steering;
   if (!value) return null;
   const ended = ENDED.includes(status.state) && !status.worker_alive, trains = runTrains({ run_kind: status.manifest?.run_kind, mode: status.mode });
   if (value.reward_spread == null) return <div className="steering-check"><p className="hint">Reward spread: not enough scored designs{ended ? '' : ' yet'}.</p></div>;
+  const noBonus = status.learner_updates > 0 ? `none recorded${ended ? '' : ' yet'}` : ended ? 'no update was made' : 'no update yet';
   return <div className="steering-check"><p>Reward spread (p90 − p10, last {value.scored_designs} scored designs): <b>{sig(value.reward_spread)}</b>;
-    {trains ? <> exploration bonus (latest update): <b>{value.exploration_bonus != null ? sig(value.exploration_bonus) : ended ? 'no update was made' : 'no update yet'}</b>.</>
+    {trains ? <> exploration bonus (latest update): <b>{value.exploration_bonus != null ? sig(value.exploration_bonus) : noBonus}</b>.</>
       : <> exploration bonus: <b>none</b> (this run does not train).</>}</p>
     {trains && value.verdict && (ended ? <p className="hint steering-verdict">At its end: {value.verdict} {ROOM_TO_LEARN}</p>
       : <p className="warn steering-verdict">{value.verdict}</p>)}</div>;
@@ -119,14 +125,26 @@ const FIRST_FEASIBLE_TIP = 'The evaluations used by the time the first design th
  *  is said beside it before any press, with the backend's `alternative` (a new run that fine-tunes from the save point)
  *  as a button; a refusal of the press stays under it (`refusal`) until the run changes. `check`: that continuation check.
  *  `onShowCause`: a failed run's Show errors or Show evaluations - the bottom panel opens Logs on the errors log, or Data
- *  tables on the evaluations (branch record SIF-137). */
-export function StatusTab({ status, runDir, error, check, continueBlocked, refusal, onContinue, onDismissRefusal, onFineTune, config, setConfig, ask = null, onAsked, onShowCause }: {
+ *  tables on the evaluations (branch record SIF-137). `row`: the run's line of the run list, for whether the Runs window
+ *  offers Load run for it (review of SIF-137). */
+export function StatusTab({ status, runDir, error, check, continueBlocked, refusal, onContinue, onDismissRefusal, onFineTune, config, setConfig, ask = null, onAsked, onShowCause, row = null }: {
   status: Json; runDir: string | null; error: string | null; check: Json | null; continueBlocked: string | null; refusal: Json | null;
   onContinue: (total: number | null) => void; onDismissRefusal: () => void; onFineTune: (alternative: Json) => void;
   config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void; ask?: { runDir: string; serial: number } | null;
-  onAsked?: (serial: number) => void; onShowCause?: (where: 'evaluations' | 'errors') => void }) {
+  onAsked?: (serial: number) => void; onShowCause?: (where: 'evaluations' | 'errors') => void; row?: Json | null }) {
   const [asking, setAsking] = useState(false);                // the budget form is open
   useEffect(() => setAsking(false), [runDir]);
+  // The registered tasks, for a failed run that kept a save point (review of SIF-137): its next step promised Load run
+  // where the Runs window greys it out - a run whose task is no longer registered, or that names none. Read as that window
+  // reads them (shared.ts: one read within 10 s); until they are read, or when the read fails, Load run is not promised.
+  const [registered, setRegistered] = useState<Map<string, Json> | null>(null);
+  const asksTasks = !!status && !status.worker_alive && status.state === 'failed' && !!status.save_point && !!row?.task_key;
+  useEffect(() => {
+    if (!asksTasks) return;
+    let current = true;
+    tasksShared().then(read => { if (current) setRegistered(new Map((read.tasks ?? []).map((x: Json) => [x.task_key, x]))); }, () => undefined);
+    return () => { current = false; };
+  }, [asksTasks, runDir]);
   // Continue... of the Runs window (record 7.267): the form opens for the run it was pressed for, once - `onAsked` marks the
   // request answered, so a return to this tab does not open it again (branch record SIF-90).
   useEffect(() => { if (ask && ask.runDir === runDir) { setAsking(true); onAsked?.(ask.serial); } }, [ask?.serial]);
@@ -178,11 +196,12 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   // What to do after a failure (branch record SIF-137): Run status said only that a failed run cannot be continued, and every
   // real failure ends there. Where the run wrote what went wrong (format.ts `failedWhere`), with a Show button that opens
   // that log or table - only where the panel looks -, then the next run by the button that starts it: a Calibration or a
-  // baseline is no run Start makes, and has no model for Load run to bring (lineage.ts).
+  // baseline is no run Start makes, and has no model for Load run to bring (lineage.ts). Load run only where the Runs
+  // window offers it, by its own rule (RunList.tsx `loadBlocked`), as its Details beside it say (review of SIF-137).
   const failed = !status.worker_alive && status.state === 'failed', where = failed ? failedWhere(status.stop_reason) : null;
-  const kind = status.manifest?.run_kind;
+  const kind = status.manifest?.run_kind, loadOffered = !!row && !!registered && !loadBlocked(row, registered);
   const nextRun = kind === 'calibration' ? 'press Calibration again.' : kind === 'baseline_preflight' ? 'run the baseline again (Retry baseline, shown with its task).'
-    : `Start a new run${status.save_point ? `; Load run in Runs... brings this run's model into it (${MODE_NAME.fine_tune} or ${MODE_NAME.frozen}).` : '.'}`;
+    : `Start a new run${status.save_point && loadOffered ? `; Load run in Runs... brings this run's model into it (${MODE_NAME.fine_tune} or ${MODE_NAME.frozen}).` : '.'}`;
   return (<div className="status-grid">
     <SteeringCheck status={status} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}

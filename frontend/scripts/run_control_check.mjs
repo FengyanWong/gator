@@ -30,7 +30,8 @@
 // whole page does, from 10,000 up in groups of three and plain below ("Learner updates 6024", "96,000"), a dispatch number
 // as it is. Branch record SIF-137: a failure's line ends with where its cause is written, and Run status says it beside "A
 // failed run cannot be continued." with the next run and a Show button that opens that table; a pause after connection
-// failures names the connection by what the header shows of it, and Run status calls its reason "connection failures".
+// failures names the connection by what the header shows of it, and Run status calls its reason "connection failures". Its
+// review follow-up: a live run's steering line says "no update yet" only while the engine counted none.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -47,9 +48,10 @@ const DIR = '/fixture/outputs/mock/fixture_experiment__0001/runs/fixture_task__s
 // `run`: the run's own effective_config.json, as Pause reads it (`run.optimizer`: branch record SIF-83). `error`: the
 // status's error, as a run that fails or pauses by itself gives one (branch record SIF-89). `first`: its first feasible
 // design, as budget.py records it (branch record SIF-116). `updates`: its learner updates (branch record SIF-117). `budget`:
-// a budget the status gives as it is, in place of the one counted from `charged` and `max` (SIF-117 review).
+// a budget the status gives as it is, in place of the one counted from `charged` and `max` (SIF-117 review). `steering`: its
+// steering check, as reward_diagnostics.py gives it (review of SIF-137).
 const sim = { dir: DIR, mock: true, state: null, alive: false, charged: 0, max: 60, stop_reason: null, error: null, beat: 0, steps: [], output: {}, run: {}, starts: 0, calibration: null, active: null, first: null,
-  updates: 0, budget: null };
+  updates: 0, budget: null, steering: null };
 const listed = () => sim.state ? [{ run_dir: DIR, run_id: 'fixture-run', task_id: 'fixture_task:0000', task_definition_hash: 'fixture', mode: 'scratch', mock: sim.mock, seed: 0,
   created_utc: '2026-09-21T00:00:00+00:00', state: sim.state, experiment: 'fixture_experiment__0001', evaluations: null, first_feasible_eval_count: null, resumability: null }] : [];
 const statusOf = () => {
@@ -62,7 +64,7 @@ const statusOf = () => {
     budget: sim.budget ?? { max_evaluations: sim.max, max_launches: null, max_retries: 0, charged: sim.charged, reserved: 0, in_flight: sim.alive && sim.state === 'running' ? 1 : 0,
       completed: sim.charged, failed: 0, released: 0, remaining: sim.max - sim.charged, launches: sim.charged, retries: 0, cache_hits: 0, first_feasible: null },
     best_design: null, persistence: null, last_checkpoint_utc: null, paths: { run_dir: sim.dir }, connection: { overall: 'not_applicable' }, summary: null, calibration: sim.calibration,
-    active_seconds: sim.active,
+    active_seconds: sim.active, steering: sim.steering,
     manifest: { mode: 'scratch', mock: sim.mock, task_id: 'fixture_task:0000', seeds: { target_seed: 0 }, source_model: null, budgets: { max_evaluations: sim.max },
       mock_notice: sim.mock ? 'FIXTURE MOCK DATA: nothing was started.' : null } };
 };
@@ -295,6 +297,17 @@ await runChecks(browser, async () => {
   sim.updates = 6024;
   check('... "Learner updates 6024": a count under 10,000 plain, in the tile and in the facts (SIF-117)', await until(`${UPDATES_TILE} === '6024' && ${UPDATES_ROW} === '6024'`, 60),
     `${await evaluate(UPDATES_TILE)} | ${await evaluate(UPDATES_ROW)}`);
+  // Review of SIF-137: a steering check with no bonus beside 6024 updates - their rows not flushed yet, or the Learner-update
+  // log off - read "no update yet"; it says "no update" only while the engine counted none
+  const STEERING = `(document.querySelector('.status-grid .steering-check')?.textContent ?? null)`;
+  const steeringSays = bonus => `Reward spread (p90 − p10, last 9 scored designs): 0.25; exploration bonus (latest update): ${bonus}.`;
+  sim.steering = { scored_designs: 9, reward_spread: 0.25, exploration_bonus: null, verdict: null };
+  check('... a live run\'s steering check with no bonus beside 6024 updates: "exploration bonus (latest update): none recorded yet." (review of SIF-137)',
+    await until(`${STEERING} === ${JSON.stringify(steeringSays('none recorded yet'))}`, 60), await evaluate(STEERING));
+  sim.updates = 0;
+  check('... and with none counted, "no update yet", as before (review of SIF-137)', await until(`${STEERING} === ${JSON.stringify(steeringSays('no update yet'))}`, 60), await evaluate(STEERING));
+  Object.assign(sim, { updates: 6024, steering: null });                     // the run as before, for the steps below
+  check('(set-up) no steering check again', await until(`${STEERING} === null && ${UPDATES_TILE} === '6024'`, 60));
   const before117 = { charged: sim.charged, max: sim.max };
   Object.assign(sim, { updates: 96000, charged: 12345, max: 20000,
     first: { first_feasible_eval_count: 12001, dispatch_index: 12001, completed_count: 11998, in_flight_count: 3, spectre_launches: 12001 } });

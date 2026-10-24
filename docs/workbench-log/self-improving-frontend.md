@@ -5665,3 +5665,59 @@ ask for words and elements the code before did not draw (the next step, its butt
 status, "At its end:", "none (this run does not train)"); they were not run on it. `reward_v21_check`, stand-alone and
 never run here, asks that `.steering-check` include "The network is still choosing close to random:", which a live and
 an ended run's line both do. In all 58 scripts, 3,001 checks: the 2,990 of SIF-136 and the 11 new ones.
+
+**Review follow-up.** The review of ad784b6 found three slips; all three are real. (1) `failedWhere` sent a failed run
+to the errors log for every stop reason but three, and for none at all, while the backend writes nothing there in two
+real cases. A start that failed - a task blocked, or `_record_failed_start` (worker.py: an import or a schema error,
+"effective_config.json no longer matches the task this run was created for") - writes `status.json` as failed with its
+error and no stop reason, before the engine opens its logs; the traceback goes to `logs/worker.log`. And a run that used
+its budget but whose lanes or schematic were not restored at its end is turned failed there (engine_finalization.py),
+the problems in its error alone, its stop reason still `budget_exhausted`. Run status read "The details are in the
+errors log (Logs, errors). Fix the cause, then Start a new run." beside a Show errors that opened an empty list, and the
+line under the header ended with the same sentence: the empty log this entry says it spared a run stopped by its failed
+evaluations. `frontend/src/format.ts`: the errors log only for the four stop reasons the engine gives a run as it logs
+what raised - `exception`, `evaluation_exception`, `persistence_failure`, `checkpoint_incompatible` -, the evaluations
+table for `consecutive_failures` as before, and nothing more for any other failure, which its error says alone, with no
+Show button. (2) Run status promised "; Load run in Runs... brings this run's model into it (Fine-tune or Evaluate
+only)." for every failed run that kept a save point, while the Runs window greys Load run out for a run whose task is no
+longer registered, or that names none (`loadBlocked`), and the Details beside Run status say "Not offered" - SIF-90's
+own sentence there leaves the promise out. `frontend/src/panels/RunTabs.tsx`: `StatusTab` takes the run's line of the
+run list (`row`; `frontend/src/panels/BottomPanel.tsx` looks it up while Run status is shown) and, for a failed run that
+kept a save point, reads the registered tasks as the Runs window does (`tasksShared`: one read within 10 s); Load run is
+named only where `loadBlocked` offers it - not before the tasks are read, nor for a run the list does not hold. (3) An
+ended run that trains read "no update was made" whenever its steering check had no bonus, and the backend leaves the
+bonus out for updates made and not recorded too: the Learner-update log off in Output settings (engine_preparation.py
+then makes no learner_updates table), a latest update whose temperature or log-probability is not finite, rows not
+flushed yet. The Learner updates tile under the line gives the engine's own count, thousands. `SteeringCheck` says "no
+update" only while that count is 0 - "no update was made" at the end, "no update yet" before - and otherwise "none
+recorded", "none recorded yet" while the run can go on: a live run with the log on read "no update yet" beside a
+counting tile until its first flush (every 64 evaluations by default). `docs/workbench.md` (the line under the header,
+the Run status tab, the steering line) and `docs/functionality-reference.md` (Start → Pause → Resume, Steering warning,
+Run status) say the three rules. Only words, and one read of the registered tasks: nothing starts, continues or stops a
+run, saves a task or writes to Virtuoso, and every question is asked as before. `tsc` clean. `run_list_check` 184 (180
+before), new: CRASHED's steering line, no update counted, reads "...: no update was made."; ORPHAN, a failed run that
+kept a save point, its task no longer registered: Load run and New run like this off, no Continue..., and after Show
+results Run status reads "The details are in the errors log (Logs, errors). Fix the cause, then Start a new run.", still
+so a second later, with "...: none recorded." beside its 36 updates; changed: CRASHED's stop reason is the engine's for
+a crash, `exception` (`error`, its reason before, is none the engine gives and now names no place), its next step is
+waited for until the tasks are read, and the window lists ten runs. `run_control_check` 181 (178): a live run's steering
+check with no bonus reads "none recorded yet" beside 6024 updates and "no update yet" with none counted. `export_check`
+38: its expectation follows the rule (its MOCK run made 2 updates, bonus 0.401). A probe run of the new checks on the
+source of ad784b6 failed the three that read the changed words - ORPHAN's two and the live "none recorded yet" - and
+passed CRASHED's, which reads as before; there the SIF-90 focus check after the form's Continue in section 9, which
+waits 2 s, failed once too, a timing flake: it passed on this tree. One lane, after the memory guard, all passed the
+first time: `calibration_check` 53, `export_check` 38, `run_control_check` 181, `run_list_check` 184,
+`request_lifecycle_check` 25; then every other script the runner runs (the three reward_v2/v21 ones are never run here):
+`run_control_live_check` 23, `training_tab_check` 139, `dom_identity_check` 56, `connection_panel_check` 101,
+`virtuoso_source_check` 123, `task_save_check` 93, `testbench_probes_check` 43, `spec_equations_check` 88,
+`model_chooser_check` 139, `output_panel_check` 98, `task_rows_check` 57, `typing_check` 62, `sheet_check` 63,
+`find_fill_copy_check` 50, `project_help_check` 62, `working_copy_check` 35, `files_tab_check` 43,
+`launch_recovery_check` 20, `blocking_issues_check` 66, `corner_check_check` 42, `task_list_check` 105,
+`editor_columns_check` 45, `looks_check` 83, `network_panel_check` 74, `ngspice_window_check` 43, `unsaved_rows_check`
+28, `calibration_save_check` 23, `save_now_check` 29, `task_run_check` 39, `pdk_check` 46, `reliability_check` 22,
+`room_check` 31, `graph_view_check` 69, `module_fold_check` 31, `reward_block_check` 34, `circuit_source_check` 17,
+`encoder_models_check` 24, `agent_window_check` 33, `formula_bar_check` 21, `matched_devices_check` 38,
+`model_structure_check` 33, `mode_suggestion_check` 20, `consistency_check` 14, `training_data_check` 124,
+`crash_panel_check` 11, `callouts_check` 8, `edit_state_check` 28, `circuit_layout_check` 4, `editor_renames_check` 8,
+`graph_paint_check` 6, `network_inputs_check` 9, `table_view_check` 10, `unit_text_check` 14. In all 58 scripts, 3,008
+checks: the 3,001 of SIF-137 and the 7 new ones; no flakes.

@@ -30,7 +30,8 @@
 // SIF-122: a tick, a Details press and its "copied" draw only the rows whose own props changed; a row's tick box still follows
 // a filter that lets the ticks go, and is greyed out while a folder move is saved. Branch record SIF-137: a failed run shown
 // from its Details says under Run status, beside why Continue... cannot go on, where its errors are and what to do next, and
-// its Show errors opens Logs on the errors log.
+// its Show errors opens Logs on the errors log. Its review follow-up: Run status names Load run only where the Runs window
+// offers it, and an ended run's steering line says "no update was made" only when the engine counted none.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -80,10 +81,19 @@ const EVALUATED = run(8, { ...LINEAGE, mode: 'frozen', model_label: null, create
 const GONE = run(9, { ...LINEAGE, task_key: 'real:fixture_gone', created_utc: '2026-09-16T08:00:00+00:00', started_utc: '2026-09-16T08:00:02+00:00', ended_utc: '2026-09-16T08:01:00+00:00',
   active_seconds: 58, state: 'completed', stop_reason: 'budget_exhausted', evaluations: 10, max_evaluations: 10, resumability: 'full_state', segments: [] });
 // Branch record SIF-90, only in section 10: a run that failed after a save point. Its "Can continue" reads yes, as the backend
-// lists it, but Run status refuses a failed run, so its Details offer no Continue... and say why.
+// lists it, but Run status refuses a failed run, so its Details offer no Continue... and say why. Review of SIF-137: its stop
+// reason is the engine's for a crash, which the errors log holds ("error" is none the engine gives), and it made no learner
+// update: its steering check has no bonus.
+const NO_BONUS = { scored_designs: 19, reward_spread: 0.25, exploration_bonus: null, verdict: null };
 const CRASHED = run(14, { ...LINEAGE, encoder: 'rgcn', created_utc: '2026-09-16T12:00:00+00:00', started_utc: '2026-09-16T12:00:02+00:00', ended_utc: '2026-09-16T12:10:00+00:00',
-  active_seconds: 598, state: 'failed', stop_reason: 'error', error: 'FIXTURE: a simulated failure after a save point, nothing real went wrong', evaluations: 30,
-  resumability: 'full_state', segments: [] });
+  active_seconds: 598, state: 'failed', stop_reason: 'exception', error: 'FIXTURE: a simulated failure after a save point, nothing real went wrong', evaluations: 30,
+  resumability: 'full_state', segments: [], updates: 0, steering: NO_BONUS });
+// Review of SIF-137, only in section 10: the same, its task no longer registered - its Details grey Load run out, and Run status
+// promised it - and with 36 learner updates whose bonus is not in its tables (the Learner-update log off): "none recorded",
+// where it read "no update was made".
+const ORPHAN = run(16, { ...LINEAGE, task_key: 'real:fixture_gone', encoder: 'rgcn', created_utc: '2026-09-16T10:00:00+00:00', started_utc: '2026-09-16T10:00:02+00:00',
+  ended_utc: '2026-09-16T10:05:00+00:00', active_seconds: 298, state: 'failed', stop_reason: 'exception', error: 'FIXTURE: a simulated failure of a run whose task is gone, nothing real went wrong',
+  evaluations: 20, resumability: 'full_state', segments: [], steering: NO_BONUS });
 // Branch record SIF-75, only in section 8b: names as the user's runs have them - an offline model, a fine-tune of it and a
 // calibration - which broke inside a word in a narrow column, or took six lines in "Started from".
 const ARCHIVE = 'Round 3 full archive — CircuitGPS v3 from scratch';
@@ -118,7 +128,7 @@ const statusOf = r => ({ state: r.state, run_id: r.run_id, mode: r.mode, entry: 
     remaining: r.max_evaluations - (r.evaluations ?? 0), launches: r.evaluations ?? 0, retries: 0, cache_hits: 0, first_feasible: null },
   best_design: { evaluation_id: 'fixture', feasible: false, metrics: { gain_db: 41.5 }, violation: 0.125, reward: -0.25, variables: [{ variable_id: 'input_pair_width', value: 2.3455777695373655e-6, unit: 'm', optimized: true }, { variable_id: 'load_capacitance', value: 2.5e-13, unit: 'F', optimized: true }] }, persistence: null,   // a LIST, as the engine writes it
   last_checkpoint_utc: r.ended_utc, connection_profile_id: null, bytes_written: 1234567, active_seconds: r.active_seconds, paths: { run_dir: r.run_dir }, connection: { overall: 'not_applicable' },
-  save_point: 'ckpt-000040', save_point_code: r.save_point_code ?? 'current',
+  save_point: 'ckpt-000040', save_point_code: r.save_point_code ?? 'current', steering: r.steering ?? null,
   summary: { time: { active_seconds: r.active_seconds, paused_seconds: r.paused_seconds, sum_job_runtime_seconds: 412.5 }, output: { resumability: 'full_state', completeness: 'complete', latest_checkpoint: 'ckpt-000040' } },
   manifest: { mode: r.mode, mock: r.mock, task_id: r.task_id, seeds: { target_seed: r.seed }, source_model: { run_id: null }, budgets: { max_evaluations: r.max_evaluations },
     mock_notice: r.mock ? 'FIXTURE MOCK DATA: nothing was run.' : null } });
@@ -753,7 +763,7 @@ await runChecks(browser, async () => {
   await undo();
   draft = await runWhen(x => !x?.model_source?.run_dir);
   check('... and one more to New model, no saved model', modeOf(draft) === 'scratch' && !draft.model_source?.run_dir, JSON.stringify(draft));
-  listed = [EVALUATED, PAUSED, RESUMED, DONE, LOST, NEVER, FAILED, CRASHED, GONE];
+  listed = [EVALUATED, PAUSED, RESUMED, DONE, LOST, NEVER, FAILED, CRASHED, ORPHAN, GONE];
   await openWindow();
   const openDetails = async rr => { if (!(await windowOpen())) await openWindow(); await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody > tr')].find(tr => tr.title === ${JSON.stringify(rr.run_dir)});
     const b = [...tr.querySelectorAll('button')].find(b => b.textContent.trim() === 'Details'); if (b) b.click(); })()`, true);
@@ -763,7 +773,7 @@ await runChecks(browser, async () => {
   const act = label => far.evaluate(`[...${ACTIONS}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}).click()`, true);
   /** Press an action that goes through: true once the window closed after it. */
   const actAndClose = async label => { await act(label); return closedByChoice(); };
-  check('(set-up) the window lists the nine runs', (await table())?.length === 9);
+  check('(set-up) the window lists the ten runs', (await table())?.length === 10);
   const notContinued = () => far.evaluate(`${ACTIONS}.querySelector('.continue-not')?.textContent ?? null`);
   check('a run\'s Details offer Load run, Show results, Continue... and New run like this', await openDetails(DONE)
     && JSON.stringify(await actions()) === JSON.stringify(['Load run', 'Show results', 'Continue...', 'New run like this']) && await notContinued() === null,
@@ -788,11 +798,17 @@ await runChecks(browser, async () => {
     await evaluate(`document.querySelector('.status-grid .continue-why')?.textContent ?? '(no reason)'`));
   // Branch record SIF-137: and what to do next beside it - where the run wrote what went wrong, a button there, then the next
   // run; this one kept a save point, so Load run brings its model, as its Details say. Show errors opens Logs on that log.
+  // Review of SIF-137: Load run is named once the registered tasks are read, where the Runs window offers it.
+  const CRASHED_NEXT = 'The details are in the errors log (Logs, errors). Fix the cause, then Start a new run; Load run in Runs... brings this run\'s model into it (Fine-tune or Evaluate only).';
+  await until(`document.querySelector('.status-grid .failed-next')?.textContent === ${JSON.stringify(CRASHED_NEXT)}`, 40);
   const failedNext = await evaluate(`(() => { const r = document.querySelector('.status-grid > .row'), n = r?.querySelector('.failed-next');
     return { next: n?.textContent ?? null, after: n?.previousElementSibling?.classList.contains('continue-why') ?? false, button: r?.querySelector('button.failed-show')?.textContent ?? null }; })()`);
   check('... with what to do next beside it: "The details are in the errors log (Logs, errors). Fix the cause, then Start a new run; Load run in Runs... brings this run\'s model into it (Fine-tune or Evaluate only).", and Show errors (SIF-137)',
-    failedNext.next === 'The details are in the errors log (Logs, errors). Fix the cause, then Start a new run; Load run in Runs... brings this run\'s model into it (Fine-tune or Evaluate only).'
-    && failedNext.after && failedNext.button === 'Show errors', JSON.stringify(failedNext));
+    failedNext.next === CRASHED_NEXT && failedNext.after && failedNext.button === 'Show errors', JSON.stringify(failedNext));
+  // Review of SIF-137: its steering check has no bonus, and the engine counted no learner update
+  const STEERING = `(document.querySelector('.status-grid .steering-check')?.textContent ?? null)`;
+  check('... its steering line, no learner update made: "exploration bonus (latest update): no update was made." (review of SIF-137)',
+    await evaluate(STEERING) === 'Reward spread (p90 − p10, last 19 scored designs): 0.25; exploration bonus (latest update): no update was made.', await evaluate(STEERING));
   await evaluate(`document.querySelector('.status-grid button.failed-show').click()`);
   const shownLog = `[document.querySelector('footer .tabs > button.active')?.textContent, document.querySelector('footer .bottom-body select.tab-choice')?.value,
     document.activeElement === document.querySelector('footer .tabs > button.active') ? 'focused' : 'focus elsewhere'].join(' | ')`;
@@ -807,6 +823,22 @@ await runChecks(browser, async () => {
   check('... its double click shows it, and changes nothing in the draft', await doubleClick(GONE) && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(GONE.run_dir)})`, 40)
     && modeOf(await runWhen(x => !!x, 5)) === 'scratch');
   check('... and closes the window', await closedByChoice());
+  // Review of SIF-137: a failed run that kept a save point, its task no longer registered - its Details grey Load run out, and
+  // Run status, shown from them, promised it all the same. Its next step names Start alone now (no Load run either after the
+  // registered tasks are read: still so a second later); its 36 learner updates left no bonus in its tables: "none recorded".
+  await openDetails(ORPHAN);
+  check('a failed run whose task is no longer registered: Load run and New run like this off, no Continue..., the reasons beside them (review of SIF-137)',
+    JSON.stringify(await actions()) === JSON.stringify(['Load run (off)', 'Show results', 'New run like this (off)'])
+    && /Not offered: its task real:fixture_gone is no longer registered/.test(await far.evaluate(`${ACTIONS}.querySelector('.run-load-why')?.textContent ?? ''`))
+    && await notContinued() === 'Continue... is not offered: a failed run cannot be continued.', JSON.stringify([await actions(), await notContinued()]));
+  const ORPHAN_NEXT = 'The details are in the errors log (Logs, errors). Fix the cause, then Start a new run.';
+  const orphanNext = `(document.querySelector('.status-grid .failed-next')?.textContent ?? null)`;
+  check('... and Show results: Run status names no Load run either - "The details are in the errors log (Logs, errors). Fix the cause, then Start a new run." (review of SIF-137)',
+    await actAndClose('Show results') && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(ORPHAN.run_dir)})`, 40)
+    && await until(`${orphanNext} === ${JSON.stringify(ORPHAN_NEXT)}`, 40) && await sleep(1000).then(() => evaluate(`${orphanNext} === ${JSON.stringify(ORPHAN_NEXT)}`)),
+    await evaluate(orphanNext));
+  check('... and its steering line, 36 learner updates whose bonus is not in its tables: "none recorded", not "no update was made" (review of SIF-137)',
+    await evaluate(STEERING) === 'Reward spread (p90 − p10, last 19 scored designs): 0.25; exploration bonus (latest update): none recorded.', await evaluate(STEERING));
   await openDetails(FAILED);
   check('a run that names no registered task: the same, with its own reason', /Not offered: the run names no registered task/.test(await far.evaluate(`${ACTIONS}.querySelector('.run-load-why')?.textContent ?? ''`)));
   check('... and a run that kept no save point says nothing of Continue... (SIF-90)', !(await actions()).includes('Continue...') && await notContinued() === null, String(await notContinued()));

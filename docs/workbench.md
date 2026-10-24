@@ -106,14 +106,17 @@ SIF-89; before, a run that completed, failed or paused by itself changed only th
 at 800 of 800 evaluations (budget used up). Its results are under Run status."; in red, "The run failed at 12 of 800
 evaluations: <its error>." and where its cause is written (branch record SIF-137): "Why each evaluation failed is in
 Data tables (evaluations: status and diagnostics)." for a run stopped by its failed evaluations - they go into the
-evaluations table, not into the errors log -, "The details are in the errors log (Logs, errors)." for one that raised
-(a crash, an evaluation that raised, a save that failed), nothing more for a full disk or a launch not confirmed, which
-the error says alone; in red, "Paused by itself after connection failures; everything is saved. Test the connection -
-its name in the header opens the Connection window - then Resume." (it named a "Connection button" whose word the pill
-keeps for screen readers while a connection is chosen; SIF-137) - never the user's "Resume continues from exactly
-there", which a pause after **Pause after N consecutive infrastructure failures** used to borrow while it saved. A
-user's Pause and Abort keep their own words. Only a change of the run the header already holds is said: taking a run
-over, letting go of one and the lookup after a reload say nothing.
+evaluations table, not into the errors log -, "The details are in the errors log (Logs, errors)." for one whose stop
+reason says it raised (a crash, an evaluation that raised, the tables' save that failed, a save point that does not
+fit), nothing more for any other failure, which the error says alone: a full disk, a launch not confirmed, a start that
+failed (it has no stop reason, and the worker writes no errors log then: the traceback is in `logs/worker.log`), a run
+whose lanes or schematic were not restored at its end (its stop reason stays, "budget used up"; review of SIF-137: those
+pointed at an empty errors log); in red, "Paused by itself after connection failures; everything is saved. Test the
+connection - its name in the header opens the Connection window - then Resume." (it named a "Connection button" whose
+word the pill keeps for screen readers while a connection is chosen; SIF-137) - never the user's "Resume continues from
+exactly there", which a pause after **Pause after N consecutive infrastructure failures** used to borrow while it
+saved. A user's Pause and Abort keep their own words. Only a change of the run the header already holds is said: taking
+a run over, letting go of one and the lookup after a reload say nothing.
 
 **What Start would start** stands beside it while it reads Start, in one line (record 7.269; plan
 [frontend run workflow](plan-frontend-run-workflow.md), "The draft"), and is the first sentence of its tooltip:
@@ -177,7 +180,9 @@ started with." - branch record SIF-72). Run configuration's model line and this 
   record SIF-89: both came after about 20 facts, out of sight in a panel that shows about four). A failed run says in that
   row, after "A failed run cannot be continued.", where its cause is written, as the line under the header does, and what
   to do next: "Fix the cause, then Start a new run" - "; Load run in Runs... brings this run's model into it (Fine-tune
-  or Evaluate only)." when it kept a save point; "press Calibration again." for a Calibration, "run the baseline again
+  or Evaluate only)." when it kept a save point and the Runs window offers Load run for it (not for a run whose task is
+  no longer registered, or that names none; review of SIF-137: Run status promised it there while its Details beside it
+  said "Not offered"); "press Calibration again." for a Calibration, "run the baseline again
   (Retry baseline, shown with its task)." for a baseline - with **Show evaluations** (Data tables on its evaluations,
   newest first) or **Show errors** (Logs on its errors log) beside it, which only choose what the panel shows (branch
   record SIF-137: Run status said only what cannot be done). Continue waits, and says why, when the run folder holds no save point to go on from - a copy made
@@ -2293,9 +2298,13 @@ Run status and Data tables show the last 50 scored designs' p90−p10 reward spr
 and latest exploration bonus. When the spread is smaller, they show the brief's plain-language steering warning.
 Said for the run it is (branch record SIF-137): a Baseline, a Calibration and an Evaluate only run make no learner
 update, so their line reads "exploration bonus: none (this run does not train)." with no warning (it read "no update
-yet" to their end); an ended run with no update reads "no update was made"; and an ended run's warning, the backend's
-words as they are, reads in grey "At its end: <warning> A larger Evaluation budget, or the Initial alpha a Calibration
-proposes, gives the next run room to learn." - in orange, as now, only while the run can still go on.
+yet" to their end); an ended run whose engine counted no learner update (the Learner updates tile) reads "no update
+was made", and a run whose updates left no bonus in its tables - the Learner-update log off in Output settings, a latest
+update whose temperature or log-probability is not finite, or rows not flushed yet - reads "none recorded" ("none
+recorded yet" while it runs; review of SIF-137: it read "no update was made" beside thousands of updates, and "no update
+yet" while it ran); and an ended run's warning, the backend's words as they are, reads in grey "At its end: <warning> A
+larger Evaluation budget, or the Initial alpha a Calibration proposes, gives the next run room to learn." - in orange,
+as now, only while the run can still go on.
 The start checklist also warns when recorded evidence has no design meeting all hard specs at all planned conditions,
 names the best recorded design's worst misses and points to Corner check. This is a warning, not a start blocker or
 proof that the targets are impossible. It reads existing tables/checks and explicitly named historical OTA7 qualification

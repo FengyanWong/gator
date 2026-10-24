@@ -120,14 +120,16 @@ await runChecks(browser, async () => {
     `${facts['Best design variables']?.text} | ${ids.join(', ')}`);
   // Branch record SIF-137, on the same real MOCK run: the ended run's steering check speaks of its end - its last exploration
   // bonus, or "no update was made", never "no update yet" - and the backend's verdict, as it is, follows "At its end: " in grey
-  // with what gives the next run room to learn (it stood in present-tense orange, nothing to act on).
+  // with what gives the next run room to learn (it stood in present-tense orange, nothing to act on). Review of SIF-137: no
+  // bonus is "no update was made" only when the engine counted none, else "none recorded" (the updates are not in the tables).
   const steer = await evaluate(`(() => { const s = document.querySelector('.status-grid .steering-check'); return s && { text: s.textContent,
     verdict: s.querySelector('.steering-verdict')?.textContent ?? null, grey: !!s.querySelector('p.hint.steering-verdict'), orange: !!s.querySelector('.warn') }; })()`);
   const sv = status.steering ?? null;
-  console.log(`INFO  steering check of the MOCK run: ${JSON.stringify(sv)}`);
-  check('... the ended run\'s steering check: "exploration bonus (latest update): <n>" or "no update was made", never "yet"; a verdict as "At its end: <the backend\'s words> A larger Evaluation budget, ..." in grey, never orange (SIF-137)',
+  console.log(`INFO  steering check of the MOCK run: ${JSON.stringify(sv)}, learner updates ${status.learner_updates}`);
+  const noBonus = status.learner_updates > 0 ? 'none recorded' : 'no update was made';
+  check('... the ended run\'s steering check: "exploration bonus (latest update): <n>", "none recorded" or "no update was made", never "yet"; a verdict as "At its end: <the backend\'s words> A larger Evaluation budget, ..." in grey, never orange (SIF-137 and its review)',
     !sv ? steer === null : !!steer && !steer.text.includes('yet') && !steer.orange
-      && (sv.reward_spread == null || steer.text.includes(`exploration bonus (latest update): ${sv.exploration_bonus == null ? 'no update was made' : ''}`))
+      && (sv.reward_spread == null || steer.text.includes(`exploration bonus (latest update): ${sv.exploration_bonus == null ? noBonus : ''}`))
       && (sv.verdict ? steer.grey && steer.verdict === `At its end: ${sv.verdict} A larger Evaluation budget, or the Initial alpha a Calibration proposes, gives the next run room to learn.`
         : steer.verdict === null), `${JSON.stringify(steer)} | ${JSON.stringify(sv)}`);
   await shot('export-1-status.png');

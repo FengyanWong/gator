@@ -17,6 +17,13 @@ from .storage.atomic import write_json
 from .storage.dataset import utcnow
 from .summary import build_run_summary
 
+# The summary's note when a run stopped while it was being prepared, before `engine_preparation.prepare` opened its save
+# points (`engine.checkpoints`): there is nothing to save then. Trying anyway added a second error that hid the first:
+# "final save failed: AttributeError: 'RunEngine' object has no attribute 'checkpoints'" after a resume refused for an
+# unresolved launch lease (2026-10-23).
+SAVE_SKIPPED_NOTE = ('No save point was written: the run stopped while it was being prepared, before it opened its '
+                     'save points. Those already in the run folder are unchanged.')
+
 
 def clear_scratch(engine):
     """Once the lanes and the preparation service are closed: the links in the lanes' folders, then the run's local
@@ -73,7 +80,9 @@ def finalize(engine, final_state):
     if persistence_ok and hasattr(engine, 'ledger'):
         try:
             engine.dataset.flush()
-            if not engine.ledger.in_flight_ids():
+            if getattr(engine, 'checkpoints', None) is None:      # preparation stopped before it opened the save points
+                engine.final_save_note = SAVE_SKIPPED_NOTE
+            elif not engine.ledger.in_flight_ids():
                 kind = {'paused': 'pause', 'stopped': 'stop', 'completed': 'final'}.get(final_state, 'safety')
                 checkpoint = engine._relabel_unchanged(kind) or engine._checkpoint(kind)
         except BaseException as exc:

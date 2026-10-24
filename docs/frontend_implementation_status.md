@@ -31,18 +31,19 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.336-7.352.md`](workbench-log/7.336-7.352.md) | entries 7.336–7.352 |
 | [`7.353-7.364.md`](workbench-log/7.353-7.364.md) | entries 7.353–7.364 |
 | [`7.365-7.375.md`](workbench-log/7.365-7.375.md) | entries 7.365–7.375 |
-| [`7.376-and-later.md`](workbench-log/7.376-and-later.md) | entries 7.376 onwards: the OPEN file |
+| [`7.376-7.388.md`](workbench-log/7.376-7.388.md) | entries 7.376–7.388 |
+| [`7.389-and-later.md`](workbench-log/7.389-and-later.md) | entries 7.389 onwards: the OPEN file |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md`, `7.336-and-later.md` `7.353-and-later.md` and `7.365-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md`, `7.336-and-later.md`, `7.353-and-later.md`, `7.365-and-later.md` and `7.376-and-later.md` are pointers kept for old links.
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.380 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.376-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.410 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.389-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
@@ -440,3 +441,8 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.382 | TuRBO against transfer-learned SAC (user: "run TuRBO on the telescopic OTA, amplifier and DFFRX1 for comparison"): a trained model wins only where its training is close to the task (DFFRX1 first pass 40/91/85 vs TuRBO 317/238/331; OTA 79 % early vs 32 %), TuRBO wins on the amplifier (first pass 102/277/186 vs 212/424/423, 441 vs 267 passes); TuRBO memory growth (12-13 GB per run, glibc keeping freed matrices) fixed with malloc_trim after each proposal: 324 MB instead of 4.8 GB over 800 designs, same proposals |
 | 7.383 | Round 4 option 1 (user: "try option 1 after the write-up"): only the RGCN model's per-transistor input layers learn from LOADBench (area R^2 0.59-0.71, power 0.40-0.66 on unseen op-amps), then Round 3's own-run recipe: 0.00801 / 0.00791 / 0.00785 vs the control's 0.00826 / 0.00792 / 0.00788 - does not help either; a cache-driven restart loop (54 stops while loading) fixed |
 | 7.384 | TuRBO and transfer-learned SAC combined (user: "commit 7.382 check the plan then go on on your own"): a model trained offline on two TuRBO runs fine-tunes far worse than one trained on two failing SAC runs (DFFRX1 median 2 passes against 300); a TuRBO warm start from the trained model helps only near its training (DFFRX1 most passes) and hurts elsewhere; three seeds confirm 7.382; every pre-registered rule fails; runtime copies only |
+| 7.385 | Round 3 seeds 1 and 2 dispatched (user: "do the round 3 seeds and afterwards do the final build"): the seed-0 matrix twice more - GraphGPS, RGCN, CircuitGPS v3 x frozen/adapt/scratch x four seen tasks, 72 real runs, at most 45,600 designs; every configuration its seed-0 twin but the seed; qualified offline, reviewed by three lenses, launched 2026-10-20 21:02 on both Virtuoso sessions (folder online-seeds12-2026-10-20) |
+| 7.386 | Plan only: matched archive/budget TuRBO transfer, Pareto MOBO and SAC comparison; fixed-target/Pareto panels, 57,831-launch ceiling |
+| 7.387 | Plan refined from Compare random forest calibration: matched-transfer-BO decision rule, archive-only RF diagnostics, optional graph-prior TuRBO (+7,227) and common RF-screen (+28,908); primary ceiling unchanged |
+| 7.388 | Round 3 seeds 1 and 2 results: 72 runs complete (45,600 designs, two same-run resumes), audited with seed 0 - all 36 blocks complete, parity passes, seed 0 unchanged; feasible designs per arm for seeds 0/1/2 |
+| 7.389 | Final save skipped when a run stops while being prepared: only the original error; log rolled over |

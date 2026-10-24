@@ -20,9 +20,9 @@ Completion means the run reached its configured budget or stopping condition; co
 | Round 1, Steps 4 / 5 / 6 | 12 runs + 3 probes / 2 runs + 1 probe / 4 runs + 4 probes complete |
 | Round 2 | All 24 repeats complete: 15,893 charged attempts and 15,889 simulator launches, including the retained four-attempt BGR preparation failure (section 7) |
 | Round 3, offline | GraphGPS, fresh CircuitGPS v2 and RGCN complete and qualified; RGCN's 12 online arms are admitted |
-| Round 3, online | Seed 0: all 36 arms complete (2026-10-16 02:32 Europe/London; 22,800 evaluations, no failed run); results record owed; seeds 1-2 remain proposed |
+| Round 3, online | Seed 0: all 36 arms complete (2026-10-16 02:32 Europe/London; 22,800 evaluations, no failed run; numbers in the thesis audit, record 7.385); seeds 1 and 2: all 72 runs complete 2026-10-22 10:39 (45,600 evaluations; two runs resumed in the same run from their save points; folder online-seeds12-2026-10-20; dispatch and incidents record 7.385, audited results record 7.388) |
 | Round 4 | Done offline 2026-10-17 to 2026-10-19 (sections 7b.7-7b.8, records 7.363, 7.381 and 7.383): LOADBench did not help the Round 3 models - stage 1 + stage 2, the predictor transplant (option C) and the pretrained input layers (option 1) all end at the control's error; online test not run |
-| Journal | J0 protocol/test split not frozen; J1 online comparison, J2-J5 and manuscript milestones remain outstanding |
+| Journal | Dropped (user, 2026-10-23: "I am not publishing"): no journal experiment J0-J5 and no manuscript milestone will be run; sections 14-15 are kept for reference only |
 
 Evidence: `artifacts/local/reviews/transfer-experiment-2026-10-10/plan-status-audit-2026-10-14.json`, the RGCN
 `completed-comparison.json` and `dual-session-2026-10-14/completion-verification.json`, and Round 3's `pair-status.json`.
@@ -1585,6 +1585,9 @@ a record entry, in `artifacts/local/reviews/transfer-experiment-2026-10-10/`; th
 
 ## 14. Journal experiments
 
+**Dropped on 2026-10-23** (user: "we are not doing journal experiments right? I am not publishing"): nothing in this section
+will be run. It is kept for reference only.
+
 Added 2026-10-13 (Europe/London), user: "add the experiments needed for a journal paper to my experiment plan
 and make a timeline to publish by next august". This section defines proposed research work. It does not dispatch
 simulations, alter the running models, change optimizer code, submit a manuscript or authorize publication fees.
@@ -1868,6 +1871,8 @@ Check the then-current fees and whether the venue satisfies the user's instituti
 
 ## 15. Timeline to August 2027 publication
 
+**Dropped on 2026-10-23** with section 14: there is no publication target. Kept for reference only.
+
 All dates use Europe/London. Since the user specified a month, use **31 August 2027** as the planning endpoint.
 Assume the desired outcome is an **accepted, publicly available online journal article** by then; a preprint,
 submitted manuscript, acceptance letter and assigned print issue are distinct milestones. Confirm which one the
@@ -1933,3 +1938,31 @@ Progress checklist: `[x] existing Round 1 arms complete (14 October)` · `[x] ar
 `[ ] results/analysis frozen` · `[ ] manuscript approved` · `[ ] submitted` · `[ ] accepted` · `[ ] online`.
 Update completion dates only when the corresponding evidence exists. This plan edit creates no scheduled reminder
 or background experiment launcher.
+
+## 16. Matched archived-data comparison: TuRBO transfer, Pareto MOBO and RL
+
+Added 2026-10-21 at the user's request; **plan only**. The implementation handoff is
+[plan-bo-mobo-rl-archive-comparison.md](plan-bo-mobo-rl-archive-comparison.md).
+
+It specifies a bounded same-circuit archive-reuse study on the published LDO, published amplifier and DFFRX1:
+TuRBO with archived observations, constrained qLogNEHVI, and GraphGPS-SAC adapted/frozen from the same source
+bundle, with cold TuRBO as a fixed-target control. Separate fixed-target and Pareto panels use 800 new-call caps;
+four-goal portfolios share that cap. Archive-known solutions count at zero new calls. All transfer methods use
+the same at-most-600-design source training bundle per circuit and fresh compatible models.
+
+Three paired replicates give 81 analysis cells and 72 distinct searches (identical MOBO trajectories serve both
+panels), at most 57,600 search launches, 15 shared qualification launches and 216 finalist confirmations:
+**57,831 nominal launches maximum**, subject to verification of each bench's invocation count. Seed 0 across the
+complete matrix is capped at 19,287 including its qualification/confirmations. Optional controls have a separate
+budget in the handoff. No simulation is authorized or launched by this plan.
+
+Refined the same day from the chat **Compare random forest calibration** (record 7.387). The comparison now
+explicitly asks whether SAC adds value over matched transfer BO and separates graph representation from policy
+learning. An archive-only RF diagnostic adds no simulations; reward Calibration, measured functioning and target
+feasibility remain distinct, and standalone Calibration rows cannot bypass replay/source eligibility. Optional
+Panel A extensions are graph-prior TuRBO (7,227 extra launches) and a common RF-screen wrapper for all four transfer
+arms (28,908 extra). Primary plus both extensions is at most 93,966 launches, excluding the separate cold controls.
+These extensions require frozen recipes and their own elected budget; the primary 57,831 ceiling is unchanged.
+
+This development study leaves the active Round 3 queue and sections 14-15's prospective journal protocol intact.
+It can guide optimizer choice for compatible archive reuse; it cannot establish unseen-topology/PDK transfer.

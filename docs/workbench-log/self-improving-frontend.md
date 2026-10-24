@@ -4473,3 +4473,73 @@ script 20.1 and 20.9 -> 2.3 and 2.2 ms, its task time 70.0 and 71.8 -> 51.2 and 
 9.5 -> 0.9 and 1.0 ms, a press's first drawing 10.0 and 10.2 -> 1.4 and 1.5 ms. What stays: a tick's other 5 ms of task
 time (its style and layout 0.06 and 0.1 ms; the frame drawn), and a Details press's 12 ms of style and 8 to 10 ms of
 layout, its Details laid into a table of 549 rows. The audit expected 20 to 50 ms per tick before; this machine took 9.7.
+
+### SIF-123 Typing with the RL model window open draws none of its saved models' rows again, and a model's Details check waits 0.5 s (2026-10-24; from the performance audit)
+
+**Found.** While the RL model window was open, each key typed in its own boxes - Name of the model it saves and the
+Advanced numbers - or in an editor of the main page, and each tick, Details press or folder change in it, drew every row
+of its saved models table again (the performance audit's REN-2, confirmed): `SavedModels` gets the page's configuration,
+which only an open model's Details read, and every row ran its name splits and its "Started from" again - with the user's
+411 saved models some 15,000 React parts each time by the audit's count, more with every run that saves a model.
+Measured below with 411 models: 5.8 ms of script per key in Name of the model it saves, 10.1 to 10.5 ms per key in a
+Parameters cell. And with a model's Details open, its check against the task on the page - a compile on the backend, on
+the machine that runs the simulations - went 0.25 s after each edit (REN-10, confirmed), so at almost every pause in
+typing: 12 checks for 12 keys typed 0.31 to 0.49 s apart. Record 7.275 had moved the model in use's own check to 0.5 s
+for exactly that reason; this copy kept 0.25 s.
+
+**Changed.** `frontend/src/panels/ModelChooser.tsx`: a saved model's row of the table is `ModelRow`, memoised, as a run's
+row in the Runs window is since SIF-122. Its props: the model; whether it is the model in use, ticked, its Details open;
+its folder's name in All models ('' elsewhere, where none is drawn); whether its tick box is greyed out (the folders being
+read or saved); the run list's lookup that "Started from" reads; and one ref, `rowAct`, through which its double click,
+Enter, tick and Details reach the window's functions of the latest render - `chooseRow` reads the Mode and the window at
+the press, as it did, so the Mode needs no prop of its own. A row is drawn again only when one of them changes: a key
+typed draws none, a tick its row, a Details press the rows whose Details open and close. The row's markup moved over
+unchanged but for those props; its Details row stays where it was, in the parent, drawn with every render as before - the
+one part of a model's row that reads the configuration. A model's Details check the task on the page 0.5 s after the last
+edit (`delay: 500`, as useRlModel's check of the model in use): the same verdict, asked less often; the first one after
+Details open, or after another save point is chosen, shows 0.25 s later than it did. Not done, as the audit's verdict
+said: no deferred filter and no memoised sorting (about 1 to 2 ms). Nothing here starts, continues or stops a run, saves a
+task or writes to Virtuoso: every press calls the function it called, with the same questions, Undo steps and requests;
+only the Details' check is sent less often. `docs/workbench.md` (Choosing which saved model to load) and
+`docs/functionality-reference.md` (Saved models) say it. `frontend/scripts/model_chooser_check.mjs`: the checks below;
+the time each model request arrives (`at`), and a models' folder save that can be held back (`holdFolders`).
+
+**Checked.** `tsc` clean. `model_chooser_check` 139 (126 before). New, which rows React drew again, read from the props
+it keeps on each row element (`__reactProps$...`, as run_list_check since SIF-122): a key in Name of the model it saves
+draws none, a tick only its row, a Details press only that row (also once its save point is checked), another model's
+Details the two rows whose Details close and open, and an edit in a Parameters cell of the main page, with A's Details
+open, none. That edit checks A again 0.5 s after it, never sooner: its save point read 506 ms and its check 510 ms after
+the edit here (a timer is never early; the edit's time is taken before it is made, each request's as it arrives). Three
+props a memoised row could miss: Undo of a Use, with the window open, takes its row's "in use" away and Redo brings it
+back; while a Move to... is saved (held back by the check) every row's box is greyed out, and none once it is saved; the
+moved model's row then names its folder in All models. A probe run of the new check on the build before failed exactly
+the six draw and timing checks (all seven rows drawn again each time; the check after the edit at 255 and 256 ms; 133
+passed). One lane, after the memory guard: `dom_identity_check` 56 (recording), `task_rows_check` 54,
+`model_chooser_check` 139, `typing_check` 62, `network_panel_check` 74, `looks_check` 76, `reliability_check` 20,
+`room_check` 31, `encoder_models_check` 24, `graph_view_check` 69, `module_fold_check` 30, `pdk_check` 46,
+`reward_block_check` 34, `model_structure_check` 33, `mode_suggestion_check` 20, `network_inputs_check` 9 - every check
+that opens the RL model window (16 scripts, 777 checks, one run) - all passed the first time. No flakes. DOM identity:
+`dom_identity_check` replayed that recording on the build before (the reference, 12 passed) and on the build after with
+`--compare`, scenes rl and rl-loaded, each drawing a saved model's row (rl-loaded's the model in use): all 12 files
+identical byte for byte - each step's page and window, requests.txt and storage.json (24 passed). A first comparison,
+into the folders SIF-122's proof had used, also compared three files of their tabs scene left there at 07:29 by that
+proof (the uPlot height its record explains), so it was made again into fresh folders.
+
+**Measured.** A throwaway check (`tmp-measure-models_check.mjs`, deleted before this commit) run by `run_checks.sh
+--lanes 1 --build <dist>` on both builds (HEAD 507e20a and this change, each built into a temp folder) behind the scratch
+backend: `/api/runs/models` answered with 411 canned saved models shaped like the user's (seven tasks, five designs, 1 to
+10 save points, about a third fine-tuned from an older one), `/api/runs` with their runs, `/api/runs/model` for each.
+Headless Edge, the RL model window 1180 x 920 in Fine-tune with a model in use, no Details open. After a warm-up and a
+garbage collection, CDP `Performance.getMetrics` (training_tab_check's `metrics()`) of the page and of the window around
+20 keys (`Input.dispatchKeyEvent`) in Name of the model it saves, then 20 in a Parameters cell of the main page
+(alternately "5" and Backspace, so that each key changes the configuration), two frames after each key, three rounds;
+per key, the median of the rounds. The window's script runs in the page's realm, so the page's ScriptDuration holds it
+(the window's own: 0.01 ms per key); TaskDuration is the renderer thread's. Also the page's own clock: performance.now()
+around an input event made in the page and React's flush. Two runs of each build, before -> after: a key in Name of the
+model it saves 5.76 and 5.83 ms of script -> 1.84 and 1.93 ms, its task time 11.6 and 11.6 -> 6.6 and 6.8 ms, by the
+page's clock 5.25 and 5.15 -> 1.5 and 1.5 ms; a key in the Parameters cell 10.1 and 10.5 ms of script -> 2.5 and 2.5 ms,
+its task time 15.0 and 15.4 -> 5.9 and 6.0 ms, by the page's clock 5.15 and 5.2 -> 1.4 and 1.3 ms. Then another model's
+Details open and 12 keys in the Parameters cell 0.3, 0.35, 0.4 and 0.45 s apart (the page saw gaps of 310 to 486 ms),
+then 2.5 s: that model's save point read and checked 12 and 12 times -> once and once, in both runs; the model in use's
+own check went once in both builds. What stays per key: the rest of the window and of the page drawn (1.3 to 1.5 ms by
+the page's clock) and the frame. The audit expected 15 to 25 ms per key before; this machine took 5.8 and 10.

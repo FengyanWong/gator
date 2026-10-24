@@ -2931,6 +2931,11 @@ The window keeps its view while it is closed, as the Tasks and Runs windows do (
 every choice, record 7.291): opened again - or in another Mode - it has the same folder, Design, filter, sort and open
 Details, and shows the rows of its last read at once while it reads the list again (once per open; in New model still
 only once the fold is opened). The ticks go at each open, and Details of a model that has left the list close.
+A key typed in the window's boxes or in an editor while the window is open, a tick, a Details press or a folder change
+draws again only the rows whose own cells change - a tick its row, Details the rows whose Details open and close, a key
+none (branch record SIF-123: each drew every row of the table again; with 411 saved models in a headless Edge about 6 ms
+of script per key in Name of the model it saves and 10 ms in an editor cell, about 2 and 2.5 ms since). What the window
+shows, and what it reads and asks, are the same.
 Runs without a save point are not listed. Bayesian runs are excluded even when an older version wrote a
 save point: their learner was never trained. Selecting such a saved path returns a clear refusal (record 7.325).
 
@@ -2945,7 +2950,9 @@ save point: their learner was never trained. Selecting such a saved path returns
   design or size read "NOT compatible ... it cannot be loaded", although Use brings its own network. What a model cannot
   bring - the task's graph, its specs, MOCK or real data - is still checked. The problems come first, a "saved {...} !=
   current {...}" pair shown as the keys whose values differ, and the checks that pass are folded under one line (branch
-  record SIF-36);
+  record SIF-36). It is checked again 0.5 s after the last edit to the task on the page, as the model in use is (record
+  7.275); until branch record SIF-123 it went 0.25 s after each edit - with Details open, a check (a compile) at almost
+  every pause in typing;
 - **Relationships**: the run that saved it, what it started from, the models trained from it and the runs that loaded
   it - each a link: a model is shown in this table, a run opens the Runs window at it - then its history, folded, oldest
   first, and its folder;

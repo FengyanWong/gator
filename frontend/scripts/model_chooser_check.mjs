@@ -39,7 +39,10 @@
 //   learning, which its run reads too, and has its box (review of SIF-103); the facts show all six reward fields, and
 //   "Use this model's reward" takes them as one Undo step while the next run's reward differs (branch record SIF-103);
 // - the model's counters as the page writes every count: from 10,000 up in groups of three, plain below (branch record
-//   SIF-117: "6,024 learner updates" here, "6024" in the Training tab and Run status).
+//   SIF-117: "6,024 learner updates" here, "6024" in the Training tab and Run status);
+// - a key in "Name of the model it saves" or in an editor cell, a tick and a Details press draw only the rows whose own props
+//   changed; a row still follows the model in use, the folders being saved and its folder's name; a model's Details check the
+//   task on the page again 0.5 s after an edit, as the model in use's check does, never sooner (branch record SIF-123).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -119,6 +122,7 @@ await runChecks(browser, async () => {
   let failModel = null;                                                            // record 7.291: a "Use" whose save point cannot be read
   let holdList = false; const heldList = [];                                       // branch record SIF-86: the list held until the window is short
   const modelFolders = { version: 1, folders: {}, assignments: {} }; let folderSerial = 0;
+  let holdFolders = false; const heldFolders = [];                                 // branch record SIF-123: a folder save held back
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
     if (name === '/api/config/validate') return fulfil(requestId, 200, VALID);
@@ -128,8 +132,9 @@ await runChecks(browser, async () => {
       return canned ? fulfil(requestId, 200, { models: served }) : send('Fetch.continueRequest', { requestId }); }
     if (name === '/api/runs/model') {
       if (!canned) return send('Fetch.continueRequest', { requestId });
+      // `at`: when it arrived here, by this machine's clock (branch record SIF-123: how long after an edit a Details' check goes)
       const body = JSON.parse(request.postData ?? '{}'); asked.push({ run_dir: body.run_dir, checkpoint_id: body.checkpoint_id, network: body.config?.run?.network ?? null,
-        mode: body.config?.run?.mode ?? null, source: body.config?.run?.model_source ?? null, withConfig: !!body.config });
+        mode: body.config?.run?.mode ?? null, source: body.config?.run?.model_source ?? null, withConfig: !!body.config, at: Date.now() });
       if (holdModel && holdModel === body.checkpoint_id && !body.config) { heldModel.push({ requestId, body }); return; }
       if (failModel && failModel === body.checkpoint_id && !body.config) return fulfil(requestId, 503, { detail: 'FIXTURE: the server is busy' });
       const found = describe(body.run_dir, body.checkpoint_id);
@@ -150,6 +155,7 @@ await runChecks(browser, async () => {
       return fulfil(requestId, 200, { run_dir: body.run_dir, model_label: body.model_label, previous });
     }
     if (name.startsWith('/api/model-folders')) {                                     // the models' folders (record 7.263): a store of this check's own
+      if (holdFolders && request.method !== 'GET') { heldFolders.push({ requestId, request }); return; }
       const body = JSON.parse(request.postData ?? '{}');
       if (request.method === 'POST') { const id = String(++folderSerial).padStart(32, '0'); modelFolders.folders[id] = body.name.trim(); return fulfil(requestId, 200, { ...modelFolders, created_id: id }); }
       if (request.method === 'PUT') body.run_dirs.forEach(dir => { if (body.folder_id) modelFolders.assignments[dir] = body.folder_id; else delete modelFolders.assignments[dir]; });
@@ -294,6 +300,31 @@ await runChecks(browser, async () => {
   check('nothing is in use yet', shown.every(r => !r.current));
   await shot('models-1-table.png');
 
+  // ---- a row is drawn again only when its own props change (branch record SIF-123) ----------------------------------------------
+  // Each key typed in the window's own boxes (Name of the model it saves, Advanced) or in an editor while the window was open, and
+  // each tick or Details press, drew every row of the table again: with the user's 411 saved models about 6 ms of script per key
+  // in the name box and 10 ms in an editor cell. React keeps the props it last drew an element with on the element (a key
+  // "__reactProps$..."): a row drawn again carries new ones, a row left alone the ones it had.
+  const markRows = () => evaluate(`(() => { const rows = ${ROWS}, key = Object.keys(rows[0] ?? {}).find(k => k.startsWith('__reactProps$'));
+    window.__drawn = key ? { key, props: new Map(rows.map(tr => [tr, tr[key]])) } : null; return !!key; })()`);
+  const redrawn = () => evaluate(`window.__drawn ? ${ROWS}.filter(tr => tr[window.__drawn.key] !== window.__drawn.props.get(tr)).map(tr => tr.title).sort() : null`);
+  const BOX = m => `(${row(m)}).querySelector('td.task-select input')`;
+  const NAME_BOX = `${RIGHT}.querySelector('input.model-label')`;
+  check('(set-up) the rows can be ticked and carry the props React drew them with', await until(`!${BOX(A)}.disabled`, 30) && await markRows());
+  await page.setValue(NAME_BOX, 'FIXTURE drawn', { event: 'input' });
+  check('a key in "Name of the model it saves" draws no row again: each keeps what it was drawn with (branch record SIF-123)',
+    (await storedWhen(s => s?.model_label === 'FIXTURE drawn'))?.model_label === 'FIXTURE drawn' && JSON.stringify(await redrawn()) === '[]', JSON.stringify(await redrawn()));
+  await page.setValue(NAME_BOX, '', { event: 'input' }); await storedWhen(s => !s?.model_label);
+  await markRows(); await evaluate(`${BOX(A)}.click()`);
+  check('... a tick only its own row (SIF-123)', await until(`${BOX(A)}.checked && ${RIGHT}.querySelector('.task-move-bar .hint:not([role])')?.textContent === '7 shown · 1 selected'`, 30)
+    && JSON.stringify(await redrawn()) === JSON.stringify([A.run_dir]), JSON.stringify(await redrawn()));
+  await evaluate(`${BOX(A)}.click()`); await until(`!${BOX(A)}.checked`, 30);
+  const COMPATIBLE = `/Compatible for Fine-tune/.test(${RIGHT}.querySelector('details.model-compatibility')?.textContent ?? '')`;
+  await markRows(); await details(B);
+  check('... a Details press only that row, also once its save point is checked (SIF-123)', await until(COMPATIBLE, 40)
+    && JSON.stringify(await redrawn()) === JSON.stringify([B.run_dir]), JSON.stringify(await redrawn()));
+  await markRows();
+
   // ---- a click only inspects -------------------------------------------------------------------------------------------
   const askedBefore = asked.length;
   await details(A);
@@ -302,6 +333,27 @@ await runChecks(browser, async () => {
     && /saved at the end of the run · newest/.test(await evaluate(`${RIGHT}.querySelector('table.model-points tbody tr').innerText`)));
   check('... its compatibility with the task on the page is checked for its newest save point - an inspection', await until(`/Compatible for Fine-tune/.test(${RIGHT}.querySelector('details.model-compatibility')?.textContent ?? '')`, 40)
     && asked.slice(askedBefore).some(a => a.run_dir === A.run_dir && a.checkpoint_id === A.latest && a.withConfig), JSON.stringify(asked.slice(askedBefore)));
+  check('... and the press drew the two rows whose Details close and open, no other (SIF-123)', JSON.stringify(await redrawn()) === JSON.stringify([A.run_dir, B.run_dir].sort()),
+    JSON.stringify(await redrawn()));
+  // Branch record SIF-123: the Details' check went 0.25 s after each edit to the task on the page - a compile at almost every pause
+  // in typing, which record 7.275 had ended for the model in use's own check (0.5 s). Edited in a Parameters cell of the main page,
+  // the open model is checked again 0.5 s after the edit, never sooner: a timer is never early, the edit's time is taken before it
+  // is made and each request's as it arrives here. No row of the table is drawn again.
+  const CELL = `(() => { const e = document.querySelector('section.editors'), at = [...e.querySelectorAll('table.editor thead th')]
+    .map(h => h.dataset.field ?? h.textContent.replace(' *', '').trim()).indexOf('upper'); return e.querySelectorAll('table.editor tbody tr')[0]?.children[at]?.querySelector('input'); })()`;
+  await evaluate(`[...document.querySelectorAll('section.editors .tabs > button')].find(b => b.textContent.trim().startsWith('Parameters'))?.click()`);
+  check('(set-up) the main page\'s Parameters table has an upper bound to edit', await until(`!!(${CELL})`, 30));
+  await sleep(700);                                                                // A's check as its Details opened, answered above, is the last one
+  const typed = (await evaluate(`(${CELL}).value`)).startsWith('3.21') ? '4.32' : '3.21';
+  await markRows(); const askedBeforeEdit = asked.length, editAt = Date.now();
+  await page.setValue(CELL, typed, { event: 'input' });
+  for (let i = 0; i < 40 && !asked.slice(askedBeforeEdit).some(a => a.run_dir === A.run_dir && a.withConfig); i++) await sleep(100);
+  const recheck = asked.slice(askedBeforeEdit).filter(a => a.run_dir === A.run_dir).map(a => ({ after: a.at - editAt, withConfig: a.withConfig }));
+  check('an edit to the task on the page checks the open model again 0.5 s after it, as the model in use is checked - not 0.25 s (SIF-123)',
+    recheck.length >= 2 && recheck[0].after >= 450 && recheck.some(a => a.withConfig) && await until(COMPATIBLE, 40), JSON.stringify(recheck));
+  check('... and draws no row of the table again (SIF-123)', JSON.stringify(await redrawn()) === '[]', JSON.stringify(await redrawn()));
+  await undo();
+  check('(set-up) Undo takes the edit back', await until(`(${CELL}).value !== ${JSON.stringify(typed)}`, 30), await evaluate(`(${CELL}).value`));
   await sleep(1100);
   check('... and opening Details changed nothing in the draft', !(await stored())?.model_source?.run_dir);
   const savedBy = await evaluate(`[...${RIGHT}.querySelectorAll('table.model-relations tr')].find(tr => tr.children[0].textContent === 'Saved by')?.children[1].innerText.replace(/\\s+/g, ' ').trim() ?? ''`);
@@ -353,9 +405,13 @@ await runChecks(browser, async () => {
   await undo();
   run = await storedWhen(s => !s?.model_source?.run_dir);
   check('one Undo takes the choice back', !run?.model_source?.run_dir, JSON.stringify(run?.model_source));
+  // Branch record SIF-123: a row is drawn again only when its own props change - whether it is the model in use among them.
+  const IN_USE_ROW = on => `(${row(A)})?.getAttribute('aria-current') ${on ? '===' : '!=='} 'true' && ${on ? '!!' : '!'}(${row(A)})?.querySelector('.in-use-tag')`;
+  check('... and the window, open meanwhile, no longer marks its row "in use" (SIF-123)', await until(IN_USE_ROW(false), 30));
   await evaluate(`document.querySelector('section.editors button[title^="Redo:"]').click()`);
   run = await storedWhen(s => s?.model_source?.checkpoint_id === early);
   check('... and Redo brings it again', run?.model_source?.checkpoint_id === early);
+  check('... its row "in use" again (SIF-123)', await until(IN_USE_ROW(true), 30));
   // ---- Fine-tune's own switches are said on the main page (branch record SIF-103) -------------------------------------------------
   // Only the window's last block said them, and it closes once a save point is chosen: kept across Modes and runs, and copied by
   // New run like this, a switch left on went unseen before Start. Those that are on have a line of their own under the model line,
@@ -628,9 +684,19 @@ await runChecks(browser, async () => {
     && await evaluate(`${RIGHT}.querySelector('.task-folders').getAttribute('aria-label')`) === 'Model folders');
   await evaluate(`${RIGHT}.querySelector('.task-folders [data-folder-id="all"]').click()`); await sleep(200);
   await evaluate(`(${row(A)}).querySelector('td.task-select input').click()`); await sleep(150);
+  // Branch record SIF-123: while the move is saved every row's tick box is greyed out, and takes ticks again once it is saved; the
+  // row moved then names its folder under its name - a row is drawn again only when its own props change, so these must be among them.
+  holdFolders = true;
   await evaluate(`(() => { const s = ${RIGHT}.querySelector('select[aria-label="Move selected models to folder"]'); s.value = ${JSON.stringify(gt)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  for (let i = 0; i < 60 && !heldFolders.length; i++) await sleep(50);
+  const boxesOff = await evaluate(`${ROWS}.map(tr => tr.querySelector('td.task-select input').disabled)`);
+  holdFolders = false; if (heldFolders.length) await answer(heldFolders.shift());
   check('"Move to..." puts the ticked model in it, by run folder', await (async () => { for (let i = 0; i < 40 && !modelFolders.assignments[A.run_dir]; i++) await sleep(100); return modelFolders.assignments[A.run_dir] === gt; })()
     && await until(`${RIGHT}.querySelector('.task-folders [data-folder-id="${gt}"]')?.textContent === 'GT models1'`, 30), JSON.stringify(modelFolders.assignments));
+  check('while "Move to..." is saved every row\'s tick box is greyed out, and none once it is saved (SIF-123)', boxesOff.length === MODELS.length && boxesOff.every(Boolean)
+    && await until(`${ROWS}.length === ${MODELS.length} && ${ROWS}.every(tr => !tr.querySelector('td.task-select input').disabled)`, 30), JSON.stringify(boxesOff));
+  check('... and in All models the moved model\'s row names its folder under its name (SIF-123)', await until(`(${row(A)})?.querySelector('.task-folder-label')?.textContent === 'GT models'`, 30),
+    await evaluate(`(${row(A)})?.querySelector('.task-folder-label')?.textContent ?? 'no folder named'`));
 
   // ---- the window keeps its view between opens (branch record SIF-102) ---------------------------------------------------------------
   // It closes after every choice (record 7.291), and each reopen started at every folder, All designs, no filter, Last saved and

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, MutableRefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { useRequest } from '../store';
 import { api, Json } from '../api';
 import { useCopied } from './copied';
@@ -99,11 +99,13 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, netF
   // and component list (withSavePoint) in a Mode that loads it. It was checked with the page's network, so a model of another
   // design or size read "NOT compatible - it cannot be loaded" although Use brings its own network. An inspection: nothing in
   // the draft changes. The page's network stays in the deps: a key the save point does not fix stays the page's, as in Use.
+  // Asked 0.5 s after the last edit, as the model in use's check in useRlModel (branch record SIF-123): at 0.25 s, kept here
+  // until then, a check - a compile - went at almost every pause in typing, which record 7.275 ended there.
   const { value: checked, error: checkError } = useRequest(async signal => {
     const read = await readSavePoint(model.run_dir, point, netFields, signal);
     return api.model(model.run_dir, point, { ...config, run: withSavePoint({ ...config.run, mode: usable ?? 'fine_tune' }, read) }, signal);
   }, [model.run_dir, point, usable, netFields.join(), JSON.stringify([config.circuit, config.parameters, config.targets, config.measurements, config.run?.network])],
-    { enabled: !!point, delay: 250 });
+    { enabled: !!point, delay: 500 });
   const failed = useError && points.some(p => pointKey(model.run_dir, p.checkpoint_id) === useError.point) ? useError : null;
   const [name, setName] = useState(modelName(model));
   const [renaming, setRenaming] = useState(false);
@@ -187,6 +189,34 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, netF
 /** What of the run list the saved models are read again by: a run that came, went, came to rest, or its model renamed. */
 const runsKeyOf = (runs: Json[]) => runs.map(r => `${r.run_dir}|${r.state}|${r.ended_utc ?? ''}|${r.model_label ?? ''}`).join('\n');
 
+/** What a saved model's row asks of the window when it is pressed (branch record SIF-123): the window's functions of its latest render. */
+type RowAct = { chooseRow: (m: Json) => void; setOpen: SavedModelsView['setOpen']; select: (id: string, checked: boolean) => void };
+
+// One saved model's row of the table (branch record SIF-123): a key typed in the window's own boxes (Name of the model it
+// saves, Advanced) or in an editor while the window is open, a tick, a Details press or a folder change draws only the rows
+// whose props changed - each drew every row again, the user's 411 saved models; the DOM is the same. Its presses go through
+// `act`; its Details stay with the window, the one part of a model's row that reads the page's configuration.
+const ModelRow = memo(function ModelRow({ m, used, checked, isOpen, folderLabel, disabled, byDir, act }: { m: Json; used: boolean; checked: boolean;
+  isOpen: boolean; folderLabel: string; disabled: boolean; byDir: Map<string, Json>; act: MutableRefObject<RowAct> }) {
+  const origin = startedFrom(m, byDir);
+  return (
+    <tr className={`model-row${used ? ' current' : ''}`} aria-current={used ? 'true' : undefined} title={m.run_dir}
+      onDoubleClick={e => { if (!(e.target as HTMLElement).closest('button, input, select, label')) act.current.chooseRow(m); }}
+      tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) act.current.chooseRow(m); }}>
+      <td className="task-select"><input type="checkbox" aria-label={`Select ${modelName(m)}`} checked={checked}
+        disabled={disabled} onChange={e => act.current.select(m.run_dir, e.target.checked)} /></td>
+      <td className="wrap-words"><b>{breakable(modelName(m))}</b>{used && <span className="badge model-tag in-use-tag">in use</span>}
+        {folderLabel && <div className="hint task-folder-label">{folderLabel}</div>}</td>
+      <td className="wrap-words" title={m.run_kind === 'offline_pretraining' ? undefined : String(trainedKey(m))}>{breakable(trainedOn(m))}</td>
+      <td className="wrap-words model-net" title={netLabel(m.network)}>{designName(m.network)}{' '}<span className="hint model-size">{sizeLabel(m.network)}</span></td>
+      <td className="numeric">{m.trained_evaluations != null ? count(m.trained_evaluations) : '?'}</td><td className="numeric">{m.checkpoints?.length ?? 0}</td>
+      <td className="wrap-words">{when(m.saved_utc)}</td><td className="wrap">{origin.text}</td>
+      <td>{m.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>
+      <td>{RESTORABLE[m.restoration_capability] ?? m.restoration_capability}</td>
+      <td><button className="notes-link" aria-expanded={isOpen} onClick={() => act.current.setOpen(o => (o === m.run_dir ? null : m.run_dir))}>{isOpen ? 'Hide details' : 'Details'}</button></td>
+    </tr>);
+});
+
 /** `view`: what the table shows, kept while the window is closed (useSavedModelsView, branch record SIF-102). `refreshRuns`:
  *  the page's run list read again (App.tsx), after a rename. */
 export function SavedModels({ source, usable, runs, outputRoot, config, netFields, popup, view, refreshRuns, onUse, usingPoint = null, useError = null }: {
@@ -243,6 +273,10 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
   // word it selected is let go. Enter on the row does the same, as on a run's row in the Runs window (branch record SIF-121):
   // from the row, the double click was the only way. Neither counts on the row's buttons or its tick box.
   const chooseRow = (m: Json) => { (popup ?? window).getSelection()?.removeAllRanges(); if (usable) useNewest(m); else setOpen(m.run_dir); };
+  // The rows' presses, one object for every row and every render (branch record SIF-123): a row is drawn again only when its own
+  // props change, and a press still reaches the functions of the latest render - the Mode and the window they read with them.
+  const rowAct = useRef<RowAct>({ chooseRow, setOpen, select: table.select });
+  rowAct.current = { chooseRow, setOpen, select: table.select };
   // A rename reads the page's run list again (branch record SIF-102): the main page's model line and Next line, Started from
   // and Models trained from it name a model by its run's row, and kept the old name beside "Renamed to ..." until something
   // else read the runs. A run list that changes runsKey reads this list again by itself; else it is read here - once either
@@ -290,26 +324,15 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
         <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
         <div className="scroll" ref={box}><table className="grid run-table model-table">
           <TableHead view={table} columns={COLUMNS} shown={shown} id={m => m.run_dir} what="models" disabled={folders.busy || !folders.ready} />
-          <tbody>{shown.map(m => { const used = m.run_dir === source.run_dir, origin = startedFrom(m, byDir); return (<Fragment key={m.run_dir}>
-            <tr className={`model-row${used ? ' current' : ''}`} aria-current={used ? 'true' : undefined} title={m.run_dir}
-              onDoubleClick={e => { if (!(e.target as HTMLElement).closest('button, input, select, label')) chooseRow(m); }}
-              tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) chooseRow(m); }}>
-              <td className="task-select"><input type="checkbox" aria-label={`Select ${modelName(m)}`} checked={selected.includes(m.run_dir)}
-                disabled={folders.busy || !folders.ready} onChange={e => table.select(m.run_dir, e.target.checked)} /></td>
-              <td className="wrap-words"><b>{breakable(modelName(m))}</b>{used && <span className="badge model-tag in-use-tag">in use</span>}
-                {folders.folder === 'all' && folders.data.folders[folders.of(m.run_dir)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(m.run_dir)]}</div>}</td>
-              <td className="wrap-words" title={m.run_kind === 'offline_pretraining' ? undefined : String(trainedKey(m))}>{breakable(trainedOn(m))}</td>
-              <td className="wrap-words model-net" title={netLabel(m.network)}>{designName(m.network)}{' '}<span className="hint model-size">{sizeLabel(m.network)}</span></td>
-              <td className="numeric">{m.trained_evaluations != null ? count(m.trained_evaluations) : '?'}</td><td className="numeric">{m.checkpoints?.length ?? 0}</td>
-              <td className="wrap-words">{when(m.saved_utc)}</td><td className="wrap">{origin.text}</td>
-              <td>{m.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>
-              <td>{RESTORABLE[m.restoration_capability] ?? m.restoration_capability}</td>
-              <td><button className="notes-link" aria-expanded={open === m.run_dir} onClick={() => setOpen(o => (o === m.run_dir ? null : m.run_dir))}>{open === m.run_dir ? 'Hide details' : 'Details'}</button></td>
-            </tr>
+          {/* ModelRow draws a saved model's row; its Details stay here, outside the memo, drawn with the window as before - they
+              read the page's configuration (branch record SIF-123) */}
+          <tbody>{shown.map(m => <Fragment key={m.run_dir}>
+            <ModelRow m={m} used={m.run_dir === source.run_dir} checked={selected.includes(m.run_dir)} isOpen={open === m.run_dir}
+              folderLabel={folders.folder === 'all' ? (folders.data.folders[folders.of(m.run_dir)] ?? '') : ''} disabled={folders.busy || !folders.ready} byDir={byDir} act={rowAct} />
             {open === m.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
               <ModelDetails model={m} models={list} runs={runs} byDir={byDir} source={source} usable={usable} config={config} netFields={netFields} from={popup}
                 usingPoint={usingPoint} useError={useError} onUse={onUse} onRenamed={renamed} onSelect={dir => { folders.setFolder('all'); setFilter(''); setOpen(dir); }} /></td></tr>}
-          </Fragment>); })}</tbody></table></div>
+          </Fragment>)}</tbody></table></div>
         {shown.length === 0 && <p className="hint task-folder-empty">{filter || design ? 'No saved model matches the filter in this folder.' : 'This folder is empty. Select models in All models, then use Move to…'}</p>}
       </div></div>}
   </div>);

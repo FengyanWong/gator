@@ -4,7 +4,7 @@ import { count, createdAt as created, plural, runName, runTaskOrBlank as taskOf,
 import { si, unitLabel } from '../units';
 import { Icon } from './Icons';
 import { KeyTile } from './fields';
-import { ENDED, shownLive } from '../runState';
+import { ENDED, LIVE_STATES, shownLive } from '../runState';
 import { TRAINING_CAPS_KEY, TRAINING_COMPARE_KEY } from '../contract';
 import { TrainingChart } from './TrainingChart';
 import { runMode } from './rlModelText';
@@ -149,7 +149,7 @@ function useTrainingReads(runs: () => { dir: string; store: TrainingStore }[] | 
   }, deps);
 }
 
-function TrainingTabBody({ hidden, runDir, status, runs }: { hidden: boolean; runDir: string | null; status: Json; runs: Json[] }) {
+function TrainingTabBody({ hidden, runDir, status, statusError, runs }: { hidden: boolean; runDir: string | null; status: Json; statusError: string | null; runs: Json[] }) {
   const pageHidden = usePageHidden();
   const active = !hidden && !pageHidden && !!runDir;
   const live = shownLive(status, runDir);
@@ -193,14 +193,25 @@ function TrainingTabBody({ hidden, runDir, status, runs }: { hidden: boolean; ru
   // ---- reading: what is new since the last answer; again every 2 s while the run is live; nothing while hidden
   const liveRef = useRef(live);
   liveRef.current = live;
+  // Each run's row of the run list, by its folder: up here because the shown run's first read asks it whether the run is live
+  // (branch record SIF-126); the names and the Compare list below read it too.
+  const rowOf = useMemo(() => new Map(runs.map(r => [r.run_dir, r] as [string, Json])), [runs]);
+  // A run the run list calls live is first read once its status is in (branch record SIF-126). Read at once, it was read as a
+  // run at rest; its status - the cheaper read, so back first - then made it live, and that started the read again from the
+  // start: the backend read the whole history twice, side by side, and the first chart came later. A run at rest is read at
+  // once, as before, and so is one the list does not have (yet: after a reload); one whose status cannot be read, once that
+  // failure is in.
+  const statusKnown = status?.run_dir === runDir || !!statusError;
+  const listedLive = !!runDir && LIVE_STATES.includes(rowOf.get(runDir)?.state);
+  const ready = statusKnown || !listedLive;
   // Nothing is noted as a read starts (branch record SIF-125): a "busy" mark that nothing showed drew the whole tab once more
   // at every 2 s read of a live run. The answer's own update below draws what it brings.
-  useTrainingReads(() => { const own = store.current; return active && own ? [{ dir: own.runDir, store: own }] : null; }, {
+  useTrainingReads(() => { const own = store.current; return active && ready && own ? [{ dir: own.runDir, store: own }] : null; }, {
     done: () => { setReading({ error: null, at: Date.now() }); return liveRef.current; },
     // a backend started before this tab existed has no such route (FastAPI's own 404 "Not Found"): said as such. The time
     // stays the last good read's: the head says "numbers read at" it (branch record SIF-77 review), and nothing was read now.
     failed: (_dir, e) => { setReading(r => ({ error: readError(e), at: r.at })); return liveRef.current ? RETRY_MS : null; },
-  }, requestFrame, [active, runDir, live, retry, requestFrame]);
+  }, requestFrame, [active, runDir, live, ready, retry, requestFrame]);
 
   // ---- other runs on the same charts (record 7.200): each its own store, read like the shown one, apart from it
   const [compare, setCompare] = useState<string[]>(storedCompare);
@@ -219,7 +230,6 @@ function TrainingTabBody({ hidden, runDir, status, runs }: { hidden: boolean; ru
     },
     failed: (dir, e) => { setComparedState(state => ({ ...state, [dir]: { error: readError(e), live: false } })); return null; },
   }, requestFrame, [active, othersKey, retry, requestFrame]);
-  const rowOf = useMemo(() => new Map(runs.map(r => [r.run_dir, r] as [string, Json])), [runs]);
   /** A run's name on a compared chart, as the run window and the Compare list show it: its task, its experiment in brackets
    *  when that has a name of its own, its seed and when it was made; the start of its folder's id only when two compared
    *  runs would read the same. Record 7.213: four Spectre runs of one task and seed read alike by folder id alone. The task

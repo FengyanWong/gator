@@ -37,6 +37,10 @@
 //   - branch record SIF-125: what draws the tab again, read from the props React keeps on its elements while the run's status
 //     and Training reads are held back: a read of a live run draws it once, as its answer comes (not also as it starts); a key
 //     typed in the editors draws the bottom panel, not the tab nor its Compare list; a status answer the tab, not its list
+//   - branch record SIF-126: a run the run list calls live, chosen in the run window while the tab is shown, is not read
+//     before its status is in, and then its history is asked for from cursor 0 once (twice before: the status answer made it
+//     live and started the read again); a run at rest is read at once, as before, and a live one whose status cannot be read
+//     all the same
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -153,9 +157,12 @@ const RUNS = {
   once: { dir: base + 'scratch__seed9__once', id: 'once', state: 'completed', final: 288, tail: 0, data: makeRun(288, { updatesPer: 1, spec: 'i_bias', unit: '\u00b5A' }) },
   // its episode starts pass from the baseline on, its proposed designs from evaluation 62 (branch record SIF-116)
   startfirst: { dir: base + 'scratch__seed12__startfirst', id: 'startfirst', state: 'completed', final: 80, tail: 0, data: makeRun(80, { startsPass: true }) },
+  // live, and listed so only while `listLive` says (branch record SIF-126): never there as the page opens, so never taken over
+  fresh: { dir: base + 'scratch__seed13__fresh', id: 'fresh', state: 'running', final: 48, tail: 2, data: makeRun(64) },
 };
 const byDir = Object.fromEntries(Object.values(RUNS).map(r => [r.dir, r]));
 let listRuns = false;                                 // GET /api/runs lists the runs only for the comparison part
+let listLive = false;                                 // ...and the live run `fresh` only for the run window's part (SIF-126)
 // A run of another task, listed only (branch record SIF-105: the Compare list puts the shown run's task first).
 const OTHER_TASK_RUN = base + 'scratch__seed11__other';
 const runRows = () => ['live', 'failed', 'frozen', 'twin', 'once', 'long'].map((id, i) => ({ run_dir: RUNS[id].dir, run_id: id, task_name: 'fixture_task', task_key: 'synthetic:fixture_task',
@@ -165,7 +172,9 @@ const runRows = () => ['live', 'failed', 'frozen', 'twin', 'once', 'long'].map((
   experiment: ['live', 'once'].includes(id) ? 'tx1-fixture__0123456789ab' : 'experiment__0123456789ab' }))
   .map(r => (r.run_id === 'once' ? { ...r, seed: 1, created_utc: '2026-10-05T10:00:00+00:00' } : r))       // reads as the live run but for its folder id
   .concat([{ run_dir: OTHER_TASK_RUN, run_id: 'other', task_name: 'other_task', task_key: 'synthetic:other_task', mode: 'scratch', seed: 11, state: 'completed',
-    created_utc: '2026-10-05T16:00:00+00:00', evaluations: 12, mock: true, experiment: 'experiment__0123456789ab' }]);
+    created_utc: '2026-10-05T16:00:00+00:00', evaluations: 12, mock: true, experiment: 'experiment__0123456789ab' }])
+  .concat(listLive ? [{ run_dir: RUNS.fresh.dir, run_id: 'fresh', task_name: 'fixture_task', task_key: 'synthetic:fixture_task', mode: 'scratch', seed: 13, state: 'running',
+    created_utc: '2026-10-05T17:00:00+00:00', evaluations: RUNS.fresh.final + RUNS.fresh.tail, mock: true, experiment: 'experiment__0123456789ab' }] : []);
 
 await runChecks(browser, async () => {
   const CONFIG = await starterConfig(APP);
@@ -181,7 +190,8 @@ await runChecks(browser, async () => {
     if (name === '/api/config/validate') return fulfil(requestId, 200, validConfiguration({ mock: true }));
     if (name === '/api/runs') return fulfil(requestId, 200, { runs: listRuns ? runRows() : [] });
     if (name === '/api/runs/default-model') return fulfil(requestId, 200, { run_dir: null, checkpoint_id: 'latest', reason: 'FIXTURE' });
-    if (name === '/api/runs/status') return run ? fulfil(requestId, 200, status(run)) : fulfil(requestId, 404, { detail: 'Not a run directory' });
+    if (name === '/api/runs/status') return !run ? fulfil(requestId, 404, { detail: 'Not a run directory' })
+      : run.statusFails ? fulfil(requestId, 500, { detail: 'FIXTURE: the status could not be read' }) : fulfil(requestId, 200, status(run));   // (SIF-126)
     if (name === '/api/runs/training') {
       if (!run) return fulfil(requestId, 404, { detail: { message: 'Not a run directory' } });
       if (run.older) return fulfil(requestId, 404, { detail: 'Not Found' });                   // a backend without the route
@@ -196,7 +206,9 @@ await runChecks(browser, async () => {
     return page.readOrRefuse({ requestId, request });
   };
   const heldOf = name => heldBack.filter(p => new URL(p.request.url).pathname === name).length;
-  const release = name => { holding.delete(name); for (const p of heldBack.filter(q => new URL(q.request.url).pathname === name)) { heldBack.splice(heldBack.indexOf(p), 1); answer(p); } };
+  // A held request the page has let go of meanwhile (a read of a run no longer shown) cannot be answered: that is no failure.
+  const release = name => { holding.delete(name); for (const p of heldBack.filter(q => new URL(q.request.url).pathname === name)) { heldBack.splice(heldBack.indexOf(p), 1);
+    Promise.resolve(answer(p)).catch(e => { if (!e?.cdp) console.log(`NOTE  a held request could not be answered: ${e?.stack ?? e}`); }); } };
   const waitFor = async (test, ms = 6000) => { for (let t = 0; t < ms && !test(); t += 50) await sleep(50); return test(); };
   // Every redraw of a chart clears its canvas: counted per canvas, with the time. While window.__axisText is a list, each text
   // drawn on a plot is noted: its size in px and, right-aligned (the y axis's numbers), where its left end falls on its canvas
@@ -971,6 +983,47 @@ await runChecks(browser, async () => {
   check('a run compared while its worker lived, then shown once it ended: its "First passing design" reads "none"',
     comparedLive && pickedFailed && await until(`(${KEYS})?.querySelectorAll('.key-tile .key-tile-value')[1]?.textContent === 'none'`, 40),
     `${comparedLive ? '' : 'its compared row never read "none yet"; '}${JSON.stringify(await keyTiles())}`);
+  await pickRun(RUNS.live); await until(`/288 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 100);
+
+  // ---- a run the run list calls live, chosen in the run window while on Training: its history read once (SIF-126) ---------
+  // Read at once, it was read as a run at rest; its status answer - the cheaper read, back first from a real backend - then
+  // made it live and started that read again from cursor 0, and the backend read the whole history twice, side by side. Here
+  // its status and its Training reads are held back and let go one after the other, each request counted as it arrives,
+  // answered or not (one the page lets go of is never answered). A run at rest is still read at once, and a run whose status
+  // cannot be read all the same.
+  const asked = (route, dir, flushes = null) => heldBack.filter(p => { const u = new URL(p.request.url);
+    return u.pathname === route && u.searchParams.get('run_dir') === dir && (flushes === null || u.searchParams.get('flushes') === String(flushes)); }).length;
+  listLive = true;                                            // its row says "running" from the run window's list read on
+  holding.add('/api/runs/status'); holding.add('/api/runs/training');
+  const pickedLive = await pickRun(RUNS.fresh);
+  const statusAsked = await waitFor(() => asked('/api/runs/status', RUNS.fresh.dir) > 0);
+  await sleep(800);
+  const beforeStatus = asked('/api/runs/training', RUNS.fresh.dir);
+  release('/api/runs/status');
+  const statusIn = await until(`/running/.test((${TRAINING}).querySelector('.badge')?.textContent ?? '')`, 40);
+  await waitFor(() => asked('/api/runs/training', RUNS.fresh.dir) > 0, 3000); await sleep(800);
+  const fromZero = asked('/api/runs/training', RUNS.fresh.dir, 0);
+  release('/api/runs/training');
+  check('a run the run list calls live, chosen in the run window while on Training, is not read before its status is in (SIF-126)',
+    pickedLive && statusAsked && beforeStatus === 0, `${beforeStatus} Training request(s) while its status was held back`);
+  check('...then its history is asked for from cursor 0 once, and drawn as live (SIF-126)', statusIn && fromZero === 1
+    && await until(`/^50 evaluations · \\d+ learner updates · .* · live$/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60),
+    `${fromZero} request(s) from cursor 0 | ${await countsText()}`);
+  holding.add('/api/runs/status');
+  const readsAtRest = reads.length;
+  const pickedRest = await pickRun(RUNS.failed);
+  const restRead = await waitFor(() => reads.slice(readsAtRest).some(r => r.run === 'failed' && r.flushes === 0), 3000);
+  const restStatusHeld = asked('/api/runs/status', RUNS.failed.dir) > 0;
+  release('/api/runs/status');
+  check('...a run at rest is read at once, as before: its history asked for while its status is on its way (SIF-126)', pickedRest && restRead && restStatusHeld,
+    `read: ${restRead}, its status held back: ${restStatusHeld}`);
+  RUNS.fresh.statusFails = true;
+  const pickedUnread = await pickRun(RUNS.fresh);
+  check('...and a run the list calls live whose status cannot be read is read all the same (SIF-126)', pickedUnread
+    && await until(`/^50 evaluations · \\d+ learner updates · .* · numbers read at \\d\\d:\\d\\d:\\d\\d$/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60),
+    await countsText());
+  delete RUNS.fresh.statusFails;
+  listLive = false;
   await pickRun(RUNS.live); await until(`/288 evaluations/.test((${TRAINING})?.querySelector('.training-counts')?.textContent ?? '')`, 100);
   listRuns = false;
 

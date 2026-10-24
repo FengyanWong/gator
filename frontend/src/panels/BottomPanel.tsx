@@ -136,8 +136,10 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
         {tab === 'files' && <FilesTab runDir={runDir} alive={status?.run_dir === runDir ? !!status.worker_alive : null}
           savePoint={status?.run_dir === runDir ? status.last_checkpoint_utc ?? '' : null} />}
         {/* Stays mounted: its recorded numbers and chosen charts survive a look at another tab; hidden - another
-            tab, or the panel folded to its tab line - it reads and draws nothing (record 7.193). */}
-        <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} runs={runs} />
+            tab, or the panel folded to its tab line - it reads and draws nothing (record 7.193). The status's error: a run the
+            list calls live waits for its status before its first read, and one whose status cannot be read is read all the
+            same (branch record SIF-126). */}
+        <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} statusError={statusError} runs={runs} />
         {tab === 'corners' && cornersUsable && <CornerCheckTab runDir={runDir} />}
       </div>
     </footer>

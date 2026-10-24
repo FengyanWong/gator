@@ -4677,3 +4677,82 @@ the tab's own drawings per read 2.00 -> 0.93 (28 for 30 reads: two answers were 
 answer). What stays per key: the page and the bottom panel drawn (1.1 ms by the page's clock) and the frame; per status
 answer the tab drawn once for its status, without its Compare list. The audit expected 0.5 to 1.5 ms less per key; this
 machine gave 0.4.
+
+### SIF-126 A live run chosen while the Training tab is shown has its history read once, not twice (2026-10-24; from the performance audit)
+
+**Found.** The performance audit's batch 5 (NET-2, confirmed). With the Training tab shown, choosing a live run - in the
+Runs window, by Show the header's run, by a task whose newest run it is - read the run's whole recorded history twice.
+The tab's first read went out at once, before the run's status was in (the page lets go of the last run's status as the
+shown run changes), so it went out as the read of a run at rest; the status, the cheaper read and so back first, then
+made the run live, a change that let go of the read in the browser and started it again from cursor 0, nothing having
+come in yet. The backend's handler finishes a request whatever the browser does, so it read the history twice, side by
+side - up to 30,000 rows a page from the run's parquet parts, on D: of the machine that runs the simulations - and the
+first chart waited for the second read, slowed by the first. Measured below with a live MOCK run of 2,000 to 2,750
+evaluations: two reads from cursor 0 at every such choice, both served by the backend, and the first chart 402 ms after
+Show results, where one read alone took 150 to 194 ms. A run at rest was read once, and is. The audit's line numbers are
+those of the file before SIF-125 (the read at 189, its dependencies at 195, the run list's rows at 214: 198, 203 and 222
+at d6bd2ce).
+
+**Changed.** `frontend/src/panels/TrainingTab.tsx`: a run that the run list calls live (its row's state one of
+`LIVE_STATES`, `runState.ts`) is first read once its status is in. The shown run's read starts when `ready` - this run's
+status is in, or its read failed (`statusError`), or the list does not call the run live - and `ready` is one of the
+read's dependencies; the run list's rows by folder (`rowOf`) moved up, above that read, which asks them (the names and
+the Compare list read them as before). So such a run is read once, as live, one status answer after the choice. A run at
+rest is read at once, as before, and so is a run the list does not have yet - after a reload that comes back on this tab,
+before the list is in, a live run is still read twice -; a run whose status cannot be read is read once that failure is
+in (a status read that never answers fails at its 30 s deadline). A stale row keeps the old order: a run that became live
+after the last list read is read twice, as before; one the list still calls live after it ended waits one status answer,
+then is read once (at once before). The read when a run ends (`live` turning false), the reads every 2 s, Retry read and
+the compared runs' reads are as they were. `frontend/src/panels/BottomPanel.tsx`: the status read's error goes to the
+tab. What the tab shows, reads and keeps is the same, and nothing here starts, continues or stops a run, saves a task or
+writes to Virtuoso. `docs/workbench.md` (The Training tab: When it reads, when it draws) and
+`docs/functionality-reference.md` (Training: Cost) say it. `frontend/scripts/training_tab_check.mjs`: the checks below;
+a fixture run that the run list lists as running only for them (`fresh`, `listLive`: never as the page opens, so never
+taken over), a status answer that fails (`statusFails`), and `release` takes a held request that the page has let go of
+as no failure.
+
+**Checked.** `tsc` clean. `training_tab_check` 131 (127 before). New, in its run window part, with the run's status and
+its Training reads held back and let go one after the other, each request counted as it arrives, answered or not: a run
+the run list calls live, chosen in the run window while on Training, is not read before its status is in (no Training
+request while its status was held back), and then its history is asked for from cursor 0 once and drawn as live; a run
+at rest is read at once (its history asked for while its status was still held back); a live one whose status cannot be
+read (a 500) is read all the same. A probe run of the new check on the build before failed exactly the first two - a
+Training request while the status was held back, then two from cursor 0 - and passed 129. One lane, after the memory
+guard, on a build of this tree: `calibration_check` 48, `export_check` 37, `run_control_live_check` 23,
+`run_control_check` 171, `training_tab_check` 131, `dom_identity_check` 56 (recording), `run_list_check` 177,
+`typing_check` 62, `files_tab_check` 43, `task_list_check` 105, `calibration_save_check` 22, `looks_check` 76,
+`task_run_check` 39, `reliability_check` 20, `room_check` 31, `matched_devices_check` 37, `agent_window_check` 33 (17
+scripts, 1111 checks, one run: every check that reads the bottom panel, where the tab is mounted, but the reward checks
+never run here, with `typing_check` and the three that start MOCK runs), then `corner_check_check` 42 (its name was
+mistyped in that run) - all passed the first time. No flakes. A comment of `TrainingTab.tsx` was reworded during that
+run: the builds before and after it are the same byte for byte (`index-VZ8c93gW.js`). DOM identity:
+`dom_identity_check` replayed that recording on the build before (the reference, 56 passed) and on the build after with
+`--compare`: 53 of its 56 files identical byte for byte, requests.txt and storage.json of every scene among them. The
+three others, the tabs scene's Training, Corner check and Run status steps, differ in six lines each: the sizes uPlot
+gives the second Training chart, 101 px high in the reference against 100, the height SIF-122 explains (the order of the
+page's first layouts decides it). The tabs scene alone, three more times on each build, drew 100 px every time, and each
+pair of the two builds was identical byte for byte (nine files each).
+
+**Measured.** A throwaway script (`tmp-measure-livepick.mjs`) and build script (`tmp-measure-build.mjs`), both deleted
+before this commit, on builds of HEAD d6bd2ce and of this change, each into a temp folder (HEAD's: the two files changed
+built from their `git show` text by a load hook, the rest of the tree as it is). Behind a scratch backend started as
+run_checks.sh starts one (its own settings and output folder on the WSL disk, the MOCK stand-in registered), a preview of
+the build served by the script with /api proxied to it; headless Edge 1600 x 1000. In each run: a MOCK run of 24
+evaluations to its end (the run at rest), then one of 20,000, concurrency 1, live, grown for 150 s and held by the
+header; the page opened on it, the Training tab pressed with its status in; then eight rounds of the Runs window, the
+live run's Details, Show results, 3 s (a 2 s read after the first answer, so that a second read from cursor 0 would be
+in), and the run at rest the same way, 1.5 s; the live run stopped at the end. Counted with CDP Network on the page:
+every `/api/runs/training` request with its cursor (`flushes`), when it was sent and how it ended (finished, or let go
+by the page); every draw of a chart (`clearRect` on a `.training-plot` canvas) with the run its head names; the time from
+the press - the page's clock, read in the window as it presses - to the first draw of the chosen run's chart; and the
+backend's own log of what it served. Two runs of each build, interleaved, 16 rounds each, before -> after: the live run
+read from cursor 0 twice in every round - the first read let go by the page 16 to 112 ms after the press, as its status
+came back, and both served by the backend (its log: two per round) -> once in every round, none let go (its log: one per
+round); its first chart 402 ms after the press (median; 326 to 452; per run 410 and 392) -> 200 ms (184 to 222; per run
+205 and 199); the read that was drawn took 360 ms (median), beside the one let go, -> 178 ms; the status came back 30 ms
+after the press (median; 14 to 110) -> 12 ms (10 to 17). The live run had 2,034 to 2,750 evaluations in the rounds before
+(answers of 630 to 858 kB) and 2,000 to 2,553 after (620 to 794 kB); its whole history read alone, by the script with
+nothing else asking, took 150 to 194 ms at 1,800 to 2,128 evaluations, a status read 4 to 10 ms. The run at rest, the
+control: read from cursor 0 once in every round of both builds, its first chart 31 -> 30 ms after the press (medians).
+Not measured: the user's D:, where each read takes longer. The batch expected 2 -> 1 and the first chart sooner by the
+duplicate read's cost: 202 ms sooner here, about one read alone.

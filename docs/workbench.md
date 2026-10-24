@@ -2018,7 +2018,15 @@ again only when what it shows can change (branch record SIF-125): a key typed in
 a status answer of a live run (every 1.5 s) drew its Compare list anew, an option per run (548 with the user's 549); and
 each 2 s read of a live run drew the tab twice, as the read started and as its answer came. With 549 runs in a headless
 Edge that was about 0.4 ms more script per key, and 68 ms of script in a minute of a live run instead of 41; what the
-tab shows, reads and keeps is the same. New numbers never change the chosen
+tab shows, reads and keeps is the same. A run the run list calls live, chosen while the tab is shown (in the run window,
+by Show the header's run, by a task whose newest run it is), is first read once its status is in (branch record
+SIF-126): read at once, it was read as a run at rest, and its status - the cheaper read, back first - then made it live,
+which started the read again from the start, so the backend read the whole history twice, side by side (the page lets go
+of a request; the backend finishes it all the same). A run at rest is read at once, as before, and so is one the list
+does not have yet (a reload that comes back on this tab reads before the list is in: a live run is read twice there, as
+before); a run whose status cannot be read is read once that failure is in. On a scratch backend with a live MOCK run of
+2,000 to 2,750 evaluations, chosen with Show results: one read from cursor 0 instead of two, and its first chart 200 ms
+after the press instead of 402 (medians of 16), a read alone taking 150 to 194 ms. New numbers never change the chosen
 tab. Another run starts from nothing (runs are never mixed); a run continued after a pause or a crash gets a dashed
 "continued" line where its new segment began. Since record 7.221 an answer reads the run's configuration and manifest
 once each, and its flush log only from where the previous answer stopped, after checking that it is still the same

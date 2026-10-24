@@ -34,7 +34,7 @@ from uuid import uuid4
 from . import caches, CHECKPOINT_METADATA_VERSION
 from .checkpoint_codec import write_compressed
 from .pdk import schema_label
-from .run_definitions import optimizer_of, require_rl_model
+from .run_definitions import NON_RL_OPTIMIZERS, optimizer_of, require_rl_model
 from .storage.atomic import PersistenceError, publish, read_dict, read_json, sha256_file, temporary_path, write_json
 from .storage.dataset import utcnow
 
@@ -486,7 +486,7 @@ def saved_models(run_entries, read_listing=None) -> list[dict]:
         manifest = getattr(entry, 'manifest', None)          # a list_runs row keeps the manifest it was built from
         if manifest is None:
             manifest = read_dict(Path(entry['run_dir']) / 'run_manifest.json')
-        if optimizer_of(manifest) == 'bayes':
+        if optimizer_of(manifest) in NON_RL_OPTIMIZERS:       # their save points hold a search, not an RL model
             continue
         listing = dict(read_listing(entry) if read_listing else list_checkpoints(entry['run_dir']))
         # An LLM-only run's saves (a search method removed on 2026-10-06) hold no RL model.
@@ -526,7 +526,7 @@ def model_label_of(run_dir, manifest=None) -> dict:
     manifest was given at the start; None for a run that saves no model (a baseline, Bayesian or LLM-only run)."""
     if manifest is None:
         manifest = read_dict(Path(run_dir) / 'run_manifest.json')
-    if optimizer_of(manifest) == 'bayes':
+    if optimizer_of(manifest) in NON_RL_OPTIMIZERS:
         return dict(model_label=None, renamed=False)
     renamed = read_dict(Path(run_dir) / MODEL_LABEL_FILE)
     label = renamed.get('model_label') if isinstance(renamed, dict) else None

@@ -6,7 +6,7 @@ replay receipts, and unfinished dispatches retain their launch leases.
 """
 from __future__ import annotations
 
-from . import best_design
+from . import best_design, engine_comparison
 from .run_lock import iso
 from .storage.atomic import read_json, read_jsonl, write_json
 from .storage.dataset import DatasetReader
@@ -29,6 +29,7 @@ def restore(engine, run_state):
         if 'rehearsal' not in collector:
             raise RuntimeError('Checkpoint lacks rehearsal sampler state')
         engine.rehearsal.load_state_dict(collector['rehearsal'])
+    search = engine_comparison.restore(engine, collector)          # the archive comparison's search, as it was saved
     cursor = run_state['data_cursor']
     report = dict(checkpoint_commit_seq=cursor['commit_seq'], recovery=engine.dataset.recovery)
     # The best design is also written on every improvement (best_design/tracker_state.json), which reaches further
@@ -71,6 +72,10 @@ def restore(engine, run_state):
             report['readmitted_transitions'] = readmitted
             report['note'] = ('Learner weights are those of the checkpoint. Experience committed after it was '
                               're-admitted to replay; the learner updates made after it are not recoverable.')
+    if engine.config.run.comparison is not None and (post or interrupted):
+        report['comparison'] = engine_comparison.after_crash(engine, cursor['commit_seq'])
+    if search is not None:
+        report['search'] = dict(search, observations=engine.proposer.observations)
     if engine.encoder is not None:
         engine.encoder.written = {r['state_id'] for r in DatasetReader(engine.layout.data).rows('states', ['state_id'])}
     # A pause for infrastructure failures asks for the connection gate to pass again, and a resume passes it: the count

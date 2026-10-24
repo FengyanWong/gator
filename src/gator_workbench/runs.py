@@ -27,7 +27,7 @@ from .paths import OutputRoots, is_mock_path, repo_root
 from .vocabulary import run_vocabulary, write_run_vocabulary
 from .model_inputs import source_vocabulary as _vocabulary_for, vocabulary_record  # compatibility exports
 from .reward_diagnostics import load as steering_check
-from .run_definitions import learner_experiment, optimizer_of, require_rl_model, saves_rl_model
+from .run_definitions import NON_RL_OPTIMIZERS, learner_experiment, optimizer_of, require_resumable, require_rl_model, saves_rl_model
 from .run_lock import RunLock
 from .schema import REMOVED_SEARCH_METHODS, WorkbenchConfig, canonical_json, config_hash, task_definition_hash
 from .storage.atomic import read_dict, read_json, write_json
@@ -125,7 +125,7 @@ def suggest_mode(config: WorkbenchConfig, source_run_dir=None, task=None) -> dic
     check loaded it twice per edit)."""
     if not source_run_dir:
         return dict(mode='scratch', reason='No previous weights selected.', requires_confirmation=False)
-    if optimizer_of(read_dict(Path(source_run_dir) / 'run_manifest.json')) == 'bayes':
+    if optimizer_of(read_dict(Path(source_run_dir) / 'run_manifest.json')) in NON_RL_OPTIMIZERS:
         return dict(mode='scratch', reason='Bayesian optimization runs hold no trained RL model.',
                     requires_confirmation=False)
     try:
@@ -536,7 +536,7 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
     """Everything an exact resume checks before it writes anything - the refusals of Continue. Shared by the press
     (under the run lock, _prepare_resume_locked) and the continuation check (record 7.261, no lock, nothing written).
     Returns (previous configuration, merged configuration, save point metadata, compatibility report)."""
-    require_rl_model(manifest)
+    require_resumable(manifest)
     if manifest['task_definition_hash'] != task_hash:
         raise RunRejected('The task definition changed (circuit, variables, targets or measurements). This cannot be '
                           'presented as a continuation of the same training run; use fine_tune.',
@@ -630,7 +630,8 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
 
     def refused(code, reason):
         alternative = None
-        if code in _FINE_TUNE_INSTEAD and point and meta and meta.get('restoration_capability') != 'search_state':
+        if (code in _FINE_TUNE_INSTEAD and point and meta and meta.get('restoration_capability') != 'search_state'
+                and optimizer_of(manifest) not in NON_RL_OPTIMIZERS):      # a search's save point holds no RL model
             alternative = dict(action='fine_tune', run_dir=str(run_dir), checkpoint_id=point,
                                label='Fine-tune from its newest save point (a new run)')
         return dict(answer, code=code, reason=reason, alternative=alternative)
@@ -718,7 +719,7 @@ def _check_save_now(layout):
     """`checkpoint` = "Save now": the RUNNING worker saves its model at the next safe boundary and goes on.
     It is refused, with the reason, whenever nothing would come of it - and it never replaces a pause, stop or
     cancel that is still in the one-slot control file (a run on its way down saves by itself, or was told not to)."""
-    require_rl_model(read_dict(layout.manifest))
+    require_resumable(read_dict(layout.manifest))
     status = run_status(layout.run_dir)
     if not status['worker_alive']:
         ended = dict(paused='paused', stopped='stopped', completed='finished').get(status.get('state'), 'ended')
@@ -790,7 +791,7 @@ def default_model(roots, label=None, project=None) -> dict:
         carrying = [row for row in rows if names.get(row['run_dir']) == label.strip()]
         last = max(carrying, key=lambda row: row.get('created_utc') or '')['run_dir'] if carrying else None
     if (not last or not roots.is_allowed(last) or not (Path(last) / 'checkpoints' / 'latest.json').is_file()
-            or optimizer_of(read_dict(Path(last) / 'run_manifest.json')) == 'bayes'):
+            or optimizer_of(read_dict(Path(last) / 'run_manifest.json')) in NON_RL_OPTIMIZERS):
         return dict(run_dir=None, checkpoint_id='latest', reason='No saved model under this label yet.')
     return dict(run_dir=last, checkpoint_id='latest', description=ckpt.describe(last, 'latest'))
 

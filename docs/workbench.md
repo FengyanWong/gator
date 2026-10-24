@@ -3828,6 +3828,15 @@ its candidate ledger. The existing SQLite pool is read-only. Recovery checkpoint
 full held-out evaluation at the final budget and numerical guards on actor/critic LayerNorm inputs. The planned recovered
 model is labelled 10,000 v1 updates plus 10,000 v2 updates. See `docs/circuit-gps.md` and the Round 3 plan record.
 
+Record 7.390 (the BO/MOBO/RL archive comparison, docs/plan-bo-mobo-rl-archive-comparison.md) adds optional request
+settings, all off by default so every earlier request pools as before. A target set's row may state its `scale` and its
+`objective` ("none", "min", "max"): a copy then scores exactly as a run of that goal view does. `candidate_ids` in a
+source's entry pools only those transitions of the run (each must be a replay-eligible transition of it).
+`relabel_targets_only` pools only the target-set copies, not the transition under its recorded targets. `balance`
+"target_set" draws from the target sets in turn, uniformly across the sources within each. It needs
+`relabel_targets_only`, the same number of target sets for every task, and `holdout_fraction` 0. With
+`holdout_fraction` 0 there is no holdout, and validation scoring skips an empty set.
+
 Record 7.342 supersedes that continuation at the user's request. The separate `circuitgps-v2-fresh/` experiment
 starts at update zero with new seed-0 weights, empty optimizer states and reset temperature/sampler, using the same
 read-only validated data and fixed runtime. It preserves the failed run and stopped recovery, and retains the

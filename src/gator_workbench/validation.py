@@ -15,7 +15,10 @@ Levels:
 """
 from __future__ import annotations
 
+import hashlib
+import importlib.util
 import math
+from pathlib import Path
 from dataclasses import dataclass, asdict
 
 from . import families, network_inputs, pdk_record, saved_rows, spec_descriptors, units
@@ -762,6 +765,7 @@ def _check_network_inputs(config, report, graph):
                        'This run is searched by Bayesian optimization, not by the network: the same task, reward, lanes and '
                        'budget, the same random warm-up designs for the same seed. The network is neither asked nor trained, '
                        'so the run saves no model worth loading, and it cannot be resumed.')
+    _comparison_rules(config, report)
     if network_inputs.any_transfer(network) and config.run.rehearsal is not None:
         report.add('blocker', 'rehearsal_with_transfer_inputs', 'run.rehearsal',
                    'Rehearsal mixes in recorded transitions of other tasks, and those would need the view of their own task '
@@ -772,6 +776,50 @@ def _check_network_inputs(config, report, graph):
                    "Operating-point inputs: this task's Maestro test does not save the DC operating point, so this run adds it "
                    'to the deck - one short DC solve more per evaluation; every other analysis and output stays as the test '
                    'has it.')
+
+
+def _comparison_rules(config, report):
+    """The archive comparison's runs (docs/plan-bo-mobo-rl-archive-comparison.md, run.comparison): every method evaluates
+    its start design, then the common first designs, then its own proposals - nothing random in between."""
+    run, comparison = config.run, config.run.comparison
+    for name in ('initial_designs', 'archive'):          # pinned files: present and the very bytes the run pins
+        path = None if comparison is None else getattr(comparison, name)
+        if path is None:
+            continue
+        try:
+            digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        except OSError as exc:
+            report.add('blocker', 'comparison_file_missing', f'run.comparison.{name}', f'{path} cannot be read: {exc}')
+            continue
+        if digest != getattr(comparison, f'{name}_sha256'):
+            report.add('blocker', 'comparison_file_not_pinned', f'run.comparison.{name}',
+                       f'{path} is not the file this run pins: its sha256 is {digest[:12]}..., the configuration names '
+                       f'{getattr(comparison, f"{name}_sha256")[:12]}...')
+    if run.optimizer in ('turbo_archive', 'mobo'):
+        if run.mode not in ('scratch', 'resume'):
+            report.add('blocker', 'comparison_search_needs_scratch', 'run.mode',
+                       f'run.optimizer "{run.optimizer}" (the archive comparison) proposes the designs itself and loads no '
+                       'saved model: its mode is scratch. A stopped run goes on from its own save point (Continue).')
+        if not config.output.save_checkpoints:
+            report.add('warning', 'comparison_search_not_resumable', 'output.save_checkpoints',
+                       'Without save points this search cannot be continued after a pause, a stop or a crash.')
+        if run.optimizer == 'mobo':
+            if importlib.util.find_spec('botorch') is None:
+                report.add('blocker', 'mobo_needs_botorch', 'run.optimizer',
+                           'M+ (run.optimizer "mobo") needs BoTorch, which only the comparison\'s own environment has '
+                           '(~/gator/envs/archive-compare-venv); this Python has none.')
+        report.add('info', 'comparison_search_run', 'run.optimizer',
+                   f'This run is searched by {run.optimizer} (the archive comparison): the network is neither asked nor '
+                   'trained, and the run saves its search with its save points, so it can be continued.')
+    elif comparison is not None:
+        if run.optimizer == 'bayes':
+            report.add('blocker', 'comparison_not_for_bayes', 'run.comparison',
+                       'Production Bayesian optimization keeps its own random warm-up: the comparison\'s first designs '
+                       'are for the comparison\'s searches (turbo_archive, mobo) and SAC runs.')
+        elif comparison.initial_designs is not None and run.advanced.warmup_transitions:
+            report.add('blocker', 'comparison_designs_replace_warmup', 'run.advanced.warmup_transitions',
+                       'In the archive comparison the common first designs replace the random warm-up: after them comes '
+                       'the method itself. Set warmup_transitions to 0.')
 
 
 def _warn_output_settings(report, out):
@@ -874,6 +922,25 @@ def _in(value, unit) -> str:
     return units.text(value, units.canonical_unit(unit)) if units.known(unit) else format(value, 'g')
 
 
+# What a goal view of the archive comparison changes in a Specs row (archive_compare.views.view_config): nothing else.
+GOAL_VIEW_FIELDS = ('lower', 'upper', 'normalization_scale', 'direction_after_feasible')
+
+
+def _only_goal_view(config, saved) -> bool:
+    """Whether the configuration's Specs rows are the saved task's but for the goal-view fields: the same rows, in the
+    same order, every other field equal. A goal view only rescores what the saved task simulates - limits, scales and the
+    preferred direction never reach the deck - so a comparison run of it is still a run of the saved task."""
+    saved_rows_ = {row.get('metric_id'): row for row in saved.get('specs') or [] if isinstance(row, dict)}
+    neutral = config.model_copy(deep=True)
+    for row in neutral.targets:
+        kept = saved_rows_.get(row.metric_id)
+        if kept is None:
+            return False
+        for field in GOAL_VIEW_FIELDS:                # a field the saved row leaves out has its default there
+            setattr(row, field, kept.get(field, type(row).model_fields[field].default))
+    return 'targets' not in saved_rows.row_differences(neutral, saved)
+
+
 def _check_saved_task(config, report, rows_from=None):
     """A saved task runs exactly as it was saved (task flow part 4, saved_rows.py): Parameters, Probes or Specs rows that
     differ from its task file block a start until "Save task" stores them, or "Reload saved values" takes the saved
@@ -889,6 +956,11 @@ def _check_saved_task(config, report, rows_from=None):
     if config.run.mode == 'resume':
         return
     differences = saved_rows.row_differences(config, saved)
+    if config.run.comparison is not None and 'targets' in differences and _only_goal_view(config, saved):
+        differences.pop('targets')
+        report.add('info', 'comparison_goal_view', 'targets',
+                   f'The Specs are the archive comparison\'s goal view of the saved task real:{name}: its limits, stated '
+                   'scales and preferred direction; every other field of every row is the saved one.')
     undone = saved_rows.undone_by_saving(config, name, saved, base=rows_from) if differences else None
     older = {item['section'] for item in undone['items']} if undone else set()
     for section, lines in differences.items():

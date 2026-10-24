@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 from typing import NamedTuple
 
-from . import bayes
+from . import bayes, engine_comparison
 from .compile import hard_constraints
 from .connection import classify_infrastructure_failure
-from .run_definitions import saves_rl_model
+from .run_definitions import saves_state
 from .run_lock import iso
 from .security import redact
 from .storage.atomic import write_json
@@ -170,6 +170,13 @@ def commit(engine, lane, busy, result, *, timing_batch):
                                   constraint_rows, status, record.get('condition_results')),
         simulator_jobs=job_rows, learner_updates=update_rows, states=state_rows, transitions=transition_rows))
     engine.dataset.commit(bundle)                              # <- durable acknowledgement
+    # ---- the archive comparison's search (T0/T+/M+): told each finished design once it is durable; a crash before this
+    # line leaves the design in the tables, and the resume tells it (engine_comparison.after_crash)
+    if (engine_comparison.is_search(engine.config) and not engine.calibration_only and op_is_step
+            and busy['proposal'] is not None):
+        engine_comparison.observe(engine, evaluation_id=evaluation_id, action_source=busy['action_source'],
+                                  proposal=busy['proposal'], status=status, reward=reward,
+                                  parameter_rows=bundle['rows']['parameters'], metric_rows=bundle['rows']['metrics'])
     timings = record.get('timings')
     if isinstance(timings, dict) and timings:
         engine._timings.append(dict(evaluation_id=evaluation_id, worker_id=lane.lane_id, phase=busy['phase'],
@@ -195,7 +202,7 @@ def commit(engine, lane, busy, result, *, timing_batch):
                                               and not terminated and not truncated)
             state['resets_since_check'] = 0
     every, seconds = engine.config.output.checkpoint_every_evaluations, engine.config.output.checkpoint_every_seconds
-    if saves_rl_model(engine.config) and (
+    if saves_state(engine.config) and (
             (every and commit_seq - engine.counters['last_checkpoint_commit'] >= every)
             or (seconds and engine._clock() - engine.last_checkpoint_time >= seconds)):
         engine.checkpoint_due = True

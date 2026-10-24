@@ -133,7 +133,7 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
     element.replaceChildren(...pieces.flatMap((piece, i) => (i ? [' · ', piece] : [piece])));
     // A row with fewer values must not shorten the line under a moving pointer (SIF-120): the plot under it would grow and
     // shrink as the pointer crossed the rows - a training row's two lines, an episode start's one. The line keeps the most
-    // lines it has taken at its width, until its width or the chart's series change.
+    // lines it has taken at its width, until its width or the chart's series change, or a key switches a series off or on.
     const width = element.clientWidth;
     if (width !== steady.current.width) { steady.current = { width, height: 0 }; element.style.minHeight = ''; }
     const height = element.offsetHeight;
@@ -253,6 +253,8 @@ export function TrainingChart({ built, hidden, xLabel, format, describe, onZoom,
     if (next.has(group)) next.delete(group); else next.add(group);
     setOff(next);
     built?.series.forEach((s, i) => { if (groupOf(s) === group) plot.current?.setSeries(i + 1, { show: !next.has(group) }); });
+    // the line has a series more or fewer: it measures its lines anew (SIF-120 review: a series switched off left a blank line)
+    steady.current = { width: -1, height: 0 };
     showReadout(plot.current);
   };
 

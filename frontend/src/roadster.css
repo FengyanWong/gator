@@ -514,3 +514,10 @@ button.line-close { border: none; background: none; }
 .training-readout .readout-part { display: inline-block; max-width: 100%; }
 .training-legend { align-items: baseline; flex: none; }
 .training-plot { min-height: 60px; }
+/* SIF-120 review: where a chart's keys and line need more than its row's 170 px leaves above the plot's 60 px, the row
+   grows to hold them. A row's least height was a fixed 170 px (styles.css), the charts' content did not count, so the plot
+   ran out of its card - 29 px at 1366 px with eight charts and a compared run - onto the chart below, whose title and ×
+   its canvas covered and whose clicks it took (the plot and its canvas are positioned, the title is not). A row is now as
+   tall as its tallest chart needs, 170 px at least, and the rows share any room left as before. */
+.training-charts { grid-auto-rows: minmax(min-content, 1fr); }
+.training-chart { min-height: 170px; }

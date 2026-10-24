@@ -4331,3 +4331,33 @@ guard: `training_tab_check` 120, `dom_identity_check` 56, `files_tab_check` 43, 
 were measured with temporary scripts, not kept (one of them, a copy of `training_tab_check`, once counted three draws of
 one chart within a second at its start, six in all, as every run of the check counts). After comments in `roadster.css`
 and the check changed, `tsc` clean and `training_tab_check` 120 again.
+
+**Review follow-up.** The review of 9203cb5 found two slips; both are real. (1) A chart could run out of its card onto
+the chart below. A row's least height was a fixed 170 px (`grid-auto-rows: minmax(170px, 1fr)`, `styles.css`), so what a
+chart holds never made its row taller; with the legend keeping all its lines (`flex: none`) and the plot stopping at 60
+px, a legend taller than the card's room pushed the plot past the card's foot - "ends 6 px below its box" in "Changed"
+above was this. Past 15 px (the card's 2 px padding and 1 px border, the 8 px gap, the next card's border and 3 px
+padding) the plot reached the next row's title; the plot is positioned, as uPlot's canvas and overlay are, and the
+title is not, so the upper chart's canvas was drawn over that title and × and took their clicks. Measured on the code
+before, eight charts at 1366 x 1000 with a compared run (its name in the keys and in the line, as every compared run's
+is): every card 170 px, seven plots at 60 px, four of them ending 29.4 px below their cards and three 12.6 px; at the
+middle of the titles and × of charts 5, 6 and 8 the pointer found the canvas of charts 1, 2 and 4, whose x-axis labels
+stood over those titles (chart 7's were clear: chart 3 ran 12.6 px out). The checks did not see it: the two charts at
+1366 px stand in one row, and SIF-120's eight charts had no compared run and measured each plot against its legend, not
+its card. `frontend/src/roadster.css` (after SIF-120's rules): a row is now as tall as its tallest chart needs, 170 px
+at least (`grid-auto-rows: minmax(min-content, 1fr)`, the 170 px a chart's `min-height`), and the rows share any room
+left as before, so where everything fits nothing changes. The same scene now: both rows 199 px, every plot inside its
+card (60 to 93 px), the second row's titles and × found where they stand (picture `training-eight-compared-1366.png`).
+The plot's 60 px floor and the legend's lines stay SIF-120's. (2) A legend key that switched a series off did not reset
+`steady`: the line lost a part but kept its taller height, a blank line, and the plot did not get the room back until
+the chart's width changed or another chart was chosen. `toggle` in `frontend/src/panels/TrainingChart.tsx` now resets
+it before writing the line, and the comment where the height is kept says so. At 1366 px the newest line, two lines
+with Training shown, takes one with it hidden and the plot grows from 103 to 119 px (before: two lines, one of them
+blank, the plot 103); shown again, two lines. `docs/workbench.md` (The Training tab: Hover) and
+`docs/functionality-reference.md` say both. Nothing here starts, continues or stops a run, saves a task or writes to
+Virtuoso. `tsc` clean. `training_tab_check` 123 (120): new, at 1366 px the key off and on again, and the eight charts
+with a compared run; SIF-120's eight-chart check also asks that each plot end inside its card. A probe run on the code
+before (`TrainingChart.tsx` and `roadster.css` as at 9203cb5, restored after, their sums compared) failed the two new
+checks of the slips (121 passed); the key on again and the eight charts at 1600 px pass there too. One lane, after the
+memory guard: `training_tab_check` 123, `dom_identity_check` 56, `files_tab_check` 43, `corner_check_check` 40,
+`looks_check` 76, `training_data_check` 120, in one run, all passed the first time; no flakes.

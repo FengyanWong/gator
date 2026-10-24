@@ -1963,8 +1963,9 @@ they are empty.
   page's font, its figures of one width, and is never cut (branch record SIF-120: in the numbers' monospace font it was cut
   at the chart's width, "... · search · episo..."): where the chart is too narrow it wraps between its parts - the x, a
   series with its value, a fact of the row - each kept whole, the keys level with its first line, and the plot gives it
-  the room (down to 60 px). While the pointer moves it keeps the most lines it has taken at that width, so the plot does
-  not grow and shrink as the pointer crosses rows with fewer values.
+  the room (down to 60 px); past that the chart's row grows, so no chart runs onto the one below (SIF-120 review). While
+  the pointer moves it keeps the most lines it has taken at that width, so the plot does not grow and shrink as the
+  pointer crosses rows with fewer values; a legend key that switches a series off or on lets it take only what it needs.
 * **Zoom**: drag across a chart. A zoomed chart holds still while new results arrive (**Follow latest** goes off).
   **Follow latest** slides back to the newest results with the same zoom width; **Reset zoom** (or a double click on a
   chart) shows the whole run.

@@ -31,7 +31,9 @@
 //   - branch record SIF-117: the counts line and the "Evaluations" key number write a count as the whole page does, from
 //     10,000 up in groups of three ("20,000 evaluations") and plain below ("1792 learner updates")
 //   - branch record SIF-120: the line over a chart in the body font, its figures of one width; at 1366 px it wraps between
-//     its parts, each whole and nothing cut, and keeps its height while the pointer crosses rows of fewer lines
+//     its parts, each whole and nothing cut, and keeps its height while the pointer crosses rows of fewer lines; a key that
+//     switches a series off gives that height back, and a row grows to hold its charts' lines - eight charts at 1366 px with
+//     a compared run, every plot inside its card, the second row's titles and × in reach (SIF-120 review)
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -377,6 +379,18 @@ await runChecks(browser, async () => {
     swept.most >= 2 && swept.fewer > 0 && !swept.shrank && !swept.grew && swept.plots.length <= 2,
     JSON.stringify({ ...swept, lines: sweep.map(s => `${s.natural}/${s.lines}`).join(' ') }));
   await page.shot(path.join(out, 'training-readout-1366.png'), `[...(${TRAINING}).querySelectorAll('figure.training-chart')][0]`);
+  // SIF-120 review: a key that switches a series off shortens the line, and the line lets go of the height it kept - it kept
+  // its taller one (a blank line, the plot not given its room back) until its width changed or another chart was chosen
+  const TRAINING_KEY = `[...${READOUT}.parentNode.querySelectorAll('.training-key')].find(b => /Training/.test(b.textContent))`;
+  const kept = await evaluate(fitOf);
+  await evaluate(`(${TRAINING_KEY}).click()`);
+  const shorter = await until(`(s => !/Training \\(recorded\\)/.test(s.text) && s.lines === s.natural && s.plot > ${kept.plot})(${fitOf})`, 30);
+  const keyOff = await evaluate(fitOf);
+  check('...a series switched off on its key: the line takes only the lines it needs, and the plot its room back (SIF-120 review)',
+    kept.natural >= 2 && shorter && keyOff.lines < kept.natural, JSON.stringify({ kept, off: keyOff }));
+  await evaluate(`(${TRAINING_KEY}).click()`);
+  check('...and switched on again, the line takes its lines again (SIF-120 review)',
+    await until(`(s => /Training \\(recorded\\)/.test(s.text) && s.lines === s.natural && s.lines === ${kept.natural})(${fitOf})`, 30), JSON.stringify(await evaluate(fitOf)));
   await page.viewport(1600, 1000); await sleep(400);
   const SECOND = CHART(1);
   await page.setValue(SECOND, 'critic_loss');
@@ -700,9 +714,10 @@ await runChecks(browser, async () => {
   const legends = await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart')].map(f => { const r = f.querySelector('.training-readout'),
     plot = f.querySelector('.training-plot').getBoundingClientRect(), legend = [...f.querySelectorAll('.training-legend > *, .readout-part')].map(e => e.getBoundingClientRect());
     return { lines: Math.round(r.offsetHeight / parseFloat(getComputedStyle(r).lineHeight)), over: Math.round(Math.max(...legend.map(e => e.bottom)) - plot.top),
-      plot: Math.round(plot.height), cut: r.scrollWidth > r.clientWidth + 1 || !/^Newest: /.test(r.textContent) }; })`);
-  check('...each chart\'s line over it whole, on two lines or more where it needs them, none over its plot; the plots 60 px high or more (SIF-120)',
-    legends.length === 8 && legends.some(l => l.lines >= 2) && legends.every(l => l.over <= 0 && l.plot >= 60 && !l.cut), JSON.stringify(legends));
+      plot: Math.round(plot.height), cut: r.scrollWidth > r.clientWidth + 1 || !/^Newest: /.test(r.textContent),
+      out: (s => Math.round((plot.bottom - f.getBoundingClientRect().bottom + parseFloat(s.borderBottomWidth) + parseFloat(s.paddingBottom)) * 10) / 10)(getComputedStyle(f)) }; })`);
+  check('...each chart\'s line over it whole, on two lines or more where it needs them, none over its plot; the plots 60 px high or more, inside their cards (SIF-120 and its review)',
+    legends.length === 8 && legends.some(l => l.lines >= 2) && legends.every(l => l.over <= 0 && l.plot >= 60 && !l.cut && l.out <= 0.5), JSON.stringify(legends));
   // branch record SIF-115: a chart's × the same way, "Remove chart <n>" (its tooltip read "Remove chart: ...")
   const chartX = await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart .training-chart-remove')].map(b => ({ text: b.textContent, title: b.title }))`);
   check('a chart\'s × is "Remove chart <n>" for screen readers, its tooltip starting with those words (SIF-115)', chartX.length === 8
@@ -733,6 +748,45 @@ await runChecks(browser, async () => {
   await page.setValue(CHART(0), 'reward'); await page.setValue(CHART(1), 'critic_loss');
   await until(`(${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 2`, 60); await sleep(500);
   check('no window listener left behind after adding and taking off charts', (await listeners()) === listenersBefore, `${listenersBefore} -> ${await listeners()}`);
+  // Branch record SIF-120 review: a chart's keys and line may need more room than its row has - a compared run's names
+  // ("fixture_task (tx1-fixture) · seed 1 · 10-05 11:00 (recorded) ...") in both, at 1366 px - and its row grows to hold them.
+  // The legend kept its lines and the plot stopped at 60 px, so the plot ran out of its 170 px card (29 px here) onto the
+  // chart below, whose title and × its canvas covered (the plot and its canvas are positioned, the title is not) and whose
+  // clicks it took. Eight charts at 1366 px with a compared run, the keys and lines leaving a plot only its 60 px: every plot
+  // inside its card, and on the second row the pointer finds each chart's title and × where they stand. Then two charts and
+  // one run again.
+  listRuns = true;                                          // Compare... lists the runs, read as the page loads
+  for (let i = 0; i < 8 && (await figures()) < 8; i++) { await evaluate(`(${ADD}).click()`); await sleep(150); }
+  await page.viewport(1366, 1000);
+  await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
+  await until(`[...((${COMPARE})?.options ?? [])].some(o => o.value === ${JSON.stringify(RUNS.twin.dir)})`, 60);
+  await page.setValue(COMPARE, RUNS.twin.dir);
+  await until(`(${TRAINING}).querySelectorAll('.training-compared .training-chip').length === 2 && (${TRAINING}).querySelectorAll('figure.training-chart canvas').length === 8
+    && /^Newest: Evaluation 322 /.test([...(${TRAINING}).querySelectorAll('.training-readout')][0].textContent)`, 60);
+  await sleep(1500);                                        // every chart drawn with the compared run's values
+  const cards = await evaluate(`(() => { const grid = (${TRAINING}).querySelector('.training-charts'), figures = [...grid.querySelectorAll('figure.training-chart')];
+    const first = Math.min(...figures.map(f => f.getBoundingClientRect().top)), lower = figures.filter(f => f.getBoundingClientRect().top > first + 1);
+    const scrolled = [grid, grid.closest('.bottom-body'), document.scrollingElement].filter(Boolean).map(e => [e, e.scrollTop]);
+    lower[0]?.querySelector('figcaption').scrollIntoView({ block: 'start' });           // the second row's titles in view
+    const found = e => { const b = e.getBoundingClientRect(), at = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+      return !at ? 'nothing' : at === e || e.contains(at) ? true : (at.className?.baseVal ?? at.className) + ' of chart ' + (figures.indexOf(at.closest('figure.training-chart')) + 1); };
+    const seen = figures.map(f => { const s = getComputedStyle(f), card = f.getBoundingClientRect(), plot = f.querySelector('.training-plot')?.getBoundingClientRect(), r = f.querySelector('.training-readout');
+      return { lines: r ? Math.round(r.offsetHeight / parseFloat(getComputedStyle(r).lineHeight)) : null, legend: r ? Math.round(r.parentNode.getBoundingClientRect().height) : null,
+        card: Math.round(card.height), plot: plot ? Math.round(plot.height) : null,
+        out: plot ? Math.round((plot.bottom - card.bottom + parseFloat(s.borderBottomWidth) + parseFloat(s.paddingBottom)) * 10) / 10 : null,
+        found: lower.includes(f) ? [found(f.querySelector('select.training-chart-choice')), found(f.querySelector('.training-chart-remove'))] : null }; });
+    scrolled.forEach(([e, top]) => { e.scrollTop = top; });
+    return seen; })()`);
+  const secondRow = cards.filter(c => c.found);
+  check('eight charts at 1366 px with a compared run, a plot left only its 60 px: every plot inside its card and 60 px or more, the second row\'s titles and × found by the pointer (SIF-120 review)',
+    cards.length === 8 && cards.some(c => c.plot !== null && c.plot <= 61) && cards.every(c => c.out === null || (c.out <= 0.5 && c.plot >= 60))
+    && secondRow.length === 4 && secondRow.every(c => c.found.every(f => f === true)), JSON.stringify(cards));
+  await page.shot(path.join(out, 'training-eight-compared-1366.png'), `(${TRAINING})`);
+  await evaluate(`[...(${TRAINING}).querySelectorAll('.training-chip-remove')][0].click()`);
+  await until(`!(${TRAINING}).querySelector('.training-compared')`, 30);
+  listRuns = false;
+  while ((await figures()) > 2) { await evaluate(`[...(${TRAINING}).querySelectorAll('figure.training-chart .training-chart-remove')].at(-1).click()`); await sleep(150); }
+  await page.viewport(1600, 1000); await sleep(300);
   const long = await loadLong(null);
   check(`20,000 evaluations and ${RUNS.long.data.updates.length.toLocaleString('en')} learner updates load in pages`, long.loaded && long.pages >= 6, `${long.seconds.toFixed(1)} s, ${long.pages} pages`);
   const t = Date.now(); await evaluate('1'); const ping = Date.now() - t;

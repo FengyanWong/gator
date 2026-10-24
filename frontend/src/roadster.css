@@ -523,3 +523,14 @@ button.line-close { border: none; background: none; }
    tall as its tallest chart needs, 170 px at least, and the rows share any room left as before. */
 .training-charts { grid-auto-rows: minmax(min-content, 1fr); }
 .training-chart { min-height: 170px; }
+
+/* SIF-130: a field's placeholder reads at 4.5 : 1 or more on the ground it is drawn on. The page set none, and the browser's
+   own #757575 read at 3.85 : 1 in a field (#18181b) and 4.06 on a zebra row (#121215): "Find rows", the windows' Filter
+   boxes, the formula bar's "Click a cell to see and edit its whole value here" and an empty Specs bound's "no limit", which
+   is information. Now the look's dim grey (the run state's unlit words, a key number's unit): 5.45 : 1 in a field, 5.75 on
+   a zebra row, 5.18 in a row not saved - still dimmer than a hint (--muted) and than the typed text, so it reads as a
+   placeholder; at full opacity (Firefox's own 0.54 would take it under the bar again). A changed cell's amber (--unsaved-cell,
+   record 7.222), where a bound cleared in a saved task says "no limit", is lighter: there the grey read 4.18 : 1, so it
+   takes the hint's grey, 5.81 : 1 (looks_check, unsaved_rows_check). */
+::placeholder { color: #8e8e96; opacity: 1; }
+table.editor tr.unsaved-changed > td.unsaved-cell input::placeholder { color: var(--muted); }

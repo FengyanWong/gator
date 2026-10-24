@@ -396,6 +396,15 @@ is hard to read"): the browser draws a select's open list from its options, and 
 analysis, for one) has no background of its own. Every option has the field colour and the text colour (a disabled one the
 muted colour); `looks_check.mjs` measures every option of the page, Probes cells included, at 4.5 : 1 or more.
 
+**Placeholders that read** (branch record SIF-130): an empty box's words - "Find rows", the windows' Filter boxes, the
+formula bar's "Click a cell to see and edit its whole value here", an empty Specs bound's "no limit", an empty Scale's
+"auto" - are in the look's dim grey: 5.45 : 1 in a field, 5.18 : 1 or more on the editor rows' colours (a row not saved is
+the lightest), and darker than a hint, so they still read as placeholders. In a changed cell's amber (a bound cleared in a
+saved task says "no limit" there) they take the hint's grey, 5.81 : 1. The page set no colour for them until then, and the
+browser's own grey read at 3.85 : 1 in a field. `looks_check.mjs` measures every placeholder in view on the ground it is
+drawn on, the Runs window's Filter too; `unsaved_rows_check.mjs` the "no limit" of a row not saved and of a bound cleared
+in a changed cell.
+
 **Colours by name.** Every colour of the page is a named value in `styles.css` (`:root`); `roadster.css`, loaded after it,
 holds what the look adds: shapes, sizes, the banner, the tabs (until record 7.360 `themes.css` held the two looks' values
 and drawings). `styles.css` keeps no value that `roadster.css` always overrides - the same selector and property there, at

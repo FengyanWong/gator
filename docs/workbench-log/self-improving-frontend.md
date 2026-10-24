@@ -4972,3 +4972,46 @@ ones kept: records since the audit added rules, SIF-96 took the pair out of the 
 `:is()` since), and the values weigh 2.7 kB in the built file, which drops their spaces and had left out 2 of them
 already. Not measured: the time a page or a pop-up window takes to read 2.7 kB less of the stylesheet it parses, 4 % of
 the file and far inside the noise of a page load or a window opening, so no time is claimed.
+
+### SIF-130 Placeholders read at 4.5 : 1 or more on the dark fields (2026-10-24; from the survey of 2026-10-24)
+
+**Found.** The survey's contrast measurement (S11-2: `contrast.mjs`, the WCAG ratio of every visible text on 14 screens of
+the branch build with real data, against the background it sits on) found one kind of text under 4.5 : 1 that a user
+needs: placeholders. The page set no colour for them, and the browser's own #757575 read at 3.85 : 1 in a field
+(#18181b): "Find rows" on every tab, the Filter boxes of the Runs window, the saved models and Output files, and the
+formula bar's "Click a cell to see and edit its whole value here", the bar's instruction while no cell is chosen; and at
+4.06 : 1 on a zebra row (#121215): an empty Specs bound's "no limit", which is information, not decoration. The only other
+texts under the bar were the disabled Clear (Runs) and Revert (task file) buttons, 4.19 : 1, which WCAG exempts: left as
+they are. Checking the batch's colour against every ground a placeholder is drawn on found one more place: a changed
+cell's amber (`--unsaved-cell`, record 7.222), where a bound cleared in a saved task says "no limit" - 2.95 : 1 in the
+browser's grey, and still 4.22 : 1 in the batch's (4.18 in the grey chosen below).
+
+**Changed.** `frontend/src/roadster.css` (SIF-130, at the end): `::placeholder` in the look's dim grey #8e8e96 - the
+colour of the run state's unlit words and a key number's unit, so the page gets no new grey (the survey proposed #8f8f94,
+5.50 : 1, a shade away) - at full opacity (Firefox draws placeholders at 0.54 of their colour unless told): 5.45 : 1 in a
+field, 5.76 in a disabled one, 5.75 on a zebra row, 5.93 on the editors' card, 5.18 on a row not saved, 5.33 on a new
+row, 5.82 on an error row; darker than a hint (`--muted`) and than the typed text, so it still reads as a placeholder. In
+a changed cell (`table.editor tr.unsaved-changed > td.unsaved-cell`, the selector that gives it its amber) the
+placeholder takes the hint's grey, 5.81 : 1. Only the colour of an empty box's words changes; nothing moves. What the page
+shows, reads, writes, asks and stores is the same; nothing starts, continues or stops a run, saves a task or writes to
+Virtuoso. `docs/workbench.md` (a paragraph "Placeholders that read" after the drop-down lists') and
+`docs/functionality-reference.md` (the page's look row) say it.
+
+**Checked.** `tsc` clean. `looks_check` 81 (78 before): new, with the Specs tab shown every placeholder in view is
+measured on the ground it is drawn on - the backgrounds under it laid over each other from the root down, as the survey's
+script measured - and reads at 4.5 : 1 or more: "Find rows" 5.45, the formula bar's instruction 5.45, the starter Spec's
+"no limit" 5.93 (its card); each is darker than a hint; and the Runs window's Filter box, 5.45. `unsaved_rows_check` 28
+(25 before): new, the Spec row not saved shows "no limit" in its empty Upper at 5.18 : 1 on the row's tint, its box with
+no colour of its own; its Lower cleared - a bound the saved task holds - says "no limit" in the changed cell in the hint's
+grey, 5.81 : 1, once validation names the cell changed (picture `unsaved-rows-specs-cleared.png`); Undo brings the bound
+back, and the Spec validated next is the one before. Its Specs picture is taken before that, as it was. The measured
+colour is the one drawn: in `looks_check`'s picture the brightest pixels of "Find rows" and of the formula bar's words
+are (142, 142, 150), #8e8e96, on the field's (24, 24, 27). One lane, after the memory guard, on a build of this tree:
+`connection_panel_check` 101, `run_list_check` 177, `model_chooser_check` 139, `output_panel_check` 98,
+`task_rows_check` 54, `spec_equations_check` 75, `typing_check` 62, `find_fill_copy_check` 50, `sheet_check` 54,
+`files_tab_check` 43, `unsaved_rows_check` 28, `blocking_issues_check` 62, `task_list_check` 105, `looks_check` 81,
+`ngspice_window_check` 43, `editor_columns_check` 34, `task_run_check` 39, `pdk_check` 46, `formula_bar_check` 21 (19
+scripts, 1,312 checks: the two changed and every check that renders a box with a placeholder - Find rows, the formula
+bar, the Specs bounds, the windows' Filter boxes, the Connection, PDK, ngspice and Output settings fields) - all passed
+the first time, no flake. Two comment-only edits (`roadster.css`, `looks_check.mjs`) came after that build;
+`looks_check` 81 and `unsaved_rows_check` 28 again on the final tree.

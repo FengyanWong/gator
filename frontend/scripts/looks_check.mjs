@@ -6,7 +6,8 @@
 //   - one look: no look name on the page, no look switch; black ground, the browser told the page is dark; Windows' own fonts,
 //     text at 14 px;
 //   - text stays readable (each text / background pair of the page's colours at least 4.5 : 1, WCAG AA), and no box is left
-//     light (main page, three bottom tabs, the Runs window);
+//     light (main page, three bottom tabs, the Runs window); every placeholder in view too, on the ground it is drawn on and
+//     darker than a hint - Find rows, the formula bar's, a Specs bound's "no limit", the Runs window's Filter (SIF-130);
 //   - the banner of Draft A: the name as a chip with its red pin-1 dot, the task by its own name, the run's state as four words
 //     with one lit, Start round and white, Abort round and red; Output settings folded on a fresh browser; a task name too
 //     long for the header ends in "..." once the facts beside it have given way, never cut through a letter (SIF-66);
@@ -87,6 +88,20 @@ const lightBoxes = session => session.evaluate(`(() => { const lum = ${LUMINANCE
     if (lum([r, g, b]) > 0.35) found.add(e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\\s+/).join('.') : ''));
   }
   return [...found].slice(0, 12); })()`);
+/** Every placeholder in view - an empty box's words - on the ground it is drawn on: the backgrounds under it laid over each
+ *  other from the window's root down, its colour over them, as a WCAG ratio; `dim` = darker than a hint (--muted), so it
+ *  still reads as a placeholder (branch record SIF-130: the browser's own #757575 read at 3.85 : 1 in a field). */
+const placeholders = session => session.evaluate(`(() => { const lum = ${LUMINANCE}, colour = ${COLOUR};
+  const rgba = c => { const [r, g, b, a = 1] = (c.match(/[\\d.]+/g) ?? []).map(Number); return [r, g, b, a]; };
+  const over = (top, under) => [0, 1, 2].map(i => top[i] * top[3] + under[i] * (1 - top[3])).concat(1);
+  const hex = c => '#' + c.slice(0, 3).map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+  const hint = lum(colour(getComputedStyle(document.documentElement).getPropertyValue('--muted').trim()));
+  return [...document.querySelectorAll('input, textarea')].filter(e => e.placeholder && !e.value && e.checkVisibility()).map(e => {
+    const chain = []; for (let x = e; x; x = x.parentElement) chain.unshift(x);
+    const ground = chain.reduce((under, x) => over(rgba(getComputedStyle(x).backgroundColor), under), [255, 255, 255, 1]);
+    const ink = over(rgba(getComputedStyle(e, '::placeholder').color), ground), a = lum(ink.slice(0, 3)), b = lum(ground.slice(0, 3));
+    return { text: e.placeholder, ink: hex(ink), ground: hex(ground), dim: a < hint,
+      ratio: Math.round(100 * (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) / 100 }; }); })()`);
 
 await runChecks(browser, async () => {
   const meta = await (await fetch(new URL('api/meta', APP))).json();
@@ -220,6 +235,10 @@ await runChecks(browser, async () => {
     const link = await runs.evaluate(`(() => { const b = document.createElement('button'); b.className = 'notes-link'; b.textContent = 'Details';
       (document.querySelector('.run-window') ?? document.body).append(b); const st = getComputedStyle(b); const seen = { colour: st.color, line: st.textDecorationLine }; b.remove(); return seen; })()`);
     check('a link in the Runs window is white and underlined, not red (record 7.372)', link.colour === 'rgb(244, 244, 245)' && link.line.includes('underline'), JSON.stringify(link));
+    // Branch record SIF-130: the window's Filter box says what it filters at 4.5 : 1 or more too (3.85 : 1 in the browser's grey).
+    const filters = await placeholders(runs);
+    check('the Runs window\'s Filter box reads at 4.5 : 1 or more on its field, darker than a hint (SIF-130)', filters.some(p => p.text.startsWith('Filter: task'))
+      && filters.every(p => p.ratio >= 4.5 && p.dim), JSON.stringify(filters));
     // Branch record SIF-64: a list table's second lines, its Details link, the state words and the paths read at sizes near the
     // table's 13 px - a second line and "Details" were 11 px (the link in a hit box about 16 px tall), a state and "MOCK" 10 to
     // 10.5 px; a path showed the copy cursor where a click copied nothing. A stand-in row: this window lists no run.
@@ -393,6 +412,14 @@ await runChecks(browser, async () => {
   check('...each chip a button with no frame, fill or padding of its own, at the line\'s size, a pointer over it (SIF-106)',
     JSON.stringify(chips.button) === JSON.stringify(['BUTTON', 'chip-insert', '0px', '0px', '0px', 'rgba(0, 0, 0, 0)', '14px', 'pointer']), JSON.stringify(chips.button));
   check('the Specs table header row takes the Specs colour', await evaluate(`document.querySelector('.editors').dataset.editor === 'targets'`));
+  // Branch record SIF-130: every placeholder in view reads at 4.5 : 1 or more on its ground - the browser's own #757575 read at
+  // 3.85 : 1 in a field and 4.06 on a zebra row: "Find rows", the formula bar's instruction while no cell is chosen, the
+  // "no limit" of an empty Specs bound (the starter Spec has a lower limit only) - and stays darker than a hint, so it still
+  // reads as a placeholder.
+  const shown = await placeholders(page), words = shown.map(p => p.text);
+  check('every placeholder in view reads at 4.5 : 1 or more on its ground: Find rows, the formula bar\'s instruction, a Specs bound\'s "no limit" (SIF-130)',
+    ['Find rows', 'Click a cell to see and edit its whole value here', 'no limit'].every(t => words.includes(t)) && shown.every(p => p.ratio >= 4.5), JSON.stringify(shown));
+  check('...each darker than a hint, so it still reads as a placeholder', shown.length > 0 && shown.every(p => p.dim), JSON.stringify(shown.filter(p => !p.dim)));
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.textContent.startsWith('Parameters')).click()`);
 
   // ---- Data tables: one line per row -------------------------------------------------------------------------------------------

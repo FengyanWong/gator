@@ -5,7 +5,8 @@
 // the fixture's saved rows field by field, as the backend does (consistency.unsaved_rows); other reads pass; every other
 // writing request is refused here: nothing is saved on the backend it runs against. What it pins:
 //   - a changed row is tinted and its changed cells more, a new row in the colour of an added row, both with a bar at their
-//     start; an error row keeps its own colour; in the page's one look (record 7.360), read from its own colour names;
+//     start; an error row keeps its own colour; in the page's one look (record 7.360), read from its own colour names; an
+//     empty bound's "no limit" reads at 4.5 : 1 or more on them, in a changed cell in the hint's grey (branch record SIF-130);
 //   - the tick-box cell says what changed and what the task holds (a column not in view too); a changed cell's tooltip
 //     starts with the saved value, written as the cell writes it (1.5 um, 1 GHz, ≥ lower);
 //   - a tab holding such rows carries a dot, its tooltip counts them and names the saved rows deleted here; a tie toggle
@@ -105,6 +106,13 @@ await runChecks(browser, async () => {
   const bg = expression => evaluate(`getComputedStyle(${expression}).backgroundColor`);
   const colour = name => evaluate(`(() => { const d = document.createElement('div'); d.style.background = 'var(${name})'; document.body.append(d);
     const c = getComputedStyle(d).backgroundColor; d.remove(); return c; })()`);
+  // A box's placeholder on its cell's colour as a WCAG ratio (branch record SIF-130); `clear`: the box has no colour of its own,
+  // so the cell's is the ground it is drawn on.
+  const placeholderOn = box => evaluate(`(e => { if (!e) return null; const rgb = c => c.match(/[\\d.]+/g).slice(0, 3).map(Number);
+    const lum = c => rgb(c).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + [0.2126, 0.7152, 0.0722][i] * v, 0);
+    const ink = getComputedStyle(e, '::placeholder').color, ground = getComputedStyle(e.closest('td')).backgroundColor, a = lum(ink), b = lum(ground);
+    return { text: e.placeholder, value: e.value, ink, ground, clear: getComputedStyle(e).backgroundColor === 'rgba(0, 0, 0, 0)',
+      ratio: Math.round(100 * (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) / 100 }; })(${box})`);
   const marked = () => evaluate(`[...document.querySelectorAll('.editors table.editor tbody tr')].filter(tr => /unsaved-/.test(tr.className)).length`);
   const tab = async name => { await evaluate(`${TAB(name)}.click()`); await sleep(300); };
   const typeIn = async (box, text) => { await page.setValue(box, text, { event: 'input', focus: true }); await evaluate(`${box}.blur()`); };
@@ -178,6 +186,25 @@ await runChecks(browser, async () => {
     && ['Limit (saved: ≥ lower)', 'Lower (saved: 1 GHz)', 'Scale (saved: 200 MHz)'].every(part => specNote.includes(part))
     && !(await evaluate(`!!${SROW('osc_frequency_hz')}.querySelector('td[data-field="normalization_scale"]')`)), specNote);
   await page.shot(path.join(out, 'unsaved-rows-specs.png'), `document.querySelector('.editors')`);
+  // Branch record SIF-130: an empty bound's "no limit" reads at 4.5 : 1 or more on a row not saved; in a changed cell - a bound
+  // cleared in the saved task - in the hint's grey, 4.5 : 1 or more on the cell's amber (the page's placeholder grey read
+  // 4.18 : 1 there). Then Undo takes the clearing back.
+  const LOWER = BOX(SROW('osc_frequency_hz'), 'lower'), free = await placeholderOn(BOX(SROW('osc_frequency_hz'), 'upper'));
+  check('Specs: an empty bound in a row not saved says "no limit" at 4.5 : 1 or more on the row\'s colour (SIF-130)', free?.text === 'no limit' && free.value === ''
+    && free.clear && free.ground === await colour('--unsaved-row') && free.ratio >= 4.5, JSON.stringify(free));
+  const specBefore = JSON.stringify(validations.at(-1)?.targets);
+  await typeIn(LOWER, '');
+  let asked = false;                                          // validation names the cleared bound changed, as the backend does
+  for (let i = 0; i < 40 && !asked; i++) { await sleep(100); asked = validations.at(-1)?.targets?.[0]?.lower === null; }
+  const cleared = asked && await page.until(`${LOWER}.value === '' && /\\bunsaved-cell\\b/.test(${LOWER}.closest('td').className)`, 40) ? await placeholderOn(LOWER) : null;
+  check('...a bound cleared in the saved task says it in its changed cell, in the hint\'s grey: 4.5 : 1 or more on the amber (SIF-130)',
+    cleared?.text === 'no limit' && cleared.clear && cleared.ground === await colour('--unsaved-cell') && cleared.ink === await colour('--muted') && cleared.ratio >= 4.5,
+    JSON.stringify({ asked, cleared }));
+  await page.shot(path.join(out, 'unsaved-rows-specs-cleared.png'), `document.querySelector('.editors')`);
+  await evaluate(`document.querySelector('section.editors button[title^="Undo:"]').click()`);
+  let undone = false;
+  for (let i = 0; i < 40 && !undone; i++) { await sleep(100); undone = JSON.stringify(validations.at(-1)?.targets) === specBefore; }
+  check('...and Undo brings the bound back, the Spec as it was', undone && await page.until(`${LOWER}.value !== ''`, 20), JSON.stringify(validations.at(-1)?.targets));
   await tab('measurements');
   check('Probes: the rows as saved are not marked', await marked() === 0);
   await tab('parameters');

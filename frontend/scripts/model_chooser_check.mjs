@@ -13,7 +13,9 @@
 //   is filled in by itself;
 // - a click only inspects (Details: save points newest first, compatibility, rename, relationships);
 // - "Use this save point" pins exactly that save point - a concrete id, never "latest" - with the model's network, as ONE
-//   Undo step; a double click on a row uses its newest save point; a newer save point is offered, never followed;
+//   Undo step; a double click on a row uses its newest save point, and so does Enter on the row, which is in the Tab order
+//   with a run row's focus ring - on its Details button Enter opens the Details alone - and the line that asks for a model
+//   says both (branch record SIF-121); a newer save point is offered, never followed;
 // - a network that arrives from elsewhere while a model is loaded is taken back, and that is said; the import that brought it
 //   says it replaced the run settings (branch record SIF-107);
 // - an incomplete configuration is a calm note; rename refuses a taken name; the filter; one read per Refresh list - the
@@ -44,7 +46,7 @@
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks, setMode } from './lib/rl_networks.mjs';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { check, launchEdge, mockStarter, NEVER_ASKED_OR_SAVED, outDir, reportRefused, RL_MODEL_WINDOW, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, focusOn, launchEdge, mockStarter, NEVER_ASKED_OR_SAVED, outDir, pressEnter, reportRefused, RL_MODEL_WINDOW, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 // Optional: the output folder whose saved models the last section lists (default: the backend's own default root).
@@ -254,6 +256,10 @@ await runChecks(browser, async () => {
     JSON.stringify(switchTitles));
   check('... "no saved model chosen yet" is said, and none was filled in by itself (record 7.265)', await evaluate(`!!${RIGHT}.querySelector('.model-none-chosen')`)
     && !(await storedWhen(s => s?.mode === 'fine_tune'))?.model_source?.run_dir && /^Fine-tune · no saved model chosen/.test(await line()), await line());
+  // Branch record SIF-121: the row's double click was said nowhere on the page, and its Enter would use a model unannounced.
+  const noneChosen = await evaluate(`${RIGHT}.querySelector('.model-none-chosen')?.textContent ?? ''`);
+  check('... and it says how one is chosen: a save point\'s Use, or a model\'s newest by a double click on its row or Enter on it (SIF-121)',
+    noneChosen === 'No saved model is chosen yet: Fine-tune needs one. Use a save point below (a model\'s newest: a double click on its row, or Enter on it); this window then closes.', noneChosen);
   // Branch record SIF-1: the network's design by name (user: "show what is each models original shape design"), its size
   // under it, in the column that was "Network".
   check('the columns: name, trained on, design, evaluations, save points, last saved, started from, data, restorable', JSON.stringify((await heads()).slice(1, 10))
@@ -424,6 +430,23 @@ await runChecks(browser, async () => {
   check('the model in use is brought into the box\'s view when the window opens: the box scrolled to it, the window stays at its top (SIF-86)',
     await until(`(() => { const at = ${INBOX}; return at.box > 0 && !!at.row && at.row[0] >= -1 && at.row[1] >= -1 && at.window === 0; })()`, 40), JSON.stringify(await evaluate(INBOX)));
   await networkPage.viewport(1180, 920);
+
+  // ---- Enter on a row does what its double click does (branch record SIF-121) ----------------------------------------------------
+  // From the row, the double click was the only way (the Details' Use the way round), as in the Runs window until SIF-109. On the
+  // row's Details button Enter presses that alone; on the row itself it uses the model's newest save point. E: a MOCK Graph
+  // Transformer with one save point; A is in use until then.
+  const E = FILLERS[0];
+  await focusOn(networkPage, `(${row(E)}).querySelector('button.notes-link')`); await pressEnter(networkPage);
+  check('Enter on a row\'s Details button opens its Details alone: nothing is used, the window stays open (branch record SIF-121)',
+    await until(`(${row(E)})?.querySelector('button.notes-link')?.getAttribute('aria-expanded') === 'true'`, 30)
+    && (await stored())?.model_source?.run_dir === A.run_dir && !(await evaluate(`window.__checkRLWindow.closed`)), JSON.stringify((await stored())?.model_source));
+  const modelFocus = await focusOn(networkPage, row(E));
+  check('... the row itself is in the Tab order, its focus ring inside it as a run row\'s (SIF-121)', !!modelFocus?.held && modelFocus.tabIndex === 0
+    && modelFocus.ring === 'solid 2px -2px', JSON.stringify(modelFocus));
+  await pressEnter(networkPage);
+  run = await storedWhen(s => s?.model_source?.run_dir === E.run_dir);
+  check('... and Enter on the row does what its double click does: its newest save point is used, pinned, and the window closes (SIF-121)',
+    run?.model_source?.run_dir === E.run_dir && run.model_source.checkpoint_id === E.latest && await chosenAndReopened(), JSON.stringify(run?.model_source));
 
   // ---- a double click uses a row's newest save point; another network comes in the same step -----------------------------------
   await evaluate(`(${row(B)}).querySelector('td:nth-child(4)').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);

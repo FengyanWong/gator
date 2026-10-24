@@ -45,7 +45,8 @@ const restorableMeans = (capability: string, checks?: Json[]) => {
 /** New model's templates (record 7.265): one row per encoder - its sizes and training values as the backend keeps them (the
  *  starting preset, or values edited and saved there), and how many saved models were made from it. A double click or "Use
  *  template" fills the draft's network and training values from it, as one Undo step (`applyEntry`, what choosing an
- *  encoder did until then). */
+ *  encoder did until then); so does Enter on the row itself, as on a run's row in the Runs window (branch record SIF-121) -
+ *  on its Use template, Enter presses that button alone. */
 function TemplatesTable({ settings, encoders, current, runs, onUse }: { settings: Json; encoders: string[]; current: string; runs: Json[]; onUse: (encoder: string) => void }) {
   const made = (encoder: string) => runs.filter(r => r.encoder === encoder && !r.parent && r.model_label && r.run_kind !== 'offline_pretraining').length;
   return (<table className="grid small template-table"><thead><tr>
@@ -54,7 +55,8 @@ function TemplatesTable({ settings, encoders, current, runs, onUse }: { settings
     <th title="The starting preset, or values edited and saved in the backend for this encoder.">Values</th>
     <th title="Saved models under the output folder made from this template (new models, not fine-tuned ones).">Models made</th><th className="plain"></th></tr></thead>
     <tbody>{encoders.map(e => { const s = settings?.settings?.[e], n = s?.network ?? {}, a = s?.advanced ?? {}, active = e === current; return (
-      <tr key={e} className={`template-row${active ? ' current' : ''}`} aria-current={active ? 'true' : undefined} data-encoder={e} onDoubleClick={() => onUse(e)}>
+      <tr key={e} className={`template-row${active ? ' current' : ''}`} aria-current={active ? 'true' : undefined} data-encoder={e} onDoubleClick={() => onUse(e)}
+        tabIndex={0} onKeyDown={k => { if (k.key === 'Enter' && k.target === k.currentTarget) onUse(e); }}>
         {/* "(experimental)" only where the label does not say it already (branch record SIF-8: "Parameter-group attention -
             experimental (experimental)") */}
         <td><b>{s?.label ?? e}</b>{s?.experimental && !/experimental/i.test(s?.label ?? '') && <span className="hint"> (experimental)</span>}</td>
@@ -63,7 +65,7 @@ function TemplatesTable({ settings, encoders, current, runs, onUse }: { settings
         <td>{s ? ORIGIN[s.origin] ?? s.origin : 'not read yet'}</td>
         <td className="numeric">{made(e)}</td>
         <td>{active ? <b className="ok">in use</b> : <button className="template-use" onClick={() => onUse(e)}
-          title={`Use template: the next run's network and training values become the ${s?.label ?? e} template's, as one Undo step.`}>Use template</button>}</td></tr>); })}
+          title={`Use template (also a double click on its row, or Enter on it): the next run's network and training values become the ${s?.label ?? e} template's, as one Undo step.`}>Use template</button>}</td></tr>); })}
     </tbody></table>);
 }
 
@@ -229,7 +231,9 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
         {!source.run_dir && suggested?.run_dir && <p className="note model-suggested">Newest model named <b>{label}</b>: {folderName(String(suggested.run_dir))}
           {suggested.description?.checkpoint_id ? <span title={suggested.description.checkpoint_id}>{`, save point ${pointText(suggested.description.checkpoint_id)}`}</span> : ''}. <button className="model-suggested-use" disabled={!!usingPoint}
             onClick={() => chooseModel(suggested.run_dir, suggested.description?.checkpoint_id ?? 'latest')}>Use</button></p>}
-        {!source.run_dir && <p className="warn model-none-chosen">No saved model is chosen yet: {MODE_NAME[run.mode]} needs one. Use a save point below; this window then closes.</p>}
+        {/* The row's double click, and its Enter since branch record SIF-121, named where the choice is asked for: the page said
+            neither, so the row's Enter would use a model unannounced. */}
+        {!source.run_dir && <p className="warn model-none-chosen">No saved model is chosen yet: {MODE_NAME[run.mode]} needs one. Use a save point below (a model's newest: a double click on its row, or Enter on it); this window then closes.</p>}
         <SavedModels source={source} usable={LOADS.includes(run.mode) ? run.mode : null} runs={runs} outputRoot={config.output?.output_root}
           config={config} netFields={netFields} popup={networkWindow.popup} view={m.savedView} refreshRuns={m.refreshRuns} onUse={chooseModel} usingPoint={usingPoint} useError={useError} />
         {source.run_dir && <><h3>The model in use</h3>

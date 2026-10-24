@@ -25,6 +25,7 @@
 //                                 { afterError } says more after an exception (the page's own errors)
 //   reportRefused(refused, never) the INFO line of the writing requests refused, and the check that none is a NEVER_* one
 //   answerDialogs / starterConfig the page's confirm dialogs answered as planned; the MOCK task as "Load task" merges it
+//   focusOn / pressEnter          the focus put on an element as Tab puts it, with its focus ring as drawn; Enter pressed there
 //   browser.close()               Edge ends, and every temporary folder of the check is removed (also after a failure, and
 //                                 by the watchdog when a check hangs: GATOR_CHECK_LIMIT_S, default 600 s)
 import { spawn } from 'node:child_process';
@@ -530,4 +531,21 @@ export async function newTaskFrom(page, browser, kind) {
   const far = await tasks.open();
   const pressed = await far.evaluate(`(() => { const b = document.querySelector('.task-window-new button.${kind}-button'); if (!b) return false; b.click(); return true; })()`, true);
   return { tasks, pressed };
+}
+
+// ---- the keyboard on a row (branch record SIF-121) ----------------------------------------------------------------------
+/** The focus put on `element` (an expression in `session`'s own window), as Tab puts it there, and what it shows: whether it
+ *  holds the focus, its tabIndex, and its focus ring as drawn ("solid 2px -2px", a run row's since branch record SIF-109;
+ *  "none" while it does not match :focus-visible). The window is taken as focused and active first (CDP focus emulation): a
+ *  headless window need not be, and then nothing in it matches :focus-visible. */
+export async function focusOn(session, element) {
+  await session.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  return session.evaluate(`(() => { const e = ${element}; if (!e) return null; e.focus(); const s = getComputedStyle(e);
+    return { held: document.activeElement === e, tabIndex: e.tabIndex, ring: e.matches(':focus-visible') ? [s.outlineStyle, s.outlineWidth, s.outlineOffset].join(' ') : 'none' }; })()`);
+}
+/** Enter pressed where the focus is, as a person presses it (on a button, its press). Its release may go unanswered when the
+ *  key closes its own window - a saved model chosen in the RL model window - and that is no failure. */
+export async function pressEnter(session) {
+  await session.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' });
+  await session.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }).catch(() => undefined);
 }

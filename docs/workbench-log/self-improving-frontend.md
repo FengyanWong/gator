@@ -4361,3 +4361,53 @@ before (`TrainingChart.tsx` and `roadster.css` as at 9203cb5, restored after, th
 checks of the slips (121 passed); the key on again and the eight charts at 1600 px pass there too. One lane, after the
 memory guard: `training_tab_check` 123, `dom_identity_check` 56, `files_tab_check` 43, `corner_check_check` 40,
 `looks_check` 76, `training_data_check` 120, in one run, all passed the first time; no flakes.
+
+### SIF-121 Rows that open on a double click open with Enter too: loaded PDKs, templates, corner checks, saved models (2026-10-24; from the survey of 2026-10-23)
+
+**Found.** SIF-109 gave a run's row Enter, as SIF-100 had given a task's, and its record named what it left: four lists
+still answered a double click alone (the survey's S10-6). The PDK window's loaded PDKs had no other way in, so a loaded
+PDK could not be shown from the keyboard at all; nor could a run's earlier corner checks. A template in the RL model
+window was taken by its Use template, but not from its row, and a saved model's newest save point only by the double
+click (or its Details, then Use). None of these rows was in the Tab order. The page named the double click on a loaded
+PDK's row (its tooltip and the hint under the list) and over the corner checks; on the templates and the saved models,
+nowhere.
+
+**Changed.** `frontend/src/panels/Pdk.tsx`: a loaded PDK's row is in the Tab order (`tabIndex` 0) and Enter on it shows
+it, as the double click does (`show`, where the newest row asked answers); its tooltip reads "Double click, or Enter, to
+show what was read", the hint "Double click a row, or press Enter on it, to show it." `frontend/src/panels/CornerCheck.tsx`:
+an earlier check's row the same (`setCheckId`, which reads that check's status only), the hint "Double click a row, or
+press Enter on it, to show that check." `frontend/src/panels/RlModelWindow.tsx`: a template's row takes Enter for `onUse`,
+as its double click and Use template do (`chooseEncoder`: one Undo step; an edit still waiting is written into its own
+template first, as before), and Use template's tooltip begins "Use template (also a double click on its row, or Enter on
+it): ...", as Load run's names them since SIF-109. "No saved model is chosen yet" reads "... Use a save point below (a
+model's newest: a double click on its row, or Enter on it); this window then closes.": the line that asks for a model,
+where the page said neither, and Enter on a row would use one unannounced. `frontend/src/panels/ModelChooser.tsx`:
+`chooseRow` holds what the double click did - in Fine-tune and Evaluate only the newest save point used (`useNewest`, one
+Undo step; the window closes once it is read, and a save point that cannot be read leaves it open, with the reason), in
+New model the Details opened - and a model's row takes Enter for it. As in the Runs window, Enter counts on the row itself
+only: on a row's Details or Use template it presses that button alone, on the tick box nothing. `frontend/src/styles.css`:
+the three new rows' focus ring is the run row's own rule (SIF-109's selector list: 2 px in the accent colour, inside the
+row); a saved model's row is a `run-table`'s and had it already. Nothing here starts, continues or stops a run, saves a
+task or writes to Virtuoso: each Enter does only what its row's double click did, with the same Undo step, the same
+refusals and the same window closing; a PDK or a corner check shown is only read. `docs/workbench.md` (Corner check, New
+model's Templates, Using one is a press, the PDK window) and `docs/functionality-reference.md` (PDK window..., Templates,
+Saved models, Corner check) say it. `frontend/scripts/lib/harness.mjs`: `focusOn` (the focus put on an element as Tab
+puts it, the window taken as focused by CDP focus emulation - a headless window need not be, and nothing in it then
+matches `:focus-visible` -, and the element's tabIndex and ring as drawn) and `pressEnter`, for the four checks.
+
+**Checked.** `tsc` clean. `pdk_check` 46 (44 before): new, with fixload shown, fixpdk's row holds the focus, is in the Tab
+order and draws "solid 2px -2px", and its tooltip and the hint name Enter; Enter on it shows "fixpdk: 3 components" and
+marks the row. `network_panel_check` 74 (72): with rgcn in use, the Graph Transformer row is in the Tab order with the
+ring, and its Use template's tooltip names the row's double click and Enter; Enter on the row makes Graph Transformer the
+template in use, with its values, nothing written. `corner_check_check` 42 (40): after the double click showed C0, C1's
+row is in the Tab order with the ring and the hint names Enter; Enter shows C1, its status read, nothing started.
+`model_chooser_check` 126 (122): in Fine-tune "No saved model is chosen yet" names the double click and Enter; with A in
+use, Enter on a filler model's Details button opens its Details alone, A still in use and the window open; the row is in
+the Tab order with the ring; Enter on the row pins its newest save point and closes the window. A probe run on the code
+before (the five source files as at HEAD, restored after, their sums compared) failed the nine new checks of the rows'
+Tab order, ring, words and Enter (279 passed); Enter on the Details button passes there too, as a button always took it.
+One lane, after the memory guard: `pdk_check` 46, `network_panel_check` 74, `corner_check_check` 42,
+`model_chooser_check` 126, all passed the first time; then those four again with `dom_identity_check` 56,
+`run_list_check` 170, `task_list_check` 105, `reliability_check` 20, `graph_view_check` 69, `reward_block_check` 34,
+`encoder_models_check` 24, `model_structure_check` 33 (12 scripts, 799 checks, one run), all passed the first time. No
+flakes.

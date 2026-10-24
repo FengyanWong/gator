@@ -165,9 +165,12 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
       <p className="hint">This run has {plural(plan.counts.feasible, 'feasible evaluation')}, {plural(plan.counts.distinct, 'different design')}. Corners: {plan.corners.map((c: Json) => `${c.id} (${cornerLabel(c)})`).join(' · ')}.</p>
     </>}
     {(plan?.checks?.length ?? 0) > 1 && <details className="more"><summary>Earlier checks of this run ({plan.checks.length})</summary>
-      <p className="hint">Double click a row to show that check.</p>
+      {/* Enter on a row shows that check too, as on a run's row in the Runs window (branch record SIF-121): a double click was the
+          only way. Showing one only reads its status; nothing is started or stopped. */}
+      <p className="hint">Double click a row, or press Enter on it, to show that check.</p>
       <table className="grid small corner-checks"><thead><tr><th>Check</th><th>State</th><th>Simulations</th><th>Verdicts</th></tr></thead>
-        <tbody>{plan.checks.map((c: Json) => <tr key={c.check_id} className={c.check_id === checkId ? 'current' : ''} onDoubleClick={() => setCheckId(c.check_id)}>
+        <tbody>{plan.checks.map((c: Json) => <tr key={c.check_id} className={c.check_id === checkId ? 'current' : ''} onDoubleClick={() => setCheckId(c.check_id)}
+          tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) setCheckId(c.check_id); }}>
           <td>{c.check_id}{c.mock ? ' (MOCK)' : ''}</td><td>{c.state}</td><td>{c.done} / {c.total}</td>
           <td>{c.verdicts ? `${c.verdicts.accepted} accepted, ${c.verdicts.rejected} rejected, ${c.verdicts.inconclusive} inconclusive` : '-'}</td></tr>)}</tbody></table>
     </details>}

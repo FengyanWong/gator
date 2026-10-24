@@ -16,7 +16,8 @@
 //   - a configuration naming a PDK that is not loaded says so;
 //   - "PDK window..." opens the PDK window: the form, the connection it reads through, the loaded PDKs (double click shows
 //     one, with every component, its pins and roles, its parameters, and its model files' sizes in a unit - the exact
-//     bytes on hover, branch record SIF-52); "Load" sends exactly the typed fields, shows that it
+//     bytes on hover, branch record SIF-52; so does Enter on its row, which is in the Tab order with its focus ring, branch
+//     record SIF-121); "Load" sends exactly the typed fields, shows that it
 //     is reading, then shows the answer and reads the list again - so does Enter in either box, never while a box holds what
 //     Load refuses (branch record SIF-109); without a connection it cannot be pressed; closing the
 //     Virtuoso window closes it too (2026-09-29). The Virtuoso window is opened as a user opens it since record 7.362: the
@@ -31,7 +32,7 @@
 // Exit code 1 if any check fails.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
-import { check, launchEdge, mockStarter, newTaskFrom, outDir, runChecks, sleep, validConfiguration, workbenchUrl, CONNECTION_WINDOW, VIRTUOSO_WINDOW, PDK_WINDOW } from './lib/harness.mjs';
+import { check, focusOn, launchEdge, mockStarter, newTaskFrom, outDir, pressEnter, runChecks, sleep, validConfiguration, workbenchUrl, CONNECTION_WINDOW, VIRTUOSO_WINDOW, PDK_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -292,6 +293,17 @@ await runChecks(browser, async () => {
   check('... Enter in the model file box loads, as Load does: the typed fields are sent (SIF-109)',
     JSON.stringify(loadBodies.slice(1)) === JSON.stringify([{ profile_id: 'fixture-link', technology_library: 'fixload', model_file: '/fixture/models/fx.scs' }]), JSON.stringify(loadBodies));
   await popup.until(`document.querySelector('button.pdk-load')?.textContent === 'Load'`, 60);
+  // Branch record SIF-121: a loaded PDK's row takes Enter, as a run's row does (SIF-109) - a double click was the only way to
+  // show one, so a keyboard could not show a loaded PDK at all. fixload is shown now, from the load above.
+  const PDK_ROW = `[...document.querySelectorAll('.pdk-list tbody tr')].find(r => r.cells[0].textContent === 'fixpdk')`;
+  const pdkFocus = await focusOn(popup, PDK_ROW);
+  check('a loaded PDK\'s row is in the Tab order, its focus ring inside it as a run row\'s; its tooltip and the hint under the list name Enter (branch record SIF-121)',
+    !!pdkFocus?.held && pdkFocus.tabIndex === 0 && pdkFocus.ring === 'solid 2px -2px' && await pev(`(${PDK_ROW}).title`) === 'Double click, or Enter, to show what was read'
+    && /^Double click a row, or press Enter on it, to show it\./.test(await pev(`document.querySelector('.pdk-list').nextElementSibling?.textContent ?? ''`)), JSON.stringify(pdkFocus));
+  const PDK_SHOWN = `document.querySelector('.pdk-details h3')?.textContent ?? 'nothing shown'`, shownBefore = await pev(PDK_SHOWN);
+  await pressEnter(popup);
+  check('... and Enter on it shows that PDK, as its double click does: fixpdk, after fixload (SIF-121)', shownBefore === 'fixload: 2 components'
+    && await popup.until(`(${PDK_SHOWN}) === 'fixpdk: 3 components'`, 40) && await pev(`(${PDK_ROW}).classList.contains('active')`), `${shownBefore} -> ${await pev(PDK_SHOWN)}`);
   await until(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`, 30);
   check('the newly loaded PDK can be chosen in the RL model window at once', await evaluate(`[...${SELECT}.options].some(o => o.value === 'pdk:fixload')`));
   await sleep(300);

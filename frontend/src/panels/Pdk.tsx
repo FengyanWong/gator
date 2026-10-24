@@ -155,11 +155,14 @@ function PdkWindow({ list, listError, profileId, circuitPdk }: { list: Json; lis
       <h3>Loaded PDKs</h3>
       {pdks.length === 0 ? <p className="hint">None yet.</p> : <>
         <table className="grid small pdk-list"><thead><tr><th>PDK</th><th>Components</th><th title="The ideal parts of analogLib read with it: sources, ideal R, C and L, probes, controlled sources">Ideal parts</th><th>Loaded</th><th>Version</th></tr></thead><tbody>
-          {pdks.map(p => <tr key={p.pdk_id} className={showing === p.pdk_id ? 'active' : undefined} onDoubleClick={() => show(p.pdk_id)} title="Double click to show what was read">
+          {/* Enter on a row shows it too, as on a run's row in the Runs window (branch record SIF-121): a double click was the only
+              way, so a loaded PDK could not be shown from the keyboard at all. On the row itself only, as there. */}
+          {pdks.map(p => <tr key={p.pdk_id} className={showing === p.pdk_id ? 'active' : undefined} onDoubleClick={() => show(p.pdk_id)} title="Double click, or Enter, to show what was read"
+            tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) show(p.pdk_id); }}>
             <td>{p.pdk_id}</td><td>{p.summary.devices} ({byFamily(p.summary)})</td><td>{p.ideal_parts?.summary ? p.ideal_parts.summary.recognized : 'not read'}</td>
             <td title={`${p.loaded_utc} (UTC)`}>{loadedAt(p.loaded_utc)}</td><td className="mono">{p.sha256.slice(0, 8)}</td></tr>)}
         </tbody></table>
-        <p className="hint">Double click a row to show it. To use one, choose it under "Components" in the RL model window (New model).</p></>}
+        <p className="hint">Double click a row, or press Enter on it, to show it. To use one, choose it under "Components" in the RL model window (New model).</p></>}
       {shown && <PdkDetails pdk={shown} devices={devices} />}
     </div>);
 }

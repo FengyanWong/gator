@@ -1,6 +1,7 @@
 // Browser check of the RL model window (the RL networks window until record 7.265) and its launcher in Run configuration.
 // Record 7.265: Mode and the RL model label moved into the window; New model's encoder is chosen in its templates table
-// ("Use template"), and the template's settings follow under "The ... template, for this run".
+// ("Use template"), and the template's settings follow under "The ... template, for this run". A template's row takes Enter,
+// as its double click does, in the Tab order with a run row's focus ring (branch record SIF-121).
 // Same approach as agent_window_check.mjs: a throwaway headless Edge over the DevTools protocol against the RUNNING
 // workbench (default http://127.0.0.1:8765/). GET /api/network-settings is answered by the real backend; every
 // PUT/POST to /api/network-settings/* is intercepted and answered with a canned entry, so nothing is ever written
@@ -10,7 +11,7 @@
 // Exit code 1 if any check fails.
 import { NETWORK_DOCUMENT, NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
 import path from 'node:path';
-import { check, launchEdge, outDir, runChecks, sleep, workbenchUrl, RL_MODEL_WINDOW, PRESET_RATE_KEY } from './lib/harness.mjs';
+import { check, focusOn, launchEdge, outDir, pressEnter, runChecks, sleep, workbenchUrl, RL_MODEL_WINDOW, PRESET_RATE_KEY } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -149,6 +150,21 @@ await runChecks(browser, async () => {
   check('heads carries the "ignored by this encoder" hint', await evaluate(`${box('heads')}.textContent.includes('ignored by this encoder')`));
   check('no write happened by only choosing an encoder', paused.length === 0, JSON.stringify(paused.map(p => p.method + ' ' + p.url)));
   await shot('network-2-rgcn.png');
+
+  // ---- Enter on a template's row uses it, as its double click does (branch record SIF-121) -----------------------------------
+  // Use template and the double click were the ways; the row took no key, as a run's row in the Runs window took none until
+  // SIF-109. On the row's Use template, Enter presses that button alone. Then back to rgcn for the edits below.
+  const TEMPLATE_ROW = name => `document.querySelector('tr.template-row[data-encoder="${name}"]')`;
+  const templateFocus = await focusOn(networkPage, TEMPLATE_ROW('graph_transformer'));
+  const useTitle = await networkPage.evaluate(`${TEMPLATE_ROW('graph_transformer')}.querySelector('button.template-use')?.title ?? ''`);
+  check('a template\'s row is in the Tab order, its focus ring inside it as a run row\'s; Use template\'s tooltip names the row\'s double click and Enter (branch record SIF-121)',
+    !!templateFocus?.held && templateFocus.tabIndex === 0 && templateFocus.ring === 'solid 2px -2px'
+    && useTitle.startsWith('Use template (also a double click on its row, or Enter on it): the next run\'s network and training values become the '), `${JSON.stringify(templateFocus)} | ${useTitle}`);
+  await pressEnter(networkPage);
+  check('... and Enter on the row uses that template, as its double click does: Graph Transformer in use, with its values, nothing written (SIF-121)',
+    await page.until(`${NETWORK_DOCUMENT}.querySelector('tr.template-row.current')?.dataset.encoder === 'graph_transformer'`, 30)
+    && JSON.stringify(await numbers()) === JSON.stringify([gt.hidden_dim, gt.heads, gt.layers].map(String)) && paused.length === 0, JSON.stringify(await numbers()));
+  await select('rgcn'); await page.until(`${NETWORK_DOCUMENT}.querySelector('tr.template-row.current')?.dataset.encoder === 'rgcn'`, 30); await sleep(500);
 
   // ---- editing a value writes it to the backend for THAT encoder (intercepted here) ---------------------------
   await evaluate(`(() => { const i = ${box('hidden')}.querySelector('input'); i.focus(); i.select(); })()`);

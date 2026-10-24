@@ -24,9 +24,10 @@ const when = (utc?: string | null) => stamp(utc) ?? 'unknown time';
  *
  *  A click only inspects: the row's Details open under it - its save points, Rename, its compatibility with the draft's task,
  *  its network structure and circuit graph view, its relationships and history. Using one is a press: "Use this save point",
- *  or a double click on the row for its newest one, sets the draft's source to exactly that save point - a concrete id,
- *  never "latest" - with the model's network and component list, as one Undo step (Right.tsx `useSavePoint`). `usable`: the
- *  Mode loads a model (Fine-tune, Evaluate only); in New model the table is for looking only, as "Look at a saved model" was.
+ *  or a double click on the row (or Enter on it, branch record SIF-121) for its newest one, sets the draft's source to
+ *  exactly that save point - a concrete id, never "latest" - with the model's network and component list, as one Undo step
+ *  (Right.tsx `useSavePoint`). `usable`: the Mode loads a model (Fine-tune, Evaluate only); in New model the table is for
+ *  looking only, as "Look at a saved model" was.
  *  Every model has a name of its own (record 7.225): the Name box in its Details renames it (POST /api/runs/model/rename). */
 
 const KIND: Record<string, string> = { periodic: 'automatic save', manual: 'saved with "Save now"', pause: 'saved at pause', stop: 'saved at stop',
@@ -238,6 +239,10 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
   const newer = usable && inUse && newest && pinned && newest.checkpoint_id !== pinned.checkpoint_id && (newest.evaluations ?? 0) > (pinned.evaluations ?? 0) ? newest : null;
   const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
   const useNewest = (m: Json) => { const p = m.checkpoints?.find((x: Json) => x.is_latest) ?? m.checkpoints?.[m.checkpoints.length - 1]; if (p) onUse(m.run_dir, p.checkpoint_id); };
+  // A double click on a model's row uses its newest save point where the Mode loads a model, else opens its Details; the
+  // word it selected is let go. Enter on the row does the same, as on a run's row in the Runs window (branch record SIF-121):
+  // from the row, the double click was the only way. Neither counts on the row's buttons or its tick box.
+  const chooseRow = (m: Json) => { (popup ?? window).getSelection()?.removeAllRanges(); if (usable) useNewest(m); else setOpen(m.run_dir); };
   // A rename reads the page's run list again (branch record SIF-102): the main page's model line and Next line, Started from
   // and Models trained from it name a model by its run's row, and kept the old name beside "Renamed to ..." until something
   // else read the runs. A run list that changes runsKey reads this list again by itself; else it is read here - once either
@@ -287,8 +292,8 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
           <TableHead view={table} columns={COLUMNS} shown={shown} id={m => m.run_dir} what="models" disabled={folders.busy || !folders.ready} />
           <tbody>{shown.map(m => { const used = m.run_dir === source.run_dir, origin = startedFrom(m, byDir); return (<Fragment key={m.run_dir}>
             <tr className={`model-row${used ? ' current' : ''}`} aria-current={used ? 'true' : undefined} title={m.run_dir}
-              onDoubleClick={e => { if ((e.target as HTMLElement).closest('button, input, select, label')) return; (popup ?? window).getSelection()?.removeAllRanges();
-                if (usable) useNewest(m); else setOpen(m.run_dir); }}>
+              onDoubleClick={e => { if (!(e.target as HTMLElement).closest('button, input, select, label')) chooseRow(m); }}
+              tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) chooseRow(m); }}>
               <td className="task-select"><input type="checkbox" aria-label={`Select ${modelName(m)}`} checked={selected.includes(m.run_dir)}
                 disabled={folders.busy || !folders.ready} onChange={e => table.select(m.run_dir, e.target.checked)} /></td>
               <td className="wrap-words"><b>{breakable(modelName(m))}</b>{used && <span className="badge model-tag in-use-tag">in use</span>}

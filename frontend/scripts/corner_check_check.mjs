@@ -10,13 +10,14 @@
 // verdicts - and stops reading once it has ended; a REAL check asks for the budget first (no = nothing sent), then the
 // connection question, and sends both answers; a finished real check says whether the cell was restored and whether the
 // nominal repeat agreed with the run; an unsupported circuit is a neutral note with Check off; earlier checks are chosen by
-// double click. A check's time is local (its UTC on hover), a temperature reads "27 degC" (branch record SIF-59). Check
+// double click, or by Enter on a row, in the Tab order with a run row's focus ring (branch record SIF-121). A check's time is
+// local (its UTC on hover), a temperature reads "27 degC" (branch record SIF-59). Check
 // draws the play mark of Start, its word for screen readers and at the start of its tooltip (branch record SIF-115).
 // Run (Windows node through WSL interop; node >= 22 for the built-in WebSocket; about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/corner_check_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { validConfiguration, check, launchEdge, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
+import { validConfiguration, check, focusOn, launchEdge, outDir, pressEnter, reportRefused, runChecks, sleep, starterConfig, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -231,6 +232,17 @@ await runChecks(browser, async () => {
   await evaluate(`(() => { const row = [...document.querySelectorAll('table.corner-checks tbody tr')].find(r => r.textContent.includes(${JSON.stringify(C0)}));
     row.cells[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); })()`);
   check('a double click shows that check', await until(`document.querySelector('.corner-result h4')?.textContent.includes(${JSON.stringify(C0)}) ?? false`) && (sim.statusReads[C0] ?? 0) > readsBefore);
+  // Branch record SIF-121: a row takes Enter, as a run's row in the Runs window does (SIF-109) - the double click was the only
+  // way to show an earlier check. Showing one reads its status; nothing starts.
+  const C1_ROW = `[...document.querySelectorAll('table.corner-checks tbody tr')].find(r => r.textContent.includes(${JSON.stringify(C1)}))`;
+  const rowFocus = await focusOn(page, C1_ROW);
+  check('an earlier check\'s row is in the Tab order, its focus ring inside it as a run row\'s; the hint over the list names Enter (branch record SIF-121)',
+    !!rowFocus?.held && rowFocus.tabIndex === 0 && rowFocus.ring === 'solid 2px -2px'
+    && await evaluate(`document.querySelector('table.corner-checks').previousElementSibling?.textContent`) === 'Double click a row, or press Enter on it, to show that check.', JSON.stringify(rowFocus));
+  const readsC1 = sim.statusReads[C1] ?? 0, startsBeforeEnter = sim.starts.length;
+  await pressEnter(page);
+  check('... and Enter on it shows that check, as its double click does; nothing is started (SIF-121)', await until(`document.querySelector('.corner-result h4')?.textContent.includes(${JSON.stringify(C1)}) ?? false`)
+    && (sim.statusReads[C1] ?? 0) > readsC1 && sim.starts.length === startsBeforeEnter, await evaluate(`document.querySelector('.corner-result h4')?.textContent ?? 'no check shown'`));
 
   // ---- a circuit the corners are not prepared for: a neutral note, Check off ------------------------------------------------------------
   Object.assign(sim, { supported: false, reason: 'FIXTURE: real:gpdk045_ldo is qualified at its normal condition only.' });

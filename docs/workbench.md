@@ -2082,7 +2082,9 @@ rule, and stay while a saved configuration still asks for corners, so that it ca
 * **MOCK** is free: the toy score has its optimum moved at each corner. It exercises the check, not a circuit.
 * It runs in a process of its own, like a run's worker, so a page reload or a backend restart does not cut it. **Stop**
   ends it after the simulation in flight. While it works the tab reads its progress every 1.5 s; otherwise nothing
-  updates by itself (**Refresh** reads again). Earlier checks of the run are a folded list; a double click shows one.
+  updates by itself (**Refresh** reads again). Earlier checks of the run are a folded list; a double click shows one, and
+  so does **Enter** on its row, as on a run's row in the Runs window (branch record SIF-121: the double click was the only
+  way). Showing a check reads its status only.
 * The buttons are icons, their words in their tooltips: **Check** starts simulations, so it is the play mark of the
   header's Start and Resume and Run status's Continue... (an hourglass while the start is on its way), and **Stop**, the
   stop square, takes its place while the check works; **Refresh** is the arrow around (branch record SIF-115: Check drew
@@ -2807,7 +2809,8 @@ chosen. A configuration without any Mode (a task's starter rows, an old file) is
 - **Templates**: one row per encoder, with its sizes, its training values (updates per evaluation, starting temperature,
   discount, learning rate), where they come from (the starting preset, or edited and saved in the backend) and how many
   saved models were made from it. **Use template** or a double click fills the next run's network and training values
-  from it, as one Undo step - what choosing an encoder did before. The template in use is marked.
+  from it, as one Undo step - what choosing an encoder did before; so does **Enter** on the row (branch record SIF-121),
+  as Use template's tooltip says - on Use template itself, Enter presses that button alone. The template in use is marked.
 - **The ... template, for this run**: its sizes, structural input, the operating-point input, Advanced (record 7.195),
   the Components list, the "In use" line with Use the template's values and Save into the template (below), and where
   the values come from. No preset buttons (record 7.191).
@@ -2945,7 +2948,10 @@ save point: their learner was never trained. Selecting such a saved path returns
 
 **Using one is a press.** **Use this save point** makes exactly that save point the next run's model - a concrete id,
 never "latest" - with the model's network and component list, as ONE Undo step, and says so ("The next run fine-tunes
-... (one Undo step takes it back)"). A double click on a row uses its newest save point the same way. While the save point
+... (one Undo step takes it back)"). A double click on a row uses its newest save point the same way, and so does
+**Enter** on the row, as on a run's row in the Runs window (branch record SIF-121: from the row, the double click was the
+only way); Enter on the row's Details button opens its Details alone, and in New model, where the table is for looking,
+the double click and Enter open the Details. "No saved model is chosen yet" names both. While the save point
 is read, the button pressed says **Using...**; the other Use buttons stay on, and a newer choice wins (record 7.278). The
 RL model window then closes (record 7.291; as do "Use the newer one" and the suggested model's Use) - a save point that
 cannot be read leaves it open, with the reason: above the saved models, and under that model's save points when its
@@ -3129,7 +3135,9 @@ reads the cell's PDK in the same press - the technology library its design libra
 connection and gate - and a line under the window's buttons says what came of it ("PDK gpdk045 read with the cell: 54
 components (version ...)", or why it was not read; a PDK that will not read never fails the cell). The window's button
 **PDK window...** opens the PDK window to read one by name (another library, another model file) and to see what was
-read; its **Load** reads, and so does Enter in either box when Load can be pressed (branch record SIF-109). The CHOICE is in the RL model window: in New model, under the template's sizes, **Components** (standard /
+read; its **Load** reads, and so does Enter in either box when Load can be pressed (branch record SIF-109). A loaded PDK
+is shown by a double click on its row, or by Enter on it (branch record SIF-121: the double click was the only way, so a
+keyboard could not show one). The CHOICE is in the RL model window: in New model, under the template's sizes, **Components** (standard /
 every loaded PDK) - a network setting like the encoder; the window says when the chosen PDK is not loaded on this
 machine and points to the Virtuoso window. In Fine-tune and Evaluate only the list comes with the saved model, as its
 network does ("Use this save point"), and the model's facts gain a "Components" row. Saved as `run.network.vocabulary` =

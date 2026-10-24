@@ -11,7 +11,8 @@
 // BEFORE switching, asked in the Tasks window (branch record SIF-84), project names stay, failed/late loads cannot replace the current task; an
 // older backend is named as such; a circuit without targets of record says so and gets no invented target. Since status
 // record 7.59: a configuration saved with one of the four removed MOCK tasks says so plainly, and choosing the one MOCK
-// task left (synthetic:gpdk045_ota5) brings its rows and name at once.
+// task left (synthetic:gpdk045_ota5) brings its rows and name at once. Branch record SIF-132: the line under the formula bar
+// that names a Redo goes with the next change, and no such line stands under later task choices.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/task_rows_check.mjs)" [--live] [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -183,10 +184,16 @@ await runChecks(browser, async () => {
   check('the note about another task is gone', (await note()) === '', await note());
   await evaluate(`${BUTTON(EDITORS, 'Redo')}.click()`);
   check('Redo: the real task with its rows again', await until(`${TASK_KEY} === 'real:gpdk045_ota5'`) && (await column('metric_id')).includes('gain_db_at_start'), JSON.stringify(await column('metric_id')));
+  // Branch record SIF-132: the line under the formula bar names the Redo until the next change, which takes it away - it stood
+  // under the edit and the task choices after it, naming rows the page no longer showed (task-rows-3-older-backend.png).
+  const STEP_LINE = `(${EDITORS}.querySelector('.paste-note')?.textContent ?? '')`;
+  check('the line under the formula bar names what the Redo brought back (SIF-97)', await until(`${STEP_LINE}.startsWith('Redo: Parameters ')`),
+    await evaluate(STEP_LINE));
 
   // ---- resolve edits before changing the task -------------------------------------------------------------------------
   await setInput(`${EDITORS}.querySelector('table.editor tbody tr input.numeric')`, '26');
   check('an edit hides the "now show this task\'s rows" note', await until(`(${PANEL}.querySelector('.task-rows')?.textContent ?? '') === ''`), await note());
+  check('...and takes the Redo\'s line away (SIF-132)', await until(`${STEP_LINE} === ''`), await evaluate(STEP_LINE));
   answers.push(false);
   await choose('Task', 'synthetic:gpdk045_ota5');
   await until(`!${PANEL}.querySelector('[role="status"]')`);
@@ -230,6 +237,8 @@ await runChecks(browser, async () => {
     check('an older backend is named as such, in the panel', await until(`(${PANEL}.querySelector('.task-rows.error')?.textContent ?? '').includes('older than the page')`), await note());
     check('failed load leaves the task, labels and rows unchanged', (await value('Task')) === 'real:ring_demo'
       && (await strip()) === 'Parameters (1) | Probes (2) | Specs (0)' && (await value('Circuit class')) === 'vco', await strip());
+    check('no Undo or Redo line stands under the formula bar after the edits and task choices (SIF-132)', !/^(Undo|Redo)\b/.test(await evaluate(STEP_LINE)),
+      await evaluate(STEP_LINE));
     await shot('task-rows-3-older-backend.png');
 
     delayTask = 'real:gpdk045_ota5';

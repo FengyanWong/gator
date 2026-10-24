@@ -5100,3 +5100,78 @@ reached the new server at once. A read-only live check: no console errors, no re
 suite on 0d5ae76 (58 scripts, 2,923 checks passed), the page of SIF-130/131 - index-Cy1uZffg.js, index-C80G9LnF.css - at
 16:10 (frontend only, no restart). docs/frontend_implementation_status.md now has this log's pointer row (owed since
 2026-10-22, when another session was editing that file).
+
+### SIF-132 A line about an Undo, a refused value or an applied task file goes once a later change makes it untrue, and Import names the rows it deletes (2026-10-24; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found three lines that outlived what
+they said. The line under the formula bar kept "Undo: ..." or "Redo: ..." through the changes after it (S12-1): in
+`task-rows-3-older-backend.png` "Redo: Parameters input_pair_width, input_pair_width__XU1_M2 added, w_in, w_in__M2, w_tail
+removed; Probes ...; Specs ..., score removed; project labels, circuit source." stood over ring_demo's Parameters (1),
+Probes (2), Specs (0) and its empty Specs table, after typed edits and four task choices; "Undo: Specs score (Limit)."
+while score_sq ... score_4 were added and typed (`spec_equation_formula.png`, `spec_shared_notes.png`); "Undo: Specs spec_3
+(Margin sides)." over the edits of half_freq that came after it (`zero_floor_button.png`). history.ts ends the step on
+every recorded change, typing and task choices included, but the effect that writes the line returned early then, and
+only a tab change cleared it. A cell's refusal stayed the same way: '"4 um" is a length; this row holds a count.' under the
+row made a length again and 3 nm taken (`sheet-2-scrolled.png`) - a press on the tab already shown changes no tab. The
+import confirmation of a file of 20 Specs read "Confirm import: 22 changed rows", Apply in focus (SIF-107), and its list
+began with the 20 new rows field by field, "Scale (empty) (empty)" in each; the 2 rows the import deletes, score and
+score_sq, came last, out of view, and nothing in view said they would go (S12-10, `spec_import_confirm.png`; Undo brings
+them back). The task file's window kept "Applied: the editors now hold its rows, and Save as will send its other parts.
+Undo takes back the rows only." under its own "The editors changed since this file was read" line after the editors' Undo
+(S12-26, `task-file-editors-changed.png`).
+
+**Changed.** `frontend/src/panels/Editors.tsx`: the line under the formula bar knows where it came from - `step`, an
+Undo's or Redo's, and `refusal`, a cell's. A step's line goes with the next recorded change, which ends the step
+(history.ts): typing, Add, a task choice, an import. A line written with a change - Deleted, Imported, Filled, Pasted,
+Copied, Margin sides set, a Probe renamed - is no step's and stays as before; a write that makes no Undo step of its own
+(the Specs that follow a typed Probe ID, the network filled in from a saved model) leaves the step, and its line, as
+history.ts leaves the step. A refusal goes once the tab's table changes - a value taken, an Undo, Add; it is told on
+leaving its cell with nothing written, so never in its own render. Both read the line as drawn, so a change that finds no
+such line asks for no render. The import's heading keeps its start, "Confirm import: 22 changed rows" (`typing_check` reads
+it so), and when a row is deleted or the rows are of more than one kind says what they are: " - 20 new, 2 deleted (score,
+score_sq)" - new, changed, deleted; up to four IDs, then "..." - the deleted part in amber (`span.warn.import-deletes`).
+`frontend/src/panels/DiffView.tsx`: the deleted rows come first (a stable sort, the backend's order by ID within each kind),
+and a field empty on both sides is left out - a row whose every field is keeps its first, so it still has its line;
+Matched devices' list gets the same. `frontend/src/panels/TaskFile.tsx`: an Apply's line drawn while the editors differ
+from the file reads "Applied earlier; the editors changed since. Save as still sends its other parts." - worked out as
+drawn, not in an effect: right after an Apply the editors differ from the rows read for one commit, until TaskSave takes
+the applied rows before the paint (its layout effect), and an effect would have replaced the fresh line; it reads
+"Applied: ..." again once the editors are back at the file's rows. The import box keeps Apply in focus (SIF-107's choice),
+now under a heading that names what it deletes. Only words, and when they show, change: nothing is imported, applied,
+saved or run without the press it took before, Undo and Redo do what they did, and every question is asked as before;
+nothing starts, continues or stops a run, saves a task or writes to Virtuoso. `docs/workbench.md` (a bullet "A line goes
+once it is untrue, and an import names the rows it deletes" after SIF-107's; the task file's paragraph) and
+`docs/functionality-reference.md` (the Toolbar, Import JSON and Task file rows) say it. Left, as the audit itself left it:
+the raw ">=" in the import's list, which SIF-51 writes as stored on purpose.
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree; first every check that renders the
+line, the import box, a diff or the task file, all passed the first time. `task_rows_check` 57 (54 before): new, the line names what the Redo brought back, the typed edit after it takes the line
+away, and no Undo or Redo line stands under the formula bar at `task-rows-3-older-backend.png`. `sheet_check` 56 (54): new,
+no refusal is left once the row is a length again and 3 nm is taken (`sheet-2-scrolled.png`), and a cell typed after the
+Redo takes its line away; the Ctrl+Z / Ctrl+Y lines and the own-undo checks of Find rows and the formula bar as before.
+`editor_columns_check` 43 (40): the zero-floor Undo's "Undo: Specs spec_3 (Margin sides).", gone with the Margin sides
+edit after it, and no Undo line at `zero_floor_button.png`; the '"half" in Ratio' refusal as before.
+`spec_equations_check` 79 (75): "Undo: Specs score (Limit)." after its Undo and no line left at
+`spec_equation_formula.png`; the heading reads "Confirm import: 22 changed rows - 20 new, 2 deleted (score, score_sq)",
+its deleted part in `.warn.import-deletes`; score and score_sq first, then extra_0; no "(empty) (empty)" line; SIF-51's
+check of the tab, the changes and the headers as before. `task_save_check` 93 (91): after the editors' Undo the window's
+line reads "Applied earlier; ..." (`task-file-editors-changed.png`), and after "Apply anyway" over the editors' Redo the
+fresh "Applied: ..." again; the Applied words right after the first Apply as before. Unchanged and passed:
+`typing_check` 62 (the heading's "0 changed rows" and "1 changed row"), `find_fill_copy_check` 50,
+`network_panel_check` 74 ("Undo: run settings."), `model_chooser_check` 139 ("Imported: replaced the run settings..."),
+`matched_devices_check` 37, `reliability_check` 20, `edit_state_check` 28, `formula_bar_check` 21, `unsaved_rows_check`
+28, `blocking_issues_check` 62, `looks_check` 81 (16 scripts, 930 checks; the four pictures named above show the new
+states). Then every other check script the runner runs, on the same source (42; the three reward_v2/v21 ones are never
+run here): `run_control_check` failed one check in that run - "... the focus goes to the Run status tab, since Continue...
+is off while the run goes on (SIF-90)", the focus on the page's body, in Run status's Continue... form, which this record
+does not touch: its focus hand-back waits a frame and races the status read that turns Continue... off - and passed alone
+at once, 171: a flake. The rest passed the first time: `calibration_check` 48, `export_check` 37, `run_control_live_check`
+23, `training_tab_check` 135, `dom_identity_check` 56, `connection_panel_check` 101, `run_list_check` 177,
+`virtuoso_source_check` 116, `testbench_probes_check` 41, `output_panel_check` 98, `project_help_check` 61,
+`save_now_check` 29, `files_tab_check` 43, `working_copy_check` 34, `launch_recovery_check` 20, `corner_check_check` 42,
+`task_list_check` 105, `ngspice_window_check` 43, `task_run_check` 39, `calibration_save_check` 22, `pdk_check` 46,
+`room_check` 31, `graph_view_check` 69, `module_fold_check` 30, `reward_block_check` 34, `circuit_source_check` 17,
+`encoder_models_check` 24, `model_structure_check` 33, `mode_suggestion_check` 20, `agent_window_check` 33,
+`consistency_check` 14, `training_data_check` 120, `crash_panel_check` 11, `callouts_check` 8, `request_lifecycle_check`
+25, `circuit_layout_check` 4, `editor_renames_check` 8, `graph_paint_check` 6, `network_inputs_check` 9,
+`table_view_check` 10, `unit_text_check` 14. In all 58 scripts, 2,937 checks: SIF-131's 2,923 and the 14 new ones.

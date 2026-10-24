@@ -21,7 +21,8 @@
 //     Ctrl+Z and Ctrl+Y in a cell are the toolbar's Undo and Redo;
 //   - (branch record SIF-97) the keys are the page's Undo and Redo wherever the focus is - a tab's button, the page itself -
 //     but in a box that takes typing (Find rows, the formula bar), which keeps its own undo; the line under the formula bar
-//     names what they changed, by tab, row ID and the field's header, and offers the tab when another is in view.
+//     names what they changed, by tab, row ID and the field's header, and offers the tab when another is in view;
+//   - (branch record SIF-132) that line goes with the next change, and a cell's refusal once the table changes.
 // Run: bash frontend/scripts/run_checks.sh --only sheet_check. About 20 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
@@ -154,6 +155,9 @@ await runChecks(browser, async () => {
       && (await shownOf('lower')) === '2 um', `${await evaluate(stored(`c.parameters[${metre}].unit`))} / ${await shownOf('lower')}`);
     await typeIn('lower', '3n');
     check('...and its values read as lengths again', await page.until(stored(`c.parameters[${metre}].lower === 3e-9`), 30) && (await shownOf('lower')) === '3 nm', await shownOf('lower'));
+    // Branch record SIF-132: a refusal goes once the table changes; it stood under the row made a length again and the 3 nm
+    // taken, and the press on the tab already shown below changed nothing (sheet-2-scrolled.png).
+    check('...and no refusal is left under the formula bar: it went once the table changed (SIF-132)', (await evaluate(NOTE)) === '', await evaluate(NOTE));
     check('no cell of the table writes a Greek letter (user: "dont use greek characters for unit")',
       !(await evaluate(`[...document.querySelectorAll('section.editors table.editor input')].some(i => /[µμΩ°]/.test(i.value))`)));
   } else check('the task has a bound in metres to read', false, JSON.stringify(config.parameters.map(p => [p.unit, p.lower])));
@@ -259,6 +263,10 @@ await runChecks(browser, async () => {
   await ownUndo(`document.querySelector('section.editors input.find-rows')`, 'the Find rows box');
   await evaluate(`${BOX(first, 'notes')}.focus()`); await sleep(150);
   await ownUndo(`document.querySelector('.formula-bar textarea')`, 'the formula bar');
+  // Branch record SIF-132: the line names the step until the next change - it stood under later edits and task choices.
+  await page.setValue(BOX(first, 'notes'), 'FIXTURE typed after the Redo', { event: 'input', focus: true });
+  check('a cell typed after the Redo takes its line away (SIF-132)', await page.until(stored(`c.parameters[${first}].notes === 'FIXTURE typed after the Redo'`), 30)
+    && await page.until(`${NOTE} === ''`, 30), await evaluate(NOTE));
 
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);
   check('no console error', !consoleErrors.length, consoleErrors.slice(0, 3).join(' | '));

@@ -16,7 +16,8 @@
 // Branch record SIF-93: the file is a snapshot of the editors' rows. Changed in the editors since (their Undo, Redo), the
 // window says an Apply replaces that, Apply takes two presses ("Apply anyway"), and "Read again from the editors" reads the
 // file anew, asking first in the window about a draft not applied. The parts beside the rows that an Apply changed are
-// named under the toolbar until a save sends them; the Applied message says Undo takes back the rows only.
+// named under the toolbar until a save sends them; the Applied message says Undo takes back the rows only - and, once the
+// editors changed since, that it was applied earlier (branch record SIF-132).
 // Record 7.203 (user: "yes build it", for rows older than the saved task):
 //   - Save task sends which saved revision the rows came from: none before the page knows, then the revision of the
 //     last save or of the rows Reload saved values brought; the check while editing gets it too;
@@ -257,6 +258,10 @@ await runChecks(browser, async () => {
   const CHANGED_SAYS = 'The editors changed since this file was read: Apply replaces those changes too (Undo in the editors takes it back).';
   check('changed in the editors since (their Undo), the window says an Apply replaces that and offers to read the file again (SIF-93)',
     await fileWindow.until(`!!${CHANGED}`, 30) && (state = await fileState()).changed.startsWith(CHANGED_SAYS) && state.changed.includes('Read again from the editors'), short(state));
+  // Branch record SIF-132: "Applied: the editors now hold its rows" stood under that line.
+  const APPLIED_LINE = `(document.querySelector('.task-file > p.ok')?.textContent ?? null)`;
+  check('...and the Apply\'s line says it was earlier and the editors changed since; Save as still sends the other parts (SIF-132)',
+    (await fileWindow.evaluate(APPLIED_LINE)) === 'Applied earlier; the editors changed since. Save as still sends its other parts.', await fileWindow.evaluate(APPLIED_LINE));
   await fileWindow.shot(path.join(out, 'task-file-editors-changed.png'), `document.querySelector('.task-file')`);
   let fileMark = calls.length;
   await fileWindow.evaluate(`${FILE_BUTTON('Apply to editors')}.click()`); await sleep(300);
@@ -286,6 +291,8 @@ await runChecks(browser, async () => {
   state = await fileState();
   check('"Apply anyway" applies: the editors hold the file\'s rows, the line goes, Apply as it was (SIF-93)', calls.at(-1).op === 'task/file/check'
     && config.parameters[0].upper === 1.7 && config.targets[0].lower === 1.25e9 && state.changed === null && state.apply === 'Apply to editors', short(state));
+  check('...and its line is the fresh one, though the editors had changed before it (SIF-132)', (await fileWindow.evaluate(APPLIED_LINE))
+    === 'Applied: the editors now hold its rows, and Save as will send its other parts. Undo takes back the rows only.', await fileWindow.evaluate(APPLIED_LINE));
   check('the parts waiting are still the file\'s analyses and notes (SIF-93)', (await pendingText()) === PENDING_LINE, await notesText());
   check('every question of the file window was planned (SIF-93)', fileDialogs.every(d => d.planned) && !fileAnswers.length, JSON.stringify(fileDialogs));
   edited.probes[0].analysis = 'sometimes';

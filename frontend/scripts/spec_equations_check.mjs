@@ -13,6 +13,8 @@
 // tab press.
 // Branch record SIF-118: a note three rows or more share in the same words is said once in a line above the table, and those
 // rows keep its level word; a row's own issue, an error too, stays whole.
+// Branch record SIF-132: the import confirmation's heading says how many rows are new and deleted, the deleted ones by ID in
+// amber, and lists them first, leaving out a field empty on both sides; the line naming an Undo goes with the next change.
 // Run (Windows node through WSL interop; node >= 22):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/spec_equations_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -103,6 +105,8 @@ await runChecks(browser, async () => {
   await page.saved();
   check('one Undo takes both back', (await page.stored()).targets[0].direction_after_feasible !== 'maximize'
     && (await cell(0, 'constraint')) === '>=|none', await cell(0, 'constraint'));
+  const STEP_LINE = `(${EDITORS}.querySelector('.paste-note')?.textContent ?? '')`;
+  check('...and the line under the formula bar names it (SIF-97)', await until(`${STEP_LINE} === 'Undo: Specs score (Limit).'`), await evaluate(STEP_LINE));
   check('Judged at is not shown while the run plans no training corners', await evaluate(`!${EDITORS}.querySelector('th[data-field="nominal_only"]')`));
 
   // a formula: its own name, a unit that cannot be checked, a new entry in the network's result registry
@@ -133,6 +137,9 @@ await runChecks(browser, async () => {
     && JSON.stringify(column.pad) === '["10px","10px"]' && column.align === 'middle' && column.cut.length === 0, JSON.stringify({ words, column }));
   const sized = await saved1();
   check('typing the lower limit proposes a scale from it (0.5)', sized?.normalization_scale === 0.5, JSON.stringify(sized));
+  // Branch record SIF-132: the Undo's line went with the Add after it; it stood under the new rows and their typing
+  // (spec_equation_formula.png, spec_shared_notes.png).
+  check('no line is left under the formula bar from the Undo before the Add and the typing (SIF-132)', (await evaluate(STEP_LINE)) === '', await evaluate(STEP_LINE));
   await shot('spec_equation_formula.png');
 
   // ---- branch record SIF-118: a note three rows or more share in the same words is said once in a line above the table, with
@@ -269,6 +276,14 @@ await runChecks(browser, async () => {
     && firsts.some(r => r[1][0] === 'extra_0' && r[2][0] === 'new') && firsts.some(r => r[1][0] === template.metric_id && r[2][0] === 'deleted')
     && fieldsOf.some(([text, title]) => text === 'Spec ID' && title === 'metric_id') && !fieldsOf.some(([text]) => text === 'metric_id'),
     JSON.stringify(imported.slice(0, 3)));
+  // Branch record SIF-132: "22 changed rows" counted the 20 rows the file adds and the 2 it deletes alike, the box listed those
+  // 2 last, under the 20, and every new row's empty Scale as "(empty) (empty)".
+  const heading = await evaluate(`({ text: document.querySelector('.editors .confirm h4')?.textContent ?? '', deletes: document.querySelector('.editors .confirm h4 .warn.import-deletes')?.textContent ?? null })`);
+  check('the heading names what the rows are: "22 changed rows - 20 new, 2 deleted (score, score_sq)", the deleted ones in amber (SIF-132)',
+    heading.text === 'Confirm import: 22 changed rows - 20 new, 2 deleted (score, score_sq)' && heading.deletes === '2 deleted (score, score_sq)', JSON.stringify(heading));
+  check('...the deleted rows come first, and no field empty on both sides is listed (SIF-132)',
+    JSON.stringify(firsts.slice(0, 3).map(r => [r[1][0], r[2][0]])) === '[["score","deleted"],["score_sq","deleted"],["extra_0","new"]]'
+    && !imported.some(r => r.at(-2)[0] === '(empty)' && r.at(-1)[0] === '(empty)'), JSON.stringify(firsts.slice(0, 3).map(r => [r[1][0], r[2][0]])));
   // Esc in the box is Cancel, with the focus back on Import JSON... (it fell to the page with the box); a cell in focus when
   // the box opens keeps it - a key meant for the cell never presses Apply - also after Cancel (branch record SIF-107).
   for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });

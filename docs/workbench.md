@@ -987,8 +987,20 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   gives the focus back to Import JSON...: it fell to the page with the box. A failed import's red line has a close mark
   and goes with a tab press: it named the tab it was tried on and stayed on every tab until the next import. Nothing is
   imported without Apply, as before.
+- **A line goes once it is untrue, and an import names the rows it deletes** (branch record SIF-132, from the states audit
+  of 2026-10-24). The line under the formula bar that names an Undo or Redo goes with the next change - typing, Add, a task
+  choice, an import - which ends the step: it stood under them, naming rows the page no longer showed. A line written with
+  a change ("Deleted ...", "Imported ...", "Filled ...", "Margin sides set ...") is no step's and stays, as before. A cell's
+  refusal ('"4 um" is a length; this row holds a count.') goes once the tab's table changes - a value taken, an Undo, Add:
+  it stood under the value taken after it, and a press on the tab already shown changes no tab. The import confirmation
+  said "22 changed rows" for a file of 20 Specs that adds 20 rows and deletes the 2 the table held, listed those 2 last,
+  under the 20, and opens with Apply in focus. Its heading now says what the rows are whenever a row is deleted or they are
+  of more than one kind - "Confirm import: 22 changed rows - 20 new, 2 deleted (score, score_sq)", the deleted part in
+  amber - and its list starts with the deleted rows. A field empty on both sides (each new row's "Scale (empty) (empty)")
+  is left out of the list, and of Matched devices' too. Only words, and when they show, change: nothing is imported,
+  applied, saved or run without the press it took before, and Undo takes an import back as before.
 
-Browser checks: `frontend/scripts/sheet_check.mjs`, `frontend/scripts/find_fill_copy_check.mjs`, `frontend/scripts/spec_equations_check.mjs` (SIF-106, SIF-107), `frontend/scripts/typing_check.mjs` (SIF-107).
+Browser checks: `frontend/scripts/sheet_check.mjs` (SIF-132), `frontend/scripts/find_fill_copy_check.mjs`, `frontend/scripts/spec_equations_check.mjs` (SIF-106, SIF-107, SIF-132), `frontend/scripts/typing_check.mjs` (SIF-107), `frontend/scripts/editor_columns_check.mjs` and `frontend/scripts/task_rows_check.mjs` (SIF-132).
 
 ### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)
 
@@ -3829,6 +3841,8 @@ drops them." (branch record SIF-93). The file is the editors' rows of the moment
 editors after that, the window says "The editors changed since this file was read: Apply replaces those changes too",
 **Apply to editors** takes two presses (the first turns it into **Apply anyway**), and **Read again from the editors**
 reads the file of the editors as they are now - asking first, in the window, when changes typed there are not applied.
+An Apply's line then reads "Applied earlier; the editors changed since. Save as still sends its other parts." (branch
+record SIF-132): "Applied: the editors now hold its rows" stood under the line saying they changed.
 Nothing is saved or written to Virtuoso from the window. A close - its Close, the window's X, the banner's **Close all** -
 keeps a draft not applied (branch record SIF-87; it used to go with no question): the next **Task file** press reads the
 file again and lays the draft over it, with the line "Your changes from before are kept, not applied yet. Revert drops

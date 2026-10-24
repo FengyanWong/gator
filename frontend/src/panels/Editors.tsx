@@ -125,8 +125,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const [active, setActive] = useState<{ index: number; name: string; key: string } | null>(null);
   // Tied rows opened under their leader, by the leader's ID (record 7.180), and what the last block paste, fill or copy did.
   const [openTies, setOpenTies] = useState<Record<string, boolean>>({});
-  // `show`: a tab the line offers to show, where an Undo changed rows of a tab not in view (branch record SIF-97).
-  const [note, setNote] = useState<{ text: string; warn: boolean; show?: Section } | null>(null);
+  // `show`: a tab the line offers to show, where an Undo changed rows of a tab not in view (branch record SIF-97). `step`: the
+  // line names an Undo or Redo, `refusal`: a cell's refusal - each goes once a later change makes it untrue (branch record
+  // SIF-132).
+  const [note, setNote] = useState<{ text: string; warn: boolean; show?: Section; step?: boolean; refusal?: boolean } | null>(null);
   // The find box's text, kept per table (record 7.184).
   const [find, setFind] = useState<Record<string, string>>({});
   const table = useRef<HTMLTableElement>(null);
@@ -374,14 +376,21 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // A failed import's line goes too (branch record SIF-107): it named the tab it was tried on, and stayed on every tab until
   // the next import.
   useEffect(() => { setActive(null); setOpenTies({}); setNote(null); setError(null); lastTicked.current = null; }, [tab]);
+  // A cell's refusal goes once the tab's table changes - a value taken, an Undo, Add (branch record SIF-132): '"4 um" is a
+  // length; this row holds a count.' stood under the row made a length again and 3 nm taken, and a press on the tab already
+  // shown changes no tab. A refusal is told on leaving its cell with nothing written, so it never goes in its own render.
+  useEffect(() => { if (note?.refusal) setNote(null); }, [config[tab]]);
   // Another tab, as its button shows it: a Matched devices box closes, the ticks go.
   const showTab = (s: Section) => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); };
   // An Undo or Redo - the toolbar's, the keys', the RL model window's - says what it changed (branch record SIF-97), and offers
   // the tab of the rows it changed when another is in view: it does not switch by itself, which would let the chosen cell go.
+  // Its line goes with the next recorded change, which ends the step (history.ts) - typing, Add, a task choice, an import
+  // (branch record SIF-132): it stood under them, naming rows the page no longer showed. A line written with that change
+  // (Deleted, Imported, Filled ...) is no step's, and stays.
   useEffect(() => {
-    if (!lastStep) return;
+    if (!lastStep) { if (note?.step) setNote(null); return; }
     const { text, tables } = stepWords(lastStep, schema.section_keys ?? {});
-    setNote({ text, warn: false, show: tables.length && !tables.includes(tab) ? tables[0] : undefined });
+    setNote({ text, warn: false, step: true, show: tables.length && !tables.includes(tab) ? tables[0] : undefined });
   }, [lastStep]);
   // An Undo or Redo moves rows and brings IDs back (review of SIF-106). A refused rename's memory follows its row, found by the
   // row itself in the rows the step brought back (an Undo of a Delete selected puts rows back above it). A Probe's ID cell the
@@ -813,6 +822,16 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       removed.length ? `${removed.length} saved row${removed.length === 1 ? '' : 's'} deleted here (${idList(removed)})` : '', u.reordered ? 'rows in another order' : ''].filter(Boolean);
     return parts.length ? parts.join(', ') : null;
   };
+  // The rows an import changes, by what Apply does to them (branch record SIF-132): "Confirm import: 22 changed rows" counted
+  // the 20 rows a file of Specs adds and the 2 it deletes alike, and the box listed those 2 last, under the 20, with Apply in
+  // focus. Said after the count when the rows are of more than one kind or any is deleted - the deleted ones by ID, in amber.
+  const importKinds = (diff: Json[]) => {
+    const keys = (change: string) => diff.filter(d => d.change === change).map(d => String(d.key));
+    const added = keys('added'), changed = keys('modified'), deleted = keys('removed');
+    if (!deleted.length && !(added.length && changed.length)) return null;
+    return <>{' - '}{[added.length ? `${added.length} new` : '', changed.length ? `${changed.length} changed` : ''].filter(Boolean).join(', ')}
+      {deleted.length > 0 && <>{added.length + changed.length ? ', ' : ''}<span className="warn import-deletes">{deleted.length} deleted ({idList(deleted)})</span></>}</>;
+  };
 
   // The table (`room`, its scroll box) left under about four rows on a wide page whose bottom panel is open: App folds the
   // panel (record 7.372) - when a cell is entered, and when Matched devices has drawn its answer above the table (branch record
@@ -990,7 +1009,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       {/* Esc in the box is Cancel (branch record SIF-107); a click on its words gives the box the focus, which fell to the page,
           so Esc works after one too. */}
       {pending && <div className="confirm" ref={importBox} tabIndex={-1} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); closeImport(); } }}>
-        <h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{pending.others.length
+        <h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{importKinds(pending.diff)}{pending.others.length
         ? `, and it replaces the ${pending.others.map(k => IMPORTED_SECTIONS[k]).join(', ')}` : ''}</h4>
         <div className="row"><button ref={applyButton} onClick={() => applyImport(pending)} title="Apply: The changes listed here are made, as one Undo step.">Apply</button>
           <button onClick={closeImport} title="Cancel: Nothing is imported. Esc does the same.">Cancel</button></div>
@@ -1043,7 +1062,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                 ? <LimitSelect row={row} title={withSaved(saved, c.guidance)} onChange={fields => patch(index, fields)} />
                 : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
                     fixed={fixedOf(row, c)} off={offOf(row, c)} unit={QUANTITY[tab]?.includes(c.name) ? effectiveUnit(row) : undefined}
-                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true })} saved={saved}
+                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true, refusal: true })} saved={saved}
                     placeholder={emptyOf(row, c)} />}</td>; })}
               {/* The row's own issues whole, first, then a note it shares with SHARED_NOTE_ROWS rows or more as its level word, all
                   of them on one line: the line above the table names it once (branch record SIF-118). */}

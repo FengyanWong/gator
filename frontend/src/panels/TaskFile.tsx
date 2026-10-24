@@ -121,6 +121,11 @@ export function TaskFileWindow({ root, text, title, draft, setDraft, editorsChan
       </div>
       {problems && problems.length > 0 && <div className="blocker"><b>Not applied: {problems.length} problem{problems.length === 1 ? '' : 's'} in the file.</b>
         <ul className="steps-list">{problems.map(p => <li key={p}>{p}</li>)}</ul></div>}
-      {message && <p className={message.level === 'ok' ? 'ok' : 'error'}>{message.text}</p>}
+      {/* An Apply's line once the editors changed since (their Undo, a typed cell): "the editors now hold its rows" stood under
+          the line saying they changed (branch record SIF-132). Worked out as drawn, not in an effect: right after an Apply
+          the editors differ from the rows read for one commit, until TaskSave takes the applied rows before the paint (its
+          layout effect), and an effect would have replaced the fresh line. */}
+      {message && <p className={message.level === 'ok' ? 'ok' : 'error'}>{message.level === 'ok' && editorsChanged
+        ? 'Applied earlier; the editors changed since. Save as still sends its other parts.' : message.text}</p>}
     </div>, root);
 }

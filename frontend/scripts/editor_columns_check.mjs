@@ -7,7 +7,8 @@
 //     equation becomes another probe takes that probe's unit while it has no limits; an empty limit reads "no limit", an
 //     empty Scale "auto" (branch record SIF-49); the zero-floor hint names an interval from 0 and goes once its Margin sides
 //     is upper (branch record SIF-50); its button beside it sets Margin sides to upper on every row it names, one Undo step
-//     (branch record SIF-107);
+//     (branch record SIF-107); the line under the formula bar that names an Undo goes with the next edit (branch record
+//     SIF-132);
 //   - Parameters: initial_value is not shown; value_type, step, scale and ratio come after "More columns"; on a follower row
 //     (binding_group set) the fields its leader decides are greyed, with why; a word typed into Ratio is refused in words;
 //     a validation answer without a count reads "The optimizer searches ? of N rows." (review of branch record SIF-50; the
@@ -193,10 +194,13 @@ await runChecks(browser, async () => {
   config = await saved();
   check('...and one Undo takes it back, the hint with it', (config.targets[2].margin_sides ?? null) === sidesBefore[2] && await until(`${HINT}.startsWith('spec_3: ')`),
     `${SIDES(config)} / ${await evaluate(HINT)}`);
+  check('...the line under the formula bar names the Undo (SIF-97)', await until(`${SAID} === 'Undo: Specs spec_3 (Margin sides).'`), await evaluate(SAID));
   await evaluate(`${MORE}.click()`);
   await until(`!!${CELL(2, 'margin_sides')}`);
   await page.setValue(CELL(2, 'margin_sides'), 'upper');
   check('...and the hint goes once that row\'s Margin sides is upper', await until(`!${EDITORS}.querySelector('.zero-floor-hint')`), await evaluate(HINT));
+  // Branch record SIF-132: the next change takes the Undo's line away; it stood under the edits after it (zero_floor_button.png).
+  check('...and that edit takes the Undo\'s line away (SIF-132)', await until(`${SAID} === ''`), await evaluate(SAID));
   await evaluate(`${MORE}.click()`);
   await until(`!${CELL(2, 'margin_sides')}`);
   // Several rows: the button counts them and sets them all, one Undo step (branch record SIF-107).
@@ -206,6 +210,7 @@ await runChecks(browser, async () => {
   await typeInto(CELL(1, 'upper'), '1');
   check('(set-up) two intervals from 0 are named, and the button reads "Set Margin sides to upper on all 2"', await until(`${HINT}.startsWith('half_freq, spec_3: ')`)
     && await evaluate(`${SET_UPPER}?.textContent === 'Set Margin sides to upper on all 2'`), `${await evaluate(HINT)} / ${await evaluate(`${SET_UPPER}?.textContent ?? 'no button'`)}`);
+  check('...with no Undo line left from before the edits (SIF-132)', !/^(Undo|Redo)\b/.test(await evaluate(SAID)), await evaluate(SAID));
   await page.shot(path.join(out, 'zero_floor_button.png'), EDITORS, { maxHeight: 420 });
   await evaluate(`${SET_UPPER}.click()`);
   config = await saved();

@@ -65,6 +65,13 @@ const issueHead = (message?: string | null) => String(message ?? '').split(/(?<=
  *  and the code stay in the tooltip. */
 const ISSUE_HEAD: Record<string, string> = { spec_adds_registry_entry: 'New spec: models without it do not load',
   basis_not_stated: 'The source of this spec is not recorded' };
+/** An issue's words in the Issues column: its own (ISSUE_HEAD), else its message's first clause. */
+const issueWords = (issue: Json): string => ISSUE_HEAD[issue.code] ?? issueHead(issue.message);
+/** A note - an info or a warning - in the same words on this many rows of a table or more is said once, in a line above the
+ *  table, and those rows keep its level word (branch record SIF-118): on the VCO's Specs six rows read "warning The unit of a
+ *  formula is not checked" and seven "info New spec: models without it do not load", 13 lines of the same words in the
+ *  column, among which a row's own note would go unseen. */
+const SHARED_NOTE_ROWS = 3;
 
 /** The table's room under which entering a cell (record 7.372) or Matched devices' answer (branch record SIF-73) folds the
  *  bottom panel: about four rows and the heading. */
@@ -193,6 +200,24 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const reported: Json[] | null = validation?.sent?.[tab] ?? null;
   const rowIssues = (index: number) => reported && reported[index]?.[keyField] !== rows[index]?.[keyField] ? []
     : issuesByRow.get(index) ?? [];
+  // A note many rows share, said once (branch record SIF-118): an info or a warning in the same words - its level, its code and
+  // what the column shows of it - on SHARED_NOTE_ROWS rows of the table or more, folded or out of Find's view too, is named in
+  // a line above the table with how many rows have it, warnings first; those rows keep its level word, the message and the
+  // code in its tooltip. By the words, not the code alone: a note whose first clause names its row ("The network reads inl1
+  // as") stays whole. An error or a blocker stays whole on every row, and so does a note on fewer rows. `same`: every row has
+  // the same message, which the line's tooltip then gives whole as it is.
+  const noteKey = (issue: Json) => `${issue.level}|${issue.code}|${issueWords(issue)}`;
+  const shared = new Map<string, { note: Json; at: number[]; same: boolean }>();
+  rows.forEach((_, index) => {
+    for (const issue of rowIssues(index)) {
+      if (issue.level !== 'info' && issue.level !== 'warning') continue;
+      const group = shared.get(noteKey(issue));
+      if (!group) shared.set(noteKey(issue), { note: issue, at: [index], same: true });
+      else { if (!group.at.includes(index)) group.at.push(index); group.same = group.same && issue.message === group.note.message; }
+    }
+  });
+  for (const [key, group] of shared) if (group.at.length < SHARED_NOTE_ROWS) shared.delete(key);
+  const sharedNotes = [...shared.values()].sort((a, b) => Number(a.note.level !== 'warning') - Number(b.note.level !== 'warning'));
   // Ticks of rows that are gone (Delete, Undo, an import) go with them: a new row given a freed ID came already ticked.
   useEffect(() => setSelected(s => {
     const ids = new Set(rows.map(r => r[keyField]));
@@ -949,6 +974,15 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             title={`Set Margin sides to upper: ${zero.join(', ')} then count${zero.length === 1 ? 's' : ''} only the upper limit in the tightest-margin bonus and the Corner check ranking; `
               + 'feasibility still checks both limits. One Undo step.'}>{zero.length === 1 ? 'Set Margin sides to upper' : `Set Margin sides to upper on all ${zero.length}`}</button></div>;
       })()}
+      {/* A note many rows share, once (branch record SIF-118): on how many rows, and the level and words its rows' marks stand
+          for; its tooltip gives the whole message - the first row's, named, where each row has words of its own -, the code and
+          the rows. Text only, as the row lines are: it changes nothing. */}
+      {sharedNotes.length > 0 && <div className="issues-shared">{sharedNotes.map(({ note, at, same }) => {
+        const ids = at.map(i => String(rows[i]?.[keyField] || `row ${i + 1}`));
+        return <p key={noteKey(note)} className={`issue ${note.level}`} data-code={note.code}
+          title={`${same ? '' : `For ${ids[0]}: `}${note.message}\n(${note.level}: ${note.code})\nRows: ${idList(ids)}\n`
+            + `Each of them shows "${note.level}" in its Issues cell${same ? '' : ', with its own words on hover'}.`}>
+          <span className="issues-shared-rows">On {plural(at.length, 'row')}:</span> <b>{note.level}</b> {issueWords(note)}</p>; })}</div>}
       {/* A failed import's line has a close mark, and a tab press takes it away too (branch record SIF-107); its words stand
           alone in their paragraph. */}
       {error && <div className="line-act import-error"><p className="error">{error}</p>
@@ -975,6 +1009,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
               + "Shift+click a row's box to tick or untick every row in view from the box clicked last."} /></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance ? `${c.name}: ${c.guidance}` : c.name} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
           <tbody onKeyDown={onTableKey} onPaste={onTablePaste}>{rows.map((row, index) => {
             const found = rowIssues(index);
+            // the row's own issues - every error and blocker -, and the notes it shares, in the order of the line above (SIF-118)
+            const own = found.filter((i: Json) => !shared.has(noteKey(i)));
+            const marks = found.filter((i: Json) => shared.has(noteKey(i))).map((i: Json) => ({ issue: i, group: shared.get(noteKey(i))! }))
+              .sort((a, b) => sharedNotes.indexOf(a.group) - sharedNotes.indexOf(b.group));
             const point = tab === 'parameters' ? { onMouseEnter: () => pointAt(devicesOf(row)), onMouseLeave: () => pointAt([]),
               onFocus: () => pointAt(devicesOf(row)), onBlur: () => pointAt([]) } : {};
             const tied = tiedCount.get(row[keyField]) ?? 0, leader = leaderOf(row), open = !!openTies[row[keyField]];
@@ -1007,8 +1045,13 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                     fixed={fixedOf(row, c)} off={offOf(row, c)} unit={QUANTITY[tab]?.includes(c.name) ? effectiveUnit(row) : undefined}
                     stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true })} saved={saved}
                     placeholder={emptyOf(row, c)} />}</td>; })}
-              <td className="issues">{found.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} data-code={i.code}
-                title={`${i.message}\n(${i.level}: ${i.code})`}><b>{i.level}</b> {ISSUE_HEAD[i.code] ?? issueHead(i.message)}</div>)}</td>
+              {/* The row's own issues whole, first, then a note it shares with SHARED_NOTE_ROWS rows or more as its level word, all
+                  of them on one line: the line above the table names it once (branch record SIF-118). */}
+              <td className="issues">{own.map((i: Json, n: number) => <div key={n} className={`issue ${i.level}`} data-code={i.code}
+                title={`${i.message}\n(${i.level}: ${i.code})`}><b>{i.level}</b> {issueWords(i)}</div>)}
+                {marks.length > 0 && <div className="issue-marks">{marks.map(({ issue: i, group }, n) => <Fragment key={n}>{n > 0 && ' '}
+                  <span className={`issue ${i.level}`} data-code={i.code}
+                    title={`${i.message}\n(${i.level}: ${i.code})\nSaid once above the table, for the ${group.at.length} rows that have it.`}>{i.level}</span></Fragment>)}</div>}</td>
             </tr>; })}</tbody>
         </table>
       </div>

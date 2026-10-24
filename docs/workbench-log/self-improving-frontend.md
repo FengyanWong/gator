@@ -4165,3 +4165,62 @@ unchanged: `export_check` 37, `run_list_check` 170, `room_check` 31, `looks_chec
 `calibration_check` 48 (seven scripts, one lane, after the memory guard), all passed the first time. A probe run on the
 code before (`RunTabs.tsx` as at 0b49f9c, restored after, its sum compared) failed the new check alone (170 passed): "0
 / undefined | evaluations used · undefined in flight · undefined failed". No flakes.
+
+### SIF-118 A note many rows share is said once, above the table (2026-10-24; from the survey of 2026-10-23)
+
+**Found.** On the user's VCO (mscr_vco_lin_c) the Specs tab's Issues column read "warning The unit of a formula is not
+checked" on six of its eight rows and "info New spec: models without it do not load" on seven: 13 lines of the same two
+notes (the survey's S10-3, picture `02-tab-specs.png`). Each row listed every issue it had, one line each (SIF-5; SIF-74
+had left the repeat as "not a defect"), so the column stopped being read, and a row's own problem would stand among the
+repeats.
+
+**Changed.** `frontend/src/panels/Editors.tsx`: in the table shown, an info or a warning in the same words - its level,
+its code and what the column shows of it (`issueWords`: `ISSUE_HEAD`'s words, else the message's first clause, as
+before) - on three rows or more (`SHARED_NOTE_ROWS`) is named once in a line above the table, after the Probes line and
+the zero-floor hint, warnings first: on the VCO "On 6 rows: warning The unit of a formula is not checked" and "On 7 rows:
+info New spec: models without it do not load". Its tooltip gives the whole message - the first row's, named ("For
+f_center_hz: 'f_center_hz' is new to the result registry ..."), when the rows' messages differ, as the registry note names
+its spec -, the code, the rows, and "Each of them shows "info" in its Issues cell, with its own words on hover." Those rows
+keep the note's level word, in its colour, on one line after their own issues and in the line's order ("warning info");
+each mark's tooltip is its row's own message and code, as its line's was, then "Said once above the table, for the 7 rows
+that have it." A row's own issues stay whole and first: every error and blocker, a note fewer rows have, and a note whose
+first clause names its row - with the transferable network inputs each Specs row says "The network reads inl1 as: ..."
+(`docs/workbench.md`), which grouping by the words, not the code alone, keeps whole. Rows folded under a leader or out of
+Find's view count too. Validation is unchanged, and the line is text, as the row lines are; the blocking-issues list, its
+Where buttons and the tabs' red counts are about errors and blockers, which stay as they were. `frontend/src/roadster.css`
+(SIF-118, after SIF-74's Issues rule): the line's notes side by side while they fit, at the column's 12.5 px in their
+level's colour, "On N rows:" in the hint's grey; the marks on one line, 8 px apart, semi-bold. The marks are no line of
+their own (`td.issues > .issue`), so SIF-5's 240 px minimum holds only while a row has words of its own: with marks alone
+the column is as narrow as they are and the other columns take the room (147 px in the check's table, where it was 277).
+One mark per note, not per level: a row with two shared infos reads "info info", told apart by their tooltips, and each
+note keeps its own message and code where a hover finds it. `docs/workbench.md` (Tied rows, spreadsheet keys and a pasted
+block: Column widths, and a new bullet after it) and `docs/functionality-reference.md` (the N blocking issues row, which
+describes the Issues column) say it.
+
+**Checked.** `tsc` clean. `spec_equations_check` 75 (69 before): new, two more formula rows beside score_sq - score_cube
+without a lower limit, score_4 with one - give three rows the same three notes, and the line above the table reads "On 3
+rows: warning The unit of a formula is not checked", "On 3 rows: info New spec: models without it do not load" and "On 3
+rows: info The source of this spec is not recorded", in that order; the registry note's tooltip starts "For score_sq:
+'score_sq' is new to the result registry the network reads" and names its code and the rows "score_sq, score_cube,
+score_4", the basis note's (the same message on every row) starts with that message; each of the three rows shows
+"warning info info", its own message and code on hover; score_cube's own error, "error constraint >= needs lower", stays
+whole and first, and no other row has a line of its own (picture `spec_shared_notes.png`); with its lower limit typed the
+column's minimum width is 0 and the marks keep one line; the two rows deleted, the line goes and score_sq's three notes are
+whole again. Every check script the runner runs (58; the three reward_v2/v21 ones are never run here), one lane, after the
+memory guard, 2854 checks, all passed the first time: `calibration_check` 48, `export_check` 37, `run_control_live_check`
+23, `run_control_check` 171, `dom_identity_check` 56, `training_tab_check` 115, `connection_panel_check` 101,
+`virtuoso_source_check` 116, `run_list_check` 170, `task_save_check` 91, `testbench_probes_check` 41, `output_panel_check`
+98, `task_rows_check` 54, `spec_equations_check` 75, `model_chooser_check` 122, `typing_check` 62, `find_fill_copy_check`
+50, `sheet_check` 54, `project_help_check` 61, `files_tab_check` 43, `working_copy_check` 34, `task_list_check` 105,
+`launch_recovery_check` 20, `blocking_issues_check` 62, `corner_check_check` 40, `ngspice_window_check` 43, `looks_check`
+76, `network_panel_check` 72, `save_now_check` 29, `task_run_check` 39, `unsaved_rows_check` 25, `calibration_save_check`
+22, `editor_columns_check` 29, `reliability_check` 20, `room_check` 31, `graph_view_check` 69, `pdk_check` 44,
+`reward_block_check` 34, `circuit_source_check` 17, `encoder_models_check` 24, `module_fold_check` 30, `formula_bar_check`
+21, `matched_devices_check` 37, `model_structure_check` 33, `mode_suggestion_check` 20, `consistency_check` 14,
+`training_data_check` 120, `agent_window_check` 33, `crash_panel_check` 11, `callouts_check` 8, `circuit_layout_check` 4,
+`edit_state_check` 28, `request_lifecycle_check` 25, `editor_renames_check` 8, `graph_paint_check` 6,
+`network_inputs_check` 9, `table_view_check` 10, `unit_text_check` 14. A probe run on the code before (`Editors.tsx` and
+`roadster.css` as at HEAD, restored after, their sums compared) failed the five new checks of the line, its tooltip, the
+marks, the error beside them (each of the three rows showed its three notes whole, score_cube's error among them) and the
+column (277 px, its minimum 240 px); the sixth, on the two rows deleted, holds there too. After a comment in `Editors.tsx` changed, `spec_equations_check`
+75 and `blocking_issues_check` 62 again. No flakes.

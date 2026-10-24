@@ -419,6 +419,16 @@ dialog.graph-dialog[open] > .graph-body { flex: 1 1 0; min-height: 0; height: au
    text, and a row's one line sat at the top of the row. Now it is padded as the heading is at the sides and centred in the
    row; nothing above or below, so a row with two lines stays as high as the others. */
 table.editor td.issues { padding: 0 10px; vertical-align: middle; }
+/* SIF-118: a note three rows of the table or more share is said once in a line over it - "On 7 rows: info New spec: models
+   without it do not load", the notes side by side while they fit, at the column's 12.5 px and in their level's colour, the
+   count in the hint's grey - and its rows keep its level word, on one line after their own issues. The marks are no line of
+   their own (`td.issues > .issue`), so the column takes SIF-5's 240 px only for a row's own words, and is as narrow as the
+   marks while the rows have none. */
+.editors > .issues-shared { display: flex; flex-wrap: wrap; gap: 2px 20px; margin: 0 0 6px; }
+.editors > .issues-shared > .issue { margin: 0; cursor: help; } .editors > .issues-shared > .issue b { font-weight: 600; }
+.editors > .issues-shared .issues-shared-rows { color: var(--muted); }
+table.editor td.issues .issue-marks { display: flex; gap: 8px; white-space: nowrap; }
+table.editor td.issues .issue-marks > .issue { font-weight: 600; cursor: help; }
 /* the Specs tab's Probe chips - the names an Equation is typed with - were the old look's 11 px beside the 14 px "Probes:" and
    the Equation cells (SIF-63 raised the other 11 px text); the line keeps its 1.75 height, so wrapped chips do not touch */
 .spec-probes code.probe-id { font-size: 13px; padding: 1px 6px; }

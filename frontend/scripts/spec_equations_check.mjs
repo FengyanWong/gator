@@ -11,6 +11,8 @@
 // Branch record SIF-107: the import confirmation opens with Apply in focus, Esc is Cancel (also after a click on its words)
 // with the focus back on Import JSON..., a cell in focus keeps it; a failed import's line has a close mark and goes with a
 // tab press.
+// Branch record SIF-118: a note three rows or more share in the same words is said once in a line above the table, and those
+// rows keep its level word; a row's own issue, an error too, stays whole.
 // Run (Windows node through WSL interop; node >= 22):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/spec_equations_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -132,6 +134,54 @@ await runChecks(browser, async () => {
   const sized = await saved1();
   check('typing the lower limit proposes a scale from it (0.5)', sized?.normalization_scale === 0.5, JSON.stringify(sized));
   await shot('spec_equation_formula.png');
+
+  // ---- branch record SIF-118: a note three rows or more share in the same words is said once in a line above the table, with
+  //      how many rows have it, warnings first; those rows keep its level word, its message and code on hover, and a row's own
+  //      issue - an error too - stays whole beside them (on the VCO's Specs 13 lines repeated two notes). Two more formula rows
+  //      give score_sq's three notes to three rows; the second has no lower limit, an error of its own -------------------------
+  const SHARED_NOTES = `[...${EDITORS}.querySelectorAll('.issues-shared > .issue')]`;
+  const ISSUES_OF = row => `${EDITORS}.querySelectorAll('table.editor tbody tr')[${row}].querySelector('td.issues')`;
+  const sharedMarks = row => evaluate(`[...${ISSUES_OF(row)}.querySelectorAll('.issue-marks > .issue')].map(d => [d.dataset.code, d.textContent.trim(), d.title])`);
+  const ownIssues = row => evaluate(`[...${ISSUES_OF(row)}.querySelectorAll(':scope > .issue')].map(d => [d.dataset.code, d.textContent.trim()])`);
+  const addSpec = async n => { await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Add').click()`);
+    await until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === ${n}`); };
+  await addSpec(3);
+  await type(2, 'metric_id', 'score_cube'); await type(2, 'equation', 'm_score ** 3');
+  await addSpec(4);
+  await type(3, 'metric_id', 'score_4'); await type(3, 'equation', 'm_score ** 4'); await type(3, 'lower', '0.5');
+  const SHARED_LINE = [['equation_unit_unchecked', 'On 3 rows: warning The unit of a formula is not checked'],
+    ['spec_adds_registry_entry', 'On 3 rows: info New spec: models without it do not load'], ['basis_not_stated', 'On 3 rows: info The source of this spec is not recorded']];
+  const lineSaid = await until(`JSON.stringify(${SHARED_NOTES}.map(p => [p.dataset.code, p.textContent.trim()])) === ${JSON.stringify(JSON.stringify(SHARED_LINE))}`, 100);
+  const sharedLine = await evaluate(`${SHARED_NOTES}.map(p => [p.dataset.code, p.textContent.trim(), p.title])`);
+  check('a note three rows share is said once in a line above the table, with how many rows have it, warnings first (SIF-118)', lineSaid, JSON.stringify(sharedLine));
+  const lineTitle = code => sharedLine.find(([c]) => c === code)?.[2] ?? '';
+  check('...its tooltip: the whole message - the first row\'s, named, where each row has its own -, the code and the rows',
+    lineTitle('spec_adds_registry_entry').startsWith("For score_sq: 'score_sq' is new to the result registry the network reads")
+    && lineTitle('spec_adds_registry_entry').includes('\n(info: spec_adds_registry_entry)\nRows: score_sq, score_cube, score_4\n')
+    && lineTitle('basis_not_stated').startsWith('The source of this requirement is not recorded\n(info: basis_not_stated)\n'), JSON.stringify(sharedLine.map(([, , t]) => t)));
+  const marked = [await sharedMarks(1), await sharedMarks(2), await sharedMarks(3)];
+  check('...each of those rows keeps the level words, in the line\'s order, its own message and code on hover',
+    marked.every(m => JSON.stringify(m.map(([code, text]) => [code, text])) === JSON.stringify([['equation_unit_unchecked', 'warning'],
+      ['spec_adds_registry_entry', 'info'], ['basis_not_stated', 'info']]))
+    && marked[1][1][2].startsWith("'score_cube' is new to the result registry") && marked[1][1][2].includes('\n(info: spec_adds_registry_entry)\n'), JSON.stringify(marked));
+  const ownLines = [await ownIssues(0), await ownIssues(1), await ownIssues(2), await ownIssues(3)];
+  check('...a row\'s own issue, an error, stays whole beside them, first; no other row has one',
+    JSON.stringify(ownLines) === JSON.stringify([[], [], [['missing_threshold', 'error constraint >= needs lower']], []]), JSON.stringify(ownLines));
+  await shot('spec_shared_notes.png');
+  await type(2, 'lower', '0.5');
+  const narrow = await until(`!${EDITORS}.querySelector('table.editor td.issues > .issue') && getComputedStyle(${ISSUES_OF(1)}).minWidth === '0px'`, 60);
+  const marksBox = await evaluate(`(() => { const td = ${ISSUES_OF(1)}, line = td.querySelector('.issue-marks');
+    return { column: Math.round(td.getBoundingClientRect().width), minWidth: getComputedStyle(td).minWidth,
+      line: line && [line.scrollWidth, line.clientWidth, Math.round(line.getBoundingClientRect().height)] }; })()`);
+  check('...with no row\'s own words left, the Issues column keeps no 240 px for them (SIF-5\'s room for a row\'s first words), the marks on one line',
+    narrow && !!marksBox.line && marksBox.line[0] <= marksBox.line[1] && marksBox.line[2] < 24, JSON.stringify(marksBox));
+  for (const n of [2, 3]) await evaluate(`${EDITORS}.querySelectorAll('table.editor tbody tr')[${n}].querySelector('td.sel input').click()`);
+  await evaluate(`[...${EDITORS}.querySelectorAll('.toolbar button')].find(b => b.textContent.trim() === 'Delete selected').click()`);
+  await until(`${EDITORS}.querySelectorAll('table.editor tbody tr').length === 2`);
+  const whole = await until(`${SHARED_NOTES}.length === 0`, 60)
+    && (await issuesUntil(1, ['warning: equation_unit_unchecked', 'info: spec_adds_registry_entry', 'info: basis_not_stated']))[0];
+  check('...two rows deleted, the line goes and score_sq\'s notes are whole again on its row', whole
+    && (await issueWords(1)).some(([text]) => text === 'warning The unit of a formula is not checked'), JSON.stringify(await issueWords(1)));
   // "Missing value = failed" is no row switch since 2026-10-10: the optimizer counts a missing value of every hard spec as
   // failed, so "More columns" does not offer it (the rows keep the value they stored), and a soft spec is named for nothing
   await evaluate(`[...${EDITORS}.querySelectorAll('button')].find(b => b.textContent.startsWith('More columns')).click()`);

@@ -806,8 +806,16 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   read is named and its cell left as it was; lines below the last row are named, not added; cells a leader decides, or
   that follow another field, are kept. A line under the formula bar says what happened. One value pastes as before.
 - **Column widths.** An ID column is wide enough to read (140 px), a leader's name 120 px, a unit 52 px; a tick box no longer
-  takes the 84 px of a text box; the Issues column is narrow while no row has an issue. At 1680 x 1050 the LDO task's
-  Parameters table fits without scrolling sideways.
+  takes the 84 px of a text box; the Issues column is narrow while no row has an issue of its own (a shared note's mark,
+  below, is short). At 1680 x 1050 the LDO task's Parameters table fits without scrolling sideways.
+- **A note many rows share, said once** (branch record SIF-118). An info or a warning in the same words on three rows of
+  the table or more - the VCO's "The unit of a formula is not checked" and "New spec: models without it do not load" stood
+  on six and seven of its eight Specs rows, 13 lines of the same words in the Issues column - is named once in a line above
+  the table, warnings first: "On 7 rows: info New spec: models without it do not load". Its tooltip gives the whole message
+  (the first row's, named, when each row has words of its own), the code and the rows. Those rows keep the note's level
+  word ("warning info"), on one line after their own issues, its message and code on hover. A row's own issues stay whole,
+  first: every error and blocker, a note fewer rows have, and a note whose words name its row ("The network reads inl1 as:
+  ..."). Nothing about validation changes; the rows folded under a leader or out of Find's view count too.
 
 - **One way of writing a quantity** (record 7.208, user: "a unified way of unit representation in the parameters probes
   and specs windows considering the convenience usage of users", chose "Prefix per value"; then "dont use greek characters

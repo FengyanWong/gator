@@ -5455,3 +5455,31 @@ its held-back status request had come in - and passed all 139 run alone: a flake
 After the full run the edge check of `spec_equations_check` also asks that score_sq's lines be whole, none cut by its
 ellipsis; run alone it passed, 88 again. In all 58 scripts, 2,975 checks: the 2,953 of SIF-133, the 8 SIF-134 added and
 the 14 new ones.
+
+**Review follow-up.** The review of 208e75f found one slip; it is real. A Where pressed while another tab is shown could
+leave its cell under the pinned Issues column. `--issues-w`, the box's scroll padding, was written by the ResizeObserver
+alone, and the browser calls an observer after the frame's animation callbacks. A Where on another tab switches the tab
+and, in the same click (React runs the effects of a click's render before the next frame), asks for the animation frame
+that scrolls its cell into view: that frame scrolled with the padding of the tab the Where was pressed on, and nothing
+scrolled again once the observer had measured. In `blocking_issues_check`'s scene, 1680 x 1050 with More columns shown:
+on Parameters, no row issue of its own, the padding was 59 px, the Specs' column is 255 px, and the Scale's Where left
+the Scale at 951 to 1057 px, the column from 1041 px, the box not scrolled - the state "Changed" above measured without
+the padding. The check pressed that Where only with Specs open, where the stale padding was the wider one (More columns
+still folded): the box scrolled 24 px and the Scale ended 8 px short of the column. `frontend/src/panels/Editors.tsx`:
+`fitIssues` puts the Issues header's width in `--issues-w` and marks the box (`markScrolled`); the observer calls it as
+before, and the Where's animation frame calls it just before `scrollIntoView`. Measured there, not in a layout effect on
+the tab and More columns, the review's other way: a Where that clears a Find text or opens a fold draws the table again
+before that frame too, and the frame measures the table it scrolls, with no layout of its own (`scrollIntoView` lays the
+page out anyway); not in `markScrolled` either, which every scroll calls, while a scroll never changes the column. Both
+Wheres now scroll the box 16 px, the Scale at 935 to 1041 px, beside the column. `docs/workbench.md` and
+`docs/functionality-reference.md` already say so and stand. Only where a Where scrolls changes: nothing starts,
+continues or stops a run, saves a task or writes to Virtuoso, and every question is asked as before. `tsc` clean.
+`blocking_issues_check` 65 (63 before), new: on Parameters with More columns shown and the box at its start the padding
+is that tab's column, narrower than the Specs' (59 against 255 px), and the Scale's Where pressed there chooses the Scale
+beside the pinned column (picture `issues-4d-scale-from-parameters.png`, of the table). A probe run of the new checks on
+`Editors.tsx` of 208e75f failed the second alone (64 of 65). One lane, after the memory guard, all passed the first
+time: `dom_identity_check` 56, `testbench_probes_check` 43, `spec_equations_check` 88, `task_rows_check` 57,
+`typing_check` 62, `sheet_check` 63, `find_fill_copy_check` 50, `project_help_check` 62, `blocking_issues_check` 65,
+`editor_columns_check` 45, `looks_check` 81, `unsaved_rows_check` 28, `formula_bar_check` 21, `matched_devices_check`
+37, `crash_panel_check` 11, `edit_state_check` 28; and `blocking_issues_check` 65 again once its new picture showed the
+table. In all 16 scripts, 797 checks; no flakes.

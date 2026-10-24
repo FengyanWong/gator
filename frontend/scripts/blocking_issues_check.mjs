@@ -249,14 +249,32 @@ await runChecks(browser, async () => {
     JSON.stringify(await evaluate(`({ where: ${WHERE}, more: ${MORE}.textContent })`)));
   // Branch record SIF-135: the Issues column stays at the right edge of the box, and the Scale - partly under it where the table
   // starts - comes into view beside it, not under it: the column's width is the box's scroll padding.
-  const scaleSeen = await evaluate(`(() => { const td = document.querySelector('section.editors table.editor td.active-cell'), box = td.closest('.scroll');
+  const seenBeside = () => evaluate(`(() => { const td = document.querySelector('section.editors table.editor td.active-cell'), box = td.closest('.scroll');
     const input = td.querySelector('input'), i = input.getBoundingClientRect(), at = document.elementFromPoint(i.left + i.width / 2, i.top + i.height / 2);
     const issues = box.querySelector('thead th:last-child').getBoundingClientRect();
     return { cell: [Math.round(td.getBoundingClientRect().left), Math.round(td.getBoundingClientRect().right)], issues: Math.round(issues.left),
       pinned: box.classList.contains('pin-issues'), onTop: at === input, scrolled: Math.round(box.scrollLeft), sideways: box.scrollWidth - box.clientWidth }; })()`);
+  const scaleSeen = await seenBeside();
   check('...the Scale chosen in view beside the Issues column pinned at the right edge, not under it (SIF-135: its width is the box\'s scroll padding)',
     scaleSeen.pinned && scaleSeen.sideways > 0 && scaleSeen.onTop && scaleSeen.cell[1] <= scaleSeen.issues + 1, JSON.stringify(scaleSeen));
   await shot('issues-4c-scale.png');
+  // Review of SIF-135: the same Where pressed on Parameters, More columns still shown and the box at its start. The column was
+  // measured only by the page's ResizeObserver, which the browser calls after the frame's animation callbacks, where the Where
+  // scrolls: the padding was still the Parameters' column - no row issue of its own, as narrow as its header -, and the Scale
+  // stayed partly under the Specs' one.
+  const BOX = `document.querySelector('section.editors table.editor').parentElement`, PAD = `parseFloat(${BOX}.style.getPropertyValue('--issues-w'))`;
+  const specsPad = await evaluate(PAD);
+  await evaluate(`${EDITOR_TAB('parameters')}.click()`);
+  await until(`${EDITOR_TAB('parameters')}.classList.contains('active') && ${PAD} < ${specsPad} - 50`, 30);
+  await evaluate(`${BOX}.scrollLeft = 0`);
+  const onParameters = await evaluate(`({ pad: ${PAD}, specs: ${specsPad}, more: ${MORE}?.textContent ?? null, scrolled: ${BOX}.scrollLeft })`);
+  check('(on Parameters, More columns shown and the box at its start: its scroll padding is the Parameters\' Issues column, narrower than the Specs\')',
+    onParameters.more === 'Fewer columns' && onParameters.scrolled === 0 && onParameters.pad < specsPad - 50, JSON.stringify(onParameters));
+  await evaluate(`[...${LIST}.querySelectorAll('button.issue-go')][1].click()`);
+  const fromParameters = await until(`${EDITOR_TAB('targets')}.classList.contains('active') && ${activeIn(0, 'normalization_scale')}`, 30) ? await seenBeside() : null;
+  check('the Scale\'s Where pressed on Parameters chooses it in view beside the pinned Issues column too: the Where measures the column before it scrolls (review of SIF-135)',
+    !!fromParameters?.pinned && fromParameters.onTop && fromParameters.cell[1] <= fromParameters.issues + 1, JSON.stringify(fromParameters));
+  await page.shot(path.join(out, 'issues-4d-scale-from-parameters.png'), `document.querySelector('section.editors')`, { maxHeight: 400 });   // the table, not the header
   await evaluate(`${MORE}.click()`);
   check('(Fewer columns folds them again)', await until(`${MORE}.textContent.startsWith('More columns')`, 30));
   // A duplicate ID typed into the last Parameters row: the report names that row, as validation.py reports a duplicate on its later row.

@@ -189,13 +189,20 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     watched.current.watch.observe(sel);
   });
   useEffect(() => () => watched.current.watch?.disconnect(), []);
+  // The Issues column's width is the box's scroll padding (styles.css), so that a cell entered by Tab or a Where comes into
+  // view beside the pinned column, not under it (branch record SIF-135); measured with its pin and edge line (markScrolled).
+  const fitIssues = (box: HTMLElement | null | undefined) => {
+    const issues = box?.querySelector<HTMLElement>('thead th.issues');
+    if (!box || !issues) return;
+    box.style.setProperty('--issues-w', `${issues.getBoundingClientRect().width}px`);
+    markScrolled(box);
+  };
   // The box and its table change size without a scroll - a window resized, More columns, a row's issue that widens its column -
-  // and the Issues column's pin and edge line follow; its width is the box's scroll padding (styles.css), so that a cell
-  // entered by Tab or a Where comes into view beside the pinned column, not under it (branch record SIF-135).
+  // and the column's padding, pin and edge line follow. A Where measures it again before it scrolls (the goTo effect below).
   useEffect(() => {
     const grid = table.current, box = grid?.parentElement, issues = grid?.querySelector<HTMLElement>('thead th.issues');
     if (!grid || !box || !issues) return;
-    const watch = new ResizeObserver(() => { box.style.setProperty('--issues-w', `${issues.getBoundingClientRect().width}px`); markScrolled(box); });
+    const watch = new ResizeObserver(() => fitIssues(box));
     for (const part of [box, grid, issues]) watch.observe(part);
     return () => watch.disconnect();
   }, []);
@@ -603,6 +610,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       // a field no column shows (a Unit of Parameters or Specs, Judged at without corners): the row's ID, as the Where says
       const cell = tr?.querySelector<HTMLElement>(`td[data-field="${CSS.escape(name)}"]`) ?? tr?.querySelector<HTMLElement>(`td[data-field="${CSS.escape(keyField)}"]`);
       if (!cell) return;
+      // The Issues column as this table draws it, measured before the scroll (review of SIF-135): the observer above is called
+      // after the frame's animation callbacks, so a Where pressed on another tab scrolled by that tab's column - on Parameters
+      // with no row issue of its own 59 px, against the Specs' 255 - and left the Scale under the pinned one.
+      fitIssues(table.current?.parentElement);
       cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       const box = cell.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)');
       // a follower's greyed field takes no focus: the formula bar still names it and says why

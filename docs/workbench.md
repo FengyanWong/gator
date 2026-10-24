@@ -404,8 +404,9 @@ do). The fonts are Windows' own, so nothing is downloaded: Bahnschrift for headi
 text, Consolas for numbers and ids. Another system shows its own fallbacks.
 
 **The title block.** The header names what the page works on: since record 7.360 the task, by the name the Task window
-gives it, then one grey line of facts - Class · PDK, the saved task's revision and the RL model's label (record 7.159; its
-first cell was the project name until the user removed that box). They are read-only; the fields stay in their panels, and
+gives it, then one grey line of facts - Class · PDK and the RL model's label (record 7.159; its first cell was the project
+name until the user removed that box; the saved task's revision stood between them until record 7.372, and is the tab
+line's since). They are read-only; the fields stay in their panels, and
 the circuit panel puts them in the header. The version and environment line is in the tooltip of the GATOR chip. Since
 record 7.182 the **Connection** button is the block's last cell (user: "move the conection button to the header"). Record
 7.182 also took the task name out (user: "remove the current task name on the header"); Draft A of the Roadster look,

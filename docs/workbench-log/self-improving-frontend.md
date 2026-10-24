@@ -4826,3 +4826,56 @@ status reads of the shown run were 39 to 40 a minute in every phase of both buil
 minute read folded before, 64 kB after. The run stood at 2,592 to 2,740 evaluations at the end of each run. Not
 measured: the user's D:, where each tail read over 9p takes longer, and the user's runs, whose log entries are of other
 sizes. The batch expected about 30 -> 1 folded, and about 30 before and after at 1000 px.
+
+### SIF-128 The stylesheet keeps no rules for parts the page no longer draws (2026-10-24; from the performance audit)
+
+**Found.** The performance audit's batch 7 (BUN-7, confirmed). `styles.css` held nine rules that match nothing the page
+or a pop-up window draws, left over from the replaced looks and the old Project column: the grid of that column's two
+window launchers (`.launchers`, and `> .row`, `.hint`, `button` and `p` under it, with their comment) - the launchers
+left the column in record 7.362 for the Tasks window's New task buttons, and only `.connection-launcher` is drawn now -;
+the brand's name and subtitle (`.tb-brand b`, `.tb-brand .tb-sub`) and the look switch (`button.look-switch`), gone in
+record 7.360 (the brand holds only the GATOR chip, `GatorChip` in `App.tsx`; the switch went with the day look); and the
+revision fact (`.tb-rev .tb-v`), which left the banner in record 7.372 (`TitleFacts`' cells are `tb-cell`, the RL
+model's `tb-model` too). No .ts or .tsx file draws these classes or builds them in code: "launchers" stands in three
+comments (`taskActions.ts`, `shared.ts`), the other three names nowhere outside the stylesheet. They told a reader of the
+stylesheet of a subtitle, a switch and a grid that are not there, and each pop-up window, which copies the page's
+stylesheet as it opens (`popupWindow.ts`), read them again. The audit's lines 272-276, 433-435 and 440 stood at 276-280,
+444-446 and 451 at HEAD 9386d1d (rules added above them since).
+
+**Changed.** `frontend/src/styles.css`: the nine rules and the launchers' comment deleted (9 lines, 24 declarations).
+`.tb-brand`, `.tb-facts`, `.tb-cell`, `.tb-k` and `.tb-v` stay: the title block draws them (`App.tsx`, `Left.tsx`;
+`roadster.css` sizes them). What the page shows, reads and writes is the same, and so is the computed style of every
+element it and its windows draw (below); nothing here starts, continues or stops a run, saves a task or writes to
+Virtuoso. `frontend/scripts/looks_check.mjs`: one check (below), and its list of what it pins no longer has the title block
+name the revision (its own check since record 7.372 says it does not). `docs/workbench.md` (The title block): its line of facts
+no longer lists the saved task's revision, which left it in record 7.372, as the same document's banner list and its
+list of record 7.372's changes say. `docs/functionality-reference.md` names none of these rules: unchanged.
+
+**Checked.** `tsc` clean. `looks_check` 77 (76 before). New, after its checks that the look switch and the revision fact
+are not drawn (both pass unchanged): no rule of the page's stylesheets, @media ones included, names the launchers grid,
+the brand's text, the look switch or the revision fact. A probe run of the new check on the build before failed exactly
+it, naming the nine selectors (76 passed). One lane, after the memory guard, on a build of this tree: `run_control_check`
+171, `dom_identity_check` 56 (recording), `connection_panel_check` 101, `virtuoso_source_check` 116, `looks_check` 77,
+`project_help_check` 61, `task_list_check` 105, `ngspice_window_check` 43, `room_check` 31, `circuit_source_check` 17
+(10 scripts, 778 checks: the title block's readers and the checks around the old launchers' place) - all passed the
+first time; `looks_check` again alone, 77, after its list of what it pins was reworded. No flakes. The batch's proof of the computed styles (plan-refactoring C11): `dom_identity_check` recorded
+once against a scratch backend on the build before (56 passed), then replayed with `--styles --widths 1680,1000,640` on
+the build before (the reference, 276 passed) and on the build after with `--compare` (552 passed): all 276 files
+identical byte for byte - at each width, for each of the 36 steps of the ten scenes, the DOM and the computed style of
+every element of the page and of each open pop-up window (108 style files: 92,643 elements and 558 ::before / ::after /
+::backdrop boxes, 69 window sections, the title block in all 108), and each scene's requests.txt and storage.json.
+`css_order_proof.mjs` on `styles.css` before and after, and with `--minified` on the two built stylesheets: as the batch
+expected, it fails - it proves a regrouping, not a removal - and names as only in the old text exactly the 24
+declarations of the nine rules (old lines 278-280, 444-446 and 451), nothing else lost, added or moved (1,759 atoms in
+the old source, 2,470 in the old bundle).
+
+**Measured.** `npx vite build` into a temp folder (the batch's measure), on HEAD 9386d1d and on this change: the
+stylesheet `index-*.css` 68.84 kB (gzip 14.97 kB) -> 68.23 kB (gzip 14.84 kB), as Vite reports it; 68,848 -> 68,233
+bytes, 615 fewer (0.9 %); with gzip -9, 14,847 -> 14,709. The source `styles.css` 71,550 -> 70,612 bytes (604 -> 595
+lines). The batch expected about 1 kB off 65.17 kB (gzip 14.27 kB): records since the audit added rules, and the build
+drops comments and spaces, so the nine rules weighed 0.6 kB there against 0.9 kB in the source, their comment included.
+The script bundle is the same byte for byte (its name follows the stylesheet's hash), and so are the other chunks and
+index.html but for the names. The batch's grep, `frontend/src` .ts and .tsx for `launchers`, `look-switch`, `tb-sub` and
+`tb-rev`, before and after: no class use (`className`, `classList`, `class=`), the same three comments for "launchers",
+nothing else; the stylesheets' lines naming them 7 -> 0. Not measured: the time a pop-up window takes to read 0.6 kB less
+of the stylesheet it copies, under 1 % of the file and far inside the noise of a window opening, so no time is claimed.

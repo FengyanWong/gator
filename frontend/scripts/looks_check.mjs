@@ -11,8 +11,9 @@
 //     with one lit, Start round and white, Abort round and red; Output settings folded on a fresh browser; a task name too
 //     long for the header ends in "..." once the facts beside it have given way, never cut through a letter (SIF-66);
 //   - the header draws nothing outside its box; the editors' tabs as one segmented control, the chosen one lit with a red bar;
-//   - the header's title block names the task's revision, the circuit's class and PDK and the RL model label; the version is
-//     one hover away on the chip;
+//   - the header's title block names the circuit's class and PDK and the RL model label (the revision is the tab line's since
+//     record 7.372); the version is one hover away on the chip; no rule of the stylesheet is left for the parts that went
+//     (branch record SIF-128);
 //   - the splitter above the bottom panel: a drag sets its height, a double click folds it to its tab line and back, a tab press
 //     opens it, the arrow keys and Enter do the same from the keyboard; kept in this browser; hidden on narrow windows;
 //   - the editors share one ink and head colour; the Specs line offers the Probe ids as chips (same text);
@@ -151,6 +152,13 @@ await runChecks(browser, async () => {
   // Record 7.372: the banner's facts leave the revision to the tab line's task chip; under 1400 px only the state that holds shows.
   check('the banner\'s facts name the class, the PDK and the RL model - not the revision, which the tab line\'s task chip says',
     await evaluate(`(() => { const d = document.querySelector('header .tb-details'); return !!d && !d.querySelector('.tb-rev') && !/revision/.test(d.textContent); })()`));
+  // Branch record SIF-128: nor does the stylesheet style the parts that went - the brand's name and subtitle and the look
+  // switch (record 7.360), the revision fact (7.372), the Project column's launchers grid (7.362). Every rule, @media ones too.
+  const retired = await evaluate(`(() => { const found = [], walk = rules => { for (const r of rules) {
+      if (r.selectorText && /\\.(launchers|look-switch|tb-sub|tb-rev)\\b|\\.tb-brand\\s+b\\b/.test(r.selectorText)) found.push(r.selectorText);
+      if (r.cssRules) walk(r.cssRules); } };
+    for (const s of document.styleSheets) walk(s.cssRules); return found; })()`);
+  check('...and no rule of the stylesheet is left for them: the brand\'s text, the look switch, the revision fact, the launchers grid', !retired.length, JSON.stringify(retired));
   await page.viewport(1366, 768); await sleep(400);
   const narrow = await evaluate(`[...document.querySelectorAll('header .run-state-strip > span')].filter(x => x.checkVisibility()).map(x => x.textContent)`);
   check('...and at 1366 px the strip shows only the state that holds (the four words took a crowded banner\'s room)', JSON.stringify(narrow) === '["Ended"]', JSON.stringify(narrow));

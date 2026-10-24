@@ -28,7 +28,9 @@
 // SIF-113: Refresh list is the refresh icon, its words for screen readers and at the start of its tooltip. Branch record
 // SIF-117: the table and the Details write a count as the whole page does, from 10,000 up in groups of three. Branch record
 // SIF-122: a tick, a Details press and its "copied" draw only the rows whose own props changed; a row's tick box still follows
-// a filter that lets the ticks go, and is greyed out while a folder move is saved.
+// a filter that lets the ticks go, and is greyed out while a folder move is saved. Branch record SIF-137: a failed run shown
+// from its Details says under Run status, beside why Continue... cannot go on, where its errors are and what to do next, and
+// its Show errors opens Logs on the errors log.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -784,6 +786,19 @@ await runChecks(browser, async () => {
     && await until(`[...document.querySelectorAll('.status-grid td')].some(td => td.textContent === ${JSON.stringify(CRASHED.run_dir)})`, 40)
     && await until(`document.querySelector('.status-grid .continue-why')?.textContent === 'A failed run cannot be continued.' && document.querySelector('.status-grid .continue-open').disabled`, 40),
     await evaluate(`document.querySelector('.status-grid .continue-why')?.textContent ?? '(no reason)'`));
+  // Branch record SIF-137: and what to do next beside it - where the run wrote what went wrong, a button there, then the next
+  // run; this one kept a save point, so Load run brings its model, as its Details say. Show errors opens Logs on that log.
+  const failedNext = await evaluate(`(() => { const r = document.querySelector('.status-grid > .row'), n = r?.querySelector('.failed-next');
+    return { next: n?.textContent ?? null, after: n?.previousElementSibling?.classList.contains('continue-why') ?? false, button: r?.querySelector('button.failed-show')?.textContent ?? null }; })()`);
+  check('... with what to do next beside it: "The details are in the errors log (Logs, errors). Fix the cause, then Start a new run; Load run in Runs... brings this run\'s model into it (Fine-tune or Evaluate only).", and Show errors (SIF-137)',
+    failedNext.next === 'The details are in the errors log (Logs, errors). Fix the cause, then Start a new run; Load run in Runs... brings this run\'s model into it (Fine-tune or Evaluate only).'
+    && failedNext.after && failedNext.button === 'Show errors', JSON.stringify(failedNext));
+  await evaluate(`document.querySelector('.status-grid button.failed-show').click()`);
+  const shownLog = `[document.querySelector('footer .tabs > button.active')?.textContent, document.querySelector('footer .bottom-body select.tab-choice')?.value,
+    document.activeElement === document.querySelector('footer .tabs > button.active') ? 'focused' : 'focus elsewhere'].join(' | ')`;
+  check('... Show errors opens Logs on the errors log, the keyboard on its tab (SIF-137)', await until(`${shownLog} === 'Logs | errors | focused'`, 40), await evaluate(shownLog));
+  await evaluate(`[...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent === 'Run status').click()`);
+  check('(set-up) back on Run status', await until(`!!document.querySelector('.status-grid .continue-why')`, 40));
   // a task that is no longer registered
   await openDetails(GONE);
   check('a run whose task is no longer registered: Load run and New run like this are off, and the reason stands beside them',

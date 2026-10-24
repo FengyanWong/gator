@@ -129,6 +129,9 @@ export const MODE_NAME: Record<string, string> = { scratch: 'New model', fine_tu
  *  model) - and, for a run that trains or evaluates a model, its design ("GraphGPS"; a run does not say CircuitGPS's version). */
 export const runMode = (r: Json) => r.run_kind === 'baseline_preflight' ? 'Baseline' : r.run_kind === 'calibration' ? 'Calibration'
   : r.run_kind === 'offline_pretraining' ? 'Offline training' : r.mode === 'resume' ? 'Resume' : MODE_NAME[r.mode] ?? r.mode ?? '';
+/** Whether a run trains its model (branch record SIF-137): a Baseline and a Calibration simulate designs without one, and an
+ *  Evaluate only run uses a saved model as it is - none makes a learner update (training_series.py, `_learner`). */
+export const runTrains = (r: Json) => !['baseline_preflight', 'calibration'].includes(r.run_kind) && r.mode !== 'frozen';
 export const runDesign = (r: Json) => (['baseline_preflight', 'calibration'].includes(r.run_kind) || !r.encoder ? ''
   : designName({ encoder_type: r.encoder, architecture_version: r.network?.architecture_version }));
 // Where an encoder's settings come from. The backend still calls it `publication`; since record 7.192 it is the network size

@@ -405,6 +405,9 @@ button.launch-refusal-close { border: none; background: none; padding: 0 2px; }
 .continue-form input { font-variant-numeric: tabular-nums; } .continue-form input[aria-invalid="true"] { border-color: var(--bad); }
 .continue-allows { color: var(--muted); font-variant-numeric: tabular-nums; } .continue-error { flex: 0 0 100%; margin: 0; }
 .continue-why { flex: 1 1 260px; }
+/* A failed run's next step (branch record SIF-137) follows the reason Continue... cannot go on and takes the row's room in
+   its place, so its Show button and Export status stand at the row's end. */
+.continue-why:has(+ .failed-next) { flex: 0 1 auto; } .failed-next { flex: 1 1 260px; }
 /* Corner check tab (CornerCheck.tsx): the plan line, the designs, then one row per design and one column per corner with a
    verdict at the end; pass / FAIL / unknown in the result colours. */
 .corner-check .row { align-items: center; } .corner-check .row > label { flex: none; flex-direction: row; align-items: center; gap: 4px; margin: 0; }

@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
 import { quantity, si, variables } from '../units';
-import { bytes, clock, CONNECTION_STATE, count, durationWhole, num, plural, runName, short, sig, stamp, stopWords, timeLine, TIME_LINE_HELP } from '../format';
+import { bytes, clock, CONNECTION_STATE, count, durationWhole, FAILED_WHERE, failedWhere, num, plural, runName, short, sig, stamp, stopWords, timeLine, TIME_LINE_HELP } from '../format';
 import { cardLive, ENDED, restingShown } from '../runState';
 import { usePolling, useRequest } from '../store';
 import { APPLY_AND_SAVE, calibrationPlan, savingText } from './calibrationPlan';
@@ -11,7 +11,7 @@ import { ContinueForm } from './ContinueForm';
 import { LaunchRefusal } from './LaunchRefusal';
 import { KeyTile } from './fields';
 import { useCopied } from './copied';
-import { REWARD_NAME, REWARD_NAMES, runMode } from './rlModelText';
+import { MODE_NAME, REWARD_NAME, REWARD_NAMES, runMode, runTrains } from './rlModelText';
 import { sortKeys, useTableView } from './TableView';
 
 // llm_calls - the AI calls a run of the LLM search methods recorded (removed 2026-10-06, record 7.226) - stays in its run folder.
@@ -19,13 +19,22 @@ const TABLES = ['evaluations', 'parameters', 'metrics', 'simulator_jobs', 'learn
 
 
 // The spread needs two scored designs and the bonus a learner update: before that the line said "last 0 scored designs): ;".
-// No check at all (a backend that sent none) shows nothing.
-function SteeringCheck({ value }: { value: Json }) {
+// No check at all (a backend that sent none) shows nothing. Said for the run it is, `status` (branch record SIF-137): a
+// Baseline, a Calibration and an Evaluate only run make no learner update and read "no update yet" to their end, and an
+// ended run said "yet" too, as "First feasible design" did before SIF-54. An ended run's verdict - the backend's words, as
+// they are - read in present-tense orange with nothing to act on: it is said as what it was at the end, with what gives
+// the next run room to learn.
+const ROOM_TO_LEARN = 'A larger Evaluation budget, or the Initial alpha a Calibration proposes, gives the next run room to learn.';
+function SteeringCheck({ status }: { status: Json }) {
+  const value = status?.steering;
   if (!value) return null;
-  if (value.reward_spread == null) return <div className="steering-check"><p className="hint">Reward spread: not enough scored designs yet.</p></div>;
+  const ended = ENDED.includes(status.state) && !status.worker_alive, trains = runTrains({ run_kind: status.manifest?.run_kind, mode: status.mode });
+  if (value.reward_spread == null) return <div className="steering-check"><p className="hint">Reward spread: not enough scored designs{ended ? '' : ' yet'}.</p></div>;
   return <div className="steering-check"><p>Reward spread (p90 − p10, last {value.scored_designs} scored designs): <b>{sig(value.reward_spread)}</b>;
-    exploration bonus (latest update): <b>{value.exploration_bonus == null ? 'no update yet' : sig(value.exploration_bonus)}</b>.</p>
-    {value.verdict && <p className="warn">{value.verdict}</p>}</div>;
+    {trains ? <> exploration bonus (latest update): <b>{value.exploration_bonus != null ? sig(value.exploration_bonus) : ended ? 'no update was made' : 'no update yet'}</b>.</>
+      : <> exploration bonus: <b>none</b> (this run does not train).</>}</p>
+    {trains && value.verdict && (ended ? <p className="hint steering-verdict">At its end: {value.verdict} {ROOM_TO_LEARN}</p>
+      : <p className="warn steering-verdict">{value.verdict}</p>)}</div>;
 }
 
 const limitText = (row: Json) => row.lower != null && row.upper != null ? `${si(row.lower, row.unit)} to ${si(row.upper, row.unit)}`
@@ -108,12 +117,14 @@ const FIRST_FEASIBLE_TIP = 'The evaluations used by the time the first design th
  *  and also continues a stopped run, which the header cannot. Record 7.261 (the launcher): it opens the budget form
  *  instead of the browser's prompt; `continueBlocked` - why it cannot go now, the backend's continuation check included -
  *  is said beside it before any press, with the backend's `alternative` (a new run that fine-tunes from the save point)
- *  as a button; a refusal of the press stays under it (`refusal`) until the run changes. `check`: that continuation check. */
-export function StatusTab({ status, runDir, error, check, continueBlocked, refusal, onContinue, onDismissRefusal, onFineTune, config, setConfig, ask = null, onAsked }: {
+ *  as a button; a refusal of the press stays under it (`refusal`) until the run changes. `check`: that continuation check.
+ *  `onShowCause`: a failed run's Show errors or Show evaluations - the bottom panel opens Logs on the errors log, or Data
+ *  tables on the evaluations (branch record SIF-137). */
+export function StatusTab({ status, runDir, error, check, continueBlocked, refusal, onContinue, onDismissRefusal, onFineTune, config, setConfig, ask = null, onAsked, onShowCause }: {
   status: Json; runDir: string | null; error: string | null; check: Json | null; continueBlocked: string | null; refusal: Json | null;
   onContinue: (total: number | null) => void; onDismissRefusal: () => void; onFineTune: (alternative: Json) => void;
   config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void; ask?: { runDir: string; serial: number } | null;
-  onAsked?: (serial: number) => void }) {
+  onAsked?: (serial: number) => void; onShowCause?: (where: 'evaluations' | 'errors') => void }) {
   const [asking, setAsking] = useState(false);                // the budget form is open
   useEffect(() => setAsking(false), [runDir]);
   // Continue... of the Runs window (record 7.267): the form opens for the run it was pressed for, once - `onAsked` marks the
@@ -164,8 +175,16 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
   // The best design's sizes, as the Runs window's Details list them (branch record SIF-98: the fact a sizing run exists for was
   // there alone, a window, a run among hundreds and Details away); copied by a click, as the Run folder.
   const sizes = best?.variables ? variables(best.variables) : '', sizesKey = `best design variables of ${status.run_dir}`;
+  // What to do after a failure (branch record SIF-137): Run status said only that a failed run cannot be continued, and every
+  // real failure ends there. Where the run wrote what went wrong (format.ts `failedWhere`), with a Show button that opens
+  // that log or table - only where the panel looks -, then the next run by the button that starts it: a Calibration or a
+  // baseline is no run Start makes, and has no model for Load run to bring (lineage.ts).
+  const failed = !status.worker_alive && status.state === 'failed', where = failed ? failedWhere(status.stop_reason) : null;
+  const kind = status.manifest?.run_kind;
+  const nextRun = kind === 'calibration' ? 'press Calibration again.' : kind === 'baseline_preflight' ? 'run the baseline again (Retry baseline, shown with its task).'
+    : `Start a new run${status.save_point ? `; Load run in Runs... brings this run's model into it (${MODE_NAME.fine_tune} or ${MODE_NAME.frozen}).` : '.'}`;
   return (<div className="status-grid">
-    <SteeringCheck value={status.steering} />
+    <SteeringCheck status={status} />
     {status.manifest?.mock && <p className="mock">{status.manifest.mock_notice}</p>}
     {status.calibration && <Calibration value={status.calibration} live={!!status.worker_alive || !ENDED.includes(status.state)} config={config} setConfig={setConfig} />}
     {/* The run at a glance (record 7.360, the Roadster look): how far it is, then four numbers; the table below holds them all.
@@ -209,6 +228,11 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
       {/* a failed or cancelled run says why too (branch record SIF-90): it is no state Continue goes on from, so the reason
           stood only in the tooltip of a greyed Continue... */}
       {(resting || (!status.worker_alive && ['failed', 'cancelled'].includes(status.state))) && continueBlocked && <span className="hint continue-why">{continueBlocked}</span>}
+      {failed && <span className="hint failed-next">{where ? `${FAILED_WHERE[where]} ` : ''}Fix the cause, then {nextRun}</span>}
+      {where && onShowCause && <button className="failed-show" onClick={() => onShowCause(where)}
+        title={where === 'errors' ? 'Show errors: Logs opens on this run\'s errors log. Nothing else changes.'
+          : 'Show evaluations: Data tables opens on this run\'s evaluations, newest first; their status and diagnostics say why each failed. Nothing else changes.'}>
+        {where === 'errors' ? 'Show errors' : 'Show evaluations'}</button>}
       {resting && check?.alternative && <button className="continue-alternative" onClick={() => onFineTune(check.alternative)}
         title={`${check.alternative.label}: The next run on this page loads this run's save point ${check.alternative.checkpoint_id} in Mode Fine-tune, as one Undo step. Nothing starts until Start.`}>{check.alternative.label}</button>}
       <button onClick={() => saveJson(`${runName(status.run_dir)}__status.json`, { exported_utc: new Date().toISOString(), ...status })}
@@ -347,7 +371,7 @@ export function DataTab({ runDir, status, choice, setChoice }: { runDir: string 
     const written = await api.exportAggregates(runDir);
     return `Downloaded ${await download(api.aggregatesUrl(runDir), 'aggregates.zip')} (${Object.keys(written.files).length} tables). Also kept in ${written.experiment_dir}/aggregates`; });
   return (<div>
-    <SteeringCheck value={status?.steering} />
+    <SteeringCheck status={status} />
     <div className="row"><select className="tab-choice" value={table} onChange={e => choose({ table: e.target.value })}>{TABLES.map(t => <option key={t}>{t}</option>)}</select>
       <select className="table-limit" aria-label="Rows shown" value={limit} onChange={e => choose({ limit: Number(e.target.value) })}
         title="Rows shown: How many of the table's rows are read and listed here. Export detailed CSV saves every row.">{[25, 100, 500].map(n => <option key={n} value={n}>{n} rows</option>)}</select>

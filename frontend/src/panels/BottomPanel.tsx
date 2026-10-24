@@ -115,6 +115,15 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
   // below that the stacked layout keeps the body in view, folded or not, and Logs reads on (branch record SIF-127). Read at
   // each drawing: a live run's status answer draws the panel every 1.5 s, and only a live run's log is read on a timer.
   const bodyHidden = folded && window.matchMedia('(min-width: 1101px)').matches;
+  // A failed run's Show errors or Show evaluations under Run status (branch record SIF-137): the tab where the run wrote what
+  // went wrong, on that log, or on its evaluations newest first - the failures that ended it on top. Only where the panel
+  // looks changes, as a press on a tab. The pressed button goes with Run status: the keyboard goes to the tab now shown, not
+  // to the page's top, as after Continue...'s form (SIF-90).
+  const showCause = (where: 'evaluations' | 'errors') => {
+    if (where === 'errors') setLogKind('errors'); else setDataChoice(now => ({ ...now, table: 'evaluations', newest: true }));
+    setTab(where === 'errors' ? 'logs' : 'data'); unfold();
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('footer .tabs button.active')?.focus());
+  };
   return (
     <footer>
       <div className="splitter" role="separator" aria-orientation="horizontal" tabIndex={0} aria-label="Height of the bottom panel"
@@ -132,7 +141,8 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
       <div className="bottom-body">
         {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} check={shownCheck} continueBlocked={continueBlocked} refusal={shownRefusal}
           onContinue={continueShown} onDismissRefusal={() => launcher.setRefusal(null)} onFineTune={fineTuneFrom} config={config} setConfig={setConfig}
-          ask={askContinue && askContinue.serial !== askedContinue.current ? askContinue : null} onAsked={serial => { askedContinue.current = serial; }} />}
+          ask={askContinue && askContinue.serial !== askedContinue.current ? askContinue : null} onAsked={serial => { askedContinue.current = serial; }}
+          onShowCause={showCause} />}
         {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} kind={logKind} setKind={setLogKind} hidden={bodyHidden} />}
         {tab === 'data' && <DataTab runDir={runDir} status={status} choice={dataChoice} setChoice={setDataChoice} />}
         {/* whether the run's worker lives and its last save point: Output files reads a live run again at each save point

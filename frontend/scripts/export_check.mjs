@@ -9,7 +9,7 @@
 //   4 Data tables: "Export research CSVs" downloads the experiment's aggregates as one zip (they lie above the run folder)
 //   5 Output files: the data-only package is named after ITS run, not "run__data.zip" for every run
 // and, since branch record SIF-105, that Logs and Data tables keep their choices (the errors log; the table and its order)
-// while another tab is looked at.
+// while another tab is looked at; since branch record SIF-137, that the ended run's steering check speaks of its end.
 // It starts one small run on the synthetic MOCK task (free, no bridge, no Virtuoso) and writes exports, so it REFUSES
 // the default backend: give it a SCRATCH backend and a scratch output root, e.g.
 //   S=<empty scratch dir>; mkdir -p $S/settings $S/out
@@ -118,6 +118,18 @@ await runChecks(browser, async () => {
   check('... "Best design variables" names each variable of the best design in its order, "<id> = <value>", "Click to copy" (SIF-98)', !ids.length ? !facts['Best design variables']
     : new RegExp(`^${ids.map(id => `${literal(id)} = [^;]+`).join('; ')}$`).test(facts['Best design variables']?.text ?? '') && facts['Best design variables'].title === 'Click to copy',
     `${facts['Best design variables']?.text} | ${ids.join(', ')}`);
+  // Branch record SIF-137, on the same real MOCK run: the ended run's steering check speaks of its end - its last exploration
+  // bonus, or "no update was made", never "no update yet" - and the backend's verdict, as it is, follows "At its end: " in grey
+  // with what gives the next run room to learn (it stood in present-tense orange, nothing to act on).
+  const steer = await evaluate(`(() => { const s = document.querySelector('.status-grid .steering-check'); return s && { text: s.textContent,
+    verdict: s.querySelector('.steering-verdict')?.textContent ?? null, grey: !!s.querySelector('p.hint.steering-verdict'), orange: !!s.querySelector('.warn') }; })()`);
+  const sv = status.steering ?? null;
+  console.log(`INFO  steering check of the MOCK run: ${JSON.stringify(sv)}`);
+  check('... the ended run\'s steering check: "exploration bonus (latest update): <n>" or "no update was made", never "yet"; a verdict as "At its end: <the backend\'s words> A larger Evaluation budget, ..." in grey, never orange (SIF-137)',
+    !sv ? steer === null : !!steer && !steer.text.includes('yet') && !steer.orange
+      && (sv.reward_spread == null || steer.text.includes(`exploration bonus (latest update): ${sv.exploration_bonus == null ? 'no update was made' : ''}`))
+      && (sv.verdict ? steer.grey && steer.verdict === `At its end: ${sv.verdict} A larger Evaluation budget, or the Initial alpha a Calibration proposes, gives the next run room to learn.`
+        : steer.verdict === null), `${JSON.stringify(steer)} | ${JSON.stringify(sv)}`);
   await shot('export-1-status.png');
 
   // ---- 1 Logs: the whole file, not the newest 200 entries --------------------------------------------------------------------------------------

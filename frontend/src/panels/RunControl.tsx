@@ -1,7 +1,7 @@
 import { Icon, IconName } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, plainError } from '../api';
-import { count, folderName, plural, runTask, stopWords, timeLine } from '../format';
+import { count, FAILED_WHERE, failedWhere, folderName, plural, runTask, stopWords, timeLine } from '../format';
 import { cardLive, ENDED, type Pending, type Phase, type RunControl } from '../runState';
 
 /** The header's run buttons (user request 2026-09-21): ONE main button that reads Start -> Pause -> Resume, and
@@ -231,10 +231,16 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
     // link and saves first) leaves an `interrupted` run that keeps its stop reason, where only what was acknowledged is kept;
     // its chip says "(the worker is gone)" and no line is added (review of SIF-89).
     const paused = phase === 'paused' && status.state === 'paused';
+    // The connection by what the header shows of it (branch record SIF-137): "(Connection button)" named a word the pill
+    // keeps for screen readers while a connection is chosen - it shows the connection's name. A failure ends with where it
+    // is written, as Run status says it beside its Show button: the line named no place, and every real failure ends here.
     if (paused && status.stop_reason === 'infrastructure_failures' && (was === 'running' || was === 'pausing'))
-      onMessage({ level: 'error', text: 'Paused by itself after connection failures; everything is saved. Test the connection (Connection button), then Resume.', title: dir });
+      onMessage({ level: 'error', text: 'Paused by itself after connection failures; everything is saved. Test the connection - its name in the header opens the Connection window - then Resume.', title: dir });
     else if (was === 'pausing' && paused) onMessage({ level: 'info', text: `Paused at${used(status)}: everything is saved. Resume continues from exactly there.` });
-    else if (ended && status.state === 'failed') onMessage({ level: 'error', text: `The run failed${at}: ${status.error ?? 'see Run status'}`, title: dir });
+    else if (ended && status.state === 'failed') {
+      const err = status.error ?? 'see Run status', where = failedWhere(status.stop_reason);
+      onMessage({ level: 'error', text: `The run failed${at}: ${err}${/[.!?]$/.test(err) ? '' : '.'}${where ? ` ${FAILED_WHERE[where]}` : ''}`, title: dir });
+    }
     else if (ended && unasked && status.state === 'completed')
       onMessage({ level: 'info', text: `Completed${at}${status.stop_reason ? ` (${stopWords(status.stop_reason)})` : ''}. Its results are under Run status.`, title: dir });
     else if (ended && (!unasked || ENDED.includes(status.state))) onMessage({ level: 'info', text: `The run has ended (${status.state}) at${used(status)}: everything it committed is saved.` });

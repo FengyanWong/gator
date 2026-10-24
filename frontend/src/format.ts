@@ -101,13 +101,26 @@ export const layerWords = (layer: string) => LAYER_WORDS[layer] ?? layer.replace
 export const bytes = (n?: number | null) => n == null ? '-' : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KiB`
   : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MiB` : `${(n / 1073741824).toFixed(2)} GiB`;
 /** Why a run stopped, in words (branch record SIF-15: "completed · budget_exhausted"); the key stays in a tooltip. A reason
- *  this list does not know reads with spaces for its underscores. */
+ *  this list does not know reads with spaces for its underscores. The engine's own pause reads "connection failures", as the
+ *  header's chip and line call it (branch record SIF-137: Run status read "infrastructure failures" beside them). */
 export const STOP_WORDS: Record<string, string> = { budget_exhausted: 'budget used up', first_feasible: 'first feasible design found',
   wall_time_limit: 'wall-time limit reached', offline_update_budget: 'update budget used up', consecutive_failures: 'too many failures in a row',
+  infrastructure_failures: 'connection failures',
   evaluation_exception: 'an evaluation failed', insufficient_storage: 'not enough disk space', baseline_invalid: 'baseline not valid',
   unresolved_launch_intent: 'launch not confirmed', interrupted: 'interrupted', pause: 'paused', user_pause: 'paused by you',
   user_stop: 'stopped by you', exception: 'an error' };
 export const stopWords = (reason?: string | null) => (reason ? STOP_WORDS[reason] ?? reason.replace(/_/g, ' ') : '');
+/** Where a failed run wrote what went wrong, by its stop reason (branch record SIF-137: the line under the header and Run
+ *  status named no place, and every real failure ends there). A run stopped by its failed evaluations wrote each one's
+ *  status and diagnostics into the evaluations table and nothing into the errors log, which holds what raised: a crash, an
+ *  evaluation that raised, a save that failed (engine.py `_log_error`). A full disk and a launch not confirmed are said by
+ *  the run's error alone: null. */
+export const failedWhere = (reason?: string | null): 'evaluations' | 'errors' | null => reason === 'consecutive_failures' ? 'evaluations'
+  : reason === 'insufficient_storage' || reason === 'unresolved_launch_intent' ? null : 'errors';
+/** That place in words, the same under the header and in Run status. */
+export const FAILED_WHERE: Record<'evaluations' | 'errors', string> = {
+  evaluations: 'Why each evaluation failed is in Data tables (evaluations: status and diagnostics).',
+  errors: 'The details are in the errors log (Logs, errors).' };
 /** A number for reading, not for a table's column: three significant digits, no padding - 0.037, -0.0248, 12.3 (branch record
  *  SIF-2: the reward spread was written 0.0370463). */
 export const sig = (v: number) => String(Number(v.toPrecision(3)));

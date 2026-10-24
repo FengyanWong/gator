@@ -8,7 +8,8 @@
 // changed by the check): the block shows the run's own Scales and Initial alpha, never the page's row of the same ID.
 // Branch record SIF-105: the line's "Show table" while the table is out of view (another tab, the panel folded, the tabs on
 // another run), never while it is in view. Branch record SIF-112: a calibration that proposes nothing says why on the line,
-// whose one button is the close mark (an X, "OK" before).
+// whose one button is the close mark (an X, "OK" before). Branch record SIF-137: its steering line says the run does not
+// train, where it read "no update yet".
 // Record 7.217: an Initial alpha is proposed only when it differs from the one the run had by a factor of 2 or more - the
 // second run here starts from the first run's applied value, so whether it proposes one follows that rule ("Apply and
 // save", for a task saved from a Virtuoso cell, is in calibration_save_check.mjs).
@@ -109,6 +110,11 @@ await runChecks(browser, async () => {
     await evaluate(`${BLOCK}.querySelector('.calibration-alpha').textContent`));
   check('the hint says what Apply will do', (await evaluate(HINT)) === 'Sets the Scale of 1 Specs row and Initial alpha, as one Undo step.', await evaluate(HINT));
   check('nothing was applied by the run', (await stored()).targets[0].normalization_scale === 1 && (await stored()).run.advanced.initial_alpha === 0.01);
+  // Branch record SIF-137: a Calibration makes no learner update - its steering line read "exploration bonus (latest update): no
+  // update yet." after its end - so it says the run does not train, and gives no verdict
+  const steering = await evaluate(`(() => { const s = document.querySelector('footer .steering-check'); return s && { text: s.textContent, verdict: !!s.querySelector('.steering-verdict') }; })()`);
+  check('its steering line: the reward spread of its random designs, then "exploration bonus: none (this run does not train).", no verdict, never "no update yet" (SIF-137)',
+    /^Reward spread \(p90 − p10, last \d+ scored designs\): \S+; exploration bonus: none \(this run does not train\)\.$/.test(steering?.text ?? '') && !steering.verdict, JSON.stringify(steering));
   await page.shot(path.join(out, 'calibration-1-proposals.png'), `document.querySelector('footer')`);
 
   // ---- Apply: one Undo step -------------------------------------------------------------------------------------------------

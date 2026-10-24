@@ -28,7 +28,9 @@
 // Open in Runs keeps it open. Branch record SIF-116: Run status's "First feasible design" says what it counts, in its tooltip
 // and in its words ("at 4 evaluations used", "at 1 evaluation used"). Branch record SIF-117: Run status writes its counts as the
 // whole page does, from 10,000 up in groups of three and plain below ("Learner updates 6024", "96,000"), a dispatch number
-// as it is.
+// as it is. Branch record SIF-137: a failure's line ends with where its cause is written, and Run status says it beside "A
+// failed run cannot be continued." with the next run and a Show button that opens that table; a pause after connection
+// failures names the connection by what the header shows of it, and Run status calls its reason "connection failures".
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 60 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_control_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -562,8 +564,10 @@ await runChecks(browser, async () => {
   sim.steps = [{ state: 'running' }, {}, { state: 'paused', stop_reason: 'infrastructure_failures', error: INFRA }, {}, { alive: false }];
   check('(the run pauses by itself, its worker saving first: "Resume")', await mainReads('Resume', 150) && (await seen()).some(s => s[0] === 'Pausing...'), JSON.stringify(await seen()));
   let line = await lineSays('Paused by itself') && await evaluate(LINE);
-  check('a pause after connection failures says so in red, and what to do first - not "Resume continues from exactly there"; the run\'s path in its tooltip (SIF-89)',
-    line?.text === 'Paused by itself after connection failures; everything is saved. Test the connection (Connection button), then Resume.' && line.red
+  // Branch record SIF-137: the connection by what the header shows of it - "(Connection button)" named the word the pill keeps for
+  // screen readers while a connection is chosen
+  check('a pause after connection failures says so in red, and what to do first - not "Resume continues from exactly there"; the run\'s path in its tooltip (SIF-89, SIF-137)',
+    line?.text === 'Paused by itself after connection failures; everything is saved. Test the connection - its name in the header opens the Connection window - then Resume.' && line.red
     && line.title.startsWith(`${sim.dir}\n`), JSON.stringify(line));
   let head = await until(`!!document.querySelector('.status-grid > p.status-error')`, 40) && await evaluate(HEAD);
   check('... Run status says the reason in red right under the run at a glance, then Continue... with Export status (JSON) last, above the facts, in view (SIF-89)',
@@ -573,6 +577,11 @@ await runChecks(browser, async () => {
   const named = await evaluate(`(() => { const b = document.querySelector('header button.connection-button'), w = b.querySelector('.connection-button-what');
     return { text: b.innerText.replace(/\\s+/g, ' ').trim(), whole: w.scrollWidth <= w.clientWidth }; })()`);
   check('... and the header\'s button it names reads "Connection" and its state, "not set up", in full (SIF-136)', named.text === 'Connection not set up' && named.whole, JSON.stringify(named));
+  // Branch record SIF-137: Run status calls the reason what the line and the chip call it (it read "infrastructure failures")
+  const REASON = `(() => { const g = document.querySelector('.status-grid'); return { hero: g?.querySelector('.status-hero-state')?.textContent ?? null,
+    state: [...(g?.querySelectorAll(':scope > table tr') ?? [])].find(tr => tr.cells[0].textContent === 'State')?.cells[1].textContent ?? null }; })()`;
+  check('... and Run status calls it what they do: "paused · connection failures", its State "paused (connection failures)" (SIF-137)',
+    await until(`(r => r.hero === 'paused · connection failures' && r.state === 'paused (connection failures)')(${REASON})`, 40), JSON.stringify(await evaluate(REASON)));
   await page.shot(path.join(out, 'run-6b-paused-by-itself.png'));                 // the whole page: the line and Run status
   sim.steps = [{}, { state: 'running', stop_reason: null, error: null }];
   await press(MAIN);
@@ -603,12 +612,43 @@ await runChecks(browser, async () => {
   sim.steps = [{ state: 'running' }, {}, { state: 'failed', stop_reason: 'consecutive_failures', error: FAILED }, {}, { alive: false }];
   check('(the run fails: "Start")', await mainReads('Start', 150));
   line = await lineSays('The run failed') && await evaluate(LINE);
-  check('a run that fails says so in red, with its reason: "The run failed at N of 60 evaluations: <error>" (SIF-89)',
-    new RegExp(`^The run failed at \\d+ of 60 evaluations: ${FAILED.replace(/[.;]/g, '\\$&')}$`).test(line?.text ?? '') && line.red && line.title.startsWith(`${sim.dir}\n`), JSON.stringify(line));
+  // Branch record SIF-137: and where it is written - a run stopped by its failed evaluations wrote each one's reason into the
+  // evaluations table, not into the errors log
+  const WHY_EACH = 'Why each evaluation failed is in Data tables (evaluations: status and diagnostics).';
+  const literal = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  check('a run that fails says so in red, with its reason and where each failure is written: "The run failed at N of 60 evaluations: <error>. Why each evaluation failed is in Data tables (evaluations: status and diagnostics)." (SIF-89, SIF-137)',
+    new RegExp(`^The run failed at \\d+ of 60 evaluations: ${literal(FAILED)}\\. ${literal(WHY_EACH)}$`).test(line?.text ?? '') && line.red && line.title.startsWith(`${sim.dir}\n`), JSON.stringify(line));
   head = await until(`document.querySelector('.status-grid > p.status-error')?.textContent === ${JSON.stringify(FAILED)}`, 40) && await evaluate(HEAD);
   check('... and Run status leads with that reason, then Continue..., above the facts (SIF-89)',
     head && head.error === head.hero + 1 && head.row === head.error + 1 && head.table > head.row && head.inView, JSON.stringify(head));
+  // Branch record SIF-137: beside "A failed run cannot be continued." it said nothing more - now where the run wrote why, a
+  // button there, and the next run (this one kept no save point, so no Load run); Export status still last in the row
+  const NEXT = `(() => { const r = document.querySelector('.status-grid > .row'), n = r?.querySelector('.failed-next'), b = r?.querySelector('button.failed-show');
+    return { why: r?.querySelector('.continue-why')?.textContent ?? null, next: n?.textContent ?? null, after: n?.previousElementSibling?.classList.contains('continue-why') ?? false,
+      button: b?.textContent ?? null, title: b?.title ?? null, last: r?.lastElementChild?.textContent ?? null }; })()`;
+  const next = await evaluate(NEXT);
+  check('... and beside "A failed run cannot be continued.", where the run wrote why and what to do next, "... Fix the cause, then Start a new run.", with Show evaluations (SIF-137)',
+    next.why === 'A failed run cannot be continued.' && next.next === `${WHY_EACH} Fix the cause, then Start a new run.` && next.after && next.button === 'Show evaluations'
+    && /^Show evaluations: Data tables opens on this run's evaluations, newest first; .* Nothing else changes\.$/.test(next.title ?? '') && next.last === 'Export status (JSON)', JSON.stringify(next));
   await page.shot(path.join(out, 'run-6c-failed.png'));
+  // Its press: Data tables on the evaluations, newest first - also when another table and order were chosen there before
+  const bottomTab = text => evaluate(`[...document.querySelectorAll('footer .tabs > button')].find(b => b.textContent === ${JSON.stringify(text)}).click()`);
+  const CHOSEN = `[...document.querySelectorAll('footer .bottom-body select.tab-choice, footer .bottom-body select.table-order')].map(s => s.value).join(' ')`;
+  await bottomTab('Data tables');
+  await until(`!!document.querySelector('footer select.table-order')`, 40);
+  await page.setValue(`document.querySelector('footer select.tab-choice')`, 'parameters');
+  await page.setValue(`document.querySelector('footer select.table-order')`, 'oldest');
+  check('(set-up) Data tables shows the parameters, oldest first', await until(`${CHOSEN} === 'parameters oldest'`, 40), await evaluate(CHOSEN));
+  await bottomTab('Run status');
+  const sentBefore = log.length;
+  check('(set-up) back on Run status, its Show evaluations', await until(`!!document.querySelector('.status-grid button.failed-show')`, 40));
+  await evaluate(`document.querySelector('.status-grid button.failed-show').click()`);
+  check('Show evaluations opens Data tables on this run\'s evaluations, newest first, the keyboard on its tab - not the page\'s top -, and sends nothing (SIF-137)',
+    await until(`document.querySelector('footer .tabs > button.active')?.textContent === 'Data tables' && ${CHOSEN} === 'evaluations newest'
+      && document.activeElement === document.querySelector('footer .tabs > button.active')`, 40) && log.length === sentBefore,
+    `${await evaluate(`document.querySelector('footer .tabs > button.active')?.textContent`)} | ${await evaluate(CHOSEN)} | focus ${await evaluate(`document.activeElement?.outerHTML.slice(0, 60) ?? 'none'`)}`);
+  await bottomTab('Run status');
+  check('(back on Run status)', await until(`!!document.querySelector('.status-grid')`, 40));
 
   // ---- 8. a run that cannot come back is announced BEFORE the pause; Abort on a paused run lets go of it -----------------------
   // Review of SIF-72: while the new Start is on its way the header still holds the ended run - the chip reads "starting" for

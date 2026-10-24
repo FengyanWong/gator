@@ -104,11 +104,16 @@ main button changes with the run:
 The line under the header says how a pause or an end came out, also when nobody pressed anything (branch record
 SIF-89; before, a run that completed, failed or paused by itself changed only the chip and the lit state): "Completed
 at 800 of 800 evaluations (budget used up). Its results are under Run status."; in red, "The run failed at 12 of 800
-evaluations: <its error>"; in red, "Paused by itself after connection failures; everything is saved. Test the
-connection (Connection button), then Resume." - never the user's "Resume continues from exactly there", which a pause
-after **Pause after N consecutive infrastructure failures** used to borrow while it saved. A user's Pause and Abort keep
-their own words. Only a change of the run the header already holds is said: taking a run over, letting go of one and
-the lookup after a reload say nothing.
+evaluations: <its error>." and where its cause is written (branch record SIF-137): "Why each evaluation failed is in
+Data tables (evaluations: status and diagnostics)." for a run stopped by its failed evaluations - they go into the
+evaluations table, not into the errors log -, "The details are in the errors log (Logs, errors)." for one that raised
+(a crash, an evaluation that raised, a save that failed), nothing more for a full disk or a launch not confirmed, which
+the error says alone; in red, "Paused by itself after connection failures; everything is saved. Test the connection -
+its name in the header opens the Connection window - then Resume." (it named a "Connection button" whose word the pill
+keeps for screen readers while a connection is chosen; SIF-137) - never the user's "Resume continues from exactly
+there", which a pause after **Pause after N consecutive infrastructure failures** used to borrow while it saved. A
+user's Pause and Abort keep their own words. Only a change of the run the header already holds is said: taking a run
+over, letting go of one and the lookup after a reload say nothing.
 
 **What Start would start** stands beside it while it reads Start, in one line (record 7.269; plan
 [frontend run workflow](plan-frontend-run-workflow.md), "The draft"), and is the first sentence of its tooltip:
@@ -169,7 +174,13 @@ started with." - branch record SIF-72). Run configuration's model line and this 
   Force abort do there. The tab keeps **Continue...** (a paused, stopped or interrupted run, with a new total budget) and
   **Export status**, in one row right under the run at a glance, above the facts, with the budget form or a refusal under
   them; a run's error stands in red between the run at a glance and that row, and stays the facts' last row too (branch
-  record SIF-89: both came after about 20 facts, out of sight in a panel that shows about four). Continue waits, and says why, when the run folder holds no save point to go on from - a copy made
+  record SIF-89: both came after about 20 facts, out of sight in a panel that shows about four). A failed run says in that
+  row, after "A failed run cannot be continued.", where its cause is written, as the line under the header does, and what
+  to do next: "Fix the cause, then Start a new run" - "; Load run in Runs... brings this run's model into it (Fine-tune
+  or Evaluate only)." when it kept a save point; "press Calibration again." for a Calibration, "run the baseline again
+  (Retry baseline, shown with its task)." for a baseline - with **Show evaluations** (Data tables on its evaluations,
+  newest first) or **Show errors** (Logs on its errors log) beside it, which only choose what the panel shows (branch
+  record SIF-137: Run status said only what cannot be done). Continue waits, and says why, when the run folder holds no save point to go on from - a copy made
   without its save points, or deleted ones (record 7.215: `GET /api/runs/status` names it as `save_point`) - and when
   that save point was written by an older version of the optimizer code: continuing needs exactly that version, while
   Fine-tune and Evaluate only still load its model (record 7.221: `save_point_code` `older`). A run that is live when the page opens - started from another browser or the CLI - is taken into
@@ -218,7 +229,8 @@ started with." - branch record SIF-72). Run configuration's model line and this 
   - **Before the press** the page asks the backend's continuation check (`GET /api/runs/continuation`, read-only:
     the press's own checks on the run's saved configuration, without the run lock or Virtuoso). The reason stands
     beside Continue..., and the header's Resume waits with it; a failed or cancelled run says "A failed (cancelled) run
-    cannot be continued." there too (branch record SIF-90). Where the backend names an alternative - the task was
+    cannot be continued." there too (branch record SIF-90), a failed one then where its cause is written and what to do
+    next (branch record SIF-137, above). Where the backend names an alternative - the task was
     saved again, the save point is from older optimizer code - a button offers it: **Fine-tune from its newest save
     point (a new run)** makes the next run on the page a fine-tune from exactly that save point, as one Undo step.
   - **Taking over is said.** A live run found when the page opens, or a task's baseline simulation started by Save task,
@@ -2279,6 +2291,11 @@ horizon and configured success ending still apply.
 
 Run status and Data tables show the last 50 scored designs' p90−p10 reward spread
 and latest exploration bonus. When the spread is smaller, they show the brief's plain-language steering warning.
+Said for the run it is (branch record SIF-137): a Baseline, a Calibration and an Evaluate only run make no learner
+update, so their line reads "exploration bonus: none (this run does not train)." with no warning (it read "no update
+yet" to their end); an ended run with no update reads "no update was made"; and an ended run's warning, the backend's
+words as they are, reads in grey "At its end: <warning> A larger Evaluation budget, or the Initial alpha a Calibration
+proposes, gives the next run room to learn." - in orange, as now, only while the run can still go on.
 The start checklist also warns when recorded evidence has no design meeting all hard specs at all planned conditions,
 names the best recorded design's worst misses and points to Corner check. This is a warning, not a start blocker or
 proof that the targets are impossible. It reads existing tables/checks and explicitly named historical OTA7 qualification

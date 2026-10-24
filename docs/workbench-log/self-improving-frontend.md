@@ -5579,3 +5579,89 @@ Continue... form, which this record does not touch, gives the focus back a frame
 read that turns Continue... off, as in SIF-132's full run - and passed all 172 run alone, twice: a flake.
 `task_run_check` stopped after 10 of its 39 checks when the Runs window's DevTools session closed under it, and passed
 all 39 run alone: a flake. In all 58 scripts, 2,990 checks: the 2,977 of SIF-135 and its follow-up, and the 13 new ones.
+
+### SIF-137 A failed run says where its cause is written and what to do next, connection failures have one name, and a run that does not train waits for no update (2026-10-24; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found a failed run that said only what
+could not be done, one pause called by two names, and a steering line waiting for an update that never comes. A failed
+run read in red under the header "The run failed at 0 of 60 evaluations: FIXTURE: 3 consecutive failed evaluations;
+stopped safely", and Run status "failed · too many failures in a row", the reason in red, a greyed Continue... with "A
+failed run cannot be continued." and Export status (S12-6, `run-6c-failed.png`): nothing said where the failures were
+written or what to do next, while the Runs window's Details of the same run say that Load run brings its model into the
+next run (SIF-90). Every real failure ends there. The plan pointed both places at the errors log, but a run stopped by its
+failed evaluations - the picture's, the end "Stop after N consecutive failed evaluations" makes - writes nothing there:
+each evaluation's status, failure type and diagnostics go into the evaluations table, and the errors log holds only what
+raised (engine.py `_log_error`: a crash, an evaluation that raised, a save that failed), so the plan's Show errors would
+have opened an empty log for that run. After the engine's own pause (S12-19, `run-6b-paused-by-itself.png`) the chip and
+the line said "connection failures" and Run status "paused · infrastructure failures", its State row "paused
+(infrastructure failures)": STOP_WORDS had no words for the reason. The line said "Test the connection (Connection
+button), then Resume.", but with a connection chosen the pill shows the connection's name, its word "Connection" for
+screen readers only (roadster.css). And the steering line read "exploration bonus (latest update): no update yet." on a
+completed Calibration (`calibration-1-proposals.png`), which never makes one - nor do a Baseline and an Evaluate only run
+-, and on a completed run the backend's verdict, "The network is still choosing close to random: ...", stood in orange in
+the present tense, with nothing to act on (S12-20, `export-1-status.png`).
+
+**Changed.** `frontend/src/format.ts`: STOP_WORDS reads `infrastructure_failures` "connection failures", so Run status's
+state and State row, the Runs window and the Training tab's badge say what the chip and the line say. `failedWhere` gives,
+by stop reason, where a failed run wrote what went wrong - the evaluations table for `consecutive_failures`, the errors
+log for the rest, nothing more for a full disk or a launch not confirmed, which the run's error says alone - and
+`FAILED_WHERE` its words, one sentence for both places: "Why each evaluation failed is in Data tables (evaluations: status
+and diagnostics)." or "The details are in the errors log (Logs, errors)." `frontend/src/panels/RunControl.tsx`: the
+failure's line ends with that sentence; the pause's line reads "Test the connection - its name in the header opens the
+Connection window - then Resume." `frontend/src/panels/RunTabs.tsx`: after "A failed run cannot be continued." Run status
+says the same sentence, then "Fix the cause, then Start a new run" - with "; Load run in Runs... brings this run's model
+into it (Fine-tune or Evaluate only)." when the run kept a save point -, "press Calibration again." for a Calibration and
+"run the baseline again (Retry baseline, shown with its task)." for a baseline (Start makes neither, and they have no
+model for Load run to bring), with **Show evaluations** or **Show errors** beside it (`onShowCause`). `SteeringCheck`
+takes the run's status: a run that does not train (`runTrains`, `frontend/src/panels/rlModelText.ts`, beside `runMode`)
+reads "exploration bonus: none (this run does not train)." with no verdict; an ended run "no update was made", and its
+verdict, the backend's words as they are, in grey: "At its end: <verdict> A larger Evaluation budget, or the Initial alpha
+a Calibration proposes, gives the next run room to learn."; a live or paused run's stays in orange.
+`frontend/src/panels/BottomPanel.tsx`: the press opens Logs on the errors log, or Data tables on the evaluations, newest
+first, and puts the keyboard on that tab, as Continue...'s form gives it back (SIF-90). `frontend/src/styles.css`: the
+next step takes the row's room after the reason, so its button and Export status stand at the row's end. Changes from the
+plan: the place by stop reason, with Show evaluations beside Show errors; the line's ending in Run status's words, not
+"Why: the errors log (Logs, errors)."; the next run by the run's kind; the spread's "not enough scored designs yet"
+without "yet" on an ended run, the same slip one line up; and the keyboard on the tab shown. Only words, and where the
+bottom panel looks: the two buttons choose its tab, log and table as presses on them do; nothing starts, continues or
+stops a run, saves a task or writes to Virtuoso, and every question is asked as before. `docs/workbench.md` (in Start,
+Pause, Resume, Abort: the line under the header, the Run status tab and Continue...'s reason before the press; in Reward
+v2.1 controls and checks: the steering line) and `docs/functionality-reference.md` (Start → Pause → Resume, Steering
+warning, Run status) say it. Seen, not changed: a run searched by Bayesian optimization trains no network either, but
+its status does not name its optimizer, so its line still reads "no update yet" while it works and "no update was made"
+at its end; and Run configuration's setting keeps its name, "Pause after N consecutive infrastructure failures".
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree. First the 21 scripts that draw Run
+status, Data tables, the line under the header or the Runs window, before the keyboard move was added: all passed the
+first time, 1,392 checks. Then every script the runner runs (58; the three reward_v2/v21 ones are never run here), all
+passed the first time, no flakes: `calibration_check` 53, `export_check` 38, `run_control_live_check` 23,
+`run_control_check` 178, `training_tab_check` 139, `dom_identity_check` 56, `connection_panel_check` 101,
+`virtuoso_source_check` 123, `run_list_check` 180, `task_save_check` 93, `testbench_probes_check` 43,
+`spec_equations_check` 88, `model_chooser_check` 139, `output_panel_check` 98, `task_rows_check` 57, `typing_check` 62,
+`sheet_check` 63, `find_fill_copy_check` 50, `project_help_check` 62, `files_tab_check` 43, `working_copy_check` 35,
+`agent_window_check` 33, `corner_check_check` 42, `launch_recovery_check` 20, `blocking_issues_check` 66,
+`task_list_check` 105, `editor_columns_check` 45, `looks_check` 83, `network_panel_check` 74, `ngspice_window_check` 43,
+`unsaved_rows_check` 28, `calibration_save_check` 23, `save_now_check` 29, `task_run_check` 39, `pdk_check` 46,
+`reliability_check` 22, `room_check` 31, `graph_view_check` 69, `module_fold_check` 31, `reward_block_check` 34,
+`circuit_source_check` 17, `encoder_models_check` 24, `matched_devices_check` 38, `formula_bar_check` 21,
+`model_structure_check` 33, `mode_suggestion_check` 20, `consistency_check` 14, `training_data_check` 124,
+`crash_panel_check` 11, `callouts_check` 8, `edit_state_check` 28, `request_lifecycle_check` 25, `circuit_layout_check`
+4, `editor_renames_check` 8, `graph_paint_check` 6, `network_inputs_check` 9, `table_view_check` 10, `unit_text_check`
+14. New: `run_control_check` 178 (172 before): after the pause for connection failures Run status reads "paused ·
+connection failures" and its State row "paused (connection failures)" (`run-6b-paused-by-itself.png`); the failure's
+line ends with "Why each evaluation failed is in Data tables (evaluations: status and diagnostics)."; beside "A failed
+run cannot be continued." stand that sentence, "Fix the cause, then Start a new run." and Show evaluations, Export status
+still last (`run-6c-failed.png`); with Data tables left on the parameters, oldest first, Show evaluations opens it on the
+evaluations, newest first, the keyboard on its tab, and sends nothing (three set-up steps around it); changed: the
+pause's line in its new words. `run_list_check` 180 (177): a failed run that kept a save point, shown from its Details,
+says "The details are in the errors log (Logs, errors). Fix the cause, then Start a new run; Load run in Runs... brings
+this run's model into it (Fine-tune or Evaluate only)." beside the reason SIF-90 pins, unchanged, and Show errors opens
+Logs on the errors log, the keyboard on its tab (and a set-up step back). `export_check` 38 (37): on its real MOCK run of
+12 evaluations, whose steering check gave the verdict (spread 0.144, bonus 0.401), the line reads "exploration bonus
+(latest update): 0.401." and "At its end: The network is still choosing close to random: ... gives the next run room to
+learn." in grey, nothing in orange (`export-1-status.png`). `calibration_check` 53 (52): the Calibration's line reads
+"...; exploration bonus: none (this run does not train)." with no verdict (`calibration-1-proposals.png`). The new checks
+ask for words and elements the code before did not draw (the next step, its button, "connection failures" in Run
+status, "At its end:", "none (this run does not train)"); they were not run on it. `reward_v21_check`, stand-alone and
+never run here, asks that `.steering-check` include "The network is still choosing close to random:", which a live and
+an ended run's line both do. In all 58 scripts, 3,001 checks: the 2,990 of SIF-136 and the 11 new ones.

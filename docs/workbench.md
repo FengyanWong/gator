@@ -398,7 +398,9 @@ muted colour); `looks_check.mjs` measures every option of the page, Probes cells
 
 **Colours by name.** Every colour of the page is a named value in `styles.css` (`:root`); `roadster.css`, loaded after it,
 holds what the look adds: shapes, sizes, the banner, the tabs (until record 7.360 `themes.css` held the two looks' values
-and drawings). Before the looks came, the 86 colour values written into 69 rules were replaced by names carrying exactly the old values; screenshots of six views of the live page were identical before
+and drawings). `styles.css` keeps no value that `roadster.css` always overrides - the same selector and property there, at
+top level or in the same @media: branch record SIF-129 took 127 of them away (the old look's heading, hint and label sizes,
+paddings and borders), which an edit in `styles.css` never showed, and `looks_check.mjs` fails on a new one. Before the looks came, the 86 colour values written into 69 rules were replaced by names carrying exactly the old values; screenshots of six views of the live page were identical before
 and after, pixel for pixel (the seventh, the Runs window, differs only in its "read at" time, as two shots of one build
 do). The fonts are Windows' own, so nothing is downloaded: Bahnschrift for headings, tabs and table heads, Segoe UI for
 text, Consolas for numbers and ids. Another system shows its own fallbacks.

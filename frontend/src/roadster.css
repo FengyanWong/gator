@@ -3,7 +3,9 @@
    mode") - in red, white and black, with readability first: 14 px text, sentence-case headings, roomier rows and fields,
    cards told apart by their tone instead of boxes inside boxes. The colours are the names in styles.css's :root; this file
    holds what the look adds: shapes, sizes, the banner, the tabs. It is loaded after styles.css and wins where both say
-   something about the same element; nothing here moves an element, so the page's parts stand where they always stood. */
+   something about the same element; nothing here moves an element, so the page's parts stand where they always stood. A
+   value styles.css held for the same selector and property, here at top level or in the same @media, never applied: it
+   goes from styles.css (branch record SIF-129; looks_check.mjs fails on one). */
 
 /* ---- the page and its text ---------------------------------------------------------------------------------------------- */
 body { font-size: 14px; line-height: 1.45; }
@@ -68,7 +70,7 @@ header button.connection-button { display: flex; flex-wrap: nowrap; align-items:
 header button.connection-button:hover:not(:disabled) { background: var(--hover); }
 header .connection-button-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* a long name gives way with "..."; the state word never (record 7.361: "lab - Virtuoso over SSH (2 sessions)" ran past the
-   pill and cut its state to "unknow" - styles.css keeps the description at flex: none) */
+   pill and cut its state to "unknow" - styles.css kept the description at flex: none) */
 header .connection-button-what { flex: 0 1 auto; font: 13.5px var(--f-body); min-width: 0; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; }
 header .connection-button .badge { flex: none; border: none; background: none; padding: 0; font: 12.5px var(--f-body); letter-spacing: 0; text-transform: lowercase; }
 header .connection-button .badge.state-unknown, header .connection-button .badge.state-not_checked { color: var(--muted); }
@@ -377,7 +379,7 @@ table.grid th:not([title]) { cursor: default; }
 table.run-table td .hint { font-size: 12px; }
 button.notes-link { font-size: inherit; padding: 3px 4px; }
 /* "Details" and "Hide details" take the same room, so a toggle moves no column: 6em at the table's 13 px holds "Hide details"
-   and its padding (styles.css's 6.5em was for 11 px) */
+   and its padding (the old look's 6.5em was for 11 px) */
 table.run-table button.notes-link { min-width: 6em; }
 /* a state and a tag lose the old look's letter spacing, as the header's connection pill (above, which keeps its 12.5 px), the
    headings and the tabs did in record 7.360: with it, the bigger "interrupted" made the Runs window's State column 9 px

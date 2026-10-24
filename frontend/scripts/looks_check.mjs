@@ -13,7 +13,7 @@
 //   - the header draws nothing outside its box; the editors' tabs as one segmented control, the chosen one lit with a red bar;
 //   - the header's title block names the circuit's class and PDK and the RL model label (the revision is the tab line's since
 //     record 7.372); the version is one hover away on the chip; no rule of the stylesheet is left for the parts that went
-//     (branch record SIF-128);
+//     (branch record SIF-128), nor a value that a later rule for the same selector and property always overrides (SIF-129);
 //   - the splitter above the bottom panel: a drag sets its height, a double click folds it to its tab line and back, a tab press
 //     opens it, the arrow keys and Enter do the same from the keyboard; kept in this browser; hidden on narrow windows;
 //   - the editors share one ink and head colour; the Specs line offers the Probe ids as chips (same text);
@@ -32,6 +32,7 @@
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, workbenchUrl, BOTTOM_KEY, CIRCUIT_PICTURE_KEY, RUNS_WINDOW } from './lib/harness.mjs';
 import { NETWORK_PANEL, openNetworks } from './lib/rl_networks.mjs';
+import { flatten } from './css_order_proof.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -159,6 +160,27 @@ await runChecks(browser, async () => {
       if (r.cssRules) walk(r.cssRules); } };
     for (const s of document.styleSheets) walk(s.cssRules); return found; })()`);
   check('...and no rule of the stylesheet is left for them: the brand\'s text, the look switch, the revision fact, the launchers grid', !retired.length, JSON.stringify(retired));
+  // Branch record SIF-129: nor a value that never applies - one a later rule for the same selector and property overrides, at
+  // top level or in the same @media - as styles.css kept 127 under roadster.css (h3's size, .hint's, the header's padding...):
+  // edited, it changed nothing. A rule's own second value for a property is its fallback (the message line's close mark,
+  // SIF-56) and is not counted; nor is a later value this browser does not take. The stylesheets as the page loaded them.
+  const sheets = await evaluate(`Promise.all([...document.styleSheets].map(s => s.href ? fetch(s.href).then(r => r.text()) : s.ownerNode?.textContent ?? ''))`);
+  const { atoms } = flatten(sheets.join('\n'), 'page');
+  const bySelector = new Map(), byDeclaration = new Map();
+  for (const x of atoms) {
+    const k = `${x.selector}\n${x.property}`;
+    bySelector.set(k, [...(bySelector.get(k) ?? []), x]); byDeclaration.set(x.position, [...(byDeclaration.get(x.position) ?? []), x]);
+  }
+  const later = x => (bySelector.get(`${x.selector}\n${x.property}`) ?? []).filter(y => y.position > x.position && y.rule !== x.rule
+    && (!y.context.length || JSON.stringify(y.context) === JSON.stringify(x.context)));
+  const overridden = [...byDeclaration.values()].filter(xs => !xs[0].important && xs.every(x => later(x).length));
+  const asked = [...new Map(overridden.flat().flatMap(x => later(x)).map(y => [`${y.property}\n${y.value}`, [y.property, y.value]])).values()];
+  const answers = await evaluate(`${JSON.stringify(asked)}.map(([p, v]) => p.startsWith('--') || CSS.supports(p, v))`);
+  const taken = new Set(asked.filter((_, i) => answers[i]).map(([p, v]) => `${p}\n${v}`));
+  const dead = overridden.filter(xs => xs.every(x => later(x).some(y => taken.has(`${y.property}\n${y.value}`))))
+    .map(xs => `${xs[0].context.join(' ')} ${xs.map(x => x.selector).join(', ')} { ${xs[0].property}: ${xs[0].value} }`.trim());
+  check('...nor a value that a later rule for the same selector and property always overrides (SIF-129: styles.css kept 127 under roadster.css)',
+    atoms.length > 1000 && !dead.length, `${atoms.length} atoms; ${dead.length} overridden: ${dead.slice(0, 8).join('; ')}`);
   await page.viewport(1366, 768); await sleep(400);
   const narrow = await evaluate(`[...document.querySelectorAll('header .run-state-strip > span')].filter(x => x.checkVisibility()).map(x => x.textContent)`);
   check('...and at 1366 px the strip shows only the state that holds (the four words took a crowded banner\'s room)', JSON.stringify(narrow) === '["Ended"]', JSON.stringify(narrow));

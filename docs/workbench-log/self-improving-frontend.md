@@ -4879,3 +4879,96 @@ index.html but for the names. The batch's grep, `frontend/src` .ts and .tsx for 
 `tb-rev`, before and after: no class use (`className`, `classList`, `class=`), the same three comments for "launchers",
 nothing else; the stylesheets' lines naming them 7 -> 0. Not measured: the time a pop-up window takes to read 0.6 kB less
 of the stylesheet it copies, under 1 % of the file and far inside the noise of a window opening, so no time is claimed.
+
+### SIF-129 The stylesheet keeps no value that the look always overrides (2026-10-24; from the performance audit)
+
+**Found.** The performance audit's batch 8 (BUN-8, confirmed). `styles.css` still held values of the look before record
+7.360 that `roadster.css` always overrides - the same selector and the same property there, at top level or in the same
+@media, in the stylesheet the page loads after it (`main.tsx`; each pop-up window copies the two in that order,
+`popupWindow.ts`): the headings' 11.5 px grey capitals (`h3`; 15 px white in sentence case on the page), the labels' and
+the hints' 11.5 px (13 px), the padding of the fields, the buttons and the icon buttons, the borders and padding of the
+header, the message line, the panels and the bottom panel, the tab strips' and the table cells' padding, the formula bar's
+name box, the header's Next line and run chip, the links' red (white since record 7.372), and from 1101 px a 19 px margin
+round the page (`@media (min-width: 1101px) { .layout { padding: 19px } }`, which `roadster.css`'s `.layout { padding:
+12px 16px }`, written at top level, beats at every width). None of them ever applied: an edit of one changed nothing on
+the page or in a window, and each window read them again as it opened. The audit counted 118 such declarations and 2 more,
+`table.editor th.sel, table.editor td.sel { padding: 0 3px; text-align: center }`, overridden for td.sel only; its line
+numbers fit `styles.css` at acd9fae (branch record SIF-82, 2026-10-22). The batch's scan (a throwaway script, deleted
+before this commit: each `styles.css` declaration, its selector list split, paired with the `roadster.css` atoms of the
+same normalised selector and property, at top level or in the same @media chain; counted when every selector of the list
+has one whose value this browser takes, never an !important one) gives exactly 118 and 2 on that tree. On HEAD 76ff39c it
+gives 127 and none partial: the 118, each still there and still overridden, between 1 line above and 6 below the audit's,
+and 9 values that later records overrode in `roadster.css` instead of changing them here - the "copied" word's size (SIF-94),
+the blocking list head's alignment (SIF-112), Tied to's width (SIF-119), and the Training charts' row and chart heights,
+the keys' alignment, the readout's font and wrapping and the plot's height (SIF-120 and its review). The th.sel / td.sel
+pair is no longer partial: since branch record SIF-96 `roadster.css` styles both cells (`table.editor :is(td, th).sel`,
+of the same specificity), which a scan by selector text does not pair (Left, below).
+
+**Changed.** `frontend/src/styles.css`: the 127 declarations deleted, and the 15 rules they left empty - `h3`,
+`button:hover:not(:disabled)`, `table.editor td`, Tied to's width, `.toolbar button.text`, `.issue`, `details a`, a
+working run chip's colour, the Runs button's hover, `.sort-mark`, `table.run-table td .hint`, Save as' border on the tab
+line, the chosen editor tab's colour, `.task-list-current .task-list-mark` and the 1101 px margin's @media block.
+Comments that named what went: the header's ("the last two win", of two paddings that went), the content-sized columns'
+(a leader's name: `roadster.css`, SIF-119), the Runs table's Details link (its same room: `roadster.css`), the
+Components row's (its height: `roadster.css`, SIF-31) and each editor's colour (its table head; its tab until record
+7.360); the file's head says no such value stands here. `frontend/src/roadster.css`, comments only: its head says a
+`styles.css` value it overrides goes from there; two comments that named a value gone say "kept" and "the old look's".
+No selector or class name leaves the two stylesheets (each rule deleted has its winner in `roadster.css`: 882 selectors
+and 438 class names before and after). What the page shows, reads and writes is the same, and so is the computed style of
+every element it and its windows draw (below); nothing here starts, continues or stops a run, saves a task or writes to
+Virtuoso. `frontend/scripts/looks_check.mjs`: one check (below). `docs/workbench.md` (Colours by name) says it;
+`docs/functionality-reference.md` names no stylesheet value: unchanged. Left, as outside the batch's scan, which pairs a
+property by its name and a selector by its text: 14 more values that never apply either - 12 under a `roadster.css`
+shorthand of the same selector (the header's `border-width: 1.5px` under `border: none`, its Connection button's
+`border-left`, that button's state word's `font-size: 9.5px` under `font`, `table.grid th`'s `font-weight: 400` and
+`font-family` under `font: 500 13px/1.4 ...`, the run chip's `font-family`, the Runs button's `border-bottom`,
+`.tb-brand`'s `padding-right`, the tab strips' 1.5 px lines - `.tabs`, its tabs and the chosen one - and the task chip
+key's `font-size: 12px` under `font: inherit`) and the th.sel / td.sel pair, which the batch kept for th.sel. A follow-up
+can take them with the same proofs.
+
+**Checked.** `tsc` clean. `looks_check` 78 (77 before). New, after SIF-128's: the stylesheets as the page loaded them
+(fetched, and parsed as `css_order_proof.mjs` parses them) hold no value that a later rule for the same selector and
+property overrides at top level or in the same @media, the later value one this browser takes (`CSS.supports`); a rule's
+own second value for a property is its fallback (the message line's close mark, SIF-56) and is not counted. A probe run
+of the new check on the build before failed exactly it, naming 125 values among 2,598 atoms (77 passed): the build had
+already left out 2 of the 127 - the header's first padding, overridden inside its own rule, and `table.editor td {
+padding: 0 }`, written the same in `roadster.css` -; on this change, 0 among 2,467. One lane, after the memory guard, on a
+build of this tree: `calibration_check` 48, `export_check` 37, `run_control_live_check` 23, `run_control_check` 171,
+`training_tab_check` 135, `dom_identity_check` 56 (recording), `connection_panel_check` 101, `run_list_check` 177,
+`virtuoso_source_check` 116, `task_save_check` 91, `testbench_probes_check` 41, `model_chooser_check` 139,
+`output_panel_check` 98, `spec_equations_check` 75, `task_rows_check` 54, `typing_check` 62, `find_fill_copy_check` 50,
+`sheet_check` 54, `project_help_check` 61, `files_tab_check` 43, `working_copy_check` 34, `launch_recovery_check` 20,
+`blocking_issues_check` 62, `corner_check_check` 42, `task_list_check` 105, `looks_check` 78, `network_panel_check` 74,
+`ngspice_window_check` 43, `calibration_save_check` 22, `save_now_check` 29, `task_run_check` 39, `unsaved_rows_check`
+25, `editor_columns_check` 34, `pdk_check` 46, `reliability_check` 20, `room_check` 31, `graph_view_check` 69,
+`reward_block_check` 34, `circuit_source_check` 17, `encoder_models_check` 24, `module_fold_check` 30,
+`formula_bar_check` 21, `matched_devices_check` 37, `model_structure_check` 33, `mode_suggestion_check` 20,
+`agent_window_check` 33, `consistency_check` 14, `training_data_check` 120, `crash_panel_check` 11, `edit_state_check`
+28, `callouts_check` 8, `circuit_layout_check` 4, `request_lifecycle_check` 25, `editor_renames_check` 8,
+`graph_paint_check` 6, `network_inputs_check` 9, `table_view_check` 10, `unit_text_check` 14 (58 scripts, 2,911 checks,
+one run of 1,195 s: every check but the three reward_v2 ones, as the change touches the base rules of every screen) - all
+passed the first time. The batch's proofs: `dom_identity_check` recorded once against a scratch backend on the build
+before (56 passed), then replayed with `--styles --widths 1680,1000,640` on the build before (the reference, 276 passed)
+and on the build after with `--compare` (551 of 552 passed): every style file identical byte for byte - at each width,
+for each of the 36 steps of the ten scenes, the computed style of every element of the page and of each open pop-up
+window (108 files: 92,643 elements and 558 ::before / ::after / ::backdrop boxes, 69 window sections, the editors' th.sel
+in all 108) - and every DOM file and storage.json. One requests.txt (640 px, rl-loaded, its first step) differed by a line
+the check itself writes, "ERROR Fetch.fulfillRequest: Invalid InterceptionId" (the harness answering a request already
+gone), the page's ten requests the same; that scene replayed alone at the three widths was identical in all 24 files: a
+flake of the harness. `css_order_proof.mjs --minified` on the two built stylesheets: as the batch expected, it names as
+only in the old one exactly `@media (min-width: 1101px) .layout { padding: 19px }`, cleared above by hand (the top-level
+`.layout` padding of `roadster.css` comes later at the same specificity), and nothing else lost, added or moved (2,446
+atoms; 150 atoms that a later atom of the same selector overrides dropped from the old side first, 20 from the new); the
+same on the source texts of the two stylesheets one after the other (2,370 atoms; 147 and 15).
+
+**Measured.** `npx vite build` into a temp folder (the batch's measure), on HEAD 76ff39c and on this change: the
+stylesheet `index-*.css` 68.23 kB (gzip 14.84 kB) -> 65.49 kB (gzip 14.47 kB), as Vite reports it; 68,233 -> 65,496
+bytes, 2,737 fewer (4.0 %); with `gzip -9 -n`, 14,690 -> 14,461. The source `styles.css` 70,612 -> 67,881 bytes (595 ->
+593 lines, the comments added included). The script bundle is the same byte for byte (its name follows the stylesheet's
+hash), and so are the other chunks and index.html but for the names. The batch's scan, before -> after: 127 declarations
+(133 atoms) always overridden and 0 partial -> 0 and 0; beside it the same 2 through `:is(td, th).sel` and the same 12
+under a shorthand (Left, above). The batch expected about 4.7 kB off 65.17 kB (gzip 14.27 kB), and the scan's 2 partial
+ones kept: records since the audit added rules, SIF-96 took the pair out of the scan (both its cells overridden through
+`:is()` since), and the values weigh 2.7 kB in the built file, which drops their spaces and had left out 2 of them
+already. Not measured: the time a page or a pop-up window takes to read 2.7 kB less of the stylesheet it parses, 4 % of
+the file and far inside the noise of a page load or a window opening, so no time is claimed.

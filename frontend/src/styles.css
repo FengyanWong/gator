@@ -3,7 +3,9 @@
    stands where the cascade needs it: moved past another rule that sets the same property with the same specificity, it can
    change which of the two wins. The regroup of 2026-10-09 (plan-refactoring C11) moved only rules that
    frontend/scripts/css_order_proof.mjs proves free to move, and merged a selector written twice only where it proves the
-   same; a later move is checked the same way (the script's header says how). */
+   same; a later move is checked the same way (the script's header says how). No value stands here that roadster.css always
+   overrides - the same selector and property there, at top level or in the same @media: edited here, it changed nothing
+   (branch record SIF-129 took 127 away; looks_check.mjs keeps it so). */
 :root {
   /* The page's colours by name (record 7.158): every rule below uses these. Since record 7.360 (the user's choice of
      2026-10-17: "dark mode only, delete the day mode", Draft A of the Roadster look) there is one look and these are its
@@ -43,12 +45,12 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 body { font: 12.5px/1.4 var(--f-body); color: var(--text); background: var(--bg); }
-h3 { margin: 10px 0 4px; font: 600 11.5px/1.3 var(--f-label); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); } h3:first-child { margin-top: 0; } h4 { margin: 8px 0 4px; }
-label { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; color: var(--muted); font-size: 11.5px; flex: 1; min-width: 0; }
+h3:first-child { margin-top: 0; } h4 { margin: 8px 0 4px; }
+label { display: flex; flex-direction: column; margin: 4px 0; color: var(--muted); flex: 1; min-width: 0; }
 label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
 input, select, textarea, button { font: inherit; color: var(--text); }
 table { font: inherit; }  /* a pop-up window starts as about:blank = quirks mode, where a table does not inherit the font and falls back to 16px */
-input, select, textarea { border: 1px solid var(--line); padding: 3px 5px; background: var(--field); min-width: 0; width: 100%; }
+input, select, textarea { border: 1px solid var(--line); background: var(--field); min-width: 0; width: 100%; }
 /* A drop-down's open list in the look's own colours (record 7.173, user: "fix the color issue of the drag down menu in night
    mode, it is hard to read"): the browser draws the list from its options. A select in an editor cell is transparent, and its
    list came out light under the night look's light text. */
@@ -58,32 +60,31 @@ input.numeric { text-align: right; font-variant-numeric: tabular-nums; font-fami
 /* record 7.171: the 0-to-1 reward boxes (Num bounded) keep type=number and its 0..1 range, without the up/down arrows */
 input.bounded { appearance: textfield; -moz-appearance: textfield; }
 input.bounded::-webkit-inner-spin-button, input.bounded::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-button { border: 1px solid var(--line); background: var(--button); padding: 3px 9px; cursor: pointer; white-space: nowrap; }
+button { border: 1px solid var(--line); background: var(--button); cursor: pointer; white-space: nowrap; }
 /* The header's Issues button (its list is with the header, below): it keeps its place before the button states. */
 button.issues-button { color: var(--bad); border-color: var(--bad); font-weight: 600; } button.issues-button.active { background: var(--bad-bg); border-color: var(--bad); }
-button:hover:not(:disabled) { border-color: var(--accent); } button:disabled { opacity: .45; cursor: not-allowed; }
-button.primary { background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill); } button.active { background: var(--selected); border-color: var(--accent); }
-.layout { display: grid; height: 100%; grid-template: 'head head head' auto 'msg msg msg' auto 'left main right' minmax(0, 1fr) 'foot foot foot' min(var(--foot, 34vh), calc(100vh - 280px)) / 300px minmax(0, 1fr) 340px; gap: 6px; padding: 6px; }
-header { grid-area: head; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--line); padding: 6px 10px;
-  border-width: 1.5px; padding: 7px 12px; }   /* the last two win: the size of record 7.162 (with the tabs' below) */
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary { background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill); } button.active { background: var(--selected); }
+.layout { display: grid; height: 100%; grid-template: 'head head head' auto 'msg msg msg' auto 'left main right' minmax(0, 1fr) 'foot foot foot' min(var(--foot, 34vh), calc(100vh - 280px)) / 300px minmax(0, 1fr) 340px; }
+header { grid-area: head; display: flex; flex-wrap: wrap; align-items: center; background: var(--panel); border-width: 1.5px; }   /* the size of record 7.162 (with the tabs' below) */
 /* The list of blocking issues is a second, full-width line of the header: it pushes the page down instead of covering the editors it is used with. */
-.issue-list { order: 1; flex: 0 0 100%; min-width: 0; border-top: 1px solid var(--line); padding-top: 6px; } .issue-list-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.issue-list { order: 1; flex: 0 0 100%; min-width: 0; border-top: 1px solid var(--line); padding-top: 6px; } .issue-list-head { display: flex; gap: 8px; margin-bottom: 4px; }
 .issue-list-body { max-height: 30vh; overflow: auto; } .issue-list code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
 /* settings.json unreadable (backend runs.load_settings): a full-width line of the header too, in the notice colours below. */
 .settings-problem { order: 1; flex: 0 0 100%; margin: 0; }
-.banner { grid-area: msg; padding: 6px 10px; border: 1px solid var(--line); background: var(--info-bg); cursor: pointer; }
-.banner.error { background: var(--bad-bg); border-color: var(--bad); } .mock, .settings-problem { background: var(--warn-bg); border-left: 3px solid var(--mock-line); padding: 4px 10px; font-weight: 600; } .banner.mock { border: 1px solid var(--mock-line); padding: 4px 8px; }
+.banner { grid-area: msg; cursor: pointer; }
+.banner.error { border-color: var(--bad); } .mock, .settings-problem { background: var(--warn-bg); border-left: 3px solid var(--mock-line); padding: 4px 10px; font-weight: 600; } .banner.mock { border: 1px solid var(--mock-line); padding: 4px 8px; }
 .left { grid-area: left; overflow: auto; } main { grid-area: main; min-width: 0; overflow: hidden; display: flex; } .right { grid-area: right; overflow: auto; }
-footer { grid-area: foot; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; position: relative; }   /* relative: for the splitter (below) */
-.bottom-body { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
-.panel { background: var(--panel); border: 1px solid var(--line); padding: 8px 10px; margin-bottom: 6px; }
+footer { grid-area: foot; background: var(--panel); display: flex; flex-direction: column; min-height: 0; position: relative; }   /* relative: for the splitter (below) */
+.bottom-body { flex: 1; overflow: auto; min-height: 0; }
+.panel { background: var(--panel); }
 .rl-networks-open { margin: 2px 0 6px; }
 /* The network in use, in short, then the button (user, 2026-10-03): the words on the left, the short button at the right end. */
 .rl-networks-row { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; } .rl-networks-row .rl-networks-open { margin: 0; flex: none; }
-.rl-networks-row .net-short { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; } .rl-networks-row .net-code { font-family: var(--f-mono); }
+.rl-networks-row .net-short { flex: 1; min-width: 0; text-overflow: ellipsis; cursor: default; } .rl-networks-row .net-code { font-family: var(--f-mono); }
 /* The switches that are on, under that line and close to it, whole (review of branch record SIF-103) */
 .model-switches { margin: 0 0 6px; }
-.rl-networks-window { max-width: 1060px; margin: 0 auto; padding: 14px 18px 24px; }
+.rl-networks-window { margin: 0 auto; padding: 14px 18px 24px; }
 .rl-networks-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .rl-networks-heading h2 { margin: 0; font-size: 17px; }
 .rl-networks-undo { display: inline-flex; gap: 4px; }   /* the window's Undo and Redo, at the heading's right (branch record SIF-97) */
@@ -91,7 +92,7 @@ footer { grid-area: foot; background: var(--panel); border: 1px solid var(--line
 /* The RL model window (record 7.265): the Mode as three joined buttons at the top, New model's templates, the saved models. */
 .rl-modes { display: flex; margin: 4px 0 2px; } .rl-modes .rl-mode { border-radius: 0; margin: 0 0 0 -1px; }
 .rl-modes .rl-mode:first-child { border-radius: 4px 0 0 4px; margin-left: 0; } .rl-modes .rl-mode:last-child { border-radius: 0 4px 4px 0; }
-.rl-modes .rl-mode.active { background: var(--selected); border-color: var(--accent); font-weight: 600; position: relative; z-index: 1; }
+.rl-modes .rl-mode.active { background: var(--selected); font-weight: 600; position: relative; z-index: 1; }
 table.template-table { width: auto; } table.template-table tr.current > td { background: var(--selected); } table.template-table tbody tr { cursor: default; }
 .in-use-tag { margin-left: 6px; } .model-details { max-width: 1000px; } .model-details h4 { margin: 10px 0 3px; }
 table.grid.model-table th { white-space: normal; }   /* two-word headings wrap: the table fits the RL model window with its Details column */
@@ -99,27 +100,27 @@ table.model-points { width: auto; } table.model-points tr.current > td { backgro
 .model-suggested, .model-newer { margin: 4px 0; } details.look-models { margin-top: 14px; }
 .row { display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; margin: 4px 0; } .spacer { flex: 1; }
 .row.circuit-labels { align-items: flex-start; } .circuit-class { flex: 1; min-width: 0; }
-.tabs { display: flex; gap: 2px; align-items: center; border-bottom: 1px solid var(--line); padding: 4px 6px 0; } .tabs button { border-bottom: none; }
+.tabs { display: flex; align-items: center; } .tabs button { border-bottom: none; }
 .tabs > button { font-family: var(--f-label); letter-spacing: .02em; }
 /* record 7.182 (user: "move the conection button to the header"): the Connection button as a cell of the header's title block -
    its name over the connection and its state, like the cells beside it; a message of the button floats under it. */
 header .connection-launcher { position: relative; display: flex; margin: 0; padding: 0; border: none; border-radius: 0; background: none; box-shadow: none; }
-header button.connection-button { width: auto; display: grid; grid-template-columns: auto auto; align-items: center; gap: 3px 7px; padding: 0 12px;
-  border: none; border-left: 1px solid var(--rule); border-radius: 0; background: none; text-align: left; }
+header button.connection-button { width: auto; grid-template-columns: auto auto;
+  border-left: 1px solid var(--rule); text-align: left; }
 header button.connection-button:hover { background: var(--hover); }
 header .connection-button-name { grid-column: 1 / -1; font: 600 8.5px/1 var(--f-label); letter-spacing: .17em; text-transform: uppercase; color: var(--muted); }
-header .connection-button-what { order: 0; flex: none; font: 12.5px/1.15 var(--f-mono); color: var(--text); max-width: 26ch; white-space: nowrap; }
-header .connection-button .badge { order: 0; font-size: 9.5px; padding: 0 5px; }
+header .connection-button-what { order: 0; color: var(--text); white-space: nowrap; }
+header .connection-button .badge { order: 0; font-size: 9.5px; }
 header .connection-launcher > p { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: max-content; max-width: 440px; margin: 0;
   padding: 4px 8px; background: var(--bad-bg); border: 1px solid var(--bad-line); }
 .panel.editors { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0; }
-.toolbar { display: flex; gap: 4px; align-items: center; padding: 6px 0; flex-wrap: wrap; }
+.toolbar { display: flex; align-items: center; flex-wrap: wrap; }
 .scroll { overflow: auto; flex: 1; min-height: 0; max-width: 100%; }
-table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 5px; text-align: left; vertical-align: top; white-space: nowrap; }
-table.grid th { background: var(--head); position: sticky; top: 0; cursor: help; font-weight: 400; font-family: var(--f-label); letter-spacing: .02em; } table.grid.small td { white-space: normal; word-break: break-word; }
+table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
+table.grid th { position: sticky; top: 0; cursor: help; font-weight: 400; font-family: var(--f-label); } table.grid.small td { white-space: normal; word-break: break-word; }
 /* Alternate rows of the tables that list many rows; any row colour of meaning (an error, the current run) wins over it. */
 :where(table.grid.small, table.editor) :where(tbody tr:nth-child(even)) > td { background: var(--zebra); }
-table.editor td { padding: 0; } table.editor td input, table.editor td select { border: none; min-width: 84px; background: transparent; }
+table.editor td input, table.editor td select { border: none; min-width: 84px; background: transparent; }
 /* record 7.182 (design advice: keep the ID column in view): the tick box and the row's ID stay at the left while a table scrolls
    sideways - the ID at the tick-box column's own width (--sel-w, measured by the page); behind them the panel's colour, which a
    zebra or an error row paints over. */
@@ -136,10 +137,9 @@ table.editor thead th:is(.sel, [data-field="variable_id"], [data-field="measurem
 .scroll.scrolled-x > table.editor :is(th, td):is([data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"])::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: 100%; width: 5px; border-left: 1px solid var(--rule); pointer-events: none;
   background: linear-gradient(to right, rgb(0 0 0 / .1), transparent); }
-/* record 7.180 (design advice: content-sized columns): an ID wide enough to read, a leader's name too, a unit narrow; the other
-   columns keep the 84 px every editor box has. */
+/* record 7.180 (design advice: content-sized columns): an ID wide enough to read, a leader's name too (roadster.css, branch
+   record SIF-119), a unit narrow; the other columns keep the 84 px every editor box has. */
 table.editor td[data-field="variable_id"] input, table.editor td[data-field="measurement_id"] input, table.editor td[data-field="metric_id"] input { min-width: 140px; }
-table.editor td[data-field="binding_group"] input { min-width: 120px; }
 table.editor td[data-field="unit"] input { min-width: 52px; }
 table.editor td input[type="checkbox"] { min-width: 0; }
 table.editor td.sel input { min-width: 0; margin: 0; }   /* the tick box: it inherited the 84 px minimum of the editor inputs */
@@ -149,7 +149,7 @@ table.editor:not(:has(td.issues > .issue)) td.issues { min-width: 0; }
 /* record 7.180 (design advice 4): a tied row folds under its leader - the leader's first cell counts them and opens them; an
    open tied row is marked and its ID indented. The note of the last block paste under the formula bar. */
 table.editor td.sel { white-space: nowrap; }
-table.editor .tie-toggle { border: none; background: none; padding: 0 2px; margin-left: 2px; font: 11px/1 var(--f-mono); color: var(--param); cursor: pointer; }
+table.editor .tie-toggle { border: none; background: none; margin-left: 2px; font: 11px/1 var(--f-mono); color: var(--param); cursor: pointer; }
 table.editor .tie-mark { margin-left: 5px; color: var(--muted); cursor: default; }
 table.editor tr.tied > td[data-field="variable_id"] input { padding-left: 16px; }
 .paste-note { margin: 0 0 4px; }
@@ -166,8 +166,8 @@ table.editor tr.tied > td[data-field="variable_id"] input { padding-left: 16px; 
 .right input[aria-invalid="true"] { border-color: var(--bad); }
 /* record 7.175: the editors' formula bar - the chosen cell's whole value in a box as wide as the table; the chosen cell is marked */
 .formula { margin: 4px 0; } .formula-bar { display: flex; align-items: flex-start; gap: 6px; }
-.formula-bar .formula-where { flex: none; width: 210px; padding: 4px 8px; border: 1px solid var(--line); background: var(--head); font-size: 11.5px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
-.formula-bar textarea { flex: 1; min-height: 26px; max-height: 7.5em; resize: none; field-sizing: content; font-family: var(--f-mono); font-size: 12px; line-height: 16px; overflow: auto; }
+.formula-bar .formula-where { flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+.formula-bar textarea { flex: 1; min-height: 26px; max-height: 7.5em; resize: none; field-sizing: content; font-family: var(--f-mono); overflow: auto; }
 .formula-bar textarea[readonly]:not(:disabled) { background: var(--field-disabled); color: var(--muted); }
 .formula-problem { margin: 3px 0 0 216px; }
 table.editor td.active-cell { box-shadow: inset 0 0 0 2px var(--accent); }
@@ -191,7 +191,6 @@ table.editor select[aria-label="Constraint"] { min-width: 200px; }
 .crash-panel h2 { margin: 0 0 8px; font: 600 15px/1.3 var(--f-label); letter-spacing: .02em; }
 .crash-panel code { display: block; margin: 8px 0; padding: 6px 8px; background: var(--bad-bg); font: 12px/1.4 var(--f-mono); white-space: pre-wrap; word-break: break-word; }
 .crash-panel .row { gap: 8px; margin: 12px 0 6px; } .crash-panel pre { max-height: 260px; overflow: auto; font: 11px/1.35 var(--f-mono); white-space: pre-wrap; }
-.toolbar button.text { font-size: 11.5px; }
 /* record 7.184: the editors' find box, and how many rows it leaves in view */
 /* record 7.185: the box shrinks with the window (80 to 170 px) and its count sits inside its right end, where the browser's own
    clear button was (Esc clears), so the toolbar stays on one line at 1366 px, a find too */
@@ -199,9 +198,9 @@ table.editor select[aria-label="Constraint"] { min-width: 200px; }
 .toolbar input.find-rows { width: 100%; min-width: 0; } .toolbar .find-box.finding input.find-rows { padding-right: 44px; }
 .toolbar input.find-rows::-webkit-search-cancel-button { display: none; }
 .toolbar .find-count { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; pointer-events: none; }
-.hint { color: var(--muted); font-size: 11.5px; } .fact { margin: 2px 0 6px; } .error { color: var(--bad); } .warn { color: var(--warn); } .ok { color: var(--ok); }
+.hint { color: var(--muted); } .fact { margin: 2px 0 6px; } .error { color: var(--bad); } .warn { color: var(--warn); } .ok { color: var(--ok); }
 .guidance { border-left: 3px solid var(--info-line); padding: 3px 10px; margin: 6px 0 0; cursor: pointer; }   /* a callout: record 7.218 */
-.issue { font-size: 11px; } .issue.error, .issue.blocker { color: var(--bad); } .issue.warning { color: var(--warn); } .issue.unresolved { color: var(--unresolved); } .issue.info { color: var(--muted); }
+.issue.error, .issue.blocker { color: var(--bad); } .issue.warning { color: var(--warn); } .issue.unresolved { color: var(--unresolved); } .issue.info { color: var(--muted); }
 td.issues { min-width: 170px; white-space: normal !important; }
 .blocker { border-left: 3px solid var(--bad); background: var(--bad-bg); padding: 6px 10px; margin: 6px 0; }   /* a status callout: record 7.218 */ .issue.blocker { border: 0; background: none; padding: 0; margin: 0; }
 /* A limit explained, not a fault: neutral, unlike .blocker. */
@@ -213,11 +212,11 @@ td.issues { min-width: 170px; white-space: normal !important; }
 /* ...and a callout inside another one has no rule of its own: its heading sets it off (two rules side by side read as a frame) */
 :is(.note, .confirm, .matched-devices, .connection-add) :is(.note, .confirm) { border-left: none; padding-left: 0; } .note p { margin: 4px 0; } .note ul { margin: 2px 0 4px; padding-left: 18px; } .note code { overflow-wrap: anywhere; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 11px; } pre.small { max-height: 180px; overflow: auto; }
-.badge { display: inline-block; padding: 1px 7px; border: 1px solid var(--line); font: 600 10.5px/1.5 var(--f-label); letter-spacing: .08em; }
+.badge { display: inline-block; padding: 1px 7px; border: 1px solid var(--line); font: 600 10.5px/1.5 var(--f-label); }
 .state-ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-line); } .state-failed { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-line); }
 .state-not_ready, .state-busy { background: var(--busy-bg); color: var(--warn); border-color: var(--warn-line); } .state-unknown, .state-not_checked { background: var(--neutral-bg); color: var(--neutral-text); } .state-not_applicable { background: var(--na-bg); color: var(--muted); }
 ul.tree { list-style: none; margin: 2px 0; padding-left: 12px; border-left: 1px dotted var(--line); } ul.tree li span { cursor: default; }
-.path { font-family: var(--f-mono); font-size: 11px; word-break: break-all; white-space: normal !important; cursor: copy; }
+.path { font-family: var(--f-mono); word-break: break-all; white-space: normal !important; }
 .confirm { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 8px 0; }   /* a callout: record 7.218 */ .diff-added td { background: var(--added-bg); } .diff-removed td { background: var(--bad-bg); }
 /* The Agent window (record 7.253; its line of buttons record 7.226), opened by "Agent..." in the bottom panel's tab line: the two
    buttons that open Claude Code or Codex in a terminal window of its own, the free "What's missing?" at the right end, one
@@ -234,9 +233,9 @@ ul.checklist li { margin: 5px 0; padding-left: 22px; position: relative; } .chec
 .check-detail { color: var(--muted); } .check-missing .check-detail { color: var(--text); } .check-action { color: var(--accent); }
 .check-done b, .check-not_applicable b { font-weight: 400; }
 .verdict { margin: 6px 0 4px; font-weight: 600; } .verdict .hint { font-weight: 400; }
-button.notes-link { border: none; background: none; padding: 0 3px; color: var(--accent); text-decoration: underline; font-size: 11px; white-space: normal; }
+button.notes-link { border: none; background: none; white-space: normal; }
 /* A link between the windows (record 7.264): a run, a task or a count that opens a window AT it - in the cell's own type. */
-button.item-link { border: none; background: none; padding: 0; color: var(--accent); text-decoration: underline; font: inherit; text-align: left; cursor: pointer; white-space: normal; }
+button.item-link { border: none; background: none; padding: 0; font: inherit; text-align: left; cursor: pointer; white-space: normal; }
 .step { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 5px; } .step-head { font-weight: 600; font-size: 12px; }
 .step-no { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 50%; background: var(--accent-fill); color: var(--on-accent); font-size: 10.5px; margin-right: 3px; }
 .command { display: flex; gap: 6px; align-items: flex-start; margin: 3px 0; } .command code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-all; background: var(--code-bg); border: 1px solid var(--line); padding: 4px 6px; font-size: 11.5px; user-select: all; }
@@ -284,20 +283,20 @@ details.labels > summary { color: var(--muted); } details.labels > summary b { f
 .ngspice-window .ngspice-check table td { vertical-align: top; } .ngspice-window .ngspice-check li.warn { color: var(--warn); }
 .real { background: var(--real-bg); border-left: 3px solid var(--accent); padding: 4px 10px; font-weight: 600; }
 label.disabled { opacity: .6; } input:disabled { background: var(--field-disabled); color: var(--muted); cursor: not-allowed; }
-td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap !important; font-family: var(--f-mono); } details a { color: var(--accent); }
+td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap !important; font-family: var(--f-mono); }
 .row.pair > button { flex: 1 1 0; min-width: 0; } p.in-use { margin: 6px 0 0; }
 /* A field whose caption line carries an action at its right end, shown as text (Output root ... Copy path); a number box with a unit list. */
 .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 4px 0 2px; } .field-head label { flex: none; margin: 0; }
 /* The action's "copied" stands just before it, the action keeping its place at the line's end (branch record SIF-94). */
-.field-head .copy-word { margin-left: auto; font-size: 11.5px; }
-button.text-link { border: none; background: none; padding: 0; color: var(--accent); font-size: 11.5px; } button.text-link:hover:not(:disabled) { text-decoration: underline; } button.text-link:active { color: var(--text); }
+.field-head .copy-word { margin-left: auto; }
+button.text-link { border: none; background: none; padding: 0; } button.text-link:hover:not(:disabled) { text-decoration: underline; } button.text-link:active { color: var(--text); }
 /* The suggested Mode in the run panel is the clickable word itself (user request 2026-09-26), at the size of its sentence. */
 button.text-link.mode-suggestion { font-size: inherit; font-weight: 600; }
 /* "RL model..." in Run configuration's notice is a word of its sentence too (branch record SIF-46). */
 p.network-review button.text-link { font-size: inherit; }
 .with-unit { display: flex; gap: 4px; } .with-unit input { flex: 1; } .with-unit select { flex: none; width: auto; }
 /* The tags of a saved model, a run or a task (in use, MOCK), and the saved models table's filter. */
-.model-tag { font-size: 10px; font-weight: 600; padding: 0 5px; color: var(--muted); } .model-tag.mock-tag { background: var(--warn-bg); border-color: var(--mock-line); color: var(--text); }
+.model-tag { font-weight: 600; padding: 0 5px; color: var(--muted); } .model-tag.mock-tag { background: var(--warn-bg); border-color: var(--mock-line); color: var(--text); }
 input.model-filter { width: 100%; margin: 2px 0; }
 .row.model-rename-row { flex-wrap: nowrap; } .row.model-rename-row label { flex: 1; min-width: 0; } .row.model-rename-row input.model-rename { width: 100%; } .row.model-rename-row button { flex: none; }
 table.grid.small.model-facts td:first-child, table.grid.small.run-facts td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
@@ -314,14 +313,14 @@ dialog.graph-dialog { width: 96vw; height: 92vh; max-width: none; max-height: no
 .graph-tools label.check { min-height: 26px; } .graph-tools label.check input { height: auto; }
 /* The close cross of a dialog, as a browser window has it: top right, no frame, red when pointed at. */
 button.dialog-close { border: none; background: none; width: 36px; height: 26px; padding: 0; font-size: 20px; line-height: 1; color: var(--muted); border-radius: 3px; }
-button.dialog-close:hover:not(:disabled) { background: var(--close-hover); color: var(--on-bad); border: none; }
+button.dialog-close:hover:not(:disabled) { background: var(--close-hover); border: none; }
 .graph-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; height: calc(92vh - 118px); } .graph-canvas { border: 1px solid var(--line); background: var(--canvas); min-height: 0; }
 .graph-side { overflow: auto; min-height: 0; } .graph-side h4 { margin: 10px 0 4px; } .graph-side table.grid th { position: static; cursor: default; } .graph-side td.numeric { white-space: nowrap !important; }
 /* Header run buttons: one main button (Start -> Pause -> Resume) and Abort. Icon-only, so the header does not shift when the label changes. */
 button.run-main { font-weight: 600; }
 /* Icon-only buttons (user request 2026-09-24): the icon in the button's own colour, the label kept off screen for screen readers
    and the page checks (`.sr-only`), the label at the start of the tooltip. */
-button:has(> svg.icon) { display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; line-height: 1; } svg.icon { flex: none; }
+button:has(> svg.icon) { display: inline-flex; align-items: center; justify-content: center; line-height: 1; } svg.icon { flex: none; }
 /* An icon button in a table row (the per-file download of Output files) keeps the row as low as its text. */
 table.grid td > button:has(> svg.icon) { padding: 1px 6px; vertical-align: middle; }
 /* "Add to Parameters" after a size of a cell read (branch record SIF-104): a small + that stays with its size when the line
@@ -332,12 +331,12 @@ table.grid td button.add-size { margin-left: 4px; padding: 1px 3px; border-radiu
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* Abort is RED (user request 2026-09-21): solid, like the main button is solid blue; faded while there is nothing to abort. */
 button.run-abort { background: var(--bad-fill); color: var(--on-bad); border-color: var(--bad-fill); font-weight: 600; } button.run-abort:hover:not(:disabled) { background: var(--bad-strong); border-color: var(--bad-strong); }
-header span.next-run { flex: 1000 1 0; min-width: 14ch; max-width: max-content; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 12px var(--f-mono); }   /* record 7.269: what Start would start */
-button.run-chip { border: none; background: none; padding: 0 2px; color: var(--muted); font-variant-numeric: tabular-nums; font-family: var(--f-mono); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
-button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { color: var(--ok); } button.run-chip.pausing, button.run-chip.paused, button.run-chip.aborting { color: var(--warn); }
+header span.next-run { overflow: hidden; text-overflow: ellipsis; }   /* record 7.269: what Start would start */
+button.run-chip { background: none; font-family: var(--f-mono); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+button.run-chip.pausing, button.run-chip.paused, button.run-chip.aborting { color: var(--warn); }
 /* Which run the bottom tabs show: ONE button at the right end of the tab strip (a full button, not a tab). It only reads "Runs..." and opens the run window;
    the run that is shown is named as plain text to its LEFT (user request 2026-09-21), cut with "..." when the strip is too narrow for all of it. */
-.tabs button.run-list-button { flex: none; font-weight: 600; margin-bottom: 3px; border-bottom: 1px solid var(--line); } .tabs button.run-list-button:hover { border-color: var(--accent); } .tabs button.run-list-button.open { background: var(--selected); border-color: var(--accent); }  /* `open`, not `active`: that class marks the chosen TAB of this strip */
+.tabs button.run-list-button { flex: none; font-weight: 600; border-bottom: 1px solid var(--line); } .tabs button.run-list-button.open { background: var(--selected); border-color: var(--accent); }  /* `open`, not `active`: that class marks the chosen TAB of this strip */
 /* "Agent...", first in the strip, is drawn as a tab by the rules below (record 7.253, user: "still a tab style but not button style") although it opens
    the Agent window and shows nothing in the panel: never `active`; the accent underline while its window is open. */
 .tabs > button.agent-tab.open { box-shadow: inset 0 -2px 0 var(--accent); }
@@ -346,15 +345,15 @@ button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { co
 #runs-root { height: 100vh; background: var(--panel); } .run-window { height: 100%; display: flex; flex-direction: column; padding: 12px 16px 10px; font-size: 13px; }
 .run-window h2 { margin: 0 0 4px; font-size: 17px; } .run-window p { margin: 4px 0; } .run-window .hint { font-size: 12.5px; } .run-window details > summary { cursor: pointer; }
 .run-window .row { align-items: center; } input.run-filter { width: 330px; } .run-count { flex: 1; }
-table.run-table td { vertical-align: middle; font-variant-numeric: tabular-nums; } table.run-table th.sortable { cursor: pointer; user-select: none; } table.run-table th.plain { cursor: default; } .sort-mark { color: var(--accent); }
+table.run-table td { vertical-align: middle; font-variant-numeric: tabular-nums; } table.run-table th.sortable { cursor: pointer; user-select: none; } table.run-table th.plain { cursor: default; }
 table.run-table tr.current > td { background: var(--selected); } table.run-table tbody tr:not(.run-details-row):hover > td { background: var(--hover); } table.run-table tr.current:hover > td { background: var(--selected-hover); }
 /* A double click on a row shows that run (there is no "Show" column): the row of the run that is shown carries a bar at its left edge besides its colour. */
 table.run-table tbody tr:not(.run-details-row) { cursor: default; } table.run-table tr.current > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
-table.run-table td .hint { font-size: 11px; } tr.run-details-row > td { background: var(--button); padding: 6px 10px 10px 34px; white-space: normal; }
+tr.run-details-row > td { background: var(--button); padding: 6px 10px 10px 34px; white-space: normal; }
 .run-details { max-width: 1100px; } .run-details h4 { margin: 10px 0 3px; } .run-details table.grid th { position: static; cursor: default; } table.run-segments { width: auto; }
 /* Names that may take two lines (record 7.264: the Started from column made the table wider than the run window). */
 table.run-table td.wrap { white-space: normal; overflow-wrap: anywhere; min-width: 6em; } tr.run-details-row > td > * { contain: inline-size; }
-table.run-table button.notes-link { min-width: 6.5em; text-align: left; }   /* "Details" and "Hide details" take the same room: a toggle moves no column */ table.run-table td.wrap-words { white-space: normal; min-width: 6.5em; }
+table.run-table button.notes-link { text-align: left; }   /* "Details" and "Hide details" take the same room (roadster.css): a toggle moves no column */ table.run-table td.wrap-words { white-space: normal; min-width: 6.5em; }
 /* Project panel: explanations are closed until asked for (details.more), so the narrow column shows the fields and buttons first. */
 .left details > summary { cursor: pointer; } details.more { margin: 4px 0; } details.more > :not(summary) { margin: 3px 0 3px 13px; }
 /* A whole block of the panel folded under its own heading (Hierarchy): the h3 is the fold line and keeps the look of the other headings. */
@@ -369,10 +368,10 @@ details.section.module { margin-top: 0; } details.module > summary { cursor: poi
 .module-attention { margin-left: 8px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; font-weight: 600; color: var(--on-warn); background: var(--warn-fill); } .module-attention.error { color: var(--on-bad); background: var(--bad-fill); }
 /* Load PDK (Pdk.tsx): the "Components" line of the RL model window, and the PDK window (a pop-up like the connection
    window; about:blank = quirks mode, so its tables are told to inherit the font). */
-/* a labelled list beside a bare button: bottom-aligned, one height for both (a centred row would put the button between the
-   caption and the list) */
-.component-row { align-items: flex-end; } .component-row > label { flex: 1; margin: 0; } .component-row > label select { width: 100%; height: 26px; }
-.component-row > button { flex: none; height: 26px; } .component-list .component-what { margin: 2px 0 4px; }
+/* a labelled list beside a bare button: bottom-aligned (a centred row would put the button between the caption and the list);
+   their height: roadster.css (branch record SIF-31) */
+.component-row { align-items: flex-end; } .component-row > label { flex: 1; margin: 0; } .component-row > label select { width: 100%; }
+.component-row > button { flex: none; } .component-list .component-what { margin: 2px 0 4px; }
 .pdk-window h3 { margin: 14px 0 6px; font-size: 14.5px; }
 .pdk-window .pdk-form { align-items: flex-end; } .pdk-window .pdk-form > label { flex: 1 1 240px; }
 .pdk-window .pdk-form > button { flex: none; } .pdk-list tr { cursor: default; } .pdk-list tr.active td { background: var(--selected-soft); }
@@ -392,7 +391,7 @@ header .launch-refusal { order: 1; flex: 0 0 100%; margin: 0; }
 button.launch-refusal-close { border: none; background: none; padding: 0 2px; }
 /* The budget form of Continue..., under its button: Used · New total · Allows n more; what is wrong is said under it. */
 .continue-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 4px 0; }
-.continue-form input { width: 9ch; font-variant-numeric: tabular-nums; } .continue-form input[aria-invalid="true"] { border-color: var(--bad); }
+.continue-form input { font-variant-numeric: tabular-nums; } .continue-form input[aria-invalid="true"] { border-color: var(--bad); }
 .continue-allows { color: var(--muted); font-variant-numeric: tabular-nums; } .continue-error { flex: 0 0 100%; margin: 0; }
 .continue-why { flex: 1 1 260px; }
 /* Corner check tab (CornerCheck.tsx): the plan line, the designs, then one row per design and one column per corner with a
@@ -410,13 +409,13 @@ table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td 
 table.grid.small.data-table td { word-break: normal; }
 table.grid.small td.id-cell { white-space: nowrap; word-break: normal; max-width: 15ch; overflow: hidden; text-overflow: ellipsis; font: 11.5px/1.4 var(--f-mono); cursor: copy; }
 table.grid.small td.time-cell { white-space: nowrap; word-break: normal; font: 11.5px/1.4 var(--f-mono); }
-table.grid.small.data-table td.json-cell { word-break: break-all; min-width: 24ch; max-width: 48ch; font: 11px/1.4 var(--f-mono); }
+table.grid.small.data-table td.json-cell { min-width: 24ch; font: 11px/1.4 var(--f-mono); }
 /* Save task at the right end of the editors' tab line, its messages and questions under their toolbar (TaskSave.tsx portals,
    user request 2026-09-22). Buttons inside `.tabs` are tab-shaped (no bottom border); these are plain buttons again. */
 .editors > .tabs { flex-wrap: wrap; } .tabs .tab-actions { margin-left: auto; display: inline-flex; } .tabs .tab-actions:empty { display: none; }
 .task-save { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding-bottom: 3px; } .task-save > .hint { white-space: nowrap; }
 .task-save > label { flex: none; flex-direction: row; align-items: center; gap: 4px; margin: 0; white-space: nowrap; } .task-save > label input { width: 11em; }
-.tabs .task-save button { border-bottom: 1px solid var(--line); } .tabs .task-save button.primary { border-color: var(--accent); }
+.tabs .task-save button { border-bottom: 1px solid var(--line); }
 .task-notes:empty { display: none; } .task-save-notes { margin: 0 0 4px; } .task-save-notes p { margin: 2px 0; } .task-save-notes .row > label { flex: 0 1 16em; }
 /* A running save's steps (record 7.198): a short bar and one line under the toolbar. */
 .task-save-progress { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
@@ -427,16 +426,16 @@ table.grid.small.data-table td.json-cell { word-break: break-all; min-width: 24c
 .matched-devices .structures { margin: 4px 0 6px 18px; padding: 0; } .matched-devices tr.muted td { color: var(--muted); }
 /* An import confirmation or the Matched devices box scrolls by itself (its Apply / Cancel first): a long diff grew past the
    clipped panel, the table shrank to nothing and Apply could not be reached (audit 2026-09-30). */
-.editors > .confirm, .editors > .matched-devices { flex: none; max-height: 45vh; overflow: auto; }
+.editors > .confirm, .editors > .matched-devices { flex: none; overflow: auto; }
 .persistence-problem { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .persistence-problem > span { flex: 1 1 300px; }
 /* ---- record 7.158: the header's title block, the splitter, each editor's colour, the circuit picture (its one-line ids
    and alternate rows stand with the Data tables tab and the tables). roadster.css adds the look's sizes and drawings (record
    7.360). ------------------------------------------------------------------------------------------------------------------- */
-header .title-block { display: flex; align-items: stretch; min-width: 0; flex: 0 1 auto; align-self: stretch; }
+header .title-block { display: flex; }
 @media (max-width: 1100px) { header .title-block { flex-wrap: wrap; } }
 .tb-brand { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding-right: 10px; cursor: default; }
-.tb-facts { display: flex; align-items: stretch; min-width: 0; }
+.tb-facts { display: flex; }
 .tb-cell { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 12px; border-left: 1px solid var(--rule); min-width: 0; }
 .tb-k { font: 600 8.5px/1 var(--f-label); letter-spacing: .17em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 .tb-v { font: 12.5px/1.15 var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 28ch; }
@@ -450,14 +449,14 @@ header .title-block { display: flex; align-items: stretch; min-width: 0; flex: 0
   .layout.bottom-folded { grid-template-rows: auto auto minmax(0, 1fr) auto; }
   .layout.bottom-folded .bottom-body { display: none; }
 }
-/* Each editor's colour: its tab and its table's header row; the Probe ids the Specs line offers are Probe-coloured chips. */
+/* Each editor's colour: its table's header row (and its tab until record 7.360: roadster.css draws the three tabs as one
+   control); the Probe ids the Specs line offers are Probe-coloured chips. */
 .editors[data-editor="parameters"], .editors > .tabs > button[data-editor="parameters"] { --editor: var(--param); --editor-head: var(--param-head); }
 .editors[data-editor="measurements"], .editors > .tabs > button[data-editor="measurements"] { --editor: var(--probe); --editor-head: var(--probe-head); }
 .editors[data-editor="targets"], .editors > .tabs > button[data-editor="targets"] { --editor: var(--spec); --editor-head: var(--spec-head); }
-.editors > .tabs > button[data-editor].active { color: var(--editor); box-shadow: inset 0 -2px 0 var(--editor); }
 .editors[data-editor] table.editor th { background: var(--editor-head); box-shadow: inset 0 -2px 0 var(--editor); }
 .fact.spec-probes { line-height: 1.75; }
-.spec-probes code.probe-id { font: 11px/1.4 var(--f-mono); color: var(--probe); background: var(--probe-chip); border: 1px solid var(--probe-chip-line); padding: 0 4px; white-space: nowrap; }
+.spec-probes code.probe-id { font: 11px/1.4 var(--f-mono); color: var(--probe); background: var(--probe-chip); border: 1px solid var(--probe-chip-line); white-space: nowrap; }
 /* The circuit picture (CircuitPicture.tsx): the graph view's manner, small. */
 .circuit-picture svg { display: block; width: 100%; height: auto; margin: 6px 0 2px; }
 .circuit-picture > summary .hint { font-weight: 400; }
@@ -479,8 +478,8 @@ header .title-block { display: flex; align-items: stretch; min-width: 0; flex: 0
    editor tabs as one segmented control and hides the mark, record 7.360). */
 .tabs { border-bottom-width: 1.5px; }
 .tabs > button:not(.run-list-button) { border-width: 1.5px; }
-.tabs > button.active:not(.run-list-button) { margin-bottom: -1.5px; border-bottom: 1.5px solid transparent; }
-.editors > .tabs > button[data-editor]::before { content: ''; display: inline-block; box-sizing: border-box; width: 15px; height: 15px;
+.tabs > button.active:not(.run-list-button) { border-bottom: 1.5px solid transparent; }
+.editors > .tabs > button[data-editor]::before { display: inline-block; box-sizing: border-box; width: 15px; height: 15px;
   margin-right: 6px; vertical-align: middle; border: 1px solid var(--editor); background: repeating-linear-gradient(45deg, var(--editor) 0 1.4px, transparent 1.4px 3.6px); }
 /* One tab style (record 7.164, user: "day and night tab style different, change the day style to night one"):
    the editors' layer swatches above, and every tab strip drawn alike - the chosen tab raised with an underline (the
@@ -488,7 +487,6 @@ header .title-block { display: flex; align-items: stretch; min-width: 0; flex: 0
    a plain button, under an editor's colour and an error row. */
 :root:root :where(.tabs > button:not(.run-list-button)) { background: transparent; border-color: transparent; color: var(--muted); border-radius: 3px 3px 0 0; }
 :root:root :where(.tabs > button.active:not(.run-list-button)) { background: var(--button); color: var(--text); border-color: var(--line); box-shadow: inset 0 -2px 0 var(--accent); }
-@media (min-width: 1101px) { .layout { padding: 19px; } }
 /* The Training tab (record 7.193): one or two charts side by side filling the bottom panel; uPlot's own box is pinned inside
    the measured plot box, so the chart never makes its box grow (and the box never grows the chart). */
 .training { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 2px; }
@@ -500,13 +498,13 @@ header .title-block { display: flex; align-items: stretch; min-width: 0; flex: 0
 .training-controls { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
 .training-head label.inline { flex: none; flex-direction: row; align-items: center; gap: 4px; margin: 0; }
 .training-head select { width: auto; max-width: 260px; }
-.training-head button[aria-pressed="true"] { background: var(--selected); border-color: var(--accent); }
+.training-head button[aria-pressed="true"] { background: var(--selected); }
 .training-run { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .training-counts { min-width: 0; }
 .training-what .badge { flex: none; }
 .training-note { margin: 0 0 2px; } .training-note ul { margin: 2px 0 4px; padding-left: 18px; }
-.training-charts { flex: 1; min-height: 150px; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(170px, 1fr); gap: 8px; overflow-y: auto; }
-.training-chart { margin: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--canvas); padding: 3px 6px 2px; }
+.training-charts { flex: 1; min-height: 150px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; overflow-y: auto; }
+.training-chart { margin: 0; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--canvas); padding: 3px 6px 2px; }
 .training-chart figcaption { display: flex; align-items: center; gap: 4px; font: 600 11.5px/1.4 var(--f-label); letter-spacing: .02em; }
 /* a chart's title is its choice (record 7.205): a list that reads as a heading until it is pointed at */
 .training-chart select.training-chart-choice { width: auto; max-width: calc(100% - 24px); padding: 0 2px; border-color: transparent; background: transparent; font: inherit; letter-spacing: inherit; cursor: pointer; }
@@ -514,14 +512,14 @@ header .title-block { display: flex; align-items: stretch; min-width: 0; flex: 0
 button.training-chart-remove { border: none; background: none; padding: 0 1px; line-height: 1; color: var(--muted); } button.training-chart-remove svg.icon { width: 11px; height: 11px; }
 .training-empty { margin: 10px 2px; }
 .training-plot-area { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.training-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: 11px; min-height: 18px; }
+.training-legend { display: flex; flex-wrap: wrap; gap: 2px 10px; min-height: 18px; }
 button.training-key { border: none; background: none; padding: 0 2px; display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
 button.training-key.off { opacity: .45; text-decoration: line-through; }
 .training-key .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--muted); }
 .key-training .swatch, .key-other0 .swatch { background: var(--accent); } .key-evaluation .swatch { background: var(--spec); }
 .key-other1 .swatch { background: var(--probe); } .key-limit .swatch { background: var(--warn); }
 .key-superseded .swatch, .key-start .swatch { background: var(--muted); }
-.training-compared { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; font-size: 11.5px; margin: 0 0 2px; }
+.training-compared { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin: 0 0 2px; }
 .training-chip { display: inline-flex; align-items: center; gap: 4px; } .training-chip .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--muted); }
 button.training-chip-remove { border: none; background: none; padding: 0 1px; line-height: 1; color: var(--muted); } button.training-chip-remove svg.icon { width: 11px; height: 11px; }
 .training-head select.training-compare { max-width: 150px; } .training-missing { margin: 0; font-size: 11px; }
@@ -530,8 +528,8 @@ button.training-chip-remove { border: none; background: none; padding: 0 1px; li
 .training-keys { margin: 0 0 2px; font-size: 11.5px; } .training-keys summary { cursor: pointer; }
 .training-keys table.grid { width: auto; max-width: 100%; margin: 2px 0 0; } .training-keys table.grid th { position: static; }
 .training-keys table.grid td, .training-keys table.grid th { padding: 1px 6px; }
-.training-readout { flex: 1 1 280px; min-width: 0; text-align: right; color: var(--muted); font: 11px/1.4 var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.training-plot { flex: 1; min-height: 110px; position: relative; }
+.training-readout { flex: 1 1 280px; min-width: 0; text-align: right; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.training-plot { flex: 1; position: relative; }
 .training-plot > .uplot { position: absolute; inset: 0; font-family: var(--f-label); }
 .training .u-select { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .training .u-hz .u-cursor-x { border-right: 1px dashed var(--muted); }
@@ -560,8 +558,8 @@ button.training-chip-remove { border: none; background: none; padding: 0 1px; li
 /* ---- the task window (record 7.227): the Project column's Task row = text + "Tasks..." button, the window reuses the run window's rules ---- */
 .row.task-row { align-items: center; gap: 8px; margin: 4px 0 2px; flex-wrap: nowrap; } .task-caption { flex: none; color: var(--muted); font-size: 11.5px; }
 .task-list-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.task-list-current code.task-list-key { font-size: 12px; } .task-list-current .task-list-mark { font-size: 11px; }
-.row.task-row button.task-list-button { display: flex; flex: 1; min-width: 0; text-align: left; font-weight: 600; } .row.task-row button.task-list-button.open { background: var(--selected); border-color: var(--accent); }
+.task-list-current code.task-list-key { font-size: 12px; }
+.row.task-row button.task-list-button { display: flex; flex: 1; min-width: 0; text-align: left; font-weight: 600; } .row.task-row button.task-list-button.open { background: var(--selected); }
 .task-window-actions { align-items: center; } .task-window-actions button { flex: none; }
 .task-list-blocked { flex-basis: 100%; }
 #tasks-root { height: 100vh; background: var(--panel); } .task-window .task-filter { width: 330px; }
@@ -573,7 +571,7 @@ table.task-table td code { font-size: 12px; } table.task-table td .hint.warn { c
 .task-folder { display: flex; justify-content: space-between; gap: 8px; text-align: left; width: 100%; }
 .task-folder > span:first-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .task-folder > .hint { flex-shrink: 0; }
-.task-folder.active { background: var(--selected); border-color: var(--accent); }
+.task-folder.active { background: var(--selected); }
 .task-folder-actions { flex-wrap: wrap; margin-top: 8px; }
 .task-move-bar { min-height: 30px; margin-bottom: 6px; } .task-move-bar select { width: 180px; margin-left: auto; }
 table.task-table .task-select, table.run-table .task-select { width: 28px; text-align: center; }

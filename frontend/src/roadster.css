@@ -297,6 +297,15 @@ table.run-table .run-date { white-space: nowrap; }
    shown it read "3.25 ko...": SIF-28 gave numbers their natural width, no minimum); text columns give way first. */
 .component-row > label select, .component-row > button { height: auto; }
 table.editor td input.numeric { min-width: calc(11ch + 20px); }
+/* SIF-119: an instance path stays whole at 1366 px. The user's VCO read "DUT/M..." in every Instance (DUT/MNA1): there the
+   table stands at its columns' minimum widths, and Instance had the 84 px of every text box. It keeps about 12 characters
+   now - 14 widths of "0", since a path's capitals are wider ("DUT/XBUF/MP4" is 98 px) - and the room comes from Notes,
+   which gives way first, down to its heading (the formula bar shows a note whole), and 10 px from Tied to (record 7.180's
+   120 px), empty on a leader's row: with a scroll bar beside the rows the table was 5 px too wide. It still holds a
+   leader's ID of about 12 characters. */
+table.editor td[data-field="instance_path"] input { min-width: calc(14ch + 20px); }
+table.editor td[data-field="notes"] input { min-width: 0; }
+table.editor td[data-field="binding_group"] input { min-width: 110px; }
 
 /* SIF-32: Data tables - a column of numbers is right-aligned in figures of one width, its title too. */
 table.grid.small.data-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; }

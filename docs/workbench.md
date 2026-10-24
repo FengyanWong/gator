@@ -805,9 +805,12 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   an exponent, a list's choices, true/false or x for a tick box, `>=`/`<=`/`interval` for a limit); a text that cannot be
   read is named and its cell left as it was; lines below the last row are named, not added; cells a leader decides, or
   that follow another field, are kept. A line under the formula bar says what happened. One value pastes as before.
-- **Column widths.** An ID column is wide enough to read (140 px), a leader's name 120 px, a unit 52 px; a tick box no longer
+- **Column widths.** An ID column is wide enough to read (140 px), a leader's name 110 px, a unit 52 px; a tick box no longer
   takes the 84 px of a text box; the Issues column is narrow while no row has an issue of its own (a shared note's mark,
-  below, is short). At 1680 x 1050 the LDO task's Parameters table fits without scrolling sideways.
+  below, is short). At 1680 x 1050 the LDO task's Parameters table fits without scrolling sideways. When the table is
+  narrow an instance path keeps about 12 characters (branch record SIF-119: at 1366 x 768 the VCO's `DUT/MNA1` read
+  "DUT/M..."), as a number keeps its 11 (SIF-31); Notes gives way first, down to its heading - the formula bar shows a
+  note whole. A wider window gives Instance about 14 characters and the rest of the room to Notes.
 - **A note many rows share, said once** (branch record SIF-118). An info or a warning in the same words on three rows of
   the table or more - the VCO's "The unit of a formula is not checked" and "New spec: models without it do not load" stood
   on six and seven of its eight Specs rows, 13 lines of the same words in the Issues column - is named once in a line above

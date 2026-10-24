@@ -11,12 +11,16 @@
 //   - Parameters: initial_value is not shown; value_type, step, scale and ratio come after "More columns"; on a follower row
 //     (binding_group set) the fields its leader decides are greyed, with why; a word typed into Ratio is refused in words;
 //     a validation answer without a count reads "The optimizer searches ? of N rows." (review of branch record SIF-50; the
-//     words of branch record SIF-73).
+//     words of branch record SIF-73);
+//   - Parameters with rows like the user's VCO, their tied rows open: at 1366 x 768 every instance path of up to 12
+//     characters is whole and nothing else is cut but Notes, which gives way first; at 1680 x 1050 Instance takes its
+//     natural 14 characters and Notes the room; the table does not scroll sideways, nor the page (branch record SIF-119).
 // HERMETIC (lib/harness.mjs): validation is answered with a canned valid report labelled FIXTURE, other reads pass, every
 // other writing request is refused. A temporary browser profile: the user's saved configuration is not touched.
-// Exit code 1 if any check fails. Picture: zero_floor_button.png, in the folder given as the first argument.
+// Exit code 1 if any check fails. Pictures: zero_floor_button.png, parameters_1366.png, in the folder given as the first
+// argument.
 import path from 'node:path';
-import { check, launchEdge, mockStarter, outDir, reportRefused, runChecks, validConfiguration, workbenchUrl } from './lib/harness.mjs';
+import { check, launchEdge, mockStarter, outDir, reportRefused, runChecks, sleep, validConfiguration, workbenchUrl } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -29,6 +33,22 @@ const PROBES = [
 const SPECS = [
   { metric_id: 'freq', equation: 'm_freq', unit: 'Hz', constraint: '>=', lower: 1e9, upper: null, normalization_scale: 1e8 },
   { metric_id: 'half_freq', equation: 'm_freq / 2', unit: 'Hz', constraint: '>=', lower: 5e8, upper: null, normalization_scale: 1e8 }];
+// Parameters rows like the user's VCO (FIXTURE, made up here): its leaders and their notes, four of them with seven tied rows
+// each, and instance paths of 6 to 12 characters - DUT/MNA1 is the VCO's own, DUT/XBUF/MP4 the widest 12 (branch record SIF-119).
+const VCO_ROW = (variable_id, instance_path, parameter_name, lower, upper, notes, more = {}) => ({ variable_id, instance_path, parameter_name,
+  unit: parameter_name === 'r' ? 'ohm' : 'm', optimized: true, value_type: 'continuous', scale: 'linear', lower, upper, notes: `${notes} (FIXTURE)`, ...more });
+const VCO_LEADERS = [
+  VCO_ROW('wn_main', 'DUT/MNA1', 'w', 1e-6, 10e-6, 'main-inverter NMOS width; scales all four stages'),
+  VCO_ROW('wp_main', 'DUT/MPA1', 'w', 2e-6, 20e-6, 'main-inverter PMOS width (2x the NMOS)'),
+  VCO_ROW('wn_aux', 'DUT/MNX1', 'w', 250e-9, 4e-6, 'auxiliary (cross-coupled) NMOS width'),
+  VCO_ROW('wp_aux', 'DUT/MPX1', 'w', 500e-9, 8e-6, 'auxiliary PMOS width'),
+  VCO_ROW('l', 'DUT/MNA1', 'l', 45e-9, 120e-9, 'channel length of all 32 transistors'),
+  VCO_ROW('r1_r', 'DUT/R1', 'r', 2000, 3250, 'R1 (VIN -> CTRL); the paper gives 2.5 kohm'),
+  VCO_ROW('r2_r', 'DUT/R2', 'r', 300, 1500, 'R2 (CTRL -> VSS); starts at the paper value'),
+  VCO_ROW('wn_tail', 'DUT/I3/MNT12', 'w', 1e-6, 8e-6, 'tail NMOS of the bias'),
+  VCO_ROW('wp_buf', 'DUT/XBUF/MP4', 'w', 1e-6, 8e-6, 'output buffer PMOS')];
+const VCO = [...VCO_LEADERS, ...[['wn_main', 'MNA'], ['wp_main', 'MPA'], ['wn_aux', 'MNX'], ['wp_aux', 'MPX']].flatMap(([lead, device]) =>
+  [2, 3, 4, 5, 6, 7, 8].map(n => VCO_ROW(`${lead}_f${n - 1}`, `DUT/${device}${n}`, 'w', null, null, `follows ${lead}`, { binding_group: lead, ratio: 1 })))];
 
 await runChecks(browser, async () => {
   const starter = await mockStarter(APP);
@@ -205,5 +225,40 @@ await runChecks(browser, async () => {
     await until(`${NOTE}.startsWith('"half" in Ratio is not a number: type it plain (0.5)')`) && (await saved()).parameters[0].ratio === ratioBefore,
     await evaluate(NOTE));
   await evaluate(`${MORE}.click()`);
+
+  // ---- Parameters at 1366 x 768 and 1680 x 1050: an instance path whole (branch record SIF-119) -----------------------------
+  // The user's VCO at 1366 x 768 read "DUT/M..." in every Instance (DUT/MNA1): there the table stands at its columns' minimum
+  // widths, and Instance had the 84 px of every text box. Rows like the VCO's, their tied rows open, so that the table box
+  // scrolls up and down beside a scroll bar as it did on the user's page (the bar takes 15 px of the table's room).
+  await page.seed({ config: { ...CONFIG, parameters: VCO }, when: 'always' });
+  await send('Page.navigate', { url: APP });
+  await until(`!!${EDITORS}?.querySelector('table.editor tbody tr')`, 150);
+  await openTab('Parameters');
+  check('(set-up) the page opens again on rows like the VCO\'s, the tied rows folded under their leaders',
+    await until(`${EDITORS}.querySelectorAll('table.editor tbody tr:not([hidden])').length === ${VCO_LEADERS.length}`));
+  await evaluate(`${EDITORS}.querySelectorAll('table.editor .tie-toggle[aria-expanded="false"]').forEach(b => b.click())`);
+  await until(`${EDITORS}.querySelectorAll('table.editor tbody tr:not([hidden])').length === ${VCO.length}`);
+  const fit = () => evaluate(`(() => { const box = ${EDITORS}.querySelector('.scroll'), table = box.querySelector('table.editor');
+    const width = f => Math.round(table.querySelector(\`thead th[data-field="\${f}"]\`).getBoundingClientRect().width);
+    const boxes = [...table.querySelectorAll('tbody tr:not([hidden]) td[data-field] input:not([type="checkbox"])')];
+    const paths = boxes.filter(i => i.closest('td').dataset.field === 'instance_path');
+    return { rows: paths.length, longest: Math.max(...paths.map(i => i.value.length)), size: paths[0]?.size,
+      cut: [...new Set(boxes.filter(i => i.scrollWidth > i.clientWidth).map(i => i.closest('td').dataset.field))],
+      widths: Object.fromEntries(['variable_id', 'instance_path', 'binding_group', 'notes'].map(f => [f, width(f)])),
+      bar: box.offsetWidth - box.clientWidth, sideways: box.scrollWidth - box.clientWidth,
+      page: document.documentElement.scrollWidth - document.documentElement.clientWidth }; })()`);
+  await page.viewport(1366, 768); await sleep(500);
+  const narrow = await fit();
+  check('(set-up) at 1366 x 768 the 37 rows, the tied ones open, scroll up and down beside a scroll bar; the longest path has 12 characters',
+    narrow.rows === VCO.length && narrow.bar > 0 && narrow.longest === 12, JSON.stringify(narrow));
+  check('at 1366 x 768 every Instance is whole, and nothing else is cut but Notes (branch record SIF-119)', narrow.cut.every(f => f === 'notes'), JSON.stringify(narrow));
+  check('...Notes gives way first, narrower than Instance now, and neither the table nor the page scrolls sideways',
+    narrow.widths.notes < narrow.widths.instance_path && narrow.sideways <= 0 && narrow.page <= 0, JSON.stringify(narrow));
+  await page.shot(path.join(out, 'parameters_1366.png'), EDITORS, { maxHeight: 420 });
+  await page.viewport(1680, 1050); await sleep(500);
+  const wide = await fit();
+  check('at 1680 x 1050 Instance takes its natural 14 characters and Notes the room: nothing cut but Notes, no sideways scroll',
+    wide.size === 14 && wide.widths.notes > wide.widths.instance_path && wide.cut.every(f => f === 'notes') && wide.sideways <= 0 && wide.page <= 0,
+    JSON.stringify(wide));
   reportRefused(refused);
 });

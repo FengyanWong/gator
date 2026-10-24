@@ -4224,3 +4224,61 @@ memory guard, 2854 checks, all passed the first time: `calibration_check` 48, `e
 marks, the error beside them (each of the three rows showed its three notes whole, score_cube's error among them) and the
 column (277 px, its minimum 240 px); the sixth, on the two rows deleted, holds there too. After a comment in `Editors.tsx` changed, `spec_equations_check`
 75 and `blocking_issues_check` 62 again. No flakes.
+
+### SIF-119 At 1366 px the Parameters table keeps an instance path whole (2026-10-24; from the survey of 2026-10-23)
+
+**Found.** On the user's VCO (mscr_vco_lin_c) at 1366 x 768 the Parameters table cut every Instance to "DUT/M..."
+(DUT/MNA1, 8 characters) while ID ("wn_main") had about 140 px and the empty Tied to about 120; Notes was cut too (the
+survey's S10-4, picture `12-page-1366.png`). An instance path is what a reader matches against the circuit. The survey
+put it down to `TEXT_SIZE` (`cells.tsx`), which gave `instance_path` no natural size; measured, the minimum widths decide
+it: at 1366 px the table stands at its columns' minimums - ID 140 px and Tied to 120 (record 7.180), each number 11
+characters (SIF-31), the headings of Parameter, Optimized and Issues - and Instance had the 84 px of every text box, 64 px
+for its text, where DUT/MNA1 takes 72 px in the cells' 14 px Segoe UI. A natural size alone changed nothing there
+(Instance 91 -> 89 px). On a page like the user's, the rows scrolling beside a scroll bar (37 rows like the VCO's, the
+tied ones open): Instance 87 px and every path cut, Notes 88, Tied to 122, ID 142; at 1680 x 1050 Instance 166 px and
+Notes 209, cut.
+
+**Changed.** `frontend/src/roadster.css` (SIF-119, after SIF-31's rule): an Instance box keeps at least 14 widths of "0"
+and its padding (126 px), about 12 characters of a path - a path's capitals are wider than "0": DUT/XBUF/MP4 is 98 px, 13
+widths. The room comes from Notes, which gives way first: its box has no minimum of its own now, so the column goes down
+to its heading (58 px beside the scroll bar, 66 without; the formula bar shows a note whole), and from Tied to, whose
+minimum is 110 px (record 7.180's 120): beside the scroll bar, Instance and Notes alone left the table 5 px wider than its
+box, a sideways scroll the page did not have. 110 px still holds a leader's ID of about 12 characters, and the column is
+empty on a leader's row. `frontend/src/panels/cells.tsx`: an instance path's natural size (`TEXT_SIZE`) is 14 characters
+where a plain box has 20, about its minimum, so a wide window gives the room to Notes. `variable_id` was checked, as the
+plan asked, and keeps the 20 of a plain box: at 1366 px the ID column stands at its 140 px minimum, which a natural size
+does not change, and at 1680 px its 180 px cut nothing. Measured after: 1366 x 768 beside the scroll bar, Instance 127
+px and nothing cut but Notes (58 px), Tied to 112, ID 142, no sideways scroll; the tied rows folded (no scroll bar),
+Instance 128 and Notes 66; at 1100 px Instance 131 and Notes 104 (109, cutting the 12-character paths, and 122); at 1680
+x 1050 Instance 140 and Notes 222. With the circuit shown, at 1680 px Instance 128 px (91 and cut before) and Notes 67,
+and at 1366 px the table, which scrolled sideways before, scrolls 307 px (305). In Probes Notes gives way first too: at
+1366 px Notes 166 -> 157 px, Expression 209 -> 214; at 1680 px nothing changed. Specs has none of these columns. The page
+never scrolls sideways. Nothing here starts, continues or stops a run, saves a task or writes to Virtuoso.
+`docs/workbench.md` (Tied rows, spreadsheet keys and a pasted block: Column widths) and `docs/functionality-reference.md`
+(the Tied rows, keys and pasting a block row) say it.
+
+**Checked.** `tsc` clean. `editor_columns_check` 34 (29 before): new, the page opens again on rows like the VCO's
+(FIXTURE: its leaders and their notes, four with seven tied rows each, paths of 6 to 12 characters - DUT/MNA1, DUT/R1,
+DUT/I3/MNT12, DUT/XBUF/MP4) and opens their tied rows; at 1366 x 768, the 37 rows beside a scroll bar, every Instance is
+whole and nothing else is cut but Notes, Notes is narrower than Instance, and neither the table nor the page scrolls
+sideways (picture `parameters_1366.png`); at 1680 x 1050 the Instance box's natural size is 14, Notes is wider than
+Instance, nothing is cut but Notes and nothing scrolls sideways. A probe run on the code before (`cells.tsx` and
+`roadster.css` as at HEAD, restored after, their sums compared) failed the three new checks (Instance 87 px and every path
+cut; at 1680 px the natural size 20, Instance 166 px); the set-up passed. Every check script the runner runs (58; the three
+reward_v2/v21 ones are never run here), one lane, after the memory guard, 2858 checks passed: `calibration_check` 48,
+`export_check` 37, `run_control_live_check` 23, `run_control_check` 171, `dom_identity_check` 56, `training_tab_check`
+115, `connection_panel_check` 101, `virtuoso_source_check` 116, `run_list_check` 170, `task_save_check` 91,
+`testbench_probes_check` 41, `output_panel_check` 98, `spec_equations_check` 75, `task_rows_check` 54,
+`model_chooser_check` 122, `typing_check` 62, `find_fill_copy_check` 50, `sheet_check` 54, `project_help_check` 61,
+`files_tab_check` 43, `working_copy_check` 34, `launch_recovery_check` 20, `corner_check_check` 40, `task_list_check` 104
+of 105, `blocking_issues_check` 62, `callouts_check` 8, `ngspice_window_check` 43, `looks_check` 76,
+`network_panel_check` 72, `save_now_check` 29, `task_run_check` 39, `unsaved_rows_check` 25, `calibration_save_check` 22,
+`editor_columns_check` 34, `reliability_check` 20, `room_check` 31, `graph_view_check` 69, `pdk_check` 44,
+`reward_block_check` 34, `circuit_source_check` 17, `encoder_models_check` 24, `module_fold_check` 30,
+`crash_panel_check` 11, `formula_bar_check` 21, `matched_devices_check` 37, `model_structure_check` 33,
+`mode_suggestion_check` 20, `consistency_check` 14, `training_data_check` 120, `agent_window_check` 33,
+`edit_state_check` 28, `request_lifecycle_check` 25, `circuit_layout_check` 4, `editor_renames_check` 8,
+`graph_paint_check` 6, `network_inputs_check` 9, `table_view_check` 10, `unit_text_check` 14. One flake:
+`task_list_check`'s check of a renamed task's row failed once in the Tasks window, which has no editor table, the row's
+text it printed being the expected "ota_relaxedinternal name fixture_ota"; alone, after the memory guard, it passed (105).
+The widths above were measured with a temporary script, not kept.

@@ -7,9 +7,11 @@ import { NUMBER_FORMS, plainNumberIn, quantity, readQuantity, sameUnit, unitChoi
 import { LIMIT_CHOICES, limitLabel, readNumber, withSaved } from './editorRules';
 
 /** A box's natural width in characters (branch record SIF-28): the editors' columns share the card by it, so a number or a
- *  one-letter parameter no longer takes as much room as an expression. Every box still fills its column. */
+ *  one-letter parameter no longer takes as much room as an expression. Every box still fills its column. An instance path
+ *  (DUT/MNA1) is 14, about its minimum width (roadster.css, branch record SIF-119): the 20 of a plain box gave it 171 px at
+ *  1680 px, room Notes takes now. */
 const NUMBER_SIZE = 11;
-const TEXT_SIZE: Record<string, number> = { signal: 40, equation: 40, notes: 28, parameter_name: 8 };
+const TEXT_SIZE: Record<string, number> = { signal: 40, equation: 40, notes: 28, parameter_name: 8, instance_path: 14 };
 
 export function LimitSelect({ row, title, onChange }: { row: Json; title: string; onChange: (fields: Json) => void }) {
   const objective = row.direction_after_feasible ?? 'none', current = `${row.constraint}|${objective}`;

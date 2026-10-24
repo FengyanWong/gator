@@ -22,7 +22,8 @@
 //   - (branch record SIF-97) the keys are the page's Undo and Redo wherever the focus is - a tab's button, the page itself -
 //     but in a box that takes typing (Find rows, the formula bar), which keeps its own undo; the line under the formula bar
 //     names what they changed, by tab, row ID and the field's header, and offers the tab when another is in view;
-//   - (branch record SIF-132) that line goes with the next change, and a cell's refusal once the table changes.
+//   - (branch record SIF-132) that line goes with the next change, and a cell's refusal once it is untrue: its cell takes a
+//     value or its row is of another quantity; typing in another row or another cell of its row leaves it (review of SIF-132).
 // Run: bash frontend/scripts/run_checks.sh --only sheet_check. About 20 s.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED_OR_SAVED, outDir, reportRefused, runChecks, sleep, starterConfig, validConfiguration, workbenchUrl } from './lib/harness.mjs';
@@ -150,14 +151,29 @@ await runChecks(browser, async () => {
       && (await shownOf('lower')) === '0.000002', `${await evaluate(stored(`c.parameters[${metre}].unit`))} / ${await shownOf('lower')}`);
     await typeIn('lower', '4 um');
     check('...a length typed into it is refused in words', (await evaluate(NOTE)).includes('is a length; this row holds a count'), await evaluate(NOTE));
+    // Review of SIF-132: the refusal stays while it is true. It went with every change of the table - the next row's first
+    // key after Enter, the next cell's after Tab - and the "4 um" was dropped with no word, as before SIF-49.
+    const other = shownRows.find(i => i !== metre);
+    await page.setValue(BOX(other, 'notes'), 'FIXTURE typed in another row', { event: 'input', focus: true });
+    check('...and stays while another row is typed in (review of SIF-132)', await page.until(stored(`c.parameters[${other}].notes === 'FIXTURE typed in another row'`), 30)
+      && (await evaluate(NOTE)).includes('is a length; this row holds a count'), await evaluate(NOTE));
+    await typeIn('notes', 'FIXTURE typed in its row');
+    check('...and while another cell of its own row is (review of SIF-132)', await page.until(stored(`c.parameters[${metre}].notes === 'FIXTURE typed in its row'`), 30)
+      && (await evaluate(NOTE)).includes('is a length; this row holds a count'), await evaluate(NOTE));
     await typeIn('parameter_name', parameterOf);
     check(`back to ${parameterOf}: a length again (metres)`, await page.until(stored(`c.parameters[${metre}].unit === 'm'`), 30)
       && (await shownOf('lower')) === '2 um', `${await evaluate(stored(`c.parameters[${metre}].unit`))} / ${await shownOf('lower')}`);
+    // Branch record SIF-132: a refusal goes once it is untrue; it stood under the row made a length again and the 3 nm taken
+    // after it, and the press on the tab already shown below changed nothing (sheet-2-scrolled.png).
+    check('...and the refusal went with it: the row holds a length now (SIF-132)', (await evaluate(NOTE)) === '', await evaluate(NOTE));
     await typeIn('lower', '3n');
     check('...and its values read as lengths again', await page.until(stored(`c.parameters[${metre}].lower === 3e-9`), 30) && (await shownOf('lower')) === '3 nm', await shownOf('lower'));
-    // Branch record SIF-132: a refusal goes once the table changes; it stood under the row made a length again and the 3 nm
-    // taken, and the press on the tab already shown below changed nothing (sheet-2-scrolled.png).
-    check('...and no refusal is left under the formula bar: it went once the table changed (SIF-132)', (await evaluate(NOTE)) === '', await evaluate(NOTE));
+    check('...and no refusal is left under the formula bar (SIF-132)', (await evaluate(NOTE)) === '', await evaluate(NOTE));
+    await typeIn('lower', '5 mV');
+    check('(set-up) a voltage typed into the row of a length is refused', (await evaluate(NOTE)).includes('is a voltage; this row holds a length (m)'), await evaluate(NOTE));
+    await typeIn('lower', '4n');
+    check('...and a value taken in that cell takes the refusal away (review of SIF-132)', await page.until(stored(`c.parameters[${metre}].lower === 4e-9`), 30)
+      && await page.until(`(${NOTE}) === ''`, 30), await evaluate(NOTE));
     check('no cell of the table writes a Greek letter (user: "dont use greek characters for unit")',
       !(await evaluate(`[...document.querySelectorAll('section.editors table.editor input')].some(i => /[µμΩ°]/.test(i.value))`)));
   } else check('the task has a bound in metres to read', false, JSON.stringify(config.parameters.map(p => [p.unit, p.lower])));

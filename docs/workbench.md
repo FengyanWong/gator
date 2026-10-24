@@ -991,8 +991,11 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   of 2026-10-24). The line under the formula bar that names an Undo or Redo goes with the next change - typing, Add, a task
   choice, an import - which ends the step: it stood under them, naming rows the page no longer showed. A line written with
   a change ("Deleted ...", "Imported ...", "Filled ...", "Margin sides set ...") is no step's and stays, as before. A cell's
-  refusal ('"4 um" is a length; this row holds a count.') goes once the tab's table changes - a value taken, an Undo, Add:
-  it stood under the value taken after it, and a press on the tab already shown changes no tab. The import confirmation
+  refusal ('"4 um" is a length; this row holds a count.') goes once it is untrue - its cell takes a value, its row is of
+  another quantity (its parameter, its Probe), another row stands at its place (a task choice): it stood under the row
+  made a length again and the 3 nm taken after it, and a press on the tab already shown changes no tab. Typing in another
+  cell or row, and Add, leave it (review of SIF-132: it went with any change of the table, so the next row's first key
+  after Enter, or the next cell's after Tab, dropped the text with no word, as before SIF-49). The import confirmation
   said "22 changed rows" for a file of 20 Specs that adds 20 rows and deletes the 2 the table held, listed those 2 last,
   under the 20, and opens with Apply in focus. Its heading now says what the rows are whenever a row is deleted or they are
   of more than one kind - "Confirm import: 22 changed rows - 20 new, 2 deleted (score, score_sq)", the deleted part in

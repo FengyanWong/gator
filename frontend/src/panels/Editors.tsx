@@ -126,9 +126,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // Tied rows opened under their leader, by the leader's ID (record 7.180), and what the last block paste, fill or copy did.
   const [openTies, setOpenTies] = useState<Record<string, boolean>>({});
   // `show`: a tab the line offers to show, where an Undo changed rows of a tab not in view (branch record SIF-97). `step`: the
-  // line names an Undo or Redo, `refusal`: a cell's refusal - each goes once a later change makes it untrue (branch record
-  // SIF-132).
-  const [note, setNote] = useState<{ text: string; warn: boolean; show?: Section; step?: boolean; refusal?: boolean } | null>(null);
+  // line names an Undo or Redo, `refusal`: a cell's refusal, with its cell - the row's place and field, the row and the unit it
+  // was read in then - each goes once a later change makes it untrue (branch record SIF-132).
+  const [note, setNote] = useState<{ text: string; warn: boolean; show?: Section; step?: boolean;
+    refusal?: { index: number; field: string; row: Json; unit: string | null } } | null>(null);
   // The find box's text, kept per table (record 7.184).
   const [find, setFind] = useState<Record<string, string>>({});
   const table = useRef<HTMLTableElement>(null);
@@ -376,10 +377,18 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   // A failed import's line goes too (branch record SIF-107): it named the tab it was tried on, and stayed on every tab until
   // the next import.
   useEffect(() => { setActive(null); setOpenTies({}); setNote(null); setError(null); lastTicked.current = null; }, [tab]);
-  // A cell's refusal goes once the tab's table changes - a value taken, an Undo, Add (branch record SIF-132): '"4 um" is a
-  // length; this row holds a count.' stood under the row made a length again and 3 nm taken, and a press on the tab already
-  // shown changes no tab. A refusal is told on leaving its cell with nothing written, so it never goes in its own render.
-  useEffect(() => { if (note?.refusal) setNote(null); }, [config[tab]]);
+  // A cell's refusal goes once a later change makes it untrue (branch record SIF-132): '"4 um" is a length; this row holds a
+  // count.' stood under the row made a length again and 3 nm taken, and a press on the tab already shown changes no tab. It
+  // goes when its cell takes a value, when its row is read in another unit (its parameter, its Probe), and when another row
+  // stands at its place (a task choice; an Undo, Delete selected and an import write lines of their own). Typing in another
+  // cell or row, and Add, leave it (review of SIF-132): it went with every change of the table - the next row's first key
+  // after Enter, the next cell's after Tab - and the text was dropped with no word, as before SIF-49. A refusal is told on
+  // leaving its cell with nothing written, so it never goes in its own render.
+  useEffect(() => {
+    const refused = note?.refusal, now = refused && rows[refused.index];
+    if (refused && !(now && now[keyField] === refused.row[keyField] && now[refused.field] === refused.row[refused.field]
+      && effectiveUnit(now) === refused.unit)) setNote(null);
+  }, [config[tab]]);
   // Another tab, as its button shows it: a Matched devices box closes, the ticks go.
   const showTab = (s: Section) => { if (s !== tab) setMatched(0); setTab(s); setSelected({}); };
   // An Undo or Redo - the toolbar's, the keys', the RL model window's - says what it changed (branch record SIF-97), and offers
@@ -1062,7 +1071,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
                 ? <LimitSelect row={row} title={withSaved(saved, c.guidance)} onChange={fields => patch(index, fields)} />
                 : <Cell column={c} value={row[c.name] === undefined ? c.default : row[c.name]} onChange={v => update(index, c.name, v)}
                     fixed={fixedOf(row, c)} off={offOf(row, c)} unit={QUANTITY[tab]?.includes(c.name) ? effectiveUnit(row) : undefined}
-                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true, refusal: true })} saved={saved}
+                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)} tell={text => setNote({ text, warn: true, refusal: { index, field: c.name, row, unit: effectiveUnit(row) } })} saved={saved}
                     placeholder={emptyOf(row, c)} />}</td>; })}
               {/* The row's own issues whole, first, then a note it shares with SHARED_NOTE_ROWS rows or more as its level word, all
                   of them on one line: the line above the table names it once (branch record SIF-118). */}

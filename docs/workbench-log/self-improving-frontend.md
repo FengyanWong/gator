@@ -5125,10 +5125,12 @@ Undo's or Redo's, and `refusal`, a cell's. A step's line goes with the next reco
 (history.ts): typing, Add, a task choice, an import. A line written with a change - Deleted, Imported, Filled, Pasted,
 Copied, Margin sides set, a Probe renamed - is no step's and stays as before; a write that makes no Undo step of its own
 (the Specs that follow a typed Probe ID, the network filled in from a saved model) leaves the step, and its line, as
-history.ts leaves the step. A refusal goes once the tab's table changes - a value taken, an Undo, Add; it is told on
-leaving its cell with nothing written, so never in its own render. Both read the line as drawn, so a change that finds no
-such line asks for no render. The import's heading keeps its start, "Confirm import: 22 changed rows" (`typing_check` reads
-it so), and when a row is deleted or the rows are of more than one kind says what they are: " - 20 new, 2 deleted (score,
+history.ts leaves the step. A refusal goes once it is untrue - its cell takes a value, its row is read in another unit
+(its parameter, its Probe), another row stands at its place - and typing in another cell or row, and Add, leave it (the
+review follow-up below); it is told on leaving its cell with nothing written, so never in its own render. Both read the
+line as drawn, so a change that finds no such line asks for no render. The import's heading keeps its start, "Confirm
+import: 22 changed rows" (`typing_check` reads it so), and when a row is deleted or the rows are of more than one kind
+says what they are: " - 20 new, 2 deleted (score,
 score_sq)" - new, changed, deleted; up to four IDs, then "..." - the deleted part in amber (`span.warn.import-deletes`).
 `frontend/src/panels/DiffView.tsx`: the deleted rows come first (a stable sort, the backend's order by ID within each kind),
 and a field empty on both sides is left out - a row whose every field is keeps its first, so it still has its line;
@@ -5175,3 +5177,36 @@ at once, 171: a flake. The rest passed the first time: `calibration_check` 48, `
 `consistency_check` 14, `training_data_check` 120, `crash_panel_check` 11, `callouts_check` 8, `request_lifecycle_check`
 25, `circuit_layout_check` 4, `editor_renames_check` 8, `graph_paint_check` 6, `network_inputs_check` 9,
 `table_view_check` 10, `unit_text_check` 14. In all 58 scripts, 2,937 checks: SIF-131's 2,923 and the 14 new ones.
+
+**Review follow-up.** The review of 90603fd found one slip; it is real, and it undid part of SIF-49. A refusal's line
+went with every change of the tab's table, not with a change that makes it untrue. "4 um" typed into a count row's
+Lower and Enter: `moveFrom` puts the focus in the next row's Lower, the blur tells the amber '"4 um" is a length; this
+row holds a count.' and the cell goes back to its stored value. The first key typed in that row writes it (`Typed`,
+`patch`, `withFollowers`), `config.parameters` changes, and the line went at once: nothing on the page said any more
+that the "4 um" was dropped, which is what SIF-49 added the line for. A cell typed after Tab or a click, and Add, did
+the same, and a press on Add that left the refused cell took the line in that same press; before 90603fd the line
+stayed until a tab change or another line. "Changed" said "a value taken, an Undo, Add", and the title "once a later
+change makes it untrue", while an edit to another row, or Add, leaves the refusal true. The review's smallest fix, the
+line tied to its row (gone once that row object is no longer in the table), mends another row and Add but not Tab: Tab
+is the browser's (`onTableKey` leaves it be) and goes to the next cell of the same row, Lower to Upper, whose first key
+writes that row. `frontend/src/panels/Editors.tsx` ties the line to its cell instead. `tell` keeps the row's place and
+the field, the row, and the unit it was read in (`effectiveUnit`); the line goes when the row at that place has
+another ID, another value in that field or another unit - a value taken in the cell, the row's parameter or a Spec's
+Probe of another quantity, a task choice - and an Undo, Delete selected and an import write lines of their own, as
+before. Typing in another cell or row, and Add, leave it: `withFollowers` and Add keep the rows they do not touch as
+the same objects, and history.ts keeps each configuration as it is. The title now holds as it stands; "Changed" above,
+`docs/workbench.md` (the SIF-132 bullet) and `docs/functionality-reference.md` (the Toolbar row) say what takes a
+refusal away and what leaves it. Only when the line goes changes: nothing starts, continues or stops a run, saves a
+task or writes to Virtuoso, and every question is asked as before. `tsc` clean. One lane, after the memory guard:
+`sheet_check` 61 (56 before): new, the "4 um" refusal stays while another row's Notes is typed and while its own row's
+Notes is, and goes with the row a length again, before 3 nm is taken; a voltage refused in that length row goes once
+its cell takes 4 nm. With `Editors.tsx` of 90603fd in the tree the two "stays" checks fail; with the review's row-tied
+fix the second one does. Unchanged and passed the first time: `dom_identity_check` 56, `task_save_check` 93,
+`model_chooser_check` 139, `spec_equations_check` 79, `task_rows_check` 57, `typing_check` 62, `find_fill_copy_check`
+50, `blocking_issues_check` 62, `editor_columns_check` 43, `looks_check` 81, `network_panel_check` 74,
+`unsaved_rows_check` 28, `reliability_check` 20, `formula_bar_check` 21, `matched_devices_check` 37, `edit_state_check`
+28; then the other scripts that draw the editors, with `sheet_check` 61 and `editor_columns_check` 43 again on the file
+put back after those two runs: `calibration_check` 48, `training_tab_check` 135, `virtuoso_source_check` 116,
+`run_list_check` 177, `testbench_probes_check` 41, `project_help_check` 61, `working_copy_check` 34, `task_list_check`
+105, `task_run_check` 39, `calibration_save_check` 22, `room_check` 31, `reward_block_check` 34, `agent_window_check`
+33, `consistency_check` 14, `crash_panel_check` 11, `callouts_check` 8. In all 33 scripts, 1,900 checks.

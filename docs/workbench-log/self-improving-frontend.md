@@ -5210,3 +5210,95 @@ put back after those two runs: `calibration_check` 48, `training_tab_check` 135,
 `run_list_check` 177, `testbench_probes_check` 41, `project_help_check` 61, `working_copy_check` 34, `task_list_check`
 105, `task_run_check` 39, `calibration_save_check` 22, `room_check` 31, `reward_block_check` 34, `agent_window_check`
 33, `consistency_check` 14, `crash_panel_check` 11, `callouts_check` 8. In all 33 scripts, 1,900 checks.
+
+### SIF-133 The Virtuoso window says which testbench Save as writes and which cell a run sizes, and promises nothing a press does not do (2026-10-24; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found the Virtuoso window naming the
+wrong cell on the very point the copy question is about, two lines that promised more than the page does, and a missing
+full stop. Right after OK to "Work in FIXTURE_DESIGNS/ring_a directly?", the window read "Working in
+FIXTURE_DESIGNS/tb_ring_a directly: you declared it a copy you made (2026-09-23 11:00:00). Its Maestro test and, in a
+run, its device sizes are written here.", the draft's next step "... then press Save as: it writes the rows into this
+cell's Maestro view (the copy you declared) and reads it back." and, after the first save, "Saved the new task
+real:ring_a_2. It runs in FIXTURE_DESIGNS/tb_ring_a - the cell you declared as your copy." (S12-2, `help-4-draft.png`,
+`help-5b-task-lines.png`, `virtuoso-2b-draft.png`; S12-12, `tbprobes-2-brought.png`: "Working in FIXTURE_TB/tb_ring3
+directly ... device sizes are written here" a moment after the copy question said "every run sets device sizes in
+ring3"). A run sets the sizes in the cell (cdf_write.py writes the design's `core_cell`) and Save as writes the Maestro
+test into the testbench (virtuoso_setup.py): the three lines put both into the testbench, against the copy question, the
+copy warning and the Tasks window's Cell column. With Probes the user had edited, "This cell was read through tb_ring3.
+Press Read the cell again to read it through other_tb: Probes then follow it." stood over rows that read keeps -
+followTestbench never replaces edited rows; only Use testbench probes exchanges them (S12-28, `tbprobes-3-kept.png`).
+With the link down, "Virtuoso cannot be reached (tunnel). Bring the link up in the Connection window, then press
+Refresh." stood over "Browse only: you can look at this cell here, but the workbench cannot optimize it yet.", the copy
+warning and "(choose its Testbench cell above first: a task needs one)" above a greyed Read, while Refresh had cleared
+the lists and the schematic: nothing of the cell was drawn and the Testbench box was off (S12-29,
+`virtuoso-3-link-down.png`). And "This cell already has a registered task: real:ota5_v1 Choose it in the Tasks window
+..." had no full stop after the key (S12-34, `virtuoso-2d-cell-has-task.png`).
+
+**Changed.** `frontend/src/panels/WorkingCopy.tsx`: the declared line keeps its first sentence, which three checks read,
+and then says where each part is written: "Working in FIXTURE_DESIGNS/tb_ring_a directly: you declared it a copy you
+made (2026-09-23 11:00:00). Save as writes the Maestro test GATOR here; a run sets device sizes in FIXTURE_DESIGNS/ring_a
+(put back when the run ends)." A record whose testbench is the cell itself keeps the old sentence, which is true there.
+`frontend/src/panels/VirtuosoWindow.tsx`: the next step ends "then press Save as: it writes the rows into the Maestro test
+of the testbench tb_ring_a (the copy you declared) and reads it back." It names the testbench of the declared record: a
+first Save as writes the record's copy (task_save.py `_first_save_target`, `working_copy.draft_target`), and a later read
+through another testbench leaves the record as it is (`declare` keeps an existing one). Without a record it names the
+testbench the cell was read through, and "its testbench" with neither. The plan named the read's testbench, then the
+box's: the box's is not where a save writes, and after a read through another testbench the read's is not either. The
+line that asks for a read through another testbench says what that read does to Probes, as followTestbench does it.
+While the note says "Probes hold rows you edited": "...: your edited Probes stay; Use testbench probes then takes its
+rows, if it fits a circuit type." - the plan's words with a condition, as other_tb in the check's own fixture fits none
+and the read after it offers no rows. Otherwise: "...: Probes then follow it, unless you edited them." The read through
+other_tb ends with "Probes were left as they were", so no line says rows were kept, and the read back through tb_ring3
+keeps the edited rows again: the plan's condition alone left "Probes then follow it" over them there. A read without a
+testbench, "Press Read the cell again to read it without one.", says nothing of Probes, as it brings no rows ("Probes
+then follow it" stood there too). The browse-only note waits while the gate's refusal stands and no schematic of the
+cell is drawn (`!(nativeGated && !native)`; `native`, the schematic as read, is a new prop): with the link down the
+window shows the refusal and its Connection... alone, and the first good Refresh brings the note back. The plan's
+`!nativeGated` would also have taken the note away after a Read the gate refused, whose "then try again" (SIF-108:
+Refresh does not read the cell) means the note's own Read button; such a refusal keeps the note, the schematic and the
+button. SIF-108's refusal words and "then press Refresh" stay. `frontend/src/panels/Left.tsx`: the first save's line
+names the cell, then its testbench: "Saved the new task real:ring_a_2. It runs in FIXTURE_DESIGNS/ring_a with its
+testbench tb_ring_a - the cell you declared as your copy." ("- its working copy" for a task's own copy, as before; the
+space before the cell, inside its code box until now, is outside it). The cell-has-task note has a full stop after the
+key or the built-in remark, "real:ota5_v1. Choose it in the Tasks window ...", and still no button and no new words
+(record 7.109, SIF-108). The window gets `native`. Only words, and when the browse-only note shows, change: nothing is
+read, saved or run without the press it took before, every question is asked as before, and nothing starts, continues
+or stops a run, saves a task or writes to Virtuoso. `docs/workbench.md` (the gate's refusal in the Virtuoso window,
+Probes follow the testbench, Read this cell into the workbench, the user's own copy, Saving a task) and
+`docs/functionality-reference.md` (the Library → cell → schematic, Probes follow the testbench, Read this cell and
+Working-copy block rows) say it.
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree. The four scripts that draw these
+lines passed the first time. `virtuoso_source_check` 123 (116 before), new: the next step names "the Maestro test of
+the testbench ota5_tb", the declared line names the cell FIXTURE_DESIGNS/ota5_v1 a run sizes (`virtuoso-2b-draft.png`),
+and the first save's line reads "It runs in FIXTURE_DESIGNS/ota5_v1 with its testbench ota5_tb - the cell you declared
+as your copy."; a full stop after real:ota5_v1 (`virtuoso-2d-cell-has-task.png`) and after the built-in's remark (that
+check's own words); with the link down, no "Browse only", no schematic and no Read (`virtuoso-3-link-down.png`); the note
+back after the good Refresh; and a Read the gate refuses - its testbench chosen, the copy question answered, the import
+refused - says "then try again" and leaves the note, the schematic and an enabled Read. `testbench_probes_check` 43
+(41), new: the declared line names FIXTURE_TB/ring3 (`tbprobes-2-brought.png`); over the kept rows the line reads "...:
+your edited Probes stay; Use testbench probes then takes its rows, if it fits a circuit type." (`tbprobes-3-kept.png`;
+the check now waits for the kept line before it reads); back to tb_ring3 after other_tb it reads "...: Probes then
+follow it, unless you edited them.". `project_help_check` 62 (61): the next step's "Maestro test of the testbench
+tb_ring_a", and, new, the first save's line in `help-5b-task-lines.png`. `working_copy_check` 35 (34): new, the declared
+line's second sentence names GPDK045_RINGOSC/ring_osc_3stage; the first sentence and its time as before. A probe run of
+these four on the code before (the three sources as at HEAD, put back after, their sums compared) failed the 12 checks
+this record adds or changes and no other: 6 of `virtuoso_source_check`, 3 of `testbench_probes_check`, 2 of
+`project_help_check`, 1 of `working_copy_check`. The two that pass there - the note back after the good Refresh, and a
+refused Read keeping it - hold the condition in place: with the plan's `!nativeGated` instead, `virtuoso_source_check`
+failed the refused-Read check alone (122 of 123). Then every other script the runner runs, on the final source (55 -
+`virtuoso_source_check` again, after the detail its full-stop check prints on a failure was corrected; the three
+reward_v2/v21 ones are never run here), all passed the first time, no flake: `calibration_check` 48, `export_check` 37,
+`run_control_live_check` 23, `training_tab_check` 135, `run_control_check` 171, `dom_identity_check` 56,
+`connection_panel_check` 101, `run_list_check` 177, `virtuoso_source_check` 123, `task_save_check` 93,
+`model_chooser_check` 139, `task_rows_check` 57, `output_panel_check` 98, `spec_equations_check` 79, `typing_check` 62,
+`sheet_check` 61, `find_fill_copy_check` 50, `files_tab_check` 43, `launch_recovery_check` 20, `blocking_issues_check`
+62, `corner_check_check` 42, `network_panel_check` 74, `task_list_check` 105, `editor_columns_check` 43, `looks_check`
+81, `ngspice_window_check` 43, `task_run_check` 39, `unsaved_rows_check` 28, `calibration_save_check` 22,
+`save_now_check` 29, `pdk_check` 46, `reliability_check` 20, `room_check` 31, `encoder_models_check` 24,
+`graph_view_check` 69, `module_fold_check` 30, `reward_block_check` 34, `circuit_source_check` 17, `formula_bar_check`
+21, `matched_devices_check` 37, `model_structure_check` 33, `mode_suggestion_check` 20, `agent_window_check` 33,
+`consistency_check` 14, `training_data_check` 120, `crash_panel_check` 11, `edit_state_check` 28, `callouts_check` 8,
+`request_lifecycle_check` 25, `circuit_layout_check` 4, `editor_renames_check` 8, `graph_paint_check` 6,
+`network_inputs_check` 9, `table_view_check` 10, `unit_text_check` 14. In all 58 scripts, 2,953 checks: the 2,942 of
+SIF-132 and its review follow-up, and the 11 new ones.

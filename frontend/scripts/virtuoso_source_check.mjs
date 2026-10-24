@@ -17,14 +17,19 @@
 //     `work_here` and the cell becomes the one the flow works in - the window says so; no "Make a working copy" anywhere;
 //     a cell without a testbench cannot be read - Read is off and says why, nothing asked or sent (branch record SIF-88); the
 //     header's title names the cell, not the last task; reading it again asks nothing;
+//   - the draft's next step names the testbench whose Maestro test Save as writes, the declared line the cell a run sets
+//     sizes in, and the first save's line that cell with its testbench (branch record SIF-133);
 //   - Save as (no Save task) from the window's cell - after a refusal it offers the name refused; the rough frequency's
 //     question takes Enter, Cancel and Escape (branch record SIF-92) -, the task then named on the tab line, what happened
 //     said under the toolbar; Check now on the tab line before Save as, what it checks in its tooltip, its result under the toolbar; Delete
 //     task in the Tasks window - the waste bin, the hourglass while its delete is on its way (branch record SIF-113); a cell
-//     that already has a task, a built-in cell; a blocked gate and an older backend are readable;
+//     that already has a task (its key ends with a full stop, branch record SIF-133), a built-in cell; a blocked gate and an
+//     older backend are readable;
 //     the gate's refusal ends with "then press Refresh" and carries Connection..., which opens the Connection window from the
-//     Virtuoso window; an older backend's line carries none (branch record SIF-108); Refresh is the refresh icon, "Refresh" for
-//     screen readers and at the start of its tooltip, on the line of "PDK window..." (branch record SIF-114).
+//     Virtuoso window; an older backend's line carries none (branch record SIF-108); while it stands, nothing of the cell is
+//     drawn and the browse-only note waits, back with the first good Refresh; a Read the gate refuses ("then try again")
+//     keeps it, with its Read button (branch record SIF-133); Refresh is the refresh icon, "Refresh" for screen readers and at
+//     the start of its tooltip, on the line of "PDK window..." (branch record SIF-114).
 // Needs a configured connection profile (the page selects the active one; reading the profiles probes nothing).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/virtuoso_source_check.mjs)" [screenshot-dir]
@@ -342,6 +347,15 @@ await runChecks(browser, async () => {
     && !(await text()).includes('Hierarchy (') && !(await wText()).includes('Browse only'));
   check('the window says the cell itself is worked in, as declared; no "Make a working copy" anywhere', await wShown('.declared') && (await wText()).includes('Working in FIXTURE_DESIGNS/ota5_tb directly: you declared it a copy you made')
     && !(await wHas('Make a working copy')) && !(await evaluate(`!!(${ANY_BUTTON('Make a working copy')})`)));
+  // States audit of 2026-10-24 (branch record SIF-133): Save as writes the Maestro test of the testbench and a run sets the sizes
+  // in the cell; the next step said "it writes the rows into this cell's Maestro view", the declared line "Its Maestro test
+  // and, in a run, its device sizes are written here" of the testbench.
+  const nextStep = await far.evaluate(`${WIN}.querySelector('.next-step')?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`);
+  check('the next step says Save as writes the rows into the Maestro test of the testbench ota5_tb (branch record SIF-133)',
+    nextStep.endsWith('then press Save as: it writes the rows into the Maestro test of the testbench ota5_tb (the copy you declared) and reads it back.'), nextStep);
+  const declaredLine = await far.evaluate(`${WIN}.querySelector('.declared')?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`);
+  check('...and the declared line that a run sets device sizes in the cell, FIXTURE_DESIGNS/ota5_v1 (branch record SIF-133)',   // its time is local
+    /you declared it a copy you made \([^)]+\)\. Save as writes the Maestro test GATOR here; a run sets device sizes in FIXTURE_DESIGNS\/ota5_v1 \(put back when the run ends\)\.$/.test(declaredLine), declaredLine);
   check('one button "Read setup", and no "Ask the agent to set up" any more (record 7.226)', await wHas('Read setup') && !(await wHas('Ask the agent to set up')));
   await shotWindow('virtuoso-2b-draft.png');
   mark = calls.length;
@@ -406,6 +420,9 @@ await runChecks(browser, async () => {
   check('the new task is opened: the task row on the tab line names it', (await stored()).circuit.source === 'registered_task' && (await value('Task')) === 'real:ota5_v1', await value('Task'));
   check('the task\'s lines under the toolbar say what happened, in which cell, and what comes first', (await statusText()).includes('Saved the new task real:ota5_v1')
     && (await statusText()).includes('the cell you declared as your copy') && (await statusText()).includes('No real baseline yet'));   // record 7.248: the task starts its own baseline (Retry baseline)
+  // States audit of 2026-10-24 (branch record SIF-133): it named the testbench alone, "It runs in FIXTURE_DESIGNS/ota5_tb".
+  check('...the cell a run sets sizes in, then its testbench (branch record SIF-133)', (await statusText()).includes('Saved the new task real:ota5_v1. It runs in '
+    + 'FIXTURE_DESIGNS/ota5_v1 with its testbench ota5_tb - the cell you declared as your copy.'), (await statusText()).slice(0, 300));
   check('the parameter editor shows the rows as saved', await evaluate(`document.querySelector('main').innerHTML.includes('wn_fixture')`));
   check('the open task offers Save as and Task file', await evaluate(`!!(${TASK_BUTTON('Save as')}) && !!(${TASK_BUTTON('Task file')}) && !(${TASK_BUTTON('Save task')})`));
   check('the window now says it follows the task and starts from a blank library', await wShown('.follows-task') && (await wText()).includes('follows the task real:ota5_v1') && (await wValue('Library')) === '');
@@ -438,10 +455,14 @@ await runChecks(browser, async () => {
   check('no "Open" shortcut (it repeated the Tasks window): the note says where to choose the task - the Tasks window, behind the task\'s name on the tab line (record 7.362)',
     JSON.stringify(await far.evaluate(`[...${WIN}.querySelectorAll('.note button')].map(b => b.textContent.trim())`)) === '[]'
     && shown.includes("Choose it in the Tasks window (the task's name on the editors' tab line)."));
+  // States audit of 2026-10-24 (branch record SIF-133): the key ran into the next sentence, "real:ota5_v1 Choose it ...".
+  check('...a full stop after the task\'s key (branch record SIF-133)', shown.includes('This cell already has a registered task: real:ota5_v1. Choose it in the Tasks window'),
+    shown.slice(shown.indexOf('This cell already'), shown.indexOf('This cell already') + 120));
   await shotWindow('virtuoso-2d-cell-has-task.png');
   await wChoose('Cell', 'vco_fixture'); await quiet();
   shown = await wText();
-  check('the cell of a verified built-in circuit names that task', shown.includes('This cell already has a registered task: real:gpdk045_ota7 (a verified built-in circuit)')
+  check('the cell of a verified built-in circuit names that task, a full stop after its remark (branch record SIF-133)',
+    shown.includes('This cell already has a registered task: real:gpdk045_ota7 (a verified built-in circuit). Choose it in the Tasks window')
     && !shown.includes('Browse only') && !shown.includes('cannot optimize it yet'));
   check('it is not offered for reading or for a task', !(await wHas('Read this cell into the workbench')) && !(await evaluate(`!!(${TASK_BUTTON('Save as')})`)));
   check('what that means is one folded line', await far.evaluate(`(() => { const d = [...${WIN}.querySelectorAll('.note details')].find(x => x.querySelector('summary').textContent === 'What this means');
@@ -568,11 +589,30 @@ await runChecks(browser, async () => {
     opened?.heading === 'Connection' && opened.opener === VIRTUOSO_WINDOW && calls.length === mark, JSON.stringify(opened));
   if (link) { link.close(); await send('Target.closeTarget', { targetId: linkWindow.id }).catch(() => undefined); }
   check('the configured library stays visible while nothing can be listed', (await wValue('Library')) === 'FIXTURE_OTHER');
+  // States audit of 2026-10-24 (branch record SIF-133): Refresh cleared the lists and the schematic, and the browse-only note
+  // still said "you can look at this cell here" and asked for a Testbench cell from a box that was off.
+  check('... and while it stands nothing of the cell is drawn, so the browse-only note waits: no "you can look at this cell here", no Read (branch record SIF-133)',
+    !(await wText()).includes('Browse only') && !(await wText()).includes('Native schematic') && !(await wHas('Read this cell into the workbench')), (await wText()).slice(0, 300));
   await shotWindow('virtuoso-3-link-down.png');
   mode = 'ok'; mark = calls.length;
   await wPress('Refresh'); await quiet();
   check('after the link is back, Refresh recovers everything', ops(mark).length === 3 && (await wText()).includes('Native schematic FIXTURE_OTHER/inv') && !(await wText()).includes('cannot be reached'), ops(mark).join(' | '));
   check('... and the refusal goes with its Connection... (branch record SIF-108)', await far.evaluate(`!${GATE_LINE} && !${WIN}.querySelector('button.open-connection')`));
+  check('... and the browse-only note is back with the schematic, its Read button with it (branch record SIF-133)', (await wText()).includes('Browse only: you can look at this cell here')
+    && await wHas('Read this cell into the workbench'));
+
+  // ---- a Read the gate refuses keeps the note: its "then try again" is the note's Read button (branch records SIF-108, SIF-133) --
+  await wChoose('Testbench cell', 'inv'); await quiet(600);
+  mode = 'blocked'; mark = calls.length; answers.push(true);
+  await wPress('Read this cell into the workbench'); await quiet();
+  const readRefusal = await far.evaluate(`${GATE_LINE}?.querySelector('p.error')?.textContent ?? ''`);
+  check('a Read the gate refuses says "then try again", and the note stays - the schematic, and the Read button that press means (branch records SIF-108, SIF-133)',
+    JSON.stringify(ops(mark)) === JSON.stringify(['import FIXTURE_OTHER inv inv work_here'])
+    && readRefusal === 'Virtuoso cannot be reached (tunnel). Bring the link up in the Connection window, then try again.'
+    && (await wText()).includes('Browse only: you can look at this cell here') && (await wText()).includes('Native schematic FIXTURE_OTHER/inv')
+    && await far.evaluate(`!!(${wButton('Read this cell into the workbench')}) && !${wButton('Read this cell into the workbench')}.disabled`), `${ops(mark).join(' | ')} / ${readRefusal}`);
+  mode = 'ok';
+  await wChoose('Testbench cell', ''); await quiet(600);
 
   // ---- an older backend (no /api/virtuoso/cells): named as the reason; the typed-cell fallback went on 2026-09-29 --------------
   mode = 'outdated'; mark = calls.length;

@@ -157,6 +157,11 @@ await runChecks(browser, async () => {
     return !!d && !d.open && d.textContent.includes('V0:p, the current through the supply source V0'); })()`));
   check('there is no circuit type box any more: a saved task reads it from its probes', !(await far.evaluate(`[...document.querySelectorAll('label')].some(l => l.firstChild?.textContent.trim() === 'Circuit type')`)));
   check('the copy matches the box: no "read again" warning', !(await shown('.tb-stale')));
+  // States audit of 2026-10-24 (branch record SIF-133): the line said "Its Maestro test and, in a run, its device sizes are
+  // written here" of the testbench, just after the copy question said every run sets device sizes in ring3.
+  check('the declared line names where Save as writes, the testbench, and the cell a run sets sizes in, FIXTURE_TB/ring3 (branch record SIF-133)',
+    (await shown('.declared')) === 'Working in FIXTURE_TB/tb_ring3 directly: you declared it a copy you made. Save as writes the Maestro test GATOR here; '
+      + 'a run sets device sizes in FIXTURE_TB/ring3 (put back when the run ends).', await shown('.declared'));
   await shot('tbprobes-2-brought.png');
 
   // ---- a press is its own Undo step ------------------------------------------------------------------------------------------------
@@ -173,7 +178,11 @@ await runChecks(browser, async () => {
   mark = calls.length;
   await choose('Testbench cell', 'other_tb'); await sleep(500);
   check('choosing another testbench reads nothing from Virtuoso', imports(mark).length === 0, imports(mark).join(' | '));
-  check('the note says the cell was read through another testbench', (await shown('.tb-stale')) === 'This cell was read through tb_ring3. Press Read the cell again to read it through other_tb: Probes then follow it.',
+  await far.until(`!!(${BUTTON('Use testbench probes')})`, 30);              // the read of the choice keeps the edited rows
+  // States audit of 2026-10-24 (branch record SIF-133): it ended "...through other_tb: Probes then follow it." over rows the read
+  // keeps; other_tb fits no circuit type, so the read after it offers no rows either.
+  check('the note says the cell was read through another testbench, and that the edited Probes stay (branch record SIF-133)', (await shown('.tb-stale')) === 'This cell was read through '
+    + 'tb_ring3. Press Read the cell again to read it through other_tb: your edited Probes stay; Use testbench probes then takes its rows, if it fits a circuit type.',
     await shown('.tb-stale'));
   check('edited Probes are kept, and the exchange is offered', (await shown('.tb-probes'))?.startsWith('Probes hold rows you edited, not the ones of the testbench tb_ring3.')
     && !!(await far.evaluate(`!!(${BUTTON('Use testbench probes')})`)), await shown('.tb-probes'));
@@ -192,7 +201,12 @@ await runChecks(browser, async () => {
   check('the copy matches the box again', !(await shown('.tb-stale')));
 
   // ---- back to tb_ring3: the offer, then the exchange on request ---------------------------------------------------------------------
-  await choose('Testbench cell', 'tb_ring3'); await press('Read the cell again'); await sleep(600);
+  await choose('Testbench cell', 'tb_ring3');
+  // Branch record SIF-133: the read through other_tb brought nothing, so no line says rows are kept; the next read keeps the
+  // edited ones all the same, and the line said "Probes then follow it".
+  check('back to tb_ring3, the line says Probes follow it unless you edited them (branch record SIF-133)', (await shown('.tb-stale')) === 'This cell was read through '
+    + 'other_tb. Press Read the cell again to read it through tb_ring3: Probes then follow it, unless you edited them.', await shown('.tb-stale'));
+  await press('Read the cell again'); await sleep(600);
   check('back through tb_ring3, the edited rows are kept and the exchange offered', (await shown('.tb-probes'))?.startsWith('Probes hold rows you edited')
     && (await probes())?.[0]?.notes === 'my own note');
   await press('Use testbench probes'); saved = await configNow();

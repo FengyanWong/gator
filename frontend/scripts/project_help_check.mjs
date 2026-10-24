@@ -238,8 +238,10 @@ await runChecks(browser, async () => {
   check('reading asked once whether the cell is a copy the user made', dialogs.length === 1 && dialogs[0].startsWith(`Work in ${LIBRARY}/ring_a directly?`), dialogs.join(' | '));
   check('draft: the headline is in view and names the button that makes it a task', await win.shown('Read from Virtuoso. Not optimizable yet: Save as makes it a task.'));
   // Branch record SIF-88: the next step stands in view (it was the fold's second paragraph); what the draft is stays folded.
-  check('draft: the next step is in view; what it is is folded under "What you can do with it now"', await win.shown('Next: fill Parameters, Probes and Specs')
-    && await win.shown('it writes the rows into this cell\'s Maestro view') && await win.shown('What you can do with it now') && await win.folded('The workbench holds the export of this cell'));
+  // Branch record SIF-133: Save as writes the Maestro test of the testbench - the step said "into this cell's Maestro view".
+  check('draft: the next step is in view, Save as writing the Maestro test of the testbench; what it is is folded under "What you can do with it now"',
+    await win.shown('Next: fill Parameters, Probes and Specs') && await win.shown('it writes the rows into the Maestro test of the testbench tb_ring_a (the copy you declared) and reads it back.')
+    && await win.shown('What you can do with it now') && await win.folded('The workbench holds the export of this cell'));
   check('draft: the next step names the + after each size, which adds it to Parameters (branch record SIF-104)',
     await win.shown('the + after a size under Hierarchy, Instances and parameters (at the end of this window) adds it to Parameters'));
   // A read brings no Parameters rows: the empty table says how to fill it, and where the cell's sizes are - each with its +
@@ -348,6 +350,11 @@ await runChecks(browser, async () => {
   check('saved task: two notes are one closed line', await col.shown('2 notes on this circuit') && await col.folded('FIXTURE NOTE: a second one.'));
   check('saved task: Hierarchy is back in the column and stays closed, as the user left it', (await evaluate(`${HIERARCHY}.open`)) === false && await col.shown('Hierarchy (1 instance)') && await col.folded('Instances and parameters'));
   check('saved task: the window follows it and shows no cell note', await win.shown('follows the task real:ring_a') && !(await win.present('Not optimizable yet')));
+  // States audit of 2026-10-24 (branch record SIF-133): "It runs in FIXTURE_DESIGNS/tb_ring_a - the cell you declared as your copy"
+  // named the testbench as the cell.
+  check('saved task: the line under the toolbar names the cell it runs in, then its testbench (branch record SIF-133)',
+    await status.shown(`It runs in ${LIBRARY}/ring_a with its testbench tb_ring_a - the cell you declared as your copy.`),
+    await evaluate(`${STATUS}.textContent.slice(0, 300)`));
   await shotColumn('help-5-generated-profile.png');
   await shotTask('help-5b-task-lines.png');
 

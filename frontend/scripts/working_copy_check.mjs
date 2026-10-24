@@ -7,7 +7,8 @@
 // 2026-09-23: the workbench makes no copy of its own; the user's copy is declared when the cell is read):
 //   - a cell read before the question, without a record: no "Make a working copy" button; the line says to read the cell
 //     again, which asks; the old /api/virtuoso/copy route is never called;
-//   - a declared cell: "Working in <library>/<testbench> directly: you declared it a copy you made", ONE button "Read setup",
+//   - a declared cell: "Working in <library>/<testbench> directly: you declared it a copy you made", then that Save as writes
+//     the Maestro test there and a run sets the sizes in <library>/<cell> (branch record SIF-133), ONE button "Read setup",
 //     only on a press, nothing on load - no "Write to Virtuoso" and no "Use in editors" (user 2026-09-22);
 //   - a copy the workbench made before that date keeps its record and its own line ("made by the workbench before");
 //   - "Read setup" reads AND fills Probes/Specs in one press, keeping the user's unit and optimizer settings, one Undo step
@@ -165,8 +166,14 @@ await runChecks(browser, async () => {
   check('reading it again asks the question and, on OK, reads with work_here - the old copy route is never called', dialogs.length === 1 && dialogs[0].message.startsWith(`Work in ${LIB}/${CELL} directly?`)
     && JSON.stringify(calls.slice(mark).map(c => [c.op, c.library, c.cell, c.testbench, !!c.work_here].join(' '))) === JSON.stringify([`import ${LIB} ${CELL} ${TB} true`]) && !calls.some(c => c.op === 'copy'),
     JSON.stringify(calls.slice(mark)));
-  check('the cell is named as worked in directly, with when it was declared', (await blockText()).includes(`Working in ${LIB}/${TB} directly: you declared it a copy you made (`)
-    && (await blockText()).includes('device sizes are written here'), await blockText());
+  check('the cell is named as worked in directly, with when it was declared', (await blockText()).includes(`Working in ${LIB}/${TB} directly: you declared it a copy you made (`),
+    await blockText());
+  // States audit of 2026-10-24 (branch record SIF-133): "Its Maestro test and, in a run, its device sizes are written here" said
+  // the sizes go into the testbench; a run writes them into the cell under it.
+  const declaredLine = await far.evaluate(`${BLOCK}?.querySelector('.declared')?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`);
+  check('...then where each part is written: Save as the Maestro test into it, a run the device sizes into the cell (branch record SIF-133)',
+    declaredLine.endsWith(`. Save as writes the Maestro test GATOR here; a run sets device sizes in ${LIB}/${CELL} (put back when the run ends).`)
+    && !declaredLine.includes('device sizes are written here'), declaredLine);
   check('then one button, Read setup - no Write to Virtuoso, no Use in editors', await far.evaluate(`!!(${BUTTON('Read setup')}) && !(${BUTTON('Write to Virtuoso')}) && !(${BUTTON('Use in editors')})`));
   check('the text beside it says when to press it', (await blockText()).includes('Changed its Maestro test yourself?'), await blockText());
   // branch record SIF-69: the fold said "source ade_output, the expression in signal" - a hidden column's value and a key

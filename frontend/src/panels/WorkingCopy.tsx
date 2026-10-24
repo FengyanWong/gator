@@ -102,12 +102,19 @@ export function WorkingCopy({ profileId, library, cell, record, config, setConfi
     `analyses: ${Object.keys(setup.analyses ?? {}).join(', ') || 'none'}`].join(', ') : null;
   return (
     <div className="working-copy">
+      {/* A declared cell's line says where each part is written (states audit of 2026-10-24, branch record SIF-133): Save as
+          writes the Maestro test into the testbench, and a run sets the sizes in the cell under it (cdf_write.py writes the
+          design's core cell). "Its Maestro test and, in a run, its device sizes are written here" named the testbench for
+          both, against the copy question and the warning; a testbench that is the cell itself keeps that sentence. */}
       {!record.verified
         ? <p className="warn">The working copy <code>{record.copy.library}</code> the workbench made did not pass its checks: {(record.problems ?? []).join('; ')}.
           Make a copy of the cell in Virtuoso yourself and read that one here.</p>
         : declared
           ? <p className="hint declared">Working in <code>{record.copy.library}/{record.copy.testbench}</code> directly: you declared it a copy you made
-            {declaredAt(record.created_utc) ? ` (${declaredAt(record.created_utc)})` : ''}. Its Maestro test and, in a run, its device sizes are written here.</p>
+            {declaredAt(record.created_utc) ? ` (${declaredAt(record.created_utc)})` : ''}.{record.copy.cell && record.copy.cell !== record.copy.testbench
+              ? <> Save as writes the Maestro test <code>GATOR</code> here; a run sets device sizes in <code>{record.copy.library}/{record.copy.cell}</code> (put
+                back when the run ends).</>
+              : ' Its Maestro test and, in a run, its device sizes are written here.'}</p>
           : <p className="hint">Working copy: <code>{record.copy.library}/{record.copy.testbench}</code>, made by the workbench before 2026-09-23. Checked then:
             it netlists like your cell.</p>}
       {record.verified && <div className="row"><span className="hint">Changed its Maestro test yourself?</span>

@@ -1195,7 +1195,10 @@ its libraries here." - choosing one does, as the chain follows the connection. W
 line says why and what then: "Virtuoso cannot be reached (tunnel). Bring the link up in the Connection window, then press
 Refresh." (after a refused read, "then try again"; an ngspice connection is told to choose a Virtuoso one). Nothing reads
 again by itself once the link is up: Refresh stays the press that does. Another failure, such as an older backend, carries
-no button.
+no button. While the gate's refusal stands and no schematic of the cell is drawn - a Refresh with the link down clears the
+lists -, the browse-only note waits: it said "you can look at this cell here" over nothing and asked for a Testbench cell
+from a box that was off. The first good Refresh brings it back. A refused read keeps it, with the schematic and **Read this
+cell into the workbench**, the press its "then try again" means (branch record SIF-133).
 
 The column and the window keep their explanations folded: a line with a small triangle ("Labels: class
 ..., PDK ..." - the column's circuit class and PDK id boxes are one closed line naming their
@@ -1242,8 +1245,11 @@ to say.
   task brought (that task's untouched targets then leave **Specs** with them). Rows you edited stay,
   and the note offers **Use testbench probes**. Undo takes an exchange back. A testbench that fits no
   circuit type brings nothing; the note says why. The rows describe the copy that was read: after
-  choosing another testbench, press **Read the cell again**. The circuit type decides how each result
-  is measured, so editing `signal` does not move it.
+  choosing another testbench, press **Read the cell again**. The line that asks for it says what that read does to
+  Probes, as above: "Probes then follow it, unless you edited them"; while the note says rows you edited were kept,
+  "your edited Probes stay; Use testbench probes then takes its rows, if it fits a circuit type"; a read without a
+  testbench brings none (branch record SIF-133; it said "Probes then follow it" over rows the read keeps). The circuit
+  type decides how each result is measured, so editing `signal` does not move it.
 * **Read this cell into the workbench** (first step towards a task for your own cell; explicit press,
   read-only, some seconds). It is off until a **Testbench cell** is chosen, and its tooltip says why (branch record
   SIF-88): the first read declares the cell, which needs the testbench, and the backend refuses it before any export.
@@ -1258,7 +1264,8 @@ to say.
   contacting Virtuoso: you can look at it, fill the three editors (the centre tabs, in this order:
   **Parameters** = what may vary, **Probes** = what is measured and how, **Specs** = equations over
   those probes and the limits they must meet; **Read setup** takes what the cell's Maestro test already holds) and
-  save it with **Save task**, which writes the rows into that cell's Maestro view. (Until 2026-10-06 "Ask the agent
+  save it with **Save task**, which writes the rows into the Maestro test of its testbench - the one the cell was
+  declared with, which the draft's next step names (branch record SIF-133; it said "this cell's Maestro view"). (Until 2026-10-06 "Ask the agent
   to set up" had the Agent tab's agent propose them; record 7.226.) That next step stands in view under the draft's
   headline (branch record SIF-88; it was folded under "What you can do with it now"). A read brings no Parameters rows,
   so an empty Parameters table says "No rows yet: add one row per size the optimizer may change (Add, the + above)" and,
@@ -3635,8 +3642,12 @@ when the run ends; a forced abort can leave them changed). Cancel reads nothing.
 the backend records the cell that was read as the flow's working copy (`working_copy.declare`: a record with
 `copy == original` and `declared: true`; `verified` there means "the user said so", not a netlist comparison - nothing is
 contacted beyond the read, and the check before every run keeps comparing the cell's export with the saved task). The
-window then says "Working in `<library>/<testbench>` directly: you declared it a copy you made (when)", and reading a
-declared cell again asks nothing. Refused in words: a cell read without its testbench (before any export), the PDK's own
+window then says "Working in `<library>/<testbench>` directly: you declared it a copy you made (when). Save as writes the
+Maestro test GATOR here; a run sets device sizes in `<library>/<cell>` (put back when the run ends)." (branch record SIF-133:
+the second sentence was "Its Maestro test and, in a run, its device sizes are written here", which put the sizes in the
+testbench; a testbench that is the cell itself keeps it), and reading a declared cell again asks nothing. The record keeps
+the testbench of that first read: reading the cell again through another one does not change where Save as writes. Refused
+in words: a cell read without its testbench (before any export), the PDK's own
 library, an export that does not name the cell. `POST /api/virtuoso/copy` refuses (`copies_not_made`).
 Since 2026-10-07, **Save as** on an existing saved task explicitly creates a new task with its own DUT/testbench
 copies in the same working library, using `working_copy.make_task_copy` (record 7.246).
@@ -3736,7 +3747,10 @@ record SIF-92); another task or cell, or a name now in the list, brings the numb
 
 On a saved task, the existing `as_new` API creates a separate task at revision 1, with renamed DUT/testbench copies
 inside its working library; the source task and its recorded baseline remain unchanged. A first save from a cell
-uses the copy the user declared when reading it. The successful new task is selected automatically. The prompt
+uses the copy the user declared when reading it. The successful new task is selected automatically, and the line under
+the toolbar names the cell it runs in, then its testbench: "It runs in `<library>/<cell>` with its testbench
+`<testbench>` - the cell you declared as your copy" ("- its working copy" for a copy of its own; branch record SIF-133:
+it named the testbench alone). The prompt
 explains the copy, and the existing save progress includes that step. A frequency retry retains the chosen name:
 a ring oscillator's save asks for its rough oscillation frequency under the toolbar, the tab line's Save as off
 meanwhile. Enter in the box, or the row's own Save as, saves with it under the chosen name; **Cancel** (or Escape)

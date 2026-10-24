@@ -255,7 +255,8 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
   const builtIn = circuit?.profile_task_generated === false;
   const taskNote = circuit?.profile_task && virtuosoOn ? (
     <div className="note">
-      <p><b>This cell already has a registered task:</b> <code>{circuit.profile_task}</code>{builtIn ? ' (a verified built-in circuit)' : ''}{' '}
+      {/* A full stop after the key or its remark (states audit of 2026-10-24, branch record SIF-133): it ran into "Choose it". */}
+      <p><b>This cell already has a registered task:</b> <code>{circuit.profile_task}</code>{builtIn ? ' (a verified built-in circuit)' : ''}.{' '}
         Choose it in the Tasks window (the task's name on the editors' tab line).</p>
       <details className="more"><summary>What this means</summary>
         <p>The workbench can already optimize this cell - through that task, in the Tasks window.{builtIn ? ' A verified built-in circuit gets no second task.'
@@ -368,8 +369,11 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
         {circuit.circuit?.connection_problem && <p className="warn">{circuit.circuit.connection_problem}</p>}
       </>)}
       <TaskBaseline key={circuit.task_key} circuit={circuit} config={config} refresh={() => load(ref)} />
-      {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in
-        <code> {saved.copy?.library}/{saved.copy?.testbench}</code>{saved.copy?.library === saved.original?.library && saved.copy?.cell === saved.original?.cell ? ' - the cell you declared as your copy' : ' - its working copy'}.{baselineText(saved)}</p>}
+      {/* The cell a run sets sizes in, then its testbench (states audit of 2026-10-24, branch record SIF-133): the line named
+          the testbench alone, as if the sizes were written there. */}
+      {saved && saved.task_key === ref.task_id && <p className="ok">Saved the new task <code>{saved.task_key}</code>. It runs in{' '}
+        <code>{saved.copy?.library}/{saved.copy?.cell}</code>{saved.copy?.testbench && saved.copy.testbench !== saved.copy.cell
+          ? <> with its testbench <code>{saved.copy.testbench}</code></> : ''}{saved.copy?.library === saved.original?.library && saved.copy?.cell === saved.original?.cell ? ' - the cell you declared as your copy' : ' - its working copy'}.{baselineText(saved)}</p>}
       {generatedName && taskCheck && <CheckSteps result={taskCheck} />}
       {generatedName && profileMessage && profileMessage.what !== 'delete' && <p className={profileMessage.level === 'ok' ? 'ok' : 'error'}>{profileMessage.text}</p>}
     </>)}
@@ -428,7 +432,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
   return <>{column}{head}{tools}{status}{taskSave}{firstSave}{titleFacts}{ngspiceWindow}<PopupPortal popup={popup} root={root}><VirtuosoWindow profileId={profileId} virtuosoOn={virtuosoOn} offered={offered}
     circuitRef={ref} chosen={chosen} libraries={libraries} cells={cells} chosenCell={chosenCell} listing={listing} importing={importing} patch={patch} setRefresh={setRefresh}
     pdkStep={pdkStep} nativeError={nativeError} nativeGated={nativeGated} error={error} circuit={circuit} taskNote={taskNote} importCell={importCell} config={config} setConfig={setConfig}
-    noteHere={noteHere} takeTestbenchProbes={takeTestbenchProbes} circuitInfo={circuitInfo} nativeSchematic={nativeSchematic} /></PopupPortal></>;
+    noteHere={noteHere} takeTestbenchProbes={takeTestbenchProbes} circuitInfo={circuitInfo} native={native} nativeSchematic={nativeSchematic} /></PopupPortal></>;
 }
 
 /** Memoised (record 7.275): its props change with the configuration, the circuit, the run list and the task - not with

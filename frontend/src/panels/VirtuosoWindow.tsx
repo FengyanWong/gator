@@ -18,15 +18,20 @@ export const NO_TESTBENCH = "Choose the cell's Testbench cell first: a task simu
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);
 
-/** `nativeGated`: `nativeError` is the connection gate's refusal (CircuitBrowser.tsx), so the line carries Connection... */
+/** `nativeGated`: `nativeError` is the connection gate's refusal (CircuitBrowser.tsx), so the line carries Connection...
+ *  `native`: the chosen cell's schematic as read (useVirtuosoBrowser), which `nativeSchematic` draws; null while none is. */
 export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref, chosen, libraries, cells, chosenCell, listing, importing, patch, setRefresh,
-  pdkStep, nativeError, nativeGated, error, circuit, taskNote, importCell, config, setConfig, noteHere, takeTestbenchProbes, circuitInfo, nativeSchematic }: {
+  pdkStep, nativeError, nativeGated, error, circuit, taskNote, importCell, config, setConfig, noteHere, takeTestbenchProbes, circuitInfo, native, nativeSchematic }: {
   profileId: string | null; virtuosoOn: boolean; offered: boolean; circuitRef: Json; chosen: Json; libraries: string[] | null; cells: Json; chosenCell: Json;
   listing: string | null; importing: boolean; patch: (fields: Json, follow?: 'choice' | 'press' | null) => void; setRefresh: (f: (n: number) => number) => void;
   pdkStep: Json; nativeError: string | null; nativeGated: boolean; error: string | null; circuit: Json; taskNote: ReactNode; importCell: () => void; config: Json;
   setConfig: (f: (c: Json) => Json, record?: boolean) => void; noteHere: Json; takeTestbenchProbes: () => void; circuitInfo: ReactNode;
-  nativeSchematic: ReactNode }) {
+  native: Json; nativeSchematic: ReactNode }) {
   const namedHere = namedTestbench(cells, chosen.cell);
+  // The testbench whose Maestro test a first Save as writes: the one the declared record names (task_save.py writes the
+  // record's copy, and a later read through another testbench leaves the record as it is), else the one the cell was read
+  // through (states audit of 2026-10-24, branch record SIF-133: the Next line said "this cell's Maestro view").
+  const savedInto: string | null = circuit?.working_copy?.copy?.testbench ?? circuit?.circuit?.testbench_cell ?? null;
   const cellInfo = new Map<string, Json>((cells?.cells ?? []).map((c: Json) => [c.name, c]));   // one look-up per option, not a search
   const readable = !!profileId && !!chosenCell?.has_schematic && !importing && !listing;
   // The warning stays in view (never folded): the confirm repeats it once, when Read is pressed.
@@ -97,11 +102,15 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
         : <p className="error">{nativeError}</p>)}
       {virtuosoOn && error && <p className="error">{error}</p>}
       {circuit && taskNote}
-      {virtuosoOn && circuit && !circuit.loaded && !taskNote && (
+      {virtuosoOn && circuit && !circuit.loaded && !taskNote && !(nativeGated && !native) && (
         // Not a fault and nothing to fix in this form: said in plain words. No list of the circuits that already have a
         // task here (user, 2026-09-22): whoever wants one of those picks it in the Project column. What the cell lacks is
         // called a task, as Save as and the Tasks window call it (branch record SIF-61: it said "circuit profile", the word
         // of the "Create profile" button that went on 2026-09-22).
+        // It waits while the gate's refusal stands and no schematic of the cell is drawn (states audit of 2026-10-24, branch
+        // record SIF-133): with the link down, Refresh clears the lists, and the note said "you can look at this cell here"
+        // over nothing, with a Testbench box to choose that was off. The first good Refresh brings it back. A Read the gate
+        // refused keeps it, schematic and all: that refusal's "then try again" is its Read button (SIF-108).
         <div className="note">
           <p><b>Browse only: you can look at this cell here, but the workbench cannot optimize it yet.</b></p>
           <details className="more"><summary>Why: it is not a task yet</summary>
@@ -132,17 +141,22 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
               leaves Parameters empty. It names the + of each size in the Hierarchy at the window's end (branch record SIF-104). */}
           <p className="hint next-step">Next: fill Parameters, Probes and Specs - the <b>+</b> after a size under <b>Hierarchy</b>, Instances and parameters
             (at the end of this window) adds it to Parameters, and <b>Read setup</b> below takes the outputs and specs of the cell's Maestro
-            test - then press <b>Save as</b>: it writes the rows into this cell's Maestro view (the copy you declared) and reads it back.</p>
+            test - then press <b>Save as</b>: it writes the rows into the Maestro test of {savedInto ? <>the testbench <code>{savedInto}</code></> : 'its testbench'} (the
+            copy you declared) and reads it back.</p>
           <details className="more"><summary>What you can do with it now</summary>
             <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled. Claude Code
               or Codex (the Agent window: "Agent..." among the bottom tabs) can help with any of it, from what you describe.</p>
           </details>
           {/* A cell not yet declared is declared by its next read, which needs a testbench (importCell refuses it without one):
-              the line asks for one instead of inviting that press (review of branch record SIF-88). */}
+              the line asks for one instead of inviting that press (review of branch record SIF-88). What that read does to
+              Probes is said as followTestbench does it (states audit of 2026-10-24, branch record SIF-133): rows you edited
+              stay until Use testbench probes exchanges them - "Probes then follow it" stood over them, the kept ones too -,
+              and a read without a testbench brings no rows at all. */}
           {(circuit.circuit?.testbench_cell ?? null) !== (ref.testbench_cell ?? null) && (
             <p className="warn tb-stale">This cell was read {circuit.circuit?.testbench_cell ? <>through <code>{circuit.circuit.testbench_cell}</code></> : 'without a testbench'}.
               {ref.testbench_cell || circuit.working_copy?.verified
-                ? <> Press <b>Read the cell again</b> to read it {ref.testbench_cell ? <>through <code>{ref.testbench_cell}</code></> : 'without one'}: Probes then follow it.</>
+                ? <> Press <b>Read the cell again</b> to read it {!ref.testbench_cell ? 'without one.' : <>through <code>{ref.testbench_cell}</code>{noteHere?.state === 'kept'
+                  ? ': your edited Probes stay; Use testbench probes then takes its rows, if it fits a circuit type.' : ': Probes then follow it, unless you edited them.'}</>}</>
                 : <> Choose its <b>Testbench cell</b> above to read it again: that read declares the cell the task flow works in, which needs one.</>}</p>)}
           {!circuit.working_copy?.verified && copyWarning}
           <div className="row">

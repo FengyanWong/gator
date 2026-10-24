@@ -41,6 +41,8 @@
 //     before its status is in, and then its history is asked for from cursor 0 once (twice before: the status answer made it
 //     live and started the read again); a run at rest is read at once, as before, and a live one whose status cannot be read
 //     all the same
+//   - branch record SIF-127: Logs, its panel folded to its tab line, reads the live run's log no more (it read it every 2 s
+//     out of sight) and reads it at once when opened again; at 1000 px, where a folded panel's body stays in view, it reads on
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -181,6 +183,7 @@ await runChecks(browser, async () => {
   const page = await browser.open({ consoleApi: false, width: 1600, height: 1000 });
   const { send, evaluate, fulfil, consoleErrors } = page;
   const reads = [];                                         // every /api/runs/training request: { run, flushes, at }
+  const logReads = [];                                      // when each /api/runs/logs request came (branch record SIF-127)
   // A request of a path in `holding` waits unanswered in `heldBack` until `release` answers it as usual (branch record SIF-125:
   // the run's status and its Training reads held back - each poll waits for its answer - so that nothing else draws the page)
   const holding = new Set(), heldBack = [];
@@ -201,7 +204,8 @@ await runChecks(browser, async () => {
       reads.push({ run: run.id, flushes: Number(url.searchParams.get('flushes')), tailCursor, at: Date.now() });
       return fulfil(requestId, 200, serve(run, Number(url.searchParams.get('flushes')), tailCursor));
     }
-    if (name === '/api/runs/logs') return fulfil(requestId, 200, { kind: url.searchParams.get('kind'), entries: [{ time_utc: '2026-10-05T12:00:01+00:00', event: 'FIXTURE_event', run_id: 'live', detail: 'logs still work' }] });
+    if (name === '/api/runs/logs') { logReads.push(Date.now());
+      return fulfil(requestId, 200, { kind: url.searchParams.get('kind'), entries: [{ time_utc: '2026-10-05T12:00:01+00:00', event: 'FIXTURE_event', run_id: 'live', detail: 'logs still work' }] }); }
     if (name === '/api/runs/files') return fulfil(requestId, 200, { files: [{ path: 'FIXTURE/run_manifest.json', bytes: 1234, modified_utc: '2026-10-05T12:00:00+00:00' }], total_bytes: 1234, run_dir: run?.dir });
     return page.readOrRefuse({ requestId, request });
   };
@@ -339,6 +343,41 @@ await runChecks(browser, async () => {
   check('incoming results do not take the tab away from Logs', (await activeTab()) === 'Logs');
   check('Logs still shows the run\'s log', await until(`/FIXTURE_event/.test(document.querySelector('footer .bottom-body .scroll.log')?.textContent ?? '')`));
   check('hidden, the Training tab reads nothing and draws nothing', reads.length === readsHidden && (await evaluate('window.__draws.length')) === quiet, `${reads.length - readsHidden} reads`);
+
+  // ---- Logs, folded (branch record SIF-127) -----------------------------------------------------------------------------------
+  // Folded to its tab line, the panel's body is out of sight at 1101 px and wider, and Logs read the live run's newest 200
+  // entries every 2 s all the same (the panel folds by itself, too, when a cell is entered with little room). The fold changes
+  // its interval, so one more read comes in (the one on its way, or one at once), then none; opened again, it reads at once.
+  // Below 1101 px the stacked layout keeps a folded panel's body in view (styles.css): there it reads on. Training stays hidden
+  // here (Logs is chosen), so its reads above are untouched.
+  const enter = async () => { await evaluate(`document.querySelector('footer .splitter').focus()`);
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); };
+  const FOLDED = `document.querySelector('.layout').classList.contains('bottom-folded')`;
+  const logsAtFold = logReads.length;
+  await enter();
+  const logsFolded = await until(FOLDED, 20);
+  await sleep(500);                                                       // the read the fold makes, answered
+  const logsFoldRead = logReads.length;
+  await sleep(4500);                                                      // two reads, every 2 s, before
+  check('folded to its tab line, Logs reads the live run\'s log no more (SIF-127)', logsFolded && logReads.length === logsFoldRead,
+    `${logsFoldRead - logsAtFold} read(s) as it folded, ${logReads.length - logsFoldRead} in the 4.5 s after`);
+  const logsShut = logReads.length;
+  await enter();
+  const logsOpened = await until(`!${FOLDED}`, 20);
+  check('opened again, Logs reads at once, then every 2 s (SIF-127)', logsOpened && await waitFor(() => logReads.length > logsShut, 1000)
+    && await waitFor(() => logReads.length > logsShut + 1, 3000), `${logReads.length - logsShut} reads`);
+  await enter();
+  const foldedNarrow = await until(FOLDED, 20);
+  await page.viewport(1000, 1000);
+  const logInView = await until(`document.querySelector('footer .bottom-body .scroll.log')?.checkVisibility()`, 20);
+  const logsNarrow = logReads.length;
+  await sleep(4500);
+  check('at 1000 px a folded panel keeps its body in view, and Logs reads on, every 2 s (SIF-127)', foldedNarrow && logInView && logReads.length - logsNarrow >= 2,
+    `${logReads.length - logsNarrow} reads in 4.5 s`);
+  await page.viewport(1600, 1000); await sleep(300);
+  await enter();
+  check('(set-up) back at 1600 px the panel opens again', await until(`!${FOLDED}`, 20));
   await press('Output files');
   check('Output files still lists the run\'s files', await until(`/FIXTURE\\/run_manifest\\.json/.test([...document.querySelectorAll('footer .bottom-body table.grid')].find(t => t.checkVisibility())?.textContent ?? '')`));
   await press('Training');
@@ -368,10 +407,7 @@ await runChecks(browser, async () => {
   await evaluate(`(${RESET}).click()`);
   check('Reset zoom shows the whole run again', await until(`(${RESET}).disabled && (${FOLLOW}).getAttribute('aria-pressed') === 'true'`, 30));
 
-  // ---- the bottom panel folded to its tab line hides the tab too ----------------------------------------------------------------
-  const enter = async () => { await evaluate(`document.querySelector('footer .splitter').focus()`);
-    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
-    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); };
+  // ---- the bottom panel folded to its tab line hides the tab too (`enter`: the splitter's Enter, above) -----------------------
   await enter();
   check('the panel folds to its tab line', await until(`document.querySelector('.layout').classList.contains('bottom-folded')`, 20));
   const readsFolded = reads.length;

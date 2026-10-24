@@ -4756,3 +4756,73 @@ nothing else asking, took 150 to 194 ms at 1,800 to 2,128 evaluations, a status 
 control: read from cursor 0 once in every round of both builds, its first chart 31 -> 30 ms after the press (medians).
 Not measured: the user's D:, where each read takes longer. The batch expected 2 -> 1 and the first chart sooner by the
 duplicate read's cost: 202 ms sooner here, about one read alone.
+
+### SIF-127 Logs reads nothing while the bottom panel is folded (2026-10-24; from the performance audit)
+
+**Found.** The performance audit's batch 6 (NET-3, confirmed). With the Logs tab chosen and a run live, the tab read the
+run's newest 200 log entries every 2 s - from the tail of `logs/events.jsonl`, on the user's D: over 9p - also while the
+bottom panel was folded to its tab line and none of it could be seen; and the panel folds by itself when a cell is
+entered with little room (record 7.372), so the reads went on while the user typed. The Training tab reads nothing while
+folded (record 7.193); Logs was given only the run and whether its worker lives. Measured below with a live MOCK run: 29
+reads in the minute after a fold, of about 64 kB each - 29 of the page's 68 and 69 requests in that minute, where the
+audit had put it at up to 40 % of the live traffic. The audit's line numbers are those of the tree at 0e8d941 (the
+review of SIF-80, 2026-10-22 00:13), as SIF-124 found for its file: the read at `RunTabs.tsx` 316 and the tab at
+`BottomPanel.tsx` 110 stood at 448 and 132 at HEAD 4927786.
+
+**Changed.** `frontend/src/panels/BottomPanel.tsx`: `bodyHidden`, whether the fold puts the tab out of sight - folded,
+in a window 1101 px or wider (`window.matchMedia('(min-width: 1101px)')`, the media query of the fold's rule in
+`styles.css`, `.layout.bottom-folded .bottom-body { display: none }`). Below that width the stacked layout keeps the
+body in view, folded or not (a fold kept in this browser from a wider window), and Logs reads on there: the audit's
+verdict found that a gate on the fold alone would freeze a Logs tab in view. It is read as the panel is drawn, which a
+live run's status answer does every 1.5 s, and only a live run's log is read on a timer, so a window resized across
+1101 px is followed within one status answer. Logs gets it as `hidden`. `frontend/src/panels/RunTabs.tsx`: `LogsTabBody`
+reads every 2 s while the worker lives and the tab is not folded out of sight (`alive && !hidden`). The fold changes the
+interval, which `useRequest` takes up at once: one more read comes in (the one on its way, or one at once), then none;
+opened again, it reads at once, then every 2 s. The read after the worker ends (`before`) is as it was, folded or not,
+and a run at rest is read once, as before. What the tab shows is the same: folded, its lines are those of the last read,
+out of sight; opened, the read at once brings them up to date. Not done, as the batch said: no gate on Corner check's
+1.5 s poll of a running check (rarely usable now); the Training tab's own rule (folded at any width, record 7.193) is
+untouched. Nothing here starts, continues or stops a run, saves a task or writes to Virtuoso.
+`frontend/scripts/fixtures/request_lifecycle.tsx`: its Logs tab is given `hidden={false}` (the prop is required, so that
+no caller leaves it out). `docs/workbench.md` (The page's look and layout: Logs reads nothing while the panel is folded)
+and `docs/functionality-reference.md` (Splitter above the bottom panel, Logs) say it.
+`frontend/scripts/training_tab_check.mjs`: the checks below; when each /api/runs/logs request came (`logReads`); the
+splitter's Enter (`enter`) moved up, shared with the Training tab's fold part.
+
+**Checked.** `tsc` clean. `training_tab_check` 135 (131 before). New, in its Logs part, with its canned live run and the
+Logs tab chosen at 1600 px: folded with the splitter's Enter, no Logs read in the 4.5 s after the fold's own (1 as it
+folded, 0 after; 2 in those 4.5 s before); opened again, a read within 1 s and another within 3 s; folded at 1000 px,
+where the body stays in view, two reads or more in 4.5 s (the freeze the audit's verdict warned of). A probe run of the
+new check on the build before failed exactly the first ("0 read(s) as it folded, 2 in the 4.5 s after"; 134 passed); its
+"opened again" passed there by chance, a 2 s read falling within the second. One lane, after the memory guard, on the
+build of this tree: `calibration_check` 48, `export_check` 37, `run_control_live_check` 23, `run_control_check` 171,
+`training_tab_check` 135, `dom_identity_check` 56 (recording), `run_list_check` 177, `typing_check` 62,
+`files_tab_check` 43, `task_list_check` 105, `looks_check` 76, `task_run_check` 39, `calibration_save_check` 22,
+`reliability_check` 20, `room_check` 31, `matched_devices_check` 37, `agent_window_check` 33, `request_lifecycle_check`
+25 (18 scripts, 1140 checks, one run: every check that shows the Logs tab or folds the panel, the others that read the
+bottom panel as SIF-126 ran them, and the request_lifecycle fixture, whose Logs tab takes `hidden`), then
+`corner_check_check` 42 (left out of that run by its name, as in SIF-126) - all passed the first time. No flakes. DOM
+identity: `dom_identity_check` replayed that recording on the build before (the reference, 56 passed) and on the build
+after with `--compare` (112 passed): all 56 files identical byte for byte - each step's page and window in the ten
+scenes, requests.txt and storage.json - among them the tabs scene's Logs step, whose FIXTURE run at rest is read once in
+both (no scene folds the panel).
+
+**Measured.** A throwaway check (`tmp-measure-logs_check.mjs`) and its wrapper script in the session's scratchpad, both
+deleted before this commit, on builds of HEAD 4927786 and of this change, each built into a temp folder. The wrapper
+started a scratch backend as run_checks.sh starts one (its own settings and output folder, the MOCK stand-in registered,
+never 8765); the check served the build with vite preview, /api proxied to that backend, started a MOCK run of 20,000
+evaluations at concurrency 1 through the API (as export_check does) and stopped it at the end. Headless Edge
+1680 x 1050, the page opened on the run - live, so the header took it, as it takes any live run - with the Logs tab
+chosen; every /api request the page sent counted with CDP Network (`Network.requestWillBeSent`), the log answers' sizes
+with `Network.loadingFinished`. In each run: A, 60 s with the panel open (the control); B, the 60 s from a real double
+click on the splitter, folded; C, 60 s at 1000 px with the fold kept, the body in view; D, back at 1680 px, five rounds
+of 3 s folded, then opened again by a double click: the time to the next /api/runs/logs request. Two runs of each build,
+interleaved, before -> after: A 30 and 30 log reads -> 30 and 30; B 29 and 29 -> 1 and 1 - the read as it folded, in its
+first second, and none in the 59 s after - and all of the page's /api requests in that minute 68 and 69 -> 41 and 41; C
+29 and 30 -> 30 and 30; D, opened again, the next read 451 to 1834 ms after the double click (median 470 of 10: the 2 s
+timer's next turn, which the rounds' even pace put between 451 and 500 ms in 8 of them) -> 10 to 23 ms (median 15). The
+status reads of the shown run were 39 to 40 a minute in every phase of both builds. Each log answer of 200 entries was
+63,694 bytes (the median in every run; at most 63,790; the smallest, 4.9 to 7.7 kB, early in the run): about 1.8 MB a
+minute read folded before, 64 kB after. The run stood at 2,592 to 2,740 evaluations at the end of each run. Not
+measured: the user's D:, where each tail read over 9p takes longer, and the user's runs, whose log entries are of other
+sizes. The batch expected about 30 -> 1 folded, and about 30 before and after at 1000 px.

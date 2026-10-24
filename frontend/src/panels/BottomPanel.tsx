@@ -111,6 +111,10 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
   // the page is open, for every run shown, as the table did while its tab stayed open.
   const [dataChoice, setDataChoice] = useState<DataChoice>(DATA_CHOICE);
   const [logKind, setLogKind] = useState('events');
+  // Whether the fold puts the tab out of sight: only at 1101 px and wider (styles.css, `.layout.bottom-folded .bottom-body`);
+  // below that the stacked layout keeps the body in view, folded or not, and Logs reads on (branch record SIF-127). Read at
+  // each drawing: a live run's status answer draws the panel every 1.5 s, and only a live run's log is read on a timer.
+  const bodyHidden = folded && window.matchMedia('(min-width: 1101px)').matches;
   return (
     <footer>
       <div className="splitter" role="separator" aria-orientation="horizontal" tabIndex={0} aria-label="Height of the bottom panel"
@@ -129,7 +133,7 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
         {tab === 'status' && <StatusTab status={status} runDir={runDir} error={statusError} check={shownCheck} continueBlocked={continueBlocked} refusal={shownRefusal}
           onContinue={continueShown} onDismissRefusal={() => launcher.setRefusal(null)} onFineTune={fineTuneFrom} config={config} setConfig={setConfig}
           ask={askContinue && askContinue.serial !== askedContinue.current ? askContinue : null} onAsked={serial => { askedContinue.current = serial; }} />}
-        {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} kind={logKind} setKind={setLogKind} />}
+        {tab === 'logs' && <LogsTab runDir={runDir} alive={!!status?.worker_alive} kind={logKind} setKind={setLogKind} hidden={bodyHidden} />}
         {tab === 'data' && <DataTab runDir={runDir} status={status} choice={dataChoice} setChoice={setDataChoice} />}
         {/* whether the run's worker lives and its last save point: Output files reads a live run again at each save point
             (branch record SIF-99); null while the shown run's status is not read */}

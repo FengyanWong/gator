@@ -440,12 +440,18 @@ const LogLine = memo(function LogLine({ time, name, text, error }: { time: strin
 });
 
 /** `kind`: the log shown, events or errors, kept by the bottom panel (branch record SIF-105: the tab is drawn only while
- *  chosen, and the errors log went back to events at every return). */
-function LogsTabBody({ runDir, alive, kind, setKind }: { runDir: string | null; alive: boolean; kind: string; setKind: (kind: string) => void }) {
+ *  chosen, and the errors log went back to events at every return). `hidden`: the panel is folded to its tab line, the tab
+ *  out of sight (branch record SIF-127). */
+function LogsTabBody({ runDir, alive, kind, setKind, hidden }: { runDir: string | null; alive: boolean; kind: string; setKind: (kind: string) => void;
+  hidden: boolean }) {
   const [note, setNote] = useState<string | null>(null);
   // Read every 2 s while the worker lives; a run at rest is read once (when the tab opens, and once more when its worker
-  // ends) - it used to be re-read every minute for as long as the tab stayed open.
-  const { value, error, refresh } = usePolling(signal => api.logs(runDir!, kind, signal), alive ? 2000 : 0, !!runDir, [runDir, kind]);
+  // ends) - it used to be re-read every minute for as long as the tab stayed open. Not on the timer while the panel is
+  // folded, as the Training tab (branch record SIF-127): a live run's newest 200 entries were read every 2 s for nobody to
+  // see, and the panel folds by itself when a cell is entered with little room. The fold changes the interval, so one more
+  // read comes in (the one on its way, or one at once), then none; opened again, it reads at once, then every 2 s. The read
+  // when the worker ends stays.
+  const { value, error, refresh } = usePolling(signal => api.logs(runDir!, kind, signal), alive && !hidden ? 2000 : 0, !!runDir, [runDir, kind]);
   // That last read starts after the worker ended: a read already on its way then was kept, and could miss the last lines
   // (review of 2026-10-01).
   const before = useRef({ runDir, alive });
@@ -469,8 +475,8 @@ function LogsTabBody({ runDir, alive, kind, setKind }: { runDir: string | null; 
 }
 
 /** Memoised (record 7.279): their props are the run and whether its worker lives - and Output files' last save point, which
- *  changes as rarely (branch record SIF-99), and the log chosen, whose setter stays the same (SIF-105) - so a status
- *  update - every 1.5 s while a run works - no longer draws the 200 log lines or the run's ~450 files again; their own reads
- *  still do. */
+ *  changes as rarely (branch record SIF-99), the log chosen, whose setter stays the same (SIF-105), and whether the panel is
+ *  folded (SIF-127) - so a status update - every 1.5 s while a run works - no longer draws the 200 log lines or the run's
+ *  ~450 files again; their own reads still do. */
 export const LogsTab = memo(LogsTabBody);
 export const FilesTab = memo(FilesTabBody);

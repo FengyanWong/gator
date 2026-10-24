@@ -442,6 +442,17 @@ run selected"; opened by hand it stays open for that page. The height and the fo
 editors always keep the window height less 280 px. Windows narrower than 1100 px keep their own stacked layout and have
 no splitter.
 
+**Logs reads nothing while the panel is folded** (branch record SIF-127). Folded to its tab line, the panel's body is
+out of sight, and Logs read a live run's newest 200 entries every 2 s all the same: about 30 reads a minute from the tail
+of `logs/events.jsonl` (about 64 kB each with a MOCK run) for nobody to see, and the panel folds by itself when a cell is
+entered with little room (record 7.372). Now Logs stops while folded, as the Training tab does since record 7.193: the
+fold lets one more read come in (the one on its way, or one at once), then none; opened again, it reads at once, then
+every 2 s; the read when the run's worker ends stays. A window narrower than 1101 px shows the body in its stacked
+layout, folded or not (a fold kept from a wider window), and Logs reads on there. With a live MOCK run on a scratch
+backend: one read in the minute after a fold (the fold's own) instead of 29, the page's requests in that minute 41
+instead of 68; opened again, the next read 10 to 23 ms after the double click instead of whenever the 2 s timer fell
+(451 to 1834 ms).
+
 **The bottom panel keeps its tab and its choices** (branch record SIF-105). Data tables and Logs are drawn only while their
 tab is chosen, and a look at Run status put them back to the newest 25 evaluations and to the events log; the tab itself
 went back to Run status at every reload, while the height, the fold and the Training tab's charts were kept. Now the panel

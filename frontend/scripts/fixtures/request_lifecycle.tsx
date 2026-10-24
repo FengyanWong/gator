@@ -42,7 +42,7 @@ function Fixture() {
     <input id="interval" type="number" value={interval} onChange={e => setInterval(Number(e.target.value))} />
     <input id="timeout" type="number" value={timeout} onChange={e => setTimeoutMs(Number(e.target.value))} />
     <div id="panel">{tab === 'data' ? <DataTab runDir={run} status={null} choice={choice} setChoice={setChoice} /> : tab === 'files' ? <FilesTab runDir={run} />
-      : tab === 'logs' ? <LogsTab runDir={run} alive={false} kind={kind} setKind={setKind} />
+      : tab === 'logs' ? <LogsTab runDir={run} alive={false} kind={kind} setKind={setKind} hidden={false} />
       : <Poll run={run} interval={interval} timeout={timeout} controls={tab === 'status'} />}</div></>;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode><Fixture /></StrictMode>);

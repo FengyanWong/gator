@@ -5371,3 +5371,87 @@ fail - the 4 new and the 3 rewritten - and 132 pass. One lane, after the memory 
 passed the first time: `training_tab_check` 139, `training_data_check` 124, `dom_identity_check` 56,
 `corner_check_check` 42, `looks_check` 81 (its SIF-129 stylesheet check included). The other scripts were not run: none
 draws the Training tab or uses these classes. In all 5 scripts, 442 checks.
+
+### SIF-135 The bound a spec's Limit uses reads "needed", its error names the box to fill, and the Issues column stays in view (2026-10-24; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found a bound a spec needs labelled as
+if it were not, its error in the schema's words, and the words that explain a red row cut by the table's box. On Specs the
+red row score_cube, Limit "≥ lower", read "no limit" in its empty Lower as in its Upper, and its Issues cell "error
+constraint >= needs lower" (S12-8, `spec_shared_notes.png`); a Lower cleared in a saved task, under "≥ lower, then higher
+is better", read "no limit" too (`unsaved-rows-specs-cleared.png`). `emptyOf` (Editors.tsx) gave every empty Specs bound
+"no limit", though its comment kept the word for a one-sided spec's other side, and the Issues column had no words of its
+own for `missing_threshold` (validation.py `_check_limits`), so the backend's sentence stood as it is. A spec made with Add
+starts so - `newRow` gives it the first limit, "≥ lower", and no lower -: every spec added showed the bound it needs as "no
+limit" beside an error in schema words. At 1680 x 1050 with More columns open the Specs table was wider than its box and
+scrolled sideways, and the box cut its last column, Issues: score_sq's red row read "error The equa", "info New spec:",
+"info The source" (S12-25, `spec_probe_chips.png`; `spec_import_error.png`: "warning The ur").
+
+**Changed.** `frontend/src/panels/editorRules.ts`: `limitUses(constraint, bound)`, the bounds each limit uses as
+`_check_limits` asks for them (≥ lower the Lower, ≤ upper the Upper, an interval both). `frontend/src/panels/Editors.tsx`:
+`emptyOf` gives the empty bound a row's Limit uses "needed", the other side "no limit"; an empty Scale's "auto" and a
+follower's "-" are as before. `boundWords`: the Issues column names a missing bound by its header and the Limit's words,
+"Lower needed: the Limit ≥ lower uses it" (the bound from the path, targets[2].lower, the limit from the message, worded by
+`limitLabel`), and a bound the Limit does not use (`unexpected_threshold`) "Upper not used by this Limit: clear it"; a
+message in other words keeps its first clause, and the backend's message and code stay in the tooltip, as for every issue.
+A tab's tooltip gives its first blocking issue in the column's words too (`blockingTitle`, the plan's optional item): "1
+blocking issue: Lower needed: the Limit ≥ lower uses it. The red button in the header lists it: ...". The Issues header
+has the class `issues`. `markScrolled` marks the box `pin-issues` from `PIN_ISSUES_PX`, 800 px, of width, and `more-x`
+while columns stand to the right of what it shows, beside the ID's `scrolled-x`; a ResizeObserver on the box, the table and
+the Issues header marks it again when they change size without a scroll (a window resized, More columns, an issue that
+widens the column) and puts the column's width in `--issues-w`. `frontend/src/styles.css`: in a `pin-issues` box the
+Issues header and cells stay at the right edge (z-index 2, the header 4, as the ID's); `td.issues` joins the ID's
+zero-specificity panel background, so zebra, error and not-saved rows still tint it; a line and a soft shadow mark its left
+edge while columns pass under it, the ID's marker mirrored; and `--issues-w` is the box's `scroll-padding-right`. Three
+changes from the plan. Its line, an inset box-shadow on the column at all times, is drawn only while columns pass under it,
+as the ID's is: always on, it doubled the grid line beside the column whenever nothing passed under, and on the header the
+header's own accent line outranks a box-shadow. The narrow-box limit is a class the page sets, not a container query - the
+box would have been the stylesheet's first container, and the page already marks it for the ID's line -, and it is 800 px,
+not about 760: at 1680 px the tick box and a Spec ID take about 210 px, an Issues column with a row's words about 270 px,
+an Equation about 310 px. At 1366 px with the circuit shown the box is about 640 px and the column stays in the table's
+flow (pinned, it and the ID would leave the other columns about 150 px); at 1366 px without the circuit it is about 950 px
+and at 1680 px 1264 px, both pinned. And the scroll padding is new: without it a cell under the pinned column counted as in
+view, so Basis, focused as Tab focuses it, stayed under the column (1114 to 1198 px, the column from 1023 px), and a Where
+to the Scale left it partly under (to 1057 px, the column from 1041 px). `frontend/src/panels/cells.tsx`: the placeholder's
+comment names "needed". Only words, a placeholder and where a column stands change: nothing is read, saved or run that was
+not, every question is asked as before, and nothing starts, continues or stops a run, saves a task or writes to Virtuoso.
+`docs/workbench.md` (Placeholders that read; The ID in view; "A spec's limit in words, and the Issues column in view" in
+Tied rows, spreadsheet keys and a pasted block) and `docs/functionality-reference.md` (the N blocking issues, Tied rows,
+keys and pasting a block, and Specs columns rows) say it.
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree. The five scripts that draw these
+lines passed the first time: `spec_equations_check` 88 (79 before), new: score_cube's empty Lower reads "needed" and its
+Upper "no limit", its error is whole with "constraint >= needs lower" and its code on hover, and the Specs tab's tooltip
+gives it in the column's words (`spec_shared_notes.png`); an Upper typed into score_4, "≥ lower", reads "error Upper not
+used by this Limit: clear it" and goes once cleared; at 1680 x 1050 with More columns, the table 176 px wider than its
+box: every Issues cell inside the box at its right edge, score_sq's error in view and on top, the edge line while columns
+pass under the column and none at the table's right end (`spec_probe_chips.png`), and Basis, focused there, comes into
+view beside the column (the box scrolled 176 px for it); changed: the error's words in the shared-notes check.
+`editor_columns_check` 45 (43), new: a spec made with Add reads "needed" in its Lower and "no limit" in its Upper, and an
+interval's two empty bounds "needed"; changed: freq's Lower reads "needed". `unsaved_rows_check` 28, changed: the Lower
+cleared in a saved task reads "needed", at 5.81 : 1 on the amber as before. `sheet_check` 63 (61), new: on Parameters
+and on Specs the Issues column is pinned in the 1264 px box and in the table's flow in the 420 px one; the tick box, the
+ID and their edge line as before. `blocking_issues_check` 63 (62), new: the Scale a Where chooses comes into view beside
+the pinned column. A probe run of these five on the code before (the three sources as at HEAD, put back after, their
+sums compared) failed 13 checks and no other: 6 of `spec_equations_check`, 2 of `sheet_check`, 3 of
+`editor_columns_check`, 1 of `unsaved_rows_check`, 1 of `blocking_issues_check`; its first try stopped three scripts at
+the `issues` class the old header lacks, so the new checks find the Issues header as the row's last and fail instead. A
+probe without the scroll padding failed the Basis and the Scale checks alone (87 of 88, 62 of 63). Then every script the
+runner runs (58; the three reward_v2/v21 ones are never run here), all passed the first time but one: `calibration_check`
+48, `export_check` 37, `run_control_live_check` 23, `run_control_check` 171, `dom_identity_check` 56,
+`connection_panel_check` 101, `virtuoso_source_check` 123, `run_list_check` 177, `task_save_check` 93,
+`testbench_probes_check` 43, `spec_equations_check` 88, `model_chooser_check` 139, `output_panel_check` 98,
+`task_rows_check` 57, `typing_check` 62, `sheet_check` 63, `find_fill_copy_check` 50, `project_help_check` 62,
+`working_copy_check` 35, `files_tab_check` 43, `launch_recovery_check` 20, `consistency_check` 14,
+`editor_columns_check` 45, `task_list_check` 105, `blocking_issues_check` 63, `corner_check_check` 42,
+`network_panel_check` 74, `ngspice_window_check` 43, `looks_check` 81, `task_run_check` 39, `unsaved_rows_check` 28,
+`calibration_save_check` 22, `save_now_check` 29, `room_check` 31, `pdk_check` 46, `reliability_check` 20,
+`graph_view_check` 69, `module_fold_check` 30, `reward_block_check` 34, `circuit_source_check` 17,
+`encoder_models_check` 24, `crash_panel_check` 11, `formula_bar_check` 21, `matched_devices_check` 37,
+`model_structure_check` 33, `mode_suggestion_check` 20, `agent_window_check` 33, `training_data_check` 124,
+`edit_state_check` 28, `callouts_check` 8, `request_lifecycle_check` 25, `circuit_layout_check` 4,
+`editor_renames_check` 8, `graph_paint_check` 6, `network_inputs_check` 9, `table_view_check` 10, `unit_text_check` 14.
+`training_tab_check` failed 1 of 139 - "...a run at rest is read at once" (SIF-126) counted the run's history read before
+its held-back status request had come in - and passed all 139 run alone: a flake, in a tab this record does not touch.
+After the full run the edge check of `spec_equations_check` also asks that score_sq's lines be whole, none cut by its
+ellipsis; run alone it passed, 88 again. In all 58 scripts, 2,975 checks: the 2,953 of SIF-133, the 8 SIF-134 added and
+the 14 new ones.

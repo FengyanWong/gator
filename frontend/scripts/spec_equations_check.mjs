@@ -15,6 +15,9 @@
 // rows keep its level word; a row's own issue, an error too, stays whole.
 // Branch record SIF-132: the import confirmation's heading says how many rows are new and deleted, the deleted ones by ID in
 // amber, and lists them first, leaving out a field empty on both sides; the line naming an Undo goes with the next change.
+// Branch record SIF-135: the empty bound a spec's Limit uses reads "needed", and its error says so in words, as the Specs tab's
+// tooltip does; a bound the Limit does not use says to clear it; at 1680 x 1050 with More columns the Issues column stays at
+// the box's right edge, a line marking it while columns pass under it, and a cell entered there comes into view beside it.
 // Run (Windows node through WSL interop; node >= 22):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/spec_equations_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -173,8 +176,27 @@ await runChecks(browser, async () => {
     && marked[1][1][2].startsWith("'score_cube' is new to the result registry") && marked[1][1][2].includes('\n(info: spec_adds_registry_entry)\n'), JSON.stringify(marked));
   const ownLines = [await ownIssues(0), await ownIssues(1), await ownIssues(2), await ownIssues(3)];
   check('...a row\'s own issue, an error, stays whole beside them, first; no other row has one',
-    JSON.stringify(ownLines) === JSON.stringify([[], [], [['missing_threshold', 'error constraint >= needs lower']], []]), JSON.stringify(ownLines));
+    JSON.stringify(ownLines) === JSON.stringify([[], [], [['missing_threshold', 'error Lower needed: the Limit ≥ lower uses it']], []]), JSON.stringify(ownLines));
+  // Branch record SIF-135: the bound a spec's Limit needs reads "needed" in its empty box, and its error says it in those words -
+  // a spec made with Add starts so, and read "no limit" there beside "error constraint >= needs lower"; the backend's words and
+  // code stay on hover, and the Specs tab's tooltip gives the error in the column's words.
+  const needed = await evaluate(`(() => { const d = ${ISSUES_OF(2)}.querySelector(':scope > .issue.error'), lower = ${CELL(2, 'lower')}, upper = ${CELL(2, 'upper')};
+    return { lower: [lower.value, lower.placeholder], upper: [upper.value, upper.placeholder], title: d?.title ?? null, cut: d ? d.scrollWidth > d.clientWidth : null,
+      tab: document.querySelector('.editors .tabs > button[data-editor="targets"]')?.title ?? null }; })()`);
+  check('...score_cube\'s empty Lower, which its Limit "≥ lower" uses, reads "needed", its Upper "no limit"; its error whole, the backend\'s words and code on hover (SIF-135)',
+    JSON.stringify(needed.lower) === '["","needed"]' && JSON.stringify(needed.upper) === '["","no limit"]'
+    && needed.title === 'constraint >= needs lower\n(error: missing_threshold)' && needed.cut === false, JSON.stringify(needed));
+  check('...and the Specs tab\'s tooltip gives that error in the same words (SIF-135)',
+    (needed.tab ?? '').startsWith('1 blocking issue: Lower needed: the Limit ≥ lower uses it. The red button in the header lists it'), JSON.stringify(needed.tab));
   await shot('spec_shared_notes.png');
+  // ...and a bound its Limit does not use says to clear it: score_4, "≥ lower", given an Upper, then cleared again
+  await type(3, 'upper', '2');
+  const unused = (await issuesUntil(3, ['error: unexpected_threshold']))[0] ? await evaluate(`[...${ISSUES_OF(3)}.querySelectorAll(':scope > .issue')].map(d => [d.dataset.code, d.textContent.trim(), d.title])`) : null;
+  check('an Upper the Limit "≥ lower" does not use reads "error Upper not used by this Limit: clear it", the backend\'s words and code on hover (SIF-135)',
+    JSON.stringify(unused) === JSON.stringify([['unexpected_threshold', 'error Upper not used by this Limit: clear it',
+      'upper is not used by constraint >=; remove it to avoid ambiguity\n(error: unexpected_threshold)']]), JSON.stringify(unused ?? await issues(3)));
+  await type(3, 'upper', '');
+  check('...and clearing it takes the error away', (await issuesUntil(3, [], ['unexpected_threshold']))[0], JSON.stringify(await issues(3)));
   await type(2, 'lower', '0.5');
   const narrow = await until(`!${EDITORS}.querySelector('table.editor td.issues > .issue') && getComputedStyle(${ISSUES_OF(1)}).minWidth === '0px'`, 60);
   const marksBox = await evaluate(`(() => { const td = ${ISSUES_OF(1)}, line = td.querySelector('.issue-marks');
@@ -459,7 +481,42 @@ await runChecks(browser, async () => {
   await evaluate(UNDO);
   check('...and Enter writes nothing more: one Undo takes the bar\'s text and the ID back', (await settled()).targets[1].equation === 'm_total *',
     (await settled()).targets[1].equation);
+  // Branch record SIF-135: at 1680 x 1050 with More columns the Specs table scrolls sideways, and the box cut its last column,
+  // Issues - score_sq's red row read "error The equa". The column stays at the box's right edge, as the ID at the left, a line
+  // marking its edge while columns pass under it (spec_probe_chips.png).
+  const SCROLL = `${EDITORS}.querySelector('.scroll')`;
+  const pinned = () => evaluate(`(() => { const box = ${SCROLL}, b = box.getBoundingClientRect(), right = b.left + box.clientLeft + box.clientWidth;
+    const head = box.querySelector('table.editor thead th:last-child');
+    const cells = [head, ...box.querySelectorAll('table.editor tbody tr:not([hidden]) td.issues')].map(c => c.getBoundingClientRect());
+    const error = box.querySelectorAll('table.editor tbody tr')[1].querySelector('td.issues > .issue.error'), e = error?.getBoundingClientRect();
+    const at = e && document.elementFromPoint(e.left + Math.min(20, e.width / 2), e.top + e.height / 2);
+    return { sideways: box.scrollWidth - box.clientWidth, scrolled: Math.round(box.scrollLeft), cells: cells.length,
+      inside: cells.every(r => r.left >= b.left && r.right <= right + 0.5), atEdge: +(right - cells[0].right).toFixed(1),
+      error: e ? [error.textContent.trim(), Math.round(e.left), Math.round(e.right), Math.round(right)] : null, errorOnTop: !!at && error.contains(at),
+      cut: error ? [...error.parentElement.querySelectorAll('.issue')].filter(d => d.scrollWidth > d.clientWidth).map(d => d.textContent) : null,
+      edge: getComputedStyle(head, '::before').content !== 'none' }; })()`);
+  const atStart = await pinned();
+  check('(set-up) at 1680 x 1050 with More columns the Specs table scrolls sideways, at its left end, and score_sq has an error',
+    atStart.sideways > 50 && atStart.scrolled === 0 && !!atStart.error, JSON.stringify(atStart));
+  check('the Issues column stays at the box\'s right edge: every cell of it inside the box, score_sq\'s error in view and on top, its lines whole (SIF-135: "error The equa")',
+    atStart.cells === 3 && atStart.inside && Math.abs(atStart.atEdge) < 1 && atStart.errorOnTop && atStart.cut?.length === 0, JSON.stringify(atStart));
+  check('...a line marking its edge while columns pass under it', atStart.edge, JSON.stringify(atStart));
+  await evaluate(`${SCROLL}.scrollLeft = ${SCROLL}.scrollWidth`); await sleep(250);
+  const atEnd = await pinned();
+  check('...which goes at the table\'s right end, where no column passes under it', atEnd.scrolled > 50 && !atEnd.edge && atEnd.inside && atEnd.errorOnTop, JSON.stringify(atEnd));
+  await evaluate(`${SCROLL}.scrollLeft = 0`); await sleep(250);
   await shot('spec_probe_chips.png');
+  // ...and a cell entered where it stands comes into view beside it, not under it - Basis, the column before it, focused as Tab
+  // focuses it (the column's width is the box's scroll padding)
+  const BASIS = CELL(0, 'basis');
+  await evaluate(`${BASIS}.focus()`); await sleep(300);
+  const entered = await evaluate(`(() => { const i = ${BASIS}, r = i.getBoundingClientRect(), issues = ${SCROLL}.querySelector('thead th:last-child').getBoundingClientRect();
+    const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { focused: document.activeElement === i, basis: [Math.round(r.left), Math.round(r.right)], issues: Math.round(issues.left), onTop: at === i, scrolled: Math.round(${SCROLL}.scrollLeft) }; })()`);
+  check('...and a cell entered under it, Basis, comes into view beside it, not under it (SIF-135: the column\'s width is the box\'s scroll padding)',
+    entered.focused && entered.onTop && entered.basis[1] <= entered.issues + 1, JSON.stringify(entered));
+  await evaluate(`${BASIS}.blur()`);
+  await evaluate(`${SCROLL}.scrollLeft = 0`); await sleep(200);
   // Review of SIF-106: a press sets the cell's text as React tracks it - the ID put into an emptied cell and deleted again left
   // the cell empty while its Spec kept m_total, which came back at the next drawing
   await page.setValue(EQ, '', { event: 'input', focus: true });

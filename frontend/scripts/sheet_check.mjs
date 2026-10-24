@@ -16,7 +16,8 @@
 //     it is w;
 //   - (record 7.182) the tick box and the row's ID stay at the left while the table scrolls sideways, the ID right beside the
 //     tick box on Parameters (whose tick-box column a tie toggle widens) and on Specs (a narrow one), also when that column
-//     changes size with no new render; nothing covers them, and nothing passing under shows through them;
+//     changes size with no new render; nothing covers them, and nothing passing under shows through them; (branch record
+//     SIF-135) the Issues column stays at the right edge of a wide box, and in the table's flow in a narrow one;
 //   - (record 7.188) the headers in plain words, each field name in its header's tooltip and on the help line a press opens;
 //     Ctrl+Z and Ctrl+Y in a cell are the toolbar's Undo and Redo;
 //   - (branch record SIF-97) the keys are the page's Undo and Redo wherever the focus is - a tab's button, the page itself -
@@ -179,10 +180,17 @@ await runChecks(browser, async () => {
   } else check('the task has a bound in metres to read', false, JSON.stringify(config.parameters.map(p => [p.unit, p.lower])));
 
   // ---- the tick box and the row's ID in view while the table scrolls sideways (record 7.182) -------------------------------------------
+  // Branch record SIF-135: the Issues column stays at the right edge of a box of 800 px or more; in a narrower one it stays in the
+  // table's flow, where pinned beside the tick box and the ID it would leave the other columns little room or cover the ID.
+  const pinOf = () => evaluate(`(() => { const box = document.querySelector('section.editors .scroll'), row = [...box.querySelectorAll('tbody > tr')].find(tr => !tr.hidden);
+    return { width: box.clientWidth, pinned: box.classList.contains('pin-issues'), head: getComputedStyle(box.querySelector('thead th:last-child')).right,
+      cell: getComputedStyle(row.querySelector('td.issues')).position }; })()`);
   for (const [tab, id] of [['parameters', 'variable_id'], ['targets', 'metric_id']]) {
     await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === '${tab}').click()`); await sleep(400);
+    const wideBox = await pinOf();
     // the table's box made narrower than the table, as on a small screen, and scrolled to its right end
     await evaluate(`document.querySelector('section.editors .scroll').style.maxWidth = '420px'`); await sleep(300);
+    const narrowBox = await pinOf();
     await evaluate(`(() => { const box = document.querySelector('section.editors .scroll'); box.scrollLeft = box.scrollWidth; })()`); await sleep(300);
     const seen = await evaluate(`(() => { const box = document.querySelector('section.editors .scroll');
       const edge = box.getBoundingClientRect().left + box.clientLeft, row = [...box.querySelectorAll('tbody > tr')].find(tr => !tr.hidden);
@@ -195,6 +203,9 @@ await runChecks(browser, async () => {
     const name = tab === 'parameters' ? 'Parameters' : 'Specs';
     check(`${name} scrolled sideways: the tick box stays at the left, the row's ID right beside it, neither covered`,
       seen.scrolled > 50 && Math.abs(seen.tickAt) < 1.5 && Math.abs(seen.idAt) < 1.5 && Math.abs(seen.cellAt) < 1.5 && seen.idOnTop && seen.tickOnTop, JSON.stringify(seen));
+    check(`...the Issues column pinned at the right edge of the ${wideBox.width} px box, and in the table's flow in the 420 px one (${name}, SIF-135)`,
+      wideBox.width >= 800 && wideBox.pinned && wideBox.head === '0px' && wideBox.cell === 'sticky'
+      && narrowBox.width <= 420 && !narrowBox.pinned && narrowBox.head === 'auto' && narrowBox.cell === 'static', JSON.stringify({ wideBox, narrowBox }));
     // nothing passing under shows through the sticky heads: the tick-box head and its line with the ID, empty, have no text
     // pixels (a collapsed table drew that line with the scrolled columns and let their text through its sliver). A text pixel
     // stands out from the head's own colour, light on the dark look (record 7.360) as dark on a light one. The head's own tick

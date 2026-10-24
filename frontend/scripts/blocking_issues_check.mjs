@@ -247,6 +247,15 @@ await runChecks(browser, async () => {
     await until(`${activeIn(0, 'normalization_scale')} && ${WHERE} === ${JSON.stringify(`Scale · ${SPEC_KEY}`)} && ${MORE}.textContent === 'Fewer columns'`, 30)
       && (await evaluate(`(() => { try { return localStorage.getItem('gator-workbench-editor-more-columns'); } catch { return 'unreadable'; } })()`)) === null,
     JSON.stringify(await evaluate(`({ where: ${WHERE}, more: ${MORE}.textContent })`)));
+  // Branch record SIF-135: the Issues column stays at the right edge of the box, and the Scale - partly under it where the table
+  // starts - comes into view beside it, not under it: the column's width is the box's scroll padding.
+  const scaleSeen = await evaluate(`(() => { const td = document.querySelector('section.editors table.editor td.active-cell'), box = td.closest('.scroll');
+    const input = td.querySelector('input'), i = input.getBoundingClientRect(), at = document.elementFromPoint(i.left + i.width / 2, i.top + i.height / 2);
+    const issues = box.querySelector('thead th:last-child').getBoundingClientRect();
+    return { cell: [Math.round(td.getBoundingClientRect().left), Math.round(td.getBoundingClientRect().right)], issues: Math.round(issues.left),
+      pinned: box.classList.contains('pin-issues'), onTop: at === input, scrolled: Math.round(box.scrollLeft), sideways: box.scrollWidth - box.clientWidth }; })()`);
+  check('...the Scale chosen in view beside the Issues column pinned at the right edge, not under it (SIF-135: its width is the box\'s scroll padding)',
+    scaleSeen.pinned && scaleSeen.sideways > 0 && scaleSeen.onTop && scaleSeen.cell[1] <= scaleSeen.issues + 1, JSON.stringify(scaleSeen));
   await shot('issues-4c-scale.png');
   await evaluate(`${MORE}.click()`);
   check('(Fewer columns folds them again)', await until(`${MORE}.textContent.startsWith('More columns')`, 30));

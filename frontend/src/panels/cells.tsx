@@ -30,7 +30,7 @@ export function LimitSelect({ row, title, onChange }: { row: Json; title: string
  *  its output name). `off`: why the field does nothing on this row (a follower's bounds, step, scale, type and "optimized":
  *  its leader decides them) - shown greyed, with that reason as its tooltip (review of 2026-10-03). `saved`: the value the
  *  saved task holds, when this one differs (record 7.222) - first in the tooltip. `placeholder`: what an empty number box
- *  means, when the column has a word for it ("no limit", "auto"; branch record SIF-49) - a bare "-" otherwise. */
+ *  means, when the column has a word for it ("no limit", "auto"; branch record SIF-49; "needed", SIF-135) - a bare "-" otherwise. */
 export function Cell({ column, value, onChange, fixed = null, off = null, unit, stored = null, onPatch, tell, saved = null, placeholder }: { column: Json; value: Json;
   onChange: (v: Json) => void; fixed?: string | null; off?: string | null; unit?: string | null; stored?: string | null;
   onPatch?: (fields: Json) => void; tell?: (text: string) => void; saved?: string | null; placeholder?: string }) {

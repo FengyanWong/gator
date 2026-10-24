@@ -8,8 +8,8 @@ import { convert, kindUnit, NUMBER_FORMS, quantity, readQuantity, sameQuantity }
 import { MatchedDevices } from './MatchedDevices';
 import { Cell, LimitSelect } from './cells';
 import { DiffView } from './DiffView';
-import { columnOf, drawsColumn, exact, FOLLOWER_IGNORES, LABELS, limitLabel, newRow, probeRename, QUANTITY, readNumber, renameProbe, type Section,
-  SECTION_TITLES as TITLES, unitIn, usesProbe, withFollowers, withSaved } from './editorRules';
+import { columnOf, drawsColumn, exact, FOLLOWER_IGNORES, LABELS, limitLabel, limitUses, newRow, probeRename, QUANTITY, readNumber, renameProbe,
+  type Section, SECTION_TITLES as TITLES, unitIn, usesProbe, withFollowers, withSaved } from './editorRules';
 import { type BarCell, FormulaBar } from './FormulaBar';
 import { keep, readKept } from '../kept';
 import { RELOAD_SAVED_REQUEST } from './taskChoice';
@@ -65,8 +65,18 @@ const issueHead = (message?: string | null) => String(message ?? '').split(/(?<=
  *  and the code stay in the tooltip. */
 const ISSUE_HEAD: Record<string, string> = { spec_adds_registry_entry: 'New spec: models without it do not load',
   basis_not_stated: 'The source of this spec is not recorded' };
-/** An issue's words in the Issues column: its own (ISSUE_HEAD), else its message's first clause. */
-const issueWords = (issue: Json): string => ISSUE_HEAD[issue.code] ?? issueHead(issue.message);
+/** A Spec's bound its Limit needs, or one it does not use (validation.py `_check_limits`), by the box's header and the Limit's
+ *  words (branch record SIF-135): "constraint >= needs lower" stood beside a Lower box that read "no limit". The bound is the
+ *  path's last part (targets[2].lower), the limit the message's; a message in other words keeps its first clause. */
+const boundWords = (issue: Json): string | null => {
+  const bound = /^targets\[\d+\]\.(lower|upper)$/.exec(String(issue.path ?? ''))?.[1];
+  if (!bound) return null;
+  if (issue.code === 'unexpected_threshold') return `${LABELS.targets[bound]} not used by this Limit: clear it`;
+  const limit = issue.code === 'missing_threshold' ? /^constraint (\S+) needs /.exec(String(issue.message ?? ''))?.[1] : undefined;
+  return limit ? `${LABELS.targets[bound]} needed: the Limit ${limitLabel(limit, 'none')} uses it` : null;
+};
+/** An issue's words in the Issues column: its own (ISSUE_HEAD, a bound's), else its message's first clause. */
+const issueWords = (issue: Json): string => ISSUE_HEAD[issue.code] ?? boundWords(issue) ?? issueHead(issue.message);
 /** A note - an info or a warning - in the same words on this many rows of a table or more is said once, in a line above the
  *  table, and those rows keep its level word (branch record SIF-118): on the VCO's Specs six rows read "warning The unit of a
  *  formula is not checked" and seven "info New spec: models without it do not load", 13 lines of the same words in the
@@ -76,6 +86,12 @@ const SHARED_NOTE_ROWS = 3;
 /** The table's room under which entering a cell (record 7.372) or Matched devices' answer (branch record SIF-73) folds the
  *  bottom panel: about four rows and the heading. */
 const CRAMPED_PX = 200;
+/** The table box's width from which the Issues column stays at its right edge while the table scrolls sideways (branch record
+ *  SIF-135): room for the tick box and a Spec ID (about 210 px), an Issues column holding a row's words (SIF-5's 240 px and
+ *  its padding, about 270 px) and, passing between them, an Equation (about 310 px), the widest column. In a narrower box - at
+ *  1366 px with the circuit shown it is about 640 px - the column stays in the table's flow: pinned, it and the ID would leave
+ *  the other columns about 150 px. */
+const PIN_ISSUES_PX = 800;
 
 /** `taskSlot` / `taskNotes`: where the circuit panel puts "Save task" (right end of the tab line) and its messages (under
  *  the toolbar) - the save sits with the rows it stores (user request 2026-09-22). No "Save" button of its own any more:
@@ -147,8 +163,15 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const namedBefore = (index: number, id: string) => refusedId.current?.index === index && refusedId.current.to === id ? refusedId.current.from : id;
   // The row's ID stays in view beside the tick box while the table scrolls sideways (record 7.182): it sticks at the tick-box
   // column's own width - which a tie toggle widens on Parameters, and a narrower window can change without a new render - and a
-  // line marks its edge while columns pass under it.
-  const markScrolled = (box: HTMLElement | null | undefined) => box?.classList.toggle('scrolled-x', box.scrollLeft > 0);
+  // line marks its edge while columns pass under it. The Issues column stays at the right edge of a box PIN_ISSUES_PX wide or
+  // more, a line marking its edge while columns pass under it (branch record SIF-135: at 1680 px with More columns the box cut
+  // the words that explain a red row, "error The equa").
+  const markScrolled = (box: HTMLElement | null | undefined) => {
+    if (!box) return;
+    box.classList.toggle('scrolled-x', box.scrollLeft > 0);
+    box.classList.toggle('pin-issues', box.clientWidth >= PIN_ISSUES_PX);
+    box.classList.toggle('more-x', box.scrollWidth - box.clientWidth - box.scrollLeft > 1);
+  };
   // Measured and observed again only when the tick-box header cell is another one (another tab, a new table): it ran at
   // every render - every keystroke - with a layout read and a new ResizeObserver (record 7.275). The observer catches
   // the width changes, and scrolling marks itself (onScroll below).
@@ -166,6 +189,16 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     watched.current.watch.observe(sel);
   });
   useEffect(() => () => watched.current.watch?.disconnect(), []);
+  // The box and its table change size without a scroll - a window resized, More columns, a row's issue that widens its column -
+  // and the Issues column's pin and edge line follow; its width is the box's scroll padding (styles.css), so that a cell
+  // entered by Tab or a Where comes into view beside the pinned column, not under it (branch record SIF-135).
+  useEffect(() => {
+    const grid = table.current, box = grid?.parentElement, issues = grid?.querySelector<HTMLElement>('thead th.issues');
+    if (!grid || !box || !issues) return;
+    const watch = new ResizeObserver(() => { box.style.setProperty('--issues-w', `${issues.getBoundingClientRect().width}px`); markScrolled(box); });
+    for (const part of [box, grid, issues]) watch.observe(part);
+    return () => watch.disconnect();
+  }, []);
   // The headers' words are editorRules.ts LABELS, which the import and Matched devices confirmations name the fields by too
   // (branch record SIF-51).
   // Units in words (record 7.208): only Probes have a Unit column; the values of Parameters and Specs carry theirs. A plain
@@ -432,8 +465,10 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
     ? `Follows ${row.binding_group}: its leader's value times the ratio is written, so this field does nothing on this row.` : null;
   // What an empty number box means, in a word (branch record SIF-49): a bare "-" said neither "no limit" (a one-sided spec's
   // other side) nor "as far as the limit itself" (an empty Scale). A follower's greyed field keeps "-": its tooltip says why.
+  // A bound the row's Limit uses reads "needed" (branch record SIF-135): it read "no limit" beside the error asking for it.
   const emptyOf = (row: Json, c: Json): string | undefined => offOf(row, c) ? undefined
-    : tab === 'targets' && (c.name === 'lower' || c.name === 'upper') ? 'no limit' : c.name === 'normalization_scale' ? 'auto' : undefined;
+    : tab === 'targets' && (c.name === 'lower' || c.name === 'upper') ? (limitUses(row.constraint, c.name) ? 'needed' : 'no limit')
+    : c.name === 'normalization_scale' ? 'auto' : undefined;
   const at = !active ? -1 : rows[active.index] && (active.name === keyField || String(rows[active.index][keyField] ?? '') === active.key)
     ? active.index : rows.findIndex(r => String(r[keyField] ?? '') === active.key);
   const activeRow = at >= 0 ? rows[at] : null;
@@ -808,11 +843,12 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   const blockingIn = (s: Section): Json[] => (validation?.issues ?? []).filter((i: Json) => { const path = String(i.path ?? '');
     return BLOCKING_LEVELS.includes(i.level) && (path === s || path.startsWith(`${s}[`) || path.startsWith(`${s}.`)); });   // never another table's key
   // Only an issue in a row has a Where that goes there (review of SIF-95): one of the table itself (nothing_to_optimize,
-  // binding_graph, no_hard_constraint, task_not_saved: path "parameters") or of a row without an ID is listed as text.
+  // binding_graph, no_hard_constraint, task_not_saved: path "parameters") or of a row without an ID is listed as text. The first
+  // issue in the Issues column's words (branch record SIF-135).
   const blockingTitle = (found: Json[]): string | null => {
     if (!found.length) return null;
     const going = found.filter((i: Json) => rowOf(String(i.path ?? ''), validation?.sent ?? config, schema)).length;
-    return `${plural(found.length, 'blocking issue')}${found.length > 1 ? ', the first' : ''}: ${issueHead(found[0].message)}. The red button in the header lists `
+    return `${plural(found.length, 'blocking issue')}${found.length > 1 ? ', the first' : ''}: ${issueWords(found[0])}. The red button in the header lists `
       + (found.length === 1 ? `it${going ? ': its Where goes to the row' : ''}.`
         : `them${going === found.length ? ": each one's Where goes to its row" : going ? ': a Where that names a row goes to it' : ''}.`);
   };
@@ -1034,7 +1070,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             checked={tickedInView > 0 && tickedInView === rowsInView.length} onChange={e => tickAll(e.target.checked)}
             ref={box => { if (box) box.indeterminate = tickedInView > 0 && tickedInView < rowsInView.length; }}
             title={'Tick every row in view, or untick them: a row that a fold or Find rows hides keeps its tick. '
-              + "Shift+click a row's box to tick or untick every row in view from the box clicked last."} /></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance ? `${c.name}: ${c.guidance}` : c.name} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th>Issues</th></tr></thead>
+              + "Shift+click a row's box to tick or untick every row in view from the box clicked last."} /></th>{visible.map(c => <th key={c.name} data-field={c.name} title={c.guidance ? `${c.name}: ${c.guidance}` : c.name} onClick={() => setHelp(c)}>{c.label ?? c.name}{c.required ? ' *' : ''}</th>)}<th className="issues">Issues</th></tr></thead>
           <tbody onKeyDown={onTableKey} onPaste={onTablePaste}>{rows.map((row, index) => {
             const found = rowIssues(index);
             // the row's own issues - every error and blocker -, and the notes it shares, in the order of the line above (SIF-118)

@@ -5,7 +5,8 @@
 //     named probe_3 (branch record SIF-50);
 //   - Specs: no "target ± tolerance" in the Constraint list and no target or tolerance column; a new spec (spec_3) whose
 //     equation becomes another probe takes that probe's unit while it has no limits; an empty limit reads "no limit", an
-//     empty Scale "auto" (branch record SIF-49); the zero-floor hint names an interval from 0 and goes once its Margin sides
+//     empty Scale "auto" (branch record SIF-49), and an empty bound the row's Limit uses "needed" - a new spec's Lower, both
+//     of an interval (branch record SIF-135); the zero-floor hint names an interval from 0 and goes once its Margin sides
 //     is upper (branch record SIF-50); its button beside it sets Margin sides to upper on every row it names, one Undo step
 //     (branch record SIF-107); the line under the formula bar that names an Undo goes with the next edit (branch record
 //     SIF-132);
@@ -146,10 +147,12 @@ await runChecks(browser, async () => {
     share.size.join() === '40,11' && share.equation > share.lower, JSON.stringify(share));
   const floor = await evaluate(`parseFloat(getComputedStyle(${CELL(0, 'lower')}).minWidth)`);
   check('...and a number keeps its 11 characters when the table is narrow: text columns give way first (branch record SIF-31)', floor >= 100, String(floor));
-  // An empty number box says what empty means (branch record SIF-49): a bare "-" said neither.
-  check('a one-sided spec\'s other limit reads "no limit" when empty, not a bare "-" (branch record SIF-49)',
-    await evaluate(`${CELL(0, 'upper')}.value === '' && ${CELL(0, 'upper')}.placeholder === 'no limit' && ${CELL(0, 'lower')}.placeholder === 'no limit'`),
-    await evaluate(`JSON.stringify([${CELL(0, 'upper')}.value, ${CELL(0, 'upper')}.placeholder])`));
+  // An empty number box says what empty means (branch record SIF-49): a bare "-" said neither. The bound the row's Limit uses
+  // says "needed" (branch record SIF-135): it said "no limit" too, beside the error that asked for it.
+  const BOUNDS = row => `JSON.stringify([${CELL(row, 'lower')}.value, ${CELL(row, 'lower')}.placeholder, ${CELL(row, 'upper')}.value, ${CELL(row, 'upper')}.placeholder])`;
+  check('a one-sided spec\'s other limit reads "no limit" when empty, not a bare "-" (branch record SIF-49); the one its Limit "≥ lower" uses, "needed" (SIF-135)',
+    await evaluate(`${CELL(0, 'upper')}.value === '' && ${CELL(0, 'upper')}.placeholder === 'no limit' && ${CELL(0, 'lower')}.placeholder === 'needed'`),
+    await evaluate(BOUNDS(0)));
   await evaluate(`${MORE}.click()`);
   await until(`!!${CELL(0, 'normalization_scale')}`);
   check('...and an empty Scale reads "auto": as far as the limit itself', await evaluate(`${CELL(0, 'normalization_scale')}?.placeholder === 'auto'`),
@@ -161,6 +164,8 @@ await runChecks(browser, async () => {
   config = await saved();
   check('(set-up) a new spec starts as the first probe, in its unit', config.targets[2].equation === 'm_freq' && config.targets[2].unit === 'Hz', JSON.stringify(config.targets[2]));
   check('...named as the tab is: spec_3, not target_3 (branch record SIF-50)', config.targets[2].metric_id === 'spec_3', config.targets[2].metric_id);
+  check('...its Limit "≥ lower" with no lower yet: its empty Lower reads "needed", its Upper "no limit" (SIF-135)', config.targets[2].constraint === '>='
+    && config.targets[2].lower == null && await evaluate(`${BOUNDS(2)} === '["","needed","","no limit"]'`), await evaluate(BOUNDS(2)));
   await typeInto(CELL(2, 'equation'), 'm_vmax');
   config = await saved();
   check('a spec with no limits yet whose equation becomes another probe takes that probe\'s unit', config.targets[2].equation === 'm_vmax' && config.targets[2].unit === 'V',
@@ -170,6 +175,7 @@ await runChecks(browser, async () => {
   const HINT = `(${EDITORS}.querySelector('.zero-floor-hint')?.textContent ?? '')`;
   check('(set-up) no zero-floor hint while no interval starts at 0', await evaluate(`!${EDITORS}.querySelector('.zero-floor-hint')`), await evaluate(HINT));
   await page.setValue(CELL(2, 'constraint'), 'interval|none');
+  check('an interval uses both bounds: both empty ones read "needed" (SIF-135)', await until(`${BOUNDS(2)} === '["","needed","","needed"]'`, 20), await evaluate(BOUNDS(2)));
   await typeInto(CELL(2, 'lower'), '0');
   await typeInto(CELL(2, 'upper'), '1');
   check('an interval from 0 is named in the zero-floor hint, with where Margin sides is (branch record SIF-50)',

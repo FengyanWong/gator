@@ -83,6 +83,11 @@ const LIMIT_TEXT: Record<string, string> = { '>=': '≥ lower', '<=': '≤ upper
 export const limitLabel = (constraint: string, objective: string) => (constraint ? LIMIT_TEXT[constraint] ?? String(constraint) : '(not set)')
   + (objective === 'minimize' ? ', then lower is better' : objective === 'maximize' ? ', then higher is better'
     : objective && objective !== 'none' ? `, then ${objective}` : '');
+// The bounds each limit uses, as validation.py `_check_limits` asks for them.
+const LIMIT_BOUNDS: Record<string, string[]> = { '>=': ['lower'], '<=': ['upper'], interval: ['lower', 'upper'] };
+/** Whether a Specs row's limit uses a bound (lower, upper): its empty box reads "needed", the other side's "no limit" (branch
+ *  record SIF-135; a spec made with Add, "≥ lower" with no lower yet, showed "no limit" in the box its error asked for). */
+export const limitUses = (constraint: string, bound: string): boolean => !!LIMIT_BOUNDS[constraint]?.includes(bound);
 
 /** A cell's tooltip with the saved task's value first, when the value here differs from it (record 7.222). */
 export const withSaved = (saved: string | null | undefined, title: Json): Json =>

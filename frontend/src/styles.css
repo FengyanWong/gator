@@ -132,11 +132,21 @@ table.editor tr > :first-child { border-left-width: 1px; } table.editor thead th
 table.editor th.sel, table.editor td.sel { position: sticky; left: 0; z-index: 2; width: 1%; padding: 0 3px; text-align: center; vertical-align: middle; }   /* the row-selection tick box: as narrow as the box itself */
 table.editor :is(th, td):is([data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"]) { position: sticky; left: var(--sel-w, 0px); z-index: 2; }
 table.editor thead th:is(.sel, [data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"]) { z-index: 4; }
-:where(table.editor) :where(td.sel, td[data-field="variable_id"], td[data-field="measurement_id"], td[data-field="metric_id"]) { background: var(--panel); }
+:where(table.editor) :where(td.sel, td[data-field="variable_id"], td[data-field="measurement_id"], td[data-field="metric_id"], td.issues) { background: var(--panel); }
 /* While columns pass under the ID, a line and a soft shadow mark its edge: the border it shared went with the column that passed. */
 .scroll.scrolled-x > table.editor :is(th, td):is([data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"])::after {
   content: ''; position: absolute; top: 0; bottom: 0; left: 100%; width: 5px; border-left: 1px solid var(--rule); pointer-events: none;
   background: linear-gradient(to right, rgb(0 0 0 / .1), transparent); }
+/* branch record SIF-135: the Issues column stays at the right edge as the ID stays at the left - in a box wide enough for both
+   (pin-issues: Editors.tsx PIN_ISSUES_PX) -, behind it the panel's colour as behind the ID (above), and a line and a soft shadow
+   mark its edge while columns pass under it (more-x). Its width (--issues-w, measured by the page) is the box's scroll padding,
+   so that a cell entered by Tab or a Where comes into view beside it, not under it. */
+.scroll.pin-issues { scroll-padding-right: var(--issues-w, 0px); }
+.scroll.pin-issues > table.editor :is(th, td).issues { position: sticky; right: 0; z-index: 2; }
+.scroll.pin-issues > table.editor thead th.issues { z-index: 4; }
+.scroll.pin-issues.more-x > table.editor :is(th, td).issues::before {
+  content: ''; position: absolute; top: 0; bottom: 0; right: 100%; width: 5px; border-right: 1px solid var(--rule); pointer-events: none;
+  background: linear-gradient(to left, rgb(0 0 0 / .1), transparent); }
 /* record 7.180 (design advice: content-sized columns): an ID wide enough to read - a Parameters ID about its 12 characters
    and a leader's name too (roadster.css, branch records SIF-119 and SIF-131) -, a unit narrow; the other columns keep the
    84 px every editor box has. */

@@ -400,13 +400,13 @@ analysis, for one) has no background of its own. Every option has the field colo
 muted colour); `looks_check.mjs` measures every option of the page, Probes cells included, at 4.5 : 1 or more.
 
 **Placeholders that read** (branch record SIF-130): an empty box's words - "Find rows", the windows' Filter boxes, the
-formula bar's "Click a cell to see and edit its whole value here", an empty Specs bound's "no limit", an empty Scale's
-"auto" - are in the look's dim grey: 5.45 : 1 in a field, 5.18 : 1 or more on the editor rows' colours (a row not saved is
-the lightest), and darker than a hint, so they still read as placeholders. In a changed cell's amber (a bound cleared in a
-saved task says "no limit" there) they take the hint's grey, 5.81 : 1. The page set no colour for them until then, and the
-browser's own grey read at 3.85 : 1 in a field. `looks_check.mjs` measures every placeholder in view on the ground it is
-drawn on, the Runs window's Filter too; `unsaved_rows_check.mjs` the "no limit" of a row not saved and of a bound cleared
-in a changed cell.
+formula bar's "Click a cell to see and edit its whole value here", an empty Specs bound's "no limit" (or "needed", the
+bound its Limit uses: branch record SIF-135), an empty Scale's "auto" - are in the look's dim grey: 5.45 : 1 in a field,
+5.18 : 1 or more on the editor rows' colours (a row not saved is the lightest), and darker than a hint, so they still read
+as placeholders. In a changed cell's amber (a bound cleared in a saved task says "needed" or "no limit" there) they take
+the hint's grey, 5.81 : 1. The page set no colour for them until then, and the browser's own grey read at 3.85 : 1 in a
+field. `looks_check.mjs` measures every placeholder in view on the ground it is drawn on, the Runs window's Filter too;
+`unsaved_rows_check.mjs` the "no limit" of a row not saved and the "needed" of a bound cleared in a changed cell.
 
 **Colours by name.** Every colour of the page is a named value in `styles.css` (`:root`); `roadster.css`, loaded after it,
 holds what the look adds: shapes, sizes, the banner, the tabs (until record 7.360 `themes.css` held the two looks' values
@@ -906,6 +906,7 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   tick-box column, whose width the page measures, also when a narrower window changes it: a tie toggle widens it on
   Parameters, and on Probes and Specs it stays as narrow as the box. The editor tables draw their lines cell by cell
   (each cell its right and bottom line), so the tick box and the ID carry theirs along and cover what passes under them.
+  In a table box of 800 px or more the Issues column stays at the right edge the same way (branch record SIF-135, below).
 - **Find rows** (record 7.184, design advice 4). The box in the toolbar keeps in view only the rows whose text cells in view
   hold every word typed, not case-sensitive, folded or not: the ID, instance path, parameter, unit, leader and notes; a
   Probe's output name and expression; a spec's equation. Inside its right end, how many of the table's rows that is (3/16).
@@ -1005,8 +1006,23 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   amber - and its list starts with the deleted rows. A field empty on both sides (each new row's "Scale (empty) (empty)")
   is left out of the list, and of Matched devices' too. Only words, and when they show, change: nothing is imported,
   applied, saved or run without the press it took before, and Undo takes an import back as before.
+- **A spec's limit in words, and the Issues column in view** (branch record SIF-135, from the states audit of 2026-10-24).
+  An empty Lower or Upper of a Specs row read "no limit" (SIF-49), also the bound its Limit needs: a spec made with Add -
+  "≥ lower", no lower yet - showed "no limit" in the very box its error asked for, and the error stood in the schema's
+  words, "error constraint >= needs lower". The empty bound a row's Limit uses now reads "needed" (≥ lower: the Lower;
+  ≤ upper: the Upper; an interval: both), the other side "no limit" as before. The error reads "Lower needed: the Limit
+  ≥ lower uses it", and a bound the Limit does not use "Upper not used by this Limit: clear it"; the backend's message and
+  code stay on hover, as for every issue, and a tab's tooltip gives its first blocking issue in the column's words. At
+  1680 x 1050 with More columns the Specs table scrolls sideways, and the box cut its last column, Issues - the words that
+  explain a red row ("error The equa"). In a table box of 800 px or more the Issues column now stays at the right edge while
+  the table scrolls sideways, as the ID stays at the left: the other columns pass under it, a line marks its edge while
+  they do, and it keeps its row's colour. Its width is the box's scroll padding, so a cell entered by Tab, or chosen by a
+  Where in the blocking-issues list, comes into view beside it, not under it. In a narrower box - at 1366 px with the
+  circuit shown it is about 640 px, where the column and the ID would leave the other columns about 150 px - it scrolls with
+  the others, as before. Only words, a placeholder and where a column stands change: nothing is saved, run or written to
+  Virtuoso.
 
-Browser checks: `frontend/scripts/sheet_check.mjs` (SIF-132), `frontend/scripts/find_fill_copy_check.mjs`, `frontend/scripts/spec_equations_check.mjs` (SIF-106, SIF-107, SIF-132), `frontend/scripts/typing_check.mjs` (SIF-107), `frontend/scripts/editor_columns_check.mjs` and `frontend/scripts/task_rows_check.mjs` (SIF-132).
+Browser checks: `frontend/scripts/sheet_check.mjs` (SIF-132, SIF-135), `frontend/scripts/find_fill_copy_check.mjs`, `frontend/scripts/spec_equations_check.mjs` (SIF-106, SIF-107, SIF-132, SIF-135), `frontend/scripts/typing_check.mjs` (SIF-107), `frontend/scripts/editor_columns_check.mjs` (SIF-132, SIF-135), `frontend/scripts/task_rows_check.mjs` (SIF-132), `frontend/scripts/unsaved_rows_check.mjs` and `frontend/scripts/blocking_issues_check.mjs` (SIF-135).
 
 ### Matched devices: ties suggested from the circuit (added 2026-09-29, user request)
 

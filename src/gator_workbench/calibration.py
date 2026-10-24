@@ -181,7 +181,9 @@ def _propose_scale(target, spec, designs, values, compressed, proposed):
         row['median_miss'] = statistics.median(misses) / factor
     few = len(misses) < MIN_MISSES or len(misses) < MIN_MISS_SHARE * len(measured)
     inside = 2 * len(misses) <= len(measured)            # at least half of the random designs are within this row's limits
-    too_few = (f'{len(misses)} of {len(measured)} random designs miss this row: too few to name a typical miss.')
+    # The page shows the typical miss beside this note whenever any design misses, so the note says what so few misses
+    # cannot do - set the Scale - rather than that there is no typical miss (states audit S12-22, branch record SIF-144).
+    too_few = (f'{len(misses)} of {len(measured)} random designs miss this row: too few for their typical miss to set the Scale.')
     if not compressed:
         pass
     elif few and not window:

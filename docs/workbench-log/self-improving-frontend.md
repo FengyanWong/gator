@@ -5793,3 +5793,32 @@ live Calibration, whose block now works out the plan before it returns early), `
 same seven on the first form of the change: `task_save_check` stopped after 33 checks with "the DevTools session closed
 (its window went away)" in its task file window (SIF-93's part, not touched here), and passed 93 alone. The other
 scripts draw neither the line nor the block and were not run.
+
+**Review follow-up.** The review of 2cdcb5b found four slips; all four are real. (1) A save that could not start said
+"once the save can start, press Undo, then Apply and save", and one of the two reasons the docs name, no connection
+chosen, ends with a choice that is an Undo step of its own (Connection.tsx `setProfileId`, App.tsx's `setConfig`,
+history.ts records by default): the Undo as told took back that choice, the Scale stayed, Apply and save stayed away,
+and the next one was refused again. `savingText` puts Undo first: "The Scale stays applied: press Undo, then, once the
+save can start, Apply and save; ...", true for every reason. (2) Those words, and Apply only's "press Undo, then Apply
+and save", outlived the Undo they ask for - the block's `said` line, which only another press or run took away, and the
+message line under the header: "The Scale stays applied" was untrue there, and a second Undo would take back an earlier
+edit (SIF-132's rule). `frontend/src/panels/RunTabs.tsx` forgets `said` with the Apply only press once something is
+pending again; `frontend/src/page/calibrationOffer.ts` keeps the message of an answer that asks for an Undo with the
+result it applied, and takes it away once the page no longer holds that result's values, a newer message left alone.
+Both stay while the page holds the values, so an edit made between the press and the Undo still takes the first Undo,
+as any Undo does. (3) The block tested "There is nothing to apply." before the rows Apply cannot write, and `proposals`
+counts only rows still as the run simulated: a run whose only proposal was the Scale of a row edited since - a second
+Calibration often proposes no Initial alpha (7.217) - said only that. `held` now covers it and names the row. (4) "a new
+Calibration proposes one for them" promised what calibration.py does not always do: a row fewer than 8 random designs
+miss gets no Scale (MIN_MISSES), and a loosened limit is missed less. It reads "a new Calibration works one out for the
+new limits when enough random designs miss them" ("for each row's new limits" for several). `docs/workbench.md` and
+`docs/functionality-reference.md` say all four. Only words, and when they go: nothing starts, continues or stops a run,
+saves a task or writes to Virtuoso, and every Undo step and question is as before. `tsc` clean. One lane, after the
+memory guard: `calibration_save_check` 38 (33 before): both refusals in the new order; new, the message line goes with
+the Undo after the line's refused Apply and save and after its Apply only, the block's line with the Undo after its
+refused save (the check reloaded there before, so never saw it), and with the row's Lower made 1 GHz the hint reads
+"There is nothing to apply. The Scale of osc_frequency_hz is not applied: ..."; an Undo and the block's Apply only
+(nothing sent) then hold the Scale again for the part after. `calibration_check` 54: the new words. A probe run on the
+sources of 2cdcb5b (put back after, their sums compared) failed exactly those, 6 of 38 and 1 of 54. On the final
+source all passed the first time: `calibration_check` 54, `run_control_check` 181, `training_tab_check` 139,
+`run_list_check` 184, `task_save_check` 93, `calibration_save_check` 38, `callouts_check` 8 (7 scripts, 697 checks).

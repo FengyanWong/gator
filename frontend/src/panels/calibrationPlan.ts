@@ -55,9 +55,11 @@ export function calibrationPlan(result: Json, config: Json) {
 
 /** "Apply and save" (record 7.217): what the page says once Save task (TaskSave.tsx `requestTaskSave`) has answered. A save
  *  that could not start leaves the Scale applied, where Apply and save is no longer offered: "try Apply and save again"
- *  named a button that was not there (branch record SIF-138). `where`: as afterApplied's. */
+ *  named a button that was not there (branch record SIF-138). Undo comes first, whatever the reason (review of SIF-138):
+ *  choosing a connection is an Undo step of its own, so "once the save can start, press Undo" took back that choice and
+ *  left the Scale. `where`: as afterApplied's. */
 export const savingText = (asked: { taken: boolean; why: string }, where = '') => asked.taken
   ? " Saving the task now: the progress is under the editors' tabs."
-  : ` Saving could not be started from here (${asked.why}). The Scale stays applied: once the save can start, press Undo, then Apply and save${where}; Save as above the editors makes a new task instead.`;
+  : ` Saving could not be started from here (${asked.why}). The Scale stays applied: press Undo, then, once the save can start, Apply and save${where}; Save as above the editors makes a new task instead.`;
 export const APPLY_AND_SAVE = 'then saves the task: the rows become its next revision, the cell in Virtuoso is written to match and read back '
   + '(about half a minute, no simulation). A change of Scale alone keeps the recorded baseline.';

@@ -2432,8 +2432,12 @@ longer offered - only a greyed Apply calibration stands - and Save as always mak
 this task is **Undo, then Apply and save**, and the page says so after Apply only and after a save that could not
 start (branch record SIF-138: it said "Use Apply and save" and "try Apply and save again", a button that was not there).
 Run status says it beside the button only after its own Apply only: not after a save of the task, nor after a reload
-(Undo does not reach back past one) or for values the page held before. An Initial alpha still to apply beside Scales
-the page holds gets Apply calibration alone, and its words name no Apply and save either.
+(Undo does not reach back past one) or for values the page held before. After a save that could not start, Undo comes
+first - *press Undo, then, once the save can start, Apply and save* - since choosing a connection is an Undo step of its
+own: "once the save can start, press Undo" took back that choice and left the Scale (review of branch record SIF-138).
+Words that ask for an Undo, in Run status and on the message line, go once something is pending again - the Undo they
+ask for, or a Scale typed: after it a second Undo would take back an earlier edit. An Initial alpha still to apply
+beside Scales the page holds gets Apply calibration alone, and its words name no Apply and save either.
 
 **When the run has ended, the header says so** (record 7.204, user: "build the prompt when the run finishes"). A line
 of its own under the header reads, for example, *Calibration ready for real:mscr_ota7t: Scale of gain_vv 260 V/V ·
@@ -2489,11 +2493,15 @@ away and changes nothing. Nothing is applied by itself.
   unreleased state of this record that cut every window to half its width.)
 - **Apply writes only what still fits.** A Specs row whose limits or unit were changed after the run is marked "not
   applied"; once the page holds the rest, the words beside Apply name such rows: "The page holds the values Apply can
-  write. The Scale of score is not applied: its limits changed after the run; a new Calibration proposes one for them."
-  (branch record SIF-138: they said "The page holds these values."). A run of another task than the one on the page
-  offers nothing. Such a run is not compared with the page's rows at all (record 7.214: an LDO's `pm_deg` used to stand
-  as the "Scale now" of an OTA's): a line names both tasks, the table shows **Scale in the run** and the Initial alpha
-  the run had, and Apply waits until the page holds the run's task (choose it in the Tasks window).
+  write. The Scale of score is not applied: its limits changed after the run; a new Calibration works one out for the
+  new limits when enough random designs miss them." (branch record SIF-138: they said "The page holds these values.").
+  When such Scales are all the run proposed, the same words follow "There is nothing to apply.", which stood alone
+  there. A new Calibration proposes no Scale for a row few of its random designs miss (above), and a loosened limit is
+  missed less: "a new Calibration proposes one for them" promised one (review of SIF-138). A run of another task than
+  the one on the page offers nothing. Such a run is not compared with the page's rows at all (record 7.214: an LDO's
+  `pm_deg` used to stand as the "Scale now" of an OTA's): a line names both tasks, the table shows **Scale in the run**
+  and the Initial alpha the run had, and Apply waits until the page holds the run's task (choose it in the Tasks
+  window).
 - **From a script:** `POST /api/runs/start` takes `calibration_only: true` with `calibration_designs` (1 to 500).
   The result is `calibration.json` and `calibration` in run status, with `random_only: true` in its request. It cannot
   also request `baseline_only`. The historical combined API remains available for existing scripts.

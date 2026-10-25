@@ -11,7 +11,8 @@
 // whose one button is the close mark (an X, "OK" before). Branch record SIF-137: its steering line says the run does not
 // train, where it read "no update yet". Branch record SIF-138: the line calls each proposal a Scale ("Scale of score ..."),
 // and with the alpha applied beside a row whose limits changed, the block names the Scale it could not write and how to
-// get one, where it said "The page holds these values.".
+// get one, where it said "The page holds these values." - in words the backend keeps (review of SIF-138: "a new Calibration
+// proposes one for them", where a row few random designs miss gets none).
 // Record 7.217: an Initial alpha is proposed only when it differs from the one the run had by a factor of 2 or more - the
 // second run here starts from the first run's applied value, so whether it proposes one follows that rule ("Apply and
 // save", for a task saved from a Virtuoso cell, is in calibration_save_check.mjs).
@@ -140,9 +141,11 @@ await runChecks(browser, async () => {
   config = await stored();
   check('...and leaves the edited row alone', config.targets[0].normalization_scale === 1 && config.targets[0].lower === 0.9 && config.run.advanced.initial_alpha === alpha,
     JSON.stringify({ scale: config.targets[0].normalization_scale, lower: config.targets[0].lower, alpha: config.run.advanced.initial_alpha }));
-  // SIF-138: the hint read "The page holds these values." beside the proposed Scale the page does not hold.
+  // SIF-138: the hint read "The page holds these values." beside the proposed Scale the page does not hold. Review of SIF-138:
+  // "a new Calibration proposes one for them" - calibration.py gives none for a row few random designs miss.
   check('...and the block names the Scale it could not write and how to get one, Apply at rest', (await evaluate(HINT)) === 'The page holds the values Apply can write. '
-    + 'The Scale of score is not applied: its limits changed after the run; a new Calibration proposes one for them.' && await evaluate(`${APPLY}.disabled`), await evaluate(HINT));
+    + 'The Scale of score is not applied: its limits changed after the run; a new Calibration works one out for the new limits when enough random designs miss them.'
+    && await evaluate(`${APPLY}.disabled`), await evaluate(HINT));
   await page.shot(path.join(out, 'calibration-2-row-changed.png'), `document.querySelector('footer')`);
 
   // ---- the next Baseline simulation asks again, and Apply calibration in the line does what the block's button does ---------

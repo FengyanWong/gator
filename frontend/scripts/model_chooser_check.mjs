@@ -42,7 +42,11 @@
 //   SIF-117: "6,024 learner updates" here, "6024" in the Training tab and Run status);
 // - a key in "Name of the model it saves" or in an editor cell, a tick and a Details press draw only the rows whose own props
 //   changed; a row still follows the model in use, the folders being saved and its folder's name; a model's Details check the
-//   task on the page again 0.5 s after an edit, as the model in use's check does, never sooner (branch record SIF-123).
+//   task on the page again 0.5 s after an edit, as the model in use's check does, never sooner (branch record SIF-123);
+// - the save point whose Details check answers NOT compatible has its Use off, saying why, the others on; with no saved model
+//   listed the line that asks for one says what to do instead, and the list says when a run saves one as the Output settings
+//   have it - every 200 evaluations, every 200 seconds, only when paused, stopped or finished, or none with Model checkpoints
+//   off (branch record SIF-140).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/model_chooser_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -623,6 +627,13 @@ await runChecks(browser, async () => {
   check('... a model of another design is checked with ITS network (RGCN), not the page\'s (Graph Transformer): its save point read first, as Use reads it (SIF-85)',
     !!askedD[0] && !askedD[0].withConfig && askedD[0].checkpoint_id === D.latest && sameNet(checkD?.network, RGCN) && checkD.mode === 'fine_tune'
     && checkD.source?.run_dir === D.run_dir && checkD.source?.checkpoint_id === D.latest && sameNet((await stored())?.network, NET), JSON.stringify(askedD));
+  // Branch record SIF-140: the save point checked (D's newest) answered NOT compatible, and its Use was on - it chose the model
+  // and closed the window, and the main page then said NOT compatible. Off now, saying why; the other one, not checked, stays on.
+  const useOf = await evaluate(`[...${RIGHT}.querySelectorAll('.model-details table.model-points tbody tr')].map(r => { const b = r.querySelector('button.model-use');
+    return { point: r.title, on: !!b && !b.disabled, title: b?.title ?? null }; })`);
+  check('... the save point checked, NOT compatible, has its Use off, its tooltip saying why; the other save point\'s Use stays on (SIF-140)',
+    useOf.length === 2 && useOf[0].point === D.latest && !useOf[0].on && useOf[0].title === 'Use this save point: it cannot be loaded with the task on the page - see NOT compatible below.'
+    && useOf[1].point === D.checkpoints[0].checkpoint_id && useOf[1].on && useOf[1].title.startsWith('Use this save point: the next run fine-tunes exactly this model'), JSON.stringify(useOf));
   const NAME = `${RIGHT}.querySelector('input.model-rename')`, RENAME = `${RIGHT}.querySelector('button.model-rename-apply')`;
   const note = () => evaluate(`${RIGHT}.querySelector('.model-rename-note')?.textContent ?? ''`);
   check('its Details have a Name box with the model\'s name, and Rename is off while the name is unchanged', (await evaluate(`${NAME}?.value`)) === D.task_name && (await evaluate(`${RENAME}?.disabled`)) === true);
@@ -763,7 +774,28 @@ await runChecks(browser, async () => {
   check('...and a copy this window\'s clipboard refuses says "could not copy" there, the main page\'s untouched (SIF-94)', refusedFolder.said && refusedFolder.main === null
     && await until(`(${RIGHT}.querySelector('.model-missing .path'))?.textContent === ${JSON.stringify(C.run_dir)}`, 40), JSON.stringify(refusedFolder));
   served = []; await evaluate(`${button('Refresh list')}.click()`);
-  check('no saved model: said in plain words, with what makes a run save one', await until(`/No saved model yet/.test(${RIGHT}.querySelector('.model-empty')?.innerText ?? '')`, 40));
+  // Branch record SIF-140: when a run saves one, as the Output settings of a run started now have it - it read "every N
+  // evaluations" - and, a model being chosen (C), as a hint, with no line asking for one. Changed there, it follows.
+  const EMPTY = `(${RIGHT}.querySelector('.model-empty')?.innerText ?? '')`, SAVES = 'No saved model yet under this output folder. A run saves one when it is paused, stopped or finished';
+  check('no saved model: said in plain words, with what makes a run save one - every 200 evaluations, as Output settings has it, not "every N" (SIF-140)',
+    await until(`${EMPTY} === ${JSON.stringify(`${SAVES}, and every 200 evaluations while it runs.`)}`, 40)
+    && await evaluate(`${RIGHT}.querySelector('.model-empty').className === 'hint model-empty' && !${RIGHT}.querySelector('.model-none-chosen')`), await evaluate(EMPTY));
+  const OUTPUT = `[...document.querySelectorAll('.right .panel')].find(p => p.querySelector('h3')?.textContent.trim() === 'Output settings')`;
+  const EVERY = `[...${OUTPUT}.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent.trim() === 'Checkpoint every')`;
+  const CHECKPOINTS = `[...${OUTPUT}.querySelectorAll('label.check')].find(l => l.textContent === 'Model checkpoints').querySelector('input')`;
+  await page.setValue(`${EVERY}.querySelector('select')`, 'seconds');
+  check('... every 200 seconds, the interval counted in seconds there (SIF-140)', await until(`${EMPTY} === ${JSON.stringify(`${SAVES}, and every 200 seconds while it runs.`)}`, 30), await evaluate(EMPTY));
+  await page.setValue(`${EVERY}.querySelector('input')`, '', { event: 'input' });
+  check('... with no interval, only when it is paused, stopped or finished (SIF-140)', await until(`${EMPTY} === ${JSON.stringify(`${SAVES}.`)}`, 30), await evaluate(EMPTY));
+  await evaluate(`(${CHECKPOINTS}).click()`);
+  check('... and none with Model checkpoints off, which keeps a run from saving any (SIF-140)', await until(`${EMPTY} === 'No saved model yet under this output folder. '
+    + '"Model checkpoints" is off in Output settings: a run saves a model only with it on.'`, 30), await evaluate(EMPTY));
+  await evaluate(`(${CHECKPOINTS}).click()`); await page.setValue(`${EVERY}.querySelector('input')`, '200', { event: 'input' });
+  await page.setValue(`${EVERY}.querySelector('select')`, 'evaluations');
+  const OUTPUT_STORED = `JSON.parse(localStorage.getItem('gator-workbench-config-v1')).output`;
+  check('(set-up) back to Model checkpoints on, every 200 evaluations', await until(`${EMPTY} === ${JSON.stringify(`${SAVES}, and every 200 evaluations while it runs.`)}`, 30)
+    && await until(`(() => { const o = ${OUTPUT_STORED}; return o.save_checkpoints === true && o.checkpoint_every_evaluations === 200 && o.checkpoint_every_seconds === null; })()`, 40),
+    `${await evaluate(EMPTY)} | ${await evaluate(`JSON.stringify(${OUTPUT_STORED})`)}`);
   served = MODELS; await evaluate(`${button('Refresh list')}.click()`); await until(`${ROWS}.length === ${MODELS.length}`, 40);
   // Branch record SIF-102: the open Details are kept between opens, so those of a model that left the list are let go - they
   // opened by themselves when it was listed again.
@@ -773,8 +805,12 @@ await runChecks(browser, async () => {
   // ---- Run configuration's notice opens the window at its reason (branch record SIF-86) -----------------------------------------------
   // D in use and answered NOT compatible: the notice's reason is the compatibility under "The model in use", which sits under
   // the saved models table. The notice's "RL model..." opened the window at its top, and the reason had to be searched for.
+  // Chosen by a double click on its row (its newest save point): the Use of the save point its Details check is off once
+  // that check answers NOT compatible (branch record SIF-140), and pressed before it answered the set-up would race it.
   incompatibleD = true;
-  await details(D); await until(`!!(${pointRow(D.latest)})`, 30); await usePoint(D.latest); await storedWhen(s => s?.model_source?.run_dir === D.run_dir);
+  await details(D); await until(`!!(${pointRow(D.latest)})`, 30);
+  await evaluate(`(${row(D)}).querySelector('td:nth-child(4)').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+  await storedWhen(s => s?.model_source?.run_dir === D.run_dir && s.model_source.checkpoint_id === D.latest);
   await closedByChoice();
   const NOTICE = `document.querySelector('p.network-review')`, COMPAT = `${NETWORK_DOCUMENT}.getElementById('net-compat')`;
   check('(set-up) with D NOT compatible, Run configuration\'s notice says so', await until(`${NOTICE}?.textContent === 'Review the settings in RL model... - the saved model is NOT compatible with this run.'`, 60),
@@ -856,6 +892,14 @@ await runChecks(browser, async () => {
     const ok = await until(`${ROWS}.length === ${expected.length} && !/Reading the saved models/.test(${RIGHT}.innerText)`, 300);
     check(`against the real route: ${expected.length} saved model(s) on this backend, ${expected.length} row(s)`, ok, `${(await rows()).length} row(s)`);
     check('... each row carries its run folder, newest save first', JSON.stringify((await rows()).map(r => r.dir)) === JSON.stringify(expected.map(m => m.run_dir)));
+    // Branch record SIF-140: with none listed (a scratch backend's empty output folder), the line asking for a model pointed at
+    // "a save point below" that was not there; it says the next step instead, in its place in the list.
+    const asking = await evaluate(`[...${RIGHT}.querySelectorAll('.model-none-chosen')].map(p => p.className + ': ' + p.textContent)`);
+    check(expected.length ? '... no model chosen: the line asks for a save point below' : '... none listed and none chosen: the line says to run New model first or set Output root, with when a run saves one - not "Use a save point below" (SIF-140)',
+      JSON.stringify(asking) === JSON.stringify([expected.length
+        ? 'warn model-none-chosen: No saved model is chosen yet: Evaluate only needs one. Use a save point below (a model\'s newest: a double click on its row, or Enter on it); this window then closes.'
+        : 'warn model-none-chosen model-empty: No saved model yet under this output folder: run New model first, or set Output root in Output settings to the folder that holds your models. '
+          + 'A run saves one when it is paused, stopped or finished, and every 200 evaluations while it runs.']), JSON.stringify(asking));
     await shot('models-3-real.png');
   }
 

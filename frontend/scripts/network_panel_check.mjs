@@ -1,7 +1,9 @@
 // Browser check of the RL model window (the RL networks window until record 7.265) and its launcher in Run configuration.
 // Record 7.265: Mode and the RL model label moved into the window; New model's encoder is chosen in its templates table
 // ("Use template"), and the template's settings follow under "The ... template, for this run". A template's row takes Enter,
-// as its double click does, in the Tab order with a run row's focus ring (branch record SIF-121).
+// as its double click does, in the Tab order with a run row's focus ring (branch record SIF-121). The template chosen reads
+// "in use" only while this run's values are its own, else "chosen - this run's values differ (see below)", its link bringing
+// the comparison into view (branch record SIF-140).
 // Same approach as agent_window_check.mjs: a throwaway headless Edge over the DevTools protocol against the RUNNING
 // workbench (default http://127.0.0.1:8765/). GET /api/network-settings is answered by the real backend; every
 // PUT/POST to /api/network-settings/* is intercepted and answered with a canned entry, so nothing is ever written
@@ -275,12 +277,27 @@ await runChecks(browser, async () => {
     && [...${differences}.querySelectorAll('button')].map(b => b.textContent).join('|') === "Use the template's values|Save into the template" && !/default/i.test(${differences}.textContent)`),
     await evaluate(`${differences}.textContent`));
   await networkPage.shot(path.join(out, 'network-5-restored-differences.png'), NETWORK_PANEL, { maxHeight: 1100, beyond: true });
+  // Branch record SIF-140: the template's row said "in use" beside the template's own values while the box said this run's
+  // values differ; it says so too now, and its link brings the box into view, in the window.
+  const MARK = `${NETWORK_DOCUMENT}.querySelector('tr.template-row.current')?.lastElementChild`;
+  const markText = () => evaluate(`(${MARK})?.textContent ?? 'no row'`);
+  const mark = await evaluate(`(() => { const c = ${MARK}; return c && { text: c.textContent, link: c.querySelector('button.item-link')?.textContent ?? null, ok: !!c.querySelector('.ok'),
+    encoder: c.parentElement.dataset.encoder }; })()`);
+  check('the template\'s row says it is chosen and that this run\'s values differ, not "in use" (SIF-140)', mark?.text === "chosen - this run's values differ (see below)"
+    && mark.link === 'see below' && !mark.ok && mark.encoder === 'graph_transformer', JSON.stringify(mark));
+  const BOX_SEEN = `(() => { const r = ${differences}.getBoundingClientRect(); return r.top >= 0 && r.bottom <= ${NETWORK_DOCUMENT}.defaultView.innerHeight; })()`;
+  await evaluate(`${NETWORK_DOCUMENT}.defaultView.scrollTo(0, 0)`);
+  check('(set-up) at the window\'s top the box is out of view', !(await evaluate(BOX_SEEN)));
+  await evaluate(`(${MARK})?.querySelector('button.item-link')?.click()`);
+  check('... and its "see below" brings the box into view in the window, with nothing written (SIF-140)', await page.until(BOX_SEEN, 20) && paused.length === 0,
+    await evaluate(`JSON.stringify(${differences}.getBoundingClientRect())`));
   // Pressed as a viewer presses it, with the focus on the button, which goes away with the comparison: the focus falls to the
   // window's page, where the keys below must still reach (review of branch record SIF-97: they did not).
   await evaluate(`(() => { const b = [...${differences}.querySelectorAll('button')].find(b => b.textContent === "Use the template's values"); b.focus(); b.click(); })()`);
   check('Use the template\'s values updates this run, clears the comparison and does not write preferences', await page.until(`!${differences}`)
     && (await numbers())[0] === String(gt.hidden_dim) && paused.length === 0);
   check('a matching configuration can accurately name the starting preset', await evaluate(`${NETWORK_PANEL}.querySelector('.in-use').textContent === 'In use: starting preset'`));
+  check('... and the template\'s row reads "in use" again (SIF-140)', await page.until(`(${MARK})?.textContent === 'in use'`, 20), await markText());
   check('...and the pressed button gone, the window\'s focus is on its page', await evaluate(`${NETWORK_DOCUMENT}.activeElement === ${NETWORK_DOCUMENT}.body`),
     await evaluate(`${NETWORK_DOCUMENT}.activeElement?.outerHTML.slice(0, 80)`));
   await windowKey('z');

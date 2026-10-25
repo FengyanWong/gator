@@ -46,8 +46,10 @@ const restorableMeans = (capability: string, checks?: Json[]) => {
  *  starting preset, or values edited and saved there), and how many saved models were made from it. A double click or "Use
  *  template" fills the draft's network and training values from it, as one Undo step (`applyEntry`, what choosing an
  *  encoder did until then); so does Enter on the row itself, as on a run's row in the Runs window (branch record SIF-121) -
- *  on its Use template, Enter presses that button alone. */
-function TemplatesTable({ settings, encoders, current, runs, onUse }: { settings: Json; encoders: string[]; current: string; runs: Json[]; onUse: (encoder: string) => void }) {
+ *  on its Use template, Enter presses that button alone. `differs`: this run's values differ from the current template's
+ *  (useRlModel), as the box under its settings, #network-differences, says. */
+function TemplatesTable({ settings, encoders, current, differs, runs, onUse }: { settings: Json; encoders: string[]; current: string; differs: boolean; runs: Json[];
+  onUse: (encoder: string) => void }) {
   const made = (encoder: string) => runs.filter(r => r.encoder === encoder && !r.parent && r.model_label && r.run_kind !== 'offline_pretraining').length;
   return (<table className="grid small template-table"><thead><tr>
     <th title="The encoder of the network.">Template</th><th title="Hidden width / attention heads / layers.">Sizes</th>
@@ -64,7 +66,14 @@ function TemplatesTable({ settings, encoders, current, runs, onUse }: { settings
         <td className="numeric">{a.updates_per_transition ?? '?'} updates · alpha {a.initial_alpha ?? '?'} · gamma {a.gamma ?? '?'} · lr {a.learning_rate ?? '?'}</td>
         <td>{s ? ORIGIN[s.origin] ?? s.origin : 'not read yet'}</td>
         <td className="numeric">{made(e)}</td>
-        <td>{active ? <b className="ok">in use</b> : <button className="template-use" onClick={() => onUse(e)}
+        {/* "in use" only while this run's values are the template's (branch record SIF-140): beside the template's values the
+            row said "in use" while the box below said this run's differ - and the box's are the values that run. Its link
+            brings that box into view in this window's own document (the table is drawn into the pop-up); its double click
+            stays its own, as on the row it would put the template's values back. */}
+        <td>{active ? differs ? <span className="warn template-differs"><b>chosen</b> - this run's values differ (<button className="item-link"
+          onClick={ev => ev.currentTarget.ownerDocument.getElementById('network-differences')?.scrollIntoView({ block: 'center' })} onDoubleClick={ev => ev.stopPropagation()}
+          title="Show how this run's values differ from this template: the comparison below, with Use the template's values and Save into the template.">see below</button>)</span>
+          : <b className="ok">in use</b> : <button className="template-use" onClick={() => onUse(e)}
           title={`Use template (also a double click on its row, or Enter on it): the next run's network and training values become the ${s?.label ?? e} template's, as one Undo step.`}>Use template</button>}</td></tr>); })}
     </tbody></table>);
 }
@@ -162,7 +171,7 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
       <h3>Templates</h3>
       <p className="hint">A new model starts from one template: its network and its training values, kept per template in the backend. Editing a value
         below saves it into that template.</p>
-      <TemplatesTable settings={netSettings} encoders={offeredEncoders} current={encoder} runs={runs} onUse={chooseEncoder} />
+      <TemplatesTable settings={netSettings} encoders={offeredEncoders} current={encoder} differs={differs} runs={runs} onUse={chooseEncoder} />
       {!offeredEncoders.includes(encoder) && <p className="error" id="net-unavailable">{DESIGN_NAME[encoder] ?? encoder} is unavailable. Choose an available template. Existing models need their matching historical optimizer version.</p>}
       <h3>The {entry?.label ?? encoder} template, for this run</h3>
       <div className="row template-sizes"><Num label="hidden" value={net.hidden_dim ?? entry?.network?.hidden_dim ?? 32} onChange={v => editNet({ hidden_dim: v })} />
@@ -232,10 +241,11 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
           {suggested.description?.checkpoint_id ? <span title={suggested.description.checkpoint_id}>{`, save point ${pointText(suggested.description.checkpoint_id)}`}</span> : ''}. <button className="model-suggested-use" disabled={!!usingPoint}
             onClick={() => chooseModel(suggested.run_dir, suggested.description?.checkpoint_id ?? 'latest')}>Use</button></p>}
         {/* The row's double click, and its Enter since branch record SIF-121, named where the choice is asked for: the page said
-            neither, so the row's Enter would use a model unannounced. */}
-        {!source.run_dir && <p className="warn model-none-chosen">No saved model is chosen yet: {MODE_NAME[run.mode]} needs one. Use a save point below (a model's newest: a double click on its row, or Enter on it); this window then closes.</p>}
+            neither, so the row's Enter would use a model unannounced. SavedModels draws the line where it stood (branch record
+            SIF-140): with no saved model listed, it says what to do instead of pointing at save points below. */}
         <SavedModels source={source} usable={LOADS.includes(run.mode) ? run.mode : null} runs={runs} outputRoot={config.output?.output_root}
-          config={config} netFields={netFields} popup={networkWindow.popup} view={m.savedView} refreshRuns={m.refreshRuns} onUse={chooseModel} usingPoint={usingPoint} useError={useError} />
+          config={config} netFields={netFields} popup={networkWindow.popup} view={m.savedView} refreshRuns={m.refreshRuns} onUse={chooseModel} usingPoint={usingPoint} useError={useError}
+          noneChosen={source.run_dir ? undefined : `No saved model is chosen yet: ${MODE_NAME[run.mode]} needs one. Use a save point below (a model's newest: a double click on its row, or Enter on it); this window then closes.`} />
         {source.run_dir && <><h3>The model in use</h3>
         {modelLoading && <p className="hint" role="status">Checking model compatibility...</p>}
         {error && <p className="error" id="net-check-error">{error}</p>}

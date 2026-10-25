@@ -131,15 +131,20 @@ function ModelDetails({ model, models, runs, byDir, source, usable, config, netF
     <table className="grid small model-points"><thead><tr><th>Evaluations</th><th>Saved</th><th>Kind</th><th>Restorable</th><th className="plain"></th></tr></thead>
       {/* The pressed Use says "Using..." while its save point is read (branch record SIF-85: it showed nothing); the other
           buttons stay on - a newer choice wins (record 7.278). The evaluations here and in the table of models as the model's
-          facts count them (branch record SIF-117). */}
-      <tbody>{points.map(p => { const used = inUse && source.checkpoint_id === p.checkpoint_id, reading = usingPoint === pointKey(model.run_dir, p.checkpoint_id); return (
+          facts count them (branch record SIF-117). The save point checked below is off while that check answers NOT
+          compatible (`refused`, branch record SIF-140): its Use chose the model and closed the window, and the main page then
+          said the model is NOT compatible with this run. The answer is that one save point's - useRequest drops it at another
+          point or an edit - so the others, not checked, stay on, as does one whose check could not compare it. */}
+      <tbody>{points.map(p => { const used = inUse && source.checkpoint_id === p.checkpoint_id, reading = usingPoint === pointKey(model.run_dir, p.checkpoint_id),
+        refused = p.checkpoint_id === point && compatibility?.compatible === false; return (
         <tr key={p.checkpoint_id} className={p.checkpoint_id === point ? 'current' : ''} title={p.checkpoint_id} onClick={() => setPoint(p.checkpoint_id)}>
           <td className="numeric">{p.evaluations != null ? count(p.evaluations) : '?'}</td><td>{when(p.created_utc)}</td>
           <td>{KIND[p.kind] ?? p.kind}{p.is_best_policy ? ' · best policy' : ''}{p.is_latest ? ' · newest' : ''}</td>
           <td>{RESTORABLE[p.restoration_capability] ?? p.restoration_capability}</td>
-          <td>{used ? <b className="ok">in use</b> : <button className="model-use" disabled={!usable || reading} aria-busy={reading || undefined}
+          <td>{used ? <b className="ok">in use</b> : <button className="model-use" disabled={!usable || reading || refused} aria-busy={reading || undefined}
             onClick={e => { e.stopPropagation(); onUse(model.run_dir, p.checkpoint_id); }}
-            title={usable ? `Use this save point: the next run ${usable === 'frozen' ? 'evaluates' : 'fine-tunes'} exactly this model, with its network and component list (one Undo step).`
+            title={usable ? refused ? 'Use this save point: it cannot be loaded with the task on the page - see NOT compatible below.'
+              : `Use this save point: the next run ${usable === 'frozen' ? 'evaluates' : 'fine-tunes'} exactly this model, with its network and component list (one Undo step).`
               : 'Choose Fine-tune or Evaluate only above to use a saved model. In New model the table is for looking only.'}>{reading ? 'Using...' : 'Use this save point'}</button>}</td></tr>); })}</tbody></table>
     {/* A Use that could not read its save point is said here too, by the button pressed (branch record SIF-85): the window
         says it far above the table, and the press looked like it did nothing. */}
@@ -218,10 +223,13 @@ const ModelRow = memo(function ModelRow({ m, used, checked, isOpen, folderLabel,
 });
 
 /** `view`: what the table shows, kept while the window is closed (useSavedModelsView, branch record SIF-102). `refreshRuns`:
- *  the page's run list read again (App.tsx), after a rename. */
-export function SavedModels({ source, usable, runs, outputRoot, config, netFields, popup, view, refreshRuns, onUse, usingPoint = null, useError = null }: {
+ *  the page's run list read again (App.tsx), after a rename. `noneChosen`: the line that asks for a model while a Mode that
+ *  loads one has none chosen (RlModelWindow). Drawn here, which knows whether any is listed (branch record SIF-140): with
+ *  none, it pointed at "a save point below" that was not there; then the next step is said instead. */
+export function SavedModels({ source, usable, runs, outputRoot, config, netFields, popup, view, refreshRuns, onUse, usingPoint = null, useError = null, noneChosen }: {
   source: Json; usable: string | null; runs: Json[]; outputRoot?: string | null; config: Json; netFields: string[]; popup: Window | null;
-  view: SavedModelsView; refreshRuns: () => Promise<Json[]>; onUse: (run_dir: string, checkpoint_id: string) => void; usingPoint?: string | null; useError?: UseError | null }) {
+  view: SavedModelsView; refreshRuns: () => Promise<Json[]>; onUse: (run_dir: string, checkpoint_id: string) => void; usingPoint?: string | null; useError?: UseError | null;
+  noneChosen?: string }) {
   // Read again when a run of the list changed - came, went, came to rest, or its model was renamed - not at every read of
   // the run list (each read here walks every run's save points on the slow D: drive; record 7.275). A live run's new
   // save points show at Refresh list or once it rests. Refresh list reads every run folder anew (`fresh`, record 7.274).
@@ -283,6 +291,14 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
   // way. Judged by the key, not by whether the list carries the new name (SIF-102 review follow-up): a page whose run list
   // already held that name - a rename in another tab, and back here - keeps its list as it is, and nothing read the models.
   const renamed = () => void refreshRuns().then(listed => { if (runsKeyOf(listed) === shownKey.current) load(); });
+  // When a run saves a model, by the Output settings a run started now gets (branch record SIF-140: it read "every N
+  // evaluations"): the interval as Output settings reads it - an absent field is 200 evaluations -, and none at all with
+  // Model checkpoints off, which keeps a run from saving any, at its end too (runs.py, engine.py).
+  const output = config.output ?? {}, every: Json = output.checkpoint_every_evaluations === undefined ? 200 : output.checkpoint_every_evaluations;
+  const interval = [every != null && plural(every, 'evaluation'), output.checkpoint_every_seconds != null && plural(output.checkpoint_every_seconds, 'second')].filter(Boolean).join(' or every ');
+  const saves = output.save_checkpoints === false ? '"Model checkpoints" is off in Output settings: a run saves a model only with it on.'
+    : `A run saves one when it is paused, stopped or finished${interval ? `, and every ${interval} while it runs` : ''}.`;
+  const empty = !!models && !list.length && !error;
   // The table scrolls in a box of its own (branch record SIF-86: 411 models made it about 20,000 px long, with the model in use
   // and the Mode's settings under it). When the list first arrives the model in use is brought to the middle of the box, if it
   // is out of its view - the box only, never the window. Once per window: a later sort, filter or Refresh list keeps the place.
@@ -301,6 +317,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
     });
   }, [read]);
   return (<div className="saved-models">
+    {noneChosen && !empty && <p className="warn model-none-chosen">{noneChosen}</p>}
     {/* Refresh list is the refresh icon, as in the Runs and Tasks windows (branch record SIF-113), its words for screen readers
         and at the start of its tooltip; while it reads, the count at the line's end says so */}
     <div className="row"><button onClick={() => { freshNext.current = true; load(); void folders.refresh(); }} disabled={loading}
@@ -312,8 +329,9 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
       <span className="hint model-count">{loading ? 'Reading the saved models...' : models ? `${plural(list.length, 'saved model')} under the output folder` : ''}</span></div>
     {error && <p className="error">The list of saved models could not be read: {error}</p>}
     {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
-    {models && !list.length && !error && <p className="hint model-empty">No saved model yet under this output folder. A run saves one when it is paused, stopped or finished,
-      and every N evaluations while it runs ("Model checkpoints" in the output settings must be on).</p>}
+    {/* With a model asked for, the line that asked for it says what to do instead (branch record SIF-140) */}
+    {empty && (noneChosen ? <p className="warn model-none-chosen model-empty">No saved model yet under this output folder: run New model first, or set Output root
+      in Output settings to the folder that holds your models. {saves}</p> : <p className="hint model-empty">No saved model yet under this output folder. {saves}</p>)}
     {source.run_dir && models && !inUse && !loading && usable && <p className="warn model-missing">The model in use is not in this list: its run folder is outside the current output
       folder, or it no longer holds a complete save point. <span className="path" title="Click to copy" onClick={() => void copying.copyText(source.run_dir)}>{source.run_dir}{copying.word(source.run_dir)}</span></p>}
     {newer && <p className="note model-newer">The model in use has a newer save point: <b>{count(newer.evaluations)} evaluations</b> ({when(newer.created_utc)}); the next run loads the save point

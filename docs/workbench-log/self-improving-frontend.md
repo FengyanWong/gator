@@ -5921,3 +5921,71 @@ netlist..." and names no Virtuoso cell (`source-3-ngspice-connection.png`); with
 cell and not the deck; neither page asks to load a circuit. A probe run on Left.tsx as at 0d6db53 (put back after, its sum
 compared) failed exactly the ngspice one, 1 of 19. On the final source, before the probe and again after it, all passed
 the first time: `circuit_source_check` 19, `task_list_check` 106, `ngspice_window_check` 46.
+
+### SIF-140 The RL model window offers no Use for a save point it says cannot be loaded, says what to do when there is no saved model, and marks a template whose values this run changed (2026-10-25; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found three places where the RL
+model window said one thing and offered or marked another. In a model's Details, the save point checked against the
+task on the page read "NOT compatible for Fine-tune - it cannot be loaded, and a run never falls back to New model" in
+red under an enabled "Use this save point" (S12-15, `models-2-details.png`): ModelChooser.tsx turned Use off only in New
+model and while a Use was reading, never by the check's answer. That picture's network keys are the fixture's (since
+SIF-85 the Details check a model with its own network), but a real check still answers NOT compatible on what a model
+cannot bring along - the circuit graph schema, the goal/spec input schema, the preprocessing, real or synthetic origin,
+an older save's checkpoint version (checkpoints.py) - a MOCK model with a real task, say. Use then chose the model and
+closed the window, and the main page said "Review the settings in RL model... - the saved model is NOT compatible with
+this run". With an empty output folder - a first Fine-tune or Evaluate only - the amber line still read "No saved model
+is chosen yet: Evaluate only needs one. Use a save point below (...)" over no rows, and the empty list's hint said a run
+saves one "every N evaluations while it runs ("Model checkpoints" in the output settings must be on)", a literal N,
+while the interval is in the configuration (S12-16, `models-3-real.png`). And in New model, after a restored
+configuration or a New run like this from an older run, the templates table marked the Graph Transformer row "in use"
+beside the template's own values, 48/4/4 and alpha 0.01, while the box under its settings said "This run's values differ
+from the Graph Transformer template (starting preset)" and the "In use" line read "current run settings" (S12-38,
+`network-5-restored-differences.png`).
+
+**Changed.** `frontend/src/panels/ModelChooser.tsx`: in a model's Details the Use of the save point checked is off while
+that check answers NOT compatible, its tooltip "Use this save point: it cannot be loaded with the task on the page - see
+NOT compatible below."; the answer is that one save point's - useRequest drops it at another save point or an edit, and
+the check runs again 0.5 s after the edit - so the save points not checked keep their Use, as does one the check could
+not compare with an incomplete configuration. `SavedModels` takes `noneChosen`, the line asking for a model, and draws
+it where RlModelWindow drew it, above the list's toolbar; once the list has answered empty it draws instead, under the
+count, "No saved model yet under this output folder: run New model first, or set Output root in Output settings to the
+folder that holds your models." and when a run saves one. That sentence, also the empty list's hint while a model is
+chosen and in New model's look, is written from the Output settings a run started now gets, the interval read as Output
+settings reads it (an absent field is 200 evaluations): "A run saves one when it is paused, stopped or finished, and
+every 200 evaluations while it runs.", "every 600 seconds" in seconds, the clause left out with no interval, and with
+Model checkpoints off '"Model checkpoints" is off in Output settings: a run saves a model only with it on.'.
+`frontend/src/panels/RlModelWindow.tsx`: passes that line to SavedModels in Fine-tune and Evaluate only while no model is
+chosen (New model's look passes none); `TemplatesTable` takes `differs`, useRlModel's, which draws the comparison box
+(#network-differences): the template chosen reads "chosen - this run's values differ (see below)" in amber while it
+holds, "in use" only while this run's values are the template's, and "see below" scrolls the box to the middle of the
+window's own document. Changes from the plan: the next-step line names the field, Output root, and leaves when a run
+saves to the shared sentence, as the plan's "(it saves one when it pauses, stops or ends)" is untrue with Model
+checkpoints off - such a run saves no model at all, at its end neither (engine.py `_checkpoint`; runs.py: "it keeps no
+saved model") -, and for the same reason the off sentence is not the plan's "so a run saves none while it runs"; a
+configuration holding both intervals (only from a file, and validation refuses it) reads "every 200 evaluations or every
+600 seconds"; and the link's double click stays its own, as on the row it would put the template's values back
+(chooseEncoder of the template in use applies its values, one Undo step). Not changed, as the plan says: a double click
+or Enter on a model's row still takes its newest save point whatever its Details' check says; Use the newer one and
+SIF-36's key lines are as they were. Only a button turned off, words and a link that scrolls: nothing starts, continues
+or stops a run, saves a task or writes to Virtuoso, and every question is asked as before. `docs/workbench.md` (New
+model's templates, the comparison, "Using one is a press" and nothing filled in by itself) and
+`docs/functionality-reference.md` (Templates, Saved models) say it.
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree. The three scripts of the plan, all
+passed the first time: `model_chooser_check` 145 (139 before), `network_panel_check` 78 (74), `output_panel_check` 98 (its
+panel still has no "every N evaluations"). New: `model_chooser_check`: with D's newest save point answered NOT
+compatible its Use is off with the tooltip, the older one's on (`models-2-details.png`); the empty list with C in use
+reads the hint with "every 200 evaluations", then, changed in the main page's Output settings, "every 200 seconds", no
+interval, and Model checkpoints off, and back; on the real route of the scratch backend (Evaluate only, none chosen,
+none listed) the one line asking for a model reads the next step (`models-3-real.png`). Changed there: the notice's
+set-up chooses D by a double click on its row, its Use being off once its check answers. `network_panel_check`: the
+restored configuration's template row reads "chosen - this run's values differ (see below)", the box out of view at the
+window's top comes into view at "see below" with nothing written, and the row reads "in use" again after Use the
+template's values (`network-5-restored-differences.png`). Then the other scripts that draw the RL model window's
+templates or saved models, all passed the first time, their counts as in SIF-139: `dom_identity_check` 56,
+`task_rows_check` 57, `typing_check` 62, `looks_check` 83, `pdk_check` 46, `reliability_check` 22, `graph_view_check`
+69, `reward_block_check` 34, `encoder_models_check` 24, `model_structure_check` 33, `network_inputs_check` 9. A probe
+run of the two changed scripts on ModelChooser.tsx and RlModelWindow.tsx as at HEAD (put back after, their sums
+compared) failed exactly the new checks, 7 of 145 and 2 of 78. After it the link's press in `network_panel_check` reads
+`?.`, so a missing link fails its check instead of stopping the script, and the three scripts of the plan passed again
+on the final source, the same counts. No flakes.

@@ -2974,7 +2974,10 @@ chosen. A configuration without any Mode (a task's starter rows, an old file) is
   discount, learning rate), where they come from (the starting preset, or edited and saved in the backend) and how many
   saved models were made from it. **Use template** or a double click fills the next run's network and training values
   from it, as one Undo step - what choosing an encoder did before; so does **Enter** on the row (branch record SIF-121),
-  as Use template's tooltip says - on Use template itself, Enter presses that button alone. The template in use is marked.
+  as Use template's tooltip says - on Use template itself, Enter presses that button alone. The template in use is marked
+  "in use" - while this run's values differ from it, "chosen - this run's values differ (see below)", whose link brings
+  the comparison under its settings into view (branch record SIF-140: it read "in use" beside the template's own values,
+  over a box saying this run's differ).
 - **The ... template, for this run**: its sizes, structural input, the operating-point input, Advanced (record 7.195),
   the Components list, the "In use" line with Use the template's values and Save into the template (below), and where
   the values come from. No preset buttons (record 7.191).
@@ -3124,7 +3127,11 @@ never "latest" - with the model's network and component list, as ONE Undo step, 
 **Enter** on the row, as on a run's row in the Runs window (branch record SIF-121: from the row, the double click was the
 only way); Enter on the row's Details button opens its Details alone, and in New model, where the table is for looking,
 the double click and Enter open the Details. "No saved model is chosen yet" names both. While the save point
-is read, the button pressed says **Using...**; the other Use buttons stay on, and a newer choice wins (record 7.278). The
+is read, the button pressed says **Using...**; the other Use buttons stay on, and a newer choice wins (record 7.278).
+The Use of the save point the Details checked is off while that check answers NOT compatible, its tooltip saying why
+(branch record SIF-140: it chose the model and closed the window, and the main page then said the model is NOT
+compatible with this run); a save point not checked, or one the check could not compare with the configuration, keeps
+its Use, and a double click or Enter on the row still takes the newest save point. The
 RL model window then closes (record 7.291; as do "Use the newer one" and the suggested model's Use) - a save point that
 cannot be read leaves it open, with the reason: above the saved models, and under that model's save points when its
 Details are open (branch record SIF-85). Opened again, the row is marked **in use**, and the model line beside the button names
@@ -3132,7 +3139,14 @@ it. When the run of the model in use has saved a newer
 save point, "The model in use has a newer save point: ... Use the newer one" offers it; nothing follows by itself. A
 model in use that is no longer listed (outside the output folder, or without a complete save point) is said, with its
 folder. Nothing is filled in by itself either: until a save point is used, the window says "No saved model is chosen
-yet", and the newest model saved under the RL model label is offered (above). Load run and New run like this in the
+yet", and the newest model saved under the RL model label is offered (above). With no saved model under the output
+folder it says the next step instead, under the count: "No saved model yet under this output folder: run New model
+first, or set Output root in Output settings to the folder that holds your models." An empty list says when a run saves
+one, by the Output settings a run started now gets: "A run saves one when it is paused, stopped or finished, and every 200
+evaluations while it runs" - the interval Output settings holds, in evaluations or in seconds, the clause left out when
+it holds none - or, with Model checkpoints off, that a run saves a model only with it on (branch record SIF-140: it
+pointed at save points below that were not there, and read "every N evaluations").
+Load run and New run like this in the
 Runs window take a saved model the same way, pinned with its network and component list (`frontend/src/savePoint.ts`,
 record 7.267).
 
@@ -3180,7 +3194,9 @@ An existing configuration keeps its explicit network and Advanced values when th
 the template's values, **In use** says **current run settings**, and a comparison table lists each differing
 setting with **This run** and **Template** values. The run uses the current values. **Use the template's values**
 replaces this run's settings (one Undo step) without writing preferences; **Save into the template** keeps this run's
-settings and saves them into that template (branch record SIF-57; the box said "saved defaults" until then). The publication/baseline label is shown as in use only while the values match.
+settings and saves them into that template (branch record SIF-57; the box said "saved defaults" until then). The publication/baseline label is shown as in use only while the values match;
+so is the template's row in the templates table, which otherwise reads "chosen - this run's values differ (see below)"
+(branch record SIF-140).
 
 One browser upgrade handles the old starting preset's learning rate (record 7.243): on the first page load after this
 fix, a scratch configuration for GT, RGCN or GATv2 that exactly matches the starting preset except for learning rate

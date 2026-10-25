@@ -13,7 +13,9 @@
 // windows open (one press brings one to the front; Close all). Branch record SIF-101: New folder with tasks ticked keeps
 // them ticked in the folder shown. Branch record SIF-109: that list is plain buttons; Esc gives the focus back to its button,
 // and after Close all the focus goes to the banner's control before it. Branch record SIF-113: Refresh list is the refresh
-// icon and Delete task the waste bin, their words for screen readers and at the start of their tooltips.
+// icon and Delete task the waste bin, their words for screen readers and at the start of their tooltips. Branch record
+// SIF-139: a blocked task's mark says why, in two lines at most, the whole reason on hover; with no task the header's title
+// stands alone.
 // Exit code 1 if any check fails.
 import path from 'node:path';
 import { check, launchEdge, NEVER_ASKED, outDir, reportRefused, runChecks, sleep, starterConfig, taskWindow, validConfiguration, workbenchUrl, TASKS_WINDOW, RUNS_WINDOW } from './lib/harness.mjs';
@@ -171,8 +173,18 @@ await runChecks(browser, async () => {
     await tw.window.evaluate(`(() => { const tr = ${ROWS}.find(tr => tr.dataset.taskKey === ${JSON.stringify(OTA.task_key)}), saved = tr.children[5], cellOf = tr.children[3];
       return saved.title === ${JSON.stringify(stamp(OTA.saved_utc))} && getComputedStyle(saved.querySelector('.task-date')).whiteSpace === 'nowrap'
         && getComputedStyle(cellOf.querySelector('.name-part')).display === 'inline-block' && cellOf.querySelector('.name-part').textContent === 'fixture_ota'; })()`));
-  check('a blocked task without a baseline: the mark [blocked], baseline none, no run', (await cell(LDO.task_key, 0)) === 'fixture_ldo[blocked]' && (await cell(LDO.task_key, 5)) === 'none'
-    && (await cell(LDO.task_key, 7)) === 'none' && (await cell(LDO.task_key, 8)) === '0', JSON.stringify(await Promise.all([0, 5, 7, 8].map(n => cell(LDO.task_key, n)))));
+  // States audit of 2026-10-24 (branch record SIF-139): the mark read a bare "[blocked]", the reason only in Details - with a
+  // connection problem, every saved task's. It says why now, in two lines at most, the whole reason on hover; a reason far
+  // longer (a connection file's path) neither takes more lines nor widens the Task column.
+  check('a blocked task without a baseline: its mark says why, baseline none, no run (SIF-139: a bare "[blocked]")', (await cell(LDO.task_key, 0)) === `fixture_ldo[blocked: ${LDO.blocker}]`
+    && (await cell(LDO.task_key, 5)) === 'none' && (await cell(LDO.task_key, 7)) === 'none' && (await cell(LDO.task_key, 8)) === '0', JSON.stringify(await Promise.all([0, 5, 7, 8].map(n => cell(LDO.task_key, n)))));
+  const blockedMark = await far.evaluate(`(() => { const m = ${ROWS}.find(tr => tr.dataset.taskKey === ${JSON.stringify(LDO.task_key)})?.querySelector('.task-mark .warn'); if (!m) return null;
+    const own = m.textContent, look = () => ({ height: m.getBoundingClientRect().height, column: m.closest('td').getBoundingClientRect().width, cut: m.scrollHeight > m.clientHeight + 1 });
+    const mine = look(); m.textContent = '[blocked]'; const line = look().height;
+    m.textContent = '[blocked: FIXTURE ' + 'a reason far longer than the Task column can hold, '.repeat(6) + ']'; const long = look(); m.textContent = own;
+    return { title: m.title, mine, line, long }; })()`);
+  check('...the whole reason is its tooltip; a reason far longer takes two lines, cut, and leaves the Task column as wide (SIF-139)', blockedMark?.title === LDO.blocker
+    && Math.abs(blockedMark.long.height - 2 * blockedMark.line) < 2 && blockedMark.long.cut && Math.abs(blockedMark.long.column - blockedMark.mine.column) < 1, JSON.stringify(blockedMark));
   check('an ngspice task without its connection: the mark "choose its connection", no cell, no baseline column value', (await cell(NG.task_key, 0)) === 'ngspice:fixture_div[ngspice: choose its connection]'
     && (await cell(NG.task_key, 2)) === 'ngspice netlist' && (await cell(NG.task_key, 5)) === '-' && (await cell(NG.task_key, 3)) === '2', JSON.stringify(await Promise.all([0, 2, 3, 5].map(n => cell(NG.task_key, n)))));
   check('the MOCK task: a MOCK badge', (await cell(MOCK.task_key, 0)) === 'synthetic:gpdk045_ota5MOCK' && await far.evaluate(`!!${ROWS}.find(tr => tr.dataset.taskKey === 'synthetic:gpdk045_ota5').querySelector('.mock-tag')`));
@@ -464,9 +476,11 @@ await runChecks(browser, async () => {
   const START = `document.querySelector('.editors .task-status .task-start')`;
   check('no task yet: the task\'s lines say so and offer Open Tasks and the ways to a new task', await until(`!!(${START})`, 150)
     && (await evaluate(`[...${START}.querySelectorAll('button')].map(b => b.textContent)[0]`)) === 'Open Tasks', await evaluate(`${START}?.innerText ?? 'none'`));
-  // Branch record SIF-88: the title kept the project's task name, the last task's (fixture_ota), over "No task yet".
-  check('...and the header\'s title says no task is chosen (branch record SIF-88)', (await evaluate(`document.querySelector('header .tb-task')?.textContent`)) === 'no task chosen',
-    await evaluate(`document.querySelector('header .tb-task')?.textContent`));
+  // Branch record SIF-88: the title kept the project's task name, the last task's (fixture_ota), over "No task yet". States
+  // audit of 2026-10-24 (branch record SIF-139): beside it stood the last task's labels and "not set", their keys hidden.
+  const noTask = await evaluate(`[document.querySelector('header .tb-task')?.textContent, document.querySelector('header .tb-facts')?.textContent]`);
+  check('...and the header\'s title says no task is chosen, with no facts beside it (branch records SIF-88, SIF-139)', JSON.stringify(noTask) === '["no task chosen","no task chosen"]'
+    && !(await evaluate(`!!document.querySelector('header .tb-details')`)), JSON.stringify(noTask));
   check('no window is open: the banner lists none', !(await evaluate(`!!document.querySelector('header .windows-button')`)));
   await evaluate(`${START}.querySelector('button.open-tasks').click()`, true);
   check('Open Tasks opens the Tasks window', await browser.window(TASKS_WINDOW, { ms: 8000 }).then(() => true, () => false));

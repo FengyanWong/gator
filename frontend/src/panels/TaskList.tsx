@@ -35,9 +35,13 @@ const ownName = (key: string) => key.replace(/^[^:]+:/, '');
  *  key - the task window's Details hold the Name box. A server older than the rename lists no `name`. */
 export const shownName = (t: Json | null | undefined, key = t?.task_key ?? '') => typeof t?.name === 'string' && t.name !== ownName(key) ? t.name : taskName(key);
 const renamed = (t: Json) => typeof t.name === 'string' && t.name !== ownName(t.task_key);
-/** The mark the old list put after a task's name: what keeps it from running right now. */
-export const taskMark = (t: Json, ngspiceOffered: boolean) => t.kind === 'mock' ? '[MOCK]'
-  : t.kind === 'ngspice' ? (t.available && ngspiceOffered ? '[ngspice]' : '[ngspice: choose its connection]') : t.available ? '' : '[blocked]';
+/** The mark the old list put after a task's name: what keeps it from running right now. `withReason`: the Tasks list's, where a
+ *  blocked task says why (states audit of 2026-10-24, branch record SIF-139): with a connection problem every saved task read a
+ *  bare "[blocked]", its reason only in Details. The tab line's chip keeps "[blocked]": the "Blocked:" line under the editors'
+ *  toolbar says why there. */
+export const taskMark = (t: Json, ngspiceOffered: boolean, withReason = false) => t.kind === 'mock' ? '[MOCK]'
+  : t.kind === 'ngspice' ? (t.available && ngspiceOffered ? '[ngspice]' : '[ngspice: choose its connection]')
+  : t.available ? '' : withReason && t.blocker ? `[blocked: ${t.blocker}]` : '[blocked]';
 const cellOf = (t: Json) => t.library && t.cell ? `${t.library}/${t.cell}` : t.kind === 'ngspice' ? 'ngspice netlist' : t.kind === 'mock' ? 'built-in netlist' : '-';
 /** The runs of one task: how many, and the newest by its start (a Baseline simulation is one of them). */
 function runsOf(runs: Json[], key: string) {
@@ -59,7 +63,7 @@ const newestText = (r: Json | null) => !r ? 'none' : `${minute(r.created_utc) ??
 
 type Column = { key: string; title: string; help: string; numeric?: boolean; value: (t: Json, runs: Json[]) => string | number | null };
 const COLUMNS: Column[] = [
-  { key: 'task', title: 'Task', help: 'The name the task is shown under. A renamed task says its internal name below it: the name its files, its cell and its runs keep (Details holds the Name box). A mark says what keeps it from running now; synthetic tasks carry a MOCK badge.', value: t => shownName(t) },
+  { key: 'task', title: 'Task', help: 'The name the task is shown under. A renamed task says its internal name below it: the name its files, its cell and its runs keep (Details holds the Name box). A mark says what keeps it from running now (the whole reason on hover); synthetic tasks carry a MOCK badge.', value: t => shownName(t) },
   { key: 'class', title: 'Class', help: 'The circuit class label the task carries (opamp, ldo, oscillator, ...).', value: t => t.circuit_class ?? '' },
   { key: 'cell', title: 'Cell', help: 'The Virtuoso library and cell the task runs in (the copy you declared), with its testbench cell.', value: t => cellOf(t) },
   { key: 'revision', numeric: true, title: 'Rev', help: 'The saved revision of the task. Save as creates a new task at revision 1.', value: t => t.revision ?? null },
@@ -146,9 +150,11 @@ function TaskDetails({ task, runs, rows, error, followed, deleting, onFollow, on
   </div>);
 }
 
-export function TaskListButton({ tasks, runs, current, currentText, currentMark, ngspiceOffered, loading, onChoose, onRefresh, onRefreshRuns,
+export function TaskListButton({ tasks, runs, current, currentText, currentMark, currentMarkTitle, ngspiceOffered, loading, onChoose, onRefresh, onRefreshRuns,
   onRenamed, onDelete, deleting, deleteDisabled, deleteTitle, deleteNotice, newTask }: { tasks: Json[]; runs: Json[];
   current: string | null; currentText: string; currentMark?: string; ngspiceOffered: boolean; loading: string | null;
+  /** The tooltip of the chip's mark: what keeps the task from running, whole (branch record SIF-139). */
+  currentMarkTitle?: string;
   /** `owner`: this window, which asks the edits question (branch record SIF-84). */
   onChoose: (taskKey: string, owner?: Window) => Promise<{ loaded: boolean }> | void;
   onRefresh: () => Promise<Json[]>; onRefreshRuns?: () => Promise<Json[]>;
@@ -227,7 +233,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
   // Not when the double click lands on the row's buttons or its tick box.
   const chooseRow = (e: MouseEvent<HTMLTableRowElement>, key: string) => { if (!(e.target as HTMLElement).closest('button, input, select, label')) follow(key); };
 
-  const text = (t: Json) => [t.task_key, t.name, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
+  const text = (t: Json) => [t.task_key, t.name, folders.data.folders[folders.of(t.task_key)], taskMark(t, ngspiceOffered, true), t.circuit_class, t.pdk_id, cellOf(t), t.testbench, t.description, t.title, stamp(t.saved_utc)].join(' ').toLowerCase();
   const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
   // Only while the window is open.
   const shown = !popup ? [] : table.arrange(tasks, t => folders.holds(t.task_key), text, t => column.value(t, runs));
@@ -268,7 +274,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
       {tasks.length > 0 && <div className="scroll"><table className="grid run-table task-table">
         <TableHead view={table} columns={COLUMNS} shown={shown} id={t => t.task_key} what="tasks" disabled={folders.busy || !folders.ready} />
-        <tbody>{shown.map(t => { const active = t.task_key === current, mark = taskMark(t, ngspiceOffered), of = runsOf(runs, t.task_key); return (<Fragment key={t.task_key}>
+        <tbody>{shown.map(t => { const active = t.task_key === current, mark = taskMark(t, ngspiceOffered, true), of = runsOf(runs, t.task_key); return (<Fragment key={t.task_key}>
           <tr className={active ? 'current' : ''} aria-current={active ? 'true' : undefined} data-task-key={t.task_key} title={renamed(t) ? `${shownName(t)} (internal name ${taskName(t.task_key)})` : taskName(t.task_key)} onDoubleClick={e => chooseRow(e, t.task_key)}
             tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) follow(t.task_key); }}>
             <td className="task-select"><input type="checkbox" aria-label={`Select ${shownName(t)}`} checked={selected.includes(t.task_key)}
@@ -276,7 +282,9 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
             <td><code>{shownName(t)}</code>{loading === t.task_key && <span className="hint"> loading...</span>}
               {renamed(t) && <div className="hint task-internal-name">internal name {taskName(t.task_key)}</div>}
               {folders.folder === 'all' && folders.data.folders[folders.of(t.task_key)] && <div className="hint task-folder-label">{folders.data.folders[folders.of(t.task_key)]}</div>}
-              {mark && <div className="task-mark">{t.kind === 'mock' ? <span className="badge model-tag mock-tag">MOCK</span> : <span className={`hint${t.available ? '' : ' warn'}`}>{mark}</span>}</div>}</td>
+              {/* The mark in two lines at most (roadster.css), what keeps the task from running whole on hover (branch record SIF-139) */}
+              {mark && <div className="task-mark">{t.kind === 'mock' ? <span className="badge model-tag mock-tag">MOCK</span>
+                : <span className={`hint${t.available ? '' : ' warn'}`} title={t.blocker ?? undefined}>{mark}</span>}</div>}</td>
             <td>{t.circuit_class ?? ''}</td>
             <td className="task-cell" title={t.testbench ? `testbench ${t.testbench}` : undefined}>{cellName(cellOf(t))}{t.testbench && <div className="hint">tb {namePart(t.testbench)}</div>}</td>
             <td className="numeric">{t.revision ?? '-'}</td>
@@ -309,7 +317,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       aria-label={current ? `Open Tasks: ${nameOf(current)}` : 'Open Tasks'}
       title={popup ? 'The task window is open: press to bring it to the front and read the lists again.' : 'Opens the task window: every registered task with its cell, revision, baseline, sizes and results, and its newest run. Double click one there to make the workbench follow it; the window then closes.'}>
       <span className="task-list-current" title={current ? nameOf(current) : taskName(currentText)}>{current ? <code className="task-list-key" data-task-key={current}>{nameOf(current)}</code> : <span className="task-list-key">{taskName(currentText)}</span>}
-        {currentMark && <span className="task-list-mark hint"> {currentMark}</span>}</span>
+        {currentMark && <span className="task-list-mark hint" title={currentMarkTitle}> {currentMark}</span>}</span>
     </button>
     {blocked && <Blocked as="span" className="error task-list-blocked" />}
     <PopupPortal popup={popup} root={root}>{view}</PopupPortal>

@@ -452,7 +452,9 @@ which the user chose on 2026-10-17, brings it back. Only a followed task is name
 from Virtuoso is "library/cell (not saved)" ("choosing a Virtuoso cell" before a cell is chosen), and a page that follows
 no task reads "no task chosen". The RL model fact falls back to the task's name for a followed task only, and reads "not
 set" otherwise. Until then a fresh page titled itself "task" (the empty configuration's name), and a cell kept the name of
-the last task loaded.
+the last task loaded. A page that follows neither a task nor a cell shows no facts: "no task chosen" stands alone (branch
+record SIF-139; it read "unspecified · unspecified · not set", the keys hidden by the look). A class or PDK label left at
+the configuration's default, "unspecified", reads "no class" or "no PDK" there.
 
 **When the page cannot be drawn** (record 7.188, design advice). A failure while drawing the page used to leave it blank.
 Now a panel names the error and offers the ways out. **Undo the last change** draws the page again from the configuration
@@ -600,14 +602,15 @@ User: "make the loaded task a button similar to the runs... button style. It ope
 The task's name starts the editors' tab line, one button followed by its revision and whether the rows are saved (record
 7.362; until then the Project column's **Task** row) (`mscr_ota5t`,
 with a mark when something keeps it from running: `[blocked]`, `[ngspice: choose its
-connection]`, `[MOCK]`; or a placeholder: "(choose a task)", "(none: MScR/x is read from Virtuoso)", "(none: the saved
-source was removed)", "synthetic:vco (removed)"). There is no separate **Tasks...** button beside the name.
+connection]`, `[MOCK]`, the reason in the mark's tooltip (branch record SIF-139) and, for a blocked task, in the
+"Blocked:" line under the toolbar; or a placeholder: "(choose a task)", "(none: MScR/x is read from Virtuoso)", "(none:
+the saved source was removed)", "synthetic:vco (removed)"). There is no separate **Tasks...** button beside the name.
 Pressing the name opens the **task window**, a browser window of its own that can stay open next
 to the workbench (allow pop-ups for the page if the browser blocks it). It lists every registered task, one row each:
 
 | Column | What it says |
 |---|---|
-| Task | The name the task is shown under: its own name, without the `real:` prefix for saved Virtuoso tasks (ngspice names retain `ngspice:`), or the name it was renamed to, with "internal name ..." under it (record 7.302, **Rename** below). Availability marks and the MOCK badge appear beside the name. There is no Kind column or Kind detail (7.249). |
+| Task | The name the task is shown under: its own name, without the `real:` prefix for saved Virtuoso tasks (ngspice names retain `ngspice:`), or the name it was renamed to, with "internal name ..." under it (record 7.302, **Rename** below). Availability marks and the MOCK badge appear beside the name. A blocked task's mark says why, `[blocked: <reason>]`, in two lines at most, the whole reason in its tooltip (branch record SIF-139: a bare `[blocked]` stood beside every saved task a connection problem blocks, the reason only in Details). There is no Kind column or Kind detail (7.249). |
 | Class | The circuit class label. |
 | Cell | The library and cell the task runs in (the copy you declared), and its testbench cell. |
 | Rev | The saved revision. |
@@ -1113,7 +1116,10 @@ A configuration saved before still says `source: netlist` (the browser's saved c
 JSON file, a run's `effective_config.json`). It still opens, with the same hashes. The Task list
 then shows no task ("the saved source was removed") and a note names the saved file; nothing is loaded
 from it and a run cannot start from it (the backend answers "The workbench no longer imports Spectre
-netlist files..."). Choosing a task also drops the two file paths from the configuration.
+netlist files..."). Choosing a task also drops the two file paths from the configuration. The note says the same in the
+backend's words - Spectre netlist files (.scs) only, where it read "no longer imports netlists" beside the Tasks window's
+**From an ngspice netlist...** - and, while that way is offered, that a SPICE deck for ngspice can become a task there
+(branch record SIF-139).
 
 Netlists as such are still used: the MOCK task is the OTA5's netlist, and a Virtuoso cell is read
 through Virtuoso's own netlist export. The best design is written as `optimized_dut.scs` only when
@@ -1187,8 +1193,9 @@ What the deck must contain, and what the workbench makes of it (`src/gator_workb
 
 How a run works (`src/gator_workbench/ngspice_backend.py`, `ngspice_tasks.py`): the task is a **real** task of the
 connection family `ngspice`. Start needs an ngspice connection chosen in the Connection window ("ngspice on this
-machine" or "ngspice over SSH"; the column says so when the connection in use is a Virtuoso one, and the Task list then
-lists no ngspice task but the one the page follows, marked "choose its connection"),
+machine" or "ngspice over SSH"; while none is in use the task's line under the editors' toolbar says so, with
+**Connection...** beside it, which opens that window and checks nothing (branch record SIF-139), and the Tasks window marks
+the ngspice tasks "choose its connection"),
 its four-layer test as the gate (the program answers, the built-in divider solves), and the confirmation of the
 number of simulations that Start asks for (the same consent as for every real run; no license or budget is spent,
 but every evaluation is counted as real). Each evaluation is one `ngspice -b` process on the written deck: on this

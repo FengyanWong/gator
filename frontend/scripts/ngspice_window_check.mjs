@@ -20,7 +20,7 @@
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/ngspice_window_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, CIRCUIT_PANEL, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, showCircuit, sleep, TASK_PANEL, TASKS_WINDOW, taskWindow, workbenchUrl, NGSPICE_WINDOW } from './lib/harness.mjs';
+import { check, CIRCUIT_PANEL, CONNECTION_WINDOW, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, showCircuit, sleep, TASK_PANEL, TASKS_WINDOW, taskWindow, workbenchUrl, NGSPICE_WINDOW } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -209,6 +209,20 @@ await runChecks(browser, async () => {
   const lines = await evaluate(`${STATUS}?.textContent ?? ''`);
   check('under the editors\' toolbar the task says it runs on ngspice and needs an ngspice connection', lines.includes('ngspice evaluation backend')
     && lines.includes('Choose an ngspice connection'), lines.slice(0, 300));
+  // States audit of 2026-10-24 (branch record SIF-139): the line named the Connection window with no button to it, while the
+  // header's pill shows a connection's name, the word "Connection" for screen readers only. It carries Connection... now, as
+  // the lines of branch record SIF-108 do; the chip's mark says on hover what keeps the task from running, and the header's
+  // facts say "no PDK" for the label the task leaves at its default ("unspecified · ..." before).
+  const LINE = `${STATUS}.querySelector('.line-act.connection-problem')`;
+  const problem = await evaluate(`(() => { const l = ${LINE}, b = l?.querySelector('button'), p = l?.querySelector('p.warn');
+    return l && { text: p?.textContent ?? '', buttons: [...l.querySelectorAll('button')].map(x => x.textContent.trim()), title: b?.title ?? '',
+      beside: !!b && !!p && b.getBoundingClientRect().top < p.getBoundingClientRect().bottom && b.getBoundingClientRect().left > p.getBoundingClientRect().left }; })()`);
+  check('...that line carries Connection... beside its words, the tooltip saying what it opens and that opening checks nothing (SIF-139)',
+    problem?.text === LOADED.circuit.connection_problem && JSON.stringify(problem.buttons) === '["Connection..."]' && problem.title.startsWith('Connection: Opens the Connection window')
+    && problem.title.endsWith('Opening it checks nothing.') && problem.beside, JSON.stringify(problem));
+  const marked = await evaluate(`[${PANEL}.querySelector('.tabs .task-row .task-list-mark')?.title ?? null, document.querySelector('header .tb-details .tb-cell .tb-v')?.textContent ?? null]`);
+  check('the tab line\'s mark gives the reason on hover, and the header\'s facts read "opamp · no PDK" (SIF-139)',
+    JSON.stringify(marked) === JSON.stringify(['needs an ngspice connection', 'opamp · no PDK']), JSON.stringify(marked));
   const rev = await evaluate(`${PANEL}.querySelector('.tabs .task-head .task-rev')?.textContent.trim() ?? ''`);
   check('the tab line gives its revision beside its name', rev === 'rev. 1', rev);
   const shown = await showCircuit(page);
@@ -231,6 +245,17 @@ await runChecks(browser, async () => {
   check('no red Blocked box for the followed task', !(await evaluate(`!!${PANEL}.querySelector('.blocker') || !!${CIRCUIT_PANEL}.querySelector('.blocker')`)));
   await shotTask('ngspice-3-task.png');
   await shot('ngspice-3-column.png');
+  // The line's Connection... opens the Connection window from the page, which holds the click, and sends nothing (SIF-139).
+  const before = { sent: sent.length, refused: refused.length };
+  await evaluate(`${LINE}?.querySelector('button')?.click()`, true);
+  const linkWindow = await browser.window(CONNECTION_WINDOW, { ms: 10000, except: page.target.id }).catch(() => null);
+  const link = linkWindow && await browser.attach(linkWindow, { errors: consoleErrors, prefix: 'Connection window: ' });
+  const opened = link && await link.until(`!!document.querySelector('.connection-window h2')`, 50)
+    && await link.evaluate(`({ heading: document.querySelector('.connection-window h2').textContent, opener: window.opener?.document.title ?? null })`);
+  const pageTitle = await evaluate(`document.title`);
+  check('...its press opens the Connection window, from the page (the window that holds the click), and sends nothing (SIF-139)',
+    opened?.heading === 'Connection' && opened.opener === pageTitle && sent.length === before.sent && refused.length === before.refused, JSON.stringify([opened, pageTitle]));
+  if (link) { link.close(); await send('Target.closeTarget', { targetId: linkWindow.id }).catch(() => undefined); }
   check('the window now offers the next revision', (await win.evaluate(`[...${W}.querySelectorAll('button')].map(b => b.textContent.trim())`)).includes('Save (next revision)'));
 
   // ---- the launchers follow the connection in use, and so do the ngspice tasks in the Task list (records 7.76, 7.77, 7.362) -----------

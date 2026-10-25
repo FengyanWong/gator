@@ -75,15 +75,20 @@ await runChecks(browser, async () => {
     (await tw.current()) === '(none: the saved source was removed)' && before.includes('synthetic:gpdk045_ota5') && !before.some(k => k === 'virtuoso' || k === 'netlist'),
     JSON.stringify([await tw.current(), before]));
   // Branch record SIF-88: the header's title gave the project's task name ("fixture") to a page that follows no task, and the
-  // empty Parameters table says how to fill it only while a task or a cell is chosen.
-  const title = await evaluate(`[document.querySelector('header .tb-task')?.textContent, document.querySelector('header .tb-model .tb-v')?.textContent]`);
-  check('the header\'s title says no task is chosen, not the project\'s task name, and no RL model label is set (branch record SIF-88)',
-    JSON.stringify(title) === JSON.stringify(['no task chosen', 'not set']), JSON.stringify(title));
+  // empty Parameters table says how to fill it only while a task or a cell is chosen. States audit of 2026-10-24 (branch
+  // record SIF-139): beside it stood "unspecified · unspecified · not set", the look hiding their keys - nothing is followed.
+  const title = await evaluate(`[document.querySelector('header .tb-task')?.textContent, document.querySelector('header .tb-facts')?.textContent, !!document.querySelector('header .tb-details')]`);
+  check('the header\'s title says no task is chosen, not the project\'s task name, and nothing beside it: no class, PDK or RL model fact (branch records SIF-88, SIF-139)',
+    JSON.stringify(title) === JSON.stringify(['no task chosen', 'no task chosen', false]), JSON.stringify(title));
   check('...and the empty Parameters table adds no "No rows yet" line: nothing is chosen to fill it for', !(await evaluate(`!!${PANEL}.querySelector('.parameters-empty')`)));
   check('there is no Source list any more (the editors\' card, the circuit column)', !(await evaluate(`!!(${FIELD(PANEL, 'Source')}) || !!(${FIELD(COLUMN, 'Source')})`)));
   const note = await lines();
-  check('a plain note under the editors\' toolbar says what happened, names the saved file and what to do', note.includes('This configuration was saved with a Spectre netlist file')
-    && note.includes(NETLIST) && note.includes('The workbench no longer imports netlists: choose a task, or a Virtuoso cell, in the Tasks window (the task\'s name on this tab line).')
+  // States audit of 2026-10-24 (branch record SIF-139): "no longer imports netlists" stood beside the Tasks window's "From an
+  // ngspice netlist...". With no connection chosen (this backend has none) both ways to a new task are offered.
+  check('a plain note under the editors\' toolbar says what happened, names the saved file and what to do: Spectre netlist files only, and a deck for ngspice can become a task (SIF-139)',
+    note.includes('This configuration was saved with a Spectre netlist file') && note.includes(NETLIST)
+    && note.includes('The workbench no longer imports Spectre netlist files (.scs): choose a task or a Virtuoso cell in the Tasks window (the task\'s name on this tab line). '
+      + 'A SPICE deck for ngspice can become a task there: New task, From an ngspice netlist...') && !note.includes('no longer imports netlists')
     && await evaluate(`!!${STATUS}.querySelector('.note code')`), note.slice(0, 400));
   // The note is as wide as the editors now, wider than the path: what wraps it at any width is its rule (styles.css: .note code).
   const widths = await evaluate(`(() => { const n = ${STATUS}.querySelector('.note'), c = n?.querySelector('code'), card = ${PANEL}; if (!c) return null;

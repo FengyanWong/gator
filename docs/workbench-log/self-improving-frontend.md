@@ -5822,3 +5822,82 @@ refused save (the check reloaded there before, so never saw it), and with the ro
 sources of 2cdcb5b (put back after, their sums compared) failed exactly those, 6 of 38 and 1 of 54. On the final
 source all passed the first time: `calibration_check` 54, `run_control_check` 181, `training_tab_check` 139,
 `run_list_check` 184, `task_save_check` 93, `calibration_save_check` 38, `callouts_check` 8 (7 scripts, 697 checks).
+
+### SIF-139 A blocked task says why in the Tasks list, the ngspice task's line has a button to the Connection window, and a page with no task reads plainly (2026-10-25; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found four places where the page had
+the words the user needed and did not show them, or showed the wrong ones. The Tasks list marked an unavailable task
+with a bare "[blocked]" in amber and no tooltip (S12-9, `task-list-2-window.png`), though the Task column's help says "A
+mark says what keeps it from running now", the ngspice row's mark does say it ("[ngspice: choose its connection]"), and
+the list answer holds the reason (`blocker`), shown only in Details ("Blocked by"). What blocks a saved Virtuoso task is
+the connection's problem, one for all of them (tasks.py `list_tasks`): with a connection problem every such row read
+"[blocked]" and no reason was in view. The ngspice task's line under the editors' toolbar read "This task runs on
+ngspice. Choose an ngspice connection in the Connection window." with no button (S12-13, `ngspice-3-task.png`), while in
+the Roadster look the header's pill shows a chosen connection's name, its word "Connection" for screen readers only:
+nothing on the page carried the name the line used. SIF-108 gave such lines Connection... in the Virtuoso and Agent
+windows; this one was not on its list. A fresh page's header read "no task chosen   unspecified · unspecified · not set"
+(S12-30, `connection-1-header.png`): the configuration's default labels, their keys "Class · PDK" and "RL model" hidden
+by the look. And a configuration saved with the removed Spectre netlist source - Import JSON of one exported before
+record 7.53 still brings it - said "The workbench no longer imports netlists: choose a task, or a Virtuoso cell, in the
+Tasks window ..." (S12-32, `source-1-saved-netlist.png`), while the Tasks window offers "New task: From an ngspice
+netlist...".
+
+**Changed.** `frontend/src/panels/TaskList.tsx`: `taskMark` takes `withReason`, which the Tasks list's rows and its
+filter pass: a blocked task's mark reads "[blocked: <its blocker>]" - "[blocked: FIXTURE: the connection file names no
+library for it]" -, and a mark's tooltip is the whole blocker, an ngspice task's too. The Task column's help says "(the
+whole reason on hover)". `TaskListButton` takes `currentMarkTitle`, the tooltip of the tab line's mark, which keeps
+"[blocked]": the "Blocked: <reason>" line under the toolbar says why in view. `frontend/src/roadster.css`: the list's
+amber mark takes two lines at most, cut with "...", and 32 characters' width at most, so a reason as long as a
+connection file's path leaves the Task column as wide as the fixture's does (about 200 px; 175 px before); the
+SIF-107/108 rules for a line with its action at its end cover `.task-status > .line-act`, the task's lines being drawn
+into `.task-status` (Editors.tsx), not straight under `.editors`, and its words keep the 4 px above and below that the
+task's other lines have. `frontend/src/panels/Left.tsx`: the tab line's mark gets the followed task's blocker as its
+tooltip; the ngspice line is `div.line-act.connection-problem`, the backend's words with **Connection...** at their end,
+which opens the Connection window from the page as the header's button does (`openConnection`, openAt.ts) and checks
+nothing; `TitleFacts` draws no facts while the page follows neither a task nor a cell, so "no task chosen" stands alone,
+and a label left "unspecified" reads "no class" or "no PDK" ("opamp · no PDK" for the saved ngspice task); the netlist
+note reads "The workbench no longer imports Spectre netlist files (.scs): choose a task or a Virtuoso cell in the Tasks
+window (the task's name on this tab line)." and, while the ngspice way is offered, "A SPICE deck for ngspice can become
+a task there: New task, From an ngspice netlist...". Changes from the plan: "imports", the word of the backend's own
+refusal (task_registry.py `NETLIST_SOURCE_REMOVED`), where the plan had "reads"; the clamp's width, which the plan had
+not: a table gives a column room by its widest line, so two lines alone would have let a long reason widen the Task
+column; the filter, which reads the reason as the row shows it; and Connection...'s tooltip, "as the connection button
+in the header does", true with no connection too, where the pill reads "Connection none chosen". Only words, tooltips
+and a button that opens a window: nothing starts, continues or stops a run, saves a task or writes to Virtuoso, and
+every question is asked as before. `docs/workbench.md` (the title block; the Tasks window's mark and its Task column;
+the removed netlist source; how an ngspice run works, whose sentence said "the column" and that the Task list leaves the
+ngspice tasks out, untrue since records 7.362 and 7.227) and `docs/functionality-reference.md` (Title block, Task,
+Task-name button, the Connection button's row, Real runs on ngspice) say it. Seen, not changed: workbench.md's "Which
+way to a new task the Tasks window offers" still says the Registered task list leaves the ngspice tasks out while a
+Virtuoso connection is in use (since record 7.227 the Tasks window lists every task, marked), and the backend's refusal
+still sends the user to "Circuit source".
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree. First the six scripts that draw
+what changed, all passed the first time: `connection_panel_check` 101, `virtuoso_source_check` 123,
+`ngspice_window_check` 46 (43 before), `task_list_check` 106 (105), `looks_check` 83, `circuit_source_check` 17. New:
+`task_list_check`: the blocked row reads "fixture_ldo[blocked: FIXTURE: the connection file names no library for it]"
+(`task-list-2-window.png`), its mark's tooltip is the blocker, and a far longer reason written into the mark takes two
+lines, cut, the Task column as wide; with no task the header's title block holds "no task chosen" and no facts.
+`ngspice_window_check`: the line reads the backend's words with Connection... beside them, its tooltip saying what it
+opens and that opening checks nothing (`ngspice-3-task.png`); the tab line's mark has the blocker as its tooltip and the
+header reads "opamp · no PDK"; the press opens the Connection window from the page and sends nothing. Changed:
+`task_list_check`'s blocked mark and its no-task title; `circuit_source_check`'s title, no facts beside "no task
+chosen", and its note's sentence, now with the ngspice way, offered as no connection is chosen
+(`source-1-saved-netlist.png`). Then every other script the runner runs (52; the three reward_v2/v21 ones are never run
+here), all passed the first time, no flakes: `calibration_check` 54, `export_check` 38, `run_control_live_check` 23,
+`run_control_check` 181, `training_tab_check` 139, `dom_identity_check` 56, `run_list_check` 184, `task_save_check` 93,
+`testbench_probes_check` 43, `spec_equations_check` 88, `model_chooser_check` 139, `output_panel_check` 98,
+`task_rows_check` 57, `typing_check` 62, `sheet_check` 63, `find_fill_copy_check` 50, `project_help_check` 62,
+`unsaved_rows_check` 28, `calibration_save_check` 38, `working_copy_check` 35, `files_tab_check` 43,
+`launch_recovery_check` 20, `blocking_issues_check` 66, `corner_check_check` 42, `editor_columns_check` 45,
+`network_panel_check` 74, `save_now_check` 29, `task_run_check` 39, `pdk_check` 46, `reliability_check` 22, `room_check`
+31, `graph_view_check` 69, `module_fold_check` 31, `reward_block_check` 34, `encoder_models_check` 24,
+`formula_bar_check` 21, `matched_devices_check` 38, `model_structure_check` 33, `mode_suggestion_check` 20,
+`agent_window_check` 33, `consistency_check` 14, `training_data_check` 124, `crash_panel_check` 11, `callouts_check` 8,
+`circuit_layout_check` 4, `edit_state_check` 28, `request_lifecycle_check` 25, `editor_renames_check` 8,
+`graph_paint_check` 6, `network_inputs_check` 9, `table_view_check` 10, `unit_text_check` 14. In all 58 scripts, 3,028
+checks: the 3,008 of SIF-137, the 16 that SIF-138 added and the 4 new ones. A probe run of the three changed scripts on
+the sources as at HEAD (put back after, their sums compared) failed exactly the 8 checks that read the changed words, 3
+of 106, 3 of 46 and 2 of 17; there the Task column was 175 px wide and the long reason took five lines. After the probe
+the ngspice press reads the line with `?.`, so a missing line fails its check instead of stopping the script, and two
+comments were reworded: the six scripts again on the final source, all passed the first time, the same counts.

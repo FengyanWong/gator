@@ -22,7 +22,7 @@ import { sameRows } from './taskRows';
 import { useTaskActions } from './taskActions';
 import { useTestbenchProbes } from './testbenchProbes';
 import { RELOAD_SAVED_REQUEST, type TaskLoad, useTaskChoice } from './taskChoice';
-import { openTasksAt } from '../openAt';
+import { openConnection, openTasksAt } from '../openAt';
 import { NO_TESTBENCH, VirtuosoWindow } from './VirtuosoWindow';
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
@@ -89,7 +89,10 @@ const copyQuestion = (r: Json) => `Work in ${r.library}/${r.cell} directly?\n\n`
  *  Read-only; the fields themselves stay in their panels.
  *  Only a followed task gives the project's task name (branch record SIF-88): a fresh page titled itself "task" (the empty
  *  configuration's name) with "RL model task", and a Virtuoso cell kept the name of the last task loaded. A cell is named as
- *  the Next line beside Start names it, library/cell. */
+ *  the Next line beside Start names it, library/cell.
+ *  A page that follows neither a task nor a cell has no facts to give (states audit of 2026-10-24, branch record SIF-139): it
+ *  read "no task chosen   unspecified · unspecified · not set", the look hiding the keys. A label left at the configuration's
+ *  default reads as words, "no class" or "no PDK". */
 function TitleFacts({ config, task }: { config: Json; task: Json | null }) {
   const ref = config.circuit;
   const followed = ref.source === 'registered_task' && !!ref.task_id;
@@ -97,9 +100,10 @@ function TitleFacts({ config, task }: { config: Json; task: Json | null }) {
     ? (ref.cell ? `${ref.library}/${ref.cell} (not saved)` : 'choosing a Virtuoso cell') : 'no task chosen';
   const model = (config.run.model_label ?? '').trim() || (followed ? config.project.task_name : 'not set');
   const fact = (key: string, value: string, extra = '') => <span className={`tb-cell${extra}`}><span className="tb-k">{key}</span><span className="tb-v" title={`${key}: ${value}`}>{value}</span></span>;
+  const label = (value: string | null | undefined, none: string) => !value || value === 'unspecified' ? none : value;
   return <><span className="tb-task" title={followed ? ref.task_id : name}>{name}</span>
-    <span className="tb-details">{fact('Class · PDK', `${ref.circuit_class ?? 'unspecified'} · ${ref.pdk_id ?? 'unspecified'}`)}
-      {fact('RL model', model, ' tb-model')}</span></>;
+    {(followed || ref.source === 'virtuoso') && <span className="tb-details">{fact('Class · PDK', `${label(ref.circuit_class, 'no class')} · ${label(ref.pdk_id, 'no PDK')}`)}
+      {fact('RL model', model, ' tb-model')}</span>}</>;
 }
 
 export type { TaskLoad, TaskLoaded } from './taskChoice';
@@ -295,7 +299,8 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
   // new runs kept the old name until the task was chosen again, which asks to discard edits. No Undo step: a label only.
   const renamedTask = (key: string, label: string) => setConfig(c => (c.circuit?.source === 'registered_task' && c.circuit.task_id === key
     && c.project?.task_name !== label ? { ...c, project: { ...c.project, task_name: label } } : c), false);
-  const revision: number | null = current ? tasks.find(t => t.task_key === current)?.revision ?? null : null;
+  const currentTask: Json = current ? tasks.find(t => t.task_key === current) ?? null : null;
+  const revision: number | null = currentTask?.revision ?? null;
   const newTask = showVirtuoso || showNgspice ? (owner: Window) => <>
     {showVirtuoso && <button className="virtuoso-button" onClick={() => openWindow(owner)}
       title={popup ? 'The Virtuoso window is open: press to bring it to the front.' : `From a Virtuoso cell: ${VIRTUOSO_OPENS}`}>From a Virtuoso cell...</button>}
@@ -309,7 +314,8 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
       <TaskListButton tasks={tasks} runs={runs} ngspiceOffered={showNgspice} loading={taskLoading} onChoose={(key, owner) => chooseTask(key, undefined, false, undefined, undefined, owner)}
         onRefresh={() => tasksShared(true).then(t => { setTasks(t.tasks); return t.tasks; })} onRefreshRuns={refreshRuns}
         onRenamed={renamedTask} current={current}
-        currentMark={current ? taskMark(tasks.find(t => t.task_key === current) ?? { kind: 'real', available: true }, showNgspice) : undefined}
+        currentMark={current ? taskMark(currentTask ?? { kind: 'real', available: true }, showNgspice) : undefined}
+        currentMarkTitle={currentTask?.blocker ?? undefined}
         onDelete={current && (deletableName || ngspiceTask) ? (ngspiceTask ? deleteNgspice : deleteProfile) : undefined}
         deleting={profileBusy === 'delete'} deleteDisabled={!!profileBusy}
         deleteTitle={ngspiceTask ? 'Delete task: Asks once more. The task leaves the Tasks window; its deck and task file are kept aside on the backend machine, and runs already made keep their data.'
@@ -329,8 +335,11 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
       {profileBusy === 'check' ? 'Checking...' : 'Check now'}</button>}
   </>, taskTools);
   const status = taskStatus && createPortal(<>
+    {/* Spectre netlist files only, as the backend's refusal says (states audit of 2026-10-24, branch record SIF-139): "no longer
+        imports netlists" stood beside the Tasks window's "From an ngspice netlist...", which that way names. */}
     {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
-      The workbench no longer imports netlists: choose a task, or a Virtuoso cell, in the Tasks window (the task's name on this tab line).</p></div>}
+      The workbench no longer imports Spectre netlist files (.scs): choose a task or a Virtuoso cell in the Tasks window (the task's name on this tab line).
+      {showNgspice ? ' A SPICE deck for ngspice can become a task there: New task, From an ngspice netlist...' : ''}</p></div>}
     {/* No task yet (record 7.372): the ways to one, here, instead of a lone "(choose a task)" on the tab line. */}
     {ref.source === 'registered_task' && !ref.task_id && <div className="task-start">
       <p>No task yet: choose one in the Tasks window, or make one.</p>
@@ -366,7 +375,12 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
       {circuit.simulator === 'ngspice' && (<>
         <p className="real">ngspice evaluation backend: every evaluation is one real circuit simulation by ngspice (no license). Start asks you to
           confirm the number of simulations first.</p>
-        {circuit.circuit?.connection_problem && <p className="warn">{circuit.circuit.connection_problem}</p>}
+        {/* The line that sends the user to the Connection window carries the button to it (states audit of 2026-10-24, branch
+            record SIF-139), as SIF-108's lines in the Virtuoso and Agent windows do: with a connection chosen the header's pill
+            shows its name, the word "Connection" for screen readers only. Opening the window checks nothing. */}
+        {circuit.circuit?.connection_problem && <div className="line-act connection-problem"><p className="warn">{circuit.circuit.connection_problem}</p>
+          <button className="open-connection" onClick={() => openConnection()}
+            title="Connection: Opens the Connection window, as the connection button in the header does: choose or add an ngspice connection there and test it. Opening it checks nothing.">Connection...</button></div>}
       </>)}
       <TaskBaseline key={circuit.task_key} circuit={circuit} config={config} refresh={() => load(ref)} />
       {/* The cell a run sets sizes in, then its testbench (states audit of 2026-10-24, branch record SIF-133): the line named

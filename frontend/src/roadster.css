@@ -292,6 +292,10 @@ table.run-table td .run-design { display: block; }
 table.task-table th, table.task-table td.task-cell, table.task-table :is(.task-folder-label, .task-internal-name, .task-mark) { white-space: normal; }
 @media (max-width: 1250px) { table.task-table td.task-when { white-space: normal; } }   /* a narrow window: date over time */
 table.task-table .task-date { white-space: nowrap; } table.task-table .name-part { display: inline-block; }
+/* SIF-139: a mark of what keeps a task from running - a blocked task's says why, "[blocked: <reason>]" - in two lines at
+   most, the whole reason in its tooltip, and no wider than 32 characters, so a long reason (a connection file's path) does
+   not take the Newest run column's room */
+table.task-table .task-mark .warn { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 32ch; }
 
 /* SIF-25: the Training charts' readout line - its numbers in the text colour, the words around them muted. */
 .training-readout b { color: var(--text); font-weight: 600; }
@@ -509,10 +513,13 @@ table.run-table td.run-from .run-from-name { display: -webkit-box; -webkit-line-
    failed import's close mark - keeps the action beside its words, which wrap in their own width. The action is not inside
    their paragraph, whose words the checks read whole. The close mark is drawn as the launch refusal's: no frame or fill
    of its own, the hover's fill. SIF-108: so does a line of the Virtuoso window that sends the user to the Connection
-   window (no connection chosen, the gate's refusal), with Connection... at its end. */
-.editors > .line-act, .virtuoso-window > .line-act { display: flex; align-items: baseline; gap: 4px 10px; }
-.editors > .line-act > p, .virtuoso-window > .line-act > p { flex: 0 1 auto; min-width: 0; }
-.editors > .line-act > button, .virtuoso-window > .line-act > button { flex: none; } .editors > .line-act > button.line-close { align-self: center; }
+   window (no connection chosen, the gate's refusal), with Connection... at its end. SIF-139: and the ngspice task's line
+   under the editors' toolbar that names the connection it lacks: the task's lines stand in .task-status (Editors.tsx), not
+   straight under .editors, and its words keep the 4 px above and below that the task's other lines have. */
+.editors > .line-act, .virtuoso-window > .line-act, .task-status > .line-act { display: flex; align-items: baseline; gap: 4px 10px; }
+.editors > .line-act > p, .virtuoso-window > .line-act > p, .task-status > .line-act > p { flex: 0 1 auto; min-width: 0; }
+.editors > .line-act > button, .virtuoso-window > .line-act > button, .task-status > .line-act > button { flex: none; } .editors > .line-act > button.line-close { align-self: center; }
+.task-status > .line-act > p { margin: 0; }
 button.line-close { border: none; background: none; }
 
 /* SIF-112, the icon audit: a button whose meaning is plain shows its icon, its words in .sr-only and at the start of its

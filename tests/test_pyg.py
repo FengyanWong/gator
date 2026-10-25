@@ -1,3 +1,5 @@
+"""PyG features, masks and batching checked on synthetic graphs, without simulator or network calls."""
+
 from dataclasses import replace
 
 import pytest

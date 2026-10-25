@@ -1,3 +1,5 @@
+"""Action and grid checks on synthetic graphs, without simulator calls or live settings."""
+
 from dataclasses import replace
 import math
 

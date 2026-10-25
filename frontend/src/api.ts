@@ -2,7 +2,7 @@
 // C10): the number formatters to format.ts (si to units.ts), the shared cached reads to shared.ts.
 // The browser never sends hosts, ports, commands or arbitrary paths: the backend has no such fields.
 import type { ModelReply, RunSummary, TaskStarter, TaskSummary, WorkbenchConfig } from './contracts';
-import { placeOf } from './panels/editorRules';
+import { placeOf } from './panels/issuePlace';
 
 export type Json = any;
 /** What a folder holds (record 7.263): tasks (by task key), runs and saved models (both by run folder). */
@@ -207,7 +207,7 @@ export const problemText = (e: any, gateText?: (gate: Json) => string): string =
  *  field, and where to fix it. "The configuration does not match the schema" alone left the reader guessing (user report
  *  2026-09-30: Matched devices on real:mscr_ldo1_rgcn). Each field by its place in the editors' and windows' words, as the
  *  header's list names it (branch record SIF-141: it read "run.max_evaluations: ..."); a row as "row N", as no configuration
- *  here names its ID. editorRules.ts imports this file for its types only. */
+ *  here names its ID. issuePlace.ts and the modules it loads import this file for its types alone, if at all. */
 export function schemaProblem(e: any): string | null {
   const errors: Json[] = Array.isArray(e?.detail?.errors) ? e.detail.errors : [];
   if (!errors.length) return null;

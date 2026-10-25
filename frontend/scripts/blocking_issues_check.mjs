@@ -341,6 +341,24 @@ await runChecks(browser, async () => {
   await typeId(DUP_KEY, fixtures.elsewhere);
   check('(the last row has its own ID again)', (await evaluate(`${ID_BOX}.value`)) === DUP_KEY);
 
+  // ---- review of SIF-141: a setting no panel or window has a box for stays as written, the connection is the Connection
+  // window's. "Run configuration", for every run setting no pattern named, stood for run.rehearsal - a blocker New run like
+  // this can bring in - and for the connection; "RL model window · Advanced" for run.advanced.spec_registry, and "Output
+  // settings" for min_free_bytes: none has a box there. Fine-tune's heading by its Mode's name (rlModelText.ts MODE_NAME).
+  fixtures.settings = report([issue('blocker', 'rehearsal_with_transfer_inputs', 'run.rehearsal', 'rehearsal needs the standard inputs'),
+    issue('error', 'invalid_spec_registry', 'run.advanced.spec_registry', 'IDs must be unique, nonempty'),
+    issue('error', 'schema', 'run.connection_profile_id', 'connection_profile_id is not written in the form this field takes'),
+    issue('error', 'schema', 'run.advanced.batch_size', 'batch_size is above 4096'),
+    issue('error', 'fine_tune_only_option', 'run.advanced', "['freeze_encoder'] apply to fine_tune only (mode is scratch)"),
+    issue('error', 'schema', 'output.min_free_bytes', 'min_free_bytes is below 0'),
+    issue('error', 'checkpoint_interval_both', 'output.checkpoint_every_seconds', 'choose one checkpoint interval')]);
+  await revalidate(fixtures.settings);
+  const settingWheres = (await rows()).map(r => r[2]);
+  check('a setting no panel or window has a box for reads as written, the connection "Connection window", one with a box its place (review of SIF-141)',
+    JSON.stringify(settingWheres) === JSON.stringify(['run.rehearsal', 'run.advanced.spec_registry', 'Connection window', 'RL model window · Advanced',
+      'RL model window · Fine-tune: its own settings', 'output.min_free_bytes', 'Output settings']), JSON.stringify(settingWheres));
+  await shot('issues-4e-settings.png');
+
   // ---- a configuration the schema rejects: one issue per field, at its row, in plain words (status record 7.56) ------------
   // Before, the page listed ONE issue "(whole configuration)" holding pydantic's list as JSON (user report 2026-09-21).
   await revalidate(fixtures.rejected);
@@ -360,9 +378,13 @@ await runChecks(browser, async () => {
   await shot('issues-5-rejected.png');
   await revalidate(fixtures.rejectedOld);
   const oldRows = await rows();
+  // Review of SIF-141: the row's tooltip too - its go-to button's, with the field as App.tsx `rejected()` writes it. placeOf
+  // reads the dotted index by itself, so the Where's words held without that rewrite, while rowOf (the button) and the
+  // editors' row marks read the report's brackets only: the row would have lost both, unseen.
   check('an older backend\'s answer is split the same way, its paths read like the report\'s', oldRows.length === 2 && oldRows[0][4] === 'schema'
-    && oldRows[0][2] === `Parameters · ${key(3)} · ID` && oldRows[0][3] === `FIXTURE: ${PATTERN}` && oldRows[1][2] === 'Run configuration · Evaluation budget'
-    && oldRows[1][5] === 'Field run.max_evaluations, check schema.', JSON.stringify(oldRows));
+    && oldRows[0][2] === `Parameters · ${key(3)} · ID` && oldRows[0][3] === `FIXTURE: ${PATTERN}`
+    && oldRows[0][5] === `Go to ${key(3)}: Parameters opens with its ID chosen. The list stays open.\nField parameters[3].variable_id, check schema.`
+    && oldRows[1][2] === 'Run configuration · Evaluation budget' && oldRows[1][5] === 'Field run.max_evaluations, check schema.', JSON.stringify(oldRows));
   check('... without an empty "Technical details"', !(await evaluate(`!!${LIST}.querySelector('details')`)));
   await revalidate(fixtures.failed);
   const failedRows = await rows();

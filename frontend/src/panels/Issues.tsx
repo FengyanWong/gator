@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import type { Json } from '../api';
 import { BLOCKING_ISSUES_ID, BLOCKING_LEVELS } from '../contract';
 import { plural } from '../format';
-import { columnOf, drawsColumn, fieldLabel, placeOf, type Section, SECTION_TITLES } from './editorRules';
+import { columnOf, drawsColumn, fieldLabel, type Section, SECTION_TITLES } from './editorRules';
 import { Icon } from './Icons';
+import { placeOf } from './issuePlace';
 
 const BLOCKING = BLOCKING_LEVELS;
 

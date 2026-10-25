@@ -6076,3 +6076,48 @@ check reads it). A probe run of the three scripts on the four sources as at HEAD
 failed exactly the checks that read the changed words, columns and tooltips and the page-open state, 16 of 69 and 1 of
 38; `editor_renames_check` passed. After it, `tsc` and the three scripts again on the final source, all passed the first
 time, the same counts.
+
+**Review follow-up.** The review of b10d9d0 found three slips; all three are real. (1) The older backend's line in
+`blocking_issues_check` had lost what it held. It read the Where's words, "Parameters · <ID> · ID", and placeOf reads
+pydantic's dotted index by itself, so the line would have passed had App.tsx `rejected()` stopped writing
+parameters.3.variable_id as parameters[3].variable_id - while rowOf, which makes the go-to button, and the editors' row
+marks and tab pills (Editors.tsx) read the brackets alone: the row would have lost both unseen, and no other check sends
+a dotted path. Before SIF-141 it read "parameters[3].variable_id row <ID>", which held both. The line now reads that
+row's tooltip too, the go-to button's, with the field as `rejected()` writes it ("Go to <ID>: Parameters opens with its
+ID chosen. The list stays open." and "Field parameters[3].variable_id, check schema."). (2) The last of the places, "Run
+configuration" for any run setting, named it for settings no box there sets: run.rehearsal, the path of the blocker
+rehearsal_with_transfer_inputs (validation.py), which New run like this can bring in (runWindowActions.ts copies
+`rehearsal`) and no control on the page sets; run.optimizer and run.cache_policy; a bare run, where the schema refuses a
+rehearsal; and the connection, which the Connection window chooses. "RL model window · Advanced" took every other
+run.advanced field, and the Advanced fold has no box for spec_registry (invalid_spec_registry, unknown_unit),
+simulation_timeout_seconds, episode_terminates_on_success or reset_temperature; "Output settings", the same way, every
+output field, and the panel has none for keep_last_checkpoints, learner_update_log_every, flush_every_evaluations,
+keep_simulator_host_folders or min_free_bytes. The Where sent the user to a place with no such control, where the path
+had at least named the field, while this entry and the docs promised a setting by the panel or window that sets it and a
+path the page does not know as written. The last pattern is gone; Advanced and Output settings take only the fields they
+have a box for - the fold's from ADVANCED_ROWS with the alpha learning rate and the tick box, Output settings' twelve in
+a list -; the connection reads "Connection window"; any other setting stays as written. (3) "Fine-tune" was written out
+in the new place, where the house rule names a Mode by rlModelText.ts's MODE_NAME, and `editor_renames_check` lets
+editorRules.ts load ../units alone: placeOf and its places moved into a file of their own,
+`frontend/src/panels/issuePlace.ts` (no React), which builds the place from `MODE_NAME.fine_tune` and the Advanced
+fields from ADVANCED_ROWS. editorRules.ts is again as it was before SIF-141; Issues.tsx and api.ts import placeOf from
+the new file, which, with what it loads, imports api.ts for its types alone, if at all. The heading the place names,
+RlModelWindow.tsx's "Fine-tune: its own settings", wrote its Mode out too, as "Evaluate only: its own settings" did:
+both take MODE_NAME now, so the place and the heading cannot part; the window reads as before. `docs/workbench.md` and
+`docs/functionality-reference.md` say it. Only words and the file that makes them: nothing starts, continues or stops a
+run, saves a task or writes to Virtuoso, and every question is asked as before. `tsc` clean. One lane, after the memory
+guard: `blocking_issues_check` 70 (69 before) - the older backend's row's tooltip; new, the Wheres of seven settings,
+"run.rehearsal", "run.advanced.spec_registry", "Connection window", "RL model window · Advanced" for batch_size, "RL
+model window · Fine-tune: its own settings" for a bare run.advanced, "output.min_free_bytes", "Output settings" for
+checkpoint_every_seconds (`issues-4e-settings.png`). A probe run with `rejected()` passing the path on as it came
+(App.tsx put back after, its sum compared) failed exactly the older backend's line, 1 of 70; one on the four sources as
+at b10d9d0 (put back the same way) exactly the new line, 1 of 70. On the final source these passed the first time:
+`blocking_issues_check` 70, `matched_devices_check` 38, `editor_renames_check` 8, and the scripts that open the RL model
+window, `model_chooser_check` 145, `network_panel_check` 78, `mode_suggestion_check` 20, `network_inputs_check` 9,
+`module_fold_check` 31, `reliability_check` 22, `reward_block_check` 34, `room_check` 31, `typing_check` 62,
+`dom_identity_check` 56; then every other script the runner runs (45) passed the first time but `task_save_check`, which
+stopped twice after 33 checks - the second time alone - at the step that presses Close inside the task file window it
+closes (the harness: such a click may never be acknowledged, and the closing session rejects what still waits); alone it
+then passed three times on this source, 93, and twice on the sources of b10d9d0: a timing flake of a step this follow-up
+does not touch. 58 scripts, 3,044 checks: the 3,043 of SIF-141 and the one new. Two comments were reworded after the run
+of the 45; `tsc` and the first three scripts passed again after it.

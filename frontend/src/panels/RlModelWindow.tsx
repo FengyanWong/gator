@@ -299,7 +299,9 @@ export function RlModelWindow({ m, undo, redo, canUndo, canRedo }: { m: RlModel;
             the choice said nothing of what it does (branch record SIF-53). The stored values stay the same. */}
         {model?.compatibility && !archDiffers && <details id="net-compat" open={!model.compatibility.compatible}><summary className={model.compatibility.compatible ? '' : 'error'}>Compatibility for {compatibilityMode(model.compatibility.mode)}: {model.compatibility.compatible ? 'compatible' : 'NOT compatible - it cannot be loaded, and a run never falls back to New model'}</summary>
           <CompatibilityList checks={model.compatibility.checks} /></details>}</>}
-        <h3>{run.mode === 'frozen' ? 'Evaluate only' : 'Fine-tune'}: its own settings</h3>
+        {/* The Mode by rlModelText's name (review of branch record SIF-141): the header's list of blocking issues names this
+            heading, for Fine-tune's switches, by the same one. */}
+        <h3>{MODE_NAME[run.mode === 'frozen' ? 'frozen' : 'fine_tune']}: its own settings</h3>
         {run.mode === 'frozen' && <label title="Deterministic: each step takes the policy's mean action, so the same state gives the same design. Sampled: each step draws an action from the policy, as in training.">Actions<select value={run.frozen_action ?? 'deterministic'} onChange={e => set({ frozen_action: e.target.value })}><option value="deterministic">Deterministic</option><option value="sampled">Sampled</option></select></label>}
         {run.mode === 'fine_tune' && <>
           {/* What each switch does, as the backend's modes.py does it (branch record SIF-58: no tooltip, so how Freeze

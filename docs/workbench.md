@@ -4519,8 +4519,11 @@ by its table, its ID and its column's header ("Specs · inl1 · Equation"; "row 
 an ID, and the row's number after an ID two rows hold), a table's own issue as "the Parameters
 table", a run, output or research setting by the panel or window that sets it ("RL model window ·
 Network", "Run configuration · Evaluation budget", "Run configuration · Limits · Max retries per
-evaluation", "Output settings"), no field as "the whole configuration"; a path the page does not
-know stays as written. The field of the configuration and the check's code are on the Where's
+evaluation", "Output settings", the connection "Connection window"), no field as "the whole
+configuration"; a path the page does not know stays as written, and so does a setting no panel or
+window has a box for (run.rehearsal, run.advanced.spec_registry, output.min_free_bytes; review of
+branch record SIF-141: they read "Run configuration", "RL model window · Advanced" and "Output
+settings"). The field of the configuration and the check's code are on the Where's
 hover. A refusal of a configuration the backend cannot read - Matched devices, Save task - names
 its fields the same way, a row by its number. A configuration the schema
 cannot even read (for example an ID with a `/` in it) is listed the same way, one issue per field:

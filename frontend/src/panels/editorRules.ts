@@ -1,6 +1,6 @@
 // The editors' rules (plan-refactoring C6, out of Editors.tsx): the tables' names and headers, the scale a Specs row is offered,
 // the Specs' limit list, typed numbers, the tooltip of a cell that differs from the saved task, the fields that follow a
-// change of a row, the row Add makes, and an issue's place in words. No React.
+// change of a row, and the row Add makes. No React.
 import type { Json } from '../api';
 import { kindUnit, PREFIX_POWERS as SUFFIX, sameQuantity } from '../units';
 
@@ -41,51 +41,6 @@ export const drawsColumn = (section: string, column: Json, config: Json): boolea
  *  writes the row's numbers as its cells do (DiffView, branch record SIF-51); null for a row that is not there. */
 export const unitIn = (config: Json, keys: Record<string, string>) => (section: string, key: string): string | null =>
   (config?.[section] ?? []).find((r: Json) => keys[section] && r[keys[section]] === key)?.unit ?? null;
-
-/** Where a run, output or research setting is set, by the words of the panel or window that holds it: the first pattern the
- *  path matches. The Run configuration ones are RunConfiguration.tsx's labels, the RL model window's its headings and
- *  labels (RlModelWindow.tsx, Pdk.tsx `ComponentList`): change both together. Fine-tune's switches are kept with the
- *  Advanced values but ticked under its own settings, and a bare run.advanced is the check of them, fine_tune_only_option
- *  (validation.py `_check_run`). */
-const PLACES: [RegExp, string][] = [
-  [/^run\.network\.vocabulary\b/, 'RL model window · Components'],
-  [/^run\.network\.(spec_input|size_features|device_model_features|bench_features|net_roles|operating_point_ratios)\b/, 'RL model window · Network inputs'],
-  [/^run\.network\b/, 'RL model window · Network'],
-  [/^run\.advanced(\.(freeze_encoder|encoder_only_transfer|reset_critic)\b|$)/, 'RL model window · Fine-tune: its own settings'],
-  [/^run\.advanced\b/, 'RL model window · Advanced'], [/^run\.mode\b/, 'RL model window · Mode'], [/^run\.model_source\b/, 'RL model window · Saved models'],
-  [/^run\.(model_label|frozen_action|continual_learning)\b/, 'RL model window'],
-  [/^run\.reward\b/, 'Run configuration · Reward and conditions'], [/^run\.conditions\b/, 'Run configuration · Training conditions'],
-  [/^run\.concurrency\b/, 'Run configuration · Concurrent Spectre jobs'], [/^run\.max_evaluations\b/, 'Run configuration · Evaluation budget'],
-  [/^run\.seed\b/, 'Run configuration · Random seed'], [/^run\.stop_at_first_feasible\b/, 'Run configuration · Stop at the first feasible design'],
-  [/^run\.max_spectre_launches\b/, 'Run configuration · Limits · Max Spectre launches'],
-  [/^run\.max_retries\b/, 'Run configuration · Limits · Max retries per evaluation'],
-  [/^run\.max_wall_seconds\b/, 'Run configuration · Limits · Wall-time limit (s)'],
-  [/^run\.max_consecutive_infrastructure_failures\b/, 'Run configuration · Limits · Pause after N consecutive infrastructure failures'],
-  [/^run\.max_consecutive_failures\b/, 'Run configuration · Limits · Stop after N consecutive failed evaluations'],
-  [/^run\b/, 'Run configuration'], [/^output\b/, 'Output settings'], [/^research\b/, 'Research experiments'], [/^circuit\b/, 'Tasks window'],
-];
-/** An issue's place in the editors' and windows' words (branch record SIF-141), from its path in the configuration as the
- *  validation report and a refusal give it: the header's list and the refusals showed "parameters[0].lower row
- *  input_pair_width", "run.network" and "(whole configuration)" as they came, while the tabs, the formula bar and the
- *  confirmations had said the same places in words since SIF-5 and SIF-51. A row by its table, its ID in `config` (`keys`:
- *  schema.section_keys) - "row N" where none names it, both where another row of the table holds the same ID, as a
- *  duplicate does - and its field by the header of the column it is chosen in: "Parameters · input_pair_width · Lower". A
- *  table alone is "the Specs table", no path "the whole configuration", a setting the place that sets it ("RL model window ·
- *  Network"); a path none of these knows stays as written. pydantic's parameters.3.variable_id, as an older backend sends
- *  it, reads as parameters[3].variable_id. */
-export function placeOf(path: string, config: Json | null, keys: Record<string, string>): string {
-  const at = path.replace(/\.(\d+)(?=\.|$)/g, '[$1]');
-  if (!at) return 'the whole configuration';
-  const row = /^(parameters|measurements|targets)(?:\[(\d+)\](?:\.(\w+))?)?(?!\w)/.exec(at);
-  if (!row) return PLACES.find(([pattern]) => pattern.test(at))?.[1] ?? path;
-  const [, section, index, field] = row, title = SECTION_TITLES[section as Section];
-  if (index == null) return `the ${title} table`;
-  const n = Number(index), keyField = keys[section], rows: Json[] = config?.[section] ?? [];
-  const key = keyField ? rows[n]?.[keyField] : null;
-  const name = key == null || key === '' ? `row ${n + 1}`
-    : rows.some((r, i) => i !== n && r?.[keyField] === key) ? `${key} (row ${n + 1})` : String(key);
-  return [title, name, ...(field ? [fieldLabel(section, columnOf(section, field))] : [])].join(' · ');
-}
 
 /** The scale offered while nobody has typed one, or null when the row gives nothing to size it by yet: then the scale stays
  * empty and the backend sizes it from the limits (the size of the threshold, else 1), instead of freezing a bare 1 W or

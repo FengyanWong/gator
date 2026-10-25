@@ -11,7 +11,8 @@
 // connection is drawn dashed (its 1.0 says nothing); supply on top; nothing overlaps or leaves the canvas; the tables
 // beside the picture (sizes now / proposed / tried; the connections of a clicked device, summing to 1); another
 // evaluation = one request; an encoder without attention and a refusal are said in plain words; Abort is red; at the RL
-// model window's 1180 px the tools wrap and the dialog does not scroll, the drawing following its box (branch record SIF-66).
+// model window's 1180 px the tools wrap and the dialog does not scroll, the drawing following its box (branch record SIF-66),
+// fitted to it again while the user has not moved the view (branch record SIF-143).
 // Last section, against the REAL route of the backend it runs on (skipped with a note when it has no saved model or is
 // older than the route): the drawn graph equals POST /api/runs/model/graph-view for the first real model.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
@@ -320,7 +321,32 @@ await runChecks(browser, async () => {
   const held = await evaluate(LAID);
   check('...and a refusal\'s line over the tools takes its height from the drawing: no scroll, and the drawing follows its box',
     held.box[1] < laid.box[1] && held.scroll <= held.client + 1 && held.follows, JSON.stringify([laid, held]));
+  // Branch record SIF-143: the drawing followed its box but kept its zoom and pan, so that line cut the lowest node - ground, at
+  // the foot of the drawing - in half. While it shows a fit, a box of another size fits it again (the fit as cytoscape computes
+  // it for that box: `fit30`, `fit24` by the padding of a layout and of Fit); a view the user moved stays theirs, until Fit.
+  const VIEW = `(() => { const cy = ${CY}, at = { zoom: cy.zoom(), pan: cy.pan() }, w = cy.width(), h = cy.height();
+    const same = v => !!v && Math.abs(v.zoom - at.zoom) < 1e-9 && Math.abs(v.pan.x - at.pan.x) < 0.01 && Math.abs(v.pan.y - at.pan.y) < 0.01;
+    const boxes = cy.nodes().map(n => ({ id: n.id(), box: n.renderedBoundingBox({ includeLabels: false }) })), low = boxes.reduce((a, b) => b.box.y2 > a.box.y2 ? b : a);
+    return { ...at, width: w, height: h, lowest: low.id, bottom: Math.round(low.box.y2 * 10) / 10, inside: boxes.every(n => n.box.x1 >= 0 && n.box.y1 >= 0 && n.box.x2 <= w && n.box.y2 <= h),
+      fit30: same(cy.getFitViewport(30)), fit24: same(cy.getFitViewport(24)) }; })()`;
+  await until(`${VIEW}.fit30`, 30);
+  const refitted = await evaluate(VIEW);
+  check('...and the drawing is fitted to its new box: the lowest node, ground, lies inside the canvas (SIF-143: it was cut in half)',
+    refitted.fit30 && refitted.inside && refitted.lowest === 'n:0' && refitted.bottom <= refitted.height - 20, JSON.stringify(refitted));
   await shot('graph-4-window-width.png', DIALOG);
+  const middle = await evaluate(`(() => { const r = ${NETWORK_DOCUMENT}.querySelector('.graph-canvas').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()`);
+  await networkPage.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: middle.x, y: middle.y, deltaX: 0, deltaY: 120 }); await sleep(300);   // out: the fit may stand at the largest zoom
+  const zoomed = await evaluate(VIEW);
+  await networkPage.viewport(1180, 860);
+  await until(`${CY}.height() < ${refitted.height}`, 30); await sleep(300);    // cytoscape reads its box's size again on its (debounced) resize
+  const kept = await evaluate(VIEW);
+  check('...while a view the user zoomed stays as they left it: a wheel turn over the drawing, then a lower window - the zoom and pan stay (SIF-143)',
+    zoomed.zoom < refitted.zoom && !zoomed.fit30 && kept.height < refitted.height && kept.zoom === zoomed.zoom && kept.pan.x === zoomed.pan.x && kept.pan.y === zoomed.pan.y && !kept.fit30,
+    JSON.stringify([refitted, zoomed, kept]));
+  await evaluate(`[...${DIALOG}.querySelectorAll('.graph-tools button')].find(b => b.textContent === 'Fit').click()`);
+  await networkPage.viewport(1180, 920);
+  check('...and after Fit it follows its box again: the window back to its height, the drawing is fitted to it (SIF-143)',
+    await until(`(v => v.fit24 && v.inside && v.height > ${kept.height})(${VIEW})`, 30), JSON.stringify(await evaluate(VIEW)));
   await evaluate(`${DIALOG}.querySelector('button.dialog-close').click()`); await until(`!${DIALOG}.open`, 30);
   await networkPage.viewport(1680, 1050); await sleep(400);
 

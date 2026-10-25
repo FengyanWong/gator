@@ -22,7 +22,8 @@
 //     (a held folder listing holds neither), "Reading the folder..." stands above the list while a folder is read, and a test's
 //     answer says when it came ("NOT writable · tested 14:03:22"); Experiment ID offers the experiments of the runs under the
 //     root (GET /api/runs answered here with FIXTURE rows), and one picked sets the experiment name too; with the MOCK task
-//     loaded (its circuit read at the end) only the MOCK ones, and a real one typed says that Start refuses it (SIF-91 review).
+//     loaded (its circuit read at the end) only the MOCK ones, and a real one typed says that Start refuses it (SIF-91 review);
+//   - branch record SIF-143: every tick box keeps its size and place beside words of two lines, and a size its unit.
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 30 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/output_panel_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -220,6 +221,20 @@ await runChecks(browser, async () => {
   const row = await evaluate(`(() => { const b = ${BOX}.getBoundingClientRect(), u = ${UNIT}.getBoundingClientRect(), l = ${LIMIT}.getBoundingClientRect();
     return { sameLine: Math.abs(b.top - u.top) < 3, unitRight: u.left >= b.right, inside: u.right <= l.right + 1, boxWidth: Math.round(b.width), unitWidth: Math.round(u.width) }; })()`);
   check('the unit list is on the same line, right of the number box, inside the panel', row.sameLine && row.unitRight && row.inside && row.boxWidth > row.unitWidth, JSON.stringify(row));
+  // ---- branch record SIF-143: a tick box keeps its size, and a size its unit ----------------------------------------------------
+  // A tick box was a flex item with min-width 0: beside words of two lines it shrank, and its words began left of the others'.
+  // The Free space cell split "used here 3.00" over "GiB".
+  const ticks = await evaluate(`[...${PANEL}.querySelectorAll('label.check')].filter(l => l.checkVisibility()).map(l => { const b = l.querySelector('input').getBoundingClientRect(), words = document.createRange();
+    words.selectNodeContents(l.lastChild); const r = n => Math.round(n * 10) / 10;
+    return { label: l.textContent, left: r(b.left), width: r(b.width), height: r(b.height), words: r(words.getClientRects()[0].left), lines: words.getClientRects().length }; })`);
+  const two = ticks.filter(t => /^(Replay snapshots|Complete transition archive) \(/.test(t.label));
+  check('every tick box of Output settings has the same size and place, and its words start at the same x - also beside words of two lines, "Replay snapshots (...)" and "Complete transition archive (...)" (SIF-143)',
+    ticks.length === 5 && two.length === 2 && ticks.every(t => ['left', 'width', 'height', 'words'].every(k => Math.abs(t[k] - ticks[0][k]) < 0.5)), JSON.stringify(ticks));
+  const whole = await evaluate(`(() => { const td = [...${PANEL}.querySelectorAll('details.output-facts td')].find(td => td.textContent.includes('used here')), line = ${PANEL}.querySelector('details.output-facts > summary .bytes');
+    return td && { text: td.textContent, sizes: [...td.querySelectorAll('.bytes')].map(s => [s.textContent, s.getClientRects().length]), line: line && [line.textContent, getComputedStyle(line).whiteSpace] }; })()`);
+  check('...and the Free space cell keeps each size whole, "400.00 GiB; used here 3.00 GiB" with each size on one line, as the line above the table does (SIF-143)',
+    whole?.text === '400.00 GiB; used here 3.00 GiB' && JSON.stringify(whole.sizes) === JSON.stringify([['400.00 GiB', 1], ['3.00 GiB', 1]])
+    && JSON.stringify(whole.line) === JSON.stringify(['400.00 GiB', 'nowrap']), JSON.stringify(whole));
   await shot('output-1-panel.png');
 
   await type('1.5'); s = await settled();

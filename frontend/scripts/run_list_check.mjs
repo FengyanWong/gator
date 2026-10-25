@@ -31,7 +31,8 @@
 // a filter that lets the ticks go, and is greyed out while a folder move is saved. Branch record SIF-137: a failed run shown
 // from its Details says under Run status, beside why Continue... cannot go on, where its errors are and what to do next, and
 // its Show errors opens Logs on the errors log. Its review follow-up: Run status names Load run only where the Runs window
-// offers it, and an ended run's steering line says "no update was made" only when the engine counted none.
+// offers it, and an ended run's steering line says "no update was made" only when the engine counted none. Branch record
+// SIF-143: the first column is "Created", and a run folder with no status says so under its "not started".
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; takes about 40 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/run_list_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -244,12 +245,13 @@ await runChecks(browser, async () => {
   check('pressing the button read the list again (it is the request to see the current runs)', lists() === 2, `${lists()} list request(s)`);
   check('the strip button still reads only "Runs..." and is marked as open', (await strip()).text === 'Runs...' && (await strip()).open, JSON.stringify(await strip()));
   let rows = await table();
-  check('every run is a row, newest first', !!rows && rows.map(r => r.folder).join() === listed.map(r => r.run_dir).join(), JSON.stringify(rows?.map(r => r.Started)));
+  check('every run is a row, newest first', !!rows && rows.map(r => r.folder).join() === listed.map(r => r.run_dir).join(), JSON.stringify(rows?.map(r => r.Created)));
   const titles = Object.keys(rows?.[0] ?? {});
-  check('the columns are start, finish and duration first, then what the run was and came to',
-    ['Started', 'Finished', 'Duration', 'State', 'Task', 'Mode', 'Seed', 'Evaluations', 'First feasible', 'Experiment', 'Data', 'Can continue'].every(t => titles.includes(t)), titles.join(', '));
+  // Branch record SIF-143: the first column is "Created", as its help says - "Started" stood over the creation time, beside a "not started".
+  check('the columns are created, finished and duration first, then what the run was and came to',
+    ['Created', 'Finished', 'Duration', 'State', 'Task', 'Mode', 'Seed', 'Evaluations', 'First feasible', 'Experiment', 'Data', 'Can continue'].every(t => titles.includes(t)) && !titles.includes('Started'), titles.join(', '));
   let r = rowOf(rows, DONE);
-  check('a finished run shows when it started and finished (local time) and how long it worked', r.Started === stamp(DONE.created_utc) && r.Finished === stamp(DONE.ended_utc) && r.Duration === '17.8 s', JSON.stringify(r));
+  check('a finished run shows when it was created and finished (local time) and how long it worked', r.Created === stamp(DONE.created_utc) && r.Finished === stamp(DONE.ended_utc) && r.Duration === '17.8 s', JSON.stringify(r));
   check('... and what it was and came to', /^completed\s*budget used up$/.test(r.State) && r.Task === 'fixture_task' && r.Mode === 'New model Graph Transformer' && r.Seed === '1' && r.Evaluations === '60 / 60'
     && r['First feasible'] === 'at 23' && r.Experiment === 'fixture_exp__0001' && r.Data === 'MOCK' && r['Can continue'] === 'yes', JSON.stringify(r));
   const whole = await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody tr')].find(x => x.title === ${JSON.stringify(DONE.run_dir)}) ?? null;
@@ -268,12 +270,19 @@ await runChecks(browser, async () => {
   r = rowOf(rows, LOST);
   check('a run whose worker died has no finish time: it reads "last seen ..."', r.Finished === `last seen ${stamp(LOST.last_seen_utc)}` && /without a clean end/.test(r.finishedTitle) && r.Duration === '3 min 57 s' && /^interrupted/.test(r.State), JSON.stringify(r));
   r = rowOf(rows, NEVER);
-  check('a run that never began shows dashes, not zeros', r.Finished === '-' && r.Duration === '-' && r.State === 'not started' && r.Evaluations === '- / 60' && r['First feasible'] === '-', JSON.stringify(r));
+  check('a run that never began shows dashes, not zeros', r.Finished === '-' && r.Duration === '-' && /^not started\b/.test(r.State) && r.Evaluations === '- / 60' && r['First feasible'] === '-', JSON.stringify(r));
+  // Branch record SIF-143: a row with no state - its folder holds the manifest but no status.json, which a run writes with it -
+  // says why under its "not started", as a stopped run's reason stands under its state; the badge stood alone.
+  const noStatus = await far.evaluate(`(() => { const tr = [...${WINDOW}.querySelectorAll('table.run-table tbody tr')].find(x => x.title === ${JSON.stringify(NEVER.run_dir)}), hint = tr?.querySelector('.run-no-status');
+    return hint && { text: hint.textContent, title: hint.title, hint: hint.classList.contains('hint'), others: [...${WINDOW}.querySelectorAll('.run-no-status')].length }; })()`);
+  check('...and says why under its "not started": "no status file", the run folder\'s missing status.json on hover - only on that row (SIF-143)',
+    r.State === 'not started no status file' && noStatus?.text === 'no status file' && noStatus.hint && noStatus.others === 1
+    && /^The run folder holds the run's manifest but no status\.json, which a run writes when it is created: .* so its state is not known\./.test(noStatus.title), JSON.stringify([r.State, noStatus]));
   r = rowOf(rows, FAILED);
   check('a real run reads "real", a failed one "failed" with its reason', r.Data === 'real' && /^failed\s*error$/.test(r.State) && r['Can continue'] === 'no' && r.Duration === '40.0 s', JSON.stringify(r));
-  check('no row is marked as shown, and there is no "Show" column: after the tick box the table starts at "Started" and a row\'s last button is "Details"',
+  check('no row is marked as shown, and there is no "Show" column: after the tick box the table starts at "Created" and a row\'s last button is "Details"',
     rows.every(x => !x.current && x.buttons.split(',').pop() === 'Details' && x.buttons.split(',').length <= 2)
-    && (await far.evaluate(`(() => { const h = [...${WINDOW}.querySelectorAll('table.run-table thead th')]; return !!h[0].querySelector('input[type=checkbox]') && h[1].textContent.replace(/[\\u25B2\\u25BC]/g, '').trim(); })()`)) === 'Started', JSON.stringify(rows.map(x => x.buttons)));
+    && (await far.evaluate(`(() => { const h = [...${WINDOW}.querySelectorAll('table.run-table thead th')]; return !!h[0].querySelector('input[type=checkbox]') && h[1].textContent.replace(/[\\u25B2\\u25BC]/g, '').trim(); })()`)) === 'Created', JSON.stringify(rows.map(x => x.buttons)));
   check('the window says what a double click does: it loads the run (record 7.267)', /Double click a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results/.test(await far.evaluate(`${WINDOW}.innerText`)));
   check('the long explanation is folded: "What the columns mean" is closed', (await far.evaluate(`(() => { const d = ${WINDOW}.querySelector('details.more'); return d && !d.open && d.querySelector('summary').textContent; })()`)) === 'What the columns mean');
   check('the window says how many runs it lists, when it read them, and that nothing updates by itself', /^6 runs under the output folder, read at \d\d:\d\d:\d\d\. Nothing here updates by itself\.$/.test(await far.evaluate(`${WINDOW}.querySelector('.run-count').textContent`)),
@@ -472,7 +481,7 @@ await runChecks(browser, async () => {
   await pressTitle('Finished'); await sleep(300);
   rows = await table();
   check('pressing "Finished" sorts the run that finished last first', rows[0].folder === PAUSED.run_dir && rows[1].folder === RESUMED.run_dir, rows.map(x => x.Finished).join(' | '));
-  await pressTitle('Started'); await sleep(300);
+  await pressTitle('Created'); await sleep(300);
   // Branch record SIF-109: a column title is in the Tab order, and Enter or Space sorts as a press does - only a click could
   // press it. Space's default, a scroll of the window, is prevented (seen by a listener after the page's own).
   const TITLE = title => `[...${WINDOW}.querySelectorAll('table.run-table thead th')].find(h => h.textContent.replace(/[\\u25B2\\u25BC]/g, '').trim() === ${JSON.stringify(title)})`;
@@ -488,7 +497,7 @@ await runChecks(browser, async () => {
   rows = await table();
   check('... and Space on it the other way, the shortest first, without scrolling the window (SIF-109)', rows[0].folder === DONE.run_dir && rows[rows.length - 1].folder === NEVER.run_dir
     && (await far.evaluate('window.__spaceKept')) === true, `${rows.map(x => x.Duration).join(' | ')} | default prevented: ${await far.evaluate('window.__spaceKept')}`);
-  await pressTitle('Started'); await sleep(300);
+  await pressTitle('Created'); await sleep(300);
 
   // ---- 5b. folders (record 7.263): the Tasks window's folders, for runs ----------------------------------------------------------
   await far.send('Page.enable');
@@ -535,7 +544,7 @@ await runChecks(browser, async () => {
     && Object.values(runFolders.assignments).every(id => id === pilot), JSON.stringify(runFolders.assignments));
   check('the counts follow: Pilot 2, Unfiled 4, All runs 6', (await folderText(pilot)) === 'Pilot2' && (await folderText('unfiled')) === 'Unfiled4' && (await folderText('all')) === 'All runs6');
   rows = await table();
-  check('in All runs a run in a folder names it under its date', rowOf(rows, DONE).Started === `${stamp(DONE.created_utc)} Pilot` && rowOf(rows, LOST).Started === stamp(LOST.created_utc), JSON.stringify(rowOf(rows, DONE)));
+  check('in All runs a run in a folder names it under its date', rowOf(rows, DONE).Created === `${stamp(DONE.created_utc)} Pilot` && rowOf(rows, LOST).Created === stamp(LOST.created_utc), JSON.stringify(rowOf(rows, DONE)));
   await nav(later); await sleep(200); replies.push({ accept: true }); await pressFolderButton('Delete folder'); await settled();
   check('(set-up) "Later" deleted again', !runFolders.folders[later] && Object.keys(runFolders.folders).length === 1, JSON.stringify(runFolders.folders));
   await nav(pilot); await sleep(200);

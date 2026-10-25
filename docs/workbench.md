@@ -1784,10 +1784,10 @@ lists every run under the output folder, newest first, one row per run:
 
 | Column | What it says |
 |---|---|
-| Started | When the run was created. All times are the local time of this computer. |
+| Created | When the run was created. All times are the local time of this computer. ("Started" until branch record SIF-143: it stood over the creation time, beside a run's "not started".) |
 | Finished | When the run came to rest: completed, stopped, failed. A paused run shows the time with "(paused)"; a run that is working reads "still running"; a run whose worker died wrote no end, so it reads "last seen ..." (its last sign of life). |
 | Duration | How long the run was actually WORKING. The time it sat paused is not counted (the cell's tooltip and the details name it); a working run reads "... so far". |
-| State | The state, and under it why the run stopped (`budget_exhausted`, `user_pause`, ...). |
+| State | The state, and under it why the run stopped, in words ("budget used up", "paused by you", ...; the key in its tooltip). A run folder that holds its manifest but no `status.json` - which a run writes with the manifest when it is created, so the folder lost it, or the run is being created that very moment - reads "not started" with "no status file" under it, the reason on hover (branch record SIF-143: it stood there with no line under it). |
 | Task, Mode, Seed, Experiment | What the run was. |
 | Started from | Where the run's model came from (record 7.264): "template GT" for a new model made from an encoder's template; "ota7t (2) @ 420" for a run that loaded a saved model - its name and the save point's evaluations, a link to the run that saved it ("(gone)" when that run is not under the output folder); "offline: 22 runs" for a model trained offline on recorded runs; "-" for a Baseline simulation or a calibration, which load none. |
 | Saved model | The name of the RL model the run saves (record 7.225; "Model" until record 7.264); empty for a Baseline simulation or an LLM-only run. |
@@ -3258,7 +3258,10 @@ left-to-right order by barycentre sweeps; nothing is put where something stands,
 it does not belong to (the loosest node steps aside). A link that enters a device at its gate ends in a dot there, one
 at its bulk in a bar. Bulk ties are hidden at first (tick "Bulk connections"; the tables list them anyway). A graph
 without a supply AND a ground net has no hints: the package's layered layout is used and the view says so. "Layered"
-and "Spread out" remain as buttons; nodes can be dragged.
+and "Spread out" remain as buttons; nodes can be dragged. The drawing is fitted into its box, and fitted again when the
+box changes size - a refusal's line above it that comes or goes, a tool line that wraps, a resized window - until the
+user pans, zooms or drags a node: from then on the view stays theirs, until **Fit** or a layout button fits it again
+(branch record SIF-143: the drawing kept its zoom and pan, and a refusal's line cut the ground net at its foot in half).
 
 The shared layout prepares fixed cross-row neighbours and weight totals once for its eight ordering passes, and
 reuses the placed-node keys during final collision checks (7.375). It still reads current coordinates after every

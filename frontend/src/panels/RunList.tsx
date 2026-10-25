@@ -76,12 +76,18 @@ function finished(r: Json): { text: string; css?: string; title?: string } {
   return { text: '-' };
 }
 
+/** A row with no state, "not started" (branch record SIF-143): run_index.py lists a run folder by its manifest, and the state
+ *  is its status.json's, which prepare_run writes with the manifest ("created") and the worker after it. So a folder without
+ *  one lost it - or is being created this very moment. */
+const NO_STATUS = 'The run folder holds the run\'s manifest but no status.json, which a run writes when it is created: a copy made without it, or it was deleted, so its state is not known. A run being created this very moment reads so too; Refresh list reads it again.';
+
 type Column = { key: string; title: string; help: string; numeric?: boolean; value?: (r: Json, byDir: Map<string, Json>) => string | number | null };
 const COLUMNS: Column[] = [
-  { key: 'started', title: 'Started', help: 'When the run was created (local time of this computer).', value: r => r.created_utc ?? null },
+  // "Created", as its help and the Details say (branch record SIF-143: "Started" stood over the creation time, beside a "not started")
+  { key: 'started', title: 'Created', help: 'When the run was created (local time of this computer).', value: r => r.created_utc ?? null },
   { key: 'finished', title: 'Finished', help: 'When the run came to rest: completed, stopped, failed or paused. A run that is working has no finish time yet.', value: r => (isLive(r) ? null : r.ended_utc ?? r.last_seen_utc ?? null) },
   { key: 'duration', numeric: true, title: 'Duration', help: 'How long the run was actually working. The time it sat paused is not counted; "Details" shows it.', value: r => r.active_seconds ?? null },
-  { key: 'state', title: 'State', help: 'How the run stands, and under it why it stopped.', value: r => r.state ?? '' },
+  { key: 'state', title: 'State', help: 'How the run stands, and under it why it stopped; "no status file" under "not started": the run folder holds no status.json, so its state is not known.', value: r => r.state ?? '' },
   { key: 'task', title: 'Task', help: 'The task (circuit and its targets) the run optimizes.', value: r => taskOf(r) },
   { key: 'mode', title: 'Mode', help: 'New model = from random weights; Fine-tune and Evaluate only = from a saved model; Baseline, Calibration and Offline training by their names. Under it, the design of the network the run trains or evaluates (GraphGPS, RGCN, ...).', value: r => `${runMode(r)} ${runDesign(r)}` },
   { key: 'from', title: 'Started from', help: 'Where the run\'s model came from: "template GT" = a new model made from an encoder\'s template; "ota7t (2) @ 420" = the saved model it loaded and the save point (its evaluations), a link to that run; "offline: 22 runs" = a model trained offline on recorded runs; "-" = a baseline or a calibration, which loads none.',
@@ -219,7 +225,9 @@ const RunRow = memo(function RunRow({ r, active, checked, isOpen, folderLabel, d
       <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{keepDates(end.text)}</td>
       {/* "so far" may go under the time (roadster.css, branch record SIF-64): on one line it made the table wider than its window */}
       <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && <span className="run-so-far"> so far</span>}</td>
-      <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}</td>
+      {/* Under "not started" its why too, as a stopped run's reason stands under its state (branch record SIF-143) */}
+      <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}
+        {r.state == null && <div className="hint run-no-status" title={NO_STATUS}>no status file</div>}</td>
       {/* Branch record SIF-75: a task and a saved model break only at a space or after "-", "_" or ".", never inside a word
           ("graphgps" over "_ldo1", "graphgps_ld" over "o1 (31)"), and so does the model a run started from where the column
           holds the word; the link takes three lines at most (roadster.css), the whole name first in its tooltip - an offline

@@ -116,13 +116,13 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
             It locks with the root (branch record SIF-91 review: a list opened before a Start still set the root under the run). */}
         {browse.entries.map((e: Json) => <li key={e.path}><button className="text-link" title="Open this folder" onClick={() => openFolder(e.path)}>{e.name}</button> <button disabled={locked} onClick={() => { set({ output_root: e.path }); closeList(); }}>Use this folder</button></li>)}</ul></>}
       {/* What the backend found for the root, as one line; the table behind it (record 7.179, design advice 3). Open at once when
-          the root cannot be written. */}
-      {check && <details className="more output-facts" open={!(check.allowed && check.writable)}><summary>{check.allowed && check.writable ? 'writable' : 'NOT writable'}{testedHere ? ` · tested ${testedHere.at}` : ''} · {bytes(check.free_bytes)} free{check.windows_path ? ` · ${check.windows_path}` : ''}</summary>
+          the root cannot be written. A size is one piece, its number never over its unit (span.bytes, branch record SIF-143). */}
+      {check && <details className="more output-facts" open={!(check.allowed && check.writable)}><summary>{check.allowed && check.writable ? 'writable' : 'NOT writable'}{testedHere ? ` · tested ${testedHere.at}` : ''} · <span className="bytes">{bytes(check.free_bytes)}</span> free{check.windows_path ? ` · ${check.windows_path}` : ''}</summary>
       <table className="grid small"><tbody>
         <tr><td>Resolved</td><td className="path">{check.resolved ?? '-'}</td></tr>
         <tr><td>Allowed / writable</td><td className={check.allowed && check.writable ? '' : 'error'}>{check.allowed ? 'yes' : 'no'} / {check.writable ? 'yes' : 'no'} {check.error ?? ''}</td></tr>
         <tr><td>Backend host</td><td>{check.host} ({check.environment}, {check.filesystem})</td></tr>
-        <tr><td>Free space</td><td>{bytes(check.free_bytes)}; used here {sized && sized.root === root ? bytes(sized.bytes)
+        <tr><td>Free space</td><td><span className="bytes">{bytes(check.free_bytes)}</span>; used here {sized && sized.root === root ? <span className="bytes">{bytes(sized.bytes)}</span>
           : <button className="text-link" disabled={busy.measure} title="Adds up the files under the output root (on D: this takes a while for many runs)."
               onClick={() => { const at = root; ask('measure', () => api.checkOutput(at, false, undefined, true)
                 // a backend from before record 7.189 refuses `usage` (422), and its plain look still carries the size

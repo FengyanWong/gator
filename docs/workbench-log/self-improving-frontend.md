@@ -6171,3 +6171,63 @@ on the three sources as at 645586c (put back after, their sums compared) failed 
 GB of file cache; the user's own relief (6 x 1 GB touched and freed in Python) gave the host 5.1 GB back, and the guard
 passed. The runner's other scripts were not run: none renders these screens. The page with real data was not looked at:
 the live backend (8765) is down since the PC restart, and stays so.
+
+### SIF-143 Output settings' tick boxes keep their size and a size never splits, the Runs window's first column says Created, and the graph view fits its drawing again when a line appears above it (2026-10-25; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found three slips of layout and words.
+In Output settings the tick boxes of the two options whose words take two lines, "Replay snapshots (needed to Continue a
+run exactly)" and "Complete transition archive (independent of replay snapshots)", were drawn smaller than the other
+three, and their words began left of the others' (S12-36, `output-1-panel.png`; 12.2 and 10.4 px wide where the others
+are 13): a `label.check` is a flex row and every input has `min-width: 0`, so the box gave its words room. Above them the
+facts' Free space cell read "400.00 GiB; used here 3.00" with "GiB" alone on the next line: bytes() joins number and unit
+with a plain space, and a small grid's cells wrap. The Runs window titled its first column "Started" but filled it with
+the creation time - its own help said "When the run was created" - so a run with no state read "Started 2026-09-18
+09:00:00" beside "not started", that badge alone where a stopped run's reason stands under its state (S12-37,
+`runs-2-window.png`). The plan's line for it, "its worker never began", does not hold: prepare_run (runs.py) writes
+status.json ("created") together with the manifest, and the worker writes it after, so run_index.py lists a run with no
+state only for a folder that holds no status.json - lost (a copy made without it, a deleted file), or in the moment
+between the two writes. In the circuit graph view at the RL model window's 1180 px, a refused "<" put its red line over
+the tools and the drawing gave that height up (SIF-66), but cytoscape kept its zoom and pan: the ground net "0" at the
+foot of the drawing was cut in half by the box's lower edge (S12-39, `graph-4-window-width.png`), until Fit.
+
+**Changed.** `frontend/src/styles.css`: a tick box in a `label.check` (or in a table cell) is `flex: none`, so it keeps
+its 13 px and its words start where the others' do; `.output-facts .bytes` does not wrap.
+`frontend/src/panels/OutputPanel.tsx`: both sizes of the Free space cell, and the free space on the line above the table,
+stand in a `span.bytes`, so a size never splits from its unit; bytes() itself is unchanged, as the plan says
+(export_check, files_tab_check and output_panel_check read its plain space). `frontend/src/panels/RunList.tsx`: the first
+column is "Created", its help and its sort key as before; under "not started" stands "no status file", its tooltip saying
+that the run folder holds the run's manifest but no status.json, which a run writes when it is created - a copy made
+without it, or it was deleted, so its state is not known - and that a run being created that very moment reads so too
+until Refresh list; the State column's help says it in short. Not the plan's words: they named a cause the backend cannot
+produce. `frontend/src/panels/CircuitGraphView.tsx`: the view keeps the padding of the fit it shows (30 after a layout, 24
+after Fit), and while it shows one, a new size of its box - cytoscape's own resize event, debounced by 100 ms, for a
+refusal's line that comes or goes, a tool line that wraps again or a resized window - fits the drawing again; a pan, a
+wheel or pinch zoom or a dragged node makes the view the user's until Fit or a layout button, and a resize that arrives
+after the drawing was let go does nothing. Only layout, words and the drawing's zoom and pan: nothing starts, continues or
+stops a run, saves a task or writes to Virtuoso, and every question is asked as before. `docs/workbench.md` (the run
+window's Created and State rows - the State row still gave the stop reason as a key, `budget_exhausted`, which the cell
+has written in words since SIF-15 - and the circuit graph view) and `docs/functionality-reference.md` (Runs..., Circuit
+graph view) say it.
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree. First the three scripts that render
+the changed screens and `looks_check` (it reads every rule of the stylesheet), all passed the first time:
+`run_list_check` 185 (184 before): the column list, the finished run's time, the column after the tick box, the two sorts
+back to newest first and a folder's name under the date read "Created" (they pinned "Started"); new, the run with no
+state reads "not started no status file", the hint with its tooltip on that row only (`runs-2-window.png`).
+`output_panel_check` 100 (98): new, the five tick boxes share their size, their left edge and the x their words start at,
+the two of two lines among them, and the Free space cell reads "400.00 GiB; used here 3.00 GiB" with each size on one
+line, the free space on the line above it kept whole too (`output-1-panel.png`); its two checks of "used here 3.00 GiB"
+pass as before. `graph_view_check` 72 (69): new, after the refusal's line at 1180 px the view is cytoscape's fit of the
+new box and the ground net's bottom (624 px) lies inside the 654 px canvas (`graph-4-window-width.png`); a wheel turn over
+the drawing, then an 860 px window, leaves the zoom and pan as they were; Fit, then the window back at 920 px, fits the
+drawing to its box again. `looks_check` 83. Then the scripts that also render the Runs window, the graph view, Output
+settings or tick boxes, all passed the first time: `run_control_check` 181, `dom_identity_check` 56,
+`model_chooser_check` 145, `blocking_issues_check` 70, `task_list_check` 106, `network_panel_check` 78,
+`task_run_check` 39, `room_check` 31, `module_fold_check` 31, `encoder_models_check` 24, `agent_window_check` 35,
+`graph_paint_check` 6 - except `training_tab_check`, which failed one timing check in that run ("a chart redraws at most
+once a second while results arrive": 6 redraws where 3 are allowed) and passed alone, 139: a flake, its charts untouched
+here. In all 17 scripts, 1,381 checks. A probe run of output_panel_check and graph_view_check on the four sources as at
+bf0d7c9 (put back after, their sums compared) failed exactly the new layout checks: the two of Output settings (the boxes
+12.2 and 10.4 px wide, no size kept whole) and two of the graph view (the ground net's bottom at 666 px in the 654 px
+canvas; no fit after Fit and a taller window); the user's zoom kept passed there too, as it must. The page with real data
+was not looked at: the backend on 8765 serves another tree, and no check runs against it.

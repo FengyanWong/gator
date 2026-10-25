@@ -80,6 +80,8 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
   const dialog = useRef<HTMLDialogElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const graph = useRef<Json>(null);                              // the cytoscape instance
+  // The padding of the fit the drawing shows; null once the user panned, zoomed or dragged a node (branch record SIF-143).
+  const fitted = useRef<number | null>(null);
   const request = useNewest();
 
   const load = (evaluation: number | null) => {
@@ -96,6 +98,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
   };
   const show = () => { setView(null); setWanted(''); dialog.current?.showModal(); load(null); };
   const close = () => { request.drop(); dialog.current?.close(); graph.current?.destroy(); graph.current = null; setView(null); setError(null); };
+  const fit = (cy: Json, padding: number) => { fitted.current = padding; cy.fit(undefined, padding); };
   const layout = (name: string, of: Json = view) => {
     const cy = graph.current; if (!cy || !of) return;
     const hinted = name === 'hints' ? hintedLayout(of) : null;
@@ -107,7 +110,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
       if (name !== 'spread') groundDown(cy);
     }
     if (name === 'hints') setGeneric(!hinted);
-    cy.fit(undefined, 30);
+    fit(cy, 30);
   };
 
   // The dialog can go away while open (a Mode or model changed in another window): the drawing, its render loop and
@@ -133,6 +136,13 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
       const cy = cytoscape({ container: canvas.current, elements, minZoom: 0.2, maxZoom: 3, wheelSensitivity: 0.3, style: graphStyle(canvas.current) });
       cy.on('tap', 'node, edge', (event: Json) => { const id: string = event.target.id(); setPicked({ type: id[0] === 'd' ? 'device' : id[0] === 'n' ? 'net' : 'connection', id: id.slice(2) }); });
       cy.on('tap', (event: Json) => { if (event.target === cy) setPicked(null); });
+      // Branch record SIF-143: the drawing follows its box (SIF-66) but kept its zoom and pan, so a refusal's line over the
+      // tools cut the lowest node, ground, in half. While it shows a fit, a box of another size fits it again; once the user
+      // pans, zooms or drags a node the view is theirs, until Fit or a layout button. (cytoscape's resize is debounced: one
+      // may come after the drawing was let go.)
+      cy.on('dragpan scrollzoom pinchzoom', () => { fitted.current = null; });
+      cy.on('dragfree', 'node', () => { fitted.current = null; });
+      cy.on('resize', () => { if (fitted.current != null && !cy.destroyed()) cy.fit(undefined, fitted.current); });
       graph.current = cy;
       (canvas.current as Json).__cy = cy;                        // the browser check reads the drawn graph through this
       layout('hints', view);
@@ -192,7 +202,7 @@ export function CircuitGraphView({ runDir, checkpointId, label }: { runDir: stri
           <button onClick={() => layout('hints')} title="Positions from what the graph says about the circuit: supply on top, ground at the bottom, every node at its place on the current path, paired devices above each other. Fixed rules, no agent.">Circuit hints</button>
           <button onClick={() => layout('layers')} title="The drawing package's own layered layout, which knows nothing about circuits">Layered</button>
           <button onClick={() => layout('spread')} title="Let the nodes push each other apart, starting from where they are">Spread out</button>
-          <button onClick={() => graph.current?.fit(undefined, 24)} title="Fit the whole graph in the view">Fit</button>
+          <button onClick={() => graph.current && fit(graph.current, 24)} title="Fit the whole graph in the view">Fit</button>
         </div>
         <div className="graph-body">
           <div ref={canvas} className="graph-canvas" />

@@ -1,3 +1,5 @@
+"""Test settings and bridge state isolation, with real model requests blocked and local test processes allowed."""
+
 import atexit
 import os
 import shutil

@@ -1,3 +1,5 @@
+"""Corner ranking and summaries from injected results and recorded condition definitions, without simulations."""
+
 from dataclasses import replace, asdict
 import json
 from pathlib import Path

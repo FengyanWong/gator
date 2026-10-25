@@ -1,3 +1,5 @@
+"""Condition identities and unsupported PVT/Monte Carlo calls checked with synthetic data, without simulations."""
+
 from dataclasses import asdict, replace
 from pathlib import Path
 

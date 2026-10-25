@@ -1,3 +1,5 @@
+"""MockBackend lifecycle, injected results and refusals in temporary folders, without network or simulator calls."""
+
 import json
 
 import pytest

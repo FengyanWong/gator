@@ -6231,3 +6231,21 @@ bf0d7c9 (put back after, their sums compared) failed exactly the new layout chec
 12.2 and 10.4 px wide, no size kept whole) and two of the graph view (the ground net's bottom at 666 px in the 654 px
 canvas; no fit after Fit and a taller window); the user's zoom kept passed there too, as it must. The page with real data
 was not looked at: the backend on 8765 serves another tree, and no check runs against it.
+
+### SIF-144 A calibration row few designs miss says the misses are too few to set the Scale (2026-10-25; from the states audit, backend words)
+
+**Found.** States audit S12-22 (calibration_save_check/calibration-save-1-block.png): on a row few random designs miss, the
+Calibration table showed the typical miss ("420 MHz") beside a note saying there were "too few to name a typical miss". The
+page shows `median_miss` whenever any design misses (RunTabs.tsx), and the backend sets it then too (calibration.py), so the
+two cells contradicted each other in words; the number was right. The note is backend text, which the frontend batches leave
+alone, so it was held back from the states run.
+
+**Changed** (`src/gator_workbench/calibration.py`; words only, the proposals unchanged). The note now reads "N of M random
+designs miss this row: too few for their typical miss to set the Scale." followed, as before, by "Its Scale stays as it is."
+or "Half the window is proposed: ...". `tests/workbench/test_wb_calibration.py` pins the new words; `docs/workbench.md` (what
+is not proposed) says the table still shows that miss beside the note; `calibration_save_check`'s fixture note follows the
+backend's words. Made on a side branch (sif-backend-words-2, 0be4dd4) while the states run held this worktree, then
+cherry-picked. Live with the next restart of the server on 8765.
+
+**Checked.** `tests/workbench/test_wb_calibration.py` 16 passed (on the side branch and again here); `calibration_save_check`
+and the full browser suite before going live.

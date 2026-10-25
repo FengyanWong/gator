@@ -41,7 +41,7 @@ const generated = task => ({ loaded: true, task_key: task, mock: false, native_d
 // The calibration as the backend answers it under today's rule, for a run recorded under the rule before it: few random
 // designs miss the window and its Scale is wider than half of it, so half the window is proposed; the Initial alpha in
 // use is close to the estimate.
-const NOTE = '3 of 64 random designs miss this row: too few to name a typical miss. Half the window is proposed: with the Scale in use (1.3 GHz) the middle of '
+const NOTE = '3 of 64 random designs miss this row: too few for their typical miss to set the Scale. Half the window is proposed: with the Scale in use (1.3 GHz) the middle of '
   + 'the window counts as 0.077 of a Scale away from its limits, and the margin bonus of the whole task cannot pay for more room than that.';
 const ALPHA_NOTE = 'Not proposed: the estimate is 0.012 (0.1 x the reward spread), within a factor of 2 of the 0.01 in use. The value in use stays.';
 const RESULT = { format: 'gator-calibration-1', status: 'calibrated', reason: null, scale_note: null, rule: { version: 3 },

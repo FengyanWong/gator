@@ -6249,3 +6249,18 @@ cherry-picked. Live with the next restart of the server on 8765.
 
 **Checked.** `tests/workbench/test_wb_calibration.py` 16 passed (on the side branch and again here); `calibration_save_check`
 and the full browser suite before going live.
+
+### Live again (2026-10-25; the user: "finish the rest")
+
+SIF-132..144 - the states audit's 12 batches and SIF-144's calibration words - after the weekly-usage pause (stopped at 84 %
+at 04:28 on the user's 85 % rule; the user then said "finish the rest"). Full browser suite on d228c7c: 58 scripts, 3,037
+checks passed; training_tab_check failed one assertion once under two lanes and passed alone (the passing retry overwrote
+its log, so the assertion is not known; every batch run of it passed). workbench (a82f950, unmoved) fast-forwarded to
+d228c7c in the shared tree. Another session ("Readability plan for Codex", record 7.390) had an uncommitted one-line edit in
+docs/functionality-reference.md, a file this branch changed too: a full copy was kept, the line merged onto the new file with
+`git merge-file` (clean) and written back, still uncommitted; its other files untouched. A stale, empty .git/index.lock from
+20:08:38 (no git process alive; the Codex desktop app's polling `git status` is the likely source) was removed first. Page:
+index-DClPr_Oz.js, index-BUlLMzRS.css, index.html last. Server restarted for SIF-144's backend words - pid 1064097 since
+20:24:23, the same 13 environment variables - beside two real CLI runs of another session's queue (their frozen runtime
+gator-runtime-bmr-f143d691, untouched). Windows reached it at once; a read-only live check: no console errors, no refused
+writes.

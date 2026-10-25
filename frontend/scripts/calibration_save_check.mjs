@@ -11,6 +11,11 @@
 //     holds the applied rows; the page says the save is running, and Save task reports the revision;
 //   - "Apply only" saves nothing and says that Save task is still to be pressed;
 //   - while another save runs, "Apply and save" still applies, sends nothing and says why Save task could not start.
+// Branch record SIF-138: the line calls each proposal a Scale ("Scale of osc_frequency_hz 100 MHz"); once the page holds
+// the Scale - after Apply only, or a save that could not start - only a greyed Apply calibration stands and Save as makes a
+// new task, so the words say that Undo, then Apply and save, updates this task (the line's, where Apply and save is); the
+// block says it only after its own Apply only, never after a save of the task. Where Apply calibration stands for such a
+// task - an Initial alpha to apply, every Scale held - no words name Apply and save.
 // Hermetic, as task_save_check.mjs: the saved task, its run with the calibration result, every /api/virtuoso/* request and
 // the save state are FIXTURES; any other writing request of the page is refused. Exit code 1 if any check fails.
 //   WSLENV=GATOR_WORKBENCH_URL GATOR_WORKBENCH_URL=http://127.0.0.1:5176/ "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/calibration_save_check.mjs)" [screenshot-dir]
@@ -120,7 +125,8 @@ await runChecks(browser, async () => {
 
   // ---- the line under the header --------------------------------------------------------------------------------------------
   const line = await evaluate(`${READY}.querySelector('span').textContent`);
-  check('the line names the task and writes the proposed Scale as a quantity: 100 MHz', line.startsWith(`Calibration ready for ${TASK}: osc_frequency_hz 100 MHz. Proposed from 64 random designs; nothing has changed yet.`), line);
+  check('the line names the task and writes the proposed Scale as a quantity, named a Scale: "Scale of osc_frequency_hz 100 MHz" (SIF-138)',
+    line.startsWith(`Calibration ready for ${TASK}: Scale of osc_frequency_hz 100 MHz. Proposed from 64 random designs; nothing has changed yet.`), line);
   check('for a saved task it offers Apply and save, Apply only and Not now', JSON.stringify(await readyButtons()) === JSON.stringify(['Apply and save', 'Apply only', 'Not now']), JSON.stringify(await readyButtons()));
   const saveTitle = await evaluate(`${readyButton('Apply and save')}.title`);
   check('the tooltip says what the press does: Apply, then the save - the cell is written, nothing is simulated',
@@ -160,9 +166,10 @@ await runChecks(browser, async () => {
     && saves()[0].config?.targets?.[0]?.normalization_scale === 1e8 && saves()[0].config?.targets?.[0]?.lower === 1.1e9, JSON.stringify(saves().map(c => ({ task: c.task, scale: c.config?.targets?.[0]?.normalization_scale }))));
   check('the page says what was applied and that the save runs', (await evaluate(BANNER)) === "Calibration applied: the Scale of 1 Specs row, as one Undo step. Saving the task now: the progress is under the editors' tabs.", await evaluate(BANNER));
   check('Save task reports the revision and the baseline, under the toolbar', await until(`/Saved real:ring_osc, revision 2\\. The recorded baseline still holds\\./.test(${NOTES})`, 50), await evaluate(NOTES));
-  check('the line goes; the block says the page holds the values and offers the plain button, at rest', await until(`!(${READY})`, 30)
+  // SIF-138: the block's hint said "Use Apply and save to update this task" here, the task just saved with the values.
+  check('the line goes; the block says the page holds the values - and no more: the task holds them too - and offers the plain button, at rest', await until(`!(${READY})`, 30)
     && JSON.stringify(await blockButtons()) === JSON.stringify(['Apply calibration']) && await evaluate(`${blockButton('Apply calibration')}.disabled`)
-    && (await evaluate(HINT)).startsWith('The page holds these values.'), JSON.stringify([await blockButtons(), await evaluate(HINT)]));
+    && (await evaluate(HINT)) === 'The page holds these values.', JSON.stringify([await blockButtons(), await evaluate(HINT)]));
   await page.shot(path.join(out, 'calibration-save-2-saved.png'), `document.querySelector('.editors')`, { maxHeight: 260 });
 
   // ---- one Undo takes the Scale back; Apply only saves nothing ------------------------------------------------------------------
@@ -175,24 +182,81 @@ await runChecks(browser, async () => {
   await settle(1200);
   config = await stored();
   check('"Apply only" writes the Scale and sends nothing', config.targets[0].normalization_scale === 1e8 && calls.length === mark, calls.slice(mark).map(c => c.op).join(' | '));
-  check('...and says that Save task is still to be pressed', (await evaluate(HINT)) === 'The page holds these values. Use Apply and save to update this task and keep its recorded baseline, or Save as to create a new task.', await evaluate(HINT));
+  check('...and says how this task is updated with it: Undo, then Apply and save; Save as makes a new task (SIF-138: "Use Apply and save" beside a lone greyed button)',
+    (await evaluate(HINT)) === 'The page holds these values. To update this task with them, press Undo, then Apply and save (it keeps the recorded baseline); Save as makes a new task.'
+    && JSON.stringify(await blockButtons()) === JSON.stringify(['Apply calibration']), JSON.stringify([await blockButtons(), await evaluate(HINT)]));
 
   // ---- while another save runs: applied, nothing sent, and the reason ------------------------------------------------------------
   await evaluate(`${UNDO}.click()`);
   await stored();
   saving = { running: { id: 'other', task_key: TASK, started_utc: '2026-10-05T17:06:00+00:00', seconds: 12, steps: STEPS, step: 'setup', step_number: 1, step_seconds: 12, usual_seconds: 34 }, last: null };
+  // The line's answer is taken back (SIF-138), so the page loaded during the save offers the line too: its Apply and save
+  // first, then the block's.
+  await evaluate(`localStorage.removeItem('gator-workbench-calibration-answered-v1')`);
   await send('Page.reload');
-  check('a page loaded during a save keeps Save task closed', await until(`!!(${SAVE}) && ${SAVE}.disabled && /Saving/.test(${SAVE}.textContent) && !!(${blockButton('Apply and save')})`, 200), await evaluate(`${SAVE}?.textContent`));
+  check('a page loaded during a save keeps Save task closed', await until(`!!(${SAVE}) && ${SAVE}.disabled && /Saving/.test(${SAVE}.textContent) && !!(${blockButton('Apply and save')})
+    && !!(${readyButton('Apply and save')})`, 200), await evaluate(`${SAVE}?.textContent`));
+  mark = calls.length;
+  await evaluate(`${readyButton('Apply and save')}.click()`);
+  await settle(1500);
+  config = await stored();
+  check('the line\'s "Apply and save" still applies, and sends no second save', config.targets[0].normalization_scale === 1e8 && calls.length === mark, calls.slice(mark).map(c => c.op).join(' | '));
+  check('...the page says why Save task could not start, and that Undo, then Apply and save under Run status, updates the task: the line has gone (SIF-138)',
+    (await evaluate(BANNER)) === `Calibration applied: the Scale of 1 Specs row, as one Undo step. Saving could not be started from here (the save of ${TASK} is still running). The Scale `
+      + 'stays applied: once the save can start, press Undo, then Apply and save under Run status of that run; Save as above the editors makes a new task instead.'
+    && await evaluate(`!(${READY})`), await evaluate(BANNER));
+  check('...beside the lone greyed Apply calibration the block says only that the page holds the values', JSON.stringify(await blockButtons()) === JSON.stringify(['Apply calibration'])
+    && (await evaluate(HINT)) === 'The page holds these values.', JSON.stringify([await blockButtons(), await evaluate(HINT)]));
+  await evaluate(`${UNDO}.click()`);
+  config = await stored();
+  check('as it says, ONE Undo takes the Scale back and the block offers Apply and save again', config.targets[0].normalization_scale === 1.3e9
+    && await until(`!!(${blockButton('Apply and save')})`, 30), JSON.stringify(await blockButtons()));
   mark = calls.length;
   await evaluate(`${blockButton('Apply and save')}.click()`);
   await settle(1500);
   config = await stored();
-  check('"Apply and save" still applies, and sends no second save', config.targets[0].normalization_scale === 1e8 && calls.length === mark, calls.slice(mark).map(c => c.op).join(' | '));
-  check('...the block says why Save task could not start, and what to press', (await evaluate(SAID))
-    === `Applied the Scale of 1 Specs row, as one Undo step. Saving could not be started from here (the save of ${TASK} is still running): try Apply and save again when ready, or use Save as above the editors.`, await evaluate(SAID));
+  check('the block\'s "Apply and save" still applies, and sends no second save', config.targets[0].normalization_scale === 1e8 && calls.length === mark, calls.slice(mark).map(c => c.op).join(' | '));
+  check('...the block says why Save task could not start, and what to press: Undo, then Apply and save (SIF-138: "try Apply and save again", a button no longer there)',
+    (await evaluate(SAID)) === `Applied the Scale of 1 Specs row, as one Undo step. Saving could not be started from here (the save of ${TASK} is still running). The Scale stays applied: `
+      + 'once the save can start, press Undo, then Apply and save; Save as above the editors makes a new task instead.'
+    && (await evaluate(HINT)) === 'The page holds these values.', JSON.stringify([await evaluate(SAID), await evaluate(HINT)]));
   await page.shot(path.join(out, 'calibration-save-3-busy.png'), `document.querySelector('footer')`);
   saving = { running: null, last: { id: 'other', task_key: TASK, ok: true, seconds: 30, answer: { task_key: TASK, revision: 3, created: false, baseline_kept: true, changed: [] } } };
   check('when that save has ended, Save task opens again', await until(`!!(${SAVE}) && !${SAVE}.disabled && ${SAVE}.textContent.trim() === 'Save as'`, 60), await evaluate(`${SAVE}?.textContent`));
+
+  // ---- Apply only in the line (SIF-138) ---------------------------------------------------------------------------------------------
+  // The line goes with the press and a greyed Apply calibration stands alone in the block: the page says that Undo, then Apply
+  // and save under Run status, updates this task. The block, whose button was not pressed, says no more than that the page
+  // holds the values.
+  await evaluate(`${UNDO}.click()`);
+  await stored();
+  await evaluate(`localStorage.removeItem('gator-workbench-calibration-answered-v1')`);
+  await send('Page.reload');
+  check('with its answer taken back, a reload offers the line again', await until(`!!(${readyButton('Apply only')}) && !!(${SAVE}) && !${SAVE}.disabled`, 200), JSON.stringify(await readyButtons()));
+  mark = calls.length;
+  await evaluate(`${readyButton('Apply only')}.click()`);
+  await settle(1200);
+  config = await stored();
+  check('the line\'s "Apply only" writes the Scale and sends nothing', config.targets[0].normalization_scale === 1e8 && calls.length === mark, calls.slice(mark).map(c => c.op).join(' | '));
+  check('...the page says how this task is updated with it, and where Apply and save is: the line has gone (SIF-138)', (await evaluate(BANNER))
+    === 'Calibration applied: the Scale of 1 Specs row, as one Undo step. To update this task with them, press Undo, then Apply and save under Run status of that run (it keeps the '
+      + 'recorded baseline); Save as makes a new task.' && await evaluate(`!(${READY})`), await evaluate(BANNER));
+  check('...and the block says only that the page holds the values', JSON.stringify(await blockButtons()) === JSON.stringify(['Apply calibration'])
+    && (await evaluate(HINT)) === 'The page holds these values.', JSON.stringify([await blockButtons(), await evaluate(HINT)]));
+
+  // ---- an Initial alpha still to apply beside a Scale the page holds (SIF-138) ---------------------------------------------------
+  // FIXTURE: the same run proposing an Initial alpha of 0.02. Every Scale is held, so Apply calibration stands alone, enabled,
+  // and no words name Apply and save: the line's tooltip and the block's hint said "Use Apply and save to update this task".
+  Object.assign(RESULT.initial_alpha, { proposed: 0.02, note: null });
+  await evaluate(`localStorage.removeItem('gator-workbench-calibration-answered-v1')`);
+  await send('Page.reload');
+  const applyTitle = await until(`!!(${readyButton('Apply calibration')})`, 200) ? await evaluate(`${readyButton('Apply calibration')}.title`) : null;
+  check('with an Initial alpha to apply, the line offers Apply calibration, not Apply and save, and its tooltip names none (SIF-138)',
+    applyTitle === 'Apply calibration: Writes the Scale of 1 Specs row and Initial alpha into the page, as one Undo step. Nothing is simulated and no task is saved.'
+    && await evaluate(`!(${readyButton('Apply and save')}) && !(${readyButton('Apply only')})`), JSON.stringify([applyTitle, await readyButtons()]));
+  check('...and the block offers Apply calibration, its hint naming no Apply and save (SIF-138)', JSON.stringify(await blockButtons()) === JSON.stringify(['Apply calibration'])
+    && await evaluate(`!${blockButton('Apply calibration')}.disabled`) && (await evaluate(HINT)) === 'Sets the Scale of 1 Specs row and Initial alpha, as one Undo step.',
+    JSON.stringify([await blockButtons(), await evaluate(HINT)]));
 
   reportRefused(page.refused);
   check('no error in the page console', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

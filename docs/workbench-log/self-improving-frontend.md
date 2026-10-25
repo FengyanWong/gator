@@ -5721,3 +5721,75 @@ first time: `calibration_check` 53, `export_check` 38, `run_control_check` 181, 
 `crash_panel_check` 11, `callouts_check` 8, `edit_state_check` 28, `circuit_layout_check` 4, `editor_renames_check` 8,
 `graph_paint_check` 6, `network_inputs_check` 9, `table_view_check` 10, `unit_text_check` 14. In all 58 scripts, 3,008
 checks: the 3,001 of SIF-137 and the 7 new ones; no flakes.
+
+### SIF-138 The calibration line calls each proposal a Scale, the page says how to update the task once it holds the Scale, and a Scale Apply could not write is named (2026-10-25; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found the calibration's words naming
+the wrong thing, or a button that was not there. The "Calibration ready" line read "Calibration ready for real:ring_osc:
+osc_frequency_hz 100 MHz. Proposed from 64 random designs; nothing has changed yet." beside a Specs row of 1.1 to
+1.3 GHz: only the alpha was named ("Initial alpha 0.029"), so the Scale read as a measured frequency, and "score 0.087"
+as a score (S12-4, `calibration-save-0-line.png`, `calibration-0b-ready-line.png`). Once the page holds the Scale -
+after Apply only, or after an Apply and save whose save could not start - Apply and save is no longer offered (`saves`,
+calibrationPlan.ts) and a greyed Apply calibration stands alone, yet the block said "Saving could not be started from
+here (the save of real:ring_osc is still running): try Apply and save again when ready, or use Save as above the
+editors." and, after Apply only, "The page holds these values. Use Apply and save to update this task and keep its
+recorded baseline, or Save as to create a new task." (S12-5, `calibration-save-3-busy.png`). Save as always makes a new
+task (TaskSave.tsx: `as_new` whenever a task is open), so the one way to update the open task is Undo, then Apply and
+save, and no line said so. With the limits of a row edited after the run and the Initial alpha applied, the hint read
+"The page holds these values." beside "0.087 not applied: the limits of this row were changed after the run", and
+nothing said how to get a Scale for the new limits (S12-21, `calibration-2-row-changed.png`). The plan, checked against
+the code, missed two more of the same. The block added its "Use Apply and save" sentence whenever the page held the
+values and the block itself had not pressed Apply and save: also right after the line's Apply and save had saved the
+task with them (`calibration_save_check` read only the hint's first sentence there), after a reload and for values held
+before. And Apply calibration, which a saved task gets only while the page holds every Scale (an Initial alpha still to
+apply), named Apply and save in the line's tooltip and in the block's hint.
+
+**Changed.** `frontend/src/panels/calibrationPlan.ts`: each Scale on the line says it is one, "Calibration ready for
+real:ring_osc: Scale of osc_frequency_hz 100 MHz.", the Initial alpha as before. A new `afterApplied(where)`: " To
+update this task with them, press Undo, then Apply and save (it keeps the recorded baseline); Save as makes a new task."
+A save that could not start (`savingText`): " Saving could not be started from here (the save of real:ring_osc is still
+running). The Scale stays applied: once the save can start, press Undo, then Apply and save; Save as above the editors
+makes a new task instead." `afterwards` stays for the line's Apply only tooltip, before the press.
+`frontend/src/panels/RunTabs.tsx` (the Calibration block of Run status): the hint gives `afterApplied` after the block's
+own Apply only, while the page holds the values - not after an Apply and save (its own line says what happened), a
+reload (the Undo history does not outlive one), values held before, or once something is pending again (an effect
+forgets the press: an Undo, then the line's Apply and save, would otherwise bring the sentence back beside a saved
+task). The plan's `${said ? '' : afterApplied}` would have put "press Undo, then Apply and save" beside the task the
+line had just saved. When the page holds all Apply can write and a row's Scale could not be written: "The page holds the
+values Apply can write. The Scale of score is not applied: its limits changed after the run; a new Calibration proposes
+one for them." (several rows: "a, b and c ... their limits changed after the run; a new Calibration proposes one for
+each"). The hint "Sets ..., as one Undo step." loses `afterwards`: there it always named an Apply and save that was not
+offered. `frontend/src/page/calibrationOffer.ts` (the line's answers): Apply only says `afterApplied`, a save that could
+not start `savingText`, both with " under Run status of that run" after Apply and save, as the line goes with any answer
+(Not now's words name the same place); after the line's Apply calibration, which writes no Scale this task lacks,
+nothing more. `frontend/src/App.tsx`: the line's Apply calibration tooltip loses the sentence too. Only words, and one
+press remembered for them: nothing starts, continues or stops a run, saves a task or writes to Virtuoso without the
+press and question it took before; Apply and save saves only on its press, and every Undo step is as before.
+`docs/workbench.md` (Apply and save, the line under the header, Apply writes only what still fits) and
+`docs/functionality-reference.md` (the Calibration and Calibration ready rows) say it. Left out, as the plan left them:
+S12-5's best fix, a button that saves the task with the values the page holds (a new press that saves), and S12-22,
+whose contradiction is in the backend's note (calibration.py `too_few`), for a backend round.
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree. `calibration_save_check` 33 (23
+before). Changed: the line reads "Scale of osc_frequency_hz 100 MHz" (`calibration-save-0-line.png`); after the line's
+Apply and save saved the task, the hint is "The page holds these values." and no more; after the block's Apply only it
+reads "... To update this task with them, press Undo, then Apply and save (it keeps the recorded baseline); Save as
+makes a new task." beside the lone Apply calibration; the block's Apply and save during another save reads the new
+refusal, with "The page holds these values." alone beside the button (`calibration-save-3-busy.png`). New: the page
+loaded during that save, the line's answer removed, offers the line too: its Apply and save applies and sends nothing,
+and the page says why and "press Undo, then Apply and save under Run status of that run", the line gone; one Undo then
+takes the Scale back and Apply and save is offered again; after the save has ended, the line's Apply only writes the
+Scale, sends nothing and says how the task is updated and where, the block saying only that the page holds the values;
+and with a FIXTURE Initial alpha of 0.02 beside the held Scale, the line's Apply calibration tooltip and the block's
+"Sets the Scale of 1 Specs row and Initial alpha, as one Undo step." name no Apply and save. `calibration_check` 54
+(53): its two lines read "Scale of score ..." (`calibration-0b-ready-line.png`), and, new, after the edited row's Apply
+the hint names score (`calibration-2-row-changed.png`). A probe run of both on the code before (the sources as at HEAD,
+put back after, their sums compared) failed exactly the checks that read the changed words: 10 of 33 in
+`calibration_save_check` - its four new set-up steps (the line's presses apply and send nothing, one Undo, the line back
+after a reload) pass there - and 3 of 54 in `calibration_check`. Then the scripts that draw a calibration run's Run
+status or the line, on the final source, all passed the first time: `calibration_check` 54, `run_control_check` 181 (its
+live Calibration, whose block now works out the plan before it returns early), `training_tab_check` 139,
+`run_list_check` 184, `task_save_check` 93, `calibration_save_check` 33, `callouts_check` 8. One flake, in a run of the
+same seven on the first form of the change: `task_save_check` stopped after 33 checks with "the DevTools session closed
+(its window went away)" in its task file window (SIF-93's part, not touched here), and passed 93 alone. The other
+scripts draw neither the line nor the block and were not run.

@@ -59,13 +59,23 @@ const limitText = (row: Json) => row.lower != null && row.upper != null ? `${si(
 function Calibration({ value, live, config, setConfig }: { value: Json; live: boolean; config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
   const result: Json = value.result, request: Json = value.request ?? {};
   const [said, setSaid] = useState<string | null>(null);                      // what "Apply and save" answered, for this result
-  useEffect(() => setSaid(null), [result?.run_id]);
+  // Apply only pressed here (branch record SIF-138): while the page holds the values, the hint says how this task is updated
+  // with them. Not after a save, a reload or values held before: the task may hold them, and Undo may not take them back.
+  const [appliedOnly, setAppliedOnly] = useState(false);
+  useEffect(() => { setSaid(null); setAppliedOnly(false); }, [result?.run_id]);
+  const { rows, scales, alpha, alphaNow, otherTask, pending, proposals, what, afterApplied, saves, apply } = calibrationPlan(result, config);
+  useEffect(() => { if (pending) setAppliedOnly(false); }, [pending]);
   if (!result) return <div className="calibration"><h4>Calibration</h4><p className="hint">{live
     ? `${request.random_only ? "" : "After the baseline, "}${request.designs} random designs are simulated; the proposals appear here when the run has ended.`
     : 'This run ended without a calibration result.'}</p></div>;
   const designs: Json = result.designs ?? {};
-  const { rows, scales, alpha, alphaNow, otherTask, pending, proposals, what, afterwards, saves, apply } = calibrationPlan(result, config);
-  const applyAndSave = () => { setConfig(apply); setSaid(`Applied ${what}, as one Undo step.${savingText(requestTaskSave(config.circuit.task_id))}`); };
+  const applyAndSave = () => { setConfig(apply); setAppliedOnly(false); setSaid(`Applied ${what}, as one Undo step.${savingText(requestTaskSave(config.circuit.task_id))}`); };
+  // Rows whose Scale Apply cannot write, their limits changed after the run (branch record SIF-138): "The page holds these
+  // values." stood beside a proposed Scale the page does not hold, and nothing said how to get one for the new limits.
+  const unwritten: string[] = rows.filter(r => r.proposed_scale != null && !r.same && r.target).map(r => r.metric_id);
+  const held = !unwritten.length ? 'The page holds these values.'
+    : `The page holds the values Apply can write. The Scale of ${unwritten.join(', ').replace(/, (?=[^,]*$)/, ' and ')} is not applied: ${unwritten.length === 1
+      ? 'its limits changed after the run; a new Calibration proposes one for them' : 'their limits changed after the run; a new Calibration proposes one for each'}.`;
   return <div className="calibration">
     <h4>Calibration <span className="hint">from this run's random designs: {designs.scored} of {designs.simulated} gave a reward, {designs.passing} pass{designs.passing === 1 ? 'es' : ''} every hard spec</span></h4>
     {result.status !== 'calibrated' && <p className="warn">Nothing is proposed. {result.reason}</p>}
@@ -96,15 +106,15 @@ function Calibration({ value, live, config, setConfig }: { value: Json; live: bo
       {saves ? <>
           <button className="primary" onClick={applyAndSave}
             title={`Apply and save: Writes ${what} into the page, as one Undo step, ${APPLY_AND_SAVE}`}>Apply and save</button>
-          <button onClick={() => { setSaid(null); setConfig(apply); }}
+          <button onClick={() => { setSaid(null); setAppliedOnly(true); setConfig(apply); }}
             title="Apply only: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into the RL model's Advanced, as one Undo step. Nothing is simulated and no task is saved. Use Apply and save to update this task, or Save as for a new task.">Apply only</button></>
         : <button disabled={!pending || otherTask} onClick={() => setConfig(apply)}
             title="Apply calibration: Writes the proposed Scale into those Specs rows and the proposed Initial alpha into the RL model's Advanced, as one Undo step. Nothing is simulated and no task is saved.">Apply calibration</button>}
       <span className="hint">{otherTask ? `Apply waits until the page holds ${result.task_key}.`
         : !proposals ? 'There is nothing to apply.'
-        : !pending ? `The page holds these values.${said ? '' : afterwards}`
+        : !pending ? `${held}${appliedOnly ? afterApplied() : ''}`
         : saves ? `Sets ${what}, as one Undo step; Apply and save also saves the task, so it can start.`
-        : `Sets ${what}, as one Undo step.${afterwards}`}</span>
+        : `Sets ${what}, as one Undo step.`}</span>
     </div>
     {said && <p className="hint calibration-said" role="status">{said}</p>}
   </div>;

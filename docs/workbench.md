@@ -2427,13 +2427,22 @@ task's next revision, the cell in Virtuoso is written to match and read back (ab
 progress and its answer are where Save task's always are, under the editors' tabs. A change of Scale alone keeps the
 recorded baseline. **Apply only** beside it applies and leaves the save to you. When Save task cannot start - another
 save is running, no connection is chosen - Apply and save still applies and says why. A task that is not saved from a
-cell (an ngspice task) keeps the one button, Apply calibration.
+cell (an ngspice task) keeps the one button, Apply calibration. Once the page holds the Scale, Apply and save is no
+longer offered - only a greyed Apply calibration stands - and Save as always makes a new task: the one way to update
+this task is **Undo, then Apply and save**, and the page says so after Apply only and after a save that could not
+start (branch record SIF-138: it said "Use Apply and save" and "try Apply and save again", a button that was not there).
+Run status says it beside the button only after its own Apply only: not after a save of the task, nor after a reload
+(Undo does not reach back past one) or for values the page held before. An Initial alpha still to apply beside Scales
+the page holds gets Apply calibration alone, and its words name no Apply and save either.
 
 **When the run has ended, the header says so** (record 7.204, user: "build the prompt when the run finishes"). A line
-of its own under the header reads, for example, *Calibration ready for real:mscr_ota7t: gain_vv 260 V/V · ugbw_hz
-11 MHz · pm_deg 9.6 deg · ibias_a 280 uA*, with **Apply and save**, **Apply only** and **Not now** (a task not saved
-from a cell: **Apply calibration** and **Not now**). The buttons there do what those in Run status do - the same code,
-one Undo step - and the page then says what was applied and that the save is running, or why it could not start.
+of its own under the header reads, for example, *Calibration ready for real:mscr_ota7t: Scale of gain_vv 260 V/V ·
+Scale of ugbw_hz 11 MHz · Scale of pm_deg 9.6 deg · Scale of ibias_a 280 uA*, each Scale named one (branch record
+SIF-138: "osc_frequency_hz 100 MHz" beside a 1.1 to 1.3 GHz Specs row read as a measured frequency), with **Apply and
+save**, **Apply only** and **Not now** (a task not saved from a cell: **Apply calibration** and **Not now**). The buttons
+there do what those in Run status do - the same code, one Undo step - and the page then says what was applied and that
+the save is running, or why it could not start; after Apply only, or a save that could not start, that Undo, then Apply
+and save under Run status of that run, updates the task - the line goes with any answer.
 Not now changes nothing; the proposals stay in Run status. While that table is out of view - the bottom tabs on another
 run or another tab, or the panel folded - the line also has **Show table**, which shows Run status of this run with the
 panel open; it changes nothing else (branch record SIF-105: the line said "The table is under Run status", and once the
@@ -2479,10 +2488,12 @@ away and changes nothing. Nothing is applied by itself.
   folder. (The seven Baseline simulations of 2026-10-05 are such runs: one under record 7.197's rule, six under an
   unreleased state of this record that cut every window to half its width.)
 - **Apply writes only what still fits.** A Specs row whose limits or unit were changed after the run is marked "not
-  applied", and a run of another task than the one on the page offers nothing. Such a run is not compared with the
-  page's rows at all (record 7.214: an LDO's `pm_deg` used to stand as the "Scale now" of an OTA's): a line names both
-  tasks, the table shows **Scale in the run** and the Initial alpha the run had, and Apply waits until the page holds
-  the run's task (choose it in the Tasks window).
+  applied"; once the page holds the rest, the words beside Apply name such rows: "The page holds the values Apply can
+  write. The Scale of score is not applied: its limits changed after the run; a new Calibration proposes one for them."
+  (branch record SIF-138: they said "The page holds these values."). A run of another task than the one on the page
+  offers nothing. Such a run is not compared with the page's rows at all (record 7.214: an LDO's `pm_deg` used to stand
+  as the "Scale now" of an OTA's): a line names both tasks, the table shows **Scale in the run** and the Initial alpha
+  the run had, and Apply waits until the page holds the run's task (choose it in the Tasks window).
 - **From a script:** `POST /api/runs/start` takes `calibration_only: true` with `calibration_designs` (1 to 500).
   The result is `calibration.json` and `calibration` in run status, with `random_only: true` in its request. It cannot
   also request `baseline_only`. The historical combined API remains available for existing scripts.

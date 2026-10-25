@@ -9,7 +9,9 @@
 // Branch record SIF-105: the line's "Show table" while the table is out of view (another tab, the panel folded, the tabs on
 // another run), never while it is in view. Branch record SIF-112: a calibration that proposes nothing says why on the line,
 // whose one button is the close mark (an X, "OK" before). Branch record SIF-137: its steering line says the run does not
-// train, where it read "no update yet".
+// train, where it read "no update yet". Branch record SIF-138: the line calls each proposal a Scale ("Scale of score ..."),
+// and with the alpha applied beside a row whose limits changed, the block names the Scale it could not write and how to
+// get one, where it said "The page holds these values.".
 // Record 7.217: an Initial alpha is proposed only when it differs from the one the run had by a factor of 2 or more - the
 // second run here starts from the first run's applied value, so whether it proposes one follows that rule ("Apply and
 // save", for a task saved from a Virtuoso cell, is in calibration_save_check.mjs).
@@ -89,8 +91,8 @@ await runChecks(browser, async () => {
   const scale = row.proposed_scale, alpha = result.initial_alpha.proposed;
 
   // ---- the line under the header: Calibration ready (record 7.204) ---------------------------------------------------------
-  check('when the run has ended, a line under the header says the calibration is ready, with the values and both buttons', await until(`!!(${READY})`, 100)
-    && (await evaluate(`${READY}.querySelector('span').textContent`)).startsWith(`Calibration ready for synthetic:gpdk045_ota5: score ${scale} \u00b7 Initial alpha ${alpha}. Proposed from 64 random designs; nothing has changed yet.`)
+  check('when the run has ended, a line under the header says the calibration is ready, with the values - each Scale named one (SIF-138) - and both buttons', await until(`!!(${READY})`, 100)
+    && (await evaluate(`${READY}.querySelector('span').textContent`)).startsWith(`Calibration ready for synthetic:gpdk045_ota5: Scale of score ${scale} \u00b7 Initial alpha ${alpha}. Proposed from 64 random designs; nothing has changed yet.`)
     && await evaluate(`!!(${readyButton('Apply calibration')}) && !!(${readyButton('Not now')})`), await evaluate(`${READY}?.textContent`));
   const rowB = await oneRow();
   check('...and above it the title block, Save now, the Next line, Start and Abort keep one row (SIF-136: three went to a second row)', rowB.ok && rowB.line !== null, JSON.stringify(rowB));
@@ -138,6 +140,9 @@ await runChecks(browser, async () => {
   config = await stored();
   check('...and leaves the edited row alone', config.targets[0].normalization_scale === 1 && config.targets[0].lower === 0.9 && config.run.advanced.initial_alpha === alpha,
     JSON.stringify({ scale: config.targets[0].normalization_scale, lower: config.targets[0].lower, alpha: config.run.advanced.initial_alpha }));
+  // SIF-138: the hint read "The page holds these values." beside the proposed Scale the page does not hold.
+  check('...and the block names the Scale it could not write and how to get one, Apply at rest', (await evaluate(HINT)) === 'The page holds the values Apply can write. '
+    + 'The Scale of score is not applied: its limits changed after the run; a new Calibration proposes one for them.' && await evaluate(`${APPLY}.disabled`), await evaluate(HINT));
   await page.shot(path.join(out, 'calibration-2-row-changed.png'), `document.querySelector('footer')`);
 
   // ---- the next Baseline simulation asks again, and Apply calibration in the line does what the block's button does ---------
@@ -153,7 +158,7 @@ await runChecks(browser, async () => {
   check('an Initial alpha is proposed only when the estimate differs from the one the run had by a factor of 2 or more (7.217)', used2 === alpha && typeof estimate2 === 'number'
     && (alpha2 === null) === close2 && (alpha2 === null ? /^Not proposed: the estimate is .* within a factor of 2 of the .* in use\. The value in use stays\.$/.test(second.initial_alpha.note) : alpha2 === estimate2),
     JSON.stringify(second?.initial_alpha));
-  const values2 = `score ${scale2}${alpha2 === null ? '' : ` \u00b7 Initial alpha ${alpha2}`}`, what2 = `the Scale of 1 Specs row${alpha2 === null ? '' : ' and Initial alpha'}`;
+  const values2 = `Scale of score ${scale2}${alpha2 === null ? '' : ` \u00b7 Initial alpha ${alpha2}`}`, what2 = `the Scale of 1 Specs row${alpha2 === null ? '' : ' and Initial alpha'}`;
   check('its line comes up, although the first run\'s was answered', await until(`!!(${readyButton('Apply calibration')})`, 150)
     && (await evaluate(`${READY}.querySelector('span').textContent`)).startsWith(`Calibration ready for synthetic:gpdk045_ota5: ${values2}. Proposed from 64 random designs`), await evaluate(`${READY}?.textContent`));
   check('a task that is not saved from a Virtuoso cell keeps the one button: no Apply and save', await evaluate(`!(${readyButton('Apply and save')}) && !(${readyButton('Apply only')})`));

@@ -24,7 +24,11 @@ export function useCalibrationOffer({ control, config, setConfig, setMessage }: 
     const dir = control.dir;
     if (!dir || !calibrationOffer) return;
     if (how !== 'no') setConfig(calibrationOffer.apply);
-    const after = how === 'save' ? savingText(requestTaskSave(config.circuit.task_id)) : calibrationOffer.afterwards;
+    // How this task is updated once the page holds the Scale (branch record SIF-138), with the place of Apply and save: the
+    // line goes with any answer. Said after Apply only (`saves`), not after Apply calibration, which writes no Scale that
+    // a save of this task would need.
+    const where = ' under Run status of that run';
+    const after = how === 'save' ? savingText(requestTaskSave(config.circuit.task_id), where) : calibrationOffer.saves ? calibrationOffer.afterApplied(where) : '';
     setCalibrationAnswered(dir);
     keep(s => s.setItem(CALIBRATION_ANSWERED_KEY, dir));   // a private window: asked again after a reload
     if (calibrated.status === 'calibrated') setMessage({ level: 'info', text: how !== 'no' ? `Calibration applied: ${calibrationOffer.what}, as one Undo step.${after}`

@@ -5846,7 +5846,8 @@ netlist...".
 filter pass: a blocked task's mark reads "[blocked: <its blocker>]" - "[blocked: FIXTURE: the connection file names no
 library for it]" -, and a mark's tooltip is the whole blocker, an ngspice task's too. The Task column's help says "(the
 whole reason on hover)". `TaskListButton` takes `currentMarkTitle`, the tooltip of the tab line's mark, which keeps
-"[blocked]": the "Blocked: <reason>" line under the toolbar says why in view. `frontend/src/roadster.css`: the list's
+"[blocked]": for a task that cannot be loaded, the "Blocked: <reason>" line under the toolbar says why in view (the
+review follow-up below). `frontend/src/roadster.css`: the list's
 amber mark takes two lines at most, cut with "...", and 32 characters' width at most, so a reason as long as a
 connection file's path leaves the Task column as wide as the fixture's does (about 200 px; 175 px before); the
 SIF-107/108 rules for a line with its action at its end cover `.task-status > .line-act`, the task's lines being drawn
@@ -5901,3 +5902,22 @@ the sources as at HEAD (put back after, their sums compared) failed exactly the 
 of 106, 3 of 46 and 2 of 17; there the Task column was 175 px wide and the long reason took five lines. After the probe
 the ngspice press reads the line with `?.`, so a missing line fails its check instead of stopping the script, and two
 comments were reworded: the six scripts again on the final source, all passed the first time, the same counts.
+
+**Review follow-up.** The review of 0d6db53 found two slips; both are real. (1) The reason given here for the tab line's
+bare "[blocked]" - the "Blocked:" line under the toolbar says why - holds only for a task that cannot be loaded: that line
+(Left.tsx) is drawn only when the load fails. A Maestro task saved before such tasks could run is listed blocked (tasks.py
+`list_tasks`, `MAESTRO_NOT_RUNNABLE`) and loads all the same (`_generated_runtime`; only a run of it is refused), so its
+reason was on the mark's hover and among the circuit's notes, folded in the circuit column, and nowhere else. The comment
+(TaskList.tsx `taskMark`), `docs/workbench.md` and "Changed" above now say so. The chip keeps its bare mark: it is one
+line of 420 px at most, cut with "...", where the reason would end after a few words; it is whole on hover. (2) The
+netlist note named "a Virtuoso cell" whatever the connection, while with an ngspice connection in use the Tasks window's
+New task row has no "From a Virtuoso cell..." (taskActions.ts `showVirtuoso`): `frontend/src/panels/Left.tsx` names it
+only while that window offers it, as the note already did for the ngspice way; `docs/workbench.md` says it. Only words:
+nothing starts, continues or stops a run, saves a task or writes to Virtuoso, and every question is as before. `tsc`
+clean. One lane, after the memory guard: `circuit_source_check` 19 (17 before). New: the page loaded again with the saved
+configuration and a fixture connection in use - with an ngspice one the note reads "... choose a task in the Tasks window
+(the task's name on this tab line). A SPICE deck for ngspice can become a task there: New task, From an ngspice
+netlist..." and names no Virtuoso cell (`source-3-ngspice-connection.png`); with a Virtuoso one it names the Virtuoso
+cell and not the deck; neither page asks to load a circuit. A probe run on Left.tsx as at 0d6db53 (put back after, its sum
+compared) failed exactly the ngspice one, 1 of 19. On the final source, before the probe and again after it, all passed
+the first time: `circuit_source_check` 19, `task_list_check` 106, `ngspice_window_check` 46.

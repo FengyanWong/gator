@@ -602,8 +602,9 @@ User: "make the loaded task a button similar to the runs... button style. It ope
 The task's name starts the editors' tab line, one button followed by its revision and whether the rows are saved (record
 7.362; until then the Project column's **Task** row) (`mscr_ota5t`,
 with a mark when something keeps it from running: `[blocked]`, `[ngspice: choose its
-connection]`, `[MOCK]`, the reason in the mark's tooltip (branch record SIF-139) and, for a blocked task, in the
-"Blocked:" line under the toolbar; or a placeholder: "(choose a task)", "(none: MScR/x is read from Virtuoso)", "(none:
+connection]`, `[MOCK]`, the reason in the mark's tooltip (branch record SIF-139) and, for a task that cannot be loaded, in
+the "Blocked:" line under the toolbar - one that loads all the same, a Maestro task saved before such tasks could run, has
+it among the circuit's notes; or a placeholder: "(choose a task)", "(none: MScR/x is read from Virtuoso)", "(none:
 the saved source was removed)", "synthetic:vco (removed)"). There is no separate **Tasks...** button beside the name.
 Pressing the name opens the **task window**, a browser window of its own that can stay open next
 to the workbench (allow pop-ups for the page if the browser blocks it). It lists every registered task, one row each:
@@ -1118,8 +1119,9 @@ then shows no task ("the saved source was removed") and a note names the saved f
 from it and a run cannot start from it (the backend answers "The workbench no longer imports Spectre
 netlist files..."). Choosing a task also drops the two file paths from the configuration. The note says the same in the
 backend's words - Spectre netlist files (.scs) only, where it read "no longer imports netlists" beside the Tasks window's
-**From an ngspice netlist...** - and, while that way is offered, that a SPICE deck for ngspice can become a task there
-(branch record SIF-139).
+**From an ngspice netlist...** - and names each way to a new task only while that window offers it: a Virtuoso cell, and
+that a SPICE deck for ngspice can become a task there (branch record SIF-139 and its review: with an ngspice connection in
+use the note still named the Virtuoso cell).
 
 Netlists as such are still used: the MOCK task is the OTA5's netlist, and a Virtuoso cell is read
 through Virtuoso's own netlist export. The best design is written as `optimized_dut.scs` only when

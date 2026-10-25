@@ -336,9 +336,11 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
   </>, taskTools);
   const status = taskStatus && createPortal(<>
     {/* Spectre netlist files only, as the backend's refusal says (states audit of 2026-10-24, branch record SIF-139): "no longer
-        imports netlists" stood beside the Tasks window's "From an ngspice netlist...", which that way names. */}
+        imports netlists" stood beside the Tasks window's "From an ngspice netlist...", which that way names. Each way to a new
+        task is named only while that window offers it (review of SIF-139: the Virtuoso cell was named with an ngspice
+        connection in use, whose New task row has no "From a Virtuoso cell..."). */}
     {!offered && <div className="note"><p>This configuration was saved with a Spectre netlist file{ref.netlist_path ? <> (<code>{ref.netlist_path}</code>)</> : null}.
-      The workbench no longer imports Spectre netlist files (.scs): choose a task or a Virtuoso cell in the Tasks window (the task's name on this tab line).
+      The workbench no longer imports Spectre netlist files (.scs): choose a task{showVirtuoso ? ' or a Virtuoso cell' : ''} in the Tasks window (the task's name on this tab line).
       {showNgspice ? ' A SPICE deck for ngspice can become a task there: New task, From an ngspice netlist...' : ''}</p></div>}
     {/* No task yet (record 7.372): the ways to one, here, instead of a lone "(choose a task)" on the tab line. */}
     {ref.source === 'registered_task' && !ref.task_id && <div className="task-start">

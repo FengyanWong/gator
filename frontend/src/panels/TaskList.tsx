@@ -37,8 +37,10 @@ export const shownName = (t: Json | null | undefined, key = t?.task_key ?? '') =
 const renamed = (t: Json) => typeof t.name === 'string' && t.name !== ownName(t.task_key);
 /** The mark the old list put after a task's name: what keeps it from running right now. `withReason`: the Tasks list's, where a
  *  blocked task says why (states audit of 2026-10-24, branch record SIF-139): with a connection problem every saved task read a
- *  bare "[blocked]", its reason only in Details. The tab line's chip keeps "[blocked]": the "Blocked:" line under the editors'
- *  toolbar says why there. */
+ *  bare "[blocked]", its reason only in Details. The tab line's chip, one line of 420 px at most, keeps "[blocked]" with the
+ *  reason on hover; for a task that cannot be loaded the "Blocked:" line under the editors' toolbar says why as well (review of
+ *  SIF-139: a Maestro task saved before such tasks could run loads all the same and has no such line, its reason being among
+ *  the circuit's notes). */
 export const taskMark = (t: Json, ngspiceOffered: boolean, withReason = false) => t.kind === 'mock' ? '[MOCK]'
   : t.kind === 'ngspice' ? (t.available && ngspiceOffered ? '[ngspice]' : '[ngspice: choose its connection]')
   : t.available ? '' : withReason && t.blocker ? `[blocked: ${t.blocker}]` : '[blocked]';

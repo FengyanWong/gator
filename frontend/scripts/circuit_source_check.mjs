@@ -9,13 +9,15 @@
 // What it pins: a saved configuration that still names the netlist source shows no task chosen, says so in plain words -
 // under the editors' toolbar with the task's other lines since record 7.362 (the user's Option D; the Project column until
 // then), the circuit column empty - and sends NOTHING about it to the backend; choosing a task drops the two file paths (in
-// the browser's saved copy too) and loads normally; Undo brings the old state back without a request. (Until 7.53 this
-// script checked the netlist form itself: 21 checks, status record 7.13; until 2026-09-23 the Source list.)
+// the browser's saved copy too) and loads normally; Undo brings the old state back without a request; and the note names a
+// way to a new task only while the Tasks window offers it, by the connection in use (a fixture list there; review of
+// SIF-139). (Until 7.53 this script checked the netlist form itself: 21 checks, status record 7.13; until 2026-09-23 the
+// Source list.)
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/circuit_source_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
 import path from 'node:path';
-import { check, CIRCUIT_PANEL, launchEdge, outDir, runChecks, sleep, TASK_PANEL, taskWindow, workbenchUrl, CONFIG_KEY } from './lib/harness.mjs';
+import { check, CIRCUIT_PANEL, launchEdge, outDir, PAGE_OPEN_TEST, runChecks, sleep, TASK_PANEL, taskWindow, workbenchUrl, CONFIG_KEY } from './lib/harness.mjs';
 
 const APP = await workbenchUrl();
 const out = outDir();
@@ -32,8 +34,18 @@ await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, until, consoleErrors } = page;
   const loads = []; const refused = [];
+  // The connection list: the backend's own (it has none) until the part about the connection in use, then a fixture of one
+  // connection of each family (review of SIF-139); the page's test of the one in use when it opens is answered, nothing probed.
+  let connections = null, profilesSeen = 0;
+  const profilesAnswer = () => ({ active: null, connection_file: 'FIXTURE', connection_file_exists: true,
+    kinds: [{ kind: 'virtuoso_ssh', family: 'virtuoso', transport: 'ssh', label: 'Virtuoso over SSH', summary: '' },
+      { kind: 'ngspice_local', family: 'ngspice', transport: 'local', label: 'ngspice on this machine', summary: '' }],
+    profiles: connections.map(c => ({ profile_id: c.id, bridge_profile: null, kind: c.kind, kind_declared: true, family: c.family, transport: 'ssh', kind_label: c.kind, settings_present: ['kind'] })) });
   const answer = ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
+    if (name === '/api/connection/profiles') { profilesSeen++; if (connections) return page.fulfil(requestId, 200, profilesAnswer()); }
+    if (connections && name === '/api/connection/status') return page.fulfil(requestId, 200, { profile_id: null, overall: 'unknown', layers: [], stale: true });
+    if (connections && name === '/api/connection/check') return page.fulfil(requestId, 200, PAGE_OPEN_TEST(JSON.parse(request.postData ?? '{}').profile_id ?? null));
     if (name === '/api/circuit/load') {
       const circuit = JSON.parse(request.postData ?? '{}').circuit ?? {};
       loads.push(circuit);
@@ -126,6 +138,34 @@ await runChecks(browser, async () => {
   check('Undo: the saved netlist source is back, shown as none, and nothing is sent', (await tw.current()) === '(none: the saved source was removed)'
     && (await lines()).includes('This configuration was saved with a Spectre netlist file') && loads.length === mark && !(await circuitText()).includes('Hierarchy ('),
     `${loads.length - mark} request(s)`);
+
+  // ---- the note names only the ways to a new task that the Tasks window offers (review of SIF-139) ------------------------------
+  // With an ngspice connection in use that window's New task row has no "From a Virtuoso cell...", with a Virtuoso one no "From
+  // an ngspice netlist..." (taskActions.ts; ngspice_window_check pins the row): the note named the Virtuoso cell whatever the
+  // connection. The page is loaded again with the saved configuration and that connection in use.
+  connections = [{ id: 'fixture-lab', kind: 'virtuoso_ssh', family: 'virtuoso' }, { id: 'fixture-sim', kind: 'ngspice_local', family: 'ngspice' }];
+  const NOTE = `([...(${STATUS}?.querySelectorAll('.note') ?? [])].find(n => n.textContent.includes('saved with a Spectre netlist file'))?.textContent ?? '')`;
+  // `goes`: the words the connection's kind takes out of the note, read once the page knows its connection (until then
+  // both ways show); a note that keeps them is read after 5 s.
+  const noteWith = async (id, goes) => {
+    await page.seed({ config: { ...CONFIG, run: { ...CONFIG.run, connection_profile_id: id } } });
+    const asked = profilesSeen;
+    await send('Page.navigate', { url: APP });
+    await until(OPENED, 150);
+    for (let i = 0; i < 50 && profilesSeen === asked; i++) await sleep(100);
+    await until(`(t => !!t && !t.includes(${JSON.stringify(goes)}))(${NOTE})`, 50);
+    return evaluate(NOTE);
+  };
+  mark = loads.length;
+  const onNgspice = await noteWith('fixture-sim', 'or a Virtuoso cell');
+  check('with an ngspice connection in use the note names no Virtuoso cell, which the Tasks window then does not offer, and keeps the deck for ngspice (review of SIF-139)',
+    onNgspice.includes('The workbench no longer imports Spectre netlist files (.scs): choose a task in the Tasks window (the task\'s name on this tab line). '
+      + 'A SPICE deck for ngspice can become a task there: New task, From an ngspice netlist...') && !onNgspice.includes('Virtuoso'), onNgspice.slice(0, 400));
+  await shot('source-3-ngspice-connection.png');
+  const onVirtuoso = await noteWith('fixture-lab', 'SPICE deck for ngspice');
+  check('...with a Virtuoso connection it names the Virtuoso cell and not the deck for ngspice, which that window then does not offer; neither page loads anything',
+    onVirtuoso.includes('The workbench no longer imports Spectre netlist files (.scs): choose a task or a Virtuoso cell in the Tasks window (the task\'s name on this tab line).')
+    && !onVirtuoso.includes('ngspice') && loads.length === mark, JSON.stringify([onVirtuoso.slice(0, 400), loads.length - mark]));
 
   check('the page asked nothing else of the backend (every request besides reads is refused here)', refused.length === 0, refused.join(' | '));
   check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | ').slice(0, 300));

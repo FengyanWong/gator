@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Json } from '../api';
 import { BLOCKING_ISSUES_ID, BLOCKING_LEVELS } from '../contract';
 import { plural } from '../format';
-import { columnOf, drawsColumn, fieldLabel, type Section, SECTION_TITLES } from './editorRules';
+import { columnOf, drawsColumn, fieldLabel, placeOf, type Section, SECTION_TITLES } from './editorRules';
 import { Icon } from './Icons';
 
 const BLOCKING = BLOCKING_LEVELS;
@@ -34,6 +34,10 @@ function chosenCell(row: { section: Section; field: string | null }, schema: Jso
   return row.field ? `${id}, as no column shows its ${fieldLabel(row.section, row.field)}` : id;
 }
 
+/** The issue's field in the configuration and the check's code, on its Where's hover (branch record SIF-141): the list showed
+ *  them in view, the code in a column of its own and the field as the Where, until it named the place in words. */
+const fieldAndCode = (issue: Json): string => `${issue.path ? `Field ${issue.path}, check` : 'Check'} ${issue.code}.`;
+
 /** Validation state in the header. Blocking issues are a BUTTON: a press lists every one of them in full. Before,
  *  they were only counted there, and an issue outside the three editor tabs (run, output, research, a rejected
  *  configuration) was shown nowhere. The list follows each validation and stays open while issues are being fixed;
@@ -42,7 +46,9 @@ export function ValidationStatus({ validation, config, schema }: { validation: J
   const [open, setOpen] = useState(false);
   const blocked = !!validation?.blocks_run;
   useEffect(() => { if (!blocked) setOpen(false); }, [blocked]);
-  if (!blocked) return <span className="ok">{validation ? 'configuration valid' : 'validating...'}</span>;
+  // Until the first answer the words are grey and have no tick (branch record SIF-141): drawn as span.ok, "validating..."
+  // wore the look's done tick on every page open.
+  if (!blocked) return validation ? <span className="ok">configuration valid</span> : <span className="hint validating">validating...</span>;
   const blocking: Json[] = (validation.issues ?? []).filter((i: Json) => BLOCKING.includes(i.level));
   // "1 blocking issue", "3 blocking issues" - it read "1 blocking issue(s)" (branch record SIF-45).
   const count = plural(blocking.length, 'blocking issue');
@@ -59,17 +65,21 @@ export function ValidationStatus({ validation, config, schema }: { validation: J
       <div className="issue-list-body"><table className="grid small">
         <thead><tr><th title="Order of the validation report">#</th>
           <th title="error: the configuration is inconsistent. blocker: consistent, but the current backend cannot execute it.">Level</th>
-          <th title="Stable identifier of the check">Code</th><th title="Field of the configuration, and the key of its row in the editor: press a row's to go there">Where</th>
+          <th title="Where to put it right, in the words of the editor or window that holds it - the field of the configuration and the check's code on hover; a row's place is a button that goes there">Where</th>
           <th title="What is wrong and what resolves it">Message</th></tr></thead>
         <tbody>{blocking.map((issue: Json, n: number) => {
-          const row = rowOf(issue.path ?? '', validation.sent ?? config, schema);   // the row of the configuration the report is about (App.tsx `sent`)
-          const where = <><code>{issue.path || '(whole configuration)'}</code>{row && <span className="hint"> row {row.key}</span>}</>;
-          // A row's place is a button that goes there (branch record SIF-95), in the words it had; the list stays open, a
-          // checklist (record 7.12). A run or output field stays text: the editors do not show it.
-          return <tr key={n}><td className="numeric">{n + 1}</td><td className="issue error">{issue.level}</td><td>{issue.code}</td>
+          const sent = validation.sent ?? config;                     // the configuration the report is about (App.tsx `sent`)
+          const row = rowOf(issue.path ?? '', sent, schema);
+          // The place in the editors' and windows' words (branch record SIF-141): "Parameters · input_pair_width · Lower", "RL
+          // model window · Network", where it read "parameters[0].lower row input_pair_width" and "run.network", beside a Code
+          // column; the field and the code are on hover, the code also the row's data-code.
+          const where = placeOf(issue.path ?? '', sent, schema?.section_keys ?? {});
+          // A row's place is a button that goes there (branch record SIF-95); the list stays open, a checklist (record 7.12). A
+          // run or output setting stays text: the editors do not show it.
+          return <tr key={n} data-code={issue.code}><td className="numeric">{n + 1}</td><td className="issue error">{issue.level}</td>
             <td>{row ? <button type="button" className="item-link issue-go" onClick={() => window.dispatchEvent(new CustomEvent(GO_TO_ISSUE, { detail: row }))}
-              title={`Go to ${row.key}: ${SECTION_TITLES[row.section] ?? row.section} opens with ${chosenCell(row, schema, config)}. The list stays open.`}>
-              {where}</button> : where}</td>
+              title={`Go to ${row.key}: ${SECTION_TITLES[row.section] ?? row.section} opens with ${chosenCell(row, schema, config)}. The list stays open.\n${fieldAndCode(issue)}`}>
+              {where}</button> : <span title={fieldAndCode(issue)}>{where}</span>}</td>
             <td>{issue.message}{issue.technical && <details className="more"><summary>Technical details</summary><code>{issue.technical}</code></details>}</td></tr>;
         })}</tbody></table></div>
     </div>}

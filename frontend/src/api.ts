@@ -2,6 +2,7 @@
 // C10): the number formatters to format.ts (si to units.ts), the shared cached reads to shared.ts.
 // The browser never sends hosts, ports, commands or arbitrary paths: the backend has no such fields.
 import type { ModelReply, RunSummary, TaskStarter, TaskSummary, WorkbenchConfig } from './contracts';
+import { placeOf } from './panels/editorRules';
 
 export type Json = any;
 /** What a folder holds (record 7.263): tasks (by task key), runs and saved models (both by run folder). */
@@ -204,12 +205,14 @@ export const problemText = (e: any, gateText?: (gate: Json) => string): string =
   : e.detail?.gate && gateText ? gateText(e.detail.gate) : schemaProblem(e) ?? e.message;
 /** A configuration the backend cannot read (HTTP 422 naming its fields, backend schema.describe_errors): said field by
  *  field, and where to fix it. "The configuration does not match the schema" alone left the reader guessing (user report
- *  2026-09-30: Matched devices on real:mscr_ldo1_rgcn). */
+ *  2026-09-30: Matched devices on real:mscr_ldo1_rgcn). Each field by its place in the editors' and windows' words, as the
+ *  header's list names it (branch record SIF-141: it read "run.max_evaluations: ..."); a row as "row N", as no configuration
+ *  here names its ID. editorRules.ts imports this file for its types only. */
 export function schemaProblem(e: any): string | null {
   const errors: Json[] = Array.isArray(e?.detail?.errors) ? e.detail.errors : [];
   if (!errors.length) return null;
   const them = errors.length === 1 ? 'it' : 'them';
-  return `The configuration is not valid yet, so this cannot be done: ${errors.slice(0, 3).map(x => `${x.path || 'the configuration'}: ${String(x.message ?? '').replace(/\.\s*$/, '')}`).join('; ')}`
+  return `The configuration is not valid yet, so this cannot be done: ${errors.slice(0, 3).map(x => `${placeOf(String(x.path ?? ''), null, {})}: ${String(x.message ?? '').replace(/\.\s*$/, '')}`).join('; ')}`
     + `${errors.length > 3 ? `; and ${errors.length - 3} more` : ''}. Put ${them} right first - the red blocking-issues button in the header lists ${them} too.`;
 }
 /** A failed request in plain words: the backend's own sentence, or - when no answer came at all ("Failed to fetch") -

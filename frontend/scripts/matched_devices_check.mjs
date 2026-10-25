@@ -42,7 +42,8 @@ await runChecks(browser, async () => {
       asked.push(body);
       // The backend's own 422 for a configuration it cannot read (schema.describe_errors wording).
       if (invalid) return page.fulfil(requestId, 422, { detail: { message: 'The configuration does not match the schema', errors: [
-        { path: 'run.max_evaluations', code: 'schema', message: 'max_evaluations is missing: this field needs a value.', technical: 'Field required [missing]' }] } });
+        { path: 'run.max_evaluations', code: 'schema', message: 'max_evaluations is missing: this field needs a value.', technical: 'Field required [missing]' },
+        { path: 'parameters[1].variable_id', code: 'invalid_id', message: 'FIXTURE: "w/2" cannot be an ID: it contains "/".', technical: 'FIXTURE [string_pattern_mismatch]' }] } });
       return page.fulfil(requestId, 200, verified ? VERIFIED : body.apply ? FIXTURE.shown : many ? MANY : FIXTURE.found);
     }
     if (request.method === 'GET' || name === '/api/config/validate' || name === '/api/circuit/load') return page.pass(requestId);
@@ -135,8 +136,11 @@ await runChecks(browser, async () => {
   // "The configuration does not match the schema" alone, on real:mscr_ldo1_rgcn; record 7.125).
   invalid = true;
   await press(TOOLBAR, 'Matched devices...');
-  check('a configuration that is not valid yet: the box names the field, in words, and points to the header\'s list',
-    await until(`/run\\.max_evaluations: max_evaluations is missing: this field needs a value/.test(${BOX}?.textContent ?? '') && /the red blocking-issues button in the header/.test(${BOX}?.textContent ?? '')`), await boxText());   // it said "blocking issue(s)" (branch record SIF-45)
+  // Branch record SIF-141: each field by its place in the editors' and windows' words, as the header's list names it - it read
+  // "run.max_evaluations: ..."; a row by its number, the refusal holding no configuration to name its ID by.
+  const INVALID = 'Run configuration · Evaluation budget: max_evaluations is missing: this field needs a value; Parameters · row 2 · ID: FIXTURE: "w/2" cannot be an ID';
+  check('a configuration that is not valid yet: the box names each field where it is set, in words, and points to the header\'s list',
+    await until(`(${BOX}?.textContent ?? '').includes(${JSON.stringify(INVALID)}) && /the red blocking-issues button in the header lists them/.test(${BOX}?.textContent ?? '')`), await boxText());   // it said "blocking issue(s)" (branch record SIF-45)
   await shot('matched_devices_invalid.png', BOX);
   invalid = false;
   await press(BOX, 'Close');

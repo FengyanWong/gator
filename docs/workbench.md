@@ -4508,19 +4508,31 @@ Virtuoso: the Agent window's launcher is tested with fake CLIs and fake terminal
 start script for real with a fake CLI), and the suite runs with `GATOR_AGENT_CLI_LAUNCH=off`.
 
 The header shows blocking issues as a red button, "N blocking issues": a press lists every one of
-them in full (level, code, field and editor row, message), including those that belong to no editor
-tab; the list follows each validation and closes when nothing blocks. The X at the end of its head
-line (Hide, branch record SIF-112) closes it, as a second press of the button does. A configuration the schema
+them in full (level, where, message), including those that belong to no editor tab; the list
+follows each validation and closes when nothing blocks. Until the first validation answers, the
+header reads "Validating..." in grey; the tick marks only "Configuration valid" (branch record
+SIF-141: the busy word wore it too). The X at the end of its head
+line (Hide, branch record SIF-112) closes it, as a second press of the button does. Where names the
+place in the words of the editor or window that holds it (branch record SIF-141; it showed the
+configuration's path, "targets[0].equation row inl1", "run.network", beside a Code column): a row
+by its table, its ID and its column's header ("Specs · inl1 · Equation"; "row 3" for a row without
+an ID, and the row's number after an ID two rows hold), a table's own issue as "the Parameters
+table", a run, output or research setting by the panel or window that sets it ("RL model window ·
+Network", "Run configuration · Evaluation budget", "Run configuration · Limits · Max retries per
+evaluation", "Output settings"), no field as "the whole configuration"; a path the page does not
+know stays as written. The field of the configuration and the check's code are on the Where's
+hover. A refusal of a configuration the backend cannot read - Matched devices, Save task - names
+its fields the same way, a row by its number. A configuration the schema
 cannot even read (for example an ID with a `/` in it) is listed the same way, one issue per field:
 the field and its editor row, what is wrong in plain words (for an ID: which characters, an ID that
 works, and what else must be renamed with it), and the schema's own text under a closed
 "Technical details" line; the editor marks the row (backend `schema.describe_errors`, status record
-7.56). A row's place ("targets[0].equation row inl1") is a button (branch record SIF-95): it opens
+7.56). A row's place is a button (branch record SIF-95): it opens
 that editor tab and brings the row the report names into view - clearing a Find text that hid it,
 showing More columns for a field behind them - with the issue's field chosen, so the formula bar
 names it; a field no column shows (the Unit of Parameters and Specs, Initial value) chooses the
 row's ID instead, and the button's tooltip says which cell it chooses. The list stays open. An issue
-of a table itself ("parameters": nothing to optimize) or of a row without an ID stays text. Each
+of a table itself (the Parameters table: nothing to optimize) or of a row without an ID stays text. Each
 editor tab counts its own blocking issues in a small red pill, its tooltip giving the first, so a
 Spec a renamed Probe broke shows on Specs while Parameters is open. Its browser check is
 `frontend/scripts/blocking_issues_check.mjs` (headless Edge against the running workbench; the

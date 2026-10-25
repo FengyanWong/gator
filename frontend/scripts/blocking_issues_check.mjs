@@ -55,17 +55,22 @@ await runChecks(browser, async () => {
   const refused = []; let validations = 0, answerWith = fixtures.three;
   const META = await (await fetch(new URL('api/meta', APP))).json();
   let settingsProblem = null;                                                     // the last section: /api/meta says settings.json is unreadable
+  let held = null;                                                                // while a list: the validations asked, not answered yet (the page's first)
+  const reply = requestId => answerWith.status ? fulfil(requestId, answerWith.status, answerWith.body) : fulfil(requestId, 200, answerWith);
   const answer = params => {
     const name = new URL(params.request.url).pathname;
     if (name === '/api/runs') return fulfil(params.requestId, 200, { runs: [] });
-    if (name === '/api/config/validate') { validations++; return answerWith.status ? fulfil(params.requestId, answerWith.status, answerWith.body) : fulfil(params.requestId, 200, answerWith); }
+    if (name === '/api/config/validate') { validations++; return held ? void held.push(params.requestId) : reply(params.requestId); }
     if (name === '/api/meta' && settingsProblem) return fulfil(params.requestId, 200, { ...META, settings_problem: settingsProblem });
     return page.readOrRefuse(params, refused);                                    // a panel asking on its own; never a start
   };
   const until = (expression, tries = 60) => page.until(expression, tries);
   const BUTTON = `document.querySelector('header button.issues-button')`;
   const LIST = `document.querySelector('#blocking-issues')`;
-  const rows = () => evaluate(`[...(${LIST}?.querySelectorAll('tbody tr') ?? [])].map(tr => [...tr.cells].map(td => td.textContent.trim()))`);
+  // A row's cells - #, Level, Where, Message: the Code column went in branch record SIF-141 -, then the check's code (the row's
+  // data-code) and the Where's tooltip, which gives the field and the code.
+  const rows = () => evaluate(`[...(${LIST}?.querySelectorAll('tbody tr') ?? [])].map(tr => [...[...tr.cells].map(td => td.textContent.trim()),
+    tr.dataset.code ?? null, tr.cells[2]?.querySelector('[title]')?.title ?? null])`);
   const headerButton = label => `[...document.querySelectorAll('header button')].find(b => b.textContent === ${JSON.stringify(label)})`;
   // The page validates by itself half a second after any change ("Static validation", the button that asked at once, went
   // on 2026-09-29): a change of the random seed makes it ask again, alternating between two seeds (the RL model label box did
@@ -87,7 +92,21 @@ await runChecks(browser, async () => {
 
   await page.intercept(['*/api/*'], answer);
   await page.seed({ config: CONFIG });
+  held = [];
   await send('Page.navigate', { url: APP });
+
+  // ---- branch record SIF-141: until the first validation answers, the header's words are grey and have no tick -----------
+  // "validating..." was a span.ok, the look's done tick before the busy word on every page open.
+  const VALIDATING = `document.querySelector('header > span.validating')`;
+  for (let i = 0; i < 150 && !held.length; i++) await sleep(100);
+  const busy = held.length && await until(`!!(${VALIDATING})`, 50) ? await evaluate(`(() => { const s = ${VALIDATING}, style = getComputedStyle(s), probe = document.createElement('span');
+      probe.style.color = 'var(--muted)'; document.body.append(probe); const muted = getComputedStyle(probe).color; probe.remove();
+      return { text: s.textContent, ok: s.classList.contains('ok'), tick: style.backgroundImage, color: style.color, muted, valid: !!document.querySelector('header span.ok') }; })()`) : null;
+  check('while the first validation is asked the header reads "validating..." in grey, with no tick, and no "configuration valid"',
+    busy?.text === 'validating...' && !busy.ok && busy.tick === 'none' && busy.color === busy.muted && !busy.valid, JSON.stringify({ busy, held: held.length }));
+  await shot('issues-0-validating.png');
+  const waiting = held; held = null;
+  for (const requestId of waiting) await reply(requestId).catch(() => {});      // one the page gave up meanwhile is no longer paused
   if (!(await until(`!!(${BUTTON})`, 150))) throw new Error(`the blocking-issues button never appeared (${validations} validation request(s) answered); the page reads: `
     + JSON.stringify(await evaluate(`(document.querySelector('header') ?? document.body).innerText.slice(0, 300)`)) + ' | console: ' + consoleErrors.join(' | ').slice(0, 300));
 
@@ -117,11 +136,18 @@ await runChecks(browser, async () => {
 
   // ---- ALL blocking issues, in full, and no other ---------------------------------------------------------------
   const listed = await rows();
-  check('all 3 blocking issues are listed, in report order', listed.length === 3 && listed.every((r, n) => r[0] === String(n + 1) && r[1] === BLOCKING[n].level && r[2] === BLOCKING[n].code), JSON.stringify(listed.map(r => r.slice(0, 3))));
-  check('each message is shown in full (not as a tooltip)', listed.every((r, n) => r[4] === BLOCKING[n].message), JSON.stringify(listed.map(r => r[4])));
-  check('a row issue names its field and the key of its row', listed[0]?.[3] === `parameters[0].lower row ${ROW_KEY}`, listed[0]?.[3]);
-  check('an issue outside the editor tabs is listed with its field', listed[1]?.[3] === 'run.network', listed[1]?.[3]);
-  check('an issue without a field reads "(whole configuration)"', listed[2]?.[3] === '(whole configuration)', listed[2]?.[3]);
+  check('all 3 blocking issues are listed, in report order', listed.length === 3 && listed.every((r, n) => r[0] === String(n + 1) && r[1] === BLOCKING[n].level && r[4] === BLOCKING[n].code), JSON.stringify(listed.map(r => [r[0], r[1], r[4]])));
+  check('each message is shown in full (not as a tooltip)', listed.every((r, n) => r[3] === BLOCKING[n].message), JSON.stringify(listed.map(r => r[3])));
+  // Branch record SIF-141: the place in the editors' and windows' words. It read "parameters[0].lower row <ID>", "run.network"
+  // and "(whole configuration)", the check's code in a column of its own.
+  check('a row issue names its table, the ID of its row and its column, as the editors do', listed[0]?.[2] === `Parameters · ${ROW_KEY} · Lower`, listed[0]?.[2]);
+  check('an issue outside the editor tabs names the window that sets it', listed[1]?.[2] === 'RL model window · Network', listed[1]?.[2]);
+  check('an issue without a field reads "the whole configuration"', listed[2]?.[2] === 'the whole configuration', listed[2]?.[2]);
+  const columns = await evaluate(`[...${LIST}.querySelectorAll('thead th')].map(th => th.textContent)`);
+  check('...in four columns, no Code column: each Where\'s tooltip gives the field and the check\'s code (SIF-141)',
+    JSON.stringify(columns) === JSON.stringify(['#', 'Level', 'Where', 'Message']) && JSON.stringify(listed.map(r => r[5])) === JSON.stringify([
+      `Go to ${ROW_KEY}: Parameters opens with its Lower chosen. The list stays open.\nField parameters[0].lower, check range_inverted.`,
+      'Field run.network, check heads_divisibility.', 'Check schema.']), JSON.stringify([columns, listed.map(r => r[5])]));
   check('warnings, unresolved and info lines are not listed', !OTHERS.some(o => JSON.stringify(listed).includes(o.code)));
   const box = await evaluate(`(() => { const h = document.querySelector('header').getBoundingClientRect(), l = ${LIST}.getBoundingClientRect(), m = document.querySelector('main').getBoundingClientRect();
     return { inside: l.top >= h.top && l.bottom <= h.bottom + 1, width: l.width, headerWidth: h.width, headerHeight: h.height, mainTop: m.top, headerBottom: h.bottom, overflowX: document.documentElement.scrollWidth > window.innerWidth }; })()`);
@@ -138,7 +164,7 @@ await runChecks(browser, async () => {
   // ---- it follows the next validation while it is open ---------------------------------------------------------
   await revalidate(fixtures.one);
   const after = await rows();
-  check('an open list follows the next validation (3 -> 1)', after.length === 1 && after[0][2] === 'heads_divisibility' && (await evaluate(`${BUTTON}.textContent`)) === '1 blocking issue', JSON.stringify(after));
+  check('an open list follows the next validation (3 -> 1)', after.length === 1 && after[0][4] === 'heads_divisibility' && (await evaluate(`${BUTTON}.textContent`)) === '1 blocking issue', JSON.stringify(after));
   check('a blocker alone is one blocking issue in the tooltip too', await tooltipSays('The configuration has a blocking issue: the red "1 blocking issue" button in the header lists it.'), await why());
   await shot('issues-3-one-left.png');
 
@@ -182,9 +208,9 @@ await runChecks(browser, async () => {
   const tabMark = key => evaluate(`(() => { const b = ${EDITOR_TAB(key)}, pill = b.querySelector('.tab-errors');
     return { errors: b.classList.contains('has-errors'), count: pill?.dataset.errors ?? null, text: b.textContent, title: b.title,
       pill: pill ? [getComputedStyle(pill, '::before').content, getComputedStyle(pill, '::before').backgroundColor] : null }; })()`);
-  const goes = () => evaluate(`[...${LIST}.querySelectorAll('tbody tr')].map(tr => tr.cells[3].querySelector('button.issue-go')?.textContent ?? null)`);
-  check('a row issue\'s Where is a button in the words it had; a run field and the whole configuration stay text',
-    JSON.stringify(await goes()) === JSON.stringify([`parameters[0].lower row ${ROW_KEY}`, null, null]), JSON.stringify(await goes()));
+  const goes = () => evaluate(`[...${LIST}.querySelectorAll('tbody tr')].map(tr => tr.cells[2].querySelector('button.issue-go')?.textContent ?? null)`);
+  check('a row issue\'s Where is a button, in the editors\' words (SIF-141); a run setting and the whole configuration stay text',
+    JSON.stringify(await goes()) === JSON.stringify([`Parameters · ${ROW_KEY} · Lower`, null, null]), JSON.stringify(await goes()));
   const [paramsMark, probesMark] = [await tabMark('parameters'), await tabMark('measurements')];
   check('the Parameters tab counts its one blocking issue in a red pill, its words unchanged; Probes counts none',
     paramsMark.errors && paramsMark.count === '1' && paramsMark.text === `Parameters (${CONFIG.parameters.length})` && paramsMark.pill?.[0] === '"1"'
@@ -229,7 +255,7 @@ await runChecks(browser, async () => {
     { ...specIssue('scale_needed_for_zero_limit', 'normalization_scale', 'FIXTURE a limit of 0 needs a Scale.'), level: 'blocker' },
     tableIssue('no_hard_constraint', 'targets', 'FIXTURE at least one hard spec is required.')]);
   await revalidate(fixtures.tables);
-  const goTitles = () => evaluate(`[...${LIST}.querySelectorAll('tbody tr')].map(tr => tr.cells[3].querySelector('button.issue-go')?.title ?? null)`);
+  const goTitles = () => evaluate(`[...${LIST}.querySelectorAll('tbody tr')].map(tr => tr.cells[2].querySelector('button.issue-go')?.title ?? null)`);
   const [tableParams, tableSpecs] = [await tabMark('parameters'), await tabMark('targets')];
   check('a tab whose one issue is the table\'s own says the list holds it, and no go-to; its Where is text',
     tableParams.count === '1' && tableParams.title === '1 blocking issue: FIXTURE at least one optimized variable is required. The red button in the header lists it.'
@@ -241,8 +267,14 @@ await runChecks(browser, async () => {
   const activeIn = (index, field) => `(() => { const td = document.querySelector('section.editors table.editor td.active-cell');
     return td?.dataset.field === '${field}' && td.closest('tr')?.dataset.index === '${index}'; })()`;
   check('a Where\'s tooltip names the cell it chooses: the Spec ID for the Unit no column shows, the Scale behind More columns',
-    JSON.stringify(await goTitles()) === JSON.stringify([null, `Go to ${SPEC_KEY}: Specs opens with its Spec ID chosen, as no column shows its Unit. The list stays open.`,
-      `Go to ${SPEC_KEY}: Specs opens with its Scale chosen, More columns shown. The list stays open.`, null]), JSON.stringify(await goTitles()));
+    JSON.stringify(await goTitles()) === JSON.stringify([null,
+      `Go to ${SPEC_KEY}: Specs opens with its Spec ID chosen, as no column shows its Unit. The list stays open.\nField targets[0].unit, check target_unit_mismatch.`,
+      `Go to ${SPEC_KEY}: Specs opens with its Scale chosen, More columns shown. The list stays open.\nField targets[0].normalization_scale, check scale_needed_for_zero_limit.`, null]),
+    JSON.stringify(await goTitles()));
+  // Branch record SIF-141: "parameters" and "targets" were the Wheres of the tables' own issues, "targets[0].unit row <ID>" a spec's
+  const tableWheres = (await rows()).map(r => r[2]);
+  check('a table\'s own issue reads "the Parameters table", "the Specs table"; a spec\'s, its table, ID and column (SIF-141)',
+    JSON.stringify(tableWheres) === JSON.stringify(['the Parameters table', `Specs · ${SPEC_KEY} · Unit`, `Specs · ${SPEC_KEY} · Scale`, 'the Specs table']), JSON.stringify(tableWheres));
   check('(More columns is folded)', (await evaluate(`${MORE}?.textContent ?? ''`)).startsWith('More columns'));
   await evaluate(`[...${LIST}.querySelectorAll('button.issue-go')][0].click()`);
   check('the Unit issue\'s Where chooses the Spec ID, as its tooltip says, More columns left folded',
@@ -296,8 +328,9 @@ await runChecks(browser, async () => {
   };
   await evaluate(`${EDITOR_TAB('parameters')}.click()`); await until(`${EDITOR_TAB('parameters')}.classList.contains('active')`, 30);
   await typeId(ROW_KEY, fixtures.duplicate);
-  check('(the last row now repeats the first row\'s ID, and the list names it)', JSON.stringify(await goes()) === JSON.stringify([`parameters[${DUP}] row ${ROW_KEY}`,
-    `parameters[${DUP}].lower row ${ROW_KEY}`]), JSON.stringify(await goes()));
+  // Branch record SIF-141: the ID two rows hold names neither alone - the row's number follows it (the path said parameters[4])
+  check('(the last row now repeats the first row\'s ID, and the list names it with the row\'s number)', JSON.stringify(await goes()) === JSON.stringify([
+    `Parameters · ${ROW_KEY} (row ${DUP + 1})`, `Parameters · ${ROW_KEY} (row ${DUP + 1}) · Lower`]), JSON.stringify(await goes()));
   await evaluate(`[...${LIST}.querySelectorAll('button.issue-go')][0].click()`);
   check('a duplicate ID\'s Where goes to the row the report names, not the first row with that ID',
     await until(`${activeIn(DUP, 'variable_id')} && ${WHERE} === ${JSON.stringify(`ID · ${ROW_KEY}`)}`, 30),
@@ -314,8 +347,8 @@ await runChecks(browser, async () => {
   const schemaRows = await rows();
   const key = n => CONFIG.parameters[n].variable_id;
   check('each rejected field is its own blocking issue (2)', schemaRows.length === 2 && (await evaluate(`${BUTTON}.textContent`)) === '2 blocking issues', JSON.stringify(schemaRows.map(r => r.slice(0, 4))));
-  check('each names its field and the key of its row', schemaRows.every((r, n) => r[2] === 'invalid_id' && r[3] === `parameters[${FOLLOWERS[n]}].variable_id row ${key(FOLLOWERS[n])}`), JSON.stringify(schemaRows.map(r => r[3])));
-  check('each message is the plain one, not a JSON list', schemaRows.every((r, n) => r[4].startsWith(idError(FOLLOWERS[n]).message)) && !schemaRows.some(r => r[4].includes('[{')), JSON.stringify(schemaRows.map(r => r[4])));
+  check('each names its row by the ID and its column, in the editors\' words', schemaRows.every((r, n) => r[4] === 'invalid_id' && r[2] === `Parameters · ${key(FOLLOWERS[n])} · ID`), JSON.stringify(schemaRows.map(r => [r[2], r[4]])));
+  check('each message is the plain one, not a JSON list', schemaRows.every((r, n) => r[3].startsWith(idError(FOLLOWERS[n]).message)) && !schemaRows.some(r => r[3].includes('[{')), JSON.stringify(schemaRows.map(r => r[3])));
   const TECH = `[...${LIST}.querySelectorAll('tbody tr')].map(tr => tr.querySelector('details.more'))`;
   check('the schema\'s own words are folded under "Technical details"', await evaluate(`${TECH}.every(d => d && !d.open && d.querySelector('summary').textContent === 'Technical details' && !d.querySelector('code').checkVisibility())`));
   await evaluate(`${TECH}[0].querySelector('summary').click()`);
@@ -327,12 +360,13 @@ await runChecks(browser, async () => {
   await shot('issues-5-rejected.png');
   await revalidate(fixtures.rejectedOld);
   const oldRows = await rows();
-  check('an older backend\'s answer is split the same way, its paths written like the report\'s', oldRows.length === 2 && oldRows[0][2] === 'schema'
-    && oldRows[0][3] === `parameters[3].variable_id row ${key(3)}` && oldRows[0][4] === `FIXTURE: ${PATTERN}` && oldRows[1][3] === 'run.max_evaluations', JSON.stringify(oldRows));
+  check('an older backend\'s answer is split the same way, its paths read like the report\'s', oldRows.length === 2 && oldRows[0][4] === 'schema'
+    && oldRows[0][2] === `Parameters · ${key(3)} · ID` && oldRows[0][3] === `FIXTURE: ${PATTERN}` && oldRows[1][2] === 'Run configuration · Evaluation budget'
+    && oldRows[1][5] === 'Field run.max_evaluations, check schema.', JSON.stringify(oldRows));
   check('... without an empty "Technical details"', !(await evaluate(`!!${LIST}.querySelector('details')`)));
   await revalidate(fixtures.failed);
   const failedRows = await rows();
-  check('any other failure is one issue with its text only', failedRows.length === 1 && failedRows[0][3] === '(whole configuration)' && failedRows[0][4] === 'FIXTURE: the backend failed', JSON.stringify(failedRows));
+  check('any other failure is one issue with its text only', failedRows.length === 1 && failedRows[0][2] === 'the whole configuration' && failedRows[0][3] === 'FIXTURE: the backend failed', JSON.stringify(failedRows));
   await revalidate(fixtures.valid);
   check('a valid answer clears them', !(await evaluate(`!!(${BUTTON})`)) && (await evaluate(`${EDITOR_ROWS}.filter(tr => tr.classList.contains('has-error')).length`)) === 0);
 

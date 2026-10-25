@@ -5989,3 +5989,90 @@ run of the two changed scripts on ModelChooser.tsx and RlModelWindow.tsx as at H
 compared) failed exactly the new checks, 7 of 145 and 2 of 78. After it the link's press in `network_panel_check` reads
 `?.`, so a missing link fails its check instead of stopping the script, and the three scripts of the plan passed again
 on the final source, the same counts. No flakes.
+
+### SIF-141 The blocking-issues list names each place in the editors' and windows' words, and "validating..." has no tick (2026-10-25; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found the header's list of blocking
+issues naming its places in the configuration's own notation (S12-11, `issues-2-open.png`): the check's code had a
+column of its own ("range_inverted", "heads_divisibility", "schema"), and Where was the path - "parameters[0].lower row
+input_pair_width" (the button SIF-95 made of it, in "the words it had"), "run.network", "(whole configuration)"; with the
+tables' own issues (`issues-4c-scale.png`) "targets[0].normalization_scale row score" and a bare "parameters" and
+"targets". SIF-5 and SIF-51 had moved the same codes, table keys and field names into the tabs' and confirmations' words.
+An issue of a run setting - a real heads_divisibility, pdk_not_loaded or encoder_spec_input_mismatch - named no window to
+go to. A refusal of a configuration the backend cannot read wrote the same paths: Matched devices said
+"run.max_evaluations: max_evaluations is missing: this field needs a value." (`matched_devices_invalid.png`; api.ts
+`schemaProblem`, which Save task and the other refusals use too). And on every page open the header read "Validating..."
+with the done tick before it until the first validation answered (S12-24, `run-7-taken-over.png`, and the calibration
+checks' header pictures): Issues.tsx drew the busy word as span.ok, and the look draws its tick before every span.ok of
+the header.
+
+**Changed.** `frontend/src/panels/editorRules.ts`: `placeOf(path, config, keys)`, with no React, so the list and the
+refusals share it. A row reads as its tab's name, the row's ID in the configuration the report is about - "row N" where
+no ID names it, both where another row of the table holds the same ID, as a duplicate does ("Parameters ·
+input_pair_width (row 5)") - and its field by the header of the column it is chosen in (`fieldLabel(columnOf(...))`):
+"Parameters · input_pair_width · Lower", "Specs · score · Scale", a Spec's objective as its Limit. A table's own issue
+reads "the Specs table", no path "the whole configuration". A run, output or research setting reads as the place that
+sets it, the first of a list of patterns: in the RL model window Components (run.network.vocabulary), Network inputs (the
+six transferable-input fields), Network (any other run.network), "Fine-tune: its own settings" (a bare run.advanced -
+fine_tune_only_option, the one check that names it - and Freeze encoder, Encoder-only transfer, Reset critic), Advanced,
+Mode, Saved models, and the window alone for the model's name, Evaluate only's actions and Continual learning; in Run
+configuration Reward and conditions, Training conditions, Concurrent Spectre jobs, Evaluation budget, Random seed, Stop at
+the first feasible design and the five Limits by their labels ("Run configuration · Limits · Max retries per
+evaluation"), any other run setting "Run configuration"; then "Output settings", "Research experiments", and "Tasks
+window" for the task's own fields. A path none of these knows stays as written; pydantic's dotted index
+(parameters.3.variable_id, from an older backend) reads as the report's. `frontend/src/panels/Issues.tsx`: the list has
+four columns - #, Level, Where, Message - and Where is placeOf's words, a row's still the button that goes there (SIF-95);
+the field and the check's code are on the Where's hover ("Field run.network, check heads_divisibility.", after a row's "Go
+to ..." sentence), the code also the row's `data-code`, and the column's header says so. Until the first validation
+answers the header's words are `span.hint.validating`: grey, with no tick. `frontend/src/api.ts`: `schemaProblem` names
+each field with placeOf, a row by its number, as a refusal holds no configuration ("Run configuration · Evaluation budget:
+max_evaluations is missing: this field needs a value; Parameters · row 2 · ID: ..."); editorRules.ts imports api.ts for
+its types only, so no import goes round at run time. `frontend/src/roadster.css`: "validating..." keeps its width in the
+header as "configuration valid" does and is capitalised as it is; the tick stays on span.ok alone. Changes from the plan:
+Components and Network inputs for the run.network fields the window shows under those labels (the backend's own warning
+says "RL model window, Components"); a bare run.advanced as "Fine-tune: its own settings", its one check being of
+Fine-tune's switches, which are ticked there and not in the Advanced fold; the reward and the training conditions under
+"Run configuration", the module that holds them; the window alone for its three settings with no heading of their own,
+and "Tasks window" for the task, where the plan left circuit.* as written; the row's number after a shared ID, which the
+path gave by its index and the ID alone would not; no wait icon; and the page-open check in `blocking_issues_check`,
+which answers every validation itself and so can hold the first, where the plan named `run_control_check` and the
+calibration checks, whose validation goes to the scratch backend and lasts only as long as its answer takes. Not
+changed, as the plan says: no button opens the window a run setting names - no page-wide event opens the RL model
+window -; the Where names it. Seen, not changed: while "validating..." shows, Start and Calibration are enabled
+(`startReadiness` holds them back only on an answer that blocks); a start is validated again by the backend, which
+refuses one with blocking issues (runs.py, `RunRejected` "The configuration has blocking issues"), and a real run still
+asks first. Only words, a tooltip and a column: nothing starts, continues or stops a run, saves a task or writes to
+Virtuoso, and every question is asked as before. `docs/workbench.md` (the blocking-issues paragraph) and
+`docs/functionality-reference.md` (N blocking issues) say it.
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree. First the three scripts that pin the
+changed words, all passed the first time: `blocking_issues_check` 69 (66 before), `matched_devices_check` 38,
+`editor_renames_check` 8 (it loads editorRules.ts with a RegExp and a require of its own: placeOf's patterns are literals,
+and it imports nothing more). New: `blocking_issues_check`: with the page's first validation held unanswered, the header
+reads "validating..." in the hint's grey, with no tick and no "configuration valid" (`issues-0-validating.png`); the list
+has the four columns, and each Where's tooltip gives the field and the code (`issues-2-open.png`); the tables' own issues
+read "the Parameters table" and "the Specs table", a spec's "Specs · score · Unit" and "Specs · score · Scale"
+(`issues-4c-scale.png`). Changed there: the rows' cells (the code read from `data-code`); the Wheres in words -
+"Parameters · <ID> · Lower", "RL model window · Network", "the whole configuration", the rejected IDs' "Parameters · <ID> ·
+ID", the older backend's "Run configuration · Evaluation budget" with its tooltip -; the duplicate's "Parameters · <ID>
+(row 5)" and its Lower; and the go-to tooltips with their second line. `matched_devices_check`: its refusal has a second
+field, a row's, and reads "Run configuration · Evaluation budget: ...; Parameters · row 2 · ID: ..."
+(`matched_devices_invalid.png`). Then every other script the runner runs (55; the three reward_v2/v21 ones are never run
+here), all passed the first time, no flakes: `calibration_check` 54, `export_check` 38, `run_control_live_check` 23,
+`run_control_check` 181, `training_tab_check` 139, `dom_identity_check` 56, `connection_panel_check` 101,
+`virtuoso_source_check` 123, `run_list_check` 184, `task_save_check` 93, `testbench_probes_check` 43,
+`spec_equations_check` 88, `model_chooser_check` 145, `output_panel_check` 98, `task_rows_check` 57, `typing_check` 62,
+`sheet_check` 63, `find_fill_copy_check` 50, `project_help_check` 62, `calibration_save_check` 38, `files_tab_check` 43,
+`launch_recovery_check` 20, `working_copy_check` 35, `corner_check_check` 42, `task_list_check` 106,
+`editor_columns_check` 45, `looks_check` 83, `network_panel_check` 78, `ngspice_window_check` 46, `unsaved_rows_check` 28,
+`save_now_check` 29, `task_run_check` 39, `pdk_check` 46, `reliability_check` 22, `room_check` 31, `graph_view_check` 69,
+`module_fold_check` 31, `reward_block_check` 34, `circuit_source_check` 19, `encoder_models_check` 24,
+`formula_bar_check` 21, `model_structure_check` 33, `mode_suggestion_check` 20, `agent_window_check` 33,
+`consistency_check` 14, `training_data_check` 124, `crash_panel_check` 11, `callouts_check` 8, `edit_state_check` 28,
+`request_lifecycle_check` 25, `circuit_layout_check` 4, `graph_paint_check` 6, `network_inputs_check` 9,
+`table_view_check` 10, `unit_text_check` 14. In all 58 scripts, 3,043 checks: the 3,028 of SIF-139, the 2 of its review
+follow-up, the 10 of SIF-140 and the 3 new ones. After the full run the Where column's header tooltip was reworded (no
+check reads it). A probe run of the three scripts on the four sources as at HEAD (put back after, their sums compared)
+failed exactly the checks that read the changed words, columns and tooltips and the page-open state, 16 of 69 and 1 of
+38; `editor_renames_check` passed. After it, `tsc` and the three scripts again on the final source, all passed the first
+time, the same counts.

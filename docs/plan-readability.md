@@ -7,7 +7,7 @@ only the live backend on 8765 was running). Optimizer source digest at HEAD:
 `6ebf5ba532b279aa83b7b9b63d7e7c2573551691384575336bd24f91bc195da3` (it must read the same after every package).
 The plan is written for Codex to execute; appendix A is the prompt to give it.
 
-**State (2026-10-25):** executing on the isolated `readability` branch; D1-D7 complete, D8's English translation authorized.
+**State (2026-10-25):** executing on the isolated `readability` branch; D1-D8 complete, including the authorized English skill translation.
 No package landed in the live workbench; the optimizer, experiment flow and served page are unchanged.
 T and P follow; F remains isolated until its coordination decision. P8 and E are excluded unless chosen.
 

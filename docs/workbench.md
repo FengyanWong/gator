@@ -4356,6 +4356,8 @@ ended run's log is read once more after its worker ended. Overlapping tests of t
 
 ## Code organization
 
+The [glossary](glossary.md) maps the page's words to code and record names.
+
 `src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and
 connections, circuits and tasks, runs and exports, and agents. `api/models.py` owns HTTP request schemas;
 `api/context.py` shares input/output authorization, configuration loading and the start checklist; `api/support.py`

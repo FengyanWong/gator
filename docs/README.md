@@ -20,6 +20,7 @@ Some openings precede later execution sections: follow the plan's later records 
 | [functionality-reference.md](functionality-reference.md) | Buttons, functions, routes, source files, tests and records, including removed features. | Living | Kept current |
 | [frontend_implementation_status.md](frontend_implementation_status.md) | The one-line index of workbench records and the rules for appending a new entry. | Living index | Kept current; linked entries are historical |
 | [decisions.md](decisions.md) | The dated project-state summary followed by the chronological research decisions. | Living summary / record | Summary kept current; historical decisions frozen |
+| [glossary.md](glossary.md) | Page, code and record names for tasks, runs, models and research terms. | Living | Kept current |
 | [optimizer-package.md](optimizer-package.md) | The optimizer's packages, backends, Spectre dialect and graph/parameter contracts. | Living | Kept current |
 | [circuit-gps.md](circuit-gps.md) | CircuitGPS selection, representation, computation and saved-model compatibility. | Living | Kept current; read the stated architecture version |
 | [global-encoders.md](global-encoders.md) | GraphGPS and parameter-group cross-attention architectures, structural inputs and comparison entrypoints. | Living | Kept current |

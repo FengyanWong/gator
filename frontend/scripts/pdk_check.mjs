@@ -26,7 +26,9 @@
 //   - the ideal parts read with a PDK (record 7.190: analogLib's sources, ideal R / C / L, probes, controlled sources): the
 //     window says that every read brings them, the list has their count, a shown PDK names how many were read and which have
 //     a kind of their own, their list is folded and shows both pin orders of one component; a PDK answered without them (an
-//     older server, a PDK loaded before) says that they were not read.
+//     older server, a PDK loaded before) says that they were not read. The heading, the sentence, the fold and the table count
+//     alike: the fold counts the parts the heading counts and the refused one apart, whose kind reads "refused: no pin order",
+//     and one unknown part reads "the other one reaches it" (branch record SIF-142).
 // Run (Windows node through WSL interop; needs node >= 22 for the built-in WebSocket; about 25 s):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/pdk_check.mjs)" [screenshot-dir]
 // Exit code 1 if any check fails.
@@ -243,10 +245,12 @@ await runChecks(browser, async () => {
       summary: list?.querySelector('summary')?.textContent }; })()`);
   check('the window says that each read also brings the ideal parts of analogLib', ideal.says);
   check('the list of loaded PDKs has an "Ideal parts" column with their count', ideal.heads[2] === 'Ideal parts' && ideal.count === '3', JSON.stringify([ideal.heads, ideal.count]));
+  // Branch record SIF-142: one unknown part in the right number - it read "the other 1 reach it as "unknown", with their pins named".
   check('a shown PDK names its ideal parts: how many, from which library, which have a kind of their own, which are "unknown"',
-    ideal.head === 'Ideal parts: 3 from analogLib' && /2 have\s+a kind of their own for the network \(isource, vsource\); the other 1 reach it as "unknown"/.test(ideal.what)
+    ideal.head === 'Ideal parts: 3 from analogLib' && /2 have a kind of their own for the network \(isource, vsource\); the other one reaches it as "unknown", with its pins named\./.test(ideal.what)
     && /states no pin order for mutual_inductor/.test(ideal.what), JSON.stringify([ideal.head, ideal.what]));
-  check('their list is folded', ideal.folded && ideal.summary === 'The ideal parts (4)', String(ideal.summary));
+  // ...and the fold counts the 3 of the heading and of the Loaded PDKs column, the refused part apart: it read "(4)" (SIF-142).
+  check('their list is folded, and counts what the heading counts, the refused part apart', ideal.folded && ideal.summary === 'The ideal parts (3, and 1 refused)', String(ideal.summary));
   await pev(`document.querySelector('.pdk-window details.ideal-list summary').click()`);
   const parts = await pev(`[...document.querySelectorAll('.pdk-window details.ideal-list tbody tr')].map(r => [...r.cells].map(c => c.textContent))`);
   const source = parts.find(r => r[0] === 'vsource') ?? [];
@@ -254,6 +258,10 @@ await runChecks(browser, async () => {
     && source[2] === 'PLUS MINUS | PLUS MINUS P1 M1 P2 M2' && source[3] === 'vdc, vprbs, vpulse', JSON.stringify(source));
   check('... a long pin order is cut short with its length, and a component without one shows "-"',
     (parts.find(r => r[0] === 'mtline') ?? [])[2] === 'p1 p2 p3 p4 p5 p6 p7 p8 ... (12 pins)' && (parts.find(r => r[0] === 'mutual_inductor') ?? [])[2] === '-', JSON.stringify(parts.map(r => r[2])));
+  // The kind of a part with no pin order is that it is refused, as the sentence says - it read "unknown", like a part the network
+  // reads (branch record SIF-142).
+  check('... and its kind reads "refused: no pin order", where a part the network reads as "unknown" keeps "unknown"',
+    (parts.find(r => r[0] === 'mutual_inductor') ?? [])[1] === 'refused: no pin order' && (parts.find(r => r[0] === 'mtline') ?? [])[1] === 'unknown', JSON.stringify(parts.map(r => r[1])));
   await popup.shot(path.join(out, 'pdk-window-1-shown.png'), `document.querySelector('.pdk-window')`, { maxHeight: 1400, beyond: true });
 
   // ---- Load ---------------------------------------------------------------------------------------------------------------

@@ -241,7 +241,10 @@ ul.tree { list-style: none; margin: 2px 0; padding-left: 12px; border-left: 1px 
 ul.checklist { list-style: none; margin: 4px 0 8px; padding: 0; }
 ul.checklist li { margin: 5px 0; padding-left: 22px; position: relative; } .check-mark { position: absolute; left: 2px; width: 16px; text-align: center; font-weight: 700; }
 .check-who { margin-left: 6px; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; font-size: 10.5px; color: var(--muted); background: var(--field); }
-.check-detail { color: var(--muted); } .check-missing .check-detail { color: var(--text); } .check-action { color: var(--accent); }
+.check-detail { color: var(--muted); } .check-missing .check-detail { color: var(--text); }
+/* What to do is red only under an item that blocks a start, amber under a warning and grey under the rest (branch record SIF-142):
+   every step was in the accent, the red of an error, so an untested connection's read like a blocker's under "Nothing blocks a start". */
+.check-action { color: var(--muted); } .check-missing .check-action { color: var(--bad); } .check-warning .check-action { color: var(--warn); }
 .check-done b, .check-not_applicable b { font-weight: 400; }
 .verdict { margin: 6px 0 4px; font-weight: 600; } .verdict .hint { font-weight: 400; }
 button.notes-link { border: none; background: none; white-space: normal; }

@@ -3,7 +3,7 @@ import { type KeyboardEvent, memo, useEffect, useMemo, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { signal } from '../signal';
-import { bytes, dateTimeOrText as loadedAt } from '../format';
+import { bytes, count, dateTimeOrText as loadedAt, plural } from '../format';
 import { PDK_WINDOW } from '../contract';
 import { api, gateText, Json, problemText } from '../api';
 import { useNewest } from '../newest';
@@ -176,18 +176,23 @@ function IdealParts({ ideal }: { ideal: Json }) {
   if (!ideal) return <p className="hint ideal-parts ideal-none">Ideal parts (sources, ideal R, C and L, probes): not read with this PDK - it was loaded
     before they were read. Press Load to read them; until then only the few parts this project verified by hand are recognized.</p>;
   const s: Json = ideal.summary, components: Json[] = ideal.components ?? [];
+  // The heading, the sentence, the fold and the table count alike (branch record SIF-142). The heading counts the parts a circuit
+  // can hold, as the Loaded PDKs column does; the fold counted every component, and the table gave one with no pin order the kind
+  // "unknown", as if the network read it, where the sentence says a circuit holding one is refused.
+  const refused: number = s?.without_pins?.length ?? 0;
   return (
     <div className="ideal-parts">
       <h3 className="ideal-head">Ideal parts: {s?.recognized ?? 0} from {ideal.library}</h3>
       {ideal.error && <p className="warn">The ideal parts of {ideal.library} could not be read: {ideal.error} Until they are, only the few parts
         this project verified by hand are recognized.</p>}
       {ideal.not_read_again && <p className="warn">The last load did not read them again ({ideal.not_read_again}); shown as read on {loadedAt(ideal.read_utc)}.</p>}
-      {s && <p className="hint ideal-what">What a circuit holds besides its PDK's components, read from the {s.cells} cells of {ideal.library}: {s.with_a_kind.length} have
-        a kind of their own for the network ({s.with_a_kind.join(', ')}); the other {s.as_unknown} reach it as "unknown", with their pins named.
-        {s.without_pins.length > 0 && ` ${ideal.library} states no pin order for ${s.without_pins.join(', ')}: a circuit holding one is refused.`}</p>}
-      {components.length > 0 && <details className="ideal-list"><summary>The ideal parts ({components.length})</summary>
+      {s && <p className="hint ideal-what">What a circuit holds besides its PDK's components, read from the {s.cells} cells of {ideal.library}: {plural(s.with_a_kind.length,
+        'has a kind of its own', 'have a kind of their own')} for the network ({s.with_a_kind.join(', ')}); {s.as_unknown === 1
+          ? 'the other one reaches it as "unknown", with its pins named.' : `the other ${count(s.as_unknown)} reach it as "unknown", with their pins named.`}
+        {refused > 0 && ` ${ideal.library} states no pin order for ${s.without_pins.join(', ')}: a circuit holding one is refused.`}</p>}
+      {components.length > 0 && <details className="ideal-list"><summary>The ideal parts ({s?.recognized ?? components.length}{refused > 0 && `, and ${refused} refused`})</summary>
         <table className="grid small"><thead><tr><th>Spectre component</th><th>Kind for the network</th><th>Pins</th><th>Cells</th></tr></thead><tbody>
-          {components.map(c => <tr key={c.component} title={c.basis}><td className="mono">{c.component}</td><td>{c.kind}</td>
+          {components.map(c => <tr key={c.component} title={c.basis}><td className="mono">{c.component}</td><td>{c.pin_orders.length ? c.kind : 'refused: no pin order'}</td>
             <td>{c.pin_orders.length ? c.pin_orders.map((o: Json) => pinsText(o.pins)).join(' | ') : '-'}</td><td>{c.cells.join(', ')}</td></tr>)}
         </tbody></table>
         <p className="hint">Cells can netlist one component with different pins ("|" separates the pin orders): a circuit is read with the order that

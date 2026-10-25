@@ -4,6 +4,7 @@ import { hintedLayout } from './circuitLayout';
 import { CIRCUIT_PICTURE_KEY } from '../contract';
 import { signal } from '../signal';
 import { keep, readKept } from '../kept';
+import { plural } from '../format';
 
 /** The circuit picture of the circuit column (record 7.158, the user's choice of 2026-10-03: "move 5"; the column is shown by
  *  "Show circuit" since record 7.362, the Project column until then). The loaded circuit as
@@ -135,9 +136,10 @@ export function CircuitPicture({ circuit }: { circuit: Json }) {
   return (
     <details className="section circuit-picture" open={open}
       onToggle={e => { const now = e.currentTarget.open; setOpen(now); keep(s => s.setItem(CIRCUIT_PICTURE_KEY, now ? 'open' : 'closed')); }}>
-      <summary><h3>Circuit picture</h3> <span className="hint">{graph.devices.length} devices · {graph.nets.length} nets</span></summary>
+      {/* Counted in the right number, as the rest of the column is (branch record SIF-142: a one-transistor deck read "1 devices"). */}
+      <summary><h3>Circuit picture</h3> <span className="hint">{plural(graph.devices.length, 'device')} · {plural(graph.nets.length, 'net')}</span></summary>
       <svg viewBox={`0 0 ${W} ${height}`} role="img"
-        aria-label={`The circuit as a picture: ${graph.devices.length} devices and ${graph.nets.length} nets, supply at the top and ground at the bottom.`}>
+        aria-label={`The circuit as a picture: ${plural(graph.devices.length, 'device')} and ${plural(graph.nets.length, 'net')}, supply at the top and ground at the bottom.`}>
         {graph.connections.filter(c => c.role !== 'bulk').map((c, i) => {
           const a = at[`d:${c.device}`], b = at[`n:${c.net}`];
           if (!a || !b) return null;

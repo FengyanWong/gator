@@ -13,7 +13,9 @@
 //   - a CLI opens on its button only, one request naming that CLI; an opened CLI is said in one line; one that could not be
 //     opened says why and what to type, with Copy; a CLI the backend did not find is a disabled button with the reason;
 //   - "What's missing?" fills the lower part of the SAME window (no second window) with the verdict, the items, whose step
-//     each is and what to do; pressed again it works the list out again from the configuration as it is then;
+//     each is and what to do; pressed again it works the list out again from the configuration as it is then; what to do is
+//     in the red of an error under an item that blocks a start, in amber under a warning and in the hint's grey under the
+//     rest (branch record SIF-142);
 //   - "Agent..." pressed while the window is open brings it to the front and looks for the CLIs again, no second window; a
 //     reload of the page closes the window, and a window opened anew starts clean;
 //   - an item whose step is in another window carries the button to it after what to do: the connection Connection..., a
@@ -33,10 +35,13 @@ const CLIS = (codex = true) => ({ directory: FOLDER, launch: 'off', note: 'FIXTU
     note: codex ? null : 'Codex is not installed for this user: no `codex` on the PATH, and no Codex app build was found.', command: `cd ${FOLDER} && codex` }] });
 // Branch record SIF-108: the third and fourth answers hold an item whose step is in another window - a real circuit's connection
 // never tested (a start would test it), then no circuit read at all (no connection item then: only a real circuit has one).
+// The third also holds a warning, which blocks nothing either (branch record SIF-142: its step in amber, the connection's in grey).
 const ELSEWHERE = [
   { ready: true, note: 'FIXTURE: computed by the backend; no model was called, nothing was probed.',
     next: { id: 'start', title: 'Start', status: 'done', who: 'you', detail: 'Nothing blocks a start.', action: '' }, items: [
       { id: 'circuit', title: 'Circuit', status: 'done', who: 'you', detail: 'REAL circuit read: 7 devices.', action: '' },
+      { id: 'corner_reachability', title: 'Corner targets', status: 'warning', who: 'you', detail: 'FIXTURE: a hard spec looks out of reach at one corner.',
+        action: 'FIXTURE: open Corner check.' },
       { id: 'output', title: 'Output folder', status: 'done', who: 'you', detail: 'Writable.', action: '' },
       { id: 'connection', title: 'Connection', status: 'unknown', who: 'you', detail: 'unknown (never tested in this backend session).',
         action: 'FIXTURE: open the Connection window, then press "Test connection" in it.' },
@@ -84,6 +89,8 @@ await runChecks(browser, async () => {
   const WINDOW = `document.querySelector('.agent-window')`;
   const BUTTON = text => `[...${WINDOW}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
   const LIST = `${WINDOW}.querySelector('.missing-list')`;
+  // The colour a colour name of the look gives in the window, as graph_view_check reads the look's red (branch record SIF-142).
+  const INK = name => `(name => { const s = document.createElement('span'); s.style.color = 'var(' + name + ')'; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; })(${JSON.stringify(name)})`;
   const posts = () => seen.filter(s => s.method === 'POST');
   const agentWindows = async () => (await browser.pages()).filter(t => t.title === AGENT_WINDOW).length;
 
@@ -155,6 +162,11 @@ await runChecks(browser, async () => {
     return li[0].querySelector('.check-mark').textContent === '\\u2714' && !li[0].querySelector('.check-who')
       && li[1].querySelector('.check-who').textContent === 'an agent can help' && li[1].querySelector('.check-action').textContent.includes('Claude Code or Codex (the Agent window)')
       && li[2].querySelector('.check-who').textContent === 'yours' && li[2].querySelector('.check-action').textContent.startsWith('Choose another folder'); })()`));
+  // Branch record SIF-142: what to do is red only under an item that blocks a start. Every step was in the accent, the red of
+  // an error, so an untested connection's optional step read like a blocker's under "Nothing blocks a start." (agent-5 below).
+  const blockers = await far.evaluate(`({ inks: [...${LIST}.querySelectorAll('ul.checklist li.check-missing .check-action')].map(a => getComputedStyle(a).color), bad: ${INK('--bad')} })`);
+  check('...what to do under the two items that block a start is in the red of an error (SIF-142)', blockers.inks.length === 2
+    && blockers.inks.every(c => c === blockers.bad), JSON.stringify(blockers));
   check('...worked out from the configuration on the page, said with the time, and how to see it again', await far.evaluate(`${LIST}.textContent.includes('no model was called')
     && /Worked out at \\d\\d:\\d\\d:\\d\\d, from the configuration on the page: press "What's missing\\?" again after a change\\./.test(${LIST}.textContent)`));
   const asked = seen.filter(s => s.name === '/api/agent/readiness');
@@ -185,11 +197,17 @@ await runChecks(browser, async () => {
   };
   await far.evaluate(`${BUTTON("What's missing?")}.click()`);
   check('a real circuit whose connection was never tested: its item carries Connection... after what to do, its tooltip saying what it opens; no other item has a button',
-    await far.until(`${LIST}?.querySelectorAll('ul.checklist li').length === 5`)
+    await far.until(`${LIST}?.querySelectorAll('ul.checklist li').length === 6`)
     && await far.evaluate(`(() => { const li = ${ITEM('Connection')}, b = li?.querySelectorAll('.check-action button') ?? [];
       return b.length === 1 && b[0].textContent === 'Connection...' && b[0].title.startsWith('Connection: Opens the Connection window') && b[0].title.endsWith('Opening it checks nothing.')
         && li.querySelector('.check-action').textContent.startsWith('FIXTURE: open the Connection window') && ${LIST}.querySelectorAll('ul.checklist button').length === 1; })()`),
     await far.evaluate(`${LIST}?.textContent.slice(0, 400) ?? '(no list)'`));
+  // Branch record SIF-142: neither item blocks a start, and the list says "Nothing blocks a start.": the connection's step is in
+  // the hint's grey, the warning's in amber - both were in the red of an error.
+  const inks = await far.evaluate(`({ verdict: ${LIST}.querySelector('.verdict').textContent, connection: getComputedStyle(${ITEM('Connection')}.querySelector('.check-action')).color,
+    warning: getComputedStyle(${ITEM('Corner targets')}.querySelector('.check-action')).color, muted: ${INK('--muted')}, warn: ${INK('--warn')} })`);
+  check('...what to do there is in the hint\'s grey, and a warning\'s in amber, under "Nothing blocks a start." (SIF-142)', inks.verdict === 'Nothing blocks a start.'
+    && inks.connection === inks.muted && inks.warning === inks.warn && inks.muted !== inks.warn, JSON.stringify(inks));
   await far.shot(path.join(out, 'agent-5-connection-button.png'), LIST);
   let before = seen.length;
   await far.evaluate(`${ITEM('Connection')}.querySelector('.check-action button').click()`, true);

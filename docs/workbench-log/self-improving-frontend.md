@@ -6121,3 +6121,53 @@ closes (the harness: such a click may never be acknowledged, and the closing ses
 then passed three times on this source, 93, and twice on the sources of b10d9d0: a timing flake of a step this follow-up
 does not touch. 58 scripts, 3,044 checks: the 3,043 of SIF-141 and the one new. Two comments were reworded after the run
 of the 45; `tsc` and the first three scripts passed again after it.
+
+### SIF-142 The PDK window counts its ideal parts alike, What's missing? draws only a blocker's step in red, and one device reads "1 device" (2026-10-25; from the states audit of 2026-10-24)
+
+**Found.** The states audit - the browser checks' own pictures of FIXTURE states - found three small slips of words and
+colour in three windows. The PDK window headed a shown PDK's ideal parts "Ideal parts: 3 from analogLib" - the parts a
+circuit can hold, the number of the Loaded PDKs column -, while their fold read "The ideal parts (4)" and its table gave
+the fourth, mutual_inductor, a component analogLib states no pin order for, the kind "unknown", as if the network read it,
+under a sentence saying that a circuit holding one is refused (S12-31, `pdk-window-1-shown.png`). The backend counts the
+two apart (pdk_record.py `build_ideal_parts`: recognized, without_pins), so the heading, the fold and the table disagree
+whenever analogLib has such a part, and IC23.1's has five. The same sentence said "the other 1 reach it as "unknown", with
+their pins named" for one part. What's missing? in the Agent window drew every item's step in the accent, which in the
+Roadster look is the red of an error (#f5434f beside the error's #ff4f61), so the optional step of a connection not tested
+yet read like a blocker's right under "Nothing blocks a start." (S12-33, `agent-5-connection-button.png`). The backend
+sends that step for every connection not tested since it started (readiness.py), the usual state after a restart. And the
+circuit column's Circuit picture read "1 devices · 0 nets" for the ngspice window's one-transistor deck, its picture's
+screen-reader label the same (S12-35, `ngspice-3-column.png`), where SIF-62 and SIF-117 had put every other count of the
+column in the right number.
+
+**Changed.** `frontend/src/panels/Pdk.tsx` (`IdealParts`): the heading keeps its count; the fold counts the same parts
+and those with no pin order apart, "The ideal parts (3, and 1 refused)"; such a component reads "refused: no pin order"
+under "Kind for the network" (its Pins "-" and its hover, the backend's "the library states no pin order for it", as
+before). The sentence takes each count's number: "1 has a kind of its own" or "N have a kind of their own" (plural()),
+and "the other one reaches it as "unknown", with its pins named" or "the other N reach it ..., with their pins named".
+`frontend/src/styles.css`: a step (`.check-action`) is in the hint's grey, under an item that blocks a start
+(`.check-missing`) in the red of an error and under a warning (`.check-warning`) in amber, as `.check-detail` already
+told a blocker apart; the ▶ of the budget asked for at Start (Agent.tsx) stays, as the plan says.
+`frontend/src/panels/CircuitPicture.tsx`: the line and the picture's aria-label count with plural(), "1 device · 0 nets"
+and "1 device and 0 nets". Beyond the plan: "with its pins named" for one part, and a warning item in the check's third
+answer, which pins the amber. Only words and a colour: nothing starts, continues or stops a run, saves a task or writes to Virtuoso,
+and every question is asked as before. `docs/workbench.md` (the ideal parts, What is missing before the run can start,
+the circuit picture) and `docs/functionality-reference.md` (Circuit picture, PDK window..., What's missing?) say it.
+
+**Checked.** `tsc` clean. One lane, after the memory guard, on a build of this tree. First the three scripts that pin
+the changed words and colours, all passed the first time: `pdk_check` 47 (46 before), with the sentence's "the other one
+reaches it as "unknown", with its pins named." and the fold's "The ideal parts (3, and 1 refused)" (they pinned "the other
+1 reach it" and "(4)"); new, mutual_inductor's kind reads "refused: no pin order" while mtline keeps "unknown"
+(`pdk-window-1-shown.png`), and the "-" of its pins still passes. `agent_window_check` 35 (33): new, the steps of the two
+items that block a start are in the colour of --bad (`agent-4-missing.png`); the third answer holds a warning now
+(Corner targets, "FIXTURE: open Corner check."; six items where the check counted five), and under "Nothing blocks a
+start." the connection's step is in the colour of --muted and the warning's in that of --warn
+(`agent-5-connection-button.png`). `ngspice_window_check` 47 (46): new, the picture's line reads "Circuit picture 1
+device · 0 nets" and its aria-label "1 device and 0 nets" (`ngspice-3-column.png`). Then the scripts that also render the
+three screens, all passed the first time, no flakes: `dom_identity_check` 56, `virtuoso_source_check` 123,
+`task_rows_check` 57, `typing_check` 62, `project_help_check` 62, `editor_columns_check` 45, `looks_check` 83 (it reads
+every rule of the stylesheet), `circuit_source_check` 19. In all 11 scripts, 636 checks. A probe run of the first three
+on the three sources as at 645586c (put back after, their sums compared) failed exactly the new and changed checks, 1 of
+47, 3 of 47 and 2 of 35. The memory guard tripped once, after the first run: the host had 0.3 GB free while WSL held 13
+GB of file cache; the user's own relief (6 x 1 GB touched and freed in Python) gave the host 5.1 GB back, and the guard
+passed. The runner's other scripts were not run: none renders these screens. The page with real data was not looked at:
+the live backend (8765) is down since the PC restart, and stays so.

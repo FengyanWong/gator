@@ -11,7 +11,8 @@
 // a diagnostic's words with its code on hover - branch record SIF-52); the kinds box and the help name no PDK's devices; Save sends the name, text, kinds and labels, then the page follows the
 // new task (its name on the editors' tab line, marked [ngspice]) and the editors hold its starter rows; a saved ngspice
 // task says under the editors' toolbar that it runs on ngspice and which connection it needs, shows its block in the
-// circuit column (revision, results), has "ngspice netlist..." back to its deck on the tab line and Delete task in the
+// circuit column (revision, results) and its circuit picture's counts in the right number ("1 device · 0 nets", branch
+// record SIF-142), has "ngspice netlist..." back to its deck on the tab line and Delete task in the
 // Tasks window (record 7.362); the launchers follow the connection in use (/api/connection/profiles answered by fixtures:
 // none chosen = both, a Virtuoso connection = "From a Virtuoso cell..." only, an ngspice connection = "From an ngspice
 // netlist..." only; the tab line's "ngspice netlist..." by the same rule), and the Tasks window lists the ngspice tasks
@@ -243,6 +244,13 @@ await runChecks(browser, async () => {
   check('pressed, it brings that window back: still one ngspice window, holding the deck', windows === 1
     && (await win.evaluate(`${W}.querySelector('textarea.ngspice-text').value`)) === DECK, `${windows} window(s)`);
   check('no red Blocked box for the followed task', !(await evaluate(`!!${PANEL}.querySelector('.blocker') || !!${CIRCUIT_PANEL}.querySelector('.blocker')`)));
+  // Branch record SIF-142: the picture draws the deck's one transistor (not its source) and counts it in the right number, on its
+  // line and for a screen reader - it read "1 devices", where every other count of the column is in the right number.
+  const picture = await evaluate(`(() => { const d = ${CIRCUIT_PANEL}.querySelector('.circuit-picture');
+    return d && [d.querySelector('summary').textContent, d.querySelector('svg')?.getAttribute('aria-label') ?? null]; })()`);
+  check('the circuit picture\'s line reads "1 device · 0 nets", and its picture says so to a screen reader (SIF-142)',
+    JSON.stringify(picture) === JSON.stringify(['Circuit picture 1 device · 0 nets', 'The circuit as a picture: 1 device and 0 nets, supply at the top and ground at the bottom.']),
+    JSON.stringify(picture));
   await shotTask('ngspice-3-task.png');
   await shot('ngspice-3-column.png');
   // The line's Connection... opens the Connection window from the page, which holds the click, and sends nothing (SIF-139).

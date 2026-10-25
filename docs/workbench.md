@@ -540,7 +540,8 @@ the task's load already returns, so nothing more is asked of the backend. It sho
 - names without their hierarchy where that stays unambiguous (DUT/M1 reads M1).
 
 Pointing at a Parameters row, or tabbing into it, lights the devices that row sizes: its own and those of the rows tied
-to it by `binding_group` (`w_pair` lights M1 and M2). The block folds into its heading line, and the fold is kept in
+to it by `binding_group` (`w_pair` lights M1 and M2). The block folds into its heading line, which counts the devices
+and nets it draws in the right number ("1 device · 0 nets", branch record SIF-142), and the fold is kept in
 this browser (`gator-workbench-circuit-picture-v1`).
 
 The loaded circuit's summary includes details for at most 400 devices. Terminal records are built only for those
@@ -3661,7 +3662,10 @@ components").
 - **Where you see it.** The line under the Virtuoso window's buttons ("PDK gpdk045 read with the cell: 54 components
   ... and 45 ideal parts of analogLib"), and the **PDK window**: an "Ideal parts" column in the list of loaded PDKs, and
   under a shown PDK how many were read, which have a kind of their own, and a folded list of every component with its
-  kind, its pin orders and its cells. A PDK loaded before this record says that its ideal parts were not read.
+  kind, its pin orders and its cells. A PDK loaded before this record says that its ideal parts were not read. The
+  heading, the sentence, the fold and the table count alike (branch record SIF-142): the fold counts the parts the
+  heading counts and those with no pin order apart ("The ideal parts (45, and 5 refused)"), the table gives such a
+  part the kind "refused: no pin order", and one part reads in the singular ("the other one reaches it").
 - **Not read:** generic libraries other than analogLib; a part from one stays unrecognized, and the refusal says so.
   Five components state no pin order (a mutual inductor has no nodes of its own) and stay unrecognized too.
 
@@ -4287,7 +4291,9 @@ not test again) and the budget authorization that only you can give. Each line s
 can help" for the three tables) and what to do; for the tables that includes Reload saved values for a saved task and that
 Claude Code or Codex (the Agent window) can draft the rows from your description. It is worked out when the button is
 pressed, from the configuration on the page, and never by itself: press it again after a change (it fills the list anew; a
-window opened anew starts without it).
+window opened anew starts without it). What to do is in the red of an error only under an item that blocks a start, in
+amber under a warning and in grey under the rest, such as a connection not tested yet (branch record SIF-142: every
+step was red, so that one read like a blocker's under "Nothing blocks a start.").
 
 An item whose step is in another window carries the button to it after what to do (branch record SIF-108): the connection
 **Connection...** (the Connection window), a circuit not read **Open Tasks** (the Tasks window, as it is). Each opens its

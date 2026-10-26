@@ -69,6 +69,7 @@ def _step(step, ok, *, detail=None, fix=None, **more) -> dict:
 
 
 def editors_step(config, name, saved) -> dict:
+    """Report whether the Parameters, Probes, and Specs rows match the saved task revision."""
     differences = row_differences(config, saved)
     if not differences:
         return _step('editors', True, detail=f'Parameters, Probes and Specs are those of revision {saved.get("revision")}.')

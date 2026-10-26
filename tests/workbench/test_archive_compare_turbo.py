@@ -15,6 +15,7 @@ def bowl(x, center=0.3):
 
 
 def run(search, f, n, *, asked=True):
+    """Advance a search through the requested number of synthetic objective evaluations."""
     for _ in range(n):
         x = search.ask()
         search.tell(x, f(x), asked=asked)

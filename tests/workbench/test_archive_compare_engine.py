@@ -26,6 +26,7 @@ FAST_MOBO = dict(num_restarts=2, raw_samples=32, mc_samples=16, maxiter=25, refi
 
 
 def sha(path):
+    """Return a file's SHA-256 digest for a pinned comparison input."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -44,6 +45,7 @@ def first_designs(root, seed=101, mutate=None):
 
 def search_config(root, block, *, optimizer='turbo_archive', lanes=1, evaluations=16, seed=101, output=None, mutate=None,
                   **run):
+    """Build a synthetic comparison run whose score cannot end an episode early."""
     return make_config(root, threshold=NEVER, mutate=mutate, output=output,
                        run=dict(dict(optimizer=optimizer, comparison=block, concurrency=lanes, max_evaluations=evaluations,
                                      seed=seed), **run))
@@ -60,6 +62,7 @@ def executed(layout):
 
 
 def steps_in_dispatch_order(layout):
+    """Return non-reset evaluations in their original dispatch order."""
     return [e for e in sorted(rows(layout, 'evaluations'), key=lambda e: e['dispatch_index']) if e['action_source'] != 'reset']
 
 
@@ -74,11 +77,13 @@ def resume(layout, root, evaluations):
 
 
 def saved_search(layout):
+    """Read the comparison search state from the latest save point."""
     payload = torch.load(checkpoints.resolve_checkpoint(layout.run_dir, 'latest') / 'training_state.pt', weights_only=False)
     return payload['run_state']
 
 
 def events(layout, name=None):
+    """Read recorded run events, optionally restricted to one event name."""
     return [e for e in read_jsonl(layout.logs / 'events.jsonl') if name is None or e['event'] == name]
 
 
@@ -256,6 +261,7 @@ MOBO_OBJECTIVES = [dict(metric='score', orientation='maximize', base_limit=0.0),
 
 
 def mobo_config(root, block, **options):
+    """Build a synthetic MOBO run with the shared two-objective fixture and small search settings."""
     return search_config(root, dict(block, objectives=MOBO_OBJECTIVES, settings=FAST_MOBO), optimizer='mobo',
                          mutate=two_objectives, **options)
 

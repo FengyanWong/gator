@@ -26,6 +26,7 @@ def circuit(x):
 
 
 def told(problem, x, status='ok'):
+    """Evaluate the synthetic circuit and encode its measurements as a search outcome."""
     m = circuit(x)
     return problem.outcome(m, {k: True for k in m}, status)
 
@@ -74,10 +75,12 @@ def test_the_hypervolume_is_exact_on_hand_worked_fixtures_and_agrees_with_botorc
 
 
 def search(seed=0, archive=None):
+    """Create a two-dimensional synthetic search with the shared constraints and small search settings."""
     return MoboSearch(2, Problem(ROWS, OBJECTIVES), seed=seed, settings=FAST, archive=archive)
 
 
 def first_designs(s, n=6):
+    """Give the search a reproducible Sobol design history before it proposes any points."""
     for x in torch.quasirandom.SobolEngine(2, scramble=True, seed=101).draw(n, dtype=torch.float64).tolist():
         s.tell(x, told(s.problem, x)[0], asked=False)
 
@@ -127,6 +130,7 @@ def test_it_improves_the_feasible_front_over_its_first_designs_on_a_known_proble
     s = search(seed=0)
     first_designs(s)
     def front():
+        """Measure the hypervolume of the search's valid feasible observations."""
         pts = []
         for y in s.Y:
             if y[3] == 1.0 and y[0] is not None and y[1] is not None and 0.2 <= y[2] <= 0.8:

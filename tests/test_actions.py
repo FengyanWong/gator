@@ -53,6 +53,7 @@ def test_no_active_actions_are_rejected(opamp):
 
 
 def group(lower, upper, step, value=None):
+    """Build a width group bound to M1.w, using its lower bound when no value is supplied."""
     return ParameterGroup('g', 'width', 'm', lower if value is None else value, lower, upper,
                           (ParameterBinding('M1', 'w'),), step=step)
 

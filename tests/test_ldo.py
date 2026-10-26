@@ -16,6 +16,7 @@ def test_regulation_and_psrr_use_measured_axes_and_input_amplitude():
 
 
 def trace():
+    """Construct a synthetic output-voltage and load-current trace around a load step."""
     time=[i*1e-6 for i in range(81)]
     output=[.8 if t<10e-6 else .797 for t in time]
     current=[10e-6 if t<10e-6 else 20e-6 for t in time]

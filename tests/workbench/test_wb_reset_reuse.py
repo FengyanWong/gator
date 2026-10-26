@@ -10,6 +10,7 @@ RESETS = ('baseline', 'episode_reset')
 
 
 def run(tmp_path, *, reuse, budget=10):
+    """Execute a scripted synthetic lane with optional reset reuse and return its recorded phases."""
     config = make_config(tmp_path, run=dict(max_evaluations=budget, concurrency=1), advanced=dict(episode_length=1))
     layout, _ = runs.prepare_run(config, roots_for(tmp_path))
     config = schema.WorkbenchConfig.model_validate(read_json(layout.effective_config))

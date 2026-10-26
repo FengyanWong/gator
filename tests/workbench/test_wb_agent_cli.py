@@ -14,6 +14,7 @@ from helpers import workbench_app
 
 
 def executable(path, text='#!/bin/sh\nexit 0\n'):
+    """Create an executable fixture script at the requested path."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
     path.chmod(0o755)
@@ -134,6 +135,7 @@ def test_a_window_on_a_linux_desktop_and_none_without_one(tmp_path, home, monkey
 
 # ------------------------------------------------------------------------------- the launch
 def launch_env(tmp_path):
+    """Provide fake launcher executables with the dry-run override removed."""
     executable(tmp_path / 'bin' / 'claude')
     executable(tmp_path / 'bin' / 'wt.exe')
     return env(tmp_path)                                   # GATOR_AGENT_CLI_LAUNCH not in it: a launch would be real

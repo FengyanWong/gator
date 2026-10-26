@@ -27,6 +27,7 @@ REVIEW = dict(allow_planned_probes=True, reason='synthetic test')
 
 
 def with_network(network):
+    """Return a configuration mutator that applies the requested network options."""
     def mutate(raw):
         raw['run']['network'].update(network)
     return mutate
@@ -110,6 +111,7 @@ def sources(tmp_path_factory):
 
 
 def request_for(runs_, inputs):
+    """Build a synthetic offline-training request tied to the supplied archive identities."""
     return dict(origin='synthetic', seed=7, holdout_fraction=0.2, inputs=inputs,
                 runs=[dict(run_dir=str(s.run_dir), archive_sha256=pretrain.archive_identity(s.run_dir)) for s in runs_],
                 updates=2, batch_size=3, checkpoint_every=2, model=dict(hidden_dim=16, heads=2, layers=1),
@@ -118,6 +120,7 @@ def request_for(runs_, inputs):
 
 @pytest.fixture(scope='module')
 def family_model(sources, tmp_path_factory):
+    """Provide an offline model trained from the fixture runs with family-vocabulary inputs."""
     root, first, other = sources
     output = tmp_path_factory.mktemp('fingerprint-offline') / 'mock' / 'offline'
     with other_circuits('toy_ldo'):
@@ -175,6 +178,7 @@ def test_a_published_standard_list_model_stays_one(sources, tmp_path):
 
 # ------------------------------------------------------------------------------------------- what a pool shows, pinned
 def shown_widths(pool):
+    """Return rounded distinct widths from the first pooled training transition."""
     transition = next(iter(pool.training.values()))[0]
     return sorted({round(values['w'].value, 6) for values in transition.observation.graph.parameters.values() if 'w' in values})
 

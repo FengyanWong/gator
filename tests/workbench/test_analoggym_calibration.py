@@ -16,6 +16,7 @@ from helpers import make_config
 
 @pytest.fixture
 def calibration(monkeypatch):
+    """Load the calibration example as a module for tests that replace its simulator dependencies."""
     examples = Path(__file__).resolve().parents[2] / 'examples'
     monkeypatch.syspath_prepend(str(examples))
     spec = importlib.util.spec_from_file_location('calibration_under_test', examples / 'calibrate_analoggym.py')
@@ -113,6 +114,7 @@ def test_every_passing_design_is_rechecked_and_disagreement_stops_all(calibratio
     monkeypatch.setattr(calibration,'parse_entry',lambda *args:SimpleNamespace(graph=graph))
     # The fixture's backend returns a passing, finite, valid score every time.
     class Backend:
+        """A synthetic calibration backend that reports a passing design for every evaluation."""
         def __init__(self,*args,**kwargs):
             self.parameters={}; self.count=0
         def connect(self): pass
@@ -120,10 +122,12 @@ def test_every_passing_design_is_rechecked_and_disagreement_stops_all(calibratio
         def set_parameters(self, values): self.parameters=values
         def native_values(self): return {'W':1.}
         def generate_netlist(self,root):
+            """Create the synthetic netlist artifact directory and return its netlist path."""
             root.mkdir(parents=True)
             return SimpleNamespace(path=root/'deck.cir',condition=None)
         def get_circuit_graph(self,artifact): return graph
         def run_simulation(self,request):
+            """Record a successful synthetic evaluation and its analysis count."""
             self.count+=1
             write_json(request.work_root/'benchmark.json',dict(native_metrics={'score':1.},upstream_passed=True))
             write_json(request.work_root/'analysis-counts.json',dict(analyses=1,commands={'op':1},complete=True))
@@ -133,6 +137,7 @@ def test_every_passing_design_is_rechecked_and_disagreement_stops_all(calibratio
     monkeypatch.setattr(calibration,'AnalogGymBackend',Backend)
     checked=[]
     def verify(*args,**kwargs):
+        """Record the independently checked design and return the selected verification verdict."""
         checked.append(args[1])
         return dict(passed=independent_pass,simulator_processes=2,differences=[] if independent_pass else ['verdict'])
     monkeypatch.setattr(calibration,'verify_pass',verify)

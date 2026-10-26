@@ -70,6 +70,7 @@ def test_a_diode_wrapped_with_its_series_resistance_is_a_diode():
         'model dm_dcore diode is=1e-15']), '/pdk/demo/wrapped.scs')
 
     def facts(name):
+        """Return the classified device family and terminal roles for an invented model."""
         found = pdk.classify_model(name, scan)
         return found['family'], [p['role'] for p in pdk.pin_roles(name, found, scan)]
     assert facts('dm_sdio') == ('diode', ['anode', 'cathode'])          # the first pin reaches the anode through r1
@@ -84,6 +85,7 @@ def test_parameters_get_units_scales_and_columns_by_rule():
     record = load_demo()
 
     def param(model, name):
+        """Find a named parameter in the loaded demo device record."""
         return next(p for p in record['devices'][model]['parameters'] if p['name'] == name)
     w = param('dm_nch', 'w')
     assert (w['cdf'], w['unit'], w['unit_declared'], w['column'], w['reference'], w['action_class']) == ('simW', 'm', True, 'w', 1e-6, 'w')
@@ -126,13 +128,16 @@ def test_reading_downloads_into_a_temporary_folder_and_follows_includes(tmp_path
     seen, folders = [], []
 
     class Result:
+        """A bridge-result stand-in with success, output and error fields."""
         def __init__(self, ok=True, output='', errors=()):
             self.ok, self.output, self.errors = ok, output, list(errors)
 
     class FakeClient:
+        """A bridge client serving only invented CDF and model-file fixtures."""
         ideal = 'ok'
 
         def execute_skill(self, text, timeout):
+            """Return fixture CDF text or a simulated busy-session error for the requested library."""
             if 'ddGetObj("analogLib")' in text:           # the ideal parts: one more query, which opens nothing
                 assert 'dbOpen' not in text and 'PARAM' not in text
                 return Result(output=(FIXTURE / 'ideal.txt').read_text()) if self.ideal == 'ok' else Result(
@@ -141,6 +146,7 @@ def test_reading_downloads_into_a_temporary_folder_and_follows_includes(tmp_path
             return Result(output=(FIXTURE / 'cdf.txt').read_text())
 
         def download_file(self, remote, local, timeout=None):
+            """Copy an invented model fixture and record the requested path and destination folder."""
             seen.append(remote)
             folders.append(Path(local).parent)
             Path(local).write_bytes((FIXTURE / 'models' / Path(remote).name).read_bytes())
@@ -279,6 +285,7 @@ def test_validation_lets_pdk_parameters_vary_only_under_the_pdk_list(demo_task, 
     runtime = tasks.load_task(schema.CircuitReference(source='registered_task', task_id='synthetic:pdk_demo'))
 
     def issues(config):
+        """Return validation messages keyed by issue code and severity."""
         report = validation.validate(config, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics))
         return {(i.code, i.level): i.message for i in report.issues}
     under_pdk = issues(demo_config(tmp_path))
@@ -289,6 +296,7 @@ def test_validation_lets_pdk_parameters_vary_only_under_the_pdk_list(demo_task, 
     assert "'rad'" in message and 'choose the component list "PDK demo045"' in message
 
     def with_row(row, vocabulary='pdk:demo045'):
+        """Add one parameter row to a synthetic configuration with the selected PDK vocabulary."""
         return demo_config(tmp_path, vocabulary, mutate=lambda raw: raw['parameters'].append(row))
     area = issues(with_row(dict(variable_id='bjt_area', instance_path='XU1/Q1', parameter_name='area', unit='1',
                                 lower=4, upper=100)))
@@ -315,6 +323,7 @@ def test_the_api_lists_shows_and_loads_a_pdk(tmp_path, monkeypatch):
     calls = []
 
     def fake_read(monitor, profile_id, op, **kwargs):
+        """Record the PDK read request and describe the demo fixtures without a bridge."""
         calls.append((profile_id, op, kwargs))
         return pdk.describe(pdk.finish_load(raw_material()))
     monkeypatch.setattr(bridge_read, 'read', fake_read)
@@ -444,10 +453,12 @@ def demo_pdk(tmp_path, monkeypatch):
     load, listing = pdk_record.load_record, pdk_record.list_pdks
 
     def counted_load(*args, **kwargs):
+        """Count PDK-record loads while returning the original loader's result."""
         loads['load_record'] += 1
         return load(*args, **kwargs)
 
     def counted_list(*args, **kwargs):
+        """Count PDK listings while returning the original listing."""
         loads['list_pdks'] += 1
         return listing(*args, **kwargs)
     monkeypatch.setattr(pdk_record, 'load_record', counted_load)          # where validation and list_pdks read it
@@ -461,7 +472,9 @@ def test_a_validation_reads_the_pdk_record_once_and_lists_the_loaded_pdks_once(d
              for i, (device, name) in enumerate((('XU1/Q1', 'area'), ('XU1/L1', 'nr'), ('XU1/M1', 'region'), ('XU1/M2', 'sa')))]
 
     def config(vocabulary):
+        """Build a demo configuration with extra rows and the requested network vocabulary."""
         def mutate(raw):
+            """Apply the fixture vocabulary and additional parameter rows."""
             raw['run']['network']['vocabulary'] = vocabulary
             raw['parameters'] += extra
         return make_config(tmp_path, 'synthetic:pdk_demo', mutate=mutate)
@@ -502,6 +515,7 @@ MODEL = '/pdk/demo045/models/demo045.scs'
 
 # ---- the PDK's model files ----------------------------------------------------------------------------------------------
 class _Result:
+    """A fake bridge result for model-file cache and CDF queries."""
     def __init__(self, ok=True, output='', errors=()):
         self.ok, self.output, self.errors = ok, output, list(errors)
 
@@ -512,6 +526,7 @@ class _Host:
         self.files, self.modified, self.downloads, self.stamp_queries, self.stamps_answer = files, modified, [], 0, True
 
     def execute_skill(self, text, timeout):
+        """Return fixture CDF facts or configured file stamps for the recognized SKILL request."""
         if 'fileTimeModified' in text:
             self.stamp_queries += 1
             if not self.stamps_answer:
@@ -524,6 +539,7 @@ class _Host:
         return _Result(output=(PDK_FIXTURE / 'cdf.txt').read_text())
 
     def download_file(self, remote, local, timeout=None):
+        """Copy an in-memory model file and record the simulated download."""
         self.downloads.append(remote)
         Path(local).write_bytes(self.files[remote])
         return _Result()
@@ -535,6 +551,7 @@ def test_the_pdk_model_files_are_downloaded_only_when_the_host_holds_others():
     modified = {path: '1727000000' for path in files}
 
     def read(host):
+        """Read the invented PDK through the supplied fake host."""
         return pdk.read_from_virtuoso(host, technology_library='demo045', model_file=MODEL, decode=lambda text: text)
     first_host = _Host(files, modified)
     first = read(first_host)
@@ -568,6 +585,7 @@ def test_the_model_file_copies_are_kept_per_host():
     other = dict(files, **{passive: files[passive][:-1] + (b'Y' if files[passive][-1:] != b'Y' else b'Z')})    # the same length
 
     def read(host, identity):
+        """Read the invented PDK with an explicit host identity for its file cache."""
         return pdk.read_from_virtuoso(host, technology_library='demo045', model_file=MODEL, decode=lambda text: text, cache_host=identity)
     folders = [pdk.ModelFileCache('demo045', identity).folder for identity in ('minlei@vm-a', 'minlei@vm-b')]
     assert [f.parent.name for f in folders] == ['minlei@vm-a', 'minlei@vm-b'] and folders[0].parent.parent == folders[1].parent.parent

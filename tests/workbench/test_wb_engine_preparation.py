@@ -21,6 +21,7 @@ class NativeLikeFactory(ScriptedEnvFactory):
 
     @contextmanager
     def preparation_context(self, limits, report):
+        """Yield a prepared factory and record preparation and restoration events."""
         EVENTS.append(('enter', type(limits).__name__))
         report['preparation'] = dict(session_dir='/fixture/session')
         try:
@@ -30,6 +31,7 @@ class NativeLikeFactory(ScriptedEnvFactory):
             EVENTS.append(('exit', None))
 
     def __call__(self, lane):
+        """Reject unprepared lane creation and record each prepared lane opening."""
         if not self.prepared:
             raise AttributeError("'NoneType' object has no attribute 'baseline'")        # what the real factory did
         EVENTS.append(('lane_open', lane))
@@ -37,6 +39,7 @@ class NativeLikeFactory(ScriptedEnvFactory):
 
 
 def run_with(tmp_path, factory_changes=None):
+    """Execute a MOCK engine with the instrumented preparation-aware lane factory."""
     EVENTS.clear()
     config = make_config(tmp_path, run=dict(max_evaluations=6, concurrency=2))
     layout, _ = runs.prepare_run(config, roots_for(tmp_path))

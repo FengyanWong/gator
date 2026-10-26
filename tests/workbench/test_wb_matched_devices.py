@@ -29,14 +29,17 @@ MAPPING = ParserConfig(models={'nch': DeviceMapping('nmos', **_MOS), 'pch': Devi
 
 
 def graph_of(text):
+    """Parse a Spectre fixture with the matched-device test mapping."""
     return SpectreParser(MAPPING).parse_text(text)
 
 
 def found(graph):
+    """Return the kinds and device groups recognized in a circuit graph."""
     return [(s.kind, s.devices) for s in structures.recognize(graph)]
 
 
 def rows(raw):
+    """Validate raw fixture rows as optimization parameters."""
     return [schema.OptimizationParameter.model_validate(r) for r in raw]
 
 
@@ -161,6 +164,7 @@ def test_the_ngspice_rows_get_the_pair_and_the_load_tied_and_the_bias_mirror_off
 
 
 def nt_config(parameter_rows):
+    """Build a synthetic OTA configuration using the supplied parameter rows."""
     return dict(project=dict(name='ota', task_name='ota'), circuit=dict(source='registered_task', task_id='synthetic:gpdk045_ota5'),
                 parameters=[r.model_dump() for r in parameter_rows], run=dict(max_evaluations=10))
 
@@ -208,6 +212,7 @@ V1 (vdd 0) vsource dc=1
 
 # ------------------------------------------------------------------------------ the route
 def post(client, config, apply=None):
+    """Submit a matched-device request and return its successful JSON response."""
     response = client.post('/api/parameters/matched', json=dict(config=config, apply=apply))
     assert response.status_code == 200, response.text
     return response.json()

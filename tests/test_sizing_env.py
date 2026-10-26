@@ -16,6 +16,7 @@ from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 
 @pytest.fixture
 def fixture_backend(opamp):
+    """Provide a synthetic backend whose first action group varies while the second remains fixed."""
     opamp.parameter_groups[0] = replace(opamp.parameter_groups[0], scale='linear')
     opamp.parameter_groups[1] = replace(opamp.parameter_groups[1], mutable=False)
     return SyntheticSizingFixture(opamp)
@@ -249,6 +250,7 @@ NOMINAL = SimulationCondition(PVTCorner('nominal', 'tt', 27.0, 1.0))
 
 
 def prepared(opamp):
+    """Prepare a graph with a linear first action group and an immutable second group."""
     opamp.parameter_groups[0] = replace(opamp.parameter_groups[0], scale='linear')
     opamp.parameter_groups[1] = replace(opamp.parameter_groups[1], mutable=False)
     return opamp
@@ -266,10 +268,12 @@ class RelabelledFixture(SyntheticSizingFixture):
             raise UnsupportedCapability('fixture: nominal only')
 
     def generate_netlist(self, work_root, *, condition=None):
+        """Relabel a synthetic netlist artifact with the supplied condition and scripted origin for accounting tests."""
         artifact = super().generate_netlist(work_root)
         return NetlistArtifact(artifact.path, artifact.job_id, artifact.sha256, self.origin, condition)
 
     def run_simulation(self, request):
+        """Relabel a synthetic result and omit its invocation count to exercise legacy accounting."""
         result = super().run_simulation(request)
         return replace(result, origin=self.origin, condition=request.condition, simulator_invocations=self.invocations)
 

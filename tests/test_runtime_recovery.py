@@ -27,7 +27,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class HangingBackend(SyntheticSizingBackend):
+    """A synthetic backend that hangs after its first evaluation to exercise lane recovery."""
     def run_simulation(self, request):
+        """Block the second evaluation indefinitely and otherwise use the synthetic response."""
         if self.calls == 1:
             while True:
                 time.sleep(.05)
@@ -36,6 +38,7 @@ class HangingBackend(SyntheticSizingBackend):
 
 @dataclass
 class ToyFactory:
+    """A picklable factory that chooses a hanging or ordinary synthetic backend for each lane."""
     graph: object
     output: Path
     steps: int = 2
@@ -45,6 +48,7 @@ class ToyFactory:
         return self.create_recorded(lane, None)
 
     def create_recorded(self, lane, recorder):
+        """Build an isolated lane environment with the requested failure mode and optional recorder."""
         backend = HangingBackend if lane == self.hang_lane else SyntheticSizingBackend
         return CircuitSizingEnv(backend(self.graph, targets={'w': .4, 'c': -.3}), self.graph,
             (MetricSpec('score', 'fixture', 'min', 1, lower=.95),), self.output / str(lane),
@@ -52,6 +56,7 @@ class ToyFactory:
 
 
 def toy_learner():
+    """Build a deterministically seeded small learner for synthetic recovery tests."""
     torch.set_num_threads(1)
     torch.manual_seed(12)
     return SACLearner(experiment=dict(origin='synthetic', split='offline-recovery', designs=['toy']),
@@ -90,6 +95,7 @@ def test_owned_worker_deadline_and_exit_do_not_block_shutdown(operation):
 def test_hung_lane_keeps_peer_transition_and_reports_unknown_job(opamp, tmp_path, monkeypatch):
     original = OwnedWorker.submit
     def submit(self, function, *args, **kwargs):
+        """Shorten only the hung lane step deadline while preserving the peer lane deadline."""
         if function.__name__ == '_step' and self.lane == 0:     # only the hung lane: its peer's step had the same 0.6 s and
             kwargs['timeout'] = .6                              # missed it under a loaded suite (review of 2026-10-01)
         return original(self, function, *args, **kwargs)
@@ -114,16 +120,19 @@ def test_cleanup_covers_initialization_and_report_errors(tmp_path, monkeypatch, 
     from analog_optimizer.envs import sizing
     events = []
     class Store:
+        """A recording-store fake that records call and close order for cleanup assertions."""
         def call(self, *args):
             events.append(args[0])
             return [] if args[0] == 'read' else 'asset'
         def close(self):
             events.append('close')
     class Manager:
+        """A process-manager fake that records whether cleanup requests shutdown."""
         def shutdown(self):
             events.append('shutdown')
     monkeypatch.setattr(recording, 'start_service', lambda *a: (Manager(), Store()))
     def create(*a, **kw):
+        """Return a fake run ID or inject the requested setup failure."""
         if fail_at == 'create_run':
             raise ValueError('setup failed')
         return 'run'
@@ -145,6 +154,7 @@ def test_cleanup_errors_preserve_original_exception(tmp_path, monkeypatch):
     from analog_optimizer.envs import sizing
     events = []
     class BrokenStore:
+        """A recording-store fake that records cleanup calls and raises on each one."""
         def call(self, *args):
             events.append('end')
             raise OSError('database failure')
@@ -152,6 +162,7 @@ def test_cleanup_errors_preserve_original_exception(tmp_path, monkeypatch):
             events.append('close')
             raise OSError('close failure')
     class Manager:
+        """A process-manager fake that records shutdown after other cleanup failures."""
         def shutdown(self):
             events.append('shutdown')
     def broken_report(*args):
@@ -177,12 +188,14 @@ def test_parallel_cli_resumes_periodic_checkpoint_twice_with_cumulative_counts(o
     config.write_text(json.dumps(dict(min_free=0, temporary_reserve=0, checkpoint_interval=1)))
     records = tmp_path / 'records'
     def prepare(args, directory):
+        """Supply the parallel CLI with a toy factory and seeded synthetic learner metadata."""
         learner = toy_learner()
         return ToyFactory(opamp, directory), learner.experiment, learner.model_config, {}, {}
     monkeypatch.setattr(entry, 'prepare_training', prepare)
     original_write = sizing.write_record
     interrupt = [True]
     def write(path, data):
+        """Write progress before injecting the interrupt requested by the resume test."""
         original_write(path, data)
         if Path(path).name == 'progress.json' and interrupt[0]:
             raise KeyboardInterrupt('injected after durable periodic checkpoint')
@@ -246,6 +259,7 @@ def test_environment_report_failure_still_restores_and_closes(opamp, tmp_path, m
     env = ToyFactory(opamp, tmp_path)(0)
     original = sizing.write_record
     def write(path, data, **options):         # the toy (synthetic) environment's journals pass durable=False
+        """Inject a restoration-report write failure while allowing the other journals to be written."""
         if Path(path).name == 'restoration.json':
             raise OSError('restoration report failure')
         return original(path, data, **options)
@@ -290,6 +304,7 @@ class LateFuture:
         self.value, self.waits = value, 0
 
     def result(self, timeout=None):
+        """Raise once on a timed result request, then return the stored value."""
         if timeout is not None and self.waits == 0:
             self.waits += 1
             raise TimeoutError()

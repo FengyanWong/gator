@@ -47,14 +47,17 @@ def test_log_tail_io_is_bounded_by_the_requested_window(tmp_path, monkeypatch):
     opened, real_open = [], Path.open
 
     class Counted(io.BufferedReader):
+        """A buffered log reader that totals bytes actually read."""
         bytes_read = 0
 
         def read(self, size=-1):
+            """Count returned bytes while preserving the normal buffered read."""
             value = super().read(size)
             self.bytes_read += len(value)
             return value
 
     def open_file(p, *args, **kwargs):
+        """Wrap only the target log's binary reader with byte accounting."""
         if p == path and args == ('rb',):
             stream = Counted(io.FileIO(p, 'r'))
             opened.append(stream)
@@ -73,14 +76,17 @@ def test_opening_a_healthy_append_log_does_not_scan_its_history(tmp_path, monkey
     opened, real_open = [], Path.open
 
     class Counted(io.BufferedRandom):
+        """A buffered append-log stream that counts reads of existing history."""
         bytes_read = 0
 
         def read(self, size=-1):
+            """Count returned history bytes while preserving the stream read."""
             value = super().read(size)
             self.bytes_read += len(value)
             return value
 
     def open_file(p, *args, **kwargs):
+        """Wrap only the target append-log stream with byte accounting."""
         if p == path and args == ('a+b',):
             stream = Counted(io.FileIO(p, 'a+'))
             opened.append(stream)
@@ -105,6 +111,7 @@ def test_file_walk_prunes_work_before_visiting_and_keeps_nested_names(tmp_path, 
     visited, scan = [], os.scandir
 
     def scandir(path):
+        """Record every visited directory while retaining normal scan behavior."""
         visited.append(Path(path))
         return scan(path)
 
@@ -125,15 +132,18 @@ def test_zip_spills_to_disk_streams_large_chunks_and_closes_on_disconnect(tmp_pa
     chunks = []
 
     async def send(message):
+        """Capture streamed ZIP body chunks and optionally simulate a disconnected client."""
         if message['type'] == 'http.response.body' and message.get('body'):
             chunks.append(message['body'])
             if disconnect:
                 raise OSError('client disconnected')
 
     async def receive():
+        """Report a disconnected HTTP client to the fixture response."""
         return {'type': 'http.disconnect'}
 
     async def transfer():
+        """Exercise the ZIP response through the fixture ASGI callbacks."""
         await response({'type': 'http', 'asgi': {'spec_version': '2.4'}}, receive, send)
 
     if disconnect:
@@ -217,6 +227,7 @@ def test_display_checksum_cache_invalidates_and_never_serves_execution(tmp_path,
     reads = []
 
     def digest(path):
+        """Record checksum reads while computing the actual file digest."""
         reads.append(path)
         return atomic.sha256_file(path)
 
@@ -275,6 +286,7 @@ def test_a_runs_files_listed_many_at_a_time_are_those_listed_one_by_one(tmp_path
         (tmp_path / relative).write_text(relative)
 
     def one_by_one(root, *, exclude_roots=(), exclude_dirs=()):          # run_files before record 7.279
+        """Return the original per-file-stat run inventory as the comparison oracle."""
         entries = []
         for directory, dirs, files in os.walk(root):
             base = Path(directory)

@@ -16,16 +16,19 @@ pytestmark = pytest.mark.xdist_group('test_wb_aggregates')
 
 
 def table(experiment_dir, name):
+    """Read a named aggregate CSV into row dictionaries."""
     with (Path(experiment_dir) / 'aggregates' / f'{name}.csv').open(newline='') as stream:
         return list(csv.DictReader(stream))
 
 
 def meta(experiment_dir, name):
+    """Read the metadata associated with a named aggregate CSV."""
     return read_json(Path(experiment_dir) / 'aggregates' / f'{name}.meta.json')
 
 
 @pytest.fixture(scope='module')
 def workflow(tmp_path_factory):
+    """Provide a recorded MOCK experiment with paired scratch, fine-tuned, and frozen target runs."""
     root = tmp_path_factory.mktemp('workflow')
     labels = lambda **k: dict(dict(budget_checkpoints=[5, 14, 50]), **k)
     source, _ = execute(make_config(root, 'synthetic:gpdk045_ota5', run=dict(max_evaluations=20, seed=100),
@@ -314,6 +317,7 @@ def test_mock_data_is_isolated_from_real_aggregates(workflow, tmp_path):
     runs_module.load_task = lambda circuit, allow_real=False, profile_id=None: real
 
     class PassingGate:                       # the connection gate is not what this test is about
+        """An always-passing gate that isolates aggregation from transfer eligibility."""
         def gate(self, action, profile_id, acknowledge_unknown=False):
             return dict(allowed=True, status='passed', profile_id=profile_id, layers=[])
     try:

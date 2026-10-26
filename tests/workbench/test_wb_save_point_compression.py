@@ -19,6 +19,7 @@ from helpers import execute, make_config
 
 
 def payload():
+    """Provide compressible tensors and nested values for save-point round-trip checks."""
     return dict(weights=torch.arange(12, dtype=torch.float32).reshape(3, 4), names=['a', 'b'] * 50,
                 nested=dict(values=[0.5] * 200, flag=True), log_alpha=torch.tensor(-2.0))
 
@@ -63,6 +64,7 @@ def test_a_difference_after_compression_is_refused_and_nothing_is_left(tmp_path,
     original = zipfile.ZipFile.writestr
 
     def altered(self, info, data, *args, **kwargs):          # one entry written with a byte changed
+        """Corrupt one pickle-entry byte during ZIP writing to test integrity rejection."""
         if isinstance(data, bytes) and data and info.filename.endswith('data.pkl'):
             data = data[:-1] + bytes([data[-1] ^ 1])
         return original(self, info, data, *args, **kwargs)
@@ -73,6 +75,7 @@ def test_a_difference_after_compression_is_refused_and_nothing_is_left(tmp_path,
 
 
 def save_points(layout):
+    """Return the run's save-point directories in name order."""
     return sorted(p for p in layout.checkpoints.iterdir() if p.is_dir() and p.name.startswith('ckpt-'))
 
 

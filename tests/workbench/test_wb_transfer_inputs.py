@@ -20,7 +20,9 @@ NUMBERS = dict(g45n1svt=dict(lmin=45e-9, wmin=120e-9, basis='model bin', vth0=0.
 
 
 def with_network(network):
+    """Return a configuration mutation applying the requested network settings."""
     def mutate(raw):
+        """Apply the fixture's network-input settings to a starter configuration."""
         raw['run']['network'].update(network)
     return mutate
 
@@ -39,6 +41,7 @@ def invented_pdk(settings, numbers=NUMBERS):
 
 @pytest.fixture(scope='module')
 def set_run(tmp_path_factory):
+    """Provide a completed synthetic run using specifications as a transferable set."""
     root = tmp_path_factory.mktemp('transfer-set')
     layout, state = execute(make_config(root, run=dict(max_evaluations=12), mutate=with_network(SET)), root)
     assert state == 'completed'

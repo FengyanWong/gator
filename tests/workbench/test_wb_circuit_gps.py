@@ -16,6 +16,7 @@ pytestmark = pytest.mark.xdist_group('test_wb_circuit_gps')
 
 
 def program(expression, *, equation='p', analysis='tran', source='ade_output', unit='V', bench=None):
+    """Describe one measurement expression bound to a specification and optional testbench."""
     probe = SimpleNamespace(measurement_id='p', analysis=analysis, result_source=source, signal=expression, unit=unit)
     target = SimpleNamespace(metric_id='s', equation=equation)
     return spec_programs.describe_programs(SimpleNamespace(measurements=[probe], targets=[target]),
@@ -23,6 +24,7 @@ def program(expression, *, equation='p', analysis='tran', source='ade_output', u
 
 
 def walk(tree):
+    """Yield a node and its descendants from the expression tree."""
     yield tree
     for child in tree.get('children', ()):
         yield from walk(child)
@@ -73,6 +75,7 @@ def test_schema_defaults_and_view_identity_include_programs(tmp_path):
 
 @pytest.fixture(scope='module')
 def joint_run(tmp_path_factory):
+    """Provide a completed MOCK run configured for CircuitGPS inputs."""
     root = tmp_path_factory.mktemp('circuit-gps-mock')
     config = make_config(root, run=dict(max_evaluations=8, network=dict(encoder_type='circuit_gps', hidden_dim=16, heads=2, layers=2)),
                          advanced=dict(updates_per_transition=1, gamma=0.))

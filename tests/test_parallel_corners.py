@@ -35,9 +35,11 @@ class SideBySideBackend(ScriptedRealBackend):
         assert condition in PLAN
 
     def delegated(self, call):
+        """Run delegated calls directly inside this scripted backend."""
         return call
 
     def run_simulation(self, request):
+        """Track overlapping scripted jobs and inject their configured delay, hook or failure."""
         with self.lock:
             self.running += 1
             self.peak = max(self.peak, self.running)
@@ -57,6 +59,7 @@ class SideBySideBackend(ScriptedRealBackend):
 
 
 def env_for(graph, directory, jobs):
+    """Build a scripted sizing environment that checks the planned corners after nominal success."""
     backend = SideBySideBackend(graph)
     return CircuitSizingEnv(backend, backend.graph, specs(), directory, max_steps=3, stop_on_success=False,
                             condition_policy='after_nominal', corners=CORNERS, condition_jobs=jobs)
@@ -74,6 +77,7 @@ def run_step(env, *, stop_file=None):
 
 
 def rows_of(record):
+    """Extract each recorded condition, status and measurement set for deterministic comparisons."""
     return [(r['condition']['corner']['id'] if r['condition'] else 'nominal', r['status'], r['metrics'])
             for r in record['condition_results']]
 
@@ -106,6 +110,7 @@ def test_every_launch_intent_is_on_disk_before_its_job_starts(opamp, tmp_path):
         seen = {}
 
         def look(request):                                                   # at the moment the simulator starts
+            """Read the matching launch receipt at the instant a scripted simulator job begins."""
             index = PLAN.index(request.condition)
             files = sorted(env.directory.glob(f'launch-*-{index}.json'), key=lambda p: p.stat().st_mtime)
             seen[index] = json.loads(files[-1].read_text())['state'] if files else None
@@ -188,6 +193,7 @@ def test_a_helper_thread_passes_the_owner_check_only_when_delegated_for_a_simula
     outcome = {}
 
     def helper():
+        """Record which connection checks a helper thread may pass with and without delegation."""
         for name, call in [('plain', lambda: backend._require_connection(delegable=True)),
                            ('delegated, other call', backend.delegated(lambda: backend._require_connection())),
                            ('delegated simulation', backend.delegated(lambda: backend._require_connection(delegable=True)))]:
@@ -207,6 +213,7 @@ def test_two_simulations_logging_at_once_keep_their_logs_apart(tmp_path, capsys)
     together = threading.Barrier(2)
 
     def job(name):
+        """Write concurrent thread output under a separate captured log for each fake job."""
         with (tmp_path / f'{name}.log').open('w') as log, virtuoso_bridge._captured(log):
             together.wait()
             for i in range(300):

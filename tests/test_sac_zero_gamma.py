@@ -14,6 +14,7 @@ from research_support import deterministic_cpu, EXPERIMENT, learner, model_confi
 
 # ------------------------------------------------------------------- record 7.221: gamma-zero shortcut, lent replay
 def _equal_state(a, b):
+    """Require identical tensor, array and nested container state after the paired learner updates."""
     import numpy as np
     if isinstance(a, torch.Tensor):
         assert isinstance(b, torch.Tensor) and a.dtype == b.dtype and torch.equal(a, b)
@@ -41,6 +42,7 @@ def assert_same_learner_state(a, b):
 
 
 def _cache(cache):
+    """Choose an empty mutable input cache or disable caching for the paired execution."""
     return {} if cache == 'warm' else dict(input_cache_capacity=0, topology_cache_capacity=0)
 
 

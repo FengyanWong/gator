@@ -26,6 +26,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def by_seq(layout, table='evaluations'):
+    """Read dataset rows in commit-sequence order."""
     return sorted(rows(layout, table), key=lambda r: r['commit_seq'])
 
 
@@ -210,6 +211,7 @@ def test_waveform_retention_follows_the_overall_best_not_each_candidate_class(tm
     scores = iter([0.6, 0.7, 0.9, 0.75])
 
     def writing(self, request):
+        """Assign the next fixture score and leave a raw output artifact for retention checks."""
         result = simulate(self, request)
         result.metrics['score'] = next(scores)
         (result.artifact_directory / 'result.txt').write_text('synthetic raw output')
@@ -288,6 +290,7 @@ def request_after(layout, command, evaluations, timeout=60, *, in_flight=False):
     import threading
 
     def watch():
+        """Poll the run budget until the requested point and then submit the control command."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             budget = (read_json(layout.status, default={}) or {}).get('budget') or {}
@@ -370,11 +373,13 @@ class CancelHeldFactory(ScriptedEnvFactory):
     deadline: float = 60.0                     # only if the engine never records the cancel; the test then fails
 
     def __call__(self, lane):
+        """Hold the selected lane's second simulation until cancellation is observed or the deadline expires."""
         env = super().__call__(lane)
         if str(lane) == '1':
             simulate, calls = env.backend.run_simulation, []
 
             def held(request):
+                """Delay the second simulation until the stop file and cancellation receipt are visible."""
                 calls.append(request)
                 if len(calls) == 2:
                     end = time.time() + self.deadline
@@ -494,6 +499,7 @@ def test_core_persistence_failure_stops_simulating_instead_of_losing_data(tmp_pa
     real_write, calls = pq.write_table, []
 
     def failing_after_first_flush(table, where, *args, **kwargs):
+        """Inject a disk-space failure when persistence advances beyond the first flush."""
         calls.append(str(where))
         if len({c.split('part-')[1][:6] for c in calls if 'part-' in c}) > 1:      # second flush onwards
             raise OSError(28, 'No space left on device')
@@ -530,6 +536,7 @@ def test_a_single_baseline_run_asks_the_task_flow_to_record_it_when_it_ends(tmp_
     handed = []
 
     def fake_adopt(run_dir, manifest=None):
+        """Record the completed baseline handoff and report successful reference adoption."""
         handed.append((Path(run_dir), manifest['state'], manifest['run_kind']))
         return dict(recorded=True, name='ring', note='FIXTURE: recorded as the reference of real:ring')
     monkeypatch.setattr(profiles, 'adopt_baseline_run', fake_adopt)
@@ -573,6 +580,7 @@ def test_a_candidate_a_pause_stops_before_its_launch_is_cancelled_not_a_failure_
     authorize, calls = CircuitSizingEnv.authorize_launches, {}
 
     def pause_on_the_way(env, allowance, *, stop_file=None):
+        """Request a pause during candidate authorization and wait for the lane's stop signal."""
         authorize(env, allowance, stop_file=stop_file)
         calls[id(env)] = calls.get(id(env), 0) + (allowance > 0)
         if calls[id(env)] == 3 and 'paused' not in calls:       # Pause is pressed while this candidate is on its way
@@ -602,6 +610,7 @@ def test_a_mock_run_resolves_its_work_folder_and_reads_the_waveform_index_once(t
     monkeypatch.setattr(engine_retention, 'read_json', counting_read)         # the retention reads waveforms/index.json
 
     def counting_resolve(self, *args, **kwargs):
+        """Record work-directory resolutions while delegating path resolution."""
         if self.name == 'work':
             resolved.append(str(self))
         return resolve(self, *args, **kwargs)
@@ -630,6 +639,7 @@ def test_the_scheduler_is_woken_by_a_lane_result():
 
 
 def evaluation_values(layout):
+    """Return ordered evaluation outcomes with run-specific identifiers omitted."""
     keep = ('evaluation_id', 'reward', 'valid', 'all_hard_constraints_satisfied', 'normalized_constraint_violation', 'phase',
             'action_source', 'policy_version')
     ordered = sorted(rows(layout, 'evaluations'), key=lambda row: row['commit_seq'])

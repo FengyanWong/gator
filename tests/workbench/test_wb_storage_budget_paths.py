@@ -15,6 +15,7 @@ import subprocess
 
 
 def metric_bundle(seq, *, value=0.5):
+    """Build one identified synthetic metric bundle for storage commit checks."""
     key = f'e{seq:03d}'
     return dict(evaluation_id=key, commit_seq=seq, rows=dict(metrics=[dict(
         run_id='r', evaluation_id=key, measurement_id='m', metric_name='score', analysis=None, condition='nominal',
@@ -162,6 +163,7 @@ def test_a_failed_writer_refuses_further_commits(tmp_path, monkeypatch):
     data = RawDataset(tmp_path / 'data', flush_every=1)
 
     def broken(*args, **kwargs):
+        """Raise a full-disk error from the fixture writer."""
         raise OSError(28, 'No space left on device')
     monkeypatch.setattr('pyarrow.parquet.write_table', broken)
     with pytest.raises(atomic.PersistenceError):
@@ -253,6 +255,7 @@ def test_ledger_is_thread_safe_and_never_overspends():
     ledger, started = BudgetLedger(50), []
 
     def worker():
+        """Reserve and complete single-launch evaluations until the shared budget is exhausted."""
         while (e := ledger.reserve()) is not None:
             started.append(ledger.start(e)); ledger.begin_attempt(e); ledger.end_attempt(e, launches=1); ledger.complete(e)
     threads = [threading.Thread(target=worker) for _ in range(8)]
@@ -326,17 +329,20 @@ def test_windows_path_is_reported_only_after_readback(tmp_path, monkeypatch):
     assert result['windows_path'] is None and result['windows_mapping'] == 'unavailable_no_wsl_interop'
 
     class Completed:
+        """A minimal subprocess result for Windows-path verification."""
         def __init__(self, out, code=0):
             self.stdout, self.returncode = out, code
     monkeypatch.setattr(paths.shutil, 'which', lambda name: f'/fake/{name}')
 
     def translated_but_unreadable(command, **kwargs):
+        """Return a translated Windows path whose readback command fails."""
         return Completed('X:\\guess\\out\n') if 'wslpath' in command[0] else Completed('', 1)
     monkeypatch.setattr(paths.subprocess, 'run', translated_but_unreadable)
     result = paths.OutputRoots([root], include_default=False).check(root)
     assert result['windows_path'] is None and result['windows_mapping'] == 'translation_not_verified'
 
     def verified(command, **kwargs):
+        """Return a translated Windows path and the actual writable-probe token."""
         if 'wslpath' in command[0]:
             return Completed('D:\\out\n')
         return Completed(next(root.glob('.writable*')).read_text())      # Windows really sees the token
@@ -376,6 +382,7 @@ def test_a_newer_complete_replacement_is_no_write_failure(tmp_path, monkeypatch)
     real_fsync = atomic.fsync_directory
 
     def another_writer_lands(path):
+        """Replace the destination with a newer complete file after the original sync."""
         real_fsync(path)
         newer = atomic.temporary_path(destination)
         newer.write_text('{"a newer writer": "longer"}')
@@ -390,6 +397,7 @@ def test_our_own_incomplete_or_missing_file_is_still_a_write_failure(tmp_path, m
     real_fsync = atomic.fsync_directory
 
     def grows_in_place(path):                     # the SAME file (inode) with another size: not a newer writer's file
+        """Change the just-synced destination in place without replacing its inode."""
         real_fsync(path)
         with destination.open('a') as stream:
             stream.write(' ')
@@ -454,6 +462,7 @@ def test_the_run_provenance_asks_git_without_taking_the_index_lock(monkeypatch):
     calls = []
 
     def fake_run(argv, **kwargs):
+        """Record git commands and return fixture revision or dirty-status output."""
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 0, stdout=' M file.py\n' if 'status' in argv else 'abc123\n', stderr='')
     monkeypatch.setattr(layout_module.subprocess, 'run', fake_run)

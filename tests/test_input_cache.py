@@ -16,6 +16,7 @@ from analog_optimizer.models.inputs import ObservationTensorCache, SpecSchema, b
 
 @pytest.fixture(autouse=True)
 def single_thread():
+    """Temporarily limit Torch to one thread and restore the previous thread count afterward."""
     threads = torch.get_num_threads()
     torch.set_num_threads(1)
     yield
@@ -23,11 +24,13 @@ def single_thread():
 
 
 def observation(graph):
+    """Build an independent synthetic score observation from a copied circuit graph."""
     return Observation(deepcopy(graph), (MetricSpec('score', 'fixture', 'min', 1, lower=.95),),
                        {'score': .6}, {'score': True}, {'score': 'fixture'}, 'ok', 'synthetic', 4, 'fixture')
 
 
 def equal(a, b):
+    """Recursively require exact tensor values and matching nested container contents."""
     if isinstance(a, torch.Tensor):
         torch.testing.assert_close(a, b, rtol=0, atol=0)
     elif isinstance(a, dict):
@@ -39,6 +42,7 @@ def equal(a, b):
 
 
 def equal_batch(a, b):
+    """Compare graph tensors and every other dataclass field in two observation batches."""
     equal(a.graph.to_dict(), b.graph.to_dict())
     for field in fields(a):
         if field.name != 'graph':
@@ -46,6 +50,7 @@ def equal_batch(a, b):
 
 
 def resize(graph):
+    """Resize the first parameter group and its members together to invalidate cached graph content."""
     group = graph.parameter_groups[0]
     group = replace(group, value=group.value * 1.1)
     graph.parameter_groups[0] = group

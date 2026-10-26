@@ -38,6 +38,7 @@ def test_only_a_run_folder_on_a_slow_mount_gets_a_local_scratch(tmp_path, monkey
 
 
 class Env:
+    """A lane environment stand-in that exposes only its scratch directory."""
     def __init__(self, directory):
         self.directory = directory
 
@@ -48,6 +49,7 @@ class EnvFactory:
         self.root = root
 
     def __call__(self, lane_id):
+        """Create a lane's candidate directory and return its scratch environment."""
         directory = Path(self.root) / f'env{lane_id}'
         (directory / 'candidates').mkdir(parents=True)
         return Env(directory)
@@ -76,18 +78,21 @@ def test_a_run_keeps_its_job_folders_in_the_scratch_until_retention_moves_them_a
     roots = {}
 
     def scratch_for(run):
+        """Assign and record a temporary scratch path for the run."""
         roots['scratch'] = tmp_path / 'scratch' / run.run_dir.name
         return roots['scratch']
     monkeypatch.setattr(engine_module, 'local_scratch', scratch_for)
     sources, apply = [], engine_module.RunEngine._apply_retention
 
     def watching(self, plan, role):
+        """Record retention sources at application time before delegating the retention plan."""
         sources.extend(Path(item['source']).resolve() for item in plan if item['source'])   # where it is right now
         return apply(self, plan, role)
     monkeypatch.setattr(engine_module.RunEngine, '_apply_retention', watching)
     simulate = SyntheticSizingBackend.run_simulation
 
     def writing(self, request):                          # the toy backend leaves its job folders empty: give each a file
+        """Leave a synthetic result file in each job directory for retention checks."""
         result = simulate(self, request)
         (Path(result.artifact_directory) / 'result.json').write_text('{}')
         return result
@@ -109,12 +114,14 @@ def test_process_lanes_link_their_own_scratch_folders(tmp_path, monkeypatch):
     roots = {}
 
     def scratch_for(run):
+        """Assign and record a temporary scratch path for the run."""
         roots['scratch'] = tmp_path / 'scratch' / run.run_dir.name
         return roots['scratch']
     monkeypatch.setattr(engine_module, 'local_scratch', scratch_for)
     sources, apply = [], engine_module.RunEngine._apply_retention
 
     def watching(self, plan, role):
+        """Record retention sources at application time before delegating the retention plan."""
         sources.extend(Path(item['source']).resolve() for item in plan if item['source'])
         return apply(self, plan, role)
     monkeypatch.setattr(engine_module.RunEngine, '_apply_retention', watching)

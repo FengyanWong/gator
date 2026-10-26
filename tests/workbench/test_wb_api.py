@@ -24,6 +24,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 @pytest.fixture
 def client(tmp_path):
+    """Provide an API client with a fixture connection probe and startup checks enabled."""
     app = workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True)
     return TestClient(app)
 
@@ -364,6 +365,7 @@ def test_serve_bounds_its_wait_for_open_requests_however_it_ends(monkeypatch, en
     seen = {}
 
     def run(app, **options):
+        """Capture server options and simulate the selected server termination."""
         seen.update(options)
         if ending == 'raises':
             raise KeyboardInterrupt

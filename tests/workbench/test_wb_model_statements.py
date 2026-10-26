@@ -73,6 +73,7 @@ def test_statement_boundaries_preserve_existing_continuation_rules(label, text, 
 
 
 def _random_text(seed):
+    """Generate reproducible statement fragments with mixed comments, continuations and line endings."""
     randomizer = random.Random(seed)
     lines = ['', ' ', '\t', '* comment {', ' // comment }', 'model mock primitive {', 'value=1',
              '}', '}}', '{', ' + value=2', '+ {', ' + }', '+ }\\', 'part\\', '{\\', '}\\',
@@ -89,6 +90,7 @@ def test_random_mixed_continuations_match_the_previous_parser(seed):
 
 
 def _large_card(count, *, mixed=False):
+    """Build an invented model card with optional mixed continuation forms."""
     lines = ['model mock_card bsim4 type=n {']
     for index in range(count):
         line = f' {index + 1}: lmin=1n wmin=2n vth0=0.4 u0=0.03'
@@ -108,6 +110,7 @@ def test_large_invented_card_keeps_exact_statement_text(mixed):
 
 
 def _invented_library():
+    """Provide synthetic library text and device records covering includes, wrappers and missing models."""
     top = '\n'.join([
         'library mock', 'section tt', 'parameters delta=0.02', '+mobility=0.03',
         'include "card.scs" section=cards', 'include "missing.scs"', 'endsection tt',
@@ -132,9 +135,11 @@ def _invented_library():
 
 
 def _library_result(module, files, record, section, temperature):
+    """Collect parsed library facts, read order and MOS numbers for comparison."""
     calls = []
 
     def read(path):
+        """Record requested model paths and return their invented contents."""
         calls.append(path)
         return files.get(path)
 

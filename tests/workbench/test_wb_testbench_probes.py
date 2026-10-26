@@ -19,6 +19,7 @@ RING_SIGNALS = dict(m_osc_frequency_hz='OUT', m_supply_power_w='V0:p', m_supply_
 
 
 def ring_import():
+    """Load the recorded ring-oscillator import used to derive testbench probes."""
     return native_cells.load_import('GPDK045_RINGOSC', 'ring_osc_3stage')
 
 

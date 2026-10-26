@@ -15,6 +15,7 @@ from helpers import execute, make_config
 
 # ---- The reader before record 7.221 (c170802), word for word: every file read whole for every answer. The oracle.
 def reference_run_objective(run_dir):
+    """Read the saved objective as the original uncached training-series reader did."""
     from gator_workbench import schema
     from gator_workbench.compile import build_specs
     raw = read_json(RunLayout(run_dir).effective_config, default=None)
@@ -27,6 +28,7 @@ def reference_run_objective(run_dir):
 
 
 def reference_learner_record(run_dir):
+    """Report learner-log availability using the reference reader's saved-run rules."""
     layout = RunLayout(run_dir)
     config = read_json(layout.effective_config, default={}) or {}
     manifest = read_json(layout.manifest, default={}) or {}
@@ -48,6 +50,7 @@ def reference_learner_record(run_dir):
 
 
 def reference_read_training(run_dir, flushes=0, *, max_rows=training_series.MAX_ROWS, tail_cursor=None):
+    """Return the reference training-series page for the requested flush and tail cursors."""
     ts = training_series
     layout = RunLayout(Path(run_dir))
     data = layout.data
@@ -89,6 +92,7 @@ def reference_read_training(run_dir, flushes=0, *, max_rows=training_series.MAX_
 
 @pytest.fixture(autouse=True)
 def fresh_caches():
+    """Clear training-series caches before and after each test."""
     training_series.clear_caches()
     yield
     training_series.clear_caches()
@@ -142,6 +146,7 @@ def agree(run_dir, flushes=0, tail_cursor=None, max_rows=training_series.MAX_ROW
 
 
 def agreed(run_dir, flushes=0, tail_cursor=None, max_rows=training_series.MAX_ROWS):
+    """Return a page only after cached, uncached and reference readers agree on a successful result."""
     result = agree(run_dir, flushes, tail_cursor, max_rows)
     assert result[0] == 'answer', result
     return result[1]
@@ -161,6 +166,7 @@ def liveness(monkeypatch):
     state = dict(state='running', worker_alive=True, asked=0)
 
     def run_status(run_dir):
+        """Return and count the fixture's current worker-status answer."""
         state['asked'] += 1
         return dict(state=state['state'], worker_alive=state['worker_alive'], run_dir=str(run_dir))
     monkeypatch.setattr(runs, 'run_status', run_status)
@@ -177,6 +183,7 @@ class SyntheticRun:
         self.path.mkdir(parents=True)
 
         def objective(raw):                                             # both limits: either direction is valid
+            """Give the synthetic score an upper target and a maximizing feasible objective."""
             raw['targets'][0].update(direction_after_feasible='maximize', upper=10.0)
         write_json(self.path / 'effective_config.json', make_config(self.path, mutate=objective).model_dump(mode='json'))
         write_json(self.path / 'run_manifest.json', dict(run_id=f'{self.path.name}-{seed}', mode='scratch', mock=True,
@@ -185,9 +192,11 @@ class SyntheticRun:
 
     @property
     def log(self):
+        """Return the flush journal path used to inspect publication records."""
         return self.path / 'data' / '_journal' / 'flushes.jsonl'
 
     def commit(self, count=1):
+        """Append deterministic evaluation, learner-update and metric rows to the run journal."""
         for _ in range(count):
             self.seq += 1
             seq, value, eid = self.seq, self.seq + self.seed / 8, f'e{self.seq}'
@@ -218,9 +227,11 @@ class SyntheticRun:
                 evaluations=[evaluation], learner_updates=updates, metrics=metrics)))
 
     def flush(self):
+        """Publish pending fixture rows as Parquet parts, if any."""
         return self.dataset.flush()                                     # None when nothing waited
 
     def compact(self):
+        """Compact the fixture run's journal as a save point would."""
         self.dataset.compact_journal()
 
     def assert_whole(self, page):
@@ -241,6 +252,7 @@ class Page:
         self.flushes, self.tail_cursor, self.answers = 0, None, []
 
     def poll(self):
+        """Read and retain pages until the available flushes and journal tail are exhausted."""
         while True:
             answer = (agreed(self.run_dir, self.flushes, self.tail_cursor, self.max_rows) if self.check else
                       training_series.read_training(self.run_dir, self.flushes, max_rows=self.max_rows,

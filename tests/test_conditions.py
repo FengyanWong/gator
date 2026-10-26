@@ -12,6 +12,7 @@ from analog_optimizer.backends.mock import MockBackend
 
 
 def nominal():
+    """Provide the nominal process, voltage and temperature condition for injected results."""
     return SimulationCondition(PVTCorner('nominal', 'tt', 27, 1))
 
 
@@ -68,6 +69,7 @@ def test_mock_never_fakes_pvt_or_mc_execution(tmp_path):
 
 
 def sample(context, index):
+    """Build an indexed nonconverged result with the supplied simulation condition."""
     return SimulationResult(str(index), 'test_fixture', 'synthetic', SimulationStatus.NONCONVERGED,
                             'injected', False, True, {}, {}, {}, {('M', 'w'): 1e-6},
                             Path('/synthetic'), 0, context, index)

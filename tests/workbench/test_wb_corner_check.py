@@ -32,6 +32,7 @@ def finished(tmp_path_factory):
 
 
 def fingerprint(directory):
+    """Map non-corner-check files to their relative paths and sizes."""
     return {p.relative_to(directory).as_posix(): p.stat().st_size for p in Path(directory).rglob('*')
             if p.is_file() and 'corner_checks' not in p.parts}
 
@@ -152,6 +153,7 @@ def test_an_unknown_corner_makes_a_design_inconclusive_never_failed(tmp_path, mo
     original, calls = SyntheticSizingBackend.run_simulation, []
 
     def flaky(self, request):
+        """Replace the selected corner result with a timeout that does not evaluate the candidate."""
         calls.append(1)
         result = original(self, request)
         if len(calls) == 2:           # the ss corner of the only design: a timeout, not a design verdict
@@ -242,6 +244,7 @@ def test_a_missing_flagged_value_at_a_corner_still_writes_the_summary(tmp_path, 
     original, calls = SyntheticSizingBackend.run_simulation, []
 
     def without_score_at_ss(self, request):
+        """Remove the selected corner's metrics while preserving its successful simulation status."""
         calls.append(1)
         result = original(self, request)
         return replace(result, metrics={}) if len(calls) == 2 else result     # an OK result that lacks the flagged value

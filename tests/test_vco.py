@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def profile():
+    """Load the reference-mode VCO contract from repository design, mapping and readback fixtures."""
     return Gpdk045VcoProfile(analysis_mode='reference',design_file=ROOT/'configs/gpdk045_vco_design.json',
         mapping_file=ROOT/'configs/gpdk045_vco.json',reference_structure=ROOT/'examples/circuits/gpdk045_vco.scs',
         reference_readback=ROOT/'examples/circuits/gpdk045_vco.cdf.json')
@@ -44,6 +45,7 @@ def test_fixed_vco_parameters_rejected(profile,name,key,value):
 def test_vco_partial_write_rolls_back_three_groups(adapter,monkeypatch):
     write,calls = changing_writer(adapter)
     def fail_once(*args):
+        """Fail the last stage write once so the adapter must restore the earlier stage changes."""
         if args[3] == 'MS3' and len(calls) == 2:
             calls.append('injected'); raise RuntimeError('stage callback failed')
         return write(*args)
@@ -75,12 +77,14 @@ def test_vco_condition_and_analysis_contract(profile):
 
 
 def trace(frequency=50e6, interval=.2e-9):
+    """Construct a synthetic sinusoidal VCO trace with the requested frequency and sample interval."""
     t = [i*interval for i in range(round(2e-6/interval)+1)]
     v = [.5+.49*math.sin(2*math.pi*frequency*x) for x in t]
     return t,v
 
 
 def measure(t,v):
+    """Measure oscillation over the fixed post-startup window used by the waveform checks."""
     return oscillation_metrics(t,v,supply=1.,start=1e-6,stop=2e-6)
 
 
@@ -142,6 +146,7 @@ def test_fast_policy_does_not_modify_physical_design_or_receipt(profile, adapter
     assert profile.design == original
     adapter.circuit.analysis_mode = 'fast'
     def export(lib, cell, output, timeout):
+        """Copy the saved VCO netlist into a local directory as a fake schematic export."""
         output.mkdir()
         (output/'netlist').write_bytes((ROOT/'examples/circuits/gpdk045_vco.scs').read_bytes())
         return {'input_file':str(output/'input.scs')}

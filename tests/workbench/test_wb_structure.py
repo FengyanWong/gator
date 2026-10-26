@@ -30,6 +30,7 @@ ENTRY_FUNCTIONS = {('gator_workbench.connection', '_probe_main'), ('gator_workbe
 
 
 def modules():
+    """Read workbench module sources and syntax trees without importing them."""
     found = {}
     for dirpath, _, files in os.walk(SRC / PACKAGE):
         if '__pycache__' in dirpath:
@@ -49,6 +50,7 @@ MODULES = modules()
 
 
 def absolute(module, stmt):
+    """Resolve an import statement's module path within the package."""
     if not stmt.level:
         return stmt.module or ''
     base = module.split('.')
@@ -60,6 +62,7 @@ def absolute(module, stmt):
 
 
 def targets(module, stmt):
+    """Return known workbench modules referenced by one import statement."""
     out = set()
     if isinstance(stmt, ast.ImportFrom):
         base = absolute(module, stmt)
@@ -80,6 +83,7 @@ def targets(module, stmt):
 
 
 def graph():
+    """Build the module import graph including imports nested inside functions."""
     edges = collections.defaultdict(set)
     for name, info in MODULES.items():
         for node in ast.walk(info['tree']):
@@ -89,9 +93,11 @@ def graph():
 
 
 def cycles(edges):
+    """Return sets of modules connected by import cycles."""
     index, low, stack, on, found, counter = {}, {}, [], set(), [], [0]
 
     def strong(v):
+        """Visit one module while collecting mutually reachable import groups."""
         index[v] = low[v] = counter[0]
         counter[0] += 1
         stack.append(v)
@@ -170,6 +176,7 @@ def test_only_the_api_and_the_command_line_import_the_api():
 
 
 def top_level_names(module):
+    """Return names available for patches at a module's top level."""
     names = set()
     for stmt in MODULES[module]['tree'].body:
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):

@@ -71,6 +71,7 @@ def test_valid_starter_config_counts_independent_actions(tmp_path):
 
 def test_equal_initial_values_do_not_imply_a_binding(tmp_path):
     def unbind(raw):
+        """Make one tied parameter independent while keeping its legal logarithmic range."""
         row = next(p for p in raw['parameters'] if p.get('binding_group'))
         row.update(binding_group=None, lower=1e-6, upper=8e-6, scale='log')
     report, _ = check(make_config(tmp_path, mutate=unbind))
@@ -101,6 +102,7 @@ def test_parameter_errors(tmp_path, change, code):
 
 def test_binding_cycle_is_detected(tmp_path):
     def cycle(raw):
+        """Bind the first parameter to its follower to create a dependency cycle."""
         raw['parameters'][0]['binding_group'] = raw['parameters'][1]['variable_id']
     report, _ = check(make_config(tmp_path, mutate=cycle))
     assert any('cycle' in i.message for i in report.issues if i.code == 'binding_graph')
@@ -108,6 +110,7 @@ def test_binding_cycle_is_detected(tmp_path):
 
 def test_integer_constraints(tmp_path):
     def integer(raw):
+        """Add an integer-valued parameter with an invalid fractional upper bound."""
         raw['parameters'].append(dict(variable_id='fingers', instance_path='input_left', parameter_name='nf',
                                       unit='count', value_type='integer', lower=1, upper=8.5))
     report, _ = check(make_config(tmp_path, mutate=integer))
@@ -132,6 +135,7 @@ def test_unregistered_metric_is_added_to_the_registry_or_blocked_by_a_configured
     """A spec is an equation over the probes, under its own name: a name the result registry lacks gets an entry
     (spec_equations.registry_entries). A registry stated in the configuration is taken as given."""
     def rename(raw):
+        """Give the target a metric identifier absent from the configured registry."""
         raw['targets'][0]['metric_id'] = 'my_noise'
     report, _ = check(make_config(tmp_path, mutate=rename))
     assert 'spec_adds_registry_entry' in issues(report, 'info') and not report.blocks_run
@@ -142,6 +146,7 @@ def test_unregistered_metric_is_added_to_the_registry_or_blocked_by_a_configured
 
 def test_only_one_post_feasibility_preference(tmp_path):
     def two(raw):
+        """Create two targets that both request a post-feasibility optimization direction."""
         raw['targets'][0]['direction_after_feasible'] = 'maximize'
         raw['targets'].append(dict(metric_id='score2', equation='m_score*2', unit='fixture', constraint='>=', lower=0,
                                    normalization_scale=1, direction_after_feasible='minimize'))
@@ -157,6 +162,7 @@ def test_the_stored_missing_value_switch_is_read_by_nothing(tmp_path, hard, acti
     reward, as before): a configuration that carries the stored value - true or false, hard or soft - validates
     without a word about it, and the row keeps it."""
     def second(raw):
+        """Add a duplicate score target with the tested hard, active and legacy missing-value flags."""
         raw['targets'].append(dict(raw['targets'][0], metric_id='score_again', hard=hard, active=active,
                                    missing_is_failure=missing_is_failure))
     config = make_config(tmp_path, mutate=second)
@@ -167,6 +173,7 @@ def test_the_stored_missing_value_switch_is_read_by_nothing(tmp_path, hard, acti
 
 # ------------------------------------------------------------------------------- measurements
 def measurement(**fields):
+    """Return a configuration mutation adding a probe with optional field overrides."""
     base = dict(measurement_id='m_x', analysis='tran', result_source='ade_output', source_name='x', unit='Hz')
     base.update(fields)
     return lambda raw: raw['measurements'].append(base)
@@ -200,6 +207,7 @@ def test_a_probe_computed_from_others_becomes_the_equation_of_its_specs(tmp_path
     since record 7.52. An older configuration loads with its arithmetic written into the specs that use it - the same
     numbers - and without the probe; a cycle never ran and is refused; a row on its own is refused in plain words."""
     def computed(raw):
+        """Add dependent computed probes and a spec referring to the derived value."""
         raw['measurements'] += [dict(measurement_id='m_half', analysis='other', result_source='expression', expression='m_twice / 4', unit='fixture'),
                                 dict(measurement_id='m_twice', analysis='other', result_source='expression', expression='m_score * 2', unit='fixture')]
         target = dict(raw['targets'][0], metric_id='half', hard=False, direction_after_feasible='none')
@@ -211,6 +219,7 @@ def test_a_probe_computed_from_others_becomes_the_equation_of_its_specs(tmp_path
     assert config.targets[-1].equation == '((m_score * 2) / 4)' + (' - 0.1' if reference == 'equation' else '')
     assert spec_equations.SpecPlan.from_config(config).spec_values({'score': 0.8})['half'] == pytest.approx(0.3 if reference == 'equation' else 0.4)
     def cycle(raw):
+        """Create mutually dependent expression probes and a spec that uses them."""
         raw['measurements'] += [dict(measurement_id='m_a', analysis='other', result_source='expression', expression='m_b', unit='fixture'),
                                 dict(measurement_id='m_b', analysis='other', result_source='expression', expression='m_a', unit='fixture')]
         raw['targets'].append(dict(raw['targets'][0], metric_id='loop', equation='m_a', hard=False, direction_after_feasible='none'))
@@ -326,6 +335,7 @@ TYPED = dict(unit='um', lower=1.84, upper=42.38, step=0.02)
 
 
 def decimal_range(raw):
+    """Apply the fixture's typed decimal bounds to the input-pair width."""
     next(r for r in raw['parameters'] if r['variable_id'] == 'input_pair_width').update(TYPED)
 
 
@@ -356,6 +366,7 @@ def test_the_optimizers_top_grid_point_is_the_compiled_upper_bound_and_nothing_e
 @pytest.mark.usefixtures('bridge_installed')
 def test_a_followers_own_clamp_at_the_leaders_range_moves_with_the_top_point(tmp_path):
     def clamp_follower(raw):
+        """Give a tied follower its own clamp matching the leader's decimal range."""
         decimal_range(raw)
         follower = next(r for r in raw['parameters'] if r.get('binding_group') == 'input_pair_width')
         follower.update(unit='um', lower=1.84, upper=42.38)        # its own clamp: the same range
@@ -400,6 +411,7 @@ SHORT = dict(unit='um', lower=13.75, upper=137.5, step=0.005)
 
 
 def short_range(raw):
+    """Apply the fixture's narrow decimal bounds to the input-pair width."""
     next(r for r in raw['parameters'] if r['variable_id'] == 'input_pair_width').update(SHORT)
 
 
@@ -467,6 +479,7 @@ def test_a_size_on_a_bound_the_grid_does_not_reach_is_said_in_words_before_any_r
 class _AlwaysTop(random.Random):
     """Every random warm-up proposal at the top of its range (z = +1)."""
     def uniform(self, a, b):
+        """Choose the upper endpoint for every uniform proposal."""
         return b
 
 
@@ -477,6 +490,7 @@ def test_a_mock_run_that_always_proposes_the_top_of_a_decimal_range_evaluates_ev
     prepare = engine_module.RunEngine._prepare
 
     def always_top(self):
+        """Prepare the engine with a random source that always proposes upper bounds."""
         prepare(self)
         self.rng = _AlwaysTop(0)
     monkeypatch.setattr(engine_module.RunEngine, '_prepare', always_top)

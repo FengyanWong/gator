@@ -16,10 +16,12 @@ ALL_FIELDS = presets.NETWORK_FIELDS + presets.ADVANCED_FIELDS
 
 @pytest.fixture
 def client(tmp_path):
+    """Provide the preset routes through a test API client with startup checking enabled."""
     return TestClient(workbench_app(tmp_path, auto_check_on_start=True))
 
 
 def saved_file():
+    """Return the preset file in the redirected settings directory."""
     return local_settings_dir() / presets.SETTINGS_FILE
 
 
@@ -52,6 +54,7 @@ def test_the_preset_numbers_are_the_ones_verified_in_the_primary_sources():
     keys = ('learning_rate', 'gamma', 'tau', 'batch_size', 'warmup_transitions', 'replay_capacity', 'episode_length')
 
     def cited(name, key):
+        """Return a preset field's published value when separately recorded."""
         field = presets.PRESETS[name]['fields'][key]
         return field.get('published', field)['value']
     training = {name: tuple(cited(name, k) for k in keys) for name in original}
@@ -175,6 +178,7 @@ def test_an_encoder_put_on_the_deleted_gator_baseline_reads_as_the_publication_p
     saved_file().parent.mkdir(parents=True, exist_ok=True)
 
     def read(values, saved_utc):
+        """Read a stored legacy preset and assert that reading leaves its file unchanged."""
         text = json.dumps(dict(schema=presets.SETTINGS_SCHEMA, encoders=dict(graph_transformer=dict(values, saved_utc=saved_utc))))
         saved_file().write_text(text)
         entry = presets.entry('graph_transformer')
@@ -324,6 +328,7 @@ def test_the_default_encoder_preset_trains_end_to_end_on_the_mock_backend(tmp_pa
 # ------------------------------------------------------------------------------- the scale warning
 def test_a_budget_that_never_leaves_warm_up_is_reported(tmp_path):
     def codes(config):
+        """Return validation issue severities for the configuration's loaded task."""
         runtime = tasks.load_task(config.circuit)
         report = validation.validate(config, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics))
         return {i.code: i.level for i in report.issues}

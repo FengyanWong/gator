@@ -13,8 +13,10 @@ pytestmark = pytest.mark.xdist_group('test_wb_pretrain')
 
 @pytest.fixture(scope='module')
 def sources(tmp_path_factory):
+    """Provide completed synthetic OTA and LDO runs for archive-pooling tests."""
     root = tmp_path_factory.mktemp('offline-sources')
     def upper_goal(raw):
+        """Set an upper-bound score target for the OTA archive source."""
         raw['targets'][0].update(constraint='<=', lower=None, upper=0.95)
     a, state = execute(make_config(root, run=dict(max_evaluations=24), mutate=upper_goal,
                                    advanced=dict(gamma=0., batch_size=4, warmup_transitions=4, episode_length=3)), root)
@@ -27,6 +29,7 @@ def sources(tmp_path_factory):
 
 
 def request_for(sources):
+    """Build a small synthetic pretraining request pinned to the source archives' hashes."""
     return dict(origin='synthetic', seed=7, holdout_fraction=0.2,
                 runs=[dict(run_dir=str(s.run_dir), archive_sha256=pretrain.archive_identity(s.run_dir)) for s in sources],
                 updates=3, batch_size=3, checkpoint_every=2,
@@ -91,6 +94,7 @@ def test_disk_pool_detects_corruption_and_preserves_viewed_transition(sources, t
     pool = pretrain.prepare_pool(request_for(sources))
     original = next(iter(pool.training.values()))[0]
     class IdentityView:
+        """An observation view that preserves the supplied object unchanged."""
         def view(self, observation):
             return observation
     viewed = pretrain._shown(original, IdentityView())
@@ -174,6 +178,7 @@ def test_a_scale_the_task_states_stays_when_its_limit_is_moved_even_when_it_equa
     task = 'synthetic:gpdk045_ota5'
 
     def stated(raw, upper=0.95):
+        """Set a movable upper score limit while retaining an explicit normalization scale."""
         raw['targets'][0].update(constraint='<=', lower=None, upper=upper, normalization_scale=0.95)
     recorded = make_config(tmp_path, run=dict(max_evaluations=24), mutate=stated,
                            advanced=dict(gamma=0., batch_size=4, warmup_transitions=4, episode_length=3))
@@ -262,6 +267,7 @@ def test_mixed_reward_and_exact_rescore_gate(sources, monkeypatch):
     from dataclasses import replace
     original = pretrain.TrajectoryLoader.transitions
     def changed(self):
+        """Alter one source transition's reward settings to create a mixed-reward archive."""
         items = original(self)
         if self.run_dir == sources[1].run_dir:
             items[0] = replace(items[0], reward_settings=replace(items[0].reward_settings, margin_weight=0.7))
@@ -270,6 +276,7 @@ def test_mixed_reward_and_exact_rescore_gate(sources, monkeypatch):
     with pytest.raises(ValueError, match='Mixed reward settings'):
         pretrain.prepare_pool(request_for(sources))
     def changed_reward(self):
+        """Perturb one recorded reward to test exact rescore validation."""
         items = original(self)
         items[0] = replace(items[0], reward=items[0].reward + 1e-13)
         return items
@@ -320,7 +327,9 @@ def test_preparation_counts_are_persisted_without_a_log_callback(sources, tmp_pa
     observed = []
 
     def checked_split(*args, progress, **kwargs):
+        """Check persisted loading progress while the original pool split runs."""
         def check(event):
+            """Assert that each pool-validation progress event is already reflected in saved status."""
             progress(event)
             saved = read_json(output / 'status.json')
             assert saved['state'] == 'loading' and saved['phase'] == 'validating_pool'
@@ -343,6 +352,7 @@ def test_failed_pool_validation_never_reports_completion(sources, tmp_path, monk
     calls = 0
 
     def reject_second_transition(observation, schema):
+        """Inject invalid-observation rejection during validation of the second transition."""
         nonlocal calls
         calls += 1
         if calls == 3:
@@ -399,6 +409,7 @@ def test_trajectory_candidate_subset(sources):
 
 @pytest.fixture(scope='module')
 def rehearsal_artifact(sources, tmp_path_factory):
+    """Provide a hashed rehearsal snapshot built from a relabelled synthetic archive pool."""
     from gator_workbench.rehearsal import build_snapshot, file_sha
     from gator_workbench.schema import RehearsalSettings
     root = tmp_path_factory.mktemp('rehearsal')
@@ -446,6 +457,7 @@ def test_rehearsal_contract_and_tamper_checks(rehearsal_artifact, tmp_path):
     _, output, settings = rehearsal_artifact
     model, _ = load_model(checkpoints.resolve_checkpoint(output, 'latest'))
     def load(config):
+        """Construct a synthetic rehearsal reader for contract and tamper checks."""
         return Rehearsal(config, model, origin='synthetic', seed=2, batch_size=8)
     with pytest.raises(ValueError, match='checksum'):
         load(settings.model_copy(update=dict(pool_sha256='0' * 64)))
@@ -612,6 +624,7 @@ def test_the_sampler_record_comes_before_its_save_point_and_says_which_update_it
     seen, save = [], CheckpointStore.save
 
     def recording(self, learner, *args, **kwargs):
+        """Record learner and sampler update counts immediately before saving a checkpoint."""
         seen.append((learner.updates, read_json(output / 'sampling.json')['learner_updates']))
         return save(self, learner, *args, **kwargs)
     monkeypatch.setattr(CheckpointStore, 'save', recording)

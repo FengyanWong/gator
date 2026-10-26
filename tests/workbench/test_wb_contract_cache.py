@@ -24,6 +24,7 @@ def builds(monkeypatch):
 
 
 def contract_of(config, *, cached):
+    """Compile a circuit and return its learner contract with the requested cache setting."""
     task = tasks.load_task(config.circuit)
     config = runs.with_circuit_content(config, task)
     task_hash = schema.task_definition_hash(config)

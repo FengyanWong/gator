@@ -146,6 +146,7 @@ def test_a_saved_baseline_depends_on_the_model_file_and_corner(tmp_path, model, 
     analyses = {'tran': {'stop': '50n', 'errpreset': 'conservative'}}
 
     def saving(model_file, section, task=None):
+        """Save the fixture task with a selected model file and matching Maestro section."""
         answer = dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[[model_file, section]], analyses=analyses,
                       variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={})
         head = MAESTRO_HEAD.replace('/pdk/model.scs', model_file).replace('section=tt', f'section={section}')
@@ -175,6 +176,7 @@ def test_a_task_starts_its_oscillator_with_initial_conditions(tmp_path):
     conditions = {'N1': '0', 'N2': '0.9', 'OUT': '0.9'}
 
     def answer(ic):
+        """Build a Maestro setup response with optional initial conditions and their file."""
         return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']],
                     analyses={'tran': {'stop': '50n', 'errpreset': 'conservative'}}, variables={}, bindings=[],
                     outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={}, initial_conditions=ic,
@@ -205,6 +207,7 @@ def test_saving_the_task_again_keeps_its_initial_conditions(tmp_path):
     conditions = {'N1': '0', 'OUT': '0.9'}
 
     def answer(ic):
+        """Build a saved-task setup response carrying the tested initial conditions."""
         return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']],
                     analyses={'tran': {'stop': '50n', 'errpreset': 'conservative'}}, variables={}, bindings=[],
                     outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={}, initial_conditions=ic,
@@ -246,6 +249,7 @@ def test_save_task_keeps_what_was_written_into_the_copy_after_the_last_save(tmp_
     rows = vs.to_rows(SETUP)
     cfg = config(probes=rows['measurements'], specs=rows['targets'])
     def answer(stop):
+        """Build a Maestro setup response with the copy's current transient stop time."""
         return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']], analyses={'tran': {'stop': stop}},
                     variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={})
     save(tmp_path, name='ring_maestro', cfg=cfg, extras=dict(analyses={'tran': {'stop': '50n'}}), commands=dict(setup=setup_writer(tmp_path, answer('50n')), deck=maestro_netlister(tmp_path)))
@@ -328,6 +332,7 @@ def test_the_task_file_routes_show_the_draft_and_check_hand_edits(tmp_path):
     real = profiles.save_task
 
     def with_fakes(*args, **kwargs):
+        """Read the task draft through the recorded working-copy fixture."""
         return real(*args, **dict(kwargs, commands=dict(read=copy_reader(tmp_path))))
     profiles.save_task = with_fakes
     try:

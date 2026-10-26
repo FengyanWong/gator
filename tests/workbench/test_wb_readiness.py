@@ -11,18 +11,22 @@ from helpers import make_config, workbench_app
 
 
 def task(mock=True, devices=7):
+    """Create the minimal task facts needed by the readiness checklist."""
     return SimpleNamespace(mock=mock, base_graph=SimpleNamespace(devices=[object()] * devices), provided_metrics={'score', 'power'})
 
 
 def by_id(report):
+    """Index readiness checklist items by their stable identifiers."""
     return {item['id']: item for item in report['items']}
 
 
 def issue(level, code, path, message='message'):
+    """Build a validation issue for readiness-message fixtures."""
     return dict(level=level, code=code, path=path, message=message)
 
 
 def complete(tmp_path):
+    """Return a valid starter configuration in the page's JSON form."""
     return make_config(tmp_path).model_dump(mode='json')
 
 
@@ -155,6 +159,7 @@ def test_the_rows_a_profile_fixes_are_written_from_its_own_parameter_groups():
 
     @dataclass
     class Group:
+        """A parameter-group stand-in carrying the profile's own bounds and bindings."""
         id: str
         unit: str
         value: float

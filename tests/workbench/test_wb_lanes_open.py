@@ -15,6 +15,7 @@ EVENTS = []
 class SlowEnv:
     """Takes `delay` seconds to build, as a real lane's environment does, and remembers when."""
     def __init__(self, lane, delay=0.5, fail=False):
+        """Record delayed lane construction and optionally fail before the environment opens."""
         start = time.monotonic()
         time.sleep(delay)
         EVENTS.append(('built', lane, start, time.monotonic()))

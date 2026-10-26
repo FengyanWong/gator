@@ -24,72 +24,90 @@ class FakeBridge:
         self.calls = []
 
     def __call__(self, settings):                  # used as the factory
+        """Act as the bridge factory, optionally failing as an unavailable package."""
         if self.b.get('import_error'):
             raise ModuleNotFoundError("No module named 'virtuoso_bridge'")
         return self
 
     def version(self):
+        """Report the configured bridge version and record the lookup."""
         self.calls.append('version'); return self.b['version']
 
     def bind_env(self, env_file):
+        """Record environment binding without reading the environment file."""
         self.calls.append('bind_env')
 
     def resolve_profile(self, explicit):
+        """Return the requested profile or a configured replacement."""
         return explicit if self.b['resolved'] == '__same__' else self.b['resolved']
 
     def roles(self, profile):
+        """Return a copy of the configured daemon and simulator roles."""
         return dict(self.b['roles'])
 
     def is_local(self, host):
+        """Return the configured host-locality answer for any host."""
         return self.b['local']
 
     def tunnel_state(self, profile):
+        """Report the configured tunnel state and liveness."""
         self.calls.append('tunnel_state'); return self.b['state'], self.b['running']
 
     def client(self, profile, timeout):
+        """Return this fake as a client, or raise the configured client error."""
         self.calls.append('client')
         if self.b['client_error']:
             raise self.b['client_error']
         return self
 
     def skill_ok(self, client, timeout):
+        """Return the configured SKILL probe result without executing SKILL."""
         self.calls.append('skill'); return self.b['skill']
 
     def daemon_user(self, client, profile, timeout):
+        """Return the configured daemon ownership check."""
         return dict(self.b['user'])
 
     def readiness(self, client):
+        """Refuse simulated ADE/Maestro conflicts or accept an idle fake session."""
         self.calls.append('readiness')
         if self.b['windows']:
             raise RuntimeError('Active ADE/Maestro window conflicts with OCEAN export: ' + '; '.join(self.b['windows']))
 
     def license(self, profile):
+        """Return fixture simulator and license details without consulting a license server."""
         self.calls.append('license'); return dict(self.b['license'])
 
     def close(self):
+        """Record the client close without touching a connection."""
         self.calls.append('close')
 
 
 def states(layers):
+    """Map connection layer names to their reported states."""
     return {item['layer']: item['state'] for item in layers}
 
 
 def reasons(layers):
+    """Map connection layers to their nonempty reason codes."""
     return {item['layer']: item['reason_code'] for item in layers if item['reason_code']}
 
 
 # ------------------------------------------------------------------------------- monitor (probe process)
 def fake_probe(tmp_path, body):
+    """Write a stand-in probe program and return its Python command."""
     script = tmp_path / 'fake_probe.py'
     script.write_text('import sys, json, time, os\n' + body)
     return [sys.executable, str(script)]
 
 
 def layers_json(**overrides):
+    """Create successful connection-layer records with selected state overrides."""
     return [dict(layer=n, state=overrides.get(n, 'ok'), reason_code=None, diagnostic=None, details={}) for n in LAYERS]
 
 
 def monitor_for(tmp_path, body, **kwargs):
+    """Create a connection monitor backed by the supplied local probe program."""
     return ConnectionMonitor(probe_command=fake_probe(tmp_path, body), **kwargs)
 
 
@@ -114,6 +132,7 @@ def ngspice_probe(tmp_path, **states):
 
 
 def write_profiles(**profiles):
+    """Save fake connection profiles with the first profile active."""
     write_json(connection.connection_file(), dict(active=next(iter(profiles)), profiles=profiles))
 
 
@@ -126,6 +145,7 @@ class FakeTunnel(FakeBridge):
         super().__init__(**dict(dict(start_error=None, comes_up=True, state=dict(port=65432, setup_path=SETUP)), **behaviour))
 
     def start_tunnel(self, profile):
+        """Record a tunnel-start request and apply the configured failure or liveness result."""
         self.calls.append('start_tunnel')
         if self.b['start_error']:
             raise self.b['start_error']

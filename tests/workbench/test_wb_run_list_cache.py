@@ -19,6 +19,7 @@ from gator_workbench.storage import read_dict, read_json
 
 
 def fabricate(root, name, *, created='2026-10-07T10:00:00+00:00', state='completed', label='ota', summary=None):
+    """Create minimal run files for cache tests without running a simulation."""
     run = root / 'exp__0123456789ab' / 'runs' / 'task' / name
     run.mkdir(parents=True)
     write_json(run / 'run_manifest.json', dict(run_id=name, created_utc=created, mock=False, experiment_name='exp',
@@ -29,6 +30,7 @@ def fabricate(root, name, *, created='2026-10-07T10:00:00+00:00', state='complet
 
 
 def save(run, point, *, code='abc', evaluations=10):
+    """Write fixture save-point metadata and select it as the run's latest point."""
     directory = run / 'checkpoints' / point
     directory.mkdir(parents=True)
     write_json(directory / 'metadata.json', dict(
@@ -114,6 +116,7 @@ def test_find_runs_finds_what_the_glob_found(tmp_path):
 
 # ---- the per-run cache ---------------------------------------------------------------------------------------------
 def rows_of(root, **kwargs):
+    """Index the run-list response by run identifier."""
     return {row['run_id']: row for row in runs.list_runs(roots_for(root), root, **kwargs)}
 
 
@@ -217,6 +220,7 @@ class _OwnedLock:
         self._lock.release()
 
     def mine(self):
+        """Report whether the current thread owns the fixture cache lock."""
         return self.owner == threading.get_ident()
 
 
@@ -225,21 +229,26 @@ class _Guarded(dict):
     two lists at once could end in "dictionary changed size during iteration" while one let go of entries and the other
     added some (Astra's review of 2026-10-08)."""
     def _held(self):
+        """Assert that the current thread holds the run-cache lock."""
         assert run_index._RUN_CACHE_LOCK.mine(), 'the run cache was touched without its lock'
 
     def get(self, *args):
+        """Require the cache lock before reading an entry."""
         self._held()
         return super().get(*args)
 
     def __setitem__(self, key, value):
+        """Require the cache lock before replacing an entry."""
         self._held()
         super().__setitem__(key, value)
 
     def pop(self, *args):
+        """Require the cache lock before removing an entry."""
         self._held()
         return super().pop(*args)
 
     def __iter__(self):
+        """Require the cache lock before iterating over keys."""
         self._held()
         return super().__iter__()
 
@@ -250,10 +259,12 @@ def test_the_cache_is_touched_under_its_lock_only_and_the_files_are_read_outside
     original, original_dict = run_index.read_json, run_index.read_dict
 
     def read_outside(*args, **kwargs):
+        """Assert that run-file JSON reads happen outside the cache lock."""
         assert not run_index._RUN_CACHE_LOCK.mine(), 'a run file was read while the cache lock was held'
         return original(*args, **kwargs)
 
     def read_dict_outside(path):                     # the empty-dict reads (refactoring package B8), checked the same way
+        """Assert that empty-dict fallback reads happen outside the cache lock."""
         assert not run_index._RUN_CACHE_LOCK.mine(), 'a run file was read while the cache lock was held'
         return original_dict(path)
     monkeypatch.setattr(run_index, 'read_json', read_outside)
@@ -273,6 +284,7 @@ def test_the_cache_is_touched_under_its_lock_only_and_the_files_are_read_outside
 # ------------------------------------------------------------------------------- B8: the run list and the model list
 @pytest.fixture(scope='module')
 def two_runs(tmp_path_factory):
+    """Provide one completed synthetic run and one prepared run without a model."""
     root = tmp_path_factory.mktemp('lists')
     execute(make_config(root, run=dict(max_evaluations=6), project=dict(task_name='with_model')), root)
     runs.prepare_run(make_config(root, project=dict(task_name='just_created')), roots_for(root))
@@ -307,6 +319,7 @@ def test_the_source_digest_is_hashed_again_in_a_thread_once_known(monkeypatch):
     values, release = iter(['first', 'second']), threading.Event()
 
     def digest():
+        """Return scripted digests while holding the second calculation for the concurrency check."""
         value = next(values)
         if value == 'second':
             release.wait(5)
@@ -328,6 +341,7 @@ def test_a_started_job_gives_its_answer_or_its_error():
     assert runs._started(lambda: 41 + 1).result(5) == 42
 
     def fails():
+        """Raise a fixture error from the background job."""
         raise ValueError('no git')
     with pytest.raises(ValueError, match='no git'):
         runs._started(fails).result(5)

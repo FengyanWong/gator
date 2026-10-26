@@ -36,6 +36,7 @@ def baseline_run(tmp_path, monkeypatch, run_dir, *, run_id='r1', run_kind='basel
     reads = []
 
     class FakeReader:
+        """A reader that serves projected baseline rows from the fixture tables."""
         def __init__(self, data_dir):
             reads.append(Path(data_dir))
 
@@ -148,6 +149,7 @@ def test_a_maestro_measured_task_records_its_own_outputs_as_the_reference(tmp_pa
                   + [dict(evaluation_id='e0', measurement_id='m_freq', metric_name='freq', raw_value=1208362157.05, unit='Hz', valid=True, aggregation_level='aggregate')])
 
     class MaestroReader:
+        """A reader that serves the fixture's recorded Maestro outputs."""
         def __init__(self, data_dir):
             pass
 

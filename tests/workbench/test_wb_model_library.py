@@ -109,6 +109,7 @@ endsection
 
 @pytest.fixture
 def library(tmp_path):
+    """Write an invented model-library tree with MOS, capacitor, resistor and SOA sections."""
     folder = tmp_path / 'lib'
     folder.mkdir()
     for name, text in dict(top=TOP, dev_mos=MOS, dev_cap=CAP, dev_res=RES, soa=SOA).items():
@@ -128,6 +129,7 @@ def runner(tmp_path, awk):
     calls = []
 
     def run(script):
+        """Run and record the model-library script with the selected local awk implementation."""
         calls.append(script)
         done = subprocess.run(['bash'], input=script, capture_output=True, text=True, timeout=60,
                               env=dict(os.environ, PATH=f'{bin_dir}:{os.environ["PATH"]}'))
@@ -205,6 +207,7 @@ def test_the_devices_of_a_deck_are_its_instances_masters():
 
 
 class Profile:
+    """A profile stand-in supplying the nominal model section and temperature."""
     nominal_corner = type('Corner', (), dict(model_section='tt', temperature_c=27.0))()
 
 
@@ -230,6 +233,7 @@ def test_a_run_gets_the_library_only_with_a_recorded_baseline(tmp_path, library,
     monkeypatch.delenv(ml.ENV)
 
     def unreachable(script):
+        """Raise the model-library error for an unavailable simulator-host connection."""
         raise ml.LibraryError('the bridge connection to the simulator host is not running')
     assert ml.attach(profile, config, reference={'gain': 1.0}, structure=structure, run=unreachable) is None
     assert 'could not be read' in profile.model_library_event['note'] and profile.model_library is None
@@ -283,14 +287,17 @@ def test_a_run_says_which_parts_of_the_model_file_its_decks_load(tmp_path, monke
                  read_seconds=0.5, note='only these parts')
 
     class WithProfile(tasks.SyntheticEnvFactory):          # a real run's factory carries the profile with its library
+        """A synthetic environment factory carrying a real-run-style model-library event."""
         profile = types.SimpleNamespace(model_library_event=event)
     load = tasks.load_task
 
     def loading(*args, **kwargs):
+        """Load a task whose environment factory also exposes the fixture model-library event."""
         task = load(*args, **kwargs)
         build = task.env_factory_builder
 
         def builder(*inputs):
+            """Wrap the task's synthetic factory with the fixture profile."""
             factory = build(*inputs)
             return WithProfile(**{f.name: getattr(factory, f.name) for f in fields(factory)})
         return replace(task, env_factory_builder=builder)

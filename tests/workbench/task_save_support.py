@@ -43,6 +43,7 @@ print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench=
 
 
 def config(probes=(FREQUENCY_PROBE,), specs=(FREQUENCY_SPEC,), rows=ROWS):
+    """Build a ring-oscillator task configuration with editable probes, specs and parameter rows."""
     return schema.WorkbenchConfig.model_validate(dict(
         circuit=dict(source='virtuoso', library=LIB, cell=CELL, testbench_cell=TB, circuit_class='vco'),
         parameters=list(rows), measurements=list(probes), targets=list(specs), run=dict(max_evaluations=5)))
@@ -56,6 +57,7 @@ def ready(tmp_path):
 
 
 def save(tmp_path, name='ring_osc', cfg=None, **kwargs):
+    """Save the ring task using fake read and copy commands unless overridden."""
     commands = dict(read=copy_reader(tmp_path), copy=task_copier(tmp_path), **kwargs.pop('commands', {}))
     return profiles.save_task(probe(tmp_path), 'lab', name, cfg or config(), library=LIB, cell=CELL, commands=commands, **kwargs)
 
@@ -69,12 +71,14 @@ def task_config(tmp_path, name='ring_osc', **run):
 
 
 def saved_ring(tmp_path):
+    """Return a saved ring-oscillator task configuration with a verified fixture working copy."""
     ready(tmp_path)
     save(tmp_path, extras=dict(expected_frequency_hz=1.2e9))
     return task_config(tmp_path)
 
 
 def saved_maestro_task(tmp_path):
+    """Save a ring task with fixture Maestro analyses, outputs and specifications."""
     ready(tmp_path)
     rows = vs.to_rows(SETUP)
     answer = dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']], analyses={'tran': {'stop': '50n'}},

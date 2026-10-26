@@ -13,6 +13,7 @@ SPEC_SCHEMA = pa.schema([arrow_schema('metrics').field(name) for name in ts.SPEC
 
 
 def metric(index, *, level='aggregate', hard=True):
+    """Build a synthetic metric row with configurable aggregation and hard-spec status."""
     return dict(evaluation_id=f'synthetic-{index % 3}', metric_name=f'spec-μ-{index % 2}',
                 raw_value=None if index % 4 == 0 else index / 8, unit='fixture',
                 threshold_lower=0.5, threshold_upper=None if index % 2 else 2.0, hard=hard,
@@ -23,6 +24,7 @@ def metric(index, *, level='aggregate', hard=True):
 
 def expected_specs(rows):
     # The public rule includes soft specs (hard=False), but excludes probes (hard=None).
+    """Return expected chart columns for aggregate hard and soft specs."""
     kept = [row for row in rows if row.get('aggregation_level') == 'aggregate' and row.get('hard') is not None]
     return {name: [row.get(name) for row in kept] for name in ts.SPEC_COLUMNS if name != 'aggregation_level'}
 
@@ -55,19 +57,23 @@ def test_only_retained_arrow_rows_are_converted_to_python():
     converted = []
 
     class ConvertedColumn:
+        """An Arrow column wrapper that records Python conversion sizes."""
         def __init__(self, column, name):
             self.column, self.name = column, name
 
         def to_pylist(self):
+            """Record the column and row count materialized into Python values."""
             converted.append((self.name, len(self.column)))
             return self.column.to_pylist()
 
     class TrackedTable:
+        """An Arrow table wrapper that permits payload access only after filtering."""
         def __init__(self, value, filtered=False):
             self.value, self.filtered = value, filtered
             self.column_names = value.column_names
 
         def __getitem__(self, name):
+            """Refuse unfiltered payload access and track conversions of filtered columns."""
             if self.filtered:
                 return ConvertedColumn(self.value[name], name)
             assert name in ('aggregation_level', 'hard'), 'Payload columns must be filtered before conversion'
@@ -86,7 +92,9 @@ def test_only_retained_arrow_rows_are_converted_to_python():
 
 def test_excluded_journal_rows_do_not_materialize_payload_columns():
     class ExcludedRow(dict):
+        """A journal row that rejects payload reads when filtering should exclude it."""
         def get(self, name, default=None):
+            """Permit only the two fields needed to decide whether a metric row is retained."""
             assert name in ('aggregation_level', 'hard'), 'Unused metric payload must not be copied into lists'
             return super().get(name, default)
 

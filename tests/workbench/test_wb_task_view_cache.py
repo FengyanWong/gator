@@ -24,6 +24,7 @@ def later(path):
 
 @pytest.fixture
 def saved(tmp_path, monkeypatch):
+    """Provide a saved fixture profile with task-load accounting and an isolated view cache."""
     tasks._view_cache.clear()
     read_cell(tmp_path)
     made = profiles.create_profile('ring_osc_3stage', config(), recipe='ring_oscillator', expected_frequency_hz=1.2e9)
@@ -32,6 +33,7 @@ def saved(tmp_path, monkeypatch):
     real = tasks.load_task
 
     def counted(*args, **kwargs):
+        """Record whether each task load permits a real backend while preserving its result."""
         loads.append(bool(kwargs.get('allow_real')))
         return real(*args, **kwargs)
     monkeypatch.setattr(tasks, 'load_task', counted)

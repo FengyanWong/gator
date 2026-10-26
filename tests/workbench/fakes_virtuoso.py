@@ -42,6 +42,7 @@ print(json.dumps({json.dumps(answer)!r} and json.loads({json.dumps(answer)!r})))
 
 
 def imported(tmp_path):
+    """Import the recorded ring netlist through a stand-in reader process."""
     script = tmp_path / 'reader.py'
     script.write_text(f'''
 import json, sys
@@ -226,6 +227,7 @@ def holds_of(text):
 
 
 def num(text):
+    """Parse a fixture's engineering-unit value using the GPDK045 number convention."""
     from analog_optimizer.backends.gpdk045 import number
     return number(text)
 
@@ -239,6 +241,7 @@ class FakeVirtuoso:
     """Runs the writer's SKILL as the form would: the fields it sets, then the callbacks. Test model only."""
 
     def __init__(self, reference, netlist, *, clamp=5.6e-6, fold_above=None, keep_capacitance=False, proximity=False):
+        """Hold an independent cell snapshot and configured callback effects."""
         self.state, self.netlist, self.clamp, self.fold_above = deepcopy(reference), netlist, clamp, fold_above
         self.proximity = proximity                                           # model the well-proximity value (sca)
         self.keep_capacitance = keep_capacitance
@@ -246,15 +249,19 @@ class FakeVirtuoso:
         self.schematic = SimpleNamespace(read=lambda *a, **kw: deepcopy(self.state), export_netlist=self.export)
 
     def list_windows(self):
+        """Report no open windows for this offline cell stand-in."""
         return []
 
     def close(self):
+        """Leave the in-memory fake cell unchanged on close."""
         pass
 
     def params(self, name):
+        """Return the mutable parameter dictionary for one fixture instance."""
         return next(i for i in self.state['instances'] if i['name'] == name)['params']
 
     def callback(self, name, text):
+        """Apply the modeled MOS or capacitor form-callback effects to the fake cell."""
         p, field = self.params(name), re.search(r"'\s*(\w+)", text).group(1)
         if text.startswith('gpdk045_mosCB'):
             w, fingers = num(p['w']), num(p['fingers'])
@@ -283,6 +290,7 @@ class FakeVirtuoso:
             p['pasUpdateParamList'] = f'{field} c'                           # bookkeeping the form rewrites
 
     def holds(self, name, test):
+        """Check a generated field expectation against the fake cell's current values."""
         field, wanted, numeric = test
         have = self.params(name).get(field)
         return (have is not None and num(have) is not None and math.isclose(num(have), float(wanted), rel_tol=1e-9, abs_tol=1e-30)
@@ -367,6 +375,7 @@ class FakeVirtuoso:
         for inst in self.state['instances']:
             names = MOS_NETLIST if inst['cell'] in ('nmos1v', 'pmos1v') else CAP_NETLIST
             def put(match):
+                """Substitute a netlisted parameter from the current fixture instance when mapped."""
                 key = match.group(1)
                 return f'{key}={inst["params"][names[key]]}' if key in names and names[key] in inst['params'] else match.group(0)
             text = re.sub(rf'(?m)^(\s*{inst["name"]} \(.*)$',
@@ -376,9 +385,11 @@ class FakeVirtuoso:
 
 
 def backend_of(tmp_path, monkeypatch, profile, directory, **fake):
+    """Create a CDF-write backend attached to the in-memory Virtuoso stand-in."""
     client = FakeVirtuoso(profile.reference, (directory / 'structure.scs').read_text(), **fake)
 
     def attach(self):
+        """Return the fake client with an offline bridge-version marker."""
         self.bridge_version = 'offline-fault-injection'
         return client
     monkeypatch.setattr(VirtuosoBridgeBackend, '_attach', attach)

@@ -16,6 +16,7 @@ CORNER = SimulationCondition(PVTCorner('corner', 'ss', 125, .9), purpose='pvt_va
 
 
 def arithmetic_row(values, *, condition=NOMINAL, status='ok', candidate_evaluated=True, validity=None):
+    """Build a lightweight measurement row with explicit validity and evaluation status for reward arithmetic."""
     return SimpleNamespace(condition=condition, status=status, candidate_evaluated=candidate_evaluated,
                            metrics=values, metric_units={k: 'V' for k in values},
                            metric_validity={k: True for k in values} if validity is None else validity)

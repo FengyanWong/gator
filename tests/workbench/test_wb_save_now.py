@@ -20,6 +20,7 @@ def send_after(layout, commands, evaluations, timeout=60):
     sent = []
 
     def watch():
+        """Send the requested commands once the run records enough completed evaluations."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             status = read_json(layout.status, default={}) or {}
@@ -36,6 +37,7 @@ def send_after(layout, commands, evaluations, timeout=60):
 
 
 def save_points(layout):
+    """Return the run's listed save-point metadata."""
     return ckpt.list_checkpoints(layout.run_dir)['checkpoints']
 
 
@@ -121,9 +123,11 @@ def test_save_now_over_http_with_a_real_detached_worker(tmp_path):
     run_dir = client.post('/api/runs/start', json=dict(config=raw)).json()['run_dir']
 
     def status():
+        """Read the detached fixture worker's current status through the API."""
         return client.get('/api/runs/status', params=dict(run_dir=run_dir)).json()
 
     def wait(test, seconds=120):
+        """Poll API status until the supplied condition holds or the timeout fails."""
         deadline = time.time() + seconds
         while time.time() < deadline:
             now = status()
@@ -159,6 +163,7 @@ def test_the_api_accepts_the_command_and_answers_a_refusal_in_plain_words(tmp_pa
 
 
 def _checkpoints(layout):
+    """Read saved evaluation counts, kinds and relabelling origins in save-point order."""
     found = [read_json(p / 'metadata.json') for p in sorted((layout.run_dir / 'checkpoints').glob('ckpt-*'))]
     return [(m['counters']['evaluations_committed'], m['kind'], m.get('relabelled_from')) for m in found]
 

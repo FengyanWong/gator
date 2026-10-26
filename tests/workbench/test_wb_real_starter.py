@@ -16,6 +16,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def as_config(raw, **run):
+    """Validate starter rows with a finite run budget and optional run overrides."""
     return schema.WorkbenchConfig.model_validate(dict(raw, run=dict(dict(max_evaluations=200), **run)))
 
 

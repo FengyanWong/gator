@@ -67,11 +67,13 @@ def _before_facts(text, *, library, cell):
 
 
 def _cell(name='mock_device', model='mock_model'):
+    """Build one synthetic CDF cell record with terminal and parameter mappings."""
     return '|'.join(['CELL', name, f'"{model}"', '(D G S B)', '(nil D \\:d G \\:g S \\:s B \\:b)',
                      '(w l)', 'nil', '(nil w simW)', 'nil', 'M', '(symbol schematic)'])
 
 
 def _rich_rows():
+    """Build CDF response rows covering escaped values, duplicates, and malformed entries."""
     return [
         'PARAM|mock_device|w|string|lengthMetric|1u|"Width | µ"|t|nil|"callback(x)"|(1u 2u)|(1e-9 1e-3)',
         'INST|M1|mock_lib|old_device', 'MASTER|mock_device|mock_lib',
@@ -96,6 +98,7 @@ def _rich_rows():
 
 
 def _large_text(count):
+    """Generate a large synthetic CDF parameter response."""
     return '\n'.join([_cell(), 'INST|M1|mock_lib|mock_device', 'AFTER|nil',
                       *[f'PARAM|mock_device|p{i}|string|nil|{i}|"Invented | value {i}"|t|t|nil|nil'
                         for i in range(count)]])
@@ -145,6 +148,7 @@ def test_field_row_consumer_accepts_one_pass_input_without_mutating_rows():
 
 
 def _counted(monkeypatch, parser, text, *, facts):
+    """Capture CDF field queries and return the call result or its validation error."""
     original = cdf_text.query_fields
     calls = []
 

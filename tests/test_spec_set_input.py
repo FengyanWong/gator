@@ -28,10 +28,12 @@ UNIT_START = len(SPEC_SET_STATE_COLUMNS)
 
 
 def model(encoder='graph_transformer'):
+    """Build a small model configuration with the requested encoder for spec-set input tests."""
     return ModelConfig(hidden_dim=16, heads=2, layers=2, encoder_type=encoder)
 
 
 def described(observation, descriptors=None):
+    """Copy an observation graph and attach caller-supplied or default spec descriptors."""
     graph = deepcopy(observation.graph)
     graph.metadata = dict(graph.metadata, **{SPEC_DESCRIPTOR_KEY: descriptors if descriptors is not None else
                                              {s.metric_id: (1.0, 0.0, 0.5) for s in observation.specs}})
@@ -39,6 +41,7 @@ def described(observation, descriptors=None):
 
 
 def amplifier(graph, specs, metrics, **descriptors):
+    """Build a synthetic observation with valid metrics and a descriptor for each supplied spec."""
     observation = Observation(deepcopy(graph), tuple(specs), dict(metrics), {k: True for k in metrics},
                               {s.metric_id: s.unit for s in specs}, 'ok', 'synthetic', 4, 'fixture')
     return described(observation, {s.metric_id: descriptors.get(s.metric_id, (1.0, 0.0, 0.5)) for s in specs})

@@ -28,10 +28,12 @@ def write(path, value):
 
 
 def rows(widths):
+    """Map stage widths to the device-parameter rows used in test requalification evidence."""
     return [dict(device=f'XU1/MS{i}', parameter='w', value=w) for i, w in enumerate(widths, 1)]
 
 
 def metrics(frequency=177e6, power=27.5e-6):
+    """Build a complete synthetic VCO measurement set with adjustable nominal frequency and power."""
     return dict(vco_frequency_hz=frequency, vco_frequency_low_hz=85e6, vco_frequency_high_hz=285e6,
         vco_tuning_gain_hz_per_v=1e9, vco_tuning_fraction=1.13, supply_power_w=power, vco_minimum_swing_v=.9,
         vco_max_period_spread=1e-5, vco_max_window_drift=1e-7, vco_startup_detection_s=1.1e-7, vco_duty_cycle=.58)
@@ -76,6 +78,7 @@ def make_pilot(tmp_path, runs):
 
 @pytest.fixture
 def pilot(tmp_path):
+    """Create artificial pilot and strict-reference records with repeated and distinct candidate designs."""
     return make_pilot(tmp_path, [('gt_adapt', 17, (BASE, BASE, A)), ('mlp_adapt', 17, (BASE, A)),
                                  ('gt_scratch', 29, (B, BASE, BASE, BASE, C)), ('gt_frozen', 17, (BASE, BASE))])
 
@@ -92,12 +95,14 @@ class StrictStub:
         self.widths = tuple(assignment[(f'XU1/MS{i}', 'w')] for i in (1, 2, 3))
 
     def generate_netlist(self, work_root):
+        """Write the selected widths to a local fake netlist artifact."""
         path = Path(work_root)/f'{self.calls}.scs'
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(repr(self.widths))
         return NetlistArtifact(path, f'export-{self.calls}', f'strict-deck-{self.widths!r}', 'real')
 
     def run_simulation(self, request):
+        """Return the configured stub response and write test-only bridge evidence."""
         self.calls += 1
         job = Path(request.work_root)/f'job-{self.calls}'
         write(job/'bridge_result.json', dict(source_sha256=f'source-{self.widths!r}',
@@ -110,6 +115,7 @@ class StrictStub:
             simulator_invocations=invocations)
 
     def restore(self):
+        """Restore baseline widths or inject the configured restoration drift."""
         self.restored = True
         self.widths = A if self.drift else BASE
 
@@ -256,6 +262,7 @@ def test_execution_rejects_a_changed_budget_and_failed_restoration(pilot, tmp_pa
 
 
 def strict_response(overrides):
+    """Build a stub response callback that substitutes chosen results for selected widths."""
     def response(widths, call):
         if widths in overrides:
             return overrides[widths]

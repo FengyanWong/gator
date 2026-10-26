@@ -17,6 +17,7 @@ from fakes_connection import FakeBridge, FakeTunnel, SETUP
 
 
 def connect(settings, **behaviour):
+    """Run connection setup against a fake tunnel with no settling delay."""
     bridge = FakeTunnel(**behaviour)
     return perform_connect(bridge, settings, settle_seconds=0), bridge
 
@@ -105,12 +106,14 @@ def test_connecting_never_stops_or_restarts_anything(settings):
 
 # ------------------------------------------------------------------------------- connector (process)
 def fake_process(tmp_path, body):
+    """Write a fixture subprocess program and return the command that runs it."""
     script = tmp_path / 'fake_connect.py'
     script.write_text('import sys, json, time, os\n' + body)
     return [sys.executable, str(script)]
 
 
 def outcome_json(**overrides):
+    """Build a successful connector-process response with the requested overrides."""
     return dict(dict(bridge_connect=True, ok=True, action='started', reason_code=None, diagnostic=None,
                      details=dict(mode='remote', ciw=ciw_lines(SETUP))), **overrides)
 
@@ -161,6 +164,7 @@ def test_the_real_connect_process_starts_nothing_without_a_profile(tmp_path):
 
 # ------------------------------------------------------------------------------- status sentence
 def check_result(scope='interactive', **states):
+    """Build scoped connection-check results from the supplied layer outcomes."""
     layers = [dict(layer=n, state=states.get(n, 'ok' if n in dict(cheap=LAYERS[:3], interactive=LAYERS[:5], full=LAYERS)[scope]
                                              else 'not_checked'), reason_code=None, diagnostic=None, details={}) for n in LAYERS]
     return dict(scope=scope, checked_utc='2026-09-20T10:00:00+00:00', stale=False, layers=layers)
@@ -199,6 +203,7 @@ def test_the_check_reports_the_setup_path_and_describe_turns_it_into_the_command
 # ------------------------------------------------------------------------------- profile creation
 @pytest.fixture
 def fake_home(tmp_path, monkeypatch):
+    """Provide a temporary home and bridge metadata without using the real bridge installation."""
     home = tmp_path / 'home'
     (home / '.virtuoso-bridge').mkdir(parents=True)
     (home / '.virtuoso-bridge' / '.env').write_text('VB_REMOTE_HOST=eda-host\nVB_PASSWORD=super-secret-value\n')
@@ -241,6 +246,7 @@ def test_profile_creation_refuses_bad_names_and_a_missing_setup(fake_home, tmp_p
 
 # ------------------------------------------------------------------------------- API
 def api(tmp_path, connector_body=None, **probe_states):
+    """Provide an API client backed by fixture probe and connector subprocesses."""
     layers = [dict(layer=n, state=probe_states.get(n, 'ok'), reason_code=None, diagnostic=None,
                    details=dict(setup_path=SETUP) if n == 'tunnel' else {}) for n in LAYERS]
     script = tmp_path / 'probe.py'

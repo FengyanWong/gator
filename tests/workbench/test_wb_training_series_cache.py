@@ -99,14 +99,17 @@ def test_replaced_cut_or_remade_logs_are_read_again(tmp_path, liveness, monkeypa
     assert len(lines) == 12 and log.stat().st_size > 6 * 256
 
     def answers():
+        """Compare cached and reference answers from several flush cursors."""
         for flushes in (0, 2, 5, 11):
             agree(run.path, flushes)
         return agreed(run.path)
 
     def rebuilt():
+        """Return the number of flush-cache rebuilds recorded by the reader."""
         return training_series.cache_stats()['flush_rebuilt']
 
     def rewrite(content, *, keep_times=False):
+        """Replace the journal's contents in place with optional access and modification time preservation."""
         before = log.stat()
         time.sleep(0.02)                                                # a later clock tick, on coarse-grained file times
         with log.open('r+b') as stream:
@@ -129,6 +132,7 @@ def test_replaced_cut_or_remade_logs_are_read_again(tmp_path, liveness, monkeypa
     assert step(lambda: os.replace(swap, log))['flushes']['total'] == 8   # an atomic replacement, fewer records
 
     def cut():
+        """Truncate the journal after the fixture's first five records."""
         with log.open('r+b') as stream:
             stream.truncate(len(b''.join(lines[:5])))
     assert step(cut)['flushes']['total'] == 5                          # cut in place
@@ -157,6 +161,7 @@ def test_replaced_cut_or_remade_logs_are_read_again(tmp_path, liveness, monkeypa
 
     # The run deleted (its answer: no run data, as before), then made again at the same path: another run's answers.
     def remake():
+        """Replace the run with different synthetic values at the same directory path."""
         run.dataset.close()
         shutil.rmtree(run.path)
         assert agree(run.path) == ('error', 'FileNotFoundError', 'This folder holds no recorded run data.')
@@ -240,6 +245,7 @@ def test_pages_polled_while_the_run_grows_get_every_row_once(tmp_path, liveness)
     done, errors = threading.Event(), []
 
     def write():
+        """Append, publish and compact fixture rows while retaining any writer failure."""
         try:
             for step in range(60):
                 run.commit(1)
@@ -254,6 +260,7 @@ def test_pages_polled_while_the_run_grows_get_every_row_once(tmp_path, liveness)
             done.set()
 
     def read(page):
+        """Poll a page during writing and once after completion, retaining any reader failure."""
         try:
             while not done.is_set():
                 page.poll()

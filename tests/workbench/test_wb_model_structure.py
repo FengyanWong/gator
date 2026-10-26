@@ -22,6 +22,7 @@ ENCODERS = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_atte
 
 @pytest.fixture(scope='module')
 def saved(tmp_path_factory):
+    """Provide a completed synthetic run whose save points supply the model-structure tests."""
     root = tmp_path_factory.mktemp('structure')
     layout, state = execute(make_config(root, run=dict(max_evaluations=8, seed=3), project=dict(task_name='structure_source')), root)
     assert state == 'completed'
@@ -149,6 +150,7 @@ def test_actor_only_rebuild_matches_the_full_builder_without_constructing_a_crit
         assert list(full) == ['actor', 'critic']
 
         def unused_critic(*args, **kwargs):
+            """Fail if actor reconstruction allocates a critic."""
             pytest.fail('Actor reconstruction must not allocate a critic')
 
         monkeypatch.setattr(graph_transformer, 'GraphCritic', unused_critic)

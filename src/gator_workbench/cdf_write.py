@@ -82,6 +82,7 @@ class Field:
     callback: str | None
     choices: tuple | None = None
 
+    # Validate the field identity, editability rule, callback type, and numeric choices.
     def check(self, where):
         if not NAME.match(self.instance or '') or not FIELD.match(self.cdf or ''):
             raise RulesError(f'{where}: invalid instance or form field name')
@@ -94,10 +95,12 @@ class Field:
         if self.kind == 'choice' and not (self.choices and all(_num(c) is not None for c in self.choices)):
             raise RulesError(f'{where}: a choice list of numbers is required')
 
+    # Return the instance-qualified CDF field name.
     @property
     def name(self):
         return f'{self.instance}.{self.cdf}'
 
+    # Return the recorded choice spelling that represents the requested numeric value.
     def choice(self, value):
         return next((c for c in self.choices or () if equal(_num(c), value)), None)
 
@@ -139,6 +142,7 @@ class Write:
     unit: str | None = None
     grid: float | None = None     # what the PDK itself works on (5 nm, fingers x 5 nm, 1, a choice spacing)
 
+    # Validate the writable field's bounds, step, and manufacturing-grid contract.
     def check(self):
         self.field.check(f'{self.device}.{self.parameter}')
         if self.grid is not None and (not math.isfinite(self.grid) or self.grid <= 0):
@@ -154,6 +158,7 @@ class Write:
             raise RulesError(f'{self.device}.{self.parameter}: invalid step')
         return self
 
+    # Check whether a numeric value satisfies the bounds, choices, integrality, and step constraints.
     def legal(self, value) -> bool:
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             return False
@@ -372,6 +377,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
             self.validate_assignment(ActionMapper(self.graph).legalize({k: value for k in groups}).assignments)
 
     # ------------------------------------------------------------------ what the adapter calls
+    # Require a complete legal parameter assignment that preserves every mutable group's fixed ratios.
     def validate_assignment(self, parameters):
         if set(parameters) != set(self.writable_keys):
             raise ValueError('A complete assignment of every writable parameter is required')
@@ -409,6 +415,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
         keys = (set(a) | set(b)) if keys is None else set(keys)
         return sorted(k for k in keys - (self._internal(name) if skip_internal else set()) if not same_value(a.get(k), b.get(k)))
 
+    # Validate fixed circuit properties and derived geometry before returning the writable values.
     def validate_readback(self, snapshot):
         actual, reference = self.instances(snapshot), self.instances(self.reference)
         if set(actual) != set(reference) or set(actual) != set(self.instance_cells):
@@ -451,6 +458,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
         self.validate_assignment(result)
         return result
 
+    # Verify requested values and reject stale derived geometry after a parameter write.
     def verify_transition(self, before, after, expected):
         actual = self.validate_readback(after)
         for key, value in expected.items():
@@ -472,6 +480,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
             if changed:
                 raise RuntimeError(f'Restoration mismatch: {name}.{changed[0]}')
 
+    # Check exported parameters against form readback and recorded fixed values.
     def validate_export(self, structure, snapshot):
         graph = self._exported_graph(structure)
         read = self.validate_readback(snapshot)
@@ -629,6 +638,7 @@ class CellLocked:
                 self._release_cell()
             raise
 
+    # Restore the cell as needed, release its ownership lock, and try to release its edit lock safely.
     def close(self):
         self._closing = True
         try:
@@ -639,6 +649,7 @@ class CellLocked:
             self._closing = False
             self._release_cell()
 
+    # Restore recorded values and, during closure, try to release the edit lock without discarding user edits.
     def restore(self):
         super().restore()
         if getattr(self, '_closing', False) and self.__dict__.get('_wrote') and not self._dirty:
@@ -726,6 +737,7 @@ def _locked(adapter):
     return _LOCKED[adapter]
 
 
+# A factory that chooses the circuit's backend for the shared preparation session.
 @dataclass(frozen=True)
 class CdfPreparationFactory:
     config: object

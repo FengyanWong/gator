@@ -31,6 +31,7 @@ def durations(manifest, *, current_active=None):
 
 
 def build_run_summary(engine, final_state, checkpoint, persistence_ok):
+    """Build the run's research summary with feasibility, censoring, costs, provenance and persistence status."""
     ledger, counters, manifest = engine.ledger, engine.counters, engine.manifest
     snapshot = ledger.snapshot()
     first = snapshot['first_feasible']

@@ -22,6 +22,7 @@ from .trajectory import StateEncoder
 
 
 def prepare(engine, *, local_scratch):
+    """Initialize persisted run state, learning resources, budgets, preparation ownership, and execution lanes."""
     cfg, out, adv = engine.config, engine.config.output, engine.config.run.advanced
     enabled = {'evaluations', 'parameters', 'metrics', 'simulator_jobs'}
     if out.save_learner_updates and not engine.frozen:
@@ -143,6 +144,7 @@ def prepare(engine, *, local_scratch):
 
 
 def record_load_policy(engine):
+    """Persist the current segment's load policy, start time, host, process, and lane mode."""
     segment = engine.manifest['segments'][-1]
     segment.update(load_policy=engine.load_policy, started_utc=iso(engine._wall_started), pid=os.getpid(),
                    host=socket.gethostname(), lanes='process' if engine.use_processes else 'thread')

@@ -46,6 +46,7 @@ def clear_scratch(engine):
 
 
 def finalize(engine, final_state):
+    """Close and restore run resources, persist final records, and return the resulting run state."""
     engine._write_timings()
     try:
         engine._run_pending_updates()                  # before the last save point and its "unchanged" check (7.281)
@@ -165,6 +166,7 @@ def calibrate(engine):
 
 
 def write_outputs(engine, final_state, checkpoint, persistence_ok):
+    """Write best-design exports and the run summary, with optional experiment aggregates."""
     task = engine.task
     reparse, exporter, netlist_name = None, None, 'optimized_dut.scs'
     if task.netlist_path and task.parser_config_path:

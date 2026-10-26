@@ -19,6 +19,7 @@ pytestmark = [pytest.mark.skipif(not sys.platform.startswith('linux'), reason='t
 
 
 def named(tmp_path, folder, name, text):
+    """Create an executable fixture program with the requested process name."""
     program = tmp_path / folder / name
     program.parent.mkdir()
     program.write_text(text)
@@ -27,6 +28,7 @@ def named(tmp_path, folder, name, text):
 
 
 def running_as(process, name):
+    """Wait for the fixture process to acquire its expected operating-system name."""
     for _ in range(150):                                                 # until the program itself runs under its name
         if open(f'/proc/{process.pid}/comm').read().strip() == name:
             return process
@@ -38,12 +40,14 @@ class Virtuoso:
     """A stand-in Virtuoso: a process named virtuoso that runs the clean-up's ``sh(...)`` as its own child, and answers
     like the bridge - a SKILL string with the line ends written out. `in_use` = a Maestro session or an ADE window open."""
     def __init__(self, tmp_path, tag='v'):
+        """Start a named shell-process stand-in that executes the fixture's submitted jobs."""
         self.calls, self.in_use, self.folder = [], False, tmp_path
         program = named(tmp_path, f'virtuoso-{tag}', 'virtuoso', '#!/bin/sh\nwhile read -r file; do sh "$file"; echo done; done\n')
         self.process = running_as(subprocess.Popen([str(program)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True), 'virtuoso')
         self.pid = self.process.pid
 
     def execute_skill(self, text, timeout=60):
+        """Validate cleanup SKILL and execute its extracted shell command through the stand-in process."""
         self.calls.append(text)
         if 'maeCloseSession' in text:
             return types.SimpleNamespace(ok=True, errors=[], output='t')
@@ -63,6 +67,7 @@ class Virtuoso:
         return types.SimpleNamespace(ok=True, errors=[], output='"' + out.read_text().replace('\n', '\\n') + '"')
 
     def end(self):
+        """Terminate the fixture process if needed and wait for it to exit."""
         if self.process.poll() is None:
             self.process.kill()
         self.process.wait(timeout=5)
@@ -70,9 +75,11 @@ class Virtuoso:
 
 @pytest.fixture
 def host(tmp_path):
+    """Provide named Virtuoso and helper-process stand-ins and stop them during teardown."""
     started = []
 
     def virtuoso(tag='v'):
+        """Start a named Virtuoso stand-in and register it for fixture teardown."""
         started.append(Virtuoso(tmp_path, tag))
         return started[-1]
 
@@ -131,6 +138,7 @@ def test_a_close_waits_for_a_helper_that_is_ending_and_removes_the_one_that_stay
     naps, sleep = [], time.sleep
 
     def nap(seconds):                                                    # the module's own wait between two looks
+        """End the selected helper during the cleanup module's wait between inspections."""
         if seconds < 0.5:
             return sleep(seconds)                                        # (subprocess waits through the same function)
         naps.append(seconds)
@@ -155,6 +163,7 @@ def test_a_close_waits_for_a_helper_that_is_ending_and_removes_the_one_that_stay
     real = bridge_setup._helper_sweep
 
     def sweep(client, remove=()):                                        # a helper that appears after the first look
+        """Hide helpers on the first inspection to simulate a helper appearing later."""
         seen.append(tuple(remove))
         return [] if len(seen) == 1 else real(client, remove)
 
@@ -168,6 +177,7 @@ def test_a_close_waits_for_a_helper_that_is_ending_and_removes_the_one_that_stay
 
 def test_a_look_that_fails_fails_nothing_and_its_text_is_not_one_the_maestro_fakes_answer():
     class Plain:                                                         # the Maestro tests' client: every call answers t
+        """A bridge client stand-in that records calls and answers each with SKILL true."""
         def __init__(self):
             self.calls = []
 
@@ -185,7 +195,9 @@ def test_a_look_that_fails_fails_nothing_and_its_text_is_not_one_the_maestro_fak
         assert word not in look
 
     class Broken(Plain):
+        """A bridge client stand-in that times out on every operation except session closure."""
         def execute_skill(self, text, timeout=60):
+            """Allow session closure and raise a fixture timeout for other SKILL operations."""
             if 'maeCloseSession' not in text:
                 raise RuntimeError('Socket timeout')
             return super().execute_skill(text, timeout)

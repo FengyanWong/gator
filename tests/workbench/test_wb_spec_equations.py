@@ -19,26 +19,32 @@ OTA_RESULTS = {'score', 'unity_gain_hz', 'bandwidth_3db_hz', 'supply_power_w'}
 
 
 def codes(report, *levels):
+    """Return validation issue codes at the requested severities."""
     return [i.code for i in report.issues if i.level in levels]
 
 
 def probe(measurement_id, source_name, unit='fixture'):
+    """Build a probe reading one named backend-profile measurement."""
     return dict(measurement_id=measurement_id, analysis='other', result_source='backend_profile', source_name=source_name, unit=unit)
 
 
 def spec(metric_id, equation, **fields):
+    """Build a lower-bound equation spec with optional field overrides."""
     return dict(dict(metric_id=metric_id, equation=equation, unit='fixture', constraint='>=', lower=0.5,
                      normalization_scale=1.0, basis='test'), **fields)
 
 
 def mock(tmp_path, *, specs=(), probes=(), **kwargs):
+    """Add equation probes and targets to a synthetic-run configuration."""
     def add(raw):
+        """Append the requested probes and targets to the fixture configuration."""
         raw['measurements'] += list(probes)
         raw['targets'] += list(specs)
     return make_config(tmp_path, mutate=add, **kwargs)
 
 
 def check(config, provided=None):
+    """Validate equations with the task's metrics or an explicitly supplied metric set."""
     runtime = tasks.load_task(config.circuit)
     return validate(config, graph=runtime.base_graph,
                     provided_metrics=set(runtime.provided_metrics) if provided is None else provided)
@@ -155,6 +161,7 @@ def test_a_probe_no_equation_uses_is_reported_and_one_used_inside_a_formula_is_n
 
 def test_a_probe_id_with_a_dot_works_as_a_whole_equation(tmp_path):
     def dotted(raw):
+        """Give a probe and its whole-equation reference the same dotted identifier."""
         raw['measurements'][0]['measurement_id'] = 'm.score'
         raw['targets'][0]['equation'] = 'm.score'
     config = make_config(tmp_path, mutate=dotted)
@@ -165,6 +172,7 @@ def test_a_probe_id_with_a_dot_works_as_a_whole_equation(tmp_path):
 # ------------------------------------------------------------------------------- the registry the network reads
 def test_a_computed_spec_gets_a_registry_entry_sized_by_what_it_computes_not_by_its_limits(tmp_path):
     def with_power(raw, lower):
+        """Add unity-gain and power probes with a derived frequency-per-power target."""
         raw['measurements'] += [probe('m_ugb', 'unity_gain_hz', 'Hz'), probe('m_power', 'supply_power_w', 'W')]
         raw['targets'].append(spec('hz_per_watt', 'm_ugb / m_power', unit='Hz', lower=lower, normalization_scale=1e12))
     base = schema.WorkbenchConfig.model_validate(tasks.starter_config('synthetic:gpdk045_ota5') | dict(run=dict(max_evaluations=5)))
@@ -184,6 +192,7 @@ def test_a_computed_spec_gets_a_registry_entry_sized_by_what_it_computes_not_by_
 # ------------------------------------------------------------------------------- inside a lane
 @dataclass(frozen=True)
 class Result:                                         # the fields SpecPlan.extend reads, as in backends.backend.SimulationResult
+    """The simulation-result fields required by equation-spec extension."""
     metrics: dict
     metric_units: dict
     metric_validity: dict
@@ -192,6 +201,7 @@ class Result:                                         # the fields SpecPlan.exte
 
 
 def plan_for(tmp_path, specs, probes=()):
+    """Compile the fixture probes and target equations into a spec-evaluation plan."""
     return comp.compile_task(mock(tmp_path, specs=specs, probes=probes),
                              tasks.load_task(make_config(tmp_path).circuit).base_graph).plan
 
@@ -238,6 +248,7 @@ def test_a_missing_probe_blanks_only_the_specs_that_read_it(tmp_path):
 
 def test_wrapping_a_backend_that_needs_nothing_leaves_it_alone(tmp_path):
     class Backend:
+        """A passthrough backend used to detect unnecessary equation wrapping."""
         def run_simulation(self, request):
             return request
     backend = Backend()
@@ -246,23 +257,28 @@ def test_wrapping_a_backend_that_needs_nothing_leaves_it_alone(tmp_path):
 
 @dataclass(frozen=True)
 class FakeInner:
+    """An environment factory exposing fixture measurements and a preparation-service marker."""
     reference_metrics: dict | None
     measured: dict
     preparation: object = None
 
     def create_recorded(self, lane, recorder):
+        """Create an environment whose reset returns the fixture's measured metrics."""
         assert self.reference_metrics is None             # the wrapper keeps the check itself, on the simulator's results
         measured = self.measured
 
         class Env:
+            """A minimal environment returning copied fixture metrics from reset."""
             backend = type('B', (), {'run_simulation': lambda self, request: request})()
 
             def reset(self):
+                """Return the fixture measurements as a valid reset evaluation."""
                 return type('Obs', (), {'metrics': dict(measured)})(), {'evaluation_valid': True}
         return Env()
 
     @contextmanager
     def preparation_context(self, limits, report):
+        """Provide a copy of the fixture factory marked as using the preparation service."""
         yield replace(self, preparation='service')
 
 

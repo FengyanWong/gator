@@ -14,6 +14,7 @@ from helpers import workbench_app
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    """Provide folder routes with a fixed list of real and ngspice task keys."""
     monkeypatch.setattr(tasks, 'list_tasks', lambda: [dict(task_key=key) for key in ('real:a', 'real:b', 'ngspice:c')])
     with TestClient(workbench_app(tmp_path)) as client:
         yield client
@@ -79,6 +80,7 @@ def test_concurrent_changes_keep_each_other_and_duplicate_names_are_rejected():
 
 # ------------------------------------------------------------------------------------- runs and models (record 7.263)
 def fake_run(root, name):
+    """Create the minimal run folder needed by folder-organization tests."""
     run = root / 'out' / 'exp__0123456789ab' / 'runs' / 'task' / name
     run.mkdir(parents=True)
     (run / 'run_manifest.json').write_text('{}')

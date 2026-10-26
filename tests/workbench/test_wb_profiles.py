@@ -170,6 +170,7 @@ def test_a_cell_read_from_virtuoso_is_validated_the_same_way_everywhere(tmp_path
 
 
 def write_profile(folder_name, **fields):
+    """Write a minimal saved profile record with optional field overrides."""
     folder = profiles.store_root() / folder_name
     folder.mkdir(parents=True, exist_ok=True)
     entry = dict(format=profiles.FORMAT, name=folder_name, circuit_class='oscillator', library='LIB', core_cell=f'{folder_name}_cell')
@@ -218,6 +219,7 @@ def test_a_task_load_finds_its_newest_baseline_through_the_run_cache(tmp_path, m
     given = []
 
     def adopt(run_dir, manifest=None):
+        """Record baseline adoption and mutate its supplied manifest to test cache isolation."""
         given.append((Path(run_dir), manifest))
         manifest['state'] = 'changed by the callee'                         # a copy: the run list's cache keeps its own
         return dict(recorded=True, name='ring_a')

@@ -26,12 +26,14 @@ POINTS = {'DUT/M1': dict(ids=1e-4, gm=1e-3, gds=1e-5, vgs=0.6, vds=0.9, vth=0.4,
 
 
 def with_network(network):
+    """Return a configuration mutator that applies the requested network options."""
     def mutate(raw):
         raw['run']['network'].update(network)
     return mutate
 
 
 def number(value):
+    """Wrap a numeric value as a parsed parameter with the fixture source span."""
     return ParameterValue(repr(value), value, SPAN)
 
 
@@ -47,6 +49,7 @@ def bench_graph():
     devices, connections, parameters = [], [], {}
 
     def add(name, kind, model, nets, **values):
+        """Append a device, its typed terminal connections, and normalized parameter values."""
         terminals = ('d', 'g', 's', 'b') if kind in ('nmos', 'pmos') else ('PLUS', 'MINUS')
         roles = ('drain', 'gate', 'source', 'bulk') if kind in ('nmos', 'pmos') else ('positive', 'negative')
         devices.append(Device(name, kind, model, terminals, SPAN))
@@ -71,6 +74,7 @@ def bench_graph():
 
 
 def shown(graph, device):
+    """Return valid numeric parameter values for the selected device."""
     return {key: value.value for key, value in graph.parameters[device].items() if value.valid}
 
 
@@ -191,6 +195,7 @@ def test_the_nets_the_active_specs_read_and_the_variables_of_a_test():
 
 @pytest.fixture(scope='module')
 def second_run(tmp_path_factory):
+    """Provide a completed MOCK run using the second-build input configuration."""
     root = tmp_path_factory.mktemp('second-build')
     layout, state = execute(make_config(root, run=dict(max_evaluations=24), mutate=with_network(SECOND),
                                         advanced=dict(gamma=0., batch_size=4, warmup_transitions=4, episode_length=3)), root)
@@ -236,6 +241,7 @@ def test_an_offline_pool_takes_the_second_build_and_runs_with_operating_points(s
     assert state == 'completed'
 
     def request(sources, **extra):
+        """Build a synthetic offline-training request with the supplied run identities and overrides."""
         return dict(origin='synthetic', seed=7, holdout_fraction=0.2,
                     runs=[dict(run_dir=str(s.run_dir), archive_sha256=pretrain.archive_identity(s.run_dir)) for s in sources],
                     updates=3, batch_size=3, checkpoint_every=2, model=dict(hidden_dim=16, heads=2, layers=1),

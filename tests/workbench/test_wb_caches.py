@@ -27,6 +27,7 @@ EMPTY = ('{}', 'dict()', 'OrderedDict()', 'collections.OrderedDict()')
 
 
 def module_caches() -> set:
+    """Find module-level empty containers and cached functions by inspecting source ASTs."""
     found = set()
     for path in SRC.rglob('*.py'):
         module = '.'.join(path.relative_to(SRC).with_suffix('').parts)

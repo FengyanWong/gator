@@ -19,6 +19,7 @@ from analog_optimizer.netlist.spectre_parser import SpectreParser
 
 @pytest.fixture(autouse=True)
 def cpu():
+    """Save and restore Torch thread and RNG state around deterministically seeded CPU tests."""
     threads = torch.get_num_threads()
     rng = torch.get_rng_state()
     torch.set_num_threads(1)

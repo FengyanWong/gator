@@ -162,6 +162,7 @@ def file_snapshot(path: Path, chunk_size: int = 1 << 20):
         raise
 
     def chunks():
+        """Yield no more than the captured file size and close the open stream afterward."""
         with stream:
             remaining = size
             while remaining:
@@ -174,6 +175,7 @@ def file_snapshot(path: Path, chunk_size: int = 1 << 20):
 
 
 def fail(status, message, **extra):
+    """Raise an HTTP error whose message is bounded and redacted."""
     raise HTTPException(status, detail=dict(message=redact(str(message), 2000), **extra))
 
 
@@ -193,6 +195,7 @@ def bridge_call(action, *refusals):
 
 
 def load_runtime(config, *, allow_real=False):
+    """Load a task or cached page view with a structured blocker for loading failures."""
     try:
         if allow_real:
             return tasks.load_task(config.circuit, allow_real=True, profile_id=config.run.connection_profile_id), None

@@ -17,27 +17,33 @@ CELL_WIDTH = '0.253u + 0.288u * larger(fingers("mn*", 400n), fingers("DUT/mp*", 
 
 
 def codes(report, *levels):
+    """Return validation issue codes at the requested severities."""
     return [i.code for i in report.issues if i.level in levels]
 
 
 def size_probe(measurement_id, source_name, signal, unit='um'):
+    """Build a size-estimate probe row for a selected parameter signal."""
     return dict(measurement_id=measurement_id, analysis='other', result_source='size_estimate', source_name=source_name,
                 signal=signal, unit=unit)
 
 
 def spec(metric_id, equation, **fields):
+    """Build an upper-bound size spec with optional field overrides."""
     return dict(dict(metric_id=metric_id, equation=equation, unit='um', constraint='<=', upper=1e9, normalization_scale=1.0,
                      basis='test'), **fields)
 
 
 def mock(tmp_path, *, specs=(), probes=(), **kwargs):
+    """Add the supplied size probes and specs to a synthetic-run configuration."""
     def add(raw):
+        """Append the requested probe and target rows to the fixture configuration."""
         raw['measurements'] += list(probes)
         raw['targets'] += list(specs)
     return make_config(tmp_path, mutate=add, **kwargs)
 
 
 def check(config):
+    """Validate size probes against the loaded task's graph and provided metrics."""
     runtime = tasks.load_task(config.circuit)
     return validate(config, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics))
 
@@ -110,6 +116,7 @@ def test_a_value_that_cannot_be_worked_out_is_invalid_never_a_number():
 
 # ------------------------------------------------------------------------------- in a configuration
 def widths_of(config):
+    """Return instance paths of optimized width rows."""
     return [p.instance_path for p in config.parameters if p.parameter_name == 'w' and p.optimized]
 
 
@@ -134,6 +141,7 @@ def test_a_configuration_without_a_size_probe_is_what_it_was(tmp_path):
     assert plain.sizes == () and plain.request_names(('score',)) == ('score',)
 
     class Backend:
+        """A passthrough backend used to detect unnecessary wrapping."""
         def run_simulation(self, request):
             return request
     backend = Backend()
@@ -160,6 +168,7 @@ def test_the_network_is_told_such_a_spec_has_no_simulator_expression(tmp_path):
 # ------------------------------------------------------------------------------- inside a lane
 @dataclass(frozen=True)
 class Result:                                         # the fields SpecPlan.extend reads, as in backends.backend.SimulationResult
+    """The simulation-result fields required by size-spec extension."""
     metrics: dict
     metric_units: dict
     metric_validity: dict
@@ -168,6 +177,7 @@ class Result:                                         # the fields SpecPlan.exte
 
 
 def plan_for(tmp_path, specs, probes):
+    """Compile the fixture's probes and specs into a size-evaluation plan."""
     return comp.compile_task(mock(tmp_path, specs=specs, probes=probes),
                              tasks.load_task(make_config(tmp_path).circuit).base_graph).plan
 
@@ -198,11 +208,14 @@ def test_a_wrapped_backend_hands_the_candidates_own_sizes_to_the_formula(tmp_pat
 
     @dataclass(frozen=True)
     class Request:
+        """A simulation request stand-in carrying required metrics and candidate sizes."""
         required_metrics: tuple
         parameters: dict
 
     class Backend:
+        """A simulator stand-in returning only a valid fixture score."""
         def run_simulation(self, request):
+            """Record requested metrics and return the score before size formulas are added."""
             asked.append(request.required_metrics)
             return Result({'score': 0.9}, {'score': 'fixture'}, {'score': True})
     backend = plan.wrap(Backend())

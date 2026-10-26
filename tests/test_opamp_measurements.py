@@ -19,6 +19,7 @@ OP_KEYS = ('ids', 'gm', 'gds', 'vgs', 'vds', 'vth', 'vdsat', 'region')
 
 
 def datasets(supply=1.8):
+    """Construct synthetic AC, DC and operating-point datasets for amplifier measurement checks."""
     response = [A0 / complex(1, f / POLE) for f in FREQ]
     dc = {'VDD': supply, 'VOUT': 0.9, 'VINP': 0.9, 'VINN': 0.9, 'VBIAS': 0.5, 'XU1.NTAIL': 0.2, 'XU1.NLOAD': 1.2,
           'VDD:p': -40e-6}
@@ -43,6 +44,7 @@ def psf(monkeypatch):
 
 def job(tmp_path, *, status='success', condition=None, log='spectre completes with 0 errors, 3 warnings, and 5 notices.',
         returncode=0, errors=()):
+    """Write a local simulator-job fixture with chosen status, condition, logs and result metadata."""
     folder = tmp_path / 'job'
     (folder / 'results').mkdir(parents=True)
     (folder / 'results' / 'spectre.out').write_text(log + '\n')

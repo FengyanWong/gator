@@ -218,6 +218,7 @@ def reconstruct_from_tables(run_dir, manifest):
 
 
 def collect_runs(experiment_dir, *, include_mock=False):
+    """Collect readable run summaries and exclusion reasons, omitting MOCK runs unless requested."""
     experiment_dir = Path(experiment_dir)
     runs, skipped = [], []
     for manifest_path in sorted(experiment_dir.glob('runs/*/*/run_manifest.json')):

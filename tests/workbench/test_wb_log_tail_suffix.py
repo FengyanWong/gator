@@ -20,6 +20,7 @@ def _before(path, limit, *, block_size=65536):
     records, pending, at_end = [], b'', True
 
     def take(line):
+        """Collect valid nonblank JSON lines while ignoring malformed or undecodable records."""
         if line.strip():
             try:
                 records.append(json.loads(line))
@@ -72,21 +73,25 @@ def test_long_uncommitted_suffix_does_not_form_a_growing_concatenation(tmp_path,
     real_open, opened, concatenations = Path.open, [], []
 
     class Block(bytes):
+        """A byte block that rejects concatenations larger than the bounded-read allowance."""
         def __add__(self, other):
             concatenations.append(len(self) + len(other))
             assert len(self) + len(other) <= 2 * block_size, 'The discarded suffix must not accumulate across reads'
             return super().__add__(other)
 
     class Reader(io.BufferedReader):
+        """A reader that counts bytes and enforces bounded reads using instrumented blocks."""
         bytes_read = 0
 
         def read(self, size=-1):
+            """Return an instrumented block and reject reads exceeding the configured block size."""
             value = super().read(size)
             self.bytes_read += len(value)
             assert size <= block_size
             return Block(value)
 
     def open_file(file, *args, **kwargs):
+        """Wrap the target binary log stream with the instrumented reader."""
         if file == path and args == ('rb',):
             stream = Reader(io.FileIO(path, 'r'))
             opened.append(stream)
@@ -117,9 +122,11 @@ def test_appends_after_the_initial_size_are_outside_the_read_snapshot(tmp_path, 
     real_open = Path.open
 
     class Reader(io.BufferedReader):
+        """A reader that appends a later record after the initial end-of-file seek."""
         appended = False
 
         def seek(self, offset, whence=os.SEEK_SET):
+            """Append the fixture record after the first seek that establishes the original file size."""
             position = super().seek(offset, whence)
             if whence == os.SEEK_END and not self.appended:
                 self.appended = True
@@ -128,6 +135,7 @@ def test_appends_after_the_initial_size_are_outside_the_read_snapshot(tmp_path, 
             return position
 
     def open_file(file, *args, **kwargs):
+        """Wrap the target log stream with a reader that appends after snapshot selection."""
         return Reader(io.FileIO(path, 'r')) if file == path and args == ('rb',) else real_open(file, *args, **kwargs)
 
     monkeypatch.setattr(Path, 'open', open_file)
@@ -142,15 +150,18 @@ def test_read_failure_still_propagates_and_closes_the_file(tmp_path, monkeypatch
     real_open, opened = Path.open, []
 
     class Reader(io.BufferedReader):
+        """A reader that injects an error on its second read."""
         reads = 0
 
         def read(self, size=-1):
+            """Delegate the first read and inject a fixture failure on the second."""
             self.reads += 1
             if self.reads == 2:
                 raise OSError('synthetic read failure')
             return super().read(size)
 
     def open_file(file, *args, **kwargs):
+        """Wrap the target binary log stream with the reader that fails mid-read."""
         if file == path and args == ('rb',):
             stream = Reader(io.FileIO(path, 'r'))
             opened.append(stream)

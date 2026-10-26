@@ -23,16 +23,19 @@ SCHEMA = SpecSchema(metrics=(('score', 'fixture', 1.), ('other', 'fixture', 1.))
 
 
 def learner():
+    """Build a small learner for scripted results using the configured corner-reward contract."""
     return SACLearner(experiment=dict(origin='real', split='scripted-mechanism-only', designs=['fake-real']),
         model_config=ModelConfig(hidden_dim=8, heads=2, layers=1), spec_schema=SCHEMA,
         config=SACConfig(alpha_learning_rate=.01), condition_policy='after_nominal', planned_conditions=PLAN)
 
 
 def missing(status=Status.MEASUREMENT_ERROR, evaluated=True, unit='fixture'):
+    """Build scripted metrics with an absent score and caller-controlled status, evaluation flag and unit."""
     return status, evaluated, {'score': None, 'other': 2.}, {'score': False, 'other': True}, {'score': unit, 'other': 'fixture'}
 
 
 def record(result):
+    """Load the candidate receipt referenced by an environment step result."""
     return json.loads(Path(result[4]['record_path']).read_text())
 
 

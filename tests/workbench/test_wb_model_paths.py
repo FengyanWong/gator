@@ -32,6 +32,7 @@ def _before(subckt, scan, start, end, blocked, *, behavioural=False):
 
 
 def _fixture(edges):
+    """Create an invented subcircuit and scan record from terminal-to-terminal elements."""
     elements = [dict(name=f'mock{i}', nodes=[a, b], master=master, sets=[])
                 for i, (a, b, master) in enumerate(edges)]
     subckt = dict(name='mock_wrapper', pins=['s', 't'], models={}, elements=elements, inline=False,
@@ -41,6 +42,7 @@ def _fixture(edges):
 
 
 def _same(subckt, scan, start='s', end='t', blocked=(), *, behavioural=False):
+    """Assert path results match the original reader without mutating the input records."""
     unchanged = deepcopy((subckt, scan, blocked))
     expected = _before(subckt, scan, start, end, blocked, behavioural=behavioural)
     actual = model_scan._paths(subckt, scan, start, end, blocked, behavioural=behavioural)
@@ -110,6 +112,7 @@ def test_element_classification_calls_and_order_are_unchanged(monkeypatch, behav
     calls, original = [], model_scan._element_family
 
     def classify(element, *args, **kwargs):
+        """Record element-classification order while retaining the original classification."""
         calls.append(element['name'])
         return original(element, *args, **kwargs)
 
@@ -126,6 +129,7 @@ def test_element_classification_calls_and_order_are_unchanged(monkeypatch, behav
 
 
 def _random_fixture(seed):
+    """Create reproducible invented paths with mixed device kinds and parallel elements."""
     randomizer = random.Random(seed)
     nodes = ['s', 't', 'N1', 'n1', 'n.01', 'branch!', '0', 'internal/node']
     masters = ['resistor', 'capacitor', 'inductor', 'diode', 'bsource', 'invented_unknown']

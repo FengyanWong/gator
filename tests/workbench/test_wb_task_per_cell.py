@@ -44,6 +44,7 @@ def test_a_cell_of_a_built_in_circuit_is_said_to_have_its_registered_task(tmp_pa
 
 
 def working_run(tmp_path, task_key, state='running'):
+    """Create a run manifest and list entry tied to the supplied task key."""
     run_dir = tmp_path / f'run_{len(list(tmp_path.glob("run_*")))}'
     run_dir.mkdir()
     (run_dir / 'run_manifest.json').write_text(json.dumps(dict(run_id='run-1', circuit=dict(task_key=task_key))))

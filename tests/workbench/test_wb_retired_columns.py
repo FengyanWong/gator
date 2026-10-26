@@ -58,6 +58,7 @@ def test_what_never_ran_is_refused_in_plain_words(tmp_path, row, refusal):
 
 def test_what_still_means_something_is_kept(tmp_path):
     def mutate(raw):
+        """Add legacy parameter fields whose supported binding meaning must survive migration."""
         raw['parameters'][1].update(relation='expression', expression='2*leader', name='the width',
                                     target_kind='instance_parameter')
     follower = make_config(tmp_path, mutate=mutate).parameters[1]

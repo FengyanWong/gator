@@ -19,6 +19,7 @@ SPEC = (MetricSpec('score', 'fixture', 'min', 1., lower=.95),)
 
 
 def record_steps(root, graph, steps=2):
+    """Collect recorded synthetic transitions in a temporary store, closing the store if collection fails."""
     store = ExperimentStore(root, RecordingConfig(min_free=0, temporary_reserve=0))
     run = store.call('run', {})
     recorder = RunRecorder(store, run)
@@ -165,6 +166,7 @@ def test_cleanup_metadata_rollback_can_be_reconciled_without_losing_core(opamp, 
             metric_validity={'score': True}, metric_units={'score': 'fixture'}, simulator_invocations=0))
         cleanup = store._op_finalize_workspace
         def cleanup_then_rollback(*args):
+            """Delete retained artifacts before injecting a metadata rollback failure."""
             cleanup(*args)
             raise ValueError('injected post-delete rollback')
         monkeypatch.setattr(store, '_op_finalize_workspace', cleanup_then_rollback)
@@ -230,6 +232,7 @@ def test_checkpoint_metadata_uses_the_position_in_the_saved_file(opamp, tmp_path
         replay.add(items[0])
         original = learner.save
         def save_then_commit(*args, **kwargs):
+            """Commit another evaluation after checkpoint saving to expose a moving database position."""
             position = original(*args, **kwargs)
             row = store.call('read', 'evaluation', items[0].candidate_id)
             key = store.call('begin', run, row['task_id'], row['graph_id'], dict(source='mock'))

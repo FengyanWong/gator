@@ -20,6 +20,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def check(settings, scope='full', run_active=False, **behaviour):
+    """Run the requested connection-check scope against a configurable fake bridge."""
     bridge = FakeBridge(**behaviour)
     return run_layers(bridge, settings, scope=scope, run_active=run_active), bridge
 
@@ -37,6 +38,7 @@ def test_all_layers_ok_in_dependency_order(settings):
 
 
 def downstream_not_checked(layers, failed_layer):
+    """Assert that layers after the failed layer remain unchecked."""
     index = LAYERS.index(failed_layer)
     assert all(item['state'] == 'not_checked' for item in layers[index + 1:]), states(layers)   # never ok, never failed
 
@@ -104,6 +106,7 @@ def test_readiness_reuses_the_adapters_own_rule():
     """The panel calls the adapter's rule, so there are never two definitions of 'ready'."""
 
     class Client:
+        """A bridge client stand-in that returns the fixture window listing."""
         def __init__(self, names):
             self.names = names
 

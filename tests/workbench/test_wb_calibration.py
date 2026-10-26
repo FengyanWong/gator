@@ -18,6 +18,7 @@ COMPRESSED = dict(violation_shape='compressed', worst_spec_share=0.5)
 def four_rows(root, **reward):
     """Four Specs rows in four units, one of them the objective. The calibration's arithmetic needs no simulator."""
     def mutate(raw):
+        """Configure the target rows and reward used by the calibration fixture."""
         raw['targets'] = [dict(metric_id='gain_db', equation='m_score', unit='dB', constraint='>=', lower=52.0),
                           dict(metric_id='ugf_hz', equation='m_score', unit='MHz', constraint='>=', lower=100.0),
                           dict(metric_id='power_w', equation='m_score', unit='uW', constraint='<=', upper=150.0, direction_after_feasible='minimize'),
@@ -27,6 +28,7 @@ def four_rows(root, **reward):
 
 
 def one_row(root, *, scale=None, **reward):
+    """Build a calibration configuration with the requested normalization scale and reward."""
     def mutate(raw):
         raw['targets'][0]['normalization_scale'] = scale
         raw['run']['reward'] = dict(COMPRESSED, **reward)
@@ -89,6 +91,7 @@ def test_the_initial_alpha_is_a_tenth_of_the_reward_spread_under_the_proposed_sc
 def window_rows(root, *, scale=None, objective='none'):
     """The output window of an LDO, 1.18 to 1.22 V (half its width: 0.02 V), beside a gain row and the objective."""
     def mutate(raw):
+        """Configure interval and scalar target rows for window-calibration checks."""
         raw['targets'] = [dict(metric_id='vout_v', equation='m_score', unit='V', constraint='interval', lower=1.18, upper=1.22,
                                normalization_scale=scale, direction_after_feasible=objective),
                           dict(metric_id='gain_db', equation='m_score', unit='dB', constraint='>=', lower=52.0),
@@ -104,6 +107,7 @@ def test_a_window_most_designs_are_inside_gets_at_most_half_its_width(tmp_path):
     window most random designs MISS keeps the typical miss - it has to be found first."""
     others = dict(gain_db=[40.0] * 16 + [60.0] * 16, power_w=[100e-6] * 32)
     def vout(config, values):
+        """Return the output-voltage calibration row for the supplied recorded values."""
         rows_ = calibration.calibrate(config, *recorded(config, dict(vout_v=values, **others)))['rows']
         return next(row for row in rows_ if row['metric_id'] == 'vout_v')
     empty = window_rows(tmp_path)                                                       # empty box = 1.22, the upper limit
@@ -141,6 +145,7 @@ def test_the_initial_alpha_is_proposed_only_when_it_differs_by_a_factor_of_two(t
     """Record 7.217. The estimate here is 0.025 (the test above): a value in use within a factor of 2 of it stays."""
     table = dict(score=[0.85] * 8 + [0.65] * 8 + [1.0] * 8)
     def alpha(in_use, **reward):
+        """Calibrate a configuration with the selected initial entropy coefficient."""
         config = one_row(tmp_path, scale=1.0, **reward)
         config.run.advanced.initial_alpha = in_use
         return calibration.calibrate(config, *recorded(config, table))
@@ -207,6 +212,7 @@ def test_the_baseline_run_is_prepared_for_random_designs_only(tmp_path):
 
 # ------------------------------------------------------------------------------- the run
 def calibration_run(root, designs, *, lanes=1, scripts=None, delays=None, reward=COMPRESSED):
+    """Prepare and execute a MOCK calibration run with scripted lane outcomes."""
     config = make_config(root, run=dict(concurrency=lanes, reward=reward)).model_copy(deep=True)
     config.run.max_evaluations, config.output.save_checkpoints = 1, False
     request = calibration.prepare(config, designs)
@@ -302,6 +308,7 @@ def test_a_stopped_calibration_run_can_still_give_the_reference(tmp_path, monkey
 # ------------------------------------------------------------------------------- the routes
 @pytest.fixture
 def client(tmp_path):
+    """Provide a workbench API client using the fixture connection probe."""
     return TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
 
 

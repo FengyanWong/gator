@@ -20,6 +20,7 @@ PARAMETERS = ('variable_id', 'member_variable_id', 'instance_path', 'parameter_n
 
 
 def recorded(layout):
+    """Collect comparable evaluation, update, and parameter outcomes in deterministic order."""
     evaluations = rows(layout, 'evaluations')
     order = {e['evaluation_id']: e['commit_seq'] for e in evaluations}
     return dict(evaluations=sorted((tuple(e[c] for c in EVALUATIONS) for e in evaluations), key=repr),
@@ -29,6 +30,7 @@ def recorded(layout):
 
 
 def run(tmp_path, monkeypatch, name, gamma, *, old_path):
+    """Execute the selected learner path and return recorded outcomes with skipped-noise counts."""
     shortcuts = []
     draw = SACLearner._draw_skipped_next_action_noise
     with monkeypatch.context() as patch:

@@ -20,6 +20,7 @@ RESCUE = dict(DEFAULT_SEARCH, method='sac_llm_rescue', provider='claude_code', m
 
 
 def with_search(config, search):
+    """Return configuration JSON containing an independent copy of legacy search settings."""
     raw = config.model_dump(mode='json')
     raw['run']['search'] = copy.deepcopy(search)
     return raw

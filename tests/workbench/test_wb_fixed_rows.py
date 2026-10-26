@@ -6,6 +6,7 @@ from helpers import execute, make_config, rows, summary
 
 
 def fix_one(raw):
+    """Disable optimization for the first parameter outside a binding group."""
     next(p for p in raw['parameters'] if not p.get('binding_group')).update(optimized=False)
 
 

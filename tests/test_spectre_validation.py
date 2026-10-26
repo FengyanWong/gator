@@ -1,3 +1,5 @@
+"""Spectre completion checks on injected logs, without launching the simulator or contacting a license server."""
+
 import pytest
 from analog_optimizer.backends.spectre_validation import validate_completion
 

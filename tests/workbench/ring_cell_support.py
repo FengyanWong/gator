@@ -17,6 +17,7 @@ CIRCUIT = dict(source='virtuoso', library='GPDK045_RINGOSC', cell='ring_osc_3sta
 
 
 def fake_reader(tmp_path, *, testbench=True):
+    """Create a reader command that copies recorded ring-cell exports."""
     script = tmp_path / 'ring_reader.py'
     script.write_text(f'''
 import json, shutil, sys
@@ -31,11 +32,13 @@ print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench_
 
 
 def read_cell(tmp_path, testbench='tb_ring_osc_3stage'):
+    """Import the recorded ring oscillator with an optional testbench readback."""
     return bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library='GPDK045_RINGOSC', cell='ring_osc_3stage',
                             testbench=testbench, command=fake_reader(tmp_path, testbench=bool(testbench)))
 
 
 def row(variable_id, instance, lower=None, upper=None, leader=None, **more):
+    """Build an adjustable width row with an optional binding leader."""
     return dict(dict(variable_id=variable_id, instance_path=instance, parameter_name='w', unit='um', optimized=True, lower=lower,
                      upper=upper, binding_group=leader, ratio=1.0), **more)
 
@@ -45,10 +48,12 @@ ROWS = [row('wn', 'XU1/MN1', 0.6, 1.6), row('wn2', 'XU1/MN2', leader='wn'), row(
 
 
 def config(rows=ROWS, **circuit):
+    """Validate ring-cell parameter rows with optional circuit overrides."""
     return schema.WorkbenchConfig.model_validate(dict(circuit=dict(CIRCUIT, **circuit), parameters=rows, run=dict(max_evaluations=5)))
 
 
 def connection_file():
+    """Write the fixture connection profile into the test settings directory."""
     target = local_settings_dir() / 'bridge_connection.json'
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(dict(active='lab', profiles=dict(lab=dict(env_file='/x/.env', library='GATOR_TESTS', model_file='/pdk/model.scs')))))

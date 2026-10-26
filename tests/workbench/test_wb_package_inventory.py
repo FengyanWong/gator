@@ -13,6 +13,7 @@ OPTIONS = dict(exclude_roots=('work', 'control', 'waveforms', 'checkpoints'), ex
 
 
 def _files(root):
+    """Create a deterministic synthetic run tree containing included and excluded package files."""
     contents = {'run_manifest.json': b'{"origin":"synthetic","provenance":"mock"}',
                 'logs/events.jsonl': b'{"origin":"synthetic","event":"saved"}\n' * 300,
                 'logs/errors.jsonl': b'', 'exports/measurements.csv': b'name,value\nsynthetic,0.5\n' * 100,
@@ -30,10 +31,12 @@ def _files(root):
 
 
 def _old_members(root):
+    """Return package members using the original metadata-reading inventory."""
     return [(path, relative) for path, relative, _ in support.run_files(root, **OPTIONS)]
 
 
 def _packed(members):
+    """Read a complete fixture ZIP response and close its spool after checking its length."""
     response = support.zip_download(members, 'synthetic.zip')
     try:
         packed = response.stream.read()
@@ -71,6 +74,7 @@ def test_directory_exclusions_are_pruned_before_scanning(tmp_path, monkeypatch):
     visited, scan = [], os.scandir
 
     def tracked(path):
+        """Record directories visited by the package inventory."""
         visited.append(Path(path))
         return scan(path)
 
@@ -109,6 +113,7 @@ def test_directory_replaced_by_a_sibling_scan_is_not_followed(tmp_path, monkeypa
         visited = []
 
         class OrderedScan:
+            """A name-sorted directory iterator that makes the replacement race reproducible."""
             def __init__(self, path):
                 with scan(path) as entries:
                     self.entries = iter(sorted(entries, key=lambda entry: entry.name))
@@ -126,6 +131,7 @@ def test_directory_replaced_by_a_sibling_scan_is_not_followed(tmp_path, monkeypa
                 return next(self.entries)
 
         def swapping_scan(path):
+            """Replace an unvisited sibling directory with an external link during traversal."""
             path = Path(path)
             visited.append(path)
             if path == root:
@@ -196,6 +202,7 @@ def test_disappearance_after_inventory_keeps_build_failure_and_spool_cleanup(tmp
     spools, make = [], support.tempfile.SpooledTemporaryFile
 
     def tracked(**kwargs):
+        """Retain created ZIP spools so failure cleanup can be checked."""
         spool = make(**kwargs)
         spools.append(spool)
         return spool
@@ -213,6 +220,7 @@ def test_unreadable_directory_matches_walk(tmp_path, monkeypatch):
     scan = os.scandir
 
     def blocked(path):
+        """Refuse the fixture log directory while allowing all other scans."""
         if Path(path) == root / 'logs':
             raise PermissionError('synthetic unreadable directory')
         return scan(path)
@@ -228,6 +236,7 @@ def test_disappeared_entry_is_skipped_and_other_file_errors_propagate(tmp_path, 
     scan = os.scandir
 
     class Entry:
+        """A directory entry that injects a chosen failure when classifying the events log."""
         def __init__(self, entry):
             self.entry, self.name, self.path = entry, entry.name, entry.path
 
@@ -235,11 +244,13 @@ def test_disappeared_entry_is_skipped_and_other_file_errors_propagate(tmp_path, 
             return self.entry.is_dir()
 
         def is_file(self):
+            """Raise the selected classification failure for the events log only."""
             if self.name == 'events.jsonl':
                 raise failure('synthetic entry classification failure')
             return self.entry.is_file()
 
     class Scan:
+        """A real directory scan yielding entries with injectable classification failures."""
         def __init__(self, path):
             self.entries = scan(path)
 
@@ -272,11 +283,13 @@ def test_regular_members_remove_the_redundant_explicit_stat_pass(tmp_path, monke
     inside_path_stat = threading.local()
 
     def tracked(path, *args, **kwargs):
+        """Count direct metadata calls for package members without double-counting Path.stat."""
         if not getattr(inside_path_stat, 'active', False) and not isinstance(path, int) and Path(path) in paths:
             calls.append(Path(path))
         return actual_stat(path, *args, **kwargs)
 
     def path_stat(path, *args, **kwargs):
+        """Count package-member Path.stat calls and distinguish their underlying system calls."""
         if path in paths:
             calls.append(path)
         inside_path_stat.active = True

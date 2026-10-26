@@ -18,6 +18,7 @@ pytestmark = pytest.mark.xdist_group('test_wb_trajectory_selection')
 
 @pytest.fixture(scope='module')
 def source(tmp_path_factory):
+    """Provide a completed synthetic run with several archive partitions."""
     root = tmp_path_factory.mktemp('selected-archive')
     config = make_config(root, run=dict(max_evaluations=16, network=dict(hidden_dim=8, heads=2, layers=1)),
                          output=dict(flush_every_evaluations=4))
@@ -28,16 +29,19 @@ def source(tmp_path_factory):
 
 @pytest.fixture
 def archive(source, tmp_path):
+    """Copy source data into an isolated archive for selection and mutation tests."""
     run = tmp_path / 'mock' / 'archive'
     shutil.copytree(source / 'data', run / 'data')
     return run
 
 
 def _fingerprints(transitions):
+    """Return transition fingerprints in their observed order."""
     return [transition.fingerprint() for transition in transitions]
 
 
 def _edit_rows(run, table, edit):
+    """Apply fixture mutations to archive rows while allowing newly missing values in their schemas."""
     for path in TrajectoryLoader(run).reader.parts(table):
         with pq.ParquetFile(path) as part:
             original = part.read()
@@ -69,6 +73,7 @@ def test_only_selected_rows_are_converted_to_python(archive, monkeypatch):
     decoded, original = dict(states=0, transitions=0), loader.reader.iter_batches
 
     class Batch:
+        """An Arrow batch wrapper that verifies only selected archive rows reach Python."""
         def __init__(self, table, batch):
             self.table, self.batch = table, batch
 
@@ -79,6 +84,7 @@ def test_only_selected_rows_are_converted_to_python(archive, monkeypatch):
             return Batch(self.table, self.batch.filter(mask))
 
         def to_pylist(self):
+            """Assert every decoded row was selected and record the decoded count."""
             result = self.batch.to_pylist()
             key = 'state_id' if self.table == 'states' else 'candidate_id'
             assert all(row[key] in wanted[self.table] for row in result)
@@ -86,11 +92,13 @@ def test_only_selected_rows_are_converted_to_python(archive, monkeypatch):
             return result
 
     def tracked(table):
+        """Yield small archive batches wrapped with selection and conversion checks."""
         with closing(original(table, batch_size=2)) as batches:
             for batch in batches:
                 yield Batch(table, batch)
 
     def whole_table(*args, **kwargs):
+        """Fail if subset loading materializes a complete table."""
         pytest.fail('A subset must not materialize an entire table')
 
     monkeypatch.setattr(loader.reader, 'iter_batches', tracked)
@@ -105,6 +113,7 @@ def test_empty_and_missing_selections_do_not_read_states(archive, candidates, mo
     original = loader.reader.iter_batches
 
     def tracked(table, *args, **kwargs):
+        """Refuse state-table reads for an empty or missing selection."""
         assert table != 'states'
         yield from original(table, *args, **kwargs)
 
@@ -121,6 +130,7 @@ def test_subset_reuses_a_loaded_state_cache_and_never_aliases_observations(archi
     original = loader.reader.iter_batches
 
     def tracked(table, *args, **kwargs):
+        """Refuse state-table reads when the requested observations are already cached."""
         assert table != 'states'
         yield from original(table, *args, **kwargs)
 
@@ -182,6 +192,7 @@ def test_ineligible_selected_rows_do_not_load_states(archive, field, value, monk
     original = loader.reader.iter_batches
 
     def tracked(table, *args, **kwargs):
+        """Refuse state-table reads for selected rows that are ineligible for replay."""
         assert table != 'states'
         yield from original(table, *args, **kwargs)
 
@@ -230,13 +241,16 @@ def test_filter_error_closes_the_current_batch_reader(archive, monkeypatch):
     closed = []
 
     class BrokenBatch:
+        """A batch whose candidate column is readable but whose filtering fails."""
         def __getitem__(self, key):
             return pa.array(['some-candidate'])
 
         def filter(self, mask):
+            """Raise the fixture's filtering error after candidate selection."""
             raise ValueError('fixture filter failure')
 
     def batches(table):
+        """Yield the failing batch and record closure of its reader."""
         try:
             yield BrokenBatch()
         finally:

@@ -20,10 +20,12 @@ pytestmark = pytest.mark.requires_evidence('artifacts/local/reward-v2-real/20260
 
 
 def baseline():
+    """Read the local reward baseline evidence used by compatibility assertions."""
     return json.loads((ROOT / 'artifacts/local/reward-v2-real/20260926-implementation-01/baseline.json').read_text())
 
 
 def robust_config():
+    """Build a bounded corner configuration with worst-spec reward compression and operating points enabled."""
     raw = deepcopy(baseline()['config'])
     raw['run'].update(max_spectre_launches=42, max_retries=0,
                       reward=dict(violation_shape='compressed', worst_spec_share=.5),

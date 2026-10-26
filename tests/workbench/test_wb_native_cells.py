@@ -15,6 +15,7 @@ UNVERIFIED = EXPORT.rstrip('\n') + '\nC9 (VOUT 0 0) pdk_mystery_dev w=4.49u l=4.
 
 
 def reference(**fields):
+    """Create a Virtuoso circuit reference to the recorded OTA test cell."""
     return schema.CircuitReference(source='virtuoso', library='GATOR_TESTS', cell='ota5_v1', **fields)
 
 
@@ -140,6 +141,7 @@ print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench_
 
 
 def reader_calls(tmp_path):
+    """Read the fake cell reader's recorded command arguments."""
     return [json.loads(line) for line in (tmp_path / 'calls.log').read_text().splitlines()]
 
 

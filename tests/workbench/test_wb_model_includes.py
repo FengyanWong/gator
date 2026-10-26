@@ -7,6 +7,7 @@ from gator_workbench import model_scan
 
 
 def previous(text):
+    """Return include paths found by the original comment-stripping implementation."""
     return sorted({match.group(1) for line in text.splitlines()
                    for match in [model_scan._INCLUDE.match(model_scan._strip_comment(line))] if match})
 
@@ -44,6 +45,7 @@ def test_output_remains_sorted_deduplicated_and_comment_walk_is_unused(monkeypat
     assert expected == ['a.scs', 'z.scs']
 
     def unwanted(line):
+        """Fail if include discovery falls back to stripping comments from every line."""
         pytest.fail('Include discovery must not walk every model line to strip comments')
 
     monkeypatch.setattr(model_scan, '_strip_comment', unwanted)

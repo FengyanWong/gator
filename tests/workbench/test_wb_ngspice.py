@@ -46,6 +46,7 @@ ngspice-47 done
 
 
 def circuit(task_key):
+    """Refer to a saved ngspice task through its registered task key."""
     return schema.CircuitReference(source='registered_task', task_id=task_key)
 
 
@@ -180,6 +181,7 @@ class FakeRunner:
         self.answers, self.decks = list(answers), []
 
     def local(self, program, deck, timeout):
+        """Record the deck and return or raise the next scripted ngspice answer."""
         self.decks.append(deck.read_text())
         answer = self.answers.pop(0)
         if isinstance(answer, Exception):
@@ -187,6 +189,7 @@ class FakeRunner:
         return answer
 
     def remote(self, host, program, deck_text, timeout):
+        """Record the remote deck and use the same scripted answers as local execution."""
         self.decks.append(deck_text)
         return self.local(program, type('D', (), dict(read_text=lambda self: deck_text))(), timeout)
 
@@ -289,10 +292,12 @@ def test_the_link_validates_the_connection_settings_and_the_remote_command_is_fi
 @pytest.mark.parametrize('outcome', ['ok', 'nonconverged', 'timeout'])
 def test_each_local_attempt_keeps_its_own_deck_and_raw_output(tmp_path, outcome):
     class RawRunner:
+        """A local ngspice stand-in that leaves distinct raw output for each attempt."""
         def __init__(self):
             self.calls = 0
 
         def local(self, program, deck, timeout):
+            """Write attempt-specific raw output and return the configured success, failure or timeout."""
             self.calls += 1
             (deck.parent / 'results.raw').write_text(f'fake raw output {self.calls}')
             if outcome == 'timeout':
@@ -372,6 +377,7 @@ def test_a_task_is_a_real_task_that_needs_an_ngspice_connection():
 
 
 def prepared_config(tmp_path, task_key, *, profile='sim', evaluations=3):
+    """Build a short single-lane ngspice run containing only adjustable parameter rows."""
     starter = tasks.starter_config(task_key)
     raw = dict(starter, run=dict(max_evaluations=evaluations, seed=3, connection_profile_id=profile, concurrency=1,
                                  network=dict(encoder_type='graph_transformer', hidden_dim=16, heads=2, layers=1),
@@ -387,7 +393,9 @@ def test_a_run_retains_local_ngspice_raw_files_by_its_policy(tmp_path, monkeypat
     from gator_workbench import worker
 
     class RawRunner:
+        """An ngspice stand-in that produces raw and numerical files for retention checks."""
         def local(self, program, deck, timeout):
+            """Write fixture output files and report a successful voltage measurement."""
             (deck.parent / 'results.raw').write_text('fake raw waveform')
             (deck.parent / 'values.dat').write_text('fake numerical output')
             return 0, 'vout_v = 0.6\n', ''
@@ -454,6 +462,7 @@ def test_a_virtuoso_task_on_an_ngspice_connection_is_refused_before_anything_is_
 # ------------------------------------------------------------------------------- the routes
 @pytest.fixture
 def client(tmp_path):
+    """Provide ngspice routes with a fake connection probe."""
     return TestClient(workbench_app(tmp_path, monitor=ngspice_probe(tmp_path), auto_check_on_start=True))
 
 
@@ -577,6 +586,7 @@ def test_a_failed_save_leaves_the_deck_before_it_whole(monkeypatch):
     write = Path.write_text
 
     def half_then_fail(self, text, *args, **kwargs):            # the disk fills up half way through the new deck
+        """Write half the replacement deck before raising a simulated full-disk error."""
         write(self, text[:len(text) // 2], *args, **kwargs)
         raise OSError(28, 'No space left on device')
     with monkeypatch.context() as patched, pytest.raises(OSError):

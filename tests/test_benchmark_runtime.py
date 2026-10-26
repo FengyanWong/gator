@@ -20,12 +20,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def tasks(graph):
+    """Build three specification-transfer partitions over one synthetic graph."""
     return [TransferTask(name, name, 'specification', 'toy', graph,
                         (MetricSpec('score', 'fixture', 'min', 1, lower=target),))
             for name, target in [('train', .9), ('validation', .95), ('test', .99)]]
 
 
 def settings():
+    """Use a small seeded benchmark matrix with short episodes and a bounded call budget."""
     return dict(seeds=[17, 29], encoders=['gatv2'], hidden_dim=16, heads=2, layers=1,
                 pretrain_steps=2, test_steps=2, batch_size=2, max_calls=40)
 

@@ -17,6 +17,7 @@ def test_both_simulator_paths_pass_the_format_on(monkeypatch, tmp_path):
     made = []
 
     class Simulator:
+        """A constructor fake that records simulator options without launching a simulator."""
         def __init__(self, **options):
             made.append(options)
 

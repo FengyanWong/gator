@@ -17,6 +17,7 @@ from helpers import bridge_is_importable  # noqa: F401 - an imported fixture bel
 
 # ------------------------------------------------------------------------------------------------ towards the first real baseline
 def measurement(measurement_id, source_name):
+    """Describe a transient-frequency measurement supplied by the backend profile."""
     return dict(measurement_id=measurement_id, analysis='tran', result_source='backend_profile', source_name=source_name, unit='Hz')
 
 
@@ -80,6 +81,7 @@ def test_a_finished_real_baseline_becomes_the_reference_once(tmp_path, monkeypat
                 aggregation_level='condition')])
 
     class FakeReader:
+        """A reader that verifies the baseline data path and serves projected fixture rows."""
         def __init__(self, data_dir):
             assert Path(data_dir) == run_dir / 'data'
 

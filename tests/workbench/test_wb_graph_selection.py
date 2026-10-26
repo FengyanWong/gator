@@ -12,6 +12,7 @@ from gator_workbench.storage.dataset import DatasetReader
 
 
 def _archive(tmp_path, groups):
+    """Write journaled transition and state parts with the supplied commit-sequence groups."""
     root = tmp_path / 'mock' / 'graph-selection' / 'data'
     for name in ('transitions', 'states', '_journal'):
         (root / name).mkdir(parents=True, exist_ok=True)
@@ -52,6 +53,7 @@ def _original(reader, wanted, saved_at):
 
 
 def _outcome(call):
+    """Capture a call's return value or its exception type and message for comparison."""
     try:
         return ('answer', call())
     except Exception as exc:
@@ -86,6 +88,7 @@ def test_large_selection_uses_only_bounded_projected_batches(tmp_path, monkeypat
     original = reader.iter_batches
 
     def batches(table, columns=None, *, batch_size=1024):
+        """Verify bounded projected transition reads and record batch sizes and closure."""
         assert table == 'transitions' and columns == ['commit_seq'] and batch_size == 1024
         try:
             with closing(original(table, columns, batch_size=batch_size)) as source:
@@ -125,6 +128,7 @@ def test_null_fallback_closes_current_part_before_the_legacy_read(tmp_path, monk
     closed = []
 
     def batches(*args, **kwargs):
+        """Record that the batch source closes before legacy fallback reads."""
         try:
             with closing(original(*args, **kwargs)) as source:
                 yield from source
@@ -132,6 +136,7 @@ def test_null_fallback_closes_current_part_before_the_legacy_read(tmp_path, monk
             closed.append(True)
 
     def table(*args, **kwargs):
+        """Verify that streaming closes before delegating to the legacy whole-table read."""
         assert closed == [True]
         return whole(*args, **kwargs)
 

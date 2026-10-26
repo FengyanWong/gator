@@ -35,6 +35,7 @@ def _before(table, objective):
 
 
 def _table(kind='mixed', chunked=False):
+    """Build Arrow metrics fixtures with optional empty, null-only, or chunked columns."""
     maps = [None, [], [{'key': 'score', 'value': 3.5}],
             [{'key': 'other', 'value': 8.0}, {'key': 'score', 'value': 2.5}],
             [{'key': 'score', 'value': 1.5}, {'key': 'score', 'value': 9.0}],
@@ -79,6 +80,7 @@ def test_feasibility_column_remains_required_even_without_rows_or_objective(obje
 
 
 class _TrackedColumn:
+    """An Arrow column wrapper that counts conversion to Python values."""
     def __init__(self, value, name, calls):
         self.value, self.name, self.calls = value, name, calls
 
@@ -94,6 +96,7 @@ class _TrackedColumn:
 
 
 class _TrackedTable:
+    """A table wrapper that exposes instrumented Arrow columns."""
     def __init__(self, value, calls):
         self.value, self.calls = value, calls
         self.column_names = value.column_names

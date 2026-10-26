@@ -8,6 +8,7 @@ from analog_optimizer.netlist.expressions import evaluate
 
 
 def group(value, lower=4.5e-08, upper=1.8e-07, step=5e-09):
+    """Build a gridded length group for testing signed distances from its legal bounds."""
     return ParameterGroup('l', 'length', 'm', value, lower, upper, (ParameterBinding('MN1', 'l'),), step=step)
 
 

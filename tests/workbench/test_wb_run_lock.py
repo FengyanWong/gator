@@ -19,6 +19,7 @@ from helpers import infrastructure_pause, roots_for
 
 @pytest.fixture
 def lock_path(tmp_path):
+    """Create an empty run-lock file in the test directory."""
     path = tmp_path / 'control' / 'run.lock'
     path.parent.mkdir()
     path.write_text('')
@@ -31,6 +32,7 @@ def probe_in_progress(path, seconds):
     fcntl.flock(stream, fcntl.LOCK_SH | fcntl.LOCK_NB)
 
     def end():
+        """Release and close the simulated probe lock after its configured delay."""
         time.sleep(seconds)
         fcntl.flock(stream, fcntl.LOCK_UN)
         stream.close()
@@ -61,6 +63,7 @@ def test_concurrent_probes_never_see_a_worker(lock_path):
     seen = []
 
     def probe():
+        """Collect repeated liveness checks while another probe holds a shared lock."""
         seen.extend(RunLock.held(lock_path) for _ in range(300))
     threads = [threading.Thread(target=probe) for _ in range(6)]
     for thread in threads:
@@ -116,6 +119,7 @@ def test_a_resume_that_fails_writing_its_check_gives_the_run_lock_back(tmp_path,
     write = runs.write_json
 
     def full_disk(path, value, **options):
+        """Reject only the resumed manifest's consistency-check write with a full-disk error."""
         if Path(path) == layout.manifest and value['segments'][-1].get('consistency_check'):
             raise OSError(28, 'No space left on device')
         return write(path, value, **options)

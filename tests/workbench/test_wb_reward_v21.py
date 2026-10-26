@@ -143,6 +143,7 @@ def complete(table, rows):
     assert not unknown, f'{table} declares no column {sorted(unknown)}'
 
     def neutral(field):
+        """Return a valid placeholder for the fixture's Arrow field type and nullability."""
         kind = field.type
         return (None if field.nullable else False if pa.types.is_boolean(kind) else 0 if pa.types.is_integer(kind)
                 else 0.0 if pa.types.is_floating(kind) else datetime(2026, 9, 29, tzinfo=timezone.utc)

@@ -13,6 +13,7 @@ BRIDGE = '/tmp/virtuoso_bridge_minlei/fyworkstation/virtuoso_bridge_spectre'
 
 
 def engine_like(tmp_path, *, mock=False, keep=False, runner=None):
+    """Build a minimal engine stand-in that records host-cleanup events and errors."""
     events, errors = [], []
     config = make_config(tmp_path, output=dict(keep_simulator_host_folders=keep))
     engine = SimpleNamespace(task=SimpleNamespace(mock=mock, task_key='real:mscr_ota7t'), config=config, _host_folders=[],
@@ -25,6 +26,7 @@ def engine_like(tmp_path, *, mock=False, keep=False, runner=None):
 
 
 def job_with(tmp_path, name, raw):
+    """Create a job directory whose measurements identify the supplied host results."""
     folder = tmp_path / name
     folder.mkdir()
     (folder / 'measurements.json').write_text(json.dumps(dict(results_on_host=raw, metrics={})))

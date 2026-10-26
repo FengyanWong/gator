@@ -12,15 +12,18 @@ from task_save_support import saved_maestro_task
 
 
 def _word(value):
+    """Encode a signed integer as a big-endian PSF word."""
     return struct.pack('>i', value)
 
 
 def _string(text):
+    """Encode a length-prefixed Latin-1 PSF string with word-aligned padding."""
     raw = text.encode('latin-1')
     return _word(len(raw)) + raw + b'\0' * (-len(raw) % 4)
 
 
 def _property(name, value):
+    """Encode a named PSF property with the tag matching its value type."""
     if isinstance(value, str):
         return _word(33) + _string(name) + _string(value)
     if isinstance(value, int):

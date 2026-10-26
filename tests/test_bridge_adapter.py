@@ -111,12 +111,14 @@ def test_immutable_artifacts_and_parameter_binding(adapter, tmp_path):
 @pytest.mark.parametrize('mode', ['failure', 'timeout', 'missing', 'missing_psf', 'valid'])
 def test_result_status_measurements_and_no_stale_op(adapter, tmp_path, monkeypatch, mode):
     def run(deck):
+        """Return an injected bridge outcome or timeout without launching a simulator."""
         if mode == 'timeout':
             raise TimeoutError('injected timeout')
         return SimpleNamespace(ok=mode != 'failure', status=SimpleNamespace(value='success' if mode != 'failure' else 'error'),
                                errors=['injected failure'] if mode == 'failure' else [], metadata={})
     monkeypatch.setattr(adapter, '_new_simulator', lambda *a: SimpleNamespace(run_simulation=run))
     def measure(*a, **kw):
+        """Supply test measurements and operating points, or simulate a missing PSF result."""
         if mode == 'missing_psf':
             raise FileNotFoundError('injected missing PSF')
         return {'metrics': {'gain': 25}, 'metric_units': {'gain': 'dB'}, 'metric_validity': {'gain': True},

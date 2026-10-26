@@ -8,6 +8,7 @@ from gator_workbench import checkpoints as ckpt
 
 
 def rows_for(labels):
+    """Create run-list entries with the supplied model labels."""
     return [dict(run_dir=f'/mock/run-{i:05d}', created_utc='2026-10-18T00:00:00Z',
                  model_label=label, renamed=False) for i, label in enumerate(labels)]
 
@@ -83,6 +84,7 @@ def test_large_duplicate_list_constructs_each_candidate_once(monkeypatch):
     numbered, calls = ckpt.numbered, []
 
     def counted(base, suffix):
+        """Record each numbered-label candidate while preserving its formatted value."""
         calls.append((base, suffix))
         return numbered(base, suffix)
 
@@ -93,6 +95,7 @@ def test_large_duplicate_list_constructs_each_candidate_once(monkeypatch):
 
 def test_unique_labels_need_no_numbered_candidates(monkeypatch):
     def unexpected(*args):
+        """Fail if a unique model label causes suffix candidates to be constructed."""
         pytest.fail('An already unique label should not construct suffix candidates')
 
     monkeypatch.setattr(ckpt, 'numbered', unexpected)

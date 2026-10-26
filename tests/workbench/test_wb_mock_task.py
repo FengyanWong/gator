@@ -18,6 +18,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def reference(task_id):
+    """Build a registered-task circuit reference for the requested identifier."""
     return schema.CircuitReference(source='registered_task', task_id=task_id)
 
 

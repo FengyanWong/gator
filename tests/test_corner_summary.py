@@ -1,3 +1,5 @@
+"""Corner ranking and summaries from injected results and recorded condition definitions, without simulations."""
+
 from dataclasses import replace, asdict
 import json
 from pathlib import Path
@@ -18,11 +20,13 @@ SPECS = [MetricSpec('gain', 'dB', 'min', 10, lower=20),
 
 
 def design(name='a', reward=0, width=4e-6):
+    """Build a nominal synthetic candidate with a matched pair of transistor widths."""
     return NominalDesign(name, 'same_circuit_and_specs', reward,
                           (('M1', 'w', width), ('M2', 'w', width)), NOMINAL, 'synthetic')
 
 
 def result(candidate, corner, *, gain=25, power=2, dc=0.5):
+    """Inject valid gain, power and DC measurements for one candidate at one validation corner."""
     return SimulationResult(corner.id, 'synthetic_fixture', 'synthetic', SimulationStatus.OK,
         'injected', False, True, {'gain': gain, 'power': power, 'dc': dc},
         {'gain': 'dB', 'power': 'W', 'dc': 'V'}, {'gain': True, 'power': True, 'dc': True},

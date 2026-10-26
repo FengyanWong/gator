@@ -62,6 +62,7 @@ def evaluator_modules(root):
 
 
 def evaluate_outputs(bundle, directory, values):
+    """Read upstream benchmark outputs and return metrics as finite values or None with the independent pass verdict."""
     modules = evaluator_modules(bundle['checkout'])
     cls = modules['LdoEnv'].LdoEnv if bundle['name'].startswith('ldo_') else modules['AmpEnv'].AmpEnv
     env = cls.__new__(cls)
@@ -103,6 +104,7 @@ def physical_graph(parsed):
 
 
 def substitute(text, values):
+    """Replace each requested deck parameter exactly once or reject an ambiguous definition."""
     for name, value in values.items():
         pattern = rf'(?im)^(\s*\.param\s+{re.escape(name)}\s*=)[^\n]*$'
         text, count = re.subn(pattern, lambda m: m[1] + format(value,'.17g'), text)
@@ -167,6 +169,7 @@ def validate_benchmark_config(config, bundle):
 
 
 class AnalogGymBackend(NgspiceBackend):
+    """A local ngspice backend that preserves AnalogGym parameter mappings and benchmark measurements."""
     def __init__(self, *args, bundle, **kwargs):
         text, graph, link = args
         empty = deepcopy(graph)
@@ -179,13 +182,16 @@ class AnalogGymBackend(NgspiceBackend):
         self.parameters = dict(self.initial)
 
     def native_values(self, parameters=None):
+        """Convert the selected physical assignment to the benchmark's native parameter values."""
         parameters = self.parameters if parameters is None else parameters
         return native_values(self.bundle, parameters)
 
     def deck(self, parameters=None):
+        """Render the benchmark deck with the selected parameter assignment."""
         return substitute(self.text, self.native_values(parameters))
 
     def generate_netlist(self, work_root, *, condition=None):
+        """Export the candidate deck and companion transient testbench while recording their parameter assignment."""
         artifact = super().generate_netlist(work_root, condition=condition)
         companion = artifact.path.parent / 'transient.cir'
         companion.write_text(instrument(substitute(self.bundle['transient'], self.native_values())))
@@ -197,6 +203,7 @@ class AnalogGymBackend(NgspiceBackend):
         return artifact
 
     def get_circuit_graph(self, artifact):
+        """Verify the saved candidate deck and return a graph with its checked parameter readback."""
         saved, values = self.exports[artifact.job_id]
         if artifact != saved or hashlib.sha256(artifact.path.read_bytes()).hexdigest() != artifact.sha256:
             raise ValueError('Imported candidate deck changed')
@@ -214,6 +221,7 @@ class AnalogGymBackend(NgspiceBackend):
         return graph
 
     def run_simulation(self, request):
+        """Run the candidate and record upstream benchmark evidence before returning workbench metrics."""
         result = super().run_simulation(replace(request, required_metrics=tuple(self.parsed.result_names)))
         metrics = {key:None for key in self.bundle['metric_units']}
         verdict, failure = False, None
@@ -238,6 +246,7 @@ class AnalogGymBackend(NgspiceBackend):
 
 @dataclass(frozen=True)
 class AnalogGymFactory(NgspiceEnvFactory):
+    """A factory that creates lane environments using the imported benchmark backend and measurement plan."""
     bundle: dict = None
 
     def __call__(self, lane):

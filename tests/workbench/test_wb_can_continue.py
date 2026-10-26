@@ -13,6 +13,7 @@ POINT = 'ckpt-000800-final'
 
 
 def fabricate(root, name, *, resumability='full_state', save=True, summary=True, state='completed'):
+    """Create a synthetic run with optional summary and checkpoint records."""
     run = root / 'mock' / 'exp__0123456789ab' / 'runs' / 'task' / name
     run.mkdir(parents=True)
     (run / 'run_manifest.json').write_text(json.dumps(dict(mock=True, experiment_name='exp', experiment_id='0123456789ab',
@@ -29,6 +30,7 @@ def fabricate(root, name, *, resumability='full_state', save=True, summary=True,
 
 
 def rows(root):
+    """Map listed run identifiers to their resumability information."""
     return {row['run_id']: row['resumability'] for row in runs.list_runs(roots_for(root), root)}
 
 

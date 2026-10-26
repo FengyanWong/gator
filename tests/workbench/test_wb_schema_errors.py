@@ -16,6 +16,7 @@ OLD_IDS = ['input_pair_width__XU1/M2', 'mirror_pair_width__XU1/M4']
 
 
 def as_config(raw):
+    """Validate raw editor rows with a finite test run budget."""
     return schema.WorkbenchConfig.model_validate(dict(raw, run=dict(raw.get('run') or {}, max_evaluations=20)))
 
 

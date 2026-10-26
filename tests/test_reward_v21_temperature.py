@@ -18,6 +18,7 @@ def test_alpha_rate_validation(rate):
 def test_default_temperature_rate_is_bit_identical_and_separate_rate_only_affects_alpha(opamp):
     batch = algebraic_transitions(opamp)[:4]
     def model(rate):
+        """Build identically seeded learners that differ only in the requested temperature learning rate."""
         torch.manual_seed(195)
         return SACLearner(experiment=dict(origin='synthetic', split='unit-only', designs=['toy']),
             model_config=ModelConfig(hidden_dim=8, heads=2, layers=1),

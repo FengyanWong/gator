@@ -36,6 +36,7 @@ def no_worker(monkeypatch):
     launched = []
 
     def launch(layout, allow_real=False):
+        """Record a simulated launch after releasing any run lock acquired by the fixture."""
         held = runs.take_lock(layout.run_dir)
         if held:
             held.release()
@@ -46,10 +47,12 @@ def no_worker(monkeypatch):
 
 
 def files_of(folder):
+    """Snapshot relative file names, sizes, and modification times beneath a folder."""
     return {str(p.relative_to(folder)): (p.stat().st_size, p.stat().st_mtime_ns) for p in folder.rglob('*') if p.is_file()}
 
 
 def manifest_of(run_dir):
+    """Read a run's persisted manifest as JSON."""
     return json.loads((run_dir / 'run_manifest.json').read_text())
 
 
@@ -159,6 +162,7 @@ def test_the_answer_is_on_disk_before_the_worker_starts_and_survives_a_lost_ackn
     seen = []
 
     def launch(layout, allow_real=False):                               # a worker that starts: it writes its status
+        """Observe the persisted launch answer and simulate a worker publishing its starting status."""
         seen.append(launch_requests.lookup('page-start-0006'))          # what the page would learn at this moment
         held = runs.take_lock(layout.run_dir)
         if held:
@@ -290,6 +294,7 @@ def test_a_continued_run_that_cannot_start_stays_resumable_and_says_why(tmp_path
     edit_json(layout.status, lambda s: s.update(state=resting))           # where the run rested when Continue was pressed
 
     def continued_under_a_changed_schema(manifest):
+        """Append a resume segment and invalidate the saved task-definition hash."""
         manifest['segments'].append(dict(segment=len(manifest['segments']) + 1, entry='resume'))
         manifest['task_definition_hash'] = '0' * 64
     edit_json(layout.manifest, continued_under_a_changed_schema)

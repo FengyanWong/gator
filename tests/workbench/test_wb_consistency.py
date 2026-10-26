@@ -109,6 +109,7 @@ def test_a_start_voltage_changed_in_virtuoso_stops_the_run(tmp_path):
     conditions = {'N1': '0', 'OUT': '0.9'}
 
     def answer(ic):
+        """Build a Maestro setup response with the supplied initial conditions."""
         return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=[['/pdk/model.scs', 'tt']], analyses={'tran': {'stop': '50n'}},
                     variables={}, bindings=[], outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={}, initial_conditions=ic)
 
@@ -133,6 +134,7 @@ def test_a_start_is_refused_on_a_difference_and_the_check_is_recorded_when_it_pa
     seen = []
 
     def fake_preflight(monitor, name, profile_id, *, acknowledge_unknown=False, command=None, timeout=300.0):
+        """Record preflight arguments and return the aggregate verdict of the fixture steps."""
         seen.append(dict(name=name, profile_id=profile_id, acknowledge_unknown=acknowledge_unknown))
         return dict(profile_preflight=True, name=name, ok=all(s['ok'] for s in outcome['steps']), steps=outcome['steps'], simulated=False)
     monkeypatch.setattr(profile_preflight, 'preflight', fake_preflight)
@@ -209,9 +211,11 @@ def test_the_no_simulation_check_leaves_the_deck_of_a_maestro_task_for_later(tmp
     from gator_workbench.generic_profile import RulesError
 
     class Profile:
+        """A profile stand-in that selects the Maestro recipe."""
         recipe = 'maestro'
 
     class Adapter:
+        """A Maestro adapter stand-in whose netlist generation raises a rules error."""
         def __init__(self, config, profile):
             pass
 

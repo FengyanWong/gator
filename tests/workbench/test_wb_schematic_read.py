@@ -26,6 +26,7 @@ class Reader:
         self.schematic = SimpleNamespace(read=self.read)
 
     def read(self, library, cell, **kw):
+        """Record the requested cell and return an empty schematic response."""
         self.calls.append((library, cell, kw))
         return dict(instances=[], nets={}, pins={}, notes=[], cell=cell)
 

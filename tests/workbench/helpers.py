@@ -44,6 +44,7 @@ SMALL_NET = dict(encoder_type='graph_transformer', hidden_dim=16, heads=2, layer
 
 
 def workbench_app(root, **options):
+    """Create the test API app with an allowed output root and optional overrides."""
     from gator_workbench.api import create_app
     return create_app(**{'extra_output_roots': [str(root)], 'serve_frontend': False, 'auto_check_on_start': False, **options})
 
@@ -97,10 +98,12 @@ def bridge_settings(tmp_path):
 class ScriptedBackend(SyntheticSizingBackend):
     """script: {simulation call number (1-based): 'timeout' | 'nan' | 'exception' | 'invalid_design'}."""
     def __init__(self, graph, *, targets, script=None, delay=0.0):
+        """Configure injected failures and a per-call delay for the synthetic backend."""
         super().__init__(graph, targets=targets)
         self.script, self.delay, self.seen = dict(script or {}), delay, 0
 
     def run_simulation(self, request):
+        """Evaluate a synthetic candidate with the configured call-number failure or delay."""
         self.seen += 1
         action = self.script.get(self.seen)
         if self.delay:
@@ -122,6 +125,7 @@ class ScriptedBackend(SyntheticSizingBackend):
 
 @dataclass
 class ScriptedEnvFactory:
+    """A lane factory for synthetic environments with independent failure scripts and delays."""
     graph: object
     specs: tuple
     work_root: str
@@ -131,6 +135,7 @@ class ScriptedEnvFactory:
     stop_on_success: bool = False
 
     def __call__(self, lane):
+        """Create a lane's synthetic environment with its own job directory and failure schedule."""
         from analog_optimizer.envs.sizing import CircuitSizingEnv
         kinds = {g.parameter_kind for g in self.graph.parameter_groups if g.mutable}
         backend = ScriptedBackend(self.graph, targets={k: tasks.MOCK_TARGETS[k] for k in kinds},
@@ -170,6 +175,7 @@ def other_circuits(*names):
 
 def make_config(root, task=MOCK_TASK, *, threshold=0.95, run=None, output=None, research=None,
                 advanced=None, project=None, mutate=None):
+    """Build a short-run configuration with a small network and test-specific overrides."""
     raw = tasks.starter_config(task)
     raw['targets'][0]['lower'] = threshold
     raw['run'].update(dict(max_evaluations=20, seed=11, network=dict(SMALL_NET)), **(run or {}))
@@ -186,6 +192,7 @@ def make_config(root, task=MOCK_TASK, *, threshold=0.95, run=None, output=None, 
 
 
 def roots_for(root):
+    """Return an output-root allowlist excluding the user's default root."""
     return OutputRoots([Path(root)], include_default=False)
 
 
@@ -197,6 +204,7 @@ def execute(config, root, *, scripts=None, delays=None, confirm_transfer=False, 
 
 
 def run_prepared(layout, *, scripts=None, delays=None, use_processes=False):
+    """Execute a prepared run with optional synthetic failure scripts and delays."""
     config = schema.WorkbenchConfig.model_validate(read_json(layout.effective_config))
     task = tasks.load_task(config.circuit)
     engine = RunEngine(layout.run_dir, task=task, use_processes=use_processes, lock=runs.take_lock(layout.run_dir))
@@ -208,14 +216,17 @@ def run_prepared(layout, *, scripts=None, delays=None, use_processes=False):
 
 
 def rows(layout, table, columns=None):
+    """Read recorded rows from one table in the run's data directory."""
     return DatasetReader(layout.data).rows(table, columns)
 
 
 def summary(layout):
+    """Read the run's saved summary."""
     return read_json(layout.summary)
 
 
 def probe(tmp_path, **states):
+    """Create a subprocess connection probe that returns preset layer states."""
     layers = [dict(layer=n, state=states.get(n, 'ok'), reason_code=None, diagnostic=None, details={}) for n in LAYERS]
     script = tmp_path / 'probe.py'
     script.write_text(f'import json\nprint(json.dumps(dict(layers={layers!r})))\n')
@@ -223,6 +234,7 @@ def probe(tmp_path, **states):
 
 
 def wait_for(client, run_dir, states=('completed', 'failed', 'paused', 'stopped', 'cancelled'), timeout=180):
+    """Poll run status until a terminal state has no live worker, or fail on timeout."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         status = client.get('/api/runs/status', params=dict(run_dir=run_dir)).json()
@@ -233,6 +245,7 @@ def wait_for(client, run_dir, states=('completed', 'failed', 'paused', 'stopped'
 
 
 def edit_json(path, change):
+    """Apply an in-place test mutation to a JSON file."""
     value = json.loads(Path(path).read_text())
     change(value)
     Path(path).write_text(json.dumps(value))
@@ -247,16 +260,19 @@ def _no_save_yet(monkeypatch):
 
 
 def issues(report, level=None):
+    """Return validation issue codes filtered by severity when requested."""
     return {i.code for i in report.issues if level is None or i.level == level}
 
 
 def check(config, task='synthetic:gpdk045_ota5'):
+    """Return the validation report and task runtime for a configuration."""
     runtime = tasks.load_task(config.circuit)
     return validation.validate(config, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics)), runtime
 
 
 # ------------------------------------------------------------------------------- pauses for infrastructure failures
 def infrastructure_pause(tmp_path):
+    """Create a synthetic run paused by repeated infrastructure failures."""
     config = make_config(tmp_path, threshold=1.5, run=dict(max_evaluations=40, concurrency=2,
                                                            max_consecutive_infrastructure_failures=3,
                                                            max_consecutive_failures=50))
@@ -277,6 +293,7 @@ TOP = 4.2380000000000004e-05
 
 # ---- run folders read many at a time ----------------------------------------------------------------------------------
 def fabricate_run(root, name, *, created, kind=None, state='completed', task='real:ring_a'):
+    """Write minimal run metadata for run-list tests without starting a worker."""
     run = root / 'exp__0123456789ab' / 'runs' / 'task' / name
     run.mkdir(parents=True)
     write_json(run / 'run_manifest.json', dict(run_id=name, created_utc=created, mock=False, experiment_name='exp',

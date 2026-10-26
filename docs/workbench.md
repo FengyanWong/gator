@@ -1,5 +1,25 @@
 # GATOR workbench: frontend, run control and data-only outputs
 
+Read the section for the feature you need; `grep -n '^##' docs/workbench.md` still lists the same section headings.
+
+| Section | What it holds | Selected records |
+|---|---|---|
+| [Start](#start) | Environment setup, starting the page and the local test commands. | 7.276, 7.366 |
+| [Start, Pause, Resume, Abort (added 2026-09-21, user request)](#start-pause-resume-abort-added-2026-09-21-user-request) | Run authorization, budgets, saving, pausing, continuing and stopping. | 7.261, 7.269, 7.265, 7.78, 7.188 |
+| [The page's look and layout (record 7.158; one look since record 7.360)](#the-pages-look-and-layout-record-7158-one-look-since-record-7360) | The Roadster page, task card, editors, windows and responsive layout. | 7.158, 7.360, 7.372, 7.264, 7.362 |
+| [What is real and what is mock](#what-is-real-and-what-is-mock) | Task provenance, saved tasks, editor rows, imports and circuit browsing. | 7.128, 7.59, 7.73, 7.246, 7.66 |
+| [Connection profiles (section 2.1)](#connection-profiles-section-21) | Remembered connections, explicit SSH connection, sessions and folders. | 7.115, 7.279, 7.80, 7.182, 7.345 |
+| [Output layout](#output-layout) | Run folders, tables, exports, the run window, Training and Corner check. | 7.377, 7.284, 7.286, 7.369, 7.321 |
+| [Reward and training conditions](#reward-and-training-conditions) | Reward controls, calibration, baselines and simulation accounting. | 7.128, 7.96, 7.171, 7.124, 7.278 |
+| [The right column: settings, saved models and the graph view](#the-right-column-settings-saved-models-and-the-graph-view) | Run settings, saved RL models, network structure and circuit graphs. | 7.226, 7.116, 7.304, 7.325, 7.150 |
+| [The PDK, and what a real run writes back into Virtuoso](#the-pdk-and-what-a-real-run-writes-back-into-virtuoso) | Loaded device vocabularies, transferable inputs and legal parameter writes. | 7.83, 7.279, 7.283, 7.377, 7.378 |
+| [A task's Virtuoso side: the cell it works in, saving, the run](#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-run) | The working copy, Maestro setup, Save as and checks before a run. | 7.226, 7.246, 7.137, 7.315, 7.141 |
+| [Reload saved data](#reload-saved-data) | Reading recorded transitions and training from an offline archive. | 7.365, 7.233, 7.298, 7.317, 7.319 |
+| [The Agent window: Claude Code or Codex in a window of its own (2026-10-06, record 7.226; 2026-10-07, record 7.253)](#the-agent-window-claude-code-or-codex-in-a-window-of-its-own-2026-10-06-record-7226-2026-10-07-record-7253) | Opening a CLI and reading the start checklist. | 7.226, 7.253, 7.6, 7.186, 7.182 |
+| [What the frontend audit changed (2026-09-30, record 7.125)](#what-the-frontend-audit-changed-2026-09-30-record-7125) | The recorded authorization, editing and navigation corrections. | 7.125, 7.226, 7.131, 7.174, 7.130 |
+| [Code organization](#code-organization) | The backend, frontend and shared test modules by responsibility. | 7.131, 7.297, 7.324, 7.292, 7.280 |
+| [Tests](#tests) | Offline tests, browser checks and their scratch backends. | 7.115, 7.276, 7.56 |
+
 Local web workbench around the existing optimizer. It reads circuits, lets you define
 optimization problems by hand or with agent assistance, runs the existing SAC backend, and
 saves the raw data and model state needed for research analysis.
@@ -10,23 +30,6 @@ Two exceptions ON SCREEN, by user decision: the **circuit graph view** (2026-09-
 below), drawn in the browser with cytoscape (MIT, frontend only, loaded when the view is opened), and the **circuit
 picture** in the circuit column (2026-10-03; shown by **Show circuit** since record 7.362, see "The page's look and layout"), drawn as plain SVG. Both are diagnostic
 pictures; nothing drawn is written into a run folder or an export, so the outputs stay data-only.
-
-**Where things are described** (this file is long: read only the section you need - `grep -n '^##' docs/workbench.md`
-lists every section with its line number; a section says what its feature does NOW):
-[Start](#start) ·
-[Start, Pause, Resume, Abort](#start-pause-resume-abort-added-2026-09-21-user-request) ·
-[The page's looks and layout](#the-pages-looks-and-layout-2026-10-03-record-7158) ·
-[What is real and what is mock](#what-is-real-and-what-is-mock) ·
-[Connection profiles](#connection-profiles-section-21) ·
-[Output layout](#output-layout) ·
-[Reward and training conditions](#reward-and-training-conditions) ·
-[The right column](#the-right-column-settings-saved-models-and-the-graph-view) ·
-[The PDK and what a run writes back](#the-pdk-and-what-a-real-run-writes-back-into-virtuoso) ·
-[A task's Virtuoso side](#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-run) ·
-[Reload saved data](#reload-saved-data) ·
-[The Agent window](#the-agent-window-claude-code-or-codex-in-a-window-of-its-own-2026-10-06-record-7226-2026-10-07-record-7253) ·
-[Code organization](#code-organization) ·
-[Tests](#tests)
 
 Where each function lives - its button, code, route, record entries, tests and browser checks - is listed in
 [functionality-reference.md](functionality-reference.md) (2026-10-02, record 7.139).
@@ -4355,6 +4358,8 @@ a registered task while a cell is read keeps the task, and a cell's previous loa
 ended run's log is read once more after its worker ended. Overlapping tests of two connections each show "Testing...".
 
 ## Code organization
+
+The [glossary](glossary.md) maps the page's words to code and record names.
 
 `src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and
 connections, circuits and tasks, runs and exports, and agents. `api/models.py` owns HTTP request schemas;

@@ -15,16 +15,19 @@ ABSENT = {'record', 'receipt', 'eval_id', 'record_path', 'candidate_id', 'job_id
 
 
 def env_for(graph, directory):
+    """Build a short environment whose scripted backend reports nominal success."""
     backend = ScriptedRealBackend(graph, nominal_pass=True)
     return CircuitSizingEnv(backend, backend.graph, specs(), directory, max_steps=2, stop_on_success=False)
 
 
 def step(env):
+    """Authorize one launch and submit a zero action to exercise candidate rechecks."""
     env.authorize_launches(1)
     return env.step({key: 0. for key in env.mapper.group_ids})
 
 
 def candidates(env):
+    """Read candidate receipts from the environment directory for reuse and launch assertions."""
     return [json.loads(p.read_text()) for p in (env.directory / 'candidates').glob('*.json')]
 
 

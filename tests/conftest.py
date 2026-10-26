@@ -1,3 +1,5 @@
+"""Shared local fixtures and safeguards that load synthetic graphs without simulator or network calls."""
+
 import os
 from pathlib import Path
 

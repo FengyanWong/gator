@@ -120,6 +120,7 @@ def entry_kind(settings) -> str | None:
 
 
 def family_of(kind) -> str:
+    """Map a connection kind to its backend family, defaulting unknown kinds to Virtuoso."""
     return KINDS[kind]['family'] if kind in KINDS else 'virtuoso'
 
 
@@ -184,6 +185,7 @@ NEXT_STEPS = {
 
 
 def layer(name, state='not_checked', reason=None, diagnostic=None, **details):
+    """Build a connection-layer result with a recognized state and redacted diagnostics."""
     if state not in STATES:
         raise ValueError(state)
     return dict(layer=name, state=state, reason_code=reason, diagnostic=redact(diagnostic, 600),
@@ -365,11 +367,13 @@ class RealBridge:
             site.addsitedir(str(Path(settings['bridge_site_packages']).resolve()))
 
     def version(self):
+        """Verify bridge importability and return its installed distribution version."""
         import importlib.metadata
         import virtuoso_bridge  # noqa: F401  (importability through THIS interpreter and import path)
         return importlib.metadata.version('virtuoso-bridge')
 
     def bind_env(self, env_file):
+        """Select the resolved environment file for subsequent bridge operations."""
         from virtuoso_bridge.env import set_runtime_env_file
         set_runtime_env_file(Path(env_file).resolve())
 
@@ -378,6 +382,7 @@ class RealBridge:
         return resolve_profile(explicit)
 
     def roles(self, profile):
+        """Return the daemon host, simulator host, and remote user resolved for the profile."""
         from virtuoso_bridge.transport.remote_roles import remote_host_roles_from_os
         roles = remote_host_roles_from_os(profile)
         return dict(daemon_host=roles.daemon_host, spectre_host=roles.spectre_host, remote_user=roles.remote_user)
@@ -387,19 +392,23 @@ class RealBridge:
         return bool(host) and _is_localhost(host)
 
     def tunnel_state(self, profile):
+        """Return the profile's stored SSH tunnel state and whether its tunnel is running."""
         from virtuoso_bridge.transport.tunnel import SSHClient
         return SSHClient.read_state(profile), SSHClient.is_running(profile)
 
     def client(self, profile, timeout):
+        """Create a bridge client for the profile with the requested timeout and CIW logging disabled."""
         from virtuoso_bridge import VirtuosoClient
         return VirtuosoClient.from_env(timeout=timeout, log_to_ciw=False, profile=profile)   # as the adapter does
 
     def skill_ok(self, client, timeout):
+        """Run a read-only SKILL probe and return its success flag and error messages."""
         from virtuoso_bridge.models import ExecutionStatus
         probe = client.execute_skill('1+1', timeout=timeout)                 # trivial and read-only
         return probe.status == ExecutionStatus.SUCCESS, [str(e) for e in (probe.errors or [])]
 
     def daemon_user(self, client, profile, timeout):
+        """Return the bridge daemon's user-ownership check result."""
         from virtuoso_bridge.daemon_guard import check_daemon_user
         check = check_daemon_user(client, profile=profile, timeout=timeout)
         return dict(ok=check.ok, skipped=getattr(check, 'skipped', False), error=check.error)
@@ -410,6 +419,7 @@ class RealBridge:
         VirtuosoBridgeBackend._check_windows(SimpleNamespace(client=client))
 
     def license(self, profile):
+        """Run the profile's Spectre license check through its simulator configuration."""
         from virtuoso_bridge.spectre.runner import SpectreSimulator
         return SpectreSimulator.from_env(profile=profile).check_license()
 
@@ -620,6 +630,7 @@ class ConnectionMonitor:
 
     def check(self, profile_id, *, scope='interactive', trigger='user'):
         # run_safety: the single in-run check made after repeated infrastructure failures, once dispatch stopped.
+        """Validate the requested check and share an in-flight probe for the same profile and scope."""
         if trigger not in ('user', 'gate', 'auto', 'run_safety'):
             raise ValueError('trigger must be user, gate, auto or run_safety')
         if trigger == 'auto' and scope != 'cheap':
@@ -767,6 +778,7 @@ def _parse_time(text):
 
 
 def overall_state(layers, scope, family='virtuoso'):
+    """Reduce the requested connection layers to the highest-priority failure or readiness state."""
     wanted = FAMILY_SCOPES[family][scope]
     states = [item['state'] for item in layers if item['layer'] in wanted]
     for state in ('failed', 'not_ready', 'busy', 'unknown'):

@@ -23,6 +23,7 @@ def register(app: FastAPI, context: ApiContext):
 
 def _meta_and_network_routes(app: FastAPI, context: ApiContext):
     """The backend's facts, the configuration schema and the network settings."""
+    # Report backend capabilities, remembered settings and operator-authorized input and output roots.
     @app.get('/api/meta')
     def meta():
         settings, settings_problem = runs.read_settings()      # a hand-edited file with a typo: said, not an HTTP 500
@@ -36,6 +37,7 @@ def _meta_and_network_routes(app: FastAPI, context: ApiContext):
                     # continuation check only where they are listed (record 7.261), so it works with either.
                     features=['launch_requests', 'continuation_check'])
 
+    # Return the configuration schema and dictionaries used to build editors and run controls.
     @app.get('/api/schema')
     def get_schema():
         return dict(schema_version=schema.CONFIG_SCHEMA_VERSION, json_schema=schema.json_schema(),
@@ -94,6 +96,7 @@ def _output_routes(app: FastAPI, context: ApiContext):
         except PathNotAllowed as exc:
             fail(403, exc)
 
+    # Check or create the requested output folder and measure its usage only when requested.
     @app.post('/api/output/check')
     def output_check(body: PathBody):
         result = context.roots.check(body.path, create=body.create)
@@ -109,6 +112,7 @@ def _connection_routes(app: FastAPI, context: ApiContext):
     def connection_profiles():
         return connection.public_profiles()
 
+    # Describe cached connection state without performing a fresh check.
     @app.get('/api/connection/status')
     def connection_status(profile_id: str = Query(pattern=PROFILE_ID)):
         return bridge_connect.describe(context.monitor.status(profile_id))

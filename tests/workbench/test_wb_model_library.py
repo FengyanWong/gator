@@ -10,6 +10,7 @@ import pytest
 from gator_workbench import model_library as ml, profiles, recipes
 from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 
+# ---- Made-up model library and local shell harness
 TOP = '''// a made-up library in GPDK045's shape
 library toplib
 section tt
@@ -139,6 +140,7 @@ def runner(tmp_path, awk):
     return run
 
 
+# ---- Library parsing and section dependencies
 @pytest.mark.parametrize('awk', ['gawk', 'mawk'])
 def test_the_layout_is_read_by_names_in_rounds_and_both_awks_agree(tmp_path, library, awk):
     run = runner(tmp_path, awk)
@@ -183,6 +185,7 @@ def test_nothing_is_trimmed_when_every_part_is_needed(tmp_path, library):
     assert 'tt' not in plan['sections'] and plan['not_trimmed']['tt'] == 'the circuit needs every part it includes'
 
 
+# ---- Deck include replacement and device discovery
 def test_the_deck_s_one_model_include_is_replaced_for_its_own_section_only():
     library = dict(model_file='/pdk/model.scs', sections=dict(tt=['include "/pdk/a.scs" section=tt', 'include "/pdk/b.scs"']),
                    parts=dict(tt=[2, 9]))
@@ -206,6 +209,7 @@ def test_the_devices_of_a_deck_are_its_instances_masters():
         ml.devices_used('simulator lang=spice\nM1 a b c d nch\n')
 
 
+# ---- Run admission with a recorded baseline
 class Profile:
     """A profile stand-in supplying the nominal model section and temperature."""
     nominal_corner = type('Corner', (), dict(model_section='tt', temperature_c=27.0))()
@@ -239,12 +243,14 @@ def test_a_run_gets_the_library_only_with_a_recorded_baseline(tmp_path, library,
     assert 'could not be read' in profile.model_library_event['note'] and profile.model_library is None
 
 
+# ---- Command-path validation
 def test_a_path_with_shell_characters_never_reaches_the_script():
     with pytest.raises(ml.LibraryError, match='not a plain absolute path'):
         ml.structure_script(['/pdk/x.scs; rm -rf /'])
     assert ml.resolve('/pdk/top.scs', '../lib/$(id).scs') is None and ml.resolve('/pdk/top.scs', 'a.scs') == '/pdk/a.scs'
 
 
+# ---- Library selection in generated decks and run manifests
 LIBRARY = dict(model_file='/pdk/model.scs', sections=dict(tt=['include "/pdk/mos.scs" section=tt']), parts=dict(tt=[1, 23]))
 
 

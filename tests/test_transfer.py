@@ -21,6 +21,7 @@ from analog_optimizer.training.sac import SACLearner
 from research_support import cpu
 
 
+# ---- Synthetic task and learner fixtures
 def task(graph, name='train', partition='train', target=.99, transfer='specification'):
     """Build a toy transfer task with the requested partition, transfer kind and score target."""
     return TransferTask(name, partition, transfer, 'toy_ota', graph,
@@ -55,6 +56,7 @@ def rename(graph):
     return g
 
 
+# ---- Topology identity and split leakage
 def test_topology_identity_rejects_renaming_and_sizing_as_new(opamp, ldo):
     assert same_topology(opamp, rename(opamp))
     resized = deepcopy(opamp)
@@ -90,6 +92,7 @@ def test_split_rejects_missing_partition_and_wrong_family(opamp, tmp_path):
         freeze_protocol(tmp_path / 'protocol.json', tasks, {})
 
 
+# ---- Frozen policies, validation and transfer isolation
 def test_frozen_policy_never_updates_and_baseline_cost_counts(opamp, tmp_path):
     t = task(opamp, 'test', 'test', target=0)
     model = learner()
@@ -148,6 +151,7 @@ def test_transfer_copies_weights_without_optimizer_replay_or_aliasing(opamp, tmp
         transfer_weights(source, learner(encoder='rgcn'))                     # another architecture is refused
 
 
+# ---- Failure costs and restoration
 def test_infrastructure_failure_is_censored_and_charged(opamp, tmp_path):
     t = task(opamp, 'test', 'test', target=1)
     env = make_env(t, 3, tmp_path)
@@ -181,6 +185,7 @@ def test_exception_during_simulation_keeps_cost_and_restores(opamp, tmp_path):
     assert result['restoration']['state'] == 'restored'
 
 
+# ---- Search progress and per-seed reports
 def test_pattern_search_polls_bounds_then_improves(opamp):
     from analog_optimizer.parameters.actions import ActionMapper
     search = PatternSearch(ActionMapper(opamp).groups)
@@ -207,6 +212,7 @@ def test_multi_seed_report_keeps_censoring():
     assert report['success_wilson_95'][0] < 1/3 < report['success_wilson_95'][1]
 
 
+# ---- Suite budgets and incomplete runs
 def test_suite_budget_replay_and_pretrain_isolation(opamp, tmp_path):
     tasks = [task(opamp, target=.9), task(opamp, 'validation', 'validation', .95),
              task(opamp, 'test', 'test', .999)]
@@ -262,6 +268,7 @@ def test_aborted_suite_keeps_failed_run_and_unexecuted_runs(opamp, tmp_path):
     assert report['aggregate'][0]['censored_runs'] == 1
 
 
+# ---- Encoder selection and architecture boundaries
 @pytest.mark.parametrize('encoders', [[], ['gatv2', 'gatv2'], ['unknown'], 'gatv2', ['gat'], ['port_gnn'], ['mlp'], ['gcn'], None])
 def test_invalid_encoder_selection_fails_before_backend_creation(opamp, tmp_path, encoders):
     tasks = [task(opamp), task(opamp, 'validation', 'validation', .95), task(opamp, 'test', 'test', .98)]

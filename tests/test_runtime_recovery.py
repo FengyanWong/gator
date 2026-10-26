@@ -26,6 +26,7 @@ from concurrent.futures import Future, TimeoutError
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# ---- Synthetic backends and worker-failure fixtures
 class HangingBackend(SyntheticSizingBackend):
     """A synthetic backend that hangs after its first evaluation to exercise lane recovery."""
     def run_simulation(self, request):
@@ -77,6 +78,7 @@ def crash():
     os._exit(7)
 
 
+# ---- Worker deadlines and peer progress
 @pytest.mark.parametrize('operation', [hang, crash])
 def test_owned_worker_deadline_and_exit_do_not_block_shutdown(operation):
     worker = OwnedWorker(0, WorkerLimits(30, .15, 2))
@@ -113,6 +115,7 @@ def test_hung_lane_keeps_peer_transition_and_reports_unknown_job(opamp, tmp_path
     assert not report['passed']
 
 
+# ---- Cleanup during initialization and reporting failures
 @pytest.mark.parametrize('fail_at', ['create_run', 'load_checkpoint', 'write_report'])
 def test_cleanup_covers_initialization_and_report_errors(tmp_path, monkeypatch, fail_at):
     from analog_optimizer import recording
@@ -179,6 +182,7 @@ def test_cleanup_errors_preserve_original_exception(tmp_path, monkeypatch):
     assert len(report['cleanup_errors']) == 3
 
 
+# ---- Checkpoint recovery and cumulative run counts
 def test_parallel_cli_resumes_periodic_checkpoint_twice_with_cumulative_counts(opamp, tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / 'examples'))
     entry = importlib.import_module('train_opamp_sac_parallel')
@@ -242,6 +246,7 @@ def test_recovery_rejects_unknown_boundary():
         restore_parallel({'boundary': 'in_flight'}, random.Random(1))
 
 
+# ---- Deadline watching and environment failure cleanup
 def test_later_lane_deadline_is_watched_while_first_lane_is_active():
     from concurrent.futures import Future
     from analog_optimizer.training.workers import DeadlineFuture, wait_workers
@@ -274,6 +279,7 @@ def test_environment_report_failure_still_restores_and_closes(opamp, tmp_path, m
     assert env.backend.parameters == env.backend.initial
 
 
+# ---- Synthetic CLI checkpoint continuation
 def test_synthetic_cli_resumes_periodic_counters(tmp_path):
     import subprocess
     from analog_optimizer.recording.reader import RunReader
@@ -298,6 +304,7 @@ def test_synthetic_cli_resumes_periodic_counters(tmp_path):
     assert final['stages_count'] == 2 and len(final['stages']) == 1
 
 
+# ---- Results arriving at the timeout boundary
 class LateFuture:
     """A job that finishes just after the deadline's wait gave up."""
     def __init__(self, value):

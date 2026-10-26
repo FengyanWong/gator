@@ -14,6 +14,7 @@ DC_OPERATING_POINT = ('// GATOR (record 7.298): the DC operating point a network
 
 
 def has_dc_operating_point(tail) -> bool:
+    """Detect a DC operating-point information directive in a deck's trailing text."""
     return bool(_DC_OP_INFO.search(tail or ''))
 
 

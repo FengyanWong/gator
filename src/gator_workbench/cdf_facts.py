@@ -96,6 +96,7 @@ let((cv lines masters extra cell cdf sp mp lcv val key rule)
 
 
 def facts_skill(library, cell) -> str:
+    """Validate the library and cell names before rendering the CDF facts query."""
     for value in (library, cell):
         if not NAME.match(value or ''):
             raise ValueError('library and cell must be plain Cadence names')
@@ -245,5 +246,6 @@ def mode_parameters(facts, cell) -> list:
 
 
 def form_of(facts, cell) -> dict:
+    """Return the recorded initialization and completion callbacks for a cell's CDF form."""
     form = (facts['cells'].get(cell) or {}).get('form') or {}
     return dict(init=form.get('init'), done=form.get('done'))

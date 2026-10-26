@@ -246,6 +246,7 @@ def _network_view(run_dir, vocabulary):
 
 
 def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
+    """Return a recorded circuit state with its actions and the saved policy's predictions and attention."""
     from analog_optimizer.models.inputs import batch_observations
     run_dir = Path(run_dir)
     directory = ckpt.resolve_checkpoint(run_dir, checkpoint_id)

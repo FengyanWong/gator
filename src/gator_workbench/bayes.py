@@ -90,6 +90,7 @@ class GaussianProcess:
         return 0.5 * y @ alpha + torch.log(torch.diagonal(L)).sum() + 0.5 * len(X) * math.log(2.0 * math.pi)
 
     def fit(self, X, y, *, steps=40, learning_rate=0.1):
+        """Fit the process and return its best finite negative log-likelihood, or None if none is found."""
         raw = self.raw.clone().requires_grad_(True)
         optimizer = torch.optim.Adam([raw], lr=learning_rate)
         best, best_raw = None, self.raw.clone()
@@ -161,6 +162,7 @@ class TrustRegionBO:
 
     # -------------------------------------------------------------------------------------------------- ask
     def ask(self):
+        """Propose an initial sample or a posterior-selected candidate inside the current trust region."""
         told = len(self.X) - self.start
         self.asked += 1
         if told + self.asked - 1 < self.n_init or told < 2:
@@ -219,6 +221,7 @@ class TrustRegionBO:
             self._begin()
 
     def state(self) -> dict:
+        """Summarize the observed designs, current trust region, restarts, and best reward."""
         return dict(designs=len(self.X), in_this_region=len(self.X) - self.start, restarts=self.restarts, length=self.length,
                     best=max(self.y) if self.y else None)
 
@@ -238,11 +241,13 @@ class Proposer:
         return len(self.search.X)
 
     def propose(self) -> dict:
+        """Return a search proposal mapped to the workbench's normalized action coordinates."""
         point = self.search.ask()
         release_freed_memory()
         return {group: float(2.0 * point[index] - 1.0) for index, group in enumerate(self.group_ids)}
 
     def observe(self, proposal, reward, *, asked):
+        """Record a proposal's reward and report whether the trust region restarted."""
         point = [(float(proposal[group]) + 1.0) / 2.0 for group in self.group_ids]
         before = self.search.restarts
         self.search.tell(point, reward, asked=asked)

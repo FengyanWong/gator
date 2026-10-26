@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ApiContext:
+    """Per-application services for authorized paths, configuration loading and cached run readiness."""
     roots: OutputRoots
     input_roots: list[Path]
     monitor: connection.ConnectionMonitor
@@ -22,6 +23,7 @@ class ApiContext:
         return config, runtime, blocked
 
     def parse_config(self, raw) -> schema.WorkbenchConfig:
+        """Validate a raw configuration and authorize any supplied circuit input paths."""
         try:
             config = schema.WorkbenchConfig.model_validate(raw)
         except ValidationError as exc:
@@ -30,6 +32,7 @@ class ApiContext:
         return config
 
     def authorize_circuit(self, circuit):
+        """Reject circuit input paths containing NUL bytes or lying outside the allowed roots."""
         for name in ('netlist_path', 'parser_config_path'):
             value = getattr(circuit, name)
             if value:
@@ -43,6 +46,7 @@ class ApiContext:
                               '(--allow-input-root), never from the browser.')
 
     def run_path(self, run_dir) -> Path:
+        """Resolve an allowed output path and require it to contain a run manifest."""
         try:
             path = self.roots.resolve(run_dir)
         except PathNotAllowed as exc:

@@ -9,6 +9,7 @@ from .context import ApiContext
 
 
 def register(app: FastAPI, context: ApiContext):
+    """Register agent-CLI availability, launch and readiness endpoints with the shared application context."""
     @app.get('/api/agent/clis')
     def clis():
         """The folder the two CLIs open in, and whether each is installed. Free: no CLI is run, nothing is sent."""

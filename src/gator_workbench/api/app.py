@@ -36,6 +36,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
                auto_check_on_start=True, connection_stale_seconds=120.0, connector=None, host=None) -> FastAPI:
     # Endpoints run in a thread pool and import the optimizer lazily: two first imports at once corrupt
     # torch_geometric for the life of the process. Import it here, before any thread or request exists.
+    """Compose the local API, connection services and optional frontend after preloading the optimizer."""
     preload()
     app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json')
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts(host))
@@ -89,6 +90,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     except Exception:
         app.state.launch_requests_reconciled = None
 
+    # Return a bounded, redacted error response for uncaught request failures.
     @app.exception_handler(Exception)
     async def unexpected(request, exc):
         return JSONResponse(status_code=500, content=dict(detail=dict(message=redact(f'{type(exc).__name__}: {exc}', 1000))))

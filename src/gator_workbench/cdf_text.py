@@ -174,6 +174,7 @@ def _parse_cdf_fields(lines):
 
 # ------------------------------------------------------------------------------------------ building the record
 def cdf_number(value):
+    """Resolve a finite numeric CDF value without variable references, returning None when unresolved."""
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):

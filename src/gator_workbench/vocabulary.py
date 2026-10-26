@@ -68,6 +68,7 @@ class Vocabulary:
                             list(graph.diagnostics), graph.metadata, graph.schema_version)
 
     def view(self, observation):
+        """Return an observation whose graph uses this vocabulary's network representation."""
         return replace(observation, graph=self.view_graph(observation.graph))
 
 
@@ -92,6 +93,7 @@ def vocabulary_of_record(record) -> Vocabulary:
 
 
 def parameter_facts(record, model_ref, name):
+    """Find a device parameter by its recorded name or canonical alias."""
     device = (record or {}).get('devices', {}).get(model_ref)
     if device is None:
         return None
@@ -107,9 +109,11 @@ def learner_class(vocabulary):
         return SACLearner
 
     class PdkViewLearner(SACLearner):
+        """A SAC learner that batches observations through the selected PDK vocabulary."""
         def batch(self, observations, *, digests=None):
             # The network sees new objects (the PDK's view): digests of the recorded observations do not describe
             # them, so the input cache keys the viewed observations by their own content (record 7.221).
+            """Batch viewed observations using their own content identities instead of recorded-state digests."""
             return super().batch([vocabulary.view(o) for o in observations])
     return PdkViewLearner
 
@@ -119,6 +123,7 @@ RUN_FILE = 'network_vocabulary.json'
 
 
 def requested(config) -> str:
+    """Read the requested network vocabulary, falling back to the standard vocabulary."""
     return getattr(getattr(config.run, 'network', None), 'vocabulary', STANDARD) or STANDARD
 
 
@@ -148,6 +153,7 @@ def run_vocabulary(run_dir) -> Vocabulary | None:
 
 
 def write_run_vocabulary(run_dir, vocabulary):
+    """Persist a selected vocabulary's block in the run directory when one is present."""
     if vocabulary is not None:
         write_json(Path(run_dir) / RUN_FILE, vocabulary.block)
 

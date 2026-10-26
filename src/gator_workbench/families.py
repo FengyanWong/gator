@@ -45,6 +45,7 @@ def family_kind(family, polarity=None) -> str:
 
 
 def schema():
+    """Build the graph feature schema used for device-family representations."""
     from analog_optimizer.graph.pyg_converter import FeatureSchema          # lazy: the optimizer imports torch
     return FeatureSchema(version=VERSION, device_kinds=KINDS, terminal_roles=ROLES, net_roles=FeatureSchema().net_roles,
                          parameters=PARAMETERS, references=REFERENCES)
@@ -115,6 +116,7 @@ class FamilyList:
                             list(graph.diagnostics), graph.metadata, graph.schema_version)
 
     def view(self, observation):
+        """Return an observation whose graph uses the device-family representation."""
         return replace(observation, graph=self.view_graph(observation.graph))
 
 

@@ -68,6 +68,7 @@ LET_GO = '''let((done)
 
 
 def let_go_skill(library, cell) -> str:
+    """Render the SKILL request to release an unmodified cell's edit lock when it is not shown in a window."""
     return LET_GO % dict(matching=_matching(library, cell))
 
 

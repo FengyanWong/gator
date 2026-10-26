@@ -23,5 +23,6 @@ class CdfNativeEnvironmentFactory(NativeEnvironmentFactory):
 
     @contextmanager
     def preparation_context(self, limits, report):
+        """Yield a factory bound to the shared CDF preparation service for the context's lifetime."""
         with preparation_session(self.config, self.profile, limits, report) as service:
             yield replace(self, preparation=service)

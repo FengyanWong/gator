@@ -191,6 +191,7 @@ def describe(result) -> dict:
 
 # ---------------------------------------------------------------------------- profile creation
 class SetupNotFound(RuntimeError):
+    """A missing bridge setup with a machine-readable reason code."""
     def __init__(self, reason_code, message):
         super().__init__(message)
         self.reason_code = reason_code
@@ -270,6 +271,7 @@ BRIDGE_PROFILE = re.compile(r'^[A-Za-z0-9_]{1,32}$')          # the suffix of th
 
 
 class ProfileExists(FileExistsError):
+    """A requested connection profile already exists and cannot be recreated."""
     pass
 
 
@@ -352,6 +354,7 @@ def create_profile(profile_id=DEFAULT_PROFILE_ID, *, kind=connection.DEFAULT_KIN
 
 
 class FolderBusy(RuntimeError):
+    """A folder change is blocked by an environment override or an active session lock."""
     pass
 
 
@@ -410,6 +413,7 @@ def save_directories(values) -> dict:
 class TunnelBridge(connection.RealBridge):
     """The check's facade plus the ONE starting call. Kept out of `connection.RealBridge` on purpose."""
     def start_tunnel(self, profile):
+        """Warm the profile's SSH connection and close its runner while leaving the tunnel available."""
         from virtuoso_bridge.transport.tunnel import SSHClient
         ssh = SSHClient.from_env(keep_remote_files=True, profile=profile)     # exactly what `virtuoso-bridge start` does
         try:
@@ -522,6 +526,7 @@ class BridgeConnector:
     attempts_started: int = 0
 
     def connect(self, profile_id) -> dict:
+        """Validate the configured profile identifier and share any connection attempt already in flight."""
         if not isinstance(profile_id, str) or not connection.PROFILE_ID.match(profile_id):
             raise ValueError('profile_id must be the identifier of a configured profile')
         return connection.single_flight(self._lock, self._inflight, profile_id, lambda: self._attempt(profile_id))

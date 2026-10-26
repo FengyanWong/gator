@@ -276,6 +276,7 @@ def _number_of(text):
 
 
 def read_library(read, entry, section):
+    """Load the selected model-library section through the supplied file reader."""
     library = _Library(read)
     library.load(entry, section)
     return library

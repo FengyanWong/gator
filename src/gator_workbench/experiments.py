@@ -15,6 +15,7 @@ from .storage.dataset import write_data_dictionary
 
 
 def register_in_experiment(experiment_dir, manifest, compiled, task, created):
+    """Register a run and its split metadata while holding the experiment's update lock."""
     experiment_dir = Path(experiment_dir)
     lock = RunLock(experiment_dir / '.experiment.lock')
     import time

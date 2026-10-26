@@ -535,3 +535,9 @@ One row per commit, newest last.
 | `2b0f47b` | 10-24 15:15 | 7.390 | archive comparison steps 2-6 (branch `bo-mobo-rl`): goal views, `turbo_archive`/`mobo` searches in the engine with exact save/continue and crash re-tell, pretrain pool settings, the goal-view rule of a comparison run; frozen runtime gator-runtime-bmr-f143d691 (session "Training encoders with Zenodo dataset") |
 | `d9d5ba0` | 10-24 15:16 | - | plan only: the transfer experiment's journal track is dropped (user, 2026-10-23: "I am not publishing") - the status table's Journal row and sections 14-15 say J0-J5 and the manuscript milestones will not be run, kept for reference |
 | `e4d295c` | 10-24 15:19 | 7.389 | a run that stops while it is being prepared, before its save points are opened, skips its final save: the original error alone, the summary's `output.note` says why, a crash test of the unresolved-launch refusal; the log rolled over (session "Skip the final save when a run never prepared") |
+| `da05b8b` | 10-26 12:58 | 7.393 | Merge completed readability packages into latest integration |
+| `7ef598b` | 10-26 13:00 | 7.393 | Merge archive comparison implementation and preserve its development record |
+| `5a38798` | 10-26 13:00 | 7.393 | Preserve codex/readability-before-refresh-2026-10-26 history; equivalent changes already integrated |
+| `e513bc0` | 10-26 13:00 | 7.393 | Preserve sif-backend-words-2 history; equivalent changes already integrated |
+| `de54083` | 10-26 13:00 | 7.393 | Preserve sif-help-text history; equivalent changes already integrated |
+| `9192e9b` | 10-26 13:14 | 7.393 | Integrate pending work and remove the frontend Agent interface |

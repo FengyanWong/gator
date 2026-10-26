@@ -1,5 +1,5 @@
 // Browser check of the "Connection" button and its window (there is no frontend test runner in this project).
-// Same approach as agent_window_check.mjs: a throwaway headless Edge over the DevTools protocol against the RUNNING
+// Same approach as external_agents_check.mjs: a throwaway headless Edge over the DevTools protocol against the RUNNING
 // workbench (default http://127.0.0.1:8765/). EVERY request to /api/connection/* is intercepted, logged and answered
 // with a canned answer labelled FIXTURE, so no probe is started, no tunnel is touched, no file is written and neither
 // Virtuoso nor ngspice is contacted; any other writing request of the page is refused (reads pass). That makes it safe

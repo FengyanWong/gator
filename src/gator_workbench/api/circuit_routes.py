@@ -40,6 +40,7 @@ def register(app: FastAPI, context: ApiContext):
 
 def _task_routes(app: FastAPI, context: ApiContext):
     """The task list, a task's starter configuration, Save task progress, the baseline, loading a circuit."""
+    # List available tasks together with the interface contract required for real backends.
     @app.get('/api/tasks')
     def get_tasks():
         return dict(tasks=tasks.list_tasks(), real_interface_contract=tasks.REAL_INTERFACE_CONTRACT)
@@ -82,11 +83,13 @@ def _task_routes(app: FastAPI, context: ApiContext):
         only - nothing is read or contacted."""
         return task_saving.status()
 
+    # Request the saved task baseline using its optional connection and output-root overrides.
     @app.post('/api/tasks/baseline')
     def retry_baseline(body: TaskBaselineBody):
         return dict(baseline=task_baseline.start(context, body.task_key, profile_id=body.profile_id,
                                                 output_root=body.output_root))
 
+    # Load circuit details and baseline status, adopting an existing completed baseline when eligible.
     @app.post('/api/circuit/load')
     def circuit_load(body: CircuitBody):
         try:
@@ -281,6 +284,7 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
             fail(422, 'A connection profile is required')
 
         def read():
+            """Read the working copy setup and compare it with supplied editor rows when a test is present."""
             found = working_copy.read_setup(context.monitor, body.profile_id, body.library, body.cell)
             if body.config is not None and found.get('test'):
                 config = context.parse_config(body.config)
@@ -387,6 +391,7 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
 
 def _configuration_routes(app: FastAPI, context: ApiContext):
     """Validating and comparing a configuration, and Matched devices."""
+    # Validate editor rows against the loaded task and return hashes, blockers and unsaved-row status.
     @app.post('/api/config/validate')
     def config_validate(body: ValidateBody):
         config, runtime, blocked = context.load_config(body.config)

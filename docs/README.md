@@ -100,7 +100,7 @@ Some openings precede later execution sections: follow the plan's later records 
 |---|---|---|---|
 | [graph-transformers-reading-guide.md](graph-transformers-reading-guide.md) | An illustrated explanation of GraphGPS and CircuitGPS inputs, learning and transfer limits. | Record / dated guide | Frozen implementation snapshot: 2026-10-14 |
 | [history-readme-milestones.md](history-readme-milestones.md) | The original README's milestone paragraphs and reference text, with an English guide. | Record | Frozen source snapshot: a82f950, archived 2026-10-25 |
-| [llm-sizing.md](llm-sizing.md) | The former LLM sizing modes and their removal in favor of agent-launched work. | Record | Frozen; removed 2026-10-06, record 7.226 |
+| [llm-sizing.md](llm-sizing.md) | The former LLM sizing modes and their removal; current help uses desktop or CLI agents started by the user. | Record | Frozen; removed 2026-10-06, record 7.226 |
 | [pdk-port-history.md](pdk-port-history.md) | The ordered circuit-porting history between GPDK045 and a second foundry's 0.18 um PDK. | Record | Frozen porting history: 2026-10-12 |
 | [report-gt-experiments-2026-10-07.md](report-gt-experiments-2026-10-07.md) | Recorded GT learning and transfer results, caveats and later encoder comparisons. | Record / report | Frozen recorded results; dated additions retained |
 

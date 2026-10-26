@@ -40,7 +40,6 @@ export const RUNS_WINDOW = 'GATOR - runs';
 export const RL_MODEL_WINDOW = 'GATOR - RL model';
 export const VIRTUOSO_WINDOW = 'GATOR - Virtuoso cell';
 export const CONNECTION_WINDOW = 'GATOR - connection';
-export const AGENT_WINDOW = 'GATOR - agent';
 export const NGSPICE_WINDOW = 'GATOR - ngspice netlist';
 export const PDK_WINDOW = 'GATOR - PDK';
 export const RUNNING_WINDOW = 'GATOR - running now';

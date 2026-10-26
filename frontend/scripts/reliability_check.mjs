@@ -109,14 +109,14 @@ await runChecks(browser, async () => {
   await page.evaluate('JSON.stringify = window.realStringify');
   for (const width of [960, 640]) {
     await page.viewport(width, 900); await sleep(100);
-    // The tab line's two window openers (record 7.253: the "Agent..." tab and the "Runs..." button); the CLI buttons themselves are in the Agent window now.
+    // Runs is the tab line's only window opener; the Agent entry was removed.
     const geometry = await page.evaluate(`({ main: document.querySelector('main').getBoundingClientRect().width,
       page: document.documentElement.scrollWidth, width: innerWidth,
-      windows: [...document.querySelectorAll('footer .tabs button.agent-tab, footer .tabs button.run-list-button')].map(b => Math.round(b.getBoundingClientRect().width)),
+      windows: [...document.querySelectorAll('footer .tabs button.run-list-button')].map(b => Math.round(b.getBoundingClientRect().width)),
       run: ['header button.run-save', 'header span.next-run', 'header button.run-main', 'header button.run-abort'].map(s => document.querySelector(s)).filter(Boolean)
         .map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.top + r.height / 2), Math.round(r.right)]; }) })`);
     check(`${width}px viewport keeps usable editors without page overflow`, geometry.main > width - 40 && geometry.page <= width, JSON.stringify(geometry));
-    check(`${width}px viewport keeps the tab line's Agent... tab and Runs... button usable`, geometry.windows.length === 2 && geometry.windows.every(w => w > 50), JSON.stringify(geometry));
+    check(`${width}px viewport keeps the tab line's Runs... button usable`, geometry.windows.length === 1 && geometry.windows.every(w => w > 50), JSON.stringify(geometry));
     // Branch record SIF-136: the header wraps Save now, the Next line, Start and Abort as one group: never Start and Abort apart
     check(`${width}px viewport keeps Save now, Start and Abort together on one row of the header, inside the window (SIF-136)`,
       geometry.run.length >= 3 && geometry.run.every(([y, right]) => Math.abs(y - geometry.run[0][0]) <= 2 && right <= width), JSON.stringify(geometry.run));

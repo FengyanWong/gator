@@ -7,9 +7,12 @@ only the live backend on 8765 was running). Optimizer source digest at HEAD:
 `6ebf5ba532b279aa83b7b9b63d7e7c2573551691384575336bd24f91bc195da3` (it must read the same after every package).
 The plan is written for Codex to execute; appendix A is the prompt to give it.
 
-**State (2026-10-25):** executing on the isolated `readability` branch; D1-D8 complete, including the authorized English skill translation.
-No package landed in the live workbench; the optimizer, experiment flow and served page are unchanged.
-T and P follow; F remains isolated until its coordination decision. P8 and E are excluded unless chosen.
+**State (2026-10-26):** D1-D8, T1-T3 and P1-01 through P1-04 are committed on `readability`, including the authorized
+English skill translation. The combined `codex/latest` branch also captures P1-05's API documentation change;
+integration and validation are recorded in [7.393](workbench-log/7.389-and-later.md). This does not complete the
+remaining P packages. F stays with the frontend session; the separately requested Agent-interface removal (7.391)
+does not complete group F. P8 and E remain excluded unless chosen.
+No package is deployed to the live workbench; the optimizer, experiment runtime and served page remain unchanged.
 
 ## 0. In plain words
 

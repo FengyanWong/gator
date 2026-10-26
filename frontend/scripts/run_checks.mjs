@@ -42,7 +42,7 @@ for (const api of [hermeticApi, writerApi].filter(Boolean))
 // finished (the serial durations measured by hand before; plan-refactoring D5: derived from the runs instead of kept by hand).
 const DURATIONS = path.join(tmpdir(), 'gator-checks-durations.json');
 const FIRST_GUESS = { virtuoso_source_check: 76, connection_panel_check: 47, run_control_check: 46, testbench_probes_check: 43,
-  agent_window_check: 12, output_panel_check: 25, run_control_live_check: 23, typing_check: 19, model_chooser_check: 19,
+  external_agents_check: 12, output_panel_check: 25, run_control_live_check: 23, typing_check: 19, model_chooser_check: 19,
   project_help_check: 17, run_list_check: 16, ngspice_window_check: 16, working_copy_check: 15,
   save_now_check: 11, corner_check_check: 11, task_save_check: 10, graph_view_check: 8, blocking_issues_check: 8,
   calibration_check: 60, calibration_save_check: 14, dom_identity_check: 180 };
@@ -64,7 +64,7 @@ if (!encoderModels) SKIPPED.encoder_models_check = 'needs its two saved MOCK mod
 const only = names(option('--only')), skip = names(option('--skip')) ?? [];
 // Check catalog: files are still discovered dynamically below; this list is documentation only.
 // Hermetic checks refuse backend writes; snapshots/downloads stay in each check's evidence folder.
-// agent_window_check: Agent window and start checklist; hermetic; record 7.253.
+// external_agents_check: the Agent UI and routes stay absent; user-started desktop or CLI agents handle assistance.
 // blocking_issues_check: Header's blocking-issues window; hermetic; record 7.12.
 // calibration_check: Baseline calibration and Apply; writes scratch MOCK runs; records 7.197, 7.202.
 // calibration_save_check: Calibration Apply and save; hermetic task-save fixtures; record 7.217.

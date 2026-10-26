@@ -5,7 +5,6 @@ import type { TaskRunSummary } from '../contracts';
 import { BOTTOM_KEY, BOTTOM_TAB_KEY } from '../contract';
 import { keep, keepInTab, readKept, readKeptInTab } from '../kept';
 import type { Refusal, useLauncher } from '../launch';
-import { AgentWindowTab } from './Agent';
 import { CornerCheckTab } from './CornerCheck';
 import { type RunChoice, RunListButton } from './RunList';
 import { DATA_CHOICE, type DataChoice, DataTab, FilesTab, LogsTab, StatusTab } from './RunTabs';
@@ -92,7 +91,7 @@ export type BottomPanelState = ReturnType<typeof useBottomPanel>;
 export type RunWindowActions = { choose: (dir: string | null) => void; load: (row: TaskRunSummary, owner?: Window | null) => Promise<RunChoice>;
   newLike: (row: TaskRunSummary, owner?: Window | null) => Promise<RunChoice>; continueFrom: (row: TaskRunSummary) => void };
 
-/** The bottom panel: the splitter, the tab line (Agent..., the tabs, the run shown and Runs...) and the tab shown.
+/** The bottom panel: the splitter, the tab line (the tabs, the run shown and Runs...) and the tab shown.
  *  `headerDir`: the header's run while it works or is paused, so the tab line can say when it shows another (branch record SIF-72). */
 export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConfig, runs, runsError, runDir, status, statusError, runWindow, refreshRuns,
   shownCheck, continueBlocked, shownRefusal, continueShown, launcher, fineTuneFrom, askContinue, headerDir = null }: { panel: BottomPanelState; tab: BottomTab;
@@ -134,7 +133,6 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
         title="Drag to give the bottom panel more or less room. Double-click: fold it down to its tab line, or open it again. Kept in this browser."
         onPointerDown={dragBottom} onDoubleClick={toggleBottom} onKeyDown={keyBottom} />
       <div className="tabs">
-        <AgentWindowTab config={config} />
         {(['status', 'logs', 'data', 'files', 'training', 'corners'] as BottomTab[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
           {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
         <span className="spacer" />

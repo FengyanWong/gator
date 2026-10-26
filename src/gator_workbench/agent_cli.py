@@ -47,6 +47,7 @@ def working_directory() -> Path:
 
 
 def in_wsl(env=None) -> bool:
+    """Detect WSL from the supplied environment or the operating-system release string."""
     env = os.environ if env is None else env
     return bool(env.get('WSL_DISTRO_NAME')) or 'microsoft' in platform.release().lower()
 

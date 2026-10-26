@@ -49,6 +49,7 @@ RECOVERABLE_BOUNDARY = ('Quiescent scheduler boundary: no evaluation reserved or
 
 
 class CheckpointIncompatible(RuntimeError):
+    """A checkpoint compatibility failure carrying its detailed component report."""
     def __init__(self, report):
         self.report = report
         failed = [c for c in report['checks'] if c['status'] == 'incompatible']
@@ -113,6 +114,7 @@ def weight_digest(learner) -> str:
 
 
 class CheckpointStore:
+    """Publish complete save points and manage retention, save kinds, and policy-selection metadata."""
     def __init__(self, run_dir, *, run_id, task_id, task_definition_hash, save_replay=True, keep_last=None):
         self.root = Path(run_dir) / 'checkpoints'
         self.root.mkdir(parents=True, exist_ok=True)
@@ -269,6 +271,7 @@ class CheckpointStore:
 
 # ---------------------------------------------------------------------- discovery / loading
 def resolve_checkpoint(run_dir, checkpoint_id='latest') -> Path:
+    """Resolve a save-point identifier or pointer to a metadata-bearing directory inside the run."""
     root = Path(run_dir) / 'checkpoints'
     if checkpoint_id in ('latest', 'best_policy'):
         pointer = read_json(root / f'{checkpoint_id}.json', default={})
@@ -318,6 +321,7 @@ def latest_point(run_dir) -> tuple[str | None, str | None]:
 
 
 def read_metadata(directory) -> dict:
+    """Read the metadata document from a save-point directory."""
     return read_json(Path(directory) / 'metadata.json')
 
 
@@ -328,6 +332,7 @@ def _display_digest(path, identity):
 
 
 def verify_files(directory, *, cached=False) -> list[str]:
+    """Report missing or mismatched checkpoint files while accepting recorded pre-compression originals."""
     directory, problems = Path(directory), []
     for relative, info in read_metadata(directory)['files'].items():
         path = directory / relative
@@ -518,6 +523,7 @@ MODEL_LABEL_MAX = 80
 
 
 class ModelNameTaken(ValueError):
+    """A requested saved-model label is already in use."""
     pass
 
 

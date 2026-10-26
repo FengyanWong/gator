@@ -18,10 +18,12 @@ from uuid import uuid4
 
 
 class BudgetError(RuntimeError):
+    """An invalid evaluation or simulator-launch budget transition."""
     pass
 
 
 class BudgetLedger:
+    """Track reserved and charged evaluations, simulator launches, retries, and feasibility milestones under a lock."""
     VERSION = 'budget-ledger-v1'
 
     def __init__(self, max_evaluations, *, max_launches=None, max_retries=0):
@@ -49,6 +51,7 @@ class BudgetLedger:
 
     # ------------------------------------------------------------------ evaluations
     def remaining(self) -> int:
+        """Return evaluation capacity after both charged work and outstanding reservations."""
         with self._lock:
             return self.max_evaluations - self.charged - len(self._reserved)
 
@@ -96,6 +99,7 @@ class BudgetLedger:
 
     # ------------------------------------------------------------------ attempts / launches
     def may_retry(self, evaluation_id) -> bool:
+        """Check whether an inactive evaluation attempt has retry and simulator-launch capacity."""
         with self._lock:
             item = self._in_flight.get(evaluation_id)
             if item is None:
@@ -123,6 +127,7 @@ class BudgetLedger:
             return item['attempts']
 
     def attempt_allowance(self, evaluation_id):
+        """Return the simulator-launch allowance of an active attempt or reject an inactive one."""
         with self._lock:
             item = self._in_flight[evaluation_id]
             if not item['attempt_active']:
@@ -148,6 +153,7 @@ class BudgetLedger:
             self.uncertain_launches += uncertain
 
     def complete(self, evaluation_id, *, failed=False, cache_hit=False) -> dict:
+        """Finish an evaluation after all attempts settle and update completion, failure, and cache-hit counters."""
         with self._lock:
             item = self._in_flight.get(evaluation_id)
             if item is None:
@@ -201,10 +207,12 @@ class BudgetLedger:
 
     # ------------------------------------------------------------------ views / persistence
     def in_flight_ids(self):
+        """Return a sorted snapshot of evaluation identifiers still in flight."""
         with self._lock:
             return sorted(self._in_flight)
 
     def snapshot(self) -> dict:
+        """Return a locked snapshot of evaluation and launch budgets with feasibility milestones."""
         with self._lock:
             return dict(max_evaluations=self.max_evaluations, max_launches=self.max_launches,
                         max_retries=self.max_retries, charged=self.charged, reserved=len(self._reserved),

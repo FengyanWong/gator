@@ -65,6 +65,7 @@ def same_value(a, b) -> bool:
 
 
 class GenericMosWidthProfile(Gpdk045OtaProfile):
+    """A generated nominal-condition profile that enforces recorded MOS width rules and circuit readback."""
     recipe = 'opamp_ac'                                   # the adapter's own deck and `measurements.opamp.analyze`
 
     def __init__(self, *, rules_file, design_file, mapping_file, reference_structure, reference_readback,
@@ -153,6 +154,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
 
     # ------------------------------------------------------------------ what the adapter calls
     def validate_condition(self, condition):
+        """Reject every condition except the profile's supported nominal corner."""
         super().validate_condition(condition)
         if not condition.nominal_only or condition.corner != self.nominal_corner:
             raise UnsupportedCapability('A generated profile supports its nominal condition only')
@@ -174,6 +176,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         return result
 
     def validate_assignment(self, parameters):
+        """Require all writable widths to satisfy their bounds, grid, and fixed group ratios."""
         if set(parameters) != set(self.writable_keys):
             raise ValueError('A complete assignment of every writable width is required')
         for (device, _), value in parameters.items():
@@ -190,6 +193,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
                     raise ValueError(f'Group {group.id}: matched widths / fixed ratio violated')
 
     def optimization_graph(self, structure=None):
+        """Return a validated optimization graph with parameter-group bounds aligned to the grid."""
         graph = self.parser.parse_file(structure) if structure is not None else deepcopy(self.graph)
         # The groups a run gets are the ones compile makes from the task's rows, also from a mapping saved before compile
         # took a group's top grid point as its upper bound: otherwise such a task's own rows no longer matched it at Start.
@@ -199,6 +203,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         return graph
 
     def validate_readback(self, snapshot):
+        """Check fixed circuit properties and derived geometry before returning validated writable widths."""
         actual, reference = self.instances(snapshot), self.instances(self.reference)
         if set(actual) != set(reference) or set(actual) != set(self.mos_names) | set(self.fixed_instances):
             raise ValueError('Unexpected instance set in the core cell')
@@ -225,6 +230,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         return result
 
     def verify_transition(self, before, after, expected):
+        """Verify requested widths and require their dependent geometry to update when a width changes."""
         actual = self.validate_readback(after)
         if any(not equal(actual[k], v) for k, v in expected.items()):
             raise ValueError('CDF width readback differs from requested values')
@@ -250,6 +256,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         return graph
 
     def validate_export(self, structure, snapshot):
+        """Compare exported parameters with schematic readback and the recorded fixed circuit values."""
         graph = self._exported_graph(structure)
         actual = self.instances(snapshot)
         writable = {device for device, _ in self.writable_keys}

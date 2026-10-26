@@ -117,8 +117,8 @@ def _prepare_pool(request, *, progress=None, storage=None):
     if origin not in ('real', 'synthetic'):
         raise ValueError('Pool origin must be real or synthetic')
     fraction = request.get('holdout_fraction', 0.1)
-    if not 0 < fraction < 1 or not request.get('runs'):
-        raise ValueError('Nonempty sources and a holdout_fraction between 0 and 1 are required')
+    if not 0 <= fraction < 1 or not request.get('runs'):
+        raise ValueError('Nonempty sources and a holdout_fraction from 0 (no holdout) to below 1 are required')
     seed = request.get('seed', DEFAULT_SEED)
     inputs = request_inputs(request)
     missing_points = request.get('missing_operating_points', 'refuse')
@@ -133,6 +133,8 @@ def _prepare_pool(request, *, progress=None, storage=None):
     run_ids, candidates, settings = set(), set(), None
     relabel = request.get('relabel_upper', {})
     target_sets = relabel_targets(request)
+    targets_only, balance = pool_options(request, target_sets, relabel, fraction)
+    seen_tasks = set()
     for source in request['runs']:
         directory = Path(source['run_dir']).resolve()
         if archive_identity(directory) != source['archive_sha256']:
@@ -179,11 +181,19 @@ def _prepare_pool(request, *, progress=None, storage=None):
         problems = loader.reader.verify()
         if problems:
             raise ValueError(f'Archive checksum failure: {problems}')
-        raw = loader.transition_rows()
+        wanted = selected_candidates(source, run_id)
+        selection = {} if wanted is None else dict(candidate_ids=wanted)        # without one: read as before
+        raw = loader.transition_rows(**selection)
         eligible = [row for row in raw if row['replay_eligible_archive']]
-        transitions = loader.transitions()
+        transitions = loader.transitions(**selection)
         if not transitions:
             raise ValueError(f'No replay-eligible transitions: {run_id}')
+        if wanted is not None and wanted - {t.candidate_id for t in transitions}:
+            raise ValueError(f'{run_id}: {len(wanted - {t.candidate_id for t in transitions})} of the selected candidate_ids '
+                             'are not replay-eligible transitions of this run')
+        if targets_only and task not in target_sets:
+            raise ValueError(f'{task} has no relabel_targets: with relabel_targets_only its transitions would not be pooled')
+        seen_tasks.add(task)
         counts = Counter()
         original_settings = {}
         for row, transition in zip(eligible, transitions, strict=True):
@@ -219,13 +229,15 @@ def _prepare_pool(request, *, progress=None, storage=None):
             def keep(t):
                 viewed = shown(t)
                 return storage.append(viewed) if storage is not None else viewed
-            groups[task][episode].append((keep(transition), False))
+            if not targets_only:
+                groups[task][episode].append((keep(transition), False))
             if task in relabel:
                 derived = _relabeled(transition, first, last, relabel[task], task)
                 groups[task][episode].append((keep(derived), True))
                 counts['relabeled'] += 1
             for number, changes in enumerate(target_sets.get(task, ()), 1):       # one more copy per target set (record 7.312)
-                groups[task][episode].append((keep(_retargeted(transition, first, last, changes, task, stated)), ('set', number)))
+                key = f'target_set:{number}' if balance == 'target_set' else task
+                groups[key][episode].append((keep(_retargeted(transition, first, last, changes, task, stated)), ('set', number)))
                 counts['relabeled'] += 1
         # Detect source mutation during reconstruction, too.
         if archive_identity(directory) != source['archive_sha256']:
@@ -235,6 +247,7 @@ def _prepare_pool(request, *, progress=None, storage=None):
                             **({} if shown_as is None else {'inputs_sha256': shown_as}),
                             evaluations=summary['totals']['candidate_evaluations_charged'],
                             eligible=len(transitions), excluded=len(raw) - len(transitions),
+                            **({} if wanted is None else {'selected': len(wanted)}),
                             relabeled=counts['relabeled'],
                             **({'reward_migrated': counts['reward_migrated'],
                                 'original_reward_settings': list(original_settings.values())}
@@ -244,7 +257,7 @@ def _prepare_pool(request, *, progress=None, storage=None):
         del transitions, loader
         if progress:
             progress(dict(event='source_loaded', **sources[-1]))
-    if (set(relabel) | set(target_sets)) - groups.keys():
+    if (set(relabel) | set(target_sets)) - seen_tasks:
         raise ValueError('Relabel task absent from pool')
     # lazy: program schemas are needed here only when reconstructing an archive pool.
     from .spec_programs import spec_program_schema
@@ -263,6 +276,8 @@ def _prepare_pool(request, *, progress=None, storage=None):
                  diagnostic_scope='within-source episode holdout; not an unseen-circuit transfer result')
     if target_sets:
         audit['relabel_target_sets'] = {task: len(sets) for task, sets in sorted(target_sets.items())}
+    if targets_only or balance != 'task':
+        audit.update(relabel_targets_only=targets_only, balance=balance)
     if migrated_settings is not None:
         audit['reward_migration'] = dict(settings=asdict(migrated_settings),
                                        count=sum(s['reward_migrated'] for s in sources),
@@ -275,6 +290,41 @@ def _shown(transition, view):
     values = {f.name: getattr(transition, f.name) for f in fields(transition)}
     values.update(observation=view.view(transition.observation), next_observation=view.view(transition.next_observation))
     return _shown_type()(**values)
+
+
+def selected_candidates(source, run_id):
+    """A source's `candidate_ids` (the archive comparison: exactly the transitions of a frozen bundle), as a set; None
+    when the source pools every replay-eligible transition of its run, as before."""
+    if 'candidate_ids' not in source:
+        return None
+    wanted = source['candidate_ids']
+    if not isinstance(wanted, list) or not wanted or not all(isinstance(c, str) and c for c in wanted):
+        raise ValueError(f'candidate_ids of {run_id} must be a nonempty list of candidate ids')
+    if len(set(wanted)) != len(wanted):
+        raise ValueError(f'candidate_ids of {run_id} names a candidate twice')
+    return set(wanted)
+
+
+def pool_options(request, target_sets, relabel, fraction):
+    """(relabel_targets_only, balance) of a request; the defaults pool as before.
+    relabel_targets_only: only the target-set copies are pooled, not the transition under its recorded targets - a pool
+    of exactly the goal views it names (the archive comparison: its four portfolio views).
+    balance: 'task' (the default) cycles over the source tasks; 'target_set' over the target sets, uniformly across the
+    sources within each - the views balanced whatever source task a transition came from. It groups each transition's
+    copies apart, so it needs relabel_targets_only, the same number of target sets for every task and no holdout (a
+    holdout per group would put one episode in training under one view and in validation under another)."""
+    targets_only, balance = bool(request.get('relabel_targets_only', False)), request.get('balance', 'task')
+    if balance not in ('task', 'target_set'):
+        raise ValueError('balance is "task" or "target_set"')
+    if targets_only and (not target_sets or relabel):
+        raise ValueError('relabel_targets_only needs relabel_targets and no relabel_upper')
+    if balance == 'target_set':
+        if not targets_only or fraction:
+            raise ValueError('balance "target_set" needs relabel_targets_only and holdout_fraction 0')
+        if len({len(sets) for sets in target_sets.values()}) != 1:
+            raise ValueError('balance "target_set" needs the same number of target sets for every task (set k of each '
+                             'task is one goal)')
+    return targets_only, balance
 
 
 class BalancedSampler:
@@ -326,19 +376,35 @@ def _relabeled(transition, first, last, changes, task):
     return derived
 
 
+TARGET_KEYS = ('lower', 'upper', 'scale', 'objective')
+OBJECTIVES = ('none', 'min', 'max')
+
+
 def relabel_targets(request) -> dict:
     """request['relabel_targets'] (record 7.312; the transfer experiment's multi-target models): task -> a list of target
     sets, each `{metric: {"lower": x, "upper": y}}` with one or both limits. Every archived transition of the task is
     pooled once as recorded and once more under each target set, re-scored - so one network sees the same designs
-    judged by several targets, each target among its inputs. {} when the request has none."""
+    judged by several targets, each target among its inputs. {} when the request has none.
+
+    A row may also state its "scale" (kept as stated, whatever its limits) and its "objective" ("none", "min" or "max":
+    the direction a design that meets every limit is still improved in). With them a target set can describe a whole
+    goal view of the archive comparison (plan-bo-mobo-rl-archive-comparison.md 4.2: the preference direction set, the
+    scales held fixed), so that its copies score exactly as a run of that view does. Without them nothing changes."""
     target_sets = request.get('relabel_targets') or {}
     for task, sets in target_sets.items():
         if not isinstance(sets, list) or not sets or not all(isinstance(changes, dict) and changes for changes in sets):
             raise ValueError(f'relabel_targets of {task} must be a list of target sets, each naming at least one metric')
         for changes in sets:
             for metric, limits in changes.items():
-                if not isinstance(limits, dict) or not limits or set(limits) - {'lower', 'upper'}:
-                    raise ValueError(f'A target of {metric} in {task} names "lower", "upper" or both')
+                if not isinstance(limits, dict) or not limits or set(limits) - set(TARGET_KEYS):
+                    raise ValueError(f'A target of {metric} in {task} names "lower", "upper" or both '
+                                     '(and may add "scale" and "objective")')
+                scale = limits.get('scale')
+                if 'scale' in limits and (isinstance(scale, bool) or not isinstance(scale, (int, float))
+                                          or not math.isfinite(scale) or scale <= 0):
+                    raise ValueError(f'The scale of {metric} in {task} must be a finite positive number')
+                if 'objective' in limits and limits['objective'] not in OBJECTIVES:
+                    raise ValueError(f'The objective of {metric} in {task} is one of {", ".join(OBJECTIVES)}')
     return target_sets
 
 
@@ -356,7 +422,8 @@ def retargeted_specs(specs, changes, task, stated=()):
     `compile.normalization_scale` - gets the size of its new limit, as the task saved with that limit would; a stated
     scale stays. `stated`: the rows whose scale the task states (`stated_scales` of the source's configuration). A
     stated scale that happens to equal the size of its limit is still stated: until record 7.322 it was taken for an
-    empty box and moved with the limit, so the copy was scored on another scale than the task saved with that limit."""
+    empty box and moved with the limit, so the copy was scored on another scale than the task saved with that limit.
+    A row that names its "scale" takes that scale; a row that names its "objective" takes that direction (`relabel_targets`)."""
     known = {s.metric_id: s for s in specs}
     if set(changes) - known.keys():
         raise ValueError(f'Relabel metric absent in {task}')
@@ -367,14 +434,18 @@ def retargeted_specs(specs, changes, task, stated=()):
         if limits is None:
             result.append(spec)
             continue
-        if any(getattr(spec, side) is None for side in limits):
-            raise ValueError(f'{spec.metric_id} in {task} has no {"/".join(side for side in limits if getattr(spec, side) is None)} limit to move')
+        sides = [side for side in ('lower', 'upper') if side in limits]
+        if any(getattr(spec, side) is None for side in sides):
+            raise ValueError(f'{spec.metric_id} in {task} has no {"/".join(side for side in sides if getattr(spec, side) is None)} limit to move')
         lower, upper = limits.get('lower', spec.lower), limits.get('upper', spec.upper)
         if lower is not None and upper is not None and not lower < upper:
             raise ValueError(f'The new limits of {spec.metric_id} in {task} are not a range')
-        follows = spec.metric_id not in stated and math.isclose(spec.scale, size(spec.lower, spec.upper), rel_tol=1e-12)
-        scale = size(lower, upper) if follows else spec.scale
-        result.append(replace(spec, lower=lower, upper=upper, scale=scale))
+        if 'scale' in limits:
+            scale = float(limits['scale'])
+        else:
+            follows = spec.metric_id not in stated and math.isclose(spec.scale, size(spec.lower, spec.upper), rel_tol=1e-12)
+            scale = size(lower, upper) if follows else spec.scale
+        result.append(replace(spec, lower=lower, upper=upper, scale=scale, objective=limits.get('objective', spec.objective)))
     return tuple(result)
 
 
@@ -414,10 +485,10 @@ def _split_episodes(groups, schema, seed, fraction, *, storage=None, progress=No
         progress(dict(event='pool_validation', completed_transitions=0, total_transitions=total))
     for task, episodes in sorted(groups.items()):
         keys = sorted(episodes)
-        if len(keys) < 2:
+        if fraction and len(keys) < 2:
             raise ValueError(f'At least two episodes required for {task}')
         random.Random(f'{seed}:{task}').shuffle(keys)
-        n = min(len(keys) - 1, max(1, math.ceil(len(keys) * fraction)))
+        n = 0 if not fraction else min(len(keys) - 1, max(1, math.ceil(len(keys) * fraction)))   # 0: no holdout
         training[task], validation[task] = [], []
         for i, key in enumerate(keys):
             subset = 'validation' if i < n else 'training'
@@ -452,6 +523,8 @@ def evaluate(learner, pool, batch_size=32):
     result = {}
     with torch.no_grad():
         for task, transitions in pool.validation.items():
+            if not len(transitions):                  # no holdout (holdout_fraction 0): nothing to score
+                continue
             training = pool.training[task]
             constant = (training.reward_mean if hasattr(training, 'reward_mean') else
                         sum(t.reward for t in training) / len(training))

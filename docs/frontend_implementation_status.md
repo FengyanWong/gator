@@ -447,3 +447,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.387 | Plan refined from Compare random forest calibration: matched-transfer-BO decision rule, archive-only RF diagnostics, optional graph-prior TuRBO (+7,227) and common RF-screen (+28,908); primary ceiling unchanged |
 | 7.388 | Round 3 seeds 1 and 2 results: 72 runs complete (45,600 designs, two same-run resumes), audited with seed 0 - all 36 blocks complete, parity passes, seed 0 unchanged; feasible designs per arm for seeds 0/1/2 |
 | 7.389 | Final save skipped when a run stops while being prepared: only the original error; log rolled over |
+| 7.390 | Archive comparison steps 2-6 (branch bo-mobo-rl, commit 2b0f47b): goal views and parity, `turbo_archive`/`mobo` searches in the engine with exact save/continue and crash re-tell, pretrain pool settings, nine source models, ngspice end-to-end acceptance, M+ settings frozen cheaper at the resource gate |

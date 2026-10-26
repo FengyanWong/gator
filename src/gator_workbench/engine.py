@@ -35,7 +35,7 @@ from uuid import uuid4
 from analog_optimizer.training.collect import random_proposal
 
 from . import bayes, checkpoints as ckpt
-from . import engine_commit, engine_finalization, engine_preparation, engine_recovery
+from . import engine_commit, engine_comparison, engine_finalization, engine_preparation, engine_recovery
 from .compile import compile_task
 from .engine_host import HostMaintenance
 from .engine_retention import Retention
@@ -48,7 +48,7 @@ from .storage.dataset import utcnow
 # re-exported: moved to run_lock.py by the refactoring (docs/plan-refactoring.md)
 from .run_lock import iso, RunLock
 # re-exported: moved to run_definitions.py by the refactoring (docs/plan-refactoring.md)
-from .run_definitions import INFRASTRUCTURE_FAILURES, decode_action, learner_experiment, saves_rl_model
+from .run_definitions import INFRASTRUCTURE_FAILURES, decode_action, learner_experiment, saves_rl_model, saves_state
 # re-exported: moved to engine_host.py by the refactoring (docs/plan-refactoring.md)
 from .engine_host import HOST_JOB_FOLDER, HOST_CLEANUP_CHUNK
 # re-exported: moved to engine_rows.py by the refactoring (docs/plan-refactoring.md)
@@ -237,7 +237,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             self.requested, self.stop_reason, self.forced = 'cancel', 'user_cancel', True
             write_json(self._condition_stop_file, dict(reason=self.stop_reason))
             self._event('control', command='cancel', note='forced cancellation')
-        elif name == 'checkpoint' and self.stop_reason is None and saves_rl_model(self.config):
+        elif name == 'checkpoint' and self.stop_reason is None and saves_state(self.config):
             # "Save now": taken like a periodic save, at the next boundary with nothing in flight (dispatch waits
             # for it), then the run goes on. A run that is already stopping saves by itself.
             self.checkpoint_due, self.checkpoint_kind = True, 'manual'
@@ -369,13 +369,19 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         else:
             op = 'step'
             group_ids = lane.info['group_ids']
-            if self.frozen:
+            initial = engine_comparison.next_initial(self)          # the archive comparison's common first designs
+            if initial is not None:
+                proposal, source, phase = initial, engine_comparison.INITIAL_SOURCE, engine_comparison.INITIAL_PHASE
+            elif self.frozen:
                 deterministic = self.config.run.frozen_action == 'deterministic'
                 proposal = self.learner.act([state['observation']], deterministic=deterministic)[0]
                 source, phase, policy_version = ('mean_policy' if deterministic else 'sampled_policy'), 'frozen_eval', self.learner.updates
             else:
                 pending = sum(1 for s in self.lane_state.values() if s['busy'] and s['busy']['op'] not in ('reset', 'reset_reused'))
-                if self.replay.insertions + pending < self.config.run.advanced.warmup_transitions:
+                if engine_comparison.is_search(self.config):         # T0/T+/M+: no random warm-up of their own
+                    proposal = engine_comparison.propose(self, evaluation_id)
+                    source, policy_version, phase = self.proposer.SOURCE, self.proposer.observations, 'search'
+                elif self.replay.insertions + pending < self.config.run.advanced.warmup_transitions:
                     proposal = random_proposal(self.rng, group_ids)
                     source, phase = 'random_warmup', 'warmup'
                 elif self.config.run.optimizer == 'bayes':
@@ -559,13 +565,16 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
                       previous_best_waveform=self.previous_best_waveform)
         if self.rehearsal is not None:
             result['rehearsal'] = self.rehearsal.state_dict()
+        search = engine_comparison.state(self)                     # the archive comparison's search (T0/T+/M+)
+        if search is not None:
+            result['comparison'] = search
         return result
 
     def _checkpoint(self, kind):
         self._run_pending_updates()                      # the save point holds every update so far (7.281)
         self._persist_waiting_rows()                     # and its data cursor covers their rows (7.283)
         self._clean_host()                               # the lanes are idle: the host's dropped job folders go (7.282)
-        if not saves_rl_model(self.config):
+        if not saves_state(self.config):
             self.checkpoint_due = False
             return None
         self.dataset.flush()
@@ -600,7 +609,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         write the very same state a second time, replay buffer and all. That save becomes the final one instead. Only
         for 'final' and only when nothing moved since: the same commit, learner updates and replay insertions."""
         last = getattr(self, 'last_checkpoint', None)
-        if (kind != 'final' or last is None or last.get('kind') != 'periodic' or not saves_rl_model(self.config)
+        if (kind != 'final' or last is None or last.get('kind') != 'periodic' or not saves_state(self.config)
                 or (self.manual_save and self.manual_save['state'] == 'waiting')):
             return None
         counters = last['counters']

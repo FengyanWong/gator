@@ -508,6 +508,38 @@ class RehearsalSettings(_Model):
     fraction: float = Field(0.5, gt=0, lt=1)
 
 
+class ComparisonObjective(_Model):
+    metric: str = Field(min_length=1, max_length=120)
+    orientation: Literal['minimize', 'maximize']
+    base_limit: float
+
+
+class ArchiveComparison(_Model):
+    """The matched archive comparison's settings of one run (docs/plan-bo-mobo-rl-archive-comparison.md): the common first
+    designs every method evaluates after its start design, the archived designs a transfer arm may use, and for the
+    Pareto arm its two objectives. Each file is pinned by its sha256 and checked against the compiled task at the start."""
+    initial_designs: Optional[str] = Field(None, max_length=1000,
+        description='JSON file of the common first designs (archive_compare.initial): proposals in [-1, 1] per group.')
+    initial_designs_sha256: Optional[str] = Field(None, pattern=r'^[0-9a-f]{64}$')
+    archive: Optional[str] = Field(None, max_length=1000,
+        description='JSON file of the archived designs a transfer arm imports (unit-cube points with their rewards under '
+                    'this run\'s goal view, or with every output for the Pareto arm). None: no archive (T0).')
+    archive_sha256: Optional[str] = Field(None, pattern=r'^[0-9a-f]{64}$')
+    objectives: list[ComparisonObjective] = Field(default_factory=list, max_length=2,
+        description='mobo only: the two objectives of the Pareto search, each a row of the goal view.')
+    energy_rule: bool = Field(False, description='mobo only: decision D6 (the flip-flop energy is missing unless all '
+                                                 'six delays are present).')
+    settings: dict = Field(default_factory=dict, description='Search settings that differ from the named version\'s own '
+                                                             '(recorded; for tests and the resource check).')
+
+    @model_validator(mode='after')
+    def pinned(self):
+        for name in ('initial_designs', 'archive'):
+            if (getattr(self, name) is None) != (getattr(self, f'{name}_sha256') is None):
+                raise ValueError(f'{name} and {name}_sha256 are given together or not at all')
+        return self
+
+
 class RunSettings(_Model):
     @model_validator(mode='before')
     @classmethod
@@ -545,11 +577,16 @@ class RunSettings(_Model):
         description='Stop dispatching once the scheduler confirms a design meeting all hard constraints.')
     frozen_action: Literal['deterministic', 'sampled'] = Field('deterministic',
         description='frozen mode only: mean action or a sample from the fixed policy.')
-    optimizer: Literal['sac', 'bayes'] = Field('sac',
+    optimizer: Literal['sac', 'bayes', 'turbo_archive', 'mobo'] = Field('sac',
         description='Who proposes the designs after the random warm-up (record 7.304). sac: the network\'s policy, trained '
                     'as the run goes. bayes: Bayesian optimization (a trust-region Gaussian process, gator_workbench.bayes) '
                     'on the same task, reward, lanes and budget - a comparison method: from scratch only, the network is '
-                    'neither asked nor trained, and the run saves no model worth loading.')
+                    'neither asked nor trained, and the run saves no model worth loading. turbo_archive and mobo: the '
+                    'archive comparison\'s TuRBO with archived data and Pareto MOBO (gator_workbench.archive_compare, '
+                    'run.comparison), which save their search with the run\'s save points and can be resumed.')
+    comparison: Optional[ArchiveComparison] = Field(None,
+        description='The archive comparison\'s settings of this run (docs/plan-bo-mobo-rl-archive-comparison.md); None '
+                    'for every other run.')
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     reward: RewardConfig = Field(default_factory=RewardConfig)
     conditions: ConditionsConfig = Field(default_factory=ConditionsConfig)
@@ -562,6 +599,19 @@ class RunSettings(_Model):
     continual_learning: bool = Field(False,
         description='Explicit opt-in to inherit weights fine-tuned on a previous test task. Default starts every '
                     'test task from the fixed source checkpoint.')
+
+    @model_validator(mode='after')
+    def valid_comparison(self):
+        if self.optimizer in ('turbo_archive', 'mobo'):
+            if self.comparison is None or self.comparison.initial_designs is None:
+                raise ValueError(f'run.optimizer "{self.optimizer}" (the archive comparison) needs run.comparison with its '
+                                 'common first designs')
+            if self.optimizer == 'mobo' and len(self.comparison.objectives) != 2:
+                raise ValueError('run.optimizer "mobo" needs exactly two run.comparison.objectives')
+        elif self.comparison is not None and (self.comparison.archive is not None or self.comparison.objectives):
+            raise ValueError('An archive or objectives in run.comparison are read only by the comparison\'s searches '
+                             '(turbo_archive, mobo)')
+        return self
 
     @model_validator(mode='after')
     def valid_rehearsal(self):
@@ -767,6 +817,8 @@ def _hashed(data):
             run.pop('model_label', None)
         if run.get('rehearsal') is None:
             run.pop('rehearsal', None)
+        if run.get('comparison') is None:        # the archive comparison's block: hashed as absent while unset
+            run.pop('comparison', None)
         reward = run.get('reward')
         run.pop('search', None)              # retired on 2026-10-06 (REMOVED_SEARCH_METHODS); at its default it was absent
         if run.get('optimizer') == 'sac':    # record 7.304: every configuration before it was a SAC run and never said so

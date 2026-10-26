@@ -10,7 +10,7 @@ import os
 import random
 import socket
 
-from . import best_design, checkpoints as ckpt, modes, network_inputs
+from . import best_design, checkpoints as ckpt, engine_comparison, modes, network_inputs
 from .budget import BudgetLedger
 from .lanes import ScratchLinked, open_lanes
 from .pdk import run_vocabulary
@@ -75,13 +75,16 @@ def prepare(engine, *, local_scratch):
     if run.optimizer == 'bayes' and (engine.mode != 'scratch' or engine.entry == 'resume'):
         raise ValueError('A Bayesian-optimization run (run.optimizer "bayes") is a from-scratch run and cannot be '
                          'resumed or started from a saved model: its search state is not saved. Start a new run.')
+    if engine_comparison.is_search(cfg) and engine.mode != 'scratch':
+        raise ValueError(f'A {run.optimizer} run (the archive comparison) starts its own search and loads no saved model: '
+                         'its mode is scratch (a resume continues it from its own save point).')
     engine.tracker = best_design.BestDesignTracker(engine.compiled.preference)
     engine.counters = dict(global_env_step=0, completion_index=0, episodes=0, baseline_done=False,
                          consecutive_failures=0, consecutive_infrastructure_failures=0,
                          infrastructure_failures=0, last_successful_evaluation_utc=None,
                          active_seconds_before=0.0, sum_job_runtime_seconds=0.0,
                          failures=0, retries=0, last_checkpoint_commit=0, launches_unconfirmed_after_crash=0,
-                         interrupted_evaluations=0, feasible_evaluations=0, valid_evaluations=0)
+                         interrupted_evaluations=0, feasible_evaluations=0, valid_evaluations=0, initial_given=0)
     engine.previous_best_waveform = None
     # A baseline run asked to calibrate (record 7.197): until its baseline evaluation is committed and valid, no other
     # lane starts and no random design is drawn (`_dispatch`, `_commit`). Any other run never waits.
@@ -92,6 +95,7 @@ def prepare(engine, *, local_scratch):
                                     graph=engine.compiled.graph, specs=engine.compiled.specs,
                                     feature_schema_version=input_options['feature_schema'].version,
                                     spec_schema_version=engine.compiled.spec_schema.version)
+    engine_comparison.prepare(engine)           # the archive comparison's first designs and search (a resume restores it)
     if engine.entry == 'resume':
         engine._restore(built['run_state'])
     if engine.ledger.uncertain_launches:

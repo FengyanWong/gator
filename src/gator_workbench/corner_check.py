@@ -100,6 +100,7 @@ def screening_corners(profile=None):
 
 
 def corner_record(corner) -> dict:
+    """Serialize a corner with its model section, temperature, and supply label."""
     return dict(asdict(corner), label=f'{corner.model_section.upper()}, {corner.temperature_c:g} °C, {corner.supply_v:g} V')
 
 
@@ -181,6 +182,7 @@ class Context:
         return 'synthetic' if self.mock else 'real'
 
     def source_name(self, instance_path, parameter_name):
+        """Return a recorded parameter's native source name or None when the parameter is absent."""
         value = self.compiled.graph.parameters.get(instance_path, {}).get(parameter_name)
         return None if value is None else (value.source_name or parameter_name)
 
@@ -264,6 +266,7 @@ def candidates(context: Context):
 
 
 def reference_candidate(context):
+    """Build the task-reference design and require an assignment covering exactly the writable parameters."""
     graph = context.compiled.graph
     values = {g.id: g.value for g in graph.parameter_groups if g.mutable}
     assignment = graph.assignments(values)
@@ -426,6 +429,7 @@ def launch(directory, *, allow_real=False) -> int:
 
 
 def request_stop(run_dir, check_id) -> dict:
+    """Write a stop request only when the selected corner check holds its run lock."""
     directory = check_directory(run_dir, check_id)
     if not RunLock.held(directory / 'control' / 'check.lock'):
         raise CheckRefused('This corner check is not running.', code='not_running')
@@ -436,6 +440,7 @@ def request_stop(run_dir, check_id) -> dict:
 
 # ================================================================================ reading
 def check_directory(run_dir, check_id) -> Path:
+    """Validate a corner-check identifier and locate its persisted request directory."""
     if not CHECK_ID.match(check_id or ''):
         raise CheckRefused('Not a corner check identifier.', code='bad_id')
     directory = Path(run_dir) / CHECK_DIR / check_id
@@ -455,6 +460,7 @@ def _state(directory, status):
 
 
 def list_checks(run_dir) -> list:
+    """List recorded corner checks with their current liveness, progress, and verdicts."""
     root = Path(run_dir) / CHECK_DIR
     rows = []
     if root.is_dir():
@@ -471,6 +477,7 @@ def list_checks(run_dir) -> list:
 
 
 def check_status(run_dir, check_id) -> dict:
+    """Return the selected corner check's request, status, result rows, and optional summary."""
     directory = check_directory(run_dir, check_id)
     request = read_json(directory / 'request.json')
     alive, status = _state(directory, read_dict(directory / 'status.json'))
@@ -514,6 +521,7 @@ def grade(result, evaluator, targets):
 
 
 class Worker:
+    """A worker for a persisted corner-check request, its results, restoration and final status."""
     def __init__(self, directory, *, allow_real=False):
         self.directory = Path(directory)
         self.request = read_json(self.directory / 'request.json')
@@ -565,6 +573,7 @@ class Worker:
 
     # ---------------------------------------------------------------- the check
     def run(self) -> str:
+        """Validate the authorized corner-check plan, execute its designs, and persist the final outcome."""
         final = 'failed'
         self.appender = JsonlAppender(self.directory / 'results.jsonl')
         try:
@@ -798,6 +807,7 @@ def execute(directory, *, allow_real=False, lock_fd=None) -> str:
 
 
 def main(argv=None):
+    """Run the corner-check worker with signal-driven stop requests and a completion exit status."""
     parser = argparse.ArgumentParser(description='Corner check worker: python -m gator_workbench.corner_check')
     parser.add_argument('--check-dir', type=Path, required=True)
     parser.add_argument('--allow-real', action='store_true',

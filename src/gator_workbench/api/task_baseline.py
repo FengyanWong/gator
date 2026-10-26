@@ -25,6 +25,7 @@ def _directory(task_key):
 
 
 def status(task_key):
+    """Read the saved baseline setup and refresh its state from the associated run when present."""
     try:
         result = read_json(_directory(task_key) / FILE, default=None)
     except ValueError:
@@ -37,6 +38,7 @@ def status(task_key):
 
 
 def configuration(task_key, *, profile_id=None, output_root=None):
+    """Build a single-evaluation nominal baseline configuration from the saved task."""
     starter = tasks.starter_config(task_key)
     if task_key.startswith('ngspice:'):
         # The imported deck stays unchanged. A current source is fixed in that deck;

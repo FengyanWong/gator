@@ -258,6 +258,7 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
 
 def _launch_and_control_routes(app: FastAPI, context: ApiContext):
     """Start, continue, the launch requests, the run commands and the run status."""
+    # Reject removed search methods and deduplicate the request before starting the configured run.
     @app.post('/api/runs/start')
     def start(body: StartBody):
         removed = schema.removed_search_method(body.config)
@@ -270,11 +271,13 @@ def _launch_and_control_routes(app: FastAPI, context: ApiContext):
         return once(body.request_id, 'start', lambda record: start_run(
             context, context.parse_config(body.config), body, baseline_only=body.baseline_only, record=record))
 
+    # Authorize the run directory and deduplicate its continuation request.
     @app.post('/api/runs/continue')
     def continue_run(body: ContinueBody):
         run_dir = context.run_path(body.run_dir)
 
         def work(record):
+            """Rebuild resume settings from the saved configuration before submitting the continuation launch."""
             config = schema.WorkbenchConfig.model_validate(read_json(RunLayout(run_dir).effective_config))
             config.run.mode, config.run.model_source.run_dir = 'resume', str(run_dir)
             if config.run.connection_profile_id:          # on whichever session of its connection is free (record 7.351)
@@ -296,6 +299,7 @@ def _launch_and_control_routes(app: FastAPI, context: ApiContext):
         lock; the press checks everything again."""
         return runs.continuation(context.run_path(run_dir), max_evaluations=max_evaluations)
 
+    # Send a supported run command and report a rejected command as a conflict.
     @app.post('/api/runs/command')
     def command(body: CommandBody):
         try:
@@ -303,6 +307,7 @@ def _launch_and_control_routes(app: FastAPI, context: ApiContext):
         except runs.RunRejected as exc:            # "Save now" on a run that cannot or need not save: said, not done
             fail(409, exc, code=exc.code)
 
+    # Read run state with the cached status of its configured connection.
     @app.get('/api/runs/status')
     def status(run_dir: str):
         path = context.run_path(run_dir)
@@ -330,6 +335,7 @@ def _corner_check_routes(app: FastAPI, context: ApiContext):
         pid = corner_check.launch(directory, allow_real=body.authorize_real_simulation and not request['mock'])
         return dict(check_id=request['check_id'], worker_pid=pid, simulations=request['simulations'], mock=request['mock'])
 
+    # Return one corner-check state after authorizing its run directory.
     @app.get('/api/runs/corner-check/status')
     def corner_check_status(run_dir: str, check_id: str):
         try:
@@ -352,6 +358,7 @@ def _corner_check_routes(app: FastAPI, context: ApiContext):
 
 def _run_data_routes(app: FastAPI, context: ApiContext):
     """A run's files, data tables, log, training series and file downloads."""
+    # List run files outside the work directory and lock files, including their total size.
     @app.get('/api/runs/files')
     def files(run_dir: str):
         path = context.run_path(run_dir)
@@ -364,6 +371,7 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
         return dict(run_dir=str(path), files=entries, total_bytes=sum(e['bytes'] for e in entries),
                     paths=RunLayout(path).subpaths())
 
+    # Return a bounded table view together with columns, row count and commit cutoff.
     @app.get('/api/runs/table')
     def table(run_dir: str, table: str, limit: int = Query(20, ge=1, le=500), tail: bool = True):
         if table not in TABLES:
@@ -387,6 +395,7 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
         except FileNotFoundError as exc:
             fail(404, exc)
 
+    # Stream only the size captured when an authorized run file is opened.
     @app.get('/api/runs/download')
     def download(run_dir: str, path: str):
         try:
@@ -402,6 +411,7 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
 
 def _export_routes(app: FastAPI, context: ApiContext):
     """Data-only exports: a run's CSV tables and package, the research aggregates."""
+    # Export one known run table as CSV and return its absolute and run-relative paths.
     @app.post('/api/runs/export-csv')
     def export_csv(body: ExportBody):
         if body.table not in TABLES:
@@ -416,6 +426,7 @@ def _export_routes(app: FastAPI, context: ApiContext):
         members = package_files(path, exclude_roots=('work', 'control', 'waveforms', 'checkpoints'), exclude_dirs=('_quarantine',))
         return zip_download(members, f'{path.name}__data.zip')
 
+    # Regenerate aggregate exports for the experiment that contains the selected run.
     @app.post('/api/aggregates/export')
     def export_aggregates(body: ExportBody):
         run_dir = context.run_path(body.run_dir)

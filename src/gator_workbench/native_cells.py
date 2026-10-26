@@ -47,6 +47,7 @@ def store_root() -> Path:
 
 
 def cell_dir(library, cell) -> Path:
+    """Return the local import directory after validating the library and cell names."""
     for value in (library, cell):
         if not isinstance(value, str) or not NAME.match(value):
             raise ValueError('library and cell must be plain Cadence names')
@@ -174,6 +175,7 @@ def load_import(library, cell) -> dict | None:
 
 
 def draft_graph(imported):
+    """Parse a recorded cell import with its stored device mapping."""
     from analog_optimizer.netlist.config import ParserConfig
     from analog_optimizer.netlist.spectre_parser import SpectreParser
     return SpectreParser(ParserConfig.from_file(imported['mapping_path'])).parse_file(imported['netlist_path'])

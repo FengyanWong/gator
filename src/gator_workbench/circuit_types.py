@@ -21,6 +21,7 @@ OPAMP_NETS = dict(VDD='supply', VINP='input', VINN='input', VOUT='output', VBIAS
 
 
 def core_instance(imported, graph) -> str:
+    """Identify the single core instance and require an exported device under its path."""
     try:
         testbench = json.loads((Path(imported['directory']) / native_cells.FILES['testbench_readback']).read_text())
     except (OSError, ValueError):

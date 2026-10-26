@@ -118,6 +118,7 @@ def parse_hierarchy(decoded):
 
 
 def fingerprint(snapshot) -> str:
+    """Return a deterministic digest of the serialized setup snapshot."""
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
 
 
@@ -540,6 +541,7 @@ def maestro_netlist(client, library, testbench, *, test, out):
 
 
 def setup_op(client, op, *, library, testbench, cells, setup=None, restore=(), test):
+    """Optionally write a Maestro setup and bindings, then return their current readback."""
     if op == 'write_setup':
         write_maestro(client, library, testbench, setup)
         write_bindings(client, library, setup['bindings'] or [], restore)      # None: nothing bound or unbound

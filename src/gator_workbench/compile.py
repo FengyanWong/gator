@@ -22,11 +22,13 @@ from .validation import resolve_leaders
 
 
 class CompileError(ValueError):
+    """A task configuration cannot be compiled into a consistent optimization contract."""
     pass
 
 
 @dataclass(frozen=True)
 class CompiledTask:
+    # The circuit graph, specification plan, variables, and objective preference shared by a run's lanes.
     graph: object                      # CircuitGraph with the configured parameter groups
     specs: tuple                       # tuple[MetricSpec, ...]
     spec_schema: object                # SpecSchema used by the goal encoder
@@ -158,6 +160,7 @@ def build_graph(config: WorkbenchConfig, graph):
 
 
 def build_specs(config: WorkbenchConfig):
+    """Compile target rows into canonical-unit specifications, threshold records, and objective preference."""
     from analog_optimizer.measurements.specs import MetricSpec
     specs, targets, preference = [], [], None
     for t in config.targets:
@@ -225,11 +228,13 @@ def _task_spec_schema(config: WorkbenchConfig):
 
 
 def reward_settings(config):
+    """Convert the configured reward fields into the optimizer's reward settings."""
     from analog_optimizer.measurements.specs import RewardSettings
     return RewardSettings(**config.run.reward.model_dump())
 
 
 def training_conditions(config):
+    """Return the configured verified training corners or reject an unsupported task."""
     if config.run.conditions.policy == 'off':
         return ()
     from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
@@ -242,6 +247,7 @@ def training_conditions(config):
 
 
 def compile_task(config: WorkbenchConfig, graph) -> CompiledTask:
+    """Compile graph and specification inputs and reject inconsistent registries or unevaluable equations."""
     compiled_graph, variables = build_graph(config, graph)
     specs, targets, preference = build_specs(config)
     schema = build_spec_schema(config)

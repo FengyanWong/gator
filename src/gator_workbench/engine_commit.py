@@ -36,6 +36,7 @@ class Outcome(NamedTuple):
 
 
 def commit(engine, lane, busy, result, *, timing_batch):
+    """Commit a completed evaluation and its learning rows before applying retention and advancing lane state."""
     state = engine.lane_state[lane.lane_id]
     completed_at = utcnow()
     engine.counters['completion_index'] += 1

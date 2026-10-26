@@ -28,6 +28,7 @@ BLOCK = 'directories'
 
 @dataclass(frozen=True)
 class Folder:
+    # A configurable directory's host side, default path, purpose, and write requirements.
     side: str
     label: str
     default: str
@@ -73,6 +74,7 @@ REMOTE_PATH = re.compile(r'^~?(?:/[A-Za-z0-9_.+\-]+)+$')      # characters that 
 
 
 class InvalidDirectory(ValueError):
+    """An invalid folder setting carrying its field key and a labeled diagnostic."""
     def __init__(self, key, message):
         super().__init__(f'{FIELDS[key].label if key in FIELDS else key}: {message}')
         self.key = key

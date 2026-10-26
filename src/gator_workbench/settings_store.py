@@ -38,6 +38,7 @@ def load_settings() -> dict:
 
 
 def save_settings(**updates) -> dict:
+    """Merge settings updates under the writer lock without overwriting an unreadable settings file."""
     with SETTINGS_LOCK:
         settings, problem = read_settings()
         settings.update(updates)
@@ -47,6 +48,7 @@ def save_settings(**updates) -> dict:
 
 
 def remembered_output_root() -> str:
+    """Return the remembered output root or the configured default."""
     return load_settings().get('output_root') or str(default_output_root())
 
 

@@ -6264,3 +6264,21 @@ index-DClPr_Oz.js, index-BUlLMzRS.css, index.html last. Server restarted for SIF
 20:24:23, the same 13 environment variables - beside two real CLI runs of another session's queue (their frozen runtime
 gator-runtime-bmr-f143d691, untouched). Windows reached it at once; a read-only live check: no console errors, no refused
 writes.
+
+### SIF-145 A run that goes on gives the keyboard to its tab even when its status comes back late (2026-10-27; from a flaky check)
+
+**Found.** `run_control_check` failed once (SIF-132's run) at "the focus goes to the Run status tab, since Continue... is off
+while the run goes on (SIF-90)", with the focus on the page's body; `training_tab_check` failed once in the full suite of
+2026-10-25. Four more runs of each, side by side, all passed: both are rare. The first is a race in the page, not in the
+check: closing the Continue form hands the keyboard back one frame later, to Continue... while it is still on; when the
+run's status comes back after that, Continue... turns off with the focus on it, and the browser drops the focus to the
+page's top - what SIF-90 set out to end.
+
+**Changed** (`frontend/src/panels/RunTabs.tsx`). A layout effect on the Continue reason: when Continue... turns off while it
+holds the keyboard, the keyboard moves on to the active tab button, before the browser's own focus fix-up for a button that
+turned disabled. The hand-back itself is unchanged. `training_tab_check`'s failing assertion is not known (the passing retry
+overwrote its log) and stays as it is.
+
+**Checked.** `tsc` clean; `run_control_check` 181 passed twice, `run_control_live_check` 23. A slip: these three runs went
+beside a real campaign run with WSL at 2 GB available and the host at 2 GB free, under this branch's 3 GB guard (the guard
+printed the numbers but did not stop the runs); they passed and are over, and nothing else was disturbed.

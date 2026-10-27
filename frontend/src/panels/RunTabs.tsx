@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';
 import { quantity, si, variables } from '../units';
@@ -175,6 +175,14 @@ export function StatusTab({ status, runDir, error, check, continueBlocked, refus
     requestAnimationFrame(() => (continueRef.current && !continueRef.current.disabled ? continueRef.current
       : document.querySelector<HTMLButtonElement>('footer .tabs button.active'))?.focus());
   };
+  // A run that went on turns Continue... off, and its status can come back after the hand-back above has already given
+  // Continue... the keyboard (a race run_control_check saw once): the browser would then drop the focus to the page's top.
+  // Before it can, the keyboard moves on to the tab button (branch record SIF-145). A layout effect, so it runs before the
+  // browser's own focus fix-up for a button that turned disabled.
+  useLayoutEffect(() => {
+    if (continueBlocked && document.activeElement === continueRef.current)
+      document.querySelector<HTMLButtonElement>('footer .tabs button.active')?.focus();
+  }, [continueBlocked]);
   // The run folder's path was copied by a click, for 1.5 s, as the Runs window says it (branch record SIF-54: it copied unsaid);
   // a refused copy says "could not copy" (branch record SIF-94). Keyed by the path: another run's folder says nothing.
   const copying = useCopied();

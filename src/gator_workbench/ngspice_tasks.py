@@ -55,6 +55,7 @@ def store_root() -> Path:
 
 
 def task_dir(name) -> Path:
+    """Validate a task name and return its local storage directory."""
     if not isinstance(name, str) or not NAME.match(name):
         raise NgspiceTaskError('The task name must be lowercase letters, digits and "_" (2-40 characters, starting with a letter)')
     return store_root() / name
@@ -87,6 +88,7 @@ def _include_root(entry) -> str | None:
 
 
 def parse_entry(entry, text) -> Parsed:
+    """Parse a saved task deck and apply its AnalogGym graph conversion when required."""
     parsed = parse_text(text, source=str(Path(entry['directory']) / FILES['netlist']) if entry.get('directory') else 'netlist.cir',
                       circuit_id=entry['name'], device_kinds=entry.get('device_kinds') or {}, include_root=_include_root(entry))
     if entry.get('analoggym'):
@@ -108,6 +110,7 @@ def check(text, *, device_kinds=None, include_root=None) -> dict:
 
 
 def summary(parsed: Parsed) -> dict:
+    """Describe a parsed deck's circuit, writable parameters, measurements and reported problems."""
     graph = parsed.graph
     kinds = {}
     for device in graph.devices:
@@ -177,6 +180,7 @@ def save(name, text, *, device_kinds=None, source_path=None, circuit_class='unsp
 
 
 def clean_kinds(device_kinds) -> dict:
+    """Normalize declared model kinds and reject unsupported kind names."""
     cleaned = {}
     for key, value in (device_kinds or {}).items():
         key, value = str(key).strip().lower(), str(value).strip().lower()
@@ -380,6 +384,7 @@ def _round(value, digits=6):
 
 
 def parameter_rows(parsed: Parsed) -> list:
+    """Build starter parameter rows with display units, ranges and default optimization choices."""
     rows = []
     for (device_id, parameter), sizable in sorted(parsed.sizables.items()):
         value = parsed.graph.parameters[device_id][parameter].value
@@ -404,6 +409,7 @@ def parameter_rows(parsed: Parsed) -> list:
 
 
 def probe_rows(parsed: Parsed) -> list:
+    """Build starter probe rows from the deck's recorded measurements."""
     rows = []
     for m in parsed.measurements:
         rows.append(dict(measurement_id=f'm_{m.name}', analysis=m.analysis, result_source='backend_profile', source_name=m.name,

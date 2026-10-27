@@ -26,6 +26,7 @@ ENV_ALLOWED_ROOTS = 'GATOR_WORKBENCH_ALLOWED_ROOTS'
 
 
 class PathNotAllowed(PermissionError):
+    """A requested output path is outside the allowed roots or violates their path rules."""
     pass
 
 
@@ -223,6 +224,7 @@ def append_local_log(name, record) -> None:
 
 
 class OutputRoots:
+    """Resolve and inspect output directories against the configured root allowlist."""
     def __init__(self, extra_roots=(), *, include_default=True):
         roots = [default_output_root()] if include_default else []
         roots += [Path(p) for p in extra_roots]
@@ -250,6 +252,7 @@ class OutputRoots:
                                f'{ENV_ALLOWED_ROOTS}).')
 
     def is_allowed(self, path) -> bool:
+        """Check whether path resolution succeeds within the configured output roots."""
         try:
             self.resolve(path)
             return True
@@ -341,6 +344,7 @@ class OutputRoots:
 
     # ---------------------------------------------------------------- mock isolation
     def data_root(self, output_root, *, mock: bool) -> Path:
+        """Resolve an output root and select its synthetic-data subdirectory when requested."""
         root = self.resolve(output_root)
         if MOCK_SUBDIR in root.parts[len(self._owning_root(root).parts):]:
             raise PathNotAllowed(f'Select the output root itself, not its {MOCK_SUBDIR}/ directory')
@@ -351,6 +355,7 @@ class OutputRoots:
 
 
 def is_mock_path(path) -> bool:
+    """Check whether a path contains the reserved synthetic-data directory component."""
     return MOCK_SUBDIR in Path(path).parts
 
 
@@ -361,6 +366,7 @@ def _existing_parent(path: Path) -> Path:
 
 
 def filesystem_type(path) -> str:
+    """Identify the filesystem of the deepest matching Linux mount, or return unknown."""
     path = Path(path).resolve()
     best = (-1, 'unknown')
     try:
@@ -375,6 +381,7 @@ def filesystem_type(path) -> str:
 
 
 def environment_label() -> str:
+    """Describe the Linux or WSL kernel from its release string when available."""
     try:
         release = Path('/proc/sys/kernel/osrelease').read_text().strip()
     except OSError:

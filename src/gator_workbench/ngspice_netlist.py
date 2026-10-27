@@ -484,6 +484,7 @@ def _with_name(value, source_name):
 
 
 def parse_file(path, **kwargs) -> Parsed:
+    """Parse a deck file using its directory as the default include root."""
     path = Path(path)
     return parse_text(path.read_text(errors='replace'), source=str(path), circuit_id=path.stem,
                       include_root=kwargs.pop('include_root', path.parent), **kwargs)

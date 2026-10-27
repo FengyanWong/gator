@@ -224,6 +224,7 @@ def merge_scans(scans):
 
 # ------------------------------------------------------------------------------------------ classifying one model
 def file_line(entry):
+    """Format a source entry as its basename and line number for diagnostics."""
     return f"{Path(entry['file']).name}:{entry['line']}"
 
 

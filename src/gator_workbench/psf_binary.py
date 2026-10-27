@@ -158,5 +158,6 @@ def read(data: bytes):
 
 
 def read_file(path):
+    """Decode an unswept binary PSF result from a file."""
     with open(path, 'rb') as handle:
         return read(handle.read())

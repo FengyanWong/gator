@@ -141,6 +141,7 @@ def _rows(part, state, module):
 
 
 def same_tensors(module, state):
+    """Check that saved and constructed states have matching ordered tensor names and shapes."""
     built = module.state_dict()
     return list(built) == list(state) and all(tuple(built[k].shape) == tuple(state[k].shape) for k in state)
 

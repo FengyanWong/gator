@@ -68,6 +68,7 @@ class NgspiceLink:
 
     @classmethod
     def from_settings(cls, settings) -> 'NgspiceLink':
+        """Validate connection settings and construct a local or SSH ngspice link."""
         settings = settings or {}
         kind = settings.get('kind')
         if kind not in ('ngspice_local', 'ngspice_ssh'):
@@ -102,6 +103,7 @@ def remote_run_command(program):
 class RealRunner:
     """The processes of a run. argv arrays only; no shell on this machine. `timeout` ends a job that hangs."""
     def local(self, program, deck: Path, timeout):
+        """Run a deck with a validated local executable and return its exit code and captured output."""
         located = shutil.which(program) if not os.path.isabs(program) else program
         if not located or not os.access(located, os.X_OK):
             raise FileNotFoundError(f'`{program}` is not an executable on the PATH of the run worker')
@@ -110,6 +112,7 @@ class RealRunner:
         return done.returncode, done.stdout or '', done.stderr or ''
 
     def remote(self, host, program, deck_text, timeout):
+        """Send a deck to the remote ngspice command over SSH and capture its result."""
         if not shutil.which('ssh'):
             raise FileNotFoundError('no `ssh` on the PATH of the run worker')
         done = subprocess.run(ssh_argv(host, remote_run_command(program)), input=deck_text, capture_output=True, text=True,
@@ -171,6 +174,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         return self.condition
 
     def validate_condition(self, condition):
+        """Accept an omitted or nominal condition and reject other deck conditions."""
         if condition is not None and condition != self.condition:
             raise UnsupportedCapability('The ngspice backend runs the deck as written: only its own nominal condition')
 
@@ -182,6 +186,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         return text
 
     def generate_netlist(self, work_root, *, condition=None):
+        """Write an instrumented candidate deck and record the parameters associated with its export."""
         self._check()
         self.validate_condition(condition)
         started = perf_counter()
@@ -219,6 +224,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         return graph
 
     def run_simulation(self, request):
+        """Evaluate an exported deck and classify its measurements, artifacts and simulator failures."""
         self._check()
         self.validate_condition(request.condition)
         started = perf_counter()

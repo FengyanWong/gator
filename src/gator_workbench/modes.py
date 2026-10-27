@@ -24,6 +24,7 @@ from .validation import native_count_columns
 
 
 def sac_config_from(advanced):
+    """Translate advanced run settings into the learner's SAC configuration."""
     from analog_optimizer.training.sac import SACConfig
     return SACConfig(gamma=advanced.gamma, tau=advanced.tau, learning_rate=advanced.learning_rate,
                      initial_alpha=advanced.initial_alpha, alpha_learning_rate=advanced.alpha_learning_rate,
@@ -32,6 +33,7 @@ def sac_config_from(advanced):
 
 
 def model_config_from(network):
+    """Translate network settings into the optimizer's model configuration."""
     from analog_optimizer.models import ModelConfig
     return ModelConfig(hidden_dim=network.hidden_dim, heads=network.heads, layers=network.layers,
                        encoder_type=network.encoder_type, structural_encoding=network.structural_encoding,
@@ -39,6 +41,7 @@ def model_config_from(network):
 
 
 def seed_everything(seed):
+    """Seed Python, NumPy, and PyTorch random generators from the run seed."""
     import numpy as np
     import torch
     random.seed(seed)
@@ -50,6 +53,7 @@ def runtime_options(config, vocabulary=None):
     # ngspice PDK subcircuits can expose additional multiplicity parameters.
     # The compiled action kind is already m/1; retain the native writeback names
     # as separate numeric columns. This does not add current/A action support.
+    """Build feature, reward, and condition settings for the configured network inputs."""
     schema = model_inputs.feature_schema(config.run.network, None if vocabulary is None else vocabulary.schema,
                                         native_counts=native_count_columns(config) if vocabulary is None else (),
                                         operating_points=config.run.network.operating_points)
@@ -84,12 +88,14 @@ class EncoderFreeze:
         self.parameters = [p for module in [learner.actor, *learner.critics] for p in module.encoder.parameters()]
 
     def apply(self):
+        """Freeze the retained encoder parameters and clear their pending gradients."""
         for parameter in self.parameters:
             parameter.requires_grad_(False)
             parameter.grad = None
 
 
 def current_contract(experiment, model_config, sac_config, spec_schema, vocabulary=None, runtime=None):
+    """Build a learner and return its current checkpoint compatibility contract."""
     return ckpt.contract_summary(_new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime))
 
 

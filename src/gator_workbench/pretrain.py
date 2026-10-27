@@ -30,6 +30,7 @@ DEFAULT_UPDATES = 20_000
 
 
 def identity(value):
+    """Hash a value's sorted JSON representation while rejecting nonfinite JSON numbers."""
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
@@ -72,6 +73,7 @@ def shared_registry(registries, overrides):
 
 @dataclass
 class Pool:
+    # A prepared offline archive pool with training splits, schemas, audit data and optional disk storage.
     training: dict
     validation: dict
     schema: object
@@ -336,6 +338,7 @@ class BalancedSampler:
         self.track_candidates = track_candidates
 
     def sample(self, size):
+        """Sample transitions while cycling through shuffled tasks to balance their contributions."""
         result = []
         for _ in range(size):
             if not self.pending:

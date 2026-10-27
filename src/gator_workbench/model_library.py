@@ -46,6 +46,7 @@ _INSTANCE = re.compile(r'^\s*([^\s(]+)\s*\(([^)]*)\)\s*([^\s=()]+)')
 
 
 class LibraryError(Exception):
+    """A model library cannot be read, parsed, or prepared under the requested contract."""
     pass
 
 

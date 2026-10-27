@@ -32,12 +32,14 @@ def store_root() -> Path:
 
 
 def profile_dir(name) -> Path:
+    """Validate a profile name and return its local storage directory."""
     if not isinstance(name, str) or not NAME.match(name):
         raise ProfileError('The profile name must be lowercase letters, digits and "_" (2-40 characters, starting with a letter)')
     return store_root() / name
 
 
 def list_profiles() -> dict:
+    """Read recognizable stored profile entries and attach their directory paths."""
     found = {}
     root = store_root()
     for entry_file in sorted(root.glob(f'*/{FILES["entry"]}')) if root.is_dir() else ():
@@ -94,6 +96,7 @@ HISTORY = 'history'
 
 
 def task_file(name) -> dict | None:
+    """Read a profile's task JSON, returning nothing when the name or file cannot be read."""
     try:
         return json.loads((profile_dir(name) / TASK_FILE).read_text())
     except (OSError, ValueError, ProfileError):

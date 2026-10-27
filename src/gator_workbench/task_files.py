@@ -69,6 +69,7 @@ _MAESTRO_PARTS = dict(initial_conditions=dict, analyses=dict, variables=dict, bi
 
 def build(*, name, revision, cell, copy, measurement, maestro, parameters, probes, specs, notes='', saved_utc=None,
           virtuoso=None) -> dict:
+    """Assemble a saved-task document from its revision, cell, measurement and editor-row data."""
     return dict(_help=HELP, format=FORMAT, name=name, revision=revision, saved_utc=saved_utc, cell=cell, copy=copy,
                 measurement=measurement, maestro=maestro, parameters=parameters, probes=probes, specs=specs,
                 notes=notes or '', virtuoso=virtuoso or {})
@@ -94,6 +95,7 @@ def draft(config, *, name, cell, copy, saved=None, extras=None, setup=None) -> d
 
 
 def render(data) -> str:
+    """Render a task document as indented Unicode JSON with a final newline."""
     return json.dumps(data, indent=2, ensure_ascii=False) + '\n'
 
 

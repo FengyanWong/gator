@@ -45,6 +45,7 @@ class Save:
         self.answer = None
 
     def mark(self, step, steps):
+        """Update the save-progress step and its start time under the shared lock."""
         with _lock:
             self._record.update(steps=list(steps), step=step, step_started=time.monotonic())
 

@@ -16,6 +16,7 @@ from .storage.dataset import utcnow
 
 
 def iso(value=None):
+    """Format the supplied time, or the current time, as a UTC ISO timestamp."""
     return (value or utcnow()).astimezone(timezone.utc).isoformat()
 
 
@@ -49,6 +50,7 @@ class RunLock:
         self._stream.flush()
 
     def release(self):
+        """Unlock and close this instance's held run-lock stream."""
         if self._stream is not None:
             fcntl.flock(self._stream, fcntl.LOCK_UN)
             self._stream.close()
@@ -67,6 +69,7 @@ class RunLock:
 
     @classmethod
     def adopt(cls, path, descriptor):
+        """Create a run lock around an inherited descriptor."""
         lock = cls(path)
         lock._stream = os.fdopen(descriptor, 'a+')
         return lock

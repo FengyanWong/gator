@@ -91,6 +91,7 @@ def learner_experiment(config: WorkbenchConfig, task, task_hash):
 
 
 class RunRejected(ValueError):
+    """A rejected run request carrying a machine-readable code and optional validation report."""
     def __init__(self, message, *, report=None, code='rejected'):
         super().__init__(message)
         self.report, self.code = report, code

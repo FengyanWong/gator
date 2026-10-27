@@ -62,6 +62,7 @@ let((lib lines cdf sp mp cv)
 
 
 def pdk_skill(library):
+    """Substitute a validated technology-library name into the PDK-readout SKILL program."""
     if not NAME.match(library or ''):
         raise ValueError('The technology library must be a plain Cadence name')
     return PDK_SKILL.replace('@LIBRARY@', library)
@@ -90,6 +91,7 @@ let((lib lines cdf sp mp)
 
 
 def ideal_skill(library=IDEAL_LIBRARY):
+    """Substitute a validated library name into the ideal-component SKILL program."""
     if not NAME.match(library or ''):
         raise ValueError('The library of ideal parts must be a plain Cadence name')
     return IDEAL_SKILL.replace('@LIBRARY@', library)

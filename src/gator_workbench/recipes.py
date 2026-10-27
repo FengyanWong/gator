@@ -91,6 +91,7 @@ def ring_metrics(time, traces, supply_current, *, supply, start, stop, contract)
 
 
 class GenericRingOscillatorProfile(GenericMosWidthProfile):
+    """A generated MOS-width profile using the ring-oscillator transient measurement recipe."""
     recipe = RING
 
     def __init__(self, **kwargs):
@@ -115,11 +116,13 @@ class GenericRingOscillatorProfile(GenericMosWidthProfile):
 
     @property
     def analysis_settings(self):
+        """Describe the ring recipe's transient timing and solver settings."""
         design = self.design
         return dict(version=1, recipe=RING, stop_s=number(design['tran_stop']), start_s=number(design['measurement_start']),
                     maxstep_s=number(design['tran_maxstep']), errpreset='conservative', reltol=1e-5, vabstol=1e-8, iabstol=1e-13)
 
     def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
+        """Build a ring-oscillator deck with initial conditions, selected saves and transient analysis."""
         from analog_optimizer.backends.virtuoso_bridge import build_deck_header
         design, settings = self.design, self.analysis_settings
         deck = model_library.apply(build_deck_header(structure, model_file, section, temperature_c=temperature_c),
@@ -230,6 +233,7 @@ class GenericMaestroProfile(GenericMosWidthProfile):
 
     @property
     def maestro(self) -> dict:
+        """Load and cache the stored Maestro deck after checking its format and required content."""
         if self._deck is None:
             try:
                 deck = json.loads(self._deck_file.read_text())
@@ -243,11 +247,13 @@ class GenericMaestroProfile(GenericMosWidthProfile):
         return self._deck
 
     def check_deck(self):
+        """Require a readable Maestro deck and return the checked profile."""
         self.maestro
         return self
 
     @property
     def analysis_settings(self):
+        """Describe the stored Maestro analyses, outputs and any operating-point readout."""
         deck = self.maestro
         settings = dict(version=1, recipe=MAESTRO, deck_sha256=deck['sha256'], analyses=list(deck['analyses']),
                         outputs=[dict(name=o['name'], expression=o['spectre_expression'], analysis=o['analysis']) for o in deck['outputs']])

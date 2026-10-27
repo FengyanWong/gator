@@ -84,12 +84,14 @@ class RealRunner:
         return shutil.which(program)
 
     def run(self, argv, *, timeout, stdin_text=None, cwd=None):
+        """Run an argument vector without a local shell and return its exit code and captured output."""
         feed = dict(input=stdin_text) if stdin_text is not None else dict(stdin=subprocess.DEVNULL)
         done = subprocess.run(list(argv), capture_output=True, text=True, timeout=timeout, shell=False, cwd=cwd, **feed)
         return done.returncode, done.stdout or '', done.stderr or ''
 
 
 def ssh_argv(host, remote_command):
+    """Build a noninteractive SSH invocation with the configured connection timeout."""
     return ['ssh', '-o', 'BatchMode=yes', '-o', f'ConnectTimeout={SSH_CONNECT_SECONDS}', '--', host, remote_command]
 
 

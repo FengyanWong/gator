@@ -420,6 +420,7 @@ def store_root() -> Path:
 
 
 def pdk_dir(pdk_id) -> Path:
+    """Validate a technology-library identifier and return its local PDK directory."""
     if not isinstance(pdk_id, str) or not NAME.match(pdk_id):
         raise PdkError('A PDK is named by its technology library: a plain Cadence name')
     return store_root() / pdk_id
@@ -438,6 +439,7 @@ def save_record(record) -> dict:
 
 
 def load_record(pdk_id, sha256=None) -> dict | None:
+    """Load a current or versioned PDK record only when its identity and format match."""
     try:
         directory = pdk_dir(pdk_id)
     except PdkError:
@@ -452,6 +454,7 @@ def load_record(pdk_id, sha256=None) -> dict | None:
 
 
 def list_pdks() -> list:
+    """Describe valid current PDK records in storage-directory order."""
     root = store_root()
     found = []
     for path in sorted(root.glob('*/pdk.json')) if root.is_dir() else ():
@@ -477,6 +480,7 @@ def describe(record, *, brief=False):
 
 
 def label(vocabulary) -> str:
+    """Describe either the standard vocabulary or a PDK vocabulary's size and version."""
     if vocabulary is None:
         return 'standard (8 generic kinds)'
     count = len(vocabulary['devices'])

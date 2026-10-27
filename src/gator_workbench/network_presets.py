@@ -382,6 +382,7 @@ def check(encoder, network, advanced) -> dict:
 
 
 def publication(encoder) -> dict:
+    """Validate and return the encoder's recorded starting network and advanced settings."""
     fields = PRESETS[encoder]['fields']
     return check(encoder, {f: fields[f]['value'] for f in NETWORK_FIELDS},
                  {f: fields[f]['value'] for f in ADVANCED_FIELDS})
@@ -449,6 +450,7 @@ def save(encoder, network=None, advanced=None) -> dict:
 
 
 def describe() -> dict:
+    """Describe available encoders, effective settings and their recorded preset evidence."""
     return dict(encoders=list(ENCODER_TYPES), default_encoder=DEFAULT_ENCODER,
                 attention_encoders=list(ATTENTION_ENCODERS), network_fields=list(NETWORK_FIELDS),
                 advanced_fields=list(ADVANCED_FIELDS), legacy_baseline=legacy_baseline(),

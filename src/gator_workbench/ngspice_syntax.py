@@ -28,6 +28,7 @@ class NetlistError(ValueError):
 
 @dataclass(frozen=True)
 class Token:
+    # A source token with its physical line and character offset in the deck.
     text: str
     line: int          # 1-based physical line of the deck
     column: int        # 0-based offset in that line
@@ -35,6 +36,7 @@ class Token:
 
 @dataclass(frozen=True)
 class Measurement:
+    # A parsed measurement with its analysis, suggested unit and original source text.
     name: str          # as ngspice prints it: lowercase
     analysis: str      # the workbench's analysis label of the Probes row
     unit: str          # a guess from the measured expression (V, A, dB, s, Hz, '1'); the row is editable
@@ -54,6 +56,7 @@ class Sizable:
 
 @dataclass
 class Parsed:
+    # A parsed deck retaining its circuit graph, source lines and metadata needed for rewriting.
     graph: CircuitGraph
     measurements: list
     analyses: list
@@ -69,6 +72,7 @@ class Parsed:
 
     @property
     def sha256(self) -> str:
+        """Hash the retained physical deck lines joined by newline characters."""
         return hashlib.sha256('\n'.join(self.lines).encode()).hexdigest()
 
     @property
@@ -78,6 +82,7 @@ class Parsed:
 
     @property
     def result_names(self) -> list:
+        """Return unique measurement names in their original order."""
         return list(dict.fromkeys(m.name for m in self.measurements))
 
     @property
@@ -104,6 +109,7 @@ _EXPRESSION_NUMBER = re.compile(r'(?<![\w.])((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)
 
 
 class Unresolved(ValueError):
+    """An expression could not be resolved within the supported SPICE value grammar."""
     pass
 
 

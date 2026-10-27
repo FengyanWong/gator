@@ -19,19 +19,23 @@ def shown_type():
     it to view a pool's designs), so that this storage does not import `pretrain`, which imports it (record 7.352)."""
     @dataclass(frozen=True)
     class ShownTransition(Transition):
+        # An already-validated transition expressed in transformed network-input coordinates.
         def validate(self):
+            """Skip physical-coordinate validation for an already-validated viewed transition."""
             return None
     return ShownTransition
 
 
 @dataclass(frozen=True)
 class TransitionRef:
+    # A disk-row reference carrying the transition identity checked during retrieval.
     index: int
     candidate_id: str
     reward: float
 
 
 class DiskTransitions:
+    """A compressed SQLite transition store with checksum checks and a bounded decoded cache."""
     def __init__(self, path=None, *, cache_size=32):
         self.connection = None
         self.temporary = tempfile.TemporaryDirectory(prefix='gator-offline-pool-') if path is None else None
@@ -44,6 +48,7 @@ class DiskTransitions:
         self.cache_size, self.cache = cache_size, OrderedDict()
 
     def append(self, transition):
+        """Store a compressed transition with its checksum and return its identity reference."""
         payload = zlib.compress(json.dumps(dict(
             viewed=type(transition) is not Transition, transition=codec.tree(vars(transition))),
             allow_nan=False, separators=(',', ':')).encode(), level=1)
@@ -52,6 +57,7 @@ class DiskTransitions:
         return TransitionRef(cursor.lastrowid, transition.candidate_id, transition.reward)
 
     def get(self, reference):
+        """Return a cached transition or decode a stored row after checking its checksum and identity."""
         if reference.index in self.cache:
             self.cache.move_to_end(reference.index)
             return self.cache[reference.index]
@@ -77,6 +83,7 @@ class DiskTransitions:
         self.connection.commit()
 
     def close(self):
+        """Close the store, clear its decoded cache and remove an owned temporary directory."""
         if self.connection is not None:
             self.cache.clear()
             self.connection.close()

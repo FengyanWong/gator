@@ -42,6 +42,7 @@ def load_model(directory):
 
 
 def proposals(learner, observations, *, best_recorded_reward, reward_rmse):
+    """Describe deterministic policy proposals and critic optimism without simulation or weight updates."""
     import torch
     from analog_optimizer.parameters.actions import ActionMapper
     rows = []

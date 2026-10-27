@@ -20,6 +20,7 @@ from .trajectory import TrajectoryLoader
 
 
 def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None):
+    """Publish a bounded training-only replay snapshot after verifying its offline split and source archives."""
     directory, output = Path(training_dir), Path(output)
     request, audit = read_json(directory / 'request.json'), read_json(directory / 'pool.json')
     if identity(request) != audit['request_sha256'] or identity(audit['split']) != audit['split_sha256']:
@@ -87,6 +88,7 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
 
 
 class Rehearsal:
+    """Mix a verified source replay pool into learner updates while retaining resumable sampling state."""
     def __init__(self, settings, learner, *, origin, seed, batch_size):
         self.learner, self.sha = learner, settings.pool_sha256
         path = Path(settings.pool_manifest)
@@ -130,15 +132,18 @@ class Rehearsal:
         self.sampler = BalancedSampler(dict(training), seed)
 
     def update(self, transitions, *, digests):
+        """Append a balanced sample of source transitions and their digests to a learner update."""
         source = self.sampler.sample(self.source_size)
         return self.learner.update(list(transitions) + source,
                                    digests=list(digests) + [self.digests[id(t)] for t in source])
 
     def state_dict(self):
+        """Capture the rehearsal pool identity and sampler state needed for continuation."""
         return dict(pool_sha256=self.sha, rng=self.sampler.rng.getstate(), pending=list(self.sampler.pending),
                     counts=dict(self.sampler.counts))
 
     def load_state_dict(self, state):
+        """Restore sampler state only when the checkpoint names the same rehearsal pool."""
         if state['pool_sha256'] != self.sha:
             raise ValueError('Resume rehearsal pool differs from checkpoint')
         self.sampler.rng.setstate(state['rng'])

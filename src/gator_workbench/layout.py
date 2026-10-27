@@ -48,6 +48,7 @@ PURPOSES = {
 
 @dataclass(frozen=True)
 class RunLayout:
+    # The standard paths and directories belonging to one persisted run.
     run_dir: Path
 
     def __post_init__(self):
@@ -68,11 +69,13 @@ class RunLayout:
         return self.run_dir.parents[2]
 
     def create(self):
+        """Create the standard run subdirectories without replacing existing contents."""
         for name in ('input_snapshot', 'data', 'best_design', 'checkpoints', 'waveforms', 'logs', 'exports',
                      'control', 'work'):
             getattr(self, name).mkdir(parents=True, exist_ok=True)
 
     def subpaths(self):
+        """Describe run artifact locations for persisted output metadata."""
         return dict(run=str(self.run_dir), raw_data=str(self.data), checkpoints=str(self.checkpoints),
                     replay='checkpoints/<checkpoint_id>/training_state.pt (embedded) + replay_buffer/manifest.json',
                     best_designs=str(self.best_design), csv_exports=str(self.exports),
@@ -122,6 +125,7 @@ def local_scratch(layout: RunLayout) -> Path | None:
 
 
 def new_experiment_dir(data_root: Path, experiment_name: str, experiment_id: str | None):
+    """Resolve an existing experiment or create a uniquely identified directory and report whether it is new."""
     data_root = Path(data_root)
     if experiment_id:
         directory = data_root / f'{experiment_name}__{experiment_id}'
@@ -135,6 +139,7 @@ def new_experiment_dir(data_root: Path, experiment_name: str, experiment_id: str
 
 
 def new_run_dir(experiment_dir: Path, task_name: str, mode: str, seed: int):
+    """Create a run directory beneath the experiment and return its layout and unique identifier."""
     run_id = uuid4().hex
     directory = Path(experiment_dir) / 'runs' / task_name / f'{mode}__seed{seed}__{run_id[:12]}'
     directory.mkdir(parents=True, exist_ok=False)
@@ -142,6 +147,7 @@ def new_run_dir(experiment_dir: Path, task_name: str, mode: str, seed: int):
 
 
 def code_provenance():
+    """Collect repository revision, worktree state, and optimizer-source identity without refreshing the Git index."""
     root = repo_root()
 
     def git(*args):
@@ -165,6 +171,7 @@ def code_provenance():
 
 
 def environment_versions():
+    """Record interpreter, host, and dependency versions, marking unavailable dependencies explicitly."""
     versions = dict(python=sys.version.split()[0], platform=platform.platform(), host=socket.gethostname(),
                     environment=environment_label(), executable=sys.executable, pid=os.getpid())
     for module in ('torch', 'torch_geometric', 'numpy', 'pyarrow', 'pydantic', 'networkx'):

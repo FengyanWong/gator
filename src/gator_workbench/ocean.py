@@ -94,17 +94,20 @@ class Names:
         return cell, path
 
     def net(self, name) -> str:
+        """Translate a hierarchical schematic net name into the simulator's mapped net name."""
         parts = name.strip('/').split('/')
         cell, path = self._walk(parts[:-1])
         net = self.nets.get(cell, {}).get(parts[-1], parts[-1])
         return self.hierarchy_delimiter.join(path + [net])
 
     def instance(self, name) -> str:
+        """Validate a hierarchical instance path and render it with the simulator's delimiter."""
         parts = name.strip('/').split('/')
         self._walk(parts)                                          # every level must be a known instance
         return self.hierarchy_delimiter.join(parts)
 
     def terminal(self, name) -> str:
+        """Translate a known instance terminal into a directly saved simulator current name."""
         parts = name.strip('/').split('/')
         if len(parts) < 2:
             raise NameError_(f'{name} names no terminal of an instance (/<instance>/<terminal>)')

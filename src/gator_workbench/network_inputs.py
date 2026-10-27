@@ -107,11 +107,13 @@ def reads_operating_points(network) -> bool:
 
 
 def reads_raw_operating_points(network) -> bool:
+    """Check whether dictionary or object settings request raw operating-point inputs."""
     get = (lambda k: network.get(k)) if isinstance(network, dict) else (lambda k: getattr(network, k, None))
     return bool(get('operating_points'))
 
 
 def any_transfer(network) -> bool:
+    """Check whether any transferable network-input representation is enabled."""
     settings = transfer_settings(network)
     return (settings['spec_input'] in ('set', 'structured') or settings['size_features'] == 'pdk_relative'
             or settings['device_model_features'] or second_build(settings))
@@ -175,6 +177,7 @@ class BenchSource:
 
 @dataclass(frozen=True)
 class GraphBench:
+    # Graph-derived ground, supply and source facts used to construct transferable bench features.
     ground: frozenset = frozenset()
     supply_source: str | None = None
     supply_net: str | None = None
@@ -450,6 +453,7 @@ class NetworkView:
 
     # ---- observations
     def view(self, observation):
+        """Return an observation with its graph transformed into the configured network view."""
         return replace(observation, graph=self.view_graph(observation.graph, getattr(observation, 'operating_points', None)))
 
     def derive(self, digest):
@@ -457,6 +461,7 @@ class NetworkView:
         return hashlib.sha256(self.key.encode() + digest).digest()
 
     def view_known(self, observation, digest):
+        """Reuse or cache a viewed observation by its replay digest."""
         with self._lock:
             found = self._seen.get(digest)
             if found is not None:
@@ -478,9 +483,11 @@ def learner_class(vocabulary=None, view=None):
     from analog_optimizer.training.sac import SACLearner
 
     class NetworkViewLearner(SACLearner):
+        """A SAC learner that applies the configured network view before batching observations."""
         network_view = view
 
         def batch(self, observations, *, digests=None):
+            """Batch viewed observations with derived digests when replay identities are available."""
             if digests is None:
                 return super().batch([view.view(o) for o in observations])
             digests = list(digests)
@@ -531,6 +538,7 @@ def view_for(config, vocabulary=None):
 
 
 def read_run_record(run_dir):
+    """Read the run's network-input record only when its stored format is recognized."""
     record = read_json(Path(run_dir) / RUN_FILE, default=None)
     return record if isinstance(record, dict) and record.get('format') == FORMAT else None
 

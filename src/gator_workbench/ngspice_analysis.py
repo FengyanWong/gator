@@ -7,6 +7,7 @@ COMMANDS = ('op', 'dc', 'ac', 'tran', 'noise', 'pz', 'sens', 'disto', 'tf')
 
 
 def instrument(text):
+    """Insert command markers before analysis-related commands in ngspice control blocks."""
     lines, control = [], False
     for line in text.splitlines(keepends=True):
         token = line.strip().split(maxsplit=1)
@@ -22,6 +23,7 @@ def instrument(text):
 
 
 def counts(stdout, *, complete):
+    """Summarize reached command markers and report an analysis total only when it is known."""
     reached = Counter(re.findall(rf'(?m)^{PREFIX} ({"|".join((*COMMANDS, "run", "resume", "source"))})\s*$', stdout))
     # run/resume may launch several analyses. Never equate one such command to one analysis.
     known = bool(reached) and not any(k in reached for k in ('run', 'resume', 'source'))

@@ -12,6 +12,7 @@ from .ngspice_netlist import read_results
 
 
 def probes(graph):
+    """Map supported MOS devices to ngspice operating-point expressions and output labels."""
     result = {}
     for index, device in enumerate(graph.devices):
         if device.kind not in ('nmos', 'pmos'):
@@ -34,6 +35,7 @@ def probes(graph):
 
 
 def instrument(text, graph):
+    """Add operating-point readout commands without changing the deck's print precision."""
     readings = probes(graph)
     if not readings:
         return text
@@ -56,6 +58,7 @@ def instrument(text, graph):
 
 
 def read(text, graph):
+    """Read finite MOS operating-point values and derive region codes when the required values exist."""
     result = {}
     for name, quantities in probes(graph).items():
         found = read_results(text, [label for label, _ in quantities.values()])

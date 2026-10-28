@@ -47,6 +47,7 @@ def store_root() -> Path:
 
 
 def copy_library_name(library) -> str:
+    """Build and validate the derived working-copy library name."""
     name = f'{library}{bridge_setup.SUFFIX}'
     if not native_cells.NAME.match(name) or len(name) > MAX_LIBRARY:
         raise CopyError(f'{library} is too long a library name to add "{bridge_setup.SUFFIX}" to')
@@ -54,6 +55,7 @@ def copy_library_name(library) -> str:
 
 
 def record_dir(library, cell) -> Path:
+    """Return a working-copy record directory after validating the library and cell names."""
     return store_root() / _checked(library) / _checked(cell)
 
 
@@ -91,6 +93,7 @@ def _json_or_empty(path) -> dict:
 
 
 def own_libraries() -> dict:
+    """Read the recorded working-copy library ownership mapping."""
     return _json_or_empty(store_root() / LIBRARIES)
 
 
@@ -335,6 +338,7 @@ SECTION = 'tt'                                                               # t
 
 
 def verified(library, cell) -> dict:
+    """Require a recorded working copy that passed its stored verification checks."""
     record = load(library, cell)
     if record is None:
         raise CopyError('This cell is not yet the one the task flow works in: read it into the workbench and confirm that it is a copy '
@@ -398,12 +402,14 @@ def claim(library, cell, task):
 
 
 def release(library, cell, task):
+    """Remove a working-copy claim only when it belongs to the specified task."""
     record = load(library, cell)
     if record and record.get('claimed_by') == task:
         write_json(record_dir(library, cell) / RECORD, {k: v for k, v in record.items() if k != 'claimed_by'})
 
 
 def task_copy_dir(task) -> Path:
+    """Return the local task-copy directory after validating the task name."""
     return store_root() / '_tasks' / _checked(task)
 
 

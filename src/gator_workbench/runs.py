@@ -703,6 +703,7 @@ def spawn_detached(module, args, lock, log_path) -> int:
 
 
 def send_command(run_dir, command: str):
+    """Validate a run-control request and publish its command record for the worker."""
     if command not in ('pause', 'stop', 'cancel', 'checkpoint'):
         raise ValueError('command must be pause, stop, cancel or checkpoint')
     layout = RunLayout(Path(run_dir))
@@ -752,6 +753,7 @@ def worker_started(run_dir, since=0.0) -> bool:
 
 
 def run_status(run_dir) -> dict:
+    """Read run status and report a missing worker as an interruption when the recorded state was live."""
     layout = RunLayout(Path(run_dir))
     status = read_dict(layout.status)
     alive = RunLock.held(layout.run_lock)

@@ -7638,3 +7638,95 @@ The PDK-name grep of the plan's rule 5 finds nothing in the changed files.
 one wrap), longest line 365 -> 312, comment lines 260 -> 262 (why the cast is true), any-casts 1 -> 0; all files 16,543
 -> 16,643 lines, comment lines 3,376 -> 3,378, any-casts 41 -> 40. The 100 added lines are the wraps and the cast's two
 comment lines; single-letter names 193 -> 26, lines over 160 columns 62 -> 4.
+
+### SIF-161 Readability F3: the remaining any-casts name their real type (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `femetrics.py` counted 40 any-casts in the page's TypeScript (its pattern: `: any` or `as any`). 24 were real
+`any` types in 13 files outside the plan's AVOID list, and 2 more are ones its pattern does not see, `[string, any]` in
+CircuitBrowser.tsx (a native instance's and a device's parameters). What they stood for: 3 times a run of the run list
+(format.ts's `runTitle`, `runTask` and `runTaskOrBlank`), twice a parameter's value as the circuit read sends it, and 21
+times a failure - 12 caught errors (`catch (e: any)`: launch.ts 3, useRequest's read in requests.ts, runWindowActions.ts
+2, CornerCheck.tsx, Folders.tsx 2, MatchedDevices.tsx 2, taskChoice.ts), 3 rejection handlers (`(e: any) =>` of the
+Virtuoso window's chain step, of the ngspice window's saved deck and of the graph view's drawing package), the 5 helpers
+that word one (`nativeProblem` in CircuitBrowser.tsx, `listProblem` in Pdk.tsx, `starterProblem` in taskChoice.ts,
+`fail` in RunControl.tsx, `problem` in Ngspice.tsx) and `useAsyncAction`'s `onError: (error: any, name: string) => void`
+(requests.ts). Of the failures, 5 are only handed on (to api.ts's `plainError` and `problemText`, which take anything,
+or to `problem`), 6 have their message read, and 10 read an ApiError's `status` or `detail` (`useAsyncAction`'s through
+TaskSave.tsx's handler, which reads `detail`). Every value that can reach them is an Error: a request fails with
+api.ts's ApiError when the backend refused, with a TypeError when no answer came (a failed fetch), with
+readWithDeadline's Error at its deadline or with an abort's DOMException (an Error in the browser, and in TypeScript's
+DOM types); every `throw` and `reject` of frontend/src throws an Error or passes one on, every `abort` gives no reason
+or the deadline's Error, and the code that applies an answer throws TypeErrors at worst; a dynamic import that fails
+rejects with a TypeError. The other 16 stay: 7 in AVOID files (App.tsx's `rejected(e: any)`, api.ts's `problemText`,
+`schemaProblem` and `plainError`, Agent.tsx's caught error and Left.tsx's two - where also VirtuosoWindow.tsx's
+`[string, any]` and api.ts's `Json = any` itself stay, which the pattern does not count), 5 in the browser checks'
+fixtures (`scripts/fixtures/edit_state.tsx` 2, `request_lifecycle.tsx` 3: check scripts, not this package's), and 4
+words of comments and page text ("has any more", "as any choice", "has any value", the ngspice window's "any numeric
+value").
+
+**Changed** (13 files: `format.ts`, `launch.ts`, `requests.ts`, `page/runWindowActions.ts`, and in `panels/`
+`CircuitBrowser.tsx`, `CircuitGraphView.tsx`, `CornerCheck.tsx`, `Folders.tsx`, `MatchedDevices.tsx`, `Ngspice.tsx`,
+`Pdk.tsx`, `RunControl.tsx`, `taskChoice.ts`; types and comments only - no name, statement, expression or value import
+is added, moved or removed). A run: `RunSummary`, contracts.ts's type of a row of the run list (`api.runs` gives it),
+which every caller passes - Load run's and New run like's `TaskRunSummary`, the Runs window's and the run brief's rows,
+the header's run, the Training tab's runs; `runTaskOrBlank` takes `RunSummary | null | undefined`, as its `?.` reads it
+(the Training tab's shown run may not be listed). `runTask` and `runTaskOrBlank` now say they return a `string`, where
+they returned `any`. A parameter's value: `Json`, the project's word for untyped JSON, as CornerCheck.tsx's
+`[string, Json]` says it. A failure: TypeScript gives a catch clause no type but `any` or `unknown`, so `catch (e: any)`
+-> `catch (e)`, `unknown` under the frontend's `strict` (as SIF-149, SIF-150 and SIF-160 did), and a read of it casts
+where it reads. Handed on only: no cast (Load run's, Matched devices' two), and `unknown` for Ngspice's `problem` and
+its saved deck's handler. Its message read: `(e as Error).message` (useRequest's read, New run like, Corner check's
+start, the folders' read and save), and `Error` for the drawing package's handler. An ApiError's `status` or `detail`
+read: `Error & Partial<ApiError>` - an Error, with an ApiError's `status` and `detail` when the backend refused, each
+optional and `undefined` on any other Error, as the code reads them (with `?.`, or compared with a number) - as the
+parameter type of `nativeProblem` and the chain step's handler, `listProblem`, `starterProblem`, `fail` and
+`useAsyncAction`'s `onError` (whose catch casts once; of its 8 callers' handlers, TaskSave.tsx's reads `detail` with it
+and the 7 others hand it on), and as the cast at the reads in launch.ts's 3 catches (4 reads) and in taskChoice's (2
+calls of `starterProblem`). `?.`, `??` and every other token stay: `e?.detail` reads
+`(e as Error & Partial<ApiError>)?.detail`. Why each cast and each Error type is true is said beside it, in a comment or
+in `useAsyncAction`'s doc comment (the drawing package's handler had its comment: a failed fetch). `type ApiError` joins
+the imports from api.ts of 5 files (requests.ts, CircuitBrowser.tsx, Pdk.tsx, RunControl.tsx, taskChoice.ts; launch.ts
+imports the class already), and format.ts imports `type { RunSummary }`. F5 only where the change took a line past 160
+columns: launch.ts's refusal of an earlier launch (194 before) wraps between two properties, Pdk.tsx's `listProblem`
+(175) before its `:`, New run like's refusal (168, its catch now a block) before its `:`, taskChoice's load error (168
+with the cast) after its `if (stillHere())`, and launch.ts's trailing comment "continued from elsewhere: show what is
+true" went above its line (164 with the casts); Corner check's one-line catch is a block of three lines, so that its
+comment stands beside it. No other line wraps: F5 is not this package's part.
+
+**Checked.** `npx tsc --noEmit -p .` exit 0 (TypeScript 5.9.3): the new types hold at every caller - the 8 handlers
+given to `useAsyncAction`, Left.tsx's `nativeProblem(e)`, the callers of the three format.ts helpers. `npx vite build`
+into a temporary folder: byte for byte the base build's (HEAD `8b4676c`, SIF-160's), all five files -
+`index-B18ikkku.js`, `index-BUlLMzRS.css`, the uPlot and cytoscape chunks and `index.html` - so the page runs the base's
+code exactly. Per file, without a browser (`emit_tree.mjs`, with its inputs and outputs in `out-F3-rest/static`): each
+of the 13 files and its HEAD version compiled as the frontend's tsconfig compiles it (TypeScript's transpileModule:
+types stripped, ES2020, react-jsx, comments removed), and the emitted JavaScript parsed again: the same syntax tree and
+the same tokens, each with its exact text, in all 13 (33,742 tokens); the emitted text of 3 files differs by one line
+break each, which TypeScript's printer keeps from the wraps (launch.ts, runWindowActions.ts, Pdk.tsx). A negative
+control, 5 mutated copies (a default `{}` -> `[]`, a space inside a template, `404` -> `405`, `??` -> `||`, an empty
+block before a wrapped statement): the comparison calls all 5 DIFFERENT, and the unmutated file beside them IDENTICAL.
+DOM identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory
+guard, WSL 14 GB available and the host 7 GB free): "all 112 checks passed", 56 of 56 compared files identical (66
+written), at its first run, into `out-F3-rest/dom`. Browser checks, one lane (WSL 14 GB, host 6 GB), on the build the
+DOM run served, the 19 that drive the windows and panels this change types: `run_control_check` 181,
+`connection_panel_check` 101, `run_list_check` 185, `virtuoso_source_check` 123, `task_save_check` 93,
+`model_chooser_check` 145, `task_rows_check` 57, `working_copy_check` 35, `launch_recovery_check` 20, `task_list_check`
+106, `ngspice_window_check` 47, `task_run_check` 39, `save_now_check` 29, `graph_view_check` 72, `pdk_check` 47,
+`matched_devices_check` 38, `request_lifecycle_check` 25 (Vite's source preview: the changed source itself),
+`corner_check_check` 42 and `training_tab_check` 139 passed, each its count in this log (1,524 checks); three of them
+(`run_list_check`, `task_list_check`, `task_run_check`) import the new format.ts under Node, which strips its
+`import type`. `training_tab_check` failed one check in the batch, "a chart redraws at most once a second while results
+arrive" (6 redraws, 3 of one chart within a second), and passed 139 when run alone just after: the race SIF-159 traced,
+which the base build loses too - a flake, on a build that is the base's byte for byte. `corner_check_check` ran after
+the batch, on its own: the batch's `--only corner_check` named no script (the runner adds `_check` only to a name that
+does not end in it). The writers `export_check`, `run_control_live_check` and `calibration_check`, which start MOCK
+runs, were left out while the campaign ran. The PDK-name grep of the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after; lines and longest block per file): format.ts 155 -> 156 (the import), 6
+-> 6; launch.ts 368 -> 374, 106 -> 111 (`useLauncher`: comments and a wrap); requests.ts 91 -> 94, 11 -> 11;
+page/runWindowActions.ts 152 -> 155, 118 -> 121; CircuitBrowser.tsx 164 -> 165, 73 -> 74; CircuitGraphView.tsx 440 ->
+440, 71 -> 71; CornerCheck.tsx 180 -> 182, 141 -> 143; Folders.tsx 122 -> 122, 43 -> 43; MatchedDevices.tsx 125 -> 125,
+85 -> 85; Ngspice.tsx 172 -> 172, 2 -> 2 (the pattern's longest block: the component's signature spans its lines);
+Pdk.tsx 234 -> 236, 64 -> 64; RunControl.tsx 272 -> 273, 125 -> 126; taskChoice.ts 92 -> 94, 70 -> 72. Any-casts in the
+13 files 25 -> 1 (Ngspice.tsx's page text); all files 16,643 -> 16,664 lines, comment lines 3,378 -> 3,390, any-casts 40
+-> 16. The 21 added lines are 12 comment lines (one of them launch.ts's comment moved above its line), 8 lines of wraps
+and format.ts's import; lines over 160 columns in the 13 files 142 -> 139.

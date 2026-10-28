@@ -4,7 +4,7 @@ export const RELOAD_SAVED_REQUEST = 'gator-reload-saved-request';
 // Choosing a registered task in the Tasks window (plan-refactoring C9, out of Left.tsx's CircuitPanelBody): its saved rows
 // replace the editors' rows - after the user agreed to drop edits -, as one Undo step, and the task load the Runs window uses.
 import { MutableRefObject, useEffect, useState } from 'react';
-import { api, Json } from '../api';
+import { api, type ApiError, Json } from '../api';
 import { inScope, type Newest, useNewest } from '../newest';
 import type { CircuitReference, TaskStarter, TaskSummary, WorkbenchConfig } from '../contracts';
 import { noteRowsFrom } from '../store';
@@ -31,7 +31,8 @@ export function useTaskChoice({ ref, tasks, latest, setConfig, request, followCo
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
   const following = useNewest();
   useEffect(() => () => { following.drop(); }, []);
-  const starterProblem = (e: any, taskId: string) => (e.status === 404 && taskId.startsWith('real:')
+  // `e`: a failed task load, an Error: an ApiError when the backend refused, with its `status`; another when no answer came.
+  const starterProblem = (e: Error & Partial<ApiError>, taskId: string) => (e.status === 404 && taskId.startsWith('real:')
     ? 'This backend is older than the page and has no starting rows for a real task yet: restart it (gator_workbench.cli serve).' : e.message);
   const goneMock = (taskId?: string | null) => !!taskId && taskId.startsWith('synthetic:') && tasks.length > 0 && !tasks.some(t => t.task_key === taskId);
   const removedMock = ref.source === 'registered_task' && goneMock(ref.task_id);
@@ -80,9 +81,10 @@ export function useTaskChoice({ ref, tasks, latest, setConfig, request, followCo
       if (currentTask === taskId) load(nextCircuit);
       setTaskRows({ task: taskId, state: 'brought', starter });
       return { loaded: true };
-    } catch (e: any) {
-      if (stillHere()) setTaskLoadError(`Could not load ${taskId}. The current task and rows are unchanged. ${starterProblem(e, taskId)}`);
-      return { loaded: false, why: `${taskId} could not be read: ${starterProblem(e, taskId)}` };
+    } catch (e) {                // an Error: the saved rows' read failed (above), or the code that applies them threw
+      if (stillHere())
+        setTaskLoadError(`Could not load ${taskId}. The current task and rows are unchanged. ${starterProblem(e as Error & Partial<ApiError>, taskId)}`);
+      return { loaded: false, why: `${taskId} could not be read: ${starterProblem(e as Error & Partial<ApiError>, taskId)}` };
     } finally {
       if (mine()) setTaskLoading(null);
     }

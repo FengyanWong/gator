@@ -1,7 +1,7 @@
 // The circuit as read (record 7.85, out of Left.tsx): the Virtuoso window's library -> cell -> schematic chain and its
 // native schematic, and the circuit's hierarchy and instances with Add to Parameters (branch record SIF-104).
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
-import { api, gateText, Json, OLDER_BACKEND } from '../api';
+import { api, type ApiError, gateText, Json, OLDER_BACKEND } from '../api';
 import { kindUnit, si } from '../units';
 import { plural, short } from '../format';
 import { Icon } from './Icons';
@@ -34,8 +34,9 @@ export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, c
   // gated, read-only, zero-cost bridge call. Refresh repeats the chain, e.g. after the link came up.
   const browsing = enabled && !!profileId;
   // `then`: what to press once the link is up - Refresh after a step of the chain below, the read's own button again after a
-  // read (Left.tsx importCell) - said beside the window's Connection... button (branch record SIF-108).
-  const nativeProblem = (e: any, then = 'then try again') => {
+  // read (Left.tsx importCell) - said beside the window's Connection... button (branch record SIF-108). `e`: the step's or the
+  // read's failure, an Error: an ApiError when the backend refused, with its `status` and `detail`; another when no answer came.
+  const nativeProblem = (e: Error & Partial<ApiError>, then = 'then try again') => {
     const gate = e.detail?.gate, outdated = e.status === 404 || e.status === 405 || (e.status === 422 && /work_here/.test(e.message ?? ''));
     const said = outdated ? OLDER_BACKEND : gate ? gateText(gate, then) : e.message;
     setNativeError(said); setGateSaid(gate && !outdated ? said : null);
@@ -44,7 +45,7 @@ export function useVirtuosoBrowser(enabled: boolean, profileId: string | null, c
     let live = true;
     setListing(step); setNativeError(null);
     call().then(answer => { if (live) done(answer); })
-      .catch((e: any) => { if (live) nativeProblem(e, 'then press Refresh'); })
+      .catch((e: Error & Partial<ApiError>) => { if (live) nativeProblem(e, 'then press Refresh'); })
       .finally(() => { if (live) setListing(current => (current === step ? null : current)); });
     return () => { live = false; setListing(current => (current === step ? null : current)); };
   };
@@ -100,7 +101,7 @@ export function NativeSchematic({ native, open, setOpen }: { native: Json; open:
     <details open={open} onToggle={e => setOpen(e.currentTarget.open)}><summary>Native schematic {native.library}/{native.cell} ({plural(native.instance_count, 'instance')}, as read)</summary>
       <p className="warn">Requires confirmation: {native.requires_confirmation.join('; ')}</p>
       <table className="grid small"><tbody>{native.instances.map((i: Json) => <tr key={i.instance_path}><td>{i.instance_path}</td><td>{i.master.library}/{i.master.cell}</td>
-        <td>{Object.entries(i.parameters).map(([k, v]: [string, any]) => `${k}=${v.raw}`).join('  ')}</td></tr>)}</tbody></table></details>);
+        <td>{Object.entries(i.parameters).map(([k, v]: [string, Json]) => `${k}=${v.raw}`).join('  ')}</td></tr>)}</tbody></table></details>);
 }
 
 /** A size's value as the editors write it, "1.2 um" (branch record SIF-62, as record 7.208): the raw number read "w=0.0000012"
@@ -141,7 +142,7 @@ export function CircuitDetails({ circuit, open, setOpen, adding, children }: { c
       <details><summary>Instances and parameters</summary>
         <table className="grid small"><thead><tr><th>Instance</th><th>Kind</th><th>Parameters</th></tr></thead>
           <tbody>{circuit.summary.devices.map((d: Json) => <tr key={d.instance_path}><td>{d.instance_path}</td><td>{d.kind}</td>
-            <td>{Object.entries(d.parameters).map(([k, v]: [string, any], i) => {
+            <td>{Object.entries(d.parameters).map(([k, v]: [string, Json], i) => {
               const value = sizeValue(k, v), row = rowOf.get(`${d.instance_path}\n${k}`);
               return <Fragment key={k}>{i > 0 && ', '}<span className="size">{`${k} = ${value}`}{adding && typeof v.value === 'number'
                 && <button className="add-size" aria-label="Add to Parameters" disabled={row !== undefined} onClick={() => {

@@ -88,7 +88,7 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
     setMessage(null);
     let point: SavePoint | null, since: string | null;
     try { [point, since] = await Promise.all([endModel(row), savedSince(row)]); }
-    catch (e: any) {
+    catch (e) {
       return stale() ? SILENT : refuse('error', `Run ${runTitle(row)} was not loaded: its model could not be read (${plainError(e)}). Nothing changed.`);
     }
     if (stale()) return SILENT;
@@ -110,7 +110,10 @@ export function useRunWindowActions({ config, setConfig, runs, taskKey, followTa
     setMessage(null);
     let settings: RunSettings | null = null;
     try { settings = migrateConfig(await api.runConfig(row.run_dir))?.run ?? null; }
-    catch (e: any) { return stale() ? SILENT : refuse('error', `New run like ${runTitle(row)}: its configuration could not be read (${e.message}). Nothing changed.`); }
+    catch (e) {                 // an Error: an ApiError when the backend refused, another when no answer came
+      return stale() ? SILENT
+        : refuse('error', `New run like ${runTitle(row)}: its configuration could not be read (${(e as Error).message}). Nothing changed.`);
+    }
     if (stale()) return SILENT;
     if (!settings) return refuse('error', `New run like ${runTitle(row)}: the run has no configuration of its own. Nothing changed.`);
     // A run continued under the old Mode resume repeats as what it was: a fine-tune of its model, or a new model.

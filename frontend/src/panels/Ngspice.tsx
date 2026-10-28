@@ -47,7 +47,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged, but
   const [message, setMessage] = useState<Json>(null);             // { level: ok | error | hint, text }
   const [loadedFrom, setLoadedFrom] = useState<string | null>(null);  // the task whose deck the window holds
   const repo = useRef<string | null>(null);
-  const problem = (e: any) => ({ level: 'error', text: problemText(e) });
+  const problem = (e: unknown) => ({ level: 'error', text: problemText(e) });
 
   const { busy, run } = useAsyncAction(e => setMessage(problem(e)), () => setMessage(null));
 
@@ -63,7 +63,7 @@ export function NgspiceButton({ config, circuit, chooseTask, onTasksChanged, but
       setKinds(Object.entries(task.device_kinds ?? {}).map(([k, v]) => `${k}=${v}`).join(' '));
       setLabels({ circuit_class: task.circuit_class ?? 'unspecified', pdk_id: task.pdk_id ?? 'unspecified' });
       setChecked(null); setMessage({ level: 'hint', text: `Holding the saved deck of ngspice:${task.name} (revision ${task.revision}). Save stores the next revision.` });
-    }).catch((e: any) => { if (live) setMessage(problem(e)); });
+    }).catch((e: unknown) => { if (live) setMessage(problem(e)); });
     return () => { live = false; };
   }, [popup, followed]);
 

@@ -65,8 +65,9 @@ export async function launchWithConsent(send: (flags: Json) => Promise<Json>, op
     flags.authorize_real_simulation = true;
   }
   for (;;) {
-    try { return await send(flags); } catch (e: any) {
-      const detail = e?.detail ?? {};
+    try { return await send(flags); } catch (e) {
+      // `send` fails with an Error: an ApiError when the backend refused - its question in `detail` -, another when no answer came.
+      const detail = (e as Error & Partial<ApiError>)?.detail ?? {};
       let flag: string | null = null, question = '';
       if (detail.code === 'real_authorization_required')
         [flag, question] = ['authorize_real_simulation', options.real ? options.authorizeText : realQuestion(detail.report)];
@@ -230,11 +231,13 @@ export function useLauncher({ control, features, onLaunched, onMessage }: {
       const earlier = features.requests ? sentLaunch() : null;
       if (earlier) {
         let known: Json;
-        try { known = await api.launchRequest(earlier.id); } catch (e: any) {
+        try { known = await api.launchRequest(earlier.id); } catch (e) {
           // The question got no answer (the backend is restarting): that launch may have made a run, so nothing new is sent
           // and its id stays kept for the next press. Taken for "unknown", as it used to be, a second launch went out here.
+          // The read fails with an Error: an ApiError when the backend refused, another when no answer came.
           answered = false;
-          setRefusal({ action, text: `Not sent: what became of an earlier launch of this page could not be checked (${plainError(e)}). Try again in a moment.`, detail: e?.detail ?? null, key });
+          setRefusal({ action, text: `Not sent: what became of an earlier launch of this page could not be checked (${plainError(e)}). Try again in a moment.`,
+            detail: (e as Error & Partial<ApiError>)?.detail ?? null, key });
           return;
         }
         if (known?.state === 'done' && known.answer?.run_dir) {
@@ -254,13 +257,16 @@ export function useLauncher({ control, features, onLaunched, onMessage }: {
       setRefusal(null);
       handed = true;
       latest.current.onLaunched(started, as, note?.(started));
-    } catch (e: any) {
+    } catch (e) {
       // A refusal answers the request in the backend's words: nothing was made (a 4xx). No answer at all - the page is going
       // away (a reload aborts the request), or the backend stopped - or a failure inside the backend (a 5xx) can come AFTER
       // the run was made: the id stays kept, and the page asks what became of it instead of sending it again.
+      // Whatever the try throws is an Error: an ApiError when the backend refused, another when no answer came (launchWithConsent
+      // passes them on), or one thrown by the page's own code.
       answered = e instanceof ApiError && e.status < 500;
-      setRefusal({ action, text: plainError(e), detail: e?.detail, key });
-      if (e?.detail?.code === 'already_running') latest.current.control.refresh();     // continued from elsewhere: show what is true
+      setRefusal({ action, text: plainError(e), detail: (e as Error & Partial<ApiError>)?.detail, key });
+      // continued from elsewhere: show what is true
+      if ((e as Error & Partial<ApiError>)?.detail?.code === 'already_running') latest.current.control.refresh();
       if (!answered && launch && sentLaunch()?.id === launch.id) { asking = true; askAbout(launch, 'a moment ago, whose answer did not arrive,'); }
     } finally {
       if (answered) keepLaunch(null);

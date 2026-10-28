@@ -82,7 +82,9 @@ export function CornerCheckTab({ runDir }: { runDir: string | null }) {
           + `Authorize ${plan.simulations} simulations?` });
       if (started) { setCheckId(started.check_id); readPlan(); }
       else setNote({ level: 'info', text: 'Not started: you answered no, so nothing was created.' });
-    } catch (e: any) { setNote({ level: 'error', text: e.message }); } finally { setBusy(null); }
+    } catch (e) {                // an Error: an ApiError when the backend refused, another when no answer came (launchWithConsent passes them on)
+      setNote({ level: 'error', text: (e as Error).message });
+    } finally { setBusy(null); }
   };
   const stop = () => { setBusy('stop'); api.cornerStop(runDir, checkId!).then(() => readCheck(), e => setNote({ level: 'error', text: e.message })).finally(() => setBusy(null)); };
 

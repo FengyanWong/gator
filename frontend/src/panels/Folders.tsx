@@ -36,8 +36,8 @@ export function useFolders(kind: FolderKind) {
     try {
       const value = await api.folders(kind);
       if (id()) { accept(value); setError(''); }
-    } catch (e: any) {
-      if (id()) { setError(`Folders could not be read: ${e.message}`); setReady(false); }
+    } catch (e) {                // an Error: an ApiError when the backend refused, another when no answer came
+      if (id()) { setError(`Folders could not be read: ${(e as Error).message}`); setReady(false); }
     } finally { if (id()) setBusy(false); }
   };
   const change = async (action: () => Promise<Json>) => {
@@ -45,7 +45,7 @@ export function useFolders(kind: FolderKind) {
     writing.current = true; request.drop(); setBusy(true); setError('');
     try {
       const value = await action(); accept(value); return value;
-    } catch (e: any) { setError(`Folders were not saved: ${e.message}`); return null; }
+    } catch (e) { setError(`Folders were not saved: ${(e as Error).message}`); return null; }   // an Error, as a read's above
     finally { writing.current = false; setBusy(false); }
   };
   /** Selected keys into a folder ('unfiled' = out of every folder). */

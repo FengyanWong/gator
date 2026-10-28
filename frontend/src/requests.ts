@@ -1,7 +1,7 @@
 // The page's reads and button actions (plan-refactoring C3, out of store.ts): useRequest and its polling form, and the
 // shared pending state of an action.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { readWithDeadline } from './api';
+import { type ApiError, readWithDeadline } from './api';
 import { pageSeen, seenAgain } from './windows';
 import { useNewest } from './newest';
 
@@ -9,14 +9,16 @@ export function usePolling<T>(fn: (signal: AbortSignal) => Promise<T>, ms: numbe
   return useRequest(fn, deps, { enabled, pollEvery: ms });
 }
 
-/** Button actions keep their feature's confirmations and messages; only the pending lifecycle is shared. */
-export function useAsyncAction(onError: (error: any, name: string) => void, onStart: () => void) {
+/** Button actions keep their feature's confirmations and messages; only the pending lifecycle is shared. `onError` gets what the
+ *  action threw, an Error: an ApiError when the backend refused, with its `status` and `detail`; another when no answer came
+ *  (the page's actions throw nothing else). */
+export function useAsyncAction(onError: (error: Error & Partial<ApiError>, name: string) => void, onStart: () => void) {
   const [busy, setBusy] = useState<string | null>(null);
   const generation = useNewest();
   const run = async (name: string, action: () => Promise<unknown>) => {
     const mine = generation.next();
     setBusy(name); onStart();
-    try { await action(); } catch (error) { onError(error, name); }
+    try { await action(); } catch (error) { onError(error as Error & Partial<ApiError>, name); }
     finally { if (mine()) setBusy(null); }
   };
   return { busy, run };
@@ -61,7 +63,8 @@ export function useRequest<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unk
         value = await request.promise;
         if (live && !request.controller.signal.aborted) setResult({ deps, value, error: null });
       }
-      catch (e: any) { if (live && !request.controller.signal.aborted) setResult({ deps, value: null, error: String(e.message ?? e) }); }
+      // A read fails with an Error: an ApiError when the backend refused, another when no answer came (a failed fetch, the deadline).
+      catch (e) { if (live && !request.controller.signal.aborted) setResult({ deps, value: null, error: String((e as Error).message ?? e) }); }
       finally {
         if (inFlight.current === request) inFlight.current = null;
         if (live && !request.controller.signal.aborted) {

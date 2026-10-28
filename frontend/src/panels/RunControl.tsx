@@ -2,7 +2,7 @@
 // reads Start, Pause or Resume, and Abort.
 import { Icon, IconName } from './Icons';
 import { useEffect, useRef, useState } from 'react';
-import { api, Json, plainError } from '../api';
+import { api, type ApiError, Json, plainError } from '../api';
 import { count, FAILED_WHERE, failedWhere, folderName, plural, runTask, stopWords, timeLine } from '../format';
 import { cardLive, ENDED, type Pending, type Phase, type RunControl } from '../runState';
 
@@ -149,7 +149,8 @@ export function RunButtons({ control, startBlocked, resumeBlocked, onStart, onRe
   control: RunControl; startBlocked: string | null; resumeBlocked: string | null; onStart: () => void; onResume: () => void;
   onMessage: (m: Json) => void; next?: string | null; task?: string | null }) {
   const { dir, status, phase, forced } = control;
-  const fail = (e: any) => onMessage({ level: 'error', text: plainError(e), detail: e?.detail });
+  // A command fails with an Error: an ApiError when the backend refused, with its `detail`; another when no answer came.
+  const fail = (e: Error & Partial<ApiError>) => onMessage({ level: 'error', text: plainError(e), detail: e?.detail });
   const command = (name: string, waitFor: Pending, text: string) => {
     control.setPending(waitFor);
     return api.command(dir!, name).then(() => { onMessage({ level: 'info', text }); return control.refresh(); })

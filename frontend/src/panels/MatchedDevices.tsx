@@ -57,11 +57,11 @@ export function MatchedDevices({ config, setConfig, onClose, onShown }: { config
       const got = await api.matchedDevices(config);
       setAnswer(got); setAsked(about(config));
       setTicked(Object.fromEntries((got.suggestions ?? []).filter((s: Json) => s.acts && s.default).map((s: Json) => [s.id, true])));
-    } catch (e: any) { setError(problemText(e)); } finally { setBusy(false); }
+    } catch (e) { setError(problemText(e)); } finally { setBusy(false); }
   };
   const review = async () => {
     setBusy(true); setError(null); setDone(null);
-    try { setShown(await api.matchedDevices(config, chosen)); } catch (e: any) { setError(problemText(e)); } finally { setBusy(false); }
+    try { setShown(await api.matchedDevices(config, chosen)); } catch (e) { setError(problemText(e)); } finally { setBusy(false); }
   };
   const apply = () => {
     const changed = shown.diff.length;

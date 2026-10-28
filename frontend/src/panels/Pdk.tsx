@@ -7,7 +7,7 @@ import { Blocked, PopupPortal } from './popupParts';
 import { signal } from '../signal';
 import { bytes, count, dateTimeOrText as loadedAt, plural } from '../format';
 import { PDK_WINDOW } from '../contract';
-import { api, gateText, Json, problemText } from '../api';
+import { api, type ApiError, gateText, Json, problemText } from '../api';
 import { useNewest } from '../newest';
 
 // Load PDK (user request 2026-09-21; backend src/gator_workbench/pdk.py). The RL network is BUILT from a list of the
@@ -35,7 +35,9 @@ const USABLE_PDK_ID = (id?: string | null) => !!id && /^[A-Za-z_][A-Za-z0-9_.\-]
 // list on the page reads the local list again - one GET each, no timer.
 const watchers = signal(null);
 export function pdksChanged() { watchers.notify(); }
-const listProblem = (e: any) => e.status === 404 ? 'This workbench server is older than the page: restart it to load PDKs.' : `The loaded PDKs cannot be listed: ${e.message}`;
+// `e`: the read's failure, an Error: an ApiError when the backend refused, with its `status`; another when no answer came.
+const listProblem = (e: Error & Partial<ApiError>) => e.status === 404 ? 'This workbench server is older than the page: restart it to load PDKs.'
+  : `The loaded PDKs cannot be listed: ${e.message}`;
 
 /** The loaded PDKs (local files only), read while `watch` is set - a list on the page, an open window - and again
  *  whenever they change. */

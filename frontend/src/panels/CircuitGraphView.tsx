@@ -192,7 +192,7 @@ function useGraphDrawing({ view, canvas, graph, fitted, request, layer, head, di
       layout('hints', view);
       paint(cy, view, layer, head, direction, scope, query);
       cy.edges('[bulk = 1]').toggleClass('hidden', !bulk);
-    }, (e: any) => {               // the drawing package is fetched on first use: a failed fetch left the picture blank, unexplained
+    }, (e: Error) => {             // the drawing package is fetched on first use: a failed fetch left the picture blank, unexplained
       if (!cancelled) setError(`the drawing package could not be loaded (${e?.message ?? e}). Reload the page, then open the view again.`);
     });
     return () => { cancelled = true; };

@@ -1,5 +1,6 @@
 // Small text helpers that several windows carried a copy of each (record 7.276): a run folder's own name, and the page's
 // times. One place, so the Runs, Tasks and RL model windows, the run brief and the messages cannot drift apart.
+import type { RunSummary } from './contracts';
 
 /** A run folder's own name, unique per run: the last part of its path. */
 export const folderName = (dir: string) => dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
@@ -42,7 +43,7 @@ export const createdAt = (utc?: string | null) => stamp(utc)?.slice(5, 16) ?? 'u
 export const timeOfDay = (seconds: number) => { const d = new Date(seconds * 1000);   // hh:mm:ss as stamp() writes it (review of SIF-59: a 12-hour browser wrote "02:03:22 PM")
   return Number.isNaN(d.getTime()) ? '' : `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
 /** A run as a message names it: its task and when it was created, "ota7t 10-06 14:02" (the folder's name without a date). */
-export const runTitle = (row: any) => { const d = row.created_utc ? new Date(row.created_utc) : null;
+export const runTitle = (row: RunSummary) => { const d = row.created_utc ? new Date(row.created_utc) : null;
   return d && !Number.isNaN(d.getTime()) ? `${row.task_name ?? folderName(row.run_dir)} ${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}` : folderName(row.run_dir); };
 
 // ---- durations: the run window shows tenths of a second under a minute, the run brief whole seconds ---------------------------
@@ -74,9 +75,9 @@ export const TIME_LINE_HELP = 'How long the run was actually working. The time i
 
 // ---- a run's task and state, as the run window and the Training tab word them -------------------------------------------------
 /** A run's task, as the run window names it: its task name, else its task id up to ':', else "unknown task" (RunList.tsx). */
-export const runTask = (r: any) => r.task_name ?? String(r.task_id ?? 'unknown task').split(':')[0];
+export const runTask = (r: RunSummary) => r.task_name ?? String(r.task_id ?? 'unknown task').split(':')[0];
 /** The same in the Training tab: blank without a task id, and no row at all is no error (TrainingTab.tsx). */
-export const runTaskOrBlank = (r: any) => r?.task_name ?? String(r?.task_id ?? '').split(':')[0];
+export const runTaskOrBlank = (r: RunSummary | null | undefined) => r?.task_name ?? String(r?.task_id ?? '').split(':')[0];
 /** A run state's badge in the run window: the class after "state-"; a paused or interrupted run can go on (RunList.tsx). */
 export const RUN_STATE_CLASS: Record<string, string> = { completed: 'ok', running: 'busy', starting: 'busy', pausing: 'busy', stopping: 'busy', paused: 'not_ready',
   interrupted: 'not_ready', failed: 'failed', cancelled: 'unknown', stopped: 'unknown' };

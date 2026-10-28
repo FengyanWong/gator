@@ -1,3 +1,5 @@
+// The right column's Run configuration panel (the workbench's first build; split by panel in plan-refactoring C4): it
+// holds useRlModel and draws Run configuration, its reward and conditions, and the RL model window.
 import { memo } from 'react';
 import type { Json } from '../api';
 import { Module } from './fields';

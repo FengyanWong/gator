@@ -1,3 +1,5 @@
+// The bottom panel's run tabs (record 7.85, the split of Bottom.tsx): Run status with its calibration and Continue...,
+// Data tables, Output files and Logs of the run the tabs show.
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { api, copy, download, downloadPackage, Json, saveJson } from '../api';

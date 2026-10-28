@@ -1,3 +1,5 @@
+// The folders of the Tasks, Runs and RL model windows (record 7.263, after the task folders of record 7.250): the
+// folder list at a window's left and the Move to... bar above its table.
 import { useRef, useState } from 'react';
 import { api, FolderKind, Json } from '../api';
 import { Icon } from './Icons';

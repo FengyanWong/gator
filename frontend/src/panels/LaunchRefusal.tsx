@@ -1,3 +1,5 @@
+// A launch the backend refused, kept beside its action until what it depends on changes (record 7.261): under the
+// header for Start, Calibration and Resume, under Continue... in Run status.
 import { Json } from '../api';
 import { CheckSteps } from './Consistency';
 import { Icon } from './Icons';

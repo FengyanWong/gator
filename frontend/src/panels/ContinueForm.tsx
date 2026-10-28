@@ -1,3 +1,5 @@
+// Continue...'s budget form under Run status (record 7.261): the evaluations used, the new total and how many more it
+// allows, in place of the browser's prompt.
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { parseTotal } from '../launch';
 import { count } from '../format';

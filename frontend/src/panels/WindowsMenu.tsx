@@ -1,3 +1,4 @@
+// The header's list of the open pop-up windows (record 7.372): a press brings one to the front, Close all closes them.
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons';
 import { type OpenWindow, useOpenWindows } from './popupWindow';

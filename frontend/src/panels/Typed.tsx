@@ -1,3 +1,4 @@
+// A box that keeps what is being typed while it has focus (record 7.64), for the editors' cells and the panels' boxes.
 import { InputHTMLAttributes, useEffect, useState } from 'react';
 import { Json } from '../api';
 

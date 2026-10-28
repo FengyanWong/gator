@@ -1,3 +1,5 @@
+// The ngspice window (record 7.74): a SPICE deck pasted or loaded, checked and saved as an ngspice: task; opened from
+// the Tasks window and the editors' tab line.
 import { useAsyncAction } from '../store';
 import { MutableRefObject, useEffect, useRef, useState } from 'react';
 import { api, Json, problemText } from '../api';

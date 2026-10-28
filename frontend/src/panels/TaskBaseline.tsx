@@ -1,3 +1,5 @@
+// A task's baseline line under the editors' toolbar (record 7.248): the automatic baseline, followed in the header, and
+// Retry baseline while no real one is recorded.
 import { api, Json, problemText } from '../api';
 import { useAsyncAction } from '../store';
 import { useState } from 'react';

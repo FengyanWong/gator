@@ -1,3 +1,5 @@
+// What Apply calibration does to the page's configuration, worked out once (record 7.204): for Run status's Calibration
+// block and the "Calibration ready" line under the header.
 import { Json } from '../api';
 import { short } from '../format';
 import { quantity } from '../units';

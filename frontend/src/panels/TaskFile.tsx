@@ -1,3 +1,5 @@
+// The task file's window (record 7.57): the task as one readable file with its parts explained, Apply to editors and
+// Revert; TaskSave opens it and keeps what is typed in it.
 import { useAsyncAction } from '../store';
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';

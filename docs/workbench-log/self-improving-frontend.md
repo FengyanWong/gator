@@ -6282,3 +6282,47 @@ overwrote its log) and stays as it is.
 **Checked.** `tsc` clean; `run_control_check` 181 passed twice, `run_control_live_check` 23. A slip: these three runs went
 beside a real campaign run with WSL at 2 GB available and the host at 2 GB free, under this branch's 3 GB guard (the guard
 printed the numbers but did not stop the runs); they passed and are over, and nothing else was disturbed.
+
+### SIF-146 Readability F1: every page source file says what it is in its first lines (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** At the group's base 2767950, 49 of the frontend's 98 `.ts`/`.tsx` files began with an import: no first line
+said what the file is (`femetrics.py`, `metrics-before-2767950.txt`). A reader of `Editors.tsx` (1,140 lines), `RunTabs.tsx`
+or `Connection.tsx` had to read on, or search the design logs, to learn which window or panel it draws and which record
+built it; where a file said so at all, it said it further down - after the imports (`store.ts`, `units.ts`,
+`circuitLayout.ts`, `CircuitGraphView.tsx`, `Pdk.tsx`) or on the main component's doc comment. Of the 49, the six files of
+the Agent window's removal on another branch (`App.tsx`, `Agent.tsx`, `BottomPanel.tsx`, `Left.tsx`, `VirtuosoWindow.tsx`,
+`popupWindow.ts`: the plan's avoid list) and `vite.config.ts`, outside `frontend/src`, stay as they are: 42 files.
+
+**Changed** (42 files under `frontend/src`, comments only). Each opens with one or two `//` lines in the manner of
+`requests.ts`, `shared.ts` and `OutputPanel.tsx`: what the file is, the window or panel it draws, and the record that built
+it, found with `git log --diff-filter=A`, `record-history.md`'s list of panels and the design logs - the workbench's first
+build (`main.tsx`, `Editors.tsx`, `Right.tsx`); records 7.12 (`Issues.tsx`), 7.18 (`RunControl.tsx`), 7.20 and 7.265
+(`ModelChooser.tsx`), 7.26 (`ModelStructure.tsx`), 7.32 (`Connection.tsx`), 7.33 (`CircuitGraphView.tsx`,
+`circuitLayout.ts`), 7.38 (`RunList.tsx`), 7.54 (`Pdk.tsx`), 7.55 (`WorkingCopy.tsx`), 7.57 (`TaskSave.tsx`,
+`TaskFile.tsx`), 7.61 (`Consistency.tsx`), 7.62 (`CornerCheck.tsx`), 7.64 (`Typed.tsx`), 7.74 (`Ngspice.tsx`), 7.85
+(`CircuitBrowser.tsx`, `RunTabs.tsx`), 7.103 (`MatchedDevices.tsx`), 7.158 (`CircuitPicture.tsx`), 7.168 and 7.170
+(`ConnectionFolders.tsx`), 7.188 (`CrashPanel.tsx`), 7.193 (`TrainingTab.tsx`, `TrainingChart.tsx`), 7.204
+(`calibrationPlan.ts`), 7.208 (`units.ts`), 7.227 (`TaskList.tsx`), 7.248 (`TaskBaseline.tsx`), 7.261 (`ContinueForm.tsx`,
+`LaunchRefusal.tsx`), 7.263 (`Folders.tsx`), 7.264 (`RunBrief.tsx`), 7.267 (`savePoint.ts`), 7.276 (`TableView.tsx`), 7.372
+(`WindowsMenu.tsx`); plan-refactoring C3 (`signal.ts`) and C7 (`newest.ts`, `popupParts.tsx`). `store.ts` had its
+three-line description after the imports: it moved to the top word for word. 80 lines added and 3 removed (the moved
+ones), each a `//` line at a file's top: no code, string, class, attribute or name changed and no line was wrapped (F5 is
+not this package's); the longer descriptions further down stay where they are.
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: its five files are byte for byte
+those of the base build of 2767950 (the same names and SHA-256: `index-Bu_vjRbm.js`, `index-BUlLMzRS.css`, the uPlot and
+cytoscape chunks, `index.html`) - comments do not reach the minified bundle, so the page served is the same. DOM identity
+(`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory guard, WSL 8 GB
+available and the host 3 GB free): "all 112 checks passed", 56 of 56 compared files identical (66 files written; the check
+keeps its 10 `requests-order.txt` out of the comparison). The source checks that read edited files, run alone with no
+browser or backend: `circuit_layout_check` 4, `graph_paint_check` 6, `table_view_check` 10, `editor_renames_check` 8
+passed, the counts of the earlier suites. Browser checks: deferred to the final suite (the host had 2 GB free, under their
+5 GB gate). One effect off the page: `circuit_layout_check --before <archive>`, the optional hand reproduction of record
+7.375 against its archived source, compares the whole text of `circuitLayout.ts` and now differs by its two header lines;
+its default run, the one `run_checks.sh` makes, passes as above. The PDK-name grep of the plan's rule 5 finds nothing in
+the changed files.
+
+**Measured** (`femetrics.py`, before -> after): files with a header comment 49 -> 91 of 98 (without one: the six avoided
+files and `vite.config.ts`); lines 14,923 -> 15,000; comment lines 3,017 -> 3,094; any-casts 47 -> 47. Every edited file
+grew by its header lines alone (`store.ts` by none: its lines moved) and kept its longest block: `Connection.tsx` 428 -> 430
+lines (longest block 398 -> 398), `Editors.tsx` 1,140 -> 1,142 (22 -> 22), `TrainingTab.tsx` 486 -> 488 (320 -> 320).

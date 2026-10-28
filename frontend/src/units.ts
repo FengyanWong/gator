@@ -1,3 +1,5 @@
+// The page's one way of writing and reading a quantity (record 7.208): number, SI prefix and unit in English letters,
+// by the table of spellings the backend sends with /api/schema.
 import type { Json } from './api';
 
 /** One way of writing a quantity in the whole page (record 7.208, user: "a unified way of unit representation in the parameters

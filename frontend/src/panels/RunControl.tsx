@@ -1,3 +1,5 @@
+// The header's run controls (record 7.18): the run state strip and the run chip, then Save now, the main button that
+// reads Start, Pause or Resume, and Abort.
 import { Icon, IconName } from './Icons';
 import { useEffect, useRef, useState } from 'react';
 import { api, Json, plainError } from '../api';

@@ -1,3 +1,5 @@
+// The page's entry point (the workbench's first build): App drawn into the root element under the outer crash panel
+// (record 7.188), with the page's two style sheets.
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';

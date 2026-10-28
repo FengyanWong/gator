@@ -1,3 +1,5 @@
+// Load PDK (record 7.54): the RL model window's Components list, and the PDK window the Virtuoso window opens to read
+// one PDK by name and show what was read, its ideal parts too (record 7.190).
 import { useAsyncAction } from '../store';
 import { type KeyboardEvent, memo, useEffect, useMemo, useState } from 'react';
 import { usePopupWindow } from './popupWindow';

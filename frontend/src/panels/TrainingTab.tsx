@@ -1,3 +1,5 @@
+// The bottom panel's Training tab (record 7.193): live charts of the shown run's recorded numbers, other runs on the
+// same charts (record 7.200), up to eight charts (record 7.205) and the key numbers (record 7.215).
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline } from '../api';
 import { count, createdAt as created, plural, runName, runTaskOrBlank as taskOf, stopWords, timeOfDay as clock, TRAINING_STATE_CLASS as STATE_CLASS } from '../format';

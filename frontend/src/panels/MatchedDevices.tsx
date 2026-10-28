@@ -1,3 +1,5 @@
+// The Parameters tab's Matched devices box (record 7.103): the structures the backend reads from the circuit and the
+// ties they suggest, applied only by Review... and Apply.
 import { useEffect, useState } from 'react';
 import { api, Json, problemText } from '../api';
 import { DiffView } from './DiffView';

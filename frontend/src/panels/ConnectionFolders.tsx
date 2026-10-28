@@ -1,3 +1,5 @@
+// The connection window's Folders section (records 7.168 and 7.170): where GATOR keeps its files outside the
+// repository, each folder at the value used before until Save folders writes a change.
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 import { api, ApiError, Json, plainError } from '../api';
 

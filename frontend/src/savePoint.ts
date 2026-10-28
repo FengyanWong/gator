@@ -1,3 +1,5 @@
+// A saved model's save point as the page takes it (record 7.267, one way to take a saved model): reading it, the
+// network it fixes and the run settings that load it - for the RL model window, Load run and New run like this.
 import { api } from './api';
 import type { ModelDescription, NetworkConfig, RunSettings } from './contracts';
 

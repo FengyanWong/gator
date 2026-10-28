@@ -1,3 +1,5 @@
+// The header's validation state (record 7.12): the blocking-issues button and the list it opens, where each issue's
+// Where is a button that goes to its row (branch record SIF-95).
 import { useEffect, useState } from 'react';
 import type { Json } from '../api';
 import { BLOCKING_ISSUES_ID, BLOCKING_LEVELS } from '../contract';

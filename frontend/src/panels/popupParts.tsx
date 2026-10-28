@@ -1,3 +1,5 @@
+// What every pop-up window's owner draws (plan-refactoring C7): Blocked, the line said when the browser refused the
+// window, and PopupPortal, the window's content drawn into it while it is open.
 import { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { BLOCKED } from './popupWindow';

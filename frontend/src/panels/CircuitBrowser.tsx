@@ -1,3 +1,5 @@
+// The circuit as read (record 7.85, out of Left.tsx): the Virtuoso window's library -> cell -> schematic chain and its
+// native schematic, and the circuit's hierarchy and instances with Add to Parameters (branch record SIF-104).
 import { Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { api, gateText, Json, OLDER_BACKEND } from '../api';
 import { kindUnit, si } from '../units';

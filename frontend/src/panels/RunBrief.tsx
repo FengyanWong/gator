@@ -1,3 +1,5 @@
+// The run brief, "Running now" (record 7.264): the small window the header's run chip opens, with a card for the
+// header's run and one for every other live run.
 import { useState } from 'react';
 import { api, Json } from '../api';
 import { clock, count, durationWhole as span, folderName, runTask, sig, taskNameOf, timeLine, TIME_LINE_HELP } from '../format';

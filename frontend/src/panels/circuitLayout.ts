@@ -1,3 +1,5 @@
+// Where the nodes of the circuit graph view stand (record 7.33; the circuit picture places its nodes with it too):
+// hintedLayout, fixed rules from what the graph says of the circuit - no agent, no model call.
 import { Json } from '../api';
 
 // WHERE the nodes of the circuit graph view stand - nothing else. The view is a node-link picture of the graph the

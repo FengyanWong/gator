@@ -1,3 +1,5 @@
+// The bottom panel's Corner check tab (record 7.62): the shown run's safest feasible designs simulated again at five
+// fixed corners - the plan, the result grid and the earlier checks.
 import { Icon } from './Icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, Json } from '../api';

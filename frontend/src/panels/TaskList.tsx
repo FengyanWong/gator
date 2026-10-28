@@ -1,3 +1,5 @@
+// The task name button and the Tasks window it opens (record 7.227; on the editors' tab line since record 7.362): every
+// registered task, with folders and Details, and the task the page follows.
 import { Fragment, MouseEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';

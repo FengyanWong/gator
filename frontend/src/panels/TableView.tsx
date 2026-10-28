@@ -1,3 +1,4 @@
+// What the Tasks, Runs and saved models tables share (record 7.276): filter, sort, ticked rows and the header row.
 import { type KeyboardEvent, useState } from 'react';
 import type { FolderView } from './Folders';
 

@@ -1,3 +1,5 @@
+// One chart of the Training tab (record 7.193), drawn with uPlot in the browser only: its keys, the readout line above
+// it, zoom, and the markers over the plot.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type uPlotType from 'uplot';
 import 'uplot/dist/uPlot.min.css';

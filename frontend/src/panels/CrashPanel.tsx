@@ -1,3 +1,4 @@
+// The crash panel (record 7.188): Undo, Export JSON and Reload when drawing the page failed, instead of a blank page.
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Json, saveJson } from '../api';
 import { STORAGE_KEY } from '../store';

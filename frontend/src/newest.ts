@@ -1,3 +1,5 @@
+// The "newest answer wins" guards (plan-refactoring C7): newest() and useNewest() for a series of asks, and the reply
+// scopes that tell what an answer belongs to (record 7.324).
 import { useRef } from 'react';
 
 /** A series of asks of which only the newest may land (plan-refactoring C7: the hand-written `mine = ++serial.current`

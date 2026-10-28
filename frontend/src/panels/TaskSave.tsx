@@ -1,3 +1,5 @@
+// Save as and Task file on the editors' tab line (record 7.57): the save, its progress and questions under the toolbar,
+// and the saves other parts of the page ask for (Apply and save, Save as).
 import { noteRowsFrom, noteTaskSaved, rowsFrom, useAsyncAction, useRequest } from '../store';
 import { Icon } from './Icons';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';

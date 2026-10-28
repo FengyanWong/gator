@@ -1,3 +1,5 @@
+// The circuit column's Circuit picture (record 7.158): the loaded circuit as a small node-link drawing placed by
+// the graph view's hints, which lights the devices of the Parameters row pointed at.
 import { useMemo, useState } from 'react';
 import { Json } from '../api';
 import { hintedLayout } from './circuitLayout';

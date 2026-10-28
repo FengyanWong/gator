@@ -1,3 +1,5 @@
+// A saved model's network structure as tables (record 7.26): the fold-out in its Details and the full layer table in a
+// dialog, read from the saved tensors.
 import { useRequest } from '../store';
 import { useRef, useState } from 'react';
 import { api, Json } from '../api';

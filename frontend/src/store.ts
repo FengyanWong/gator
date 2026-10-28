@@ -1,11 +1,11 @@
+// What the page holds besides its draw (plan-refactoring C3): this file keeps the rows-from note and the task-save signal,
+// and is the one place the page and the source fixtures import the rest from - the migrations (migrations.ts), the windows
+// of the page (windows.ts), the configuration with its Undo history (history.ts) and the reads (requests.ts).
 import type { Json } from './api';
 import { CONFIG_KEY } from './contract';
 import { signal } from './signal';
 import { keep, readKept } from './kept';
 
-// What the page holds besides its draw (plan-refactoring C3): this file keeps the rows-from note and the task-save signal,
-// and is the one place the page and the source fixtures import the rest from - the migrations (migrations.ts), the windows
-// of the page (windows.ts), the configuration with its Undo history (history.ts) and the reads (requests.ts).
 export { migrateConfig } from './migrations';
 export { pageSeen, registerInputWindow } from './windows';
 export { SIMPLE_REWARD, useConfig } from './history';

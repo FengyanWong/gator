@@ -1,3 +1,4 @@
+// The check before every run, step by step (record 7.61): shown by Check now and by a launch it refused.
 import { Json } from '../api';
 
 /** The result of the check before every run of a saved task (backend consistency.py): one line per step - what was

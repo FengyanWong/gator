@@ -1,3 +1,5 @@
+// One small store for a value the page holds outside React (plan-refactoring C3): the task saves, the circuit picture's
+// pointed devices and the loaded PDKs each keep one.
 import { useSyncExternalStore } from 'react';
 
 /** A value the page holds outside React, and the parts that show it told of each change (plan-refactoring C3: the look, the

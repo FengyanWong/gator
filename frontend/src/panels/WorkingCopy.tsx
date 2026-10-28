@@ -1,3 +1,5 @@
+// The Virtuoso window's working copy part (record 7.55): the cell the task flow works in, and Read setup, which takes
+// the cell's Maestro outputs and specs into Probes and Specs.
 import { useAsyncAction } from '../store';
 import { useEffect, useRef, useState } from 'react';
 import { api, gateText, Json, problemText } from '../api';

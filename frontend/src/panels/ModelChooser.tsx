@@ -1,3 +1,5 @@
+// The RL model window's saved models (record 7.20, renewed by record 7.265): a table of every saved model with folders,
+// and each model's Details - save points, Rename, compatibility, structure, graph view, relationships.
 import { Fragment, memo, MutableRefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { useRequest } from '../store';
 import { api, Json } from '../api';

@@ -1,3 +1,5 @@
+// The circuit graph view (record 7.33): the dialog that draws a save point's graph as the network sees it - the
+// attention on every link, the sizes it proposes - opened from a saved model's Details in the RL model window.
 import { useEffect, useRef, useState } from 'react';
 import { api, Json } from '../api';
 import { kindUnit, si } from '../units';

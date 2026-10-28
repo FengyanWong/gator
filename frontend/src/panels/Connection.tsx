@@ -1,3 +1,5 @@
+// The header's Connection button and the connection window it opens (record 7.32; in the header since record 7.182):
+// choose or add a connection, connect it, load the bridge in the CIW, test it, and set GATOR's folders.
 import { useAsyncAction } from '../store';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePopupWindow } from './popupWindow';

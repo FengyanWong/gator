@@ -1,3 +1,5 @@
+// The bottom tab strip's Runs... button and the Runs window it opens (record 7.38): every run under the output folder,
+// with folders, relationships, and each run's Details and actions.
 import { Fragment, memo, MouseEvent, MutableRefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { styled, usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';

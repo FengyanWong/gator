@@ -1,3 +1,5 @@
+// The editors (the workbench's first build; the task's card since record 7.362): the Parameters, Probes and Specs
+// tables with their tab line, toolbar, formula bar, find box, issue marks and the marks of rows not saved in the task.
 import { Icon } from './Icons';
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';

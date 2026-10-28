@@ -7002,3 +7002,111 @@ files.
 9, the five placing helpers 2 to 7), longest line 228 -> 185, comment lines 42 -> 66, any-casts 0 -> 0; all files 15,922
 -> 16,042 lines, any-casts 41 -> 41. The 120 added lines are the steps' signatures and reads from the circuit, `Circuit`
 and `Links`, the doc comments and the wraps.
+
+### SIF-155 Readability F2, F4, F5: the Training tab's store reads as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `TrainingStore` was 192 of `training/store.ts`'s 344 lines (`femetrics.py` counts a class as one block). Three
+of its methods did their work in one body each: `apply`, 45 lines (the two guards against a late answer, the answer's
+facts, a reset's cut of the provisional rows, the final rows, the tail, the version, then the memory bound - the thinning
+loops, `shrink` and the word lists' compaction); `append`, 50 lines (the evaluation rows, the spec values joined to their
+rows, the spec definitions and the learner updates, in blocks of 9 to 23 lines, four of whose column copies were one line
+each, 194 to 229 columns: a loop over the columns holding two declarations and a loop over the rows); and `thin`, 33 lines
+(the oldest half's bins three loops deep - each bin, each value column, each row - then the counts). 7 of the file's lines
+ran past 160 columns (the longest 229, the word columns' copy). It declared 36 single-letter names: in `append` the chunk's
+evaluations, updates and specs (`e`, `u`, `s`) and 8 loop `i`; in `thin` a bin's first row `b`, a value `v`, the sort's
+`a` and `c`, the filter's `c` (a column's name) and 3 `i`; `c` a pair of column names (4 times, the constructor) and a
+word's code (twice, `Words`); `v` in `num` and `flag`; `t` the table in `addSpec`; `i` in `Changes.since`, `Table.keep`,
+`Words.compact` and `lastTime`; `n`, a row count, 3 times; and an unused `_`. `names` was the reasons' word list, beside
+`name`, a spec's name. F3 is not this package's part, and the file has no `any` (`femetrics.py`: 0). The file has no React:
+no hook or component is involved. One constraint: `training_data_check.mjs` imports trainingData.ts and its parts as they
+are, under Node, which strips the types - so the file may use only TypeScript that erases (`private` methods do; parameter
+properties or enums would not).
+
+**Changed** (`frontend/src/panels/training/store.ts` alone). `apply` (21 lines) reads as its steps, in the order its code
+ran: the two guards, the answer's facts and `reset`, as they were; `cutTail` (a reset: each table back to its final rows,
+the thinned stretch no longer than they, the tail's counts at 0); `appendFinal` (the final rows appended and counted as
+received, and after a reset the final rows end with them; it gives what `append` gave); the flush counts, as they were;
+`appendTail` (the tail, if there is one, appended - its evaluations numbered after every one received - and counted as the
+tail's; it gives what `append` gave, or 0); the cursor, the version and the tail key, as they were; `keepMemoryBound` (each
+table thinned while it is over its cap, then the version, `shrink` and the word lists' compaction). `append` (10 lines):
+the chunk's three parts and `fresh`, as they were, and each `if` with its condition and its count, its body now a step -
+`appendEvaluations` (numbers, flags, words, `k`, and "no row" for every spec), `joinSpecValues` (each spec value on the row
+of its commit_seq; the lowest earlier row it changed noted in `specChanges`) and `appendUpdates` - with the spec
+definitions between, as they were. `thin` (13 lines): the table, its final rows and the half, as they were; `rowsToKeep`
+(the oldest half's bins, and every other row of them when they would not make the half smaller), a function of the module
+since it reads no `this`, with its innermost loop - a value column's extremes and first gap in one bin - as `addExtremes`;
+then the newer half kept whole and the counts, as they were. The class's 7 steps are private methods, the module's 2 are
+not exported; each is called once, from where its code stood, takes what it reads and gives what it writes (the methods
+write the store, as the code did), and holds its statements as they were, in the same order, with only F4's names changed.
+No public member, field or method is renamed or moved, and no field is added. The class and `append` gained doc comments
+and each step has one; the code's comments moved with their lines. F4: `e`, `u`, `s` -> `evaluations`, `updates`,
+`specs` (the chunk's; the tables stay `this.evaluations` and `this.updates`, or `table`); `i` -> `row` where it is a row of
+the answer or of a table (11 times), `specRow` (a row of the spec values), `change` (`Changes.since`), `place`
+(`Table.keep`: where a kept row goes) and `index` (the splice's filter); `b` -> `start` (a bin's first row; `end` was its
+end); `v` -> `value`; the sort's `a, c` -> `first, second`; the filter's `c` -> `name`; `value`, the value columns' names,
+-> `valueColumns`; `c` -> `pair` (the constructor) and `code` (`Words`); `t` -> `table`; `names` -> `reasonWords`. Left:
+`n`, a row count as the answers' `n` and `Table.n` name it (`truncate`'s parameter - a public method's, which this package
+does not rename - `decode`'s and `compact`'s `{ values, n }`), and the filter's unused `_`: 36 -> 4. F5: 7 -> 0 lines over
+160 columns: the four column copies as loops of three statements, `Segment`'s members on a line of their own (the same
+tokens: no `;` added), `labelOf` after its `=>`, `lastTime`'s scan as a block; and the lines the longer names took past
+160: `Words.code` (a statement a line), the constructor's columns (between arguments) and the spec values' columns
+(between declarators). The longest line is 156 columns (229 before), an unchanged constant.
+
+**Checked.** `npx tsc --noEmit -p .` exit 0 (TypeScript 5.9.3, the file in its program). `npx vite build` into a temporary
+folder: the main bundle changes, as moved code does (`index-Ddd-3o5X.js`); the CSS and the uPlot and cytoscape chunks are
+byte for byte SIF-154's build's. DOM identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's
+reference; behind the memory guard, WSL 12 to 13 GB available and the host 8 to 9 GB free): "all 112 checks passed", 56 of
+56 compared files identical (66 written), at its second run; its tabs scene draws the Training tab from two stores fed the
+recorded answers (the shown run and a compared one). The first run - into a folder that also held this package's proof
+files, which it compared too - differed, of the page's 56 files, in three of the tabs scene, in SIF-149's way: uPlot's plots
+101 px high instead of 100 (12 lines a file: the plot's box, canvas and axes). Not this change: the tabs scene alone, 4
+runs of the base build (SIF-154's, the code before this change) taken in turn with 4 of this build, drew 101 px in 2 of
+the base's runs and 1 of this build's; the base's 101 px Training tab file is byte for byte this build's, and the first full run's is
+byte for byte the base's fourth. Without a browser (the scripts, their outputs and the mutants beside the DOM identity
+output, `out-F2-trainingstore/static`): (1) Tokens (`proof_inline.mjs`): each file compiled on its own (0 errors; it
+imports nothing), with comments, doc comments and white space set aside and every name declared inside a function numbered
+by first use: the 29 top-level statements the same, in order; the members of `Changes` (4), `Table` (11), `Words` (5) and
+`TrainingStore` (35) the same, in order - `apply`, `append` and `thin` once their steps are written back where they are
+called, as an inliner writes them (623, 921 and 510 tokens); each of the 9 steps called once; the public surface (59
+exported declarations and public members, their modifiers and their signatures with names and types) the same. The 215
+strings, numbers and template pieces are the same multiset (`proof_literals.mjs`). (2) Side by side
+(`proof_differential.mjs`): the old file and the new one transpiled in memory for the page's build target (ES2020) and run
+in one process, each a module with its own caps; an old store and a new store fed the same answers and compared whole after
+every one - what `apply` answered, `counts()`, `lastTime()`, and every field, the private ones too, in the order the store
+holds them: each table's rows, capacity, columns in key order with every cell by `Object.is` (past the rows held too) and
+its record of changes, the word lists and their indexes, the specs and their record of changes, the cursor and the tail
+key; an object taken from an answer the same object in both; a throw the same class and message, and the stores the same
+after it. 143,468 answers in 3,400 runs: 400 random runs as `training_data_check.mjs` simulates them (its generator, copied:
+flushes, journal pages and rewrites, late answers, learner restarts, resumes, spec values a page late, low caps that thin)
+and 3,000 runs of answers no backend sends (missing, short and odd columns; codes out of range; NaN, Infinity, -0, strings
+and booleans; duplicate and unknown commit_seq; no tail page; 1 to 31 specs; malformed answers), the caps changed between
+answers 3,587 times, and a sequence for the one state only such a change reaches (thinning that starts inside the stretch
+thinned before: 44 rows thinned, then a half of 37): 0 differences; `apply` answered true 129,149 times and threw alike
+3,517 times; 1,758 runs thinned. `Changes` and `Table` driven directly: 36,000 operations, 0 differences. V8's block
+coverage: every function and block of the new file ran (51 functions, 200 ranges), and of the old one (42, 195). (3) A
+negative control, 29 mutated copies of the new file (`make_mutants.py`): the token proof caught all 29; the side-by-side run
+caught the 27 that change behaviour (a reset every time, the final updates unmarked, the tail numbered from the final rows,
+thinning without a new version, spec values not counted, `k` from 0, "no row" left out, `fresh` inclusive, spec changes
+unnoted, one phase for all updates, a bin's width and its end, `specOk` taken as a value, the splice's last row, ties to the
+last row, the last gap, the stretch from the half alone - by the sequence above -, a word's code 0 read as none, `since`
+one short, `keep` the wrong way, a 63-row window in `lastTime`, Infinity kept as a number, the tail counted as final, the
+final rows kept inclusive, the reasons' words not compacted, the stretch unclamped at a reset, `appendFinal` given another
+flag), and not the two that only reorder independent code (a reset's two truncations swapped; the memory bound before the
+tail key), which the token proof catches. (4) `training_data_check.mjs` (trainingData.ts and its parts as they are, under
+Node): 124 passed; with `--reference` the base's trainingData.ts and training/ folder (which the check names "the builders
+before 7.221") and 40 random runs instead of 12: 152 passed, 120,012 charts and key-number sets built from the new store
+equal to those built from the old one, number for number by `Object.is`. Browser checks, one lane (WSL 12 GB, host 7 GB),
+on the build the DOM run served, the ten that draw the Training tab with a run shown in the bottom panel and the one that
+imports the file: `run_control_check` 181, `training_tab_check` 139, `run_list_check` 185, `files_tab_check` 43,
+`task_list_check` 106, `corner_check_check` 42, `looks_check` 83, `task_run_check` 39, `reliability_check` 22,
+`room_check` 31, `training_data_check` 124 passed (995), each the count of its last run in this log; `training_tab_check`
+failed one check in the batch, "a chart redraws at most once a second while results arrive" (6 redraws, 3 of one chart
+within a second where 2 are allowed), and passed alone, 139: the timing flake SIF-125 and SIF-143 met. The writers
+`export_check` and `calibration_check`, which start MOCK runs, were left out while the campaign ran. The PDK-name grep of
+the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `training/store.ts` 344 -> 416 lines, longest block 192 -> 226
+(`TrainingStore`: the class now holds its 7 steps, and `femetrics.py` counts a class as one block; its longest method is
+23 lines, 50 before - `apply` 45 -> 21, `append` 50 -> 10, `thin` 33 -> 13, the steps 7 to 23, `rowsToKeep` 13 and
+`addExtremes` 11), longest line 229 -> 156, comment lines 29 -> 49, any-casts 0 -> 0; all files 16,042 -> 16,114 lines,
+any-casts 41 -> 41. The 72 added lines are the steps' signatures, the doc comments and the wraps.

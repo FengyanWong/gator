@@ -297,24 +297,47 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     consistency = _check_consistency(config, task, monitor, acknowledge_unknown)
     if config.run.mode == 'resume':
         layout, manifest = _prepare_resume(config, roots, task, task_hash, gate, before_write)
-        if consistency is not None:
-            manifest['segments'][-1]['consistency_check'] = consistency
-            try:
-                write_json(layout.manifest, manifest)
-            except BaseException:         # the run lock taken for this resume goes too: kept, it refused every later Resume
-                take_lock(layout.run_dir).release()             # as "already running" until the backend restarted
-                raise
+        _record_resume_consistency(consistency, manifest, layout)
         return layout, manifest
+    output_root, data_root = _prepare_data_root(config, roots, task)
+    vocabulary, source_manifest, source_model, parent = _source_model(config, roots, task, task_hash, compiled,
+                                                                      confirm_transfer)
+    if before_write is not None:
+        before_write()
+    experiment_dir, experiment_id, created, layout, run_id, config = _create_run_layout(
+        data_root, config, vocabulary, roots, output_root)
+    manifest, now = _new_run_manifest(
+        config, source_manifest, compiled, experiment_id, run_id, task_hash, task, vocabulary, source_model,
+        parent, gate, consistency, allow_real, provenance, data_root, experiment_dir, layout)
+    _persist_prepared_run(
+        manifest, layout, task, compiled, config, run_id, now, experiment_dir, created, remember_concurrency)
+    return layout, manifest
+
+
+def _record_resume_consistency(consistency, manifest, layout):
+    """Persist a resume consistency check and release the held run lock if that write fails."""
+    if consistency is not None:
+        manifest['segments'][-1]['consistency_check'] = consistency
+        try:
+            write_json(layout.manifest, manifest)
+        except BaseException:         # the run lock taken for this resume goes too: kept, it refused every later Resume
+            take_lock(layout.run_dir).release()             # as "already running" until the backend restarted
+            raise
+
+
+def _prepare_data_root(config, roots, task):
+    """Validate the selected output root and create the task-specific data directory."""
     output_root = config.output.output_root or remembered_output_root()
     check = roots.check(output_root, create=True, verify_windows=False)
     if not check['allowed'] or not check['writable']:
         raise RunRejected(f"Output root is not usable: {check['error'] or 'not writable'}", report=check, code='output')
     data_root = roots.data_root(output_root, mock=task.mock)      # mock data is confined to <root>/mock
     data_root.mkdir(parents=True, exist_ok=True)
-    vocabulary, source_manifest, source_model, parent = _source_model(config, roots, task, task_hash, compiled,
-                                                                      confirm_transfer)
-    if before_write is not None:
-        before_write()
+    return output_root, data_root
+
+
+def _create_run_layout(data_root, config, vocabulary, roots, output_root):
+    """Create the run directory, persist its network inputs, and copy the configuration with resolved output identifiers."""
     experiment_dir, experiment_id, created = new_experiment_dir(data_root, config.output.experiment_name,
                                                                  config.output.experiment_id)
     layout, run_id = new_run_dir(experiment_dir, config.project.task_name, config.run.mode, config.run.seed)
@@ -325,6 +348,13 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
         write_json(layout.run_dir / network_inputs.RUN_FILE, inputs_record)
     config = config.model_copy(deep=True)
     config.output.output_root, config.output.experiment_id = str(roots.resolve(output_root)), experiment_id
+    return experiment_dir, experiment_id, created, layout, run_id, config
+
+
+def _new_run_manifest(
+    config, source_manifest, compiled, experiment_id, run_id, task_hash, task, vocabulary, source_model, parent,
+    gate, consistency, allow_real, provenance, data_root, experiment_dir, layout):
+    """Construct the initial run manifest with source lineage, model identity, contracts, budgets, and provenance."""
     research, pretrain_seed, pretrain_origin = _research_block(config, source_manifest)
     initial, initial_hash = _initial_dimensions(compiled)
     # The name this run's model goes by (record 7.225): the label in use, numbered when a model under this output root
@@ -376,6 +406,12 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
                     experiment_dir=str(experiment_dir), run_dir=str(layout.run_dir),
                     relative_run_dir=str(layout.run_dir.relative_to(experiment_dir))),
         segments=[dict(segment=1, entry='start', requested_utc=now)], notes=list(task.notes))
+    return manifest, now
+
+
+def _persist_prepared_run(
+    manifest, layout, task, compiled, config, run_id, now, experiment_dir, created, remember_concurrency):
+    """Write the run input snapshot and records, register the experiment entry, and remember the selected run."""
     manifest['notes'] += _input_snapshot(layout, task, compiled, config)
     write_json(layout.effective_config, config.model_dump(mode='json'))
     write_json(layout.manifest, manifest)
@@ -385,7 +421,6 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     # The newest run that saves an RL model is remembered under the model's label (record 7.159): Resume, fine_tune and
     # frozen start from it. A run that saves no model (a Baseline simulation) leaves the label alone.
     _remember_run(config, layout, remember_concurrency)
-    return layout, manifest
 
 
 def _checked_task(config, roots, allow_real):

@@ -60,6 +60,7 @@ PARAMETER_KIND_UNITS = {'w': 'm', 'l': 'm', 'm': 'count', 'nf': 'count', 'r': 'o
 
 
 class UnitError(ValueError):
+    """A unit or conversion is outside the explicitly supported unit registry."""
     pass
 
 
@@ -68,6 +69,7 @@ def known(unit: str) -> bool:
 
 
 def canonical_unit(unit: str) -> str:
+    """Return a registered unit's canonical name or reject an unknown unit."""
     if unit not in LOOKUP:
         raise UnitError(f'Unknown unit {unit!r}; accepted units: {", ".join(sorted(LOOKUP))}')
     return LOOKUP[unit][0]
@@ -84,10 +86,12 @@ def to_canonical(value: float, unit: str) -> float:
 
 
 def compatible(first: str, second: str) -> bool:
+    """Check whether two recognized units share the same canonical unit."""
     return known(first) and known(second) and canonical_unit(first) == canonical_unit(second)
 
 
 def is_affine(unit: str) -> bool:
+    """Check whether converting the unit requires a nonzero affine offset."""
     return unit in _AFFINE and _AFFINE[unit][2] != 0.0
 
 

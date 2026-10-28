@@ -65,6 +65,7 @@ def matrix(cases) -> dict:
 
 
 def budget(jobs, cases) -> dict:
+    """Summarize search, qualification and confirmation launch ceilings for the full matrix and seed-0 stage."""
     search = sum(job['max_launches'] for job in jobs)
     stage0 = sum(job['max_launches'] for job in jobs if job['replicate'] == 0)
     searches = len({job['parent'] or job['job_id'] for job in jobs})

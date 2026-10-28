@@ -6812,3 +6812,104 @@ rule 5 finds nothing in the changed files.
 `plotOptions`, `useChartDrawing`, `drawMarks`, `useBoxSize` and `legendGroups` 50, 30, 21, 17 and 14), comment lines 44 ->
 55, any-casts 0 -> 0; all files 15,723 -> 15,767 lines, any-casts 41 -> 41. The 44 added lines are the steps' signatures
 with their typed parameters, the two types, the doc comments and the wraps.
+
+### SIF-153 Readability F2, F4, F5: the RL model window reads as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `RlModelWindow` was 209 of `RlModelWindow.tsx`'s 330 lines (`femetrics.py`: since SIF-152 the frontend's longest
+top-level block but `App.tsx`'s `Page`, a file another branch is changing). Its body read 48 names out of `m` in one
+four-line destructuring, made its two hook calls (`useCopied` and the effect that hears Undo and Redo on the window's
+document), and then drew the whole window in one 175-line return: the heading with Undo and Redo, the Mode buttons and
+the Mode's help; New model's part (62 lines: the Templates table, the template's sizes, structural encoding, network
+inputs, operating points, Advanced and component list, the values in use, the differences box, where the values come
+from, the new model's name); the window's message and the budget's warning; the part of a Mode that loads a saved model
+(90 lines: the newest model under the label, the saved models, the model in use with its 43-line facts table and its
+compatibility, and the Mode's own settings); and the saved models to look at. 60 of the file's 330 lines ran past 160
+columns (the longest 440, Evaluate only's Actions). Its single letters: `m` for a Mode in the buttons' map and the help's
+find, beside the prop `m` (the RL model's state) it shadowed; `c` a first letter (three times) or a planned condition; `v`
+a box's value (nine times); `f` a setting, `p` its provenance, `k` a reward field. F3 found nothing to do: the file has no
+`any` and no `as` cast (`femetrics.py`: 0). Its non-null assertions stay: `planned_conditions!` and `contract!` are true
+once that plan's length is above 0, and `planned_conditions?.length! > 0` asserts a length a model without a plan does not
+have - no true type, but no `any` either: `undefined > 0` is false and leaves the row out, and a true form (`?? 0`) would
+change the code.
+
+**Changed** (`frontend/src/panels/RlModelWindow.tsx` alone). `RlModelWindow` (40 lines) reads as its steps, in the order its
+code ran: the 15 values it uses itself, read from `m`; `chooseModel`, `means`, `useError` and `copying` (`useCopied`), as
+they were; `useUndoKeys` (the window's own Undo and Redo keys, SIF-97: the effect, with `popup` as before); then a return
+that draws the window by its parts - `windowHeading` (the heading with Undo and Redo), `modeButtons`, the Mode's help or
+the no-Mode note as it was, `newModelPart` in New model, the window's message and the budget's warning as they were,
+`savedModelsPart` in a Mode that loads a model, and the saved models to look at, as they were. `newModelPart` calls
+`networkInputs` (record 7.332's line or box), `differencesBox` (#network-differences) and `templateSources` (where the
+template's values come from); `savedModelsPart` calls `suggestedModel` (the newest model under the label, with its Use)
+and `modelInUse` (the check, its error, the facts and the compatibility), which calls `modelFacts` (the facts table), which
+calls `rewardFact` (the Reward row, with Use this model's reward). Each drawing step is a plain function that returns the
+element, fragment or conditional that stood where it is called - as a JSX child, or on the right of the same `&&` - and is
+never drawn as a component, so the tree React keeps is the one it kept: no new fragment, no new boundary. The two hook
+calls run in the order they ran, the effect with its dependency list (`[popup, undo, redo]`); no memo added or removed. A
+step takes the RL model's state, `m`, and reads what it draws from it in its first line (`const { ... } = m;`, as
+`AdvancedFields` and `ModelLabelInput` already did); the window's own values by their names (one private type,
+`WindowValues`, names `chooseModel`, `useError`, `means` and `copying`); and the model in use as `model: ModelReply`
+where a `model?.description &&` guard has made sure of it, as the code it replaces read it (`ModelReply` from contracts.ts,
+a type-only import). Comments moved with their code: the keys' comment (SIF-97) became `useUndoKeys`' doc comment ("this
+section" now "the window's section"), and four JSX comments the doc comments of the steps they opened (the network inputs,
+record 7.332; the differences box's word, SIF-57; the suggestion, record 7.265 and SIF-67; the reward's stored names,
+SIF-41); the comment on the blocks' ids (SIF-86) stands above the return, whose blocks carry them. Each new function has a
+doc comment, and `RlModelWindow`'s names its parts and says why the order of its hooks matters. F4: `m` -> `mode` (the Mode,
+twice), `c` -> `letter` (three times) and `condition`, `v` -> `value` (nine times), `f` -> `field`, `p` -> `provenance`, `k`
+-> `field`. `e` for an event stays, as in SIF-147 to SIF-152, and so does `m`: the page's name for the RL model's state,
+the prop of `RlModelWindow`, `AdvancedFields`, `ModelLabelInput`, `NoModeNote`, `RunConfiguration` and `RewardConditions`,
+which the steps take by that name; so do the single letters of the file's other functions (`TemplatesTable`'s,
+`AdvancedFields`' `v` and `i`, the small helpers' above them). F5: 60 -> 3 lines over 160 columns, wrapped between
+attributes, properties, parameters and import names, between a `</td>` and the `<td>` or two `{...}` that stood side by
+side, before a `?`, `:` or `??`, after `=>`, inside a `${...}` of four templates (Use template's tooltip, the RL model
+label's title, "No saved model is chosen yet", Use this model's reward), inside a JSX `{...}` (the budget's warning, the
+compatibility's summary), and in six JSX texts between two words (the soft actor-critic warning re-flowed, Advanced's
+hint, the unavailable template, the experimental encoder, the Templates table's training cell, the differences box's
+hint) - never where a space meets a tag or a `{...}`, which a wrap would drop; four texts (see below, Use the template's
+values, Actions, Name of the model it saves) start on the line after their tag, which the compiler reads the same. The 3
+left are each one string longer than a wrap can split: the operating points tooltip, Evaluate only's Actions tooltip and
+the second line of Use this model's reward's tooltip.
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: the main bundle changes, as moved
+code does (`index-Cq8EpHUy.js`); the CSS and the uPlot and cytoscape chunks are byte for byte SIF-152's build's. DOM
+identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory guard,
+WSL 11 to 13 GB available and the host 7 to 8 GB free): "all 112 checks passed", 56 of 56 compared files identical (66
+written), at its third run. The first drew all 56 files identical too, but the check also walked this record's proof
+folder, which then stood in its output folder (19 files "not in the reference"; moved aside); the second differed in the
+three files of the tabs scene alone, the Training chart 101 px high instead of 100 - SIF-149's flake (`TrainingChart`'s
+ResizeObserver), in a scene that never opens this window. Its `rl` and `rl-loaded` scenes draw this window in each Mode
+(New model, Fine-tune, Evaluate only, New model again) and with a FIXTURE saved model in use: the heading, the Mode
+buttons, the Templates table and the template's values, Advanced, the component list, the saved models, the model in
+use's facts and compatibility, the Mode's own settings - their 12 files identical in all three runs. Without a browser -
+the TypeScript compiler API on the base file and on this one, each compiled in the frontend's own program, with comments,
+white space and types set aside, every binding declared inside a function numbered by place and JSX text cleaned as the
+compiler does (SIF-152's script adapted, with SIF-151's rule for a step called as a JSX child; it, its output and the
+negative control beside the DOM identity output, `out-F2-rlmodelwindow/static`): 0 diagnostics each; the one export,
+`RlModelWindow`, with the same type and props; the 428 strings, template pieces, numbers, regular expressions and JSX
+texts the same multiset but for the new type import's module path (`'../contracts'`), and so are the JSX tags (214) and
+attribute names (252); `RlModelWindow` with its steps written back where they are called - the hook's statements where its
+call stands, each drawing step's JSX where it is called - and the reads from `m` set aside (each name they bind written
+`m.name`: `m` is the plain object `useRlModel` returns, read again in the same drawing), equals the base body statement by
+statement, in order (7 statements, 5,332 tokens); the file's other 23 top-level statements are found unchanged, so the
+wraps in `TemplatesTable` and `AdvancedFields` change nothing, and the one new statement is the type import; the 2 hook
+calls the same sequence with the same dependency list; the value references to imports and globals the same multiset
+(473); each step called once where it belongs and never drawn as a component, the hook a statement of the body itself, the
+drawing steps call no hook; the 29 values passed to steps each go by its own name, with the type its parameter declares
+(19 the same type as written, 10 `Json` on both sides); single letters declared: 23 before (`m` 3, `e` 4, `c` 4, `v` 9,
+`f`, `p`, `k`), 14 now (`m` 10: the prop and the nine steps' parameter; `e` 4). A negative control, the same script on 12
+mutated copies of the new file - the two hooks swapped, a dependency added, a caption changed, a value passed under
+another name, a JSX space dropped by a wrap, the hook called under a condition, a memo added, two arguments swapped, a
+guard changed, a block added, a step drawn as a component, the model in use read from elsewhere: each was caught.
+Browser checks, one lane (WSL 13 GB, host 9 GB), on the build the DOM run served, the 13 that open the RL model window:
+`run_list_check` 185, `model_chooser_check` 145, `looks_check` 83, `network_panel_check` 78, `graph_view_check` 72,
+`typing_check` 62, `task_rows_check` 57, `pdk_check` 47, `reward_block_check` 34, `model_structure_check` 33,
+`encoder_models_check` 24, `reliability_check` 22, `network_inputs_check` 9 passed (851, no flake), each the count of its
+last run in this log; `reward_v21_check` and the two `reward_v2_*` checks, which need fixtures this machine does not have,
+stopped for that reason before opening any page (named in `--only`, the runner runs them instead of skipping them). The
+PDK-name grep of the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `RlModelWindow.tsx` 330 -> 485 lines, longest block 209 -> 51 (`modelFacts`;
+`RlModelWindow` itself is 40 lines, and `savedModelsPart`, `newModelPart`, `templateSources`, `differencesBox`,
+`rewardFact`, `modelInUse`, `networkInputs`, `useUndoKeys`, `windowHeading`, `suggestedModel` and `modeButtons` 45, 44,
+21, 17, 17, 16, 11, 10, 9, 8 and 7), longest line 440 -> 195, comment lines 43 -> 77, any-casts 0 -> 0; all files 15,767
+-> 15,922 lines, any-casts 41 -> 41. The 155 added lines are the steps' signatures and reads from `m`, `WindowValues`, the
+doc comments and the wraps.

@@ -7730,3 +7730,63 @@ Pdk.tsx 234 -> 236, 64 -> 64; RunControl.tsx 272 -> 273, 125 -> 126; taskChoice.
 13 files 25 -> 1 (Ngspice.tsx's page text); all files 16,643 -> 16,664 lines, comment lines 3,378 -> 3,390, any-casts 40
 -> 16. The 21 added lines are 12 comment lines (one of them launch.ts's comment moved above its line), 8 lines of wraps
 and format.ts's import; lines over 160 columns in the 13 files 142 -> 139.
+
+### SIF-162 Readability F6: every block of roadster.css says which panel or window it styles (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `roadster.css`, the Roadster look's stylesheet (record 7.360), was 578 lines: 44 blocks of rules (paragraphs
+between blank lines) under 110 comments. The first nine blocks go by part of the page, each under a divider ("the page
+and its text", "fields and buttons", "cards", "the banner (header)", "tabs", "the task on the editors' tab line",
+"tables", "the run's numbers at a glance", "red stays for attention"); the other 35, from "branch record SIF-3" on, are
+the branch records' fixes, mostly in the records' order, a later record's rules often joining the block of the same part
+(SIF-99 stands after SIF-33; SIF-119 and SIF-131 are in SIF-31's block, SIF-139 in SIF-24's and SIF-107's). So one
+window's rules stand in several blocks (counted by the new "Styles:" lines: the RL model window's in 10, the bottom
+panel's in 9, the editors' in 12). The comments say why each rule is there, in the page's words, but only 8 of the 44
+blocks named a file that draws what they style, and a class's name does not always tell: `.run-table` is the list table
+of the Runs, Tasks and RL model windows (RunList.tsx, TaskList.tsx, ModelChooser.tsx), `.run-window` the box of both the
+Runs and the Tasks window's content, `.virtuoso-window` of both the Virtuoso and the ngspice window's,
+`.rl-networks-window` the RL model window's root (named in useRlModel.ts, which opens it), `.component-row` the RL model
+window's Components list (Pdk.tsx), `.real` the ngspice task's note on the editors' card, and Left.tsx draws the task's
+caption, revision, tools and lines into the editors' card through portals. Regrouping the file by panel is no way to say
+it: where two rules tie on specificity the later one wins (record 7.360's traps), and the package allows comments only.
+
+**Changed** (`frontend/src/roadster.css`; comments only: 76 lines added, none removed or changed). Under the file's
+header, a comment "Where each block goes": each block has a "Styles:" line, `grep -n "Styles:" roadster.css` lists them
+all, a pop-up window takes the page's stylesheets (popupWindow.ts) so its rules stand here too, how the blocks are
+ordered, and why nothing is regrouped. Then, under each block's opening comment (its divider, or its record's comment)
+and before its first rule or sub-comment, one "Styles:" comment - 28 of one line, 10 of two, 5 of three, the header's of
+four - naming the panel or window the block styles, in the page's words, and the file that draws it, with what other
+files put there: the header is App.tsx's, with Left.tsx's task facts, Connection.tsx's pill, RunControl.tsx's run state
+strip, run chip and run buttons, WindowsMenu.tsx's menu, Issues.tsx's "configuration valid" and blocking issues and
+LaunchRefusal.tsx's refusal; the editors' tab line is Editors.tsx's, with TaskList.tsx's task chip, Left.tsx's caption,
+revision and tools, and TaskSave.tsx's Save as and Task file. Where a class reaches further than its name says, the line
+says so (`.run-table`: the Runs, Tasks and RL model windows; `.run-window`: the Runs and Tasks windows), and a block
+that styles every grid table, every badge or every field says that. Each line was checked against the source: the
+class's `className` (or a pop-up's `rootClass` and `rootId`) in the .tsx and .ts files, and Left.tsx's portals. No rule
+is moved, merged, split, edited or wrapped: the 19 lines over 160 columns are rules and stay (F5 is not this package's
+part, and F6 allows comments only). The added lines are 123 columns at most, as the file's comments are (up to 142).
+
+**Checked.** Without a browser (`prove_static.py`, with its inputs and outputs in `out-F6-roadster/static`): against
+HEAD `2c1046d` the change is insert-only (45 chunks, 76 lines; no line removed or changed); each chunk is whole
+comments, standing at top level - outside any rule, comment or string - by a scan of the CSS text; with the comments
+removed, the two texts are one token stream. `npx tsc --noEmit -p .` exit 0 (TypeScript 5.9.3; no TypeScript changed).
+`npx vite build` into a temporary folder: byte for byte the base build's (HEAD `2c1046d`, built before the change;
+`diff -r` and sha256), all five files - `index-B18ikkku.js`, `index-BUlLMzRS.css`, the uPlot and cytoscape chunks and
+`index.html` - as the build drops a stylesheet's comments: the page gets exactly the bytes it got before. DOM identity
+with `--styles` (`--replay` the recorded answers, `--build` this build, `--compare` the base's `ref-styles`; behind the
+memory guard, WSL 13 GB available and the host 8 GB free): "all 184 checks passed", 92 of 92 compared files identical
+(102 written), the 36 computed-style snapshots among them, at its first run, into `out-F6-roadster/dom`. Browser checks,
+one lane (WSL 13 GB available, the host 8 GB free), on this build: the 12 that guard roadster.css's rules - the 9 its
+comments cite, the 2 more that name the file, and `connection_panel_check` (the pill's fix of record 7.361 stands in
+it): `run_control_check` 181, `training_tab_check` 139, `connection_panel_check` 101, `run_list_check` 185,
+`model_chooser_check` 145, `find_fill_copy_check` 50, `files_tab_check` 43, `looks_check` 83 (its rule audit reads the
+stylesheets as the page loaded them), `unsaved_rows_check` 28, `graph_view_check` 72, `reliability_check` 22 and
+`callouts_check` 8 passed, each its count in this group's base suite (`suite-base.txt`): 1,057 checks, none flaky. The
+first batch stopped before any check, "Windows cannot reach the scratch backend" (the port hiccup of record 7.292); its
+rerun is the one counted. The PDK-name grep of the plan's rule 5 finds the second foundry's library in no changed file,
+and no added line names a PDK.
+
+**Measured.** `femetrics.py` reads only .ts and .tsx files: its output is the same byte for byte before and after (98
+files, 16,664 lines, comment lines 3,390, files with a header comment 91, any-casts 16). roadster.css by its own measure
+(`cssmetrics.py`, beside the static proof): lines 578 -> 654, longest block (the header's) 98 -> 102 lines, comments 110
+-> 155, blocks naming a file that draws what they style 8 -> 43 of 44 (the 44th, SIF-34's, styles every grid table),
+blocks with a "Styles:" line 0 -> 44, lines over 160 columns 19 -> 19 (rules), longest line 271 -> 271.

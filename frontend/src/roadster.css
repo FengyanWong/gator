@@ -7,7 +7,17 @@
    value styles.css held for the same selector and property, here at top level or in the same @media, never applied: it
    goes from styles.css (branch record SIF-129; looks_check.mjs fails on one). */
 
+/* Where each block goes (branch record SIF-162): under its opening comment, each block below has a line "Styles:" naming
+   the panel or window it styles and the file that draws it (App.tsx beside this file, the others in panels/), so
+   `grep -n "Styles:" roadster.css` lists them all. A pop-up window takes the page's stylesheets (popupWindow.ts): its
+   rules stand here too. The first nine blocks go by part of the page, from its text to "red stays for attention"; from
+   "branch record SIF-3" on, the blocks follow the branch records, mostly in their order - a later record's rules often
+   stand in the block of the same part -, so one window's rules can stand in several blocks. Nothing is regrouped: where
+   two rules tie on specificity the later one wins, so a rule moved beside its panel's others can change the page (record
+   7.360's traps). */
+
 /* ---- the page and its text ---------------------------------------------------------------------------------------------- */
+/* Styles: the page and every window: text sizes, headings, links, the focus ring; .layout is the page's grid (App.tsx) */
 body { font-size: 14px; line-height: 1.45; }
 .layout { gap: 12px; padding: 12px 16px; }   /* the columns keep their widths and their narrow layouts (styles.css) */
 @media (max-width: 1100px) { .layout { padding: 8px; } }   /* one column of editors: as wide as the window lets them (reliability_check) */
@@ -21,6 +31,8 @@ a { color: var(--text); } a:hover { color: #ffffff; }
 details > summary::marker { color: var(--muted); }
 
 /* ---- fields and buttons ------------------------------------------------------------------------------------------------- */
+/* Styles: every field and button of the page and its windows; icon buttons (Icons.tsx); the dialogs' close mark
+   (CircuitGraphView.tsx, ModelStructure.tsx) */
 input, select, textarea { border-radius: 8px; padding: 6px 9px; }
 button { border-radius: 9px; padding: 6px 12px; }
 button:hover:not(:disabled) { border-color: #5a5a61; background: var(--hover); }
@@ -29,6 +41,9 @@ button:has(> svg.icon) { padding: 7px 9px; }
 button.dialog-close:hover:not(:disabled) { color: var(--on-bad); }
 
 /* ---- cards: tone instead of outlines ------------------------------------------------------------------------------------ */
+/* Styles: the cards - each .panel (the editors, the Circuit panel, the right column's modules, the RL model window), the
+   bottom panel (footer: BottomPanel.tsx) and the message line under the header (.banner: App.tsx) - and the side bar of a
+   note, a question or a card, Calibration ready's among them (a line under the header, App.tsx) */
 .panel { border: none; border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
 footer { border: none; border-radius: 16px; }   /* no overflow clip: the splitter stands above its top edge */
 .bottom-body { padding: 12px 16px; }
@@ -39,6 +54,10 @@ footer { border: none; border-radius: 16px; }   /* no overflow clip: the splitte
 .calibration-ready { border-left-color: var(--text); }
 
 /* ---- the banner (header) ----------------------------------------------------------------------------------------------- */
+/* Styles: the header (App.tsx) and what other files put in it: the task's facts (Left.tsx), the Connection pill
+   (Connection.tsx), the run state strip, the run chip and the run buttons (RunControl.tsx), the Windows menu
+   (WindowsMenu.tsx), "configuration valid" (Issues.tsx); and the lines under it: Issues.tsx's blocking issues,
+   LaunchRefusal.tsx's refusal, App.tsx's settings problem and Calibration ready */
 header { border: none; border-radius: 16px; padding: 7px 10px; gap: 8px 14px; }
 /* One line while no full-width line (blocking issues, a refusal, a settings problem, Calibration ready) is open: the task's
    facts and the connection's name give way with "..." before anything wraps. From 1201 px: the banner's fixed parts take
@@ -138,6 +157,8 @@ header button.run-abort:hover:not(:disabled) { background: #e8213c; border: none
 header button.run-main svg.icon, header button.run-abort svg.icon { width: 17px; height: 17px; }
 
 /* ---- tabs ------------------------------------------------------------------------------------------------------------- */
+/* Styles: the two tab lines - the bottom panel's (BottomPanel.tsx; on it the Runs... button and the link to the header's
+   run, RunList.tsx) and the editors' (Editors.tsx), whose Parameters, Probes and Specs tabs make one segmented control */
 /* every tab strip: the chosen tab white with a short red bar under its name, the others grey */
 .tabs { border-bottom: 1px solid var(--grid-line); padding: 6px 10px 0; gap: 2px; }
 .tabs > button:not(.run-list-button) { position: relative; border: none; background: transparent; color: var(--muted); padding: 9px 14px 11px; border-radius: 10px 10px 0 0; font: 14px var(--f-label); letter-spacing: 0; }
@@ -163,6 +184,9 @@ header button.run-main svg.icon, header button.run-abort svg.icon { width: 17px;
 
 /* ---- the task on the editors' tab line (record 7.362, the user's Option D): its name as a chip (it opens the Tasks window),
    its revision and whether the rows are saved; Show circuit, Check now, Save as and Task file at the line's end -------------- */
+/* Styles: the editors' tab line (Editors.tsx) and what others put on it: the task's chip (TaskList.tsx) with its caption,
+   revision and tools (Left.tsx), Save as and Task file (TaskSave.tsx); under it the rows not saved (Editors.tsx) and
+   "No task yet" (Left.tsx); last, the Tasks window's New task line (TaskList.tsx) */
 .editors > .tabs { align-items: center; row-gap: 6px; }
 .editors > .tabs .task-head:empty { display: none; }
 .editors > .tabs .row.task-row { margin: 0 8px 0 0; gap: 8px; flex: 0 1 auto; min-width: 0; }
@@ -188,6 +212,9 @@ header button.run-main svg.icon, header button.run-abort svg.icon { width: 17px;
 .task-window-new { align-items: center; gap: 8px; margin: 6px 0 10px; }
 
 /* ---- tables ------------------------------------------------------------------------------------------------------------ */
+/* Styles: every grid table; .run-table, the list tables of the Runs, Tasks and RL model windows (RunList.tsx,
+   TaskList.tsx, ModelChooser.tsx; .run-window: the Runs and Tasks windows); the editors' table, toolbar and formula bar
+   (Editors.tsx, cells.tsx, FormulaBar.tsx) */
 table.grid { font-size: 13.5px; line-height: 1.4; }
 table.grid th, table.grid td { border-color: var(--grid-line); padding: 6px 10px; }
 table.grid th { background: var(--head); font: 500 13px/1.4 var(--f-label); color: var(--muted); letter-spacing: 0; }
@@ -211,6 +238,8 @@ table.editor td:has(> input[type="checkbox"]) { vertical-align: middle; }   /* a
 .formula-bar textarea { font-size: 13px; line-height: 20px; }
 
 /* ---- the run's numbers at a glance: Run status's head and the Training tab's key numbers --------------------------------- */
+/* Styles: Run status in the bottom panel (RunTabs.tsx), with Continue...'s form and refusal (ContinueForm.tsx,
+   LaunchRefusal.tsx); the key numbers' tiles there and in the Training tab (fields.tsx's KeyTile, TrainingTab.tsx) */
 .status-hero { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: stretch; margin: 2px 0 14px; }
 .status-hero-count { flex: 0 1 260px; display: flex; flex-direction: column; gap: 4px; }
 .status-hero-state { font-size: 14px; }
@@ -241,6 +270,9 @@ details.training-keys td .key-tile-note { display: block; font-size: inherit; }
 /* ---- red stays for attention (record 7.372): text links are white and underlined, a chosen or pressed button is outlined in
    white, and Save as and the sort marks lose their red - red is left for Abort, errors, the tab bars, focus, the active cell
    and the current run ---------------------------------------------------------------------------------------------------- */
+/* Styles: text links and chosen buttons everywhere; by name the RL model window's Modes (RlModelWindow.tsx), the windows'
+   folder lists (Folders.tsx), the Training tab's head (TrainingTab.tsx), the task's chip (TaskList.tsx), Save as
+   (TaskSave.tsx), the Runs... button (RunList.tsx) and the sort marks (TableView.tsx, RunTabs.tsx) */
 button.notes-link, button.item-link, button.text-link, details a { color: var(--text); text-decoration: underline; text-underline-offset: 2px;
   text-decoration-color: #8e8e96; }
 button.notes-link:hover:not(:disabled), button.item-link:hover:not(:disabled), button.text-link:hover:not(:disabled), details a:hover { color: #ffffff;
@@ -254,6 +286,8 @@ button.active, .rl-modes .rl-mode.active, .task-folder.active, .training-head bu
 /* ---- branch record SIF-3 ----------------------------------------------------------------------------------------------------
    Run configuration's model line in the body font, two lines at most ("New model · Graph Transformer template · GT 48/4/4" was
    cut to "New model · Graph Transform..." in a monospace font); its tooltip keeps the whole. */
+/* Styles: the right column's Run configuration, its model line (RunConfiguration.tsx); then the bottom panel's body and
+   the right column as scroll areas (BottomPanel.tsx, App.tsx) */
 .rl-networks-row .net-short, .rl-networks-row .net-short.net-code { font-family: var(--f-body); white-space: normal; display: -webkit-box;
   -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
 /* The scroll areas hold what is placed in them: an icon button's screen-reader label (.sr-only, absolute) at the end of a long
@@ -262,19 +296,23 @@ button.active, .rl-modes .rl-mode.active, .task-folder.active, .training-head bu
 
 /* ---- branch record SIF-4: the Data tables keep one line per row - a JSON value too (best_so_far_metrics wrapped into a block
    200 px tall); the whole value on hover, a click copies it */
+/* Styles: the bottom panel's Data tables tab (RunTabs.tsx) */
 table.grid.small.data-table td.json-cell { white-space: nowrap; word-break: normal; overflow: hidden; text-overflow: ellipsis; max-width: 48ch; cursor: copy; }
 
 /* ---- branch record SIF-5: an issue in a row says what it is - its level and the first clause of its message, one line, the
    whole message and its code on hover; it showed the code ("warning: equation_unit_unchecked") */
+/* Styles: the editors' Issues column (Editors.tsx) */
 table.editor td.issues .issue { max-width: 40ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
 table.editor:has(td.issues > .issue) td.issues { min-width: 240px; }   /* room for the first words while a row has an issue */
 table.editor td.issues .issue b { font-weight: 600; margin-right: 3px; }
 
 /* ---- branch record SIF-9: a cell that holds more than it shows says so - "main-inverter NMOS..." - while it is not being edited
    (the formula bar and the cell itself show all of it once entered) */
+/* Styles: the editors' cells (cells.tsx) */
 table.editor td input:not([type="checkbox"]):not(:focus) { text-overflow: ellipsis; }
 
 /* ---- branch record SIF-11: the Runs window's Mode cell names what the run was, its design under it */
+/* Styles: the Runs window's table (RunList.tsx) */
 table.run-table td .run-design { display: block; }
 /* the Runs window's fifteen columns fit a 1500 px window with real names: its wrapping cells may be narrower (they were 85 px at
    least, and the table 1302 px in its 1234 px) */
@@ -284,14 +322,18 @@ table.run-table td .run-design { display: block; }
    could be the whole card at 1366 x 768 with a run below, the table pushed out of view). Branch record SIF-73: and they leave the
    table its heading and about three rows (340 px: the card's tab line, toolbar, fact line and formula bar take about 190) - 40 % of
    the 353 px card a message line leaves showed the table's heading cut in half - but keep 72 px, their heading and a line. */
+/* Styles: the editors' card (Editors.tsx): the Parameters tab's Matched devices box (MatchedDevices.tsx) and the confirm
+   questions over the table */
 .editors > .confirm, .editors > .matched-devices { max-height: min(45vh, 40%, max(72px, calc(100% - 340px))); }
 
 /* ---- branch record SIF-23: the saved models' Design list sits beside Refresh list at its own width (the window's selects take
    the whole line) */
+/* Styles: the RL model window's saved models (ModelChooser.tsx) */
 .saved-models > .row { flex-wrap: wrap; gap: 6px; } .saved-models select.model-design-filter { width: auto; flex: none; max-width: 22em; }
 
 /* SIF-24: the Tasks list shares its width. A task's folder line, its cell (after the library's "/") and the column titles
    may take two lines, so the Newest run column is not squeezed into four or five lines at the window's 1500 px. */
+/* Styles: the Tasks window's table (TaskList.tsx) */
 table.task-table th, table.task-table td.task-cell, table.task-table :is(.task-folder-label, .task-internal-name, .task-mark) { white-space: normal; }
 @media (max-width: 1250px) { table.task-table td.task-when { white-space: normal; } }   /* a narrow window: date over time */
 table.task-table .task-date { white-space: nowrap; } table.task-table .name-part { display: inline-block; }
@@ -301,9 +343,11 @@ table.task-table .task-date { white-space: nowrap; } table.task-table .name-part
 table.task-table .task-mark .warn { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 32ch; }
 
 /* SIF-25: the Training charts' readout line - its numbers in the text colour, the words around them muted. */
+/* Styles: the Training tab's charts, the readout line over each (TrainingChart.tsx) */
 .training-readout b { color: var(--text); font-weight: 600; }
 
 /* SIF-26: the task file's text fills its window; the buttons, and the problems a refused file has, stay in view under it. */
+/* Styles: the Task file window (TaskFile.tsx; TaskSave.tsx opens it, its root #task-file-root) */
 #task-file-root { height: 100vh; }
 .task-file { height: 100%; display: flex; flex-direction: column; }
 .task-file > * { flex: none; }
@@ -311,20 +355,25 @@ table.task-table .task-mark .warn { display: -webkit-box; -webkit-line-clamp: 2;
 .task-file > .blocker { max-height: 35vh; overflow: auto; }
 
 /* SIF-27: in the Runs window a date stays whole (SIF-11's narrower cells broke "2026-10-" over "20"); a task name breaks after "_" or "-". */
+/* Styles: the Runs window's table (RunList.tsx) */
 table.run-table .run-date { white-space: nowrap; }
 
 /* SIF-29: the Logs and Data tables lists sit at their own width at the start of their tool line (they took a line of the
    bottom panel to themselves, the window's whole width for "events"). */
+/* Styles: the bottom panel's Logs and Data tables tabs (RunTabs.tsx) */
 .row > select.tab-choice { width: auto; flex: none; min-width: 10em; }
 
 /* SIF-30: the RL model window uses a wider window (its saved models' table wrapped names over two lines beside empty
    margins); its sentences keep a readable length. */
+/* Styles: the RL model window (RlModelWindow.tsx; useRlModel.ts opens it, its root .rl-networks-window) */
 .rl-networks-window { max-width: 1440px; } .rl-networks-window p { max-width: 120ch; }
 .rl-networks-window :is(.row.template-sizes, label > select, label > input:not([type="checkbox"])) { max-width: 640px; }   /* "48", "4" need no 450 px box */
 
 /* SIF-31: no text cut by its box. The Components list kept the old look's 26 px height - 12 px of room for a 16 px line
    under the Roadster padding. A number in the editors keeps its 11 characters when the table is narrow (with the circuit
    shown it read "3.25 ko...": SIF-28 gave numbers their natural width, no minimum); text columns give way first. */
+/* Styles: the RL model window's Components list (ComponentList, Pdk.tsx); then the editors' table (Editors.tsx,
+   cells.tsx): a number's least width, and the Parameters' Instance, Notes, Tied to and ID columns */
 .component-row > label select, .component-row > button { height: auto; }
 table.editor td input.numeric { min-width: calc(11ch + 20px); }
 /* SIF-119: an instance path stays whole at 1366 px. The user's VCO read "DUT/M..." in every Instance (DUT/MNA1): there the
@@ -344,27 +393,33 @@ table.editor td[data-field="binding_group"] input { min-width: 110px; }
 table.editor td[data-field="variable_id"] input { min-width: calc(12ch + 26px); }
 
 /* SIF-32: Data tables - a column of numbers is right-aligned in figures of one width, its title too. */
+/* Styles: the bottom panel's Data tables tab (RunTabs.tsx) */
 table.grid.small.data-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* SIF-33: Output files - the sizes right-aligned in figures of one width, as Data tables' numbers (SIF-32). */
+/* Styles: the bottom panel's Output files tab (RunTabs.tsx) */
 table.grid.small.files-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* SIF-99: Data tables' rows and order lists at their own width beside the table list; Output files' filter box wide enough
    for a folder's name and a file's, and its column titles sort, with the hand, as the Runs window's do. */
+/* Styles: the bottom panel's Data tables and Output files tabs (RunTabs.tsx) */
 .row > select:is(.table-limit, .table-order) { width: auto; flex: none; }
 .row > input.files-filter { width: 260px; flex: none; }
 table.grid.small.files-table th.sortable { cursor: pointer; user-select: none; }
 
 /* SIF-34: a numeric cell is right-aligned, as td.numeric always meant (styles.css) - "table.grid td { text-align: left }"
    outranked it in every grid table: Runs (seed, evaluations), Tasks (revision, sizes), saved models, model facts. */
+/* Styles: every grid table: a numeric column and its title (the Runs, Tasks and RL model windows' tables among them) */
 table.grid td.numeric, table.grid th.numeric { text-align: right; }   /* and the title over such a column */
 
 /* SIF-35: the output folder's facts read as the run's and the model's facts do: each name on one line, muted; the value
    takes the rest ("Allowed / writable" took three lines in the right column). */
+/* Styles: the right column's Output settings, the output folder's facts (OutputPanel.tsx) */
 .output-facts table.grid.small td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
 
 /* SIF-36: a saved model's compatibility - the problems first; a "saved {...} != current {...}" pair as the keys that differ,
    in the text colour under the red head; the checks that pass folded under one line. */
+/* Styles: a saved model's compatibility in the RL model window (CompatibilityList.tsx) */
 ul.compat-problems, details.compat-passed > ul { margin: 4px 0; padding-left: 1.2em; }
 ul.compat-diff { margin: 3px 0 3px 0.4em; padding: 0; list-style: none; color: var(--text); font-size: 12px; }
 ul.compat-diff > li { margin: 1px 0; overflow-wrap: anywhere; } ul.compat-diff code { color: var(--muted); }
@@ -373,9 +428,11 @@ details.compat-raw > pre { max-height: 12em; overflow: auto; white-space: pre-wr
 
 /* SIF-37: the circuit graph view's tools keep their compact 26 px (styles.css) without the Roadster padding above and below:
    12 px of room cut the lists' words ("Local port edges", "block 1") through the middle. */
+/* Styles: the circuit graph view's tool line (CircuitGraphView.tsx: the dialog a saved model's Details open) */
 .graph-tools :is(input, select, button) { padding-top: 0; padding-bottom: 0; }
 
 /* SIF-43: the Windows menu's "Close all" is an action, not a window: a line sets it apart from the windows listed above it. */
+/* Styles: the header's Windows menu (WindowsMenu.tsx) */
 header .windows-list .windows-close-all { position: relative; margin-top: 6px; }
 header .windows-list .windows-close-all::before { content: ''; position: absolute; left: 2px; right: 2px; top: -6px; border-top: 1px solid var(--line); }
 
@@ -383,6 +440,7 @@ header .windows-list .windows-close-all::before { content: ''; position: absolut
    a muted "x" at the end of its first line shows it. Drawn here, not as an element, so the line's text stays the message
    alone (the checks read it whole); room is kept for it, under the MOCK line's own padding too. The second `content` keeps
    the mark out of what a screen reader says, where the browser knows that form. */
+/* Styles: the message line under the header (.banner, App.tsx) */
 .banner, .banner.mock { position: relative; padding-right: 34px; }
 .banner::after { content: '\00d7'; content: '\00d7' / ''; position: absolute; top: 0; right: 12px; padding-top: inherit;
   font-size: 16px; line-height: 20px; color: var(--muted); }
@@ -392,6 +450,8 @@ header .windows-list .windows-close-all::before { content: ''; position: absolut
    the page, beside 13 px hints; 12.5 px rather than 13 keeps the Issues column's growth small (SIF-5's 40ch cap grows with
    the font). "More columns" and "Matched devices..." are everyday actions at the labels' 13 px (they were 11.5 px fine
    print); the toolbar keeps one line at 1366 x 768 (find_fill_copy_check). */
+/* Styles: an issue's words wherever they stand (Editors.tsx, MatchedDevices.tsx, Issues.tsx, CompatibilityList.tsx); the
+   editors' toolbar and a leader row's count (Editors.tsx); the task's chip (TaskList.tsx); every grid table's headings */
 .issue { font-size: 12.5px; }
 .toolbar button.text { font-size: 13px; }
 /* the leader row's count that opens its tied rows - the only way to - read and hit more easily: it was 11 px text in about
@@ -410,6 +470,8 @@ table.grid th:not([title]) { cursor: default; }
    11 px in a hit box about 16 px tall (the old padding outranked Roadster's); a run's state ("completed"), a connection
    layer's and the "MOCK" / "in use" tags were 10 to 10.5 px. The tables still fit their windows: the Runs window's 1500 px
    (run_list_check), the saved models' 1100 px (model_chooser_check). */
+/* Styles: the list tables of the Runs, Tasks and RL model windows (RunList.tsx, TaskList.tsx, ModelChooser.tsx); every
+   .badge, .model-tag and .path, on the page and in its windows */
 table.run-table td .hint { font-size: 12px; }
 button.notes-link { font-size: inherit; padding: 3px 4px; }
 /* "Details" and "Hide details" take the same room, so a toggle moves no column: 6em at the table's 13 px holds "Hide details"
@@ -434,6 +496,7 @@ table.run-table td .run-so-far { white-space: normal; }
    (styles.css); the numbers under it already read at this look's sizes: one run's tiles at 12 px labels and 17 px values
    (record 7.360, user: "make it more compact but keeping the style"), several runs' table at 13.5 px (table.grid). The
    axis numbers: TrainingChart.tsx. */
+/* Styles: the Training tab's charts (TrainingTab.tsx, TrainingChart.tsx) */
 .training-legend, .training-compared { font-size: 12.5px; }
 .training-chart figcaption { font-size: 13px; }
 .training-readout { font-size: 12px; }
@@ -444,6 +507,8 @@ table.run-table td .run-so-far { white-space: normal; }
    tooltip holding the task, and only once the grey facts are gone: it never shrinks (SIF-66 review: weighted 1000 to 1
    against the facts, it gave up a fraction of a pixel while they showed, and the browser draws the "..." for that too -
    "OTA 7T wi..." at 1250 to 1366 px); its box's width clamps it when the box is narrower than the name. */
+/* Styles: four places - the header's task name (Left.tsx), Continue...'s form under Run status (ContinueForm.tsx), the
+   formula bar's name box (FormulaBar.tsx) and the circuit graph view's dialog (CircuitGraphView.tsx) */
 .tb-task { flex: none; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Continue...'s "New total": 9ch less the look's padding left about six characters - the empty field's "more than 1200" read
    "more th". It holds "more than 12000" and "1,000,000" whole (run_control_check). */
@@ -464,6 +529,8 @@ dialog.graph-dialog[open] > .graph-body { flex: 1 1 0; min-height: 0; height: au
    pad themselves) and the old look's top alignment: its lines touched the cell's left line, left of the "Issues" heading's
    text, and a row's one line sat at the top of the row. Now it is padded as the heading is at the sides and centred in the
    row; nothing above or below, so a row with two lines stays as high as the others. */
+/* Styles: the editors (Editors.tsx): the Issues column, the notes several rows share over the table, the Specs tab's
+   Probe chips and the tick boxes' column */
 table.editor td.issues { padding: 0 10px; vertical-align: middle; }
 /* SIF-118: a note three rows of the table or more share is said once in a line over it - "On 7 rows: info New spec: models
    without it do not load", the notes side by side while they fit, at the column's 12.5 px and in their level's colour, the
@@ -493,11 +560,13 @@ table.editor :is(td, th).sel { text-align: left; }
    ("Round 3 full archive — CircuitGPS v3 from scratch (offline)") took six lines, its row 120 px, and about six rows were in
    view. Three lines are the height a row's State (the stop reason under it) and Mode (the design under it) take already, and
    they keep the word that tells two archives apart ("GraphGPS", "CircuitGPS"). */
+/* Styles: the Runs window's table (RunList.tsx) */
 table.run-table td.run-from .run-from-name { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* SIF-81: the task file's _help part as a list over its text, each part's name in bold and its wrapped lines hanging in
    under it: inside the box they ran back under the opening "{". The list scrolls by itself at about a third of the
    window, so the text keeps the rest of it (SIF-26). */
+/* Styles: the Task file window's help list (TaskFile.tsx) */
 .task-file-help { margin: 0 0 8px; } .task-file-help > summary { cursor: pointer; font-size: 13px; }
 .task-file-help dl { max-height: 30vh; overflow: auto; margin: 4px 0 0; font-size: 13px; }
 .task-file-help dl > div { margin: 0 0 4px; padding-left: 1.5em; text-indent: -1.5em; }
@@ -508,6 +577,7 @@ table.run-table td.run-from .run-from-name { display: -webkit-box; -webkit-line-
    keeps room for its scroll bar, so its columns keep their width (model_chooser_check: no sideways scroll at 1100 px). A
    model's Details scroll with its row: their own tables' titles do not stick over the box's. Not the Full layer table's: it
    scrolls in its dialog's own box, its titles at that box's top (branch record SIF-86, review follow-up). */
+/* Styles: the RL model window's saved models and their Details (ModelChooser.tsx; the layer tables, ModelStructure.tsx) */
 .rl-networks-window .saved-models .task-folder-content .scroll { max-height: min(60vh, 720px); overflow: auto; scrollbar-gutter: stable; }
 .rl-networks-window .saved-models .task-folder-content .scroll > table > thead th { z-index: 1; }
 .rl-networks-window .saved-models .model-details table.grid:not(.structure-layers) th { position: static; }
@@ -519,6 +589,9 @@ table.run-table td.run-from .run-from-name { display: -webkit-box; -webkit-line-
    window (no connection chosen, the gate's refusal), with Connection... at its end. SIF-139: and the ngspice task's line
    under the editors' toolbar that names the connection it lacks: the task's lines stand in .task-status (Editors.tsx), not
    straight under .editors, and its words keep the 4 px above and below that the task's other lines have. */
+/* Styles: a line of words with its action at the end - over the editors' table (Editors.tsx), in the Virtuoso window
+   (VirtuosoWindow.tsx), among the task's lines on the editors' card (Left.tsx) - and a close mark at a line's end
+   (.line-close: Editors.tsx; the header's Calibration line, App.tsx) */
 .editors > .line-act, .virtuoso-window > .line-act, .task-status > .line-act { display: flex; align-items: baseline; gap: 4px 10px; }
 .editors > .line-act > p, .virtuoso-window > .line-act > p, .task-status > .line-act > p { flex: 0 1 auto; min-width: 0; }
 .editors > .line-act > button, .virtuoso-window > .line-act > button, .task-status > .line-act > button { flex: none; } .editors > .line-act > button.line-close { align-self: center; }
@@ -529,6 +602,7 @@ button.line-close { border: none; background: none; }
    tooltip (Icons.tsx). What such a button needs on a line laid out for words stands in this one block for every batch of
    the audit; a later batch adds its lines here. A close mark at the end of a line of words is a button.line-close (above):
    the calibration line's Close. Measured in headless Edge, the icon's middle against the words' middle: */
+/* Styles: the header's blocking-issues list (Issues.tsx) and Running now's Refresh (RunBrief.tsx) */
 /* the blocking issues' Hide, an X at the head's end: the head centres its parts. On their shared baseline the X stood 2 px
    over the words; centred alone, 6 px under them, as the words keep to the top of a line the button makes taller. The count
    and the hint, centred, stand within 0.3 px of one baseline, and a narrow window's two-line hint keeps all three centred. */
@@ -549,6 +623,7 @@ button.line-close { border: none; background: none; }
    way to the plot's 110 px, down to its own 18 px (styles.css), so a wrapped line ran over the plot's top - by 7 px with
    two charts at 1366 px, by 43 px with eight -, as the cut line already did where it stood under the keys (9 px, eight
    charts at 1600 px). */
+/* Styles: the Training tab's charts (TrainingChart.tsx; their grid, TrainingTab.tsx) */
 .training-readout { font: 12px/1.4 var(--f-body); font-variant-numeric: tabular-nums; white-space: normal; overflow-wrap: anywhere; }
 .training-readout .readout-part { display: inline-block; max-width: 100%; }
 .training-legend { align-items: baseline; flex: none; }
@@ -574,5 +649,6 @@ button.line-close { border: none; background: none; }
    placeholder; at full opacity (Firefox's own 0.54 would take it under the bar again). A changed cell's amber (--unsaved-cell,
    record 7.222), where a bound cleared in a saved task says "no limit", is lighter: there the grey read 4.18 : 1, so it
    takes the hint's grey, 5.81 : 1 (looks_check, unsaved_rows_check). */
+/* Styles: every field's placeholder; in the editors, a changed cell's (Editors.tsx) */
 ::placeholder { color: #8e8e96; opacity: 1; }
 table.editor tr.unsaved-changed > td.unsaved-cell input::placeholder { color: var(--muted); }

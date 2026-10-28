@@ -7204,3 +7204,117 @@ steps `useRegisteredTasks`, `useContinueFocus`, `statusHero`, `statusActions` an
 lines - the last the flat table of 22 rows; Calibration, 71 lines, is 80 with its wraps), comment lines 139 -> 152,
 any-casts 0 -> 0; all files 16,114 -> 16,229 lines, any-casts 41 -> 41. The 115 added lines are the steps' signatures with
 their typed parameters, their doc comments and returns, and the wraps.
+
+### SIF-157 Readability F2, F4, F5: the circuit graph view reads as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `CircuitGraphView` was 188 of `CircuitGraphView.tsx`'s 294 lines (`femetrics.py`: the file's longest block). One
+body made its 22 hook calls - 12 `useState`, 4 `useRef`, `useNewest` and the drawing's five effects - with `load`, `show`,
+`close`, `fit` and `layout` between them; the effect that draws once per answer alone was 36 lines (the proposed sizes, the
+nodes and lines, the cytoscape instance and its five listeners, the layout, the first paint and the bulk ties). Then came
+the 11 values the dialog reads and one 82-line return: the Circuit graph view button, the dialog's heading, the error and
+busy lines, the row of tools (24 lines: the evaluation box, Show, < and >, the attention's four choices, the bulk ties, the
+three layouts and Fit) and the drawing with its side (43 lines: the state shown, the notes, the node-attention table, the
+vocabulary, the legend, the sizes table, the picked device, net or line, and what was measured). 49 of the file's 294
+lines ran past 160 columns, 44 of them in `CircuitGraphView` (the longest 350, the bulk ties' check box). It declared 39
+single-letter names: `e` an event or a caught error (10), `c` a connection (4), `k` a direction or a parameter's name (4),
+`n` a node or a net (3), `m` a member or a metric (3), `i` an index (3), `v` the backend's answer or a parameter's value,
+`h` the head held or one head's attention, `g` a group, `d` a device, `_` an argument not read (2 each), `l` the layer held
+and `a` a connection's attention. F3: the file's one `any` (`femetrics.py`: 1) is the drawing package's failed fetch,
+`(e: any)`, and it stays: a rejection's reason is whatever the import threw, the Promise types give it as `any`, and the code
+reads it as `e?.message ?? e`, for a value with a message or without one. `unknown`, its true type, refuses `e?.message`,
+and making that compile would take a narrowing that changes what a value without a message shows, or a cast; `Error` would
+claim more than an import promises; `Json` is not JSON. The file's two other casts stay: `net.roles as string[]` (in
+`netRole`, true) and, in the drawing's effect, `canvas.current as Json`, which hangs the drawing on its box for the browser
+checks (`__cy`, a property no DOM type has).
+
+**Changed** (`frontend/src/panels/CircuitGraphView.tsx` alone). `CircuitGraphView` (71 lines) reads as its steps, in the
+order its code ran: the dialog's state and refs, `useNewest`, `load`, `show` and `close`, as they were; `useGraphDrawing`
+(the drawing: `fit` and `layout`, then its five effects in their order, each with its dependency list - it goes with the
+dialog, it is drawn once per answer, its lines are painted again for another layer, head, direction, scope or query, a
+picked node becomes the global query, and the bulk ties show or hide), which gives `fit` and `layout`; the 11 values, as
+they were; then a return that draws the button as it was and the dialog by its parts - `graphHeading` (its name, the save
+point and Close), the error and busy lines as they were, `graphTools` (the row of tools; it calls `attentionChoices`, the
+attention's four choices, on the right of the same `attention.available &&`), the drawing's box as it was, and `graphSide`
+(the state shown, the notes and the legend; it calls `sizesTable`, and `pickedNode` and `pickedConnection` on the right of
+the same `&&`). Inside the effect that draws once per answer, two plain steps name its parts: `graphElements` (the proposed
+sizes, then the nodes and lines; it ends `return elements;`, the name its call takes) and `addListeners` (the click that
+picks a device, a net or a line, the click beside them that picks nothing, and the fit that follows the box, branch record
+SIF-143) - each called as a statement where its code stood, so the effect still lets the old drawing go, makes the
+elements, makes the drawing, adds its listeners, holds it, lays it out, paints it and hides the bulk ties, in that order.
+Each drawing step is a plain function that returns the element or fragment that stood where it is called - as a JSX child,
+or on the right of the same `&&` - and is never drawn as a component, so the tree React keeps is the one it kept: no new
+fragment, no new boundary. The 22 hook calls run in the order they ran, each effect with its dependency list; no memo added
+or removed (the file has none). A step takes each value it reads by its own name, typed as tsc types the value passed (86
+values: 28 `Json`, the backend's JSON or the values read from it, on both sides; 58 of the type written, among them
+`RefObject<HTMLDivElement>`, `MutableRefObject<Json>` and `MutableRefObject<number | null>` for the refs, `Newest`, the
+`Dispatch<SetStateAction<...>>` setters, `(evaluation: number | null) => void` for `load` and `'to_device' | 'to_net'` for
+`towards`). `Picked`, a private type, names a clicked device, net or line, for the state that holds it and the steps that
+take it. `addListeners` takes the drawing as cytoscape's own `Core` (`import('cytoscape').Core`, a type: nothing is imported
+at run time, and the cytoscape chunk is still fetched when the view opens), as tsc typed the code it replaces - `Json` would
+have been untrue and would have stopped tsc checking its five `cy.on` calls. Comments moved with their code: the effects'
+comments stand in `useGraphDrawing` above their effects, SIF-143's in `addListeners` above its listeners, and the trailing
+comments of the bulk ties' and the generic layout's state went above their lines; the JSX comments stand where they stood.
+Each new function and `Picked` has a doc comment, and `CircuitGraphView`'s names its steps and says why the order of its
+hooks matters. `attentionOf`, `nodeWeights`, `graphStyle` and `paint` keep their names and stand alone, as
+`graph_paint_check.mjs` reads them out of this file by name. F4: `v` -> `answer` (the backend's) and `value` (a parameter's),
+`l` and `h` -> `chosen` (the layer and the head held), `h` -> `weight` (one head's attention), `n` -> `node` (in `layout`)
+and `net`, `g` -> `group` (twice), `m` -> `member` (twice) and `metric`, `d` -> `device`, `c` -> `link` (three times), `d`,
+`n` and `c` -> `candidate` in the three finds of the picked device, net or line, `i` -> `index` (three times), `k` -> `value`
+(a direction among the choices), `name` (a parameter's) and `direction` (twice, the picked line's table), `a` ->
+`linkAttention`. `e` for an event or a caught error and `_` for an argument not read stay, as in SIF-147 to SIF-156, and so
+do the single letters of the file's other functions (`fixed`, `look`, `netRole`, `graphStyle`, `groundDown`, `nodeWeights`,
+`paint`). F5: 49 -> 4 lines over 160 columns, wrapped between attributes, properties, statements and arguments, after a
+`=>` or a call's `(`, between a `</td>` or `</th>` and the cell after it, between a tag and the tag or `{...}` after it,
+between two `{...}` that stood side by side, before a `?` or `:` inside a JSX `{...}`, and in five JSX texts between two
+words (the generic layout's note, the vocabulary's line, the legend's two texts, "takes from each of its connections") -
+never where a space meets a tag or a `{...}`, which a wrap would drop; "Evaluation (" starts on the line after its tag,
+which the compiler reads the same. The 4 left are each one string longer than a wrap can split: the Circuit
+graph view button's tooltip, the bulk ties' and Circuit hints' tooltips, and the reading line of global attention. The
+longest line is 266 columns (350 before).
+
+**Checked.** `npx tsc --noEmit -p .` exit 0 (TypeScript 5.9.3). `npx vite build` into a temporary folder: the main bundle
+changes, as moved code does (`index-3h5PzYTl.js`); the CSS and the uPlot and cytoscape chunks are byte for byte SIF-156's
+build's, and the main bundle still reaches the cytoscape chunk through its one dynamic import alone, as before. DOM identity
+(`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory guard, WSL 11 GB
+available and the host 7 GB free): "all 112 checks passed", 56 of 56 compared files identical (66 written), at its first
+run, into `out-F2-circuitgraph/dom`; its scenes never open the graph view (no `graph-open` in the reference), so it shows
+the rest of the page unchanged with this build, and the proofs below carry the view itself. Without a browser
+(`proof_static.mjs`, SIF-156's script with one rule more, for a step called as a statement inside a nested function - its
+statements written where the call stands, and for `const elements = graphElements(view)` the step's own `elements` read as
+the caller's; it, its output and the mutants beside the DOM identity output, `out-F2-circuitgraph/static`): each file
+compiled in the frontend's own program, 0 diagnostics each; the one export, `CircuitGraphView`, with the same type and
+props; the 545 strings, template pieces, numbers, regular expressions and JSX texts (cleaned as the compiler cleans them)
+the same multiset, and so are the JSX tags (133) and attribute names (117); `CircuitGraphView` with its steps written back
+where they are called - the hook's statements where its call stands, its `return { fit, layout }` matched against what the
+call takes; each drawing step's JSX where it is called; each statement step's statements where its call stands - equals the
+base body statement by statement, in order (39 statements, 5,157 tokens); the file's other 13 top-level statements
+unchanged and in the same order, so the wraps in `KIND_COLOUR`, `FAMILY`, `ROLE_COLOUR` and `graphStyle` change nothing;
+the one new top-level declaration but the steps is the type `Picked`; the imports bring the same values (`Dispatch`,
+`MutableRefObject`, `RefObject`, `SetStateAction` and `Newest` are types only); the 22 hook calls the same sequence, with
+the same five dependency lists, and the one return after them; the value references to imports and globals the same
+multiset (324); no memo in either file; each step called once where it belongs - the hook a const of `CircuitGraphView`'s
+own body, the drawing steps inline and never as components, the statement steps as statements of the effect's block - and
+none but the hook calls a hook; each value passed to a step by its own name, with the type its parameter declares (86). The
+proof's first run found one difference, and it was right: the Close button's `{'\u00d7'}` had come out of the editor as
+the character itself - the same string at run time, but not the file's text, which is all ASCII; the escape was put back
+before anything else ran. A negative control, the same script on 28 mutated copies of the new file (`make_mutants.py`) -
+two effects swapped, a dependency added, a dependency list in another order, a caption changed, a value passed under
+another name, a wrap that drops a JSX space (twice), the hook called inside a closure and on a condition, a `useCallback`
+added, two arguments swapped (which tsc accepts), a step drawn as a component, a step called twice, two parts of the side
+swapped, the listeners added after the drawing is held, the elements made inside the cytoscape call, a key changed, two
+states in another order, the hook returning something else, the value step returning something else, a CSS class changed,
+a fragment added, a guard changed, an aria label changed, a space written as `{' '}`, a listener dropped, a side effect
+dropped from the unmount effect, a prop made required: each was caught. Browser checks, one lane (WSL 12 GB, host 7 GB),
+on the build the DOM run served, the 5 that open the graph view or a saved model's Details, where its button stands, or run
+this file's own functions: `graph_view_check` 72 (the drawing, its tools, the tables, a clicked device, another evaluation,
+the fit that follows the box), `encoder_models_check` 24, `model_structure_check` 33 and `graph_paint_check` 6 passed;
+`model_chooser_check` stopped after 107 of its checks with "the DevTools session closed (its window went away)" - no check
+failed - and passed 145 alone (WSL 13 GB, host 8 GB): a flake, as in SIF-57, SIF-113, SIF-136 and SIF-138. 280 passed,
+each the count of its last run in this log. The PDK-name grep of the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `CircuitGraphView.tsx` 294 -> 440 lines, longest block 188 -> 71
+(`CircuitGraphView`; its steps `useGraphDrawing`, `graphSide`, `graphTools`, `attentionChoices`, `pickedNode`,
+`graphElements`, `addListeners`, `pickedConnection`, `sizesTable` and `graphHeading` are 53, 39, 29, 23, 18, 16, 14, 12, 11
+and 8 lines), longest line 350 -> 266, comment lines 32 -> 57, any-casts 1 -> 1; all files 16,229 -> 16,375 lines, comment
+lines 3,318 -> 3,343, any-casts 41 -> 41. The 146 added lines are the steps' signatures with their typed parameters,
+`Picked`, the doc comments and the wraps.

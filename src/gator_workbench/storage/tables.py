@@ -22,6 +22,7 @@ RETENTION = ('pending', 'retained_best', 'retained_failure', 'retained_all', 'de
 
 @dataclass(frozen=True)
 class Column:
+    # A shared column declaration for Arrow typing and the exported data dictionary.
     name: str
     type: str                      # key into _arrow()
     description: str
@@ -288,6 +289,7 @@ FLUSH_ORDER = ('parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'll
 
 
 def arrow_schema(table):
+    """Build a table's Arrow schema with declared nullability and GATOR schema metadata."""
     import pyarrow as pa
     return pa.schema([pa.field(c.name, _arrow(c.type), nullable=c.null is not None or c.type.startswith(('list', 'map')))
                       for c in TABLES[table]['columns']],
@@ -295,6 +297,7 @@ def arrow_schema(table):
 
 
 def empty_row(table):
+    """Create a row containing every declared column initialized to null."""
     return {c.name: None for c in TABLES[table]['columns']}
 
 
@@ -316,6 +319,7 @@ def normalize_row(table, row):
 
 
 def data_dictionary():
+    """Describe all raw tables and their storage, type, unit and provenance conventions."""
     tables = {}
     for name, spec in TABLES.items():
         tables[name] = dict(

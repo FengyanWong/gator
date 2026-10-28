@@ -95,6 +95,7 @@ def row_differences(config, saved) -> dict:
 
 
 def describe_rows(section, lines, *, name, revision) -> str:
+    """Summarize a section's differences from a named saved-task revision."""
     label = next(label for key, label, _i, _p in SECTIONS if key == section)
     shown = '; '.join(lines[:4]) + (f'; and {len(lines) - 4} more' if len(lines) > 4 else '')
     return f'{label} differ from the saved task real:{name} (revision {revision}): {shown}.'
@@ -224,6 +225,7 @@ def undone_by_saving(config, name, saved, base=None) -> dict | None:
 
 
 def undone_lines(undone) -> list[str]:
+    """Describe row changes that saving an older configuration would undo."""
     labels = {section: label for section, label, _key, _part in SECTIONS}
     out = []
     for item in undone['items']:
@@ -239,6 +241,7 @@ def undone_lines(undone) -> list[str]:
 
 
 def describe_undone(name, undone) -> str:
+    """Explain the stale revision and summarize changes that saving it would undo."""
     lines = undone_lines(undone)
     shown = '; '.join(lines[:4]) + (f'; and {len(lines) - 4} more' if len(lines) > 4 else '')
     return (f'real:{name} was saved again after these rows were loaded: it is revision {undone["current"]} now, the rows here '

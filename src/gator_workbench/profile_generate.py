@@ -221,6 +221,19 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
     (staging / FILES['structure']).write_text(text)
     graph = SpectreParser(ParserConfig.from_file(staging / FILES['mapping'])).parse_file(staging / FILES['structure'])
     core = core_instance(imported, graph)
+    rows, optimized, facts, specs, compiled = _compile_profile_rows(imported, config, graph, core, reference)
+    instances, mos, writable = _profile_devices(graph, reference, core, compiled)
+    design, net_roles = _profile_design(recipe, imported, expected_frequency_hz, graph, core)
+    _check_profile_measurements(recipe, config)
+    _write_profile_data(mapping, net_roles, compiled, staging, design, reference, imported)
+    _write_profile_rules(specs, staging, recipe, core, mos, instances, writable, facts, reference, compiled)
+    entry = _write_profile_entry(
+        staging, imported, design, recipe, config, name, core, optimized, specs, entry_extra)
+    return dict(entry=entry, rows=rows)
+
+
+def _compile_profile_rows(imported, config, graph, core, reference):
+    """Adjust editor rows through the verified width or form writer and compile their graph contract."""
     facts, specs = _form_facts(imported), None
     try:                                              # the verified width writer, when it can do what the rows ask
         rows, optimized, leaders = _adjust_rows(config, graph, core)
@@ -241,6 +254,11 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
         compiled, _ = build_graph(adjusted, graph)
     except (CompileError, ValueError) as exc:
         raise ProfileError(str(exc))
+    return rows, optimized, facts, specs, compiled
+
+
+def _profile_devices(graph, reference, core, compiled):
+    """Collect recorded instances and the writable ranges of mutable parameter-group members."""
     kinds = {device.id: device.kind for device in graph.devices}
     instances = [item['name'] for item in reference['instances']]
     mos = [n for n in instances if kinds.get(f'{core}/{n}') in ('nmos', 'pmos')]
@@ -249,6 +267,11 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
         if group.mutable:
             for member in group.members:
                 writable[member.device_id.split('/')[1]] = (group.lower * member.ratio, group.upper * member.ratio)
+    return instances, mos, writable
+
+
+def _profile_design(recipe, imported, expected_frequency_hz, graph, core):
+    """Build circuit-specific design metadata and net roles using the existing timing and supply checks."""
     design = dict(topology=f'generated:{recipe}', pdk_library=imported.get('technology_library'), library=imported['library'],
                   core_cell=imported['cell'], testbench_cell=imported['testbench_cell'])
     if recipe == 'ring_oscillator':
@@ -280,12 +303,21 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
         opamp_fit(graph, core)
         design.update(supply_v=format(graph.parameters['VDD']['dc'].value, '.12g'))
         net_roles = {net: [role] for net, role in OPAMP_NETS.items()}
+    return design, net_roles
+
+
+def _check_profile_measurements(recipe, config):
+    """Reject backend-profile measurements that the selected circuit recipe does not provide."""
     available = recipes.provided_metrics(recipe)
     unknown = [f'{m.measurement_id} ({m.source_name})' for m in config.measurements
                if m.result_source == 'backend_profile' and m.source_name and m.source_name not in available]
     if unknown:
         raise ProfileError(f'Measurement(s) {", ".join(unknown)} use a result this circuit type does not produce. '
                            f'Available: {", ".join(available)}')
+
+
+def _write_profile_data(mapping, net_roles, compiled, staging, design, reference, imported):
+    """Persist the adjusted mapping, design, readback, and any supply-scaled conditions for the profile."""
     # No `value` in a group, as in the verified mappings: the parser takes it from the netlist it reads. A recorded value
     # made every export of a changed candidate fail its own graph check ("Binding/current value mismatch").
     mapping.update(net_roles={'0': ['ground'], **net_roles},
@@ -297,6 +329,10 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
     conditions = scaled_conditions_for(imported.get('technology_library'), design['supply_v'])
     if conditions is not None:                        # the task's own PVT conditions: a PDK with a relative template
         write_json(staging / FILES['conditions'], conditions)
+
+
+def _write_profile_rules(specs, staging, recipe, core, mos, instances, writable, facts, reference, compiled):
+    """Write verified width rules or form-derived rules while retaining their existing refusal messages."""
     if specs is None:
         write_json(staging / FILES['rules'], dict(
             format=RULES_FORMAT, recipe=recipe, core_instance=core, width_step=VERIFIED_WIDTH_STEP, mos_instances=mos,
@@ -308,6 +344,10 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
         except cdf_rules.RowError as exc:
             raise ProfileError(str(exc)) from None
         write_json(staging / FILES['rules'], dict(rules, mos_instances=mos))
+
+
+def _write_profile_entry(staging, imported, design, recipe, config, name, core, optimized, specs, entry_extra):
+    """Write the creation receipt and registry entry for the generated profile."""
     write_json(staging / FILES['receipt'], dict(
         library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], config=design,
         receipt_recorded_at=utcnow().isoformat(), source_netlist_sha256=imported['netlist_sha256'], imported_utc=imported['imported_utc'],
@@ -322,7 +362,7 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
                  status='unverified: no real baseline simulation has been recorded for this profile yet')
     entry.update(entry_extra or {})                   # what the task adds: its cells, copy, revision, measurement
     write_json(staging / FILES['entry'], entry)
-    return dict(entry=entry, rows=rows)
+    return entry
 
 
 def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:

@@ -6326,3 +6326,69 @@ the changed files.
 files and `vite.config.ts`); lines 14,923 -> 15,000; comment lines 3,017 -> 3,094; any-casts 47 -> 47. Every edited file
 grew by its header lines alone (`store.ts` by none: its lines moved) and kept its longest block: `Connection.tsx` 428 -> 430
 lines (longest block 398 -> 398), `Editors.tsx` 1,140 -> 1,142 (22 -> 22), `TrainingTab.tsx` 486 -> 488 (320 -> 320).
+
+### SIF-147 Readability F2, F4, F5: the Connection button reads as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `ConnectionButton` was 398 of `Connection.tsx`'s 430 lines (`femetrics.py`: the frontend's longest top-level
+block). One function body held 14 `useState`, 3 effects, each session's Connect and test with their revisions, the
+page-open test, Add a connection, and all of the drawing: the header's pill and its note, the window, the add form, and a
+143-line `renderSession` closure that built each card's Details table and both families' steps. 42 lines ran past 160
+columns (the longest 340). Callback parameters were single letters that meant different things a few lines apart: `p` a
+profile, a connection or a problem; `s` a session, the statuses or the Details map; `c` the connections, a check or the
+copied key; `k` a kind's setup or a described kind; and `l`, `d`, `h`, `n`, `o`, `f`, `a`, `b`, `g`, `i`. F3 found
+nothing to do: the file has no `any` cast (`femetrics.py`: 0); its three casts are true types (`event as
+CustomEvent<ConnectionAt>` on the window event of SIF-108, `profileId as string` twice where a guard has made it non-null)
+and stay.
+
+**Changed** (`frontend/src/panels/Connection.tsx` alone). `ConnectionButton` (78 lines) now reads as its steps, in the
+order its code ran: its eight state values; `chosenConnection`, a plain function (the connections the list offers, the
+one the configuration names, its sessions, whether one session is named by its own name); the window (`usePopupWindow`)
+and `useOpenFromOtherWindows` (SIF-108's opener and listener); five more state values (the add form's three, the Folders
+section's two); loading the setup and the profiles; `useAsyncAction`; `useSessionActions` (each session's action under
+way and revision, `showStatus`, Connect and test: record 7.351); `useTestOnOpen` (the one page-open test and the
+siblings' cached reads: record 7.80); the clipboard copy; the Add a connection values (`freeName` now one statement per
+line); then four plain functions that return what it draws, called inline and never used as components - `launcherView`
+(the pill and its note, with the pill's state words), `connectionWindow`, `addConnectionForm` and `sessionCard`, which
+calls `layerTable` (the Details table), `virtuosoSteps` and `ngspiceSteps` - and the same return,
+`<>{launcher}<PopupPortal ...>{view}</PopupPortal></>`. The hooks run in the order they ran (eight `useState`,
+`usePopupWindow`, the opener's `useRef` and `useEffect`, five `useState`, the profiles effect, `useAsyncAction`,
+`busyFor` and `revisions`, `testedOnOpen` and its effect), each effect with its dependency list; no memo added or
+removed. A card still builds both families' steps and shows its family's, as `renderSession` did (a comment says why).
+Each new function's parameters carry their real types (`Dispatch<SetStateAction<...>>`, `MutableRefObject`,
+`Promise<void>`, `Promise<void | undefined>` for the copy; `Json` for the backend's JSON), each checked against the type
+`tsc` infers for the value passed; comments moved with their code, and each new function has a one-sentence doc comment.
+F4: the single-letter callback parameters spelled out (`profile`, `connection`, `session`, `list`, `running`, `errors`,
+`statuses`, `connections`, `key`, `copied`, `choice`, `check`, `problem`, `machine`, `current`, `shown`, `opened`,
+`layer`, `note`, `described`, `index`), `i` -> `suffix` in `freeName`, and the card's
+`profileId`, a copy of `id` kept only so that the moved buttons' `!profileId` still worked, is gone: they read `!id`. `e`,
+an event or a caught error as in the page's 156 other `e =>` callbacks, stays, and so does `breakAfterSlash`'s `i`,
+outside the button. F5: 42 -> 11 lines over 160 columns, wrapped between attributes, at a `?` or `:`, inside a `${...}`
+or between two words of a text - never where a space meets a `{...}`, which a wrap would drop; each of the 11 left is one
+string or template longer than a wrap can split (tooltips and two hover titles).
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: the main bundle changes, as moved
+code does (`index-Ces4YeSN.js`); the CSS and the uPlot and cytoscape chunks are byte for byte the base build's. DOM
+identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory
+guard, WSL 8 GB available and the host 6 GB free): "all 112 checks passed", 56 of 56 compared files identical (66
+written). The recorded answers name no connection, so that run draws the pill, the window's empty list, the add form and
+Folders but no session card; three more replays of its connection scene draw the cards - the recorded answers with
+FIXTURE connections of all four kinds as four sessions of one connection, named by the connection's name ("3 of 4 OK"),
+by one session's own name (pinned, "Virtuoso 2 only", a card too old to trust), and by a name the file does not have -
+each taken on the base build as the reference and on this build compared: 15 of 15 files identical (each run also
+reports the one request the replay holds no answer for, the validation of the configuration the adopted connection
+changes: the same 404 on both builds).
+Without a browser, base file against this one: every string, template piece, number and regular expression the file
+compiles to (JSX text as the compiler cleans it) is the same multiset (554), and so are its JSX tags (141) and attribute
+names (155); each of its 11 JSX trees, serialized with JSX text cleaned and callback parameters numbered, equals its
+counterpart but for the four changes above (`!profileId` -> `!id`, the two lists of steps by their new names, and
+`sessions.map(renderSession)` -> a call of `sessionCard`); 121 of the 138 statements of the old function bodies are found
+unchanged in the new ones, and each of the others is a moved JSX value, a renamed parameter or `suffix`. Browser checks,
+one lane (WSL 8 GB, host 6 GB): `run_control_check` 181, `connection_panel_check` 101, `looks_check` 83,
+`ngspice_window_check` 47, `pdk_check` 47, `matched_devices_check` 38, `agent_window_check` 35, `callouts_check` 8 passed
+(540, no flake), each the count of its last run in this log. The PDK-name grep of the plan's rule 5 finds nothing in the
+changed files.
+
+**Measured** (`femetrics.py`, before -> after): `Connection.tsx` 430 -> 573 lines, longest block 398 -> 78
+(`ConnectionButton`; its longest new functions, `connectionWindow`, `sessionCard` and `virtuosoSteps`, are about 60 lines
+of markup each), comment lines 48 -> 67, any-casts 0 -> 0; all files 15,000 -> 15,143 lines, any-casts 47 -> 47. The 143
+added lines are the new functions' typed parameters and doc comments, and the wraps.

@@ -2,7 +2,7 @@
 // and the saves other parts of the page ask for (Apply and save, Save as).
 import { noteRowsFrom, noteTaskSaved, rowsFrom, useAsyncAction, useRequest } from '../store';
 import { Icon } from './Icons';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Dispatch, MutableRefObject, SetStateAction, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, gateText, Json, problemText } from '../api';
 import { FileDraft, otherPartsChanged, TaskFileWindow, unapplied } from './TaskFile';
@@ -86,6 +86,8 @@ const progressOf = (running: Json) => {
     text: `Saving ${running.task_key} - ${where} (${Math.round(running.seconds ?? 0)} s${usual})` };
 };
 
+/** Save as and Task file, and the notes under the toolbar (the comment above `NAME` says what they do). Its steps follow it,
+ *  called in the order their code ran here: React keeps each hook's state by its place in that order. */
 export function TaskSave({ profileId, library, cell, task, hasCopy, config, setConfig, onSaved, onSavedElsewhere, onReload, bar, notes }: {
   profileId: string | null; library: string | null; cell: string | null; task: string | null;
   hasCopy: boolean; config: Json; setConfig: (f: (c: Json) => Json, record?: boolean) => void; onSaved: (made: Json, sentConfig: Json) => void;
@@ -96,11 +98,97 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
   const [askFrequency, setAskFrequency] = useState(false);                    // the save asked for the ring oscillator's rough frequency
   const [newer, setNewer] = useState<Json>(null);                             // the save was refused: the rows are older than the task
   const [frequency, setFrequency] = useState('');
+  const { file, setFile, fileDraft, setFileDraft, closedFile, fileRows, setFileRows, keptRows, applied, setApplied, pending, setPending, fileBase,
+    lastApplied } = useTaskFileState();
+  const latest = useRef({ config, profileId, library, cell, task, pending });
+  latest.current = { config, profileId, library, cell, task, pending };
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const [asked, setAsked] = useState(0);                                      // saves asked for by "Apply and save" (record 7.217)
+  const able = useRef({ can: false, why: '' });
+  // The task file's window. It is opened INSIDE the click on "Task file" - the browser's pop-up rule refuses a window
+  // opened later, when the file has arrived - so a blocked window can be tried again with the next press.
+  const fileWindow = usePopupWindow('gator-task-file', { title: 'GATOR - Task file', features: 'popup,width=760,height=900',
+    rootId: 'task-file-root', rootClass: 'task-file-window', onClose: closedFile, closeOnUnmount: true });
+  // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go,
+  // with what was typed in that file.
+  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setChoice(null); setFrequency(''); setFile(null);
+    setFileDraft(null); fileWindow.popup?.close();
+    setPending([]); fileBase.current = null; lastApplied.current = null; setFileRows(null); }, [task, library, cell]);
+  useLayoutEffect(() => { if (applied) setFileRows(rowsKey(latest.current.config)); }, [applied]);   // before paint: no flash of "changed"
+
+  const { own, backend, running } = useRunningSave({ setMessage, onSavedElsewhere });
+
+  const suggested = task || suggestTaskName(cell) || 'task';
+  const taskName = choice?.name ?? suggested;
+  const stillHere = () => mounted.current && latest.current.config.circuit === config.circuit
+    && latest.current.profileId === profileId && latest.current.library === library && latest.current.cell === cell && latest.current.task === task;
+  const report = (e: unknown) => {
+    setMessage({ level: 'error', text: problemText(e, gateText) });
+  };
+  const { busy, run } = useAsyncAction(e => {
+    if (e.detail?.code === 'needs_expected_frequency') { setAskFrequency(true); setMessage({ level: 'warn', text: e.detail.message }); }
+    else if (e.detail?.code === 'saved_task_newer') setNewer(e.detail);
+    else report(e);
+  }, () => { setMessage(null); setNewer(null); });
+  const { storeTask, save, saveAs } = saveActions({ extras, setChoice, own, backend, task, profileId, config, library, cell, stillHere, setExtras,
+    setAskFrequency, latest, pending, setPending, fileBase, lastApplied, setMessage, onSaved, run, choice, suggested });
+  useSaveRequests({ latest, able, setAsked, asked, run, storeTask, suggested, saveAs });
+  const { openFile, rereadFile, applyFile } = taskFileActions({ setMessage, file, fileWindow, setFile, report, config, library, cell, task, extras,
+    mounted, setFileRows, fileBase, setFileDraft, setConfig, setExtras, setPending, setApplied, lastApplied });
+  const frequencyValue = parseFrequency(frequency);
+  const canSave = !!profileId && (task ? true : hasCopy) && !busy && !running;
+  // The rough frequency's question can end without a save (branch record SIF-92): until then only a frequency or another
+  // task or cell ended it, the tab line's Save as staying off. The chosen name stays, for the next Save as to offer. Not
+  // while the save with a frequency is on its way.
+  const stopAsking = () => { if (busy) return; setAskFrequency(false); setFrequency(''); setMessage(null); };
+  able.current = { can: canSave && !askFrequency && !!task, why: running ? `the save of ${running.task_key} is still running`
+    : busy ? 'a save is under way' : !profileId ? 'no connection is chosen' : askFrequency ? 'the save waits for the rough frequency' : '' };
+  const progress = running ? progressOf(running) : busy === 'save' ? { value: 0, max: 1, text: `Saving real:${taskName} - starting` } : null;
+  const waits = running && busy !== 'save' ? `Waits for the save of ${running.task_key} that is running. ` : '';
+  const said = askFrequency || message || progress || newer || pending.length > 0;
+  const rowsRead = fileDraft?.kept && unapplied(fileDraft) ? keptRows : fileRows;    // the rows under what the box shows
+  const editorsChanged = !!file?.text && rowsRead !== null && rowsKey(config) !== rowsRead;
+  return (<>
+    {bar && createPortal(
+      <div className="task-save">
+        {/* The task and its revision start the tab line (record 7.362): this holds Save as and Task file only. Greyed out
+            for want of a connection, its tooltip says so and where to choose one (branch record SIF-68). */}
+        <button className="primary" disabled={!canSave || askFrequency} onClick={saveAs} title={saveAsTitle({ waits, profileId, task, hasCopy })}>
+          <Icon name="task" label={busy === 'save' || running ? 'Saving...' : 'Save as'} /></button>
+        <button disabled={!!busy} onClick={openFile}
+          title="Task file: The task as one readable file, in a window of its own: open it, change it, apply it to the editors.">
+          <Icon name="task-file" label="Task file" /></button>
+      </div>, bar)}
+    {notes && said && createPortal(
+      <div className="task-save-notes">
+        {progress && <div className="task-save-progress" role="status"><progress value={progress.value} max={progress.max} /><span>{progress.text}</span></div>}
+        {askFrequency && frequencyQuestion({ frequencyValue, canSave, save, stopAsking, frequency, setFrequency, busy })}
+        {newer && newerQuestion({ newer, onReload, setNewer, canSave, save })}
+        {pending.length > 0 && <p className="warn task-file-pending">
+          From the task file, not saved yet: {pending.join(', ')}. Save as stores them; a reload or another task drops them.</p>}
+        {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'warn' ? 'warn' : 'error'}>{message.text}</p>}
+      </div>, notes)}
+    {file && <TaskFileWindow root={fileWindow.root} text={file.text} title={file.title} draft={fileDraft} setDraft={setFileDraft}
+      editorsChanged={editorsChanged} onReread={rereadFile} onApply={applyFile} onClose={() => { closedFile(); fileWindow.popup?.close(); }} />}
+  </>);
+}
+
+/** What an answer that comes later compares with the page as it is now (`stillHere`), and what Apply and save reads. */
+type Latest = { config: Json; profileId: string | null; library: string | null; cell: string | null; task: string | null; pending: string[] };
+/** `useAsyncAction`'s run: an action under its name (`busy` while it runs), its error said by the handler given to it. */
+type Run = ReturnType<typeof useAsyncAction>['run'];
+/** The read of the save running in the backend (`useRunningSave`). */
+type SavingRead = ReturnType<typeof useRunningSave>['backend'];
+
+/** The task file's state: the file in its window and what is typed in it, the editors' rows it was read from and the parts
+ *  beside the rows that applied files changed (branch records SIF-87, SIF-93). */
+function useTaskFileState() {
   const [file, setFile] = useState<Json>(null);                               // { text, title } while the window is open (text null: reading)
   // What is typed in it (branch record SIF-87): kept here, so that a close - Close, the window's X, the banner's Close all -
   // keeps a draft not applied for the next "Task file" press, which reads the file again and lays the draft over it.
   const [fileDraft, setFileDraft] = useState<FileDraft | null>(null);
-  const closedFile = () => { setFile(null); setFileDraft(d => (unapplied(d) ? { ...d, kept: true } : null));
+  const closedFile = () => { setFile(null); setFileDraft(draft => (unapplied(draft) ? { ...draft, kept: true } : null));
     // Kept for the first time: the rows it was typed over, which the next reading no longer holds (`keptRows`).
     if (!fileDraft?.kept) setKeptRows(fileRows); };
   // Branch record SIF-93. The file is a snapshot: `fileRows`, the editors' rows it was read from (or that its last Apply
@@ -118,25 +206,14 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
   const [pending, setPending] = useState<string[]>([]);
   const fileBase = useRef<string | null>(null);
   const lastApplied = useRef<string | null>(null);
-  const latest = useRef({ config, profileId, library, cell, task, pending });
-  latest.current = { config, profileId, library, cell, task, pending };
-  const mounted = useRef(false);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const [asked, setAsked] = useState(0);                                      // saves asked for by "Apply and save" (record 7.217)
-  const able = useRef({ can: false, why: '' });
-  // The task file's window. It is opened INSIDE the click on "Task file" - the browser's pop-up rule refuses a window
-  // opened later, when the file has arrived - so a blocked window can be tried again with the next press.
-  const fileWindow = usePopupWindow('gator-task-file', { title: 'GATOR - Task file', features: 'popup,width=760,height=900',
-    rootId: 'task-file-root', rootClass: 'task-file-window', onClose: closedFile, closeOnUnmount: true });
-  // Another task or cell: its extras, its messages, a typed name or frequency and an open task file (the old task's) go,
-  // with what was typed in that file.
-  useEffect(() => { setExtras({}); setMessage(null); setAskFrequency(false); setNewer(null); setChoice(null); setFrequency(''); setFile(null); setFileDraft(null); fileWindow.popup?.close();
-    setPending([]); fileBase.current = null; lastApplied.current = null; setFileRows(null); }, [task, library, cell]);
-  useLayoutEffect(() => { if (applied) setFileRows(rowsKey(latest.current.config)); }, [applied]);   // before paint: no flash of "changed"
+  return { file, setFile, fileDraft, setFileDraft, closedFile, fileRows, setFileRows, keptRows, applied, setApplied, pending, setPending, fileBase,
+    lastApplied };
+}
 
-  // The save running in the backend, read when Save task appears and then every second while one runs (`own`: this
-  // page's press is on its way; `followed`: a save the page did not send, asked about until an answer says it ended -
-  // a read that fails does not end it). That save says how it ended; the rows stay as they are.
+/** The save running in the backend, read when Save task appears and then every second while one runs (`own`: this page's
+ *  press is on its way; `followed`: a save the page did not send, asked about until an answer says it ended - a read that
+ *  fails does not end it). That save says how it ended; the rows stay as they are. */
+function useRunningSave({ setMessage, onSavedElsewhere }: { setMessage: Dispatch<SetStateAction<Json>>; onSavedElsewhere: (last: Json) => void }) {
   const own = useRef(false);
   const followed = useRef<string | null>(null);
   const followEvery = useCallback((value: Json) => (value?.running || own.current || followed.current ? 1000 : 0), []);
@@ -157,24 +234,26 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
       return;
     }
     const last = value.last;
-    setMessage(last.ok ? { level: last.answer?.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `The save that was running has ended. ${savedText(last.answer)}` }
-      : { level: last.problem?.code === 'needs_expected_frequency' ? 'warn' : 'error', text: `The save that was running ended without saving: ${last.problem?.message}` });
+    setMessage(last.ok
+      ? { level: last.answer?.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `The save that was running has ended. ${savedText(last.answer)}` }
+      : { level: last.problem?.code === 'needs_expected_frequency' ? 'warn' : 'error',
+        text: `The save that was running ended without saving: ${last.problem?.message}` });
     if (last.ok) followTaskBaseline(last.answer);
     onSavedElsewhere(last);
   }, [backend.value]);
+  return { own, backend, running };
+}
 
-  const suggested = task || suggestTaskName(cell) || 'task';
-  const taskName = choice?.name ?? suggested;
-  const stillHere = () => mounted.current && latest.current.config.circuit === config.circuit
-    && latest.current.profileId === profileId && latest.current.library === library && latest.current.cell === cell && latest.current.task === task;
-  const report = (e: any) => {
-    setMessage({ level: 'error', text: problemText(e, gateText) });
-  };
-  const { busy, run } = useAsyncAction(e => {
-    if (e.detail?.code === 'needs_expected_frequency') { setAskFrequency(true); setMessage({ level: 'warn', text: e.detail.message }); }
-    else if (e.detail?.code === 'saved_task_newer') setNewer(e.detail);
-    else report(e);
-  }, () => { setMessage(null); setNewer(null); });
+/** The saves: `storeTask` sends the rows under a name, with the saved revision they came from (record 7.203); `save` sends
+ *  them again under the name chosen, with the rough frequency or over a newer save; `saveAs` asks for a new name first. */
+function saveActions({ extras, setChoice, own, backend, task, profileId, config, library, cell, stillHere, setExtras, setAskFrequency, latest,
+  pending, setPending, fileBase, lastApplied, setMessage, onSaved, run, choice, suggested }: {
+  extras: Json; setChoice: Dispatch<SetStateAction<SaveChoice | null>>; own: MutableRefObject<boolean>; backend: SavingRead; task: string | null;
+  profileId: string | null; config: Json; library: string | null; cell: string | null; stillHere: () => boolean;
+  setExtras: Dispatch<SetStateAction<Json>>; setAskFrequency: Dispatch<SetStateAction<boolean>>; latest: MutableRefObject<Latest>;
+  pending: string[]; setPending: Dispatch<SetStateAction<string[]>>; fileBase: MutableRefObject<string | null>;
+  lastApplied: MutableRefObject<string | null>; setMessage: Dispatch<SetStateAction<Json>>; onSaved: (made: Json, sentConfig: Json) => void;
+  run: Run; choice: SaveChoice | null; suggested: string }) {
   const storeTask = async (selected: SaveChoice, more: Json = {}, replaceNewer = false) => {
     const sent = { ...extras, ...more };
     setChoice(selected);
@@ -192,7 +271,8 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     // Sent: the file's other parts no longer wait (branch record SIF-93) - unless a file applied during the save added more.
     if (latest.current.pending === pending) { setPending([]); fileBase.current = lastApplied.current; }
     const edited = ['parameters', 'measurements', 'targets'].some(key => latest.current.config[key] !== config[key]);
-    setMessage({ level: made.baseline?.state === 'blocked' ? 'warn' : 'ok', text: `${savedText(made)}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
+    setMessage({ level: made.baseline?.state === 'blocked' ? 'warn' : 'ok',
+      text: `${savedText(made)}${edited ? ' Newer editor changes are kept and are not included in this save.' : ''}` });
     onSaved(made, config);
   };
   const save = (more: Json = {}, replaceNewer = false) => run('save', () => storeTask(choice ?? { name: suggested, asNew: false }, more, replaceNewer));
@@ -200,7 +280,9 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     let listed: Json;
     try { listed = await api.tasks(); } catch (e) { if (stillHere()) throw e; return; }
     if (!stillHere()) return;
-    const used = new Set<string>((listed.tasks ?? []).flatMap((t: Json) => [String(t.task_key).replace(/^[^:]+:/, ''), ...(typeof t.name === 'string' ? [t.name] : [])]));   // a shown name (record 7.302) is taken too
+    // The names in use; a shown name (record 7.302) is taken too.
+    const used = new Set<string>((listed.tasks ?? []).flatMap((listedTask: Json) => [String(listedTask.task_key).replace(/^[^:]+:/, ''),
+      ...(typeof listedTask.name === 'string' ? [listedTask.name] : [])]));
     if (task) used.add(task);
     // After a refused save, the name chosen for it is offered again (branch record SIF-92: the numbered name came back, and
     // the name typed was lost at each refusal - frequent while a task is set up). Another task or cell clears the choice and
@@ -209,7 +291,8 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     let problem = '';
     for (;;) {
       const entered = window.prompt(`${problem}Save as: new task name\nUse 2–40 lowercase letters, digits or underscores, starting with a letter.\n`
-        + (task ? 'Creates a new task with its own DUT and testbench copies, then runs one baseline simulation automatically.' : 'Saves the cell you declared as a new task, then runs one baseline simulation automatically.'), proposed);
+        + (task ? 'Creates a new task with its own DUT and testbench copies, then runs one baseline simulation automatically.'
+          : 'Saves the cell you declared as a new task, then runs one baseline simulation automatically.'), proposed);
       if (entered === null || !stillHere()) return;
       proposed = entered.trim();
       if (!NAME.test(proposed)) { problem = 'That name is invalid.\n\n'; continue; }
@@ -218,13 +301,22 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     }
   });
   const saveNew = (selected: SaveChoice) => run('save', () => storeTask(selected));
+  return { storeTask, save, saveAs };
+}
+
+/** The saves other parts of the page ask for, each answered at once: Apply and save's Save task (record 7.217) and the Save
+ *  as of the summary of the rows not saved (record 7.372). */
+function useSaveRequests({ latest, able, setAsked, asked, run, storeTask, suggested, saveAs }: {
+  latest: MutableRefObject<Latest>; able: MutableRefObject<{ can: boolean; why: string }>; setAsked: Dispatch<SetStateAction<number>>;
+  asked: number; run: Run; storeTask: (selected: SaveChoice, more?: Json, replaceNewer?: boolean) => Promise<void>; suggested: string;
+  saveAs: () => Promise<void> }) {
   // "Apply and save": the request names the task; this Save task answers at once, and saves with the rows of the next render.
   useEffect(() => {
     const request = (e: Event) => {
       const detail = (e as CustomEvent<Json>).detail;
       if (!detail || !latest.current.task || detail.task !== `real:${latest.current.task}`) return;
       detail.taken = able.current.can; detail.why = able.current.why || 'saving is not available';
-      if (able.current.can) setAsked(n => n + 1);
+      if (able.current.can) setAsked(count => count + 1);
     };
     window.addEventListener(SAVE_TASK_REQUEST, request);
     return () => window.removeEventListener(SAVE_TASK_REQUEST, request);
@@ -242,14 +334,29 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     window.addEventListener(SAVE_AS_REQUEST, request);
     return () => window.removeEventListener(SAVE_AS_REQUEST, request);
   }, []);
+}
+
+/** The task file's window: Task file opens it with the file of the editors as they are now, "Read again from the editors"
+ *  reads that file again, and Apply puts its rows into the editors and keeps its other parts for the next save. */
+function taskFileActions({ setMessage, file, fileWindow, setFile, report, config, library, cell, task, extras, mounted, setFileRows, fileBase,
+  setFileDraft, setConfig, setExtras, setPending, setApplied, lastApplied }: {
+  setMessage: Dispatch<SetStateAction<Json>>; file: Json; fileWindow: ReturnType<typeof usePopupWindow>; setFile: Dispatch<SetStateAction<Json>>;
+  report: (e: unknown) => void; config: Json; library: string | null; cell: string | null; task: string | null; extras: Json;
+  mounted: MutableRefObject<boolean>; setFileRows: Dispatch<SetStateAction<string | null>>; fileBase: MutableRefObject<string | null>;
+  setFileDraft: Dispatch<SetStateAction<FileDraft | null>>; setConfig: (f: (c: Json) => Json, record?: boolean) => void;
+  setExtras: Dispatch<SetStateAction<Json>>; setPending: Dispatch<SetStateAction<string[]>>; setApplied: Dispatch<SetStateAction<number>>;
+  lastApplied: MutableRefObject<string | null> }) {
   const openFile = async () => {
     setMessage(null);
     // Already open: bring it forward and keep what is typed in it (a second press used to replace the draft silently).
     if (file && fileWindow.popup && !fileWindow.popup.closed) { fileWindow.popup.focus(); return; }
     const opened = fileWindow.open();
-    if (!opened) { setMessage({ level: 'error', text: 'The browser blocked the task file window. Allow pop-ups for this page, then press "Task file" again.' }); return; }
+    if (!opened) {
+      setMessage({ level: 'error', text: 'The browser blocked the task file window. Allow pop-ups for this page, then press "Task file" again.' });
+      return;
+    }
     setFile({ text: null, title: 'Task file' });
-    try { await readFile(opened); } catch (e: any) { setFile(null); opened.close(); report(e); }
+    try { await readFile(opened); } catch (e) { setFile(null); opened.close(); report(e); }
   };
   // The file of the editors as they are now, into the window (`owner`): its title, its text and the rows it was read from.
   const readFile = async (owner: Window) => {
@@ -270,62 +377,53 @@ export function TaskSave({ profileId, library, cell, task, hasCopy, config, setC
     if (owner && !owner.closed && await readFile(owner)) setFileDraft(null);
   };
   const applyFile = (rows: Json, more: Json, text: string) => {
-    setConfig(c => ({ ...c, parameters: rows.parameters ?? c.parameters, measurements: rows.measurements ?? c.measurements, targets: rows.targets ?? c.targets }), true);
-    setExtras((x: Json) => ({ ...x, ...more }));
+    setConfig(c => ({ ...c, parameters: rows.parameters ?? c.parameters, measurements: rows.measurements ?? c.measurements,
+      targets: rows.targets ?? c.targets }), true);
+    setExtras((current: Json) => ({ ...current, ...more }));
     const base = fileBase.current ?? file?.text ?? text;
     fileBase.current = base; lastApplied.current = text;
     setPending(otherPartsChanged(base, text));
-    setApplied(n => n + 1);
+    setApplied(count => count + 1);
   };
-  const frequencyValue = parseFrequency(frequency);
-  const canSave = !!profileId && (task ? true : hasCopy) && !busy && !running;
-  // The rough frequency's question can end without a save (branch record SIF-92): until then only a frequency or another
-  // task or cell ended it, the tab line's Save as staying off. The chosen name stays, for the next Save as to offer. Not
-  // while the save with a frequency is on its way.
-  const stopAsking = () => { if (busy) return; setAskFrequency(false); setFrequency(''); setMessage(null); };
-  able.current = { can: canSave && !askFrequency && !!task, why: running ? `the save of ${running.task_key} is still running`
-    : busy ? 'a save is under way' : !profileId ? 'no connection is chosen' : askFrequency ? 'the save waits for the rough frequency' : '' };
-  const progress = running ? progressOf(running) : busy === 'save' ? { value: 0, max: 1, text: `Saving real:${taskName} - starting` } : null;
-  const waits = running && busy !== 'save' ? `Waits for the save of ${running.task_key} that is running. ` : '';
-  const said = askFrequency || message || progress || newer || pending.length > 0;
-  const rowsRead = fileDraft?.kept && unapplied(fileDraft) ? keptRows : fileRows;    // the rows under what the box shows
-  const editorsChanged = !!file?.text && rowsRead !== null && rowsKey(config) !== rowsRead;
-  return (<>
-    {bar && createPortal(
-      <div className="task-save">
-        {/* The task and its revision start the tab line (record 7.362): this holds Save as and Task file only. Greyed out
-            for want of a connection, its tooltip says so and where to choose one (branch record SIF-68). */}
-        <button className="primary" disabled={!canSave || askFrequency} onClick={saveAs}
-          title={'Save as: ' + waits + (!profileId ? 'Not available: no connection is chosen - choose one with the Connection button in the header. ' : '') + 'Asks for a new task name, with the next available numbered name suggested (after a refused save, the name chosen for it). ' + (task ? 'Stores the rows of Parameters, Probes and Specs as a new task with its own DUT and testbench copies. ' : hasCopy
-            ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '
-            : 'Read the cell in the Virtuoso window first and confirm that it is a copy you made: the task is saved into that cell. ')
-            + 'It writes the cell in Virtuoso to match and reads it back, then automatically runs one baseline simulation. Only you can press it.'}>
-          <Icon name="task" label={busy === 'save' || running ? 'Saving...' : 'Save as'} /></button>
-        <button disabled={!!busy} onClick={openFile} title="Task file: The task as one readable file, in a window of its own: open it, change it, apply it to the editors."><Icon name="task-file" label="Task file" /></button>
-      </div>, bar)}
-    {notes && said && createPortal(
-      <div className="task-save-notes">
-        {progress && <div className="task-save-progress" role="status"><progress value={progress.value} max={progress.max} /><span>{progress.text}</span></div>}
-        {/* A form (branch record SIF-92): Enter in the box saves as the row's Save as does, under the same rule; Escape
-            is Cancel. */}
-        {askFrequency && <form className="row" onSubmit={e => { e.preventDefault(); if (frequencyValue > 0 && canSave) save({ expected_frequency_hz: frequencyValue }); }}
-          onKeyDown={e => { if (e.key === 'Escape') stopAsking(); }}>
-          <label title="Rough is enough: it only sizes the transient (60 periods, measured after 20).">Rough oscillation frequency
-            <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>
-          <button type="submit" className="primary" disabled={!(frequencyValue > 0) || !canSave} title="Save as: Keeps the chosen name and saves with this frequency. Enter in the box does the same."><Icon name="task" label="Save as" /></button>
-          <button type="button" disabled={!!busy} onClick={stopAsking} title="Cancel: Nothing is saved. Save as asks for a name again, with the one you chose suggested.">Cancel</button></form>}
-        {newer && <div className="task-save-newer">
-          <p className="warn">{newer.message}</p>
-          <div className="row">
-            {onReload && <button onClick={() => { setNewer(null); onReload(); }}
-              title="Reload saved values: Puts the saved rows of the task into the editors. Asks before discarding edits; Undo takes it back.">Reload saved values</button>}
-            <button disabled={!canSave} onClick={() => save({}, true)}
-              title="Save anyway: Stores the rows here as the next revision, replacing what was saved since.">Save anyway</button>
-          </div></div>}
-        {pending.length > 0 && <p className="warn task-file-pending">From the task file, not saved yet: {pending.join(', ')}. Save as stores them; a reload or another task drops them.</p>}
-        {message && <p className={message.level === 'ok' ? 'ok' : message.level === 'warn' ? 'warn' : 'error'}>{message.text}</p>}
-      </div>, notes)}
-    {file && <TaskFileWindow root={fileWindow.root} text={file.text} title={file.title} draft={fileDraft} setDraft={setFileDraft}
-      editorsChanged={editorsChanged} onReread={rereadFile} onApply={applyFile} onClose={() => { closedFile(); fileWindow.popup?.close(); }} />}
-  </>);
+  return { openFile, rereadFile, applyFile };
+}
+
+/** The Save as button's tooltip: what it stores and where, and why it is greyed out for want of a connection. */
+function saveAsTitle({ waits, profileId, task, hasCopy }: { waits: string; profileId: string | null; task: string | null; hasCopy: boolean }) {
+  return 'Save as: ' + waits + (!profileId ? 'Not available: no connection is chosen - choose one with the Connection button in the header. ' : '')
+    + 'Asks for a new task name, with the next available numbered name suggested (after a refused save, the name chosen for it). '
+    + (task ? 'Stores the rows of Parameters, Probes and Specs as a new task with its own DUT and testbench copies. ' : hasCopy
+      ? 'Stores the rows of Parameters, Probes and Specs as a new task of this cell. '
+      : 'Read the cell in the Virtuoso window first and confirm that it is a copy you made: the task is saved into that cell. ')
+    + 'It writes the cell in Virtuoso to match and reads it back, then automatically runs one baseline simulation. Only you can press it.';
+}
+
+/** The rough frequency's question, a form (branch record SIF-92): Enter in the box saves as the row's Save as does, under the
+ *  same rule; Escape is Cancel. */
+function frequencyQuestion({ frequencyValue, canSave, save, stopAsking, frequency, setFrequency, busy }: {
+  frequencyValue: number; canSave: boolean; save: (more?: Json, replaceNewer?: boolean) => Promise<void>; stopAsking: () => void;
+  frequency: string; setFrequency: Dispatch<SetStateAction<string>>; busy: string | null }) {
+  return <form className="row" onSubmit={e => { e.preventDefault(); if (frequencyValue > 0 && canSave) save({ expected_frequency_hz: frequencyValue }); }}
+    onKeyDown={e => { if (e.key === 'Escape') stopAsking(); }}>
+    <label title="Rough is enough: it only sizes the transient (60 periods, measured after 20).">Rough oscillation frequency
+      <input value={frequency} placeholder="e.g. 1.2G" onChange={e => setFrequency(e.target.value)} /></label>
+    <button type="submit" className="primary" disabled={!(frequencyValue > 0) || !canSave}
+      title="Save as: Keeps the chosen name and saves with this frequency. Enter in the box does the same."><Icon name="task" label="Save as" /></button>
+    <button type="button" disabled={!!busy} onClick={stopAsking}
+      title="Cancel: Nothing is saved. Save as asks for a name again, with the one you chose suggested.">Cancel</button></form>;
+}
+
+/** The rows were refused as older than the saved task (record 7.203): Reload saved values, or Save anyway. */
+function newerQuestion({ newer, onReload, setNewer, canSave, save }: {
+  newer: Json; onReload?: () => void; setNewer: Dispatch<SetStateAction<Json>>; canSave: boolean;
+  save: (more?: Json, replaceNewer?: boolean) => Promise<void> }) {
+  return <div className="task-save-newer">
+    <p className="warn">{newer.message}</p>
+    <div className="row">
+      {onReload && <button onClick={() => { setNewer(null); onReload(); }}
+        title="Reload saved values: Puts the saved rows of the task into the editors. Asks before discarding edits; Undo takes it back.">
+        Reload saved values</button>}
+      <button disabled={!canSave} onClick={() => save({}, true)}
+        title="Save anyway: Stores the rows here as the next revision, replacing what was saved since.">Save anyway</button>
+    </div></div>;
 }

@@ -6563,3 +6563,80 @@ ran. The PDK-name grep of the plan's rule 5 finds nothing in the changed files.
 (`TrainingTabBody`; its longest steps, `chartActions`, `chartCard` and `headControls`, are 32, 28 and 27 lines), comment
 lines 98 -> 130, any-casts 3 -> 0; all files 15,274 -> 15,457 lines, any-casts 46 -> 43. The 183 added lines are the
 steps' signatures with their typed parameters, their doc comments, returns and destructurings, and the wraps.
+
+### SIF-150 Readability F2, F3, F4, F5: Save as and Task file read as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `TaskSave` was 243 of `TaskSave.tsx`'s 331 lines (`femetrics.py`: since SIF-149 the frontend's second longest
+top-level block, after `App.tsx`'s `Page`, a file another branch is changing). One body made its 32 hook calls - 13
+`useState`, 8 `useRef`, 6 effects and a layout effect, a `useCallback`, `useRequest`, `usePopupWindow` and
+`useAsyncAction` - in among the task file's state under its nine-line note (SIF-93), the save running in the backend and
+how a followed one ended, the save itself, Save as's name prompt, the two saves other parts of the page ask for (Apply and
+save, the summary's Save as) and the task file window's open, read, read again and Apply; then one return of 38 lines drew
+the tab line, the notes and both questions, the Save as tooltip one expression whose first line ran to 406 columns. 15
+lines ran past 160 columns. Its single letters: `d` a draft, `t` a listed task, `n` a count (twice), `x` the extras and
+`c` the configuration. F3: its two `any` were caught errors, `report = (e: any)` and Task file's `catch (e: any)`.
+
+**Changed** (`frontend/src/panels/TaskSave.tsx` alone). `TaskSave` (85 lines) reads as its steps, in the order its code
+ran: the save's six state values, as they were; `useTaskFileState` (the file in its window, what is typed in it,
+`closedFile`, the rows it was read from, the rows a kept draft was typed over, the Apply count, the parts waiting and the
+two refs, with their notes); `latest`, `mounted`, `asked`, `able`, the task file's window and the two effects, as they were
+(`asked` and `able` serve the requests, but their hooks come before the window's, and a step takes only hooks that were
+next to each other); `useRunningSave` (the save running in the backend: `own`, `followed`, the poll, the read and the
+effect that says how a followed save ended); `suggested`, `stillHere`, `report` and `useAsyncAction`, as they were;
+`saveActions`, a plain function (`storeTask`, `save`, `saveAs` and `saveNew`); `useSaveRequests` (Apply and save's
+listener with the effect that saves, and the summary's Save as with its ref); `taskFileActions`, plain (`openFile`,
+`readFile`, `rereadFile`, `applyFile`); the values the drawing reads, as they were; and the same return, the Save as
+tooltip from `saveAsTitle` (plain, it returns the text) and the two questions from `frequencyQuestion` and
+`newerQuestion`, called inline and never drawn as components. The 32 hook calls run in the order they ran, each with its
+arguments, each effect with its dependency list, and the render's three ref writes (`latest`, `saveAsNow`, `able`) stay at
+their places among them; no memo added or removed. Three private types name what the steps pass: `Latest`, `Run` and
+`SavingRead`, the last two taken with `ReturnType` from `useAsyncAction` and `useRunningSave`, so they are true by
+construction. Parameters carry their real types (`Dispatch<SetStateAction<...>>`, `MutableRefObject<...>`,
+`ReturnType<typeof usePopupWindow>`, `Promise<void>` for the saves, `Json` for the backend's JSON); a step gets each value
+it reads by its own name, and its results are taken by their names. Comments moved with their code: the running save's
+became `useRunningSave`'s doc comment, the frequency form's JSX comment `frequencyQuestion`'s, and the trailing comment on
+the names in use went above its line; each new function has a doc comment, and `TaskSave`'s says why the order of its
+hooks matters. F3: `any` -> `unknown` in both: a caught error is whatever its `try` threw (the `ApiError` of a refused
+request, the `TypeError` of a failed fetch, or anything thrown while an answer was applied), and `problemText` (api.ts,
+not this package's file) takes anything; the bare `catch (e)` is `unknown` under the frontend's `strict`, as the file's
+other two catches were. F4: `d` -> `draft`, `t` -> `listedTask`, `n` -> `count` (twice), `x` -> `current` (as
+`storeTask`'s update of the extras names it); `c` in the `setConfig` update and `e` for an event or a caught error stay,
+as in SIF-147 to SIF-149, and so do the single letters of the file's other functions. F5: 15 -> 0 lines over 160 columns,
+wrapped between statements, attributes, parameters and properties, before a `?`, `:` or `+`, and in two JSX texts that now
+start on the line after their tag (the parts waiting and Reload saved values), which the compiler reads the same.
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: the main bundle changes, as moved
+code does (`index-CiF_PHpk.js`); the CSS and the uPlot and cytoscape chunks are byte for byte SIF-149's build's. DOM
+identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory
+guard, WSL 4 GB available and the host 3 GB free): "all 112 checks passed", 56 of 56 compared files identical (66
+written). A first run passed the same 112 but also compared this package's static proof, which sat in its output folder,
+as 4 files not in the reference; with the proof moved aside, the run above. Its scenes never draw TaskSave - it is mounted
+for a registered real task or a cell's first save, and they open the MOCK stand-in - so it proves the rest of the page
+unchanged, and TaskSave's own proof is the next one. Without a browser - the TypeScript compiler API on the base file and
+on this one, each compiled in the frontend's own program, with comments, white space and types set aside, parameters
+numbered by place and JSX text cleaned as the compiler does (SIF-149's script adapted; it and its output beside the DOM
+identity output, `out-F2-tasksave/static`): 0 diagnostics each; the 8 exported names the same, each with the same type;
+the 224 strings, template pieces, numbers, regular expressions and JSX texts the same multiset, and so are the JSX tags
+(23) and attribute names (53); of the base body's 58 statements, 57 are found unchanged in the new file and the 58th, the
+return, equals the new return with `saveAsTitle`, `frequencyQuestion` and `newerQuestion` inlined (863 tokens,
+identical); the file's other 23 top-level statements are found unchanged but for the React import, which gained three
+types; the 32 hook calls with the render's 3 ref writes, expanded through the steps, are the same sequence of 35 with the
+same arguments and values, their 8 dependency lists among them; the value references to imports and globals are the same
+multiset (107); the 8 calls of steps pass their 7 arguments as objects of shorthand properties naming exactly the
+parameter's elements (`useTaskFileState` takes none), the 4 destructurings of a step's result take the names as they are,
+each step is called once in `TaskSave`'s own body and never drawn as a component, and the 5 plain steps call no hook.
+A negative control, the same script on five mutated copies of the new file (`negative_control.out` beside it): two hooks
+swapped, a dependency added to an effect, a caption changed, a value passed to a step under another name, and the render's
+write of `latest` moved below the next hook - each was caught. Browser checks deferred to the final suite: the guard of
+the checks (WSL 4 GB available and the host 5 GB free) was not met in 20 minutes of waiting, from 05:54 to 06:14 - WSL 3
+to 8 GB, the host 2 to 4 GB (4.9 GB at most) beside the campaign. The six that press TaskSave's buttons or send it its
+requests are the ones to read there: `task_save_check` (93 at its last run in this log), `virtuoso_source_check` (123),
+`unsaved_rows_check` (28), `project_help_check` (62), `calibration_save_check` (38) and `edit_state_check` (28). In the
+compiled bundle, the children of the line of parts waiting, of Reload saved values and of the rough frequency's label, and
+the Task file tooltip, read as in SIF-149's build but for the minifier's names. The PDK-name grep of the plan's rule 5
+finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `TaskSave.tsx` 331 -> 429 lines, longest block 243 -> 85 (`TaskSave`; its
+longest steps, `saveActions` and `taskFileActions`, are 57 and 49 lines), comment lines 57 -> 75, any-casts 2 -> 0; all
+files 15,457 -> 15,555 lines, any-casts 43 -> 41. The 98 added lines are the steps' signatures with their typed
+parameters, their doc comments, returns and destructurings, and the wraps.

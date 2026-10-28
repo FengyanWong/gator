@@ -25,6 +25,7 @@ MOBO_ARCHIVE_FORMAT = 'archive-compare-mobo-archive-v1'
 
 
 class ComparisonFileError(ValueError):
+    """A validation error for a comparison file's format, pinned identity or compiled-task compatibility."""
     pass
 
 

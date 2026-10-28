@@ -132,6 +132,7 @@ class TaskBlocked(RuntimeError):
 
 @dataclass
 class TaskRuntime:
+    # A task's circuit, provenance and environment-factory contract with its execution limits and authorization.
     task_key: str
     origin: str                        # 'synthetic' | 'real'
     base_graph: object
@@ -170,6 +171,7 @@ def offered_real_profiles() -> dict:
 
 
 def real_task_removed(task) -> str:
+    """Explain when a retired built-in task was removed and how to select a saved real task."""
     when = '2026-09-30' if task in ('real:gpdk045_ota7', 'real:gpdk045_ldo') else '2026-09-23'
     return (f'{task} no longer exists: the built-in verified tasks were removed on user request (this one on {when}). The '
             'real tasks are the ones you save from a Virtuoso cell; choose one under "Task".')
@@ -180,6 +182,7 @@ CORNER_TASKS = frozenset()
 
 
 def training_capabilities(task_key):
+    """Describe whether a task supports corner training and which condition policies it offers."""
     corners = task_key in CORNER_TASKS
     return dict(corners=corners, policies=['off', 'after_nominal', 'always'] if corners else ['off'])
 

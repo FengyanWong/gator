@@ -265,6 +265,21 @@ def _ngspice_routes(app: FastAPI, context: ApiContext):
 
 def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
     """A task's Virtuoso side: the copy refusal, the setup read, Save task, the task file, Check now."""
+    _register_virtuoso_copy_route(app)
+
+    _register_virtuoso_setup_read_route(app, context)
+
+    _register_virtuoso_task_save_route(app, context)
+
+    _register_virtuoso_task_file_route(app, context)
+
+    _register_virtuoso_task_check_route(app, context)
+
+    _register_virtuoso_task_file_check_route(app)
+
+
+def _register_virtuoso_copy_route(app):
+    """Register the endpoint that explains why automatic cell copying is refused."""
     @app.post('/api/virtuoso/copy')
     def virtuoso_copy(body: CopyBody):
         """Refused since 2026-09-23 (user request): the workbench makes no copy of a cell any more. The user copies the
@@ -275,6 +290,9 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
                   'and its testbench in Virtuoso yourself, then read the copy in the Virtuoso window - it asks whether the cell '
                   'is a copy you made and works in it.', code='copies_not_made')
 
+
+def _register_virtuoso_setup_read_route(app, context):
+    """Register the working-copy Maestro setup read and editor-comparison endpoint."""
     @app.post('/api/virtuoso/setup/read')
     def virtuoso_setup_read(body: SetupBody):
         """Explicit click: what the working copy's Maestro view holds (test, analyses, outputs, specs, variables and the
@@ -295,6 +313,9 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
             return found
         return bridge_call(read, COPY_REFUSED)
 
+
+def _register_virtuoso_task_save_route(app, context):
+    """Register saved-task writes and their baseline handoff through the existing session flow."""
     @app.post('/api/virtuoso/task/save')
     def virtuoso_task_save(body: TaskSaveBody):
         """Explicit click - a person's only: store the editors' rows as the task real:<name>. The first save of a cell takes
@@ -345,6 +366,9 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
             fail(409, exc, code='save_running', running=task_saving.status()['running'])
         return save.answer
 
+
+def _register_virtuoso_task_file_route(app, context):
+    """Register rendering of the current editor rows as a task file."""
     @app.post('/api/virtuoso/task/file')
     def virtuoso_task_file(body: TaskFileBody):
         """The task file of the CURRENT editors - what "Save task" would store - as text, laid out with its own
@@ -357,6 +381,9 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
                                 setup=dict(setup, test='GATOR') if setup else None)
         return dict(text=task_files.render(data), name=name, revision=(saved or {}).get('revision', 0), saved=saved is not None)
 
+
+def _register_virtuoso_task_check_route(app, context):
+    """Register the saved-task and working-copy consistency check endpoint."""
     @app.post('/api/virtuoso/task/check')
     def virtuoso_task_check(body: TaskCheckBody):
         """Explicit click ("Check now"): the check Start runs by itself before every run of a saved task - the editors
@@ -381,6 +408,9 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
             result['virtuoso_session'] = session.record()
         return result
 
+
+def _register_virtuoso_task_file_check_route(app):
+    """Register parsing and validation of edited task-file text."""
     @app.post('/api/virtuoso/task/file/check')
     def virtuoso_task_file_check(body: TaskFileTextBody):
         """Read a task file someone edited: its rows (checked with the editors' schema), what it holds beside them, and

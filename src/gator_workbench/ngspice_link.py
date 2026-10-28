@@ -142,19 +142,9 @@ def run_layers(runner, settings, *, scope='interactive', timeout=5.0):
         """The ssh destination never leaves in a diagnostic (ssh names it in its own error lines)."""
         return scrub_host(str(text or ''), host)
 
-    def fail(name, state, reason, diagnostic=None, *, step=None, **details):
-        results[name] = layer(name, state, reason, scrub(diagnostic) if diagnostic else None,
-                              next_step=NEXT_STEPS.get(step or reason), **details)
-        return list(results.values())
+    fail = _failure_recorder(results, scrub)
 
-    def call(argv, **kwargs):
-        """(returncode, stdout, stderr), or a string naming why there is no answer."""
-        try:
-            return runner.run(argv, **kwargs)
-        except subprocess.TimeoutExpired:
-            return 'probe_timeout'
-        except OSError as exc:
-            return f'{type(exc).__name__}: {exc}'
+    call = _command_caller(runner)
 
     # 1 -- connection profile: only the workbench's own file is read; nothing is contacted
     if kind not in ('ngspice_local', 'ngspice_ssh'):
@@ -224,13 +214,43 @@ def run_layers(runner, settings, *, scope='interactive', timeout=5.0):
     if isinstance(answer, str):
         return fail('trial_run', 'failed', 'trial_run_failed', answer)
     code, out, err = answer
-    measured = RESULT.search(out)
-    try:
-        volts = float(measured.group(1)) if measured else None
-    except ValueError:
-        volts = None
+    volts = _trial_voltage(out)
     if volts is None or abs(volts - EXPECTED_VOLTS) > 1e-6:
         return fail('trial_run', 'failed', 'trial_run_failed', _tail(out, err) or f'exit code {code}, no v(out) in the output')
     results['trial_run'] = layer('trial_run', 'ok', measured='v(out) = 0.5 V on a fixed 1 V divider',
                                  note='A built-in three-element circuit: no user circuit, no budget, no license.')
     return list(results.values())
+
+
+def _failure_recorder(results, scrub):
+    """Build the failure recorder using the shared layer results and diagnostic scrubber."""
+    def fail(name, state, reason, diagnostic=None, *, step=None, **details):
+        results[name] = layer(name, state, reason, scrub(diagnostic) if diagnostic else None,
+                              next_step=NEXT_STEPS.get(step or reason), **details)
+        return list(results.values())
+    return fail
+
+
+def _command_caller(runner):
+    """Build the command wrapper that turns timeout and operating-system errors into diagnostic answers."""
+    def call(argv, **kwargs):
+        """(returncode, stdout, stderr), or a string naming why there is no answer."""
+        try:
+            return runner.run(argv, **kwargs)
+        except subprocess.TimeoutExpired:
+            return 'probe_timeout'
+        except OSError as exc:
+            return f'{type(exc).__name__}: {exc}'
+    return call
+
+
+
+
+def _trial_voltage(out):
+    """Read the divider measurement or return None when it is absent or cannot be parsed."""
+    measured = RESULT.search(out)
+    try:
+        volts = float(measured.group(1)) if measured else None
+    except ValueError:
+        volts = None
+    return volts

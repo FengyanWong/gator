@@ -16,6 +16,7 @@ _PATTERNS = [
 
 
 def redact(text, limit=None):
+    """Apply the configured redaction patterns and optionally truncate the resulting text."""
     if text is None:
         return None
     text = str(text)

@@ -6392,3 +6392,82 @@ changed files.
 (`ConnectionButton`; its longest new functions, `connectionWindow`, `sessionCard` and `virtuosoSteps`, are about 60 lines
 of markup each), comment lines 48 -> 67, any-casts 0 -> 0; all files 15,000 -> 15,143 lines, any-casts 47 -> 47. The 143
 added lines are the new functions' typed parameters and doc comments, and the wraps.
+
+### SIF-148 Readability F2, F3, F4, F5: the RL model's state and work read as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `useRlModel` was 332 of `useRlModel.ts`'s 351 lines (`femetrics.py`: since SIF-147 the frontend's longest
+top-level block). One body of 103 statements made its 24 hook calls - the RL model window, the saved models view, two
+`useRequest`, five `useState`, seven `useRef`, seven effects and `useNewest` - in among the saved model's check, what
+Reward and conditions draws, the encoders' templates with their write queue (the edit waiting, the 0.7 s timer, the
+revision counter, the chain of writes), the network that follows a loaded model, "Use this save point" and the Mode, the
+model lines, the model's reward and the notice's reason. Four pure template rules (`networkKey`, `keepList`,
+`newModelList`, `templateInputs`) were closures made again at every draw, though they read nothing of it. 8 lines ran
+past 160 columns (the longest 232). Callback parameters were single letters that meant different things a few lines
+apart: `e` a template (`remember`, `applyEntry`, a saved one) or a caught error, `s` the backend's answer or the
+templates held, `c` the configuration or a corner, and `f`, `k`, `t`, `m`. F3: the file's one `any` was the caught error
+of "Use this save point", `(e: any)`; `femetrics.py` counts 2 because its pattern `as any` also matches the words "as
+any choice does" of a comment, which stays.
+
+**Changed** (`frontend/src/panels/useRlModel.ts` alone). `useRlModel` (57 lines) reads as its steps, in the order its
+code ran: the run settings and their setters and the RL model window and saved models view, as they were;
+`useModelInUse` (the saved model's check, and what is known about it while the same model is checked again);
+`rewardAndConditions`, a plain function (what Reward and conditions draws); `useTemplates` (the templates the backend
+keeps, the window's message, the refs of the write queue, the template of the encoder in use and what that encoder
+takes); `templateActions`, plain (`applyEntry`, `chooseList`, `flush`, `queueSave`, `editNet`, `editAdv`,
+`chooseEncoder`); `useReadTemplatesOnce` (the effect that reads them when Run configuration is first drawn, takes a
+restored preset's old learning rate up once per browser, and writes an edit still waiting when it goes);
+`useFillLeftOutValues` (the effect that fills a value the configuration leaves out); `templateDifferences` and
+`trainingWarnings`, plain; `loads`, `noMode` and the label, as they were; `useNetworkFollowsModel` (the saved model's
+network and component list: its ref and three effects); `useModelChoice` (the suggestion, "Use this save point" and the
+Mode); `useModelLines` (the model lines, and the effect that hands the Next line to the page); `savedModelReward`,
+plain; the limits and fold lines, as they were; `networkNotice`, plain (the notice's error, warning, reason and block);
+`useOpenAtBlock` (opening the window at that block) - and the same return, its 75 keys in their order. The 24 hook calls
+run in the order they ran, each with its arguments, each effect with its dependency list; no memo added or removed. The
+four template rules moved to the file's top level: they read nothing of the hook, were never returned and stood in no
+dependency list. A step gets each value it reads by its own name - a same-named argument, or the `templates` object of
+`useTemplates`, taken by its names - and each value it returns is taken by its name. `useRlModel`'s new doc comment
+names its steps and says why their order matters: React keeps a hook's state by its place in that order. Comments moved
+with their code: four became the doc comments of the steps they opened, the three template rules' comments their doc
+comments, and "AT that block" and "(above)" now name what they meant; each new function has a doc comment. Parameters
+carry their types: `Json` for the backend's JSON, `ModelReply | null`, `string | null` for the check's error,
+`ReturnType<typeof usePopupWindow>`, and two private names, `SetConfig` (the page's setter, history.ts) and `Templates`
+(`useTemplates`' result). F3: `(e: any)` -> `(e: Error)`: `readSavePoint` rejects with the `ApiError` of a refused read
+or the `TypeError` of a failed fetch (api.ts `call` and `answer`), both Errors, and the message reads `e.message`. F4:
+`t` -> `target`, `k` -> `field` (twice), `f` -> `field`, `c` -> `corner` where it is a corner, `s` -> `answer` (the
+backend's, twice) and `previous` (in `remember`'s update), `e` -> `saved` (a template the backend saved, in `remember`
+and `flush`) and `template` (`applyEntry`'s), `m` -> `message`, and `newModelList`'s `c` -> `config` now that it is a
+top-level function. `c` for the configuration in the file's 10 `setConfig` updates stays - the page's word there (34 of
+its 43 updates, and `setConfig`'s own type spells `(c: Json) => Json`) - and so does `e` for a caught error, as in
+SIF-147. F5: 8 -> 1 lines over 160 columns, wrapped between parameters and properties, before a `&&` or `?`, inside a
+`${...}` of the "next run fine-tunes" message, and the trailing comment on the check's delay moved above the options it
+describes; the one left is the warning "The network stays ...", a template of 157 characters by itself.
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: the main bundle changes, as moved
+code does (`index-Dj22mWJc.js`); the CSS and the uPlot and cytoscape chunks are byte for byte the base build's. DOM
+identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory
+guard, short for three minutes - WSL 2 GB available, the host 1 to 2 GB free - and run at WSL 8 GB and the host 5 GB):
+"all 112 checks passed", 56 of 56 compared files identical (66 written); its `rl` and `rl-loaded` scenes draw the RL
+model window in each Mode and with a saved model in use. Without a browser - the TypeScript compiler API on the base
+file and on this one, each compiled in the frontend's own program (the script and its output beside the DOM identity
+output, `out-F2-useRlModel/static`): 0 diagnostics each; `RlModel`'s 75 keys in the same order with the same types, but
+for the name of `applyEntry`'s parameter; the 158 strings, template pieces and numbers the same multiset; of the base
+body's 103 statements, 102 are found unchanged in the new file with comments, white space and parameter names set aside
+(a parameter that names a shorthand property keeps its name), and the 103rd, `useSavePoint`, differs by the catch's
+`Error` alone (with that annotation swapped in the base, 103 of 103); the 24 hook calls, expanded through the steps, are
+the same sequence with the same arguments, the effects' dependency lists among them; the file's value references to
+imports and globals are the same multiset (102: no name came to mean a global or an import it did not mean before); and
+the 14 calls of steps pass their 40 arguments by name (a same-named argument, or an object of shorthand properties
+naming exactly the parameter's elements), the 12 steps that return give a name or an object of shorthand properties, and
+the 19 destructurings of a step's result or of `templates` take the names as they are. Browser checks, one lane (WSL 8
+GB, host 5 GB), the 17 that draw Run configuration, the RL model window or the header's Next line: `run_control_check`
+181, `run_list_check` 185, `model_chooser_check` 145, `looks_check` 83, `network_panel_check` 78, `graph_view_check` 72,
+`typing_check` 62, `task_rows_check` 57, `pdk_check` 47, `reward_block_check` 34, `model_structure_check` 33,
+`module_fold_check` 31, `room_check` 31, `encoder_models_check` 24, `reliability_check` 22, `mode_suggestion_check` 20,
+`network_inputs_check` 9 passed (1,114, no flake), each the count of its last run in this log; `reward_v21_check` and
+the two `reward_v2_*` checks, which need fixtures this machine does not have, the runner skipped. The PDK-name grep of
+the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `useRlModel.ts` 351 -> 482 lines, longest block 332 -> 57 (`useRlModel`;
+its longest steps, `templateActions` and `useModelChoice`, are 57 and 48 lines), comment lines 90 -> 122, any-casts 2 ->
+1 (the comment's words); all files 15,143 -> 15,274 lines, any-casts 47 -> 46. The 131 added lines are the steps'
+signatures with their typed parameters, their doc comments, returns and destructurings, and the wraps.

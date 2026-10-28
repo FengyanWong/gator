@@ -24,6 +24,15 @@ from .trajectory import StateEncoder
 def prepare(engine, *, local_scratch):
     """Initialize persisted run state, learning resources, budgets, preparation ownership, and execution lanes."""
     cfg, out, adv = engine.config, engine.config.output, engine.config.run.advanced
+    experiment = _initialize_dataset(out, engine, cfg)
+    input_options, built = _build_learning_resources(engine, cfg, adv, experiment)
+    run = _initialize_run_state(cfg, engine, input_options)
+    _restore_run_state(engine, built, out)
+    _open_run_lanes(engine, run, adv, local_scratch)
+
+
+def _initialize_dataset(out, engine, cfg):
+    """Open the configured dataset tables and record the learner experiment and transition-archive policy."""
     enabled = {'evaluations', 'parameters', 'metrics', 'simulator_jobs'}
     if out.save_learner_updates and not engine.frozen:
         enabled.add('learner_updates')
@@ -33,16 +42,14 @@ def prepare(engine, *, local_scratch):
     engine.archive = out.save_transition_archive
     experiment = learner_experiment(cfg, engine.task, engine.task_hash)
     engine.experiment = experiment
+    return experiment
+
+
+def _build_learning_resources(engine, cfg, adv, experiment):
+    """Build the learner and replay resources, apply rehearsal and freezing policy, and retain their load metadata."""
     engine.vocabulary = run_vocabulary(engine.layout.run_dir)      # the run's own component list; None = standard
     input_options = modes.runtime_options(cfg, engine.vocabulary)
-    source_dir = source_meta = None
-    if engine.entry == 'resume':
-        source_dir = ckpt.resolve_checkpoint(engine.layout.run_dir, 'latest')
-        source_meta = ckpt.read_metadata(source_dir)
-    elif engine.mode in ('fine_tune', 'frozen'):
-        parent = engine.manifest['parent']
-        source_dir = ckpt.resolve_checkpoint(parent['run_dir'], parent['checkpoint_id'])
-        source_meta = ckpt.read_metadata(source_dir)
+    source_dir, source_meta = _checkpoint_source(engine)
     built = modes.build('resume' if engine.entry == 'resume' else engine.mode, experiment=experiment,
                         model_config=modes.model_config_from(cfg.run.network),
                         sac_config=modes.sac_config_from(adv), spec_schema=engine.compiled.spec_schema,
@@ -65,6 +72,24 @@ def prepare(engine, *, local_scratch):
     if engine.entry == 'resume' and engine.mode == 'fine_tune' and adv.freeze_encoder:
         engine.freeze = modes.EncoderFreeze(engine.learner)
     engine.frozen_digest = ckpt.weight_digest(engine.learner) if engine.frozen else None
+    return input_options, built
+
+
+def _checkpoint_source(engine):
+    """Resolve checkpoint data and metadata for a resumed run or a task started from saved weights."""
+    source_dir = source_meta = None
+    if engine.entry == 'resume':
+        source_dir = ckpt.resolve_checkpoint(engine.layout.run_dir, 'latest')
+        source_meta = ckpt.read_metadata(source_dir)
+    elif engine.mode in ('fine_tune', 'frozen'):
+        parent = engine.manifest['parent']
+        source_dir = ckpt.resolve_checkpoint(parent['run_dir'], parent['checkpoint_id'])
+        source_meta = ckpt.read_metadata(source_dir)
+    return source_dir, source_meta
+
+
+def _initialize_run_state(cfg, engine, input_options):
+    """Initialize budgets, counters, calibration gating, the optional state encoder and comparison search."""
     run = cfg.run
     engine.ledger = BudgetLedger(run.max_evaluations, max_launches=run.max_spectre_launches,
                                max_retries=run.max_retries)
@@ -97,6 +122,11 @@ def prepare(engine, *, local_scratch):
                                     feature_schema_version=input_options['feature_schema'].version,
                                     spec_schema_version=engine.compiled.spec_schema.version)
     engine_comparison.prepare(engine)           # the archive comparison's first designs and search (a resume restores it)
+    return run
+
+
+def _restore_run_state(engine, built, out):
+    """Restore resumable state, reject unresolved launch intents, and initialize checkpoint persistence and load-policy records."""
     if engine.entry == 'resume':
         engine._restore(built['run_state'])
     if engine.ledger.uncertain_launches:
@@ -106,6 +136,10 @@ def prepare(engine, *, local_scratch):
                                             task_definition_hash=engine.task_hash,
                                             save_replay=out.save_replay_snapshots, keep_last=out.keep_last_checkpoints)
     engine._record_load_policy()
+
+
+def _open_run_lanes(engine, run, adv, local_scratch):
+    """Enter the preparation context, wrap the lane factory with local scratch, and open and initialize execution lanes."""
     count = min(run.concurrency, engine.task.max_concurrency)
     env_run = run.model_copy(deep=True)
     factory = engine._lane_factory or engine.task.env_factory_builder(engine.compiled, engine.layout.work, env_run)

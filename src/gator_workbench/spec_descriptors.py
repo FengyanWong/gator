@@ -65,6 +65,7 @@ _SI = dict(T=1e12, G=1e9, M=1e6, K=1e3, k=1e3, m=1e-3, u=1e-6, n=1e-9, p=1e-12, 
 # ------------------------------------------------------------------------------------------ the expression tree
 @dataclass
 class Node:
+    # A parsed measurement-expression node used to build name-independent spec descriptors.
     kind: str                       # number, string, keyword, name, call, neg, add, sub, mul, div
     value: object = None            # number value, string text, name or function name
     children: list = field(default_factory=list)
@@ -428,6 +429,7 @@ def _first_at(text, name):
 
 
 def spec_set_schema():
+    """Return the versioned descriptor columns and unit references for set-based spec inputs."""
     from analog_optimizer.models.inputs import SpecSetSchema
     return SpecSetSchema(DESCRIPTOR_VERSION, DESCRIPTOR_COLUMNS, UNIT_REFERENCES)
 

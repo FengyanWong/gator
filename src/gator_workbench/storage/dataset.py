@@ -56,6 +56,7 @@ def _parse_time(value):
 
 
 class RawDataset:
+    """A single-writer dataset that journals evaluation bundles before publishing closed Parquet parts."""
     def __init__(self, data_dir, *, enabled_tables=None, flush_every=16):
         self.root = Path(data_dir)
         self.journal_dir = self.root / '_journal'
@@ -110,6 +111,7 @@ class RawDataset:
 
     # ------------------------------------------------------------------ writes
     def has(self, evaluation_id) -> bool:
+        """Check whether an evaluation identifier is already known to this dataset."""
         return evaluation_id in self._known
 
     def next_seq(self) -> int:
@@ -237,12 +239,14 @@ class RawDataset:
                     rows=dict(self.flushed_rows), buffered_bundles=len(self._buffer))
 
     def status(self):
+        """Describe the current journal, flush, buffered-bundle and persistence status."""
         return dict(last_commit_seq=self.last_seq, flushed_seq=self.flushed_seq, flushes=len(self._flushes),
                     buffered_bundles=len(self._buffer), rows=dict(self.flushed_rows),
                     bytes_written=self.bytes_written, failed=self.failed,
                     last_successful_save=None if self.last_success is None else self.last_success.isoformat())
 
     def close(self):
+        """Flush a healthy dataset and close both journal streams even when flushing fails."""
         try:
             if self.failed is None:
                 self.flush()
@@ -294,6 +298,7 @@ class DatasetReader:
         self.cutoff_seq = max((f['last_seq'] for f in flushes), default=0)
 
     def parts(self, table):
+        """List a table's part paths in published flush order."""
         return [self.root / table / f['parts'][table] for f in self.flushes if table in f['parts']]
 
     @staticmethod
@@ -324,6 +329,7 @@ class DatasetReader:
         return result if tail_rows is None else result.slice(max(0, result.num_rows - tail_rows))
 
     def table(self, table, columns=None):
+        """Read and concatenate published table parts, preserving the schema when no parts exist."""
         import pyarrow as pa
         paths = self.parts(table)
         if not paths:
@@ -331,6 +337,7 @@ class DatasetReader:
         return pa.concat_tables([self._read_part(p, table, columns) for p in paths])
 
     def rows(self, table, columns=None):
+        """Materialize the selected table columns as Python row dictionaries."""
         return self.table(table, columns).to_pylist()
 
     def iter_batches(self, table, columns=None, *, batch_size=1024):
@@ -384,6 +391,7 @@ class DatasetReader:
         return whole.slice(max(0, whole.num_rows - limit))
 
     def row_counts(self):
+        """Sum each table's published row counts from the flush records."""
         return {table: sum(f['rows'].get(table, 0) for f in self.flushes) for table in TABLES}
 
     def verify(self):
@@ -420,6 +428,7 @@ class DatasetReader:
 
 
 def map_to_dict(pairs):
+    """Convert stored key-value structs to a dictionary while preserving a missing map."""
     return None if pairs is None else {item['key']: item['value'] for item in pairs}
 
 

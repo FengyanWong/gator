@@ -454,10 +454,7 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
     profile = settings.get('profile') or None
     arg = f' -p {profile}' if profile else ''
 
-    def fail(name, state, reason, diagnostic=None, **details):
-        results[name] = layer(name, state, reason, diagnostic,
-                              next_step=NEXT_STEPS.get(reason, '').format(profile_arg=arg) or None, **details)
-        return list(results.values())
+    fail = _failure_recorder(results, arg)
 
     # 1 -- bridge package
     try:
@@ -530,10 +527,7 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
             if run_active:
                 return fail('daemon', 'busy', 'busy_active_run', 'the CIW is occupied by the active run')
             return fail('daemon', 'failed', 'no_response', '; '.join(errors)[:300] or 'no successful answer')
-        try:
-            user = bridge.daemon_user(client, profile, timeout)
-        except Exception as exc:
-            user = dict(ok=True, skipped=True, error=f'{type(exc).__name__}: {exc}')
+        user = _daemon_user_check(bridge, client, profile, timeout)
         if not user['ok']:
             return fail('daemon', 'failed', 'daemon_user_mismatch', 'the answering daemon belongs to another user')
         results['daemon'] = layer('daemon', 'ok', user_check='skipped' if user.get('skipped') else 'matched')
@@ -548,11 +542,7 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
         except Exception as exc:
             return fail('session_readiness', 'unknown', 'readiness_unreadable', f'{type(exc).__name__}: {exc}')
     finally:
-        if client is not None:
-            try:
-                client.close()                  # closes only this probe's client; upstream keeps the shared tunnel
-            except Exception:
-                pass
+        _close_probe_client(client)
     if 'spectre' not in wanted:
         return list(results.values())
     # 6 + 7 -- Spectre executable and license snapshot (one upstream call provides both)
@@ -562,6 +552,39 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
         return fail('spectre', 'unknown', 'spectre_check_failed', f'{type(exc).__name__}: {exc}')
     if not info.get('spectre_path'):
         return fail('spectre', 'failed', 'spectre_not_found', 'the executable was not found on the resolved Spectre host')
+    _record_spectre_results(results, info)
+    return list(results.values())
+
+
+def _failure_recorder(results, arg):
+    """Create the failure recorder that fills one layer and returns the ordered results."""
+    def fail(name, state, reason, diagnostic=None, **details):
+        results[name] = layer(name, state, reason, diagnostic,
+                              next_step=NEXT_STEPS.get(reason, '').format(profile_arg=arg) or None, **details)
+        return list(results.values())
+    return fail
+
+
+def _daemon_user_check(bridge, client, profile, timeout):
+    """Read daemon ownership while recording an unavailable user check as skipped."""
+    try:
+        user = bridge.daemon_user(client, profile, timeout)
+    except Exception as exc:
+        user = dict(ok=True, skipped=True, error=f'{type(exc).__name__}: {exc}')
+    return user
+
+
+def _close_probe_client(client):
+    """Close this probe client when present, suppressing close failures."""
+    if client is not None:
+        try:
+            client.close()                  # closes only this probe's client; upstream keeps the shared tunnel
+        except Exception:
+            pass
+
+
+def _record_spectre_results(results, info):
+    """Record a found Spectre executable and its parsed license availability."""
     results['spectre'] = layer('spectre', 'ok', version=redact(info.get('version'), 120))
     features = parse_license_lines(info.get('licenses'))
     relevant = [f for f in features if SPECTRE_FEATURE.search(f['feature'])]
@@ -574,7 +597,6 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
     else:
         results['spectre_license'] = layer('spectre_license', 'failed', 'license_unavailable', features=relevant,
                                            note=LICENSE_NOTE, next_step=NEXT_STEPS['license_unavailable'])
-    return list(results.values())
 
 
 # ---------------------------------------------------------------------------- probe process

@@ -603,16 +603,7 @@ def execute(request, output, *, audit_only=False, progress=None):
     from analog_optimizer.training.replay import ReplayBuffer
     from analog_optimizer.training.sac import SACConfig, SACLearner
 
-    output = Path(output).resolve()
-    if request['origin'] == 'synthetic' and 'mock' not in output.parts:
-        raise ValueError('Synthetic offline artifacts must be under a mock/ directory')
-    updates, batch_size = request.get('updates', DEFAULT_UPDATES), request.get('batch_size', 8)
-    interval = request.get('checkpoint_every', 1000)
-    if any(type(x) is not int or x < 1 for x in (updates, batch_size, interval)):
-        raise ValueError('updates, batch_size and checkpoint_every must be positive integers')
-    output.mkdir(parents=True, exist_ok=False)
-    write_json(output / 'request.json', request)
-    started = time.monotonic()
+    output, updates, batch_size, interval, started = _begin_offline_artifact(request, output)
     learner = None
     pool = None
     loaded_sources = 0
@@ -639,62 +630,15 @@ def execute(request, output, *, audit_only=False, progress=None):
     try:
         status('loading', phase='loading_sources', completed_sources=0, total_sources=len(request.get('runs', ())))
         pool = prepare_pool(request, progress=pool_progress, storage_dir=output)
-        status('loading', phase='saving_pool', completed_transitions=len(pool.audit['split']),
-               total_transitions=len(pool.audit['split']))
-        write_json(output / 'pool.json', pool.audit)
-        write_json(output / 'spec_registry.json', [dict(metric_id=n, unit=u, reference=r)       # a spec set has none
-                                                   for n, u, r in getattr(pool.schema, 'metrics', ())])
+        _save_pool_audit(status, pool, output)
         if audit_only:
             status('audited', source_evaluations=pool.audit['source_evaluations'], eligible=pool.audit['eligible'])
             return pool.audit
-        torch.set_num_threads(1)
-        seed_everything(request.get('seed', DEFAULT_SEED))
-        experiment = dict(origin=request['origin'], split='offline_training',
-                          designs=pool.audit['sources'], pool_sha256=pool.audit['request_sha256'])
-        model = ModelConfig(**request.get('model', dict(hidden_dim=48, heads=4, layers=4)))
-        sac = SACConfig(**request.get('sac', dict(gamma=0., learning_rate=1e-3, initial_alpha=0.01, tau=0.005)))
-        if sac.gamma != 0:
-            raise ValueError('Phase-0 reward-regression diagnostics require gamma=0')
+        experiment, model, sac = _offline_training_config(torch, request, pool, ModelConfig, SACConfig)
         learner = SACLearner(experiment=experiment, spec_schema=pool.schema, model_config=model,
                              config=sac, reward_settings=pool.reward_settings, feature_schema=pool.feature_schema)
-        sampler = BalancedSampler(pool.training, request.get('seed', DEFAULT_SEED), track_candidates=True)
-        replay = ReplayBuffer(1, origin=request['origin'])
-        # This path has no online collector or replay. Do not advertise RunEngine resume.
-        store = CheckpointStore(output, run_id=pool.audit['request_sha256'][:24], task_id='offline:general',
-                                task_definition_hash=pool.audit['request_sha256'], save_replay=False, keep_last=2)
-        history = []
-        candidate_runs = {r['candidate_id']: r['run_id'] for r in pool.audit['split'] if r['subset'] == 'training'}
-        def checkpoint():
-            status('training', phase='evaluating_validation', validation_transitions=sum(map(len, pool.validation.values())))
-            scores = evaluate(learner, pool)
-            history.append(dict(updates=learner.updates, scores=scores))
-            write_json(output / 'validation.json', history)
-            # The sampler's record of this save, written BEFORE the save point, with the update count it belongs to and the
-            # sampler's own state (record 7.352): written after it, a stop between the two left the newest save point with
-            # the record of the one before, and nothing in the record said so.
-            per_run = Counter()
-            for candidate, count in sampler.candidate_counts.items():
-                per_run[candidate_runs[candidate]] += count
-            write_json(output / 'sampling.json', dict(learner_updates=learner.updates, sampled_per_task=dict(sampler.counts),
-                       sampled_per_run=dict(per_run), unique_training_candidates=len(sampler.candidate_counts),
-                       available_training_candidates=len(candidate_runs),
-                       candidate_counts=dict(sampler.candidate_counts),
-                       candidate_note='a design and its relabelled copies share one candidate id',
-                       sampler_state=dict(random=sampler.rng.getstate(), pending=list(sampler.pending))))
-            store.save(learner, replay, ledger_state={}, data_cursor=dict(commit_seq=0),
-                       counters=dict(evaluations_committed=0, learner_updates=learner.updates, replay_size=0),
-                       collector_state=None, mode='scratch', effective_experiment=experiment)
-            status('training', sampled_per_task=dict(sampler.counts), scores=scores,
-                   source_evaluations=pool.audit['source_evaluations'],
-                   parameter_counts={k: sum(p.numel() for p in v.parameters()) for k, v in
-                                     [('actor', learner.actor), ('critics', learner.critics)]})
-        checkpoint()
-        for _ in range(updates):
-            losses = learner.update(sampler.sample(batch_size))
-            if learner.updates % interval == 0 or learner.updates == updates:
-                checkpoint()
-            elif learner.updates % 100 == 0:
-                status('training', losses=losses, sampled_per_task=dict(sampler.counts))
+        _train_offline(
+            request, pool, ReplayBuffer, output, learner, status, experiment, updates, batch_size, interval)
         status('trained_unqualified', source_evaluations=pool.audit['source_evaluations'],
                pending_gates=['specialist critic comparison', 'actor proposal diagnostics',
                               'forgetting-curve review', 'workbench model publication', 'online rehearsal'])
@@ -705,3 +649,83 @@ def execute(request, output, *, audit_only=False, progress=None):
     finally:
         if pool is not None and pool.storage is not None:
             pool.storage.close()
+
+
+def _begin_offline_artifact(request, output):
+    """Validate offline run settings and create the new artifact directory with its frozen request."""
+    output = Path(output).resolve()
+    if request['origin'] == 'synthetic' and 'mock' not in output.parts:
+        raise ValueError('Synthetic offline artifacts must be under a mock/ directory')
+    updates, batch_size = request.get('updates', DEFAULT_UPDATES), request.get('batch_size', 8)
+    interval = request.get('checkpoint_every', 1000)
+    if any(type(x) is not int or x < 1 for x in (updates, batch_size, interval)):
+        raise ValueError('updates, batch_size and checkpoint_every must be positive integers')
+    output.mkdir(parents=True, exist_ok=False)
+    write_json(output / 'request.json', request)
+    started = time.monotonic()
+    return output, updates, batch_size, interval, started
+
+
+def _save_pool_audit(status, pool, output):
+    """Report pool-save progress and persist the frozen pool audit and specification registry."""
+    status('loading', phase='saving_pool', completed_transitions=len(pool.audit['split']),
+           total_transitions=len(pool.audit['split']))
+    write_json(output / 'pool.json', pool.audit)
+    write_json(output / 'spec_registry.json', [dict(metric_id=n, unit=u, reference=r)       # a spec set has none
+                                               for n, u, r in getattr(pool.schema, 'metrics', ())])
+
+
+def _offline_training_config(torch, request, pool, ModelConfig, SACConfig):
+    """Seed offline training and construct its experiment, model, and zero-discount learner configuration."""
+    torch.set_num_threads(1)
+    seed_everything(request.get('seed', DEFAULT_SEED))
+    experiment = dict(origin=request['origin'], split='offline_training',
+                      designs=pool.audit['sources'], pool_sha256=pool.audit['request_sha256'])
+    model = ModelConfig(**request.get('model', dict(hidden_dim=48, heads=4, layers=4)))
+    sac = SACConfig(**request.get('sac', dict(gamma=0., learning_rate=1e-3, initial_alpha=0.01, tau=0.005)))
+    if sac.gamma != 0:
+        raise ValueError('Phase-0 reward-regression diagnostics require gamma=0')
+    return experiment, model, sac
+
+
+def _train_offline(
+    request, pool, ReplayBuffer, output, learner, status, experiment, updates, batch_size, interval):
+    """Construct the offline sampler and checkpoint store, then run the requested learner updates with periodic saves."""
+    sampler = BalancedSampler(pool.training, request.get('seed', DEFAULT_SEED), track_candidates=True)
+    replay = ReplayBuffer(1, origin=request['origin'])
+    # This path has no online collector or replay. Do not advertise RunEngine resume.
+    store = CheckpointStore(output, run_id=pool.audit['request_sha256'][:24], task_id='offline:general',
+                            task_definition_hash=pool.audit['request_sha256'], save_replay=False, keep_last=2)
+    history = []
+    candidate_runs = {r['candidate_id']: r['run_id'] for r in pool.audit['split'] if r['subset'] == 'training'}
+    def checkpoint():
+        status('training', phase='evaluating_validation', validation_transitions=sum(map(len, pool.validation.values())))
+        scores = evaluate(learner, pool)
+        history.append(dict(updates=learner.updates, scores=scores))
+        write_json(output / 'validation.json', history)
+        # The sampler's record of this save, written BEFORE the save point, with the update count it belongs to and the
+        # sampler's own state (record 7.352): written after it, a stop between the two left the newest save point with
+        # the record of the one before, and nothing in the record said so.
+        per_run = Counter()
+        for candidate, count in sampler.candidate_counts.items():
+            per_run[candidate_runs[candidate]] += count
+        write_json(output / 'sampling.json', dict(learner_updates=learner.updates, sampled_per_task=dict(sampler.counts),
+                   sampled_per_run=dict(per_run), unique_training_candidates=len(sampler.candidate_counts),
+                   available_training_candidates=len(candidate_runs),
+                   candidate_counts=dict(sampler.candidate_counts),
+                   candidate_note='a design and its relabelled copies share one candidate id',
+                   sampler_state=dict(random=sampler.rng.getstate(), pending=list(sampler.pending))))
+        store.save(learner, replay, ledger_state={}, data_cursor=dict(commit_seq=0),
+                   counters=dict(evaluations_committed=0, learner_updates=learner.updates, replay_size=0),
+                   collector_state=None, mode='scratch', effective_experiment=experiment)
+        status('training', sampled_per_task=dict(sampler.counts), scores=scores,
+               source_evaluations=pool.audit['source_evaluations'],
+               parameter_counts={k: sum(p.numel() for p in v.parameters()) for k, v in
+                                 [('actor', learner.actor), ('critics', learner.critics)]})
+    checkpoint()
+    for _ in range(updates):
+        losses = learner.update(sampler.sample(batch_size))
+        if learner.updates % interval == 0 or learner.updates == updates:
+            checkpoint()
+        elif learner.updates % 100 == 0:
+            status('training', losses=losses, sampled_per_task=dict(sampler.counts))

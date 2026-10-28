@@ -6471,3 +6471,95 @@ the plan's rule 5 finds nothing in the changed files.
 its longest steps, `templateActions` and `useModelChoice`, are 57 and 48 lines), comment lines 90 -> 122, any-casts 2 ->
 1 (the comment's words); all files 15,143 -> 15,274 lines, any-casts 47 -> 46. The 131 added lines are the steps'
 signatures with their typed parameters, their doc comments, returns and destructurings, and the wraps.
+
+### SIF-149 Readability F2, F3, F4, F5: the Training tab reads as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `TrainingTabBody` was 320 of `TrainingTab.tsx`'s 488 lines (`femetrics.py`: since SIF-148 the frontend's
+longest top-level block). One body made its 37 hook calls, those of `usePageHidden` and `useTrainingReads` counted - 12
+`useState`, 9 `useRef`, 7 effects, 8 `useMemo` and a `useCallback` - in among the store that follows the shown run, the
+drawing's once-a-second throttle, the shown run's reads and the compared runs' reads, the run names, the Compare list,
+the chart catalog, the key numbers, each chart's cached data, what the head's buttons do and the facts of a recorded
+row; then one return of 107 lines drew everything, the key numbers' tiles as a function written and called in place
+(`((k: ...) => <div ...>...</div>)(keyRows[0].numbers!)`). 32 lines ran past 160 columns (the longest 292). Its
+single-letter names meant different things a few lines apart: `r` a row of the run list (six times) or the reading, `c`
+a chart (five times) or a table's columns, `w` the words or the widths, `s` the storage (twice) or a run's status or
+row, `n` a smoothing choice or Retry's count, and `t`, `v`, `k`, `m`, `d`, `f`, `i` (six times). F3: the file's three
+`any` were a Training read's failure: `catch (e: any)` in `useTrainingReads`, `ReadLoop`'s `failed: (dir, e: any)` and
+`readError = (e: any)`.
+
+**Changed** (`frontend/src/panels/TrainingTab.tsx` alone). `TrainingTabBody` (73 lines) reads as its steps, in the order
+its code ran: `usePageHidden`, `active` and `live`, as they were; `useChartSettings` (the charts on the page with their
+stable keys, the smoothing, the learner's x and whether the key numbers are open: read from this browser once, kept
+there at each change); `useTabState` (the shown run's store, which another run replaces, the frame count, the shown
+run's reading, each chart's zoom and width, Retry read's count, and the effect that lets go of the zoom and the last
+read when the run changes); `useFrameRequests` (the drawing's throttle, which gives `requestFrame`); the live ref and
+`rowOf`, as they were; `useShownRunReads` (whether the shown run is ready to be read, SIF-126, and its reads);
+`useComparedRuns` (the compared runs kept in this browser, their stores and their reads); `useRunLabel`;
+`useCompareList` (SIF-125's memoized Compare list); `own` and `calibration`, as they were; `useChartCatalog` (the
+context, the charts and their choices); `useKeyRows`; `specOf` and `viewOf`, as they were; `useBuiltCharts` (each
+chart's data and its cache); `chartActions`, a plain function (choose, add or take off a chart, zoom, Follow latest,
+Reset zoom, the learner's x, with `shown`, `following` and `learnerShown`); `rowFacts`, plain (the old `describe`, the
+facts of a recorded row, at the file's top level: it reads only the store and the learner's x); then, after the same
+early return, `noPassWord`, `empty` and `unavailable`, as they were; `countsWords`, plain (the counts line and its
+tooltip); and the same return, its parts from plain functions called inline and never drawn as components: `whatIsShown`
+and `headControls` (the head's two halves), `comparedChips`, `keyNumbersBox` with `keyTiles` (the function that was
+written and called in place) and `keyTable`, and `chartCard`, called in `slots.map` where the callback's body was. The
+five notes stay in the return. The 37 hook calls run in the order they ran, each with its arguments, each effect with
+its dependency list; no memo added or removed. Four private types name what the steps pass: `Slot`, `Reading`,
+`ComparedState` and `KeyRow`. A step gets each value it reads by its own name (a same-named argument, or an object of
+shorthand properties), and its results are taken by their names. Comments moved with their code: the seven that opened a
+step's code ("drawing", "other runs on the same charts", the labels', the Compare list's, the key numbers', each chart's
+data and the row facts') became its doc comment, and five trailing comments went above their lines (three of the lines
+were too long, and Follow latest's two went as a pair); each new function has a doc comment, and `TrainingTabBody`'s
+says why the order of its hooks matters. F3: `any` -> `unknown` in the three places. A read's failure is whatever its
+`try` threw - the `ApiError` of a refused read, the `TypeError` of a failed fetch, the deadline's `Error`, or anything
+thrown while its answer was applied - and `readError` reads it only after `instanceof ApiError`; `plainError` (api.ts,
+not this package's file) takes anything; a bare `catch (e)` is `unknown` under the frontend's `strict`, as in
+`Connection.tsx` and `TaskSave.tsx`. F4: in the body and the code moved out of it, `r` -> `row` and `previous` (the
+reading), `c` -> `chart` and `cols`, `t` -> `table`, `w` -> `words` and `widths`, `v` -> `views`, `s` -> `storage` and
+`facts`, `k` -> `numbers` (the key numbers, tiles and table), `m` -> `run` (a run a chart cannot draw), `n` -> `points`
+and `tries`, `d` -> `other`, `f` -> `frame`, `i` -> `index`; `e` for an event or a caught error stays, as in SIF-147 and
+SIF-148, and so do the single letters of the file's other functions. F5: 32 -> 3 lines over 160 columns, wrapped between
+imports, parameters and attributes, before a `?` or `:`, inside a `${...}`, or between two words of a JSX text - never
+where a space meets a tag or a `{...}`, which a wrap would drop; three JSX texts (Key numbers, Best design's worst miss,
+Temperature α) start on the line after their tag, which the compiler reads the same. The three left are each one
+template too long to split: `RECENT_TIP` and the entropy tooltip, twice.
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: the main bundle changes, as moved
+code does (`index-BcAzmMqs.js`); the CSS and the uPlot and cytoscape chunks are byte for byte the previous build's. DOM
+identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory
+guard, WSL 5 to 8 GB available and the host 4 to 5 GB free): "all 112 checks passed", 56 of 56 compared files identical
+(66 written). Its first two runs differed in one way, in three files of the tabs scene (the Training tab, and the same
+tab kept mounted under Corner check and Run status): uPlot's plots 101 px high instead of 100 (`u-wrap`, the canvas and
+the axes; nothing else). Not this change. `TrainingChart` (not edited) takes its plot's size from a ResizeObserver that
+keeps a size within 1 px of the one it last took, so the height it ends on depends on the layouts the box passed
+through, that is, on when the answers came. The build of HEAD (SIF-148's, the code before this change) draws the same:
+over 11 runs it drew 101 px once - a file byte for byte this build's 101 px file - and this build 4 times over 13 (the
+tabs scene alone, 8 runs each, 5 of them interleaved: HEAD 1, this build 2; full runs: HEAD 0 of 3, this build its first
+2 of 5, then 3 passes in a row taken in turn with HEAD's). A second replay drew the key numbers as tiles, the one-run
+form the reference never reaches: a scratch copy of the DOM check outside the repository whose tabs scene compares no
+run (its one change), HEAD's build taken as the reference and this build compared, 9 of 9 files identical. Without a
+browser - the TypeScript compiler API on the base file and on this one, each compiled in the frontend's own program,
+with comments, white space and types set aside, parameters numbered by place and JSX text cleaned as the compiler does
+(the script and its output beside the DOM identity output, `out-F2-trainingtab/static`): 0 diagnostics each;
+`TrainingTab`'s type the same; the 471 strings, template pieces, numbers and JSX texts the same multiset, and so are the
+JSX tags (93) and attribute names (152); of the base body's 76 statements, 74 are found unchanged in the new file (with
+the renames of F4 applied), the 75th, `describe`, equals `rowFacts`' returned function token for token, and the 76th,
+the return, equals the new return with its seven drawing functions inlined (and the old tiles' function written in place
+inlined too): 2,990 tokens, identical; the file's other 43 top-level statements are found unchanged but for the two
+imports that gained types; the 37 hook calls, expanded through the steps with each step's parameters replaced by what it
+was given, are the same sequence with the same arguments, their 16 dependency lists among them; the value references to
+imports and globals are the same multiset (316); the 20 calls of steps pass their arguments by name, all but `keyTiles`'
+`numbers: keyRows[0].numbers!` (the argument of the function written in place), and the 6 destructurings of a step's
+result take the names as they are. The source keeps the base's escapes of ·, → and α where it had them (counted).
+Browser checks, one lane, once the guard of the checks was met (WSL 8 GB, the host 5 GB; from 05:01 to 05:10 they read 2
+to 4 GB), the ten that draw the tab with a run shown in the bottom panel: `training_tab_check` 139, `run_list_check`
+185, `run_control_check` 181, `task_list_check` 106, `looks_check` 83, `files_tab_check` 43, `corner_check_check` 42,
+`task_run_check` 39, `room_check` 31, `reliability_check` 22 passed (871, no flake), each the count of its last run in
+this log; the writers `export_check` and `calibration_check`, which start MOCK runs, were left out while the campaign
+ran. The PDK-name grep of the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `TrainingTab.tsx` 488 -> 671 lines, longest block 320 -> 73
+(`TrainingTabBody`; its longest steps, `chartActions`, `chartCard` and `headControls`, are 32, 28 and 27 lines), comment
+lines 98 -> 130, any-casts 3 -> 0; all files 15,274 -> 15,457 lines, any-casts 46 -> 43. The 183 added lines are the
+steps' signatures with their typed parameters, their doc comments, returns and destructurings, and the wraps.

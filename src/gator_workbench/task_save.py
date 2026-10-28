@@ -92,6 +92,52 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
     steps = (['copy'] if current and not updating else []) + (['setup', 'deck'] if kind == MAESTRO else []) + ['read', 'files']
     mark = (lambda step: progress(step, steps)) if progress else (lambda step: None)
     saved = task_file(task) if current else None
+    target, claimed = _save_target(
+        updating, current, task, mark, monitor, profile_id, name, commands, library, cell)
+    staging = directory.with_name(f'.{name}.saving')
+    try:
+        # What the task file adds beside the rows: sent with this save, else what the copy was last written with (by the last
+        # save, "Write to Virtuoso" or an approved agent setup - so never older than the saved task's), else the saved task's;
+        # a part none of them names stays as the copy has it. Save as starts from the open task's copy.
+        base = working_copy.last_written(current['copy_target'] if current else target) or (saved or {}).get('maestro') or {}
+        maestro = None
+        if kind == MAESTRO:
+            maestro, probes, deck = _prepare_saved_maestro(
+                config, extras, base, mark, monitor, profile_id, target, commands)
+        imported, frequency, measurement, revision, extra = _stage_task_files(
+            mark, monitor, profile_id, target, commands, extras, saved, kind, updating, staging, maestro)
+        if kind == MAESTRO:
+            # Maestro's circuit part and the export the task is generated from must be the same circuit.
+            exported = Path(imported['netlist_path']).read_text()
+            if working_copy.structure(deck['circuit']) != working_copy.structure(exported):
+                raise ProfileError('Maestro netlists the working copy differently from its schematic export: look at the copy in '
+                                   'Virtuoso, then save again')
+            extra['maestro_deck_sha256'] = deck['sha256']
+            # The network's result registry: exactly the task's outputs, each with the scale its spec normalizes by.
+            extra['spec_registry'] = _spec_registry(config, deck, probes)
+        result = write_profile_files(name, config, recipe=kind, imported=imported, staging=staging, expected_frequency_hz=frequency, entry_extra=extra)
+        if kind == MAESTRO:
+            write_json(staging / FILES['maestro_deck'], {k: v for k, v in deck.items() if k != 'circuit'})
+        data = _write_saved_task_record(
+            name, revision, extra, target, measurement, maestro, result, config, extras, saved, imported, staging)
+        changed, baseline_kept = _publish_task_revision(
+            updating, name, current, saved, data, staging, directory, kind)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        if not updating and directory.exists() and not (directory / TASK_FILE).is_file():
+            shutil.rmtree(directory, ignore_errors=True)
+        if claimed:
+            working_copy.release(*claimed, name)
+        raise
+    return dict(task_key=f'real:{name}', name=name, revision=revision, measurement=measurement, runnable=True,
+                copy=target['copy'], original=target['original'], directory=str(directory), created=not updating,
+                baseline_kept=baseline_kept, changed=sorted(changed), circuit_class=result['entry']['circuit_class'],
+                pdk_id=result['entry']['pdk_id'], parameters=[row.model_dump(mode='json') for row in result['rows']],
+                maestro_matches=None if maestro is None else True)
+
+
+def _save_target(updating, current, task, mark, monitor, profile_id, name, commands, library, cell):
+    """Choose the existing task copy, clone it for Save as, or claim the cell copy for its first save."""
     claimed = None
     if updating:
         target = current['copy_target']
@@ -106,87 +152,78 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
     else:
         target = _first_save_target(library, cell, name)
         claimed = (library, cell)
-    staging = directory.with_name(f'.{name}.saving')
+    return target, claimed
+
+
+def _prepare_saved_maestro(config, extras, base, mark, monitor, profile_id, target, commands):
+    """Write and verify the working copy Maestro setup, then obtain its measurement probes and exported deck."""
+    setup = _maestro_setup(config, extras, base)
+    mark('setup')
+    written = working_copy.write_setup_on(monitor, profile_id, target, setup, command=commands.get('setup'))
+    if not written['matches']:
+        raise ProfileError('The copy\'s Maestro setup reads back differently from the rows: ' + '; '.join(written['differences']))
+    maestro = virtuoso_setup.normalize(written)
+    # Maestro's own deck of the test, netlisted once: every evaluation runs it around the circuit it exports,
+    # and OCEAN measures the outputs with their signal names translated by Maestro's own name maps.
+    probes, outputs = _maestro_outputs(config, maestro)
+    mark('deck')
+    deck = working_copy.maestro_deck_on(monitor, profile_id, target, outputs, command=commands.get('deck'))
+    return maestro, probes, deck
+
+
+def _stage_task_files(
+    mark, monitor, profile_id, target, commands, extras, saved, kind, updating, staging, maestro):
+    """Read the working copy back into the workbench and initialize the revision staging directory and metadata."""
+    mark('read')
+    bridge_read.read(monitor, profile_id, 'import_cell', library=target['copy']['library'], cell=target['copy']['cell'],
+                     testbench=target['copy']['testbench'], command=commands.get('read'))
+    mark('files')
+    imported = native_cells.load_import(target['copy']['library'], target['copy']['cell'])
+    if imported is None:
+        raise ProfileError('The working copy could not be read back into the workbench')
+    frequency = extras.get('expected_frequency_hz', ((saved or {}).get('measurement') or {}).get('expected_frequency_hz'))
+    measurement = dict(kind=kind, **({'expected_frequency_hz': float(frequency)} if kind == 'ring_oscillator' and frequency else {}))
+    revision = (saved or {}).get('revision', 0) + 1 if updating else 1
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    extra = dict(original=target['original'], copy=target['copy'], copy_target=target, revision=revision,
+                 measurement=kind, runnable=True, saved_utc=utcnow().isoformat())
+    if kind == MAESTRO:
+        extra['provided_metrics'] = [o['name'] for o in maestro['outputs']]
+    return imported, frequency, measurement, revision, extra
+
+
+def _write_saved_task_record(
+    name, revision, extra, target, measurement, maestro, result, config, extras, saved, imported, staging):
+    """Build and write the task record from the verified working copy, editor rows, and generated profile."""
+    data = task_files.build(
+        name=name, revision=revision, saved_utc=extra['saved_utc'], cell=target['original'], copy=target['copy'],
+        measurement=measurement,
+        maestro=None if maestro is None else dict(test=maestro['test'], model_files=maestro['model_files'], analyses=maestro['analyses'],
+                                                  variables=maestro['variables'], bindings=maestro['bindings'],
+                                                  initial_conditions=maestro['initial_conditions'],
+                                                  outputs=maestro['outputs'], specs=maestro['specs']),
+        parameters=[row.model_dump(mode='json', exclude_none=True) for row in result['rows']],
+        probes=[m.model_dump(mode='json', exclude_none=True) for m in config.measurements],
+        specs=[t.model_dump(mode='json', exclude_none=True) for t in config.targets],
+        notes=extras.get('notes', (saved or {}).get('notes', '')),
+        virtuoso=dict(copy_netlist_sha256=imported['netlist_sha256'],
+                      maestro_fingerprint=virtuoso_setup.fingerprint(maestro) if maestro else None))
+    write_json(staging / TASK_FILE, data)
+    return data
+
+
+def _publish_task_revision(updating, name, current, saved, data, staging, directory, kind):
+    """Replace the saved revision, publish its staging directory, and check the resulting real-backend profile."""
+    changed, baseline_kept = set(), False
+    if updating:
+        changed, baseline_kept = _replace_revision(name, current, saved, data, staging)
+    staging.rename(directory)
     try:
-        # What the task file adds beside the rows: sent with this save, else what the copy was last written with (by the last
-        # save, "Write to Virtuoso" or an approved agent setup - so never older than the saved task's), else the saved task's;
-        # a part none of them names stays as the copy has it. Save as starts from the open task's copy.
-        base = working_copy.last_written(current['copy_target'] if current else target) or (saved or {}).get('maestro') or {}
-        maestro = None
-        if kind == MAESTRO:
-            setup = _maestro_setup(config, extras, base)
-            mark('setup')
-            written = working_copy.write_setup_on(monitor, profile_id, target, setup, command=commands.get('setup'))
-            if not written['matches']:
-                raise ProfileError('The copy\'s Maestro setup reads back differently from the rows: ' + '; '.join(written['differences']))
-            maestro = virtuoso_setup.normalize(written)
-            # Maestro's own deck of the test, netlisted once: every evaluation runs it around the circuit it exports,
-            # and OCEAN measures the outputs with their signal names translated by Maestro's own name maps.
-            probes, outputs = _maestro_outputs(config, maestro)
-            mark('deck')
-            deck = working_copy.maestro_deck_on(monitor, profile_id, target, outputs, command=commands.get('deck'))
-        mark('read')
-        bridge_read.read(monitor, profile_id, 'import_cell', library=target['copy']['library'], cell=target['copy']['cell'],
-                         testbench=target['copy']['testbench'], command=commands.get('read'))
-        mark('files')
-        imported = native_cells.load_import(target['copy']['library'], target['copy']['cell'])
-        if imported is None:
-            raise ProfileError('The working copy could not be read back into the workbench')
-        frequency = extras.get('expected_frequency_hz', ((saved or {}).get('measurement') or {}).get('expected_frequency_hz'))
-        measurement = dict(kind=kind, **({'expected_frequency_hz': float(frequency)} if kind == 'ring_oscillator' and frequency else {}))
-        revision = (saved or {}).get('revision', 0) + 1 if updating else 1
-        shutil.rmtree(staging, ignore_errors=True)
-        staging.mkdir(parents=True)
-        extra = dict(original=target['original'], copy=target['copy'], copy_target=target, revision=revision,
-                     measurement=kind, runnable=True, saved_utc=utcnow().isoformat())
-        if kind == MAESTRO:
-            extra['provided_metrics'] = [o['name'] for o in maestro['outputs']]
-        if kind == MAESTRO:
-            # Maestro's circuit part and the export the task is generated from must be the same circuit.
-            exported = Path(imported['netlist_path']).read_text()
-            if working_copy.structure(deck['circuit']) != working_copy.structure(exported):
-                raise ProfileError('Maestro netlists the working copy differently from its schematic export: look at the copy in '
-                                   'Virtuoso, then save again')
-            extra['maestro_deck_sha256'] = deck['sha256']
-            # The network's result registry: exactly the task's outputs, each with the scale its spec normalizes by.
-            extra['spec_registry'] = _spec_registry(config, deck, probes)
-        result = write_profile_files(name, config, recipe=kind, imported=imported, staging=staging, expected_frequency_hz=frequency, entry_extra=extra)
-        if kind == MAESTRO:
-            write_json(staging / FILES['maestro_deck'], {k: v for k, v in deck.items() if k != 'circuit'})
-        data = task_files.build(
-            name=name, revision=revision, saved_utc=extra['saved_utc'], cell=target['original'], copy=target['copy'],
-            measurement=measurement,
-            maestro=None if maestro is None else dict(test=maestro['test'], model_files=maestro['model_files'], analyses=maestro['analyses'],
-                                                      variables=maestro['variables'], bindings=maestro['bindings'],
-                                                      initial_conditions=maestro['initial_conditions'],
-                                                      outputs=maestro['outputs'], specs=maestro['specs']),
-            parameters=[row.model_dump(mode='json', exclude_none=True) for row in result['rows']],
-            probes=[m.model_dump(mode='json', exclude_none=True) for m in config.measurements],
-            specs=[t.model_dump(mode='json', exclude_none=True) for t in config.targets],
-            notes=extras.get('notes', (saved or {}).get('notes', '')),
-            virtuoso=dict(copy_netlist_sha256=imported['netlist_sha256'],
-                          maestro_fingerprint=virtuoso_setup.fingerprint(maestro) if maestro else None))
-        write_json(staging / TASK_FILE, data)
-        changed, baseline_kept = set(), False
-        if updating:
-            changed, baseline_kept = _replace_revision(name, current, saved, data, staging)
-        staging.rename(directory)
-        try:
-            load_profile(name).check_deck() if kind == MAESTRO else load_profile(name)   # every check of the verified classes
-        except Exception as exc:
-            raise ProfileError(f'The task does not pass the checks of the real backend: {exc}')
-    except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
-        if not updating and directory.exists() and not (directory / TASK_FILE).is_file():
-            shutil.rmtree(directory, ignore_errors=True)
-        if claimed:
-            working_copy.release(*claimed, name)
-        raise
-    return dict(task_key=f'real:{name}', name=name, revision=revision, measurement=measurement, runnable=True,
-                copy=target['copy'], original=target['original'], directory=str(directory), created=not updating,
-                baseline_kept=baseline_kept, changed=sorted(changed), circuit_class=result['entry']['circuit_class'],
-                pdk_id=result['entry']['pdk_id'], parameters=[row.model_dump(mode='json') for row in result['rows']],
-                maestro_matches=None if maestro is None else True)
+        load_profile(name).check_deck() if kind == MAESTRO else load_profile(name)   # every check of the verified classes
+    except Exception as exc:
+        raise ProfileError(f'The task does not pass the checks of the real backend: {exc}')
+    return changed, baseline_kept
 
 
 def _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision):

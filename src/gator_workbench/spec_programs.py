@@ -11,6 +11,7 @@ from . import spec_descriptors as descriptors, spec_equations, units
 
 
 def spec_program_schema():
+    """Return the spec-input schema for the measurement-program layout."""
     from analog_optimizer.models.inputs import SpecSetSchema, SPEC_PROGRAM_LAYOUT
     from analog_optimizer.models.measurement_program import PROGRAM_VERSION
     return SpecSetSchema(PROGRAM_VERSION, descriptors.DESCRIPTOR_COLUMNS, descriptors.UNIT_REFERENCES,

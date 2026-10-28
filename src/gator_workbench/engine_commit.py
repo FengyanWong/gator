@@ -51,6 +51,41 @@ def commit(engine, lane, busy, result, *, timing_batch):
     outcome = engine._outcome(record, result, observation, truncated)
     (status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows, valid, feasible,
      nominal_feasible, violation) = outcome
+    op_is_step, failed, infrastructure, env_success = _record_completion(
+        engine, busy, result, record, status, valid, feasible, info, step, completed_at, evaluation_id)
+    _observe_search(engine, lane, busy, reward, op_is_step, evaluation_id)
+    transition_rows, state_rows, update_rows, eligible = _admit_to_replay(
+        engine, lane, busy, record, step, observation, reward, info, op_is_step, commit_seq)
+    # ---- first feasibility: decided when the scheduler receives the result
+    in_flight_before, after_first = engine._first_feasibility(busy, evaluation_id, commit_seq, nominal_feasible, feasible)
+    role, best = engine._offer(busy, record, info, observation, reward, commit_seq, outcome)
+    # A class may improve without replacing the overall best (e.g. an infeasible design after a feasible one).
+    # Keep recording every class improvement, but replace raw outputs only for the selected design.
+    retention_role = role if best is not None and best['evaluation_id'] == evaluation_id else None
+    job_rows, retention_plan = engine._job_rows(busy, lane, retention_role, failed)
+    if infrastructure and job_rows:
+        job_rows[-1]['exit_status'] = f"{job_rows[-1]['exit_status']}:{infrastructure}"   # distinguishable in simulator_jobs
+    engine.counters['retries'] = engine.ledger.retries
+    committed_at = utcnow()
+    diagnostics, evaluation = _evaluation_row(
+        engine, lane, busy, result, record, info, reward, completed_at, committed_at, commit_seq, evaluation_id,
+        valid, feasible, violation, env_success, nominal_feasible, best, after_first, in_flight_before, status,
+        infrastructure, terminated, truncated, eligible)
+    bundle, update_rows = _commit_dataset_rows(
+        engine, busy, record, evaluation_id, commit_seq, evaluation, raw_metrics, raw_validity, raw_units, derived,
+        spec_values, constraint_rows, status, job_rows, update_rows, state_rows, transition_rows)
+    _observe_comparison_search(engine, busy, evaluation_id, op_is_step, status, reward, bundle)
+    _persist_retention(
+        engine, lane, busy, record, evaluation_id, committed_at, timing_batch, role, commit_seq, retention_plan,
+        retention_role)
+    _advance_lane(
+        engine, busy, result, state, info, observation, terminated, truncated, diagnostics, evaluation_id,
+        commit_seq)
+
+
+def _record_completion(
+    engine, busy, result, record, status, valid, feasible, info, step, completed_at, evaluation_id):
+    """Account for receipts and evaluation completion, including baseline failure and feasibility disagreement."""
     if op_is_step := busy['op'] != 'reset':
         engine.counters['global_env_step'] += 1
     if not engine._baseline_checked and busy['phase'] == 'baseline':
@@ -87,12 +122,21 @@ def commit(engine, lane, busy, result, *, timing_batch):
     if valid and env_success is not None and bool(env_success) != feasible:
         engine._event('feasibility_disagreement', evaluation_id=evaluation_id, independent=feasible,
                     environment=bool(env_success), note='The independent threshold check is authoritative')
+    return op_is_step, failed, infrastructure, env_success
+
+
+def _observe_search(engine, lane, busy, reward, op_is_step, evaluation_id):
+    """Feed completed step rewards to the Bayesian proposer and record trust-region restarts."""
     # ---- Bayesian optimization (record 7.304): every finished design and its reward, the random warm-up's included;
     # a design without a reward (its simulation failed) counts as the worst seen
     if engine.config.run.optimizer == 'bayes' and not engine.calibration_only and op_is_step and busy['proposal'] is not None:
         asked = busy['action_source'] == bayes.Proposer.SOURCE
         if engine._proposer(lane.info['group_ids']).observe(busy['proposal'], reward, asked=asked):
             engine._event('bayes_region_restarted', evaluation_id=evaluation_id, **engine.proposer.search.state())
+
+
+def _admit_to_replay(engine, lane, busy, record, step, observation, reward, info, op_is_step, commit_seq):
+    """Admit eligible transitions, prepare archive rows, and run or defer the resulting learner updates."""
     # ---- learner receipt: replay admission and the updates it triggers
     transition_rows, state_rows, update_rows, admitted = [], [], [], False
     eligible = bool(info.get('replay_eligible')) if step else False
@@ -113,17 +157,14 @@ def commit(engine, lane, busy, result, *, timing_batch):
                 engine._pending_updates.append(commit_seq)
         elif admitted:
             update_rows = engine._maybe_update(commit_seq)
-    # ---- first feasibility: decided when the scheduler receives the result
-    in_flight_before, after_first = engine._first_feasibility(busy, evaluation_id, commit_seq, nominal_feasible, feasible)
-    role, best = engine._offer(busy, record, info, observation, reward, commit_seq, outcome)
-    # A class may improve without replacing the overall best (e.g. an infeasible design after a feasible one).
-    # Keep recording every class improvement, but replace raw outputs only for the selected design.
-    retention_role = role if best is not None and best['evaluation_id'] == evaluation_id else None
-    job_rows, retention_plan = engine._job_rows(busy, lane, retention_role, failed)
-    if infrastructure and job_rows:
-        job_rows[-1]['exit_status'] = f"{job_rows[-1]['exit_status']}:{infrastructure}"   # distinguishable in simulator_jobs
-    engine.counters['retries'] = engine.ledger.retries
-    committed_at = utcnow()
+    return transition_rows, state_rows, update_rows, eligible
+
+
+def _evaluation_row(
+    engine, lane, busy, result, record, info, reward, completed_at, committed_at, commit_seq, evaluation_id, valid,
+    feasible, violation, env_success, nominal_feasible, best, after_first, in_flight_before, status,
+    infrastructure, terminated, truncated, eligible):
+    """Build the evaluation row and its diagnostic text from the completed attempt and current run counters."""
     diagnostics = None
     if result.get('exception'):
         diagnostics = f"{result['exception']['type']}: {result['exception']['message']}"
@@ -163,6 +204,13 @@ def commit(engine, lane, busy, result, *, timing_batch):
             infrastructure or ('invalid_measurement' if status == 'ok' else (record.get('reason_code') or status))),
         diagnostics=redact(diagnostics, 2000), terminated=terminated, truncated=truncated,
         replay_eligible=eligible, duplicate_of=record.get('duplicate_of'))
+    return diagnostics, evaluation
+
+
+def _commit_dataset_rows(
+    engine, busy, record, evaluation_id, commit_seq, evaluation, raw_metrics, raw_validity, raw_units, derived,
+    spec_values, constraint_rows, status, job_rows, update_rows, state_rows, transition_rows):
+    """Commit the evaluation bundle together with any learner-update rows waiting for persistence."""
     if engine._update_rows_waiting:                    # updates learned since the last commit go with this one (7.281)
         update_rows, engine._update_rows_waiting = engine._update_rows_waiting + update_rows, []
     bundle = dict(evaluation_id=evaluation_id, commit_seq=commit_seq, rows=dict(
@@ -171,6 +219,11 @@ def commit(engine, lane, busy, result, *, timing_batch):
                                   constraint_rows, status, record.get('condition_results')),
         simulator_jobs=job_rows, learner_updates=update_rows, states=state_rows, transitions=transition_rows))
     engine.dataset.commit(bundle)                              # <- durable acknowledgement
+    return bundle, update_rows
+
+
+def _observe_comparison_search(engine, busy, evaluation_id, op_is_step, status, reward, bundle):
+    """Tell the archive search about a completed design after its dataset rows are durable."""
     # ---- the archive comparison's search (T0/T+/M+): told each finished design once it is durable; a crash before this
     # line leaves the design in the tables, and the resume tells it (engine_comparison.after_crash)
     if (engine_comparison.is_search(engine.config) and not engine.calibration_only and op_is_step
@@ -178,6 +231,12 @@ def commit(engine, lane, busy, result, *, timing_batch):
         engine_comparison.observe(engine, evaluation_id=evaluation_id, action_source=busy['action_source'],
                                   proposal=busy['proposal'], status=status, reward=reward,
                                   parameter_rows=bundle['rows']['parameters'], metric_rows=bundle['rows']['metrics'])
+
+
+def _persist_retention(
+    engine, lane, busy, record, evaluation_id, committed_at, timing_batch, role, commit_seq, retention_plan,
+    retention_role):
+    """Record timings and tracker state, then apply retention after the durable dataset commit."""
     timings = record.get('timings')
     if isinstance(timings, dict) and timings:
         engine._timings.append(dict(evaluation_id=evaluation_id, worker_id=lane.lane_id, phase=busy['phase'],
@@ -188,6 +247,11 @@ def commit(engine, lane, busy, result, *, timing_batch):
         write_json(engine.layout.best_design / 'tracker_state.json',
                    dict(last_commit_seq=commit_seq, **engine.tracker.state_dict()))
     engine._apply_retention(retention_plan, retention_role)
+
+
+def _advance_lane(
+    engine, busy, result, state, info, observation, terminated, truncated, diagnostics, evaluation_id, commit_seq):
+    """Advance lane state and checkpoint scheduling after recording the completed evaluation."""
     # ---- lane state for the next dispatch
     if result.get('exception') and not result.get('cancelled'):
         state['finished'] = True

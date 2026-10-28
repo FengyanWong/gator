@@ -88,6 +88,7 @@ def _loaded_pdk_knowing(graph, p, loaded=None):
 
 @dataclass(frozen=True)
 class Issue:
+    # A semantic-validation finding with its severity, stable code, configuration path and message.
     level: str
     code: str
     path: str
@@ -98,6 +99,7 @@ class Issue:
 
 
 class Report:
+    """Collect semantic issues and facts while keeping editor-only unsaved-row details separate."""
     def __init__(self):
         self.issues: list[Issue] = []
         self.facts: dict = {}
@@ -109,9 +111,11 @@ class Report:
 
     @property
     def blocks_run(self):
+        """Check whether any recorded issue has a severity that blocks starting a run."""
         return any(i.level in BLOCKING for i in self.issues)
 
     def as_dict(self):
+        """Serialize validation facts and issues with severity counts and the run-blocking decision."""
         counts = {}
         for issue in self.issues:
             counts[issue.level] = counts.get(issue.level, 0) + 1
@@ -145,6 +149,7 @@ def resolve_leaders(parameters):
 
 
 def independent_action_count(parameters):
+    """Count optimized binding leaders, returning nothing when parameter bindings cannot be resolved."""
     try:
         leaders = resolve_leaders(parameters)
     except ValueError:
@@ -863,11 +868,13 @@ def _check_research(config, report, *, for_generalization=False):
 
 
 def default_registry():
+    """Return the optimizer's default metric-to-unit registry."""
     from analog_optimizer.models.inputs import SpecSchema
     return {name: unit for name, unit, _ in SpecSchema().metrics}
 
 
 def registry_for(config):
+    """Select the configuration's custom, task-specific or default metric registry."""
     custom = config.run.advanced.spec_registry
     if custom is None:
         if config.circuit.source == 'virtuoso':

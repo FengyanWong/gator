@@ -28,18 +28,19 @@ const MEANS = 48;              // running means kept per run (one per chart and 
 export type Fill = (from: number, to: number) => Typed;              // a series' values at positions [from, to)
 
 /** The codes of this store's statuses that are a verdict on the design (DESIGN_STATUSES). */
-export const designCodes = (store: TrainingStore) => new Set(store.words.status.list.map((w, i) => (DESIGN_STATUSES.includes(w) ? i : -1)).filter(i => i >= 0));
+export const designCodes = (store: TrainingStore) =>
+  new Set(store.words.status.list.map((word, code) => (DESIGN_STATUSES.includes(word) ? code : -1)).filter(code => code >= 0));
 
 /** The first of the first `n` entries of an ascending array that is at least `v` (n if none). */
 export function lowerBound(a: ArrayLike<number>, n: number, v: number): number {
   let lo = 0, hi = n;
-  while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < v) lo = m + 1; else hi = m; }
+  while (lo < hi) { const middle = (lo + hi) >> 1; if (a[middle] < v) lo = middle + 1; else hi = middle; }
   return lo;
 }
 /** The first that is above `v` (n if none). */
 export function upperBound(a: ArrayLike<number>, n: number, v: number): number {
   let lo = 0, hi = n;
-  while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] <= v) lo = m + 1; else hi = m; }
+  while (lo < hi) { const middle = (lo + hi) >> 1; if (a[middle] <= v) lo = middle + 1; else hi = middle; }
   return lo;
 }
 
@@ -63,7 +64,7 @@ export class Index {
   private valueSeen: number[];
   constructor(key: string, table: Table, column: string, drawn: ((row: number) => boolean) | null, members: Changes[], values: Changes[]) {
     this.key = key; this.table = table; this.column = column; this.drawn = drawn; this.members = members; this.values = values;
-    this.memberSeen = members.map(c => c.stamp); this.valueSeen = values.map(c => c.stamp);
+    this.memberSeen = members.map(changes => changes.stamp); this.valueSeen = values.map(changes => changes.stamp);
   }
   x(): ArrayLike<number> { return this.own ? this.own.xs : this.table.cols[this.column]; }
   rowAt(p: number): number { return this.own ? this.own.rows[p] : p; }
@@ -73,25 +74,25 @@ export class Index {
     if (!this.own) return Math.min(row, this.len);
     if (this.ascending) return lowerBound(this.own.rows, this.len, row);
     let count = 0;
-    for (let p = 0; p < this.len; p++) if (this.own.rows[p] < row) count += 1;
+    for (let pos = 0; pos < this.len; pos++) if (this.own.rows[pos] < row) count += 1;
     return count;
   }
   /** The first position holding `row` or a later row, -1 if none (as Array.findIndex finds it). */
   find(row: number): number {
-    if (this.ascending) { const p = this.before(row); return p < this.len ? p : -1; }
-    for (let p = 0; p < this.len; p++) if (this.rowAt(p) >= row) return p;
+    if (this.ascending) { const pos = this.before(row); return pos < this.len ? pos : -1; }
+    for (let pos = 0; pos < this.len; pos++) if (this.rowAt(pos) >= row) return pos;
     return -1;
   }
   sync(): this {
     const n = this.table.n;
     let back = n;
-    this.members.forEach((c, i) => { back = Math.min(back, c.since(this.memberSeen[i])); this.memberSeen[i] = c.stamp; });
+    this.members.forEach((changes, place) => { back = Math.min(back, changes.since(this.memberSeen[place])); this.memberSeen[place] = changes.stamp; });
     if (back < this.scanned) {
       if (this.ascending && back > 0) { this.len = this.before(back); this.scanned = back; this.changes.note(this.len); }
       else { this.len = 0; this.scanned = 0; this.own = null; this.ascending = true; this.changes.note(0); }     // all again, no copy kept
     }
     let changed = Infinity;
-    this.values.forEach((c, i) => { changed = Math.min(changed, c.since(this.valueSeen[i])); this.valueSeen[i] = c.stamp; });
+    this.values.forEach((changes, place) => { changed = Math.min(changed, changes.since(this.valueSeen[place])); this.valueSeen[place] = changes.stamp; });
     if (changed < Infinity) this.changes.note(this.ascending ? this.before(changed) : 0);
     if (this.scanned < n) this.extend(n);
     return this;
@@ -100,14 +101,14 @@ export class Index {
     const xs = this.table.cols[this.column];
     let last = this.len ? this.x()[this.len - 1] : 0;
     for (let row = this.scanned; row < n; row++) {
-      const v = xs[row];
-      if (Number.isNaN(v) || (this.drawn && !this.drawn(row))) { if (!this.own) this.copy(this.len); continue; }
-      if (this.len && v < last) { this.sort(n); return; }
+      const rowX = xs[row];
+      if (Number.isNaN(rowX) || (this.drawn && !this.drawn(row))) { if (!this.own) this.copy(this.len); continue; }
+      if (this.len && rowX < last) { this.sort(n); return; }
       if (this.own) {
         if (this.len === this.own.rows.length) this.copy(Math.max(256, 2 * this.len));
-        this.own.rows[this.len] = row; this.own.xs[this.len] = v;
+        this.own.rows[this.len] = row; this.own.xs[this.len] = rowX;
       }
-      this.len += 1; last = v;
+      this.len += 1; last = rowX;
     }
     this.scanned = n;
   }
@@ -115,16 +116,16 @@ export class Index {
   private copy(cap: number) {
     const rows = new Int32Array(cap), xs = new Float64Array(cap);
     if (this.own) { rows.set(this.own.rows.subarray(0, this.len)); xs.set(this.own.xs.subarray(0, this.len)); }
-    else { for (let p = 0; p < this.len; p++) rows[p] = p; xs.set(this.table.cols[this.column].subarray(0, this.len)); }
+    else { for (let pos = 0; pos < this.len; pos++) rows[pos] = pos; xs.set(this.table.cols[this.column].subarray(0, this.len)); }
     this.own = { rows, xs };
   }
   private sort(n: number) {
     const xs = this.table.cols[this.column], rows: number[] = [];
     for (let row = 0; row < n; row++) if (!Number.isNaN(xs[row]) && (!this.drawn || this.drawn(row))) rows.push(row);
-    rows.sort((a, b) => xs[a] - xs[b] || a - b);
+    rows.sort((first, second) => xs[first] - xs[second] || first - second);
     this.own = { rows: Int32Array.from(rows), xs: Float64Array.from(rows, row => xs[row]) };
     this.len = rows.length; this.scanned = n;
-    this.ascending = rows.every((row, i) => i === 0 || row > rows[i - 1]);
+    this.ascending = rows.every((row, pos) => pos === 0 || row > rows[pos - 1]);
     this.changes.note(0);
   }
 }
@@ -135,7 +136,7 @@ type MeanKind = 'last' | 'over' | 'share';      // smooth (the last N values), s
  *  SIF-134): the additions and subtractions of the values that left it can leave a rounding remainder - "Worst spec miss"
  *  read "mean of last 50 2.558e-17" once every design met its specs. */
 interface State { pos: number; sum: number; count: number; nz: number; lo: number; ring: Float64Array | null; head: number }
-const copyState = (s: State): State => ({ ...s, ring: s.ring && s.ring.slice() });
+const copyState = (state: State): State => ({ ...state, ring: state.ring && state.ring.slice() });
 
 /** A running mean, or the share so far, of one series from position `start` on - smooth, smoothOver and the share of
  *  record 7.193's charts - kept as its state every `spacing` positions: the values of any stretch are worked out from the
@@ -187,24 +188,28 @@ class Running {
     const xs = this.index.x();
     for (let pos = from; pos < to; pos++) {
       if (keep && (pos - start) % spacing === 0 && pos > this.points[this.points.length - 1].pos) this.points.push(copyState({ ...state, pos }));
-      const recorded = kinds[pos - base], v = nums[pos - base];
+      const recorded = kinds[pos - base], value = nums[pos - base];
       let mean = 0;
-      if (kind === 'last') {                       // smooth: ring.push(v); sum += v; past the window sum -= ring.shift()
+      if (kind === 'last') {                       // smooth: ring.push(value); sum += value; past the window sum -= ring.shift()
         if (recorded === 2) {
           const ring = state.ring!, size = window + 1;
-          ring[(state.head + state.count) % size] = v; state.count += 1; state.sum += v; if (v !== 0) state.nz += 1;
-          if (state.count > window) { const gone = ring[state.head]; state.sum -= gone; if (gone !== 0) state.nz -= 1; state.head = (state.head + 1) % size; state.count -= 1; }
+          ring[(state.head + state.count) % size] = value; state.count += 1; state.sum += value; if (value !== 0) state.nz += 1;
+          if (state.count > window) {
+            const gone = ring[state.head]; state.sum -= gone; if (gone !== 0) state.nz -= 1; state.head = (state.head + 1) % size; state.count -= 1;
+          }
           if (!state.nz) state.sum = 0;            // only zeros in the window (SIF-134)
           mean = state.sum / state.count;
         }
-      } else if (kind === 'share') {               // judged += 1, passed += v, passed / judged
-        if (recorded === 2) { state.count += 1; state.sum += v; mean = state.sum / state.count; }
+      } else if (kind === 'share') {               // judged += 1, passed += value, passed / judged
+        if (recorded === 2) { state.count += 1; state.sum += value; mean = state.sum / state.count; }
       } else {                                     // smoothOver: the value in, then out what is `window` x units behind
-        if (recorded === 2) { state.sum += v; state.count += 1; if (v !== 0) state.nz += 1; }
+        if (recorded === 2) { state.sum += value; state.count += 1; if (value !== 0) state.nz += 1; }
         const limit = xs[pos] - window;
         while (state.lo < len && xs[state.lo] <= limit) {
-          const i = state.lo - base, gone = i < kinds.length ? null : fill(state.lo, state.lo + 1);
-          if ((gone ? gone.kinds[0] : kinds[i]) === 2) { const w = gone ? gone.nums[0] : nums[i]; state.sum -= w; state.count -= 1; if (w !== 0) state.nz -= 1; }
+          const place = state.lo - base, gone = place < kinds.length ? null : fill(state.lo, state.lo + 1);
+          if ((gone ? gone.kinds[0] : kinds[place]) === 2) {
+            const leaving = gone ? gone.nums[0] : nums[place]; state.sum -= leaving; state.count -= 1; if (leaving !== 0) state.nz -= 1;
+          }
           state.lo += 1;
         }
         if (!state.nz && state.count) state.sum = 0;   // only zeros in the window (SIF-134); an empty one keeps its sum, as before
@@ -239,81 +244,117 @@ export class Prep {
     this.evaluationsSeen = store.evaluations.changes.stamp; this.updatesSeen = store.updates.changes.stamp;
   }
 
-  /** Each evaluation's category and pass flag, brought up to date. */
+  /** Each evaluation's category and pass flag, brought up to date: the rows from the first that changed are counted out,
+   *  the arrays sized to the table, and each row not yet derived gets its category and flag. */
   evaluations(): this {
-    const t = this.store.evaluations, back = Math.min(t.changes.since(this.evaluationsSeen), t.n);
-    this.evaluationsSeen = t.changes.stamp;
-    if (back < this.evaluationsDone) {
-      for (let i = back; i < this.evaluationsDone; i++) this.counts[this.cat[i]] -= 1;
-      this.evaluationsDone = back;
-    }
-    if (this.evaluationsDone >= t.n) return this;
-    if (this.cat.length < t.n || (this.evaluationsDone === 0 && this.cat.length > t.cap)) {     // grown, or smaller after thinning
-      const cat = new Uint8Array(t.cap), pass = new Float64Array(t.cap);
+    const table = this.store.evaluations, back = Math.min(table.changes.since(this.evaluationsSeen), table.n);
+    this.evaluationsSeen = table.changes.stamp;
+    if (back < this.evaluationsDone) this.cutEvaluations(back);
+    if (this.evaluationsDone >= table.n) return this;
+    this.resizeEvaluationArrays(table);
+    this.deriveEvaluations(table);
+    return this;
+  }
+  /** The evaluations from `back` on counted out of their categories, to be derived again. */
+  private cutEvaluations(back: number) {
+    for (let row = back; row < this.evaluationsDone; row++) this.counts[this.cat[row]] -= 1;
+    this.evaluationsDone = back;
+  }
+  /** `cat` and `pass` made as long as the table's capacity when they are shorter than its rows, or longer than its capacity
+   *  while every row is to be derived again (a table smaller after thinning); the rows derived so far are copied. */
+  private resizeEvaluationArrays(table: Table) {
+    if (this.cat.length < table.n || (this.evaluationsDone === 0 && this.cat.length > table.cap)) {     // grown, or smaller after thinning
+      const cat = new Uint8Array(table.cap), pass = new Float64Array(table.cap);
       cat.set(this.cat.subarray(0, this.evaluationsDone)); pass.set(this.pass.subarray(0, this.evaluationsDone));
       this.cat = cat; this.pass = pass;
     }
-    const phases = this.store.words.phase.list, design = designCodes(this.store), phase = t.cols.phase, status = t.cols.status, feasible = t.cols.feasible;
-    for (let i = this.evaluationsDone; i < t.n; i++) {
-      const c = CODE[categoryOf(phases[phase[i]])];
-      this.cat[i] = c; this.counts[c] += 1;
-      this.pass[i] = design.has(status[i]) && !Number.isNaN(feasible[i]) ? feasible[i] : NaN;
+  }
+  /** Each evaluation not yet derived: its category, counted, and its pass flag - whether every hard spec was met (1 or 0)
+   *  when its status is a verdict on the design, else NaN (rowCategories and passFlags, row by row). */
+  private deriveEvaluations(table: Table) {
+    const phases = this.store.words.phase.list, design = designCodes(this.store), phase = table.cols.phase, status = table.cols.status,
+      feasible = table.cols.feasible;
+    for (let row = this.evaluationsDone; row < table.n; row++) {
+      const code = CODE[categoryOf(phases[phase[row]])];
+      this.cat[row] = code; this.counts[code] += 1;
+      this.pass[row] = design.has(status[row]) && !Number.isNaN(feasible[row]) ? feasible[row] : NaN;
     }
-    this.evaluationsDone = t.n;
-    return this;
+    this.evaluationsDone = table.n;
   }
 
   /** The learner's restarts and abandoned updates, brought up to date (updateBranches, row by row). A restart marks every
    *  earlier update at or above its count; a cut that takes a restart away clears what it marked: all is derived again. */
   updates(): this {
-    const t = this.store.updates, cum = t.cols.cum, back = Math.min(t.changes.since(this.updatesSeen), t.n);
-    this.updatesSeen = t.changes.stamp;
+    const table = this.store.updates, cum = table.cols.cum, back = Math.min(table.changes.since(this.updatesSeen), table.n);
+    this.updatesSeen = table.changes.stamp;
     if (back < this.updatesDone) {
-      if (this.restartRows.length && this.restartRows[this.restartRows.length - 1] >= back) {
-        this.superseded.fill(0); this.restarts = []; this.restartRows = []; this.updatesDone = 0; this.top = -Infinity;
-        this.branches.note(0);
-      } else {
-        this.superseded.fill(0, back, this.updatesDone); this.updatesDone = back; this.top = -Infinity;
-        for (let j = back - 1; j >= 0; j--) if (!Number.isNaN(cum[j])) { this.top = cum[j]; break; }
-      }
+      if (this.restartRows.length && this.restartRows[this.restartRows.length - 1] >= back) this.resetUpdates();
+      else this.cutUpdates(back, cum);
     }
-    if (this.updatesDone >= t.n) return this;
-    if (this.superseded.length < t.n || (this.updatesDone === 0 && this.superseded.length > t.cap)) {
-      const superseded = new Uint8Array(t.cap);
+    if (this.updatesDone >= table.n) return this;
+    this.resizeSuperseded(table);
+    this.markRestarts(table, cum);
+    return this;
+  }
+  /** Nothing derived from the updates any more (a cut took a restart away): no restart, no update abandoned, and every
+   *  mark noted as changed. */
+  private resetUpdates() {
+    this.superseded.fill(0); this.restarts = []; this.restartRows = []; this.updatesDone = 0; this.top = -Infinity;
+    this.branches.note(0);
+  }
+  /** The updates from `back` on no longer marked, to be derived again; the top is the last count before them. */
+  private cutUpdates(back: number, cum: Float64Array) {
+    this.superseded.fill(0, back, this.updatesDone); this.updatesDone = back; this.top = -Infinity;
+    for (let row = back - 1; row >= 0; row--) if (!Number.isNaN(cum[row])) { this.top = cum[row]; break; }
+  }
+  /** `superseded` made as long as the table's capacity in the two cases `resizeEvaluationArrays` makes `cat` so; the marks
+   *  so far are copied. */
+  private resizeSuperseded(table: Table) {
+    if (this.superseded.length < table.n || (this.updatesDone === 0 && this.superseded.length > table.cap)) {
+      const superseded = new Uint8Array(table.cap);
       superseded.set(this.superseded.subarray(0, this.updatesDone));
       this.superseded = superseded;
     }
+  }
+  /** Each update not yet derived: a count at or below the one before it is a restart, which marks every earlier update at
+   *  or above it abandoned; the first row whose mark it set is noted in `branches`. */
+  private markRestarts(table: Table, cum: Float64Array) {
     let flipped = Infinity;
-    for (let j = this.updatesDone; j < t.n; j++) {
-      const v = cum[j];
-      if (Number.isNaN(v)) continue;
-      if (v <= this.top) {
-        this.restarts.push(v); this.restartRows.push(j);
-        for (let i = 0; i < j; i++) if (cum[i] >= v && !this.superseded[i]) { this.superseded[i] = 1; if (i < flipped) flipped = i; }
+    for (let row = this.updatesDone; row < table.n; row++) {
+      const count = cum[row];
+      if (Number.isNaN(count)) continue;
+      if (count <= this.top) {
+        this.restarts.push(count); this.restartRows.push(row);
+        for (let earlier = 0; earlier < row; earlier++)
+          if (cum[earlier] >= count && !this.superseded[earlier]) { this.superseded[earlier] = 1; if (earlier < flipped) flipped = earlier; }
       }
-      this.top = v;
+      this.top = count;
     }
-    this.updatesDone = t.n;
+    this.updatesDone = table.n;
     if (flipped < Infinity) this.branches.note(flipped);
-    return this;
   }
 
   /** The rows of a learner chart in the order of its x (`learnerX`): every update with that count, or (`going`) only those
    *  of the line the learner went on - abandoned ones left out, as compared runs and the key numbers take them. */
   order(learnerX: LearnerX, going: boolean): Index {
     this.updates();
-    const key = `order:${learnerX}:${going ? 'going' : 'all'}`, t = this.store.updates;
+    const key = `order:${learnerX}:${going ? 'going' : 'all'}`, table = this.store.updates;
     let index = this.indexes.get(key);
-    if (!index) this.indexes.set(key, index = new Index(key, t, learnerX === 'evaluation' ? 'collected' : 'cum', going ? row => !this.superseded[row] : null,
-      going ? [t.changes, this.branches] : [t.changes], going ? [] : [this.branches]));
+    if (!index) this.indexes.set(key, index = new Index(key, table, learnerX === 'evaluation' ? 'collected' : 'cum',
+      going ? row => !this.superseded[row] : null,                   // drawn
+      going ? [table.changes, this.branches] : [table.changes],      // members
+      going ? [] : [this.branches]));                                // values
     return index.sync();
   }
   /** The evaluations of the categories `only` (codes; null: every evaluation), in their order (x = the evaluation number). */
   rows(only: number[] | null): Index {
     this.evaluations();
-    const key = `rows:${only ? only.join(',') : 'all'}`, t = this.store.evaluations;
+    const key = `rows:${only ? only.join(',') : 'all'}`, table = this.store.evaluations;
     let index = this.indexes.get(key);
-    if (!index) this.indexes.set(key, index = new Index(key, t, 'k', only ? row => only.includes(this.cat[row]) : null, [t.changes], [this.store.specChanges]));
+    if (!index) this.indexes.set(key, index = new Index(key, table, 'k',
+      only ? row => only.includes(this.cat[row]) : null,             // drawn
+      [table.changes],                                               // members
+      [this.store.specChanges]));                                    // values
     return index.sync();
   }
 
@@ -321,23 +362,24 @@ export class Prep {
    *  the first row of a segment), kept as rows arrive; `deps`: the changes it depends on. */
   first(key: string, table: Table, deps: Changes[], test: (row: number) => boolean): number {
     let fact = this.facts.get(key);
-    if (!fact) this.facts.set(key, fact = { row: -1, scanned: 0, seen: deps.map(c => c.stamp) });
+    if (!fact) this.facts.set(key, fact = { row: -1, scanned: 0, seen: deps.map(changes => changes.stamp) });
     let back = table.n;
-    deps.forEach((c, i) => { back = Math.min(back, c.since(fact!.seen[i])); fact!.seen[i] = c.stamp; });
+    deps.forEach((changes, place) => { back = Math.min(back, changes.since(fact!.seen[place])); fact!.seen[place] = changes.stamp; });
     if (back < fact.scanned) { fact.scanned = back; if (fact.row >= back) fact.row = -1; }
-    if (fact.row < 0) for (let i = fact.scanned; i < table.n; i++) if (test(i)) { fact.row = i; break; }
+    if (fact.row < 0) for (let row = fact.scanned; row < table.n; row++) if (test(row)) { fact.row = row; break; }
     fact.scanned = table.n;
     return fact.row;
   }
   /** Whether an evaluation column has a value in any row (a spec's values can also join earlier rows). */
   any(column: string): boolean {
-    const t = this.store.evaluations, c = t.cols[column];
-    return !!c && this.first(`any ${column}`, t, column.startsWith('spec:') ? [t.changes, this.store.specChanges] : [t.changes], row => !Number.isNaN(c[row])) >= 0;
+    const table = this.store.evaluations, values = table.cols[column];
+    return !!values && this.first(`any ${column}`, table, column.startsWith('spec:') ? [table.changes, this.store.specChanges] : [table.changes],
+      row => !Number.isNaN(values[row])) >= 0;
   }
   /** Whether a column of the learner's updates has a value in any row. */
   anyUpdate(column: string): boolean {
-    const t = this.store.updates, c = t.cols[column];
-    return !!c && this.first(`any update ${column}`, t, [t.changes], row => !Number.isNaN(c[row])) >= 0;
+    const table = this.store.updates, values = table.cols[column];
+    return !!values && this.first(`any update ${column}`, table, [table.changes], row => !Number.isNaN(values[row])) >= 0;
   }
 
   /** A running mean of a series as the fill of its smoothed line: kept per series (`key`), kind, window and start, and brought
@@ -366,9 +408,9 @@ const PREPARED = new WeakMap<TrainingStore, Prep>();
 export function preparedSize(store: TrainingStore) { return PREPARED.get(store)?.size() ?? null; }
 /** The store's shared chart preparation: made at its first chart, gone with the store. */
 export function prep(store: TrainingStore): Prep {
-  let p = PREPARED.get(store);
-  if (!p) PREPARED.set(store, p = new Prep(store));
-  return p;
+  let prepared = PREPARED.get(store);
+  if (!prepared) PREPARED.set(store, prepared = new Prep(store));
+  return prepared;
 }
 
 /** A fill that keeps its last stretch: a series' recorded values are asked for again by its running mean (the same rows when
@@ -388,9 +430,9 @@ export function valuesFill(p: Prep, index: Index, value: (row: number) => number
     for (let pos = from; pos < to; pos++) {
       const row = index.rowAt(pos);
       if (only !== null && cat[row] !== only) continue;
-      const v = value(row);
-      if (Number.isNaN(v)) out.kinds[pos - from] = 1;
-      else { out.kinds[pos - from] = 2; out.nums[pos - from] = v; }
+      const rowValue = value(row);
+      if (Number.isNaN(rowValue)) out.kinds[pos - from] = 1;
+      else { out.kinds[pos - from] = 2; out.nums[pos - from] = rowValue; }
     }
     return out;
   });
@@ -399,12 +441,12 @@ export function valuesFill(p: Prep, index: Index, value: (row: number) => number
  *  at a restart out (undefined), 'abandoned' has only those, 'all' every position. */
 export function learnerFill(p: Prep, index: Index, column: string, sign: number, which: 'main' | 'abandoned' | 'all'): Fill {
   return remembered((from, to) => {
-    const out = typed(to - from), c = p.store.updates.cols[column], superseded = p.superseded;
+    const out = typed(to - from), values = p.store.updates.cols[column], superseded = p.superseded;
     for (let pos = from; pos < to; pos++) {
       const row = index.rowAt(pos);
       if (which !== 'all' && (superseded[row] === 1) !== (which === 'abandoned')) continue;
-      if (Number.isNaN(c[row])) out.kinds[pos - from] = 1;
-      else { out.kinds[pos - from] = 2; out.nums[pos - from] = sign * c[row]; }
+      if (Number.isNaN(values[row])) out.kinds[pos - from] = 1;
+      else { out.kinds[pos - from] = 2; out.nums[pos - from] = sign * values[row]; }
     }
     return out;
   });

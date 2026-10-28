@@ -7426,3 +7426,128 @@ its steps `taskRow`, `useTaskReads`, `useOpenAtTask`, `windowHead`, `listButton`
 14 and 13 lines; `TaskDetails`, 73 lines, is 86 with its wraps), longest line 500 -> 360, comment lines 59 -> 79, any-casts
 0 -> 0; all files 16,375 -> 16,501 lines, comment lines 3,343 -> 3,363, any-casts 41 -> 41. The 126 added lines are the
 steps' signatures with their typed parameters, `RowsRead`, the doc comments and the wraps.
+
+### SIF-159 Readability F2, F4, F5: the Training tab's shared chart preparation reads as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `Prep` was 144 of `training/prep.ts`'s 411 lines (`femetrics.py` counts a class as one block: the file's
+longest). Two of its methods did their work in one body each: `evaluations`, 22 lines (how far back the table changed;
+the rows from there counted out of their categories; `cat` and `pass` made as long as the table's capacity, grown or
+smaller after thinning; then each new row's category, count and pass flag, with the five names it reads declared on one
+line of 155 columns), and `updates`, 32 lines (a cut that takes a restart away clearing all, or else clearing the marks
+from the changed row and finding the top again, the two inside one `if`; `superseded` made as long as the capacity; then
+each new update's count, a restart marking every earlier update at or above it in a loop three deep, and the first row
+whose mark it set noted). Its other methods are 4 to 11 lines. The file declared 57 single-letter names: `t` a table (6,
+all in `Prep`); `c` a category's code, a column's values (3) or a record of changes (`Changes`, 6); `i` a row (4), a
+record's place in a list of them (3), a status's code (2), the sort's place or a value's place in a fill; `j` an
+update's row (2); `v` an update's count, a row's x, a running mean's value or a row's value; `p` a position (4) or the
+store's Prep; `w` a status word or the value that leaves a window; `m` a binary search's middle (2); the sort's `a, b`;
+`s` a mean's state; and the parameters of exported functions and public methods (`lowerBound`'s and `upperBound`'s `a`,
+`n`, `v`, `rowAt`'s `p`, `valuesFill`'s and `learnerFill`'s `p`) and `n`, a table's row count, in `Index` (3). 3 lines
+ran past 160 columns (the longest 176, a running mean's ring dropping its oldest value). F3 found nothing to cast: the
+file has no `any`; `femetrics.py` counts 1 because its pattern `as any` matches the words "has any value" in `first`'s
+doc comment, which stays. Its casts are true and stay: `this.means.keys().next().value as string` (the map holds more
+than MEANS means there, so its first key exists; TypeScript types an iterator's next value `string | undefined`),
+`state.ring!` (a 'last' mean's states always hold a ring: its constructor makes one and `copyState` copies it) and
+`fact!` twice in `first`'s callback (set just above). The file has no React: no hook or component is involved. One
+constraint, as in SIF-155: `training_data_check.mjs` imports trainingData.ts and its parts as they are, under Node,
+which strips the types - so a step may use only TypeScript that erases (`private` methods do).
+
+**Changed** (`frontend/src/panels/training/prep.ts` alone). `evaluations` (9 lines) reads as its steps, in the order its
+code ran: the table, how far back it changed and the stamp, as they were; `cutEvaluations` (the rows from there counted
+out of their categories, the cursor back to there), on the right of the same `if`; the return when nothing is new, as it
+was; `resizeEvaluationArrays` (`cat` and `pass` made as long as the table's capacity in the same two cases, the rows
+derived so far copied); `deriveEvaluations` (each new row's category, counted, and its pass flag; then the cursor at the
+table's end); the return. `updates` (12 lines): the table, its counts column, how far back it changed and the stamp, as
+they were; the cut's `if` and its condition as they were, each branch now a step - `resetUpdates` (nothing derived any
+more, every mark noted as changed) when the cut took a restart away, else `cutUpdates` (the marks from there cleared,
+the cursor back to there, the top the last count before it); the return when nothing is new; `resizeSuperseded` (as
+`resizeEvaluationArrays`); `markRestarts` (each new update's count, a restart marking the earlier updates at or above
+it; then the cursor at the end, and the first row whose mark it set noted). The 7 steps are private methods of `Prep`,
+each called once, from where its code stood; each takes what it reads (the table, the changed row, the counts column)
+and writes the Prep's fields, as the code did, and holds its statements as they were, in the same order, with only F4's
+names changed. No public member, field or method is renamed or moved, and no field is added. Each step has a doc
+comment, and `evaluations`' names its steps. `order` and `rows` give `new Index(...)` its drawn rows, members and values
+a line each, with the parameter's name as a comment. F4: `t` -> `table`; `c` -> `code` (a category's), `values` (a
+column's: `any`, `anyUpdate`, `learnerFill`, as store.ts's word lists call a column) and `changes` (a record of
+changes); `i` -> `row`, `place` (a record's place in `members`, `values` or `deps`, and a value's place in a smoothOver
+fill), `code` (`designCodes`), `pos` (the sort's check of its order) and `earlier` (an earlier update); `j` -> `row`;
+`v` -> `count` (an update's count), `rowX` (`extend`), `value` (a running mean's) and `rowValue` (`valuesFill`, beside
+its `value` function); `p` -> `pos` (4) and `prepared` (`prep`); `w` -> `word` and `leaving` (the value that leaves a
+smoothOver window); `m` -> `middle`; `a, b` -> `first, second`; `s` -> `state`. Left: the parameters of exported
+functions and public methods (`lowerBound`'s and `upperBound`'s `a`, `n`, `v`, which their doc comments name; `rowAt`'s
+`p`, which the class's doc comment names; `valuesFill`'s and `learnerFill`'s `p`), and `n`, a row count as `Table.n`
+names it, in `Index`, as SIF-155 left it: 57 -> 12. The two comments that spell a mean's arithmetic say `value` with the
+code. F5: 3 -> 0 lines over 160 columns: a ring's oldest value and the value that leaves a smoothOver window as blocks
+of one line (inside their braces), `any`'s return between arguments; and the lines F4's longer names took past 160:
+`designCodes` after its `=>`, `markRestarts`' inner loop before its `if`, `deriveEvaluations`' columns between
+declarators, `order` and `rows` between arguments. The longest line is 155 columns (176 before).
+
+**Checked.** `npx tsc --noEmit -p .` exit 0 (TypeScript 5.9.3, the file in its program). `npx vite build` into a
+temporary folder: the main bundle changes, as moved code does (`index-wmRmQGK8.js`); the CSS and the uPlot and cytoscape
+chunks are byte for byte SIF-158's build's; the build of the final file (one doc comment more exact than the tested one)
+is byte for byte the tested build. DOM identity (`--replay` the recorded answers, `--build` this build, `--compare` the
+base's reference; behind the memory guard, WSL 14 GB available and the host 8 GB free): "all 112 checks passed", 56 of
+56 compared files identical (66 written), at its first run; its tabs scene draws the Training tab from two stores fed
+the recorded answers, the shown run and a compared one. Without a browser (the scripts, their outputs and the mutants
+beside the DOM identity output, `out-F2-prep/static`): (1) Tokens (`proof_inline.mjs`, SIF-155's for a class whose steps
+are its private methods): each file compiled in a program of its own training/ folder as the frontend's tsconfig
+compiles it (5 files, 0 errors each); with comments, doc comments and white space set aside and every name declared
+inside a function numbered by first use: the 26 top-level statements the same, in order; the members of `Index` (23),
+`Running` (14) and `Prep` (26) the same, in order - `evaluations` and `updates` once their steps are written back where
+they are called, as an inliner writes them (356 and 448 tokens); each of the 7 steps private and called once; the public
+surface (46 exported declarations and public members: names, the parameters and return types of exported functions, the
+public members' modifiers and signatures) the same. The 154 strings, numbers and template pieces are the same multiset
+(`proof_literals.mjs`). (2) Side by side (`proof_differential.mjs`): the old file and the new one transpiled in memory
+for the page's build target (ES2020) and run in one process on the one store.ts and series.ts; on each store fed the
+answers of SIF-155's generators (2,400 runs: 400 random as `training_data_check.mjs` simulates them and 2,000 of answers
+no backend sends; 120,599 answers), an old Prep and a new Prep (each module's `prep(store)`) asked alike what the page
+asks - `evaluations()`, `updates()`, `order()` and `rows()` with what a chart reads of the Index (x, rows, `before`,
+`find`, `bytes`, its changes), `first()` with the page's facts, `any()`, `anyUpdate()`, `meanFill()` with the fills
+`valuesFill()` and `learnerFill()` give and the values of random stretches (some past the rows synced), `size()`,
+`preparedSize()`, `designCodes()` - and compared after every question: the answers, and both Preps whole, every field,
+the private ones too, in their order (the arrays cell by cell by `Object.is`, the maps of indexes, facts and running
+means in their least-recently-used order, each Index and running mean with its checkpoints and rings), an object of the
+store the same object in both; caps and checkpoint spacing changed between answers and runs, and many questions waited
+for several answers. 226,871 questions asked of both (`meanFill` 61,205, `first` 27,117, `updates` 22,911, `rows`
+22,737, `order` 22,641, `evaluations` 22,401, `any` 18,136, `anyUpdate` 13,787, `size` 9,046, `designCodes` 6,890), the
+caps changed between answers 2,741 times, 1,274 runs thinned and 2,182 had a learner restart, none threw, and 4,000
+pairs of `lowerBound` and `upperBound` on random arrays: 0 differences. V8's block coverage: every function and block of
+both files ran (57 functions and 253 ranges in the old file, 64 and 255 in the new). (3) A negative control, 34 mutated
+copies of the new file (`make_mutants.py`): the token proof caught all 34; the side-by-side run caught 29 of the 30
+meant to change behaviour, each after 1 to 16,280 answers; the 30th, `cutUpdates` clearing the marks from the row after
+the cut, changes nothing - a restart marks only rows before it, and that cut comes only when no restart is at or after
+its row, so those rows hold no mark (an equivalent mutant) - and it did not catch the four that only reorder or repeat
+code whose order does not matter (a reset's two lists cleared in the other order, two columns read in the other order,
+`cat` and `pass` set in the other order, `resizeEvaluationArrays` called twice), which the token proof catches. (4)
+`training_data_check.mjs` (trainingData.ts and its parts as they are, under Node): 124 passed; with `--reference` the
+base's trainingData.ts and training/ folder and 40 random runs instead of 12: 152 passed, 120,012 charts and key-number
+sets built from the new code equal to those of the old, number for number by `Object.is`. Browser checks, one lane (WSL
+14 GB, host 10 GB), on the build the DOM run served, the ten that draw the Training tab with a run shown in the bottom
+panel and the one that imports the file, SIF-155's set: `run_control_check` 181, `run_list_check` 185, `files_tab_check`
+43, `corner_check_check` 42, `task_list_check` 106, `looks_check` 83, `task_run_check` 39, `reliability_check` 22,
+`room_check` 31, `training_data_check` 124 passed, each its count in SIF-155; `training_tab_check` failed one check, "a
+chart redraws at most once a second while results arrive" (6 redraws, 3 of one chart within a second where 2 are
+allowed), in the batch and again alone; then, run alone in turn with the base build (SIF-158's: HEAD's code), it passed
+139 twice in three runs of this build, and in four of four of the base's. The writers `export_check` and
+`calibration_check`, which start MOCK runs, were left out while the campaign ran. Not a change of behaviour, but the
+race SIF-155 met as a timing flake, now found: a copy of the check in the proof folder (`flake/diag`; the repository's
+check is not edited) that notes each draw with its canvas's size, each write of the line over a chart and the history's
+reads, and ends after that check (50 runs, both builds in turn, and SIF-155's and SIF-157's builds). The live fixture's
+history comes in three answers ("deliberately tiny live pages": rows to 162, 164, 165), and the tab's first frame draws
+what has arrived when it renders - 162, 164 or 165 rows, a race with the second and third answers. With row 164 newest,
+a timed-out evaluation, the line over each chart takes two lines (34 px), keeps them (SIF-120's steady height), the plot
+canvas goes from 119 to 102 px and draws again 4 to 14 ms later; with the frame of the next second that is 3 draws of
+one chart in a second. 162 and 165 take one line: 2 draws. The base build loses the race too: its first frame drew row
+164 once and failed alike. The copy's own fetch hook moved most first frames to row 162 in both builds - so small a
+change in timing moves the race, as any change of the bundle can. Counted over the check and the copy: this build 6
+failures in 24 runs, the base 1 in 23 (Fisher's one-sided p 0.055; the last set, 7 runs each, went the other way, 0 and
+1), SIF-155's and SIF-157's builds 0 in 6 each; the page computes, from the same rows, the same values (the proofs
+above). The PDK-name grep of the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `training/prep.ts` 411 -> 453 lines, longest block 144 -> 181 (`Prep`:
+the class now holds its 7 steps, and `femetrics.py` counts a class as one block; its longest method is 15 lines, 32
+before - `evaluations` 22 -> 9, `updates` 32 -> 12, the steps 4 to 15: `markRestarts` 15, `deriveEvaluations` 10,
+`resizeEvaluationArrays` and `resizeSuperseded` 7, `resetUpdates`, `cutEvaluations` and `cutUpdates` 4), longest line
+176 -> 155, comment lines 59 -> 72, any-casts 1 -> 1 (the comment's words); all files 16,501 -> 16,543 lines, comment
+lines 3,363 -> 3,376, any-casts 41 -> 41. The 42 added lines are the steps' signatures, their doc comments and the
+wraps.

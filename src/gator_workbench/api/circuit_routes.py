@@ -40,11 +40,29 @@ def register(app: FastAPI, context: ApiContext):
 
 def _task_routes(app: FastAPI, context: ApiContext):
     """The task list, a task's starter configuration, Save task progress, the baseline, loading a circuit."""
+    _register_task_list_route(app)
+
+    _register_task_starter_route(app)
+
+    _register_task_rename_route(app)
+
+    _register_task_save_status_route(app)
+
+    _register_task_baseline_route(app, context)
+
+    _register_circuit_load_route(app, context)
+
+
+def _register_task_list_route(app):
+    """Register the task list and real-backend contract endpoint."""
     # List available tasks together with the interface contract required for real backends.
     @app.get('/api/tasks')
     def get_tasks():
         return dict(tasks=tasks.list_tasks(), real_interface_contract=tasks.REAL_INTERFACE_CONTRACT)
 
+
+def _register_task_starter_route(app):
+    """Register the starter editor rows and saved-revision endpoint."""
     @app.get('/api/tasks/starter')
     def starter(task_key: str):
         """The rows the three editors start from for a registered task. A real task: its profile's parameters and, for a
@@ -60,6 +78,9 @@ def _task_routes(app: FastAPI, context: ApiContext):
         except Exception as exc:                           # a generated profile whose files no longer pass their own checks
             fail(409, redact(f'The starting rows of {task_key} cannot be built: {type(exc).__name__}: {exc}', 600))
 
+
+def _register_task_rename_route(app):
+    """Register task display-name changes and their existing conflict responses."""
     @app.post('/api/tasks/rename')
     def rename_task(body: RenameTaskBody):
         """Shows a registered task under another name (record 7.302; user: "add rename functionality to tasks"). Kept
@@ -76,6 +97,9 @@ def _task_routes(app: FastAPI, context: ApiContext):
         except task_names.TaskNameError as exc:
             fail(422, exc)
 
+
+def _register_task_save_status_route(app):
+    """Register the in-memory Save task progress endpoint."""
     @app.get('/api/tasks/saving')
     def tasks_saving():
         """The Save task running in this backend, step by step, and the last one that ended (record 7.198): the page asks
@@ -83,12 +107,18 @@ def _task_routes(app: FastAPI, context: ApiContext):
         only - nothing is read or contacted."""
         return task_saving.status()
 
+
+def _register_task_baseline_route(app, context):
+    """Register the saved-task baseline request endpoint."""
     # Request the saved task baseline using its optional connection and output-root overrides.
     @app.post('/api/tasks/baseline')
     def retry_baseline(body: TaskBaselineBody):
         return dict(baseline=task_baseline.start(context, body.task_key, profile_id=body.profile_id,
                                                 output_root=body.output_root))
 
+
+def _register_circuit_load_route(app, context):
+    """Register circuit loading with saved baseline adoption and native-task details."""
     # Load circuit details and baseline status, adopting an existing completed baseline when eligible.
     @app.post('/api/circuit/load')
     def circuit_load(body: CircuitBody):

@@ -152,6 +152,23 @@ def register(app: FastAPI, context: ApiContext):
 
 def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
     """The run list and the saved models: describe, default, rename, list, structure, graph view."""
+    _register_run_list_route(app, context)
+
+    _register_model_description_route(app, context)
+
+    _register_default_model_route(app, context)
+
+    _register_model_rename_route(app, context)
+
+    _register_saved_models_route(app, context)
+
+    _register_model_structure_route(app, context)
+
+    _register_model_graph_view_route(app, context)
+
+
+def _register_run_list_route(app, context):
+    """Register the run-list endpoint with its existing refresh and output-root choices."""
     @app.get('/api/runs')
     def get_runs(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
         """`fresh`: every run folder read again, past the run list's cache (the page's Refresh list; record 7.274)."""
@@ -160,6 +177,9 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         except PathNotAllowed as exc:
             fail(403, exc)
 
+
+def _register_model_description_route(app, context):
+    """Register saved-model facts and compatibility with the current configuration."""
     @app.post('/api/runs/model')
     def describe_model(body: ModelBody):
         """The selected RL model: source task, save time, schema, counters, actual path, restorable
@@ -193,12 +213,18 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
                 result['suggestion'] = runs.suggest_mode(config, run_dir, task=runtime)   # the task loaded above, not a second load
         return result
 
+
+def _register_default_model_route(app, context):
+    """Register lookup of the newest saved model under a model or legacy project label."""
     @app.get('/api/runs/default-model')
     def default_model(label: str | None = None, project: str | None = None):
         """Default = the newest model saved under this RL model label (record 7.159), and that run's `latest`, not
         `best`. `project`: the project name runs were remembered under before the label, asked when the label has none."""
         return runs.default_model(context.roots, label, project)
 
+
+def _register_model_rename_route(app, context):
+    """Register saved-model label changes and name-conflict responses."""
     @app.post('/api/runs/model/rename')
     def rename_model(body: RenameModelBody):
         """Gives a saved model a new name (record 7.225; user: "add a functionality of rename saved model"). Kept in the
@@ -217,6 +243,9 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
             fail(422, exc)
         return dict(run_dir=str(run_dir), model_label=record['model_label'], previous=record['previous'])
 
+
+def _register_saved_models_route(app, context):
+    """Register the model chooser list with its saved checkpoints."""
     @app.get('/api/runs/models')
     def saved_models(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
         """The model chooser's list: every run that holds a saved RL model, with all of its save points.
@@ -229,6 +258,9 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         except PathNotAllowed as exc:
             fail(403, exc)
 
+
+def _register_model_structure_route(app, context):
+    """Register the saved model network-structure table endpoint."""
     @app.post('/api/runs/model/structure')
     def model_structure_table(body: ModelStructureBody):
         """Every layer of the chosen saved model with its type, shape and parameter count - a table, no plot.
@@ -242,6 +274,9 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         except ValueError as exc:
             fail(409, exc)
 
+
+def _register_model_graph_view_route(app, context):
+    """Register archived-state graph inspection for a selected saved model."""
     @app.post('/api/runs/model/graph-view')
     def model_graph_view(body: GraphViewBody):
         """The data of the circuit graph view: the chosen save point replayed on a state its own run ARCHIVED -

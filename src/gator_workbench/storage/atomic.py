@@ -24,6 +24,7 @@ class PersistenceError(OSError):
 
 
 def sha256_file(path, chunk=1 << 20) -> str:
+    """Hash a file incrementally without reading its complete contents into memory."""
     digest = hashlib.sha256()
     with Path(path).open('rb') as stream:
         while block := stream.read(chunk):
@@ -32,6 +33,7 @@ def sha256_file(path, chunk=1 << 20) -> str:
 
 
 def fsync_directory(path) -> None:
+    """Sync directory metadata through a descriptor that is closed even on failure."""
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(fd)
@@ -60,6 +62,7 @@ def _await_visible(path: Path, size: int | None, attempts=8, delay=0.025, identi
 
 
 def temporary_path(path: Path) -> Path:
+    """Choose a unique temporary sibling path without creating the file."""
     return path.with_name(f'{path.name}{TEMP_MARKER}{uuid4().hex}')
 
 
@@ -231,6 +234,7 @@ class JsonlAppender:
         self.bytes_written = 0
 
     def append(self, record) -> None:
+        """Append and sync one JSON record before updating the acknowledged byte count."""
         line = (json.dumps(jsonable(record), allow_nan=False, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf8')
         try:
             self._stream.write(line)
@@ -246,6 +250,7 @@ class JsonlAppender:
 
 
 def read_jsonl(path):
+    """Read complete JSONL records, ignoring an incomplete tail and rejecting corrupt complete lines."""
     path = Path(path)
     if not path.exists():
         return []

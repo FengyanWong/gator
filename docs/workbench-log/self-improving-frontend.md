@@ -6726,3 +6726,89 @@ rule 5 finds nothing in the changed files.
 `runBrowser`, are 41, 32, 29, 29 and 29 lines), comment lines 110 -> 131, any-casts 0 -> 0; all files 15,555 -> 15,723
 lines, any-casts 41 -> 41. The 168 added lines are the steps' signatures with their typed parameters, `RunWindowParts`,
 their doc comments, returns and destructurings, and the wraps.
+
+### SIF-152 Readability F2, F4, F5: the Training tab's chart reads as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `TrainingChart` was 214 of `TrainingChart.tsx`'s 288 lines (`femetrics.py`: since SIF-151 the frontend's
+longest top-level block but `App.tsx`'s `Page`, a file another branch is changing). One body made its 15 hook calls - 7
+`useRef`, 3 `useState`, 3 effects and 2 `useMemo` - and wrote two refs as it drew, in among the 55-line closure that writes
+the line above the plot (`showReadout`), the effect that draws the chart, and two functions declared inside the component,
+`options` (47 lines: the axes, each series' look, the zoom and the reset) and `drawMarks` (the markers over the plot); then
+the keys' groups, `toggle` and the return. 9 of the file's lines ran past 160 columns (the longest 240, the `Palette`
+interface). Its 26 single letters: `s` a series (6 times) or the size before (once), `u` the uPlot chart (5 times), `i` a
+series' place (3 times) or a piece's, `j` the rows before and after that share an x, `v` an axis number (twice), `b` the
+bold element, `o` another series, `x` a marker's x on the canvas, `y` whether an axis is the y axis, `g` a key's colour and
+label, and `e`. F3 found nothing to do: the file has no `any` (`femetrics.py`: 0). Its casts are true and stay: `as
+uPlotType.AlignedData` (the x, then each series' values: uPlot's tuple, which TypeScript infers as an array), colourOf's
+`series.category as Category` (outside the package's function), and the non-null assertions on what the code has just
+made sure of (`cursor.left!` once `hovering`, `series.run!` for a compared run's swatch, `plot.current!` just made, uPlot's
+`paths.stepped!`); the `e` of the drawing's `.catch` is a rejection's `any` from the Promise types, read as `e?.message ??
+e`, not a cast.
+
+**Changed** (`frontend/src/panels/TrainingChart.tsx` alone). `TrainingChart` (40 lines) reads as its steps, in the order
+its code ran: the refs, the state and the two ref writes, as they were; `useBoxSize` (the effect by which the plot follows
+its box: the ResizeObserver, and the width to `onWidth`); the effect that destroys the chart with the component, as it
+was; `showReadout`, now from `readoutWriter`, a plain function that gives the function as it stood, made anew at each
+drawing as before; `useChartDrawing` (the `layoutKey` memo and the effect that draws: a new chart when the series change,
+the groups switched off on the keys hidden in it again, else the same chart fed the data and its box's size; then the
+zoom's x range and the readout); the keys' `groups`, the same memo, its body now `legendGroups`, a plain function; `toggle`
+and the return, as they were. The two functions declared inside the component stand at the file's top level among the
+steps, each given what it read from the component as parameters after its own: `options` as `plotOptions` (with `latest`
+and `showReadout`; TrainingTab.tsx's `chartOptions` is the chart chooser's list) and `drawMarks` (with `latest`). The 15
+hook calls and the 2 ref writes run in the order they ran, each effect and memo with its dependency list; no memo added or
+removed; the return draws what it drew, and no step is drawn as a component. Two private types name what the steps pass:
+`Latest`, a `Pick` of `ChartProps` (true by construction), and `Size`. Parameters carry their real types
+(`RefObject<HTMLDivElement>`, `MutableRefObject<...>`, `Dispatch<SetStateAction<...>>`), each compared with the type tsc
+gives the value passed (30 values): the same, 7 of them written otherwise (`MutableRefObject<Latest>` for the type tsc
+infers for `latest`, `Size` for `{ width: number; height: number }`), and `plotOptions`' `element`, an `HTMLElement` as
+`options` declared it, is given `box.current`, an `HTMLDivElement`, as before. Comments moved with their code: "The plot
+follows its box ..." and "The values under the pointer ..." opened their code and became `useBoxSize`'s and
+`readoutWriter`'s doc comments, `options`' and `drawMarks`' stay theirs, and the trailing comment on a key's colour went
+above its line; each new function has a doc comment, and `TrainingChart`'s says why the order of its hooks matters. F4:
+`s` -> `series` (5 times), `source` (in `options`' map, beside the uPlot `series` it builds) and `previous` (the size), `u`
+-> `chart`, `i` -> `position`, `j` -> `earlier` and `later`, `b` -> `bold`, `v` -> `value`, `o` -> `other`, `x` ->
+`markX`, `y` -> `yAxis`, `g` -> `look`; `e` for a caught error stays, as in SIF-147 to SIF-151, and so do the single
+letters of the file's other functions (`loadUPlot`'s, `alpha`'s, `palette`'s `i`). F5: 9 -> 0 lines over 160 columns, and
+the three the longer names took past 160 are wrapped too: between members, properties, parameters and statements, before
+a `:`, `?`, `.map(` or `.replace(`, and the keys' button between its attributes, its swatch on the line after the opening
+tag - white space with a line break between two tags is no JSX text, so the button's children are the same.
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: the main bundle changes, as moved
+code does (`index-DgBzZ5xO.js`); the CSS and the uPlot and cytoscape chunks are byte for byte SIF-151's build's. DOM
+identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory
+guard, WSL 11 GB available and the host 6 GB free): "all 112 checks passed", 56 of 56 compared files identical (66
+written), at its first run. Its tabs scene draws this chart in the Training tab with a compared run: the keys with their
+classes, `aria-pressed` and tooltips, the line above the plot with the compared run's swatches ("Newest: Evaluation 48
+..."), and uPlot's plot and canvases at the size the box gave (SIF-149's 101 px plot did not come). A doc comment's words
+changed after that run; the build of the committed file is byte for byte the one the DOM run served, and so is the
+browser checks' build. Without a browser - the TypeScript compiler API on the base file and on this one, each compiled
+in the frontend's own program, with comments, white space and types set aside, every binding declared inside a function
+numbered by place (the parameters, and the locals F4 renamed) and JSX text cleaned as the compiler does (SIF-151's script
+adapted; it, its output and the negative control beside the DOM identity output, `out-F2-trainingchart/static`): 0
+diagnostics each; the exported names (`TrainingChart`, `groupOf`, `Format`, `ChartProps`) with the same types, and the
+same props; the 271 strings, template pieces, numbers and regular expressions the same multiset (the file has no JSX
+text), and so are the JSX tags (7) and attribute names (14); `TrainingChart` with its steps written back where they are
+called - the hooks' statements where their calls stand, `readoutWriter`'s function, `legendGroups` inside the memo,
+`plotOptions` inside the drawing and `drawMarks` inside its draw hook - and, in the base, `options` and `drawMarks` written
+back where they were called, equals the base body statement by statement, in order (20 statements, 3,196 tokens); the
+file's other 16 top-level statements are found unchanged but for the React import, which gained four types, so the wraps
+in `Palette`, `palette` and `groupOf` change nothing; the 15 hook calls and 2 ref writes are the same sequence, with their
+5 dependency lists; the value references to imports and globals the same multiset (55); each step is called once where it
+belongs - the two hooks as statements of the body itself - and never drawn as a component, the plain steps call no hook,
+and every value passed to a step by name goes by its own name; no single-letter name is declared in `TrainingChart` or its
+steps but the caught error's `e`. A negative control, the same script on ten mutated copies of the new file - two hooks
+swapped, a dependency added, a caption changed, a value passed under another name, a ref write moved, the two scans for a
+value at the same x swapped, the readout's function memoized, a hook called under a condition, a JSX space added,
+`drawMarks`' read of the data changed: each was caught.
+Browser checks, one lane (WSL 11 GB, host 6 GB), on the build the DOM run served, the ten that draw the Training tab with
+a run shown in the bottom panel: `run_control_check` 181, `training_tab_check` 139, `run_list_check` 185, `room_check` 31,
+`files_tab_check` 43, `task_list_check` 106, `corner_check_check` 42, `looks_check` 83, `task_run_check` 39,
+`reliability_check` 22 passed (871, no flake), each the count of its last run in this log; the writers `export_check`
+and `calibration_check`, which start MOCK runs, were left out while the campaign ran. The PDK-name grep of the plan's
+rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `TrainingChart.tsx` 288 -> 332 lines, longest block 214 -> 60
+(`readoutWriter`, 16 of whose lines are the comments that stood in `showReadout`; `TrainingChart` itself is 40 lines, and
+`plotOptions`, `useChartDrawing`, `drawMarks`, `useBoxSize` and `legendGroups` 50, 30, 21, 17 and 14), comment lines 44 ->
+55, any-casts 0 -> 0; all files 15,723 -> 15,767 lines, any-casts 41 -> 41. The 44 added lines are the steps' signatures
+with their typed parameters, the two types, the doc comments and the wraps.

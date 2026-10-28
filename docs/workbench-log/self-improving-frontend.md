@@ -7854,3 +7854,27 @@ old check twice, the mended once (`mutant-frame0*`), at most 2 draws per chart i
 fixture's live run never brings more than two answers within a second, so a page that draws at every answer stays within
 the limit. A fixture that brings several answers within a second would make the frame limit's check bite: left for a
 later record. The PDK-name grep finds nothing in the changed files.
+
+### SIF-164 The Training tab check's frame limit bites: the live run's new rows come back to back, and only frames are counted (2026-10-28; from SIF-163)
+
+**Found.** SIF-163 left it written: "a chart redraws at most once a second while results arrive" did not catch a page
+without its frame limit - a build with `FRAME_MS = 0` in TrainingTab.tsx passed it, before SIF-163 and after. The
+check's live run brought its three new rows in two answers (to row 194, then 195: the fixture's tail pages of 2 rows),
+so a page that drew at every answer drew twice, within the limit of 2 per chart in a second. That limit has room for a
+draw that is no frame: the plot following its box when the line over it takes a second line (SIF-120), which the count
+took as one.
+
+**Changed** (`frontend/scripts/training_tab_check.mjs` only; no page file):
+- the draw recorder notes each draw's canvas size beside its time and plot;
+- in the live phase the live run's tail comes a row a page (`tailPage = 1`; the fixture's pages of 2 everywhere else):
+  its three new rows come as three answers back to back, each read as the one before is in;
+- the count takes frames only: a draw at another size than the plot's draw before it is the plot following its box and
+  is left out. The limit stays 2 frames per chart in a second: a frame is timed from its timer but drawn after the
+  page's work, so two can fall within 1000 ms by a few milliseconds;
+- its line in the check's header says so.
+
+**Checked.** Side by side, four rounds behind the memory guard (WSL 9-10 GB available, the host 8-9 GB free;
+`sif164.txt` and `sif164/` beside the group F files): this branch's build passed all 139 checks in each round, at most 1
+frame per chart in a second; a copy with `FRAME_MS = 0` (a temporary worktree, removed after) failed in each round this
+check alone, 138 of 139 passing - "6 redraws since (6 frames), at most 3 frames per chart in a second". `node --check`
+passes. The PDK-name grep finds nothing in the changed files.

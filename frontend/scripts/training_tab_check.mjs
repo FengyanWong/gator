@@ -46,6 +46,8 @@
 //   - branch record SIF-134: every key in the colour its lines are drawn in (the plot's own strokes): compared runs' chips,
 //     legend keys, Key numbers rows and the swatches in the line over a chart, and one run's gradient norms; on a comparison
 //     that line names each value's run by its swatch (the whole name its tooltip), then "recorded" or "mean of last 50"
+//   - branch record SIF-164: the live run's new results come as three answers back to back, and a chart draws them within
+//     its frame limit (frames counted; a draw at a new size, the plot following its box, is not one)
 // Run (Windows node through WSL interop, ~1.5 min):
 //   "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/training_tab_check.mjs)" [screenshot-dir]
 import path from 'node:path';
@@ -126,8 +128,9 @@ function serve(run, cursor, tailCursor) {
   const previous = tailCursor ? JSON.parse(tailCursor) : null;
   const reset = previous?.base !== run.final;
   const tailFrom = reset ? run.final : previous.offset;
-  // Deliberately tiny live pages exercise both cursor polling loops independently of the larger history pages.
-  const tailTo = Math.min(run.final + run.tail, tailFrom + 2);
+  // Deliberately tiny live pages exercise both cursor polling loops independently of the larger history pages. A run's
+  // `tailPage` makes them tinier still: the live phase's new rows come as answers back to back (branch record SIF-164).
+  const tailTo = Math.min(run.final + run.tail, tailFrom + (run.tailPage ?? 2));
   const tailPage = served === flushes
     ? { start: tailCursor, cursor: JSON.stringify({ base: run.final, offset: tailTo }), reset, more: tailTo < run.final + run.tail }
     : { start: tailCursor, cursor: null, reset: true, more: false };
@@ -217,13 +220,14 @@ await runChecks(browser, async () => {
   const release = name => { holding.delete(name); for (const p of heldBack.filter(q => new URL(q.request.url).pathname === name)) { heldBack.splice(heldBack.indexOf(p), 1);
     Promise.resolve(answer(p)).catch(e => { if (!e?.cdp) console.log(`NOTE  a held request could not be answered: ${e?.stack ?? e}`); }); } };
   const waitFor = async (test, ms = 6000) => { for (let t = 0; t < ms && !test(); t += 50) await sleep(50); return test(); };
-  // Every redraw of a chart clears its canvas: counted per canvas, with the time. While window.__axisText is a list, each text
+  // Every redraw of a chart clears its canvas: counted per canvas, with the time and the canvas's size (branch record SIF-164:
+  // a draw at a new size is the plot following its box, not a frame of new results). While window.__axisText is a list, each text
   // drawn on a plot is noted: its size in px and, right-aligned (the y axis's numbers), where its left end falls on its canvas
   // (branch record SIF-65). While window.__strokes is a list, the colour of each line drawn on a plot, with the plot's place
   // (branch record SIF-134: a key in its line's colour).
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const clear = CanvasRenderingContext2D.prototype.clearRect; window.__draws = [];
     CanvasRenderingContext2D.prototype.clearRect = function (...a) { const plot = this.canvas.closest && this.canvas.closest('.training-plot');
-      if (plot) { const at = performance.now(); window.__draws.push({ at, plot: [...document.querySelectorAll('.training-plot')].indexOf(plot) });
+      if (plot) { const at = performance.now(); window.__draws.push({ at, plot: [...document.querySelectorAll('.training-plot')].indexOf(plot), w: this.canvas.width, h: this.canvas.height });
         queueMicrotask(() => (window.__drawMs ??= []).push(performance.now() - at)); }   // uPlot draws on from here, in one go
       return clear.apply(this, a); };
     const fill = CanvasRenderingContext2D.prototype.fillText; window.__axisText = null;
@@ -320,15 +324,25 @@ await runChecks(browser, async () => {
 
   // ---- live: new results arrive; at most one redraw a second; the chosen tab never changes ------------------------------------
   const drawsBefore = await evaluate('window.__draws.length');
+  // The new results come as three answers back to back, a row each (branch record SIF-164): a page that drew at every answer,
+  // without its frame limit, drew three frames within a few milliseconds. With pages of two rows it drew two: within the count.
+  RUNS.live.tailPage = 1;
   RUNS.live.final = 192; RUNS.live.tail = 3;
   check('a live run is read again within about 2 s and its new results counted', await until(`/195 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60));
   await sleep(2600);
   // Only the draws since the results began to arrive (branch record SIF-163). Counted from the page's first draw, a frame
   // just before them whose newest row's line wrapped onto a second line - the plot 17 px lower and drawn again at once - made
   // a third draw within a second of the first live frame now and then, in the base build as well (SIF-125 and SIF-143 met it).
-  const draws = (await evaluate('window.__draws')).slice(drawsBefore);
-  const perSecond = Math.max(0, ...draws.map(d => draws.filter(e => e.plot === d.plot && e.at >= d.at && e.at < d.at + 1000).length));
-  check('a chart redraws at most once a second while results arrive', perSecond <= 2, `${draws.length} redraws since, at most ${perSecond} per chart in a second`);
+  const allDraws = await evaluate('window.__draws');
+  const draws = allDraws.slice(drawsBefore);
+  // Frames only (branch record SIF-164): a draw at another size than the plot's draw before it is the plot following its
+  // box - the line over it took a second line - not a frame of new results.
+  const liveFrames = draws.filter((d, i) => { const before = allDraws.slice(0, drawsBefore + i).reverse().find(e => e.plot === d.plot);
+    return !before || (before.w === d.w && before.h === d.h); });
+  const perSecond = Math.max(0, ...liveFrames.map(d => liveFrames.filter(e => e.plot === d.plot && e.at >= d.at && e.at < d.at + 1000).length));
+  check('a chart redraws at most once a second while results arrive', perSecond <= 2,
+    `${draws.length} redraws since (${liveFrames.length} frames), at most ${perSecond} frames per chart in a second`);
+  delete RUNS.live.tailPage;
   const quiet = await evaluate('window.__draws.length');
   await sleep(4500);                                                        // two more reads that bring nothing new
   check('nothing new, no redraw', (await evaluate('window.__draws.length')) === quiet, `${(await evaluate('window.__draws.length')) - quiet} redraws`);

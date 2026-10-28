@@ -88,6 +88,7 @@ class ArchiveTrustRegionBO:
 
     # -------------------------------------------------------------------------------------------------- ask
     def ask(self):
+        """Propose a unit-cube design, using all archived and online observations when fitting the current region."""
         told = len(self.X) - self.start
         self.asked += 1
         fit_X, fit_y = self._fit_data()
@@ -151,12 +152,14 @@ class ArchiveTrustRegionBO:
             self._begin()
 
     def summary(self) -> dict:
+        """Describe archive counts, online progress, the current trust region and the best known reward."""
         return dict(version=VERSION, archived=len(self.source_y), archived_failed=self.source_failed, online=len(self.X),
                     in_this_region=len(self.X) - self.start, region=self.region, restarts=self.restarts,
                     length=self.length, best=max(list(self.source_y) + list(self.y)) if (self.source_y or self.y) else None)
 
     # ------------------------------------------------------------------------------------------- save/restore
     def state_dict(self) -> dict:
+        """Serialize observations, trust-region state and random generator positions needed for exact continuation."""
         return dict(version=VERSION, dim=self.dim, seed=self.seed, n_init=self.n_init, n_candidates=self.n_candidates,
                     length_init=self.length_init, length_min=self.length_min, length_max=self.length_max,
                     success_tolerance=self.success_tolerance, failure_tolerance=self.failure_tolerance,
@@ -170,6 +173,7 @@ class ArchiveTrustRegionBO:
 
     @classmethod
     def from_state(cls, state: dict) -> 'ArchiveTrustRegionBO':
+        """Restore the archived data, current region and random state of a supported saved search."""
         if state.get('version') != VERSION:
             raise ValueError(f"a {state.get('version')!r} search state is not {VERSION}")
         search = cls(state['dim'], seed=state['seed'], n_init=state['n_init'], n_candidates=state['n_candidates'],
@@ -203,17 +207,21 @@ class ArchiveProposer:
 
     @property
     def observations(self) -> int:
+        """Count online designs accepted by the search, excluding the imported archive."""
         return len(self.search.X)
 
     def propose(self) -> dict:
+        """Return the next search design as one normalized proposal per parameter group."""
         point = self.search.ask()
         release_freed_memory()
         return {group: float(2.0 * point[index] - 1.0) for index, group in enumerate(self.group_ids)}
 
     def executed_point(self, executed: dict) -> list:
+        """Map executed group values to the unit cube in the search's group order."""
         return [(self._to_proposal(g, executed[g['id']]) + 1.0) / 2.0 for g in self.groups]
 
     def observe(self, executed: dict, reward, *, asked, infrastructure=False) -> bool:
+        """Record an executed design and report whether it restarted the trust region."""
         before = self.search.restarts
         self.search.tell(self.executed_point(executed), reward, asked=asked, infrastructure=infrastructure)
         return self.search.restarts != before
@@ -223,6 +231,7 @@ class ArchiveProposer:
 
     @classmethod
     def from_state(cls, state: dict) -> 'ArchiveProposer':
+        """Restore the parameter-group mapping and TuRBO search used by the run engine."""
         proposer = cls.__new__(cls)
         proposer.groups = list(state['groups'])
         proposer.group_ids = [g['id'] for g in proposer.groups]

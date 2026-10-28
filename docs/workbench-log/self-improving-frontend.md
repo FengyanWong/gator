@@ -7318,3 +7318,111 @@ each the count of its last run in this log. The PDK-name grep of the plan's rule
 and 8 lines), longest line 350 -> 266, comment lines 32 -> 57, any-casts 1 -> 1; all files 16,229 -> 16,375 lines, comment
 lines 3,318 -> 3,343, any-casts 41 -> 41. The 146 added lines are the steps' signatures with their typed parameters,
 `Picked`, the doc comments and the wraps.
+
+### SIF-158 Readability F2, F4, F5: the task name button and the Tasks window read as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `TaskListButton` was 173 of `TaskList.tsx`'s 329 lines (`femetrics.py`: the file's longest block). One body made
+its 13 hook calls - `usePopupWindow`, six `useState`, `useTableView`, `useFolders`, a `useRef` and three `useEffect` - with
+the reads between them (a task's rows, the list with Refresh list, the list again after a rename, and the effect that reads
+it when the window opens) and another window's link (the task to scroll to, `focusTask`, the ref of the latest functions,
+the OPEN_TASKS listener and the scroll to the row); then the list's text, sort column and shown rows; then one 71-line
+`view` - the window's top line, the errors, the current task with Delete task, the notes, and the folders beside the table,
+whose rows were one 29-line `map` callback (the row, and under it the Details row) - and a 12-line return (the name button,
+the blocked line, the portal). 48 of the file's 329 lines ran past 160 columns, 19 of them in `TaskListButton` (the file's
+longest 500, the window's help paragraph). Its single letters: `t` a task (8), `r` a run, a read of a task's rows or
+`onChoose`'s answer (4), `c` a column (2), `e` an event or a caught error (7). F3 found nothing to cast: the file has no
+`any` (`femetrics.py`: 0), and its two casts stay, both true - `event as CustomEvent<TasksAt>` (a listener is handed an
+`Event`; openAt.ts dispatches a `CustomEvent<TasksAt>`) and `e.target as HTMLElement` (what a double click on a row lands on
+is an element).
+
+**Changed** (`frontend/src/panels/TaskList.tsx` alone). `TaskListButton` (97 lines, 14 of them its signature with the props'
+type) reads as its steps, in the order its code ran: the window's state, the table view, the folders, `chooseFolder` and
+`nameOf`, as they were; `useTaskReads` (`readRows`, `refresh`, `renamedTask` and the effect that reads the list when the
+window opens), which gives the three; `useOpenAtTask` (another window's link, record 7.264: the task to scroll to,
+`focusTask`, the ref and its write, the listener's effect and the scroll's), which gives nothing and is called as a
+statement; `toggle`, `follow`, `chooseRow`, the text, the sort column and the shown rows, as they were; then the window by
+its parts - `windowHead` (Refresh list, the filter and the count), the errors as they were, `currentTaskLine` (the current
+task and Delete task, on the right of the same `current && onDelete &&`), the notice, New task, the notes and the warnings
+as they were, and the folders beside the table, whose `map` callback became `task => taskRow({ ... })`, the step's body the
+callback's block (the row's three values, then its row and Details row in their keyed fragment) - and a return that draws
+the button by `listButton`, then the blocked line and the portal as they were. Each drawing step returns the element that
+stood where it is called - as a JSX child, on the right of the same `&&`, or as the `map` callback's result - and is never
+drawn as a component, so the tree React keeps is the one it kept: no new fragment, no new boundary. The 13 hook calls run in
+the order they ran, each effect with its dependency list; no memo added or removed (the file has none). A step takes each
+value it reads by its own name, typed as tsc types the value passed (59 values: 12 `Json`, the backend's JSON, on both
+sides; 45 of the type written - among them `FolderView`, `TableView`, the `Dispatch<SetStateAction<...>>` setters,
+`(from?: unknown) => Window | null` for `openPopup`, `Window` for the window inside `popup && root &&`, and
+`Promise<void | undefined>` for what `renamedTask` gives). The other two are `nameOf`, which tsc reads as `(key: string) =>
+any` because `shownName` reads a `Json` property; the steps take it as `(key: string) => string`, which it is - `shownName`
+gives the name only after `typeof t?.name === 'string'`, else `taskName(key)`. `RowsRead`, a private type, names a task's
+rows as read for its Details, for the state that holds them and the steps that take them. Comments moved with their code:
+the reads' comments into `useTaskReads`, the link's comment became `useOpenAtTask`'s doc comment, the Refresh list and waste
+bin JSX comments stand in `windowHead` and `currentTaskLine`, the mark's and the run links' in `taskRow`, and the name
+button's JSX comment became `listButton`'s doc comment ("the effect above" now "the effect of useTaskReads"). Each new
+function and `RowsRead` has a doc comment, and `TaskListButton`'s names its steps and says why the order of its hooks
+matters. F4: `t` -> `task` (eight times), `r` -> `run` (`runs.some`), `previous` (the rows' earlier read, twice) and
+`answer` (`onChoose`'s), `c` -> `candidate` (the sort column's find) and `entry` (the columns' help, beside the `column` the
+table sorts by). `e` for an event or a caught error stays, as in SIF-147 to SIF-157, and so do the single letters of the
+file's other functions (`TaskDetails`, the columns' values, `shownName`, `renamed`, `taskMark`, `cellOf`, `runsOf`,
+`newestText`). F5: 48 -> 5 lines over 160 columns, wrapped between attributes, properties, declarations and statements,
+after a `=>`, before a `?`, `:`, `&&`, `.then`, `.filter` or `.map`, between a tag and the tag or `{...}` after it, between
+two `{...}` side by side, between a `</td>` and the `<td>` after it, inside a `{...}` (the Parameters heading's count), and
+in three JSX texts between two words (the window's help paragraph, the old server's warning, the empty list's line) - never
+where a space meets a tag or a `{...}`, which a wrap would drop; the paragraph of the comment under the imports re-flowed
+to 124 columns, the file's comment width. The 5 left are each one string longer than a wrap can split: the Task and Newest
+run columns' help, Follow this task's and the Name box's tooltips, and the name button's. The longest line is 360 columns
+(500 before).
+
+**Checked.** `npx tsc --noEmit -p .` exit 0 (TypeScript 5.9.3). `npx vite build` into a temporary folder: the main bundle
+changes, as moved code does (`index-DiYWU4zR.js`); the CSS and the uPlot and cytoscape chunks are byte for byte SIF-157's
+build's. DOM identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the
+memory guard, WSL 11 to 13 GB available and the host 6 to 9 GB free): "all 112 checks passed", 56 of 56 compared files
+identical (66 written), at its third and fourth runs. Its first two runs differed in the three files of the tabs scene
+alone, the Training chart 101 px high instead of 100 - SIF-149's flake (`TrainingChart`'s ResizeObserver keeps a size within
+1 px of the one it took, so the height it ends on follows the order of the layouts), in a scene that never opens this
+window. Not this change: SIF-157's build of HEAD, the code before it, run next under the same conditions drew the same
+101 px, and this build's 66 files were byte for byte its 66 but `requests-order.txt`, which the check never compares (its
+order races); then three runs in turn - this build, HEAD's, this build - each "all 112 checks passed". Its `fresh`,
+`virtuoso` and `ngspice` scenes open this window and choose a task in it: the name button with and without a task, the top
+line, New task, the table's head and a row marked current (`02-tasks-window.html`, three times, and `03-task-chosen.html`),
+identical in all six runs. Without a browser (`proof_static.mjs`, SIF-157's script with two rules more: a hook step that
+returns nothing, called as a statement of the body, its statements written where the call stands, none of them a
+`return`; a drawing step called as the whole body of an arrow, `task => taskRow({ ... })`, its block written back as that
+arrow's block body; it, its output and the mutants beside the DOM identity output, `out-F2-tasklist/static`): each file
+compiled in the frontend's own program, 0 diagnostics each; the three exports (`TaskListButton`, `shownName`, `taskMark`)
+with the same types, and the same props of `TaskListButton`; the 427 strings, template pieces, numbers, regular expressions
+and JSX texts (cleaned as the compiler cleans them) the same multiset, and so are the JSX tags (154) and attribute names
+(157); `TaskListButton` with its steps written back where they are called - each hook step's statements where its call
+stands, `useTaskReads`' `return { readRows, refresh, renamedTask }` matched against what its call takes; each drawing step's
+JSX where it is called - equals the base body statement by statement, in order (30 statements, 3,248 tokens); the file's
+other 14 top-level statements unchanged and in the same order, so the wraps in the helpers, `COLUMNS` and `TaskDetails`
+change nothing; the one new top-level declaration but the steps is the type `RowsRead`; the imports bring the same values
+(`Dispatch`, `SetStateAction`, `FolderView` and `TableView` are types only); the 13 hook calls and the render's write of the
+link's ref the same sequence, with the same three dependency lists, and the one return after them; the value references to
+imports and globals the same multiset (350); no memo in either file; each step called once where it belongs - the hooks
+statements of `TaskListButton`'s own body, the drawing steps inline and never as components - and none but the hooks calls
+a hook; each value passed to a step by its own name, with the type its parameter declares (59). A negative control, the
+same script on 32 mutated copies of the new file (`make_mutants.py`) - two effects swapped, a dependency added, a caption
+changed, a value passed under another name, three JSX spaces dropped (two by a wrap, in the help paragraph and the
+Parameters heading, and the one between a date and its time), the hook that returns nothing called inside a closure and on
+a condition, the reading hook called through a conditional expression, a `useCallback` added, two side effects of Refresh
+list swapped, a drawing step drawn as a component, a drawing step called twice, two parts of the window swapped, two
+attributes of a row in another order, the hook that returns nothing returning before its effects while the window is
+closed, a value negated, the row's element put in an array (no longer the arrow's body), a CSS class changed, a fragment
+added, a guard changed, an aria label changed, a space written as `{' '}`, the reading hook returning something else, a
+prop made required, the listener's effect given a dependency, two states in another order, the ref's write dropped, an
+argument added, a drawing step calling a hook, a key changed: each was caught. Browser checks, one lane (WSL 13 GB, host
+8 GB), on the build the DOM run served, the 13 that open this window or draw its button: `task_list_check` 106 (the
+window, Details, Rename, Follow this task, Delete task, the filter and the folders), `task_rows_check` 57,
+`testbench_probes_check` 43, `circuit_source_check` 19, `consistency_check` 14, `pdk_check` 47, `ngspice_window_check` 47,
+`virtuoso_source_check` 123 and `project_help_check` 62 (tasks chosen or made through it), `run_list_check` 185 and
+`agent_window_check` 35 (another window's link into it: at a task, with its Details open, and as it is) and `looks_check`
+83 passed; `task_run_check` stopped after 13 of its checks with "the DevTools session closed (its window went away)" - no
+check failed - and passed 39 alone (WSL 12 GB, host 7 GB): a flake, as in SIF-157. 860 passed, each the count of its last
+run in this log. The PDK-name grep of the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `TaskList.tsx` 329 -> 455 lines, longest block 173 -> 97 (`TaskListButton`;
+its steps `taskRow`, `useTaskReads`, `useOpenAtTask`, `windowHead`, `listButton` and `currentTaskLine` are 46, 30, 23, 16,
+14 and 13 lines; `TaskDetails`, 73 lines, is 86 with its wraps), longest line 500 -> 360, comment lines 59 -> 79, any-casts
+0 -> 0; all files 16,375 -> 16,501 lines, comment lines 3,343 -> 3,363, any-casts 41 -> 41. The 126 added lines are the
+steps' signatures with their typed parameters, `RowsRead`, the doc comments and the wraps.

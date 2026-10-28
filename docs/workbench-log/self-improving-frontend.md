@@ -7110,3 +7110,97 @@ the plan's rule 5 finds nothing in the changed files.
 23 lines, 50 before - `apply` 45 -> 21, `append` 50 -> 10, `thin` 33 -> 13, the steps 7 to 23, `rowsToKeep` 13 and
 `addExtremes` 11), longest line 229 -> 156, comment lines 29 -> 49, any-casts 0 -> 0; all files 16,042 -> 16,114 lines,
 any-casts 41 -> 41. The 72 added lines are the steps' signatures, the doc comments and the wraps.
+
+### SIF-156 Readability F2, F4, F5: the Run status tab reads as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `StatusTab` was 190 of `RunTabs.tsx`'s 553 lines (`femetrics.py`: the file's longest block). One body made its
+8 hook calls - two `useState`, three `useEffect`, a `useRef`, a `useLayoutEffect` and `useCopied` - in among the registered
+tasks' read for a failed run's Load run (review of SIF-137), the Runs window's Continue... (SIF-90), the keyboard's way back
+from the budget form and on to the tab button (SIF-90, SIF-145) and the copy; then the 23 values the drawing reads (39 lines
+with their comments); then one 106-line return: the steering line, the MOCK notice, the calibration, the run at a glance (25
+lines), the error line, the row of Continue... and what stands beside it (17 lines), the budget form, a refusal and the facts
+table (47 lines, 22 rows). 74 of the file's 553 lines ran past 160 columns, 35 of them in `StatusTab` (the file's longest
+426, Export research CSVs; in `StatusTab` 356, the Conditions row). Its single letters: `b` the budget (declared once, read
+39 times), `x` a registered task, `v` a value (`few` and `metric`), `k` a metric's key (five times), `u` its unit, `w` an
+active worker. F3 found nothing to do: the file has no `any` (`femetrics.py`: 0) and `StatusTab` no cast; the file's four
+casts, `as Json[]` on a table's rows (DataSnapshot, three times) and on the folder's files (FilesTabBody), already name the
+project's word and stand outside the package's function.
+
+**Changed** (`frontend/src/panels/RunTabs.tsx` alone). `StatusTab` (80 lines) reads as its steps, in the order its code ran:
+the budget form's state and its reset for another run, as they were; `useRegisteredTasks` (the registered tasks' state,
+whether this run asks for them and the effect that reads them; review of SIF-137), which gives `registered`; the Runs
+window's Continue... effect (SIF-90), as it was; `useContinueFocus` (Continue...'s ref, `closeForm` with its hand-back,
+SIF-90, and the layout effect that moves the keyboard on, SIF-145), which gives `continueRef` and `closeForm`; the copy
+(`useCopied`), the early return and the 23 values, as they were; then a return that draws the tab by its parts - the
+steering line, the MOCK notice and the calibration as they were, `statusHero` (the run at a glance, on the right of the
+same `budget &&`), the error line as it was, `statusActions` (Continue..., why it cannot go, a failed run's next step and
+its Show button, the backend's alternative and Export status), the budget form and the refusal as they were, and
+`statusFacts` (the facts table). Each drawing step is a plain function that returns the element that stood where it is
+called - as a JSX child, or on the right of the same `&&` - and is never drawn as a component, so the tree React keeps is
+the one it kept: no new fragment, no new boundary. The 8 hook calls run in the order they ran, before the early return as
+before, each effect with its dependency list; no memo added or removed (the file's four `memo` stay). The values stay in
+the body, in their order (a step takes only code that stood together); a step takes each value it reads by its own name,
+and its parameters carry the types tsc gives the values passed (41 values: 21 `Json`, the backend's JSON, on both sides,
+and 20 of the type written - among them `RefObject<HTMLButtonElement>`, `Dispatch<SetStateAction<boolean>>` and, for the
+copy, `ReturnType<typeof useCopied>`). The comparison caught one untrue type before the commit: `modeWords`, first written
+`Json`, is `string` (`runMode` reads `MODE_NAME`, a `Record<string, string>`). Comments moved with their code: the run at
+a glance's JSX comment (record 7.360, SIF-117) became `statusHero`'s doc comment, the registered tasks' comment
+`useRegisteredTasks'`; the comments of the form's hand-back and of the keyboard's move stand in `useContinueFocus` above
+their lines. Each new function has a doc comment, and `StatusTab`'s names its steps and says why the order of its hooks
+matters. F4: `b` -> `budget`, `x` -> `task`, `v` -> `value`, `k` -> `key`, `u` -> `unit`, `w` -> `worker`. `c` stays - a
+parameter name inside the `setConfig` prop's type, as Calibration's, not a local - and so do the file's other functions'
+single letters (`r`, `c`, `i`, `t`, `n`, `f`, `e`), as in SIF-147 to SIF-155. F5: 74 -> 7 lines over 160 columns, wrapped
+between attributes, properties, arguments, statements and import names, between a `</td>` and the `<td>` that stood side
+by side, between a tag and the tag or `{...}` after it, before a `?`, `:`, `??`, `&&`, `.filter` or `.join`, inside a
+`${...}` of ten templates (the first feasibility's cost, the next run's words, Budget, Spectre launches, Best design, the
+alternative's tooltip, Saved to disk's tooltip and text, the research export's note, Data tables' count line), right after
+the brace of two JSX `{...}` that hold no operator to break before (Launch accounting's uncertain launches, the executed
+reward's objective weight), and in five JSX texts between two words (the calibration's heading, "Worked out again", the
+reward's spread, the Conditions row's "; robust:" and "; coverage:") - never where a space meets a tag or a `{...}`, which a
+wrap would drop. The 7 left are each one string longer than a wrap can split: the calibration's Proposed Scale header,
+Apply only and Apply calibration tooltips, Show evaluations' and Export status's tooltips, Data tables' Order and Export
+research CSVs' tooltips. The longest line is 291 columns (426 before).
+
+**Checked.** `npx tsc --noEmit -p .` exit 0 (TypeScript 5.9.3). `npx vite build` into a temporary folder: the main bundle
+changes, as moved code does (`index-BGFH6MA3.js`); the CSS and the uPlot and cytoscape chunks are byte for byte SIF-155's
+build's. DOM identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the
+memory guard, WSL 13 GB available and the host 6 GB free): "all 112 checks passed", 56 of 56 compared files identical (66
+written), at its first run - into `out-F2-runtabs/dom`, a folder of its own, since `--compare` also walks every other file
+of the folder it writes (SIF-155's first run); its tabs scene draws Logs, Data tables, Output files and Run status of a
+completed FIXTURE run - in Run status the run at a glance with its tiles, Continue... and Export status, and the facts
+table (`07-tab-status.html`, 1,440 lines). Without a browser (`proof_static.mjs`, SIF-153's script with SIF-151's rule for
+a hook step that returns what its call takes; it, its output and the mutants beside the DOM identity output,
+`out-F2-runtabs/static`): each file compiled in the frontend's own program, 0 diagnostics each; the exported names
+(`StatusTab`, `DataTab`, `DATA_CHOICE`, `LogsTab`, `FilesTab`, `DataChoice`) with the same types, and the same props of
+`StatusTab`; the 722 strings, template pieces, numbers, regular expressions and JSX texts (cleaned as the compiler cleans
+them) the same multiset, and so are the JSX tags (227) and attribute names (227); `StatusTab` with its steps written back
+where they are called - each hook step's statements where its call stands, its `return` matched against what the call
+takes, each drawing step's JSX where it is called - and the old `b` read as `budget`, equals the base body statement by
+statement, in order (28 statements, 3,747 tokens); the file's other 20 top-level statements unchanged and in the same order,
+so the wraps in SteeringCheck, Calibration, DataSnapshot, DataTab, FILE_COLUMNS, FilesTabBody and LogsTabBody change
+nothing; the imports bring the same values (`Dispatch`, `RefObject` and `SetStateAction` are types only); the 8 hook calls
+the same sequence, all before the early return, with the same 4 dependency lists; the value references to imports and
+globals the same multiset (608); `memo` four times in both; each step called once, in `StatusTab` - the hooks as consts of
+its own body, the drawing steps inline and never as components - and the drawing steps call no hook; each value passed to
+a step by its own name, with the type its parameter declares (41). A negative control, the same script on 22 mutated
+copies of the new file (`make_mutants.py`) - two hooks swapped, a dependency added, a caption changed, a value passed under
+another name, a wrap that drops a JSX space, a hook step called on a condition, a `useCallback` added, a hook step's two
+arguments swapped (which tsc accepts), the early return's guard changed, two parts of the tab swapped, a drawing step drawn
+as a component, a drawing step called twice, a renamed parameter read in the wrong place, a space written as `{' '}` (the
+same text, one text node more), the form's reset effect moved, the layout effect made an effect, a hook step returning
+something else, a hook moved after the early return, a CSS class changed, a prop made required, two parts of the row
+swapped, a value moved into a step: each was caught. Browser checks, one lane (WSL 13 to 14 GB, host 6 to 10 GB), on the
+build the DOM run served, the 13 that draw Run status, Data tables, Output files, Logs or a calibration result
+(`request_lifecycle_check` mounts the four tabs from the source, under Vite): `run_control_check` 181,
+`training_tab_check` 139, `run_list_check` 185, `calibration_save_check` 38, `files_tab_check` 43, `looks_check` 83,
+`task_run_check` 39, `save_now_check` 29, `reliability_check` 22, `room_check` 31, `matched_devices_check` 38,
+`request_lifecycle_check` 25 and, in a run of its own, `corner_check_check` 42 passed (895, no flake), each the count of
+its last run in this log. The writers `export_check` and `calibration_check`, which start MOCK runs (they draw the steering
+line and a calibration run's own Run status), were left out while the campaign ran: deferred to the final suite. The
+PDK-name grep of the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `RunTabs.tsx` 553 -> 668 lines, longest block 190 -> 80 (`StatusTab`; its
+steps `useRegisteredTasks`, `useContinueFocus`, `statusHero`, `statusActions` and `statusFacts` are 11, 20, 35, 27 and 69
+lines - the last the flat table of 22 rows; Calibration, 71 lines, is 80 with its wraps), comment lines 139 -> 152,
+any-casts 0 -> 0; all files 16,114 -> 16,229 lines, any-casts 41 -> 41. The 115 added lines are the steps' signatures with
+their typed parameters, their doc comments and returns, and the wraps.

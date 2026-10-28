@@ -94,6 +94,7 @@ def linear_ratio(expression):
     return f1
 
 
+# One Parameters row defining a circuit variable, its legal action range and any explicit leader binding.
 class OptimizationParameter(_Model):
     variable_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
         description='Stable ID of this variable. Used in data tables; it is an identifier, never a learned feature.')
@@ -159,6 +160,7 @@ class OptimizationParameter(_Model):
 
 
 # --------------------------------------------------------------------------- targets
+# One Spec row defining an equation, feasibility limits and reward preferences.
 class PerformanceTarget(_Model):
     metric_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
         description='Name of this spec: the value its equation gives is recorded, scored and shown under this name. It '
@@ -237,6 +239,7 @@ class PerformanceTarget(_Model):
 
 
 # --------------------------------------------------------------------------- measurements
+# One Probe row describing a backend result, Maestro output or size estimate available to spec equations.
 class MeasurementDefinition(_Model):
     measurement_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
         description='Stable ID. Spec equations refer to it. A Maestro output\'s ID is m_ + its output name.')
@@ -276,6 +279,7 @@ class MeasurementDefinition(_Model):
 
 
 # --------------------------------------------------------------------------- circuit
+# Circuit or task selection and the source identity retained in the configuration.
 class CircuitReference(_Model):
     source: Literal['registered_task', 'netlist', 'virtuoso'] = Field(
         description='registered_task: a task provider known to the backend. virtuoso: a native library/cell/view read '
@@ -304,6 +308,7 @@ class CircuitReference(_Model):
 STANDARD_VOCABULARY = 'standard'
 
 
+# Neural architecture and input-feature choices that form the saved model network contract.
 class NetworkConfig(_Model):
     encoder_type: Literal['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps'] = 'graph_transformer'
     hidden_dim: int = Field(32, ge=4, le=1024)
@@ -406,6 +411,7 @@ class NetworkConfig(_Model):
         return value
 
 
+# One metric identity, canonical unit and physical input-normalization reference.
 class SpecRegistryEntry(_Model):
     metric_id: str
     unit: str = Field(description='Canonical unit of the registered metric.')
@@ -445,6 +451,7 @@ class AdvancedRL(_Model):
     simulation_timeout_seconds: float = Field(120.0, gt=0)
 
 
+# Source run, save point and optional external pretraining cost for loading a saved RL model.
 class ModelSource(_Model):
     run_dir: Optional[str] = Field(None, max_length=1000,
         description='Run directory whose checkpoint is loaded (resume / fine_tune / frozen).')
@@ -456,6 +463,7 @@ class ModelSource(_Model):
                     '(recorded as unknown, never as 0).')
 
 
+# Reward-shaping parameters for nominal gating, violations, objective improvement and margin bonuses.
 class RewardConfig(_Model):
     nominal_gate_band: float = Field(0.5, gt=0, lt=1, description='Nominal gate band: strictly between 0 and 1. Every scored design that passes nominal ranks above one that fails nominal under after_nominal.')
     objective_shape: Literal['clipped', 'compressed'] = Field('clipped', description='Clipped stops the objective bonus at one scale; compressed keeps rewarding improvement below 1.')
@@ -465,6 +473,7 @@ class RewardConfig(_Model):
     margin_weight: float = Field(0.0, ge=0, le=1)
 
 
+# Corner-evaluation policy and the ordered corner IDs planned for a run.
 class ConditionsConfig(_Model):
     policy: Literal['off', 'always', 'after_nominal'] = 'off'
     corners: list[Literal['ss_hot_low', 'ff_cold_high', 'fs_nominal', 'sf_nominal']] = Field(default_factory=list)
@@ -502,12 +511,14 @@ def removed_search_method(config) -> str | None:
     return method if method in REMOVED_SEARCH_METHODS else None
 
 
+# Pinned offline source pool and the batch fraction mixed with target-task transitions.
 class RehearsalSettings(_Model):
     pool_manifest: str = Field(min_length=1, max_length=1000)
     pool_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     fraction: float = Field(0.5, gt=0, lt=1)
 
 
+# One Pareto objective's metric, direction and base-view limit.
 class ComparisonObjective(_Model):
     metric: str = Field(min_length=1, max_length=120)
     orientation: Literal['minimize', 'maximize']
@@ -532,6 +543,7 @@ class ArchiveComparison(_Model):
     settings: dict = Field(default_factory=dict, description='Search settings that differ from the named version\'s own '
                                                              '(recorded; for tests and the resource check).')
 
+    # Require every optional comparison file to be paired with its expected checksum.
     @model_validator(mode='after')
     def pinned(self):
         for name in ('initial_designs', 'archive'):
@@ -540,6 +552,7 @@ class ArchiveComparison(_Model):
         return self
 
 
+# Execution mode, shared budgets, lane concurrency, learner settings and source-model choices for one run.
 class RunSettings(_Model):
     @model_validator(mode='before')
     @classmethod
@@ -600,6 +613,7 @@ class RunSettings(_Model):
         description='Explicit opt-in to inherit weights fine-tuned on a previous test task. Default starts every '
                     'test task from the fixed source checkpoint.')
 
+    # Require common designs for archive searches and exactly two objectives for MOBO.
     @model_validator(mode='after')
     def valid_comparison(self):
         if self.optimizer in ('turbo_archive', 'mobo'):
@@ -613,6 +627,7 @@ class RunSettings(_Model):
                              '(turbo_archive, mobo)')
         return self
 
+    # Require rehearsal to use fine-tuning or resume and to leave source and target items in each batch.
     @model_validator(mode='after')
     def valid_rehearsal(self):
         if self.rehearsal is not None:
@@ -625,6 +640,7 @@ class RunSettings(_Model):
 
 
 # --------------------------------------------------------------------------- output
+# Run output location, persistence cadence, retention rules and storage limits.
 class OutputSettings(_Model):
     output_root: Optional[str] = Field(None, max_length=1000,
         description='Backend directory. Empty = <repo_root>/outputs. Must be inside an allowed root and writable.')
@@ -675,6 +691,7 @@ class OutputSettings(_Model):
 RETIRED_RESEARCH_FIELDS = {'experiment_group': UNSPECIFIED, 'test_tasks': []}
 
 
+# Explicit research provenance and comparison labels recorded with a run.
 class ResearchLabels(_Model):
     @model_validator(mode='before')
     @classmethod
@@ -696,12 +713,14 @@ class ResearchLabels(_Model):
         description='e.g. Scratch, Pretrained-Frozen, Pretrained-Fine-tuned, encoder-only transfer.')
 
 
+# Project and task display labels with optional descriptive notes.
 class ProjectInfo(_Model):
     name: str = Field('gator-project', min_length=1, max_length=120)
     task_name: str = Field('task', min_length=1, max_length=80, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]*$')
     notes: str = Field('', max_length=2000)
 
 
+# Versioned task configuration joining circuit selection, editor rows, run settings, outputs and research labels.
 class WorkbenchConfig(_Model):
     schema_version: Literal['gator-workbench-config-v1'] = CONFIG_SCHEMA_VERSION
     project: ProjectInfo = Field(default_factory=ProjectInfo)
@@ -727,6 +746,7 @@ class WorkbenchConfig(_Model):
             return data
 
         def written(text, seen=()):
+            """Inline legacy computed probes recursively and reject expression cycles."""
             for name in [n for n in computed if isinstance(n, str) and _equation_uses(text, n)]:
                 if name in seen:
                     raise ValueError(f'Probe {name} is computed from itself; a cycle of expression probes never ran.')
@@ -762,6 +782,7 @@ SECTION_KEYS = {'parameters': 'variable_id', 'targets': 'metric_id', 'measuremen
 
 
 def canonical_json(value) -> str:
+    """Serialize sorted compact JSON without ASCII escaping or non-finite numbers."""
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
 
 

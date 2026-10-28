@@ -66,6 +66,7 @@ def grid_index(group, value: float):
 
 
 def design_key(groups, values: dict) -> tuple:
+    """Identify a design by the grid index or rounded value of each ordered group."""
     return tuple(grid_index(group, values[group['id']]) for group in groups)
 
 

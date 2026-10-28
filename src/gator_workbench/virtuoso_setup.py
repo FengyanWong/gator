@@ -101,6 +101,7 @@ def check_expression(expression, variables=()) -> list[str]:
 
 
 def outermost_function(expression):
+    """Read a leading function-call name from an expression without evaluating it."""
     match = re.match(r'\s*([A-Za-z_]\w*)\s*\(', expression or '')
     return match.group(1) if match else None
 
@@ -117,6 +118,7 @@ def analysis_of(expression):
 
 
 def suggested_unit(expression):
+    """Suggest an output unit from recognized functions, falling back to dimensionless."""
     outer = outermost_function(expression)
     if outer in UNIT_OF:
         return UNIT_OF[outer]
@@ -155,6 +157,7 @@ def normalize(setup) -> dict:
 
 
 def fingerprint(setup) -> str:
+    """Hash the normalized setup using sorted JSON keys."""
     return hashlib.sha256(json.dumps(normalize(setup), sort_keys=True).encode()).hexdigest()
 
 

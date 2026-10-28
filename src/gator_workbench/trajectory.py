@@ -28,6 +28,7 @@ def _codec():
 
 
 class StateEncoder:
+    """An encoder for unique observation states using shared graph and spec templates with exact reconstruction checks."""
     def __init__(self, static_dir, *, task_id, graph, specs, feature_schema_version, spec_schema_version):
         codec = _codec()
         self.static_dir = Path(static_dir)
@@ -99,11 +100,13 @@ class TrajectoryLoader:
         return self._static[name]
 
     def state_rows(self):
+        """Load and cache archived state rows indexed by their state identifiers."""
         if self._states is None:
             self._states = {row['state_id']: row for row in self.reader.rows('states')}
         return self._states
 
     def observation(self, state_id):
+        """Reconstruct an observation from its archived state identifier."""
         return self._observation(self.state_rows()[state_id])
 
     def _observation(self, row):
@@ -165,6 +168,7 @@ class TrajectoryLoader:
         return rows
 
     def transition_rows(self, *, candidate_ids=None):
+        """Read transitions in commit order and mark whether each archived row is eligible for replay."""
         rows = (self.reader.rows('transitions') if candidate_ids is None
                 else self._selected_rows('transitions', 'candidate_id', candidate_ids))
         rows = sorted(rows, key=lambda r: r['commit_seq'])

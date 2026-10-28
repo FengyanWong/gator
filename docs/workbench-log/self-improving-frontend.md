@@ -6913,3 +6913,92 @@ PDK-name grep of the plan's rule 5 finds nothing in the changed files.
 21, 17, 17, 16, 11, 10, 9, 8 and 7), longest line 440 -> 195, comment lines 43 -> 77, any-casts 0 -> 0; all files 15,767
 -> 15,922 lines, any-casts 41 -> 41. The 155 added lines are the steps' signatures and reads from `m`, `WindowValues`, the
 doc comments and the wraps.
+
+### SIF-154 Readability F2, F4, F5: the circuit layout reads as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `hintedLayout` was 196 of `circuitLayout.ts`'s 241 lines (`femetrics.py`: since SIF-153 the frontend's longest
+top-level block but `App.tsx`'s `Page`, a file another branch is changing). It is a pure function - the graph in, where
+each node stands out - and its one body did all of it in order, with 55 names at its top level (14 of them closures) and
+only `// ---- ... ----` comments between the parts: the rails, each device's kind and the wires indexed five ways; the
+steps from the rails; the heights; the rows; the links, the ties and the walk; the eight barycentre sweeps; the five
+helpers that look for a free place; the control nets, the shelves, supply and ground, what hangs and the margin; and the
+last passes that step nodes off the links. 11 of its lines ran past 160 columns (the longest 228, `hang`'s else branch).
+It declared 99 single-letter names: `n` mostly a net, as an object or an id (23), `d` a device (17), `q` a point or a sort
+argument (12), `a` and `b` (9 each: sort arguments, a link's two ends as ids or as points, `gap`'s two nodes), `w` a wire
+(9), `i` an index (4), `l` a link (4), `s` a sum or the steps from the supply (3), and once each `g` (the steps from
+ground), `j`, `p`, `m`, `e`, `v`, `o`, `r` and `x`. F3 is not this package's part, and the file has no `any`
+(`femetrics.py`: 0); its casts are true: `net.roles as string[]` in `roleOf`, the neighbours' `as const`, and
+`queue.shift()!` in a loop that runs while the queue has items. One constraint shaped the work: `circuit_layout_check.mjs`
+(record 7.375's offline layout equivalence) finds five pieces of this function by their exact text, indentation included,
+to rebuild the code of before record 7.375 - its two changes apart and together - and run it beside the file: the prepared
+neighbours (`across`, with its comment), `const { others, total } = across[id];`, the kept keys (`placedIds`, with its
+comment), `step`'s test line and `for (const id of placedIds) {`; the rebuilt text reads `links`, `rowOf`, `r` and
+`positions` where those pieces stand. A check that would need a change means changed behaviour, so those pieces had to stay
+byte for byte.
+
+**Changed** (`frontend/src/panels/circuitLayout.ts` alone). `hintedLayout` (20 lines) reads as its steps, in the order
+their code ran: the supply and ground nets and the null for a graph without them, as they were; `readCircuit` (the rail set,
+each device's kind, the wires and their five indexes - `Circuit`, a private type, holds them for the steps); `heightsOf`
+(the steps from the rails by `stepsFrom`, the nets' heights, the control nets, the sources and capacitors that stand beside
+the rows, the devices' heights); `rowsOf` (the nodes of the rows, each one's row, the rows - still empty - and the last
+row's number); `linksOf` (the wires between nodes of the rows and the ties of 6; `Links`, a private type); `walkOrder`;
+`sweepRows` (the rows filled in the walk's order, the prepared neighbours, the gap and the eight sweeps; it gives each
+node's x); the positions of the rows' nodes and the middle and height, as they were; `placeControlNets`; `topAndBottom` (the
+shelves, and so where supply and ground stand); `placeRails`; `placeHanging` (`hang`, what hangs, the margin); `untangle`
+(the degrees, the kept keys, `step` and the ten passes). The five helpers that read where the placed nodes stand (`free`,
+`beside`, `clearLink`, `offLinks`, `place`) stand at the module's top level between the sweeps and the steps that use them,
+given `positions` - and `offLinks` and `place` the wires - as their first parameters; `steps` is `stepsFrom`, given the
+circuit; a closure that one step alone used (`isControl`, `railLevel`, `walk`, `gap`, `shelved`, `over`, `hang`, `step`)
+stays inside that step. A step takes what it reads - the circuit, read in its first line (`const { ... } = circuit;`), and
+what earlier steps gave - and returns what it writes; the four that place nodes write into `positions`, the one object
+`hintedLayout` returns, as the code did, and `sweepRows` fills the rows that `rowsOf` gave. No expression changed but for
+its names: the same arithmetic in the same order, and the same writes to `positions` in the same order (its key order is
+part of what the function gives). `circuit_layout_check.mjs`' five pieces stand byte for byte in `sweepRows` (the first
+two, its loops nested as deep as before) and in `untangle` (the other three; `step` is still a closure inside it), with
+the names the rebuilt text reads. Comments moved with their code: the section heads and the comments that opened code
+(the steps from the rails, the shelves, the last passes) became the steps' doc comments, the others stand where they stood,
+and each new function and type has a doc comment; `hintedLayout`'s names its steps. F4: `n` -> `net` (`node` where it is a
+node's id), `d` -> `device`, `q` -> `point`, `w` -> `wire`, `s` and `g` -> `toSupply` and `toGround`, `v` -> `value`, `e`
+-> `end`, `i` -> `index` or `tries`, `i` and `j` -> `first` and `second`, the link's `a` and `b` -> `device` and `net`, the
+tie's -> `device` and `partner`, a link's ends -> `start` and `end` (`untangle` keeps `from` and `to` for their ids), the
+sort arguments -> `first` and `second`, `gap`'s -> `left` and `right`, the walk's `l` -> `link`. 9 single-letter names are
+left, 99 before: `x`, each node's x as in `Point` (twice: `sweepRows` makes it, `hintedLayout` reads it), the pieces' `l`,
+`s`, `r` and `o`, and the sweep's `others.reduce((s, l) => ...)`, which keeps the letters of the piece above it that it
+mirrors; so do the single letters of the file's other functions (`roleOf`'s, `mean`'s, `half`'s and `through`'s). F5: 11
+-> 1 line over 160 columns, wrapped between statements, declarators, arguments and array elements, before a `:` or `&&`
+or after a `=>`; the one left is `step`'s test line, a piece the check finds by its text (185 columns).
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: the main bundle changes, as moved
+code does (`index-DNIGetAa.js`); the CSS and the uPlot and cytoscape chunks are byte for byte SIF-153's build's. DOM
+identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory guard,
+WSL 13 GB available and the host 9 GB free): "all 112 checks passed", 56 of 56 compared files identical (66 written), at
+its first run; 34 of them draw the recorded circuit's picture (6 devices, 8 nets, 17 links) where `hintedLayout` puts
+them, to the last digit. Without a browser - the function is pure, so the old file and the new one were run on the same
+graphs, each transpiled in memory as `circuit_layout_check.mjs` transpiles it (`proof_differential.mjs`, its output
+and its mutants beside the DOM identity output, `out-F2-circuitlayout/static`): 20,180 graphs - the check's 180 fixtures,
+rebuilt, and 20,000 seeded random ones (rails missing, doubled or marked twice; MOS, bipolar and two-terminal devices;
+sources and capacitors by kind or by family; control nets, a MOS capacitor on one, devices with no wires or with bulk ties
+only, lone nets, a wire to a net the graph does not list) - 0 differences: 18,702 laid out (329,664 nodes, each x and y the
+same number by `Object.is`, the keys in the same order), 1,178 null, 300 thrown alike (the same class and message), and
+neither file changed a graph it was given. V8's block coverage of the new file while they ran: every function and block
+ran but 3 ranges, which never ran in the old file either and read the same there but for F4's names - a `?? []` that cannot
+run (a device on the DC path at a net is on the path, both lists written together), the `|| 1` for a link of length 0, and
+the `?? 0` for a node without links that stands on a link. A negative control, 18 mutated copies of the new file - two steps
+swapped, supply and ground placed the other way round, seven sweeps, a gap, an offset, a tie's weight, the walk lightest
+link first, a shelf, the step's width, a net's height, the margin's order, a base no control terminal, the rows' threshold,
+two arguments swapped, the passes before what hangs, the key order of the rows' nodes, a hang's side, the middle: each was
+caught, on 10 to 2,954 of 3,180 graphs. The 227 strings, numbers and template pieces are the same multiset, and the export
+the same declaration. `circuit_layout_check.mjs` on the new file: 4 passed, and its instrumented counts on the 12-stage
+ring (neighbour filters, link weights, key and entry enumerations) equal the base's run, number for number.
+Browser checks, one lane (WSL 12 GB, host 8 GB), on the build the DOM run served, the 7 that draw the circuit picture or
+the graph view or run this file: `model_chooser_check` 145, `looks_check` 83, `graph_view_check` 72,
+`ngspice_window_check` 47, `encoder_models_check` 24, `graph_paint_check` 6, `circuit_layout_check` 4 passed (381, no
+flake), each the count of its last run in this log. The PDK-name grep of the plan's rule 5 finds nothing in the changed
+files.
+
+**Measured** (`femetrics.py`, before -> after): `circuitLayout.ts` 241 -> 361 lines, longest block 196 -> 37 (`untangle`;
+`hintedLayout` itself is 20 lines, and `sweepRows`, `placeHanging`, `linksOf`, `heightsOf`, `readCircuit`, `rowsOf`,
+`walkOrder`, `topAndBottom`, `stepsFrom`, `placeControlNets` and `placeRails` 26, 26, 24, 23, 15, 12, 12, 12, 11, 11 and
+9, the five placing helpers 2 to 7), longest line 228 -> 185, comment lines 42 -> 66, any-casts 0 -> 0; all files 15,922
+-> 16,042 lines, any-casts 41 -> 41. The 120 added lines are the steps' signatures and reads from the circuit, `Circuit`
+and `Links`, the doc comments and the wraps.

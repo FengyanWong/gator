@@ -188,6 +188,22 @@ def _short(value):
 def adjust(config, graph, core, facts, reference):
     """Rows of the parameter editor -> (rows a real run honours, optimized leader ids, leaders, {key: spec}).
     Raises RowError with the reason."""
+    rows, leaders, optimized = _checked_adjustment_rows(config)
+    specs = _checked_parameter_specs(rows, leaders, optimized, facts, core, reference, graph)
+    by_id = {row.variable_id: row for row in rows}
+    adjusted = []
+    for row in rows:
+        leader_id, _ = leaders[row.variable_id]
+        if leader_id in optimized and row.binding_group:     # a follower keeps the ratio and nothing else
+            row = row.model_copy(update=dict(lower=None, upper=None, step=None, scale='linear', value_type='continuous'))
+        elif row.variable_id in optimized:
+            row = _adjust_leader(row, specs, by_id, leaders, reference)
+        adjusted.append(row)
+    return adjusted, optimized, leaders, specs
+
+
+def _checked_adjustment_rows(config):
+    """Copy editor rows and require valid binding leaders with at least one optimized variable."""
     rows = [row.model_copy() for row in config.parameters]
     try:
         leaders = resolve_leaders(rows)
@@ -196,6 +212,11 @@ def adjust(config, graph, core, facts, reference):
     optimized = {row.variable_id for row in rows if row.optimized and not row.binding_group}
     if not optimized:
         raise RowError('Nothing is marked as optimized: the parameter editor needs at least one variable that may change')
+    return rows, leaders, optimized
+
+
+def _checked_parameter_specs(rows, leaders, optimized, facts, core, reference, graph):
+    """Resolve writable form specifications, validate units, and determine each optimized member grid."""
     specs = {}
     for row in rows:
         leader_id, _ = leaders[row.variable_id]
@@ -213,87 +234,100 @@ def adjust(config, graph, core, facts, reference):
         specs[row.instance_path, row.parameter_name] = spec
     for spec in specs.values():                             # a grid can depend on another written value of the instance
         spec['grid'], spec['integer'] = member_grid(spec, facts, reference, list(specs.values()))
-    by_id = {row.variable_id: row for row in rows}
-    adjusted = []
-    for row in rows:
-        leader_id, _ = leaders[row.variable_id]
-        if leader_id in optimized and row.binding_group:     # a follower keeps the ratio and nothing else
-            row = row.model_copy(update=dict(lower=None, upper=None, step=None, scale='linear', value_type='continuous'))
-        elif row.variable_id in optimized:
-            members = [(ratio, specs[by_id[other].instance_path, by_id[other].parameter_name])
-                       for other, (lead, ratio) in leaders.items() if lead == row.variable_id]
-            spec = specs[row.instance_path, row.parameter_name]
-            if len({m['unit'] for _, m in members}) != 1:
-                raise RowError(f'{row.variable_id}: the values bound together hold different kinds of quantity')
-            choice = [m for _, m in members if m['kind'] == 'choice']
-            if choice and (len(choice) != len(members) or any(r != 1.0 for r, _ in members)
-                           or len({tuple(m['choices']) for m in choice}) != 1):
-                raise RowError(f'{row.variable_id}: a choice list can only be bound to the same choice list, ratio 1')
-            integer = any(m['integer'] for _, m in members)
-            if row.lower is None or row.upper is None:
-                raise RowError(f'{row.variable_id}: a lower and an upper bound are required')
-            lower, upper = units.to_canonical(row.lower, row.unit), units.to_canonical(row.upper, row.unit)
-            step = None if row.step is None else units.scale_to_canonical(row.step, row.unit)
-            if row.scale == 'log' and lower <= 0:
-                raise RowError(f'{row.variable_id}: a logarithmic range needs a positive lower bound')
-            # The PDK's own declared range, when it states one: the property form refuses a value outside it, so a row
-            # that leaves it would die on its first clamped candidate - after a real evaluation was paid for.
-            for ratio, member in members:
-                allowed = member.get('range')
-                if not allowed or not ratio:
-                    continue
-                low, high = min(lower * ratio, upper * ratio), max(lower * ratio, upper * ratio)
-                if low < allowed[0] - 1e-18 or high > allowed[1] + 1e-18:
-                    scale = units.scale_to_canonical(1.0, row.unit) or 1.0        # canonical -> the row's own unit
-                    raise RowError(f'{row.variable_id}: the property form of {member["device"]} accepts '
-                                   f'{allowed[0] / scale:g} to {allowed[1] / scale:g} {row.unit} for {member["cdf"]}; '
-                                   f'the row asks for {row.lower:g} to {row.upper:g} {row.unit}'
-                                   + (f' (ratio {ratio:g})' if ratio != 1 else ''))
-            try:
-                step = _group_step([(ratio, m['grid']) for ratio, m in members], step)
-            except RowError as exc:
-                raise RowError(f'{row.variable_id}: {exc}')
-            if integer and step is not None and step != int(step):
-                raise RowError(f'{row.variable_id}: a count moves in whole steps')
-            if choice:                                                    # snapped INWARD onto the choices
-                inside = [a for a in sorted(cdf_number(c) for c in spec['choices'])
-                          if lower - 1e-12 * abs(lower) <= a <= upper + 1e-12 * abs(upper)]
-                if len(inside) < 2:
-                    raise RowError(f'{row.variable_id}: the range holds fewer than two of the choices {spec["choices"]}')
-                lower, upper = inside[0], inside[-1]
-            elif step is not None:                                       # snapped INWARD onto the grid
-                lower = math.ceil(lower / step - 1e-7) * step
-                upper = math.floor(upper / step + 1e-7) * step
-            current = spec['value']
-            if not lower < upper or not lower - 1e-15 * abs(lower) - 1e-30 <= current <= upper + 1e-15 * abs(upper) + 1e-30:
-                raise RowError(f'{row.variable_id}: the range {lower:g} .. {upper:g} {spec["unit"]} (after snapping onto the '
-                               f'grid) must contain the present value {current:g}')
-            if step is not None and not _multiple((current - lower), step):
-                raise RowError(f'{row.variable_id}: the present value {current:g} is not on the grid {lower:g} + k x {step:g}')
-            if integer and lower < 1:
-                raise RowError(f'{row.variable_id}: a count starts at 1')
-            for ratio, member in members:                  # a finger count must keep the finger width on the grid
-                params = _instance_params(reference, member['instance'])
-                if member['cdf'] == 'fingers' and {'w', 'fw'} <= set(params) and step:
-                    total = cdf_number(params['w'])
-                    counts = [(lower + k * step) * ratio for k in range(int(round((upper - lower) / step)) + 1)]
-                    off = [round(c) for c in counts if total is None or not _multiple(total / c, LENGTH_GRID)]
-                    if off:
-                        fits = [round(c) for c in counts if round(c) not in off]
-                        raise RowError(f'{row.variable_id}: with its total width of {total:g} m, {member["device"]} would get a '
-                                       f'finger width off the 5 nm grid at {", ".join(map(str, off[:6]))} fingers; the counts of '
-                                       f'the range that fit: {", ".join(map(str, fits)) or "none"}')
-            if choice:
-                allowed = [cdf_number(c) for c in spec['choices']]
-                grid_points = [lower + k * step for k in range(int(round((upper - lower) / step)) + 1)]
-                if any(not any(math.isclose(p, a, rel_tol=1e-9, abs_tol=1e-18) for a in allowed) for p in grid_points):
-                    raise RowError(f'{row.variable_id}: every value of the range must be one of the choices {spec["choices"]}')
-            scale = units.scale_to_canonical(1.0, row.unit)
-            row = row.model_copy(update=dict(
-                lower=_short(lower / scale), upper=_short(upper / scale), step=None if step is None else _short(step / scale),
-                initial_value=None, value_type='integer' if integer else 'continuous'))
-        adjusted.append(row)
-    return adjusted, optimized, leaders, specs
+    return specs
+
+
+def _adjust_leader(row, specs, by_id, leaders, reference):
+    """Validate an optimized binding group and return its leader with legal bounds, step, and value type."""
+    members = [(ratio, specs[by_id[other].instance_path, by_id[other].parameter_name])
+               for other, (lead, ratio) in leaders.items() if lead == row.variable_id]
+    spec = specs[row.instance_path, row.parameter_name]
+    if len({m['unit'] for _, m in members}) != 1:
+        raise RowError(f'{row.variable_id}: the values bound together hold different kinds of quantity')
+    choice = [m for _, m in members if m['kind'] == 'choice']
+    if choice and (len(choice) != len(members) or any(r != 1.0 for r, _ in members)
+                   or len({tuple(m['choices']) for m in choice}) != 1):
+        raise RowError(f'{row.variable_id}: a choice list can only be bound to the same choice list, ratio 1')
+    integer = any(m['integer'] for _, m in members)
+    if row.lower is None or row.upper is None:
+        raise RowError(f'{row.variable_id}: a lower and an upper bound are required')
+    lower, upper = units.to_canonical(row.lower, row.unit), units.to_canonical(row.upper, row.unit)
+    step = None if row.step is None else units.scale_to_canonical(row.step, row.unit)
+    if row.scale == 'log' and lower <= 0:
+        raise RowError(f'{row.variable_id}: a logarithmic range needs a positive lower bound')
+    _check_declared_ranges(members, lower, upper, row)
+    step, lower, upper = _snap_leader_range(members, step, row, integer, choice, spec, lower, upper)
+    _check_finger_widths(members, reference, step, lower, upper, row)
+    if choice:
+        allowed = [cdf_number(c) for c in spec['choices']]
+        grid_points = [lower + k * step for k in range(int(round((upper - lower) / step)) + 1)]
+        if any(not any(math.isclose(p, a, rel_tol=1e-9, abs_tol=1e-18) for a in allowed) for p in grid_points):
+            raise RowError(f'{row.variable_id}: every value of the range must be one of the choices {spec["choices"]}')
+    scale = units.scale_to_canonical(1.0, row.unit)
+    row = row.model_copy(update=dict(
+        lower=_short(lower / scale), upper=_short(upper / scale), step=None if step is None else _short(step / scale),
+        initial_value=None, value_type='integer' if integer else 'continuous'))
+    return row
+
+
+def _check_declared_ranges(members, lower, upper, row):
+    """Reject a bound group whose requested range exceeds any member property form range."""
+    # The PDK's own declared range, when it states one: the property form refuses a value outside it, so a row
+    # that leaves it would die on its first clamped candidate - after a real evaluation was paid for.
+    for ratio, member in members:
+        allowed = member.get('range')
+        if not allowed or not ratio:
+            continue
+        low, high = min(lower * ratio, upper * ratio), max(lower * ratio, upper * ratio)
+        if low < allowed[0] - 1e-18 or high > allowed[1] + 1e-18:
+            scale = units.scale_to_canonical(1.0, row.unit) or 1.0        # canonical -> the row's own unit
+            raise RowError(f'{row.variable_id}: the property form of {member["device"]} accepts '
+                           f'{allowed[0] / scale:g} to {allowed[1] / scale:g} {row.unit} for {member["cdf"]}; '
+                           f'the row asks for {row.lower:g} to {row.upper:g} {row.unit}'
+                           + (f' (ratio {ratio:g})' if ratio != 1 else ''))
+
+
+def _snap_leader_range(members, step, row, integer, choice, spec, lower, upper):
+    """Resolve a shared step, snap bounds inward, and check the present value and count constraints."""
+    try:
+        step = _group_step([(ratio, m['grid']) for ratio, m in members], step)
+    except RowError as exc:
+        raise RowError(f'{row.variable_id}: {exc}')
+    if integer and step is not None and step != int(step):
+        raise RowError(f'{row.variable_id}: a count moves in whole steps')
+    if choice:                                                    # snapped INWARD onto the choices
+        inside = [a for a in sorted(cdf_number(c) for c in spec['choices'])
+                  if lower - 1e-12 * abs(lower) <= a <= upper + 1e-12 * abs(upper)]
+        if len(inside) < 2:
+            raise RowError(f'{row.variable_id}: the range holds fewer than two of the choices {spec["choices"]}')
+        lower, upper = inside[0], inside[-1]
+    elif step is not None:                                       # snapped INWARD onto the grid
+        lower = math.ceil(lower / step - 1e-7) * step
+        upper = math.floor(upper / step + 1e-7) * step
+    current = spec['value']
+    if not lower < upper or not lower - 1e-15 * abs(lower) - 1e-30 <= current <= upper + 1e-15 * abs(upper) + 1e-30:
+        raise RowError(f'{row.variable_id}: the range {lower:g} .. {upper:g} {spec["unit"]} (after snapping onto the '
+                       f'grid) must contain the present value {current:g}')
+    if step is not None and not _multiple((current - lower), step):
+        raise RowError(f'{row.variable_id}: the present value {current:g} is not on the grid {lower:g} + k x {step:g}')
+    if integer and lower < 1:
+        raise RowError(f'{row.variable_id}: a count starts at 1')
+    return step, lower, upper
+
+
+def _check_finger_widths(members, reference, step, lower, upper, row):
+    """Reject finger-count ranges that would place the recorded total width off the verified length grid."""
+    for ratio, member in members:                  # a finger count must keep the finger width on the grid
+        params = _instance_params(reference, member['instance'])
+        if member['cdf'] == 'fingers' and {'w', 'fw'} <= set(params) and step:
+            total = cdf_number(params['w'])
+            counts = [(lower + k * step) * ratio for k in range(int(round((upper - lower) / step)) + 1)]
+            off = [round(c) for c in counts if total is None or not _multiple(total / c, LENGTH_GRID)]
+            if off:
+                fits = [round(c) for c in counts if round(c) not in off]
+                raise RowError(f'{row.variable_id}: with its total width of {total:g} m, {member["device"]} would get a '
+                               f'finger width off the 5 nm grid at {", ".join(map(str, off[:6]))} fingers; the counts of '
+                               f'the range that fit: {", ".join(map(str, fits)) or "none"}')
 
 
 # ------------------------------------------------------------------------------------------ the rules file

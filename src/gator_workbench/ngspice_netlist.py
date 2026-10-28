@@ -220,40 +220,15 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                     if len(ports) != len(child.ports):
                         raise NetlistError(f'line {head.line}: {name} connects {len(ports)} nodes, subcircuit {sub} has {len(child.ports)} ports')
                     subckt_uses[sub] += 1
-                    overrides = {}
-                    for key, token in named.items():
-                        value = resolve(_value_token(token), env, f'{identifier}.{key}')
-                        if value.valid:
-                            overrides[key] = value.value
+                    overrides = _subcircuit_overrides(named, resolve, env, identifier)
                     actual = [net(p, path, port_map) for p in ports]
                     expand(child, _Env(child.params, env, overrides), identifier,
                            {p.lower(): n for p, n in zip(child.ports, actual)}, (*ancestry, sub))
                     continue
-                # an instance of a subcircuit the deck does not define: a PDK cell (its kind from device_kinds)
-                kind = kinds_given.get(sub, 'unknown')
-                expected = external_subckts.get(sub)
-                if expected is not None and expected != len(ports):
-                    diagnostics.append(Diagnostic('port_count', f'{identifier}: {len(ports)} nodes, but {sub} has {expected} ports',
-                                                  span, 'warning'))
-                roles = ROLES.get(kind)
-                if roles is not None and len(ports) != len(roles):
-                    diagnostics.append(Diagnostic('port_count', f'{identifier}: {sub} is declared {kind} ({len(roles)} terminals) '
-                                                  f'but connects {len(ports)} nodes', span, 'warning'))
-                    roles, kind = None, 'unknown'
-                if kind == 'unknown':
-                    unknown_models.append(sub)
-                    diagnostics.append(Diagnostic('unknown_device', f'{identifier}: subcircuit {sub} is not defined in the '
-                                                  'netlist and its kind is not declared', span, 'warning'))
-                terminals = tuple(f'port_{i}' for i in range(len(ports))) if roles is None else \
-                    tuple(('d', 'g', 's', 'b') if len(roles) == 4 else ('p', 'n'))
-                roles = roles or ('unknown',) * len(ports)
+                kind, terminals, roles = _external_subcircuit_terminals(
+                    kinds_given, sub, external_subckts, ports, diagnostics, identifier, span, unknown_models)
                 graph.devices.append(Device(identifier, kind, sub, terminals, span))
-                values = {}
-                for key, token in named.items():
-                    canonical = MOS_PARAMETERS.get(key, key) if kind in ('nmos', 'pmos') else key
-                    values[canonical] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}', numeric=False), key))
-                    if canonical in ('w', 'l', 'm', 'nf') and values[canonical].valid and kind in ('nmos', 'pmos'):
-                        sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token), current.name)
+                values = _external_subcircuit_parameters(named, kind, resolve, env, identifier, sizables, current)
                 graph.parameters[identifier] = values
                 for ordinal, (terminal, role, target) in enumerate(zip(terminals, roles, [net(p, path, port_map) for p in ports])):
                     graph.connections.append(Connection(identifier, target, terminal, ordinal, role))
@@ -264,88 +239,12 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                 continue
             if letter not in 'RCLMDQJZVIEGFHBS':
                 raise NetlistError(f'line {head.line}: {name!r} is not an element the reader knows')
-            # nodes and model: the first `count` positional tokens are nodes; the next one, if any, the model
-            model = None
-            if letter == 'M':
-                count = 4
-                if len(positional) < 5:
-                    raise NetlistError(f'line {head.line}: {name} needs four nodes and a model')
-                model = positional[4].text.lower()
-            elif letter == 'Q':
-                rest = positional[3:]
-                if len(rest) >= 2 and rest[1].text.lower() in model_types and rest[0].text.lower() not in model_types:
-                    count, model = 4, rest[1].text.lower()
-                elif rest:
-                    count, model = 3, rest[0].text.lower()
-                else:
-                    raise NetlistError(f'line {head.line}: {name} needs three nodes and a model')
-            else:
-                count = NODE_COUNT[letter]
-                if letter in ('D', 'J', 'Z', 'S'):
-                    if len(positional) <= count:
-                        raise NetlistError(f'line {head.line}: {name} needs {count} nodes and a model')
-                    model = positional[count].text.lower()
-                elif letter in ELEMENT_KINDS and len(positional) > count and number(positional[count].text) is None \
-                        and not positional[count].text.startswith(('{', "'", '"')) \
-                        and positional[count].text.lower() not in ('dc', 'ac', 'pulse', 'sin', 'pwl', 'exp', 'sffm', 'am', 'trnoise', 'trrandom') \
-                        and (positional[count].text.lower() in model_types or letter in 'RCL' and len(positional) == count + 1 and 'r' not in named and 'c' not in named and 'l' not in named):
-                    model = positional[count].text.lower()
-            if len(positional) < count:
-                raise NetlistError(f'line {head.line}: {name} needs {count} nodes')
-            kind, roles, _ = kind_of(letter, model, [t.text.lower() for t in positional])
-            if kind == 'unknown' and letter in ('M', 'D', 'Q', 'J', 'Z', 'S') and model:
-                unknown_models.append(model)
-                diagnostics.append(Diagnostic('unknown_device', f'{identifier}: model {model} has no known kind '
-                                              + ('' if model in model_types else '(no .model line for it was found)'), span, 'warning'))
-            elif kind == 'unknown' and letter in 'EGFHB':
-                diagnostics.append(Diagnostic('unknown_device', f'{identifier}: a {letter} source is shown as unknown', span, 'warning'))
-            node_tokens = positional[:count]
-            if letter in ('M', 'D', 'Q', 'J', 'Z', 'S') or roles is None:
-                terminals = ('d', 'g', 's', 'b') if letter == 'M' else tuple(f'port_{i}' for i in range(count))
-                roles = roles or ('unknown',) * count
-                if len(roles) != count:
-                    roles = ('unknown',) * count
-            else:
-                terminals = ('p', 'n')
+            model, count = _element_nodes_and_model(letter, positional, model_types, head, name, named)
+            kind, roles, node_tokens, terminals = _element_terminals(
+                letter, model, positional, count, kind_of, unknown_models, diagnostics, identifier, span, model_types)
             graph.devices.append(Device(identifier, kind, model or letter.lower(), terminals, span))
-            values = {}
-            # the sized value: MOS W/L/M/NF, or the positional value of R C L V I (`R1 a b 1k`, `V1 a 0 dc 1.8`)
-            if letter == 'M':
-                for key, token in named.items():
-                    canonical = MOS_PARAMETERS.get(key, key)
-                    values[canonical] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}',
-                                                                           numeric=key in MOS_PARAMETERS), key))
-                    if canonical in MOS_PARAMETERS.values() and values[canonical].valid and kind != 'unknown':
-                        sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token), current.name)
-            elif letter in ELEMENT_KINDS:
-                canonical = VALUE_PARAMETER[letter]
-                value_token = None
-                tail = positional[count + (1 if model else 0):]
-                if letter in ('V', 'I'):
-                    lowered = [t.text.lower() for t in tail]
-                    if 'dc' in lowered and lowered.index('dc') + 1 < len(tail):
-                        value_token = tail[lowered.index('dc') + 1]
-                    elif tail and tail[0].text.lower() not in ('ac', 'pulse', 'sin', 'pwl', 'exp', 'sffm', 'am', 'trnoise', 'trrandom'):
-                        value_token = tail[0]
-                    if 'dc' in named:
-                        value_token = _value_token(named['dc'])
-                else:
-                    own = {'R': 'r', 'C': 'c', 'L': 'l'}[letter]
-                    if own in named:
-                        value_token = _value_token(named[own])
-                    elif tail:
-                        value_token = tail[0]
-                if value_token is not None:
-                    values[canonical] = ParameterValue(*_with_name(resolve(value_token, env, f'{identifier}.{canonical}'), canonical))
-                    if values[canonical].valid and kind != 'unknown':
-                        sizables[(identifier, canonical)] = Sizable(identifier, canonical, canonical, value_token, current.name)
-                for key, token in named.items():
-                    if key == {'R': 'r', 'C': 'c', 'L': 'l', 'V': 'dc', 'I': 'dc'}[letter]:
-                        continue
-                    values[key] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}', numeric=False), key))
-            else:
-                for key, token in named.items():
-                    values[key] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}', numeric=False), key))
+            values = _element_parameters(letter, named, resolve, env, identifier, kind, sizables, current,
+                                         positional, count, model)
             graph.parameters[identifier] = values
             for ordinal, (terminal, role, token) in enumerate(zip(terminals, roles, node_tokens)):
                 graph.connections.append(Connection(identifier, net(token.text, path, port_map), terminal, ordinal, role))
@@ -497,6 +396,146 @@ def _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_typ
             return kinds_given.get(model, 'unknown'), None, None
         return kinds_given.get(model, 'unknown'), None, NODE_COUNT.get(letter)
     return net, resolve, kind_of
+
+
+def _subcircuit_overrides(named, resolve, env, identifier):
+    """Resolve valid parameter overrides for an instantiated subcircuit."""
+    overrides = {}
+    for key, token in named.items():
+        value = resolve(_value_token(token), env, f'{identifier}.{key}')
+        if value.valid:
+            overrides[key] = value.value
+    return overrides
+
+
+def _external_subcircuit_terminals(kinds_given, sub, external_subckts, ports, diagnostics, identifier, span, unknown_models):
+    """Classify an external subcircuit's terminals and record missing-kind or port-count diagnostics."""
+    # an instance of a subcircuit the deck does not define: a PDK cell (its kind from device_kinds)
+    kind = kinds_given.get(sub, 'unknown')
+    expected = external_subckts.get(sub)
+    if expected is not None and expected != len(ports):
+        diagnostics.append(Diagnostic('port_count', f'{identifier}: {len(ports)} nodes, but {sub} has {expected} ports',
+                                      span, 'warning'))
+    roles = ROLES.get(kind)
+    if roles is not None and len(ports) != len(roles):
+        diagnostics.append(Diagnostic('port_count', f'{identifier}: {sub} is declared {kind} ({len(roles)} terminals) '
+                                      f'but connects {len(ports)} nodes', span, 'warning'))
+        roles, kind = None, 'unknown'
+    if kind == 'unknown':
+        unknown_models.append(sub)
+        diagnostics.append(Diagnostic('unknown_device', f'{identifier}: subcircuit {sub} is not defined in the '
+                                      'netlist and its kind is not declared', span, 'warning'))
+    terminals = tuple(f'port_{i}' for i in range(len(ports))) if roles is None else \
+        tuple(('d', 'g', 's', 'b') if len(roles) == 4 else ('p', 'n'))
+    roles = roles or ('unknown',) * len(ports)
+    return kind, terminals, roles
+
+
+def _external_subcircuit_parameters(named, kind, resolve, env, identifier, sizables, current):
+    """Resolve external-subcircuit parameters and register valid declared MOS sizes."""
+    values = {}
+    for key, token in named.items():
+        canonical = MOS_PARAMETERS.get(key, key) if kind in ('nmos', 'pmos') else key
+        values[canonical] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}', numeric=False), key))
+        if canonical in ('w', 'l', 'm', 'nf') and values[canonical].valid and kind in ('nmos', 'pmos'):
+            sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token), current.name)
+    return values
+
+
+def _element_nodes_and_model(letter, positional, model_types, head, name, named):
+    """Determine an element's node count and model while enforcing its required positional tokens."""
+    # nodes and model: the first `count` positional tokens are nodes; the next one, if any, the model
+    model = None
+    if letter == 'M':
+        count = 4
+        if len(positional) < 5:
+            raise NetlistError(f'line {head.line}: {name} needs four nodes and a model')
+        model = positional[4].text.lower()
+    elif letter == 'Q':
+        rest = positional[3:]
+        if len(rest) >= 2 and rest[1].text.lower() in model_types and rest[0].text.lower() not in model_types:
+            count, model = 4, rest[1].text.lower()
+        elif rest:
+            count, model = 3, rest[0].text.lower()
+        else:
+            raise NetlistError(f'line {head.line}: {name} needs three nodes and a model')
+    else:
+        count = NODE_COUNT[letter]
+        if letter in ('D', 'J', 'Z', 'S'):
+            if len(positional) <= count:
+                raise NetlistError(f'line {head.line}: {name} needs {count} nodes and a model')
+            model = positional[count].text.lower()
+        elif letter in ELEMENT_KINDS and len(positional) > count and number(positional[count].text) is None \
+                and not positional[count].text.startswith(('{', "'", '"')) \
+                and positional[count].text.lower() not in ('dc', 'ac', 'pulse', 'sin', 'pwl', 'exp', 'sffm', 'am', 'trnoise', 'trrandom') \
+                and (positional[count].text.lower() in model_types or letter in 'RCL' and len(positional) == count + 1 and 'r' not in named and 'c' not in named and 'l' not in named):
+            model = positional[count].text.lower()
+    if len(positional) < count:
+        raise NetlistError(f'line {head.line}: {name} needs {count} nodes')
+    return model, count
+
+
+def _element_terminals(letter, model, positional, count, kind_of, unknown_models, diagnostics, identifier, span, model_types):
+    """Classify an element's terminals and record diagnostics for unknown device kinds."""
+    kind, roles, _ = kind_of(letter, model, [t.text.lower() for t in positional])
+    if kind == 'unknown' and letter in ('M', 'D', 'Q', 'J', 'Z', 'S') and model:
+        unknown_models.append(model)
+        diagnostics.append(Diagnostic('unknown_device', f'{identifier}: model {model} has no known kind '
+                                      + ('' if model in model_types else '(no .model line for it was found)'), span, 'warning'))
+    elif kind == 'unknown' and letter in 'EGFHB':
+        diagnostics.append(Diagnostic('unknown_device', f'{identifier}: a {letter} source is shown as unknown', span, 'warning'))
+    node_tokens = positional[:count]
+    if letter in ('M', 'D', 'Q', 'J', 'Z', 'S') or roles is None:
+        terminals = ('d', 'g', 's', 'b') if letter == 'M' else tuple(f'port_{i}' for i in range(count))
+        roles = roles or ('unknown',) * count
+        if len(roles) != count:
+            roles = ('unknown',) * count
+    else:
+        terminals = ('p', 'n')
+    return kind, roles, node_tokens, terminals
+
+
+def _element_parameters(letter, named, resolve, env, identifier, kind, sizables, current, positional, count, model):
+    """Resolve an element's parameter values and register the values eligible for sizing."""
+    values = {}
+    # the sized value: MOS W/L/M/NF, or the positional value of R C L V I (`R1 a b 1k`, `V1 a 0 dc 1.8`)
+    if letter == 'M':
+        for key, token in named.items():
+            canonical = MOS_PARAMETERS.get(key, key)
+            values[canonical] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}',
+                                                                   numeric=key in MOS_PARAMETERS), key))
+            if canonical in MOS_PARAMETERS.values() and values[canonical].valid and kind != 'unknown':
+                sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token), current.name)
+    elif letter in ELEMENT_KINDS:
+        canonical = VALUE_PARAMETER[letter]
+        value_token = None
+        tail = positional[count + (1 if model else 0):]
+        if letter in ('V', 'I'):
+            lowered = [t.text.lower() for t in tail]
+            if 'dc' in lowered and lowered.index('dc') + 1 < len(tail):
+                value_token = tail[lowered.index('dc') + 1]
+            elif tail and tail[0].text.lower() not in ('ac', 'pulse', 'sin', 'pwl', 'exp', 'sffm', 'am', 'trnoise', 'trrandom'):
+                value_token = tail[0]
+            if 'dc' in named:
+                value_token = _value_token(named['dc'])
+        else:
+            own = {'R': 'r', 'C': 'c', 'L': 'l'}[letter]
+            if own in named:
+                value_token = _value_token(named[own])
+            elif tail:
+                value_token = tail[0]
+        if value_token is not None:
+            values[canonical] = ParameterValue(*_with_name(resolve(value_token, env, f'{identifier}.{canonical}'), canonical))
+            if values[canonical].valid and kind != 'unknown':
+                sizables[(identifier, canonical)] = Sizable(identifier, canonical, canonical, value_token, current.name)
+        for key, token in named.items():
+            if key == {'R': 'r', 'C': 'c', 'L': 'l', 'V': 'dc', 'I': 'dc'}[letter]:
+                continue
+            values[key] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}', numeric=False), key))
+    else:
+        for key, token in named.items():
+            values[key] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}', numeric=False), key))
+    return values
 
 
 def _finish_circuit_graph(graph, nets, diagnostics, subckt_uses, sizables, unknown_models):

@@ -7790,3 +7790,67 @@ files, 16,664 lines, comment lines 3,390, files with a header comment 91, any-ca
 (`cssmetrics.py`, beside the static proof): lines 578 -> 654, longest block (the header's) 98 -> 102 lines, comments 110
 -> 155, blocks naming a file that draws what they style 8 -> 43 of 44 (the 44th, SIF-34's, styles every grid table),
 blocks with a "Styles:" line 0 -> 44, lines over 160 columns 19 -> 19 (rules), longest line 271 -> 271.
+
+### Group F closing check: the whole browser suite at both ends (2026-10-28; SIF-146 to SIF-162 of docs/plan-readability.md)
+
+**Ran.** Group F of docs/plan-readability.md came as 17 packages, SIF-146 to SIF-162 (`eb28023` to `b6c15f7`), each
+proved on its own - `tsc`, a build, the DOM identity check byte for byte against the base's recorded answers, the
+browser checks of its screens when the memory guard allowed them, else left to this check - and each reviewed by a
+second agent, which found nothing to fix in any of the 17. Here the part left over: the whole browser suite
+(`run_checks.sh --lanes 2 --retry-failed`, behind the memory guard) on the group's base `2767950` (SIF-145, in a
+temporary worktree with its own build) and on its end `b6c15f7`. Its files are in
+`artifacts/local/reviews/groupF-2026-10-28/`.
+
+**Found.** The base: 58 scripts, 3,054 checks passed, none failed, none flaky (648 s, `suite-base.txt`). The end: 57 of
+the 58 scripts passed with the base's counts, check for check; `training_tab_check` passed 138 of its 139 twice - in the
+batch it failed "a chart redraws at most once a second while results arrive" (3 draws of one chart within a second, 2
+allowed), alone in its retry SIF-126's "...a run at rest is read at once" ("its status held back: false") - 3,053 checks
+(890 s, `suite-final.txt`). Both are races of the check with the page's own timing, at both ends alike: run side by
+side, the two builds at once for eight rounds (`ab-training-tab.txt`), each failed 3 of 8, the same two checks (the
+redraw count twice and the status once, at each end). The code under them is the same at both ends: the Training tab's
+read hooks keep their order and their dependency lists (SIF-149), the line over a chart is written by the same code
+under longer local names (SIF-152), the status poll (page/shownRun.ts, App.tsx) was not touched, and the run window's
+pick (page/runWindowActions.ts) lost two `any`s only (SIF-161), which the build drops. SIF-163 mends the two checks.
+
+**Measured** (`femetrics.py`; `metrics-before-2767950.txt` -> `metrics-after-b6c15f7.txt`): 98 files; lines 14,923 ->
+16,664; comment lines 3,017 -> 3,390; files with a header comment 49 -> 91 (the 7 without: vite.config.ts and six of the
+files left for after the Agent window's removal on codex/latest - App.tsx, Agent.tsx, BottomPanel.tsx, Left.tsx,
+VirtuosoWindow.tsx, popupWindow.ts); any-casts 47 -> 16 (SIF-161 says why each of the 16 stays; 7 are in those files).
+The longest block of each part the group split: ConnectionButton 398 -> 78 lines, useRlModel 332 -> 57, TrainingTabBody
+320 -> 73, TaskSave 243 -> 85, RunListButtonBody 226 -> 96, CircuitGraphView 188 -> 71, TaskListButton 173 -> 97; the
+longest block in TrainingChart.tsx is now 60 lines (TrainingChart was 214), in RlModelWindow.tsx 51 (209), in
+circuitLayout.ts 37 (hintedLayout 196), in RunTabs.tsx 80 (StatusTab 190); the two classes, counted whole, grew as their
+methods became named steps (TrainingStore 192 -> 226, Prep 144 -> 181, Prep's longest method 32 -> 15). Still long,
+outside what the group split: App.tsx's Page (246) and VirtuosoWindow (175), both left for after the Agent window's
+removal, ModelChooser's SavedModels (129), RunControl's RunButtons (126) and launch.ts's useLauncher (111).
+
+### SIF-163 The Training tab check counts the draws while results arrive, and waits for the status it checks (2026-10-28; from group F's closing check)
+
+**Found.** `training_tab_check` failed one of its 139 checks in 3 of 8 runs at each end of group F (above), as it had
+now and then since SIF-125 (SIF-125, SIF-143, SIF-155 and SIF-159 met it, the last with a diagnostic copy of the check
+in `out-F2-prep/static/flake/diag`). Two of its checks race the page's own timing:
+- "a chart redraws at most once a second while results arrive" counted every draw since the page opened, not those since
+  the results began to arrive. When a frame just before them showed a newest row whose line over the chart takes two
+  lines (a result that timed out), the line kept that height (SIF-120), the plot under it came out 17 px lower (119 ->
+  102 px) and was drawn again 4 to 14 ms later; the first live frame, timed a second after that frame's timer but drawn
+  sooner after its own, came a little under a second after it: 3 draws of one chart within a second (the diagnostic's
+  draw times: +32, +38 and +1013 ms, the live phase from +469 ms).
+- SIF-126's "...a run at rest is read at once, as before: its history asked for while its status is on its way" looked
+  once for the status request, the moment the history read came in. The page asks for the status a moment after the read
+  starts - its status poll is an effect of the page, which React runs after the tab's - and now and then the look came
+  between the two ("read: true, its status held back: false").
+
+**Changed** (`frontend/scripts/training_tab_check.mjs` only; no page file). The redraw count takes the draws from the
+count taken just before the results begin to arrive, as the check's words say; its limit stays 2 per chart in a second.
+The status request is waited for (up to 2 s; it stays held back) instead of looked for once. A comment at each names
+this record.
+
+**Checked.** Side by side again, the mended check in both worktrees (copied into the base's), six rounds behind the
+memory guard (WSL 12-14 GB available, the host 8-10 GB free; `ab-training-tab-fixed.txt`): 12 of 12 runs passed all 139,
+the base's six and the end's six; the redraw count since the results began was at most 1 per chart in a second in ten
+runs and 2 in two, and every rest run's read found its status held back. What this check does not catch, before this
+change or after: a build of the base with the frame limit taken out (`FRAME_MS = 0` in TrainingTab.tsx) passes it - the
+old check twice, the mended once (`mutant-frame0*`), at most 2 draws per chart in a second either way - as this
+fixture's live run never brings more than two answers within a second, so a page that draws at every answer stays within
+the limit. A fixture that brings several answers within a second would make the frame limit's check bite: left for a
+later record. The PDK-name grep finds nothing in the changed files.

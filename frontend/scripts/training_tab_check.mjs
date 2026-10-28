@@ -323,9 +323,12 @@ await runChecks(browser, async () => {
   RUNS.live.final = 192; RUNS.live.tail = 3;
   check('a live run is read again within about 2 s and its new results counted', await until(`/195 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60));
   await sleep(2600);
-  const draws = await evaluate('window.__draws');
+  // Only the draws since the results began to arrive (branch record SIF-163). Counted from the page's first draw, a frame
+  // just before them whose newest row's line wrapped onto a second line - the plot 17 px lower and drawn again at once - made
+  // a third draw within a second of the first live frame now and then, in the base build as well (SIF-125 and SIF-143 met it).
+  const draws = (await evaluate('window.__draws')).slice(drawsBefore);
   const perSecond = Math.max(0, ...draws.map(d => draws.filter(e => e.plot === d.plot && e.at >= d.at && e.at < d.at + 1000).length));
-  check('a chart redraws at most once a second while results arrive', perSecond <= 2, `${draws.length - drawsBefore} redraws since, at most ${perSecond} per chart in a second`);
+  check('a chart redraws at most once a second while results arrive', perSecond <= 2, `${draws.length} redraws since, at most ${perSecond} per chart in a second`);
   const quiet = await evaluate('window.__draws.length');
   await sleep(4500);                                                        // two more reads that bring nothing new
   check('nothing new, no redraw', (await evaluate('window.__draws.length')) === quiet, `${(await evaluate('window.__draws.length')) - quiet} redraws`);
@@ -1130,7 +1133,10 @@ await runChecks(browser, async () => {
   const readsAtRest = reads.length;
   const pickedRest = await pickRun(RUNS.failed);
   const restRead = await waitFor(() => reads.slice(readsAtRest).some(r => r.run === 'failed' && r.flushes === 0), 3000);
-  const restStatusHeld = asked('/api/runs/status', RUNS.failed.dir) > 0;
+  // Its status is asked a moment after the read starts (the page's status poll is the parent's effect, run after the tab's):
+  // waited for, and still held back - sampled once as the read came in, it missed it now and then, in the base build as well
+  // (branch record SIF-163).
+  const restStatusHeld = await waitFor(() => asked('/api/runs/status', RUNS.failed.dir) > 0, 2000);
   release('/api/runs/status');
   check('...a run at rest is read at once, as before: its history asked for while its status is on its way (SIF-126)', pickedRest && restRead && restStatusHeld,
     `read: ${restRead}, its status held back: ${restStatusHeld}`);

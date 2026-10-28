@@ -7551,3 +7551,90 @@ before - `evaluations` 22 -> 9, `updates` 32 -> 12, the steps 4 to 15: `markRest
 176 -> 155, comment lines 59 -> 72, any-casts 1 -> 1 (the comment's words); all files 16,501 -> 16,543 lines, comment
 lines 3,363 -> 3,376, any-casts 41 -> 41. The 42 added lines are the steps' signatures, their doc comments and the
 wraps.
+
+### SIF-160 Readability F3, F4, F5: the editors' one-letter names spelled out (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `Editors.tsx` was 1,142 lines: `stepWords` (what an Undo or Redo changed, in words), one component,
+`EditorsView`, with 15 `useState` and 16 effects, and its `memo` (`femetrics.py` counts the file's longest block as
+`stepWords`' 22 lines: the component's signature closes its braces on its second line). The file declared 193
+single-letter names - parameters, variables, destructured names and a caught error - and a letter stood for different
+things a few lines apart: `c` a column 27 times, but the configuration in the six `setConfig` updates and in
+`setConfig`'s own type; `i` an issue 12 times, a row's place 16 times, a row's ID twice, a probe chip's place, the line
+a paste is on; `r` a row 27 times; `s` a table 10 times, the ticks, a storage, a selection entry, a cell's trimmed text;
+`f` a field, the Find texts, a chosen file; `n` a converted value, a parsed number, a count, a name, an issue's place;
+`k` a section or a row's ID; `v` a column or a value; `w` a row as it was before an Undo or Redo step, or a word of
+Find; `o` the open ties, the changes summary's state, a list's choice; and `a`, `b`, `d`, `e` (an expected unit), `j`,
+`l`, `m`, `p`, `t`, `u`. 62 lines ran past 160 columns (the longest 365, the Matched devices button). F3: the file's one
+`any` was Import JSON's caught error, `catch (e: any)`, whose message the line reads.
+
+**Changed** (`frontend/src/panels/Editors.tsx` alone; no statement, hook, effect dependency, JSX element, message, class
+or attribute moved, added or removed). F4: 167 single-letter names spelled out where they are declared and used, inside
+their functions: `c` -> `column` (26; `copyOut` names the pressed cell's column `cellColumn`, as its block's callbacks
+read `column`); `r` -> `row` (23), `member` (the rows of a tied group, `devicesOf`, 2), `follower` (a leader's folded
+rows) and `candidate` (the row a Where finds, beside the `row` the same line declares); `i` -> `index` (13, a row's
+place and a probe chip's), `issue` (12), `rowIndex` (3, in `fillDown` and `copyOut`, which hold the pressed cell's
+`index`), `rowId` (2), `target` (a row Fill down writes) and `down` (a pasted line); `s` -> `section` (10), `ticks` (3,
+`setSelected`'s updates), `storage` (2), `entry`, `text` and `trimmed`; `f` -> `texts` (4, `setFind`'s updates), `field`
+(3), `chosen` (2, the chosen file) and `candidate`; `k` -> `section` (7, the sections an import replaces) and `id`; `n`
+-> `place` (3, an issue's place in its list, beside the row's `index`), `parsed` (2), `converted`, `count` and `name`;
+`v` -> `value` (4), `column` (3) and `candidate`; `w` -> `wasRow` (3: the row as it was before the Undo or Redo step -
+the plan's `savedRow` would say saved in the task, which these rows are not) and `word`; `o` -> `ties` (2), `open` and
+`choice`; `a, b` -> `first, second` (3 each); `d` -> `entry` (2, an import diff's); `j` -> `across` (2); `l` -> `leader`
+(2); `m` -> `probe` (2; the plan's `model` does not fit here: the `m` of this file is a Probe); `t` -> `spec` (2) and
+`text`; `u` -> `unsavedRows` (2); `p` -> `confirmed` (the import Apply writes); `e` -> `expected` (the unit
+`expectedUnit` gives, not an event). In `onTablePaste` the first column's place, `column`, is `firstColumn`, so the
+column a value lands in reads `column`. The local objects of `remove` that list the rows going, `{ r, i }`, are `{ row,
+index }`, with their five reads (`({ row })`, `({ row, index })`, `({ index })` twice, `going[0]?.index`); they never
+leave `remove`. What stays: `e` for an event or the caught error (16), `c` for the configuration in the six `setConfig`
+updates and in `setConfig`'s type (8, as SIF-148 to SIF-159 left it), and `_` (2). No new name takes the place of
+another that the same callback reads: the tie button's update reads `open`, so its updater's parameter is `ties`. F3:
+`catch (e: any)` -> `catch (e)`, `unknown` under the frontend's `strict` (TypeScript allows a catch clause no other
+annotation than `any` or `unknown`), and the line reads `(e as Error).message`, with a comment saying why that is true:
+whatever the `try` throws is an Error - the parser's SyntaxError, the three refusals above it, the DOMException of a
+file that cannot be read, `api.diff`'s ApiError, a TypeError (a failed fetch among them). F5: 62 -> 4 lines over 160
+columns, wrapped between statements, declarators, attributes, array elements and arguments, before a `?`, `:`, `&&`, `+`
+or `.method`, inside a `${...}`, and in two JSX texts between two words (the empty Parameters table's line, the
+zero-floor hint) - never where a space meets a tag or a `{...}`; a JSX child that moved to the next line (the toolbar's
+and the import error's icons, Matched devices..., a probe chip's code, the tie toggle's count, a shared mark's level,
+the zero-floor hint's paragraph and button words, the import's deleted rows, the header cells) has only white space with
+a line break before it, which the compiler drops. The 4 left each hold one string longer than a wrap can split: the
+Scale's guidance (312 columns), the Show circuit tooltip (165), Export JSON's (161) and Matched devices' (250).
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: the CSS and the uPlot and
+cytoscape chunks are byte for byte the base build's (SIF-159's, `index-wmRmQGK8.js`); the main bundle
+(`index-B18ikkku.js`, 26 bytes longer) differs from the base's only in `remove`'s eight property names (`r:` -> `row:`,
+`i:` -> `index:`, `.i` -> `.index`), at six places - the minifier gives every other renamed local the short name it gave
+the old one, so the rest of what the page runs is the base's code, byte for byte. DOM identity (`--replay` the recorded
+answers, `--build` this build, `--compare` the base's reference; behind the memory guard, WSL 13 GB available and the
+host 8 GB free): "all 112 checks passed", 56 of 56 compared files identical (66 written), at its second run, into
+`out-F4-editors/dom`, a folder of its own (`--compare` walks every file of the folder it writes). Its first run differed
+in one file, `fresh/requests.txt`: while the page opened it validated one configuration the recorded answers never held
+(answered 404: 9 lines in the open step where the reference has 7, the request and its "NOT RECORDED" line), and every
+drawn file of that scene and of the others was identical; the two runs' 66 files are the same but that one. Not this
+change: the bytes that differ run only in Delete selected, which no scene presses; App validates the configuration 0.5 s
+after its key changes (`useRequest`, `delay: 500`), so a configuration the page passes through while it opens is
+validated too when an answer comes that much later - a race with the replayed answers' timing. Without a browser
+(`proof_tokens.mjs`, its outputs and the mutants in `out-F4-editors/static`): each file compiled in the frontend's
+program, 0 diagnostics each; the two token streams IDENTICAL, 16,214 tokens in order, with comments, white space and
+types set aside, JSX text cleaned as the compiler cleans it, and each of the 650 function-local bindings numbered as the
+file declares it, every use by the declaration the type checker resolves it to (in the old file `remove`'s property
+names `r`, `i` read as `row`, `index`); the 1,121 strings, template pieces, numbers, regular expressions and JSX texts
+the same multiset; the one export, `Editors`, the same; 168 bindings renamed (the 167 letters and `firstColumn`). A
+negative control, 10 mutated copies of the new file (`make_mutants.py`): the proof calls DIFFERENT each of the 9 that
+change behaviour - 8 of which pass tsc: an updater parameter named after the value it reads, a callback parameter that
+shadows the row it compares with, a wrap that drops a JSX space, a sort's two sides swapped, a message a character
+shorter, `remove`'s property read by another name, two effects in the other order, Fill down writing the row it reads
+from (the ninth, a paste that finds its column by the line, also fails tsc: an unused parameter) - and IDENTICAL the one
+that changes only a type. Browser checks, one lane (WSL 12 GB, host 7 GB), on the build the DOM run served, the 17 that
+drive the editors: `virtuoso_source_check` 123, `testbench_probes_check` 43, `task_rows_check` 57,
+`spec_equations_check` 88, `model_chooser_check` 145, `typing_check` 62, `unsaved_rows_check` 28, `sheet_check` 63,
+`find_fill_copy_check` 50, `project_help_check` 62, `blocking_issues_check` 70, `editor_columns_check` 45, `looks_check`
+83, `room_check` 31, `formula_bar_check` 21, `matched_devices_check` 38, `edit_state_check` 28 passed (1,037 at the
+first run, no flake), each the count of its last run in this log; four of them (`find_fill_copy_check`,
+`spec_equations_check`, `typing_check`, `virtuoso_source_check`) press Delete selected, the code whose bytes changed.
+The PDK-name grep of the plan's rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `Editors.tsx` 1,142 -> 1,242 lines, longest block 22 -> 23 (`stepWords`,
+one wrap), longest line 365 -> 312, comment lines 260 -> 262 (why the cast is true), any-casts 1 -> 0; all files 16,543
+-> 16,643 lines, comment lines 3,376 -> 3,378, any-casts 41 -> 40. The 100 added lines are the wraps and the cast's two
+comment lines; single-letter names 193 -> 26, lines over 160 columns 62 -> 4.

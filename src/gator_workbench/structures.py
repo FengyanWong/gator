@@ -120,6 +120,16 @@ def recognize(graph) -> list:
             seen.add(key)
             structures.append(Structure(kind, tuple(devices), text))
 
+    seeds = _find_seed_pairs(mos, order, diode, rails, on_net, kinds, add)
+
+    _follow_matched_branches(seeds, order, mos, diode, rails, add)
+
+    _add_bias_mirrors(structures, mos, diode, add)
+    return structures
+
+
+def _find_seed_pairs(mos, order, diode, rails, on_net, kinds, add):
+    """Identify differential and cross-coupled pairs and record their tail sources."""
     # Seeds: differential and cross-coupled pairs (same type and model, one source, two gates, two drains).
     seeds = []
     seed_groups = _seed_groups(mos)
@@ -147,7 +157,11 @@ def recognize(graph) -> list:
                 if t in mos:
                     add('tail_source', (t,), f'{t} is the tail current source of the pair {a} / {b}.')
             seeds.append(((a, b), (pa['drain'], pb['drain'])))
+    return seeds
 
+
+def _follow_matched_branches(seeds, order, mos, diode, rails, add):
+    """Extend each matched pair through its cascodes and loads in circuit order."""
     # Spread along the two branches of every matched pair.
     matched = {tuple(s[0]) for s in seeds}
     # A cascode or a load of a branch pair has its source or its drain on the two branches, so only the transistors that
@@ -165,40 +179,48 @@ def recognize(graph) -> list:
         visited.add((left, right))
         for c in touching.get(left, ()):
             kc, mc, pc = mos[c]
-            for d in touching.get(right, ()):
-                if d == c or c in pair or d in pair:
-                    continue
-                kd, md, pd = mos[d]
-                if (kc, mc, pc['gate']) != (kd, md, pd['gate']):
-                    continue
-                if pc['source'] == left and pd['source'] == right:              # above the branches: cascodes
-                    found = (c, d)
-                    if found not in matched:
-                        matched.add(found)
-                        add('cascode_pair', found, f'{c} and {d} are matched cascodes on {_both(pair)} '
-                                                   f'(shared gate {pc["gate"]}).')
-                        work.append((found, (pc['drain'], pd['drain'])))
-                elif pc['drain'] == left and pd['drain'] == right:              # on the branches: loads
-                    found = (c, d)
-                    if found in matched:
-                        continue
-                    matched.add(found)
-                    if pc['source'] == pd['source']:
-                        reference = next((x for x in found if x in diode), None)
-                        if reference is not None:
-                            other = d if reference == c else c
-                            add('active_load', (reference, other), f'{reference} (diode-connected) and {other} are the '
-                                                                   f'current-mirror load of {_both(pair)}.')
-                        else:
-                            add('load_pair', found, f'{c} and {d} are matched loads of {_both(pair)} '
-                                                    f'(shared gate {pc["gate"]}).')
-                        if pc['source'] not in rails:
-                            work.append((found, (pc['source'], pd['source'])))
-                    else:
-                        add('cascode_pair', found, f'{c} and {d} are matched cascodes of the loads of {_both(pair)} '
-                                                   f'(shared gate {pc["gate"]}).')
-                        work.append((found, (pc['source'], pd['source'])))
+            _match_branch_partners(pair, left, right, c, kc, mc, pc, touching, mos, matched, add, work, diode, rails)
 
+
+def _match_branch_partners(pair, left, right, c, kc, mc, pc, touching, mos, matched, add, work, diode, rails):
+    """Record the matched cascodes or loads that continue the current pair's right branch."""
+    for d in touching.get(right, ()):
+        if d == c or c in pair or d in pair:
+            continue
+        kd, md, pd = mos[d]
+        if (kc, mc, pc['gate']) != (kd, md, pd['gate']):
+            continue
+        if pc['source'] == left and pd['source'] == right:              # above the branches: cascodes
+            found = (c, d)
+            if found not in matched:
+                matched.add(found)
+                add('cascode_pair', found, f'{c} and {d} are matched cascodes on {_both(pair)} '
+                                           f'(shared gate {pc["gate"]}).')
+                work.append((found, (pc['drain'], pd['drain'])))
+        elif pc['drain'] == left and pd['drain'] == right:              # on the branches: loads
+            found = (c, d)
+            if found in matched:
+                continue
+            matched.add(found)
+            if pc['source'] == pd['source']:
+                reference = next((x for x in found if x in diode), None)
+                if reference is not None:
+                    other = d if reference == c else c
+                    add('active_load', (reference, other), f'{reference} (diode-connected) and {other} are the '
+                                                           f'current-mirror load of {_both(pair)}.')
+                else:
+                    add('load_pair', found, f'{c} and {d} are matched loads of {_both(pair)} '
+                                            f'(shared gate {pc["gate"]}).')
+                if pc['source'] not in rails:
+                    work.append((found, (pc['source'], pd['source'])))
+            else:
+                add('cascode_pair', found, f'{c} and {d} are matched cascodes of the loads of {_both(pair)} '
+                                           f'(shared gate {pc["gate"]}).')
+                work.append((found, (pc['source'], pd['source'])))
+
+
+def _add_bias_mirrors(structures, mos, diode, add):
+    """Add current mirrors that are not already represented by a matched load."""
     # Current mirrors: one gate, one source, a diode-connected reference. One that already is a load is not listed twice.
     loads = {frozenset(s.devices) for s in structures if s.kind == 'active_load'}
     groups: dict = {}
@@ -213,7 +235,6 @@ def recognize(graph) -> list:
             continue
         add('current_mirror', (reference, *outputs), f'{reference} (diode-connected) mirrors its current into '
                                                      f'{", ".join(outputs)}.')
-    return structures
 
 
 # ------------------------------------------------------------------------------ ties for the Parameters rows

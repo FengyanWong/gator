@@ -1,16 +1,17 @@
 // The bottom tab strip's Runs... button and the Runs window it opens (record 7.38): every run under the output folder,
 // with folders, relationships, and each run's Details and actions.
-import { Fragment, memo, MouseEvent, MutableRefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { Dispatch, Fragment, memo, MouseEvent, MutableRefObject, SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { styled, usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { RUNS_WINDOW } from '../contract';
 import { api, Json } from '../api';
 import { tasksShared } from '../shared';
-import { bytes, clock, count, durationTenths as span, folderName, plural, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, sig, stamp, stopWords } from '../format';
+import { bytes, clock, count, durationTenths as span, folderName, plural, RUN_STATE_CLASS as STATE_CSS, runTask as taskOf, sig, stamp,
+  stopWords } from '../format';
 import { CONTINUE_STATES, isLive } from '../runState';
-import { FolderMoveBar, Folders, useFolders } from './Folders';
+import { FolderMoveBar, Folders, FolderView, useFolders } from './Folders';
 import { Icon } from './Icons';
-import { TableHead, useTableView } from './TableView';
+import { TableHead, TableView, useTableView } from './TableView';
 import { childrenOf, historyOf, startedFrom } from '../lineage';
 import { OPEN_RUNS, openTasksAt, RunsAt } from '../openAt';
 import { MODE_NAME, runDesign, runMode } from './rlModelText';
@@ -26,7 +27,8 @@ const SAVED_STATE: Record<string, string> = { full_state: 'full state', weights_
  *  the table, with the user's 549 runs, 1259 px in its 1234. */
 const breakAt = (text: string) => text.split(/(?<=[-_.])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 /** A date never breaks at its hyphens (branch record SIF-27): in a narrow column "2026-10-20 13:09:11" goes date over time, not "2026-10-" over "20". */
-const keepDates = (text: string) => text.split(/(\d{4}-\d\d-\d\d)/).map((part, i) => <Fragment key={i}>{i % 2 ? <span className="run-date">{part}</span> : part}</Fragment>);
+const keepDates = (text: string) => text.split(/(\d{4}-\d\d-\d\d)/)
+  .map((part, i) => <Fragment key={i}>{i % 2 ? <span className="run-date">{part}</span> : part}</Fragment>);
 /** A run's row in the run window, once it is drawn. */
 const rowIn = (win: Window, dir: string) => [...win.document.querySelectorAll<HTMLTableRowElement>('table.run-table tbody > tr')].find(tr => tr.title === dir);
 
@@ -65,14 +67,17 @@ const rowIn = (win: Window, dir: string) => [...win.document.querySelectorAll<HT
 // `state`: what the page's own status poll says now - the list row keeps the state of its last read ("starting").
 // The run shown, left of Runs...: its start, task, Mode (as the RL model window names it), seed and state, set apart by "·"
 // as the page's other lines are (branch record SIF-6: "2026-10-16 16:32:51 | mscr_vco_lin_c | scratch seed0 | completed").
-const label = (r: Json, state?: string | null) => `${stamp(r.created_utc) ?? 'unknown time'} · ${taskOf(r)} · ${runMode(r)}, seed ${r.seed} · ${state ?? r.state ?? 'not started'}${r.mock ? ' · MOCK' : ''}`;
+const label = (r: Json, state?: string | null) =>
+  `${stamp(r.created_utc) ?? 'unknown time'} · ${taskOf(r)} · ${runMode(r)}, seed ${r.seed} · ${state ?? r.state ?? 'not started'}${r.mock ? ' · MOCK' : ''}`;
 const RESUME: Record<string, string> = { full_state: 'yes', weights_only: 'model only', none: 'no' };
 
 /** The "Finished" cell. A run at rest has the end of its last segment; a run that is working has none; a worker that
  *  died wrote none, so the last sign of life is what is known. */
 function finished(r: Json): { text: string; css?: string; title?: string } {
   if (isLive(r)) return { text: 'still running', css: 'ok' };
-  if (r.ended_utc) return r.state === 'paused' ? { text: `${stamp(r.ended_utc)} (paused)`, title: 'Paused, not finished: this is when the pause was complete. The run can continue.' } : { text: stamp(r.ended_utc)! };
+  if (r.ended_utc) return r.state === 'paused'
+    ? { text: `${stamp(r.ended_utc)} (paused)`, title: 'Paused, not finished: this is when the pause was complete. The run can continue.' }
+    : { text: stamp(r.ended_utc)! };
   if (r.state === 'interrupted' && r.last_seen_utc) return { text: `last seen ${stamp(r.last_seen_utc)}`, css: 'warn',
     title: 'The worker process went away without a clean end, so no finish time was written. This is its last sign of life.' };
   return { text: '-' };
@@ -87,20 +92,31 @@ type Column = { key: string; title: string; help: string; numeric?: boolean; val
 const COLUMNS: Column[] = [
   // "Created", as its help and the Details say (branch record SIF-143: "Started" stood over the creation time, beside a "not started")
   { key: 'started', title: 'Created', help: 'When the run was created (local time of this computer).', value: r => r.created_utc ?? null },
-  { key: 'finished', title: 'Finished', help: 'When the run came to rest: completed, stopped, failed or paused. A run that is working has no finish time yet.', value: r => (isLive(r) ? null : r.ended_utc ?? r.last_seen_utc ?? null) },
-  { key: 'duration', numeric: true, title: 'Duration', help: 'How long the run was actually working. The time it sat paused is not counted; "Details" shows it.', value: r => r.active_seconds ?? null },
-  { key: 'state', title: 'State', help: 'How the run stands, and under it why it stopped; "no status file" under "not started": the run folder holds no status.json, so its state is not known.', value: r => r.state ?? '' },
+  { key: 'finished', title: 'Finished', help: 'When the run came to rest: completed, stopped, failed or paused. A run that is working has no finish time yet.',
+    value: r => (isLive(r) ? null : r.ended_utc ?? r.last_seen_utc ?? null) },
+  { key: 'duration', numeric: true, title: 'Duration',
+    help: 'How long the run was actually working. The time it sat paused is not counted; "Details" shows it.',
+    value: r => r.active_seconds ?? null },
+  { key: 'state', title: 'State', help: 'How the run stands, and under it why it stopped; "no status file" under "not started": the run folder holds no status.json, so its state is not known.',
+    value: r => r.state ?? '' },
   { key: 'task', title: 'Task', help: 'The task (circuit and its targets) the run optimizes.', value: r => taskOf(r) },
-  { key: 'mode', title: 'Mode', help: 'New model = from random weights; Fine-tune and Evaluate only = from a saved model; Baseline, Calibration and Offline training by their names. Under it, the design of the network the run trains or evaluates (GraphGPS, RGCN, ...).', value: r => `${runMode(r)} ${runDesign(r)}` },
+  { key: 'mode', title: 'Mode', help: 'New model = from random weights; Fine-tune and Evaluate only = from a saved model; Baseline, Calibration and Offline training by their names. Under it, the design of the network the run trains or evaluates (GraphGPS, RGCN, ...).',
+    value: r => `${runMode(r)} ${runDesign(r)}` },
   { key: 'from', title: 'Started from', help: 'Where the run\'s model came from: "template GT" = a new model made from an encoder\'s template; "ota7t (2) @ 420" = the saved model it loaded and the save point (its evaluations), a link to that run; "offline: 22 runs" = a model trained offline on recorded runs; "-" = a baseline or a calibration, which loads none.',
     value: (r, byDir) => startedFrom(r, byDir).text },
-  { key: 'model', title: 'Saved model', help: 'The name of the RL model this run saves; every model under the output folder has one of its own, so a name already given gets a number. Empty for a run that saves none (a baseline, LLM only).', value: r => r.model_label ?? null },
+  { key: 'model', title: 'Saved model', help: 'The name of the RL model this run saves; every model under the output folder has one of its own, so a name already given gets a number. Empty for a run that saves none (a baseline, LLM only).',
+    value: r => r.model_label ?? null },
   { key: 'seed', numeric: true, title: 'Seed', help: 'The random seed of the run.', value: r => r.seed ?? null },
-  { key: 'evaluations', numeric: true, title: 'Evaluations', help: 'Candidate designs simulated so far, of the budget the run was given.', value: r => r.evaluations ?? null },
-  { key: 'feasible', numeric: true, title: 'First feasible', help: 'How many evaluations had been spent when the first design met every target. "none" = no design has met them.', value: r => r.first_feasible_eval_count ?? null },
+  { key: 'evaluations', numeric: true, title: 'Evaluations', help: 'Candidate designs simulated so far, of the budget the run was given.',
+    value: r => r.evaluations ?? null },
+  { key: 'feasible', numeric: true, title: 'First feasible',
+    help: 'How many evaluations had been spent when the first design met every target. "none" = no design has met them.',
+    value: r => r.first_feasible_eval_count ?? null },
   { key: 'experiment', title: 'Experiment', help: 'The experiment folder the run belongs to.', value: r => r.experiment ?? '' },
-  { key: 'data', title: 'Data', help: 'MOCK = the built-in synthetic backend, not a circuit result. real = Virtuoso / Spectre simulations.', value: r => (r.mock ? 'mock' : 'real') },
-  { key: 'resume', title: 'Can continue', help: 'Whether the saved state allows this run to be continued: yes (full state), model only (usable for Fine-tune and Evaluate only - also a full save point written by an older version of the optimizer code, which only that version can continue), no - also when the run folder no longer holds its save point (a copy made without them, or deleted ones).', value: r => r.resumability ?? '' },
+  { key: 'data', title: 'Data', help: 'MOCK = the built-in synthetic backend, not a circuit result. real = Virtuoso / Spectre simulations.',
+    value: r => (r.mock ? 'mock' : 'real') },
+  { key: 'resume', title: 'Can continue', help: 'Whether the saved state allows this run to be continued: yes (full state), model only (usable for Fine-tune and Evaluate only - also a full save point written by an older version of the optimizer code, which only that version can continue), no - also when the run folder no longer holds its save point (a copy made without them, or deleted ones).',
+    value: r => r.resumability ?? '' },
 ];
 
 /** Where this run's model came from and what came of it (record 7.264). From the run list's own fields (lineage.ts): a
@@ -122,7 +138,8 @@ function Relationships({ row, info, runs, byDir, tasks, from, onFocus }: { row: 
     ? plural(s.evaluations, 'evaluation') : 'evaluations unknown'}${s?.model_label ? ` · ${s.model_label}` : ''}`;
   return (<table className="grid small run-relations"><tbody>
     <tr><td>Task</td><td>{row.task_key ? <button className="item-link" onClick={() => openTasksAt({ task_key: row.task_key, from })}
-        title="Open the Tasks window at this task.">{task && typeof task.name === 'string' && task.name !== row.task_key.replace(/^[^:]+:/, '') ? `${task.name} (${row.task_key})` : row.task_key}</button> : taskOf(row)}
+        title="Open the Tasks window at this task.">{task && typeof task.name === 'string' && task.name !== row.task_key.replace(/^[^:]+:/, '')
+          ? `${task.name} (${row.task_key})` : row.task_key}</button> : taskOf(row)}
       {row.task_definition_hash && <span className="hint"> · definition {String(row.task_definition_hash).slice(0, 12)}</span>}
       {task?.revision != null && <span className="hint"> · revision {task.revision} now</span>}
       {savedSince && <span className="warn"> · saved again since this run ({stamp(task.saved_utc)})</span>}
@@ -130,17 +147,21 @@ function Relationships({ row, info, runs, byDir, tasks, from, onFocus }: { row: 
     <tr><td>Started from</td><td>{row.run_kind === 'offline_pretraining'
         ? <>trained offline on {row.pretraining_sources ?? sources.length} recorded runs
             {sources.length > 0 && <details className="more"><summary>the recorded runs</summary><ul className="steps-list">{sources.map((s: Json) =>
-              <li key={s.run_dir}>{runLink(s.run_dir, `${s.task ?? '?'} · ${s.evaluations != null ? count(s.evaluations) : '?'} evaluations · ${folderName(s.run_dir)}`)}</li>)}</ul></details>}</>
+              <li key={s.run_dir}>{runLink(s.run_dir,
+                `${s.task ?? '?'} · ${s.evaluations != null ? count(s.evaluations) : '?'} evaluations · ${folderName(s.run_dir)}`)}</li>)}</ul></details>}</>
         : origin.parent ? <>{runLink(origin.parent, origin.text)}{row.parent?.checkpoint_id
-            && <span className="hint">{` (${row.parent.relation === 'frozen' ? 'evaluated' : 'fine-tuned'} from its save point ${row.parent.checkpoint_id})`}</span>}</>
+            && <span className="hint">{
+              ` (${row.parent.relation === 'frozen' ? 'evaluated' : 'fine-tuned'} from its save point ${row.parent.checkpoint_id})`}</span>}</>
         : origin.text === '-' ? <span className="hint">no model: {row.run_kind === 'calibration' ? 'a calibration' : 'a baseline simulation'} loads none</span>
         : <>{origin.text} <span className="hint">(a new model)</span></>}</td></tr>
-    <tr><td>Saved model</td><td>{row.model_label ? <>{row.model_label}{info && <span className="hint"> · latest save point {info.save_point ?? 'none'}</span>}</>
+    <tr><td>Saved model</td><td>{row.model_label
+      ? <>{row.model_label}{info && <span className="hint"> · latest save point {info.save_point ?? 'none'}</span>}</>
       : <span className="hint">none</span>}</td></tr>
     <tr><td>Runs that started from its model</td><td>{children.length ? children.map((c, i) => <Fragment key={c.run_dir}>{i > 0 && ', '}
       {runLink(c.run_dir, `${stamp(c.created_utc) ?? folderName(c.run_dir)} ${runMode(c)}${c.model_label ? ` (${c.model_label})` : ''}`)}</Fragment>)
       : <span className="hint">none under this output folder</span>}</td></tr>
-    <tr><td>History</td><td><details className="more run-history"><summary>{behind ? `${behind} model${behind > 1 ? 's' : ''} behind this run, oldest first` : 'no saved model behind this run'}</summary>
+    <tr><td>History</td><td><details className="more run-history"><summary>{behind ? `${behind} model${behind > 1 ? 's' : ''} behind this run, oldest first`
+      : 'no saved model behind this run'}</summary>
       <ol className="steps-list"><li className={history.root.missing ? 'warn' : 'hint'}>{history.root.text}</li>
         {history.steps.map(s => <li key={s.run_dir}>{s.run_dir === row.run_dir ? <b>this run</b> : runLink(s.run_dir, stepText(s.row))}
           {s.checkpoint_id && <span className="hint"> - loaded the one above at its save point {s.checkpoint_id}</span>}</li>)}</ol></details></td></tr>
@@ -156,24 +177,35 @@ export function loadBlocked(row: Json, tasks: Map<string, Json>): string | null 
 }
 
 /** Everything else about one run. `row` is its line of the list; `info` is /api/runs/status, read when the details open. */
-function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { row: Json; info: Json; error?: string; onCopy: (text: string) => void; copied: boolean;
-  relations: JSX.Element; actions?: JSX.Element | null }) {
+function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { row: Json; info: Json; error?: string; onCopy: (text: string) => void;
+  copied: boolean; relations: JSX.Element; actions?: JSX.Element | null }) {
   const b = info?.budget, best = info?.best_design, first = info?.first_feasible, summary = info?.summary, source = info?.manifest?.source_model;
   const facts: [string, string | null | undefined][] = [
     ['Run id', row.run_id], ['Registered task', row.task_key], ['Task id', row.task_id], ['Experiment', row.experiment],
-    ['Created', stamp(row.created_utc)], ['Worker began', stamp(row.started_utc)], ['Came to rest', stamp(row.ended_utc)], ['Last sign of life', row.ended_utc ? null : stamp(row.last_seen_utc)],
+    ['Created', stamp(row.created_utc)], ['Worker began', stamp(row.started_utc)], ['Came to rest', stamp(row.ended_utc)],
+    ['Last sign of life', row.ended_utc ? null : stamp(row.last_seen_utc)],
     ['Worked for', span(row.active_seconds)], ['Paused between segments', row.paused_seconds ? span(row.paused_seconds) : null],
-    ['Summed simulator job time', summary?.time?.sum_job_runtime_seconds != null ? `${span(summary.time.sum_job_runtime_seconds)} (parallel jobs added up: not elapsed time)` : null],
-    ['Stop reason', row.stop_reason ? `${stopWords(row.stop_reason)} (${row.stop_reason})` : null], ['Error', row.error],   // words, the key beside them (SIF-16)
+    ['Summed simulator job time', summary?.time?.sum_job_runtime_seconds != null
+      ? `${span(summary.time.sum_job_runtime_seconds)} (parallel jobs added up: not elapsed time)` : null],
+    ['Stop reason', row.stop_reason ? `${stopWords(row.stop_reason)} (${row.stop_reason})` : null],   // words, the key beside them (SIF-16)
+    ['Error', row.error],
     // "used", as Run status, the Continue... form and the Abort question count the budget (SIF-76: "charged")
     // the counts as Run status writes them (branch record SIF-117)
-    ['Budget', b ? `${count(b.charged)} used / ${count(b.max_evaluations)} (completed ${count(b.completed)}, failed ${count(b.failed)}, in flight ${count(b.in_flight)}, remaining ${count(b.remaining)})` : null],
-    ['Spectre launches', b ? `${count(b.launches)}${b.max_launches ? ' / ' + count(b.max_launches) : ''} (retries ${count(b.retries)}, cache hits ${count(b.cache_hits)})` : null],
+    ['Budget', b
+      ? `${count(b.charged)} used / ${count(b.max_evaluations)} (completed ${count(b.completed)}, failed ${count(b.failed)}, in flight ${count(b.in_flight)}, remaining ${count(b.remaining)})`
+      : null],
+    ['Spectre launches', b
+      ? `${count(b.launches)}${b.max_launches ? ' / ' + count(b.max_launches) : ''} (retries ${count(b.retries)}, cache hits ${count(b.cache_hits)})` : null],
     ['Learner updates', info ? count(info.learner_updates ?? 0) : null],
-    ['First feasibility', info ? (first ? `at ${plural(first.first_feasible_eval_count, 'evaluation')} used (${count(first.completed_count)} completed, ${plural(first.spectre_launches, 'launch', 'launches')})` : 'not reached') : null],   // one as one (SIF-76 review)
-    ['Best design', info ? (best ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics, best.metric_units)} · violation ${typeof best.violation === 'number' ? sig(best.violation) : '-'}` : 'none') : null],   // not shouted (SIF-19); three digits (SIF-44)
+    ['First feasibility', info ? (first
+      ? `at ${plural(first.first_feasible_eval_count, 'evaluation')} used (${count(first.completed_count)} completed, ${plural(first.spectre_launches, 'launch', 'launches')})`
+      : 'not reached') : null],   // one as one (SIF-76 review)
+    ['Best design', info ? (best
+      ? `${best.feasible ? 'feasible' : 'infeasible'} · ${pairs(best.metrics, best.metric_units)} · violation ${typeof best.violation === 'number' ? sig(best.violation) : '-'}`
+      : 'none') : null],   // not shouted (SIF-19); three digits (SIF-44)
     ['Best design variables', best?.variables ? variables(best.variables) : null],
-    ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}` : 'none (random weights)') : null],
+    ['Model loaded at the start', info ? (source?.run_id ? `run ${String(source.run_id).slice(0, 12)} / ${source.checkpoint_id}`
+      : 'none (random weights)') : null],
     ['Last save point', info ? stamp(info.last_checkpoint_utc) ?? 'none' : null],   // as Run status names it (SIF-70: "Last model save")
     // a save point the summary names but the run folder no longer holds (a copy made without them, deleted ones): said (7.215)
     ['Saved state', summary?.output ? (info?.save_point === null && summary.output.resumability !== 'none'
@@ -194,14 +226,19 @@ function RunDetails({ row, info, error, onCopy, copied, relations, actions }: { 
     <h4>Relationships</h4>
     {relations}
     <table className="grid small run-facts"><tbody>
-      <tr><td>Run folder</td><td className="path" title="Click to copy" onClick={() => onCopy(row.run_dir)}>{row.run_dir}{copied && <b className="ok"> copied</b>}</td></tr>
-      {facts.filter(([, value]) => value != null && value !== '').map(([name, value]) => <tr key={name}><td>{name}</td><td className={name === 'Error' ? 'error' : ''}>{value}</td></tr>)}
+      <tr><td>Run folder</td><td className="path" title="Click to copy"
+        onClick={() => onCopy(row.run_dir)}>{row.run_dir}{copied && <b className="ok"> copied</b>}</td></tr>
+      {facts.filter(([, value]) => value != null && value !== '')
+        .map(([name, value]) => <tr key={name}><td>{name}</td><td className={name === 'Error' ? 'error' : ''}>{value}</td></tr>)}
     </tbody></table>
     {row.segments?.length > 0 && <>
       <h4>Segments <span className="hint">- one per Start or Resume; a pause lies between two of them</span></h4>
-      <table className="grid small run-segments"><thead><tr><th>#</th><th>Began as</th><th>Started</th><th>Ended</th><th>Ended as</th><th>Why</th><th>Worked for</th></tr></thead>
-        <tbody>{row.segments.map((s: Json) => <tr key={s.segment}><td>{s.segment}</td><td>{s.entry}</td><td>{stamp(s.started_utc) ?? 'not begun'}</td><td>{stamp(s.ended_utc) ?? (s.started_utc ? 'open' : '-')}</td>
-          <td>{s.end_state ?? '-'}</td><td title={s.stop_reason ?? undefined}>{s.stop_reason ? stopWords(s.stop_reason) : '-'}</td><td className="numeric">{span(s.active_seconds) ?? '-'}</td></tr>)}</tbody></table></>}
+      <table className="grid small run-segments">
+        <thead><tr><th>#</th><th>Began as</th><th>Started</th><th>Ended</th><th>Ended as</th><th>Why</th><th>Worked for</th></tr></thead>
+        <tbody>{row.segments.map((s: Json) => <tr key={s.segment}><td>{s.segment}</td><td>{s.entry}</td><td>{stamp(s.started_utc) ?? 'not begun'}</td>
+          <td>{stamp(s.ended_utc) ?? (s.started_utc ? 'open' : '-')}</td><td>{s.end_state ?? '-'}</td>
+          <td title={s.stop_reason ?? undefined}>{s.stop_reason ? stopWords(s.stop_reason) : '-'}</td>
+          <td className="numeric">{span(s.active_seconds) ?? '-'}</td></tr>)}</tbody></table></>}
   </div>);
 }
 
@@ -226,17 +263,21 @@ const RunRow = memo(function RunRow({ r, active, checked, isOpen, folderLabel, d
       <td className="wrap-words">{keepDates(stamp(r.created_utc) ?? '-')}{folderLabel && <div className="hint task-folder-label">{folderLabel}</div>}</td>
       <td className={`wrap-words${end.css ? ` ${end.css}` : ''}`} title={end.title}>{keepDates(end.text)}</td>
       {/* "so far" may go under the time (roadster.css, branch record SIF-64): on one line it made the table wider than its window */}
-      <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>{span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && <span className="run-so-far"> so far</span>}</td>
+      <td className="numeric" title={r.paused_seconds ? `Working time. It also sat paused for ${span(r.paused_seconds)}.` : undefined}>
+        {span(r.active_seconds) ?? '-'}{isLive(r) && r.active_seconds != null && <span className="run-so-far"> so far</span>}</td>
       {/* Under "not started" its why too, as a stopped run's reason stands under its state (branch record SIF-143) */}
-      <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>{r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}
+      <td className="wrap-words"><span className={`badge state-${STATE_CSS[r.state] ?? 'unknown'}`}>{r.state ?? 'not started'}</span>
+        {r.stop_reason && <div className="hint" title={r.stop_reason}>{stopWords(r.stop_reason)}</div>}
         {r.state == null && <div className="hint run-no-status" title={NO_STATUS}>no status file</div>}</td>
       {/* Branch record SIF-75: a task and a saved model break only at a space or after "-", "_" or ".", never inside a word
           ("graphgps" over "_ldo1", "graphgps_ld" over "o1 (31)"), and so does the model a run started from where the column
           holds the word; the link takes three lines at most (roadster.css), the whole name first in its tooltip - an offline
           model's name took six lines, its row 120 px. That cell keeps "wrap": a run that is not under this output folder is
           named by its folder, whose 12-character hash would otherwise widen the column and the table past its window. */}
-      <td className="wrap-words" title={r.task_id}>{breakAt(taskOf(r))}</td><td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
-      <td className="wrap run-from">{origin.parent ? <button className="item-link" onClick={() => act.current.focusRun(origin.parent!)} title={`${origin.text}\n${origin.parent}\nShow the run it started from.`}>
+      <td className="wrap-words" title={r.task_id}>{breakAt(taskOf(r))}</td>
+      <td className="wrap-words">{runMode(r)}{runDesign(r) && <span className="hint run-design">{runDesign(r)}</span>}</td>
+      <td className="wrap run-from">{origin.parent ? <button className="item-link" onClick={() => act.current.focusRun(origin.parent!)}
+        title={`${origin.text}\n${origin.parent}\nShow the run it started from.`}>
         <span className="run-from-name">{breakAt(origin.text)}</span></button> : origin.text}
         {origin.missing && <span className="hint" title="That run is not under this output folder."> (gone)</span>}</td>
       <td className="wrap-words">{breakAt(r.model_label ?? '-')}</td><td className="numeric">{r.seed}</td>
@@ -245,16 +286,18 @@ const RunRow = memo(function RunRow({ r, active, checked, isOpen, folderLabel, d
       <td className="wrap-words run-experiment" title={r.experiment}>{breakAt(experimentName(r.experiment))}</td>
       <td>{r.mock ? <span className="badge model-tag mock-tag">MOCK</span> : 'real'}</td>
       <td>{RESUME[r.resumability] ?? '-'}</td>
-      <td><button className="notes-link" aria-expanded={isOpen} onClick={() => act.current.toggle(r.run_dir)}>{isOpen ? 'Hide details' : 'Details'}</button></td>
+      <td><button className="notes-link" aria-expanded={isOpen}
+        onClick={() => act.current.toggle(r.run_dir)}>{isOpen ? 'Hide details' : 'Details'}</button></td>
     </tr>);
 });
 
 /** `headerDir`: the header's run while it works or is paused (App.tsx); when the tabs show another, the line says so.
- *  `onLoad` and `onNewLike` get this window: it asks the edits question (branch record SIF-84). */
-function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRefresh, onLoad, onNewLike, onContinue, headerDir = null }: { runs: Json[]; runsError: string | null; runDir: string | null;
-  shownState: string | null; onChoose: (runDir: string | null) => void; onRefresh: (fresh?: boolean) => Promise<Json[]>;
-  onLoad?: (row: Json, owner?: Window | null) => Promise<RunChoice> | void; onNewLike?: (row: Json, owner?: Window | null) => Promise<RunChoice> | void;
-  onContinue?: (row: Json) => void; headerDir?: string | null }) {
+ *  `onLoad` and `onNewLike` get this window: it asks the edits question (branch record SIF-84). Its steps stand below
+ *  `RunListButton`, called in the order their code ran here: React keeps each hook's state by its place in that order. */
+function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRefresh, onLoad, onNewLike, onContinue, headerDir = null }: {
+  runs: Json[]; runsError: string | null; runDir: string | null; shownState: string | null; onChoose: (runDir: string | null) => void;
+  onRefresh: (fresh?: boolean) => Promise<Json[]>; onLoad?: (row: Json, owner?: Window | null) => Promise<RunChoice> | void;
+  onNewLike?: (row: Json, owner?: Window | null) => Promise<RunChoice> | void; onContinue?: (row: Json) => void; headerDir?: string | null }) {
   // While `popup` is set, the run window is open (one pop-up window for the whole page: `popupWindow.ts`).
   const { popup, root, blocked, open: openPopup } = usePopupWindow('gator-runs',
     { title: RUNS_WINDOW, features: 'popup,width=1500,height=860', rootId: 'runs-root' });
@@ -269,19 +312,99 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   const [onlyTask, setOnlyTask] = useState<string | null>(null);   // only one task's runs: a link from the Tasks window (7.264)
   const [tasks, setTasks] = useState<Map<string, Json>>(new Map());
   const [focus, setFocus] = useState<string | null>(null);         // a run to scroll to once it is drawn
-  const byDir = useMemo(() => new Map(runs.map(r => [r.run_dir, r])), [runs]);
-  const readTasks = (fresh = false) => tasksShared(fresh).then(read => setTasks(new Map((read.tasks ?? []).map((x: Json) => [x.task_key, x]))), () => undefined);
+  const byDir = useMemo(() => new Map(runs.map(row => [row.run_dir, row])), [runs]);
+  const readTasks = (fresh = false) => tasksShared(fresh)
+    .then(read => setTasks(new Map((read.tasks ?? []).map((task: Json) => [task.task_key, task]))), () => undefined);
   const chooseFolder = (id: string) => { folders.setFolder(id); setSelected([]); setOpen(null); };
 
-  const readDetails = (dir: string) => { setInfo({ dir }); api.status(dir).then(value => setInfo(i => (i?.dir === dir ? { dir, value } : i)), e => setInfo(i => (i?.dir === dir ? { dir, error: e.message } : i))); };
+  const readDetails = (dir: string) => {
+    setInfo({ dir });
+    api.status(dir).then(value => setInfo(previous => (previous?.dir === dir ? { dir, value } : previous)),
+      e => setInfo(previous => (previous?.dir === dir ? { dir, error: e.message } : previous)));
+  };
   // `fresh`: the Refresh list press reads every run folder anew (record 7.274); the window's opening uses the backend's cache.
   const lastRead = useRef(0);
   const refresh = (fresh = false) => { setLoading(true); setSelected([]); setRefused(null); void folders.refresh(); void readTasks(fresh);
     onRefresh(fresh).finally(() => { setLoading(false); lastRead.current = Date.now(); setReadAt(clock()); }); if (open) readDetails(open); };
-  const text = (r: Json) => [stamp(r.created_utc), stamp(r.ended_utc), taskOf(r), r.task_key, r.task_id, r.mode, runMode(r), runDesign(r), r.model_label, `seed${r.seed}`, r.state, r.stop_reason, stopWords(r.stop_reason), r.experiment, r.mock ? 'mock' : 'real', folderName(r.run_dir),
-    folders.data.folders[folders.of(r.run_dir)]].join(' ').toLowerCase();
+  const text = (row: Json) => [stamp(row.created_utc), stamp(row.ended_utc), taskOf(row), row.task_key, row.task_id, row.mode, runMode(row), runDesign(row),
+    row.model_label, `seed${row.seed}`, row.state, row.stop_reason, stopWords(row.stop_reason), row.experiment, row.mock ? 'mock' : 'real',
+    folderName(row.run_dir), folders.data.folders[folders.of(row.run_dir)]].join(' ').toLowerCase();
   /** Whether the folder, the one task and the filter chosen show a run. */
-  const inView = (r: Json) => folders.holds(r.run_dir) && (!onlyTask || r.task_key === onlyTask) && table.matches(text(r));
+  const inView = (row: Json) => folders.holds(row.run_dir) && (!onlyTask || row.task_key === onlyTask) && table.matches(text(row));
+  const { back, leaveView, goBack, focusRun } = useFollowLinks({ popup, folders, filter, setFilter, setSelected, onlyTask, setOnlyTask, byDir, inView,
+    setOpen, readDetails, setFocus });
+  // Whoever had the list read - this window, or the page when a run was started - the window says when that was.
+  useEffect(() => setReadAt(clock()), [runs]);
+  const { refused, setRefused, toggle, chosen, showRow, showRun } = useRunChoice({ popup, open, setOpen, readDetails, onLoad, tasks, onChoose });
+  const { placeShown, openWindow, rowAct } = useOpenWindow({ popup, runDir, lastRead, refresh, openPopup, focusRun, leaveView, setOpen, setOnlyTask,
+    showRun, showRow, toggle, table, focus, setFocus });
+  // Once the list the press read is drawn, and the window's styles are in (a place measured before is measured without
+  // them): the shown run's row to the middle, when it is out of view - a row in view stays where a click may be aimed at
+  // it. Only a scroll - no Details, no folder, no filter - and only when the folder and the filter show the run; else "Go
+  // to the shown run" stands beside the filter. Not through `focus`, which waits for its row: a run hidden now would pull
+  // the list to it at a later filter change.
+  useEffect(() => {
+    if (!placeShown.current || !popup || !root || loading) return;
+    placeShown.current = false;
+    const win = popup, dir = runDir;
+    if (dir && shown.some(row => row.run_dir === dir)) void styled(win).then(() => {
+      const row = win.closed ? undefined : rowIn(win, dir), at = row?.getBoundingClientRect();
+      if (row && at && (at.top < 0 || at.bottom > win.innerHeight)) row.scrollIntoView({ block: 'center' });
+    });
+  });
+  // The click happens in the run window, so ITS clipboard is the one a browser lets this gesture write to.
+  const copyPath = (text: string) => (popup ?? window).navigator.clipboard?.writeText(text)
+    .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
+
+  const current: Json = runs.find(row => row.run_dir === runDir) ?? null;
+  const elsewhere = headerDir && headerDir !== runDir ? headerDir : null;          // the header's run, when these tabs show another
+  const column = COLUMNS.find(candidate => candidate.key === table.sort.key) ?? COLUMNS[0];
+  // Only while the window is open: the page redraws on every status poll, and a closed window needs no sorted list.
+  const shown = !popup ? [] : table.arrange(runs, row => folders.holds(row.run_dir) && (!onlyTask || row.task_key === onlyTask), text,
+    row => column.value!(row, byDir));
+  const timed = runs.some(row => 'active_seconds' in row);     // an older workbench server lists runs without their times
+  // Branch record SIF-101: the shown run, when the folder, the one task or the filter hide it, and the view a link left,
+  // while it is not the view now - each a link beside the filter.
+  const shownHidden = !!current && !shown.includes(current);
+  const backTo = back && (back.folder !== folders.folder || back.filter !== filter || back.onlyTask !== onlyTask)
+    ? [folders.name(back.folder) ?? folders.name('all'), back.onlyTask && `the runs of ${back.onlyTask}`, back.filter && `"${back.filter}"`]
+      .filter(Boolean).join(' · ') : null;
+
+  const view = popup && root && runWindowContent({ popup, runs, runsError, runDir, loading, readAt, folders, table, filter, setFilter, selected,
+    setSelected, onlyTask, setOnlyTask, open, info, copied, tasks, byDir, refused, refresh, onChoose, onLoad, onContinue, onNewLike, chosen, focusRun,
+    goBack, chooseFolder, copyPath, rowAct, shown, timed, shownHidden, backTo });
+
+  return (<>
+    {blocked && <Blocked as="span" className="error run-list-blocked" />}
+    {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}
+    {/* Branch record SIF-72: while the header's run works or is paused and these tabs show another, the line says "Shown:" and
+        offers the header's run - it showed "... mscr_vco_lin_c · New model, seed 0 · completed" under a header running 270 of 800. */}
+    <span className="run-list-current" title={runDir ?? undefined}>{elsewhere && runDir ? 'Shown: ' : ''}{current ? label(current, shownState)
+      : runDir ? folderName(runDir) : 'No run selected'}</span>
+    {elsewhere && <span className="run-list-header"><button className="item-link" onClick={() => onChoose(elsewhere)}
+      title={`The header holds another run, the one its buttons act on: ${elsewhere}\nPress to show it in these tabs.`}>Show the header's run</button></span>}
+    <button className={`run-list-button${popup ? ' open' : ''}`} onClick={() => openWindow()}
+      title={popup ? 'The run window is open: press to bring it to the front and read the list again.'
+        : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show; the window then closes.'}>
+      Runs...</button>
+    <PopupPortal popup={popup} root={root}>{view}</PopupPortal>
+  </>);
+}
+
+/** Memoised (record 7.279): it gets the shown run's state, not the whole status, and App.tsx hands it callbacks that stay
+ *  the same functions - so a status update no longer draws the open window's table (124 runs: 3,500 parts) again. */
+export const RunListButton = memo(RunListButtonBody);
+
+// ---- its hooks, called on every drawing in the order RunListButtonBody calls them ---------------------------------------------
+
+/** Following a link inside the run window (branch record SIF-101): `focusRun` shows one run - selected, its Details open,
+ *  scrolled to - and where the view hides it, `leaveView` sets every folder and no filter and keeps the view that was in
+ *  `back`, for "Back to ..." (`goBack`). */
+function useFollowLinks({ popup, folders, filter, setFilter, setSelected, onlyTask, setOnlyTask, byDir, inView, setOpen, readDetails, setFocus }: {
+  popup: Window | null; folders: FolderView; filter: string; setFilter: Dispatch<SetStateAction<string>>;
+  setSelected: Dispatch<SetStateAction<string[]>>; onlyTask: string | null; setOnlyTask: Dispatch<SetStateAction<string | null>>;
+  byDir: Map<string, Json>; inView: (row: Json) => boolean; setOpen: Dispatch<SetStateAction<string | null>>; readDetails: (dir: string) => void;
+  setFocus: Dispatch<SetStateAction<string | null>> }) {
   // The view a link left, for "Back to ..." (branch record SIF-101): a link to a run the view hid set every folder and no
   // filter, and nothing brought the user's folder and filter back. Let go when the window closes.
   const [back, setBack] = useState<{ folder: string; filter: string; onlyTask: string | null } | null>(null);
@@ -307,8 +430,15 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
     if (ofTask) setOnlyTask(ofTask);
     setOpen(dir); readDetails(dir); setFocus(dir);
   };
-  // Whoever had the list read - this window, or the page when a run was started - the window says when that was.
-  useEffect(() => setReadAt(clock()), [runs]);
+  return { back, leaveView, goBack, focusRun };
+}
+
+/** A run chosen in the window (record 7.267; branch records SIF-84 and SIF-109): a double click or Enter on its row, or an
+ *  action of its Details, goes through `chosen`, which closes the window - at once, or once Load run or New run like this
+ *  went through - or keeps why it did not (`refused`). `toggle` opens and closes a run's Details. */
+function useRunChoice({ popup, open, setOpen, readDetails, onLoad, tasks, onChoose }: {
+  popup: Window | null; open: string | null; setOpen: Dispatch<SetStateAction<string | null>>; readDetails: (dir: string) => void;
+  onLoad?: (row: Json, owner?: Window | null) => Promise<RunChoice> | void; tasks: Map<string, Json>; onChoose: (runDir: string | null) => void }) {
   // A Load run or New run like this that did not go through, and why (branch record SIF-84): the edits question is asked in
   // this window now, and the page's message line stands behind it. Beside the run's actions while its Details are open,
   // else in the count line (a double click); the next press, a Details toggle, Refresh list or closing the window lets it go.
@@ -319,9 +449,9 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
   const chosen = (done?: Promise<RunChoice> | void, row?: Json) => {
     const shown = popup;
     setRefused(null);
-    void Promise.resolve(done).then(r => {
+    void Promise.resolve(done).then(answer => {
       if (!shown || shown.closed) return;
-      if (r?.loaded !== false) shown.close(); else if (r.why && row) setRefused({ dir: row.run_dir, why: r.why });
+      if (answer?.loaded !== false) shown.close(); else if (answer.why && row) setRefused({ dir: row.run_dir, why: answer.why });
     });
   };
   // A double click on a run's row loads the run (record 7.267, plan "Load run"; it only showed the run until then, user
@@ -333,27 +463,19 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
     if (onLoad && !loadBlocked(row, tasks)) chosen(onLoad(row, popup), row); else { onChoose(row.run_dir); chosen(); }
   };
   const showRun = (e: MouseEvent<HTMLTableRowElement>, row: Json) => { if (!(e.target as HTMLElement).closest('button, input, select, label')) showRow(row); };
-  const actions = (r: Json) => {
-    if (!onLoad) return null;
-    const why = loadBlocked(r, tasks);
-    // Continue... only where Run status can go on (branch record SIF-90): a full save point and a state it continues from. It
-    // was offered for any run at rest that kept a save point, failed, cancelled and model-only ones too: the press closed this
-    // window on a greyed-out budget form. Such a run says why beside the actions, and where its model can still go.
-    const atRest = !isLive(r) && !!onContinue, kept = r.resumability != null && r.resumability !== 'none';
-    const continuable = atRest && r.resumability === 'full_state' && CONTINUE_STATES.includes(r.state);
-    const notContinued = !atRest || !kept || continuable ? null : r.state === 'failed' ? 'a failed run cannot be continued'
-      : r.state === 'cancelled' ? 'a cancelled run cannot be continued' : r.resumability === 'weights_only' ? 'its save point is model only' : null;
-    return <div className="row run-actions">
-      <button className="run-load" disabled={!!why} onClick={() => chosen(onLoad(r, popup), r)} title={why ?? 'Load run (also a double click on the run, or Enter on its row): its task comes into the editors - edits are asked about first -, its model becomes the next run\'s model, pinned, and the bottom tabs show its results. One Undo step takes the task and the model back. Nothing starts.'}>Load run</button>
-      <button className="run-show" onClick={() => { onChoose(r.run_dir); chosen(); }} title="Show results: the bottom tabs show this run (Run status, Logs, Data tables...). Nothing else changes.">Show results</button>
-      {continuable && <button className="run-continue" onClick={() => { onContinue!(r); chosen(); }} title="Continue...: the run goes on in its own folder, from its newest save point, with its own settings - Run status shows it, with the budget form.">Continue...</button>}
-      {onNewLike && <button className="run-like" disabled={!!why} onClick={() => chosen(onNewLike(r, popup), r)} title={why ?? 'New run like this: the next run repeats this one - its task (edits are asked about first), Mode, the model it started from, network, training values, reward, conditions, budget, seed and limits. One Undo step. Nothing starts.'}>New run like this</button>}
-      {why && <span className="hint run-load-why">{why}</span>}
-      {notContinued && <span className="hint continue-not">Continue... is not offered: {notContinued}.{why ? '' : ` Load run brings its model into the next run (${MODE_NAME.fine_tune} or ${MODE_NAME.frozen}).`}</span>}
-      {refused && refused.dir === r.run_dir && <span className="hint run-refused" role="status">{refused.why}</span>}
-    </div>;
-  };
+  return { refused, setRefused, toggle, chosen, showRow, showRun };
+}
 
+/** How the window opens: Runs... (`openWindow`: the list read again, and the window at the shown run, `placeShown`), and
+ *  another window's link (openAt.ts), AT a run - scrolled to once its row is drawn - or with one task's runs only. `latest`,
+ *  and the rows' `rowAct` made beside it, hold the functions of the latest drawing for the presses that come later. */
+function useOpenWindow({ popup, runDir, lastRead, refresh, openPopup, focusRun, leaveView, setOpen, setOnlyTask, showRun, showRow, toggle, table,
+  focus, setFocus }: {
+  popup: Window | null; runDir: string | null; lastRead: MutableRefObject<number>; refresh: (fresh?: boolean) => void;
+  openPopup: (from?: unknown) => Window | null; focusRun: (dir: string, ofTask?: string) => void; leaveView: () => void;
+  setOpen: Dispatch<SetStateAction<string | null>>; setOnlyTask: Dispatch<SetStateAction<string | null>>;
+  showRun: (e: MouseEvent<HTMLTableRowElement>, row: Json) => void; showRow: (row: Json) => void; toggle: (dir: string) => void; table: TableView;
+  focus: string | null; setFocus: Dispatch<SetStateAction<string | null>> }) {
   // Pressing Runs... is the request to see the current list. A link from another window (`link`) only opens the window at
   // an item: it reads the list again when the window was closed or its list is older than a minute (record 7.275).
   // Pressing it while the window is closed opens it at the shown run (branch record SIF-101, `placeShown`): the window opened
@@ -386,98 +508,144 @@ function RunListButtonBody({ runs, runsError, runDir, shownState, onChoose, onRe
     const row = rowIn(popup, focus);
     if (row) { row.scrollIntoView({ block: 'center' }); setFocus(null); }
   });
-  // Once the list the press read is drawn, and the window's styles are in (a place measured before is measured without
-  // them): the shown run's row to the middle, when it is out of view - a row in view stays where a click may be aimed at
-  // it. Only a scroll - no Details, no folder, no filter - and only when the folder and the filter show the run; else "Go
-  // to the shown run" stands beside the filter. Not through `focus`, which waits for its row: a run hidden now would pull
-  // the list to it at a later filter change.
-  useEffect(() => {
-    if (!placeShown.current || !popup || !root || loading) return;
-    placeShown.current = false;
-    const win = popup, dir = runDir;
-    if (dir && shown.some(r => r.run_dir === dir)) void styled(win).then(() => {
-      const row = win.closed ? undefined : rowIn(win, dir), at = row?.getBoundingClientRect();
-      if (row && at && (at.top < 0 || at.bottom > win.innerHeight)) row.scrollIntoView({ block: 'center' });
-    });
-  });
-  // The click happens in the run window, so ITS clipboard is the one a browser lets this gesture write to.
-  const copyPath = (text: string) => (popup ?? window).navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
-
-  const current: Json = runs.find(r => r.run_dir === runDir) ?? null;
-  const elsewhere = headerDir && headerDir !== runDir ? headerDir : null;          // the header's run, when these tabs show another
-  const column = COLUMNS.find(c => c.key === table.sort.key) ?? COLUMNS[0];
-  // Only while the window is open: the page redraws on every status poll, and a closed window needs no sorted list.
-  const shown = !popup ? [] : table.arrange(runs, r => folders.holds(r.run_dir) && (!onlyTask || r.task_key === onlyTask), text, r => column.value!(r, byDir));
-  const timed = runs.some(r => 'active_seconds' in r);     // an older workbench server lists runs without their times
-  // Branch record SIF-101: the shown run, when the folder, the one task or the filter hide it, and the view a link left,
-  // while it is not the view now - each a link beside the filter.
-  const shownHidden = !!current && !shown.includes(current);
-  const backTo = back && (back.folder !== folders.folder || back.filter !== filter || back.onlyTask !== onlyTask)
-    ? [folders.name(back.folder) ?? folders.name('all'), back.onlyTask && `the runs of ${back.onlyTask}`, back.filter && `"${back.filter}"`].filter(Boolean).join(' · ') : null;
-
-  const view = popup && root && (
-    <div className="run-window">
-      <h2>Runs</h2>
-      <div className="row">
-        {/* Refresh list is the refresh icon, as in the Tasks and RL model windows and the bottom tabs (branch record SIF-113),
-            its words for screen readers and at the start of its tooltip; while it reads, the count beside it says so */}
-        <button onClick={() => refresh(true)} disabled={loading || folders.busy} title="Refresh list: every run folder is read again from the disk."><Icon name="refresh" label="Refresh list" /></button>
-        <button onClick={() => onChoose(null)} disabled={!runDir} title="The bottom tabs of the workbench show no run. Nothing is stopped or deleted.">Clear</button>
-        <input className="run-filter" placeholder="Filter: task, mode, state, mock / real, date ..." value={filter} onChange={e => { setFilter(e.target.value); setSelected([]); }} />
-        {shownHidden && <button className="item-link run-go-shown" onClick={() => focusRun(runDir!)}
-          title="The run the bottom tabs show is not in this folder or filter. Show it here: every folder, no filter, its Details open.">Go to the shown run</button>}
-        {backTo && <button className="item-link run-back" onClick={goBack}
-          title="The folder and the filter this window showed before a link cleared them, to show its run.">Back to {backTo}</button>}
-        {/* a double click that did not go through says why here, where the count stood (branch record SIF-84) */}
-        {refused && open !== refused.dir ? <span className="hint run-count run-refused" role="status">{refused.why}</span>
-          : <span className="hint run-count">{loading ? 'Reading the runs...' : runsError ? 'The list could not be read.'
-          : `${runs.length} run${runs.length === 1 ? '' : 's'} under the output folder${readAt ? `, read at ${readAt}` : ''}. Nothing here updates by itself.`}</span>}
-      </div>
-      {runsError && !loading && <p className="error run-list-error">The run list could not be read: {runsError}</p>}
-      {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
-      {onLoad ? <p className="hint"><b>Double click</b> a run to load it: its task comes into the editors, its model becomes the next run's model, and the bottom tabs of the workbench show its results (one Undo step takes the task and the model back; nothing starts). <b>Enter</b> on a run's row does the same. A run's <b>Details</b> also offer <b>Show results</b> alone, <b>Continue...</b> and <b>New run like this</b>. The run that is shown is marked, and the window opens at it; <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. The window closes once a run is loaded, shown, continued or repeated - it stays open, saying why, when that does not go through (Cancel at the edits question, a model that cannot be read), and for <b>Clear</b> and <b>Details</b>.</p>
-        : <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run that is shown is marked, and the window then closes. <b>Enter</b> on a run's row does the same. <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none.</p>}
-      <details className="more"><summary>What the columns mean</summary>
-        <ul className="steps-list">{COLUMNS.map(c => <li key={c.key}><b>{c.title}</b>: {c.help}</li>)}
-          <li>All times are the local time of this computer. Press a column title to sort by it. "Details" shows everything else the run recorded.</li></ul></details>
-      {runs.length > 0 && !timed && <p className="warn">The workbench server that is running is older than this page and does not report when a run finished or how long it took.
-        Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Refresh list".</p>}
-      {runs.length === 0 && !loading && !runsError && <p className="hint run-empty">No run yet under this output folder. A run appears here as soon as it has been started.</p>}
-      <div className="task-browser">
-      <Folders state={folders} keys={runs.map(r => r.run_dir)} popup={popup} onSelect={chooseFolder} selected={selected.length} />
-      <div className="task-folder-content">
-      <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
-      {onlyTask && <p className="hint run-only-task">Only the runs of <code>{onlyTask}</code>{' '}
-        <button className="item-link" onClick={() => setOnlyTask(null)}>Show every run</button></p>}
-      {runs.length > 0 && <div className="scroll"><table className="grid run-table">
-        <TableHead view={table} columns={COLUMNS} shown={shown} id={r => r.run_dir} what="runs" disabled={folders.busy || !folders.ready} />
-        {/* RunRow draws a run's row; its Details stay here, outside the memo, drawn with the window as before (branch record SIF-122) */}
-        <tbody>{shown.map(r => <Fragment key={r.run_dir}>
-          <RunRow r={r} active={r.run_dir === runDir} checked={selected.includes(r.run_dir)} isOpen={open === r.run_dir}
-            folderLabel={folders.folder === 'all' ? (folders.data.folders[folders.of(r.run_dir)] ?? '') : ''} disabled={folders.busy || !folders.ready} byDir={byDir} act={rowAct} />
-          {open === r.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
-            <RunDetails row={r} info={info?.dir === r.run_dir ? info?.value : null} error={info?.dir === r.run_dir ? info?.error : undefined} onCopy={copyPath} copied={copied}
-              actions={actions(r)} relations={<Relationships row={r} info={info?.dir === r.run_dir ? info?.value : null} runs={runs} byDir={byDir} tasks={tasks} from={popup} onFocus={focusRun} />} /></td></tr>}
-        </Fragment>)}</tbody></table></div>}
-      {runs.length > 0 && shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No run matches the filter in this folder.' : 'This folder is empty. Select runs in All runs, then use Move to…'}</p>}
-      </div></div>
-    </div>
-  );
-
-  return (<>
-    {blocked && <Blocked as="span" className="error run-list-blocked" />}
-    {/* The run that is shown is said as plain text to the LEFT of the button; the button itself only reads "Runs..." (user request 2026-09-21). */}
-    {/* Branch record SIF-72: while the header's run works or is paused and these tabs show another, the line says "Shown:" and
-        offers the header's run - it showed "... mscr_vco_lin_c · New model, seed 0 · completed" under a header running 270 of 800. */}
-    <span className="run-list-current" title={runDir ?? undefined}>{elsewhere && runDir ? 'Shown: ' : ''}{current ? label(current, shownState) : runDir ? folderName(runDir) : 'No run selected'}</span>
-    {elsewhere && <span className="run-list-header"><button className="item-link" onClick={() => onChoose(elsewhere)}
-      title={`The header holds another run, the one its buttons act on: ${elsewhere}\nPress to show it in these tabs.`}>Show the header's run</button></span>}
-    <button className={`run-list-button${popup ? ' open' : ''}`} onClick={() => openWindow()}
-      title={popup ? 'The run window is open: press to bring it to the front and read the list again.' : 'Opens the run window: every run with its start and finish time, its duration and its results. Choose there which run these tabs show; the window then closes.'}>Runs...</button>
-    <PopupPortal popup={popup} root={root}>{view}</PopupPortal>
-  </>);
+  return { placeShown, openWindow, rowAct };
 }
 
-/** Memoised (record 7.279): it gets the shown run's state, not the whole status, and App.tsx hands it callbacks that stay
- *  the same functions - so a status update no longer draws the open window's table (124 runs: 3,500 parts) again. */
-export const RunListButton = memo(RunListButtonBody);
+// ---- what it draws: plain functions called inline, not components, so the tree React keeps is the one it kept before ---------
+
+/** What the run window draws and does: RunListButtonBody's state, its steps' functions, and the list as this drawing
+ *  arranges it (`shown`). */
+type RunWindowParts = {
+  popup: Window; runs: Json[]; runsError: string | null; runDir: string | null; loading: boolean; readAt: string | null; folders: FolderView;
+  table: TableView; filter: string; setFilter: Dispatch<SetStateAction<string>>; selected: string[]; setSelected: Dispatch<SetStateAction<string[]>>;
+  onlyTask: string | null; setOnlyTask: Dispatch<SetStateAction<string | null>>; open: string | null;
+  info: { dir: string; value?: Json; error?: string } | null; copied: boolean; tasks: Map<string, Json>; byDir: Map<string, Json>;
+  refused: { dir: string; why: string } | null; refresh: (fresh?: boolean) => void; onChoose: (runDir: string | null) => void;
+  onLoad?: (row: Json, owner?: Window | null) => Promise<RunChoice> | void; onContinue?: (row: Json) => void;
+  onNewLike?: (row: Json, owner?: Window | null) => Promise<RunChoice> | void; chosen: (done?: Promise<RunChoice> | void, row?: Json) => void;
+  focusRun: (dir: string, ofTask?: string) => void; goBack: () => void; chooseFolder: (id: string) => void;
+  copyPath: (text: string) => Promise<void | undefined>; rowAct: MutableRefObject<RowAct>; shown: Json[]; timed: boolean;
+  shownHidden: boolean; backTo: string | null;
+};
+
+/** The run window: the line of its buttons, filter and count, the notes, and the folders beside the table of runs. */
+function runWindowContent(parts: RunWindowParts) {
+  const { runs, runsError, loading, folders, onLoad, timed } = parts;
+  return (
+    <div className="run-window">
+      <h2>Runs</h2>
+      {windowHead(parts)}
+      {runsError && !loading && <p className="error run-list-error">The run list could not be read: {runsError}</p>}
+      {folders.error && <p className="error" role="alert">{folders.error} Press Refresh list to retry.</p>}
+      {onLoad ? <p className="hint"><b>Double click</b> a run to load it: its task comes into the editors, its model becomes the next run's model, and the
+        bottom tabs of the workbench show its results (one Undo step takes the task and the model back; nothing starts). <b>Enter</b> on a run's row does
+        the same. A run's <b>Details</b> also offer <b>Show results</b> alone, <b>Continue...</b> and <b>New run like this</b>. The run that is shown is
+        marked, and the window opens at it; <b>Clear</b> shows no run. Choosing a task under <b>Task</b> shows its newest run, or none if it has none. The
+        window closes once a run is loaded, shown, continued or repeated - it stays open, saying why, when that does not go through (Cancel at the edits
+        question, a model that cannot be read), and for <b>Clear</b> and <b>Details</b>.</p>
+        : <p className="hint"><b>Double click</b> a run to show it in the bottom tabs of the workbench (Run status, Logs, Data tables, Output files); the run
+        that is shown is marked, and the window then closes. <b>Enter</b> on a run's row does the same. <b>Clear</b> shows no run. Choosing a task
+        under <b>Task</b> shows its newest run, or none if it has none.</p>}
+      <details className="more"><summary>What the columns mean</summary>
+        <ul className="steps-list">{COLUMNS.map(column => <li key={column.key}><b>{column.title}</b>: {column.help}</li>)}
+          <li>All times are the local time of this computer. Press a column title to sort by it. "Details" shows everything else the run recorded.</li>
+        </ul></details>
+      {runs.length > 0 && !timed && <p className="warn">The workbench server that is running is older than this page and does not report when a run
+        finished or how long it took. Restart it (Ctrl+C in its terminal, then start `serve` again) and press "Refresh list".</p>}
+      {runs.length === 0 && !loading && !runsError && <p className="hint run-empty">No run yet under this output folder. A run appears here as soon as it
+        has been started.</p>}
+      {runBrowser(parts)}
+    </div>
+  );
+}
+
+/** The line at the top of the window: Refresh list, Clear, the filter, the links to the shown run and back to the view a link
+ *  left, and the count - or why a double click did not go through. */
+function windowHead({ refresh, loading, folders, onChoose, runDir, filter, setFilter, setSelected, shownHidden, focusRun, backTo, goBack, refused, open,
+  runsError, runs, readAt }: RunWindowParts) {
+  return (
+    <div className="row">
+      {/* Refresh list is the refresh icon, as in the Tasks and RL model windows and the bottom tabs (branch record SIF-113),
+          its words for screen readers and at the start of its tooltip; while it reads, the count beside it says so */}
+      <button onClick={() => refresh(true)} disabled={loading || folders.busy}
+        title="Refresh list: every run folder is read again from the disk."><Icon name="refresh" label="Refresh list" /></button>
+      <button onClick={() => onChoose(null)} disabled={!runDir}
+        title="The bottom tabs of the workbench show no run. Nothing is stopped or deleted.">Clear</button>
+      <input className="run-filter" placeholder="Filter: task, mode, state, mock / real, date ..." value={filter}
+        onChange={e => { setFilter(e.target.value); setSelected([]); }} />
+      {shownHidden && <button className="item-link run-go-shown" onClick={() => focusRun(runDir!)}
+        title="The run the bottom tabs show is not in this folder or filter. Show it here: every folder, no filter, its Details open.">
+        Go to the shown run</button>}
+      {backTo && <button className="item-link run-back" onClick={goBack}
+        title="The folder and the filter this window showed before a link cleared them, to show its run.">Back to {backTo}</button>}
+      {/* a double click that did not go through says why here, where the count stood (branch record SIF-84) */}
+      {refused && open !== refused.dir ? <span className="hint run-count run-refused" role="status">{refused.why}</span>
+        : <span className="hint run-count">{loading ? 'Reading the runs...' : runsError ? 'The list could not be read.'
+        : `${runs.length} run${runs.length === 1 ? '' : 's'} under the output folder${readAt ? `, read at ${readAt}` : ''}. Nothing here updates by itself.`}
+        </span>}
+    </div>
+  );
+}
+
+/** The folders on the left and, beside them, the Move to... bar, the one task's line and the table: a row per run (RunRow),
+ *  and under the open run's row its Details, drawn here outside RunRow's memo, with the window (branch record SIF-122). */
+function runBrowser(parts: RunWindowParts) {
+  const { popup, runs, runDir, folders, table, filter, selected, onlyTask, setOnlyTask, open, info, copied, tasks, byDir, focusRun, chooseFolder,
+    copyPath, rowAct, shown } = parts;
+  return (
+    <div className="task-browser">
+      <Folders state={folders} keys={runs.map(row => row.run_dir)} popup={popup} onSelect={chooseFolder} selected={selected.length} />
+      <div className="task-folder-content">
+        <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
+        {onlyTask && <p className="hint run-only-task">Only the runs of <code>{onlyTask}</code>{' '}
+          <button className="item-link" onClick={() => setOnlyTask(null)}>Show every run</button></p>}
+        {runs.length > 0 && <div className="scroll"><table className="grid run-table">
+          <TableHead view={table} columns={COLUMNS} shown={shown} id={row => row.run_dir} what="runs" disabled={folders.busy || !folders.ready} />
+          {/* RunRow draws a run's row; its Details stay here, outside the memo, drawn with the window as before (branch record SIF-122) */}
+          <tbody>{shown.map(row => <Fragment key={row.run_dir}>
+            <RunRow r={row} active={row.run_dir === runDir} checked={selected.includes(row.run_dir)} isOpen={open === row.run_dir}
+              folderLabel={folders.folder === 'all' ? (folders.data.folders[folders.of(row.run_dir)] ?? '') : ''} disabled={folders.busy || !folders.ready}
+              byDir={byDir} act={rowAct} />
+            {open === row.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
+              <RunDetails row={row} info={info?.dir === row.run_dir ? info?.value : null} error={info?.dir === row.run_dir ? info?.error : undefined}
+                onCopy={copyPath} copied={copied} actions={detailsActions(parts, row)}
+                relations={<Relationships row={row} info={info?.dir === row.run_dir ? info?.value : null} runs={runs} byDir={byDir} tasks={tasks}
+                  from={popup} onFocus={focusRun} />} /></td></tr>}
+          </Fragment>)}</tbody></table></div>}
+        {runs.length > 0 && shown.length === 0 && <p className="hint task-folder-empty">{filter ? 'No run matches the filter in this folder.'
+          : 'This folder is empty. Select runs in All runs, then use Move to…'}</p>}
+      </div>
+    </div>
+  );
+}
+
+/** A run's actions in its Details (record 7.267): Load run, Show results, Continue... and New run like this, why one is not
+ *  offered, and why a press did not go through (branch record SIF-84). None without `onLoad`. */
+function detailsActions({ popup, tasks, refused, onChoose, onLoad, onContinue, onNewLike, chosen }: RunWindowParts, row: Json) {
+  if (!onLoad) return null;
+  const why = loadBlocked(row, tasks);
+  // Continue... only where Run status can go on (branch record SIF-90): a full save point and a state it continues from. It
+  // was offered for any run at rest that kept a save point, failed, cancelled and model-only ones too: the press closed this
+  // window on a greyed-out budget form. Such a run says why beside the actions, and where its model can still go.
+  const atRest = !isLive(row) && !!onContinue, kept = row.resumability != null && row.resumability !== 'none';
+  const continuable = atRest && row.resumability === 'full_state' && CONTINUE_STATES.includes(row.state);
+  const notContinued = !atRest || !kept || continuable ? null : row.state === 'failed' ? 'a failed run cannot be continued'
+    : row.state === 'cancelled' ? 'a cancelled run cannot be continued' : row.resumability === 'weights_only' ? 'its save point is model only' : null;
+  return <div className="row run-actions">
+    <button className="run-load" disabled={!!why} onClick={() => chosen(onLoad(row, popup), row)}
+      title={why ?? 'Load run (also a double click on the run, or Enter on its row): its task comes into the editors - edits are asked about first -, its model becomes the next run\'s model, pinned, and the bottom tabs show its results. One Undo step takes the task and the model back. Nothing starts.'}>
+      Load run</button>
+    <button className="run-show" onClick={() => { onChoose(row.run_dir); chosen(); }}
+      title="Show results: the bottom tabs show this run (Run status, Logs, Data tables...). Nothing else changes.">Show results</button>
+    {continuable && <button className="run-continue" onClick={() => { onContinue!(row); chosen(); }}
+      title="Continue...: the run goes on in its own folder, from its newest save point, with its own settings - Run status shows it, with the budget form.">
+      Continue...</button>}
+    {onNewLike && <button className="run-like" disabled={!!why} onClick={() => chosen(onNewLike(row, popup), row)}
+      title={why ?? 'New run like this: the next run repeats this one - its task (edits are asked about first), Mode, the model it started from, network, training values, reward, conditions, budget, seed and limits. One Undo step. Nothing starts.'}>
+      New run like this</button>}
+    {why && <span className="hint run-load-why">{why}</span>}
+    {notContinued && <span className="hint continue-not">Continue... is not offered: {notContinued}.{why ? ''
+      : ` Load run brings its model into the next run (${MODE_NAME.fine_tune} or ${MODE_NAME.frozen}).`}</span>}
+    {refused && refused.dir === row.run_dir && <span className="hint run-refused" role="status">{refused.why}</span>}
+  </div>;
+}

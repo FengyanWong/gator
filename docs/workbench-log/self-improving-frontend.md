@@ -6640,3 +6640,89 @@ finds nothing in the changed files.
 longest steps, `saveActions` and `taskFileActions`, are 57 and 49 lines), comment lines 57 -> 75, any-casts 2 -> 0; all
 files 15,457 -> 15,555 lines, any-casts 43 -> 41. The 98 added lines are the steps' signatures with their typed
 parameters, their doc comments, returns and destructurings, and the wraps.
+
+### SIF-151 Readability F2, F4, F5: the Runs button and its window read as named steps (2026-10-28; group F of docs/plan-readability.md)
+
+**Found.** `RunListButtonBody` was 226 of `RunList.tsx`'s 483 lines (`femetrics.py`: since SIF-150 the frontend's longest
+top-level block but `App.tsx`'s `Page`, a file another branch is changing). One body made its 24 hook calls -
+`usePopupWindow`, `useTableView`, `useFolders`, 10 `useState`, a `useMemo`, 4 `useRef` and 6 effects - and wrote two refs
+as it drew, in among reading the tasks, a run's details and the list, the filter's text, following a link inside the
+window and "Back to ..." (SIF-101), choosing a run - a double click, Enter, and the window that closes or says why it stays
+open (SIF-84, SIF-109) - and opening the window: Runs..., another window's link, the rows' presses (SIF-122) and two
+scrolls. Then it drew: a `view` of 48 lines (the window's head line, its notes, the folders and the table with each run's
+Details) and a 20-line `actions` closure (a run's Load run, Show results, Continue... and New run like this). 71 of the
+file's lines ran past 160 columns, 27 of them in the function (the longest 822, the window's first note). Its single
+letters: `r` a run's row of the list (12 times) or what Load run answered, `c` a column (twice), `x` a listed task and `i`
+the details read before (twice). F3 found nothing to do: the file has no `any` (`femetrics.py`: 0); its two casts are true
+types (`event as CustomEvent<RunsAt>` on openAt.ts's window event, `e.target as HTMLElement` for the double click's
+target) and stay.
+
+**Changed** (`frontend/src/panels/RunList.tsx` alone). `RunListButtonBody` (96 lines) reads as its steps, in the order its
+code ran: the window (`usePopupWindow`) and its state values, as they were; reading the tasks, a run's details and the
+list (`readTasks`, `readDetails`, `lastRead` and `refresh`), the filter's text and `inView`, as they were;
+`useFollowLinks` (the view a link left and its effect, `leaveView`, `goBack` and `focusRun`: SIF-101); the read time's
+effect, as it was; `useRunChoice` (the refusal and its effect, `toggle`, `chosen`, `showRow` and `showRun`: SIF-84,
+SIF-109); `useOpenWindow` (`placeShown` and `openWindow`, `latest` and `rowAct` with their writes, the listener for
+another window's link and the scroll to a link's run); the effect that brings the shown run's row into view, the copy and
+the values the drawing reads, as they were; `view` from `runWindowContent`, a plain function called inline and never drawn
+as a component - it calls `windowHead` (Refresh list, Clear, the filter, the two links and the count) and `runBrowser`
+(the folders, Move to..., the table with its RunRow rows and, under the open run's row, its Details), which calls
+`detailsActions` (the old `actions` closure) - and the same return. The 24 hook calls and the 2 ref writes run in the
+order they ran, each effect with its dependency list; no memo added or removed. The shown run's scroll effect stays in the
+body: it reads `shown`, which is worked out after it, and a step takes only code that stood together - moving either would
+change the order of the code. One private type, `RunWindowParts`, names the 35 values the drawing reads; the four drawing
+steps take it whole, and each destructures what it draws. A step gets each value it reads by its own name, and its results
+are taken by their names. Comments moved with their code; each new function has a doc comment, and `RunListButtonBody`'s
+says why the order of its hooks matters. Parameters carry their real types (`Dispatch<SetStateAction<...>>`,
+`MutableRefObject<...>`, `FolderView`, `TableView`, `Json` for the backend's JSON), each compared with the type tsc gives
+the value passed (69 values): the same, but for `byDir`, declared `Map<string, Json>` as the file's other functions
+declare it where tsc infers `Map<any, any>` from `runs: Json[]`, and `refresh`'s `fresh?: boolean`, which tsc prints once
+as `boolean | undefined`. The comparison caught one untrue type before the commit: the copy's result, first written
+`Promise<void | undefined> | undefined`, is `Promise<void | undefined>`. F4: `r` -> `row` (12 times) and `answer` (what
+Load run answered), `c` -> `candidate` (the column sought) and `column`, `x` -> `task`, `i` -> `previous` (twice); `e`
+for an event or a caught error stays, as in SIF-147 to SIF-150, and so do the single letters of the file's other
+functions (RunRow's `r`, Relationships' and RunDetails' `s`). F5: 71 -> 17 lines over 160 columns, wrapped in an
+import's list, between parameters, properties, array entries, attributes and tags that stood side by side, before a `?`
+or `:`, after `=>`, inside a JSX `{...}`, and in four JSX texts between two words - never where a space meets a tag or a
+`{...}`, which a wrap would drop; a column's `value` stands on a line of its own where its entry ran past 160 (as "Started
+from"'s already did; `help` too for Duration and First feasible), and five button texts (Go to the shown run, Load run,
+Continue..., New run like this, Runs...) start on the line after their tag, which the compiler reads the same. The 17
+left are each one string or template longer than a wrap can split: `NO_STATUS`, five column helps, the two "Not offered"
+reasons, six of the Details' texts and three tooltips.
+
+**Checked.** `npx tsc --noEmit -p .` exit 0. `npx vite build` into a temporary folder: the main bundle changes, as moved
+code does (`index-DkTmNAdc.js`); the CSS and the uPlot and cytoscape chunks are byte for byte SIF-150's build's. DOM
+identity (`--replay` the recorded answers, `--build` this build, `--compare` the base's reference; behind the memory
+guard, WSL 12 GB available and the host 9 GB free): "all 112 checks passed", 56 of 56 compared files identical (66
+written); its `runs` scene opens this window at the shown run and then the shown run's Details - the head line, the notes,
+the folders, every row, and the Details with their Relationships and actions. Two changes came after that run: a type (the
+copy's result) and the names of two new functions (`runWindow` and `runActions` meant other things elsewhere in the page:
+App.tsx's `runWindow` prop, runWindowActions.ts's `runActions` ref); the build of the committed file is byte for byte the
+one the DOM run served, and so is the browser checks' build. Without a browser - the TypeScript compiler API on the base
+file and on this one, each compiled in the frontend's own program, with comments, white space and types set aside,
+parameters numbered by place and JSX text cleaned as the compiler does (SIF-150's script adapted; it, its output and the
+negative control beside the DOM identity output, `out-F2-runlist/static`): 0 diagnostics each; the exported names
+(`RunListButton`, `loadBlocked`, `RunChoice`) with the same types, and the same props of `RunListButton`; the 575
+strings, template pieces, numbers, regular expressions and JSX texts the same multiset, and so are the JSX tags (179)
+and attribute names (205); `RunListButtonBody` with its steps written back where they are called - each hook step's
+statements in its place, each drawing step's JSX in its place, and the base body's `actions` closure where it was
+called - equals the base body statement by statement, in order (51 statements, 4,218 tokens); the file's other 33
+top-level statements are found unchanged but for the three imports that gained types (`Dispatch`, `SetStateAction`,
+`FolderView`, `TableView`), so the wraps in COLUMNS, Relationships, RunDetails and RunRow change nothing; the 24 hook
+calls and 2 ref writes are the same sequence, with their 5 dependency lists, and the two effects without one still
+without; the value references to imports and globals the same multiset (487); each step is called once - the hooks as
+statements of the body itself, the drawing steps inline and never as components - and the drawing steps call no hook;
+every value passed to a step goes by its own name. A negative control, the same script on eight mutated copies of the
+new file - two hooks swapped, a dependency added, a caption changed, a value passed under another name, the shown run's
+scroll effect moved below the drawing's values, a wrap that drops a JSX space, a ref write moved, a helper given another
+row: each was caught.
+Browser checks, one lane (WSL 11 GB, host 7 GB), the seven that open the Runs window or draw its button: `run_list_check`
+185, `run_control_check` 181, `training_tab_check` 139, `task_list_check` 106, `looks_check` 83, `task_run_check` 39,
+`reliability_check` 22 passed (755, no flake), each the count of its last run in this log. The PDK-name grep of the plan's
+rule 5 finds nothing in the changed files.
+
+**Measured** (`femetrics.py`, before -> after): `RunList.tsx` 483 -> 651 lines, longest block 226 -> 96
+(`RunListButtonBody`; its longest steps, `useOpenWindow`, `useFollowLinks`, `useRunChoice`, `runWindowContent` and
+`runBrowser`, are 41, 32, 29, 29 and 29 lines), comment lines 110 -> 131, any-casts 0 -> 0; all files 15,555 -> 15,723
+lines, any-casts 41 -> 41. The 168 added lines are the steps' signatures with their typed parameters, `RunWindowParts`,
+their doc comments, returns and destructurings, and the wraps.

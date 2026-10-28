@@ -178,86 +178,9 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
     for name, kind in kinds_given.items():
         if kind not in KINDS:
             raise NetlistError(f'device kind {kind!r} for {name!r} is not one of {", ".join(KINDS)}')
-    root = _Scope(None)
-    scopes, scope = {}, root
-    globals_ = set(GROUND)
-    analyses, measurements, includes = [], [], []
-    has_end = False
-    diagnostics = []
-    for tokens in stmts:
-        head = tokens[0]
-        word = head.text.lower()
-        if word.startswith('.'):
-            if word == '.end':
-                has_end = True
-            elif word == '.subckt':
-                if scope is not root:
-                    raise NetlistError(f'line {head.line}: a .subckt inside a .subckt is not supported')
-                if len(tokens) < 2:
-                    raise NetlistError(f'line {head.line}: .subckt without a name')
-                name = tokens[1].text.lower()
-                ports, params = [], {}
-                in_params = False
-                for token in tokens[2:]:
-                    if token.text.lower() == 'params:':
-                        in_params = True
-                        continue
-                    key, equals, value = token.text.partition('=')
-                    if equals:
-                        params[key.lower()] = value
-                    elif not in_params:
-                        ports.append(token.text)
-                if name in scopes:
-                    raise NetlistError(f'line {head.line}: subcircuit {name} is defined twice')
-                scope = scopes[name] = _Scope(name, tuple(ports), params)
-            elif word == '.ends':
-                if scope is root:
-                    raise NetlistError(f'line {head.line}: .ends without a .subckt')
-                scope = root
-            elif word == '.param':
-                for token in tokens[1:]:
-                    key, equals, value = token.text.partition('=')
-                    if equals and key:
-                        scope.params[key.lower()] = value
-            elif word == '.global':
-                globals_.update(t.text for t in tokens[1:])
-            elif word in ('.include', '.inc', '.lib'):
-                if len(tokens) > 1:
-                    includes.append((word.lstrip('.'), _unquote(tokens[1].text), head.line))
-            elif word in ('.meas', '.measure'):
-                found = _measure([t.text for t in tokens], head.line, ' '.join(t.text for t in tokens))
-                if found:
-                    measurements.append(found)
-            elif word in ('.op', '.dc', '.ac', '.tran', '.noise', '.pz', '.tf', '.sens', '.disto', '.sp', '.pss'):
-                analyses.append(dict(text=' '.join(t.text for t in tokens), source=str(SourceSpan(source, head.line))))
-            continue
-        if scope is None:
-            continue
-        scope.body.append(tokens)
-    if scope is not root:
-        raise NetlistError(f'subcircuit {scope.name} is not closed with .ends')
-    control_units, last_analysis = {}, 'other'
-    for line, statement in control_lines:
-        words = statement.split()
-        if not words:
-            continue
-        command = words[0].lower()
-        if command in ('meas', 'measure'):
-            found = _measure(words, line, statement)
-            if found:
-                measurements.append(found)
-        elif command in ('op', 'dc', 'ac', 'tran', 'noise', 'pz', 'tf', 'sens', 'disto', 'sp'):
-            last_analysis = MEASURE_ANALYSES.get(command, 'other') if command != 'op' else 'dc'
-            analyses.append(dict(text=statement, source=str(SourceSpan(source, line))))
-        elif command == 'let':
-            key, equals, expression = statement[3:].partition('=')
-            if equals and re.match(r'^[a-z_]\w*$', key.strip().lower()):
-                control_units[key.strip().lower()] = expression_unit(expression)
-        elif command in ('print', 'echo') and command == 'print':
-            for word in words[1:]:
-                name = word.lower()
-                if re.match(r'^[a-z_]\w*$', name) and name not in ('all',) and name not in {m.name for m in measurements}:
-                    measurements.append(Measurement(name, last_analysis, unit_from_name(name) or control_units.get(name, '1'), line, statement))
+    (root, scopes, globals_, analyses, measurements, includes,
+     has_end, diagnostics) = _collect_deck_statements(stmts, source)
+    _read_control_outputs(control_lines, source, measurements, analyses)
     # model types: the deck itself, then its included files (read for their .model / .subckt lines only)
     model_types, external_subckts, notes = scan_models(text, root=include_root) if scan_includes else scan_models(text, root=None, depth=MAX_INCLUDE_DEPTH)
     for note in notes:
@@ -269,44 +192,7 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
         'globals': sorted(globals_), 'measurements': [m.name for m in measurements],
         'scope_parameters': {name or '<root>': dict(s.params) for name, s in [(None, root), *scopes.items()]}})
     nets, sizables, unknown_models, subckt_uses = {}, {}, [], {name: 0 for name in scopes}
-    # ngspice reads a node's name without regard to case (IN and in are one wire): one net per name, under the spelling
-    # the deck gives first - a deck of one spelling reads as it always did. Until record 7.322 each spelling was a net.
-    spelled = {}
-    global_names = {name.lower() for name in globals_}
-
-    def net(name, path, port_map):
-        key = port_map.get(name.lower())
-        if key is None:
-            key = name if name.lower() in global_names or not path else f'{path}/{name}'
-            key = spelled.setdefault(key.lower(), key)
-        if key not in nets:
-            nets[key] = Net(key, ('ground',) if key.lower() in GROUND else ('normal',), 'default')
-        return key
-
-    def resolve(token, env, label, *, numeric=True):
-        raw = token.text
-        try:
-            return ParameterValue(raw, evaluate(raw, env.lookup), SourceSpan(source, token.line, token.column + 1))
-        except Unresolved as exc:
-            if numeric:
-                diagnostics.append(Diagnostic('unresolved_expression', f'{label}: {raw} ({exc})',
-                                              SourceSpan(source, token.line, token.column + 1), 'warning'))
-            return ParameterValue(raw, None, SourceSpan(source, token.line, token.column + 1), str(exc))
-
-    def kind_of(letter, model, positional):
-        """(kind, roles, node count) of an element from its letter and model."""
-        if letter == 'M':
-            declared = kinds_given.get(model) or MODEL_KINDS.get(model_types.get(model, ''), None)
-            if declared is None:
-                declared = 'nmos' if model_types.get(model) == 'vdmos' and 'pchan' not in positional else \
-                    'pmos' if model_types.get(model) == 'vdmos' else 'unknown'
-            return declared, ROLES.get(declared, ('unknown',) * 4), 4
-        if letter in ELEMENT_KINDS:
-            kind = kinds_given.get(model, ELEMENT_KINDS[letter]) if model else ELEMENT_KINDS[letter]
-            return kind, ROLES.get(kind, ('unknown', 'unknown')), 2
-        if letter == 'Q':
-            return kinds_given.get(model, 'unknown'), None, None
-        return kinds_given.get(model, 'unknown'), None, NODE_COUNT.get(letter)
+    net, resolve, kind_of = _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_types)
 
     def expand(current, env, path, port_map, ancestry):
         if len(ancestry) > 32:
@@ -465,6 +351,156 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                 graph.connections.append(Connection(identifier, net(token.text, path, port_map), terminal, ordinal, role))
 
     expand(root, _Env(root.params), '', {}, ())
+    unknown = _finish_circuit_graph(graph, nets, diagnostics, subckt_uses, sizables, unknown_models)
+    return Parsed(graph, measurements, analyses, sizables, lines, title, dict(subckt_uses), includes, has_control, has_end,
+                  unknown, model_types)
+
+
+def _collect_deck_statements(stmts, source):
+    """Collect circuit scopes, directives and element statements while preserving their source order."""
+    root = _Scope(None)
+    scopes, scope = {}, root
+    globals_ = set(GROUND)
+    analyses, measurements, includes = [], [], []
+    has_end = False
+    diagnostics = []
+    for tokens in stmts:
+        head = tokens[0]
+        word = head.text.lower()
+        if word.startswith('.'):
+            if word == '.end':
+                has_end = True
+            elif word == '.subckt':
+                scope = _open_subcircuit(scope, root, tokens, head, scopes)
+            elif word == '.ends':
+                if scope is root:
+                    raise NetlistError(f'line {head.line}: .ends without a .subckt')
+                scope = root
+            elif word == '.param':
+                _record_scope_parameters(tokens, scope)
+            elif word == '.global':
+                globals_.update(t.text for t in tokens[1:])
+            elif word in ('.include', '.inc', '.lib'):
+                if len(tokens) > 1:
+                    includes.append((word.lstrip('.'), _unquote(tokens[1].text), head.line))
+            elif word in ('.meas', '.measure'):
+                found = _measure([t.text for t in tokens], head.line, ' '.join(t.text for t in tokens))
+                if found:
+                    measurements.append(found)
+            elif word in ('.op', '.dc', '.ac', '.tran', '.noise', '.pz', '.tf', '.sens', '.disto', '.sp', '.pss'):
+                analyses.append(dict(text=' '.join(t.text for t in tokens), source=str(SourceSpan(source, head.line))))
+            continue
+        if scope is None:
+            continue
+        scope.body.append(tokens)
+    if scope is not root:
+        raise NetlistError(f'subcircuit {scope.name} is not closed with .ends')
+    return root, scopes, globals_, analyses, measurements, includes, has_end, diagnostics
+
+
+def _open_subcircuit(scope, root, tokens, head, scopes):
+    """Validate a subcircuit declaration and register its port and parameter scope."""
+    if scope is not root:
+        raise NetlistError(f'line {head.line}: a .subckt inside a .subckt is not supported')
+    if len(tokens) < 2:
+        raise NetlistError(f'line {head.line}: .subckt without a name')
+    name = tokens[1].text.lower()
+    ports, params = [], {}
+    in_params = False
+    for token in tokens[2:]:
+        if token.text.lower() == 'params:':
+            in_params = True
+            continue
+        key, equals, value = token.text.partition('=')
+        if equals:
+            params[key.lower()] = value
+        elif not in_params:
+            ports.append(token.text)
+    if name in scopes:
+        raise NetlistError(f'line {head.line}: subcircuit {name} is defined twice')
+    scope = scopes[name] = _Scope(name, tuple(ports), params)
+    return scope
+
+
+def _record_scope_parameters(tokens, scope):
+    """Record named parameter definitions in the current circuit scope."""
+    for token in tokens[1:]:
+        key, equals, value = token.text.partition('=')
+        if equals and key:
+            scope.params[key.lower()] = value
+
+
+def _read_control_outputs(control_lines, source, measurements, analyses):
+    """Collect control-block analyses and measurements in their original order."""
+    control_units, last_analysis = {}, 'other'
+    for line, statement in control_lines:
+        words = statement.split()
+        if not words:
+            continue
+        command = words[0].lower()
+        if command in ('meas', 'measure'):
+            found = _measure(words, line, statement)
+            if found:
+                measurements.append(found)
+        elif command in ('op', 'dc', 'ac', 'tran', 'noise', 'pz', 'tf', 'sens', 'disto', 'sp'):
+            last_analysis = MEASURE_ANALYSES.get(command, 'other') if command != 'op' else 'dc'
+            analyses.append(dict(text=statement, source=str(SourceSpan(source, line))))
+        elif command == 'let':
+            key, equals, expression = statement[3:].partition('=')
+            if equals and re.match(r'^[a-z_]\w*$', key.strip().lower()):
+                control_units[key.strip().lower()] = expression_unit(expression)
+        elif command in ('print', 'echo') and command == 'print':
+            for word in words[1:]:
+                name = word.lower()
+                if re.match(r'^[a-z_]\w*$', name) and name not in ('all',) and name not in {m.name for m in measurements}:
+                    measurements.append(Measurement(name, last_analysis, unit_from_name(name) or control_units.get(name, '1'), line, statement))
+
+
+def _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_types):
+    """Create the name, parameter and device-kind resolvers for one parsed circuit."""
+    # ngspice reads a node's name without regard to case (IN and in are one wire): one net per name, under the spelling
+    # the deck gives first - a deck of one spelling reads as it always did. Until record 7.322 each spelling was a net.
+    spelled = {}
+    global_names = {name.lower() for name in globals_}
+
+    def net(name, path, port_map):
+        key = port_map.get(name.lower())
+        if key is None:
+            key = name if name.lower() in global_names or not path else f'{path}/{name}'
+            key = spelled.setdefault(key.lower(), key)
+        if key not in nets:
+            nets[key] = Net(key, ('ground',) if key.lower() in GROUND else ('normal',), 'default')
+        return key
+
+    def resolve(token, env, label, *, numeric=True):
+        raw = token.text
+        try:
+            return ParameterValue(raw, evaluate(raw, env.lookup), SourceSpan(source, token.line, token.column + 1))
+        except Unresolved as exc:
+            if numeric:
+                diagnostics.append(Diagnostic('unresolved_expression', f'{label}: {raw} ({exc})',
+                                              SourceSpan(source, token.line, token.column + 1), 'warning'))
+            return ParameterValue(raw, None, SourceSpan(source, token.line, token.column + 1), str(exc))
+
+    def kind_of(letter, model, positional):
+        """(kind, roles, node count) of an element from its letter and model."""
+        if letter == 'M':
+            declared = kinds_given.get(model) or MODEL_KINDS.get(model_types.get(model, ''), None)
+            if declared is None:
+                declared = 'nmos' if model_types.get(model) == 'vdmos' and 'pchan' not in positional else \
+                    'pmos' if model_types.get(model) == 'vdmos' else 'unknown'
+            return declared, ROLES.get(declared, ('unknown',) * 4), 4
+        if letter in ELEMENT_KINDS:
+            kind = kinds_given.get(model, ELEMENT_KINDS[letter]) if model else ELEMENT_KINDS[letter]
+            return kind, ROLES.get(kind, ('unknown', 'unknown')), 2
+        if letter == 'Q':
+            return kinds_given.get(model, 'unknown'), None, None
+        return kinds_given.get(model, 'unknown'), None, NODE_COUNT.get(letter)
+    return net, resolve, kind_of
+
+
+def _finish_circuit_graph(graph, nets, diagnostics, subckt_uses, sizables, unknown_models):
+    """Finalize and validate the circuit graph, excluding sizes shared by repeated subcircuits."""
     graph.nets = list(nets.values())
     graph.diagnostics = diagnostics
     graph.metadata['ports'] = ()
@@ -475,8 +511,7 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
         sizables.pop(key)
     graph.validate(require_complete=False)
     unknown = list(dict.fromkeys(unknown_models))
-    return Parsed(graph, measurements, analyses, sizables, lines, title, dict(subckt_uses), includes, has_control, has_end,
-                  unknown, model_types)
+    return unknown
 
 
 def _with_name(value, source_name):

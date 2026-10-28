@@ -51,6 +51,7 @@ MOCK_TARGETS = {'w': 0.4, 'l': -0.2, 'm': 0.0, 'nf': 0.0, 'r': 0.3, 'c': -0.3, '
 
 
 def parse_netlist(netlist_path, parser_config_path, *, top=None):
+    """Parse a Spectre circuit and discard file-declared parameter groups so configuration rows own the bindings."""
     from analog_optimizer.netlist.config import ParserConfig
     from analog_optimizer.netlist.spectre_parser import SpectreParser
     config = ParserConfig.from_file(parser_config_path)
@@ -118,6 +119,7 @@ def _netlist_runtime(task_key, netlist, parser_config, *, circuit_class, pdk_id,
 
 
 def list_tasks():
+    """Describe registered task choices with availability, displayed names and training capabilities."""
     tasks = []
     for name, info in task_registry.SYNTHETIC_FIXTURES.items():
         tasks.append(dict(task_key=f'synthetic:{name}', kind='mock', circuit_class=info['circuit_class'],
@@ -165,6 +167,7 @@ def bridge_importable() -> bool:
 
 
 def profile_settings(profile_id=None):
+    """Return loaded connection state and settings for the named or active profile."""
     loaded, _, settings = named_or_active(profile_id)
     return loaded, settings
 

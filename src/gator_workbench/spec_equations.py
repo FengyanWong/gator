@@ -97,6 +97,7 @@ def evaluate(text, lookup):
 
 
 def is_finite_number(value):
+    """Check that a value is a finite Python integer or float, excluding booleans."""
     return value is not None and not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
@@ -251,6 +252,7 @@ def size_value(text, widths):
 
 @dataclass(frozen=True)
 class SpecEntry:
+    # A spec equation and its unit, validity requirement and direct-result relationship.
     spec_id: str
     equation: str
     unit: str                 # canonical unit of the spec
@@ -268,6 +270,7 @@ class SpecPlan:
 
     @classmethod
     def from_config(cls, config) -> 'SpecPlan':
+        """Compile measurement sources and target equations into a spec-evaluation plan."""
         probes = tuple((m.measurement_id, m.source_name) for m in config.measurements)
         sizes = tuple((m.source_name, m.signal or '', units.canonical_unit(m.unit) if units.known(m.unit) else m.unit)
                       for m in config.measurements if m.result_source == SIZE_SOURCE and m.source_name)
@@ -390,6 +393,7 @@ class EquationNativeFactory:
 
     @contextmanager
     def preparation_context(self, limits, report):
+        """Wrap the prepared inner factory while preserving the equation plan."""
         with self.inner.preparation_context(limits, report) as prepared:
             yield replace(self, inner=prepared)
 
@@ -397,6 +401,7 @@ class EquationNativeFactory:
         return self.create_recorded(lane, None)
 
     def create_recorded(self, lane, recorder):
+        """Create an equation-aware recorded environment while checking baseline equality on simulator results only."""
         reference = self.inner.reference_metrics
         env = replace(self.inner, reference_metrics=None).create_recorded(lane, recorder)
         self.plan.wrap(env.backend)
@@ -420,6 +425,7 @@ class EquationNativeFactory:
 
 # ---------------------------------------------------------------------------------- the result registry
 def magnitude(unit) -> float:
+    """Return the reference magnitude for a recognized canonical unit, defaulting to one."""
     canonical = units.canonical_unit(unit) if isinstance(unit, str) and units.known(unit) else unit
     return float(UNIT_MAGNITUDE.get(canonical, 1.0))
 

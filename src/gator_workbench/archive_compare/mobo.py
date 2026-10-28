@@ -89,6 +89,7 @@ class Problem:
         return functions
 
     def describe(self) -> dict:
+        """Describe the objectives, constraints, outputs and reference point that identify this search problem."""
         return dict(objectives=self.objectives, constraint_rows=self.constraint_rows, outputs=self.outputs,
                     ref_point=self.ref_point, energy_rule=self.energy_rule)
 
@@ -116,6 +117,7 @@ class MoboSearch:
         self.Y.append([None if v is None else float(v) for v in y])
 
     def tell(self, x, y, *, asked=True, infrastructure=False):
+        """Settle a proposal and retain circuit outputs unless the failure is caused by infrastructure."""
         if asked:
             self.asked = max(0, self.asked - 1)
         if infrastructure:                           # not evidence about the circuit: left out of every model
@@ -167,6 +169,7 @@ class MoboSearch:
         return True
 
     def ask(self, pending=()):
+        """Return the next unit-cube design and proposal details, accounting for designs still in flight."""
         import torch
         from botorch.acquisition.multi_objective.logei import qLogNoisyExpectedHypervolumeImprovement
         from botorch.acquisition.multi_objective.objective import IdentityMCMultiOutputObjective
@@ -206,6 +209,7 @@ class MoboSearch:
                            acquisition_value=float(value.reshape(-1)[0]))
 
     def state_dict(self) -> dict:
+        """Serialize observations, search settings and fitted model state needed for continuation."""
         import torch
         hyper = None if self.hyper is None else [{k: v.tolist() for k, v in state.items()} for state in self.hyper]
         return dict(version=VERSION, dim=self.dim, seed=self.seed, settings=self.settings, problem=self.problem.describe(),
@@ -215,6 +219,7 @@ class MoboSearch:
 
     @classmethod
     def from_state(cls, state: dict, problem: Problem) -> 'MoboSearch':
+        """Restore a search after checking its version and objective contract."""
         import torch
         if state.get('version') != VERSION:
             raise ValueError(f"a {state.get('version')!r} search state is not {VERSION}")
@@ -244,16 +249,20 @@ class MoboProposer:
 
     @property
     def observations(self) -> int:
+        """Count online circuit observations, excluding imported archive rows."""
         return len(self.search.X) - self.search.archived
 
     def executed_point(self, executed: dict) -> list:
+        """Map executed group values to the unit cube in the search's group order."""
         return [(to_proposal(g, executed[g['id']]) + 1.0) / 2.0 for g in self.groups]
 
     def propose(self, pending_executed=()) -> dict:
+        """Return one proposal per parameter group while accounting for designs still in flight."""
         point, self.last = self.search.ask([self.executed_point(p) for p in pending_executed])
         return {group: float(2.0 * point[index] - 1.0) for index, group in enumerate(self.group_ids)}
 
     def observe(self, executed: dict, metrics: dict, validity: dict, status: str, *, asked) -> None:
+        """Record an executed design's measured outputs, excluding infrastructure failures from the models."""
         y, infrastructure = self.problem.outcome(metrics, validity, status)
         self.search.tell(self.executed_point(executed), y, asked=asked, infrastructure=infrastructure)
 
@@ -262,6 +271,7 @@ class MoboProposer:
 
     @classmethod
     def from_state(cls, state: dict, problem: Problem) -> 'MoboProposer':
+        """Restore the parameter-group mapping and MOBO search used by the run engine."""
         proposer = cls.__new__(cls)
         proposer.groups = list(state['groups'])
         proposer.group_ids = [g['id'] for g in proposer.groups]

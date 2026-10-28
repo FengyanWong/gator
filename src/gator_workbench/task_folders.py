@@ -24,10 +24,12 @@ _LOCK = threading.Lock()
 
 
 class FolderError(ValueError):
+    """Folder organization could not be validated, read or changed."""
     pass
 
 
 class FolderMissing(FolderError):
+    """The requested organizational folder no longer exists."""
     pass
 
 
@@ -47,6 +49,7 @@ def _name(value):
 
 
 def read(kind='tasks'):
+    """Read and validate folder organization, returning an empty initial state only when its file is absent."""
     file, noun, _ = _kind(kind)
     path = local_settings_dir() / file
     try:
@@ -95,6 +98,7 @@ def _unique(state, name, except_id=None):
 
 
 def create(name, kind='tasks'):
+    """Create a uniquely named organizational folder and return its new identifier with the updated state."""
     name, folder_id = _name(name), uuid4().hex
 
     def edit(state):
@@ -105,6 +109,7 @@ def create(name, kind='tasks'):
 
 
 def rename(folder_id, name, kind='tasks'):
+    """Rename an existing organizational folder after checking that its new name is unique."""
     name = _name(name)
 
     def edit(state):
@@ -116,6 +121,7 @@ def rename(folder_id, name, kind='tasks'):
 
 
 def remove(folder_id, kind='tasks'):
+    """Remove an organizational folder and its assignments while retaining the organized items."""
     def edit(state):
         _require(state, folder_id, kind)
         del state['folders'][folder_id]

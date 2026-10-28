@@ -22,14 +22,17 @@ _NAME = re.compile(TASK_NAME)
 
 
 class TaskNameError(ValueError):
+    """Task display names could not be validated, read or changed."""
     pass
 
 
 class TaskNameTaken(TaskNameError):
+    """A requested display name conflicts with another task's name."""
     pass
 
 
 class TaskNameMissing(TaskNameError):
+    """A task targeted for renaming is no longer registered."""
     pass
 
 

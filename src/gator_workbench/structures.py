@@ -35,6 +35,7 @@ NOTE_LIMIT = 1000                                # schema.OptimizationParameter.
 
 @dataclass(frozen=True)
 class Structure:
+    # A recognized device relationship with ordered members and an explanation for the parameter editor.
     kind: str                                    # differential_pair, cross_coupled_pair, tail_source, active_load,
     devices: tuple[str, ...]                     # load_pair, cascode_pair, current_mirror; a mirror's reference first
     text: str

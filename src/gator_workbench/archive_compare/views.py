@@ -25,10 +25,12 @@ SIDES = {'<=': ('upper',), '>=': ('lower',), 'interval': ('lower', 'upper')}
 
 
 def canonical(value) -> str:
+    """Encode sorted compact JSON while rejecting non-finite numbers."""
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
 
 
 def digest(value) -> str:
+    """Hash a value's canonical JSON representation."""
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 

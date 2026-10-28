@@ -52,6 +52,7 @@ class SessionsBusy(RuntimeError):
 
 @dataclass
 class Choice:
+    # A selected Virtuoso session with its explanation and reservation bookkeeping.
     profile_id: str                       # the session the work goes to (its connection name)
     connection: str                       # the connection the page named
     label: str                            # "Virtuoso 2"
@@ -62,6 +63,7 @@ class Choice:
     release: tuple | None = None          # (session, who, library, cell): to let go of the cell first (`release_pending`)
 
     def record(self) -> dict:
+        """Return the connection and session details intended for the page and run record."""
         return dict(connection=self.connection, session=self.profile_id, label=self.label, said=self.said,
                     sessions=self.sessions)
 

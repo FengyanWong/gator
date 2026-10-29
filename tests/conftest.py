@@ -1,3 +1,5 @@
+"""Shared local fixtures and safeguards that load synthetic graphs without simulator or network calls."""
+
 import os
 from pathlib import Path
 
@@ -13,8 +15,8 @@ FIXTURES = ROOT / "tests" / "fixtures" / "synthetic"
 # on the toy backend that was synthetic:gpdk045_ota5 - before anything imports gator_workbench.tasks; the run workers
 # and lanes a test starts inherit the variable.
 os.environ.setdefault("GATOR_WORKBENCH_SYNTHETIC_FIXTURES", str(ROOT / "tests" / "workbench" / "fixtures" / "synthetic_fixtures.json"))
-# The Agent tab's buttons open Claude Code or Codex in a terminal window (agent_cli.py): never from a test. With the
-# variable off a launch is a dry run that says what it would have opened and writes nothing.
+# Legacy CLI integration routes can open Claude Code or Codex in a terminal window (agent_cli.py): never from a test.
+# With the variable off a launch is a dry run that says what it would have opened and writes nothing.
 os.environ["GATOR_AGENT_CLI_LAUNCH"] = "off"
 
 

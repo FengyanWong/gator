@@ -51,6 +51,7 @@ MOCK_TARGETS = {'w': 0.4, 'l': -0.2, 'm': 0.0, 'nf': 0.0, 'r': 0.3, 'c': -0.3, '
 
 
 def parse_netlist(netlist_path, parser_config_path, *, top=None):
+    """Parse a Spectre circuit and discard file-declared parameter groups so configuration rows own the bindings."""
     from analog_optimizer.netlist.config import ParserConfig
     from analog_optimizer.netlist.spectre_parser import SpectreParser
     config = ParserConfig.from_file(parser_config_path)
@@ -71,8 +72,10 @@ class SyntheticEnvFactory:
     max_steps: int
     timeout_seconds: float
     stop_on_success: bool
-    plan: object = None               # spec_equations.SpecPlan: the specs computed from the probes are added to each result
-    reward_settings: object = None    # measurements.specs.RewardSettings: the run's settings, the same ones the learner enforces
+    # spec_equations.SpecPlan: the specs computed from the probes are added to each result
+    plan: object = None
+    # measurements.specs.RewardSettings: the run's settings, the same ones the learner enforces
+    reward_settings: object = None
 
     def __call__(self, lane):
         from analog_optimizer.backends.synthetic_sizing import SyntheticSizingBackend
@@ -99,7 +102,8 @@ def _synthetic_builder(compiled, work_root, run_settings):
 def _with_computed_specs(factory, compiled):
     """The verified real factory, unchanged when every spec is a simulator result itself; otherwise wrapped so that the
     specs computed from the probes reach the reward (spec_equations.EquationNativeFactory)."""
-    if not compiled.plan.injected and not compiled.plan.sizes:        # sizes: probes worked out from the sizes (record 7.308)
+    # sizes: probes worked out from the sizes (record 7.308)
+    if not compiled.plan.injected and not compiled.plan.sizes:
         return factory
     return EquationNativeFactory(factory, compiled.plan)
 
@@ -107,7 +111,8 @@ def _with_computed_specs(factory, compiled):
 def _netlist_runtime(task_key, netlist, parser_config, *, circuit_class, pdk_id, top=None, notes=()):
     netlist, parser_config = Path(netlist), Path(parser_config)
     graph = parse_netlist(netlist, parser_config, top=top)
-    digest = _sha256(netlist)                          # one hash for both fields: each read of the netlist is a 9p round trip
+    # one hash for both fields: each read of the netlist is a 9p round trip
+    digest = _sha256(netlist)
     circuit = dict(circuit_class=circuit_class, pdk_id=pdk_id, dut_hierarchy=top,
                    netlist_sha256=digest, parser_config_sha256=_sha256(parser_config),
                    netlist_file=str(netlist), parser_config_file=str(parser_config),
@@ -118,10 +123,12 @@ def _netlist_runtime(task_key, netlist, parser_config, *, circuit_class, pdk_id,
 
 
 def list_tasks():
+    """Describe registered task choices with availability, displayed names and training capabilities."""
     tasks = []
     for name, info in task_registry.SYNTHETIC_FIXTURES.items():
         tasks.append(dict(task_key=f'synthetic:{name}', kind='mock', circuit_class=info['circuit_class'],
-                          pdk_id=info.get('pdk_id', MOCK_PDK), available=True, description=info.get('description', MOCK_DESCRIPTION)))
+                          pdk_id=info.get('pdk_id', MOCK_PDK), available=True, description=info.get('description',
+                              MOCK_DESCRIPTION)))
     for name, info in offered_real_profiles().items():
         blocker = real_backend_blocker(None, name)               # each circuit has its own receipt and baseline
         tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=info['circuit_class'], pdk_id='gpdk045',
@@ -140,17 +147,25 @@ def list_tasks():
             blocker = shared_blocker[0]
         reference = profiles.reference_metrics(name)
         tasks.append(dict(task_key=f'real:{name}', kind='real', circuit_class=entry['circuit_class'], generated=True,
-                          pdk_id=entry.get('pdk_id') or 'gpdk045', available=blocker is None, blocker=blocker, library=entry['library'], cell=entry['core_cell'],
-                          revision=entry.get('revision'), measurement=entry.get('measurement'), original=entry.get('original'),
+                          pdk_id=entry.get('pdk_id') or 'gpdk045', available=blocker is None, blocker=blocker,
+                          library=entry['library'], cell=entry['core_cell'],
+                          revision=entry.get('revision'), measurement=entry.get('measurement'),
+                          original=entry.get('original'),
                           verified=reference is not None,
-                          # The task window (record 7.227) shows these facts of the saved task: all from its entry, no other file read.
-                          testbench=entry.get('testbench_cell'), saved_utc=entry.get('saved_utc'), created_utc=entry.get('created_utc'),
+                          # The task window (record 7.227) shows these facts of the saved task: all from its entry, no
+                          # other file read.
+                          testbench=entry.get('testbench_cell'), saved_utc=entry.get('saved_utc'),
+                          created_utc=entry.get('created_utc'),
                           baseline_recorded_utc=entry.get('baseline_recorded_utc'), status=entry.get('status'),
-                          variables=len(entry.get('optimized_variables') or ()), results=len(entry.get('provided_metrics') or ()),
-                          description=f"Profile generated from {entry['library']}/{entry['core_cell']} (Virtuoso + Spectre). "
+                          variables=len(entry.get('optimized_variables') or ()),
+                          results=len(entry.get('provided_metrics') or ()),
+                          description=
+                              f"Profile generated from {entry['library']}/{entry['core_cell']} (Virtuoso + "
+                              f'Spectre). '
                                       + ('' if reference else 'No real baseline recorded yet.')))
     from . import ngspice_tasks  # lazy: ngspice_tasks imports the optimizer (torch)
     tasks.extend(ngspice_tasks.task_entries())                 # SPICE decks saved in the ngspice window
+    # ---- Apply display names and capabilities after collecting all task types.
     given, keys = task_names.names(), [task['task_key'] for task in tasks]
     for task in tasks:
         # The name the windows show (record 7.302): the task's own unless it was renamed. Its key never changes.
@@ -165,6 +180,7 @@ def bridge_importable() -> bool:
 
 
 def profile_settings(profile_id=None):
+    """Return the loaded connection file and the named or active profile's settings, None if unconfigured."""
     loaded, _, settings = named_or_active(profile_id)
     return loaded, settings
 
@@ -175,9 +191,10 @@ def _not_a_virtuoso_connection(profile_id, settings):
     kind = profile_kind(settings)
     if kind is None or family_of(kind) == 'virtuoso':
         return None                                   # an unknown kind is named by the connection check itself
-    return (f'Connection {profile_id or "(the active one)"!r} is "{KINDS[kind]["label"]}". This circuit runs on Virtuoso + '
-            'Spectre: choose a Virtuoso connection in the Connection window. An ngspice connection runs the ngspice netlist '
-            'tasks (the Tasks window: "From an ngspice netlist...").')
+    return (
+        f'''Connection {profile_id or '(the active one)'!r} is "{KINDS[kind]['label']}". This circuit runs '''
+        f'on Virtuoso + Spectre: choose a Virtuoso connection in the Connection window. An ngspice '
+        f'connection runs the ngspice netlist tasks (the Tasks window: "From an ngspice netlist...").')
 
 
 def bridge_config_of(connection):
@@ -186,7 +203,8 @@ def bridge_config_of(connection):
     adapter and factory as they are, which take no lock of their cell (record 7.311): they stay in the first Virtuoso
     session. (A task saved from a cell runs in any session: its adapter locks its cell, `cdf_write.backend_class`.)"""
     from analog_optimizer.backends.virtuoso_bridge import BridgeConfig
-    env_file = bridge_env_snapshot(connection['env_file'])                                    # its own copy: record 7.306
+    # its own copy: record 7.306
+    env_file = bridge_env_snapshot(connection['env_file'])
     _first_session_only(env_file, connection, 'This task')
     return BridgeConfig(env_file, connection['library'], Path(connection['creation_receipt']).resolve(),
                         bridge_state_dir().resolve(), connection['model_file'],
@@ -196,9 +214,10 @@ def bridge_config_of(connection):
 def _first_session_only(env_file, connection, what):
     """Refuse a further Virtuoso session for a task whose adapter does not lock its cell (record 7.311)."""
     if bridge_session_dir(env_file, connection.get('profile')) != bridge_state_dir():
-        raise TaskBlocked(f'{what} is written by the older adapter, which does not lock its cell: it runs in the first Virtuoso '
-                          f'session only, and this connection reaches another (bridge profile {connection.get("profile")!r}). '
-                          'Choose a connection of the first session.')
+        raise TaskBlocked(
+            f'{what} is written by the older adapter, which does not lock its cell: it runs in the first '
+            f'Virtuoso session only, and this connection reaches another (bridge profile '
+            f"{connection.get('profile')!r}). Choose a connection of the first session.")
 
 
 CIRCUIT_KEYS = ('creation_receipt', 'reference_measurements')     # these two belong to ONE circuit, not to the link
@@ -232,7 +251,8 @@ def _binding_problem(name, bound):
     for key, expected in (('library', bound['library']), ('core_cell', design.get('core_cell')),
                           ('testbench_cell', design.get('testbench_cell'))):
         if receipt.get(key) != expected:
-            return (f'The creation receipt bound to real:{name} is for {key}={receipt.get(key)!r}, but this circuit needs '
+            return (
+                f'The creation receipt bound to real:{name} is for {key}={receipt.get(key)!r}, but this circuit needs '
                     f'{expected!r}. Bind the receipt of THIS circuit under "circuits": {{"{name}": ...}}.')
     if reference.get('origin') != 'real' or not isinstance(reference.get('metrics'), dict) or not reference['metrics']:
         return f'reference_measurements of real:{name} must be verified REAL baseline measurements with a metrics table'
@@ -255,15 +275,17 @@ def _link_problem(profile_id, not_importable):
         import site
         site.addsitedir(str(Path(settings['bridge_site_packages']).resolve()))
     if not bridge_importable():
-        return (f'virtuoso_bridge is not importable by the backend interpreter ({sys.executable}). {not_importable} for the '
-                'profile in configs/local/workbench/bridge_connection.json.'), loaded, settings
+        return (
+            f'virtuoso_bridge is not importable by the backend interpreter ({sys.executable}). '
+            f'{not_importable} for the profile in configs/local/workbench/bridge_connection.json.'), loaded, settings
     return None, loaded, settings
 
 
 def real_backend_blocker(profile_id=None, name=None):
     """Why real execution is impossible here, or None. With `name`, the per-circuit bindings of that
     registered real task are checked as well."""
-    problem, loaded, settings = _link_problem(profile_id, 'It is installed only in another virtualenv. Install virtuoso-bridge '
+    problem, loaded, settings = _link_problem(profile_id,
+        'It is installed only in another virtualenv. Install virtuoso-bridge '
                                               '0.8.0 into this interpreter, or set "bridge_site_packages"')
     if problem:
         return problem
@@ -319,21 +341,24 @@ def load_task(circuit, *, allow_real=False, profile_id=None) -> TaskRuntime:
         raise TaskBlocked(NETLIST_SOURCE_REMOVED)
     if circuit.source == 'virtuoso':
         imported = native_cells.load_import(circuit.library, circuit.cell) if circuit.library and circuit.cell else None
-        if imported is None or allow_real:                   # allow_real = a run start: a cell without a profile never executes
+        # allow_real = a run start: a cell without a profile never executes
+        if imported is None or allow_real:
             raise TaskBlocked((NATIVE_DRAFT_NOT_EXECUTABLE if imported else
                                'Optimizing an arbitrary native cellview needs a verified circuit profile (writable '
                                'parameters, CDF rules, analyses, measurements).') + ' Existing profiles: '
-                              + ', '.join(f'real:{n}' for n in offered_real_profiles()), contract=REAL_INTERFACE_CONTRACT)
+                              + ', '.join(f'real:{n}' for n in offered_real_profiles()),
+                              contract=REAL_INTERFACE_CONTRACT)
         return _native_draft_runtime(imported, circuit)
     raise TaskBlocked(f'Unsupported circuit source {circuit.source!r}')
 
 
-# ---- a saved task as the page loads it: kept while its files are unchanged ----------------------------------------------
-# Loading a GENERATED task (real:<name>, saved from a cell) opens ~43 files - every saved task's entry three times, its own
-# folder, the connection file - and rebuilds its form writer: 0.3-1 s on the 9p-mounted D: drive, at EVERY edit of the
-# page (validation, task load, Matched devices, the saved-model check; review of 2026-10-01). The page's loads keep the
-# runtime while none of the files it is built from changed; the link and the model file are checked at every call, as
-# before. A run never takes this path: it loads with the authorization (load_task(allow_real=True)).
+# ---- a saved task as the page loads it: kept while its files are unchanged
+# ----------------------------------------------
+# Loading a GENERATED task (real:<name>, saved from a cell) opens ~43 files - every saved task's entry three times, its
+# own folder, the connection file - and rebuilds its form writer: 0.3-1 s on the 9p-mounted D: drive, at EVERY edit of
+# the page (validation, task load, Matched devices, the saved-model check; review of 2026-10-01). The page's loads keep
+# the runtime while none of the files it is built from changed; the link and the model file are checked at every call,
+# as before. A run never takes this path: it loads with the authorization (load_task(allow_real=True)).
 _VIEW_LIMIT = 16
 _view_cache: dict = {}
 
@@ -392,10 +417,13 @@ def _native_draft_runtime(imported, circuit):
     def builder(compiled, work_root, run_settings):
         raise TaskBlocked(NATIVE_DRAFT_NOT_EXECUTABLE, contract=REAL_INTERFACE_CONTRACT)
     unverified = imported.get('unverified_models') or []
-    notes = [f"Read from Virtuoso {imported['imported_utc'][:19]} UTC (netlist export of {imported['exported_cell']}, read-only). "
-             'Shown from the local copy: read the cell again after changing it in Virtuoso.']
+    notes = [
+        f"Read from Virtuoso {imported['imported_utc'][:19]} UTC (netlist export of "
+        f"{imported['exported_cell']}, read-only). Shown from the local copy: read the cell again after "
+        f'changing it in Virtuoso.']
     if unverified:
-        notes.append(f"Device type(s) {', '.join(unverified)} are described neither by the cell's PDK nor by the ideal parts "
+        notes.append(
+            f"Device type(s) {', '.join(unverified)} are described neither by the cell's PDK nor by the ideal parts "
                      'of analogLib read with it: their pins are shown unnamed, and nothing is assumed about them.')
     info = dict(circuit_class=circuit.circuit_class, pdk_id=circuit.pdk_id if circuit.pdk_id != 'unspecified'
                 else imported.get('technology_library') or 'unspecified', dut_hierarchy=circuit.dut_hierarchy,
@@ -448,8 +476,10 @@ def generated_bridge_config(name, profile_id=None):
     config = BridgeConfig(env_file, entry['library'], (directory / profiles.FILES['receipt']).resolve(),
                           bridge_session_dir(env_file, connection.get('profile')).resolve(), connection['model_file'],
                           profile=connection.get('profile'))
-    if entry.get('recipe') == profiles.MAESTRO:                   # its OCEAN measurement reaches Virtuoso the way the run does
-        profile.bridge = dict(env_file=str(config.env_file), profile=connection.get('profile'), site=connection.get('bridge_site_packages'))
+    # its OCEAN measurement reaches Virtuoso the way the run does
+    if entry.get('recipe') == profiles.MAESTRO:
+        profile.bridge = dict(env_file=str(config.env_file), profile=connection.get('profile'),
+            site=connection.get('bridge_site_packages'))
     return config, profile, entry
 
 
@@ -470,25 +500,33 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED, contract=REAL_INTERFACE_CONTRACT)
         from analog_optimizer.envs.sizing import graph_contract
         # lazy: cdf_write imports the optimizer (torch)
-        from .cdf_write import factory_class              # a task written by the PDK's form: the form writer owns the cell
+        # a task written by the PDK's form: the form writer owns the cell
+        from .cdf_write import factory_class
         if graph_contract(compiled.graph) != graph_contract(graph):
-            raise TaskBlocked('This task fixes which values may change, their ranges and their grid. The rows of the parameter '
-                              'editor differ from what was saved: press "Save as" to keep them as a new task, or "Reload saved '
-                              'values" to take the saved ones back.')
+            raise TaskBlocked(
+                'This task fixes which values may change, their ranges and their grid. The rows of the '
+                'parameter editor differ from what was saved: press "Save as" to keep them as a new task, or '
+                '"Reload saved values" to take the saved ones back.')
         adv = run_settings.advanced
         from analog_optimizer.measurements.specs import RewardSettings
         # its decks load only the parts of the model file it uses (7.154)
         model_library.attach(profile, config, reference=reference, structure=structure.read_text())
         # a Maestro task reads its operating points for a network that uses them (record 7.298)
         # the raw input (record 7.298) or the ratios of the second build (record 7.317)
-        profile.read_operating_points = bool(run_settings.network.operating_points or run_settings.network.operating_point_ratios)
-        return _with_computed_specs(factory_class(profile)(config, profile, compiled.specs, Path(work_root), adv.episode_length,
+        profile.read_operating_points = bool(
+            run_settings.network.operating_points or run_settings.network.operating_point_ratios)
+        return _with_computed_specs(factory_class(profile)(config, profile, compiled.specs, Path(work_root),
+                                                           adv.episode_length,
                                                            adv.simulation_timeout_seconds, reference,
-                                                           reward_settings=RewardSettings(**run_settings.reward.model_dump())), compiled)
+                                                           reward_settings=RewardSettings(
+                                                               **run_settings.reward.model_dump())), compiled)
+    # ---- Describe the saved task independently of the deferred environment builder.
     structure, mapping = directory / profiles.FILES['structure'], directory / profiles.FILES['mapping']
     circuit = dict(circuit_class=entry['circuit_class'], pdk_id=entry.get('pdk_id') or 'gpdk045', dut_hierarchy=None,
-                   netlist_sha256=_sha256(structure), parser_config_sha256=_sha256(mapping), netlist_file=str(structure),
-                   parser_config_file=str(mapping), topology_id=f'profile:{name}', complete=True, generated_profile=True,
+                   netlist_sha256=_sha256(structure), parser_config_sha256=_sha256(mapping),
+                   netlist_file=str(structure),
+                   parser_config_file=str(mapping), topology_id=f'profile:{name}', complete=True,
+                   generated_profile=True,
                    baseline_recorded=reference is not None, evaluation_backend='virtuoso_bridge + Spectre (REAL)',
                    baseline_attempt=None if reference is not None else entry.get('baseline_attempt'))
     notes = ['Generated profile: it passes every offline check of the verified profiles, but '
@@ -500,13 +538,16 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
                      'simulation budget (asked when you press Start).')
     if entry.get('recipe') == profiles.MAESTRO:
         notes.insert(0, profiles.MAESTRO_NOT_RUNNABLE if not entry.get('runnable') else
-                     'Measured by Maestro: every evaluation runs the Maestro deck of its working copy\'s test around the exported '
-                     'circuit, and OCEAN measures the outputs on that run\'s results.')
-    provided = tuple(entry.get('provided_metrics') or ()) if entry.get('recipe') == profiles.MAESTRO else recipes.provided_metrics(entry['recipe'])
+                     "Measured by Maestro: every evaluation runs the Maestro deck of its working copy's test "
+                     "around the exported circuit, and OCEAN measures the outputs on that run's results.")
+    provided = tuple(entry.get('provided_metrics') or ()) if entry.get(
+        'recipe') == profiles.MAESTRO else recipes.provided_metrics(entry['recipe'])
     return TaskRuntime(task_key, 'real', graph, provided, circuit, structure.read_text(),
-                       str(structure), str(mapping), builder, max_concurrency=REAL_LANES, authorized=bool(authorized), notes=notes,
+                       str(structure), str(mapping), builder, max_concurrency=REAL_LANES, authorized=bool(authorized),
+                       notes=notes,
                        reference_metrics=None if reference is None else {
-                           key: dict(value=value, unit=None) for key, value in reference.items() if isinstance(value, (int, float))})
+                           key: dict(value=value, unit=None) for key, value in reference.items() if isinstance(value,
+                               (int, float))})
 
 
 def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
@@ -525,6 +566,7 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
         raise TaskBlocked('reference_measurements must be verified REAL baseline measurements')
     graph = profile.optimization_graph()
 
+    # ---- Defer simulator construction until authorization and graph checks pass.
     def builder(compiled, work_root, run_settings):
         if not authorized:
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED, contract=REAL_INTERFACE_CONTRACT)
@@ -538,12 +580,16 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
         from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
         corners = {row['id']: PVTCorner(**row) for row in profile.condition_config['screening_corners']}
         selected = tuple(SimulationCondition(corners[key], 'pvt_training') for key in run_settings.conditions.corners)
-        return _with_computed_specs(NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root), adv.episode_length,
+        return _with_computed_specs(NativeEnvironmentFactory(config, profile, compiled.specs, Path(work_root),
+                                                             adv.episode_length,
                                                              adv.simulation_timeout_seconds, reference['metrics'],
-                                                             reward_settings=RewardSettings(**run_settings.reward.model_dump()),
-                                                             condition_policy=run_settings.conditions.policy, corners=selected), compiled)
+                                                             reward_settings=RewardSettings(
+                                                                 **run_settings.reward.model_dump()),
+                                                             condition_policy=run_settings.conditions.policy,
+                                                             corners=selected), compiled)
     circuit = dict(circuit_class=info['circuit_class'], pdk_id='gpdk045', dut_hierarchy=None,
-                   netlist_sha256=_sha256(root / info['structure']), parser_config_sha256=_sha256(root / info['mapping']),
+                   netlist_sha256=_sha256(root / info['structure']),
+                   parser_config_sha256=_sha256(root / info['mapping']),
                    netlist_file=str(root / info['structure']), parser_config_file=str(root / info['mapping']),
                    topology_id=f'profile:{name}', complete=True, evaluation_backend='virtuoso_bridge + Spectre (REAL)')
     metrics = tuple(reference['metrics'])
@@ -551,9 +597,11 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
                        str(root / info['structure']), str(root / info['mapping']), builder, max_concurrency=REAL_LANES,
                        authorized=bool(authorized),
                        reference_metrics={name: dict(value=value, unit=(reference.get('metric_units') or {}).get(name))
-                                          for name, value in reference['metrics'].items() if isinstance(value, (int, float))},
-                       notes=[] if authorized else ['Loaded for viewing and validation only. Running it needs your explicit '
-                                                    'authorization of a real simulation budget (asked when you press Start).'])
+                                          for name, value in reference['metrics'].items() if isinstance(value, (int,
+                                              float))},
+                       notes=[] if authorized else [
+                           'Loaded for viewing and validation only. Running it needs your explicit '
+                           'authorization of a real simulation budget (asked when you press Start).'])
 
 
 def profile_parameter_rows(runtime) -> list:
@@ -589,8 +637,10 @@ def _graph_parameter_rows(graph) -> list:
                 row.update(lower=record['lower'], upper=record['upper'], step=record.get('step'),
                            optimized=bool(record.get('mutable', True)), initial_value=record.get('value'))
                 leader = variable_id
-            else:                                # a follower carries its group's flag: a frozen group is frozen as a whole
-                row.update(binding_group=leader, ratio=member.get('ratio', 1.0), optimized=bool(record.get('mutable', True)))
+            # a follower carries its group's flag: a frozen group is frozen as a whole
+            else:
+                row.update(binding_group=leader, ratio=member.get('ratio', 1.0), optimized=bool(record.get('mutable',
+                    True)))
             rows.append(row)
     return rows
 
@@ -615,7 +665,8 @@ def real_starter_config(task_key: str) -> dict:
         basis = (f'Pilot target of record ({file}: {" / ".join(keys)}): a goal near the measured baseline of this '
                  'circuit, not a product specification.')
         results = {spec['metric_id']: spec['unit'] for spec in specs}
-        probes = [dict(measurement_id=f'm_{metric}', analysis='tran' if oscillator else RESULT_ANALYSIS.get(metric, 'dc'),
+        probes = [dict(measurement_id=f'm_{metric}', analysis='tran' if oscillator else RESULT_ANALYSIS.get(metric,
+            'dc'),
                        result_source='backend_profile', source_name=metric, unit=unit,
                        notes='Computed by the circuit profile from the simulation results.')
                   for metric, unit in results.items()]
@@ -627,15 +678,19 @@ def real_starter_config(task_key: str) -> dict:
         saved = profiles.task_file(name)
         if saved is not None:                          # a saved task: its own rows, exactly as "Save task" stored them
             return dict(project=starter_project(task_key),
-                        circuit=dict(source='registered_task', task_id=task_key, circuit_class=circuit_class, pdk_id=pdk_id),
-                        parameters=saved.get('parameters') or [], measurements=saved.get('probes') or [], targets=saved.get('specs') or [])
+                        circuit=dict(source='registered_task', task_id=task_key, circuit_class=circuit_class,
+                            pdk_id=pdk_id),
+                        parameters=saved.get('parameters') or [], measurements=saved.get('probes') or [],
+                        targets=saved.get('specs') or [])
         profile = profiles.load_profile(name)
         graph = profile.optimization_graph()
         # The Probes of the testbench the profile was made through: the rows reading the cell brought
         # (profiles.testbench_probes), built by the same function - so after Create profile the editors still hold
         # this task's own rows, and choosing another task treats them as nobody's work.
-        probes = profiles.probe_rows(entry['recipe'], profiles.probe_results(entry['recipe'], entry.get('spec_registry')),
-                                     profiles.design_signals(entry['recipe'], profile.design), entry.get('testbench_cell'))
+        probes = profiles.probe_rows(entry['recipe'], profiles.probe_results(entry['recipe'],
+            entry.get('spec_registry')),
+                                     profiles.design_signals(entry['recipe'], profile.design),
+                                     entry.get('testbench_cell'))
         specs, basis = [], ''
     thresholds = dict(min=('>=', ('lower',)), max=('<=', ('upper',)), range=('interval', ('lower', 'upper')))
     targets = []
@@ -669,6 +724,7 @@ def starter_config(task_key: str) -> dict:
     root, info = repo_root(), task_registry.SYNTHETIC_FIXTURES[name]
     parser_config = ParserConfig.from_file(root / info['config'])
     parameters = []
+    # ---- Use the first member as the group leader and tie later members to its variable.
     for group in parser_config.parameter_groups:
         leader = None
         for member in group['members']:

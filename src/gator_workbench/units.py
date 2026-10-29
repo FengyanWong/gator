@@ -8,33 +8,43 @@ from __future__ import annotations
 
 import math
 
+_MILLI = 0.001
+_MICRO = 1e-06
+_NANO = 1e-09
+_PICO = 1e-12
+_FEMTO = 1e-15
+_KILO = 1000.0
+_MEGA = 1000000.0
+_GIGA = 1000000000.0
+
+
 # canonical unit -> {accepted spelling: factor to canonical}
 _LINEAR = {
-    'm': {'m': 1.0, 'mm': 1e-3, 'um': 1e-6, 'µm': 1e-6, 'nm': 1e-9},
-    'F': {'F': 1.0, 'mF': 1e-3, 'uF': 1e-6, 'µF': 1e-6, 'nF': 1e-9, 'pF': 1e-12, 'fF': 1e-15, 'aF': 1e-18},
-    'ohm': {'ohm': 1.0, 'Ohm': 1.0, 'Ω': 1.0, 'kohm': 1e3, 'kΩ': 1e3, 'Mohm': 1e6, 'MΩ': 1e6},
-    'H': {'H': 1.0, 'mH': 1e-3, 'uH': 1e-6, 'µH': 1e-6, 'nH': 1e-9, 'pH': 1e-12},
-    'V': {'V': 1.0, 'mV': 1e-3, 'uV': 1e-6, 'µV': 1e-6, 'nV': 1e-9, 'kV': 1e3},
-    'A': {'A': 1.0, 'mA': 1e-3, 'uA': 1e-6, 'µA': 1e-6, 'nA': 1e-9, 'pA': 1e-12},
-    'W': {'W': 1.0, 'mW': 1e-3, 'uW': 1e-6, 'µW': 1e-6, 'nW': 1e-9, 'pW': 1e-12},
+    'm': {'m': 1.0, 'mm': _MILLI, 'um': _MICRO, 'µm': _MICRO, 'nm': _NANO},
+    'F': {'F': 1.0, 'mF': _MILLI, 'uF': _MICRO, 'µF': _MICRO, 'nF': _NANO, 'pF': _PICO, 'fF': _FEMTO, 'aF': 1e-18},
+    'ohm': {'ohm': 1.0, 'Ohm': 1.0, 'Ω': 1.0, 'kohm': _KILO, 'kΩ': _KILO, 'Mohm': _MEGA, 'MΩ': _MEGA},
+    'H': {'H': 1.0, 'mH': _MILLI, 'uH': _MICRO, 'µH': _MICRO, 'nH': _NANO, 'pH': _PICO},
+    'V': {'V': 1.0, 'mV': _MILLI, 'uV': _MICRO, 'µV': _MICRO, 'nV': _NANO, 'kV': _KILO},
+    'A': {'A': 1.0, 'mA': _MILLI, 'uA': _MICRO, 'µA': _MICRO, 'nA': _NANO, 'pA': _PICO},
+    'W': {'W': 1.0, 'mW': _MILLI, 'uW': _MICRO, 'µW': _MICRO, 'nW': _NANO, 'pW': _PICO},
     # Energy, e.g. the Specs equation "power / frequency" = energy per cycle.
-    'J': {'J': 1.0, 'mJ': 1e-3, 'uJ': 1e-6, 'µJ': 1e-6, 'nJ': 1e-9, 'pJ': 1e-12, 'fJ': 1e-15, 'aJ': 1e-18},
-    'Hz': {'Hz': 1.0, 'kHz': 1e3, 'MHz': 1e6, 'GHz': 1e9, 'THz': 1e12},
-    's': {'s': 1.0, 'ms': 1e-3, 'us': 1e-6, 'µs': 1e-6, 'ns': 1e-9, 'ps': 1e-12, 'fs': 1e-15},
+    'J': {'J': 1.0, 'mJ': _MILLI, 'uJ': _MICRO, 'µJ': _MICRO, 'nJ': _NANO, 'pJ': _PICO, 'fJ': _FEMTO, 'aJ': 1e-18},
+    'Hz': {'Hz': 1.0, 'kHz': _KILO, 'MHz': _MEGA, 'GHz': _GIGA, 'THz': 1e12},
+    's': {'s': 1.0, 'ms': _MILLI, 'us': _MICRO, 'µs': _MICRO, 'ns': _NANO, 'ps': _PICO, 'fs': _FEMTO},
     'deg': {'deg': 1.0, 'degree': 1.0, '°': 1.0},
     'rad': {'rad': 1.0},
     'dB': {'dB': 1.0},
     'dBc/Hz': {'dBc/Hz': 1.0},
-    'V/sqrt(Hz)': {'V/sqrt(Hz)': 1.0, 'nV/sqrt(Hz)': 1e-9, 'uV/sqrt(Hz)': 1e-6, 'µV/sqrt(Hz)': 1e-6},
-    'A/sqrt(Hz)': {'A/sqrt(Hz)': 1.0, 'pA/sqrt(Hz)': 1e-12, 'fA/sqrt(Hz)': 1e-15},
+    'V/sqrt(Hz)': {'V/sqrt(Hz)': 1.0, 'nV/sqrt(Hz)': _NANO, 'uV/sqrt(Hz)': _MICRO, 'µV/sqrt(Hz)': _MICRO},
+    'A/sqrt(Hz)': {'A/sqrt(Hz)': 1.0, 'pA/sqrt(Hz)': _PICO, 'fA/sqrt(Hz)': _FEMTO},
     'V^2/Hz': {'V^2/Hz': 1.0},
-    'Vrms': {'Vrms': 1.0, 'mVrms': 1e-3, 'uVrms': 1e-6, 'µVrms': 1e-6},
-    'V/s': {'V/s': 1.0, 'V/us': 1e6, 'V/µs': 1e6, 'V/ns': 1e9},
-    'Hz/V': {'Hz/V': 1.0, 'MHz/V': 1e6, 'GHz/V': 1e9},
+    'Vrms': {'Vrms': 1.0, 'mVrms': _MILLI, 'uVrms': _MICRO, 'µVrms': _MICRO},
+    'V/s': {'V/s': 1.0, 'V/us': _MEGA, 'V/µs': _MEGA, 'V/ns': _GIGA},
+    'Hz/V': {'Hz/V': 1.0, 'MHz/V': _MEGA, 'GHz/V': _GIGA},
     # Line and load regulation of a regulator, as the verified LDO profile reports them. V/A is kept apart from ohm:
     # it is a regulation figure, and the result registry of record spells it this way.
-    'V/V': {'V/V': 1.0, 'mV/V': 1e-3},
-    'V/A': {'V/A': 1.0, 'mV/mA': 1.0, 'mV/A': 1e-3},
+    'V/V': {'V/V': 1.0, 'mV/V': _MILLI},
+    'V/A': {'V/A': 1.0, 'mV/mA': 1.0, 'mV/A': _MILLI},
     '%': {'%': 1.0},
     'count': {'count': 1.0},
     '1': {'1': 1.0, 'ratio': 1.0, 'unitless': 1.0, '': 1.0},
@@ -60,6 +70,7 @@ PARAMETER_KIND_UNITS = {'w': 'm', 'l': 'm', 'm': 'count', 'nf': 'count', 'r': 'o
 
 
 class UnitError(ValueError):
+    """The error for an unknown unit, or for converting a value that is not a finite number."""
     pass
 
 
@@ -68,6 +79,7 @@ def known(unit: str) -> bool:
 
 
 def canonical_unit(unit: str) -> str:
+    """Return a registered unit's canonical name or reject an unknown unit."""
     if unit not in LOOKUP:
         raise UnitError(f'Unknown unit {unit!r}; accepted units: {", ".join(sorted(LOOKUP))}')
     return LOOKUP[unit][0]
@@ -84,10 +96,12 @@ def to_canonical(value: float, unit: str) -> float:
 
 
 def compatible(first: str, second: str) -> bool:
+    """Check whether both units are registered and have the same canonical unit."""
     return known(first) and known(second) and canonical_unit(first) == canonical_unit(second)
 
 
 def is_affine(unit: str) -> bool:
+    """Check whether converting the unit requires a nonzero affine offset."""
     return unit in _AFFINE and _AFFINE[unit][2] != 0.0
 
 
@@ -101,21 +115,26 @@ def scale_to_canonical(value: float, unit: str) -> float:
 
 
 # ---------------------------------------------------------------------- the written form of a quantity (record 7.208)
-# One way of writing a quantity in the whole workbench (user: "a unified way of unit representation in the parameters probes
-# and specs windows considering the convenience usage of users", chose "Prefix per value"): the number, an SI prefix and the
-# unit, as Virtuoso's forms write them - 1.2 um, 45 nm, 9.535 kohm, 400 uA, 100 MHz, -30 dB, 60 deg. In English letters only
-# (user: "dont use greek characters for unit, use english letters instead"): u for micro, ohm, deg; the Greek spellings
-# (µm, kΩ, °) are still read. The digits are the stored number's own, moved and never computed. The page writes and reads
-# quantities with the same table (`written_forms`, sent with /api/schema); stored numbers and units never change.
-PREFIXABLE = {'m', 'F', 'ohm', 'H', 'V', 'A', 'W', 'J', 'Hz', 's', 'Vrms', 'V/s', 'Hz/V', 'V/sqrt(Hz)', 'A/sqrt(Hz)', 'V/A'}
-SYMBOLS = {'Ohm': 'ohm', 'Ω': 'ohm', 'degree': 'deg', '°': 'deg', 'C': 'degC', '°C': 'degC', '1': '', 'ratio': '', 'unitless': '',
+# One way of writing a quantity in the whole workbench (user: "a unified way of unit representation in the parameters
+# probes and specs windows considering the convenience usage of users", chose "Prefix per value"): the number, an SI
+# prefix and the unit, as Virtuoso's forms write them - 1.2 um, 45 nm, 9.535 kohm, 400 uA, 100 MHz, -30 dB, 60 deg. In
+# English letters only (user: "dont use greek characters for unit, use english letters instead"): u for micro, ohm, deg;
+# the Greek spellings (µm, kΩ, °) are still read. The digits are the stored number's own, moved and never computed. The
+# page writes and reads quantities with the same table (`written_forms`, sent with /api/schema); stored numbers and
+# units never change.
+PREFIXABLE = {'m', 'F', 'ohm', 'H', 'V', 'A', 'W', 'J', 'Hz', 's', 'Vrms', 'V/s', 'Hz/V', 'V/sqrt(Hz)', 'A/sqrt(Hz)',
+    'V/A'}
+SYMBOLS = {'Ohm': 'ohm', 'Ω': 'ohm', 'degree': 'deg', '°': 'deg', 'C': 'degC', '°C': 'degC', '1': '', 'ratio': '',
+    'unitless': '',
            '': '', 'count': '', 'fixture': ''}
 QUANTITIES = {'m': 'a length', 'F': 'a capacitance', 'ohm': 'a resistance', 'H': 'an inductance', 'V': 'a voltage',
               'A': 'a current', 'W': 'a power', 'J': 'an energy', 'Hz': 'a frequency', 's': 'a time', 'deg': 'an angle',
-              'rad': 'an angle', 'dB': 'a level in dB', 'dBc/Hz': 'a phase noise', 'V/sqrt(Hz)': 'a voltage noise density',
+              'rad': 'an angle', 'dB': 'a level in dB', 'dBc/Hz': 'a phase noise',
+              'V/sqrt(Hz)': 'a voltage noise density',
               'A/sqrt(Hz)': 'a current noise density', 'V^2/Hz': 'a noise power density', 'Vrms': 'an rms voltage',
               'V/s': 'a slew rate', 'Hz/V': 'a tuning gain', 'V/V': 'a voltage ratio', 'V/A': 'a regulation in V/A',
-              '%': 'a percentage', 'count': 'a count', '1': 'a plain number', 'degC': 'a temperature', 'fixture': 'a fixture value'}
+              '%': 'a percentage', 'count': 'a count', '1': 'a plain number', 'degC': 'a temperature',
+              'fixture': 'a fixture value'}
 _PREFIXES = {-18: 'a', -15: 'f', -12: 'p', -9: 'n', -6: 'u', -3: 'm', 0: '', 3: 'k', 6: 'M', 9: 'G', 12: 'T'}
 
 
@@ -123,10 +142,12 @@ def written_forms() -> dict:
     """The table the page writes and reads quantities with: every accepted spelling -> [canonical, factor, offset], the
     canonical units that take an SI prefix, how a unit is written (Ω as ohm), what quantity it is, and the unit of each
     parameter kind."""
-    return dict(spellings={spelling: list(rule) for spelling, rule in sorted(LOOKUP.items())}, prefixable=sorted(PREFIXABLE),
+    return dict(spellings={spelling: list(rule) for spelling, rule in sorted(LOOKUP.items())},
+                prefixable=sorted(PREFIXABLE),
                 symbols=SYMBOLS, quantities=QUANTITIES,
-                # the unit a parameter of these names is sized in (w and l lengths, m and nf counts...): the editors have no
-                # Unit column for Parameters since record 7.208, so this decides what a value typed in such a row must be
+                # the unit a parameter of these names is sized in (w and l lengths, m and nf counts...): the editors
+                # have no Unit column for Parameters since record 7.208, so this decides what a value typed in such a
+                # row must be
                 kinds={name: unit for name, unit in PARAMETER_KIND_UNITS.items() if unit})
 
 
@@ -156,7 +177,7 @@ def text(value, unit: str | None) -> str:
         return _join(_shortest(value), symbol(unit) if rule is None or rule[1] == 1.0 else unit)
     canonical, factor, _offset = rule
     shift = round(math.log10(factor))
-    if abs(10.0 ** shift - factor) > 1e-12 * factor:
+    if abs(10.0 ** shift - factor) > _PICO * factor:
         return _join(_shortest(value), unit)
     if value == 0:                                             # in the row's own prefix: 0 um
         return _join('0', f'{_PREFIXES.get(shift, "")}{symbol(canonical)}')
@@ -164,7 +185,8 @@ def text(value, unit: str | None) -> str:
     digits = ''.join(map(str, digits))
     exponent += shift
     lead = exponent + len(digits) - 1
-    if not -18 <= lead < 15:                                   # beyond the prefixes: the exponent form, in the canonical unit
+    # beyond the prefixes: the exponent form, in the canonical unit
+    if not -18 <= lead < 15:
         number = f'{digits[0]}{"." + digits[1:] if len(digits) > 1 else ""}e{lead}'
         return _join(f'{"-" if value < 0 else ""}{number}', symbol(canonical))
     prefix = lead // 3 * 3

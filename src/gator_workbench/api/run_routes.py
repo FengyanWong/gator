@@ -1,6 +1,7 @@
 """Run control, saved models and data-only exports."""
 from __future__ import annotations
 import mimetypes
+from typing import NamedTuple
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from .. import (aggregates, calibration, checkpoints as ckpt, connection, corner_check, graph_view, launch_requests,
@@ -18,23 +19,38 @@ from .models import (CommandBody, ContinueBody, CornerCheckBody, CornerStopBody,
 from .support import attachment, compatibility_unchecked, fail, file_snapshot, package_files, run_files, zip_download
 
 
-# /api/runs/model took any dict: {}, a numeric checkpoint_id or a list as run_dir failed with HTTP 500 (review of 2026-09-29).
+# /api/runs/model took any dict: {}, a numeric checkpoint_id or a list as run_dir failed with HTTP 500 (review of
+# 2026-09-29).
 class ModelBody(ModelStructureBody):
     """A saved model and, optionally, the page's configuration to compare it with."""
     config: dict | None = None
 
 
 
-def start_run(context, config, body, *, baseline_only=False, record=None, session=None):
+def start_run(context, config, body, *, baseline_only: bool=False, record=None, session=None) -> dict:
     """`session`: a Virtuoso session chosen for this run already (Save task hands its own to the baseline it starts,
     record 7.351) - no second choice; this start lets it go, or hands it to its worker, as it would its own choice."""
+    config, allow_real, random_only, calibrating = _configure_start(config, body, baseline_only)
+    # A connection with two Virtuoso sessions: the run goes to whichever is free (record 7.351, session_routing). A busy
+    # session that holds the task's cell lets go of it once prepare_run's refusals have passed (`before_write`).
+    config, session = _select_start_session(config, session, allow_real, context)
+    kind = _RunKind(baseline_only, random_only, calibrating)
+    layout, manifest, made = _prepare_start_directory(config, context, allow_real, body, session, kind, record)
+    pid = _launch_start_worker(layout, allow_real, manifest, session)
+    return dict(made, worker_pid=pid)
+
+
+def _configure_start(config, body, baseline_only) -> tuple:
+    """Validate calibration options and copy the configuration for a baseline or calibration run."""
     allow_real = bool(body.authorize_real_simulation)
     designs, calibrating = getattr(body, 'calibration_designs', 0), None
     random_only = getattr(body, 'calibration_only', False)
     if random_only and (baseline_only or not designs):
         fail(400, 'Calibration needs random designs and cannot also request a baseline.')
     if designs and not (baseline_only or random_only):
-        fail(400, 'Calibration designs belong to the Baseline simulation (baseline_only), or Calibration (calibration_only), not to an optimization run.')
+        fail(400,
+            'Calibration designs belong to the Baseline simulation (baseline_only), or Calibration '
+            '(calibration_only), not to an optimization run.')
     if baseline_only or random_only:
         config = config.model_copy(deep=True)
         config.run.mode, config.run.max_evaluations = 'scratch', 1         # exactly ONE costed evaluation
@@ -43,8 +59,11 @@ def start_run(context, config, body, *, baseline_only=False, record=None, sessio
         config.run.rehearsal = None
         if designs:                                # ... and then the random designs of the calibration (record 7.197)
             calibrating = calibration.prepare(config, designs, random_only=random_only)
-    # A connection with two Virtuoso sessions: the run goes to whichever is free (record 7.351, session_routing). A busy
-    # session that holds the task's cell lets go of it once prepare_run's refusals have passed (`before_write`).
+    return config, allow_real, random_only, calibrating
+
+
+def _select_start_session(config, session, allow_real, context) -> tuple:
+    """Attach the supplied session or choose an available session for a real run."""
     if session is not None:
         config = session_routing.with_session(config, session)
     elif allow_real:
@@ -52,12 +71,27 @@ def start_run(context, config, body, *, baseline_only=False, record=None, sessio
             config, session = session_routing.route(config, context.monitor)
         except session_routing.SessionsBusy as exc:
             fail(409, exc, code=exc.code, report=exc.report)
+    return config, session
+
+
+class _RunKind(NamedTuple):
+    """What a start runs: a Baseline simulation, a Calibration or an optimization run, and its calibration designs."""
+    baseline_only: bool
+    random_only: bool               # a Calibration: random designs only, no starting-design evaluation
+    calibrating: dict | None        # calibration.prepare's request when calibration designs were asked for, else None
+
+
+def _prepare_start_directory(config, context, allow_real, body, session, kind, record) -> tuple:
+    """Prepare the run directory and persist its launch records, releasing the session when either step fails."""
+    # ---- Release the selected session if directory preparation fails.
     try:
         layout, manifest = runs.prepare_run(config, context.roots, allow_real=allow_real,
-                                            confirm_transfer=getattr(body, 'confirm_transfer', False), monitor=context.monitor,
+                                            confirm_transfer=getattr(body, 'confirm_transfer', False),
+                                            monitor=context.monitor,
                                             acknowledge_unknown=body.acknowledge_unknown_connection,
                                             remember_concurrency=not getattr(body, 'automatic_baseline', False),
-                                            before_write=lambda: session_routing.release_pending(session, context.monitor))
+                                            before_write=lambda: session_routing.release_pending(session,
+                                                context.monitor))
     except session_routing.SessionsBusy as exc:
         session_routing.finished(session)
         fail(409, exc, code=exc.code, report=exc.report)
@@ -70,20 +104,25 @@ def start_run(context, config, body, *, baseline_only=False, record=None, sessio
     except BaseException:
         session_routing.finished(session)
         raise
+    # ---- Record the session and run kind before reporting a successful start.
     try:
         if session is not None:                    # which session, and why, in the run's record (its current segment)
             manifest['segments'][-1]['virtuoso_session'] = session.record()
             manifest['notes'].append(session.said)
-        if baseline_only or random_only:
-            manifest['run_kind'] = 'calibration' if random_only else 'baseline_preflight'
-            manifest['notes'].append('Calibration: random designs only; no starting-design evaluation.' if random_only else
+        if kind.baseline_only or kind.random_only:
+            manifest['run_kind'] = 'calibration' if kind.random_only else 'baseline_preflight'
+            manifest['notes'].append(
+                'Calibration: random designs only; no starting-design evaluation.' if kind.random_only else
                                      'Baseline simulation: a costed preflight evaluation, not a free check.')
-            if calibrating:
-                manifest['calibration'] = calibrating
-                manifest['notes'].append((f'Calibration: {calibrating["designs"]} random designs over the ' if random_only else
-                                          f'With calibration: after the baseline, {calibrating["designs"]} random designs over the ') +
-                                         'Parameters ranges (each of them a costed evaluation; nothing is learned from them).')
-        if session is not None or baseline_only or random_only:
+            if kind.calibrating:
+                manifest['calibration'] = kind.calibrating
+                manifest['notes'].append((
+                    f'Calibration: {kind.calibrating["designs"]} random designs over the ' if kind.random_only else
+                                          f"With calibration: after the baseline, {kind.calibrating['designs']} "
+                                          f'random designs over the ') +
+                                         'Parameters ranges (each of them a costed evaluation; nothing is '
+                                         'learned from them).')
+        if session is not None or kind.baseline_only or kind.random_only:
             write_json(layout.manifest, manifest)  # one write for both (the manifest is on the D: drive)
         made = dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=None,
                     paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),
@@ -100,17 +139,27 @@ def start_run(context, config, body, *, baseline_only=False, record=None, sessio
         if held is not None:
             held.release()
         raise
+    return layout, manifest, made
+
+
+
+
+def _launch_start_worker(layout, allow_real, manifest, session):
+    """Launch the worker, release its session on launch failure, and record a successful start."""
     try:
         pid = runs.launch_worker(layout, allow_real=allow_real and not manifest['mock'])
     except BaseException:
         session_routing.finished(session)
         raise
     session_routing.started(session, pid)    # reserved until the worker holds the session's lock, or has ended
-    return dict(made, worker_pid=pid)
+    return pid
 
 
 def worker_started(answer, at) -> bool:
-    """Whether the run a launching record (written at `at`) names has its worker (launch_requests: the `started` test)."""
+    (
+        'Whether the run a launching record (written at `at`) names has its worker (launch_requests: the '
+        '`started` test).'
+    )
     return bool(answer.get('run_dir')) and runs.worker_started(answer['run_dir'], since=at)
 
 
@@ -141,7 +190,7 @@ def once(request_id, kind, work):
     return result
 
 
-def register(app: FastAPI, context: ApiContext):
+def register(app: FastAPI, context: ApiContext) -> None:
     """The run routes, registered in this order: the order of registration is the order of matching."""
     _run_list_and_model_routes(app, context)
     _launch_and_control_routes(app, context)
@@ -150,8 +199,25 @@ def register(app: FastAPI, context: ApiContext):
     _export_routes(app, context)
 
 
-def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
+def _run_list_and_model_routes(app: FastAPI, context: ApiContext) -> None:
     """The run list and the saved models: describe, default, rename, list, structure, graph view."""
+    _register_run_list_route(app, context)
+
+    _register_model_description_route(app, context)
+
+    _register_default_model_route(app, context)
+
+    _register_model_rename_route(app, context)
+
+    _register_saved_models_route(app, context)
+
+    _register_model_structure_route(app, context)
+
+    _register_model_graph_view_route(app, context)
+
+
+def _register_run_list_route(app, context) -> None:
+    """Register the run-list endpoint with its existing refresh and output-root choices."""
     @app.get('/api/runs')
     def get_runs(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
         """`fresh`: every run folder read again, past the run list's cache (the page's Refresh list; record 7.274)."""
@@ -160,6 +226,9 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         except PathNotAllowed as exc:
             fail(403, exc)
 
+
+def _register_model_description_route(app, context) -> None:
+    """Register saved-model facts and compatibility with the current configuration."""
     @app.post('/api/runs/model')
     def describe_model(body: ModelBody):
         """The selected RL model: source task, save time, schema, counters, actual path, restorable
@@ -188,17 +257,25 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
                 except runs.RunRejected as exc:
                     result['compatibility_unchecked'] = dict(
                         title='The component list of this configuration is not available',
-                        what=str(exc), note='Read that PDK in the Virtuoso window ("PDK window..." reads one by name), or choose the '
+                        what=str(exc),
+                        note='Read that PDK in the Virtuoso window ("PDK window..." reads one by name), or choose the '
                         'standard list. The saved model itself is fine.', technical=f'{exc.code}: {exc}')
-                result['suggestion'] = runs.suggest_mode(config, run_dir, task=runtime)   # the task loaded above, not a second load
+                # the task loaded above, not a second load
+                result['suggestion'] = runs.suggest_mode(config, run_dir, task=runtime)
         return result
 
+
+def _register_default_model_route(app, context) -> None:
+    """Register lookup of the newest saved model under a model or legacy project label."""
     @app.get('/api/runs/default-model')
     def default_model(label: str | None = None, project: str | None = None):
         """Default = the newest model saved under this RL model label (record 7.159), and that run's `latest`, not
         `best`. `project`: the project name runs were remembered under before the label, asked when the label has none."""
         return runs.default_model(context.roots, label, project)
 
+
+def _register_model_rename_route(app, context) -> None:
+    """Register saved-model label changes and name-conflict responses."""
     @app.post('/api/runs/model/rename')
     def rename_model(body: RenameModelBody):
         """Gives a saved model a new name (record 7.225; user: "add a functionality of rename saved model"). Kept in the
@@ -217,6 +294,9 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
             fail(422, exc)
         return dict(run_dir=str(run_dir), model_label=record['model_label'], previous=record['previous'])
 
+
+def _register_saved_models_route(app, context) -> None:
+    """Register the model chooser list with its saved checkpoints."""
     @app.get('/api/runs/models')
     def saved_models(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
         """The model chooser's list: every run that holds a saved RL model, with all of its save points.
@@ -229,6 +309,9 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         except PathNotAllowed as exc:
             fail(403, exc)
 
+
+def _register_model_structure_route(app, context) -> None:
+    """Register the saved model network-structure table endpoint."""
     @app.post('/api/runs/model/structure')
     def model_structure_table(body: ModelStructureBody):
         """Every layer of the chosen saved model with its type, shape and parameter count - a table, no plot.
@@ -242,6 +325,9 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
         except ValueError as exc:
             fail(409, exc)
 
+
+def _register_model_graph_view_route(app, context) -> None:
+    """Register archived-state graph inspection for a selected saved model."""
     @app.post('/api/runs/model/graph-view')
     def model_graph_view(body: GraphViewBody):
         """The data of the circuit graph view: the chosen save point replayed on a state its own run ARCHIVED -
@@ -256,28 +342,35 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
             fail(409, exc)
 
 
-def _launch_and_control_routes(app: FastAPI, context: ApiContext):
+def _launch_and_control_routes(app: FastAPI, context: ApiContext) -> None:
     """Start, continue, the launch requests, the run commands and the run status."""
+    # Reject removed search methods and deduplicate the request before starting the configured run.
     @app.post('/api/runs/start')
     def start(body: StartBody):
         removed = schema.removed_search_method(body.config)
         if removed:
             # Only a page older than this server sends one (the configuration it keeps drops the search block when it
             # loads, store.ts migrateConfig): starting it as SAC would run something else than the page said.
-            fail(409, f'Not started: this configuration asks for the search method "{schema.REMOVED_SEARCH_METHODS[removed]}", '
-                      'which was removed on 2026-10-06 - SAC is the only search method now. The page is older than the '
-                      'server: reload it, check Run configuration, and press Start again.', code='search_method_removed')
+            fail(409,
+                f'Not started: this configuration asks for the search method "'
+                f'{schema.REMOVED_SEARCH_METHODS[removed]}", which was removed on 2026-10-06 - SAC is the '
+                f'only search method now. The page is older than the server: reload it, check Run '
+                f'configuration, and press Start again.',
+                code='search_method_removed')
         return once(body.request_id, 'start', lambda record: start_run(
             context, context.parse_config(body.config), body, baseline_only=body.baseline_only, record=record))
 
+    # Authorize the run directory and deduplicate its continuation request.
     @app.post('/api/runs/continue')
     def continue_run(body: ContinueBody):
         run_dir = context.run_path(body.run_dir)
 
         def work(record):
+            """Rebuild resume settings from the saved configuration before submitting the continuation launch."""
             config = schema.WorkbenchConfig.model_validate(read_json(RunLayout(run_dir).effective_config))
             config.run.mode, config.run.model_source.run_dir = 'resume', str(run_dir)
-            if config.run.connection_profile_id:          # on whichever session of its connection is free (record 7.351)
+            # on whichever session of its connection is free (record 7.351)
+            if config.run.connection_profile_id:
                 config.run.connection_profile_id = connection.session_group(config.run.connection_profile_id)[0]
             if body.max_evaluations:
                 config.run.max_evaluations = body.max_evaluations
@@ -296,6 +389,7 @@ def _launch_and_control_routes(app: FastAPI, context: ApiContext):
         lock; the press checks everything again."""
         return runs.continuation(context.run_path(run_dir), max_evaluations=max_evaluations)
 
+    # Send a supported run command and report a rejected command as a conflict.
     @app.post('/api/runs/command')
     def command(body: CommandBody):
         try:
@@ -303,17 +397,22 @@ def _launch_and_control_routes(app: FastAPI, context: ApiContext):
         except runs.RunRejected as exc:            # "Save now" on a run that cannot or need not save: said, not done
             fail(409, exc, code=exc.code)
 
+    # Read run state with the cached status of its configured connection.
     @app.get('/api/runs/status')
     def status(run_dir: str):
         path = context.run_path(run_dir)
         return runs.status_view(path, context.monitor.status)
 
 
-def _corner_check_routes(app: FastAPI, context: ApiContext):
+def _corner_check_routes(app: FastAPI, context: ApiContext) -> None:
     """The corner check of a run: plan, start, status, stop."""
     @app.get('/api/runs/corner-check/plan')
-    def corner_check_plan(run_dir: str, designs: int = Query(corner_check.MAX_DESIGNS, ge=1, le=corner_check.MAX_DESIGNS)):
-        """Which designs a check would simulate at which corners, and how many simulations that is. Free: local files."""
+    def corner_check_plan(run_dir: str, designs: int = Query(corner_check.MAX_DESIGNS, ge=1,
+        le=corner_check.MAX_DESIGNS)):
+        (
+            'Which designs a check would simulate at which corners, and how many simulations that is. Free: '
+            'local files.'
+        )
         return corner_check.plan(context.run_path(run_dir), designs=designs)
 
     @app.post('/api/runs/corner-check/start')
@@ -323,13 +422,16 @@ def _corner_check_routes(app: FastAPI, context: ApiContext):
         try:
             directory = corner_check.prepare(run_dir, designs=body.designs, expected=body.expected_designs,
                                              simulations=body.simulations, allow_real=body.authorize_real_simulation,
-                                             acknowledge_unknown=body.acknowledge_unknown_connection, monitor=context.monitor)
+                                             acknowledge_unknown=body.acknowledge_unknown_connection,
+                                             monitor=context.monitor)
         except (corner_check.CheckRefused, runs.RunRejected) as exc:
             fail(409, exc, code=exc.code, report=exc.report)
         request = read_json(directory / 'request.json')
         pid = corner_check.launch(directory, allow_real=body.authorize_real_simulation and not request['mock'])
-        return dict(check_id=request['check_id'], worker_pid=pid, simulations=request['simulations'], mock=request['mock'])
+        return dict(check_id=request['check_id'], worker_pid=pid, simulations=request['simulations'],
+            mock=request['mock'])
 
+    # Return one corner-check state after authorizing its run directory.
     @app.get('/api/runs/corner-check/status')
     def corner_check_status(run_dir: str, check_id: str):
         try:
@@ -350,8 +452,9 @@ def _corner_check_routes(app: FastAPI, context: ApiContext):
             fail(404, 'This run has no corner check with that identifier.')
 
 
-def _run_data_routes(app: FastAPI, context: ApiContext):
+def _run_data_routes(app: FastAPI, context: ApiContext) -> None:
     """A run's files, data tables, log, training series and file downloads."""
+    # List run files outside the work directory and lock files, including their total size.
     @app.get('/api/runs/files')
     def files(run_dir: str):
         path = context.run_path(run_dir)
@@ -364,6 +467,7 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
         return dict(run_dir=str(path), files=entries, total_bytes=sum(e['bytes'] for e in entries),
                     paths=RunLayout(path).subpaths())
 
+    # Return a bounded table view together with columns, row count and commit cutoff.
     @app.get('/api/runs/table')
     def table(run_dir: str, table: str, limit: int = Query(20, ge=1, le=500), tail: bool = True):
         if table not in TABLES:
@@ -374,7 +478,8 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
                     columns=names, rows=rows)
 
     @app.get('/api/runs/logs')
-    def logs(run_dir: str, kind: str = Query('events', pattern='^(events|errors)$'), limit: int = Query(100, ge=1, le=1000)):
+    def logs(run_dir: str, kind: str = Query('events', pattern='^(events|errors)$'), limit: int = Query(100, ge=1,
+        le=1000)):
         return dict(kind=kind, entries=read_jsonl_tail(context.run_path(run_dir) / 'logs' / f'{kind}.jsonl', limit))
 
     @app.get('/api/runs/training')
@@ -387,6 +492,7 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
         except FileNotFoundError as exc:
             fail(404, exc)
 
+    # Stream only the size captured when an authorized run file is opened.
     @app.get('/api/runs/download')
     def download(run_dir: str, path: str):
         try:
@@ -400,8 +506,9 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
                                  headers={'Content-Length': str(size), **attachment(target.name)})
 
 
-def _export_routes(app: FastAPI, context: ApiContext):
+def _export_routes(app: FastAPI, context: ApiContext) -> None:
     """Data-only exports: a run's CSV tables and package, the research aggregates."""
+    # Export one known run table as CSV and return its absolute and run-relative paths.
     @app.post('/api/runs/export-csv')
     def export_csv(body: ExportBody):
         if body.table not in TABLES:
@@ -413,9 +520,11 @@ def _export_routes(app: FastAPI, context: ApiContext):
     def export_package(body: ExportBody):
         """Data-only package: JSON, Parquet, CSV, JSONL, netlists. No waveforms, work files or models."""
         path = context.run_path(body.run_dir)
-        members = package_files(path, exclude_roots=('work', 'control', 'waveforms', 'checkpoints'), exclude_dirs=('_quarantine',))
+        members = package_files(path, exclude_roots=('work', 'control', 'waveforms', 'checkpoints'),
+            exclude_dirs=('_quarantine',))
         return zip_download(members, f'{path.name}__data.zip')
 
+    # Regenerate aggregate exports for the experiment that contains the selected run.
     @app.post('/api/aggregates/export')
     def export_aggregates(body: ExportBody):
         run_dir = context.run_path(body.run_dir)
@@ -427,7 +536,8 @@ def _export_routes(app: FastAPI, context: ApiContext):
         """The research CSVs of this run's experiment as one zip: they lie above the run directory, where the per-file
         download cannot reach. Only what the exporter writes (<table>.csv + <table>.meta.json), as it is on disk now."""
         experiment = RunLayout(context.run_path(run_dir)).experiment_dir
-        members = [experiment / 'aggregates' / f'{table}{suffix}' for table in aggregates.COLUMNS for suffix in ('.csv', '.meta.json')]
+        members = [experiment / 'aggregates' / f'{table}{suffix}' for table in aggregates.COLUMNS for suffix in ('.csv',
+            '.meta.json')]
         members = [m for m in members if m.is_file() and not m.is_symlink()]
         if not members:
             fail(404, 'No research CSVs have been exported for this experiment yet')

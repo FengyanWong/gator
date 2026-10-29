@@ -46,10 +46,12 @@ EVALUATION_COLUMNS = ('commit_seq', 'completion_index', 'global_env_step', 'epis
                       'action_source', 'status', 'policy_version', 'reward', 'valid', 'all_hard_constraints_satisfied',
                       'normalized_constraint_violation', 'clearance_margin', 'best_so_far_feasible',
                       'best_so_far_violation', 'execution_seconds', 'committed_at')
-UPDATE_COLUMNS = ('cumulative_updates', 'evaluations_collected', 'update_phase', 'actor_loss', 'critic_loss', 'alpha_loss',
+UPDATE_COLUMNS = ('cumulative_updates', 'evaluations_collected', 'update_phase', 'actor_loss', 'critic_loss',
+    'alpha_loss',
                   'alpha', 'mean_log_prob', 'target_mean', 'critic_grad_norm', 'actor_grad_norm', 'updated_at')
-# A spec's row: one per evaluation and spec, the value its equation gave and the limits it was held to (engine._metric_rows:
-# aggregation_level 'aggregate' with `hard` set; a probe that no spec shows whole has hard = null and is not a spec).
+# A spec's row: one per evaluation and spec, the value its equation gave and the limits it was held to
+# (engine._metric_rows: aggregation_level 'aggregate' with `hard` set; a probe that no spec shows whole has hard = null
+# and is not a spec).
 SPEC_COLUMNS = ('evaluation_id', 'metric_name', 'raw_value', 'unit', 'threshold_lower', 'threshold_upper', 'hard',
                 'satisfied', 'failure_reason', 'aggregation_level')
 STRING_COLUMNS = {'episode_id', 'phase', 'action_source', 'status', 'update_phase', 'metric_name', 'failure_reason'}
@@ -150,7 +152,10 @@ def _objective_values(maps, objective, feasible):
 
 
 def _rows_columns(rows, columns, objective):
-    """Journal rows (dicts, timestamps as ISO text, map columns as key/value pairs) -> the same columns as a part gives."""
+    (
+        'Journal rows (dicts, timestamps as ISO text, map columns as key/value pairs) -> the same columns as a '
+        'part gives.'
+    )
     specs = 'aggregation_level' in columns
     if specs:
         if 'hard' not in columns:
@@ -167,7 +172,8 @@ def _rows_columns(rows, columns, objective):
             if name in TIME_COLUMNS:
                 out[name].append(_epoch(value))
             elif name == 'best_so_far_metrics':
-                out['best_so_far_objective'].extend(_objective_values([value], objective, [row.get('best_so_far_feasible')]))
+                out['best_so_far_objective'].extend(_objective_values([value], objective,
+                    [row.get('best_so_far_feasible')]))
             else:
                 out[name].append(value)
     return out
@@ -196,7 +202,8 @@ class _Chunk:
                 self.spec_defs[name] = dict(unit=unit, threshold_lower=_finite(lower), threshold_upper=_finite(upper),
                                             hard=hard)
             self._extend(self.specs, {k: v for k, v in specs.items()
-                                      if k in ('commit_seq', 'metric_name', 'raw_value', 'satisfied', 'failure_reason')})
+                                      if k in ('commit_seq', 'metric_name', 'raw_value', 'satisfied',
+                                          'failure_reason')})
 
     def as_json(self):
         def encode(columns, order):
@@ -230,7 +237,8 @@ def _flush_chunk(data, flushes, objective):
             if table in flush['parts']:
                 jobs.append((flush['flush_id'], table, data / table / flush['parts'][table], columns))
     tables = dict(zip([(j[0], j[1]) for j in jobs],
-                      _pool().map(lambda job: _table_columns(_read_part(job[2], job[1], list(job[3])), objective), jobs)))
+                      _pool().map(lambda job: _table_columns(_read_part(job[2], job[1], list(job[3])), objective),
+                          jobs)))
     chunk = _Chunk()
     for flush in flushes:
         evaluations = tables.get((flush['flush_id'], 'evaluations'))
@@ -247,8 +255,10 @@ def _bundle_chunk(bundles, objective):
         rows = bundle.get('rows') or {}
         evaluations = rows.get('evaluations') or []
         seq_of = {row['evaluation_id']: row['commit_seq'] for row in evaluations}
-        chunk.add(_rows_columns(evaluations, EVALUATION_COLUMNS + ('best_so_far_metrics',), objective) if evaluations else None,
-                  _rows_columns(rows.get('learner_updates') or [], UPDATE_COLUMNS, objective) if rows.get('learner_updates') else None,
+        chunk.add(_rows_columns(evaluations, EVALUATION_COLUMNS + ('best_so_far_metrics',),
+            objective) if evaluations else None,
+                  _rows_columns(rows.get('learner_updates') or [], UPDATE_COLUMNS,
+                      objective) if rows.get('learner_updates') else None,
                   _rows_columns(rows.get('metrics') or [], SPEC_COLUMNS, objective) if rows.get('metrics') else None,
                   seq_of)
     return chunk
@@ -322,6 +332,7 @@ def journal_page(path, after_seq, objective, cursor=None, *, max_rows=MAX_ROWS):
         stat = os.fstat(stream.fileno())
         identity = [stat.st_dev, stat.st_ino]
         offset, row_offset, seq = 0, 0, after_seq
+        # ---- Reuse a cursor only while its flush boundary and file identity still match.
         try:
             saved = json.loads(cursor) if cursor else {}
             if (saved.get('base') == after_seq and saved.get('file') == identity
@@ -338,6 +349,7 @@ def journal_page(path, after_seq, objective, cursor=None, *, max_rows=MAX_ROWS):
                 offset = next((end for line, end in _journal_lines(stream)
                                if json.loads(line)['commit_seq'] <= after_seq), 0)
             stream.seek(offset)
+            # ---- Page acknowledged bundles, retaining a row offset when a bundle spans pages.
             while remaining > 0:
                 offset = stream.tell()
                 line = stream.readline()
@@ -430,11 +442,11 @@ class _FlushLog:
         self.tail, self.pending = data[window - start:offset - start], data[offset - start:]
 
 
-def _pread(fd, size, offset):
+def _pread(file_descriptor, size, offset):
     """`size` bytes from `offset`; fewer only at the end of the file."""
     chunks = []
     while size > 0:
-        chunk = os.pread(fd, size, offset)
+        chunk = os.pread(file_descriptor, size, offset)
         if not chunk:
             break
         chunks.append(chunk)
@@ -504,6 +516,7 @@ def _flush_records(path):
         with _CACHE_LOCK:
             entry = _FLUSH_LOGS.get(key)
             _STATS['flush_reads'] += 1
+        # ---- Check file identity, size/time consistency, and byte anchors before reusing cached rows.
         if (entry is not None and entry.identity == (info.st_dev, info.st_ino) and info.st_size >= entry.offset
                 and (info.st_size != entry.size or entry.times == (info.st_mtime_ns, info.st_ctime_ns))):
             start = entry.offset - len(entry.tail)                  # 0 when the tail holds the head as well
@@ -612,10 +625,13 @@ def run_objective(run_dir):
 # The runs that train no model, by run_kind: their learner_updates table stays empty by design, which the Training tab
 # would otherwise call "No learner update yet: they begin once the warm-up designs fill a training batch."
 NO_LEARNER = {
-    'baseline_preflight': 'A Baseline simulation measures the starting design (and, with calibration, random designs) '
-                          'without training a model: there are no learner updates, so no losses, temperature or entropy.',
-    'calibration': "A Calibration run simulates random designs to suggest each Specs row's scale and a starting "
-                   'temperature, without training a model: there are no learner updates, so no losses, temperature or entropy.',
+    'baseline_preflight':
+        'A Baseline simulation measures the starting design (and, with calibration, random designs) without '
+        'training a model: there are no learner updates, so no losses, temperature or entropy.',
+    'calibration':
+        "A Calibration run simulates random designs to suggest each Specs row's scale and a starting "
+        'temperature, without training a model: there are no learner updates, so no losses, temperature or '
+        'entropy.',
 }
 
 
@@ -633,7 +649,8 @@ def _learner(config, manifest):
     method = (run.get('search') or {}).get('method', 'sac')
     every = output.get('learner_update_log_every') or 1
     if manifest.get('run_kind') == 'offline_pretraining':
-        return dict(recorded=False, every=every, reason='Offline training records its validation curve in validation.json; '
+        return dict(recorded=False, every=every,
+            reason='Offline training records its validation curve in validation.json; '
                     'it has no simulator evaluations or online learner-update rows.')
     if manifest.get('run_kind') in NO_LEARNER:
         return dict(recorded=False, every=every, reason=NO_LEARNER[manifest['run_kind']])
@@ -666,9 +683,11 @@ def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None, ca
     start = max(0, min(int(flushes), total))
     manifest = read_dict(layout.manifest)
     config, objective = _config(layout.effective_config, cached)
+    # ---- Take whole flushed records first, then use the remaining row budget for the journal tail.
     chosen, rows = [], 0
     for record in records[start:]:
-        if chosen and rows + sum(record['rows'].get(t, 0) for t in ('evaluations', 'learner_updates', 'metrics')) > max_rows:
+        if chosen and rows + sum(record['rows'].get(t, 0) for t in ('evaluations', 'learner_updates',
+            'metrics')) > max_rows:
             break
         chosen.append(record)
         rows += sum(record['rows'].get(t, 0) for t in ('evaluations', 'learner_updates', 'metrics'))
@@ -685,13 +704,15 @@ def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None, ca
         else:
             tail_page['more'] = True
     from .runs import run_status  # lazy: tests patch runs.run_status
-    status = run_status(layout.run_dir)      # status.json + the run lock: whether a run compared beside the shown one still works
+    # status.json + the run lock: whether a run compared beside the shown one still works
+    status = run_status(layout.run_dir)
     return dict(run_dir=str(layout.run_dir), run_id=manifest.get('run_id'), mode=manifest.get('mode'),
                 mock=manifest.get('mock'), state=status.get('state'), worker_alive=bool(status.get('worker_alive')),
                 flushes=dict(served=served, total=total, start=start),
                 final=final.as_json(), tail=tail, tail_complete=tail_complete, latest_seq=latest, tail_page=tail_page,
                 objective=objective, learner=_learner(config or {}, manifest),
-                segments=[{k: s.get(k) for k in ('segment', 'entry', 'started_utc', 'ended_utc', 'end_state', 'stop_reason')}
+                segments=[{k: s.get(k) for k in ('segment', 'entry', 'started_utc', 'ended_utc', 'end_state',
+                    'stop_reason')}
                           for s in manifest.get('segments') or []])
 
 

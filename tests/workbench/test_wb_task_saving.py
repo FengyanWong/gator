@@ -38,6 +38,7 @@ def test_a_maestro_task_reports_its_two_virtuoso_steps_first(tmp_path):
 
 
 def _client(tmp_path):
+    """Provide task-save routes with a successful fake connection probe."""
     return TestClient(workbench_app(tmp_path, monitor=probe(tmp_path), auto_check_on_start=True))
 
 
@@ -46,6 +47,7 @@ def _held_save(monkeypatch, *, revision=7):
     started, go_on = threading.Event(), threading.Event()
 
     def held(monitor, profile_id, name, config, **kwargs):
+        """Report setup progress and hold the fake save until the test releases it."""
         kwargs['progress']('setup', MAESTRO_STEPS)
         started.set()
         assert go_on.wait(20)
@@ -100,6 +102,7 @@ def test_a_save_that_fails_says_why_and_frees_the_place(tmp_path, monkeypatch):
     client = _client(tmp_path)
 
     def refused(monitor, profile_id, name, config, **kwargs):
+        """Report read progress before refusing the fake working-copy readback."""
         kwargs['progress']('read', ['read', 'files'])
         raise profiles.ProfileError('The working copy could not be read back into the workbench')
     monkeypatch.setattr(profiles, 'save_task', refused)

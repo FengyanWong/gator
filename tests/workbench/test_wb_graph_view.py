@@ -21,6 +21,7 @@ pytestmark = pytest.mark.xdist_group('test_wb_graph_view')
 
 
 def trained(root, encoder, name, **output):
+    """Execute and return a completed MOCK run with the requested encoder and output options."""
     network = dict(encoder_type=encoder, hidden_dim=16, heads=2, layers=2)
     config = make_config(root, run=dict(max_evaluations=14, seed=4, network=network), project=dict(task_name=name),
                          output=dict(dict(checkpoint_every_evaluations=6), **output))
@@ -31,6 +32,7 @@ def trained(root, encoder, name, **output):
 
 @pytest.fixture(scope='module', params=['graph_transformer', 'gatv2', 'graph_gps', 'group_cross_attention'])
 def transformer(tmp_path_factory, request):
+    """Provide a completed transformer run for graph-view checks."""
     root = tmp_path_factory.mktemp('graph_view')
     return (root, *trained(root, request.param, f'view_{request.param}'))
 
@@ -194,6 +196,7 @@ def test_the_graph_view_reads_one_transition_part_and_its_state_newest_first(tmp
     filtered, read = [], pq.read_table
 
     def counting(path, *args, **kwargs):
+        """Record filtered Parquet table reads while delegating to the real reader."""
         if kwargs.get('filters'):
             filtered.append(Path(path).parent.name)
         return read(path, *args, **kwargs)

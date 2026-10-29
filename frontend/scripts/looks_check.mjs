@@ -145,7 +145,7 @@ await runChecks(browser, async () => {
   await evaluate(`[...document.querySelectorAll('.editors > .tabs > button')].find(b => b.dataset.editor === 'parameters').click()`);
   await sleep(300);
   check('no light box is left on the page (Run status)', !(await lightBoxes(page)).length, JSON.stringify(await lightBoxes(page)));
-  for (const tab of ['Data tables', 'Logs']) {        // (the Agent tab became a window on 2026-10-07, record 7.253: pop-ups are checked below)
+  for (const tab of ['Data tables', 'Logs']) {        // Pop-up windows are checked below.
     await evaluate(`[...document.querySelectorAll('footer .tabs button')].find(b => b.textContent.trim() === ${JSON.stringify(tab)}).click()`);
     await sleep(700);
     const left = await lightBoxes(page);

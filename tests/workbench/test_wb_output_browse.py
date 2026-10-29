@@ -8,6 +8,7 @@ from gator_workbench import paths
 
 
 def previous_browse(roots, path=None):
+    """Return the original path-based directory listing as a comparison oracle."""
     if path is None:
         return dict(path=None, parent=None,
                     entries=[dict(name=str(r), path=str(r), exists=r.exists()) for r in roots.roots])
@@ -23,6 +24,7 @@ def previous_browse(roots, path=None):
 
 @pytest.fixture
 def allowed(tmp_path, monkeypatch):
+    """Provide one isolated output root without environment-defined allowed roots."""
     monkeypatch.delenv(paths.ENV_ALLOWED_ROOTS, raising=False)
     root = tmp_path / 'mock'
     root.mkdir()
@@ -83,6 +85,7 @@ def test_child_path_stat_calls_are_avoided(allowed, monkeypatch):
     real_stat, reads = Path.stat, []
 
     def counted(path, *args, **kwargs):
+        """Record metadata reads of direct children while preserving normal stat results."""
         if path.parent == root:
             reads.append(path.name)
         return real_stat(path, *args, **kwargs)
@@ -100,6 +103,7 @@ def test_scan_failure_closes_iterator_and_propagates(allowed, monkeypatch):
     closed = []
 
     class BrokenScan:
+        """A directory scan that fails during iteration and records closure."""
         def __enter__(self):
             return self
 
@@ -120,16 +124,20 @@ def test_child_type_error_precedes_hidden_and_link_exclusion(allowed, monkeypatc
     closed = []
 
     class InaccessibleEntry:
+        """A hidden link whose target type check fails before link exclusion is allowed."""
         name = '.inaccessible-link'
 
         def is_dir(self, *, follow_symlinks=True):
+            """Raise the configured target-access failure after checking link-following behavior."""
             assert follow_symlinks
             raise PermissionError('synthetic inaccessible target')
 
         def is_symlink(self):
+            """Fail if link exclusion runs before the target type check."""
             pytest.fail('The failed type check precedes link exclusion')
 
     class Scan:
+        """A scan yielding the inaccessible entry and recording context exit."""
         def __enter__(self):
             return iter([InaccessibleEntry()])
 

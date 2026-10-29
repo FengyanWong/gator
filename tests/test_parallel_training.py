@@ -19,11 +19,13 @@ from analog_optimizer.training.sac import SACLearner
 
 
 class TimedBackend(SyntheticSizingBackend):
+    """A synthetic sizing backend with lane-specific delays and an optional injected timeout."""
     def __init__(self, graph, output, lane, failure):
         super().__init__(graph, targets={'w': .4, 'c': -.3})
         self.output, self.lane, self.failure = output, lane, failure
 
     def run_simulation(self, request):
+        """Record a delayed synthetic evaluation and optionally replace one lane result with a timeout."""
         start = time.time()
         time.sleep(.15 if self.lane == 0 else .25)
         result = super().run_simulation(request)
@@ -37,6 +39,7 @@ class TimedBackend(SyntheticSizingBackend):
 
 @dataclass
 class Factory:
+    """A picklable factory for short synthetic environments sharing the test graph and output directory."""
     graph: object
     output: Path
     failure: bool = False
@@ -45,12 +48,14 @@ class Factory:
         return self.create_recorded(lane, None)
 
     def create_recorded(self, lane, recorder):
+        """Build a timed synthetic environment with the supplied lane and optional recorder."""
         return CircuitSizingEnv(TimedBackend(self.graph, self.output, lane, self.failure), self.graph,
                                 (MetricSpec('score', 'fixture', 'min', 1, lower=.95),), self.output,
                                 max_steps=2, stop_on_success=False, expected_origin='synthetic', recorder=recorder)
 
 
 def make_learner():
+    """Build a seeded small SAC learner after limiting Torch to one CPU thread."""
     torch.set_num_threads(1)
     torch.manual_seed(91)
     return SACLearner(experiment={'origin': 'synthetic', 'split': 'parallel-test', 'designs': ['fixture']},

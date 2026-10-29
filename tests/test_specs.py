@@ -1,3 +1,5 @@
+"""Specification validity, feasibility and rewards checked on injected numbers, without simulator calls."""
+
 from dataclasses import replace
 import pytest
 

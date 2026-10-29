@@ -13,6 +13,7 @@ from helpers import execute, make_config, rows
 
 
 def update_row(n, collected):
+    """Build a complete fixture learner-update row tied to a collected-evaluation count."""
     return dict(run_id='r', update_id=f'r:u{n:09d}', updated_at='2026-10-08T10:00:00+00:00', evaluations_collected=collected,
                 actor_loss=0.1, critic_loss=0.2, alpha_loss=0.0, alpha=0.01, mean_log_prob=-1.0, target_mean=0.0,
                 critic_grad_norm=1.0, actor_grad_norm=1.0, learning_rate=1e-3, replay_size=n, batch_size=4,
@@ -20,6 +21,7 @@ def update_row(n, collected):
 
 
 def commit(dataset, seq):
+    """Commit an empty evaluation bundle to establish a dataset sequence boundary."""
     assert dataset.commit(dict(evaluation_id=f'e{seq}', commit_seq=seq, rows={}))
 
 
@@ -72,10 +74,12 @@ def test_a_record_written_after_a_flush_at_the_same_number_survives_a_crash(tmp_
 
 # ---- the engine ----------------------------------------------------------------------------------------------------
 def covered_rows(layout, meta):
+    """Count learner-update rows covered by a save point's recorded data cursor."""
     return len(DatasetReader(layout.data, cutoff_seq=meta['data_cursor']['commit_seq']).rows('learner_updates'))
 
 
 def events_of(layout):
+    """Read event names from the run's event log in recorded order."""
     return [json.loads(line)['event'] for line in (layout.logs / 'events.jsonl').read_text().splitlines()]
 
 
@@ -86,6 +90,7 @@ def test_a_pause_right_after_a_commit_keeps_the_rows_of_the_updates_it_counts(tm
     original = RunEngine._poll_control
 
     def pause_once_updates_wait(self):
+        """Request a user pause as soon as deferred learner updates are waiting."""
         original(self)
         if self._pending_updates and self.stop_reason is None:
             self.requested, self.stop_reason = 'pause', 'user_pause'                # as the pause command does
@@ -145,6 +150,7 @@ def transitions(layout):
 
 def test_learning_after_the_dispatch_keeps_every_update_and_every_save_point(tmp_path):
     def run(folder, switch, concurrency):
+        """Execute a synthetic comparison run with the selected update timing and lane count."""
         config = make_config(folder, run=dict(max_evaluations=30, concurrency=concurrency),
                              advanced=dict(updates_per_transition=3, update_after_dispatch=switch),
                              output=dict(checkpoint_every_evaluations=10))

@@ -22,17 +22,20 @@ from .validation import resolve_leaders
 
 
 class CompileError(ValueError):
+    """A task configuration cannot be compiled into a consistent optimization contract."""
     pass
 
 
 @dataclass(frozen=True)
 class CompiledTask:
+    # The circuit graph, specification plan, variables, and objective preference shared by a run's lanes.
     graph: object                      # CircuitGraph with the configured parameter groups
     specs: tuple                       # tuple[MetricSpec, ...]
     spec_schema: object                # SpecSchema used by the goal encoder
     variables: tuple                   # per independent variable: id, unit, bounds, members (canonical units)
     targets: tuple                     # canonical thresholds per active target (for independent feasibility)
-    plan: object                       # spec_equations.SpecPlan: each spec's value from the probes, the same in every lane
+    # spec_equations.SpecPlan: each spec's value from the probes, the same in every lane
+    plan: object
     preference: dict | None            # {'metric': id, 'direction': 'min'|'max'} or None
 
 
@@ -92,6 +95,7 @@ def build_graph(config: WorkbenchConfig, graph):
     parameters = list(config.parameters)
     leaders = resolve_leaders(parameters)
     by_id = {p.variable_id: p for p in parameters}
+    # ---- Collect each leader's followers before constructing canonical parameter groups.
     members = {}
     for p in parameters:
         leader_id, ratio = leaders[p.variable_id]
@@ -115,7 +119,8 @@ def build_graph(config: WorkbenchConfig, graph):
         if lower is None or upper is None:
             raise CompileError(f'{leader_id}: bounds are required')
         # A varied group's upper bound is the optimizer's own top grid point when that lands above the typed bound
-        # (grid_top), and a follower's own clamp at that same range moves with it; with the point not above, nothing moves.
+        # (grid_top), and a follower's own clamp at that same range moves with it; with the point not above, nothing
+        # moves.
         top = grid_top(lower, upper, step, leader.value_type == 'integer') if leader.optimized else upper
         bindings = []
         for row, ratio in rows:
@@ -130,7 +135,8 @@ def build_graph(config: WorkbenchConfig, graph):
         unit = group_unit(units.canonical_unit(leader.unit))
         kind = _group_kind(leader.parameter_name, unit)
         if kind is None:
-            raise CompileError(f'{leader_id}: {leader.parameter_name} in {leader.unit!r} cannot be varied: the optimizer '
+            raise CompileError(
+                f'{leader_id}: {leader.parameter_name} in {leader.unit!r} cannot be varied: the optimizer '
                                'varies lengths, counts, resistances, capacitances, inductances and voltages only')
         group = ParameterGroup(id=leader_id, parameter_kind=kind,
                                unit=unit, value=value, lower=lower, upper=upper,
@@ -143,6 +149,7 @@ def build_graph(config: WorkbenchConfig, graph):
                               parameter_kind=kind, parameter_name=leader.parameter_name,
                               members=[dict(variable_id=row.variable_id, instance_path=row.instance_path,
                                             parameter_name=row.parameter_name, ratio=ratio) for row, ratio in rows]))
+    # ---- Validate the rebuilt graph before accepting any configured starting values.
     graph.parameter_groups = groups
     try:
         graph.validate()
@@ -151,13 +158,15 @@ def build_graph(config: WorkbenchConfig, graph):
     # A varied row whose circuit value the optimizer's grid moves could never start a run (start_off_grid): said here in
     # words, where Save task, Check now and Start all pass, instead of by the run's first comparison.
     for group in groups:
-        start = start_off_grid(group.lower, group.upper, group.step, group.value, group.domain == 'integer') if group.mutable else None
+        start = start_off_grid(group.lower, group.upper, group.step, group.value,
+            group.domain == 'integer') if group.mutable else None
         if start is not None:
             raise CompileError(start_words(by_id[group.id], group.value, start))
     return graph, tuple(variables)
 
 
 def build_specs(config: WorkbenchConfig):
+    """Compile target rows into canonical-unit specifications, threshold records, and objective preference."""
     from analog_optimizer.measurements.specs import MetricSpec
     specs, targets, preference = [], [], None
     for t in config.targets:
@@ -170,7 +179,8 @@ def build_specs(config: WorkbenchConfig):
         specs.append(MetricSpec(metric_id=t.metric_id, unit=unit, comparator=comparator,
                                 scale=units.scale_to_canonical(normalization_scale(t), t.unit),
                                 lower=lower, upper=upper, weight=t.soft_weight, required=t.hard, active=t.active,
-                                objective={'none': 'none', 'minimize': 'min', 'maximize': 'max'}[t.direction_after_feasible],
+                                objective={'none': 'none', 'minimize': 'min',
+                                    'maximize': 'max'}[t.direction_after_feasible],
                                 # A missing value of a hard spec counts as failed in EVERY task: the optimizer's own
                                 # default since 2026-10-10. A row's stored missing_is_failure is not passed on.
                                 nominal_only=t.nominal_only, margin_sides=t.margin_sides))
@@ -211,25 +221,31 @@ def _task_spec_schema(config: WorkbenchConfig):
     from analog_optimizer.models.inputs import SpecSchema
     custom = config.run.advanced.spec_registry
     if custom is None:
-        generated = task_spec_registry(config.circuit)       # see validation.registry_for: the same fallback, the same order
+        # see validation.registry_for: the same fallback, the same order
+        generated = task_spec_registry(config.circuit)
         if generated is None:
             of_record = verified_spec_registry(config.circuit)
             if of_record is None:
                 return SpecSchema()
-            version, entries = of_record                      # identical to the experiment's own schema, so it keeps its name
-            return SpecSchema(version=version, metrics=tuple((e['metric_id'], e['unit'], float(e['reference'])) for e in entries))
+            # identical to the experiment's own schema, so it keeps its name
+            version, entries = of_record
+            return SpecSchema(version=version, metrics=tuple((e['metric_id'], e['unit'],
+                float(e['reference'])) for e in entries))
         return SpecSchema(version='spec-input-generated-profile-v1',
-                          metrics=tuple((e['metric_id'], units.canonical_unit(e['unit']), float(e['reference'])) for e in generated))
+                          metrics=tuple((e['metric_id'], units.canonical_unit(e['unit']),
+                              float(e['reference'])) for e in generated))
     return SpecSchema(version='spec-input-custom-v1',
                       metrics=tuple((e.metric_id, units.canonical_unit(e.unit), float(e.reference)) for e in custom))
 
 
 def reward_settings(config):
+    """Convert the configured reward fields into the optimizer's reward settings."""
     from analog_optimizer.measurements.specs import RewardSettings
     return RewardSettings(**config.run.reward.model_dump())
 
 
 def training_conditions(config):
+    """Return () when corners are off, else nominal plus chosen corners; raise CompileError if unsupported."""
     if config.run.conditions.policy == 'off':
         return ()
     from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
@@ -242,6 +258,7 @@ def training_conditions(config):
 
 
 def compile_task(config: WorkbenchConfig, graph) -> CompiledTask:
+    """Compile graph and specification inputs and reject inconsistent registries or unevaluable equations."""
     compiled_graph, variables = build_graph(config, graph)
     specs, targets, preference = build_specs(config)
     schema = build_spec_schema(config)

@@ -14,6 +14,7 @@ DC_OPERATING_POINT = ('// GATOR (record 7.298): the DC operating point a network
 
 
 def has_dc_operating_point(tail) -> bool:
+    """Detect a DC operating-point information directive in a deck's trailing text."""
     return bool(_DC_OP_INFO.search(tail or ''))
 
 
@@ -26,7 +27,8 @@ def with_dc_operating_point(tail):
     lines = (tail or '').split('\n')
     found = next((i for i, line in enumerate(lines) if _DC_OP.match(line)), None)
     if found is None:
-        return (tail or '').rstrip('\n') + '\n' + DC_OPERATING_POINT.replace('dcOpInfo info', 'dcOp dc\ndcOpInfo info', 1)
+        return (tail or '').rstrip('\n') + '\n' + DC_OPERATING_POINT.replace('dcOpInfo info', 'dcOp dc\ndcOpInfo info',
+            1)
     end = found
     while lines[end].rstrip().endswith('\\') and end + 1 < len(lines):      # a statement continued on the next lines
         end += 1

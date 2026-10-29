@@ -1,3 +1,5 @@
+"""Saved OTA export and subcircuit syntax checks that read local files without contacting Virtuoso or Spectre."""
+
 from pathlib import Path
 import pytest
 

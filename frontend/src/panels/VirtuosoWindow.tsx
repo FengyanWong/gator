@@ -144,8 +144,9 @@ export function VirtuosoWindow({ profileId, virtuosoOn, offered, circuitRef: ref
             test - then press <b>Save as</b>: it writes the rows into the Maestro test of {savedInto ? <>the testbench <code>{savedInto}</code></> : 'its testbench'} (the
             copy you declared) and reads it back.</p>
           <details className="more"><summary>What you can do with it now</summary>
-            <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled. Claude Code
-              or Codex (the Agent window: "Agent..." among the bottom tabs) can help with any of it, from what you describe.</p>
+            <p>The workbench holds the export of this cell, so you can look at it and fill the three editors. Start stays disabled.
+              For help with setup, editing, troubleshooting or reviewing results, use a desktop or CLI agent that you start yourself
+              in this repository, with your own settings and permissions.</p>
           </details>
           {/* A cell not yet declared is declared by its next read, which needs a testbench (importCell refuses it without one):
               the line asks for one instead of inviting that press (review of branch record SIF-88). What that read does to

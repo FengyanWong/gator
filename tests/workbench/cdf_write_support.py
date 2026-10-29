@@ -9,6 +9,7 @@ from ring_cell_support import CIRCUIT, FIXTURE
 
 
 def fake_reader(tmp_path, files=('netlist.scs', 'core_readback.json', 'testbench_readback.json', 'core_cdf.json')):
+    """Create a reader command that copies the requested ring-cell fixture exports."""
     script = tmp_path / 'ring_reader.py'
     script.write_text(f'''
 import json, shutil, sys
@@ -23,16 +24,19 @@ print(json.dumps(dict(library=args['--library'], cell=args['--cell'], testbench_
 
 
 def read_cell(tmp_path, **kw):
+    """Import ring-cell fixture exports through a fake reader and connection probe."""
     return bridge_read.read(probe(tmp_path), 'lab', 'import_cell', library='GPDK045_RINGOSC', cell='ring_osc_3stage',
                             testbench='tb_ring_osc_3stage', command=fake_reader(tmp_path, **kw))
 
 
 def row(variable_id, instance, parameter='w', unit='um', lower=None, upper=None, leader=None, **more):
+    """Build an adjustable parameter row with an optional binding leader."""
     return dict(dict(variable_id=variable_id, instance_path=instance, parameter_name=parameter, unit=unit, optimized=True,
                      lower=lower, upper=upper, binding_group=leader, ratio=1.0), **more)
 
 
 def stage_rows(parameter, lead, lower, upper, instances=('MN1', 'MN2', 'MN3'), unit='um', **more):
+    """Build a leader row and tied rows for one parameter across ring stages."""
     first, *rest = instances
     return [row(lead, f'XU1/{first}', parameter, unit, lower, upper, **more)] + [
         row(f'{lead}{i + 2}', f'XU1/{name}', parameter, unit, leader=lead) for i, name in enumerate(rest)]
@@ -44,9 +48,11 @@ MIXED = (stage_rows('w', 'wn', 0.6, 1.6) + stage_rows('l', 'ln', 0.045, 0.1)
 
 
 def config(rows):
+    """Validate ring-cell editor rows as a short-run configuration."""
     return schema.WorkbenchConfig.model_validate(dict(circuit=CIRCUIT, parameters=rows, run=dict(max_evaluations=5)))
 
 
 def make(tmp_path, rows=MIXED, name='ring_cdf'):
+    """Create a ring-oscillator profile from fixture exports and parameter rows."""
     read_cell(tmp_path)
     return profiles.create_profile(name, config(rows), recipe='ring_oscillator', expected_frequency_hz=1.2e9)

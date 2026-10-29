@@ -39,6 +39,7 @@ def skill_value(text):
     """A value printed by SKILL's %L (as the bridge returns it: its backslashes doubled once more).
     nil -> None, t -> True, "s" -> str, (a b) -> list, symbols -> str, numbers -> int/float."""
     text = (text or '').strip().replace('\\\\', '\\')
+    # ---- Tokenize strings and atoms before interpreting parentheses as nested lists.
     tokens, i = [], 0
     while i < len(text):
         char = text[i]
@@ -83,6 +84,7 @@ def skill_value(text):
         except ValueError:
             return value
 
+    # ---- Assemble list structure from the completed token stream.
     def parse(position):
         token = tokens[position]
         if token == '(':
@@ -134,7 +136,10 @@ def numeric_range(value):
 
 
 def parse_cdf_text(text):
-    """The query's lines -> {cells: {name: {...}}, leaves: {cell: [{instance, library, cell, model}]}, layout_only: [..]}."""
+    (
+        "The query's lines -> {cells: {name: {...}}, leaves: {cell: [{instance, library, cell, model}]}, "
+        'layout_only: [..]}.'
+    )
     return _parse_cdf_fields(query_fields(raw.rstrip('\r')) for raw in (text or '').splitlines())
 
 
@@ -157,7 +162,8 @@ def _parse_cdf_fields(lines):
             entry = dict(type=skill_value(parts[3]), units=skill_value(parts[4]), default=skill_value(parts[5]),
                          prompt=skill_value(parts[6]))
             if len(parts) >= 11:                          # how the property form treats it (Load PDK since 2026-09-22)
-                entry.update(editable=_form_rule(parts[7]), display=_form_rule(parts[8]), callback=skill_value(parts[9]),
+                entry.update(editable=_form_rule(parts[7]), display=_form_rule(parts[8]),
+                             callback=skill_value(parts[9]),
                              choices=skill_value(parts[10]))
             if len(parts) >= 12:                          # the range the form itself enforces (2026-09-23): (low high)
                 entry['range'] = numeric_range(skill_value(parts[11]))
@@ -174,6 +180,7 @@ def _parse_cdf_fields(lines):
 
 # ------------------------------------------------------------------------------------------ building the record
 def cdf_number(value):
+    """Resolve a finite numeric CDF value without variable references, returning None when unresolved."""
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
@@ -234,7 +241,8 @@ def writability(source, numeric):
         return 'no'
     if source['editable'] is None:
         return 'unknown'
-    if source['editable'] is False or source['display'] is False or source['type'] not in NUMERIC_CDF_TYPES + ('cyclic',):
+    if source['editable'] is False or source['display'] is False or source['type'] not in NUMERIC_CDF_TYPES + (
+        'cyclic',):
         return 'no'
     if source['type'] == 'cyclic' and not (isinstance(source['choices'], list)
                                            and all(cdf_number(c) is not None for c in source['choices'])):
@@ -244,7 +252,8 @@ def writability(source, numeric):
 
 def leaf_of(cells, leaves, name):
     """A cell without a Spectre entry of its own: the one primitive its schematic places that has one."""
-    found = [leaf for leaf in leaves.get(name, []) if (cells.get(leaf['cell']) or {}).get('spectre') and leaf.get('model')]
+    found = [leaf for leaf in leaves.get(name,
+        []) if (cells.get(leaf['cell']) or {}).get('spectre') and leaf.get('model')]
     return found[0] if len(found) == 1 else None
 
 

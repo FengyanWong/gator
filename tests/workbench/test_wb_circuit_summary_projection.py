@@ -105,6 +105,7 @@ def test_terminal_records_are_built_only_for_shown_device_ids(monkeypatch):
     reads = Counter()
 
     class CountedConnection:
+        """A connection wrapper that counts attribute reads during graph summarization."""
         def __init__(self, original):
             self.device_id = original.device_id
             self.original = original

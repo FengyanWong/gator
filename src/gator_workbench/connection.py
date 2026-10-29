@@ -63,7 +63,11 @@ from .storage.dataset import utcnow
 # re-exported: moved to paths.py by the refactoring (docs/plan-refactoring.md)
 from .paths import connection_file
 
-VERIFIED_BRIDGE_VERSION = '0.8.0'      # mirrors the pin in analog_optimizer/backends/virtuoso_bridge.py (a test pins both)
+_MAX_DIAGNOSTIC_CHARS = 300
+
+
+# mirrors the pin in analog_optimizer/backends/virtuoso_bridge.py (a test pins both)
+VERIFIED_BRIDGE_VERSION = '0.8.0'
 LAYERS = ('bridge_package', 'connection_profile', 'tunnel', 'daemon', 'session_readiness', 'spectre', 'spectre_license')
 STATES = ('ok', 'failed', 'not_ready', 'not_applicable', 'not_checked', 'busy', 'unknown')
 CHEAP_LAYERS = LAYERS[:3]              # no contact with Virtuoso: safe for automatic checks
@@ -77,10 +81,13 @@ ACTION_LAYERS = {
 # ---------------------------------------------------------------------------- connection kinds
 KINDS = {
     'virtuoso_ssh': dict(family='virtuoso', transport='ssh', label='Virtuoso over SSH',
-                         summary='Virtuoso + Spectre on another machine, reached through the virtuoso-bridge SSH tunnel.'),
+                         summary=
+                             'Virtuoso + Spectre on another machine, reached through the virtuoso-bridge SSH '
+                             'tunnel.'),
     'virtuoso_local': dict(family='virtuoso', transport='local', label='Virtuoso on this machine',
-                           summary='Virtuoso + Spectre on the same machine as the workbench backend: virtuoso-bridge in '
-                                   'local mode, no SSH tunnel.'),
+                           summary=
+                               'Virtuoso + Spectre on the same machine as the workbench backend: virtuoso-bridge '
+                               'in local mode, no SSH tunnel.'),
     'ngspice_local': dict(family='ngspice', transport='local', label='ngspice on this machine',
                           summary='The ngspice program installed on the same machine as the workbench backend.'),
     'ngspice_ssh': dict(family='ngspice', transport='ssh', label='ngspice over SSH',
@@ -100,8 +107,9 @@ TIMEOUT_LAYER = dict(virtuoso='daemon', ngspice='ngspice')      # the layer a pr
 UNSUPPORTED_ACTION = {
     'read_cellview': 'This is an ngspice connection. Reading a Virtuoso library or cell needs a Virtuoso connection: '
                      'choose one in the Connection window.',
-    'write_cellview': 'This is an ngspice connection. Working on a Virtuoso cell needs a Virtuoso connection: choose one '
-                      'in the Connection window.',
+    'write_cellview':
+        'This is an ngspice connection. Working on a Virtuoso cell needs a Virtuoso connection: choose one in '
+        'the Connection window.',
 }
 
 
@@ -120,6 +128,7 @@ def entry_kind(settings) -> str | None:
 
 
 def family_of(kind) -> str:
+    """Map a connection kind to its backend family, defaulting unknown kinds to Virtuoso."""
     return KINDS[kind]['family'] if kind in KINDS else 'virtuoso'
 
 
@@ -130,7 +139,7 @@ def kind_of_profile(profile_id) -> str | None:
     return DEFAULT_KIND if settings is None else entry_kind(settings)
 
 
-def kind_problem(settings, local):
+def kind_problem(settings, local) -> tuple | None:
     """(reason_code, diagnostic) when a DECLARED Virtuoso kind and the bridge env file disagree, else None.
     `local` is what the bridge resolved from its env file. An undeclared kind is never second-guessed."""
     declared = (settings or {}).get('kind')
@@ -141,7 +150,8 @@ def kind_problem(settings, local):
     if KINDS[declared]['family'] != 'virtuoso':
         return 'unknown_kind', f'kind {declared!r} is not a Virtuoso kind'
     if (KINDS[declared]['transport'] == 'local') != bool(local):
-        return 'kind_mismatch', (f'the profile is declared as "{KINDS[declared]["label"]}", but the bridge env file names '
+        return 'kind_mismatch', (
+            f'the profile is declared as "{KINDS[declared]["label"]}", but the bridge env file names '
                                  f'{"this machine (localhost)" if local else "another machine"}')
     return None
 
@@ -149,10 +159,12 @@ def kind_problem(settings, local):
 LICENSE_NOTE = ('A license query is a snapshot. It does not check out or hold a seat and does not guarantee that a '
                 'later simulation will obtain one.')
 NEXT_STEPS = {
-    'bridge_not_importable': 'Install virtuoso-bridge 0.8.0 into the backend interpreter, or set "bridge_site_packages" '
-                             'for this profile in configs/local/workbench/bridge_connection.json, then check again.',
-    'bridge_version_unverified': f'The existing adapter has only been verified with virtuoso-bridge {VERIFIED_BRIDGE_VERSION}. '
-                                 'Install that version, or review the adapter before upgrading.',
+    'bridge_not_importable':
+        'Install virtuoso-bridge 0.8.0 into the backend interpreter, or set "bridge_site_packages" for this '
+        'profile in configs/local/workbench/bridge_connection.json, then check again.',
+    'bridge_version_unverified':
+        f'The existing adapter has only been verified with virtuoso-bridge {VERIFIED_BRIDGE_VERSION}. Install '
+        f'that version, or review the adapter before upgrading.',
     'connection_file_missing': 'Create configs/local/workbench/bridge_connection.json with a named profile '
                                '(see docs/workbench.md). Hosts and accounts are never guessed.',
     'profile_not_configured': 'Choose one of the configured profile identifiers.',
@@ -162,28 +174,36 @@ NEXT_STEPS = {
                                 'explicitly (or run `virtuoso-bridge profile clear`) so runs never bind implicitly.',
     'unknown_kind': 'Set "kind" of this profile in configs/local/workbench/bridge_connection.json to one of: '
                     'virtuoso_ssh, virtuoso_local, ngspice_local, ngspice_ssh.',
-    'kind_mismatch': 'The connection file and the bridge env file disagree, so nothing was started. Either change "kind" of '
-                     'this profile in configs/local/workbench/bridge_connection.json, or point the bridge env file at the '
-                     'machine you mean (VB_REMOTE_HOST=localhost means this machine).',
+    'kind_mismatch':
+        'The connection file and the bridge env file disagree, so nothing was started. Either change "kind" of '
+        'this profile in configs/local/workbench/bridge_connection.json, or point the bridge env file at the '
+        'machine you mean (VB_REMOTE_HOST=localhost means this machine).',
     'local_bridge_not_set_up': 'Click "Set up local bridge" in the Connection window, or run in a terminal:  '
                                'virtuoso-bridge start{profile_arg}   Then load the shown line in the Virtuoso CIW.',
-    'tunnel_not_running': 'Click "Connect SSH" in this panel, or run in a terminal:  virtuoso-bridge start{profile_arg}   '
-                          '(a check never starts the tunnel; only that explicit click or command does).',
+    'tunnel_not_running':
+        'Click "Connect SSH" in this panel, or run in a terminal:  virtuoso-bridge start{profile_arg}   (a check '
+        'never starts the tunnel; only that explicit click or command does).',
     'no_response': 'Virtuoso is not running, or the bridge setup file is not loaded in the CIW. Paste the load("...") '
                    'line shown in this panel into the CIW, then test again. If the CIW says "already running", run '
                    'RBStop() there first and load it again.',
-    'auth_failed': 'The daemon rejected the token. Restart the bridge from your terminal: virtuoso-bridge restart{profile_arg}',
+    'auth_failed':
+        'The daemon rejected the token. Restart the bridge from your terminal: virtuoso-bridge '
+        'restart{profile_arg}',
     'daemon_user_mismatch': 'The port answers for another user\'s daemon. Use your own Virtuoso session/profile.',
-    'conflicting_ade_windows': 'Close the listed ADE/Maestro/Explorer windows; the adapter refuses to run while they are open.',
-    'spectre_not_found': 'Make `spectre` available on the Spectre host (PATH, VB_SPECTRE_BIN or VB_CADENCE_CSHRC in the .env).',
+    'conflicting_ade_windows':
+        'Close the listed ADE/Maestro/Explorer windows; the adapter refuses to run while they are open.',
+    'spectre_not_found':
+        'Make `spectre` available on the Spectre host (PATH, VB_SPECTRE_BIN or VB_CADENCE_CSHRC in the .env).',
     'license_unavailable': 'No Spectre seat is reported free. Wait, or ask your license administrator.',
-    'license_not_checkable': 'The license server gave nothing parseable (lmstat missing or no matching feature listed).',
+    'license_not_checkable':
+        'The license server gave nothing parseable (lmstat missing or no matching feature listed).',
     'probe_timeout': 'The probe did not answer in time. Check the network/tunnel and try again.',
     'busy_active_run': 'A run is using the CIW; a probe timeout during a run means busy, not failed.',
 }
 
 
-def layer(name, state='not_checked', reason=None, diagnostic=None, **details):
+def layer(name, state='not_checked', reason=None, diagnostic=None, **details) -> dict:
+    """Build a connection-layer result with a recognized state and redacted diagnostics."""
     if state not in STATES:
         raise ValueError(state)
     return dict(layer=name, state=state, reason_code=reason, diagnostic=redact(diagnostic, 600),
@@ -211,9 +231,10 @@ def public_profiles() -> dict:
     """What the browser may see: identifiers and presence flags. Never a value that could be a secret."""
     loaded = load_profiles()
 
-    def public(key, value):
+    def public(key, value) -> dict:
         value = value if isinstance(value, dict) else {}
-        kind = profile_kind(value)                       # None = a kind this backend does not know: shown, never guessed
+        # None = a kind this backend does not know: shown, never guessed
+        kind = profile_kind(value)
         info = KINDS.get(kind, {})
         return dict(profile_id=key, bridge_profile=value.get('profile'), kind=kind, kind_declared='kind' in value,
                     family=info.get('family'), transport=info.get('transport'),
@@ -291,11 +312,12 @@ def kill_group(process) -> None:
         pass
 
 
-def run_child(argv, timeout):
+def run_child(argv, timeout) -> tuple | None:
     """Run `argv` in the worker environment, in a process group of its own, for at most `timeout` seconds:
     (stdout, stderr, returncode), or None when it did not finish in time - its group is then killed. The one way the
     backend waits for a bridge read, a Virtuoso write, a profile check or a connection probe."""
-    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               text=True,
                                shell=False, env=worker_environment(), cwd=str(repo_root()), start_new_session=True)
     try:
         stdout, stderr = process.communicate(timeout=timeout)
@@ -306,7 +328,7 @@ def run_child(argv, timeout):
     return stdout, stderr, process.returncode
 
 
-def require_gate(monitor, action, profile_id, what, *, acknowledge_unknown=False) -> dict:
+def require_gate(monitor, action, profile_id, what, *, acknowledge_unknown: bool=False) -> dict:
     """The gate for `action`, or PermissionError('The connection gate blocked <what>') carrying the gate as `.gate` (the
     page shows its blocking layers). Every bridge read, Virtuoso write and profile check asks this way."""
     gate = monitor.gate(action, profile_id, acknowledge_unknown=acknowledge_unknown)
@@ -324,7 +346,10 @@ def child_error(stderr, default, limit=400) -> RuntimeError:
 
 
 def json_lines(stdout):
-    """The lines of a child's stdout that are JSON, parsed, from the last line up (a child may print other lines first)."""
+    (
+        "The lines of a child's stdout that are JSON, parsed, from the last line up (a child may print other "
+        'lines first).'
+    )
     for line in reversed((stdout or '').strip().splitlines()):
         try:
             data = json.loads(line)
@@ -359,17 +384,19 @@ def single_flight(lock, inflight, key, work):
 class RealBridge:
     """Thin facade over the installed bridge. Only observation methods exist here - there is
     deliberately no start/stop/restart/warm method to call by accident."""
-    def __init__(self, settings):
+    def __init__(self, settings) -> None:
         import site
         if settings.get('bridge_site_packages'):
             site.addsitedir(str(Path(settings['bridge_site_packages']).resolve()))
 
     def version(self):
+        """Verify bridge importability and return its installed distribution version."""
         import importlib.metadata
         import virtuoso_bridge  # noqa: F401  (importability through THIS interpreter and import path)
         return importlib.metadata.version('virtuoso-bridge')
 
-    def bind_env(self, env_file):
+    def bind_env(self, env_file) -> None:
+        """Select the resolved environment file for subsequent bridge operations."""
         from virtuoso_bridge.env import set_runtime_env_file
         set_runtime_env_file(Path(env_file).resolve())
 
@@ -377,7 +404,8 @@ class RealBridge:
         from virtuoso_bridge.profile import resolve_profile
         return resolve_profile(explicit)
 
-    def roles(self, profile):
+    def roles(self, profile) -> dict:
+        """Return the daemon host, simulator host, and remote user resolved for the profile."""
         from virtuoso_bridge.transport.remote_roles import remote_host_roles_from_os
         roles = remote_host_roles_from_os(profile)
         return dict(daemon_host=roles.daemon_host, spectre_host=roles.spectre_host, remote_user=roles.remote_user)
@@ -386,35 +414,41 @@ class RealBridge:
         from virtuoso_bridge.transport.tunnel import _is_localhost
         return bool(host) and _is_localhost(host)
 
-    def tunnel_state(self, profile):
+    def tunnel_state(self, profile) -> tuple:
+        """Return the profile's stored SSH tunnel state and whether its tunnel is running."""
         from virtuoso_bridge.transport.tunnel import SSHClient
         return SSHClient.read_state(profile), SSHClient.is_running(profile)
 
     def client(self, profile, timeout):
+        """Create a bridge client for the profile with the requested timeout and CIW logging disabled."""
         from virtuoso_bridge import VirtuosoClient
         return VirtuosoClient.from_env(timeout=timeout, log_to_ciw=False, profile=profile)   # as the adapter does
 
-    def skill_ok(self, client, timeout):
+    def skill_ok(self, client, timeout) -> tuple:
+        """Run a read-only SKILL probe and return its success flag and error messages."""
         from virtuoso_bridge.models import ExecutionStatus
         probe = client.execute_skill('1+1', timeout=timeout)                 # trivial and read-only
         return probe.status == ExecutionStatus.SUCCESS, [str(e) for e in (probe.errors or [])]
 
-    def daemon_user(self, client, profile, timeout):
+    def daemon_user(self, client, profile, timeout) -> dict:
+        """Return the bridge daemon's user-ownership check result."""
         from virtuoso_bridge.daemon_guard import check_daemon_user
         check = check_daemon_user(client, profile=profile, timeout=timeout)
         return dict(ok=check.ok, skipped=getattr(check, 'skipped', False), error=check.error)
 
-    def readiness(self, client):
+    def readiness(self, client) -> None:
         """The adapter's OWN rule, called on a stand-in: the panel and the adapter cannot disagree."""
         from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend
         VirtuosoBridgeBackend._check_windows(SimpleNamespace(client=client))
 
     def license(self, profile):
+        """Return the bridge's Spectre check for the profile: executable path, version and license lines."""
         from virtuoso_bridge.spectre.runner import SpectreSimulator
         return SpectreSimulator.from_env(profile=profile).check_license()
 
 
-LICENSE_LINE = re.compile(r'Users of\s+([\w.\-]+):\s*\(Total of\s+(\d+)\s+licenses? issued;\s*Total of\s+(\d+)\s+licenses? in use\)')
+LICENSE_LINE = re.compile(
+    r'Users of\s+([\w.\-]+):\s*\(Total of\s+(\d+)\s+licenses? issued;\s*Total of\s+(\d+)\s+licenses? in use\)')
 SPECTRE_FEATURE = re.compile(r'(?i)(spectre|multi_mode_simulation|mmsim|virtuoso_multi_mode)')
 
 
@@ -431,7 +465,8 @@ def parse_license_lines(lines):
 
 
 # ---------------------------------------------------------------------------- the layers
-def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, run_active=False, profile_error=None):
+def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, run_active: bool=False,
+    profile_error=None):
     """Check layers in dependency order. Everything downstream of a failure stays `not_checked`.
 
     scope: 'cheap' (layers 1-3, no Virtuoso contact), 'interactive' (1-5), 'full' (1-7).
@@ -444,10 +479,7 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
     profile = settings.get('profile') or None
     arg = f' -p {profile}' if profile else ''
 
-    def fail(name, state, reason, diagnostic=None, **details):
-        results[name] = layer(name, state, reason, diagnostic,
-                              next_step=NEXT_STEPS.get(reason, '').format(profile_arg=arg) or None, **details)
-        return list(results.values())
+    fail = _failure_recorder(results, arg)
 
     # 1 -- bridge package
     try:
@@ -479,7 +511,8 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
     local = bridge.is_local(roles.get('daemon_host'))
     missing = [name for name in ('daemon_host',) if not roles.get(name)]
     if missing:
-        return fail('connection_profile', 'failed', 'profile_incomplete', f'missing settings: {missing}', missing=missing)
+        return fail('connection_profile', 'failed', 'profile_incomplete', f'missing settings: {missing}',
+            missing=missing)
     disagreement = kind_problem(settings, local)          # a declared kind must match what the bridge would really do
     if disagreement:
         return fail('connection_profile', 'failed', disagreement[0], disagreement[1])
@@ -510,7 +543,8 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
             client = bridge.client(profile, timeout)
             ok, errors = bridge.skill_ok(client, timeout)
         except Exception as exc:
-            timed_out = isinstance(exc, TimeoutError) or 'timed out' in str(exc).lower() or 'timeout' in str(exc).lower()
+            timed_out = isinstance(exc,
+                TimeoutError) or 'timed out' in str(exc).lower() or 'timeout' in str(exc).lower()
             if run_active and timed_out:
                 return fail('daemon', 'busy', 'busy_active_run', 'the CIW is occupied by the active run')
             return fail('daemon', 'failed', 'no_response', f'{type(exc).__name__}: {exc}')
@@ -519,11 +553,9 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
                 return fail('daemon', 'failed', 'auth_failed', 'the daemon rejected the request')
             if run_active:
                 return fail('daemon', 'busy', 'busy_active_run', 'the CIW is occupied by the active run')
-            return fail('daemon', 'failed', 'no_response', '; '.join(errors)[:300] or 'no successful answer')
-        try:
-            user = bridge.daemon_user(client, profile, timeout)
-        except Exception as exc:
-            user = dict(ok=True, skipped=True, error=f'{type(exc).__name__}: {exc}')
+            return fail('daemon', 'failed', 'no_response',
+                '; '.join(errors)[:_MAX_DIAGNOSTIC_CHARS] or 'no successful answer')
+        user = _daemon_user_check(bridge, client, profile, timeout)
         if not user['ok']:
             return fail('daemon', 'failed', 'daemon_user_mismatch', 'the answering daemon belongs to another user')
         results['daemon'] = layer('daemon', 'ok', user_check='skipped' if user.get('skipped') else 'matched')
@@ -538,11 +570,7 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
         except Exception as exc:
             return fail('session_readiness', 'unknown', 'readiness_unreadable', f'{type(exc).__name__}: {exc}')
     finally:
-        if client is not None:
-            try:
-                client.close()                  # closes only this probe's client; upstream keeps the shared tunnel
-            except Exception:
-                pass
+        _close_probe_client(client)
     if 'spectre' not in wanted:
         return list(results.values())
     # 6 + 7 -- Spectre executable and license snapshot (one upstream call provides both)
@@ -551,7 +579,41 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
     except Exception as exc:
         return fail('spectre', 'unknown', 'spectre_check_failed', f'{type(exc).__name__}: {exc}')
     if not info.get('spectre_path'):
-        return fail('spectre', 'failed', 'spectre_not_found', 'the executable was not found on the resolved Spectre host')
+        return fail('spectre', 'failed', 'spectre_not_found',
+            'the executable was not found on the resolved Spectre host')
+    _record_spectre_results(results, info)
+    return list(results.values())
+
+
+def _failure_recorder(results, arg):
+    """Create the failure recorder that fills one layer and returns the ordered results."""
+    def fail(name, state, reason, diagnostic=None, **details) -> list:
+        results[name] = layer(name, state, reason, diagnostic,
+                              next_step=NEXT_STEPS.get(reason, '').format(profile_arg=arg) or None, **details)
+        return list(results.values())
+    return fail
+
+
+def _daemon_user_check(bridge, client, profile, timeout):
+    """Read daemon ownership while recording an unavailable user check as skipped."""
+    try:
+        user = bridge.daemon_user(client, profile, timeout)
+    except Exception as exc:
+        user = dict(ok=True, skipped=True, error=f'{type(exc).__name__}: {exc}')
+    return user
+
+
+def _close_probe_client(client) -> None:
+    """Close this probe client when present, suppressing close failures."""
+    if client is not None:
+        try:
+            client.close()                  # closes only this probe's client; upstream keeps the shared tunnel
+        except Exception:
+            pass
+
+
+def _record_spectre_results(results, info) -> None:
+    """Record a found Spectre executable and its parsed license availability."""
     results['spectre'] = layer('spectre', 'ok', version=redact(info.get('version'), 120))
     features = parse_license_lines(info.get('licenses'))
     relevant = [f for f in features if SPECTRE_FEATURE.search(f['feature'])]
@@ -564,11 +626,10 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
     else:
         results['spectre_license'] = layer('spectre_license', 'failed', 'license_unavailable', features=relevant,
                                            note=LICENSE_NOTE, next_step=NEXT_STEPS['license_unavailable'])
-    return list(results.values())
 
 
 # ---------------------------------------------------------------------------- probe process
-def _probe_main(argv=None):
+def _probe_main(argv=None) -> int:
     """Entry point of the short-lived probe process: prints ONE JSON object."""
     import argparse
     parser = argparse.ArgumentParser()
@@ -586,7 +647,8 @@ def _probe_main(argv=None):
     if settings is not None and profile_kind(settings) is None:
         # Which chain of layers applies is itself unknown: nothing is probed and the one problem is named.
         reason, diagnostic = kind_problem(settings, local=False)
-        layers = [layer(name, 'failed', reason, diagnostic, next_step=NEXT_STEPS[reason]) if name == 'connection_profile'
+        layers = [layer(name, 'failed', reason, diagnostic,
+            next_step=NEXT_STEPS[reason]) if name == 'connection_profile'
                   else layer(name) for name in LAYERS]
     elif settings is not None and family_of(profile_kind(settings)) == 'ngspice':
         from . import ngspice_link                       # kept apart: what THIS module may do is pinned by its own test
@@ -616,10 +678,12 @@ class ConnectionMonitor:
 
     def _command(self, profile_id, scope, run_active):
         base = self.probe_command or [sys.executable, '-m', 'gator_workbench.connection']
-        return [*base, '--profile-id', profile_id, '--scope', scope, '--timeout', '5'] + (['--run-active'] if run_active else [])
+        return [*base, '--profile-id', profile_id, '--scope', scope, '--timeout',
+            '5'] + (['--run-active'] if run_active else [])
 
     def check(self, profile_id, *, scope='interactive', trigger='user'):
         # run_safety: the single in-run check made after repeated infrastructure failures, once dispatch stopped.
+        """Probe the profile's connection layers for `scope`, joining a probe in flight; return the result."""
         if trigger not in ('user', 'gate', 'auto', 'run_safety'):
             raise ValueError('trigger must be user, gate, auto or run_safety')
         if trigger == 'auto' and scope != 'cheap':
@@ -627,11 +691,13 @@ class ConnectionMonitor:
         if not isinstance(profile_id, str) or not PROFILE_ID.match(profile_id):
             raise ValueError('profile_id must be the identifier of a configured profile')
         # coalesced: a second check of the same profile and scope shares the probe already running
-        return single_flight(self._lock, self._inflight, (profile_id, scope), lambda: self._probe(profile_id, scope, trigger))
+        return single_flight(self._lock, self._inflight, (profile_id, scope), lambda: self._probe(profile_id, scope,
+            trigger))
 
     def _probe(self, profile_id, scope, trigger):
         active = self.active_run_lookup(profile_id) if self.active_run_lookup else None
-        kind = kind_of_profile(profile_id)                      # the workbench's own file; decides which layers to expect
+        # the workbench's own file; decides which layers to expect
+        kind = kind_of_profile(profile_id)
         family = family_of(kind)
         names, slow = FAMILY_LAYERS[family], TIMEOUT_LAYER[family]
         started, began = utcnow(), time.monotonic()
@@ -641,10 +707,12 @@ class ConnectionMonitor:
             stdout, stderr, _ = finished
             layers = self._parse(stdout, names)
             if layers is None:
-                layers = [layer(n, 'unknown', 'unparseable_probe_output', stderr[-300:] if stderr else 'no JSON on stdout')
+                layers = [layer(n, 'unknown', 'unparseable_probe_output',
+                    stderr[-_MAX_DIAGNOSTIC_CHARS:] if stderr else 'no JSON on stdout')
                           for n in names]
         else:                                                           # only the probe's own process group was killed
-            state, reason = ('busy', 'busy_active_run') if active and family == 'virtuoso' else ('unknown', 'probe_timeout')
+            state, reason = ('busy', 'busy_active_run') if active and family == 'virtuoso' else ('unknown',
+                'probe_timeout')
             layers = [layer(n, state if n == slow else 'not_checked', reason if n == slow else None,
                             next_step=NEXT_STEPS[reason] if n == slow else None) for n in names]
         result = dict(profile_id=profile_id, kind=kind, scope=scope, trigger=trigger, checked_utc=started.isoformat(),
@@ -652,7 +720,8 @@ class ConnectionMonitor:
                       overall=overall_state(layers, scope, family), stale=False, age_seconds=0.0,
                       run_active=bool(active),
                       last_successful_bridge_interaction_utc=(active or {}).get('last_successful_evaluation_utc'),
-                      cost=dict(evaluations_charged=0, spectre_launches=0, note='Zero-cost observation; never a baseline.'))
+                      cost=dict(evaluations_charged=0, spectre_launches=0,
+                          note='Zero-cost observation; never a baseline.'))
         with self._lock:
             self._results[profile_id] = result
         self._log(result)
@@ -668,16 +737,18 @@ class ConnectionMonitor:
                 return layers
         return None
 
-    def status(self, profile_id):
+    def status(self, profile_id) -> dict:
         """Last result with its age. Before the first check, or once stale, every layer is `unknown`:
         a cached `ok` is never presented as current."""
         with self._lock:
             result = self._results.get(profile_id)
         kind = kind_of_profile(profile_id)
         if result is not None and result.get('kind') != kind:
-            result = None                                # the profile was rewritten as another kind: that result is not its
+            # the profile was rewritten as another kind: that result is not its
+            result = None
         if result is None:
-            return dict(profile_id=profile_id, kind=kind, checked_utc=None, age_seconds=None, stale=True, overall='unknown',
+            return dict(profile_id=profile_id, kind=kind, checked_utc=None, age_seconds=None, stale=True,
+                        overall='unknown',
                         layers=[layer(n, 'unknown', 'never_checked') for n in FAMILY_LAYERS[family_of(kind)]])
         age = (utcnow() - _parse_time(result['checked_utc'])).total_seconds()
         if age <= self.stale_after_seconds:
@@ -686,7 +757,7 @@ class ConnectionMonitor:
                     layers=[dict(item, state='unknown', reason_code='stale_result', previous_state=item['state'])
                             for item in result['layers']])
 
-    def gate(self, action, profile_id, *, acknowledge_unknown=False):
+    def gate(self, action, profile_id, *, acknowledge_unknown: bool=False):
         """Pre-dispatch gate. Blocks on failed/not_ready; unknown/busy/not_checked need an explicit
         acknowledgement. A blocked start reserves nothing and creates nothing."""
         if action not in ACTION_LAYERS:
@@ -699,18 +770,22 @@ class ConnectionMonitor:
         kind = kind_of_profile(profile_id)
         needed = FAMILY_ACTIONS[family_of(kind)].get(action)
         if needed is None:
-            # The connection is of a kind that cannot serve this action at all. Nothing is probed: no test could change it.
+            # The connection is of a kind that cannot serve this action at all. Nothing is probed: no test could change
+            # it.
             sentence = UNSUPPORTED_ACTION.get(action, f'This kind of connection ({kind}) cannot serve {action}.')
             gate = dict(action=action, allowed=False, profile_id=profile_id, connection_kind=kind, checked_utc=None,
                         status='blocked', needed_layers=[], blocking=['connection_kind'], uncertain=[],
                         acknowledged_unknown=False, bridge_version=None, next_steps=[sentence],
-                        layers=[dict(layer='connection_kind', state='failed', reason_code='unsupported_by_connection_kind')])
-            self._log(dict(profile_id=profile_id, trigger='gate', checked_utc=utcnow().isoformat(), duration_seconds=0.0,
+                        layers=[dict(layer='connection_kind', state='failed',
+                            reason_code='unsupported_by_connection_kind')])
+            self._log(dict(profile_id=profile_id, trigger='gate', checked_utc=utcnow().isoformat(),
+                           duration_seconds=0.0,
                            overall='failed', layers=[dict(gate['layers'][0], diagnostic=sentence)],
                            refusal=dict(action=action, status='blocked', blocking=gate['blocking'], uncertain=[])))
             return gate
         scope = 'full' if 'spectre' in needed else 'interactive'
-        reused = self._recent_pass(profile_id, kind, needed) if action != 'real_simulation' and scope == 'interactive' else None
+        reused = self._recent_pass(profile_id, kind,
+            needed) if action != 'real_simulation' and scope == 'interactive' else None
         result = reused or self.check(profile_id, scope=scope, trigger='gate')
         relevant = [item for item in result['layers'] if item['layer'] in needed]
         blocking = [item for item in relevant if item['state'] in ('failed', 'not_ready')]
@@ -720,15 +795,18 @@ class ConnectionMonitor:
                     status='passed' if allowed and not uncertain else 'passed_with_acknowledged_unknown' if allowed
                     else 'blocked' if blocking else 'needs_acknowledgement',
                     needed_layers=list(needed), blocking=[i['layer'] for i in blocking],
-                    uncertain=[i['layer'] for i in uncertain], acknowledged_unknown=bool(acknowledge_unknown and uncertain),
+                    uncertain=[i['layer'] for i in uncertain],
+                    acknowledged_unknown=bool(acknowledge_unknown and uncertain),
                     layers=[dict(layer=i['layer'], state=i['state'], reason_code=i['reason_code']) for i in relevant],
                     bridge_version=next((i['details'].get('installed_version') for i in result['layers']
                                          if i['layer'] == 'bridge_package'), None),
-                    next_steps=[i['details'].get('next_step') for i in blocking + uncertain if i['details'].get('next_step')],
+                    next_steps=[i['details'].get('next_step') for i in blocking + uncertain if i['details'].get(
+                        'next_step')],
                     check_reused=reused is not None)
         if not allowed:
             self._log(dict(result, trigger='gate', refusal=dict(action=action, status=gate['status'],
-                                                                 blocking=gate['blocking'], uncertain=gate['uncertain'])))
+                                                                 blocking=gate['blocking'],
+                                                                 uncertain=gate['uncertain'])))
         return gate
 
     def _recent_pass(self, profile_id, kind, needed):
@@ -747,18 +825,18 @@ class ConnectionMonitor:
         states = {item['layer']: item['state'] for item in result['layers']}
         if not all(states.get(name) == 'ok' for name in needed):
             return None
-        # Asked last (record 7.279): the lookup reads the run list on the D: drive, 1-2.4 s, and only a result that could
-        # be reused needs it. It was asked first, so every gate that went on to probe paid for it twice.
+        # Asked last (record 7.279): the lookup reads the run list on the D: drive, 1-2.4 s, and only a result that
+        # could be reused needs it. It was asked first, so every gate that went on to probe paid for it twice.
         active = self.active_run_lookup(profile_id) if self.active_run_lookup else None
         return result if bool(active) == bool(result.get('run_active')) else None
 
-    def _log(self, result):
+    def _log(self, result) -> None:
         """Application-level diagnostics log. Never a research table, never an aggregate."""
         append_local_log('connection_checks.jsonl', lambda: dict(
             timestamp_utc=result['checked_utc'], profile_id=result['profile_id'], trigger=result['trigger'],
             duration_seconds=result['duration_seconds'], overall=result['overall'], refusal=result.get('refusal'),
             layers=[dict(layer=i['layer'], state=i['state'], reason_code=i['reason_code'],
-                         diagnostic=redact(i['diagnostic'], 300)) for i in result['layers']]))
+                         diagnostic=redact(i['diagnostic'], _MAX_DIAGNOSTIC_CHARS)) for i in result['layers']]))
 
 
 def _parse_time(text):
@@ -767,6 +845,7 @@ def _parse_time(text):
 
 
 def overall_state(layers, scope, family='virtuoso'):
+    """Reduce the requested connection layers to the highest-priority failure or readiness state."""
     wanted = FAMILY_SCOPES[family][scope]
     states = [item['state'] for item in layers if item['layer'] in wanted]
     for state in ('failed', 'not_ready', 'busy', 'unknown'):
@@ -778,7 +857,8 @@ def overall_state(layers, scope, family='virtuoso'):
 
 
 INFRASTRUCTURE_PATTERNS = (
-    ('license_unavailable', re.compile(r'(?i)(licen[sc]e|lmgrd|lmstat|checkout failed|no license|FLEXnet|LMF-|SPECTRE-\d+.*licen)')),
+    ('license_unavailable',
+        re.compile(r'(?i)(licen[sc]e|lmgrd|lmstat|checkout failed|no license|FLEXnet|LMF-|SPECTRE-\d+.*licen)')),
     ('daemon_no_response', re.compile(r'(?i)(daemon|CIW|skill.*(timeout|timed out)|no response|RAMIC|bridge setup)')),
     ('bridge_unreachable', re.compile(r'(?i)(connection refused|connection reset|broken pipe|ssh|tunnel|unreachable|'
                                       r'network|socket|transport|upload failed|EOF)')),

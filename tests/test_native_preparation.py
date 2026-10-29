@@ -32,6 +32,7 @@ def fixture_export(state, circuit, output):
 
 
 def fixture_text(state, circuit):
+    """Render the saved OTA fixture with widths and geometry from the fake CDF snapshot."""
     text = (ROOT / 'examples/circuits/gpdk045_ota5.scs').read_text()
     for name in ('M1', 'M2'):
         params = circuit.instances(state)[name]['params']
@@ -47,6 +48,7 @@ def fixture_text(state, circuit):
 
 @pytest.fixture
 def service(adapter, monkeypatch):
+    """Provide a preparation service backed by fake schematic writes and exports, then close it."""
     writer, calls = changing_writer(adapter)
     monkeypatch.setattr(bridge, 'set_gpdk_mos', writer)
     adapter.test_client.schematic.export_netlist = lambda lib, cell, output, timeout: fixture_export(
@@ -121,7 +123,9 @@ def test_failed_preparation_never_reaches_simulator_and_owner_restores(adapter, 
 
 
 class OfflinePreparationBackend(VirtuosoBridgeBackend):
+    """A bridge backend fake that prepares local fixture netlists and records scheduling intervals."""
     def _attach(self):
+        """Expose a copied schematic snapshot through an in-memory bridge facade."""
         self.bridge_version = 'offline-scheduling-fixture'
         self.state = deepcopy(self.circuit.reference)
         return SimpleNamespace(list_windows=lambda: [], close=lambda: None,
@@ -129,6 +133,7 @@ class OfflinePreparationBackend(VirtuosoBridgeBackend):
                 export_netlist=lambda lib, cell, output, timeout: fixture_export(self.state, self.circuit, output)))
 
     def _write_widths(self, parameters):
+        """Delay a fake width update, scale its geometry and record the preparation interval."""
         begin = time.time()
         time.sleep(.08)
         for device, parameter in parameters:
@@ -144,6 +149,7 @@ class OfflinePreparationBackend(VirtuosoBridgeBackend):
 
 @dataclass
 class OfflinePreparationFactory:
+    """A picklable factory carrying the configuration and circuit for the preparation fake."""
     config: object
     circuit: object
 
@@ -152,7 +158,9 @@ class OfflinePreparationFactory:
 
 
 class OfflineLane(NativeCandidateBackend):
+    """A native lane fake that checks prepared assignments and returns delayed synthetic measurements."""
     def connect(self):
+        """Check the shared baseline and activate the lane without opening a simulator connection."""
         baseline = self.preparation.baseline()
         assert baseline['initial_parameters'] == self._parameters
         activate_lane(self)
@@ -164,6 +172,7 @@ class OfflineLane(NativeCandidateBackend):
         pass
 
     def run_simulation(self, request):
+        """Validate the prepared graph and return an injected result while recording a simulated job interval."""
         begin = time.time()
         self.get_circuit_graph(request.netlist)
         # Hold the simulator open while the next candidate is prepared.
@@ -182,7 +191,9 @@ class OfflineLane(NativeCandidateBackend):
 
 @dataclass(frozen=True)
 class OfflineNativeFactory(NativeEnvironmentFactory):
+    """A native environment factory that substitutes the offline lane for simulator execution."""
     def create_recorded(self, lane, recorder):
+        """Build a lane-specific sizing environment with the fake backend and optional recorder."""
         from analog_optimizer.envs.sizing import CircuitSizingEnv
         return CircuitSizingEnv(OfflineLane(self.config, self.profile, self.preparation),
             self.profile.optimization_graph(), self.specs, self.output / f'worker-{lane}',
@@ -288,6 +299,7 @@ def test_a_cell_edited_during_the_export_is_still_refused(service, tmp_path):
     params = adapter.circuit.instances(adapter.test_state)['M1']['params']
     length, export = params['l'], adapter.test_client.schematic.export_netlist
     def edited_while_exporting(lib, cell, output, timeout):
+        """Inject a length change during the fake export to test concurrent-edit rejection."""
         params['l'] = '1u'                                   # someone changes the cell in Virtuoso meanwhile
         return export(lib, cell, output, timeout)
     adapter.test_client.schematic.export_netlist = edited_while_exporting
@@ -477,6 +489,7 @@ class OceanClient:
         self.schematic, self.list_windows, self.close = inner.schematic, inner.list_windows, inner.close
 
     def execute_skill(self, text, timeout=60):
+        """Emulate OCEAN setup and export responses while tracking the fake design selection."""
         if text.startswith('progn(simulator('):
             self.setups += 1
             self.design = re.search(r'design\("([^"]+)" "([^"]+)"', text).groups()
@@ -486,6 +499,7 @@ class OceanClient:
         return SimpleNamespace(ok=True, output=f'"/sim/{self.design[1]}/spectre/schematic/netlist/input.scs"', errors=[])
 
     def download_file(self, remote, local, timeout=None, recursive=False):
+        """Write local fixture files in place of downloading an exported simulator netlist."""
         assert recursive and remote.endswith('/netlist')
         local.mkdir()
         (local / 'input.scs').write_text('')

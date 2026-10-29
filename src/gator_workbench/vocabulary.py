@@ -12,13 +12,16 @@ from . import families
 from .pdk_record import PdkError, STANDARD, VOCABULARY_FORMAT, label, load_record, standard_schema
 from .storage.atomic import read_json, write_json
 
+_PDK_PREFIX_CHARS = 4
+
+
 
 # ------------------------------------------------------------------------------------------ the network's view
 class Vocabulary:
     """A loaded PDK's component list, as the learner uses it. Built from the `vocabulary` block of a record (or of a
     run's own copy), never from the live PDK folder: what a run used is fixed at its start."""
 
-    def __init__(self, block):
+    def __init__(self, block: dict) -> None:
         if not isinstance(block, dict) or block.get('format') != VOCABULARY_FORMAT:
             raise PdkError('Not a PDK component list')
         self.block = block
@@ -27,11 +30,12 @@ class Vocabulary:
         from analog_optimizer.graph.pyg_converter import FeatureSchema
         self.schema = FeatureSchema(version=block['version'], device_kinds=tuple(block['device_kinds']),
                                     terminal_roles=tuple(block['terminal_roles']), net_roles=tuple(block['net_roles']),
-                                    parameters=tuple(block['parameters']), references=tuple(float(r) for r in block['references']))
+                                    parameters=tuple(block['parameters']),
+                                    references=tuple(float(r) for r in block['references']))
         self.name = f'pdk:{self.pdk_id}'
 
     @property
-    def label(self):
+    def label(self) -> str:
         return label(self.block)
 
     def view_graph(self, graph):
@@ -68,6 +72,7 @@ class Vocabulary:
                             list(graph.diagnostics), graph.metadata, graph.schema_version)
 
     def view(self, observation):
+        """Return an observation whose graph uses this vocabulary's network representation."""
         return replace(observation, graph=self.view_graph(observation.graph))
 
 
@@ -83,7 +88,8 @@ def parse_models(record) -> dict:
         aliases = {p['name']: p['canonical'] for p in device['parameters'] if p['numeric'] and p.get('canonical')}
         if not names or len(set(names)) != len(names) or len(set(aliases.values())) != len(aliases):
             continue
-        models[model] = dict(kind=device['standard_kind'], terminals=names, roles=device['standard_roles'], parameters=aliases)
+        models[model] = dict(kind=device['standard_kind'], terminals=names, roles=device['standard_roles'],
+            parameters=aliases)
     return models
 
 
@@ -92,6 +98,7 @@ def vocabulary_of_record(record) -> Vocabulary:
 
 
 def parameter_facts(record, model_ref, name):
+    """Return a PDK record's entry for one device parameter, found by name or canonical alias, or None."""
     device = (record or {}).get('devices', {}).get(model_ref)
     if device is None:
         return None
@@ -99,7 +106,7 @@ def parameter_facts(record, model_ref, name):
 
 
 # ------------------------------------------------------------------------------------------ learner
-def learner_class(vocabulary):
+def learner_class(vocabulary) -> type:
     """The optimizer's own SACLearner, or - with a PDK list - a subclass whose only change is that the observations are
     shown to the network through the PDK's view. Weights, losses, saving and the contract are the package's own."""
     from analog_optimizer.training.sac import SACLearner
@@ -107,9 +114,11 @@ def learner_class(vocabulary):
         return SACLearner
 
     class PdkViewLearner(SACLearner):
+        """A SAC learner that batches observations through the selected PDK vocabulary."""
         def batch(self, observations, *, digests=None):
             # The network sees new objects (the PDK's view): digests of the recorded observations do not describe
             # them, so the input cache keys the viewed observations by their own content (record 7.221).
+            """Batch the observations as the PDK view shows them; `digests` is ignored."""
             return super().batch([vocabulary.view(o) for o in observations])
     return PdkViewLearner
 
@@ -119,6 +128,7 @@ RUN_FILE = 'network_vocabulary.json'
 
 
 def requested(config) -> str:
+    """Read the requested network vocabulary, falling back to the standard vocabulary."""
     return getattr(getattr(config.run, 'network', None), 'vocabulary', STANDARD) or STANDARD
 
 
@@ -131,9 +141,11 @@ def current_vocabulary(name, pdk_id=None) -> Vocabulary | None:
         return families.FamilyList(families.block_for(pdk_id))
     if not name.startswith('pdk:'):
         raise PdkError(f'Unknown component list {name!r}')
-    record = load_record(name[4:])
+    record = load_record(name[_PDK_PREFIX_CHARS:])
     if record is None:
-        raise PdkError(f'PDK {name[4:]} is not loaded. Read it in the Virtuoso window first ("PDK window..." reads one by name).')
+        raise PdkError(
+            f'PDK {name[_PDK_PREFIX_CHARS:]} is not loaded. Read it in the Virtuoso window first ("PDK '
+            f'window..." reads one by name).')
     return vocabulary_of_record(record)
 
 
@@ -147,7 +159,8 @@ def run_vocabulary(run_dir) -> Vocabulary | None:
     return Vocabulary(block)
 
 
-def write_run_vocabulary(run_dir, vocabulary):
+def write_run_vocabulary(run_dir, vocabulary) -> None:
+    """Persist a selected vocabulary's block in the run directory when one is present."""
     if vocabulary is not None:
         write_json(Path(run_dir) / RUN_FILE, vocabulary.block)
 
@@ -158,14 +171,18 @@ def schema_label(feature_schema) -> str:
     version, _, inputs = (feature_schema or {}).get('version', '').partition('+')
     extra = ''.join(f', {words}' for words in (('sizes relative to the PDK',) if 'pdk-relative-sizes' in inputs else ())
                     + (('device model features',) if 'device-model-features' in inputs else ())
-                    + (('bench sources on their own scales',) if 'bench-features' in inputs else ())       # record 7.317
+                    # record 7.317
+                    + (('bench sources on their own scales',) if 'bench-features' in inputs else ())
                     + (('net tags by rule',) if 'net-roles-by-rule' in inputs else ())
                     + (('operating-point ratios',) if 'op-ratios' in inputs else ()))
     if version == families.VERSION:
         return f'device families ({len(families.KINDS) - 1} kinds)' + extra
     if version.startswith('pdk-'):
         kinds = len((feature_schema or {}).get('device_kinds') or ()) - len(standard_schema().device_kinds)
-        return f"PDK {version[4:].rsplit('-', 1)[0]} ({kinds} components, version {version.rsplit('-', 1)[-1][:8]}){extra}"
+        return (
+            f"PDK {version[_PDK_PREFIX_CHARS:].rsplit('-', 1)[0]} ({kinds} components, version "
+            f"{version.rsplit('-', 1)[-1][:8]}){extra}"
+        )
     return 'standard (8 generic kinds)' + extra
 
 
@@ -176,7 +193,8 @@ def run_vocabulary_facts(run_dir, feature_schema=None) -> dict:
     offline model published before record 7.319 - is the family list when that schema says so, not the standard one."""
     own = run_vocabulary(run_dir)
     if own is None and (feature_schema or {}).get('version', '').partition('+')[0] == families.VERSION:
-        own = families.FamilyList(families.block_for(None))            # the list itself: each task's PDK is mapped at its start
+        # the list itself: each task's PDK is mapped at its start
+        own = families.FamilyList(families.block_for(None))
     return dict(name=own.name if own else STANDARD, label=own.label if own else label(None),
                 pdk_id=own.pdk_id if own else None, sha256=own.sha256 if own else None,
                 loaded=bool(own is None or own.name == families.NAME or load_record(own.pdk_id) is not None))

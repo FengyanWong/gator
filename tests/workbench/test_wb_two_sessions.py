@@ -213,9 +213,11 @@ def test_a_write_from_the_page_takes_its_connections_session_and_its_cells(tmp_p
     seen = []
 
     class Stop(Exception):
+        """A sentinel that ends the fake bridge call after session selection is observed."""
         pass
 
     def bridge(settings):
+        """Record the selected connection profile and stop before any bridge action."""
         seen.append(settings.get('profile'))
         raise Stop
     monkeypatch.setattr(bridge_setup, 'RealBridge', bridge)

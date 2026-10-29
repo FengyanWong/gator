@@ -14,7 +14,8 @@ its top). There is no `AGENTS.md`.
    area: for the workbench the untracked `gator_claude_code_fable51_frontend_data_outputs_en.md` at the repository
    root, otherwise the plan or brief of the area in `docs/`. Do not redo finished modules from memory. Where a function
    lives (button, code, route, entries, tests, checks): `docs/functionality-reference.md`; when you add, change or
-   remove a function, change its row there as well. A new entry
+   remove a function, change its row there as well. The page, code and records use the words defined in
+   `docs/glossary.md`. A new entry
    goes at the end of the open log file `docs/workbench-log/7.428-and-later.md`, plus its one-line row in the index;
    a new commit row goes at the end of the commit table in `docs/workbench-log/record-history.md`.
 2. Preserve uncommitted user work. Never commit, push or reset without being asked. Several sessions

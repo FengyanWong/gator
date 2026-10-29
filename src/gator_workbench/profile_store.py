@@ -20,7 +20,8 @@ NAME = re.compile(TASK_NAME)
 FORMAT = 'gator-generated-profile-1'
 FILES = dict(design='design.json', mapping='mapping.json', structure='structure.scs', readback='readback.cdf.json',
              rules='rules.json', receipt='creation.json', entry='profile.json', reference='reference_measurements.json',
-             maestro_deck='maestro_deck.json', conditions='conditions.json')      # conditions: only tasks of a PDK with a relative template (2026-10-09)
+             # conditions: only tasks of a PDK with a relative template (2026-10-09)
+             maestro_deck='maestro_deck.json', conditions='conditions.json')
 
 
 class ProfileError(ValueError):
@@ -32,12 +33,15 @@ def store_root() -> Path:
 
 
 def profile_dir(name) -> Path:
+    """Validate a profile name and return its local storage directory."""
     if not isinstance(name, str) or not NAME.match(name):
-        raise ProfileError('The profile name must be lowercase letters, digits and "_" (2-40 characters, starting with a letter)')
+        raise ProfileError(
+            'The profile name must be lowercase letters, digits and "_" (2-40 characters, starting with a letter)')
     return store_root() / name
 
 
 def list_profiles() -> dict:
+    """Return every well-formed stored profile entry, keyed by name, each with its folder path added."""
     found = {}
     root = store_root()
     for entry_file in sorted(root.glob(f'*/{FILES["entry"]}')) if root.is_dir() else ():
@@ -85,7 +89,8 @@ def reference_metrics(name) -> dict | None:
         reference = json.loads((profile_dir(name) / FILES['reference']).read_text())
     except (OSError, ValueError):
         return None
-    return reference['metrics'] if reference.get('origin') == 'real' and isinstance(reference.get('metrics'), dict) else None
+    return reference['metrics'] if reference.get('origin') == 'real' and isinstance(reference.get('metrics'),
+        dict) else None
 
 
 # The task file of a saved task, and the folder that keeps the task files of its earlier revisions.
@@ -94,6 +99,7 @@ HISTORY = 'history'
 
 
 def task_file(name) -> dict | None:
+    """Return the parsed task.json of saved task `name`, or None for an invalid name or unreadable file."""
     try:
         return json.loads((profile_dir(name) / TASK_FILE).read_text())
     except (OSError, ValueError, ProfileError):

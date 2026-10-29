@@ -12,6 +12,7 @@ from helpers import execute, make_config, roots_for, workbench_app
 
 
 def rows_by_dir(root):
+    """Index listed run records by their run directories."""
     return {row['run_dir']: row for row in runs.list_runs(roots_for(root), root)}
 
 

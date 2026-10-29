@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 
 # ------------------------------------------------------------------------------------------ what the families are
@@ -85,13 +86,13 @@ def _assignments(text):
     return out
 
 
-def includes_of(text):
+def includes_of(text) -> list:
     """The files a model file includes, as written (relative to that file)."""
     # The anchored quoted prefix cannot contain an external comment; comments after it do not affect the match.
     return sorted({m.group(1) for line in text.splitlines() for m in [_INCLUDE.match(line)] if m})
 
 
-def _define(into, name, item, models, subckts, duplicates):
+def _define(into, name, item, models, subckts, duplicates) -> None:
     """The first definition of a name wins, across models and subcircuits; a later one is listed."""
     if name in models or name in subckts:
         duplicates.append(dict(name=name, file=item['file'], line=item['line']))
@@ -99,12 +100,21 @@ def _define(into, name, item, models, subckts, duplicates):
         into[name] = item
 
 
-def scan_model_text(text, file):
+class _FileScan(NamedTuple):
+    """One model file being scanned: its path, and the models, subcircuits and repeated names found in it so far."""
+    file: str                                    # the path each definition records
+    models: dict                                 # name -> model defined outside any subcircuit
+    subckts: dict                                # name -> subcircuit
+    duplicates: list                             # a name defined again, and where (`_define`)
+
+
+def scan_model_text(text, file) -> dict:
     """Top-level definitions of one Spectre model file: {'models': {name: {...}}, 'subckts': {name: {...}}}.
     Only what classifying a device needs is kept: a model's primitive and `type`; a subcircuit's pins, parameters,
     elements (name, nodes, master, which of r/c/q/l they set) and its own local models. Model parameter blocks
     `{ ... }` (binned BSIM cards, thousands of lines) are skipped except for their `type=`."""
     models, subckts, duplicates = {}, {}, []
+    file_scan = _FileScan(file, models, subckts, duplicates)  # the same file and tables, for the SPICE statements
     scope, brace, brace_model, language = None, 0, None, 'spectre'
     for number, line in _logical_lines(text):
         if brace:
@@ -126,7 +136,7 @@ def scan_model_text(text, file):
                 language = found.group(1).lower()
             continue
         if language == 'spice':
-            scope = _spice_statement(words, line, number, file, scope, models, subckts, duplicates)
+            scope = _spice_statement(words, line, number, scope, file_scan)
             continue
         if head in ('inline', 'subckt') and (head == 'subckt' or (len(words) > 1 and words[1].lower() == 'subckt')):
             inline = head == 'inline'
@@ -172,18 +182,20 @@ def scan_model_text(text, file):
             if element:
                 params = _assignments(element.group(4))
                 scope['elements'].append(dict(name=element.group(1), nodes=element.group(2).split(),
-                                              master=element.group(3), sets=sorted(k for k in params if k in ('r', 'c', 'q', 'l', 'i'))))
+                                              master=element.group(3), sets=sorted(k for k in params if k in ('r', 'c',
+                                                  'q', 'l', 'i'))))
     return dict(models=models, subckts=subckts, duplicates=duplicates)
 
 
-def _spice_statement(words, line, number, file, scope, models, subckts, duplicates):
+def _spice_statement(words, line, number, scope, file_scan):
     """The few SPICE statements a model file may switch to: .subckt/.ends/.model and element lines inside a .subckt."""
     head = words[0].lower() if words else ''
     if head == '.subckt' and len(words) >= 2:
         pins = [w for w in words[2:] if '=' not in w and w.lower() != 'params:']
-        scope = dict(name=words[1], inline=False, pins=pins, parameters=_assignments(line.split(None, 2)[2] if len(words) > 2 else ''),
-                     elements=[], models={}, file=file, line=number)
-        _define(subckts, words[1], scope, models, subckts, duplicates)
+        scope = dict(name=words[1], inline=False, pins=pins,
+                     parameters=_assignments(line.split(None, 2)[2] if len(words) > 2 else ''),
+                     elements=[], models={}, file=file_scan.file, line=number)
+        _define(file_scan.subckts, words[1], scope, file_scan.models, file_scan.subckts, file_scan.duplicates)
         return scope
     if head == '.ends':
         return None
@@ -192,9 +204,9 @@ def _spice_statement(words, line, number, file, scope, models, subckts, duplicat
         primitive = {'nmos': 'bsim4', 'pmos': 'bsim4', 'npn': 'bjt', 'pnp': 'bjt', 'd': 'diode', 'r': 'resistor',
                      'c': 'capacitor', 'l': 'inductor'}.get(primitive, primitive)
         kind = words[2].split('(')[0].lower()
-        model = dict(name=words[1], primitive=primitive, file=file, line=number,
+        model = dict(name=words[1], primitive=primitive, file=file_scan.file, line=number,
                      type={'nmos': 'n', 'pmos': 'p', 'npn': 'npn', 'pnp': 'pnp'}.get(kind))
-        (scope['models'] if scope is not None else models).setdefault(words[1], model)
+        (scope['models'] if scope is not None else file_scan.models).setdefault(words[1], model)
         return scope
     if scope is not None and words and words[0][:1].isalpha():
         letter = words[0][0].lower()
@@ -210,7 +222,7 @@ def _spice_statement(words, line, number, file, scope, models, subckts, duplicat
     return scope
 
 
-def merge_scans(scans):
+def merge_scans(scans) -> dict:
     """Several files' scans -> one namespace (the first definition of a name wins; later ones are listed)."""
     models, subckts, duplicates = {}, {}, []
     for scan in scans:
@@ -223,17 +235,22 @@ def merge_scans(scans):
 
 
 # ------------------------------------------------------------------------------------------ classifying one model
-def file_line(entry):
+def file_line(entry) -> str:
+    """Format a source entry as its basename and line number for diagnostics."""
     return f"{Path(entry['file']).name}:{entry['line']}"
 
 
-def _element_family(element, subckt, scan, depth=0):
+def _element_family(element, subckt, scan, depth=0) -> tuple:
     """(family, polarity, basis) of one element inside a subcircuit."""
     master = element['master']
     local = subckt['models'].get(master) or scan['models'].get(master)
     if local is not None:
         family = PRIMITIVE_FAMILY.get(local['primitive'])
-        return family, local.get('type'), f"model {master} = {local['primitive']}{', type=' + local['type'] if local.get('type') else ''} ({file_line(local)})"
+        return family, local.get(
+            'type'), (
+                f"model {master} = {local['primitive']}{(', type=' + local['type'] if local.get('type') else '')}"
+                f' ({file_line(local)})'
+            )
     if master.lower() in PRIMITIVE_FAMILY:
         return PRIMITIVE_FAMILY[master.lower()], None, f'Spectre primitive {master}'
     if master.lower() == 'bsource':
@@ -244,11 +261,12 @@ def _element_family(element, subckt, scan, depth=0):
     inner = scan['subckts'].get(master)
     if inner is not None and depth < 4:
         found = classify_model(master, scan, depth=depth + 1)
-        return found['family'], found.get('polarity'), f"subcircuit {master} ({file_line(inner)}): {found['family_basis']}"
+        return found['family'], found.get(
+            'polarity'), f"subcircuit {master} ({file_line(inner)}): {found['family_basis']}"
     return None, None, f'{master}: not defined in the model files read'
 
 
-def _paths(subckt, scan, start, end, blocked, *, behavioural=False):
+def _paths(subckt, scan, start, end, blocked, *, behavioural: bool=False):
     """Families of the elements on every simple path from pin `start` to pin `end` through internal nodes only.
     `behavioural`: also a behavioural source with controlling nodes (`bsource` with more than two), through the first two
     nodes its current flows between - labelled by what it sets, else 'behavioural' (record 7.298)."""
@@ -276,31 +294,39 @@ def _paths(subckt, scan, start, end, blocked, *, behavioural=False):
     return found
 
 
-def classify_model(name, scan, *, cdf_units=(), depth=0):
+def classify_model(name, scan, *, cdf_units=(), depth=0) -> dict:
     """What one Spectre model is: {family, polarity, family_basis, core (element whose terminals give the pin roles)}.
     `cdf_units` = the units the cell's CDF declares (decides between passive candidates, never overrides a primitive)."""
     model = scan['models'].get(name)
     if model is not None:
         family = PRIMITIVE_FAMILY.get(model['primitive'])
         return dict(family=family or 'other', polarity=model.get('type'), core=None,
-                    family_basis=f"model {name} = {model['primitive']}{', type=' + model['type'] if model.get('type') else ''} ({file_line(model)})"
-                    if family else f"model {name} uses primitive {model['primitive']}, which is not classified here ({file_line(model)})")
+                    family_basis=
+                        f"model {name} = {model['primitive']}"
+                        f"{(', type=' + model['type'] if model.get('type') else '')} ({file_line(model)})"
+                    if family else
+                        f"model {name} uses primitive {model['primitive']}, which is not classified here ("
+                        f'{file_line(model)})')
     subckt = scan['subckts'].get(name)
     if subckt is None and name.lower() in SPECTRE_PASSIVES:            # Spectre's own primitive, used without a model
         return dict(family=name.lower(), polarity=None, core=None,
                     family_basis=f"{name} is Spectre's own {name.lower()} primitive (record 7.298)")
     if subckt is None:
-        return dict(family='other', polarity=None, core=None, family_basis=f'{name} is not defined in the model files read')
+        return dict(family='other', polarity=None, core=None,
+            family_basis=f'{name} is not defined in the model files read')
     if subckt['inline']:
         main = next((e for e in subckt['elements'] if e['name'] == name), None)
         if main is not None:
             family, polarity, basis = _element_family(main, subckt, scan, depth)
             if family:
                 return dict(family=family, polarity=polarity, core=main,
-                            family_basis=f'inline subcircuit {name} ({file_line(subckt)}): its own element uses {basis}')
+                            family_basis=
+                                f'inline subcircuit {name} ({file_line(subckt)}): its own element uses {basis}')
+    # ---- Prefer a unique active-device core before considering passive paths.
     active = [(e, *_element_family(e, subckt, scan, depth)) for e in subckt['elements']]
     for wanted in ('mos', 'bjt'):
-        cores = [item for item in active if item[1] == wanted and len(item[0]['nodes']) >= (4 if wanted == 'mos' else 3)]
+        cores = [item for item in active if item[1] == wanted and len(item[0]['nodes']) >= (
+            4 if wanted == 'mos' else 3)]
         if len(cores) == 1:
             element, family, polarity, basis = cores[0]
             return dict(family=family, polarity=polarity, core=element,
@@ -310,12 +336,7 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
                         family_basis=f'subcircuit {name} ({file_line(subckt)}) holds {len(cores)} {wanted} elements')
     if len(subckt['pins']) < 2:
         return dict(family='other', polarity=None, core=None, family_basis=f'subcircuit {name} has fewer than two pins')
-    paths = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]))
-    on_path = {family for path in paths for family in path}
-    candidates = on_path & set(PASSIVE)
-    declared = {CDF_UNITS.get(u) for u in cdf_units}
-    by_unit = {'ohm': 'resistor', 'F': 'capacitor', 'H': 'inductor'}
-    where = f'subcircuit {name} ({file_line(subckt)})'
+    paths, on_path, candidates, declared, by_unit, where = _passive_path_evidence(subckt, scan, cdf_units, name)
     if not paths:
         # Only behavioural sources may join them (a diffusion resistor modelled as a chain of `bsource` segments): that
         # names a family only when the cell's own CDF declares exactly one passive quantity (record 7.298).
@@ -329,33 +350,56 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
                 and on_path & set(PASSIVE) <= set(declared_passive):
             family = declared_passive[0]
             return dict(family=family, polarity=None, core=None,
-                        family_basis=f"{where}: behavioural sources between its first two pins, and the cell declares a "
-                                     f"{ {v: k for k, v in by_unit.items()}[family] } parameter")
-        return dict(family='other', polarity=None, core=None, family_basis=f'{where}: its first two pins are not connected')
-    # A diode wrapped with its series resistance (`r1 (1 3) resistor` + `d1 (3 2) <diode model>`): every path between the
-    # first two pins crosses the one diode that can lie on such a path, and nothing but resistors besides it. A diode to
-    # a further pin (the body) never lies on one; a resistor beside a diode in parallel leaves a path without it.
+                        family_basis=
+                            f'{where}: behavioural sources between its first two pins, and the cell declares a '
+                            f'{ {v: k for (k, v) in by_unit.items()}[family]} parameter')
+        return dict(family='other', polarity=None, core=None,
+            family_basis=f'{where}: its first two pins are not connected')
+    # A diode wrapped with its series resistance (`r1 (1 3) resistor` + `d1 (3 2) <diode model>`): every path between
+    # the first two pins crosses the one diode that can lie on such a path, and nothing but resistors besides it. A
+    # diode to a further pin (the body) never lies on one; a resistor beside a diode in parallel leaves a path without
+    # it.
     series = [item for item in active if item[1] == 'diode' and len(item[0]['nodes']) == 2
               and not set(item[0]['nodes']) & set(subckt['pins'][2:])]
     if len(series) == 1 and all(path.count('diode') == 1 and set(path) <= {'diode', 'resistor'} for path in paths):
         element, _, _, basis = series[0]
         return dict(family='diode', polarity=None, core=element,
-                    family_basis=f"{where}: element {element['name']} uses {basis}, with only resistance in series between its first two pins")
+                    family_basis=
+                        f"{where}: element {element['name']} uses {basis}, with only resistance in series "
+                        f'between its first two pins')
     if on_path == {'resistor'}:
-        return dict(family='resistor', polarity=None, core=None, family_basis=f'{where}: only resistive elements between its first two pins')
+        return dict(family='resistor', polarity=None, core=None,
+            family_basis=f'{where}: only resistive elements between its first two pins')
     if len(candidates) == 1 and on_path <= set(PASSIVE):
         family = candidates.pop()
-        return dict(family=family, polarity=None, core=None, family_basis=f'{where}: only {family} elements between its first two pins')
+        return dict(family=family, polarity=None, core=None,
+            family_basis=f'{where}: only {family} elements between its first two pins')
     backed = [by_unit[u] for u in sorted(declared & set(by_unit)) if by_unit[u] in candidates]
     if len(backed) == 1:
         return dict(family=backed[0], polarity=None, core=None,
-                    family_basis=f"{where}: {', '.join(sorted(candidates))} between its first two pins; the cell declares a "
-                                 f"{ {v: k for k, v in by_unit.items()}[backed[0]] } parameter")
+                    family_basis=
+                        f"{where}: {', '.join(sorted(candidates))} between its first two pins; the cell declares "
+                        f'a { {v: k for (k, v) in by_unit.items()}[backed[0]]} parameter')
     if 'inductor' in candidates:
         return dict(family='inductor', polarity=None, core=None,
-                    family_basis=f"{where}: an inductor lies between its first two pins (with {', '.join(sorted(candidates - {'inductor'})) or 'nothing else'})")
+                    family_basis=
+                        f'{where}: an inductor lies between its first two pins (with '
+                        f"{', '.join(sorted(candidates - {'inductor'})) or 'nothing else'})")
     return dict(family='other', polarity=None, core=None,
-                family_basis=f"{where}: {', '.join(sorted(on_path)) or 'nothing'} between its first two pins - not classified")
+                family_basis=
+                    f"{where}: {', '.join(sorted(on_path)) or 'nothing'} between its first two pins - not "
+                    f'classified')
+
+
+def _passive_path_evidence(subckt, scan, cdf_units, name) -> tuple:
+    """Collect terminal-path families, declared passive units and the source description for classification."""
+    paths = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]))
+    on_path = {family for path in paths for family in path}
+    candidates = on_path & set(PASSIVE)
+    declared = {CDF_UNITS.get(u) for u in cdf_units}
+    by_unit = {'ohm': 'resistor', 'F': 'capacitor', 'H': 'inductor'}
+    where = f'subcircuit {name} ({file_line(subckt)})'
+    return paths, on_path, candidates, declared, by_unit, where
 
 
 def pin_roles(name, found, scan):
@@ -369,7 +413,10 @@ def pin_roles(name, found, scan):
     pins = subckt['pins']
     if family in PASSIVE:
         return [dict(model_pin=pin, role=('positive', 'negative')[i] if i < 2 else 'bulk',
-                     basis='first terminal' if i == 0 else 'second terminal' if i == 1 else 'further terminal (substrate / body)')
+                     basis=
+                         'first terminal' if i == 0 else
+                         'second terminal' if i == 1 else
+                         'further terminal (substrate / body)')
                 for i, pin in enumerate(pins)]
     core, roles = found.get('core'), TERMINAL_ROLES.get(family)
     if core is None or roles is None:

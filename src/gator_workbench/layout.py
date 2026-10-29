@@ -48,12 +48,13 @@ PURPOSES = {
 
 @dataclass(frozen=True)
 class RunLayout:
+    # The standard paths and directories belonging to one persisted run.
     run_dir: Path
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, 'run_dir', Path(self.run_dir))
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Path:
         table = dict(manifest='run_manifest.json', effective_config='effective_config.json',
                      summary='run_summary.json', artifact_manifest='artifact_manifest.json', status='status.json',
                      input_snapshot='input_snapshot', data='data', best_design='best_design',
@@ -67,12 +68,14 @@ class RunLayout:
     def experiment_dir(self) -> Path:
         return self.run_dir.parents[2]
 
-    def create(self):
+    def create(self) -> None:
+        """Create the standard run subdirectories without replacing existing contents."""
         for name in ('input_snapshot', 'data', 'best_design', 'checkpoints', 'waveforms', 'logs', 'exports',
                      'control', 'work'):
             getattr(self, name).mkdir(parents=True, exist_ok=True)
 
-    def subpaths(self):
+    def subpaths(self) -> dict[str, str]:
+        """Return the path of each kind of run output (data, checkpoints, logs and more) as text."""
         return dict(run=str(self.run_dir), raw_data=str(self.data), checkpoints=str(self.checkpoints),
                     replay='checkpoints/<checkpoint_id>/training_state.pt (embedded) + replay_buffer/manifest.json',
                     best_designs=str(self.best_design), csv_exports=str(self.exports),
@@ -80,13 +83,13 @@ class RunLayout:
                     logs=str(self.logs), simulator_work=str(self.work))
 
 
-# Simulator scratch on the local disk (record 7.149). The D: drive seen from WSL is a 9p mount, about 100 times slower per
-# file operation: replayed offline, a lane's job folder (the 19 files of an mscr_ota7t job) took 0.15 s there and
+# Simulator scratch on the local disk (record 7.149). The D: drive seen from WSL is a 9p mount, about 100 times slower
+# per file operation: replayed offline, a lane's job folder (the 19 files of an mscr_ota7t job) took 0.15 s there and
 # 0.002 s on the WSL disk, the preparation's export files 0.03 s and 0.0015 s.
 SLOW_FILESYSTEMS = frozenset({'9p', 'drvfs', 'cifs', 'smb3', 'nfs', 'nfs4', 'fuse.sshfs'})
 
 
-def filesystem_type(path, mounts=None) -> str | None:
+def filesystem_type(path, mounts: str | None=None) -> str | None:
     """The type of the filesystem holding `path`: that of the longest mount point above it in /proc/mounts (`mounts`,
     its text, for tests). None when unknown."""
     if mounts is None:
@@ -121,7 +124,8 @@ def local_scratch(layout: RunLayout) -> Path | None:
     return root / layout.experiment_dir.name / layout.run_dir.name
 
 
-def new_experiment_dir(data_root: Path, experiment_name: str, experiment_id: str | None):
+def new_experiment_dir(data_root: Path, experiment_name: str, experiment_id: str | None) -> tuple[Path, str, bool]:
+    """Resolve an existing experiment or create a uniquely identified directory and report whether it is new."""
     data_root = Path(data_root)
     if experiment_id:
         directory = data_root / f'{experiment_name}__{experiment_id}'
@@ -134,24 +138,26 @@ def new_experiment_dir(data_root: Path, experiment_name: str, experiment_id: str
     return directory, experiment_id, True
 
 
-def new_run_dir(experiment_dir: Path, task_name: str, mode: str, seed: int):
+def new_run_dir(experiment_dir: Path, task_name: str, mode: str, seed: int) -> tuple[RunLayout, str]:
+    """Create a run directory beneath the experiment and return its layout and unique identifier."""
     run_id = uuid4().hex
     directory = Path(experiment_dir) / 'runs' / task_name / f'{mode}__seed{seed}__{run_id[:12]}'
     directory.mkdir(parents=True, exist_ok=False)
     return RunLayout(directory), run_id
 
 
-def code_provenance():
+def code_provenance() -> dict:
+    """Collect repository revision, worktree state, and optimizer-source identity without refreshing the Git index."""
     root = repo_root()
 
-    def git(*args):
+    def git(*args: str) -> str | None:
         try:
             return subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=20,
                                   check=True).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return None
-    # --no-optional-locks: a plain `git status` may take .git/index.lock and rewrite the index to refresh its stat cache -
-    # on every run start, in a working tree and index that several sessions share. The answer is the same without it.
+    # --no-optional-locks: a plain `git status` may take .git/index.lock and rewrite the index to refresh its stat cache
+    # - on every run start, in a working tree and index that several sessions share. The answer is the same without it.
     commit, status = git('rev-parse', 'HEAD'), git('--no-optional-locks', 'status', '--porcelain')
     try:
         from analog_optimizer.training.sac import source_digest
@@ -164,7 +170,8 @@ def code_provenance():
                 analog_optimizer_source_sha256=optimizer_digest, workbench_version=__version__)
 
 
-def environment_versions():
+def environment_versions() -> dict:
+    """Return the interpreter, host and dependency versions, with 'unavailable' for a missing dependency."""
     versions = dict(python=sys.version.split()[0], platform=platform.platform(), host=socket.gethostname(),
                     environment=environment_label(), executable=sys.executable, pid=os.getpid())
     for module in ('torch', 'torch_geometric', 'numpy', 'pyarrow', 'pydantic', 'networkx'):
@@ -175,7 +182,7 @@ def environment_versions():
     return versions
 
 
-def build_artifact_manifest(layout: RunLayout, *, run_id, final: bool, dataset_status=None, notes=None):
+def build_artifact_manifest(layout: RunLayout, *, run_id, final: bool, dataset_status=None, notes=None) -> dict:
     """List every file with relative path, purpose, format, size, checksum and write status."""
     entries = []
     flushed = set()
@@ -211,8 +218,10 @@ def build_artifact_manifest(layout: RunLayout, *, run_id, final: bool, dataset_s
                 continue
             entries.append(dict(path=relative, purpose=PURPOSES.get(top, PURPOSES.get(relative, 'run file')),
                                 format=path.suffix.lstrip('.') or 'none', bytes=info.st_size,
-                                sha256=None if own_checksum else (sha256_file(path) if final or status == 'final' else None),
-                                checksum_in=f'checkpoints/{relative.split("/")[1]}/metadata.json' if own_checksum else None,
+                                sha256=None if own_checksum else (sha256_file(
+                                    path) if final or status == 'final' else None),
+                                checksum_in=
+                                    f"checkpoints/{relative.split('/')[1]}/metadata.json" if own_checksum else None,
                                 write_status=status))
         except OSError:
             continue
@@ -226,7 +235,7 @@ def build_artifact_manifest(layout: RunLayout, *, run_id, final: bool, dataset_s
     return manifest
 
 
-def _flushes(layout):
+def _flushes(layout: RunLayout) -> list:
     return read_jsonl(layout.data / '_journal' / 'flushes.jsonl')
 
 
@@ -234,7 +243,7 @@ def run_bytes(layout: RunLayout) -> int:
     return directory_bytes(layout.run_dir)
 
 
-def _subfolders(path, *, experiments=False) -> list[str]:
+def _subfolders(path, *, experiments: bool=False) -> list[str]:
     """The folders in `path` as pathlib's glob `*` (or `*__*`) matched them - hidden names included; [] when `path` is
     no folder."""
     try:
@@ -244,7 +253,7 @@ def _subfolders(path, *, experiments=False) -> list[str]:
         return []
 
 
-def find_runs(data_root, *, manifest=True) -> list[Path]:
+def find_runs(data_root, *, manifest: bool=True) -> list[Path]:
     """Every run directory (has run_manifest.json) under a data root: <experiment with '__'>/runs/<task>/<run>.
 
     Walked with os.scandir rather than glob (record 7.274): on the 9p-mounted D: drive each file operation costs
@@ -253,11 +262,12 @@ def find_runs(data_root, *, manifest=True) -> list[Path]:
     found = []
     for experiment in _subfolders(data_root, experiments=True):
         for task in _subfolders(os.path.join(experiment, 'runs')):
-            found += [Path(run) for run in _subfolders(task) if not manifest or os.path.isfile(os.path.join(run, 'run_manifest.json'))]
+            found += [Path(run) for run in _subfolders(task) if not manifest or os.path.isfile(os.path.join(run,
+                'run_manifest.json'))]
     return sorted(found)
 
 
-def read_run(run_dir, *, status=True) -> dict:
+def read_run(run_dir, *, status: bool=True) -> dict:
     """`status=False` leaves status.json out, for a caller that reads it through runs.run_status (which adds the lock
     check) anyway: the run list read every status file twice."""
     layout = RunLayout(Path(run_dir))

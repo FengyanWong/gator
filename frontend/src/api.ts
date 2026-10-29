@@ -154,11 +154,6 @@ export const api = {
   cornerStart: (body: Json) => call('POST', '/api/runs/corner-check/start', body),
   cornerStatus: (run_dir: string, check_id: string, signal?: AbortSignal) => call('GET', '/api/runs/corner-check/status' + q({ run_dir, check_id }), undefined, signal),
   cornerStop: (run_dir: string, check_id: string) => call('POST', '/api/runs/corner-check/stop', { run_dir, check_id }),
-  // The Agent window (records 7.226, 7.253): the folder and the two CLIs found (free), one of them opened in a terminal window of its own,
-  // and the free checklist of what a run still needs - no model is called, nothing is probed.
-  agentClis: () => call('GET', '/api/agent/clis'),
-  openCli: (cli: 'claude' | 'codex') => call('POST', '/api/agent/open', { cli }),
-  agentReadiness: (config: Json) => call('POST', '/api/agent/readiness', { config }),
   // Load PDK (backend pdk.py): the PDKs loaded so far, one of them in full, and an explicit read through a connection.
   pdks: () => call('GET', '/api/pdks'),
   pdk: (pdk_id: string) => call('GET', '/api/pdks/' + encodeURIComponent(pdk_id)),
@@ -192,7 +187,7 @@ export const saveJson = (name: string, value: Json) => save(name, new Blob([JSON
 
 /** Puts text on the clipboard of `from`, the window the click happened in (branch record SIF-94): a browser refuses a write
  *  from a window that does not have focus, so a click in a pop-up copies through the pop-up's own clipboard, as the
- *  Connection, Agent and Runs windows do theirs; the main page's when none is given or it has closed. No clipboard here
+ *  Connection and Runs windows do theirs; the main page's when none is given or it has closed. No clipboard here
  *  rejects too, so every caller can say "could not copy": it returned nothing then, and a refused write went unsaid. */
 export const copy = (text: string, from?: Window | null): Promise<void> => {
   const at = from && !from.closed ? from : window;

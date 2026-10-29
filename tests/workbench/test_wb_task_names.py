@@ -14,11 +14,13 @@ MOCK = 'synthetic:gpdk045_ota5'
 
 @pytest.fixture
 def client(tmp_path):
+    """Provide task-name routes through an isolated test API client."""
     with TestClient(workbench_app(tmp_path)) as client:
         yield client
 
 
 def _task(client, key=MOCK):
+    """Find the task API entry with the requested stable key."""
     return next(task for task in client.get('/api/tasks').json()['tasks'] if task['task_key'] == key)
 
 

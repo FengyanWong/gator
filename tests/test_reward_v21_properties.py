@@ -15,6 +15,7 @@ from reward_v21_support import NOMINAL, CORNERS, PLAN
 
 
 def row(values, condition=NOMINAL, status='ok', evaluated=True, **kwargs):
+    """Build a lightweight metric row with explicit condition, status and evaluation flags for reward properties."""
     return SimpleNamespace(condition=condition, status=status, candidate_evaluated=evaluated,
         metrics=values, metric_units=kwargs.get('units', {k: 'V' for k in values}),
         metric_validity=kwargs.get('validity', {k: True for k in values}))

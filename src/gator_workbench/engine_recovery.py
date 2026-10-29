@@ -6,7 +6,7 @@ replay receipts, and unfinished dispatches retain their launch leases.
 """
 from __future__ import annotations
 
-from . import best_design
+from . import best_design, engine_comparison
 from .run_lock import iso
 from .storage.atomic import read_json, read_jsonl, write_json
 from .storage.dataset import DatasetReader
@@ -29,6 +29,7 @@ def restore(engine, run_state):
         if 'rehearsal' not in collector:
             raise RuntimeError('Checkpoint lacks rehearsal sampler state')
         engine.rehearsal.load_state_dict(collector['rehearsal'])
+    search = engine_comparison.restore(engine, collector)          # the archive comparison's search, as it was saved
     cursor = run_state['data_cursor']
     report = dict(checkpoint_commit_seq=cursor['commit_seq'], recovery=engine.dataset.recovery)
     # The best design is also written on every improvement (best_design/tracker_state.json), which reaches further
@@ -39,6 +40,7 @@ def restore(engine, run_state):
     if later and (later.get('last_commit_seq') or 0) > cursor['commit_seq']:
         engine.tracker = best_design.BestDesignTracker(engine.compiled.preference, later)
         report['best_design_after_checkpoint'] = later['last_commit_seq']
+    # ---- Reconcile durable evaluations and unresolved launches beyond the checkpoint.
     engine.dataset.flush()
     if engine.dataset.last_seq > cursor['commit_seq']:
         report['counters_after_checkpoint'] = engine._count_since(cursor['commit_seq'])
@@ -71,6 +73,10 @@ def restore(engine, run_state):
             report['readmitted_transitions'] = readmitted
             report['note'] = ('Learner weights are those of the checkpoint. Experience committed after it was '
                               're-admitted to replay; the learner updates made after it are not recoverable.')
+    if engine.config.run.comparison is not None and (post or interrupted):
+        report['comparison'] = engine_comparison.after_crash(engine, cursor['commit_seq'])
+    if search is not None:
+        report['search'] = dict(search, observations=engine.proposer.observations)
     if engine.encoder is not None:
         engine.encoder.written = {r['state_id'] for r in DatasetReader(engine.layout.data).rows('states', ['state_id'])}
     # A pause for infrastructure failures asks for the connection gate to pass again, and a resume passes it: the count
@@ -92,7 +98,8 @@ def count_since(engine, checkpoint_seq):
                'global_env_step', 'episode_id', 'completed_at', 'dispatch_index', 'cumulative_evaluations_charged',
                'cumulative_completed', 'cumulative_launches', 'in_flight_at_commit']
     later = sorted((row for row in DatasetReader(engine.layout.data).rows('evaluations', columns)
-                    if row['commit_seq'] > checkpoint_seq and row['status'] != 'interrupted'), key=lambda row: row['commit_seq'])
+                    if row['commit_seq'] > checkpoint_seq and row['status'] != 'interrupted'),
+                    key=lambda row: row['commit_seq'])
     try:        # the record made at the event (its seconds, what was in flight); the table's own numbers without it
         logged = {(e.get('event'), e.get('evaluation_id')): e for e in read_jsonl(engine.layout.logs / 'events.jsonl')}
     except (OSError, ValueError):
@@ -111,7 +118,8 @@ def count_since(engine, checkpoint_seq):
         number = (row['episode_id'] or '').rpartition('-')[2]
         if number.isdigit():
             engine.counters['episodes'] = max(engine.counters['episodes'], int(number))
-        for field, column in (('first_nominal_feasible', 'nominal_feasible'), ('first_feasible', 'all_hard_constraints_satisfied')):
+        for field, column in (('first_nominal_feasible', 'nominal_feasible'), ('first_feasible',
+            'all_hard_constraints_satisfied')):
             if not row[column] or getattr(engine.ledger, field) is not None:
                 continue
             event = logged.get((field, row['evaluation_id']))
@@ -127,7 +135,8 @@ def count_since(engine, checkpoint_seq):
                 found = row['evaluation_id']
     if found and engine.config.run.stop_at_first_feasible:        # the stop it asked for was cut off by the crash
         engine.stop_reason = 'first_feasible'
-    return dict(evaluations=len(later), consecutive_failures=engine.counters['consecutive_failures'], first_feasible=found)
+    return dict(evaluations=len(later), consecutive_failures=engine.counters['consecutive_failures'],
+        first_feasible=found)
 
 
 def record_interrupted(engine):
@@ -166,7 +175,8 @@ def record_interrupted(engine):
                    in_flight_at_commit=0, after_first_feasible=engine.ledger.first_feasible is not None,
                    in_flight_at_first_feasible=False, status='interrupted', failure_type='interrupted_by_crash',
                    diagnostics='The worker process ended while this evaluation was running. It stays charged. ' + (
-                               'Whether the toy backend was called is unknown; nothing physical happened.' if engine.task.mock else
+                               'Whether the toy backend was called is unknown; nothing physical happened.'
+                               if engine.task.mock else
                                'Its full launch allowance remains charged as unresolved, separately from confirmed '
                                'jobs. Reconcile the worker launch journals before any resume.'),
                    terminated=False, truncated=True, replay_eligible=False, duplicate_of=None)

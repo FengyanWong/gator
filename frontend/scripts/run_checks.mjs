@@ -42,7 +42,7 @@ for (const api of [hermeticApi, writerApi].filter(Boolean))
 // finished (the serial durations measured by hand before; plan-refactoring D5: derived from the runs instead of kept by hand).
 const DURATIONS = path.join(tmpdir(), 'gator-checks-durations.json');
 const FIRST_GUESS = { virtuoso_source_check: 76, connection_panel_check: 47, run_control_check: 46, testbench_probes_check: 43,
-  agent_window_check: 12, output_panel_check: 25, run_control_live_check: 23, typing_check: 19, model_chooser_check: 19,
+  external_agents_check: 12, output_panel_check: 25, run_control_live_check: 23, typing_check: 19, model_chooser_check: 19,
   project_help_check: 17, run_list_check: 16, ngspice_window_check: 16, working_copy_check: 15,
   save_now_check: 11, corner_check_check: 11, task_save_check: 10, graph_view_check: 8, blocking_issues_check: 8,
   calibration_check: 60, calibration_save_check: 14, dom_identity_check: 180 };
@@ -62,6 +62,69 @@ const encoderModels = option('--encoder-models');
 if (!encoderModels) SKIPPED.encoder_models_check = 'needs its two saved MOCK models (run_checks.sh makes them: --encoder-models)';
 
 const only = names(option('--only')), skip = names(option('--skip')) ?? [];
+// Check catalog: files are still discovered dynamically below; this list is documentation only.
+// Hermetic checks refuse backend writes; snapshots/downloads stay in each check's evidence folder.
+// external_agents_check: the Agent UI and routes stay absent; user-started desktop or CLI agents handle assistance.
+// blocking_issues_check: Header's blocking-issues window; hermetic; record 7.12.
+// calibration_check: Baseline calibration and Apply; writes scratch MOCK runs; records 7.197, 7.202.
+// calibration_save_check: Calibration Apply and save; hermetic task-save fixtures; record 7.217.
+// callouts_check: Panel and window callout styling; hermetic; record 7.218.
+// circuit_layout_check: Circuit-graph layout; pure in-memory differential checks; record 7.375.
+// circuit_source_check: Restoring the removed netlist source; hermetic; record 7.53.
+// connection_panel_check: Connection window; hermetic, optional scratch ngspice writes; records 7.9, 7.77.
+// consistency_check: Saved-task Check now and refused starts; hermetic; record 7.61.
+// corner_check_check: Corner check tab and run state; hermetic; record 7.62.
+// crash_panel_check: Crash panel and recovery actions; hermetic; record 7.188.
+// dom_identity_check: Page/window DOM and request identity; hermetic, saves snapshots; record 7.290.
+// edit_state_check: Editor/save state and Undo under StrictMode; in-memory source fixture; record 7.174.
+// editor_columns_check: Parameters, Probes and Specs columns; hermetic; record 7.172.
+// editor_renames_check: Editor rename propagation; pure in-memory differential checks; record 7.377.
+// encoder_models_check: RL-model structure and attention; reads saved MOCK fixtures on scratch API; record 7.228.
+// export_check: Run-tab exports and downloaded contents; writes scratch MOCK runs and exports; record 7.31.
+// files_tab_check: Output files downloads and progress; hermetic download fixtures; record 7.91.
+// find_fill_copy_check: Editor Find, Fill and Copy; hermetic, clipboard intercepted; record 7.184.
+// formula_bar_check: Editor formula bar and cell editing; hermetic; record 7.175.
+// graph_paint_check: Circuit-graph attention styling; in-memory headless Cytoscape; record 7.374.
+// graph_view_check: Circuit graph window; fixtures plus optional saved-model reads; record 7.33.
+// launch_recovery_check: Header recovery after a lost start/status reply; hermetic; record 7.268.
+// looks_check: Page and window layout in the Roadster look; hermetic; records 7.158, 7.360.
+// matched_devices_check: Parameters' Matched devices window; hermetic; record 7.103.
+// mode_suggestion_check: Run mode suggestions and legacy resume; hermetic; records 7.90, 7.267.
+// model_chooser_check: RL-model window and save-point selection; hermetic; record 7.265.
+// model_structure_check: Model Details' structure tables; fixtures plus optional saved-model reads; record 7.26.
+// module_fold_check: Run configuration and Output settings folding; hermetic; record 7.45.
+// network_inputs_check: RL-model network-input choices; hermetic; records 7.298, 7.317.
+// network_panel_check: RL-model templates and settings; hermetic save replies; record 7.265.
+// ngspice_window_check: ngspice task window; hermetic import fixtures; record 7.74.
+// output_panel_check: Output settings, paths and units; hermetic; record 7.41.
+// pdk_check: PDK window and component list; hermetic; record 7.54.
+// project_help_check: Circuit-column and Virtuoso-window explanations; hermetic; record 7.30.
+// reliability_check: Browser persistence and stale UI replies; hermetic; record 7.130.
+// request_lifecycle_check: Read cancellation and stale replies; in-memory source fixture; verified in record 7.99.
+// reward_block_check: Run configuration's reward sentence and limits; hermetic; record 7.183.
+// reward_v21_check: Reward v2.1 controls; hermetic preview with scratch fixture reads; record 7.112.
+// reward_v2_frontend_check: Saved real reward data; scratch API and new evidence reports; records 7.95, 7.109.
+// reward_v2_real_check: Saved real reward qualification; scratch API and evidence reports; record 7.95.
+// room_check: Editor space, tab placement and narrow layouts; hermetic; record 7.179.
+// run_control_check: Header Start, Pause, Resume and Abort; hermetic run fixtures; record 7.18.
+// run_control_live_check: Header run controls end to end; writes scratch MOCK runs; record 7.18.
+// run_list_check: Runs window, selection and details; hermetic; record 7.38.
+// save_now_check: Header Save now without pausing; hermetic; record 7.23.
+// sheet_check: Editor ties, selection and spreadsheet keys; hermetic; record 7.180.
+// spec_equations_check: Specs equations and migration; read-only backend validation; record 7.52.
+// table_view_check: Task/run/model table order and selection; pure in-memory checks; record 7.373.
+// task_list_check: Tasks window and task selection; hermetic; record 7.227.
+// task_rows_check: Task selection loads its editor rows; hermetic, optional read-only API mode; record 7.44.
+// task_run_check: Bottom tabs follow the selected task; hermetic; record 7.212.
+// task_save_check: Save as and Task file windows; hermetic save fixtures; records 7.57, 7.246.
+// testbench_probes_check: Virtuoso testbench selection and Probe rows; hermetic; record 7.49.
+// training_data_check: Training-tab series arithmetic; local fixtures without a backend; record 7.193.
+// training_tab_check: Training-tab charts and recorded values; hermetic; record 7.193.
+// typing_check: Typed editor values, units and imports; hermetic; record 7.64.
+// unit_text_check: Shared quantity formatting; read-only schema API, no browser; record 7.208.
+// unsaved_rows_check: Editor marks and diffs for unsaved rows; hermetic; record 7.222.
+// virtuoso_source_check: Virtuoso cell window and import; hermetic, no Virtuoso contact; records 7.15, 7.362.
+// working_copy_check: Virtuoso working-copy and Maestro setup; hermetic; record 7.55.
 const all = readdirSync(scripts).filter(f => f.endsWith('_check.mjs')).map(f => f.replace(/\.mjs$/, ''));
 const chosen = all.filter(n => (!only || only.includes(n)) && !skip.includes(n) && !(n in SKIPPED && !only?.includes(n)));
 if (!writerApi || !scratchOut) for (const n of WRITERS) if (chosen.includes(n)) chosen.splice(chosen.indexOf(n), 1);

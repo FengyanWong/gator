@@ -46,6 +46,7 @@ _INSTANCE = re.compile(r'^\s*([^\s(]+)\s*\(([^)]*)\)\s*([^\s=()]+)')
 
 
 class LibraryError(Exception):
+    """The error raised when a model library cannot be read or trimmed for a circuit."""
     pass
 
 
@@ -163,7 +164,8 @@ def host_runner(config, *, timeout=120):
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):     # the runner echoes its command
                     code, out, err = runner.run_command(command, timeout=timeout)
             if code != 0:
-                raise LibraryError(f'reading the model library on the simulator host failed (exit {code}): {err.strip()[-300:]}')
+                raise LibraryError(
+                    f'reading the model library on the simulator host failed (exit {code}): {err.strip()[-300:]}')
             return out
         finally:
             set_runtime_env_file(prior_file)
@@ -171,6 +173,20 @@ def host_runner(config, *, timeout=120):
                 del os.environ[key]
             os.environ.update(prior_env)
     return run
+
+
+def _read_structure_section(tag, rest, entry):
+    """Apply a section record to the collected model-library structure."""
+    if tag == 'S' and len(rest) == 4:
+        entry(rest[0], rest[1])['span'] = (int(rest[2]), int(rest[3]))
+    elif tag == 'I' and len(rest) == 4:
+        entry(rest[0], rest[1])['includes'].append((rest[2], None if rest[3] == '-' else rest[3]))
+    elif tag == 'D' and len(rest) == 3:
+        entry(rest[0], rest[1])['defines'].add(rest[2])
+    elif tag == 'R' and len(rest) == 3:
+        entry(rest[0], rest[1])['refs'].add(rest[2])
+    elif tag == 'O' and len(rest) == 3:
+        entry(rest[0], rest[1])['own'] = int(rest[2])
 
 
 def parse_structure(text):
@@ -189,23 +205,16 @@ def parse_structure(text):
             files[rest[0]] = tuple(rest[1:3])
         elif tag == 'X' and len(rest) == 1:
             files[rest[0]] = None
-        elif tag == 'S' and len(rest) == 4:
-            entry(rest[0], rest[1])['span'] = (int(rest[2]), int(rest[3]))
-        elif tag == 'I' and len(rest) == 4:
-            entry(rest[0], rest[1])['includes'].append((rest[2], None if rest[3] == '-' else rest[3]))
-        elif tag == 'D' and len(rest) == 3:
-            entry(rest[0], rest[1])['defines'].add(rest[2])
-        elif tag == 'R' and len(rest) == 3:
-            entry(rest[0], rest[1])['refs'].add(rest[2])
-        elif tag == 'O' and len(rest) == 3:
-            entry(rest[0], rest[1])['own'] = int(rest[2])
+        else:
+            _read_structure_section(tag, rest, entry)
     return files, sections
 
 
 def resolve(including, target):
     """An include's file as an absolute path: relative to the including file's folder, as Spectre resolves it. None
     when it is not a plain path."""
-    path = posixpath.normpath(target if target.startswith('/') else posixpath.join(posixpath.dirname(including), target))
+    path = posixpath.normpath(target if target.startswith('/') else posixpath.join(posixpath.dirname(including),
+        target))
     return path if REMOTE_PATH.match(path) else None
 
 
@@ -275,6 +284,7 @@ def plan_library(structure, model_file, devices) -> dict:
                 raise LibraryError(f'{file} includes {target!r}, not a plain path')
             closure(path, inner, seen)
 
+    # ---- Plan each top-level section separately and retain reasons a section cannot be trimmed.
     found, plans, parts, why = set(), {}, {}, {}
     for (file, section), info in sections.items():
         if file != model_file or section == '-':
@@ -371,7 +381,9 @@ def attach(profile, config, *, reference, structure, run=None):
             else:
                 library['read_seconds'] = perf_counter() - started
         except Exception as exc:                          # the run goes on with the whole model file
-            library, note = None, f'The model library could not be read, so the decks include the whole model file: {exc}'
+            library, note = None, (
+                f'The model library could not be read, so the decks include the whole model file: {exc}'
+            )
     profile.model_library = library
     profile.model_library_event = summary(library, note)
     return library

@@ -1,4 +1,4 @@
-"""An experiment folder's registry of its runs (experiment_registry.json) and its split manifest (split_manifest.json),
+"""An experiment folder's registry of its runs (experiment.json) and its split manifest (split_manifest.json),
 updated as each run is created; the data dictionary written beside them.
 
 Moved from runs.py by the refactoring (docs/plan-refactoring.md); runs.py re-exports both names.
@@ -15,6 +15,7 @@ from .storage.dataset import write_data_dictionary
 
 
 def register_in_experiment(experiment_dir, manifest, compiled, task, created):
+    """Add the run to the experiment's run list and split manifest; raise RunRejected if the lock is busy."""
     experiment_dir = Path(experiment_dir)
     lock = RunLock(experiment_dir / '.experiment.lock')
     import time
@@ -57,9 +58,11 @@ def _update_split_manifest(experiment_dir, manifest, compiled, task):
                                 for t in compiled.targets if t['active']],
                  variable_ranges=[dict(variable_id=v['variable_id'], lower=v['lower'], upper=v['upper'], unit=v['unit'])
                                   for v in compiled.variables if v['optimized']],
-                 initial_values=manifest['initial_dimensions'], training_sources=manifest['research']['training_sources'],
+                 initial_values=manifest['initial_dimensions'],
+                 training_sources=manifest['research']['training_sources'],
                  runs=[manifest['run_id']])
-    existing = next((t for t in split['tasks'] if t['task_id'] == entry['task_id'] and t['role'] == entry['role']), None)
+    existing = next((t for t in split['tasks'] if t['task_id'] == entry['task_id'] and t['role'] == entry['role']),
+        None)
     if existing:
         existing['runs'].append(manifest['run_id'])
     else:
@@ -73,13 +76,16 @@ def _update_split_manifest(experiment_dir, manifest, compiled, task):
             same_netlist = first['netlist_sha256'] and first['netlist_sha256'] == second['netlist_sha256']
             same_spec = first['specification'] == second['specification']
             if same_netlist and same_spec:
-                warnings.append(f"{first['task_id']} ({first['role']}) and {second['task_id']} ({second['role']}) share the "
+                warnings.append(
+                    f"{first['task_id']} ({first['role']}) and {second['task_id']} ({second['role']}) share the "
                                 'same netlist AND specification: identical task across partitions.')
             elif same_netlist and 'unseen_topology' in (first['generalization_level'], second['generalization_level']):
-                warnings.append(f"{first['task_id']} and {second['task_id']} share a netlist but one is labelled unseen_topology.")
+                warnings.append(
+                    f"{first['task_id']} and {second['task_id']} share a netlist but one is labelled unseen_topology.")
             if (second['generalization_level'] == 'unseen_circuit_class'
                     and second['circuit_class'] in (second['training_sources'] or [])):
-                warnings.append(f"{second['task_id']}: unseen_circuit_class but its class is listed in training_sources.")
+                warnings.append(
+                    f"{second['task_id']}: unseen_circuit_class but its class is listed in training_sources.")
     split['overlap_warnings'] = sorted(set(warnings))
     split['counts'] = {role: sum(1 for t in tasks if t['role'] == role)
                        for role in ('train', 'validation', 'test', 'unspecified')}

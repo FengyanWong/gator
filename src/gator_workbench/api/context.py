@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ApiContext:
+    """Per-application services for authorized paths, configuration loading and the run start checklist."""
     roots: OutputRoots
     input_roots: list[Path]
     monitor: connection.ConnectionMonitor
@@ -22,6 +23,7 @@ class ApiContext:
         return config, runtime, blocked
 
     def parse_config(self, raw) -> schema.WorkbenchConfig:
+        """Validate a raw configuration and authorize any supplied circuit input paths."""
         try:
             config = schema.WorkbenchConfig.model_validate(raw)
         except ValidationError as exc:
@@ -30,6 +32,7 @@ class ApiContext:
         return config
 
     def authorize_circuit(self, circuit):
+        """Reject circuit input paths containing NUL bytes or lying outside the allowed roots."""
         for name in ('netlist_path', 'parser_config_path'):
             value = getattr(circuit, name)
             if value:
@@ -43,6 +46,7 @@ class ApiContext:
                               '(--allow-input-root), never from the browser.')
 
     def run_path(self, run_dir) -> Path:
+        """Resolve an allowed output path and require it to contain a run manifest."""
         try:
             path = self.roots.resolve(run_dir)
         except PathNotAllowed as exc:
@@ -61,9 +65,12 @@ class ApiContext:
         except (KeyError, ValueError):
             link = None
         try:
-            output = self.roots.check(config.output.output_root or runs.remembered_output_root(), create=False, verify_windows=False)
-        except Exception:                                  # a checklist must never fail because one line cannot be filled in
+            output = self.roots.check(config.output.output_root or runs.remembered_output_root(), create=False,
+                verify_windows=False)
+        # a checklist must never fail because one line cannot be filled in
+        except Exception:
             output = None
         profile = readiness.profile_rows_check(config, runtime, report)
-        return readiness.build(config.model_dump(mode='json'), task=runtime, task_blocker=(blocked or {}).get('blocker'),
+        return readiness.build(config.model_dump(mode='json'), task=runtime,
+                                     task_blocker=(blocked or {}).get('blocker'),
                                      validation=report, connection=link, output=output, profile=profile)

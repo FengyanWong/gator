@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from contextlib import closing
 from pathlib import Path
+from typing import NamedTuple
 
 from . import checkpoints as ckpt, model_structure, network_inputs
 from .pdk import run_vocabulary
@@ -59,13 +60,14 @@ def _one_row(reader, table, column, value, columns=None, flushes=None):
     import pyarrow.parquet as pq
     for flush in reader.flushes if flushes is None else flushes:
         if table in flush['parts']:
-            found = pq.read_table(reader.root / table / flush['parts'][table], columns=columns, filters=[(column, '=', value)])
+            found = pq.read_table(reader.root / table / flush['parts'][table], columns=columns, filters=[(column, '=',
+                value)])
             if found.num_rows:
                 return found.to_pylist()[0]
     return None
 
 
-def _legacy_step_number(reader, wanted, saved_at):
+def _legacy_step_number(reader, wanted, saved_at) -> tuple:
     """The direct path for small archives; also retain the original errors on exceptional input."""
     numbers = sorted(reader.table('transitions', ['commit_seq'])['commit_seq'].to_pylist())
     if not numbers:
@@ -82,7 +84,7 @@ def _legacy_step_number(reader, wanted, saved_at):
     return chosen, dict(first=first, last=last, count=len(numbers))
 
 
-def _small_step_archive(reader):
+def _small_step_archive(reader) -> bool:
     """Keep the direct read for at most 4,096 declared transition rows, without any extra filesystem reads."""
     count = 0
     for flush in reader.flushes:
@@ -136,19 +138,20 @@ def _step_number(reader, wanted, saved_at):
         return _legacy_step_number(reader, wanted, saved_at)
     if wanted is not None and not found:
         raise GraphViewUnavailable(f'This run has no archived evaluation {wanted}: it holds {first} to {last}.')
-    return (wanted if wanted is not None else last if chosen is None else chosen), dict(first=first, last=last, count=count)
+    return (wanted if wanted is not None else last if chosen is None else chosen), dict(first=first, last=last,
+        count=count)
 
 
-def _step(loader, wanted, saved_at):
+def _step(loader, wanted, saved_at) -> tuple:
     """The asked archived evaluation, else the last one the save point had seen.
     Long-archive selection scans numbers in bounded batches; the chosen transition and state are single-row reads.
     """
     chosen, steps = _step_number(loader.reader, wanted, saved_at)
     # A transition is committed with its evaluation number, so it sits in the part of the flush whose range holds that
-    # number; its state was written in that flush or an earlier one (once, with the first transition that saw it). One read
-    # for the transition and the states newest first from there, instead of every part of a long run oldest first (the
-    # default view of a 400-evaluation run: 96 parquet reads, ~1.2 s on the 9p mount). Anything not found there is looked
-    # for in the other parts, as before.
+    # number; its state was written in that flush or an earlier one (once, with the first transition that saw it). One
+    # read for the transition and the states newest first from there, instead of every part of a long run oldest first
+    # (the default view of a 400-evaluation run: 96 parquet reads, ~1.2 s on the 9p mount). Anything not found there is
+    # looked for in the other parts, as before.
     flushes = loader.reader.flushes
     at = next((i for i, f in enumerate(flushes) if f['first_seq'] <= chosen <= f['last_seq']), len(flushes) - 1)
     columns = ['commit_seq', 'state_ref', 'action', 'policy_version']
@@ -162,13 +165,13 @@ def _step(loader, wanted, saved_at):
     return row, steps
 
 
-def capture_attention(actor, run):
+def capture_attention(actor, run) -> tuple:
     """Run `run()` and return (its result, [per attention layer: (edge_index [2,E], alpha [E,H])])."""
     import torch
     from torch_geometric.nn import GATv2Conv, TransformerConv
     captured, handles = [], []
 
-    def hook(module, inputs, output):
+    def hook(module, inputs, output) -> None:
         with torch.no_grad():
             _, (edge_index, alpha) = module.forward(*inputs, return_attention_weights=True)
         captured.append((edge_index, alpha))
@@ -184,12 +187,12 @@ def capture_attention(actor, run):
     return result, captured
 
 
-def capture_dense_attention(actor, run):
+def capture_dense_attention(actor, run) -> tuple:
     """Inspect global/group weights only on demand; leave the policy's output untouched."""
     import torch
     captured, handles = [], []
 
-    def hook(module, inputs, kwargs, output):
+    def hook(module, inputs, kwargs, output) -> None:
         with torch.no_grad():
             _, weights = module.forward(*inputs, **dict(kwargs, need_weights=True, average_attn_weights=False))
         captured.append(dict(kind=module.attention_kind, weights=weights.detach().cpu()))
@@ -240,95 +243,47 @@ def _network_view(run_dir, vocabulary):
         raise GraphViewUnavailable('What this run showed its network (its spec descriptions or its PDK\'s device '
                                    f'numbers) cannot be rebuilt here ({type(exc).__name__}).') from exc
     if view is None or view.key != recorded.get('view_key'):
-        raise GraphViewUnavailable('What this run showed its network has changed since it ran (its task\'s spec '
-                                   "descriptions or its PDK's device numbers), so the circuit cannot be shown to it the same way.")
+        raise GraphViewUnavailable(
+            "What this run showed its network has changed since it ran (its task's spec descriptions or its "
+            "PDK's device numbers), so the circuit cannot be shown to it the same way.")
     return view
 
 
 def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
+    """Return a recorded circuit state with its actions and the saved policy's predictions and attention."""
     from analog_optimizer.models.inputs import batch_observations
     run_dir = Path(run_dir)
-    directory = ckpt.resolve_checkpoint(run_dir, checkpoint_id)
-    meta, weights = model_structure.load_verified(directory)
-    actor = _actor(meta, weights)
-    features, spec = model_structure.schemas(meta['contract'])
-    loader = TrajectoryLoader(run_dir)
-    row, steps = _step(loader, evaluation, (meta.get('counters') or {}).get('evaluations_committed'))
-    observation = loader.observation(row['state_ref'])
-    # A run built with a PDK's component list saw every circuit through that PDK's view: replay it the same way, and
-    # draw what the network saw (the PDK kinds and pin roles). The run's own copy of the list is used, never a newer load.
-    vocabulary = run_vocabulary(run_dir)
-    if vocabulary is not None:
-        if network_inputs.feature_schema(vocabulary.schema, _network_of(run_dir)) != features:
-            raise GraphViewUnavailable('The component list kept in this run folder is not the one this save point was '
-                                       'trained with, so the circuit cannot be shown to it the same way.')
-    # The transferable inputs (record 7.298) are shown to the network only: the page draws the circuit as recorded (its
-    # sizes as simulated, never a PDK's device numbers), with the PDK kinds and pin roles of the list when there is one.
-    seen = _network_view(run_dir, vocabulary)
-    shown = vocabulary.view(observation) if vocabulary is not None else observation
-    batch = batch_observations([seen.view(observation) if seen is not None else shown], features, spec)
-    observation = shown
-    (sample, layers), dense_layers = capture_dense_attention(actor,
-        lambda: capture_attention(actor, lambda: actor.sample(batch, deterministic=True)))
+    state = _load_graph_state(run_dir, checkpoint_id, evaluation)
+    vocabulary, batch, observation = _network_observation(run_dir, state, batch_observations)
+    # ---- Evaluate the saved policy on the recorded observation before assembling graph display rows.
+    (sample, layers), dense_layers = capture_dense_attention(state.actor,
+        lambda: capture_attention(state.actor, lambda: state.actor.sample(batch, deterministic=True)))
     policy = batch.proposals(sample.actions)[0]
-    recorded = map_to_dict(row['action']) if row.get('action') is not None else {}
+    recorded = map_to_dict(state.row['action']) if state.row.get('action') is not None else {}
 
     graph = observation.graph
     device_ids, net_ids = [d.id for d in graph.devices], [n.id for n in graph.nets]
-    count = len(device_ids)
-    roles = features.terminal_roles
-    # One entry per physical connection; both directions of the network's edge list are folded into it.
-    connections = {}
-    for c in graph.connections:
-        connections[(c.device_id, c.net_id, c.role, c.ordinal)] = dict(
-            id=f'{c.device_id}.{c.terminal}#{c.ordinal}->{c.net_id}', device=c.device_id, net=c.net_id, terminal=c.terminal,
-            role=c.role, ordinal=c.ordinal, attention=[])
-    edge_index, edge_role, edge_ordinal = batch.edge_index.tolist(), batch.edge_role.tolist(), batch.edge_ordinal.tolist()
-    incoming = [0] * (count + len(net_ids))
-    for receiver in edge_index[1]:
-        incoming[receiver] += 1
-    keys = []
-    for position, (source, receiver) in enumerate(zip(*edge_index)):
-        to_net = edge_role[position] % 2 == 0                       # direction 0 = device -> net
-        device, net = (source, receiver - count) if to_net else (receiver, source - count)
-        keys.append(((device_ids[device], net_ids[net], roles[edge_role[position] // 2], int(edge_ordinal[position])),
-                     'to_net' if to_net else 'to_device', incoming[receiver]))
-    for number, (index, alpha) in enumerate(layers):
-        if index.tolist() != edge_index:
-            raise GraphViewUnavailable('An attention layer reported other connections than the network was given.')
-        for entry in connections.values():
-            entry['attention'].append(dict(layer=number + 1))
-        for (key, direction, competitors), heads in zip(keys, alpha.tolist()):
-            slot = connections[key]['attention'][number]
-            slot[direction] = sum(heads) / len(heads)
-            slot[f'{direction}_heads'] = heads
-            slot[f'{direction}_uniform'] = 1 / competitors
-    member_of = {}
-    for group in graph.parameter_groups:
-        for member in group.members:
-            member_of.setdefault(member.device_id, []).append(group.id)
-    groups = []
-    for group in graph.parameter_groups:
-        z, done = policy.get(group.id), recorded.get(group.id)
-        groups.append(dict(
-            id=group.id, parameter=group.parameter_kind, unit=group.unit, value=group.value, lower=group.lower,
-            upper=group.upper, scale=group.scale, mutable=group.mutable,
-            members=[dict(device=m.device_id, parameter=m.parameter, ratio=m.ratio) for m in group.members],
-            policy_action=z, policy_value=None if z is None else decode_action(z, group.lower, group.upper, group.scale),
-            recorded_action=done,
-            recorded_value=None if done is None else decode_action(done, group.lower, group.upper, group.scale)))
-    config = meta['contract']['model_config']
+    connections, edge_index, keys = _graph_connections(state.features, graph, batch, device_ids, net_ids)
+    _append_connection_attention(layers, edge_index, connections, keys)
+    member_of, groups = _graph_parameter_groups(graph, policy, recorded)
+    config = state.meta['contract']['model_config']
     has_attention = bool(layers)
     return dict(
-        checkpoint_id=meta['checkpoint_id'], run_dir=str(run_dir), task_id=meta.get('task_id'), network=config,
-        circuit_id=graph.circuit_id, origin=observation.origin,
-        step=dict(evaluation=row['commit_seq'], policy_version_then=row.get('policy_version'),
-                  saved_at=(meta.get('counters') or {}).get('evaluations_committed'), status=observation.status, **steps),
-        metrics=[dict(id=k, value=v, unit=observation.metric_units.get(k, ''), valid=bool(observation.metric_validity.get(k)))
+        checkpoint_id=state.meta['checkpoint_id'], run_dir=str(run_dir), task_id=state.meta.get('task_id'),
+        network=config, circuit_id=graph.circuit_id, origin=observation.origin,
+        step=dict(evaluation=state.row['commit_seq'], policy_version_then=state.row.get('policy_version'),
+                  saved_at=(state.meta.get('counters') or {}).get('evaluations_committed'), status=observation.status,
+                  **state.steps),
+        metrics=[dict(id=k, value=v, unit=observation.metric_units.get(k, ''),
+            valid=bool(observation.metric_validity.get(k)))
                  for k, v in sorted(observation.metrics.items())],
-        vocabulary=dict(name=vocabulary.name, label=vocabulary.label) if vocabulary is not None else dict(name='standard', label='standard (8 generic kinds)'),
-        devices=[dict(id=d.id, kind=d.kind, model=d.model_ref, groups=member_of.get(d.id, []), family=_family(d, vocabulary),
-                      parameters={name: p.value for name, p in (graph.parameters.get(d.id) or {}).items() if p.value is not None})
+        vocabulary=dict(name=vocabulary.name,
+            label=vocabulary.label) if vocabulary is not None else dict(name='standard',
+            label='standard (8 generic kinds)'),
+        devices=[dict(id=d.id, kind=d.kind, model=d.model_ref, groups=member_of.get(d.id, []), family=_family(d,
+            vocabulary),
+                      parameters={name: p.value for name,
+                          p in (graph.parameters.get(d.id) or {}).items() if p.value is not None})
                  for d in graph.devices],
         nets=[dict(id=n.id, roles=list(n.roles)) for n in graph.nets],
         connections=list(connections.values()), groups=groups,
@@ -347,3 +302,125 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
         actions_note='policy = what THIS save point proposes for this state (its mean action, no exploration noise), '
                      'before the value is snapped to the grid. recorded = what the run really tried at this evaluation '
                      '(a random warm-up action, or the policy of that moment with exploration noise).')
+
+
+class _GraphState(NamedTuple):
+    """A save point's metadata, actor and schemas, with the archived step it is replayed on."""
+    meta: dict
+    actor: object
+    features: object
+    spec: object
+    row: dict                       # the archived transition (commit_seq, state_ref, action, policy_version)
+    steps: dict                     # the archived evaluations: first, last, count
+    observation: object             # the observation before that evaluation, as archived (TrajectoryLoader)
+
+
+def _load_graph_state(run_dir, checkpoint_id, evaluation) -> _GraphState:
+    """Verify the selected checkpoint and reconstruct the archived observation and its step metadata."""
+    directory = ckpt.resolve_checkpoint(run_dir, checkpoint_id)
+    meta, weights = model_structure.load_verified(directory)
+    actor = _actor(meta, weights)
+    features, spec = model_structure.schemas(meta['contract'])
+    loader = TrajectoryLoader(run_dir)
+    row, steps = _step(loader, evaluation, (meta.get('counters') or {}).get('evaluations_committed'))
+    observation = loader.observation(row['state_ref'])
+    return _GraphState(meta, actor, features, spec, row, steps, observation)
+
+
+class _NetworkObservation(NamedTuple):
+    """The run's component list, the batch the network is given, and the observation the page draws."""
+    vocabulary: object
+    batch: object
+    observation: object
+
+
+def _network_observation(run_dir, state, batch_observations) -> _NetworkObservation:
+    (
+        'Validate the saved component vocabulary and construct the network batch while retaining the displayed '
+        'circuit view.'
+    )
+    # A run built with a PDK's component list saw every circuit through that PDK's view: replay it the same way, and
+    # draw what the network saw (the PDK kinds and pin roles). The run's own copy of the list is used, never a newer
+    # load.
+    vocabulary = run_vocabulary(run_dir)
+    if vocabulary is not None:
+        if network_inputs.feature_schema(vocabulary.schema, _network_of(run_dir)) != state.features:
+            raise GraphViewUnavailable('The component list kept in this run folder is not the one this save point was '
+                                       'trained with, so the circuit cannot be shown to it the same way.')
+    # The transferable inputs (record 7.298) are shown to the network only: the page draws the circuit as recorded (its
+    # sizes as simulated, never a PDK's device numbers), with the PDK kinds and pin roles of the list when there is one.
+    seen = _network_view(run_dir, vocabulary)
+    shown = vocabulary.view(state.observation) if vocabulary is not None else state.observation
+    batch = batch_observations([seen.view(state.observation) if seen is not None else shown], state.features,
+                               state.spec)
+    return _NetworkObservation(vocabulary, batch, shown)
+
+
+class _GraphConnections(NamedTuple):
+    """Physical connections, the network's edge list, and each edge's connection, direction, competitors."""
+    connections: dict               # (device, net, role, ordinal) -> the connection as the page gets it
+    edge_index: list                # the network's directed edges: [sources, receivers]
+    keys: list                      # per edge: (its connection's key, direction, edges arriving at its receiver)
+
+
+def _graph_connections(features, graph, batch, device_ids, net_ids) -> _GraphConnections:
+    """Index physical connections and map both directed network edges to their receiving-node competitors."""
+    roles = features.terminal_roles
+    # One entry per physical connection; both directions of the network's edge list are folded into it.
+    connections = {}
+    for c in graph.connections:
+        connections[(c.device_id, c.net_id, c.role, c.ordinal)] = dict(
+            id=f'{c.device_id}.{c.terminal}#{c.ordinal}->{c.net_id}', device=c.device_id, net=c.net_id,
+            terminal=c.terminal,
+            role=c.role, ordinal=c.ordinal, attention=[])
+    edge_index, edge_role, edge_ordinal = (
+        batch.edge_index.tolist(), batch.edge_role.tolist(), batch.edge_ordinal.tolist()
+    )
+    count = len(device_ids)                                         # the nets are numbered after the devices
+    incoming = [0] * (count + len(net_ids))
+    for receiver in edge_index[1]:
+        incoming[receiver] += 1
+    keys = []
+    for position, (source, receiver) in enumerate(zip(*edge_index)):
+        to_net = edge_role[position] % 2 == 0                       # direction 0 = device -> net
+        device, net = (source, receiver - count) if to_net else (receiver, source - count)
+        keys.append(((device_ids[device], net_ids[net], roles[edge_role[position] // 2], int(edge_ordinal[position])),
+                     'to_net' if to_net else 'to_device', incoming[receiver]))
+    return _GraphConnections(connections, edge_index, keys)
+
+
+def _append_connection_attention(layers, edge_index, connections, keys) -> None:
+    (
+        'Verify each attention layer uses the recorded edges and attach directional head weights to physical '
+        'connections.'
+    )
+    for number, (index, alpha) in enumerate(layers):
+        if index.tolist() != edge_index:
+            raise GraphViewUnavailable('An attention layer reported other connections than the network was given.')
+        for entry in connections.values():
+            entry['attention'].append(dict(layer=number + 1))
+        for (key, direction, competitors), heads in zip(keys, alpha.tolist()):
+            slot = connections[key]['attention'][number]
+            slot[direction] = sum(heads) / len(heads)
+            slot[f'{direction}_heads'] = heads
+            slot[f'{direction}_uniform'] = 1 / competitors
+
+
+def _graph_parameter_groups(graph, policy, recorded) -> tuple:
+    """Build device group membership and decoded policy and recorded values for each parameter group."""
+    member_of = {}
+    for group in graph.parameter_groups:
+        for member in group.members:
+            member_of.setdefault(member.device_id, []).append(group.id)
+    groups = []
+    for group in graph.parameter_groups:
+        z, done = policy.get(group.id), recorded.get(group.id)
+        groups.append(dict(
+            id=group.id, parameter=group.parameter_kind, unit=group.unit, value=group.value, lower=group.lower,
+            upper=group.upper, scale=group.scale, mutable=group.mutable,
+            members=[dict(device=m.device_id, parameter=m.parameter, ratio=m.ratio) for m in group.members],
+            policy_action=z, policy_value=None if z is None else decode_action(z, group.lower, group.upper,
+                group.scale),
+            recorded_action=done,
+            recorded_value=None if done is None else decode_action(done, group.lower, group.upper, group.scale)))
+    return member_of, groups

@@ -27,6 +27,7 @@ from analog_optimizer.training.sac import SACLearner
 
 @pytest.fixture(autouse=True)
 def cpu():
+    """Restrict each importing test to one torch CPU thread and restore the prior count."""
     old = torch.get_num_threads()
     torch.set_num_threads(1)
     yield
@@ -34,7 +35,9 @@ def cpu():
 
 
 class SyntheticSizingFixture(VirtuosoBackend):
+    """A sizing backend with controllable synthetic status, validity and scores."""
     def __init__(self, graph):
+        """Keep an independent graph and the initial mutable parameter assignments."""
         self.graph = deepcopy(graph)
         self.initial = graph.assignments({g.id: g.value for g in graph.parameter_groups if g.mutable})
         self.parameters = dict(self.initial)
@@ -44,22 +47,28 @@ class SyntheticSizingFixture(VirtuosoBackend):
         self.exports = {}
 
     def connect(self):
+        """Mark the fake backend connected without contacting a simulator."""
         self.connected = True
 
     def close(self):
+        """Mark the fake backend disconnected without touching external processes."""
         self.connected = False
 
     def restore(self):
+        """Restore the fake backend's original mutable parameter assignments."""
         self.parameters = dict(self.initial)
 
     def read_parameters(self):
+        """Return a copy of the fake backend's current assignments."""
         return dict(self.parameters)
 
     def set_parameters(self, parameters):
+        """Record a parameter write and replace the fake backend's assignments."""
         self.writes += 1
         self.parameters = dict(parameters)
 
     def generate_netlist(self, work_root):
+        """Write a synthetic parameter snapshot as a netlist artifact for graph readback."""
         job_id = uuid4().hex
         directory = work_root / job_id
         directory.mkdir(parents=True)
@@ -69,6 +78,7 @@ class SyntheticSizingFixture(VirtuosoBackend):
         return NetlistArtifact(path, job_id, hashlib.sha256(path.read_bytes()).hexdigest(), 'synthetic')
 
     def get_circuit_graph(self, artifact):
+        """Return a graph containing the assignments captured by the requested fake export."""
         graph, values = deepcopy(self.graph), self.exports[artifact.job_id]
         for group_index, group in enumerate(graph.parameter_groups):
             if not group.mutable:
@@ -81,6 +91,7 @@ class SyntheticSizingFixture(VirtuosoBackend):
         return graph
 
     def run_simulation(self, request):
+        """Return a configurable synthetic score and status for the fake backend's current assignments."""
         self.calls += 1
         directory = request.work_root / uuid4().hex
         directory.mkdir(parents=True)
@@ -93,6 +104,7 @@ class SyntheticSizingFixture(VirtuosoBackend):
 
 
 def environment(backend, tmp_path, **kwargs):
+    """Create a synthetic sizing environment whose score must reach the fixture threshold."""
     return CircuitSizingEnv(backend, backend.graph, [MetricSpec('score', 'fixture', 'min', 1, lower=3)],
                             tmp_path, expected_origin='synthetic', **kwargs)
 
@@ -102,6 +114,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def profile():
+    """Provide the five-transistor OTA profile backed by repository design and readback fixtures."""
     return Gpdk045OtaProfile(design_file=ROOT / 'configs/gpdk045_opamp_design.json',
                             mapping_file=ROOT / 'configs/gpdk045_opamp.json',
                             reference_structure=ROOT / 'examples/circuits/gpdk045_ota5.scs',
@@ -110,6 +123,7 @@ def profile():
 
 @pytest.fixture
 def adapter(tmp_path, monkeypatch, profile):
+    """Provide a bridge backend attached to an offline client with mutable fixture readback."""
     env = tmp_path / 'bridge.env'
     env.write_text('# offline test configuration\n')
     receipt = tmp_path / 'receipt.json'
@@ -119,11 +133,13 @@ def adapter(tmp_path, monkeypatch, profile):
     client = SimpleNamespace(closed=False, list_windows=lambda: [])
     client.close = lambda: setattr(client, 'closed', True)
     def export(lib, cell, output, timeout):
+        """Write the recorded OTA netlist as the fake client's export."""
         output.mkdir()
         (output / 'netlist').write_bytes((ROOT / 'examples/circuits/gpdk045_ota5.scs').read_bytes())
         return {'input_file': str(output / 'input.scs')}
     client.schematic = SimpleNamespace(read=lambda *a, **kw: deepcopy(state), export_netlist=export)
     def attach(self):
+        """Attach the backend to the offline fixture client."""
         self.bridge_version = 'offline-fault-injection'
         return client
     monkeypatch.setattr(VirtuosoBridgeBackend, '_attach', attach)
@@ -135,8 +151,10 @@ def adapter(tmp_path, monkeypatch, profile):
 
 
 def changing_writer(backend, *, fail_second=False, stale=False):
+    """Return a fake width writer and its call log, with optional failure or stale geometry."""
     calls = []
     def write(client, lib, cell, name, width, length):
+        """Update fixture width and geometry or inject the configured callback failure."""
         calls.append(name)
         if fail_second and len(calls) == 2:
             raise RuntimeError('injected callback failure')
@@ -151,6 +169,7 @@ def changing_writer(backend, *, fail_second=False, stale=False):
 
 
 def observation(graph, *, steps=4):
+    """Build a synthetic observation with a score target and remaining-step budget."""
     return Observation(deepcopy(graph), (MetricSpec('score', 'fixture', 'min', 1, lower=.95),),
                        {'score': .6}, {'score': True}, {'score': 'fixture'}, 'ok', 'synthetic', steps, 'fixture')
 
@@ -159,10 +178,12 @@ EVIDENCE = ROOT / 'artifacts/local/m6-real-cross-category/eedb54fe59d642edaff93b
 
 
 def read(path):
+    """Read a recorded research artifact as JSON."""
     return json.loads(Path(path).read_text())
 
 
 def recorded_observation(record):
+    """Reconstruct a real observation from its recorded graph and matching measurement artifact."""
     assert record['origin'] == 'real' and record['status'] == 'ok'
     saved = deepcopy(record['observation'])
     data = saved.pop('graph')
@@ -190,6 +211,7 @@ def recorded_observation(record):
 
 @pytest.fixture(scope='module')
 def real_transition():
+    """Provide a validated transition from the required local real cross-category evidence."""
     if not EVIDENCE.is_dir():
         pytest.fail('Required local REAL evidence is unavailable; do not substitute a simulator mock')
     report = read(EVIDENCE / 'opamp/report.json')
@@ -208,6 +230,7 @@ EXPERIMENT = {'origin': 'synthetic', 'split': 'training-fixture', 'designs': ['o
 
 @pytest.fixture(autouse=True)
 def deterministic_cpu():
+    """Seed torch for each test and restore its CPU random state and thread count afterwards."""
     threads = torch.get_num_threads()
     rng = torch.get_rng_state()
     torch.set_num_threads(1)
@@ -219,6 +242,7 @@ def deterministic_cpu():
 
 @pytest.fixture
 def transitions(opamp, ldo, tmp_path):
+    """Provide synthetic opamp and LDO transitions with backend parameters restored after collection."""
     result = []
     for graph in (opamp, ldo):
         backend = SyntheticSizingBackend(graph, targets={'w': .4, 'c': -.3})
@@ -235,10 +259,12 @@ def transitions(opamp, ldo, tmp_path):
 
 
 def model_config(encoder):
+    """Return the small encoder configuration shared by research learner tests."""
     return ModelConfig(hidden_dim=16, heads=2, layers=2, encoder_type=encoder)
 
 
 def learner(encoder='graph_transformer', **kwargs):
+    """Create a learner for the synthetic research fixture with configurable test options."""
     return SACLearner(experiment=EXPERIMENT, model_config=model_config(encoder), **kwargs)
 
 

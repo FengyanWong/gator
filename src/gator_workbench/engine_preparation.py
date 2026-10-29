@@ -10,7 +10,7 @@ import os
 import random
 import socket
 
-from . import best_design, checkpoints as ckpt, modes, network_inputs
+from . import best_design, checkpoints as ckpt, engine_comparison, modes, network_inputs
 from .budget import BudgetLedger
 from .lanes import ScratchLinked, open_lanes
 from .pdk import run_vocabulary
@@ -21,8 +21,18 @@ from .storage.dataset import RawDataset
 from .trajectory import StateEncoder
 
 
-def prepare(engine, *, local_scratch):
-    cfg, out, adv = engine.config, engine.config.output, engine.config.run.advanced
+def prepare(engine, *, local_scratch) -> None:
+    """Set up the run's dataset, learner, budget and save points, restore a resumed run and open its lanes."""
+    config, out, adv = engine.config, engine.config.output, engine.config.run.advanced
+    experiment = _initialize_dataset(out, engine, config)
+    input_options, built = _build_learning_resources(engine, config, adv, experiment)
+    run = _initialize_run_state(config, engine, input_options)
+    _restore_run_state(engine, built, out)
+    _open_run_lanes(engine, run, adv, local_scratch)
+
+
+def _initialize_dataset(out, engine, config):
+    """Open the configured dataset tables and record the learner experiment and transition-archive policy."""
     enabled = {'evaluations', 'parameters', 'metrics', 'simulator_jobs'}
     if out.save_learner_updates and not engine.frozen:
         enabled.add('learner_updates')
@@ -30,31 +40,30 @@ def prepare(engine, *, local_scratch):
         enabled |= {'transitions', 'states'}
     engine.dataset = RawDataset(engine.layout.data, enabled_tables=enabled, flush_every=out.flush_every_evaluations)
     engine.archive = out.save_transition_archive
-    experiment = learner_experiment(cfg, engine.task, engine.task_hash)
+    experiment = learner_experiment(config, engine.task, engine.task_hash)
     engine.experiment = experiment
+    return experiment
+
+
+def _build_learning_resources(engine, config, adv, experiment) -> tuple:
+    """Build the learner and replay resources, apply rehearsal and freezing policy, and retain their load metadata."""
     engine.vocabulary = run_vocabulary(engine.layout.run_dir)      # the run's own component list; None = standard
-    input_options = modes.runtime_options(cfg, engine.vocabulary)
-    source_dir = source_meta = None
-    if engine.entry == 'resume':
-        source_dir = ckpt.resolve_checkpoint(engine.layout.run_dir, 'latest')
-        source_meta = ckpt.read_metadata(source_dir)
-    elif engine.mode in ('fine_tune', 'frozen'):
-        parent = engine.manifest['parent']
-        source_dir = ckpt.resolve_checkpoint(parent['run_dir'], parent['checkpoint_id'])
-        source_meta = ckpt.read_metadata(source_dir)
+    input_options = modes.runtime_options(config, engine.vocabulary)
+    source_dir, source_meta = _checkpoint_source(engine)
     built = modes.build('resume' if engine.entry == 'resume' else engine.mode, experiment=experiment,
-                        model_config=modes.model_config_from(cfg.run.network),
+                        model_config=modes.model_config_from(config.run.network),
                         sac_config=modes.sac_config_from(adv), spec_schema=engine.compiled.spec_schema,
-                        advanced=adv, seed=cfg.run.seed, origin=engine.task.origin, source_dir=source_dir,
-                        source_metadata=source_meta, task_definition_hash=engine.task_hash, vocabulary=engine.vocabulary,
-                        runtime=input_options, view=network_inputs.view_for(cfg, engine.vocabulary))
+                        advanced=adv, seed=config.run.seed, origin=engine.task.origin, source_dir=source_dir,
+                        source_metadata=source_meta, task_definition_hash=engine.task_hash,
+                        vocabulary=engine.vocabulary,
+                        runtime=input_options, view=network_inputs.view_for(config, engine.vocabulary))
     engine.learner, engine.replay, engine.freeze = built['learner'], built['replay'], built['freeze']
     engine.load_policy = built['policy']
     engine.rehearsal = None
-    if cfg.run.rehearsal is not None:
+    if config.run.rehearsal is not None:
         from .rehearsal import Rehearsal  # lazy: rehearsal imports torch
-        engine.rehearsal = Rehearsal(cfg.run.rehearsal, engine.learner, origin=engine.task.origin,
-                                   seed=cfg.run.seed, batch_size=adv.batch_size)
+        engine.rehearsal = Rehearsal(config.run.rehearsal, engine.learner, origin=engine.task.origin,
+                                   seed=config.run.seed, batch_size=adv.batch_size)
     if engine.frozen:
         for module in (engine.learner.actor, engine.learner.critics, engine.learner.targets):
             module.requires_grad_(False).eval()
@@ -64,7 +73,25 @@ def prepare(engine, *, local_scratch):
     if engine.entry == 'resume' and engine.mode == 'fine_tune' and adv.freeze_encoder:
         engine.freeze = modes.EncoderFreeze(engine.learner)
     engine.frozen_digest = ckpt.weight_digest(engine.learner) if engine.frozen else None
-    run = cfg.run
+    return input_options, built
+
+
+def _checkpoint_source(engine) -> tuple:
+    """Resolve checkpoint data and metadata for a resumed run or a task started from saved weights."""
+    source_dir = source_meta = None
+    if engine.entry == 'resume':
+        source_dir = ckpt.resolve_checkpoint(engine.layout.run_dir, 'latest')
+        source_meta = ckpt.read_metadata(source_dir)
+    elif engine.mode in ('fine_tune', 'frozen'):
+        parent = engine.manifest['parent']
+        source_dir = ckpt.resolve_checkpoint(parent['run_dir'], parent['checkpoint_id'])
+        source_meta = ckpt.read_metadata(source_dir)
+    return source_dir, source_meta
+
+
+def _initialize_run_state(config, engine, input_options):
+    """Initialize budgets, counters, calibration gating, the optional state encoder and comparison search."""
+    run = config.run
     engine.ledger = BudgetLedger(run.max_evaluations, max_launches=run.max_spectre_launches,
                                max_retries=run.max_retries)
     engine.rng = random.Random(run.seed)
@@ -75,32 +102,55 @@ def prepare(engine, *, local_scratch):
     if run.optimizer == 'bayes' and (engine.mode != 'scratch' or engine.entry == 'resume'):
         raise ValueError('A Bayesian-optimization run (run.optimizer "bayes") is a from-scratch run and cannot be '
                          'resumed or started from a saved model: its search state is not saved. Start a new run.')
+    if engine_comparison.is_search(config) and engine.mode != 'scratch':
+        raise ValueError(
+            f'A {run.optimizer} run (the archive comparison) starts its own search and loads no saved model: '
+                         'its mode is scratch (a resume continues it from its own save point).')
     engine.tracker = best_design.BestDesignTracker(engine.compiled.preference)
     engine.counters = dict(global_env_step=0, completion_index=0, episodes=0, baseline_done=False,
                          consecutive_failures=0, consecutive_infrastructure_failures=0,
                          infrastructure_failures=0, last_successful_evaluation_utc=None,
                          active_seconds_before=0.0, sum_job_runtime_seconds=0.0,
                          failures=0, retries=0, last_checkpoint_commit=0, launches_unconfirmed_after_crash=0,
-                         interrupted_evaluations=0, feasible_evaluations=0, valid_evaluations=0)
+                         interrupted_evaluations=0, feasible_evaluations=0, valid_evaluations=0, initial_given=0)
     engine.previous_best_waveform = None
     # A baseline run asked to calibrate (record 7.197): until its baseline evaluation is committed and valid, no other
     # lane starts and no random design is drawn (`_dispatch`, `_commit`). Any other run never waits.
-    engine._baseline_checked = engine.calibration_only or not engine.manifest.get('calibration') or engine.entry == 'resume'
+    engine._baseline_checked = engine.calibration_only or not engine.manifest.get(
+        'calibration') or engine.entry == 'resume'
     engine.encoder = None
     if engine.archive:
         engine.encoder = StateEncoder(engine.layout.data / 'states' / 'static', task_id=engine.task_id,
                                     graph=engine.compiled.graph, specs=engine.compiled.specs,
                                     feature_schema_version=input_options['feature_schema'].version,
                                     spec_schema_version=engine.compiled.spec_schema.version)
+    # the archive comparison's first designs and search (a resume restores it)
+    engine_comparison.prepare(engine)
+    return run
+
+
+def _restore_run_state(engine, built, out) -> None:
+    (
+        'Restore resumable state, reject unresolved launch intents, and initialize checkpoint persistence and '
+        'load-policy records.'
+    )
     if engine.entry == 'resume':
         engine._restore(built['run_state'])
     if engine.ledger.uncertain_launches:
         write_json(engine._condition_stop_file, dict(reason='unresolved_launch_intent'))
-        raise RuntimeError('Unresolved physical launch intents/leases must be reconciled before resume; no lanes opened')
+        raise RuntimeError(
+            'Unresolved physical launch intents/leases must be reconciled before resume; no lanes opened')
     engine.checkpoints = ckpt.CheckpointStore(engine.layout.run_dir, run_id=engine.run_id, task_id=engine.task_id,
                                             task_definition_hash=engine.task_hash,
                                             save_replay=out.save_replay_snapshots, keep_last=out.keep_last_checkpoints)
     engine._record_load_policy()
+
+
+def _open_run_lanes(engine, run, adv, local_scratch) -> None:
+    (
+        'Enter the preparation context, wrap the lane factory with local scratch, and open and initialize '
+        'execution lanes.'
+    )
     count = min(run.concurrency, engine.task.max_concurrency)
     env_run = run.model_copy(deep=True)
     factory = engine._lane_factory or engine.task.env_factory_builder(engine.compiled, engine.layout.work, env_run)
@@ -117,13 +167,17 @@ def prepare(engine, *, local_scratch):
         engine.preparation_report = {}
         engine._preparation = ExitStack()
         factory = engine._preparation.enter_context(prepare_context(WorkerLimits(), engine.preparation_report))
-        engine._event('preparation_service_started', session=(engine.preparation_report.get('preparation') or {}).get('session_dir'))
-    limits = WorkerLimits(operation_seconds=max(300., (1 + len(run.conditions.corners)) * adv.simulation_timeout_seconds + 180.))
+        engine._event('preparation_service_started',
+            session=(engine.preparation_report.get('preparation') or {}).get('session_dir'))
+    limits = WorkerLimits(operation_seconds=max(300.,
+        (1 + len(run.conditions.corners)) * adv.simulation_timeout_seconds + 180.))
     engine._scratch = local_scratch(engine.layout)
     if engine._scratch is not None:                    # wrapped last: it keeps the preparation service's factory as is
         factory = ScratchLinked(factory, engine._scratch)
         engine._event('simulator_scratch', path=str(engine._scratch),
-                    note='export packages and per-job folders on the local disk; kept job folders move to the run folder')
+                    note=
+                        'export packages and per-job folders on the local disk; kept job folders move to the run '
+                        'folder')
     engine.lanes = open_lanes(factory, count, use_processes=engine.use_processes, limits=limits)
     engine.lane_state = {lane.lane_id: dict(observation=None, needs_reset=True, busy=None, finished=False,
                                           episode_id=None, reset_cache_valid=False, resets_since_check=0)
@@ -138,7 +192,8 @@ def prepare(engine, *, local_scratch):
     engine.checkpoint_kind, engine.manual_save = 'periodic', None
 
 
-def record_load_policy(engine):
+def record_load_policy(engine) -> None:
+    """Persist the current segment's load policy, start time, host, process, and lane mode."""
     segment = engine.manifest['segments'][-1]
     segment.update(load_policy=engine.load_policy, started_utc=iso(engine._wall_started), pid=os.getpid(),
                    host=socket.gethostname(), lanes='process' if engine.use_processes else 'thread')

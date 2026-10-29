@@ -47,6 +47,7 @@ def store_root() -> Path:
 
 
 def cell_dir(library, cell) -> Path:
+    """Return the local import directory after validating the library and cell names."""
     for value in (library, cell):
         if not isinstance(value, str) or not NAME.match(value):
             raise ValueError('library and cell must be plain Cadence names')
@@ -88,13 +89,16 @@ def _mapping(netlist_text, *, circuit_id='native', technology_library=None) -> t
     editors."""
     from analog_optimizer.netlist.config import ParserConfig
     from analog_optimizer.netlist.spectre_parser import SpectreParser
-    survey = SpectreParser(ParserConfig(models={})).parse_text(netlist_text, source='<virtuoso-export>', circuit_id=circuit_id)
+    survey = SpectreParser(ParserConfig(models={})).parse_text(netlist_text, source='<virtuoso-export>',
+        circuit_id=circuit_id)
     used = sorted({device.model_ref for device in survey.devices})
-    nodes = {}                                               # how many nodes the lines of each model have in THIS netlist
+    # how many nodes the lines of each model have in THIS netlist
+    nodes = {}
     for device in survey.devices:
         nodes.setdefault(device.model_ref, set()).add(len(device.terminals))
     # A description is used only when it has as many pins as the netlist's lines have nodes: analogLib netlists a
-    # `vsource` with two nodes from `vdc` and with six from `vprbs`, and a mapping with the wrong count stops the parser.
+    # `vsource` with two nodes from `vdc` and with six from `vprbs`, and a mapping with the wrong count stops the
+    # parser.
     fits = lambda found: {name: entry for name, entry in found.items() if nodes.get(name) == {len(entry['terminals'])}}
     verified, described, ideal, version, record = fits(verified_models()), {}, {}, 'native-draft-1', None
     if technology_library:
@@ -102,7 +106,8 @@ def _mapping(netlist_text, *, circuit_id='native', technology_library=None) -> t
         record = load_record(technology_library)
     if record is not None:
         described = {name: entry for name, entry in fits(parse_models(record)).items() if name not in verified}
-        ideal = {name: entry for name, entry in ideal_models(record, nodes).items() if name not in verified and name not in described}
+        ideal = {name: entry for name, entry in ideal_models(record,
+            nodes).items() if name not in verified and name not in described}
         if any(name in described for name in used):
             version = f"native-draft-1+pdk-{record['pdk_id']}-{record['sha256'][:12]}"
         if any(name in ideal for name in used):             # a mapping names the description it was built from
@@ -110,7 +115,8 @@ def _mapping(netlist_text, *, circuit_id='native', technology_library=None) -> t
     origin = {name: 'verified' if name in verified else 'pdk' if name in described else 'ideal'
               for name in used if name in verified or name in described or name in ideal}
     models = {name: verified.get(name) or described.get(name) or ideal[name] for name in origin}
-    mapping = dict(mapping_version=version, models=models, global_nets=['0'], net_roles={'0': ['ground']}, parameter_groups=[])
+    mapping = dict(mapping_version=version, models=models, global_nets=['0'], net_roles={'0': ['ground']},
+        parameter_groups=[])
     return mapping, [name for name in used if name not in models], origin
 
 
@@ -136,7 +142,8 @@ def finish_import(directory, *, library, cell, testbench_cell=None, technology_l
     try:
         facts = json.loads((directory / FILES['form_rules']).read_text())
         form_rules = (dict(read=False, reason=facts['error']) if facts.get('error') else
-                      dict(read=True, instances=len(facts.get('instances') or {}), modified_after=bool(facts.get('modified_after'))))
+                      dict(read=True, instances=len(facts.get('instances') or {}),
+                          modified_after=bool(facts.get('modified_after'))))
     except (OSError, ValueError, KeyError):
         form_rules = None                                  # a reader older than the form rules
     meta = dict(format=FORMAT, library=library, cell=cell, testbench_cell=testbench_cell or None, form_rules=form_rules,
@@ -174,6 +181,7 @@ def load_import(library, cell) -> dict | None:
 
 
 def draft_graph(imported):
+    """Parse a recorded cell import with its stored device mapping."""
     from analog_optimizer.netlist.config import ParserConfig
     from analog_optimizer.netlist.spectre_parser import SpectreParser
     return SpectreParser(ParserConfig.from_file(imported['mapping_path'])).parse_file(imported['netlist_path'])

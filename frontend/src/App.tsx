@@ -62,8 +62,7 @@ function GatorChip() {
 /** Layout (specification section 2; record 7.362, Option D of the user's preview): the task across the left and the centre - its
  *  name, revision and actions on the editors' tab line, the three editors under it - with the circuit beside them on request;
  *  right = run configuration + output settings (always visible); bottom = status, logs, data, files, training, corner check,
- *  with the Agent window and the run window opened from its tab line (record 7.253: the Agent tab became "Agent...", drawn
- *  as a tab but opening a window - no tab view).
+ *  with the run window opened from its tab line.
  *  Tables, numbers, status and file lists. On screen only, by user decision: two pictures of the circuit - the graph view
  *  (2026-09-21) and the circuit picture in the left column (2026-10-03) - and the Training tab's charts of a run's
  *  recorded numbers (2026-10-05, record 7.193); nothing drawn is written. */

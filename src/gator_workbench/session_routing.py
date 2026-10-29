@@ -52,6 +52,7 @@ class SessionsBusy(RuntimeError):
 
 @dataclass
 class Choice:
+    # A selected Virtuoso session with its explanation and reservation bookkeeping.
     profile_id: str                       # the session the work goes to (its connection name)
     connection: str                       # the connection the page named
     label: str                            # "Virtuoso 2"
@@ -59,9 +60,11 @@ class Choice:
     sessions: list = field(default_factory=list)
     lock: str | None = None               # the session lock reserved for the work
     token: str = ''                       # this choice's reservation: `started` and `finished` touch only their own
-    release: tuple | None = None          # (session, who, library, cell): to let go of the cell first (`release_pending`)
+    # (session, who, library, cell): to let go of the cell first (`release_pending`)
+    release: tuple | None = None
 
     def record(self) -> dict:
+        """Return the connection and session details intended for the page and run record."""
         return dict(connection=self.connection, session=self.profile_id, label=self.label, said=self.said,
                     sessions=self.sessions)
 
@@ -78,7 +81,8 @@ def _sessions(group, profiles, root) -> list:
     sessions = []
     for index, profile_id in enumerate(group):
         settings = profiles.get(profile_id) or {}
-        folder = bridge_session_dir(settings['env_file'], settings.get('profile'), root) if settings.get('env_file') else root
+        folder = bridge_session_dir(settings['env_file'], settings.get('profile'),
+            root) if settings.get('env_file') else root
         sessions.append(dict(profile_id=profile_id, label=f'Virtuoso {index + 1}', lock=str(folder / 'session.lock'),
                              queue=folder / 'queue.lock', first=folder == root))
     return sessions
@@ -133,19 +137,23 @@ def _free(sessions, cell, root) -> list:
     for session in sessions:
         session['state'], session['holder'] = _state(session, now)
     if cell is not None and any(item.get('cell') == tuple(cell) for item in _RESERVED.values()):
-        raise SessionsBusy(f'The cell {cell[0]}/{cell[1]} was given to a run started a moment ago, which is still starting. '
-                           'Only one run or check works on a cell at a time; try again when it has started or ended.',
-                           report=dict(sessions=_public(sessions)))
+        raise SessionsBusy(
+            f'The cell {cell[0]}/{cell[1]} was given to a run started a moment ago, which is still starting. '
+            'Only one run or check works on a cell at a time; try again when it has started or ended.',
+            report=dict(sessions=_public(sessions)))
     held = lock_holder(bridge_cell_lock(*cell, root)) if cell is not None else None
     if held:
-        raise SessionsBusy(f'The cell {cell[0]}/{cell[1]} is in use: {held}. Only one run or check works on a cell at a time, '
-                           'whatever the Virtuoso session; try again when it has finished.',
-                           report=dict(sessions=_public(sessions)))
+        raise SessionsBusy(
+            f'The cell {cell[0]}/{cell[1]} is in use: {held}. Only one run or check works on a cell at a time, '
+            'whatever the Virtuoso session; try again when it has finished.',
+            report=dict(sessions=_public(sessions)))
     free = [s for s in sessions if s['state'] == 'free']
     if not free:
         raise SessionsBusy('Every Virtuoso session of this connection is busy: ' + '; '.join(
-            f"{_who(s)}: {s['holder']}" for s in sessions) + '. Try again when one has finished. A run started from this '
-            'page stops with Abort; one started from a command line stops there.', report=dict(sessions=_public(sessions)))
+            f"{_who(s)}: {s['holder']}" for s in sessions) +
+                '. Try again when one has finished. A run started from this page stops with Abort; one started '
+                'from a command line stops there.',
+            report=dict(sessions=_public(sessions)))
     return free
 
 
@@ -189,8 +197,8 @@ def choose(profile_id, *, cell=None, first_session_only=False, monitor=None, pur
     if cell is not None:
         with _GUARD:
             free = _free(sessions, cell, root)
-        # Asked only where the answer can change the choice: a busy session (it must let go of the cell for a free one to
-        # write it), and the free ones only when there is more than one of them to choose from.
+        # Asked only where the answer can change the choice: a busy session (it must let go of the cell for a free one
+        # to write it), and the free ones only when there is more than one of them to choose from.
         asked = [s for s in sessions if s['state'] != 'free' or len(free) > 1]
         holds = _ask_all(asked, monitor, cell) if asked else {}
     with _GUARD:
@@ -202,16 +210,19 @@ def choose(profile_id, *, cell=None, first_session_only=False, monitor=None, pur
         if owner is not None and owner['state'] == 'free':
             chosen, why = owner, 'it holds the cell open for editing, so only it can write the cell now'
         else:
-            if owner is not None:                           # a busy session holds the cell: it lets go of it, or a refusal
+            # a busy session holds the cell: it lets go of it, or a refusal
+            if owner is not None:
                 hold, where = owner['hold'], f'{cell[0]}/{cell[1]}'
                 if not hold['saved']:
-                    raise SessionsBusy(f'{_who(owner)} holds {where} open for editing with unsaved edits, and is busy '
-                                       f"({owner['holder']}). Save or discard the edits there, or wait until it is free.",
-                                       report=dict(sessions=_public(sessions)))
+                    raise SessionsBusy(
+                        f'{_who(owner)} holds {where} open for editing with unsaved edits, and is busy ('
+                        f"{owner['holder']}). Save or discard the edits there, or wait until it is free.",
+                        report=dict(sessions=_public(sessions)))
                 if hold['windows']:
                     raise SessionsBusy(f'{_who(owner)} shows {where} in a window, open for editing, and is busy '
                                        f"({owner['holder']}). Close that window or make the cell read-only there "
-                                       '(Design > Make Read Only), then start again.', report=dict(sessions=_public(sessions)))
+                                       '(Design > Make Read Only), then start again.',
+                                       report=dict(sessions=_public(sessions)))
                 release = (owner['profile_id'], _who(owner), *cell)
             # The free session whose last test passed first; the connection's own session first among equals.
             chosen = min(free, key=lambda s: (_status(monitor, s['profile_id']) != 'ok', sessions.index(s)))
@@ -224,8 +235,10 @@ def choose(profile_id, *, cell=None, first_session_only=False, monitor=None, pur
             said += (f" {owner['label']} let go of the cell it held open for editing (saved, in no window), so that "
                      f"{chosen['label']} can write it.")
         token = uuid.uuid4().hex
-        _RESERVED[chosen['lock']] = dict(token=token, until=time.monotonic() + PREPARING_SECONDS, attached=False, pid=None,
-                                         profile_id=chosen['profile_id'], cell=tuple(cell) if cell is not None else None,
+        _RESERVED[chosen['lock']] = dict(token=token, until=time.monotonic() + PREPARING_SECONDS, attached=False,
+                                         pid=None,
+                                         profile_id=chosen['profile_id'],
+                                         cell=tuple(cell) if cell is not None else None,
                                          said=f'a {purpose} started from this page at {_clock()} is starting there')
         for session in sessions:
             session['chosen'] = session is chosen
@@ -249,7 +262,8 @@ def release_pending(choice: Choice | None, monitor) -> None:
     try:
         cell_hold.release(monitor, holder, library, cell)
     except Exception as exc:
-        raise SessionsBusy(f'{who} holds {library}/{cell} open for editing and is busy; letting go of the cell there failed: '
+        raise SessionsBusy(
+            f'{who} holds {library}/{cell} open for editing and is busy; letting go of the cell there failed: '
                            f'{redact(str(exc), 300)}. Start again when it is free.') from None
     choice.release = None
 

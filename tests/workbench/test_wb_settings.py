@@ -30,6 +30,7 @@ def test_concurrent_settings_saves_keep_every_update(monkeypatch):
     barrier, original = threading.Barrier(2), settings_store.write_json
 
     def write_after_both_read(path, value, **kwargs):
+        """Delay a settings write so both concurrent readers can observe the prior state."""
         try:
             barrier.wait(timeout=0.5)
         except threading.BrokenBarrierError:
@@ -48,6 +49,7 @@ def test_concurrent_settings_saves_keep_every_update(monkeypatch):
 # ------------------------------------------------------------------------------- A12: a settings.json with a typo
 @pytest.fixture
 def broken_settings():
+    """Write invalid settings JSON and return its path and original text."""
     path = paths.local_settings_dir() / 'settings.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     text = '{"output_root": "/somewhere",}\n'                          # a hand edit with a trailing comma

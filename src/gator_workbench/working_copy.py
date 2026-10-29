@@ -47,6 +47,7 @@ def store_root() -> Path:
 
 
 def copy_library_name(library) -> str:
+    """Return the name of the library the workbench copies `library` into; raise CopyError if invalid."""
     name = f'{library}{bridge_setup.SUFFIX}'
     if not native_cells.NAME.match(name) or len(name) > MAX_LIBRARY:
         raise CopyError(f'{library} is too long a library name to add "{bridge_setup.SUFFIX}" to')
@@ -54,6 +55,7 @@ def copy_library_name(library) -> str:
 
 
 def record_dir(library, cell) -> Path:
+    """Return a working-copy record directory after validating the library and cell names."""
     return store_root() / _checked(library) / _checked(cell)
 
 
@@ -91,6 +93,7 @@ def _json_or_empty(path) -> dict:
 
 
 def own_libraries() -> dict:
+    """Return the facts of each library the workbench created, by name; {} when the file cannot be read."""
     return _json_or_empty(store_root() / LIBRARIES)
 
 
@@ -159,7 +162,8 @@ def netlist_cells(text, library) -> list:
                 current[name] = stripped.split(':', 1)[1].strip()
                 break
         if current.keys() >= {'library', 'cell', 'view'}:
-            if current['library'] == library and native_cells.NAME.match(current['cell']) and native_cells.NAME.match(current['view']):
+            if current['library'] == library and native_cells.NAME.match(current['cell']) and native_cells.NAME.match(
+                current['view']):
                 views = found.setdefault(current['cell'], [])
                 if current['view'] not in views:
                     views.append(current['view'])
@@ -217,11 +221,13 @@ def reverify(library, cell) -> dict | None:
     record, imported = load(library, cell), native_cells.load_import(library, cell)
     if record is None or imported is None:
         return None
-    if record.get('declared'):                       # the user's own copy: there is no separate original to compare with
+    # the user's own copy: there is no separate original to compare with
+    if record.get('declared'):
         return record
     directory = record_dir(library, cell)
     problems = compare(Path(imported['netlist_path']).read_text(), (directory / 'netlist.scs').read_text(),
-                       copy_library=record['copy']['library'], copied_cells=sorted({c['cell'] for c in record['copied']}))
+                       copy_library=record['copy']['library'],
+                       copied_cells=sorted({c['cell'] for c in record['copied']}))
     if not record.get('originals_unchanged'):
         problems.append('The original cells read back differently after the copy - look at them in Virtuoso')
     record = dict(record, problems=problems, netlist_equal=not any('netlist like' in p for p in problems),
@@ -230,7 +236,8 @@ def reverify(library, cell) -> dict | None:
     return record
 
 
-# ---------------------------------------------------------------------------------- the user's own copy (since 2026-09-23)
+# ---------------------------------------------------------------------------------- the user's own copy (since
+# 2026-09-23)
 def declare(profile_id, library, cell) -> dict:
     """The user's OWN copy: the workbench makes no copy of its own any more (user request 2026-09-23). After a cell was
     read into the workbench, the page asks whether it is a copy the user made; on "yes" the import request carries
@@ -248,19 +255,25 @@ def declare(profile_id, library, cell) -> dict:
         raise CopyError('Read the cell into the workbench first (Read this cell into the workbench)')
     testbench = imported.get('testbench_cell')
     if not testbench:
-        raise CopyError('Read the cell through its testbench first: a task simulates the testbench, and its Maestro setup lives there')
+        raise CopyError(
+            'Read the cell through its testbench first: a task simulates the testbench, and its Maestro '
+            'setup lives there')
     technology = imported.get('technology_library')
     if technology and library == technology:
-        raise CopyError(f'{library} is the technology library - the PDK itself: copy the cell into a library of yours first')
+        raise CopyError(
+            f'{library} is the technology library - the PDK itself: copy the cell into a library of yours first')
     cells = netlist_cells(Path(imported['netlist_path']).read_text(), library)
     named = {c['cell'] for c in cells}
     if not {cell, testbench} <= named:
-        raise CopyError(f'The export of {testbench} does not name both {cell} and {testbench} in {library}: read the cell again '
+        raise CopyError(
+            f'The export of {testbench} does not name both {cell} and {testbench} in {library}: read the cell again '
                         'through a testbench of the same library')
     record = dict(format=FORMAT, created_utc=utcnow().isoformat(), profile_id=profile_id, declared=True,
-                  original=dict(library=library, cell=cell, testbench=testbench, netlist_sha256=imported['netlist_sha256']),
+                  original=dict(library=library, cell=cell, testbench=testbench,
+                      netlist_sha256=imported['netlist_sha256']),
                   copy=dict(library=library, cell=cell, testbench=testbench, path=None),
-                  technology_library=technology, created_library=False, cds_lib=None, cells=cells, copied=[], remastered={},
+                  technology_library=technology, created_library=False, cds_lib=None, cells=cells, copied=[],
+                  remastered={},
                   originals_unchanged=None, netlist_equal=None, problems=[], verified=True)
     target = record_dir(library, cell)
     target.mkdir(parents=True, exist_ok=True)
@@ -291,33 +304,42 @@ def make(monitor, profile_id, library, cell, *, command=None, timeout=600.0) -> 
     attempt = _json_or_empty(attempt_file)
     incoming = target.parent / f'.incoming-{uuid4().hex}'
     incoming.mkdir(parents=True)
+    # ---- Run the copy in staging and retain partial progress if bridge work fails.
     try:
         args = ['--library', library, '--cell', cell, '--testbench', testbench, '--copy-library', copy_library,
                 '--overwrite', json.dumps(sorted(attempt.get('copied', [])))]
         if copy_library in ours:
             args.append('--reuse-library')
         try:
-            answer = bridge_setup.run(profile_id, 'make_copy', args=args, output=incoming, command=command, timeout=timeout)
+            answer = bridge_setup.run(profile_id, 'make_copy', args=args, output=incoming, command=command,
+                timeout=timeout)
         except BaseException:
             _keep_attempt(incoming, attempt_file, attempt, copy_library, library, profile_id)
             raise
         if answer.get('created_library'):
             _own(copy_library, answer['copy_path'], answer['copy_technology_library'], library, profile_id)
+        # ---- Compare the copied netlist, original-cell digests, and technology binding before recording
+        # verification.
         copy_netlist = (incoming / 'netlist.scs').read_text()
         copied_cells = sorted({item['cell'] for item in answer['copied']})
         problems = compare(Path(imported['netlist_path']).read_text(), copy_netlist, copy_library=copy_library,
                            copied_cells=copied_cells)
-        touched = sorted(name for name, digest in answer['originals_before'].items() if answer['originals_after'].get(name) != digest)
+        touched = sorted(name for name,
+            digest in answer['originals_before'].items() if answer['originals_after'].get(name) != digest)
         if touched:
-            problems.append(f'The original cells read back differently after the copy: {", ".join(touched)} - look at them in Virtuoso')
+            problems.append(
+                f"The original cells read back differently after the copy: {', '.join(touched)} - look at "
+                f'them in Virtuoso')
         if answer.get('copy_technology_library') != answer.get('technology_library'):
             problems.append(f'The copy library is bound to {answer.get("copy_technology_library")!r}, the original to '
                             f'{answer.get("technology_library")!r}')
         record = dict(format=FORMAT, created_utc=utcnow().isoformat(), profile_id=profile_id,
-                      original=dict(library=library, cell=cell, testbench=testbench, netlist_sha256=imported['netlist_sha256']),
+                      original=dict(library=library, cell=cell, testbench=testbench,
+                          netlist_sha256=imported['netlist_sha256']),
                       copy=dict(library=copy_library, cell=cell, testbench=testbench, path=answer['copy_path']),
                       technology_library=answer['technology_library'], created_library=answer['created_library'],
-                      cds_lib=answer['cds_lib'], cells=answer['cells'], copied=answer['copied'], remastered=answer['remastered'],
+                      cds_lib=answer['cds_lib'], cells=answer['cells'], copied=answer['copied'],
+                      remastered=answer['remastered'],
                       originals_unchanged=not touched, netlist_equal=not problems, problems=problems,
                       verified=not problems)
         write_json(incoming / RECORD, record)
@@ -330,17 +352,22 @@ def make(monitor, profile_id, library, cell, *, command=None, timeout=600.0) -> 
 
 
 # ---------------------------------------------------------------------------------- the Maestro setup of a copy
-ANALOGLIB_PRIMITIVES = ('res', 'cap', 'ind', 'vdc', 'idc', 'vsource', 'isource')     # nothing is derived from their values
-SECTION = 'tt'                                                               # the verified nominal condition (gpdk045_conditions.json)
+# nothing is derived from their values
+ANALOGLIB_PRIMITIVES = ('res', 'cap', 'ind', 'vdc', 'idc', 'vsource', 'isource')
+# the verified nominal condition (gpdk045_conditions.json)
+SECTION = 'tt'
 
 
 def verified(library, cell) -> dict:
+    """Require a recorded working copy that passed its stored verification checks."""
     record = load(library, cell)
     if record is None:
-        raise CopyError('This cell is not yet the one the task flow works in: read it into the workbench and confirm that it is a copy '
-                        'you made (the Virtuoso window asks when you read it)')
+        raise CopyError(
+            'This cell is not yet the one the task flow works in: read it into the workbench and confirm '
+            'that it is a copy you made (the Virtuoso window asks when you read it)')
     if not record.get('verified'):
-        raise CopyError('The working copy did not pass its checks: ' + '; '.join(record.get('problems') or ['(no details)']))
+        raise CopyError('The working copy did not pass its checks: ' + '; '.join(record.get('problems') or [
+            '(no details)']))
     return record
 
 
@@ -374,10 +401,12 @@ def _original_values_on(target) -> dict:
     """{(cell of the copy, instance, parameter): value} the ORIGINAL design has, from its CDF readback."""
     names = target['names']
     return {(names.get(owner, owner), instance, parameter): value
-            for (owner, instance), entry in _readbacks(target['original']).items() for parameter, value in (entry.get('params') or {}).items()}
+            for (owner, instance), entry in _readbacks(target['original']).items() for parameter,
+            value in (entry.get('params') or {}).items()}
 
 
-# ---------------------------------------------------------------------------------- targets: which copy a setup is about
+# ---------------------------------------------------------------------------------- targets: which copy a setup is
+# about
 def draft_target(library, cell) -> dict:
     """The cell's own working copy - the cell itself when the user declared it their copy, or the copy the workbench
     made before 2026-09-23 - as the setup functions take it."""
@@ -391,19 +420,22 @@ def claim(library, cell, task):
     """The first task saved from a cell takes the cell's working copy; a second task gets its own copy (Save as)."""
     record = verified(library, cell)
     if record.get('claimed_by') not in (None, task):
-        raise CopyError(f'{library}/{cell} belongs to the task real:{record["claimed_by"]}: open it in the Tasks window (its Save as '
-                        'makes another task, with a copy of its own). Another task of this cell otherwise needs another copy: '
-                        'make one in Virtuoso and read it in the Virtuoso window')
+        raise CopyError(
+            f"{library}/{cell} belongs to the task real:{record['claimed_by']}: open it in the Tasks window "
+            f'(its Save as makes another task, with a copy of its own). Another task of this cell otherwise '
+            f'needs another copy: make one in Virtuoso and read it in the Virtuoso window')
     write_json(record_dir(library, cell) / RECORD, dict(record, claimed_by=task))
 
 
 def release(library, cell, task):
+    """Remove a working-copy claim only when it belongs to the specified task."""
     record = load(library, cell)
     if record and record.get('claimed_by') == task:
         write_json(record_dir(library, cell) / RECORD, {k: v for k, v in record.items() if k != 'claimed_by'})
 
 
 def task_copy_dir(task) -> Path:
+    """Return the local task-copy directory after validating the task name."""
     return store_root() / '_tasks' / _checked(task)
 
 
@@ -414,7 +446,8 @@ def make_task_copy(monitor, profile_id, source, task, *, source_netlist, command
     names = {original: f'{original}_{task}' for original in source['names']}
     for name in names.values():
         if not native_cells.NAME.match(name) or len(name) > 120:
-            raise CopyError(f'The copy cell name {name!r} would not be a plain Cadence name: choose a shorter task name')
+            raise CopyError(
+                f'The copy cell name {name!r} would not be a plain Cadence name: choose a shorter task name')
     rename = {source['names'][original]: new for original, new in names.items()}
     require_gate(monitor, 'write_cellview', profile_id, 'writing into Virtuoso')
     directory = task_copy_dir(task)
@@ -428,24 +461,32 @@ def make_task_copy(monitor, profile_id, source, task, *, source_netlist, command
                 '--copy-library', library, '--reuse-library', '--rename', json.dumps(rename),
                 '--overwrite', json.dumps(sorted(attempt.get('copied', [])))]
         try:
-            answer = bridge_setup.run(profile_id, 'make_copy', args=args, output=incoming, command=command, timeout=timeout)
+            answer = bridge_setup.run(profile_id, 'make_copy', args=args, output=incoming, command=command,
+                timeout=timeout)
         except BaseException:
             _keep_attempt(incoming, attempt_file, attempt, library, library, profile_id)
             raise
+        # ---- Map copied names back to the source before comparing netlists and source-cell digests.
         text = (incoming / 'netlist.scs').read_text()
         for old, new in sorted(rename.items(), key=lambda item: -len(item[1])):
             text = re.sub(rf'\b{re.escape(new)}\b', old, text)
         problems = compare(source_netlist, text, copy_library=library, copied_cells=sorted(rename))
-        touched = sorted(name for name, digest in answer['originals_before'].items() if answer['originals_after'].get(name) != digest)
+        touched = sorted(name for name,
+            digest in answer['originals_before'].items() if answer['originals_after'].get(name) != digest)
         if touched:
             problems.append(f'The source copy read back differently afterwards: {", ".join(touched)}')
         if problems:
             raise CopyError('The new copy did not pass its checks: ' + '; '.join(problems))
-        target = dict(original=source['original'], copy=dict(library=library, cell=answer['copy_cell'], testbench=answer['copy_testbench']),
-                      names=names, schematics=[names[o] for o, c in source['names'].items() if c in source['schematics']],
+        # ---- Publish the new task's copy record only after those checks pass.
+        target = dict(original=source['original'], copy=dict(library=library, cell=answer['copy_cell'],
+            testbench=answer['copy_testbench']),
+                      names=names, schematics=[names[o] for o,
+                          c in source['names'].items() if c in source['schematics']],
                       state_dir=str(directory))
-        write_json(incoming / RECORD, dict(format=FORMAT, created_utc=utcnow().isoformat(), profile_id=profile_id, task=task,
-                                           made_from=source['copy'], target=target, copied=answer['copied'], verified=True))
+        write_json(incoming / RECORD, dict(format=FORMAT, created_utc=utcnow().isoformat(), profile_id=profile_id,
+                                           task=task,
+                                           made_from=source['copy'], target=target, copied=answer['copied'],
+                                           verified=True))
         if directory.exists():
             directory.rename(directory.with_name(f'{task}.replaced-{utcnow().strftime("%Y%m%dT%H%M%S")}'))
         incoming.rename(directory)
@@ -462,11 +503,13 @@ def _request_dir(target) -> Path:
     return directory
 
 
-def _run_setup(op, profile_id, target, request, *, command=None):
+def _run_setup(operation, profile_id, target, request, *, command=None):
     out = _request_dir(target)
     (out / 'request.json').write_text(json.dumps(request, indent=1))
-    answer = bridge_setup.run(profile_id, op, args=['--library', target['original']['library'], '--cell', target['copy']['cell'],
-                                                     '--testbench', target['copy']['testbench'], '--copy-library', target['copy']['library'],
+    answer = bridge_setup.run(profile_id, operation, args=['--library', target['original']['library'], '--cell',
+        target['copy']['cell'],
+                                                     '--testbench', target['copy']['testbench'], '--copy-library',
+                                                     target['copy']['library'],
                                                      '--request', str(out / 'request.json')],
                               output=out, command=command, timeout=300.0)
     write_json(out / 'answer.json', answer)
@@ -481,9 +524,14 @@ def _described(answer) -> dict:
 
 
 def read_setup_on(monitor, profile_id, target, *, command=None, acknowledge_unknown=False) -> dict:
-    """What the Maestro view of one copy says now. Read-only, zero cost. `acknowledge_unknown`: see profile_preflight."""
-    require_gate(monitor, 'read_cellview', profile_id, 'reading the Maestro setup', acknowledge_unknown=acknowledge_unknown)
-    answer = _run_setup('read_setup', profile_id, target, dict(cells=target['schematics'], test=virtuoso_setup.TEST), command=command)
+    (
+        'What the Maestro view of one copy says now. Read-only, zero cost. `acknowledge_unknown`: see '
+        'profile_preflight.'
+    )
+    require_gate(monitor, 'read_cellview', profile_id, 'reading the Maestro setup',
+        acknowledge_unknown=acknowledge_unknown)
+    answer = _run_setup('read_setup', profile_id, target, dict(cells=target['schematics'], test=virtuoso_setup.TEST),
+        command=command)
     return _described(answer)
 
 
@@ -533,19 +581,24 @@ def write_setup_on(monitor, profile_id, target, setup, *, command=None) -> dict:
             (unknown if value == bound[key] else restore).append([*key, value])
     if unknown:
         raise virtuoso_setup.SetupError('The setup cannot be written: ' + '; '.join(
-            f'{c}/{i} parameter {p} would go back to the variable name {v!r} (the cell was read again while it was bound, '
-            'so its value before is not known): type its value in Virtuoso and read the cell again' for c, i, p, v in unknown))
+            f'{c}/{i} parameter {p} would go back to the variable name {v!r} (the cell was read again while '
+            f'it was bound, so its value before is not known): type its value in Virtuoso and read the cell '
+            f'again' for c, i, p,
+            v in unknown))
     still_bound = dict(values=[dict(key=list(k), value=v) for k, v in sorted(before.items()) if k in wanted])
     normalized = virtuoso_setup.normalize(setup)
     for part in keep:
         normalized[part] = None
     normalized['keep_model_files'] = bool(setup.get('keep_model_files'))
-    answer = _run_setup('write_setup', profile_id, target, dict(cells=target['schematics'], test=normalized['test'], setup=normalized,
+    answer = _run_setup('write_setup', profile_id, target, dict(cells=target['schematics'], test=normalized['test'],
+                                                              setup=normalized,
                                                               restore=restore), command=command)
     wanted, got = virtuoso_setup.normalize(setup), virtuoso_setup.normalize(answer)
     # What was left to the copy (a part not sent, model files not chosen) is compared with what the copy has.
-    expected = dict(wanted, model_files=got['model_files'] if setup.get('keep_model_files') and got['model_files'] else wanted['model_files'],
-                    **{part: got[part] for part in keep})
+    expected = dict(wanted,
+        model_files=got['model_files'] if setup.get('keep_model_files') and got['model_files'] else wanted[
+            'model_files'],
+        **{part: got[part] for part in keep})
     write_json(last_file, expected)                                    # what the copy holds now
     if 'bindings' not in keep:                                         # kept only while the parameter stays bound
         write_json(before_file, still_bound)
@@ -570,8 +623,10 @@ def maestro_deck_on(monitor, profile_id, target, outputs, *, command=None, ackno
     Maestro's netlist has an unexpected layout, an output reads an analysis the deck does not run, or a signal name
     cannot be translated plainly."""
     import hashlib
-    require_gate(monitor, 'read_cellview', profile_id, 'netlisting the copy\'s Maestro test', acknowledge_unknown=acknowledge_unknown)
-    answer = _run_setup('maestro_netlist', profile_id, target, dict(cells=target['schematics'], test=virtuoso_setup.TEST), command=command)
+    require_gate(monitor, 'read_cellview', profile_id, 'netlisting the copy\'s Maestro test',
+        acknowledge_unknown=acknowledge_unknown)
+    answer = _run_setup('maestro_netlist', profile_id, target, dict(cells=target['schematics'],
+        test=virtuoso_setup.TEST), command=command)
     folder = Path(answer['folder'])
     deck, circuit = (folder / 'input.scs').read_text(), (folder / 'netlist').read_text()
     head, tail = virtuoso_setup.split_deck(deck, circuit)
@@ -583,7 +638,8 @@ def maestro_deck_on(monitor, profile_id, target, outputs, *, command=None, ackno
     translated, problems = [], []
     for output in outputs:
         if output['analysis'] not in analyses:
-            problems.append(f'Output {output["name"]} reads the {output["analysis"]} analysis, which the Maestro test does not run')
+            problems.append(
+                f'Output {output["name"]} reads the {output["analysis"]} analysis, which the Maestro test does not run')
             continue
         try:
             translated.append(dict(output, spectre_expression=ocean.translate(output['expression'], names)))

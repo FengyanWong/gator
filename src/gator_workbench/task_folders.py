@@ -24,20 +24,22 @@ _LOCK = threading.Lock()
 
 
 class FolderError(ValueError):
+    """Folder organization could not be validated, read or changed."""
     pass
 
 
 class FolderMissing(FolderError):
+    """The requested organizational folder no longer exists."""
     pass
 
 
-def _kind(kind):
+def _kind(kind: str) -> tuple[str, str, str]:
     if kind not in KINDS:
         raise ValueError(f'Unknown kind of folders: {kind}')
     return KINDS[kind]
 
 
-def _name(value):
+def _name(value: str) -> str:
     name = value.strip()
     if not name or len(name) > 60 or re.search(r'[/\\\x00-\x1f\x7f]', name):
         raise FolderError('Use a folder name of 1–60 characters without slashes or control characters.')
@@ -46,7 +48,8 @@ def _name(value):
     return name
 
 
-def read(kind='tasks'):
+def read(kind: str='tasks') -> dict:
+    """Read and validate folder organization, returning an empty initial state only when its file is absent."""
     file, noun, _ = _kind(kind)
     path = local_settings_dir() / file
     try:
@@ -68,11 +71,12 @@ def read(kind='tasks'):
         if not all(isinstance(key, str) and folder in folders for key, folder in assignments.items()):
             raise ValueError('Invalid assignment')
     except (ValueError, KeyError, TypeError, AttributeError) as exc:
-        raise FolderError(f'{noun.capitalize()} folders contain invalid data; the existing file has been kept.') from exc
+        raise FolderError(
+            f'{noun.capitalize()} folders contain invalid data; the existing file has been kept.') from exc
     return state
 
 
-def _change(edit, kind):
+def _change(edit, kind: str) -> dict:
     # Serialize read/modify/write across browser tabs AND backend/maintenance processes - one lock for every kind.
     directory = local_settings_dir()
     directory.mkdir(parents=True, exist_ok=True)
@@ -84,30 +88,32 @@ def _change(edit, kind):
         return state
 
 
-def _require(state, folder_id, kind):
+def _require(state: dict, folder_id: str, kind: str) -> None:
     if folder_id not in state['folders']:
         raise FolderMissing(f'This folder no longer exists. Refresh the {_kind(kind)[1]} list.')
 
 
-def _unique(state, name, except_id=None):
+def _unique(state: dict, name: str, except_id: str | None=None) -> None:
     if any(key != except_id and label.casefold() == name.casefold() for key, label in state['folders'].items()):
         raise FolderError('A folder with that name already exists.')
 
 
-def create(name, kind='tasks'):
+def create(name: str, kind: str='tasks') -> dict:
+    """Create a uniquely named organizational folder and return its new identifier with the updated state."""
     name, folder_id = _name(name), uuid4().hex
 
-    def edit(state):
+    def edit(state: dict) -> None:
         _unique(state, name)
         state['folders'][folder_id] = name
 
     return dict(_change(edit, kind), created_id=folder_id)
 
 
-def rename(folder_id, name, kind='tasks'):
+def rename(folder_id: str, name: str, kind: str='tasks') -> dict:
+    """Rename an existing organizational folder after checking that its new name is unique."""
     name = _name(name)
 
-    def edit(state):
+    def edit(state: dict) -> None:
         _require(state, folder_id, kind)
         _unique(state, name, folder_id)
         state['folders'][folder_id] = name
@@ -115,8 +121,9 @@ def rename(folder_id, name, kind='tasks'):
     return _change(edit, kind)
 
 
-def remove(folder_id, kind='tasks'):
-    def edit(state):
+def remove(folder_id: str, kind: str='tasks') -> dict:
+    """Remove an organizational folder and its assignments while retaining the organized items."""
+    def edit(state: dict) -> None:
         _require(state, folder_id, kind)
         del state['folders'][folder_id]
         state['assignments'] = {key: value for key, value in state['assignments'].items() if value != folder_id}
@@ -124,7 +131,7 @@ def remove(folder_id, kind='tasks'):
     return _change(edit, kind)
 
 
-def move(keys, folder_id, *, known_tasks=None, known=None, kind='tasks'):
+def move(keys, folder_id: str | None, *, known_tasks=None, known=None, kind: str='tasks') -> dict:
     """Put `keys` (task keys, or run folders) into the folder, or back to Unfiled (`folder_id` None). Every key must be
     `known` - a registered task, a listed run - or nothing is changed."""
     _, noun, plural = _kind(kind)
@@ -132,7 +139,7 @@ def move(keys, folder_id, *, known_tasks=None, known=None, kind='tasks'):
     if not keys or not set(keys) <= set(known or ()):
         raise FolderError(f'Some selected {plural} no longer exist. Refresh the {noun} list.')
 
-    def edit(state):
+    def edit(state: dict) -> None:
         if folder_id is not None:
             _require(state, folder_id, kind)
         for key in keys:

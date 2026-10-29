@@ -50,7 +50,7 @@ function placed(name: string, features: string, screen: Screen): { features: str
 }
 
 /** The workbench's pop-up windows (Connection, Virtuoso, PDK, ngspice, Tasks, Runs, the run brief, the RL model window,
- *  the task file, Agent): a NAMED `about:blank` window with the page's own stylesheets copied into it and one root
+ *  the task file): a NAMED `about:blank` window with the page's own stylesheets copied into it and one root
  *  element to portal React into. The window closes with the page, and when the viewer closes it the panel hears of it.
  *  `open()` brings an already open window to the front instead of making a second one; `blocked` says the browser
  *  refused to open it (`BLOCKED` says so; the task file names its own button). A window opens again at the size and place

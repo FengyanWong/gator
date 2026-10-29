@@ -25,6 +25,7 @@ from .storage.dataset import utcnow
 
 
 class BestDesignTracker:
+    """The run's best observed design per class: feasible, nominally feasible, least-violating infeasible."""
     def __init__(self, preference=None, state=None):
         self.preference = preference
         self.feasible = self.infeasible = None
@@ -34,6 +35,7 @@ class BestDesignTracker:
             self.nominal_feasible = state.get('nominal_feasible')
 
     def state_dict(self):
+        """Return the best design held in each of the three classes, for saving and restoring the tracker."""
         return dict(feasible=self.feasible, nominal_feasible=self.nominal_feasible, infeasible=self.infeasible)
 
     def _better_feasible(self, new, old):
@@ -74,9 +76,11 @@ class BestDesignTracker:
 
     @property
     def best(self):
+        """Return the best feasible, else nominally feasible, else least-violating design, or None if none yet."""
         return self.feasible or self.nominal_feasible or self.infeasible
 
     def selection_rule(self):
+        """Describe the feasibility classes, objective preference, and tie-breaking rules used for selection."""
         return dict(feasible_over_infeasible=True, preference=self.preference,
                     classes=['complete_feasible', 'nominal_feasible', 'valid_infeasible'],
                     robust_objective='adverse measured value across applicable conditions',
@@ -87,7 +91,8 @@ class BestDesignTracker:
 
 def _record(candidate, *, status, tracker, task, config_summary):
     if candidate is None:
-        return dict(status=status, design=None, selection_rule=tracker.selection_rule(), generated_utc=utcnow().isoformat())
+        return dict(status=status, design=None, selection_rule=tracker.selection_rule(),
+            generated_utc=utcnow().isoformat())
     return dict(status=status, generated_utc=utcnow().isoformat(), selection_rule=tracker.selection_rule(),
                 design=dict(evaluation_id=candidate['evaluation_id'], commit_seq=candidate['commit_seq'],
                             feasible=candidate['feasible'], reward=candidate['reward'],
@@ -104,24 +109,29 @@ def _record(candidate, *, status, tracker, task, config_summary):
                             clearance_rule=candidate.get('clearance_rule'),
                             validation_status=('complete declared deterministic training plan; no Monte Carlo'
                                                if candidate.get('robust_feasible') else
-                                               'nominal evaluation only; no PVT/Monte-Carlo post-validation has been performed'
+                                               'nominal evaluation only; no PVT/Monte-Carlo post-validation '
+                                               'has been performed'
                                                if (candidate.get('conditions_planned') or 1) <= 1 else
-                                               'nominal evidence or incomplete/infeasible deterministic plan; no Monte Carlo')),
+                                               'nominal evidence or incomplete/infeasible deterministic '
+                                               'plan; no Monte Carlo')),
                 task=task, specification=config_summary)
 
 
 def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary, netlist_text, graph,
                   reparse=None, netlist_name='optimized_dut.scs', exporter=None):
+    """Write the best-design records and feasible-design exports, delete stale ones, and return file notes."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     notes = {}
     feasible = tracker.feasible
     reason = {} if feasible else {
         'reason': 'No evaluated design satisfied every hard constraint. This is an explicit null, not a result.'}
+    # ---- Write design-status records even when no feasible export can be produced.
     for name, candidate, extra in (('best_feasible', feasible, reason), ('best_infeasible', tracker.infeasible, {}),
                                    ('best_nominal_feasible', tracker.nominal_feasible, {})):
         write_json(directory / f'{name}.json', _record(candidate, status='found' if candidate else 'none_found',
-                                                        tracker=tracker, task=task, config_summary=config_summary) | extra)
+                                                        tracker=tracker, task=task,
+                                                        config_summary=config_summary) | extra)
     additional = tuple(getattr(exporter, 'additional_filenames', ()))
     if any(Path(name).name != name for name in additional):
         raise ValueError('Additional export files must have plain filenames')
@@ -133,6 +143,7 @@ def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary
     if feasible is None:
         notes['parameters.csv'] = notes[netlist_name] = 'not created: no feasible design exists'
         return notes
+    # ---- Export feasible parameters first; publish a netlist only if verification succeeds.
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator='\n')
     writer.writerow(['variable_id', 'member_variable_id', 'role', 'instance_path', 'parameter_name', 'value', 'unit',
@@ -145,7 +156,8 @@ def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary
     temporary.write_text(buffer.getvalue(), encoding='utf8')
     publish(temporary, directory / 'parameters.csv')
     # `exporter`: another netlist language's writer (an ngspice deck), with the same outcome contract as export_netlist.
-    outcome = exporter(netlist_text, graph, feasible['members']) if exporter else export_netlist(netlist_text, graph, feasible['members'], reparse=reparse)
+    outcome = exporter(netlist_text, graph, feasible['members']) if exporter else export_netlist(netlist_text, graph,
+        feasible['members'], reparse=reparse)
     if outcome['status'] == 'verified':
         files = outcome.get('additional_files', {})
         if set(files) != set(additional):
@@ -190,7 +202,8 @@ def export_netlist(netlist_text, graph, members, *, reparse=None):
             return dict(status='unsupported', reason=f'{path}.{parameter} is not in the parsed circuit')
         source_name = value.source_name or parameter
         index = device.source.line - 1
-        pattern = re.compile(r'(?<![\w.])' + re.escape(source_name) + r'(\s*=\s*)' + re.escape(value.raw) + r'(?![\w.])')
+        pattern = re.compile(r'(?<![\w.])' + re.escape(source_name) + r'(\s*=\s*)' + re.escape(
+            value.raw) + r'(?![\w.])')
         replaced = False
         while 0 <= index < len(lines):
             new_line, count = pattern.subn(lambda m: f'{source_name}{m.group(1)}{float(member["value"]):.12g}',
@@ -202,7 +215,9 @@ def export_netlist(netlist_text, graph, members, *, reparse=None):
                 break
             index += 1
         if not replaced:
-            return dict(status='unsupported', reason=f'could not locate {source_name}={value.raw} on the line of {path}')
+            return dict(status='unsupported',
+                reason=f'could not locate {source_name}={value.raw} on the line of {path}')
+    # ---- Reparse the edited text and check both targeted and untouched parameter values.
     text = '\n'.join(lines)
     if reparse is None:
         return dict(status='unsupported', reason='no parser available to verify the rewritten netlist')

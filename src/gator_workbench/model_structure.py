@@ -20,40 +20,57 @@ from . import checkpoints as ckpt
 from .storage.atomic import sha256_file
 
 PARTS = (('actor', 'Actor', 'The policy: reads the circuit and the goals, proposes a size for every parameter group.'),
-         ('critic', 'Critic', 'Judges a proposed action (its Q-value). Two identical critics are trained, and each has a '
+         ('critic', 'Critic',
+             'Judges a proposed action (its Q-value). Two identical critics are trained, and each has a '
                               'slowly following target copy: 4 networks of this structure are saved.'))
 
 # (pattern on the layer path, section, what it does). First match wins.
 ROLES = (
-    (r'^encoder\.device_values$', 'Inputs', 'Device numbers (w, l, m, ... with their present / optimizable flags) into the hidden width.'),
-    (r'^encoder\.device_kind$', 'Inputs', 'Look-up table: one learned vector per device kind (nmos, pmos, resistor, ...).'),
+    (r'^encoder\.device_values$', 'Inputs',
+        'Device numbers (w, l, m, ... with their present / optimizable flags) into the hidden width.'),
+    (r'^encoder\.device_kind$', 'Inputs',
+        'Look-up table: one learned vector per device kind (nmos, pmos, resistor, ...).'),
     (r'^encoder\.net_values$', 'Inputs', 'Net role (ground, supply, input, output, ...) into the hidden width.'),
-    (r'^encoder\.context\.\d+$', 'Inputs', 'The goals: targets, measured values, budget and status, as one vector added to every node.'),
-    (r'^encoder\.port_role$', 'Inputs', 'Look-up table: one learned vector per terminal role and direction (drain, gate, ...) - the edge label.'),
+    (r'^encoder\.context\.\d+$', 'Inputs',
+        'The goals: targets, measured values, budget and status, as one vector added to every node.'),
+    (r'^encoder\.port_role$', 'Inputs',
+        'Look-up table: one learned vector per terminal role and direction (drain, gate, ...) - the edge label.'),
     (r'^encoder\.port_ordinal$', 'Inputs', 'Position of a terminal among equal ones, added to the edge label.'),
     (r'^encoder\.parameter_kind$', 'Inputs', 'Look-up table: one learned vector per parameter kind (w, l, m, ...).'),
     (r'^encoder\.binding_ratio$', 'Inputs', 'Ratio between a group and the device it drives (matched pairs, mirrors).'),
-    (r'^encoder\.group_values\.\d+$', 'Inputs', 'Numbers of a parameter group (current value, bounds, ...) into the hidden width.'),
-    (r'^encoder\.action_token\.\d+$', 'Inputs', 'Critic only: the proposed action of a group, injected into the devices it drives.'),
-    (r'^encoder\.structural_projection$', 'Inputs', 'Topology-only random-walk return probabilities (2, 4, 8, 16 steps) into the hidden width.'),
-    (r'^encoder\.operating_points$', 'Inputs', 'Measured nominal operating points with independent missing-value masks.'),
+    (r'^encoder\.group_values\.\d+$', 'Inputs',
+        'Numbers of a parameter group (current value, bounds, ...) into the hidden width.'),
+    (r'^encoder\.action_token\.\d+$', 'Inputs',
+        'Critic only: the proposed action of a group, injected into the devices it drives.'),
+    (r'^encoder\.structural_projection$', 'Inputs',
+        'Topology-only random-walk return probabilities (2, 4, 8, 16 steps) into the hidden width.'),
+    (r'^encoder\.operating_points$', 'Inputs',
+        'Measured nominal operating points with independent missing-value masks.'),
     (r'^encoder\.blocks\.(\d+)\.norm_\w+$', 'Block {n}', 'Normalization before the step that follows.'),
     (r'^encoder\.blocks\.(\d+)\.attention\.lin_skip$', 'Block {n}', "Skip path of PyG's TransformerConv."),
-    (r'^encoder\.blocks\.(\d+)\.attention(\..+)?$', 'Block {n}', 'Message passing along the circuit connections: what a node takes from its neighbours.'),
-    (r'^encoder\.blocks\.(\d+)\.message(\..+)?$', 'Block {n}', 'Message passing along the circuit connections: what a node takes from its neighbours.'),
+    (r'^encoder\.blocks\.(\d+)\.attention(\..+)?$', 'Block {n}',
+        'Message passing along the circuit connections: what a node takes from its neighbours.'),
+    (r'^encoder\.blocks\.(\d+)\.message(\..+)?$', 'Block {n}',
+        'Message passing along the circuit connections: what a node takes from its neighbours.'),
     (r'^encoder\.blocks\.(\d+)\.ff\.\d+$', 'Block {n}', 'Per-node feed-forward step after the message passing.'),
-    (r'^encoder\.blocks\.(\d+)\.global_attention\..+$', 'Block {n}', 'Global node attention within this circuit; other circuits and padding are masked.'),
-    (r'^encoder\.group_readout\.norm_\w+$', 'Read-out', 'Normalize group queries, circuit node keys/values, or the group feed-forward input.'),
-    (r'^encoder\.group_readout\.cross_attention\..+$', 'Read-out', 'Each bound parameter-group query attends to all device and net nodes in its own circuit.'),
+    (r'^encoder\.blocks\.(\d+)\.global_attention\..+$', 'Block {n}',
+        'Global node attention within this circuit; other circuits and padding are masked.'),
+    (r'^encoder\.group_readout\.norm_\w+$', 'Read-out',
+        'Normalize group queries, circuit node keys/values, or the group feed-forward input.'),
+    (r'^encoder\.group_readout\.cross_attention\..+$', 'Read-out',
+        'Each bound parameter-group query attends to all device and net nodes in its own circuit.'),
     (r'^encoder\.group_readout\.ff\.\d+$', 'Read-out', 'Per-group feed-forward step after cross-attention.'),
-    (r'^encoder\.group_head\.\d+$', 'Read-out', 'Per parameter group: its devices (mean), the group itself and the goals, combined.'),
+    (r'^encoder\.group_head\.\d+$', 'Read-out',
+        'Per parameter group: its devices (mean), the group itself and the goals, combined.'),
     (r'^encoder\.output_norm$', 'Read-out', 'Final normalization of the node vectors.'),
     (r'^encoder\.(spec_values|group_coordinates|physics)(\..+)?$', 'Inputs',
      'Structured spec values, normalized legal parameter coordinates, or masked device physics.'),
     (r'^encoder\.block_kind$', 'Inputs', 'Typed electrical motifs and explicitly configured functional blocks.'),
     (r'^encoder\.blocks\.(\d+)\.program(\..+)?$', 'Block {n}',
      'Ordered measurement tree with constants and live embeddings of its measured circuit nodes.'),
-    (r'^encoder\.blocks\.(\d+)\.(spec_from_nodes|nodes_from_specs|groups_from_nodes|nodes_from_groups|groups_from_specs|spec_self|group_self|block_from_nodes|nodes_from_blocks)(\..+)?$',
+    (
+        '^encoder\\.blocks\\.(\\d+)\\.(spec_from_nodes|nodes_from_specs|groups_from_nodes|nodes_from_groups|group'
+        's_from_specs|spec_self|group_self|block_from_nodes|nodes_from_blocks)(\\..+)?$',
      'Block {n}', 'Gated attention for this typed relation, restricted to tokens of the same circuit.'),
     (r'^encoder\.blocks\.(\d+)\.(node_ff|spec_ff|group_ff|block_ff)(\..+)?$',
      'Block {n}', 'Gated feed-forward residual after token interactions, with pre-normalization.'),
@@ -82,7 +99,10 @@ def _describe(part, path):
 
 
 def schemas(contract):
-    """(FeatureSchema, SpecSchema) of a checkpoint's own contract: its JSON lists back as the tuples the schemas hold."""
+    (
+        "(FeatureSchema, SpecSchema) of a checkpoint's own contract: its JSON lists back as the tuples the "
+        'schemas hold.'
+    )
     from analog_optimizer.graph.pyg_converter import FeatureSchema
     from analog_optimizer.models.inputs import spec_schema_from_dict
 
@@ -126,7 +146,8 @@ def _rows(part, state, module):
     owners = {}
     for name, tensor in state.items():
         path, _, leaf = name.rpartition('.')
-        owners.setdefault(path, []).append(dict(name=leaf, shape=[int(n) for n in tensor.shape], count=int(tensor.numel())))
+        owners.setdefault(path, []).append(dict(name=leaf, shape=[int(n) for n in tensor.shape],
+            count=int(tensor.numel())))
     modules = dict(module.named_modules()) if module is not None else {}
     unused = _unused_paths(module) if module is not None else set()
     rows = []
@@ -141,6 +162,7 @@ def _rows(part, state, module):
 
 
 def same_tensors(module, state):
+    """Check whether a built module's state has the saved state's tensor names, order and shapes."""
     built = module.state_dict()
     return list(built) == list(state) and all(tuple(built[k].shape) == tuple(state[k].shape) for k in state)
 
@@ -167,9 +189,12 @@ def structure(directory) -> dict:
     try:
         built = rebuild_network(meta['contract'])
         if not all(same_tensors(built[part], states[part]) for part in states):
-            problem, built = 'The network rebuilt from the recorded settings does not hold the same tensors as the file.', {}
+            problem, built = (
+                'The network rebuilt from the recorded settings does not hold the same tensors as the file.'
+            ), {}
     except Exception as exc:          # an older contract, another source version: the tensors are still listed
         problem, built = f'The network could not be rebuilt from the recorded settings ({type(exc).__name__}).', {}
+    # ---- Summarize tensor rows by layer section before counting the model's saved copies.
     parts = []
     for part, title, about in PARTS:
         rows = _rows(part, states[part], built.get(part))
@@ -186,7 +211,8 @@ def structure(directory) -> dict:
                           parameters=total, unused_parameters=sum(r['parameters'] for r in rows if r['unused'])))
     actor, critic = parts
     identical = ([(k, tuple(v.shape)) for k, v in first.items()] == [(k, tuple(v.shape)) for k, v in second.items()]
-                 and [(k, tuple(v.shape)) for k, v in critics.items()] == [(k, tuple(v.shape)) for k, v in weights['targets'].items()])
+                 and [(k, tuple(v.shape)) for k, v in critics.items()] == [(k, tuple(v.shape)) for k,
+                     v in weights['targets'].items()])
     trained = actor['parameters'] + 2 * critic['parameters'] + int(weights['log_alpha'].numel())
     return dict(
         checkpoint_id=meta['checkpoint_id'], network=meta['contract']['model_config'], types_verified=not problem,

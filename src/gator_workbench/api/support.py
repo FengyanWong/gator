@@ -22,17 +22,22 @@ def compatibility_unchecked(exc) -> dict:
     row = re.fullmatch(r'(.+): bounds are required', text)
     unresolved = re.fullmatch(r'(.+): (.+) is unresolved', text)
     if row:
-        what = (f'Parameter row "{row.group(1)}" is set to be optimized but has no lower and no upper bound. Fill in both '
+        what = (
+            f'Parameter row "{row.group(1)}" is set to be optimized but has no lower and no upper bound. Fill in both '
                 'bounds in the Parameters table, or untick "optimize" for that row.')
     elif unresolved:
-        what = (f'Parameter row "{unresolved.group(1)}" points at {unresolved.group(2)}, and the loaded circuit has no usable '
-                'value there. Correct the instance or parameter name of that row in the Parameters table.')
+        what = (
+            f'Parameter row "{unresolved.group(1)}" points at {unresolved.group(2)}, and the loaded circuit '
+            f'has no usable value there. Correct the instance or parameter name of that row in the '
+            f'Parameters table.')
     else:
         what = 'The Parameters / Targets tables on this page cannot be turned into a task yet.'
-    return dict(title='Not compared with your configuration yet: the configuration on this page is incomplete.', what=what,
-                note='This says nothing about the saved model. Its facts, its network structure and its circuit graph view '
-                     'are unaffected; the comparison appears as soon as the configuration is complete. The blocking '
-                     'issues in the header list the same problem.',
+    return dict(title='Not compared with your configuration yet: the configuration on this page is incomplete.',
+                what=what,
+                note=
+                    'This says nothing about the saved model. Its facts, its network structure and its circuit '
+                    'graph view are unaffected; the comparison appears as soon as the configuration is complete. '
+                    'The blocking issues in the header list the same problem.',
                 technical=redact(f'{type(exc).__name__}: {text}', 500))
 
 
@@ -91,7 +96,8 @@ def run_files(root, *, exclude_roots=(), exclude_dirs=()):
             return path.stat()
         except FileNotFoundError:                     # a worker may prune a file while the directory is listed
             return None
-    entries = [(path, path.relative_to(root).as_posix(), info) for path, info in zip(paths, runs.read_many(stat_of, paths))
+    entries = [(path, path.relative_to(root).as_posix(), info) for path, info in zip(paths, runs.read_many(stat_of,
+        paths))
                if info is not None and stat.S_ISREG(info.st_mode)]
     return sorted(entries, key=lambda entry: entry[1])
 
@@ -162,6 +168,7 @@ def file_snapshot(path: Path, chunk_size: int = 1 << 20):
         raise
 
     def chunks():
+        """Yield no more than the captured file size and close the open stream afterward."""
         with stream:
             remaining = size
             while remaining:
@@ -174,6 +181,7 @@ def file_snapshot(path: Path, chunk_size: int = 1 << 20):
 
 
 def fail(status, message, **extra):
+    """Raise an HTTP error whose message is bounded and redacted."""
     raise HTTPException(status, detail=dict(message=redact(str(message), 2000), **extra))
 
 
@@ -188,16 +196,18 @@ def bridge_call(action, *refusals):
     except Exception as exc:
         for kinds, code in refusals:
             if isinstance(exc, kinds):
-                fail(409, exc, code=code, **getattr(exc, 'detail_extra', {}))      # what the page needs to ask (record 7.203)
+                # what the page needs to ask (record 7.203)
+                fail(409, exc, code=code, **getattr(exc, 'detail_extra', {}))
         fail(422 if isinstance(exc, (KeyError, ValueError)) else 502, exc)
 
 
 def load_runtime(config, *, allow_real=False):
+    """Load the task for `config`; return (task, None), or (None, blocker details) instead of raising."""
     try:
         if allow_real:
             return tasks.load_task(config.circuit, allow_real=True, profile_id=config.run.connection_profile_id), None
-        # The page's loads - validation, the task, Matched devices, the saved-model check, the checklist: a saved task is kept
-        # while its files are unchanged (tasks.load_task_view, review of 2026-10-01).
+        # The page's loads - validation, the task, Matched devices, the saved-model check, the checklist: a saved task
+        # is kept while its files are unchanged (tasks.load_task_view, review of 2026-10-01).
         return tasks.load_task_view(config.circuit, profile_id=config.run.connection_profile_id), None
     except tasks.TaskBlocked as exc:
         return None, dict(blocker=str(exc), interface_contract=exc.contract)
@@ -212,7 +222,8 @@ def validate_loaded(config, runtime, *, roots=None, reachability=True, rows_from
     that reads recorded runs: for a caller that keeps only the errors and blockers."""
     draft = runtime is not None and bool(runtime.circuit.get('native_draft'))
     report = validate(config, graph=None if runtime is None else runtime.base_graph,
-                      provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics), rows_from=rows_from)
+                      provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics),
+                      rows_from=rows_from)
     if reachability and config.run.conditions.policy != 'off' and not report.blocks_run:
         try:
             evidence = check(config, roots=roots)

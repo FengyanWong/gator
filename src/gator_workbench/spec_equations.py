@@ -75,7 +75,8 @@ def parse(text):
         return None, 'too complex'
     for node in nodes:
         if not isinstance(node, _ALLOWED) or (isinstance(node, ast.Constant) and type(node.value) not in (int, float)):
-            what = {ast.Call: 'a function call', ast.Attribute: 'a dotted name', ast.Compare: 'a comparison'}.get(type(node), type(node).__name__)
+            what = {ast.Call: 'a function call', ast.Attribute: 'a dotted name',
+                ast.Compare: 'a comparison'}.get(type(node), type(node).__name__)
             return None, f'{what} is not allowed'
     return list(dict.fromkeys(node.id for node in nodes if isinstance(node, ast.Name))), None
 
@@ -97,7 +98,9 @@ def evaluate(text, lookup):
 
 
 def is_finite_number(value):
-    return value is not None and not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+    """Return whether `value` is a finite int or float, booleans excluded."""
+    return value is not None and not isinstance(value, bool) and isinstance(value, (int,
+        float)) and math.isfinite(value)
 
 
 # ---------------------------------------------------------------------------------- a probe that measures the sizes
@@ -143,14 +146,17 @@ def _size_tree(text):
         if not math.isfinite(value):
             raise ValueError('a number is too large')
         return repr(value)
+    # ---- Protect instance patterns while converting numeric suffixes into Python literals.
     try:
         pieces = _STRING.split(_STRING.sub(keep, source))              # text, index, text, index, ...
-        expression = ''.join(NUMBER.sub(number, piece) if i % 2 == 0 else f'"{piece}"' for i, piece in enumerate(pieces))
+        expression = ''.join(NUMBER.sub(number, piece) if i % 2 == 0 else f'"{piece}"' for i,
+            piece in enumerate(pieces))
         tree = ast.parse(expression, mode='eval')
     except SyntaxError:
         return None, None, 'not a formula (check the brackets, quotes and operators)'
     except (ValueError, RecursionError) as exc:
         return None, None, str(exc)
+    # ---- Validate supported calls and their patterns before checking the remaining syntax.
     nodes = list(ast.walk(tree))
     if len(nodes) > 128:
         return None, None, 'too complex'
@@ -168,7 +174,9 @@ def _size_tree(text):
                 # keep() is a pattern index; interpreting any other string as one crashed configuration validation.
                 literal = ast.get_source_segment(expression, first)
                 if not (isinstance(first, ast.Constant) and isinstance(first.value, str) and literal in literals):
-                    return None, None, f'{name}() needs an instance pattern in double quotes first, e.g. {name}("mn*"...)'
+                    return None, None, (
+                        f'{name}() needs an instance pattern in double quotes first, e.g. {name}("mn*"...)'
+                    )
                 used.append(literals[literal])
     calls = {id(n.func) for n in nodes if isinstance(n, ast.Call)}
     firsts = {id(n.args[0]) for n in nodes if isinstance(n, ast.Call) and n.func.id in ('fingers', 'width', 'count')}
@@ -177,8 +185,10 @@ def _size_tree(text):
             continue
         if isinstance(node, ast.Name):
             return None, None, f'{node.id!r}: a size formula reads sizes only, no Probe and no other name'
-        if not isinstance(node, _SIZE_ALLOWED) or (isinstance(node, ast.Constant) and type(node.value) not in (int, float)):
-            what = {ast.Attribute: 'a dotted name', ast.Compare: 'a comparison', ast.Constant: 'a text outside a pattern'}.get(type(node), type(node).__name__)
+        if not isinstance(node, _SIZE_ALLOWED) or (isinstance(node, ast.Constant) and type(node.value) not in (int,
+            float)):
+            what = {ast.Attribute: 'a dotted name', ast.Compare: 'a comparison',
+                ast.Constant: 'a text outside a pattern'}.get(type(node), type(node).__name__)
             return None, None, f'{what} is not allowed'
     if not used:
         return None, None, 'the formula reads no size: use fingers("..." ...), width("...") or count("...")'
@@ -199,7 +209,8 @@ def size_matches(pattern, instance):
 
 def instance_widths(parameters):
     """{instance: width in m} from a candidate's parameters {(instance, parameter name): value}."""
-    return {instance: value for (instance, name), value in (parameters or {}).items() if name == 'w' and is_finite_number(value)}
+    return {instance: value for (instance, name),
+        value in (parameters or {}).items() if name == 'w' and is_finite_number(value)}
 
 
 def size_value(text, widths):
@@ -251,12 +262,14 @@ def size_value(text, widths):
 
 @dataclass(frozen=True)
 class SpecEntry:
+    # A spec equation and its unit, validity requirement and direct-result relationship.
     spec_id: str
     equation: str
     unit: str                 # canonical unit of the spec
     required: bool            # active and hard: the evaluation only counts when this value is valid
     probe: str | None         # the Probe ID when the equation is exactly one probe
-    result_backed: bool       # that probe reads the simulator result of the SAME name: the result itself carries the value
+    # that probe reads the simulator result of the SAME name: the result itself carries the value
+    result_backed: bool
 
 
 @dataclass(frozen=True)
@@ -264,10 +277,12 @@ class SpecPlan:
     """Picklable: goes to every lane with the environment factory."""
     probes: tuple             # (probe_id, source_name | None), in table order
     specs: tuple              # SpecEntry, in table order
-    sizes: tuple = ()         # (source_name, formula, canonical unit) of the probes that measure the sizes (record 7.308)
+    # (source_name, formula, canonical unit) of the probes that measure the sizes (record 7.308)
+    sizes: tuple = ()
 
     @classmethod
     def from_config(cls, config) -> 'SpecPlan':
+        """Compile measurement sources and target equations into a spec-evaluation plan."""
         probes = tuple((m.measurement_id, m.source_name) for m in config.measurements)
         sizes = tuple((m.source_name, m.signal or '', units.canonical_unit(m.unit) if units.known(m.unit) else m.unit)
                       for m in config.measurements if m.result_source == SIZE_SOURCE and m.source_name)
@@ -277,7 +292,8 @@ class SpecPlan:
             text = t.equation.strip()
             probe = text if text in table else None
             specs.append(SpecEntry(t.metric_id, text, units.canonical_unit(t.unit) if units.known(t.unit) else t.unit,
-                                   bool(t.active and t.hard), probe, probe is not None and table[probe][1] == t.metric_id))
+                                   bool(t.active and t.hard), probe,
+                                   probe is not None and table[probe][1] == t.metric_id))
         return cls(probes, tuple(specs), sizes)
 
     @property
@@ -332,24 +348,29 @@ class SpecPlan:
         a spec may then read through that probe. `parameters` is the candidate's {(instance, parameter name): value}."""
         if self.sizes:
             taken = [source for source, _, _ in self.sizes if source in result.metrics]
-            if taken:                                              # validation refuses this; never overwrite a measurement
+            # validation refuses this; never overwrite a measurement
+            if taken:
                 raise ValueError(f'Size probe(s) {taken} carry the name of a simulator result: rename their source')
             values = self.size_results(parameters)
-            metrics, sized_units, validity = dict(result.metrics), dict(result.metric_units), dict(result.metric_validity)
+            metrics, sized_units, validity = dict(result.metrics), dict(result.metric_units), dict(
+                result.metric_validity)
             for source, _, unit in self.sizes:
-                metrics[source], sized_units[source], validity[source] = values[source], unit, values[source] is not None
+                metrics[source], sized_units[source], validity[source] = values[source], unit, values[
+                    source] is not None
             result = replace(result, metrics=metrics, metric_units=sized_units, metric_validity=validity)
         injected = [s for s in self.specs if not s.result_backed]
         if not injected:
             return result
         clash = [s.spec_id for s in injected if s.spec_id in result.metrics]
-        if clash:                                                  # validation refuses this; never overwrite a measurement
-            raise ValueError(f'Spec(s) {clash} carry the name of a simulator result but are computed by an equation: rename them')
+        # validation refuses this; never overwrite a measurement
+        if clash:
+            raise ValueError(
+                f'Spec(s) {clash} carry the name of a simulator result but are computed by an equation: rename them')
         usable = {name: value for name, value in result.metrics.items()
                   if result.metric_validity.get(name) is True and is_finite_number(value)}
         values = self.spec_values(usable)
-        # A completed simulation with a missing probe (measurement_error) blanks only the specs that read that probe; the
-        # others keep their measured values, which a spec's "Missing value = failed" relies on (record 7.112).
+        # A completed simulation with a missing probe (measurement_error) blanks only the specs that read that probe;
+        # the others keep their measured values, which a spec's "Missing value = failed" relies on (record 7.112).
         evaluated = result.status in ('ok', 'measurement_error') and bool(result.candidate_evaluated)
         metrics, units, validity = dict(result.metrics), dict(result.metric_units), dict(result.metric_validity)
         for spec in injected:
@@ -365,7 +386,8 @@ class SpecPlan:
         simulate, plan = backend.run_simulation, self
 
         def run_simulation(request):
-            return plan.extend(simulate(replace(request, required_metrics=plan.request_names(request.required_metrics))),
+            return plan.extend(simulate(replace(request,
+                required_metrics=plan.request_names(request.required_metrics))),
                                getattr(request, 'parameters', None))
         backend.run_simulation = run_simulation
         return backend
@@ -390,6 +412,7 @@ class EquationNativeFactory:
 
     @contextmanager
     def preparation_context(self, limits, report):
+        """Wrap the prepared inner factory while preserving the equation plan."""
         with self.inner.preparation_context(limits, report) as prepared:
             yield replace(self, inner=prepared)
 
@@ -397,13 +420,15 @@ class EquationNativeFactory:
         return self.create_recorded(lane, None)
 
     def create_recorded(self, lane, recorder):
+        """Build the lane's recorded environment; computed specs are added and left out of the baseline check."""
         reference = self.inner.reference_metrics
         env = replace(self.inner, reference_metrics=None).create_recorded(lane, recorder)
         self.plan.wrap(env.backend)
         if reference is not None:
             computed, reset = set(self.plan.injected), env.reset
 
-            def checked_reset():                                   # = NativeEnvironmentFactory's check, on the results only
+            # = NativeEnvironmentFactory's check, on the results only
+            def checked_reset():
                 observation, info = reset()
                 if observation is not None and info['evaluation_valid']:
                     measured = {k: v for k, v in observation.metrics.items() if k not in computed}
@@ -420,6 +445,7 @@ class EquationNativeFactory:
 
 # ---------------------------------------------------------------------------------- the result registry
 def magnitude(unit) -> float:
+    """Return the reference magnitude of `unit`'s canonical form, or 1.0 for a unit without one."""
     canonical = units.canonical_unit(unit) if isinstance(unit, str) and units.known(unit) else unit
     return float(UNIT_MAGNITUDE.get(canonical, 1.0))
 

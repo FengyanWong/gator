@@ -21,13 +21,16 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from typing import NamedTuple
 from .schema import OptimizationParameter
 from .tasks import member_variable_id
 from .validation import resolve_leaders
 
 MOS = ('nmos', 'pmos')
-TAIL_ELEMENTS = ('isource', 'resistor')          # below a pair, besides the drain of a transistor of the pair's own type
-KEEP_RATIO = ('w',)                              # a width may follow in the ratio the circuit has; others only when equal
+# below a pair, besides the drain of a transistor of the pair's own type
+TAIL_ELEMENTS = ('isource', 'resistor')
+# a width may follow in the ratio the circuit has; others only when equal
+KEEP_RATIO = ('w',)
 TIE_KINDS = {'differential_pair': True, 'cross_coupled_pair': True, 'active_load': True, 'load_pair': True,
              'cascode_pair': True, 'current_mirror': False}          # kind -> ticked by default
 NOTE_LIMIT = 1000                                # schema.OptimizationParameter.notes
@@ -35,6 +38,7 @@ NOTE_LIMIT = 1000                                # schema.OptimizationParameter.
 
 @dataclass(frozen=True)
 class Structure:
+    # A recognized device relationship with ordered members and an explanation for the parameter editor.
     kind: str                                    # differential_pair, cross_coupled_pair, tail_source, active_load,
     devices: tuple[str, ...]                     # load_pair, cascode_pair, current_mirror; a mirror's reference first
     text: str
@@ -43,7 +47,7 @@ class Structure:
         return dict(kind=self.kind, devices=list(self.devices), text=self.text)
 
 
-def _natural(text: str):
+def _natural(text: str) -> list:
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r'(\d+)', text)]
 
 
@@ -55,7 +59,10 @@ def _pins(graph) -> dict:
 
 
 def _transistors(graph, pins) -> dict:
-    """id -> (kind, model, pins) of every transistor whose drain, gate and source the mapping names, in natural order."""
+    (
+        'id -> (kind, model, pins) of every transistor whose drain, gate and source the mapping names, in '
+        'natural order.'
+    )
     found = {d.id: (d.kind, d.model_ref, pins.get(d.id, {})) for d in graph.devices
              if d.kind in MOS and all(role in pins.get(d.id, {}) for role in ('drain', 'gate', 'source'))}
     return {key: found[key] for key in sorted(found, key=_natural)}
@@ -100,6 +107,16 @@ def _seed_groups(mos):
     return positions
 
 
+class _Circuit(NamedTuple):
+    """The graph as recognition reads it: transistors in natural order, diodes, rails, nets and kinds."""
+    mos: dict                                    # _transistors: id -> (kind, model, pins), in natural order
+    order: list                                  # their ids, in that order
+    diode: set                                   # the diode-connected ones: gate on drain
+    rails: set                                   # ground and supply nets, and the graph's globals
+    on_net: dict                                 # net -> the connections on it
+    kinds: dict                                  # device id -> kind, of every device
+
+
 def recognize(graph) -> list:
     """The structures of `graph` (an analog_optimizer CircuitGraph), in a stable order. Identifiers only."""
     pins = _pins(graph)
@@ -111,94 +128,131 @@ def recognize(graph) -> list:
         on_net.setdefault(c.net_id, []).append(c)
     diode = {d for d, (_, _, p) in mos.items() if p['gate'] == p['drain']}
     order = list(mos)
+    circuit = _Circuit(mos, order, diode, rails, on_net, kinds)
     structures, seen = [], set()
 
-    def add(kind, devices, text):
+    def add(kind, devices, text) -> None:
         key = (kind, tuple(devices))
         if key not in seen:
             seen.add(key)
             structures.append(Structure(kind, tuple(devices), text))
 
+    seeds = _find_seed_pairs(circuit, add)
+
+    _follow_matched_branches(seeds, circuit, add)
+
+    _add_bias_mirrors(structures, mos, diode, add)
+    return structures
+
+
+def _find_seed_pairs(circuit, add):
+    """Identify differential and cross-coupled pairs and record their tail sources."""
     # Seeds: differential and cross-coupled pairs (same type and model, one source, two gates, two drains).
     seeds = []
-    seed_groups = _seed_groups(mos)
-    for a in order:
-        ka, ma, pa = mos[a]
+    seed_groups = _seed_groups(circuit.mos)
+    for a in circuit.order:
+        ka, ma, pa = circuit.mos[a]
         members, position = seed_groups[a]
         for index in range(position + 1, len(members)):
             b = members[index]
-            kb, mb, pb = mos[b]
-            if (ka, ma, pa['source']) != (kb, mb, pb['source']) or pa['gate'] == pb['gate'] or pa['drain'] == pb['drain']:
+            kb, mb, pb = circuit.mos[b]
+            if ((ka, ma, pa['source']) != (kb, mb, pb['source'])
+                    or pa['gate'] == pb['gate'] or pa['drain'] == pb['drain']):
                 continue
-            if a in diode or b in diode:
+            if a in circuit.diode or b in circuit.diode:
                 continue
             cross = pa['gate'] == pb['drain'] and pb['gate'] == pa['drain']
             source = pa['source']
-            below = None if source in rails else _tail(source, (a, b), ka, on_net, kinds)
+            below = None if source in circuit.rails else _tail(source, (a, b), ka, circuit.on_net, circuit.kinds)
             if not cross and below is None:
                 continue
             if cross:
-                add('cross_coupled_pair', (a, b), f'{a} and {b} are a cross-coupled pair: each gate is on the other\'s drain.')
+                add('cross_coupled_pair', (a, b),
+                    f'{a} and {b} are a cross-coupled pair: each gate is on the other\'s drain.')
             else:
-                add('differential_pair', (a, b), f'{a} and {b} are a differential pair (gates {pa["gate"]} / {pb["gate"]}, '
+                add('differential_pair', (a, b),
+                    f'{a} and {b} are a differential pair (gates {pa["gate"]} / {pb["gate"]}, '
                                                  f'shared source {source}).')
             for t in below or ():
-                if t in mos:
+                if t in circuit.mos:
                     add('tail_source', (t,), f'{t} is the tail current source of the pair {a} / {b}.')
             seeds.append(((a, b), (pa['drain'], pb['drain'])))
+    return seeds
 
+
+class _Walk(NamedTuple):
+    """The walk along matched branches: its circuit, transistors by net, the pairs matched, the work left."""
+    circuit: _Circuit
+    touching: dict                               # net -> the transistors whose source or drain is on it
+    matched: set                                 # every pair matched so far, the seeds included
+    work: list                                   # (pair, (left, right)): the branches still to follow
+    add: object                                  # recognize's add: records a structure once
+
+
+def _follow_matched_branches(seeds, circuit, add) -> None:
+    """Extend each matched pair through its cascodes and loads in circuit order."""
     # Spread along the two branches of every matched pair.
     matched = {tuple(s[0]) for s in seeds}
     # A cascode or a load of a branch pair has its source or its drain on the two branches, so only the transistors that
-    # touch those two nets are tried - in natural order, the same pairs in the same order as trying every pair, which was
-    # quadratic per pair found (800 transistors: 12 s).
+    # touch those two nets are tried - in natural order, the same pairs in the same order as trying every pair, which
+    # was quadratic per pair found (800 transistors: 12 s).
     touching: dict = {}                          # net -> the transistors whose source or drain is on it
-    for x in order:
-        for net in dict.fromkeys((mos[x][2]['source'], mos[x][2]['drain'])):
+    for x in circuit.order:
+        for net in dict.fromkeys((circuit.mos[x][2]['source'], circuit.mos[x][2]['drain'])):
             touching.setdefault(net, []).append(x)
     work, visited = list(seeds), set()
+    walk = _Walk(circuit, touching, matched, work, add)
     while work:
         pair, (left, right) = work.pop(0)
         if (left, right) in visited or left == right:
             continue
         visited.add((left, right))
         for c in touching.get(left, ()):
-            kc, mc, pc = mos[c]
-            for d in touching.get(right, ()):
-                if d == c or c in pair or d in pair:
-                    continue
-                kd, md, pd = mos[d]
-                if (kc, mc, pc['gate']) != (kd, md, pd['gate']):
-                    continue
-                if pc['source'] == left and pd['source'] == right:              # above the branches: cascodes
-                    found = (c, d)
-                    if found not in matched:
-                        matched.add(found)
-                        add('cascode_pair', found, f'{c} and {d} are matched cascodes on {_both(pair)} '
-                                                   f'(shared gate {pc["gate"]}).')
-                        work.append((found, (pc['drain'], pd['drain'])))
-                elif pc['drain'] == left and pd['drain'] == right:              # on the branches: loads
-                    found = (c, d)
-                    if found in matched:
-                        continue
-                    matched.add(found)
-                    if pc['source'] == pd['source']:
-                        reference = next((x for x in found if x in diode), None)
-                        if reference is not None:
-                            other = d if reference == c else c
-                            add('active_load', (reference, other), f'{reference} (diode-connected) and {other} are the '
-                                                                   f'current-mirror load of {_both(pair)}.')
-                        else:
-                            add('load_pair', found, f'{c} and {d} are matched loads of {_both(pair)} '
-                                                    f'(shared gate {pc["gate"]}).')
-                        if pc['source'] not in rails:
-                            work.append((found, (pc['source'], pd['source'])))
-                    else:
-                        add('cascode_pair', found, f'{c} and {d} are matched cascodes of the loads of {_both(pair)} '
-                                                   f'(shared gate {pc["gate"]}).')
-                        work.append((found, (pc['source'], pd['source'])))
+            _match_branch_partners(walk, pair, left, right, c)
 
-    # Current mirrors: one gate, one source, a diode-connected reference. One that already is a load is not listed twice.
+
+def _match_branch_partners(walk, pair, left, right, c) -> None:
+    """Record the matched cascodes or loads that continue the current pair's right branch."""
+    kc, mc, pc = walk.circuit.mos[c]
+    for d in walk.touching.get(right, ()):
+        if d == c or c in pair or d in pair:
+            continue
+        kd, md, pd = walk.circuit.mos[d]
+        if (kc, mc, pc['gate']) != (kd, md, pd['gate']):
+            continue
+        if pc['source'] == left and pd['source'] == right:              # above the branches: cascodes
+            found = (c, d)
+            if found not in walk.matched:
+                walk.matched.add(found)
+                walk.add('cascode_pair', found, f'{c} and {d} are matched cascodes on {_both(pair)} '
+                                                f'(shared gate {pc["gate"]}).')
+                walk.work.append((found, (pc['drain'], pd['drain'])))
+        elif pc['drain'] == left and pd['drain'] == right:              # on the branches: loads
+            found = (c, d)
+            if found in walk.matched:
+                continue
+            walk.matched.add(found)
+            if pc['source'] == pd['source']:
+                reference = next((x for x in found if x in walk.circuit.diode), None)
+                if reference is not None:
+                    other = d if reference == c else c
+                    walk.add('active_load', (reference, other), f'{reference} (diode-connected) and {other} are the '
+                                                                f'current-mirror load of {_both(pair)}.')
+                else:
+                    walk.add('load_pair', found, f'{c} and {d} are matched loads of {_both(pair)} '
+                                                 f'(shared gate {pc["gate"]}).')
+                if pc['source'] not in walk.circuit.rails:
+                    walk.work.append((found, (pc['source'], pd['source'])))
+            else:
+                walk.add('cascode_pair', found, f'{c} and {d} are matched cascodes of the loads of {_both(pair)} '
+                                                f'(shared gate {pc["gate"]}).')
+                walk.work.append((found, (pc['source'], pd['source'])))
+
+
+def _add_bias_mirrors(structures, mos, diode, add) -> None:
+    """Add current mirrors that are not already represented by a matched load."""
+    # Current mirrors: one gate, one source, a diode-connected reference. One that already is a load is not listed
+    # twice.
     loads = {frozenset(s.devices) for s in structures if s.kind == 'active_load'}
     groups: dict = {}
     for d, (kind, model, p) in mos.items():
@@ -212,7 +266,6 @@ def recognize(graph) -> list:
             continue
         add('current_mirror', (reference, *outputs), f'{reference} (diode-connected) mirrors its current into '
                                                      f'{", ".join(outputs)}.')
-    return structures
 
 
 # ------------------------------------------------------------------------------ ties for the Parameters rows
@@ -240,6 +293,7 @@ def plan_ties(graph, rows, structures=None) -> list:
         leaders = {}
     by_key = {(r.instance_path, r.parameter_name): r for r in rows if r.instance_path}
     suggestions = []
+    # ---- Compare existing bindings within each structure before proposing new ties.
     for structure in structures:
         if structure.kind not in TIE_KINDS:
             continue
@@ -257,14 +311,17 @@ def plan_ties(graph, rows, structures=None) -> list:
                 change = dict(device=device, parameter=parameter, variable_id=row.variable_id if row else None,
                               leader=leader.variable_id, leader_device=leader.instance_path)
                 value = _value(graph, device, parameter)
-                if row is not None and row.binding_group and _ultimate(leaders, row.variable_id) == _ultimate(leaders, leader.variable_id):
+                if row is not None and row.binding_group and _ultimate(leaders, row.variable_id) == _ultimate(leaders,
+                    leader.variable_id):
                     changes.append(dict(change, action='kept', reason=f'already follows {row.binding_group}'))
                     continue
                 if row is not None and row.binding_group:
-                    changes.append(dict(change, action='skip', reason=f'already follows {row.binding_group}: left as it is'))
+                    changes.append(dict(change, action='skip',
+                        reason=f'already follows {row.binding_group}: left as it is'))
                     continue
                 if value is None or lead_value is None:
-                    changes.append(dict(change, action='skip', reason='its value in the circuit is not a positive number'))
+                    changes.append(dict(change, action='skip',
+                        reason='its value in the circuit is not a positive number'))
                     continue
                 ratio = value / lead_value
                 if parameter not in KEEP_RATIO and not math.isclose(ratio, 1.0, rel_tol=1e-9):
@@ -278,8 +335,8 @@ def plan_ties(graph, rows, structures=None) -> list:
         suggestions.append(dict(id=f'{structure.kind}:{"+".join(devices)}', kind=structure.kind, devices=list(devices),
                                 text=structure.text, default=TIE_KINDS[structure.kind] and bool(acting),
                                 note='' if TIE_KINDS[structure.kind] else
-                                'A bias mirror: tying keeps the copied current fixed. Leave it untied when that current is a '
-                                'design variable.',
+                                'A bias mirror: tying keeps the copied current fixed. Leave it untied when '
+                                'that current is a design variable.',
                                 changes=changes, acts=bool(acting)))
     return suggestions
 

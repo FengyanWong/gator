@@ -23,6 +23,7 @@ def raw_material():
 
 
 def load_demo():
+    """Finish loading the demo PDK from local model and CDF fixtures."""
     return pdk.finish_load(raw_material())
 
 
@@ -44,6 +45,7 @@ def parser_config(tmp_path, record):
 
 
 def demo_config(root, vocabulary='pdk:demo045', **kwargs):
+    """Build a synthetic demo-PDK configuration with the selected network vocabulary."""
     run = dict(kwargs.pop('run', {}))
     run['network'] = dict(SMALL_NET, vocabulary=vocabulary)
     return make_config(root, 'synthetic:pdk_demo', run=run, **kwargs)

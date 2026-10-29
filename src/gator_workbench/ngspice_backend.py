@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 from time import perf_counter
+from typing import NamedTuple
 from uuid import uuid4
 
 from analog_optimizer.backends.backend import (BackendNotConnected, HeldParameters, NetlistArtifact, SimulationResult,
@@ -68,6 +69,7 @@ class NgspiceLink:
 
     @classmethod
     def from_settings(cls, settings) -> 'NgspiceLink':
+        """Validate connection settings and construct a local or SSH ngspice link."""
         settings = settings or {}
         kind = settings.get('kind')
         if kind not in ('ngspice_local', 'ngspice_ssh'):
@@ -96,12 +98,14 @@ class NgspiceLink:
 def remote_run_command(program):
     """One fixed remote command: the deck arrives on stdin into a temporary folder that is removed again, whatever
     the outcome. `program` passed PROGRAM, so it needs no quoting."""
-    return (f'd=$(mktemp -d) && cat > "$d/deck.cir" && cd "$d" && {program} -b deck.cir; s=$?; cd / ; rm -rf "$d"; exit $s')
+    return (
+        f'd=$(mktemp -d) && cat > "$d/deck.cir" && cd "$d" && {program} -b deck.cir; s=$?; cd / ; rm -rf "$d"; exit $s')
 
 
 class RealRunner:
     """The processes of a run. argv arrays only; no shell on this machine. `timeout` ends a job that hangs."""
     def local(self, program, deck: Path, timeout):
+        """Run a deck with a validated local executable and return its exit code and captured output."""
         located = shutil.which(program) if not os.path.isabs(program) else program
         if not located or not os.access(located, os.X_OK):
             raise FileNotFoundError(f'`{program}` is not an executable on the PATH of the run worker')
@@ -110,9 +114,11 @@ class RealRunner:
         return done.returncode, done.stdout or '', done.stderr or ''
 
     def remote(self, host, program, deck_text, timeout):
+        """Send a deck to the remote ngspice command over SSH and capture its result."""
         if not shutil.which('ssh'):
             raise FileNotFoundError('no `ssh` on the PATH of the run worker')
-        done = subprocess.run(ssh_argv(host, remote_run_command(program)), input=deck_text, capture_output=True, text=True,
+        done = subprocess.run(ssh_argv(host, remote_run_command(program)), input=deck_text, capture_output=True,
+                              text=True,
                               timeout=timeout + SSH_COMMAND_SECONDS, shell=False)
         return done.returncode, done.stdout or '', done.stderr or ''
 
@@ -142,14 +148,38 @@ def deck_condition(text) -> SimulationCondition:
     return SimulationCondition(PVTCorner('nominal', 'nominal', temperature, supply if supply > 0 else 1.0))
 
 
+class _RunFailure(NamedTuple):
+    """The status, reason and summary of a failed ngspice run, and whether it evaluated the design."""
+    status: SimulationStatus
+    reason: str
+    summary: str
+    evaluated: bool | None = None       # None: the run keeps the value it already has
+
+
+def _classify_ngspice_measurement_failure(failure, evidence, found, wanted):
+    """Return the simulator or missing-measurement failure of a finished run, or None if there is none."""
+    if failure == 'nonconverged':
+        return _RunFailure(SimulationStatus.NONCONVERGED, 'ngspice_nonconverged', evidence, evaluated=True)
+    if failure == 'deck_error':
+        return _RunFailure(SimulationStatus.BACKEND_ERROR, 'ngspice_deck_error', evidence, evaluated=False)
+    if failure == 'measurement_error' and not found:
+        return _RunFailure(SimulationStatus.MEASUREMENT_ERROR, 'ngspice_measurement_failed', evidence)
+    if not found and wanted:
+        return _RunFailure(SimulationStatus.MEASUREMENT_ERROR, 'no_results_printed',
+                           'ngspice printed none of the results the task reads: ' + ', '.join(wanted[:8]))
+    return None
+
+
 class NgspiceBackend(HeldParameters, VirtuosoBackend):
     """One deck, one connection; sizes set and read back through the deck's own tokens."""
     def __init__(self, text, graph, link: NgspiceLink, *, units=None, device_kinds=None, include_root=None,
                  circuit_id='ngspice', runner=None, source='<task>'):
         graph.validate()
         self.text, self.link, self.units = text, link, dict(units or {})
-        self.device_kinds, self.include_root, self.circuit_id, self.source = dict(device_kinds or {}), include_root, circuit_id, source
-        self.parsed = ngspice_netlist.parse_text(text, source=source, circuit_id=circuit_id, device_kinds=self.device_kinds,
+        self.device_kinds, self.include_root, self.circuit_id, self.source = dict(
+            device_kinds or {}), include_root, circuit_id, source
+        self.parsed = ngspice_netlist.parse_text(text, source=source, circuit_id=circuit_id,
+                                                device_kinds=self.device_kinds,
                                                 include_root=include_root)
         self.graph = deepcopy(graph)
         self.condition = deck_condition(text)
@@ -171,6 +201,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         return self.condition
 
     def validate_condition(self, condition):
+        """Accept no condition or the deck's own nominal one; raise UnsupportedCapability for any other."""
         if condition is not None and condition != self.condition:
             raise UnsupportedCapability('The ngspice backend runs the deck as written: only its own nominal condition')
 
@@ -182,6 +213,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         return text
 
     def generate_netlist(self, work_root, *, condition=None):
+        """Write an instrumented candidate deck and record the parameters associated with its export."""
         self._check()
         self.validate_condition(condition)
         started = perf_counter()
@@ -201,8 +233,10 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         saved, values = self.exports[artifact.job_id]
         if artifact != saved or hashlib.sha256(artifact.path.read_bytes()).hexdigest() != artifact.sha256:
             raise ValueError('ngspice deck identity changed')
-        again = ngspice_netlist.parse_text(artifact.path.read_text(encoding='utf8'), source=self.source, circuit_id=self.circuit_id,
-                                           device_kinds=self.device_kinds, include_root=self.include_root, scan_includes=False)
+        again = ngspice_netlist.parse_text(artifact.path.read_text(encoding='utf8'), source=self.source,
+                                           circuit_id=self.circuit_id,
+                                           device_kinds=self.device_kinds, include_root=self.include_root,
+                                           scan_includes=False)
         graph = deepcopy(self.graph)
         for i, group in enumerate(graph.parameter_groups):
             if not group.mutable:
@@ -211,7 +245,8 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
                 old = graph.parameters[member.device_id][member.parameter]
                 key = (member.device_id, old.source_name or member.parameter)
                 read = again.graph.parameters.get(member.device_id, {}).get(member.parameter)
-                if read is None or not read.valid or not math.isclose(read.value, values[key], rel_tol=1e-9, abs_tol=1e-30):
+                if read is None or not read.valid or not math.isclose(read.value, values[key], rel_tol=1e-9,
+                    abs_tol=1e-30):
                     raise ValueError(f'{member.device_id}.{member.parameter} did not read back from the written deck')
                 graph.parameters[member.device_id][member.parameter] = replace(old, value=read.value, raw=read.raw)
             graph.parameter_groups[i] = replace(group, value=values[key] / member.ratio)
@@ -219,6 +254,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         return graph
 
     def run_simulation(self, request):
+        """Run an exported deck in ngspice and return the result, whose status reports any failed run."""
         self._check()
         self.validate_condition(request.condition)
         started = perf_counter()
@@ -231,24 +267,34 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         self.calls += 1
         status, reason, retryable, evaluated, invocations = SimulationStatus.OK, 'ngspice_batch', False, True, 1
         code, out, err = None, '', ''
+        # ---- Launch the copied deck and translate process failures into simulator status.
         try:
             if self.link.remote:
-                code, out, err = self.runner.remote(self.link.ssh_host, self.link.program, deck.read_text(encoding='utf8'),
+                code, out, err = self.runner.remote(self.link.ssh_host, self.link.program,
+                                                    deck.read_text(encoding='utf8'),
                                                     request.timeout_seconds)
             else:
                 code, out, err = self.runner.local(self.link.program, deck, request.timeout_seconds)
         except subprocess.TimeoutExpired as exc:
-            status, reason, retryable, evaluated, invocations = SimulationStatus.TIMEOUT, 'ngspice_timeout', True, False, 1
+            status, reason, retryable, evaluated, invocations = SimulationStatus.TIMEOUT, (
+                'ngspice_timeout'
+            ), True, False, 1
             out, err = exc.stdout or '', exc.stderr or ''
             out = out.decode(errors='replace') if isinstance(out, bytes) else out
             err = err.decode(errors='replace') if isinstance(err, bytes) else err
         except FileNotFoundError as exc:
-            status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'program_not_found', True, False, 0
+            status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, (
+                'program_not_found'
+            ), True, False, 0
             err = str(exc)
         except OSError as exc:
-            status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'launch_failed', True, False, 0
+            status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, (
+                'launch_failed'
+            ), True, False, 0
             err = f'{type(exc).__name__}: {exc}'
-        (directory / 'ngspice.log').write_text(f'# exit code: {code}\n# stdout:\n{out}\n# stderr:\n{err}\n', encoding='utf8')
+        # ---- Persist launch evidence before interpreting the measured results.
+        (directory / 'ngspice.log').write_text(f'# exit code: {code}\n# stdout:\n{out}\n# stderr:\n{err}\n',
+            encoding='utf8')
         write_json(directory / 'analysis-counts.json', counts(out, complete=code is not None))
         version = VERSION.search(out + '\n' + err)
         self.version = version.group(1) if version else self.version
@@ -256,30 +302,28 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         summary = ''
         if status == SimulationStatus.OK:
             if self.link.remote and code == 255:
-                status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'ssh_failed', True, False, 0
+                status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, (
+                    'ssh_failed'
+                ), True, False, 0
                 summary = _scrub(_last_line(err) or 'ssh ended with exit code 255', self.link.ssh_host)
             elif code in (126, 127) and self.link.remote:
-                status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'program_not_found', True, False, 0
+                status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, (
+                    'program_not_found'
+                ), True, False, 0
                 summary = _scrub(_last_line(err) or f'exit code {code}', self.link.ssh_host)
             else:
                 failure, evidence = ngspice_netlist.classify_failure(out, err, code)
-                if failure == 'nonconverged':
-                    status, reason, evaluated = SimulationStatus.NONCONVERGED, 'ngspice_nonconverged', True
-                    summary = evidence
-                elif failure == 'deck_error':
-                    status, reason, evaluated = SimulationStatus.BACKEND_ERROR, 'ngspice_deck_error', False
-                    summary = evidence
-                elif failure == 'measurement_error' and not found:
-                    status, reason = SimulationStatus.MEASUREMENT_ERROR, 'ngspice_measurement_failed'
-                    summary = evidence
-                elif not found and wanted:
-                    status, reason = SimulationStatus.MEASUREMENT_ERROR, 'no_results_printed'
-                    summary = 'ngspice printed none of the results the task reads: ' + ', '.join(wanted[:8])
+                run_failure = _classify_ngspice_measurement_failure(failure, evidence, found, wanted)
+                if run_failure is not None:
+                    status, reason, summary = run_failure.status, run_failure.reason, run_failure.summary
+                    if run_failure.evaluated is not None:
+                        evaluated = run_failure.evaluated
         metrics = {name: found.get(name) for name in wanted}
         units = {name: self.units.get(name) or self.parsed.units.get(name) or '1' for name in wanted}
         validity = {name: name in found for name in wanted}
         operating_points = read_operating_points(out, self.graph) if evaluated else {}
-        return SimulationResult(directory.name, BACKEND_KIND, 'real', status, reason, retryable, evaluated, metrics, units,
+        return SimulationResult(directory.name, BACKEND_KIND, 'real', status, reason, retryable, evaluated, metrics,
+                                units,
                                 validity, dict(exported), directory, perf_counter() - started, condition=self.condition,
                                 simulator_invocations=invocations, error_summary=summary[:400],
                                 simulator_version=f'ngspice-{self.version}' if self.version else None,

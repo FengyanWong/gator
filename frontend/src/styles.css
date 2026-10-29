@@ -233,24 +233,6 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 1
 ul.tree { list-style: none; margin: 2px 0; padding-left: 12px; border-left: 1px dotted var(--line); } ul.tree li span { cursor: default; }
 .path { font-family: var(--f-mono); word-break: break-all; white-space: normal !important; }
 .confirm { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 8px 0; }   /* a callout: record 7.218 */ .diff-added td { background: var(--added-bg); } .diff-removed td { background: var(--bad-bg); }
-/* The Agent window (record 7.253; its line of buttons record 7.226), opened by "Agent..." in the bottom panel's tab line: the two
-   buttons that open Claude Code or Codex in a terminal window of its own, the free "What's missing?" at the right end, one
-   headline, one folded help line, and under them the start checklist once it was asked for. */
-.agent-window { max-width: 760px; margin: 0 auto; padding: 14px 18px 24px; font-size: 13.5px; } .agent-window h2 { margin: 0 0 10px; font-size: 17px; }
-.agent-window .hint { font-size: 12.5px; } .agent-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .agent-headline { margin: 8px 0 2px; }
-.agent-help { margin: 2px 0; } .agent-help > summary { cursor: pointer; } .agent-help p { margin: 4px 0; max-width: 110ch; }
-.agent-said { margin: 8px 0 0; } .agent-said code { font-family: var(--f-mono); font-size: 11.5px; word-break: break-all; }
-.missing-list { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); } .missing-list h3 { margin: 0 0 4px; font-size: 14px; }
-/* The start checklist, under "What's missing?" in the Agent window. */
-ul.checklist { list-style: none; margin: 4px 0 8px; padding: 0; }
-ul.checklist li { margin: 5px 0; padding-left: 22px; position: relative; } .check-mark { position: absolute; left: 2px; width: 16px; text-align: center; font-weight: 700; }
-.check-who { margin-left: 6px; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; font-size: 10.5px; color: var(--muted); background: var(--field); }
-.check-detail { color: var(--muted); } .check-missing .check-detail { color: var(--text); }
-/* What to do is red only under an item that blocks a start, amber under a warning and grey under the rest (branch record SIF-142):
-   every step was in the accent, the red of an error, so an untested connection's read like a blocker's under "Nothing blocks a start". */
-.check-action { color: var(--muted); } .check-missing .check-action { color: var(--bad); } .check-warning .check-action { color: var(--warn); }
-.check-done b, .check-not_applicable b { font-weight: 400; }
-.verdict { margin: 6px 0 4px; font-weight: 600; } .verdict .hint { font-weight: 400; }
 button.notes-link { border: none; background: none; white-space: normal; }
 /* A link between the windows (record 7.264): a run, a task or a count that opens a window AT it - in the cell's own type. */
 button.item-link { border: none; background: none; padding: 0; font: inherit; text-align: left; cursor: pointer; white-space: normal; }
@@ -267,7 +249,7 @@ button.item-link { border: none; background: none; padding: 0; font: inherit; te
 .connection-button-name { font-weight: 600; flex: 1; } .connection-button .badge { order: 1; }
 .connection-button-what { order: 2; flex: 0 0 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11.5px; }
 .connection-launcher .error { margin: 5px 2px 0; }
-#connection-root, #virtuoso-root, #pdk-root, #ngspice-root, #task-file-root, #agent-root { min-height: 100vh; background: var(--panel); }
+#connection-root, #virtuoso-root, #pdk-root, #ngspice-root, #task-file-root { min-height: 100vh; background: var(--panel); }
 /* The task file is edited in a monospace box of the window's height (it was the browser's two-line default). */
 .task-file { padding: 14px 18px; } .task-file textarea { display: block; width: 100%; height: 70vh; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.35; }
 .connection-window, .virtuoso-window, .pdk-window { max-width: 760px; margin: 0 auto; padding: 14px 18px 24px; font-size: 13.5px; } .pdk-window { max-width: 1060px; }
@@ -355,9 +337,6 @@ button.run-chip.pausing, button.run-chip.paused, button.run-chip.aborting { colo
 /* Which run the bottom tabs show: ONE button at the right end of the tab strip (a full button, not a tab). It only reads "Runs..." and opens the run window;
    the run that is shown is named as plain text to its LEFT (user request 2026-09-21), cut with "..." when the strip is too narrow for all of it. */
 .tabs button.run-list-button { flex: none; font-weight: 600; border-bottom: 1px solid var(--line); } .tabs button.run-list-button.open { background: var(--selected); border-color: var(--accent); }  /* `open`, not `active`: that class marks the chosen TAB of this strip */
-/* "Agent...", first in the strip, is drawn as a tab by the rules below (record 7.253, user: "still a tab style but not button style") although it opens
-   the Agent window and shows nothing in the panel: never `active`; the accent underline while its window is open. */
-.tabs > button.agent-tab.open { box-shadow: inset 0 -2px 0 var(--accent); }
 .tabs .run-list-current { min-width: 0; max-width: 62%; margin: 0 8px 3px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; } .run-list-blocked { margin-right: 8px; }
 /* The run window (drawn through a portal): every run as one table row. The table scrolls under its sticky titles; a run's details open as a row of their own. */
 #runs-root { height: 100vh; background: var(--panel); } .run-window { height: 100%; display: flex; flex-direction: column; padding: 12px 16px 10px; font-size: 13px; }

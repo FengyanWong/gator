@@ -26,10 +26,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def categories():
+    """Load the repository category contracts for offline split and budget checks."""
     return load_categories(ROOT)
 
 
 def settings(schema, encoders=('graph_transformer',)):
+    """Build a short single-seed benchmark configuration from the supplied schema and encoders."""
     return dict(seeds=[17], encoders=list(encoders), pretrain_steps=2, test_steps=2,
                 batch_size=2, hidden_dim=16, heads=2, layers=1, max_calls=200,
                 spec_schema=asdict(schema))

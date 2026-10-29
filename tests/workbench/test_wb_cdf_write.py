@@ -265,6 +265,7 @@ def test_the_width_callback_sees_the_final_length_in_a_candidate_and_in_the_rest
     length = cdf_write.Field('MN1', 'l', 'string', True, "gpdk045_mosCB('l)")
 
     def write(w, l):
+        """Apply width and length targets through the fixture's generated CDF write script."""
         skill = cdf_write.write_skill('LIB', 'cell', [dict(instance='MN1', form={}, targets=[(width, w), (length, l)])])
         assert client.execute_skill(skill).ok
     write(2e-6, 6e-8)

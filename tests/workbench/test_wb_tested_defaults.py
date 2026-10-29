@@ -9,6 +9,7 @@ from helpers import make_config
 
 
 def issues(config):
+    """Return a validation report and its issues indexed by code."""
     runtime = tasks.load_task(config.circuit)
     report = validation.validate(config, graph=runtime.base_graph, provided_metrics=set(runtime.provided_metrics))
     return report, {i.code: i for i in report.issues}
@@ -54,7 +55,9 @@ def test_a_budget_below_the_start_of_learning_is_named_for_a_from_scratch_sac_ru
 
 
 def zero_limit(tmp_path, **fields):
+    """Build a score target with a zero upper limit and optional field overrides."""
     def mutate(raw):
+        """Set the fixture target's zero limit and leave its normalization scale unspecified."""
         raw['targets'][0].update(dict(dict(constraint='<=', lower=None, upper=0.0, normalization_scale=None), **fields))
     return make_config(tmp_path, mutate=mutate)
 

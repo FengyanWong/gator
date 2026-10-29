@@ -68,6 +68,7 @@ LET_GO = '''let((done)
 
 
 def let_go_skill(library, cell) -> str:
+    """Render the SKILL request to release an unmodified cell's edit lock when it is not shown in a window."""
     return LET_GO % dict(matching=_matching(library, cell))
 
 
@@ -82,16 +83,17 @@ def parse_rows(decoded) -> dict:
                 windows=sum(r['windows'] for r in rows))
 
 
-def _call(op, profile_id, library, cell, timeout):
-    what = 'the look at the cell' if op == 'look' else 'letting go of the cell'
-    finished = run_child([sys.executable, '-m', 'gator_workbench.cell_hold', '--profile-id', profile_id, '--op', op,
+def _call(operation, profile_id, library, cell, timeout):
+    what = 'the look at the cell' if operation == 'look' else 'letting go of the cell'
+    finished = run_child([sys.executable, '-m', 'gator_workbench.cell_hold', '--profile-id', profile_id, '--op',
+        operation,
                           '--library', library, '--cell', cell], timeout)
     if finished is None:
         raise TimeoutError(f'Virtuoso did not answer within {timeout:.0f} s')
     stdout, stderr, code = finished
     if code != 0:
         raise child_error(stderr, f'{what} failed')
-    data = next((d for d in json_lines(stdout) if isinstance(d, dict) and d.get('op') == op), None)
+    data = next((d for d in json_lines(stdout) if isinstance(d, dict) and d.get('op') == operation), None)
     if data is None:
         raise RuntimeError(f'{what}: no answer')
     return data

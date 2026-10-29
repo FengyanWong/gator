@@ -18,6 +18,7 @@ from gator_workbench.storage.tables import TABLES, arrow_schema
 
 
 def _value(kind, index):
+    """Generate a deterministic fixture value for the supplied Arrow type."""
     if pa.types.is_string(kind):
         return f'fixture μ,"quoted"\n{index}'
     if pa.types.is_boolean(kind):
@@ -36,6 +37,7 @@ def _value(kind, index):
 
 
 def _row(table, index):
+    """Build one schema-compatible synthetic dataset row with deterministic nulls."""
     return {field.name: (None if field.nullable and index % 3 == 0 else _value(field.type, index))
             for field in arrow_schema(table)} | dict(run_id='synthetic', **(
                 {'provenance': 'mock'} if table == 'evaluations' else {}))
@@ -43,6 +45,7 @@ def _row(table, index):
 
 @pytest.fixture
 def dataset(tmp_path):
+    """Provide a committed dataset spanning multiple flushes and all raw tables."""
     writer = RawDataset(tmp_path / 'data', flush_every=3)
     for index in range(1, 10):
         writer.commit(dict(evaluation_id=f'fixture-{index}', commit_seq=index,
@@ -85,9 +88,11 @@ def test_csv_bytes_and_metadata_match_without_materializing_the_table(dataset, t
 
 
 def _track_parts(monkeypatch):
+    """Instrument Parquet access and return the opened parts and observed batches."""
     original, opened, batches = pq.ParquetFile, [], []
 
     class TrackedPart:
+        """A Parquet wrapper that records projections, batch sizes, and closure."""
         def __init__(self, path):
             self.path, self.part, self.closed = Path(path), original(path), False
             self.reads, self.group_reads, self.batch_reads = [], [], []
@@ -114,6 +119,7 @@ def _track_parts(monkeypatch):
             return self.part.read_row_groups(groups, **kwargs)
 
         def iter_batches(self, **kwargs):
+            """Yield delegated batches while recording their paths, projections, and row counts."""
             self.batch_reads.append(kwargs)
             for batch in self.part.iter_batches(**kwargs):
                 batches.append((self.path, kwargs['columns'], batch.num_rows))
@@ -168,6 +174,7 @@ def test_tail_keeps_the_direct_path_for_small_parts(dataset, monkeypatch, limit,
 
 
 def _tail_reader(tmp_path, *, table='metrics', count=4099, row_group_size=None, drop=()):
+    """Create a journaled Parquet fixture with selectable row groups and missing columns."""
     root = tmp_path / 'mock' / 'data'
     path = root / table / 'part-000001.parquet'
     path.parent.mkdir(parents=True)
@@ -331,6 +338,7 @@ def test_failed_export_keeps_previous_files_and_removes_partial_output(dataset, 
         original = DatasetReader.iter_batches
 
         def broken(self, *args, **kwargs):
+            """Yield one real batch and then inject an export read failure."""
             with closing(original(self, *args, **kwargs)) as batches:
                 yield next(batches)
                 raise OSError('fixture read failed')
@@ -340,11 +348,13 @@ def test_failed_export_keeps_previous_files_and_removes_partial_output(dataset, 
         original = csv.writer
 
         class BrokenWriter:
+            """A CSV writer that fails before writing its third row."""
             def __init__(self, *args, **kwargs):
                 self.writer = original(*args, **kwargs)
                 self.count = 0
 
             def writerow(self, row):
+                """Forward initial rows and inject a failure before the third row is written."""
                 self.count += 1
                 if self.count == 3:
                     raise OSError('fixture write failed')
@@ -480,6 +490,7 @@ def test_summary_uses_one_published_snapshot_even_when_a_part_arrives_mid_read(t
                    reader.root / 'evaluations' / 'later.parquet')  # ignored until published below
 
     def publish_later(self, *args, **kwargs):
+        """Publish another part after the reader has selected its initial snapshot."""
         with journal.open('a') as stream:
             stream.write(json.dumps(dict(first_seq=3, last_seq=3, parts=dict(evaluations='later.parquet'))) + '\n')
         with closing(original(self, *args, **kwargs)) as batches:
@@ -496,10 +507,12 @@ def test_summary_closes_the_part_when_processing_a_batch_fails(tmp_path, monkeyp
     original = DatasetReader.iter_batches
 
     class BrokenBatch:
+        """A batch whose conversion to Python rows raises a fixture error."""
         def to_pylist(self):
             raise OSError('fixture decode failed')
 
     def broken(self, *args, **kwargs):
+        """Replace the first real batch with a batch that fails during decoding."""
         with closing(original(self, *args, **kwargs)) as batches:
             next(batches)
             yield BrokenBatch()

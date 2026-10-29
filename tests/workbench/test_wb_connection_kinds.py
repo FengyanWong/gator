@@ -136,6 +136,7 @@ class FakeRunner:
         return f'/usr/bin/{Path(program).name}' if Path(program).name in self.programs or program in self.programs else None
 
     def run(self, argv, *, timeout, stdin_text=None, cwd=None):
+        """Record invocation details and return or raise the selected fixture outcome."""
         self.calls.append(dict(argv=list(argv), stdin=stdin_text, timeout=timeout))
         command = argv[-1]
         step = 'ssh' if command == 'true' else 'version' if command.endswith('--version') else 'trial'
@@ -245,6 +246,7 @@ def test_REAL_remote_command_line_runs_under_sh_and_leaves_no_file_behind(tmp_pa
     fake.chmod(0o755)
 
     class ShellInsteadOfSsh(ngspice_link.RealRunner):
+        """A runner that executes the remote shell command locally for quoting checks."""
         def run(self, argv, **kwargs):
             assert argv[0] == 'ssh' and argv[-3] == '--'
             return super().run(['sh', '-c', argv[-1]], **kwargs)
@@ -269,6 +271,7 @@ def test_REAL_probe_of_ngspice_on_this_host_reports_what_is_really_here(tmp_path
 
 # ------------------------------------------------------------------------------- monitor and gate, per family
 def ngspice_probe(tmp_path, **overrides):
+    """Create a fixture subprocess that reports the requested ngspice probe result."""
     layers = [dict(layer=n, state=overrides.get(n, 'ok'), reason_code=None, diagnostic=None, details={}) for n in NGSPICE_LAYERS]
     script = tmp_path / 'fake_ngspice_probe.py'
     script.write_text(f'import json\nprint(json.dumps(dict(layers={layers!r})))\n')
@@ -333,6 +336,7 @@ def test_a_real_circuit_names_a_connection_of_the_wrong_kind_instead_of_missing_
 # ------------------------------------------------------------------------------- creating connections
 @pytest.fixture
 def fake_home(tmp_path, monkeypatch):
+    """Provide temporary bridge and SSH configuration with fixture importability."""
     home = tmp_path / 'home'
     (home / '.virtuoso-bridge').mkdir(parents=True)
     (home / '.virtuoso-bridge' / '.env').write_text('VB_REMOTE_HOST=eda-host\nVB_PASSWORD=super-secret-value\n')

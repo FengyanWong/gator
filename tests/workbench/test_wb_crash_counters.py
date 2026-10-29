@@ -50,6 +50,7 @@ def crashed_run(tmp_path, *, script, crash_after, threshold=0.0, run=None):
 
 
 def resume(config, layout, tmp_path, **options):
+    """Prepare and execute a resumed copy of the supplied run configuration."""
     resumed = config.model_copy(deep=True)
     resumed.run.mode, resumed.run.model_source.run_dir = 'resume', str(layout.run_dir)
     again, _ = runs.prepare_run(resumed, roots_for(tmp_path))

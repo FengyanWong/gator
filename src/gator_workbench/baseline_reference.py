@@ -32,7 +32,9 @@ def record_reference(name, run_dir) -> dict:
     directory, run_dir = Path(entry['directory']), Path(run_dir)
     target = directory / FILES['reference']
     if target.exists():
-        raise ProfileError(f'real:{name} already has a recorded baseline; it is never replaced. To start over, delete the task and save it again.')
+        raise ProfileError(
+            f'real:{name} already has a recorded baseline; it is never replaced. To start over, delete the '
+            f'task and save it again.')
     try:
         config = json.loads((run_dir / 'effective_config.json').read_text())
         manifest = json.loads((run_dir / 'run_manifest.json').read_text())
@@ -40,32 +42,43 @@ def record_reference(name, run_dir) -> dict:
         raise ProfileError('Not a finished run directory')
     if (config.get('circuit') or {}).get('task_id') != f'real:{name}' or manifest.get('mock'):
         raise ProfileError(f'That run did not simulate real:{name}')
+    # ---- Select the real baseline and require complete recipe metrics before writing a reference.
     reader = DatasetReader(run_dir / 'data')
-    baselines = [row for row in reader.rows('evaluations', ['evaluation_id', 'phase', 'provenance', 'result_source', 'completed_at'])
+    baselines = [row for row in reader.rows('evaluations', ['evaluation_id', 'phase', 'provenance', 'result_source',
+        'completed_at'])
                  if row['phase'] == 'baseline' and row['provenance'] == 'real' and row['result_source'] == 'simulation']
     if not baselines:
         raise ProfileError('That run holds no real baseline simulation')
     evaluation = baselines[0]['evaluation_id']
-    # The simulator's own results are the per-condition rows (a spec computed by a formula has no measurement_id either).
-    raw = {row['metric_name']: row for row in reader.rows('metrics', ['evaluation_id', 'measurement_id', 'metric_name', 'raw_value', 'unit',
+    # The simulator's own results are the per-condition rows (a spec computed by a formula has no measurement_id
+    # either).
+    raw = {row['metric_name']: row for row in reader.rows('metrics', ['evaluation_id', 'measurement_id', 'metric_name',
+        'raw_value', 'unit',
                                                                       'valid', 'aggregation_level'])
-           if row['evaluation_id'] == evaluation and row['measurement_id'] is None and row['aggregation_level'] == 'condition'}
+           if row['evaluation_id'] == evaluation and row['measurement_id'] is None and row[
+               'aggregation_level'] == 'condition'}
     # A task measured by Maestro names its own results (its outputs; `recipes.provided_metrics` has none for it) - found
-    # on the user's first real baseline, 2026-09-24: with the recipe's empty tuple every Maestro baseline was "unexpected".
-    expected = list(entry.get('provided_metrics') or ()) if entry.get('recipe') == MAESTRO else list(recipes.provided_metrics(entry['recipe']))
+    # on the user's first real baseline, 2026-09-24: with the recipe's empty tuple every Maestro baseline was
+    # "unexpected".
+    expected = list(entry.get('provided_metrics') or ()) if entry.get('recipe') == MAESTRO else list(
+        recipes.provided_metrics(entry['recipe']))
     if not expected:
         raise ProfileError(f'real:{name} names no result to record (its provided_metrics are empty)')
-    problems = [metric for metric in expected if metric not in raw or not raw[metric]['valid'] or raw[metric]['raw_value'] is None]
+    problems = [metric for metric in expected if metric not in raw or not raw[metric]['valid'] or raw[metric][
+        'raw_value'] is None]
     if problems or set(raw) != set(expected):
-        raise ProfileError('The baseline of that run is not a complete, valid measurement '
-                           f'(missing or invalid: {", ".join(problems) or "unexpected metrics " + ", ".join(sorted(set(raw) - set(expected)))})')
-    reference = dict(origin='real', profile=name, run_dir=str(run_dir), run_id=manifest.get('run_id'), evaluation_id=evaluation,
+        raise ProfileError(
+            f'The baseline of that run is not a complete, valid measurement (missing or invalid: '
+            f"{', '.join(problems) or 'unexpected metrics ' + ', '.join(sorted(set(raw) - set(expected)))})")
+    reference = dict(origin='real', profile=name, run_dir=str(run_dir), run_id=manifest.get('run_id'),
+                     evaluation_id=evaluation,
                      completed_at=str(baselines[0]['completed_at']), recorded_utc=utcnow().isoformat(),
                      metrics={metric: raw[metric]['raw_value'] for metric in expected},
                      metric_units={metric: raw[metric]['unit'] for metric in expected},
                      note='Raw backend metrics of the baseline evaluation, read from the run\'s metrics table.')
     write_json(target, reference)
-    write_json(directory / FILES['entry'], dict({k: v for k, v in entry.items() if k not in ('directory', 'baseline_attempt')},
+    write_json(directory / FILES['entry'], dict({k: v for k, v in entry.items() if k not in ('directory',
+        'baseline_attempt')},
                                                 status='baseline recorded: one real simulation of the recorded sizes',
                                                 baseline_recorded_utc=reference['recorded_utc']))
     return reference
@@ -82,8 +95,10 @@ def latest_baseline_run(name, run_dirs):
     return None
 
 
-# ---------------------------------------------------------------------------------- a finished Baseline simulation records itself
-BASELINE_KIND = 'baseline_preflight'                 # run_kind of the header's "Baseline simulation" (api/app.py `_start`)
+# ---------------------------------------------------------------------------------- a finished Baseline simulation
+# records itself
+# run_kind of the header's "Baseline simulation" (api/app.py `_start`)
+BASELINE_KIND = 'baseline_preflight'
 
 
 def _run_outlived_the_task(entry, manifest) -> str | None:
@@ -93,7 +108,8 @@ def _run_outlived_the_task(entry, manifest) -> str | None:
     circuit = manifest.get('circuit') or {}
     directory = Path(entry['directory'])
     try:
-        current = dict(netlist_sha256=_sha256(directory / FILES['structure']), parser_config_sha256=_sha256(directory / FILES['mapping']))
+        current = dict(netlist_sha256=_sha256(directory / FILES['structure']),
+            parser_config_sha256=_sha256(directory / FILES['mapping']))
     except OSError:
         return 'the task files cannot be read'
     if any(circuit.get(key) != value for key, value in current.items()):
@@ -131,25 +147,35 @@ def adopt_baseline_run(run_dir, manifest=None) -> dict | None:
         return None
     # A run asked to calibrate (record 7.197) goes on after its baseline with random designs: stopped by the user among
     # them, its baseline evaluation is as finished as that of a run of one evaluation (`record_reference` looks at it).
-    if manifest.get('state') != 'completed' and not (manifest.get('state') == 'stopped' and manifest.get('calibration')):
-        return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: the run ended as {manifest.get("state")}.')
+    if manifest.get('state') != 'completed' and not (manifest.get('state') == 'stopped' and manifest.get(
+        'calibration')):
+        return dict(recorded=False, name=name,
+            note=f'Not recorded as the reference of {task_key}: the run ended as {manifest.get("state")}.')
     if reference_metrics(name) is not None:
-        return dict(recorded=False, name=name, note=f'{task_key} already has a recorded baseline; it is never replaced.')
+        return dict(recorded=False, name=name,
+            note=f'{task_key} already has a recorded baseline; it is never replaced.')
     outlived = _run_outlived_the_task(entry, manifest)
     if outlived:
         return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: {outlived}.')
     attempt = entry.get('baseline_attempt') or {}
-    if attempt.get('run_id') and attempt.get('run_id') == manifest.get('run_id'):      # tried before: the answer has not changed
-        return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: {attempt["reason"]}', attempt=attempt)
+    # tried before: the answer has not changed
+    if attempt.get('run_id') and attempt.get('run_id') == manifest.get('run_id'):
+        return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: {attempt["reason"]}',
+            attempt=attempt)
     try:
         reference = record_reference(name, run_dir)
     except ProfileError as exc:
         attempt = dict(run_id=manifest.get('run_id'), run_dir=str(run_dir), reason=str(exc),
-                       ended_utc=((manifest.get('segments') or [{}])[-1]).get('ended_utc') or manifest.get('created_utc'))
-        write_json(Path(entry['directory']) / FILES['entry'], dict({k: v for k, v in entry.items() if k != 'directory'}, baseline_attempt=attempt))
-        return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: {exc}', attempt=attempt)
+                       ended_utc=((manifest.get('segments') or [{}])[-1]).get('ended_utc') or manifest.get(
+                           'created_utc'))
+        write_json(Path(entry['directory']) / FILES['entry'], dict({k: v for k, v in entry.items() if k != 'directory'},
+            baseline_attempt=attempt))
+        return dict(recorded=False, name=name, note=f'Not recorded as the reference of {task_key}: {exc}',
+            attempt=attempt)
     return dict(recorded=True, name=name, reference=reference,
-                note=f'Recorded as the reference of {task_key}: every later run compares its first evaluation with this result.')
+                note=
+                    f'Recorded as the reference of {task_key}: every later run compares its first evaluation '
+                    f'with this result.')
 
 
 def adopt_latest_baseline(name, data_root) -> dict | None:
@@ -166,7 +192,8 @@ def adopt_latest_baseline(name, data_root) -> dict | None:
         if facts is None:                          # no readable manifest
             continue
         manifest = facts['manifest']
-        if (manifest.get('run_kind') == BASELINE_KIND and manifest.get('state') == 'completed' and not manifest.get('mock')
+        if (manifest.get('run_kind') == BASELINE_KIND and manifest.get('state') == 'completed' and not manifest.get(
+            'mock')
                 and (manifest.get('circuit') or {}).get('task_key') == f'real:{name}'
                 and (newest is None or (manifest.get('created_utc') or '') > newest[0])):
             newest = (manifest.get('created_utc') or '', run_dir, manifest)

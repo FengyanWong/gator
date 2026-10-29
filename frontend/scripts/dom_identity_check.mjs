@@ -12,7 +12,6 @@
 //               until then): the Virtuoso cell window, then the PDK window opened from it
 //   ngspice     the Tasks window, then its "New task: From an ngspice netlist..." (record 7.362): the ngspice netlist window
 //   connection  the Connection window, then its "Folders..."
-//   agent       the Agent window, then "What's missing?"
 //   brief       the header's run chip: the run brief window
 // Each scene first settles as the page opened (01-open), so that every request is listed under the step that made it.
 // After each step, once nothing has changed for about two seconds (no request, the same DOM), it writes
@@ -57,7 +56,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AGENT_WINDOW, APP_ROOT_ID, check, CONFIG_KEY, CONNECTION_WINDOW, fail, finish, HEADER_RUN_KEY, launchEdge, NGSPICE_WINDOW, NO_WRITES, PAGE_OPEN_TEST, PDK_WINDOW,
+import { APP_ROOT_ID, check, CONFIG_KEY, CONNECTION_WINDOW, fail, finish, HEADER_RUN_KEY, launchEdge, NGSPICE_WINDOW, NO_WRITES, PAGE_OPEN_TEST, PDK_WINDOW,
   readOnly, RL_MODEL_WINDOW, RUNNING_WINDOW, RUNS_WINDOW, sleep, TASK_PANEL, TASKS_WINDOW, TRAINING_COMPARE_KEY, VIRTUOSO_WINDOW, workbenchUrl } from './lib/harness.mjs';
 
 const args = process.argv.slice(2);
@@ -496,11 +495,6 @@ try {
       let connection = null;
       await s.take('connection-window', async () => { connection = await s.popup(s.page, `document.querySelector('header button.connection-button')`, CONNECTION_WINDOW, { width: 660, height: 920 }); });
       await s.take('folders', () => connection.evaluate(`[...document.querySelectorAll('.connection-window button')].find(b => b.textContent.trim() === 'Folders...').click()`));
-    });
-    await scene(look, 'agent', seeded(CONFIG), async s => {
-      let agent = null;
-      await s.take('agent-window', async () => { agent = await s.popup(s.page, `document.querySelector('footer .tabs button.agent-tab')`, AGENT_WINDOW, { width: 780, height: 760 }); });
-      await s.take('whats-missing', () => agent.evaluate(`document.querySelector('.agent-window button.missing').click()`));
     });
     await scene(look, 'brief', seeded(CONFIG, { [HEADER_RUN_KEY]: RUN }), async s => {
       await s.take('brief-window', () => s.popup(s.page, `document.querySelector('header button.run-chip')`, RUNNING_WINDOW, { width: 470, height: 540 }));

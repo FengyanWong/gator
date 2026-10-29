@@ -31,12 +31,16 @@ from dataclasses import dataclass, field
 from . import spec_equations, units
 from .profile_store import FILES, profile_entry
 
+_LOG_RANGE_SCALE = 10
+
+
 DESCRIPTOR_VERSION = 'gator-spec-descriptor-v2'           # v2: position + span replace the frequency point
 ANALYSES = ('dc', 'ac', 'tran', 'noise', 'stb', 'pss', 'pnoise', 'other')
 SIGNALS = ('voltage', 'current', 'loop_gain', 'transfer_xf', 'noise', 'other_data', 'no_expression')
 SOURCES = ('from_supply', 'from_other_source', 'ac_stimulus_on_supply', 'node_difference')
 FORMS = ('ratio', 'negated', 'scaled', 'offset', 'combined_probes')
-REDUCTIONS = ('value_at', 'cross', 'margin', 'extreme', 'window', 'integral', 'waveform', 'magnitude', 'decibel', 'root')
+REDUCTIONS = ('value_at', 'cross', 'margin', 'extreme', 'window', 'integral', 'waveform', 'magnitude', 'decibel',
+    'root')
 DESCRIPTOR_COLUMNS = (tuple(f'analysis_{a}' for a in ANALYSES) + tuple(f'signal_{s}' for s in SIGNALS) + SOURCES +
                       tuple(f'form_{f}' for f in FORMS) + tuple(f'reduction_{r}' for r in REDUCTIONS) +
                       ('position', 'span', 'has_position', 'probe_count'))
@@ -56,7 +60,8 @@ _CURRENT = {'IF', 'IS', 'IDC', 'IT', 'IN', 'IM', 'IP', 'IR', 'II', 'i'}
 _REDUCTION_OF = dict(value='value_at', cross='cross', phaseMargin='margin', gainMargin='margin', ymax='extreme',
                      ymin='extreme', peakToPeak='extreme', clip='window', integ='integral', average='integral',
                      rms='integral', iinteg='integral', frequency='waveform', dutyCycle='waveform', riseTime='waveform',
-                     fallTime='waveform', slewRate='waveform', delay='waveform', period='waveform', settlingTime='waveform',
+                     fallTime='waveform', slewRate='waveform', delay='waveform', period='waveform',
+                     settlingTime='waveform',
                      overshoot='waveform', bandwidth='cross', unityGainFreq='cross', mag='magnitude', abs='magnitude',
                      dB20='decibel', dB10='decibel', db='decibel', db10='decibel', sqrt='root', pow='root')
 _SI = dict(T=1e12, G=1e9, M=1e6, K=1e3, k=1e3, m=1e-3, u=1e-6, n=1e-9, p=1e-12, f=1e-15, a=1e-18)
@@ -65,6 +70,7 @@ _SI = dict(T=1e12, G=1e9, M=1e6, K=1e3, k=1e3, m=1e-3, u=1e-6, n=1e-9, p=1e-12, 
 # ------------------------------------------------------------------------------------------ the expression tree
 @dataclass
 class Node:
+    # A parsed measurement-expression node used to build name-independent spec descriptors.
     kind: str                       # number, string, keyword, name, call, neg, add, sub, mul, div
     value: object = None            # number value, string text, name or function name
     children: list = field(default_factory=list)
@@ -191,7 +197,8 @@ def _is_constant(node):
 
 
 def _signal_calls(node):
-    return [n for n in _walk(node) if n.kind == 'call' and (n.value in _VOLTAGE or n.value in _CURRENT or n.value == 'getData')]
+    return [n for n in _walk(node) if n.kind == 'call' and (
+        n.value in _VOLTAGE or n.value in _CURRENT or n.value == 'getData')]
 
 
 def _first_string(node):
@@ -282,6 +289,43 @@ def bench_of_task(config):
 
 
 # ------------------------------------------------------------------------------------------ one probe
+def _describe_probe_call(node, analysis, bench, found):
+    """Add signal, reduction and position facts for one measurement-expression call."""
+    if node.value in _VOLTAGE:
+        found['signal_voltage'] = 1.0
+        if analysis == 'ac' and bench.supply and bench.supply in bench.ac_sources:
+            found['ac_stimulus_on_supply'] = 1.0
+    elif node.value in _CURRENT:
+        found['signal_current'] = 1.0
+        terminal = (_first_string(node) or '').strip('/').split('/')[0]
+        if terminal:
+            found['from_supply' if terminal == bench.supply else 'from_other_source'] = 1.0
+    elif node.value == 'getData':
+        result = _keyword(node, 'result')
+        result = result.value if result is not None and result.kind == 'string' else ''
+        name = (_first_string(node) or '').strip('/')
+        if result == 'stb' and name == 'loopGain':
+            found['signal_loop_gain'] = 1.0
+        elif result == 'xf':
+            found['signal_transfer_xf'] = 1.0
+            if name:
+                found['from_supply' if name == bench.supply else 'from_other_source'] = 1.0
+        elif result == 'noise':
+            found['signal_noise'] = 1.0
+        else:
+            found['signal_other_data'] = 1.0
+    reduction = _REDUCTION_OF.get(node.value)
+    if reduction:
+        found[f'reduction_{reduction}'] = 1.0
+    if analysis in PLACED_ANALYSES and 'has_position' not in found:
+        place = _place(node)
+        if place is not None:
+            low, high = place
+            found['position'] = math.log10(math.sqrt(low * high)) / _LOG_RANGE_SCALE
+            found['span'] = math.log10(high / low) / _LOG_RANGE_SCALE
+            found['has_position'] = 1.0
+
+
 def probe_facts(analysis, expression, bench=Bench(), *, measured_by_analyzer=False):
     """The description columns of one probe, as a dict column -> number (only the ones it sets)."""
     found = {f'analysis_{analysis if analysis in ANALYSES else "other"}': 1.0}
@@ -294,49 +338,19 @@ def probe_facts(analysis, expression, bench=Bench(), *, measured_by_analyzer=Fal
         return found
     for node in _walk(tree):
         if node.kind == 'call':
-            if node.value in _VOLTAGE:
-                found['signal_voltage'] = 1.0
-                if analysis == 'ac' and bench.supply and bench.supply in bench.ac_sources:
-                    found['ac_stimulus_on_supply'] = 1.0
-            elif node.value in _CURRENT:
-                found['signal_current'] = 1.0
-                terminal = (_first_string(node) or '').strip('/').split('/')[0]
-                if terminal:
-                    found['from_supply' if terminal == bench.supply else 'from_other_source'] = 1.0
-            elif node.value == 'getData':
-                result = _keyword(node, 'result')
-                result = result.value if result is not None and result.kind == 'string' else ''
-                name = (_first_string(node) or '').strip('/')
-                if result == 'stb' and name == 'loopGain':
-                    found['signal_loop_gain'] = 1.0
-                elif result == 'xf':
-                    found['signal_transfer_xf'] = 1.0
-                    if name:
-                        found['from_supply' if name == bench.supply else 'from_other_source'] = 1.0
-                elif result == 'noise':
-                    found['signal_noise'] = 1.0
-                else:
-                    found['signal_other_data'] = 1.0
-            reduction = _REDUCTION_OF.get(node.value)
-            if reduction:
-                found[f'reduction_{reduction}'] = 1.0
-            if analysis in PLACED_ANALYSES and 'has_position' not in found:
-                place = _place(node)
-                if place is not None:
-                    low, high = place
-                    found['position'] = math.log10(math.sqrt(low * high)) / 10
-                    found['span'] = math.log10(high / low) / 10
-                    found['has_position'] = 1.0
+            _describe_probe_call(node, analysis, bench, found)
         elif node.kind == 'div' and all(_signal_calls(child) for child in node.children):
             found['form_ratio'] = 1.0
-        elif node.kind == 'sub' and all(any(c.value in _VOLTAGE for c in _signal_calls(child)) for child in node.children):
+        elif node.kind == 'sub' and all(any(c.value in _VOLTAGE for c in _signal_calls(
+            child)) for child in node.children):
             found['node_difference'] = 1.0
         if node.kind in ('mul', 'div') and any(_is_constant(c) for c in node.children) and _signal_calls(node):
             found['form_scaled'] = 1.0
         if node.kind in ('add', 'sub') and any(_is_constant(c) for c in node.children) and _signal_calls(node):
             found['form_offset'] = 1.0
     top = tree
-    if top.kind == 'neg' or (top.kind == 'mul' and any(_is_constant(c) and (_evaluate(c) or 0) < 0 for c in top.children)):
+    if top.kind == 'neg' or (top.kind == 'mul' and any(_is_constant(c) and (_evaluate(
+        c) or 0) < 0 for c in top.children)):
         found['form_negated'] = 1.0
     return found
 
@@ -382,7 +396,8 @@ def describe_specs(config, bench=None):
         names = [equation] if equation in probes else sorted(
             (n for n in (spec_equations.parse(equation)[0] or ()) if n in probes), key=lambda n: _first_at(equation, n))
         columns = {}
-        for name in names:                       # in the order the equation names them: the first one placed sets the place
+        # in the order the equation names them: the first one placed sets the place
+        for name in names:
             probe = probes[name]
             facts = probe_facts(probe.analysis, probe.signal, bench,
                                 measured_by_analyzer=probe.result_source in ('backend_profile', 'size_estimate'))
@@ -408,7 +423,8 @@ def measured_nets(config) -> tuple:
         if not target.active:
             continue
         equation = target.equation.strip()
-        names = [equation] if equation in probes else [n for n in (spec_equations.parse(equation)[0] or ()) if n in probes]
+        names = [equation] if equation in probes else [n for n in (spec_equations.parse(equation)[
+            0] or ()) if n in probes]
         for name in names:
             probe = probes[name]
             if probe.result_source in ('backend_profile', 'size_estimate'):
@@ -428,20 +444,24 @@ def _first_at(text, name):
 
 
 def spec_set_schema():
+    """Return the versioned descriptor columns and unit references for set-based spec inputs."""
     from analog_optimizer.models.inputs import SpecSetSchema
     return SpecSetSchema(DESCRIPTOR_VERSION, DESCRIPTOR_COLUMNS, UNIT_REFERENCES)
 
 
 _WORDS = dict(signal_voltage='node voltages', signal_current='a source current', signal_loop_gain='the stb loop gain',
-              signal_transfer_xf='an xf transfer', signal_noise='output noise', signal_other_data='other simulator data',
+              signal_transfer_xf='an xf transfer', signal_noise='output noise',
+              signal_other_data='other simulator data',
               signal_no_expression="a built-in analyzer's result",
               from_supply='from the supply', from_other_source='from another source',
               ac_stimulus_on_supply='with the AC stimulus on the supply', node_difference='a difference of two nodes',
               form_ratio='a ratio', form_negated='negated', form_scaled='scaled by a constant',
               form_offset='offset by a constant', form_combined_probes='combining several probes',
-              reduction_value_at='value at a point', reduction_cross='a crossing', reduction_margin='a phase/gain margin',
+              reduction_value_at='value at a point', reduction_cross='a crossing',
+              reduction_margin='a phase/gain margin',
               reduction_extreme='an extreme', reduction_window='a window', reduction_integral='an integral or average',
-              reduction_waveform='a waveform measure', reduction_magnitude='a magnitude', reduction_decibel='in decibels',
+              reduction_waveform='a waveform measure', reduction_magnitude='a magnitude',
+              reduction_decibel='in decibels',
               reduction_root='a root or power')
 
 
@@ -450,14 +470,16 @@ def words(described, unit):
     columns = dict(zip(DESCRIPTOR_COLUMNS, described))
     analyses = [a for a in ANALYSES if columns[f'analysis_{a}']]
     parts = [unit or 'no unit', (', '.join(analyses) + ' analysis') if analyses else 'no analysis']
-    parts.append('reads ' + (', '.join(_WORDS[f'signal_{s}'] for s in SIGNALS if columns[f'signal_{s}']) or 'nothing it recognises'))
+    parts.append('reads ' + (', '.join(_WORDS[f'signal_{s}'] for s in SIGNALS if columns[
+        f'signal_{s}']) or 'nothing it recognises'))
     parts += [_WORDS[k] for k in SOURCES + tuple(f'form_{f}' for f in FORMS) if columns[k]]
     reductions = [_WORDS[f'reduction_{r}'] for r in REDUCTIONS if columns[f'reduction_{r}']]
     if reductions:
         parts.append('as ' + ', '.join(reductions))
     if columns['has_position']:
-        unit = 's' if columns['analysis_tran'] and not any(columns[f'analysis_{a}'] for a in FREQUENCY_ANALYSES) else 'Hz'
-        centre, span = 10 ** (columns['position'] * 10), 10 ** (columns['span'] * 10)
+        unit = 's' if columns['analysis_tran'] and not any(columns[
+            f'analysis_{a}'] for a in FREQUENCY_ANALYSES) else 'Hz'
+        centre, span = 10 ** (columns['position'] * _LOG_RANGE_SCALE), 10 ** (columns['span'] * _LOG_RANGE_SCALE)
         low, high = (float(f'{x:.4g}') for x in (centre / math.sqrt(span), centre * math.sqrt(span)))
         parts.append(f"at {units.text(float(f'{centre:.4g}'), unit)}" if columns['span'] == 0 else
                      f'over {units.text(low, unit)} to {units.text(high, unit)}')

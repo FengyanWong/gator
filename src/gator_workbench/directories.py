@@ -28,6 +28,7 @@ BLOCK = 'directories'
 
 @dataclass(frozen=True)
 class Folder:
+    # A configurable directory's host side, default path, purpose, and write requirements.
     side: str
     label: str
     default: str
@@ -40,39 +41,43 @@ class Folder:
 FIELDS = {
     'adapter_state': Folder(
         LOCAL, 'Adapter state', '~/.local/state/gator/bridge-state',
-        'The locks that runs, corner checks and task saves take - one per Virtuoso session and one per cell, so that two '
-        'never work in a session or on a cell at once - and the crash journal of every write to a cell. Every GATOR '
-        'process of this machine must use the same folder. Keep it on '
-        'the local disk (on D: from WSL a candidate\'s journal writes took 16 ms instead of 1) and out of /tmp, which a '
-        'restart empties.',
+        'The locks that runs, corner checks and task saves take - one per Virtuoso session and one per cell, '
+        'so that two never work in a session or on a cell at once - and the crash journal of every write to '
+        'a cell. Every GATOR process of this machine must use the same folder. Keep it on the local disk (on '
+        "D: from WSL a candidate's journal writes took 16 ms instead of 1) and out of /tmp, which a restart "
+        'empties.',
         'the next run, corner check or task save', env='GATOR_BRIDGE_STATE_DIR', writable=True),
     'local_scratch': Folder(
         LOCAL, 'Simulator scratch', '/tmp/gator-work',
-        'Export packages and Spectre job folders of a run whose output folder is on a slow mount (D: from WSL). Each run '
-        'gets a folder of its own there, removed when the run ends; kept job folders move to the run folder. On a slow '
-        'mount itself it would gain nothing and is refused.',
+        'Export packages and Spectre job folders of a run whose output folder is on a slow mount (D: from '
+        'WSL). Each run gets a folder of its own there, removed when the run ends; kept job folders move to '
+        'the run folder. On a slow mount itself it would gain nothing and is refused.',
         'the next run', writable=True),
     'bridge_checkout': Folder(
         LOCAL, 'virtuoso-bridge checkout', '~/virtuoso-bridge-lite',
-        'Where "Add a connection" looks for the bridge package (its .venv) when the backend\'s Python cannot import it, '
-        'and where the agent diagnostics look for the bridge\'s skills. A connection keeps the package folder it was '
-        'created with.',
+        'Where "Add a connection" looks for the bridge package (its .venv) when the backend\'s Python cannot '
+        "import it, and where the agent diagnostics look for the bridge's skills. A connection keeps the "
+        'package folder it was created with.',
         'the next "Add a connection"'),
     'simulator_ic': Folder(
         SIMULATOR, 'Initial-condition files', '~/.gator/ic',
-        'Saving a task writes its Maestro test\'s initial conditions there, as a file the test includes; the folder is made '
-        'when missing. Files already registered in a test - also in the default folder - are still recognized.',
+        "Saving a task writes its Maestro test's initial conditions there, as a file the test includes; the "
+        'folder is made when missing. Files already registered in a test - also in the default folder - are '
+        'still recognized.',
         'the next task save'),
     'maestro_netlist': Folder(
         SIMULATOR, 'Maestro netlists', '/tmp/gator_maestro_netlist',
-        'Maestro writes a test\'s netlist there when a task is saved, and GATOR downloads it. On a host shared with other '
-        'users, or where Virtuoso\'s /tmp is not the one SSH sees, choose a folder of your own (e.g. ~/gator/netlists).',
+        "Maestro writes a test's netlist there when a task is saved, and GATOR downloads it. On a host "
+        "shared with other users, or where Virtuoso's /tmp is not the one SSH sees, choose a folder of your "
+        'own (e.g. ~/gator/netlists).',
         'the next task save'),
 }
-REMOTE_PATH = re.compile(r'^~?(?:/[A-Za-z0-9_.+\-]+)+$')      # characters that pass SKILL strings and shell commands as they are
+# characters that pass SKILL strings and shell commands as they are
+REMOTE_PATH = re.compile(r'^~?(?:/[A-Za-z0-9_.+\-]+)+$')
 
 
 class InvalidDirectory(ValueError):
+    """The error for a rejected folder setting, keeping its field key and naming the field in its message."""
     def __init__(self, key, message):
         super().__init__(f'{FIELDS[key].label if key in FIELDS else key}: {message}')
         self.key = key
@@ -96,11 +101,13 @@ def normalized(key, raw) -> str | None:
         raise InvalidDirectory(key, 'a folder is one line of at most 1024 characters')
     if FIELDS[key].side == SIMULATOR:
         if not REMOTE_PATH.match(text) or any(part in ('.', '..') for part in text.split('/')):
-            raise InvalidDirectory(key, f'{text!r} is not a folder on the simulator host as GATOR can pass it: start with / or '
-                                        '~/ (the simulator user\'s home) and use letters, digits and _ . + - only, no "..".')
+            raise InvalidDirectory(key,
+                f'{text!r} is not a folder on the simulator host as GATOR can pass it: start with / or ~/ '
+                f"""(the simulator user's home) and use letters, digits and _ . + - only, no "..".""")
         return text
     if not (text.startswith('/') or text == '~' or text.startswith('~/')):
-        raise InvalidDirectory(key, f'{text!r} is not a full path: start with / or ~/ (the home folder of the backend user).')
+        raise InvalidDirectory(key,
+            f'{text!r} is not a full path: start with / or ~/ (the home folder of the backend user).')
     path = Path(text).expanduser()
     if path == Path('/') or path == Path.home() or any(part == '..' for part in path.parts):
         raise InvalidDirectory(key, 'choose a folder of its own - not /, not the home folder itself, no "..".')
@@ -159,7 +166,10 @@ def value(key, values=None) -> str:
 
 
 def local_path(key, home=None) -> Path:
-    """A local folder in use, with `~` expanded - as `home` when given (the functions that take a home for their tests)."""
+    (
+        'A local folder in use, with `~` expanded - as `home` when given (the functions that take a home for '
+        'their tests).'
+    )
     if FIELDS[key].side != LOCAL:
         raise ValueError(f'{key} is a folder on the simulator host')
     text = value(key)
@@ -175,10 +185,13 @@ def describe() -> dict:
     for key, field in FIELDS.items():
         env = field.env if field.env and os.environ.get(field.env) else None
         fields.append(dict(key=key, side=field.side, label=field.label, default=field.default, saved=values.get(key),
-                           value=value(key, values), source='environment' if env else 'file' if key in values else 'default',
+                           value=value(key, values),
+                           source='environment' if env else 'file' if key in values else 'default',
                            environment_variable=field.env, set_by_environment=env, problem=problems.get(key),
                            used_for=field.used_for, takes_effect=field.takes_effect))
     return dict(fields=fields, connection_file=str(connection_file()),
-                note='Spectre\'s job folders on the simulator host are the bridge\'s own setting: VB_REMOTE_SCRATCH_ROOT in '
-                     'the bridge env file (/tmp when unset). The settings folder, which holds the connection file, is '
-                     'moved with GATOR_WORKBENCH_SETTINGS_DIR; the output folder is chosen in the output panel.')
+                note=
+                    "Spectre's job folders on the simulator host are the bridge's own setting: "
+                    'VB_REMOTE_SCRATCH_ROOT in the bridge env file (/tmp when unset). The settings folder, which '
+                    'holds the connection file, is moved with GATOR_WORKBENCH_SETTINGS_DIR; the output folder is '
+                    'chosen in the output panel.')

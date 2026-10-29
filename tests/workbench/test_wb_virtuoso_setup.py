@@ -91,6 +91,7 @@ def test_rows_and_setup_map_onto_each_other():
     assert (spec_vmax['constraint'], spec_vmax['lower'], spec_vmax['upper'], spec_vmax['unit']) == ('interval', 0.9, 1.1, 'V')
 
     def rows_into(raw):
+        """Add Maestro-derived editor rows and a spec computed from two probes."""
         raw['measurements'] = rows['measurements']
         raw['targets'] = rows['targets'] + [dict(metric_id='energy', equation='m_vmax / m_freq', unit='1', constraint='<=', upper=1,
                                                  normalization_scale=1.0)]
@@ -148,6 +149,7 @@ def test_the_conditions_are_written_with_the_setup_and_read_back(tmp_path):
 
 
 def written_answer():
+    """Return the fixture Maestro readback after its setup has been written."""
     return dict(exists=True, tests=['GATOR'], test='GATOR', model_files=SETUP['model_files'],
                 analyses={'tran': dict(SETUP['analyses']['tran'], trannoisemethod='default')}, variables=SETUP['variables'],
                 outputs=SETUP['outputs'], specs=SETUP['specs'], raw_specs={}, bindings=SETUP['bindings'])
@@ -187,6 +189,7 @@ def bound_then_read_again(tmp_path):
     readback = working_copy.native_cells.cell_dir(LIB, CELL) / 'testbench_readback.json'
 
     def read(vdc):
+        """Write a testbench readback with the requested supply-source value."""
         readback.write_text(json.dumps(dict(instances=[dict(name='V0', lib='analogLib', cell='vdc', params=dict(vdc=vdc, srcType='dc')),
                                                        dict(name='XU1', lib=LIB, cell=CELL, params={})])))
     read('1.0')
@@ -243,6 +246,7 @@ def test_the_copy_and_setup_routes_go_through_the_same_checks(tmp_path, monkeypa
     answers = dict(make_copy=None, read_setup=written_answer(), write_setup=written_answer())
 
     def fake_run(profile_id, op, *, args, output, timeout=600.0, command=None):
+        """Dispatch copy and setup operations to their recorded-data fake programs."""
         command = fake_writer(tmp_path) if op == 'make_copy' else setup_writer(tmp_path, answers[op])
         return real_run(profile_id, op, args=args, output=output, timeout=timeout, command=command)
     monkeypatch.setattr(bridge_setup, 'run', fake_run)
@@ -259,6 +263,7 @@ def test_the_copy_and_setup_routes_go_through_the_same_checks(tmp_path, monkeypa
     readback.write_text(json.dumps(dict(instances=[dict(name='V0', lib='analogLib', cell='vdc', params=dict(vdc='1.0'))])))
 
     def with_rows(raw):
+        """Replace starter probes and specs with the fixture Maestro rows."""
         rows = vs.to_rows(SETUP)
         raw['measurements'], raw['targets'] = rows['measurements'], rows['targets']
     task = make_config(tmp_path, mutate=with_rows)

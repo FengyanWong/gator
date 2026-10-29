@@ -4,7 +4,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import ValidationError
 from . import task_baseline
-from .. import (bridge_read, consistency, ngspice_tasks, profile_store, profiles, runs, schema, session_routing, structures,
+from .. import (bridge_read, consistency, ngspice_tasks, profile_store, profiles, runs, schema, session_routing,
+    structures,
                 task_files, task_names, task_registry, task_save, task_saving, tasks, virtuoso_setup, working_copy)
 from ..circuit_summary import loaded_circuit
 from ..diffs import structured_diff
@@ -21,15 +22,18 @@ from .support import bridge_call, fail, load_runtime, validate_loaded
 COPY_REFUSED = ((working_copy.CopyError, virtuoso_setup.SetupError), 'refused')
 
 
-def _saved_cell(body):
-    """(library, cell) a Save task writes: the working copy of the open task, else the cell being saved; None unknown."""
+def _saved_cell(body) -> tuple | None:
+    (
+        '(library, cell) a Save task writes: the working copy of the open task, else the cell being saved; None '
+        'unknown.'
+    )
     entry = profile_store.profile_entry(body.task) if body.task else None
     if entry and entry.get('library') and entry.get('core_cell'):
         return entry['library'], entry['core_cell']
     return (body.library, body.cell) if body.library and body.cell else None
 
 
-def register(app: FastAPI, context: ApiContext):
+def register(app: FastAPI, context: ApiContext) -> None:
     """The task and circuit routes, registered in this order: the order of registration is the order of matching."""
     _task_routes(app, context)
     _virtuoso_cell_routes(app, context)
@@ -38,12 +42,31 @@ def register(app: FastAPI, context: ApiContext):
     _configuration_routes(app, context)
 
 
-def _task_routes(app: FastAPI, context: ApiContext):
+def _task_routes(app: FastAPI, context: ApiContext) -> None:
     """The task list, a task's starter configuration, Save task progress, the baseline, loading a circuit."""
+    _register_task_list_route(app)
+
+    _register_task_starter_route(app)
+
+    _register_task_rename_route(app)
+
+    _register_task_save_status_route(app)
+
+    _register_task_baseline_route(app, context)
+
+    _register_circuit_load_route(app, context)
+
+
+def _register_task_list_route(app) -> None:
+    """Register the task list and real-backend contract endpoint."""
+    # List available tasks together with the interface contract required for real backends.
     @app.get('/api/tasks')
     def get_tasks():
         return dict(tasks=tasks.list_tasks(), real_interface_contract=tasks.REAL_INTERFACE_CONTRACT)
 
+
+def _register_task_starter_route(app) -> None:
+    """Register the starter editor rows and saved-revision endpoint."""
     @app.get('/api/tasks/starter')
     def starter(task_key: str):
         """The rows the three editors start from for a registered task. A real task: its profile's parameters and, for a
@@ -53,12 +76,17 @@ def _task_routes(app: FastAPI, context: ApiContext):
         try:
             answer = tasks.starter_config(task_key)
             saved = profiles.task_file(task_key[len('real:'):]) if task_key.startswith('real:') else None
-            return dict(answer, revision=saved['revision']) if saved and isinstance(saved.get('revision'), int) else answer
+            return dict(answer, revision=saved['revision']) if saved and isinstance(saved.get('revision'),
+                int) else answer
         except KeyError:
             fail(404, 'No starter configuration for this task')
-        except Exception as exc:                           # a generated profile whose files no longer pass their own checks
+        # a generated profile whose files no longer pass their own checks
+        except Exception as exc:
             fail(409, redact(f'The starting rows of {task_key} cannot be built: {type(exc).__name__}: {exc}', 600))
 
+
+def _register_task_rename_route(app) -> None:
+    """Register task display-name changes and their existing conflict responses."""
     @app.post('/api/tasks/rename')
     def rename_task(body: RenameTaskBody):
         """Shows a registered task under another name (record 7.302; user: "add rename functionality to tasks"). Kept
@@ -75,6 +103,9 @@ def _task_routes(app: FastAPI, context: ApiContext):
         except task_names.TaskNameError as exc:
             fail(422, exc)
 
+
+def _register_task_save_status_route(app) -> None:
+    """Register the in-memory Save task progress endpoint."""
     @app.get('/api/tasks/saving')
     def tasks_saving():
         """The Save task running in this backend, step by step, and the last one that ended (record 7.198): the page asks
@@ -82,11 +113,19 @@ def _task_routes(app: FastAPI, context: ApiContext):
         only - nothing is read or contacted."""
         return task_saving.status()
 
+
+def _register_task_baseline_route(app, context) -> None:
+    """Register the saved-task baseline request endpoint."""
+    # Request the saved task baseline using its optional connection and output-root overrides.
     @app.post('/api/tasks/baseline')
     def retry_baseline(body: TaskBaselineBody):
         return dict(baseline=task_baseline.start(context, body.task_key, profile_id=body.profile_id,
                                                 output_root=body.output_root))
 
+
+def _register_circuit_load_route(app, context) -> None:
+    """Register circuit loading with saved baseline adoption and native-task details."""
+    # Load circuit details and baseline status, adopting an existing completed baseline when eligible.
     @app.post('/api/circuit/load')
     def circuit_load(body: CircuitBody):
         try:
@@ -96,23 +135,28 @@ def _task_routes(app: FastAPI, context: ApiContext):
         context.authorize_circuit(circuit)
         shell = schema.WorkbenchConfig.model_validate(dict(circuit=circuit.model_dump(), run=dict(max_evaluations=1)))
         runtime, blocked = load_runtime(shell)
-        if runtime is not None and runtime.circuit.get('generated_profile') and not runtime.circuit.get('baseline_recorded'):
+        if runtime is not None and runtime.circuit.get('generated_profile') and not runtime.circuit.get(
+            'baseline_recorded'):
             # A Baseline simulation records itself when it finishes (record 7.78); one made before that, or one
             # whose worker could not, becomes the reference now: the newest completed one of this task under the
             # remembered output root (the one every run is filed under; none remembered = no run was ever made here),
             # from its manifest and tables, nothing simulated. The task is then loaded again with its reference.
             remembered = runs.load_settings().get('output_root')
             try:
-                adopted = remembered and profiles.adopt_latest_baseline(runtime.task_key[len('real:'):], context.roots.resolve(remembered))
+                adopted = remembered and profiles.adopt_latest_baseline(runtime.task_key[len('real:'):],
+                    context.roots.resolve(remembered))
             except (PathNotAllowed, OSError):
                 adopted = None
             if adopted:
                 runtime, blocked = load_runtime(shell)
         # A Virtuoso cell that already has a registered task - a profile generated from it, or one of the verified
         # built-in circuits - is not "browse only", and gets no second profile: the form points to its task.
-        existing = profiles.task_for_cell(circuit.library, circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
-        native = dict(profile_task=existing and existing['task_key'], profile_task_generated=existing and existing['generated'],
-                      working_copy=working_copy.load(circuit.library, circuit.cell) if circuit.library and circuit.cell else None
+        existing = profiles.task_for_cell(circuit.library,
+            circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
+        native = dict(profile_task=existing and existing['task_key'],
+                      profile_task_generated=existing and existing['generated'],
+                      working_copy=working_copy.load(circuit.library,
+                          circuit.cell) if circuit.library and circuit.cell else None
                       ) if circuit.source == 'virtuoso' else {}
         if runtime is None:
             return dict(loaded=False, **blocked, **native)
@@ -121,13 +165,15 @@ def _task_routes(app: FastAPI, context: ApiContext):
             imported = load_cell_import(circuit.library, circuit.cell)
             native['testbench_probes'] = imported and profiles.testbench_probes(imported, graph=runtime.base_graph)
         return dict(loaded=True, baseline_setup=task_baseline.status(runtime.task_key),
-                    training_capabilities=tasks.training_capabilities(runtime.task_key), **loaded_circuit(runtime), **native)
+                    training_capabilities=tasks.training_capabilities(runtime.task_key), **loaded_circuit(runtime),
+                    **native)
 
 
-def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
+def _virtuoso_cell_routes(app: FastAPI, context: ApiContext) -> None:
     """Browsing and reading Virtuoso cells, importing one, its reference and its deletion."""
     def _native(body, op):
-        return bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, op, library=body.library, cell=body.cell,
+        return bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, op, library=body.library,
+                                                     cell=body.cell,
                                                      testbench=body.testbench if op == 'import_cell' else None))
 
     @app.post('/api/virtuoso/libraries')
@@ -151,8 +197,12 @@ def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
         `work_here` (2026-09-23): the page asked whether the cell is a copy the user made and they said yes - the cell
         that was read becomes the task flow's working copy (working_copy.declare, no further contact with Virtuoso;
         the workbench makes no copy of its own any more); the answer then carries the record."""
-        if body.work_here and not body.testbench:               # said before any export: the declaration would refuse anyway
-            fail(409, 'Choose the cell\'s Testbench cell first: the task simulates the testbench and keeps its Maestro setup there.', code='refused')
+        # said before any export: the declaration would refuse anyway
+        if body.work_here and not body.testbench:
+            fail(409,
+                "Choose the cell's Testbench cell first: the task simulates the testbench and keeps its "
+                'Maestro setup there.',
+                code='refused')
         imported = _native(body, 'import_cell')
         if body.work_here:
             try:
@@ -171,7 +221,8 @@ def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
             run_dir = context.run_path(body.run_dir) if body.run_dir else profiles.latest_baseline_run(
                 body.name, [r['run_dir'] for r in runs.list_runs(context.roots, include_mock=False)])
             if run_dir is None:
-                fail(409, f'No run of real:{body.name} was found under the output root. Run "Baseline simulation" first.',
+                fail(409,
+                     f'No run of real:{body.name} was found under the output root. Run "Baseline simulation" first.',
                      code='no_baseline_run')
             return profiles.record_reference(body.name, run_dir)
         except profiles.ProfileError as exc:
@@ -183,7 +234,8 @@ def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
         can get a new one. Contacts nothing. The folder is kept aside, the runs that were made keep their data; refused
         while a worker is on a run of the task, while the task is being saved, and for the verified built-in circuits."""
         if task_saving.running_task() == f'real:{body.name}':
-            fail(409, f'real:{body.name} is being saved right now: delete it once the save has ended.', code='delete_refused')
+            fail(409, f'real:{body.name} is being saved right now: delete it once the save has ended.',
+                code='delete_refused')
         try:
             answer = profiles.delete_profile(body.name, run_rows=runs.list_runs(context.roots, include_mock=False))
         except profiles.ProfileError as exc:
@@ -192,7 +244,7 @@ def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
         return answer
 
 
-def _ngspice_routes(app: FastAPI, context: ApiContext):
+def _ngspice_routes(app: FastAPI, context: ApiContext) -> None:
     """ngspice decks: read, check, save as a task, read the task, delete it."""
     def _ngspice_kinds(body):
         try:
@@ -201,7 +253,7 @@ def _ngspice_routes(app: FastAPI, context: ApiContext):
         except ngspice_tasks.NgspiceTaskError as exc:
             fail(422, exc)
 
-    def _ngspice_source(path):
+    def _ngspice_source(path) -> str | None:
         """The file a deck was loaded from, for its relative includes: only a path under the input roots counts - the
         browser names no other file (it got this one from /api/ngspice/read)."""
         if not path or '\x00' in str(path):         # a NUL byte is no file (the OS refuses it with ValueError)
@@ -231,13 +283,15 @@ def _ngspice_routes(app: FastAPI, context: ApiContext):
     def ngspice_save(body: NgspiceSaveBody):
         """Save the deck; a new task automatically starts one fixed baseline evaluation."""
         try:
-            entry = ngspice_tasks.save(body.name, body.text, device_kinds=_ngspice_kinds(body), source_path=_ngspice_source(body.source_path),
+            entry = ngspice_tasks.save(body.name, body.text, device_kinds=_ngspice_kinds(body),
+                                       source_path=_ngspice_source(body.source_path),
                                        circuit_class=body.circuit_class, pdk_id=body.pdk_id)
         except ngspice_tasks.NgspiceTaskError as exc:
             fail(409, exc, code='refused')
         parsed = ngspice_tasks.parse_entry(entry, body.text)
         task_baseline.after_save(context, entry, profile_id=body.profile_id, output_root=body.output_root)
-        return dict(entry, starter=ngspice_tasks.starter_config(entry['task_key']), check=dict(ok=True, **ngspice_tasks.summary(parsed)))
+        return dict(entry, starter=ngspice_tasks.starter_config(entry['task_key']), check=dict(ok=True,
+            **ngspice_tasks.summary(parsed)))
 
     @app.get('/api/ngspice/task')
     def ngspice_task(name: str):
@@ -260,18 +314,37 @@ def _ngspice_routes(app: FastAPI, context: ApiContext):
         return answer
 
 
-def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
+def _virtuoso_task_routes(app: FastAPI, context: ApiContext) -> None:
     """A task's Virtuoso side: the copy refusal, the setup read, Save task, the task file, Check now."""
+    _register_virtuoso_copy_route(app)
+
+    _register_virtuoso_setup_read_route(app, context)
+
+    _register_virtuoso_task_save_route(app, context)
+
+    _register_virtuoso_task_file_route(app, context)
+
+    _register_virtuoso_task_check_route(app, context)
+
+    _register_virtuoso_task_file_check_route(app)
+
+
+def _register_virtuoso_copy_route(app) -> None:
+    """Register the endpoint that explains why automatic cell copying is refused."""
     @app.post('/api/virtuoso/copy')
     def virtuoso_copy(body: CopyBody):
         """Refused since 2026-09-23 (user request): the workbench makes no copy of a cell any more. The user copies the
         cell and its testbench in Virtuoso and reads the copy (`/api/virtuoso/import` with `work_here`: the page asks
         whether it is a copy they made). `working_copy.make` stays for the tests only: Save as through the API makes its
         copy with `working_copy.make_task_copy`, which does not call it."""
-        fail(409, f'The workbench no longer makes copies of your cells ({body.library}/{body.cell} was not copied): copy the cell '
-                  'and its testbench in Virtuoso yourself, then read the copy in the Virtuoso window - it asks whether the cell '
-                  'is a copy you made and works in it.', code='copies_not_made')
+        fail(409,
+            f'The workbench no longer makes copies of your cells ({body.library}/{body.cell} was not '
+            f'copied): copy the cell and its testbench in Virtuoso yourself, then read the copy in the '
+            f'Virtuoso window - it asks whether the cell is a copy you made and works in it.', code='copies_not_made')
 
+
+def _register_virtuoso_setup_read_route(app, context) -> None:
+    """Register the working-copy Maestro setup read and editor-comparison endpoint."""
     @app.post('/api/virtuoso/setup/read')
     def virtuoso_setup_read(body: SetupBody):
         """Explicit click: what the working copy's Maestro view holds (test, analyses, outputs, specs, variables and the
@@ -281,6 +354,7 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
             fail(422, 'A connection profile is required')
 
         def read():
+            """Read the working copy setup and compare it with supplied editor rows when a test is present."""
             found = working_copy.read_setup(context.monitor, body.profile_id, body.library, body.cell)
             if body.config is not None and found.get('test'):
                 config = context.parse_config(body.config)
@@ -291,6 +365,9 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
             return found
         return bridge_call(read, COPY_REFUSED)
 
+
+def _register_virtuoso_task_save_route(app, context) -> None:
+    """Register saved-task writes and their baseline handoff through the existing session flow."""
     @app.post('/api/virtuoso/task/save')
     def virtuoso_task_save(body: TaskSaveBody):
         """Explicit click - a person's only: store the editors' rows as the task real:<name>. The first save of a cell takes
@@ -311,13 +388,14 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
                 session = None
                 if session_routing.grouped(body.profile_id):
                     # On whichever session of the connection is free, preferring the one that holds the cell open for
-                    # editing (record 7.351) - after the save's own refusals, which need no Virtuoso, so that a refused save
-                    # changes nothing there. The baseline it starts below gets the same session.
+                    # editing (record 7.351) - after the save's own refusals, which need no Virtuoso, so that a refused
+                    # save changes nothing there. The baseline it starts below gets the same session.
                     bridge_call(lambda: task_save.check_saveable(body.name, config, task=body.task, as_new=body.as_new,
                                                                  run_rows=run_rows, replace_newer=body.replace_newer,
                                                                  base_revision=body.base_revision), *refusals)
                     try:
-                        session = session_routing.choose(body.profile_id, cell=_saved_cell(body), monitor=context.monitor,
+                        session = session_routing.choose(body.profile_id, cell=_saved_cell(body),
+                                                         monitor=context.monitor,
                                                          purpose='save')
                         session_routing.release_pending(session, context.monitor)
                     except session_routing.SessionsBusy as exc:
@@ -326,8 +404,10 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
                 profile_id = session.profile_id if session is not None else body.profile_id
                 try:
                     save.answer = bridge_call(
-                        lambda: profiles.save_task(context.monitor, profile_id, body.name, config, library=body.library, cell=body.cell,
-                                                   task=body.task, as_new=body.as_new, extras=body.extras, run_rows=run_rows,
+                        lambda: profiles.save_task(context.monitor, profile_id, body.name, config, library=body.library,
+                                                   cell=body.cell,
+                                                   task=body.task, as_new=body.as_new, extras=body.extras,
+                                                   run_rows=run_rows,
                                                    progress=save.mark, base_revision=body.base_revision,
                                                    replace_newer=body.replace_newer), *refusals)
                 except BaseException:
@@ -341,6 +421,9 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
             fail(409, exc, code='save_running', running=task_saving.status()['running'])
         return save.answer
 
+
+def _register_virtuoso_task_file_route(app, context) -> None:
+    """Register rendering of the current editor rows as a task file."""
     @app.post('/api/virtuoso/task/file')
     def virtuoso_task_file(body: TaskFileBody):
         """The task file of the CURRENT editors - what "Save task" would store - as text, laid out with its own
@@ -351,8 +434,12 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
         setup = working_copy.last_written(dict(state_dir=state_dir)) if state_dir else None
         data = task_files.draft(config, name=name, cell=cell, copy=copy, saved=saved, extras=body.extras,
                                 setup=dict(setup, test='GATOR') if setup else None)
-        return dict(text=task_files.render(data), name=name, revision=(saved or {}).get('revision', 0), saved=saved is not None)
+        return dict(text=task_files.render(data), name=name, revision=(saved or {}).get('revision', 0),
+            saved=saved is not None)
 
+
+def _register_virtuoso_task_check_route(app, context) -> None:
+    """Register the saved-task and working-copy consistency check endpoint."""
     @app.post('/api/virtuoso/task/check')
     def virtuoso_task_check(body: TaskCheckBody):
         """Explicit click ("Check now"): the check Start runs by itself before every run of a saved task - the editors
@@ -364,7 +451,8 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
         # about; with every session busy the check runs as before and its "busy" step names who holds the lock.
         try:
             session = session_routing.choose(body.profile_id, first_session_only=session_routing.task_cell(config)[1],
-                                             monitor=context.monitor, purpose='check') if session_routing.grouped(body.profile_id) else None
+                                             monitor=context.monitor,
+                                             purpose='check') if session_routing.grouped(body.profile_id) else None
         except session_routing.SessionsBusy:
             session = None
         try:
@@ -377,6 +465,9 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
             result['virtuoso_session'] = session.record()
         return result
 
+
+def _register_virtuoso_task_file_check_route(app) -> None:
+    """Register parsing and validation of edited task-file text."""
     @app.post('/api/virtuoso/task/file/check')
     def virtuoso_task_file_check(body: TaskFileTextBody):
         """Read a task file someone edited: its rows (checked with the editors' schema), what it holds beside them, and
@@ -385,8 +476,9 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
         return dict(rows=rows, extras=extras, problems=problems, ok=not problems)
 
 
-def _configuration_routes(app: FastAPI, context: ApiContext):
+def _configuration_routes(app: FastAPI, context: ApiContext) -> None:
     """Validating and comparing a configuration, and Matched devices."""
+    # Validate editor rows against the loaded task and return hashes, blockers and unsaved-row status.
     @app.post('/api/config/validate')
     def config_validate(body: ValidateBody):
         config, runtime, blocked = context.load_config(body.config)
@@ -414,9 +506,11 @@ def _configuration_routes(app: FastAPI, context: ApiContext):
         answer = structures.suggest(runtime.base_graph, list(config.parameters), None if verified else body.apply)
         answer.update(applicable=not verified, independent_before=independent_action_count(config.parameters))
         if verified:
-            return dict(answer, suggestions=[], why_not=f'The rows of {runtime.task_key} are fixed by its verified circuit '
+            return dict(answer, suggestions=[],
+                why_not=f'The rows of {runtime.task_key} are fixed by its verified circuit '
                         'profile: a run accepts exactly those. The structures are listed for information.')
-        answer['note'] = ('Save as afterwards: a task runs with the rows it was saved with, so the ties run in the new task.'
+        answer['note'] = (
+            'Save as afterwards: a task runs with the rows it was saved with, so the ties run in the new task.'
                           if runtime.circuit.get('generated_profile') else 'The ties become part of the task when you '
                           'press Save as.' if runtime.circuit.get('native_draft') else '')
         if body.apply is not None:

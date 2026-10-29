@@ -24,21 +24,25 @@ SPEC = (MetricSpec('score', 'fixture', 'min', 1., lower=.95),)
 
 @pytest.fixture
 def store(tmp_path):
+    """Open a temporary experiment store with free-space thresholds disabled and close it after use."""
     with ExperimentStore(tmp_path / 'recording', RecordingConfig(min_free=0, temporary_reserve=0)) as value:
         yield value
 
 
 def setup(store, graph):
+    """Register a run, task and graph and return their IDs as an evaluation context."""
     run = store.call('run', {})
     task, gid = store.call('task', graph, SPEC)
     return run, task, gid
 
 
 def begin(store, context, i='e', **kwargs):
+    """Begin a mock evaluation in the registered run, task and graph."""
     return store.call('begin', *context, dict(source='mock', **kwargs), eval_id=i)
 
 
 def result(value=.96, status='ok'):
+    """Build an injected metric result with no simulator invocations."""
     return dict(status=status, metrics={'score': value}, metric_validity={'score': value is not None},
                 metric_units={'score': 'fixture'}, applied_parameters={('M1', 'm'): 3}, simulator_invocations=0)
 
@@ -47,6 +51,7 @@ def test_static_idempotent_parallel_and_summaries(store, opamp):
     context = setup(store, opamp)
     assert store.call('task', opamp, SPEC) == context[1:]
     def worker(i):
+        """Finish the same mock evaluation twice and require identical acknowledgements."""
         key = begin(store, context, str(i), worker_id=str(i), phase='initial' if i == 0 else 'training')
         data = result(.96 if i % 2 else .5)
         ack = store.call('finish', key, data)
@@ -368,6 +373,7 @@ def test_export_does_not_leak_other_run_states_with_same_task(store, opamp, tmp_
 
 
 def _process_record(store, context, worker):
+    """Finish worker-tagged evaluations in a subprocess and check idempotent acknowledgements."""
     for i in range(5):
         key = begin(store, context, f'{worker}-{i}', worker_id=str(worker))
         ack = store.call('finish', key, result(i / 10))
@@ -400,6 +406,7 @@ def test_remote_helper_ownership_space_and_finished_gate(tmp_path):
     from analog_optimizer.recording.remote import HELPER
     root = tmp_path / 'spectre-host'
     def invoke(operation, **kwargs):
+        """Run the remote-helper protocol in a local subprocess and decode its JSON response."""
         run = subprocess.run([sys.executable, '-c', HELPER, json.dumps(dict(operation=operation, root=str(root), **kwargs))],
                              capture_output=True, text=True)
         if run.returncode:
@@ -443,7 +450,9 @@ def test_remote_helper_selects_available_interpreter(tmp_path, executable):
     commands.mkdir()
     (commands / executable).symlink_to(sys.executable)
     class Runner:
+        """A local shell runner used to exercise remote interpreter selection."""
         def run_command(self, command, timeout):
+            """Execute a local shell command with the test interpreter directory as its PATH."""
             return subprocess.run(['/bin/sh', '-c', command], timeout=timeout,
                                   env=dict(os.environ, PATH=str(commands)), capture_output=True, text=True)
     scratch = BridgeScratch.__new__(BridgeScratch)
@@ -456,6 +465,7 @@ def test_remote_helper_selects_available_interpreter(tmp_path, executable):
 
 
 def _crash_after_commit(root, graph):
+    """Exit the process after committing one evaluation and leaving another pending."""
     import os
     store = ExperimentStore(root, RecordingConfig(min_free=0, temporary_reserve=0))
     context = setup(store, graph)

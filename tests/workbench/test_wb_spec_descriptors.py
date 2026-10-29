@@ -9,6 +9,7 @@ from helpers import make_config
 
 
 def facts(analysis, expression, bench=sd.Bench(), **kwargs):
+    """Return the nonempty probe-descriptor flags excluding source locations."""
     return set(k for k, v in sd.probe_facts(analysis, expression, bench, **kwargs).items() if v and k not in ('position', 'span'))
 
 
@@ -60,6 +61,7 @@ def test_the_bench_s_supply_and_ac_stimulus_come_from_its_netlist():
 
 
 def _ade(raw):
+    """Replace starter rows with gain and frequency probes and derived gain/VCO-gain specs."""
     raw['measurements'] = [dict(measurement_id='m_gain', analysis='ac', result_source='ade_output', source_name='gain',
                                 signal=GAIN, unit='dB'),
                            dict(measurement_id='m_f1', analysis='tran', result_source='ade_output', source_name='f1',
@@ -111,6 +113,7 @@ def test_windows_bands_and_series_tell_alike_specs_apart():
 
 def test_a_combined_spec_takes_its_place_from_the_probe_it_names_first(tmp_path):
     def series(raw):
+        """Create frequency-window probes and specs comparing each frequency with their average."""
         raw['measurements'] = [dict(measurement_id=f'm_f{i}', analysis='tran', result_source='ade_output', source_name=f'f{i}',
                                     signal=f'frequency(clip(VT("/OUT") {i}e-08 {i + 1}e-08))', unit='Hz') for i in (1, 2, 3)]
         first = dict(raw['targets'][0])

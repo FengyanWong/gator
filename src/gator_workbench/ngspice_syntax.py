@@ -12,7 +12,8 @@ import re
 
 from analog_optimizer.graph.circuit_graph import CircuitGraph
 
-SCALES = {'t': 1e12, 'g': 1e9, 'meg': 1e6, 'k': 1e3, 'm': 1e-3, 'u': 1e-6, 'n': 1e-9, 'p': 1e-12, 'f': 1e-15, 'a': 1e-18,
+SCALES = {'t': 1e12, 'g': 1e9, 'meg': 1e6, 'k': 1e3, 'm': 1e-3, 'u': 1e-6, 'n': 1e-9, 'p': 1e-12, 'f': 1e-15,
+    'a': 1e-18,
           'mil': 25.4e-6}
 
 
@@ -28,6 +29,7 @@ class NetlistError(ValueError):
 
 @dataclass(frozen=True)
 class Token:
+    # A source token with its physical line and character offset in the deck.
     text: str
     line: int          # 1-based physical line of the deck
     column: int        # 0-based offset in that line
@@ -35,6 +37,7 @@ class Token:
 
 @dataclass(frozen=True)
 class Measurement:
+    # A parsed measurement with its analysis, suggested unit and original source text.
     name: str          # as ngspice prints it: lowercase
     analysis: str      # the workbench's analysis label of the Probes row
     unit: str          # a guess from the measured expression (V, A, dB, s, Hz, '1'); the row is editable
@@ -54,6 +57,7 @@ class Sizable:
 
 @dataclass
 class Parsed:
+    # A parsed deck retaining its circuit graph, source lines and metadata needed for rewriting.
     graph: CircuitGraph
     measurements: list
     analyses: list
@@ -69,6 +73,7 @@ class Parsed:
 
     @property
     def sha256(self) -> str:
+        """Return the SHA-256 hex digest of the deck text exactly as it was given to the parser."""
         return hashlib.sha256('\n'.join(self.lines).encode()).hexdigest()
 
     @property
@@ -78,6 +83,7 @@ class Parsed:
 
     @property
     def result_names(self) -> list:
+        """Return unique measurement names in their original order."""
         return list(dict.fromkeys(m.name for m in self.measurements))
 
     @property
@@ -85,7 +91,7 @@ class Parsed:
         return {m.name: m.unit for m in self.measurements}
 
 
-def number(text):
+def number(text: str) -> float | None:
     """A SPICE number, or None. `10uF` = 10e-6 (letters after the scale are ignored), `1Meg` = 1e6, `1M` = 1e-3."""
     match = NUMBER.match(text.strip())
     if not match:
@@ -100,14 +106,16 @@ _FUNCTIONS = {'sqrt': math.sqrt, 'exp': math.exp, 'log': math.log, 'ln': math.lo
               'sinh': math.sinh, 'cosh': math.cosh, 'tanh': math.tanh, 'nint': lambda x: float(round(x))}
 
 
-_EXPRESSION_NUMBER = re.compile(r'(?<![\w.])((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(meg|mil|[tgkmunpfa])?(?![\w.])', re.IGNORECASE)
+_EXPRESSION_NUMBER = re.compile(r'(?<![\w.])((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(meg|mil|[tgkmunpfa])?(?![\w.])',
+    re.IGNORECASE)
 
 
 class Unresolved(ValueError):
+    """An expression could not be resolved within the supported SPICE value grammar."""
     pass
 
 
-def evaluate(text, lookup):
+def evaluate(text: str, lookup) -> float:
     """The value of a SPICE expression (`{2*wn}`, `'wn/2'`, `wn`) with `lookup(name)` for parameters: numbers with SPICE
     scales, + - * / ** and unary signs, brackets and the arithmetic functions ngspice has. A whitelist over the syntax
     tree, never eval(); anything else is Unresolved."""
@@ -125,7 +133,7 @@ def evaluate(text, lookup):
     if plain is not None:
         return plain
 
-    def literal(match):
+    def literal(match: re.Match[str]) -> str:
         value = float(match.group(1)) * SCALES.get((match.group(2) or '').lower(), 1.0)
         return repr(value)
     binary = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv,
@@ -143,7 +151,8 @@ def evaluate(text, lookup):
             if isinstance(node.op, ast.Pow) and abs(right) > 100:
                 raise Unresolved('exponent too large')
             return binary[type(node.op)](left, right)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.lower() in _FUNCTIONS and not node.keywords:
+        if isinstance(node, ast.Call) and isinstance(node.func,
+            ast.Name) and node.func.id.lower() in _FUNCTIONS and not node.keywords:
             return float(_FUNCTIONS[node.func.id.lower()](*[visit(a) for a in node.args]))
         raise Unresolved(f'unsupported {type(node).__name__}')
     try:
@@ -160,7 +169,7 @@ def evaluate(text, lookup):
     return value
 
 
-def strip_comment(line):
+def strip_comment(line: str) -> str:
     """The line without a `$ ...` or `; ...` inline comment (SPICE), keeping quotes and braces whole."""
     depth, quote = 0, None
     for i, char in enumerate(line):
@@ -179,7 +188,27 @@ def strip_comment(line):
     return line
 
 
-def tokenize(line, line_number):
+def _scan_spice_token(line: str, i: int, n: int) -> tuple[int, int]:
+    """Find the end and starting offset of a token while respecting quotes and brackets."""
+    start, depth, quote = i, 0, None
+    while i < n:
+        char = line[i]
+        if quote:
+            if char == quote:
+                quote = None
+        elif char in "'\"":
+            quote = char
+        elif char in '{(':
+            depth += 1
+        elif char in '})':
+            depth -= 1
+        elif char in ' \t,' and depth <= 0:
+            break
+        i += 1
+    return i, start
+
+
+def tokenize(line: str, line_number: int) -> list[Token]:
     """Tokens of one physical line: split on blanks and commas outside quotes and brackets, then `a = b` joined to `a=b`
     (SPICE allows the spaces). Each token remembers its place, so a value can be replaced in the deck later."""
     raw, i, n = [], 0, len(line)
@@ -187,25 +216,12 @@ def tokenize(line, line_number):
         if line[i] in ' \t,':
             i += 1
             continue
-        start, depth, quote = i, 0, None
-        while i < n:
-            char = line[i]
-            if quote:
-                if char == quote:
-                    quote = None
-            elif char in "'\"":
-                quote = char
-            elif char in '{(':
-                depth += 1
-            elif char in '})':
-                depth -= 1
-            elif char in ' \t,' and depth <= 0:
-                break
-            i += 1
+        i, start = _scan_spice_token(line, i, n)
         raw.append(Token(line[start:i], line_number, start))
     tokens = []
     for token in raw:
-        if tokens and (token.text.startswith('=') or tokens[-1].text.endswith('=')) and not (tokens[-1].text == '=' and len(tokens) == 1):
+        if tokens and (token.text.startswith('=') or tokens[-1].text.endswith('=')) and not (tokens[
+            -1].text == '=' and len(tokens) == 1):
             previous = tokens.pop()
             tokens.append(Token(previous.text + token.text, previous.line, previous.column))
         else:
@@ -213,7 +229,7 @@ def tokenize(line, line_number):
     return tokens
 
 
-def statements(lines):
+def statements(lines) -> tuple:
     """Logical statements of the deck: each a list of tokens across `+` continuation lines. The title line is not a
     statement. Returns (title, statements, has_control, control_lines)."""
     title = lines[0].rstrip() if lines else ''
@@ -247,7 +263,7 @@ def statements(lines):
     return title, result, control, control_lines
 
 
-def _split(tokens, *, first=1):
+def _split(tokens, *, first: int=1) -> tuple[list, dict]:
     """(positional tokens, {name: token of the whole `name=value`}) after the element name."""
     positional, named = [], {}
     for token in tokens[first:]:
@@ -259,7 +275,7 @@ def _split(tokens, *, first=1):
     return positional, named
 
 
-def _value_token(token):
+def _value_token(token: Token) -> Token:
     """The value part of a `name=value` token as a token of its own (for the writeback), or the token itself."""
     head, equals, tail = token.text.partition('=')
     if equals and NAME.match(head or ' '):

@@ -133,7 +133,8 @@ class _EnvDriver:
                 observation, info = env.reset()
                 self._last = ('reset', None)
                 step = (observation, None, info['terminated'], info['truncated'], info)
-            elif op == 'reset_reused':                     # the engine's every-5th-reset rule (2026-09-30): nothing runs
+            # the engine's every-5th-reset rule (2026-09-30): nothing runs
+            elif op == 'reset_reused':
                 observation, info = env.reset_reused()
                 self._last = None                          # so there is nothing to retry either
                 step = (observation, None, info['terminated'], info['truncated'], info)
@@ -160,6 +161,7 @@ class _EnvDriver:
                                        cleanup_error=getattr(exc, 'cleanup_error', None))
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 result['interrupted'] = True
+        # ---- Collect launch records even when the requested operation failed.
         records = self._new_records()
         result.update(ended_at=_now(), launches=env.simulation_calls - calls_before, records=records,
                       record=records[-1] if records else None, episode=env.episode, episode_step=env.steps)
@@ -191,6 +193,7 @@ class _Handle:
 
 
 class ThreadLane:
+    """An execution lane that owns one environment on a dedicated thread."""
     kind = 'thread'
 
     def __init__(self, lane_id, factory):
@@ -222,11 +225,13 @@ class ThreadLane:
                 return
 
     def submit(self, op, proposal=None, *, allowance=1, stop_file=None):
+        """Queue a lane operation and return a handle for its eventual result."""
         future = Future()
         self._commands.put(((op, proposal, allowance, stop_file), future))
         return _Handle(future)
 
     def close(self, timeout=30.0):
+        """Close the environment, wait for the lane thread to end, and return the restoration outcome."""
         if not self._thread.is_alive():
             return dict(lane_id=self.lane_id, state='already_closed')
         outcome = self.submit('close')._future.result(timeout=timeout)
@@ -246,8 +251,8 @@ def _process_open(factory, lane_id):
     return _DRIVER.describe()
 
 
-def _process_run(op, proposal=None, allowance=1, stop_file=None):
-    return _DRIVER.run(op, proposal, allowance, stop_file)
+def _process_run(operation, proposal=None, allowance=1, stop_file=None):
+    return _DRIVER.run(operation, proposal, allowance, stop_file)
 
 
 def _process_close():
@@ -257,6 +262,7 @@ def _process_close():
 
 
 class ProcessLane:
+    """An execution lane that owns one environment in a managed child process."""
     kind = 'process'
 
     def __init__(self, lane_id, factory, limits=None):
@@ -271,9 +277,11 @@ class ProcessLane:
             raise
 
     def submit(self, op, proposal=None, *, allowance=1, stop_file=None):
+        """Submit a lane operation to the owned process and return its result handle."""
         return self._worker.submit(_process_run, op, proposal, allowance, stop_file)
 
     def close(self, timeout=None):
+        """Close the environment, always shut down the child process, and return the restoration outcome."""
         outcome = dict(lane_id=self.lane_id, state='unknown')
         try:
             outcome = self._worker.submit(_process_close, timeout=timeout or self.limits.shutdown_seconds).result()

@@ -1,3 +1,5 @@
+"""Spectre syntax and include boundaries checked with local fixtures and temporary files, without simulation."""
+
 from dataclasses import replace
 from pathlib import Path
 

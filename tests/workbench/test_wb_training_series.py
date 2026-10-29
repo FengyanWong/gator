@@ -27,6 +27,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def read_all(run_dir, max_rows=training_series.MAX_ROWS):
+    """Read every training page while checking cursor continuity and JSON-safe values."""
     answers, cursor, tail_cursor = [], 0, None
     while True:
         answer = agreed(run_dir, cursor, tail_cursor, max_rows)  # the same answer before 7.221, uncached and cached
@@ -42,6 +43,7 @@ def read_all(run_dir, max_rows=training_series.MAX_ROWS):
 
 
 def epoch(value):
+    """Convert an optional recorded datetime to epoch seconds."""
     return None if value is None else value.timestamp()
 
 
@@ -168,6 +170,7 @@ def test_a_killed_and_resumed_run_reads_whole_in_order_and_once(tmp_path):
 
 @pytest.fixture(scope='module')
 def frozen_run(tmp_path_factory):
+    """Provide a completed frozen-policy run using a synthetic source model."""
     root = tmp_path_factory.mktemp('frozen')
     source, state = execute(make_config(root, run=dict(max_evaluations=12, seed=5), project=dict(task_name='source')), root)
     assert state == 'completed'
@@ -189,6 +192,7 @@ def test_a_frozen_run_is_an_evaluation_and_has_no_learner(frozen_run):
 
 def test_best_feasible_objective_is_the_trackers_objective_value(tmp_path):
     def objective(raw):
+        """Set the fixture score as the objective to maximize after feasibility."""
         raw['targets'][0]['direction_after_feasible'] = 'maximize'
     layout, state = execute(make_config(tmp_path, threshold=0.4, run=dict(max_evaluations=16, seed=2), mutate=objective), tmp_path)
     assert state == 'completed'
@@ -214,6 +218,7 @@ def test_infeasible_or_unknown_best_design_has_no_feasible_objective():
 
 
 def journal_bundle(seq, updates=7):
+    """Build one journal bundle with linked evaluation, update and aggregate metric rows."""
     return dict(commit_seq=seq, evaluation_id=f'e{seq}', rows=dict(
         evaluations=[dict(evaluation_id=f'e{seq}', commit_seq=seq)],
         learner_updates=[dict(cumulative_updates=(seq - 1) * updates + i + 1) for i in range(updates)],
@@ -277,6 +282,7 @@ def test_new_flush_cursor_seeks_past_the_published_history(tmp_path, monkeypatch
     original = training_series._journal_lines
 
     def track(stream):
+        """Record commit numbers visited by journal iteration."""
         for line, end in original(stream, block_size=128):
             visited.append(json.loads(line)['commit_seq'])
             yield line, end

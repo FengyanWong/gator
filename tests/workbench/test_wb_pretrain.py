@@ -13,8 +13,10 @@ pytestmark = pytest.mark.xdist_group('test_wb_pretrain')
 
 @pytest.fixture(scope='module')
 def sources(tmp_path_factory):
+    """Provide completed synthetic OTA and LDO runs for archive-pooling tests."""
     root = tmp_path_factory.mktemp('offline-sources')
     def upper_goal(raw):
+        """Set an upper-bound score target for the OTA archive source."""
         raw['targets'][0].update(constraint='<=', lower=None, upper=0.95)
     a, state = execute(make_config(root, run=dict(max_evaluations=24), mutate=upper_goal,
                                    advanced=dict(gamma=0., batch_size=4, warmup_transitions=4, episode_length=3)), root)
@@ -27,6 +29,7 @@ def sources(tmp_path_factory):
 
 
 def request_for(sources):
+    """Build a small synthetic pretraining request pinned to the source archives' hashes."""
     return dict(origin='synthetic', seed=7, holdout_fraction=0.2,
                 runs=[dict(run_dir=str(s.run_dir), archive_sha256=pretrain.archive_identity(s.run_dir)) for s in sources],
                 updates=3, batch_size=3, checkpoint_every=2,
@@ -91,6 +94,7 @@ def test_disk_pool_detects_corruption_and_preserves_viewed_transition(sources, t
     pool = pretrain.prepare_pool(request_for(sources))
     original = next(iter(pool.training.values()))[0]
     class IdentityView:
+        """An observation view that preserves the supplied object unchanged."""
         def view(self, observation):
             return observation
     viewed = pretrain._shown(original, IdentityView())
@@ -174,6 +178,7 @@ def test_a_scale_the_task_states_stays_when_its_limit_is_moved_even_when_it_equa
     task = 'synthetic:gpdk045_ota5'
 
     def stated(raw, upper=0.95):
+        """Set a movable upper score limit while retaining an explicit normalization scale."""
         raw['targets'][0].update(constraint='<=', lower=None, upper=upper, normalization_scale=0.95)
     recorded = make_config(tmp_path, run=dict(max_evaluations=24), mutate=stated,
                            advanced=dict(gamma=0., batch_size=4, warmup_transitions=4, episode_length=3))
@@ -206,6 +211,47 @@ def test_a_scale_the_task_states_stays_when_its_limit_is_moved_even_when_it_equa
     kept = [json.loads(line) for line in gzip.open(tmp_path / 'mock' / 'rehearsal' / 'transitions.jsonl.gz', 'rt')]
     copies = [Transition(**codec.untree(row['transition'])) for row in kept if row['selection'].get('target_set') == 1]
     assert copies and all(copy.observation.specs == online for copy in copies)
+
+
+def test_a_target_set_can_state_scales_and_an_objective_and_then_scores_as_a_run_of_that_view(sources, tmp_path):
+    """The archive comparison's goal views (plan-bo-mobo-rl-archive-comparison.md 4.2): a target set that names a row's
+    "scale" and "objective" makes each copy score exactly as a run of the task saved with those limits, that scale and
+    that preferred direction - the scale held whatever the limit, the objective bonus paid on a design meeting every
+    limit. Rows not named and requests without the new keys are as before (the tests above)."""
+    from dataclasses import asdict, replace
+    from analog_optimizer.measurements.specs import RewardSettings
+    from gator_workbench.compile import build_specs
+    task = 'synthetic:gpdk045_ota5'
+    request = request_for(sources)
+    request['relabel_targets'] = {task: [{'score': {'upper': 0.95, 'scale': 2.0, 'objective': 'min'}}]}
+    # the comparison's reward settings (plan section 3, decision D5): an objective bonus is paid only with a weight
+    request['migrate_reward_settings'] = asdict(RewardSettings(violation_shape='compressed', worst_spec_share=0.5,
+                                                               objective_weight=1.0, margin_weight=0.0,
+                                                               objective_shape='compressed'))
+    pool = pretrain.prepare_pool(request)
+    copies = [t for t in pool.training[task] + pool.validation[task] if t.observation.specs[0].objective == 'min']
+    assert copies and {t.observation.specs[0].scale for t in copies} == {2.0}
+
+    def view(raw):
+        raw['targets'][0].update(constraint='<=', lower=None, upper=0.95, normalization_scale=2.0,
+                                 direction_after_feasible='minimize')
+    online = build_specs(make_config(tmp_path, mutate=view))[0]
+    assert copies[0].observation.specs == online
+    assert all(t.reward == replace(t.next_observation, specs=online).evaluation.reward for t in copies)
+    passing = [t for t in copies if t.next_observation.evaluation.success]
+    assert passing, 'the fixture needs a design that meets the limit'
+    plain = (replace(online[0], objective='none'),)
+    assert all(t.reward > replace(t.next_observation, specs=plain).evaluation.reward for t in passing)   # the bonus is paid
+    # a scale alone keeps the limits; an objective alone keeps limits and scale
+    spec = (online[0],)
+    assert pretrain.retargeted_specs(spec, dict(score=dict(scale=3.0)), 'a task')[0] == replace(online[0], scale=3.0)
+    assert pretrain.retargeted_specs(spec, dict(score=dict(objective='none')), 'a task')[0] == plain[0]
+    with pytest.raises(ValueError, match='Objective requires its directional limit'):
+        pretrain.retargeted_specs(spec, dict(score=dict(objective='max')), 'a task')      # an "at most" row has no lower limit
+    for bad, words in (({task: [{'score': {'scale': 0}}]}, 'finite positive'), ({task: [{'score': {'scale': True}}]}, 'finite positive'),
+                       ({task: [{'score': {'objective': 'up'}}]}, 'is one of none, min, max')):
+        with pytest.raises(ValueError, match=words):
+            pretrain.prepare_pool(dict(request_for(sources), relabel_targets=bad))
 
 
 def test_split_is_reproducible_and_keeps_episodes_and_relabels_together(sources):
@@ -258,10 +304,50 @@ def test_real_pool_rejects_mock_sources(sources):
         pretrain.prepare_pool(request)
 
 
+def test_a_pool_of_chosen_transitions_under_only_its_goal_views_is_balanced_by_view(sources):
+    """The archive comparison's source pool (plan-bo-mobo-rl-archive-comparison.md 5): exactly the chosen transitions of a
+    run (`candidate_ids`), each only under the request's target sets (`relabel_targets_only`), all for training
+    (`holdout_fraction` 0) and drawn by target set in turn (`balance` "target_set")."""
+    from analog_optimizer.training.replay import Transition  # noqa: F401 - the pool holds optimizer transitions
+    from gator_workbench.trajectory import TrajectoryLoader
+    task = 'synthetic:gpdk045_ota5'
+    request = request_for(sources[:1])
+    eligible = [t.candidate_id for t in TrajectoryLoader(sources[0].run_dir).transitions()]
+    chosen = eligible[1:6]
+    request['runs'][0]['candidate_ids'] = chosen
+    sets = [{'score': {'upper': 0.8}}, {'score': {'upper': 0.5}}]
+    request.update(relabel_targets={task: sets}, relabel_targets_only=True, balance='target_set', holdout_fraction=0)
+    pool = pretrain.prepare_pool(request)
+    assert set(pool.training) == {'target_set:1', 'target_set:2'} and not any(map(len, pool.validation.values()))
+    for number, changes in enumerate(sets, 1):
+        copies = pool.training[f'target_set:{number}']
+        assert sorted(t.candidate_id for t in copies) == sorted(chosen)                  # each chosen one once, no other
+        assert {next(s.upper for s in t.observation.specs if s.metric_id == 'score') for t in copies} == {changes['score']['upper']}
+        assert all(t.reward == t.next_observation.evaluation.reward for t in copies)
+    assert pool.audit['sources'][0]['selected'] == 5 and pool.audit['relabel_targets_only'] is True
+    assert pool.audit['balance'] == 'target_set' and {r['subset'] for r in pool.audit['split']} == {'training'}
+    sampler = pretrain.BalancedSampler(pool.training, 3)
+    sampler.sample(40)
+    assert sampler.counts == {'target_set:1': 20, 'target_set:2': 20}
+    # what is refused: a candidate the run does not have, and the options that would break the views apart
+    for change, words in ((dict(runs=[dict(request['runs'][0], candidate_ids=chosen + ['nobody'])]), 'not replay-eligible'),
+                          (dict(runs=[dict(request['runs'][0], candidate_ids=[])]), 'nonempty list'),
+                          (dict(holdout_fraction=0.2), 'holdout_fraction 0'),
+                          (dict(relabel_targets_only=False), 'needs relabel_targets_only'),
+                          (dict(balance='views'), 'balance is'),
+                          (dict(relabel_targets={task: sets[:1]}, balance='task', relabel_targets_only=True,
+                                runs=request_for(sources)['runs']), 'synthetic:toy_ldo has no relabel_targets')):
+        with pytest.raises(ValueError, match=words):
+            pretrain.prepare_pool(dict(request, **change))
+    # without the options a request pools as before
+    assert pretrain.prepare_pool(request_for(sources[:1])).audit.get('balance') is None
+
+
 def test_mixed_reward_and_exact_rescore_gate(sources, monkeypatch):
     from dataclasses import replace
     original = pretrain.TrajectoryLoader.transitions
     def changed(self):
+        """Alter one source transition's reward settings to create a mixed-reward archive."""
         items = original(self)
         if self.run_dir == sources[1].run_dir:
             items[0] = replace(items[0], reward_settings=replace(items[0].reward_settings, margin_weight=0.7))
@@ -270,6 +356,7 @@ def test_mixed_reward_and_exact_rescore_gate(sources, monkeypatch):
     with pytest.raises(ValueError, match='Mixed reward settings'):
         pretrain.prepare_pool(request_for(sources))
     def changed_reward(self):
+        """Perturb one recorded reward to test exact rescore validation."""
         items = original(self)
         items[0] = replace(items[0], reward=items[0].reward + 1e-13)
         return items
@@ -320,7 +407,9 @@ def test_preparation_counts_are_persisted_without_a_log_callback(sources, tmp_pa
     observed = []
 
     def checked_split(*args, progress, **kwargs):
+        """Check persisted loading progress while the original pool split runs."""
         def check(event):
+            """Assert that each pool-validation progress event is already reflected in saved status."""
             progress(event)
             saved = read_json(output / 'status.json')
             assert saved['state'] == 'loading' and saved['phase'] == 'validating_pool'
@@ -343,6 +432,7 @@ def test_failed_pool_validation_never_reports_completion(sources, tmp_path, monk
     calls = 0
 
     def reject_second_transition(observation, schema):
+        """Inject invalid-observation rejection during validation of the second transition."""
         nonlocal calls
         calls += 1
         if calls == 3:
@@ -399,6 +489,7 @@ def test_trajectory_candidate_subset(sources):
 
 @pytest.fixture(scope='module')
 def rehearsal_artifact(sources, tmp_path_factory):
+    """Provide a hashed rehearsal snapshot built from a relabelled synthetic archive pool."""
     from gator_workbench.rehearsal import build_snapshot, file_sha
     from gator_workbench.schema import RehearsalSettings
     root = tmp_path_factory.mktemp('rehearsal')
@@ -446,6 +537,7 @@ def test_rehearsal_contract_and_tamper_checks(rehearsal_artifact, tmp_path):
     _, output, settings = rehearsal_artifact
     model, _ = load_model(checkpoints.resolve_checkpoint(output, 'latest'))
     def load(config):
+        """Construct a synthetic rehearsal reader for contract and tamper checks."""
         return Rehearsal(config, model, origin='synthetic', seed=2, batch_size=8)
     with pytest.raises(ValueError, match='checksum'):
         load(settings.model_copy(update=dict(pool_sha256='0' * 64)))
@@ -612,6 +704,7 @@ def test_the_sampler_record_comes_before_its_save_point_and_says_which_update_it
     seen, save = [], CheckpointStore.save
 
     def recording(self, learner, *args, **kwargs):
+        """Record learner and sampler update counts immediately before saving a checkpoint."""
         seen.append((learner.updates, read_json(output / 'sampling.json')['learner_updates']))
         return save(self, learner, *args, **kwargs)
     monkeypatch.setattr(CheckpointStore, 'save', recording)

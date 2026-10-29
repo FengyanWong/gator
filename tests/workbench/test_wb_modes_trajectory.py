@@ -18,11 +18,13 @@ pytestmark = pytest.mark.xdist_group('test_wb_modes_trajectory')
 
 
 def latest(layout):
+    """Return the latest save-point directory and its metadata."""
     directory = ckpt.resolve_checkpoint(layout.run_dir, 'latest')
     return directory, ckpt.read_metadata(directory)
 
 
 def transfer_config(tmp_path, source_layout, mode, task='synthetic:gpdk045_ota5', **kwargs):
+    """Build a transfer configuration using the source run's network and saved-model location."""
     network = read_json(source_layout.effective_config)['run']['network']
     run = dict(dict(max_evaluations=12, mode=mode, network=network), **kwargs.pop('run', {}))
     config = make_config(tmp_path, task, run=run, **kwargs)

@@ -75,6 +75,7 @@ def test_each_proposal_gives_its_freed_memory_back_and_changes_no_number(monkeyp
     DFFRX1); `Proposer.propose` trims after every proposal. Allocator work only: the proposals are the same with and
     without it, and a system without glibc's `malloc_trim` simply runs without it."""
     def proposals(trim):
+        """Generate a seeded proposal sequence while recording optional fitting-window trimming."""
         calls = []
         monkeypatch.setattr(bayes, '_TRIM', (lambda pad: calls.append(pad) or 1) if trim else None)
         proposer, made = bayes.Proposer([f'g{i}' for i in range(4)], seed=3, warmup=2), []

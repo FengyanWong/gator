@@ -1,3 +1,5 @@
+"""Operating-point and analysis-counter checks using optional local ngspice subprocesses and temporary decks."""
+
 import shutil
 from pathlib import Path
 

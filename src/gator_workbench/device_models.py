@@ -73,7 +73,8 @@ def evaluate(text, scope, *, depth=0):
         value = _node(tree, scope, depth)
     except (ArithmeticError, ValueError, TypeError, KeyError, RecursionError):
         return None
-    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value,
+        bool) and math.isfinite(value) else None
 
 
 def _node(node, scope, depth):
@@ -194,6 +195,7 @@ class _Library:
                 continue
             if head in ('library', 'endlibrary', 'endl'):
                 continue
+            # ---- Filter by section before following includes or collecting model definitions.
             inside = current == section if section is not None else current is None
             if not (inside or (active and current is None)):
                 continue
@@ -206,6 +208,7 @@ class _Library:
                     target = target if target.is_absolute() else path.parent / target
                     self.load(target, match.group(2))
                 continue
+            # ---- Keep wrapper-local parameters and model cards separate from the library scope.
             if head == 'inline' and len(words) > 2 and words[1].lower() == 'subckt':
                 wrapper = dict(name=words[2].split('(')[0], parameters={}, cards={}, devices=[])
                 continue
@@ -215,7 +218,8 @@ class _Library:
                 wrapper = None
                 continue
             if head == 'parameters':
-                (wrapper['parameters'] if wrapper is not None else self.parameters).update(assignments(item[len('parameters'):]))
+                (wrapper['parameters'] if wrapper is not None else self.parameters).update(assignments(item[len(
+                    'parameters'):]))
                 continue
             if head == 'model' and len(words) >= 3:
                 name, kind = words[1], words[2].split('{')[0]
@@ -276,6 +280,7 @@ def _number_of(text):
 
 
 def read_library(read, entry, section):
+    """Return a model library section parsed with its includes, listing the files that could not be read."""
     library = _Library(read)
     library.load(entry, section)
     return library
@@ -286,13 +291,15 @@ def mos_numbers(library, record, *, temperature_c=27.0):
     {model: reason} for the ones that could not be read. Absent numbers are left out (the network masks them).
     Spectre's own `temp` and `tnom` are the nominal temperature and `m`, the implicit multiplier of a subckt instance, 1."""
     found, problems = {}, {}
-    builtins = dict(temp=repr(float(temperature_c)), tnom=repr(float(temperature_c)), m='1')   # m: a subckt's implicit multiplier
+    # m: a subckt's implicit multiplier
+    builtins = dict(temp=repr(float(temperature_c)), tnom=repr(float(temperature_c)), m='1')
     for model, device in sorted((record or {}).get('devices', {}).items()):
         if device.get('standard_kind') not in ('nmos', 'pmos'):
             continue
         card, scope = _mos_card(library, model)
         scope = None if scope is None else dict(builtins, **scope)
-        defaults = {p['name']: _number_of(p.get('default')) for p in device.get('parameters', ()) if p.get('name') in ('w', 'l')}
+        defaults = {p['name']: _number_of(p.get('default')) for p in device.get('parameters',
+            ()) if p.get('name') in ('w', 'l')}
         numbers = {}
         if card is not None:
             values = _smallest_bin(card, scope)
@@ -311,7 +318,12 @@ def mos_numbers(library, record, *, temperature_c=27.0):
         if numbers:
             found[model] = numbers
         else:
-            problems[model] = 'not found in the nominal section of the cached model library' if card is None else 'no usable number'
+            problems[
+                model] = (
+                    'not found in the nominal section of the cached model library'
+                ) if card is None else (
+                    'no usable number'
+                )
     return found, problems
 
 
@@ -319,7 +331,8 @@ def mos_numbers(library, record, *, temperature_c=27.0):
 def _cache_reader(pdk_id, record):
     """remote path -> cached text, for the model files Load PDK cached for this PDK (any host's cache folder)."""
     shas = {f['path']: f['sha256'] for f in record.get('sources', {}).get('model_files', ())}
-    folders = [p for p in (local_settings_dir() / 'pdk-model-files').glob(f'*/{record.get("technology_library") or pdk_id}')
+    folders = [p for p in (local_settings_dir() / 'pdk-model-files').glob(
+        f'*/{record.get("technology_library") or pdk_id}')
                if (p / 'index.json').is_file()]
 
     def read(path):
@@ -367,7 +380,8 @@ def load(pdk_id, *, entry=None, section='tt'):
         document = json.loads((pdk_dir(pdk_id) / FILE).read_text())
     except (OSError, ValueError):
         document = None
-    if (not isinstance(document, dict) or document.get('format') != FORMAT or document.get('record_sha256') != record.get('sha256')
+    if (not isinstance(document,
+        dict) or document.get('format') != FORMAT or document.get('record_sha256') != record.get('sha256')
             or document.get('section') != section or (entry is not None and document.get('entry') != entry)):
         try:
             document = build(pdk_id, entry=entry, section=section)

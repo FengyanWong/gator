@@ -23,7 +23,8 @@ class PersistenceError(OSError):
     """Core persistence failed. Callers must pause dispatch safely, not continue silently."""
 
 
-def sha256_file(path, chunk=1 << 20) -> str:
+def sha256_file(path: str | os.PathLike[str], chunk: int=1 << 20) -> str:
+    """Hash a file incrementally without reading its complete contents into memory."""
     digest = hashlib.sha256()
     with Path(path).open('rb') as stream:
         while block := stream.read(chunk):
@@ -32,6 +33,7 @@ def sha256_file(path, chunk=1 << 20) -> str:
 
 
 def fsync_directory(path) -> None:
+    """Flush a directory's entries to disk so renames and new files in it survive a crash."""
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(fd)
@@ -39,7 +41,8 @@ def fsync_directory(path) -> None:
         os.close(fd)
 
 
-def _await_visible(path: Path, size: int | None, attempts=8, delay=0.025, identity=None) -> None:
+def _await_visible(path: Path, size: int | None, attempts: int=8, delay: float=0.025, identity: tuple[int,
+    int] | None=None) -> None:
     """`identity` = (st_dev, st_ino) of the file this writer renamed into place. When another writer's rename landed
     after ours, the path holds a DIFFERENT file of another size: that is no failure of ours - every writer publishes a
     whole, fsynced file by rename, so the newer one is complete too - and it used to be reported as one (two saves of
@@ -60,6 +63,7 @@ def _await_visible(path: Path, size: int | None, attempts=8, delay=0.025, identi
 
 
 def temporary_path(path: Path) -> Path:
+    """Choose a unique temporary sibling path without creating the file."""
     return path.with_name(f'{path.name}{TEMP_MARKER}{uuid4().hex}')
 
 
@@ -119,7 +123,7 @@ def jsonable(value):
     raise TypeError(f'Not a machine-readable JSON value: {type(value).__name__}')
 
 
-def nonfinite_paths(value, prefix=''):
+def nonfinite_paths(value, prefix: str='') -> list[str]:
     """Paths of NaN/inf numbers, so a manifest can state WHY a value became null."""
     found = []
     if isinstance(value, float) and not math.isfinite(value):
@@ -133,7 +137,7 @@ def nonfinite_paths(value, prefix=''):
     return found
 
 
-def write_json(path, value, *, indent=2) -> dict:
+def write_json(path: str | os.PathLike[str], value, *, indent=2) -> dict:
     """Atomically publish JSON. Returns {bytes, sha256, null_reasons}."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,7 +159,7 @@ def write_json(path, value, *, indent=2) -> dict:
 _MISSING = object()
 
 
-def read_json(path, default=_MISSING):
+def read_json(path: str | os.PathLike[str], default=_MISSING):
     """Read JSON. With `default` (None included) a missing file returns it; otherwise a missing file
     is retried briefly (stale 9p directory entries) and then raised."""
     path = Path(path)
@@ -171,10 +175,11 @@ def read_json(path, default=_MISSING):
     raise FileNotFoundError(path)
 
 
-UNREADABLE = object()      # read_json_quiet's default where a file holding null must not read as one that cannot be read
+# read_json_quiet's default where a file holding null must not read as one that cannot be read
+UNREADABLE = object()
 
 
-def read_json_quiet(path, default=None):
+def read_json_quiet(path: str | os.PathLike[str], default=None):
     """json.loads(Path(path).read_text()), or `default` when that raises OSError or ValueError: no file, a folder, bytes
     that are not text in the locale's encoding, not JSON. Read in the locale's encoding like the code it replaced
     (read_json reads UTF-8 and lets a broken file raise). Pass UNREADABLE as `default` where the caller must tell a
@@ -185,7 +190,7 @@ def read_json_quiet(path, default=None):
         return default
 
 
-def read_dict(path):
+def read_dict(path: str | os.PathLike[str]):
     """read_json(path, default=None) or {}: the JSON of a file that holds an object; {} when the file is missing or holds
     null, false, 0, "" or []. A file that is not JSON raises, as with read_json."""
     return read_json(path, default=None) or {}
@@ -198,7 +203,7 @@ class JsonlAppender:
     discarded before appending again; complete lines are never rewritten. Opening a
     healthy log reads only its final byte, not the whole journal.
     """
-    def __init__(self, path):
+    def __init__(self, path: str | os.PathLike[str]) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._stream = self.path.open('a+b')
@@ -231,7 +236,9 @@ class JsonlAppender:
         self.bytes_written = 0
 
     def append(self, record) -> None:
-        line = (json.dumps(jsonable(record), allow_nan=False, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf8')
+        """Append and sync one JSON record before updating the acknowledged byte count."""
+        line = (json.dumps(jsonable(record), allow_nan=False, ensure_ascii=False, separators=(',',
+            ':')) + '\n').encode('utf8')
         try:
             self._stream.write(line)
             self._stream.flush()
@@ -245,7 +252,8 @@ class JsonlAppender:
             self._stream.close()
 
 
-def read_jsonl(path):
+def read_jsonl(path: str | os.PathLike[str]) -> list:
+    """Return a JSONL file's complete records ([] if missing); a corrupt line raises PersistenceError."""
     path = Path(path)
     if not path.exists():
         return []
@@ -264,7 +272,7 @@ def read_jsonl(path):
     return records
 
 
-def read_jsonl_tail(path, limit, *, block_size=65536):
+def read_jsonl_tail(path: str | os.PathLike[str], limit: int, *, block_size: int=65536) -> list:
     """Newest complete log records, without scanning the journal's entire history.
 
     Display only: skip malformed log lines and an unfinished final line. Discard that unfinished
@@ -279,7 +287,7 @@ def read_jsonl_tail(path, limit, *, block_size=65536):
         return []
     records, pending, at_end = [], b'', True
 
-    def take(line):
+    def take(line: bytes) -> None:
         if line.strip():
             try:
                 records.append(json.loads(line))
@@ -313,7 +321,7 @@ def read_jsonl_tail(path, limit, *, block_size=65536):
     return records[::-1]
 
 
-def remove_registered_temporaries(directory) -> list[str]:
+def remove_registered_temporaries(directory: str | os.PathLike[str]) -> list[str]:
     """Delete only this package's own temporary files. Never models or primary data."""
     removed = []
     directory = Path(directory)

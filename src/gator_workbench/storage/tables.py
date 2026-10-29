@@ -9,19 +9,22 @@ from dataclasses import dataclass
 
 from .. import TABLE_SCHEMA_VERSION
 
-# The llm_* phases, the sources llm_proposal and seeded_warmup, the evaluations' llm_call_id and the llm_calls table were
-# written by the LLM search methods removed on 2026-10-06 (record 7.226). They stay declared so that the runs that recorded
-# them read and are described as before (the data dictionary is unchanged); no run writes them any more.
+# The llm_* phases, the sources llm_proposal and seeded_warmup, the evaluations' llm_call_id and the llm_calls table
+# were written by the LLM search methods removed on 2026-10-06 (record 7.226). They stay declared so that the runs that
+# recorded them read and are described as before (the data dictionary is unchanged); no run writes them any more.
 PHASES = ('baseline', 'episode_reset', 'warmup', 'adapt', 'search', 'validation', 'frozen_eval', 'preflight',
           'llm_warmup', 'llm_search', 'llm_rescue')
-ACTION_SOURCES = ('reset', 'random_warmup', 'sac_policy', 'mean_policy', 'sampled_policy', 'llm_proposal', 'seeded_warmup',
-                  'bayes_opt')       # bayes_opt: a design proposed by Bayesian optimization (run.optimizer, record 7.304)
+ACTION_SOURCES = ('reset', 'random_warmup', 'sac_policy', 'mean_policy', 'sampled_policy', 'llm_proposal',
+    'seeded_warmup',
+                  # bayes_opt: a design proposed by Bayesian optimization (run.optimizer, record 7.304)
+                  'bayes_opt')
 RETENTION = ('pending', 'retained_best', 'retained_failure', 'retained_all', 'deleted_by_policy',
              'deleted_storage_limit', 'not_produced')
 
 
 @dataclass(frozen=True)
 class Column:
+    # A shared column declaration for Arrow typing and the exported data dictionary.
     name: str
     type: str                      # key into _arrow()
     description: str
@@ -30,7 +33,7 @@ class Column:
     null: str | None = None        # meaning of null; None = column is never null
 
 
-def _arrow(kind):
+def _arrow(kind: str):
     import pyarrow as pa
     pair = lambda value_type: pa.list_(pa.struct([('key', pa.string()), ('value', value_type)]))
     return {
@@ -79,7 +82,8 @@ TABLES: dict[str, dict] = {
             C('attempts', 'int32', 'Simulator job attempts for this evaluation (1 = no retry).'),
             C('parameters_ref', 'string', 'Key into the parameters table (evaluation_id).'),
             C('metrics_ref', 'string', 'Key into the metrics table (evaluation_id).'),
-            C('reward', 'float64', 'Versioned learning reward; inspect run settings, independently of hard feasibility.',
+            C('reward', 'float64',
+              'Versioned learning reward; inspect run settings, independently of hard feasibility.',
               null='no valid reward (infrastructure/measurement failure)'),
             C('reward_components', 'map<string,float64>', 'Capped per-metric violation terms used by the reward.',
               null='reward unavailable'),
@@ -92,20 +96,28 @@ TABLES: dict[str, dict] = {
               null='environment produced no verdict'),
             C('reward_version', 'string', 'Versioned reward contract.', null='historical nominal reward'),
             C('condition_policy', 'string', 'off or always.', null='historical nominal-only'),
-            C('conditions_planned', 'int32', 'Number of planned conditions including nominal.', null='historical coverage unknown'),
-            C('conditions_evaluated', 'int32', 'Number of returned condition results.', null='historical coverage unknown'),
-            C('conditions_complete', 'bool', 'Every planned condition has a result.', null='historical coverage unknown'),
+            C('conditions_planned', 'int32', 'Number of planned conditions including nominal.',
+                null='historical coverage unknown'),
+            C('conditions_evaluated', 'int32', 'Number of returned condition results.',
+                null='historical coverage unknown'),
+            C('conditions_complete', 'bool', 'Every planned condition has a result.',
+                null='historical coverage unknown'),
             C('nominal_feasible', 'bool', 'Nominal hard constraints passed.', null='no nominal verdict'),
             C('robust_feasible', 'bool', 'Hard constraints passed the complete declared plan.', null='no robust plan'),
-            C('clearance_margin', 'float64', 'Tightest eligible hard-spec signed margin; equalities excluded.', null='unavailable'),
+            C('clearance_margin', 'float64', 'Tightest eligible hard-spec signed margin; equalities excluded.',
+                null='unavailable'),
             C('tightest_clearance_spec', 'string', 'Binding eligible hard spec.', null='no eligible measured spec'),
-            C('clearance_rule', 'string', 'Clearance definition, distinct from historical min_margin.', null='historical rule'),
-            C('condition_results_json', 'string', 'Condition measurements, validity, reasons and operating points.', null='historical nominal-only'),
+            C('clearance_rule', 'string', 'Clearance definition, distinct from historical min_margin.',
+                null='historical rule'),
+            C('condition_results_json', 'string', 'Condition measurements, validity, reasons and operating points.',
+                null='historical nominal-only'),
             C('best_so_far_evaluation_id', 'string', 'Best design known to the scheduler at this commit.',
               null='no valid design yet'),
             C('best_so_far_feasible', 'bool', 'Whether that best design is feasible.'),
-            C('best_so_far_violation', 'float64', 'Its normalized violation (0 when feasible).', null='no valid design yet'),
-            C('best_so_far_metrics', 'map<string,float64>', 'Its raw metrics in canonical units.', null='no valid design yet'),
+            C('best_so_far_violation', 'float64', 'Its normalized violation (0 when feasible).',
+                null='no valid design yet'),
+            C('best_so_far_metrics', 'map<string,float64>', 'Its raw metrics in canonical units.',
+                null='no valid design yet'),
             C('cumulative_evaluations_charged', 'int64', 'Budget consumed at commit: evaluations STARTED so far.'),
             C('cumulative_completed', 'int64', 'Evaluations completed at commit.'),
             C('cumulative_launches', 'int64', 'Actual simulator launches at commit, incl. retries and failures.'),
@@ -120,7 +132,8 @@ TABLES: dict[str, dict] = {
             C('terminated', 'bool', 'MDP termination flag.'),
             C('truncated', 'bool', 'Truncation (infrastructure/measurement failure).'),
             C('replay_eligible', 'bool', 'Eligible for the training replay buffer.'),
-            C('duplicate_of', 'string', 'Earlier evaluation with identical executed parameters.', null='not a duplicate'),
+            C('duplicate_of', 'string', 'Earlier evaluation with identical executed parameters.',
+                null='not a duplicate'),
         ]),
     'parameters': dict(
         primary_key=('evaluation_id', 'member_variable_id'),
@@ -151,7 +164,8 @@ TABLES: dict[str, dict] = {
         purpose='Long format: one row per evaluation, test condition and metric; raw physical values.',
         columns=IDS + [
             C('evaluation_id', 'string', 'Evaluation.'),
-            C('measurement_id', 'string', 'Measurement definition (Probe); on a spec row, the probe that is its whole equation.',
+            C('measurement_id', 'string',
+              'Measurement definition (Probe); on a spec row, the probe that is its whole equation.',
               null='raw backend metric (condition row), or a spec whose equation is a formula of several probes'),
             C('metric_name', 'string', 'Spec name, Probe ID, or raw backend metric name.'),
             C('analysis', 'string', 'Analysis that produced it.', null='not declared'),
@@ -166,9 +180,10 @@ TABLES: dict[str, dict] = {
             C('hard', 'bool', 'Hard constraint.', null='metric has no target'),
             C('satisfied', 'bool', 'Constraint satisfied.', null='no target or invalid measurement'),
             C('violation', 'float64', 'Uncapped violation/scale.', null='no target or invalid measurement'),
-            C('aggregation_level', 'string', 'condition = the value at one test condition (a simulator result; at a training '
-                                             'corner also each formula spec, marked aggregation = equation); aggregate = '
-                                             'value used for reward/feasibility.', enum=('condition', 'aggregate')),
+            C('aggregation_level', 'string',
+                'condition = the value at one test condition (a simulator result; at a training corner also '
+                'each formula spec, marked aggregation = equation); aggregate = value used for '
+                'reward/feasibility.', enum=('condition', 'aggregate')),
             C('aggregation', 'string', 'Rule that produced the value (equation = a spec computed by its formula; on a '
                                        'condition row, that formula at a training corner).',
               null='a simulator result (condition row)'),
@@ -178,7 +193,9 @@ TABLES: dict[str, dict] = {
         columns=IDS + [
             C('job_id', 'string', 'Launch attempt ID.'), C('evaluation_id', 'string', 'Evaluation it served.'),
             C('worker_id', 'string', 'Lane.'), C('host', 'string', 'Execution host label.'),
-            C('analysis', 'string', 'Analysis set, or ngspice: followed by JSON with reached command counts and output completeness.'), C('condition', 'string', 'Corner/test condition.'),
+            C('analysis', 'string',
+                'Analysis set, or ngspice: followed by JSON with reached command counts and output completeness.'),
+            C('condition', 'string', 'Corner/test condition.'),
             C('attempt', 'int32', 'Attempt number within the evaluation (1-based).'),
             C('dispatched_at', 'timestamp', 'UTC dispatch time.'), C('started_at', 'timestamp', 'UTC start time.'),
             C('ended_at', 'timestamp', 'UTC end time.'),
@@ -249,7 +266,8 @@ TABLES: dict[str, dict] = {
             C('spec_ref', 'string', 'File under data/states/static/ holding the encoded specifications.'),
             C('group_ids', 'list<string>', 'Independent variable IDs (order of the numeric arrays).'),
             C('group_values', 'list<float64>', 'Current group values (canonical units).'),
-            C('group_lower', 'list<float64>', 'Group lower bounds.'), C('group_upper', 'list<float64>', 'Upper bounds.'),
+            C('group_lower', 'list<float64>', 'Group lower bounds.'), C('group_upper', 'list<float64>',
+                'Upper bounds.'),
             C('group_mutable', 'list<bool>', 'Action mask: true where the optimizer may act.'),
             C('members', 'list<member>', 'Expanded parameter mapping with current values.'),
             C('metric_ids', 'list<string>', 'Metric order.'),
@@ -269,7 +287,8 @@ TABLES: dict[str, dict] = {
 }
 
 # Evaluations are published LAST in a flush: their presence proves the other tables are complete.
-TABLES['llm_calls'] = dict(primary_key=('call_id',), purpose='Every sizing request, including rejected and cancelled calls.',
+TABLES['llm_calls'] = dict(primary_key=('call_id',),
+    purpose='Every sizing request, including rejected and cancelled calls.',
     columns=IDS + [
         C('call_id', 'string', 'Sizing request ID.'),
         *[C(name, 'string', name.replace('_', ' '), null='unavailable') for name in
@@ -278,27 +297,32 @@ TABLES['llm_calls'] = dict(primary_key=('call_id',), purpose='Every sizing reque
         *[C(name, 'int64', name.replace('_', ' '), null='provider did not report or not applicable') for name in
           ('input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'returned', 'accepted',
            'notes_kept', 'notes_dropped', 'hints_included', 'request_position', 'release_position', 'round')],
-        C('notional_cost_usd', 'float64', 'Provider-reported cost; never estimated as zero.', unit='USD', null='not reported'),
+        C('notional_cost_usd', 'float64', 'Provider-reported cost; never estimated as zero.', unit='USD',
+            null='not reported'),
         C('latency_seconds', 'float64', 'Request duration.', unit='s', null='not finished'),
         C('repair', 'bool', 'This request repairs one invalid answer.'),
         C('rejected_json', 'string', 'Candidate rejections and reasons.'),
     ])
 
-FLUSH_ORDER = ('parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'llm_calls', 'states', 'transitions', 'evaluations')
+FLUSH_ORDER = ('parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'llm_calls', 'states', 'transitions',
+    'evaluations')
 
 
-def arrow_schema(table):
+def arrow_schema(table: str):
+    """Build a table's Arrow schema with declared nullability and GATOR schema metadata."""
     import pyarrow as pa
-    return pa.schema([pa.field(c.name, _arrow(c.type), nullable=c.null is not None or c.type.startswith(('list', 'map')))
+    return pa.schema([pa.field(c.name, _arrow(c.type), nullable=c.null is not None or c.type.startswith(('list',
+        'map')))
                       for c in TABLES[table]['columns']],
                      metadata={'gator_table': table, 'gator_table_schema': TABLE_SCHEMA_VERSION})
 
 
-def empty_row(table):
+def empty_row(table: str) -> dict:
+    """Create a row containing every declared column initialized to null."""
     return {c.name: None for c in TABLES[table]['columns']}
 
 
-def normalize_row(table, row):
+def normalize_row(table: str, row) -> dict:
     """Reject unknown columns; convert dict-valued map columns to key/value pairs."""
     columns = {c.name: c for c in TABLES[table]['columns']}
     unknown = set(row) - set(columns)
@@ -315,7 +339,8 @@ def normalize_row(table, row):
     return result
 
 
-def data_dictionary():
+def data_dictionary() -> dict:
+    """Describe all raw tables and their storage, type, unit and provenance conventions."""
     tables = {}
     for name, spec in TABLES.items():
         tables[name] = dict(

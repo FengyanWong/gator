@@ -20,6 +20,7 @@ BEFORE = {'adapter_state': '~/.local/state/gator/bridge-state', 'local_scratch':
 
 @pytest.fixture
 def http(tmp_path, monkeypatch):
+    """Provide an API client with a temporary home and no bridge-state override."""
     monkeypatch.delenv('GATOR_BRIDGE_STATE_DIR')                 # the tests' own folder is set by conftest; these test the setting
     monkeypatch.setenv('HOME', str(tmp_path / 'home'))            # `~` - so no check looks at the real adapter lock
     (tmp_path / 'home').mkdir()
@@ -27,6 +28,7 @@ def http(tmp_path, monkeypatch):
 
 
 def write_connections(document):
+    """Write connection settings to the configured fixture connection file."""
     connection.connection_file().parent.mkdir(parents=True, exist_ok=True)
     connection.connection_file().write_text(json.dumps(document))
 
@@ -172,6 +174,7 @@ class Client:
         self.calls, self.listed, self.home, self.downloads = [], listed, home, []
 
     def execute_skill(self, text, timeout=60):
+        """Record SKILL calls and return fixture directory and Maestro responses."""
         self.calls.append(text)
         if text.startswith('strcat(getShellEnvVar("HOME") '):
             output = '"' + self.home + text.split('"')[3] + '"'
@@ -182,6 +185,7 @@ class Client:
         return types.SimpleNamespace(ok=True, errors=[], output=output)
 
     def download_file(self, remote, local, recursive=False):
+        """Record a requested download and create a synthetic local netlist tree."""
         self.downloads.append(remote)
         folder = Path(local) / 'netlist'
         (folder / 'amap').mkdir(parents=True)
@@ -191,6 +195,7 @@ class Client:
 
 @pytest.fixture
 def skill(monkeypatch):
+    """Install a fixture bridge module with an identity SKILL-output decoder."""
     fake = types.ModuleType('virtuoso_bridge')
     fake.decode_skill_output = lambda text: text
     monkeypatch.setitem(sys.modules, 'virtuoso_bridge', fake)

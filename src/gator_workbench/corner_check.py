@@ -61,6 +61,9 @@ from .storage.atomic import JsonlAppender, read_dict, read_json, read_jsonl, wri
 from .storage.dataset import DatasetReader
 from .tasks import MOCK_TARGETS
 
+_MAX_ERROR_CHARS = 2000
+
+
 CHECK_DIR = 'corner_checks'
 MAX_DESIGNS = 3
 LIVE = ('starting', 'running', 'stopping')
@@ -72,9 +75,10 @@ CONDITIONS_FILE = 'configs/gpdk045_conditions.json'
 MOCK_CORNER_SHIFT = {'nominal': 0.0, 'ss_hot_low': 0.35, 'ff_cold_high': -0.35, 'fs_nominal': 0.15, 'sf_nominal': -0.15}
 MOCK_NOTICE = ('MOCK: the toy score has its optimum moved at each corner. This exercises the corner check; it says '
                'nothing about a circuit.')
-SELECTION_RULE = ('The real task reference is also available even when nominal fails. Recorded designs that met every hard spec at the normal condition; identical widths counted once; the safest '
-                  'first - the largest smallest spec margin (distance to the nearest limit divided by that spec\'s scale); '
-                  'ties: the earlier evaluation.')
+SELECTION_RULE = (
+    'The real task reference is also available even when nominal fails. Recorded designs that met every hard '
+    'spec at the normal condition; identical widths counted once; the safest first - the largest smallest '
+    "spec margin (distance to the nearest limit divided by that spec's scale); ties: the earlier evaluation.")
 REAL_AUTHORIZATION = ('A corner check of a real circuit runs real Spectre simulations and writes each design\'s widths '
                       'into the cell (restored afterwards). It needs your explicit authorization.')
 
@@ -100,15 +104,19 @@ def screening_corners(profile=None):
 
 
 def corner_record(corner) -> dict:
-    return dict(asdict(corner), label=f'{corner.model_section.upper()}, {corner.temperature_c:g} °C, {corner.supply_v:g} V')
+    """Return a corner's fields plus a readable label of its model section, temperature and supply."""
+    return dict(asdict(corner),
+        label=f'{corner.model_section.upper()}, {corner.temperature_c:g} °C, {corner.supply_v:g} V')
 
 
 def _real_profile(task_key):
     """The circuit profile object of a real task, from local files only (no connection)."""
     name = task_key.partition(':')[2]
     if str(task_key).startswith('ngspice:'):
-        raise CheckRefused('Corner checks simulate through the Virtuoso profiles: an ngspice netlist task has none yet.',
-                           code='unsupported_task')
+        raise CheckRefused(
+            'Corner checks simulate through the Virtuoso profiles: an ngspice netlist task has none yet.',
+            code='unsupported_task'
+        )
     if name in tasks.offered_real_profiles():
         return tasks.verified_profile(name)
     if profiles.profile_entry(name) is None:
@@ -181,6 +189,7 @@ class Context:
         return 'synthetic' if self.mock else 'real'
 
     def source_name(self, instance_path, parameter_name):
+        """Return a recorded parameter's native source name or None when the parameter is absent."""
         value = self.compiled.graph.parameters.get(instance_path, {}).get(parameter_name)
         return None if value is None else (value.source_name or parameter_name)
 
@@ -220,6 +229,7 @@ def candidates(context: Context):
             values.setdefault(row['evaluation_id'], {})[row['metric_name']] = row['raw_value']
     hard = [t for t in context.compiled.targets if t['active'] and t['hard']]
     seen, ranked, feasible, skipped = set(), [], 0, []
+    # ---- Filter complete feasible assignments and deduplicate physical designs before ranking.
     for row in sorted(evaluations, key=lambda r: (r['completion_index'] is None, r['completion_index'] or 0)):
         if not (row['valid'] and row['all_hard_constraints_satisfied'] and row['status'] == 'ok'):
             continue
@@ -250,26 +260,31 @@ def candidates(context: Context):
                            widths=[dict(variable_id=r['variable_id'], instance_path=r['instance_path'],
                                         parameter_name=r['parameter_name'], value=r['executed_value'], unit=r['unit'])
                                    for r in rows],
-                           assignment=[dict(device=d, parameter=p, value=v) for (d, p), v in sorted(assignment.items())]))
+                           assignment=[dict(device=d, parameter=p, value=v) for (d, p),
+                               v in sorted(assignment.items())]))
     ranked.sort(key=lambda d: (-(d['min_margin'] if d['min_margin'] is not None else math.inf),
                                d['completion_index'] or 0))
-    distinct = len(ranked)              # the run's own designs: the page said "0 feasible evaluations, 1 different design"
+    # the run's own designs: the page said "0 feasible evaluations, 1 different design"
+    distinct = len(ranked)
     # A reference check diagnoses unreachable targets even when no search design passes nominal.
     if not context.mock:
         reference = reference_candidate(context)
-        key = tuple(sorted(((a['device'], a['parameter']), float(f"{a['value']:.12g}")) for a in reference['assignment']))
+        key = tuple(sorted(((a['device'], a['parameter']),
+            float(f"{a['value']:.12g}")) for a in reference['assignment']))
         if key not in seen:
             ranked.append(reference)
     return ranked, dict(evaluations=len(evaluations), feasible=feasible, distinct=distinct, skipped=skipped)
 
 
 def reference_candidate(context):
+    """Build the task-reference design and require an assignment covering exactly the writable parameters."""
     graph = context.compiled.graph
     values = {g.id: g.value for g in graph.parameter_groups if g.mutable}
     assignment = graph.assignments(values)
     assignment = {(d, context.source_name(d, p) or p): v for (d, p), v in assignment.items()}
     if set(assignment) != context.expected_keys:
-        raise CheckRefused('The reference does not specify exactly the writable parameters.', code='reference_parameters')
+        raise CheckRefused('The reference does not specify exactly the writable parameters.',
+            code='reference_parameters')
     return dict(evaluation_id='task_reference', label='Task reference (nominal feasibility not required)',
                 completion_index=None, reward=None, min_margin=None, tightest_spec=None, spec_values={},
                 widths=[dict(variable_id=m['variable_id'], instance_path=m['instance_path'],
@@ -290,7 +305,8 @@ def plan(run_dir, *, designs=MAX_DESIGNS) -> dict:
     answer = dict(run_dir=str(layout.run_dir), run_id=manifest.get('run_id'),
                   task_key=(manifest.get('circuit') or {}).get('task_key'), mock=mock, supported=False, reason=None,
                   code=None, corners=[], designs=[], counts=None, simulations=0, limit=designs, max_designs=MAX_DESIGNS,
-                  selection_rule=SELECTION_RULE, notice=MOCK_NOTICE if mock else None, checks=list_checks(layout.run_dir))
+                  selection_rule=SELECTION_RULE, notice=MOCK_NOTICE if mock else None,
+                  checks=list_checks(layout.run_dir))
     if run_status(layout.run_dir).get('worker_alive'):
         return dict(answer, code='run_working',
                     reason='The run is still working. Check its designs once it has finished or is paused.')
@@ -315,7 +331,8 @@ def bridge_busy(profile_id=None, task_key=None) -> bool:
     its cell (record 7.311; the same files every real task takes). Without arguments: the first session's lock."""
     if profile_id is None and task_key is None:
         return RunLock.held(bridge_session_lock())
-    from .consistency import task_locks  # lazy: consistency imports the saved-task readers, which a mock check never needs
+    # lazy: consistency imports the saved-task readers, which a mock check never needs
+    from .consistency import task_locks
     from .profile_store import profile_entry  # lazy: as above
     entry = profile_entry(task_key.partition(':')[2]) if task_key else None
     return any(lock is not None and RunLock.held(lock) for lock in task_locks(profile_id, entry))
@@ -400,7 +417,8 @@ def _prepared(run_dir, proposal, chosen, *, allow_real, acknowledge_unknown, mon
                    task_definition_hash=manifest.get('task_definition_hash'), corners=proposal['corners'],
                    designs=chosen, simulations=proposal['simulations'], counts=proposal['counts'],
                    selection_rule=SELECTION_RULE,
-                   authorization=dict(real_simulation=real, authorized_simulations=proposal['simulations'] if real else None),
+                   authorization=dict(real_simulation=real,
+                       authorized_simulations=proposal['simulations'] if real else None),
                    connection_gate=gate, notice=proposal['notice'],
                    notes=['Post-validation only: nothing of this check enters the run, its replay or its model.'])
     write_json(directory / 'request.json', request)
@@ -426,6 +444,7 @@ def launch(directory, *, allow_real=False) -> int:
 
 
 def request_stop(run_dir, check_id) -> dict:
+    """Write and return a stop request for a running corner check; raise CheckRefused if it is not running."""
     directory = check_directory(run_dir, check_id)
     if not RunLock.held(directory / 'control' / 'check.lock'):
         raise CheckRefused('This corner check is not running.', code='not_running')
@@ -436,6 +455,7 @@ def request_stop(run_dir, check_id) -> dict:
 
 # ================================================================================ reading
 def check_directory(run_dir, check_id) -> Path:
+    """Validate a corner-check identifier and locate its persisted request directory."""
     if not CHECK_ID.match(check_id or ''):
         raise CheckRefused('Not a corner check identifier.', code='bad_id')
     directory = Path(run_dir) / CHECK_DIR / check_id
@@ -455,6 +475,7 @@ def _state(directory, status):
 
 
 def list_checks(run_dir) -> list:
+    """List recorded corner checks with their current liveness, progress, and verdicts."""
     root = Path(run_dir) / CHECK_DIR
     rows = []
     if root.is_dir():
@@ -471,6 +492,7 @@ def list_checks(run_dir) -> list:
 
 
 def check_status(run_dir, check_id) -> dict:
+    """Return the selected corner check's request, status, result rows, and optional summary."""
     directory = check_directory(run_dir, check_id)
     request = read_json(directory / 'request.json')
     alive, status = _state(directory, read_dict(directory / 'status.json'))
@@ -506,7 +528,8 @@ def grade(result, evaluator, targets):
                     failing.append(dict(metric_id=t['metric_id'], value=value, unit=t['unit'], lower=t['lower'],
                                         upper=t['upper'], violation=-margin))
         failing.sort(key=lambda f: -f['violation'])
-    elif result.status in (SimulationStatus.INVALID_DESIGN, SimulationStatus.NONCONVERGED) and result.candidate_evaluated:
+    elif result.status in (SimulationStatus.INVALID_DESIGN,
+        SimulationStatus.NONCONVERGED) and result.candidate_evaluated:
         state = 'failed'
     else:
         state = 'unknown'
@@ -514,6 +537,7 @@ def grade(result, evaluator, targets):
 
 
 class Worker:
+    """The worker that runs one saved corner-check request and records its results, restoration and status."""
     def __init__(self, directory, *, allow_real=False):
         self.directory = Path(directory)
         self.request = read_json(self.directory / 'request.json')
@@ -553,7 +577,7 @@ class Worker:
                       violations=evaluation.violations, evaluation_errors=evaluation.errors, failing=failing,
                       job_id=result.job_id, elapsed_seconds=result.elapsed_seconds,
                       simulator_invocations=result.simulator_invocations,
-                      error_summary=redact(result.error_summary or '', 2000) or None,
+                      error_summary=redact(result.error_summary or '', _MAX_ERROR_CHARS) or None,
                       artifact_directory=(str(artifact.relative_to(self.directory))
                                           if self.directory in artifact.parents else str(artifact)),
                       started_utc=started_utc, ended_utc=iso())
@@ -565,6 +589,7 @@ class Worker:
 
     # ---------------------------------------------------------------- the check
     def run(self) -> str:
+        """Validate the authorized corner-check plan, execute its designs, and persist the final outcome."""
         final = 'failed'
         self.appender = JsonlAppender(self.directory / 'results.jsonl')
         try:
@@ -589,13 +614,14 @@ class Worker:
                                        code='plan_changed')
                 if self.context.profile is not None:
                     self.context.profile.validate_assignment(assignment)
+            # ---- Execute only after rechecking authorized designs, corners, and simulation count.
             (self._run_mock if self.request['mock'] else self._run_real)()
             final = 'stopped' if self.stop_requested and self.done < self.request['simulations'] else (
                 'failed' if self.error else 'completed')
         except CheckRefused as exc:
             self.error = dict(code=exc.code, message=str(exc))
         except BaseException as exc:
-            self.error = dict(code='exception', message=redact(f'{type(exc).__name__}: {exc}', 2000))
+            self.error = dict(code='exception', message=redact(f'{type(exc).__name__}: {exc}', _MAX_ERROR_CHARS))
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 final = 'stopped'
         finally:
@@ -645,7 +671,8 @@ class Worker:
         tasks.generated_bridge_config)."""
         name = self.context.task_key.partition(':')[2]
         if name in tasks.REAL_PROFILES:
-            connection = tasks.real_bindings(tasks.profile_settings(self.context.config.run.connection_profile_id)[1], name)
+            connection = tasks.real_bindings(tasks.profile_settings(self.context.config.run.connection_profile_id)[1],
+                name)
             return tasks.bridge_config_of(connection), self.context.profile
         config, profile, _ = tasks.generated_bridge_config(name, self.context.config.run.connection_profile_id)
         return config, profile
@@ -683,7 +710,7 @@ class Worker:
                             'The check stopped so that no more budget is spent; the cell was restored.'))
                         return
         except BaseException as exc:
-            self.error = dict(code='exception', message=redact(f'{type(exc).__name__}: {exc}', 2000))
+            self.error = dict(code='exception', message=redact(f'{type(exc).__name__}: {exc}', _MAX_ERROR_CHARS))
         finally:
             self.restoration = self._restore(backend, connected, initial)
 
@@ -701,7 +728,7 @@ class Worker:
                 if not same:
                     record['error'] = 'The widths read back after restoring differ from the ones recorded at the start.'
         except BaseException as exc:
-            record = dict(state='recovery_required', error=redact(f'{type(exc).__name__}: {exc}', 2000))
+            record = dict(state='recovery_required', error=redact(f'{type(exc).__name__}: {exc}', _MAX_ERROR_CHARS))
         finally:
             try:
                 backend.close()
@@ -717,7 +744,8 @@ class Worker:
     # ---------------------------------------------------------------- the verdicts
     def _summary(self, final) -> dict:
         context = getattr(self, 'context', None)
-        summary = dict(check_id=self.request['check_id'], run_id=self.request['run_id'], task_key=self.request['task_key'],
+        summary = dict(check_id=self.request['check_id'], run_id=self.request['run_id'],
+                       task_key=self.request['task_key'],
                        mock=self.request['mock'], state=final, finished_utc=iso(), designs=[], verdicts=None,
                        budget=dict(authorized=self.request['authorization'].get('authorized_simulations'),
                                    simulations=self.request['simulations'], started=self.started, completed=self.done,
@@ -740,16 +768,19 @@ class Worker:
                     measured = next((r for r in results if r.condition.corner.id == context.nominal.id), None)
                     if measured is None:
                         raise ValueError('No measured nominal result for the reference')
-                    nominal_reward = context.evaluator.evaluate(measured.metrics, measured.metric_units, measured.metric_validity).reward
+                    nominal_reward = context.evaluator.evaluate(measured.metrics, measured.metric_units,
+                        measured.metric_validity).reward
                     if nominal_reward is None:
                         raise ValueError('The reference nominal result is unavailable')
                 entry = NominalDesign(design['evaluation_id'], problem, float(nominal_reward),
-                                      tuple((d, p, v) for (d, p), v in sorted(assignment.items())), nominal, context.origin)
+                                      tuple((d, p, v) for (d, p), v in sorted(assignment.items())), nominal,
+                                      context.origin)
                 outcome = summarize_corners(entry, context.corners, results, context.compiled.specs, lambda_failed=lam)
             except (ValueError, TypeError) as exc:         # a result that is not this design's: never graded
-                # TypeError: the optimizer's grading subtracts a value that is not there - an OK corner result without the
-                # value of a spec marked "Missing value = failed" (evaluation/corners.py; its own guard waits for a source
-                # digest change). Raised here, inside the worker's `finally`, it lost summary.json and the check's verdicts.
+                # TypeError: the optimizer's grading subtracts a value that is not there - an OK corner result without
+                # the value of a spec marked "Missing value = failed" (evaluation/corners.py; its own guard waits for a
+                # source digest change). Raised here, inside the worker's `finally`, it lost summary.json and the
+                # check's verdicts.
                 why = str(exc) if isinstance(exc, ValueError) else (
                     f'The corner grading could not judge these results ({type(exc).__name__}: {exc}). A spec marked '
                     '"Missing value = failed" that has no value at a corner causes this.')
@@ -771,7 +802,8 @@ class Worker:
 
     def _nominal_repeat(self, design, index):
         """The nominal corner simulated again: the same spec values as the run recorded for this design?"""
-        record = next((r for r in self.records if r['design'] == index and r['corner'] == self.context.nominal.id), None)
+        record = next((r for r in self.records if r['design'] == index and r['corner'] == self.context.nominal.id),
+            None)
         if record is None:
             return dict(matches=None, differences=[])
         differences = []
@@ -798,6 +830,7 @@ def execute(directory, *, allow_real=False, lock_fd=None) -> str:
 
 
 def main(argv=None):
+    """Run the corner-check worker with SIGTERM and SIGINT as stop requests; return 0 unless it failed."""
     parser = argparse.ArgumentParser(description='Corner check worker: python -m gator_workbench.corner_check')
     parser.add_argument('--check-dir', type=Path, required=True)
     parser.add_argument('--allow-real', action='store_true',

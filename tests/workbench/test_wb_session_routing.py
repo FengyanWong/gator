@@ -28,6 +28,7 @@ CELL = ('GATOR_TESTS', 'ota')
 
 @pytest.fixture(autouse=True)
 def _no_reservations():
+    """Clear process-local session reservations before and after each test."""
     session_routing._RESERVED.clear()
     yield
     session_routing._RESERVED.clear()
@@ -47,10 +48,12 @@ def connections(tmp_path, **extra):
 
 
 def first_lock():
+    """Return the default connection's session-lock path."""
     return paths.bridge_session_lock()
 
 
 def second_lock(settings):
+    """Return the second session's lock path for the supplied connection settings."""
     return paths.bridge_session_lock(settings, 's2')
 
 
@@ -70,6 +73,7 @@ class Monitor:
         self.states = states
 
     def status(self, profile_id):
+        """Report the configured readiness state for one connection profile."""
         return dict(overall=self.states.get(profile_id, 'unknown'))
 
 
@@ -78,6 +82,7 @@ def holds(monkeypatch, answers, released=None):
     asked = []
 
     def look(profile_id, library, cell, **_):
+        """Return scripted cell-ownership facts while asserting the routing guard is released."""
         assert not session_routing._GUARD.locked()          # Virtuoso is asked without the guard: nobody else waits
         asked.append(profile_id)
         answer = answers.get(profile_id, dict(open=False, editing=False, saved=True, windows=0))
@@ -86,6 +91,7 @@ def holds(monkeypatch, answers, released=None):
         return answer
 
     def release(monitor, profile_id, library, cell, **_):
+        """Record a simulated cell release or raise the configured release error."""
         if isinstance(released, Exception):
             raise released
         (released if isinstance(released, list) else []).append((profile_id, library, cell))
@@ -381,6 +387,7 @@ def test_start_records_the_chosen_session_and_lets_it_go_when_the_start_is_refus
     calls, prepared = [], []
 
     def route(config, monitor, **_):
+        """Route the fixture configuration to the second connection profile."""
         routed = config.model_copy(deep=True)
         routed.run.connection_profile_id = 'lab2'
         return routed, choice
@@ -392,6 +399,7 @@ def test_start_records_the_chosen_session_and_lets_it_go_when_the_start_is_refus
     layout.manifest.parent.mkdir(parents=True, exist_ok=True)
 
     def prepare(config, roots, before_write=None, **_):
+        """Record the routed profile and perform the fixture's pre-write release before creating its manifest."""
         prepared.append(config.run.connection_profile_id)
         before_write()                       # every refusal of prepare_run has passed: the busy holder lets go now
         manifest = dict(run_id='r1', mock=False, mock_notice='', notes=['made'], segments=[dict(segment=1, entry='start')])
@@ -429,6 +437,7 @@ def test_start_records_the_chosen_session_and_lets_it_go_when_the_start_is_refus
     calls.clear()
 
     def busy_holder(config, roots, before_write=None, **_):
+        """Refuse preparation because a busy session cannot release its edited cell."""
         raise session_routing.SessionsBusy('Virtuoso 1 (lab) holds L/c open for editing and is busy; letting go failed')
     monkeypatch.setattr(runs, 'prepare_run', busy_holder)                 # the hook's refusal comes out of prepare_run
     with pytest.raises(HTTPException) as caught:
@@ -437,6 +446,7 @@ def test_start_records_the_chosen_session_and_lets_it_go_when_the_start_is_refus
     calls.clear()
 
     def refused(config, roots, **_):
+        """Simulate a connection-gate refusal before run preparation."""
         raise runs.RunRejected('The connection gate blocked this action.', code='connection_gate_blocked')
     monkeypatch.setattr(runs, 'prepare_run', refused)
     with pytest.raises(HTTPException) as caught:
@@ -488,6 +498,7 @@ def test_a_run_lets_go_of_its_cell_after_restoring_it_and_before_its_locks(tmp_p
     original = client.execute_skill
 
     def execute(skill, timeout=60):
+        """Record lock ownership and dirty state when the fake backend releases its cell."""
         if skill == let_go:
             seen.append((RunLock.held(cell), RunLock.held(root / 'session.lock'), backend._dirty))
         return original(skill, timeout)
@@ -517,6 +528,7 @@ def test_letting_go_never_stops_a_run_from_closing(tmp_path, monkeypatch):
     original = client.execute_skill
 
     def execute(skill, timeout=60):
+        """Inject a timeout only when the backend attempts to release its cell."""
         if 'dbReopen' in skill:
             raise TimeoutError('Virtuoso did not answer')
         return original(skill, timeout)

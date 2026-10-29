@@ -25,6 +25,7 @@ def graph_of(devices, *, rails=('0',)):
 
 
 def mos(name, drain, gate, source, *, kind='nmos', model='nch', bulk='0'):
+    """Describe one MOS device with explicit terminal roles for a synthetic graph."""
     return name, kind, model, dict(drain=drain, gate=gate, source=source, bulk=bulk)
 
 
@@ -35,12 +36,14 @@ def global_groups(devices):
 
 
 def previous_recognition(graph, monkeypatch):
+    """Run structure recognition with the original global candidate groups."""
     with monkeypatch.context() as patch:
         patch.setattr(structures, '_seed_groups', global_groups)
         return [item.as_dict() for item in structures.recognize(graph)]
 
 
 def stages(count):
+    """Build repeated five-transistor stages with one shared supply source."""
     devices = []
     for i in range(count):
         devices.extend([mos(f'T{i}', f't{i}', 'vb', '0'),
@@ -127,15 +130,19 @@ def test_800_mos_fixture_keeps_full_output_with_fewer_actual_seed_candidates(mon
     original_groups = structures._seed_groups
 
     def recognized(grouping):
+        """Return recognition output and candidate-read counts for one grouping strategy."""
         calls = Counter()
 
         class Members(list):
+            """A candidate list that counts indexed reads and rejects tail-slice copies."""
             def __getitem__(self, index):
+                """Count a single candidate lookup and refuse slicing."""
                 assert isinstance(index, int), 'The seed scan must not copy a tail slice'
                 calls['candidate'] += 1
                 return super().__getitem__(index)
 
         def counted(mos_by_id):
+            """Wrap shared candidate lists with counters while preserving their shared identities."""
             groups, copies = grouping(mos_by_id), {}
             for members, _ in groups.values():
                 if id(members) not in copies:

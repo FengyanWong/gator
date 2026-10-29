@@ -64,7 +64,8 @@ class Names:
 
     def __init__(self, amap):
         amap = Path(amap)
-        info = dict(_read_map(amap / '__simulator_information__')) if (amap / '__simulator_information__').is_file() else {}
+        info = dict(_read_map(amap / '__simulator_information__')) if (
+            amap / '__simulator_information__').is_file() else {}
         self.hierarchy_delimiter = info.get('__artHierarchyDelimiter__', '.')
         self.terminal_delimiter = info.get('__artInstanceTerminalDelimiter__', ':')
         top = dict(_read_map(amap / 'top_level_map.inst')).get('__NEXT_FILE__')
@@ -81,7 +82,8 @@ class Names:
                     terminals.update({name[:-1]: value for name in names})
             self.maps[path.stem] = dict(instances=instances, terminals=terminals)
         for path in amap.glob('*.net'):
-            self.nets[path.stem] = {key[:-1]: value[:-1] for key, value in _read_map(path) if key.endswith('v') and value.endswith('v')}
+            self.nets[path.stem] = {key[:-1]: value[:-1] for key,
+                value in _read_map(path) if key.endswith('v') and value.endswith('v')}
 
     def _walk(self, parts):
         """(cell map name of the cell that holds the last part, Spectre instance path of the parts before it)."""
@@ -94,17 +96,20 @@ class Names:
         return cell, path
 
     def net(self, name) -> str:
+        """Translate a hierarchical schematic net name into the simulator's mapped net name."""
         parts = name.strip('/').split('/')
         cell, path = self._walk(parts[:-1])
         net = self.nets.get(cell, {}).get(parts[-1], parts[-1])
         return self.hierarchy_delimiter.join(path + [net])
 
     def instance(self, name) -> str:
+        """Validate a hierarchical instance path and render it with the simulator's delimiter."""
         parts = name.strip('/').split('/')
         self._walk(parts)                                          # every level must be a known instance
         return self.hierarchy_delimiter.join(parts)
 
     def terminal(self, name) -> str:
+        """Translate a known instance terminal into a directly saved simulator current name."""
         parts = name.strip('/').split('/')
         if len(parts) < 2:
             raise NameError_(f'{name} names no terminal of an instance (/<instance>/<terminal>)')
@@ -131,7 +136,8 @@ def translate(expression, names) -> str:
             if value.startswith('/'):
                 if not PATH.match(value):
                     raise NameError_(f'{value} is not a schematic path the workbench translates')
-                value = names.terminal(value) if pending in TERMINALS else names.instance(value) if pending in INSTANCES else names.net(value)
+                value = names.terminal(value) if pending in TERMINALS else names.instance(
+                    value) if pending in INSTANCES else names.net(value)
             text = '"' + value + '"'
             pending = None
         elif kind == 'name' and text in FUNCTIONS and expression[end:].lstrip().startswith('('):
@@ -158,13 +164,15 @@ def program(raw_dir, outputs) -> str:
     "nil" when the expression gave no number). `outputs`: [{name, spectre_expression, analysis}], all checked."""
     lines = ['let((v out)', f'  unless(openResults("{raw_dir}") error("GATOR: no results in {raw_dir}"))', '  out = ""']
     for output in outputs:
-        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$', output['name']) or not re.match(r'^[a-z][a-z0-9_]{0,31}$', output['analysis']):
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$', output['name']) or not re.match(r'^[a-z][a-z0-9_]{0,31}$',
+            output['analysis']):
             raise ValueError(f'Unexpected output {output["name"]!r} / analysis {output["analysis"]!r}')
         lines += [f"  errset(selectResult('{output['analysis']}) nil)",
                   f"  v = car(errset({output['spectre_expression']} nil))",
                   f'  out = strcat(out "{output["name"]}=" if(numberp(v) sprintf(nil "%.17g" float(v)) "nil") "\\n")']
     # Let the folder's results go (record 7.294: the waveforms), then the folder itself (record 7.316: OCEAN keeps every
-    # folder it opened, 0.3 to 0.5 MB each for good). The values are in `out` by then, so a close that fails fails nothing.
+    # folder it opened, 0.3 to 0.5 MB each for good). The values are in `out` by then, so a close that fails fails
+    # nothing.
     lines += ['  ocnResetResults()', f'  errset(closeResults("{raw_dir}") nil)', '  out)']
     return '\n'.join(lines)
 

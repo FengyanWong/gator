@@ -14,7 +14,8 @@ from .storage.atomic import read_json, write_json
 
 # ---------------------------------------------------------------------------- settings memory
 # One writer at a time: two saves at once (Agent settings and a run start) each read the file, and the later write
-# dropped the earlier one's keys (review of 2026-09-29). Reentrant, so prepare_run can hold it across its last_run merge.
+# dropped the earlier one's keys (review of 2026-09-29). Reentrant, so prepare_run can hold it across its last_run
+# merge.
 SETTINGS_LOCK = threading.RLock()
 
 
@@ -38,6 +39,7 @@ def load_settings() -> dict:
 
 
 def save_settings(**updates) -> dict:
+    """Merge settings updates under the writer lock without overwriting an unreadable settings file."""
     with SETTINGS_LOCK:
         settings, problem = read_settings()
         settings.update(updates)
@@ -47,6 +49,7 @@ def save_settings(**updates) -> dict:
 
 
 def remembered_output_root() -> str:
+    """Return the remembered output root or the configured default."""
     return load_settings().get('output_root') or str(default_output_root())
 
 

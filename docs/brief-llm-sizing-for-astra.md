@@ -1,5 +1,9 @@
 # Brief for Astra: SAC and LLM sizing modes, with a free SKY130 benchmark
 
+> **Historical brief.** The integrated LLM search methods were removed on 2026-10-06 (record 7.226), and the remaining
+> frontend Agent entry and launch controls on 2026-10-26 (record 7.435). For current agent assistance, start your own
+> [desktop or CLI agent](workbench.md#desktop-and-cli-agents). The dated plan below records the former implementation.
+
 > **Status (2026-09-30): IMPLEMENTED; free baseline calibration complete; comparison protocol revised; paid slices unapproved.**
 > Its precondition, reward v2.1 finished and committed, was met on 2026-09-29
 > (`8cf53ae`, `8db46b8`, audit fixes `7d365c3`). For this work it overrides the no-LLM rule ("no LLM search / no LLM inner

@@ -45,6 +45,7 @@ def family_kind(family, polarity=None) -> str:
 
 
 def schema():
+    """Build the graph feature schema used for device-family representations."""
     from analog_optimizer.graph.pyg_converter import FeatureSchema          # lazy: the optimizer imports torch
     return FeatureSchema(version=VERSION, device_kinds=KINDS, terminal_roles=ROLES, net_roles=FeatureSchema().net_roles,
                          parameters=PARAMETERS, references=REFERENCES)
@@ -57,12 +58,14 @@ def block_for(pdk_id) -> dict:
     for model, device in sorted(((record or {}).get('devices') or {}).items()):
         devices[model] = dict(
             kind=family_kind(device.get('family'), device.get('polarity')), family=device.get('family'),
-            polarity=device.get('polarity'), roles=[pin['role'] if pin.get('role') in ROLES else 'unknown' for pin in device['pins']],
+            polarity=device.get('polarity'),
+            roles=[pin['role'] if pin.get('role') in ROLES else 'unknown' for pin in device['pins']],
             columns={p['name']: p['canonical'] for p in device.get('parameters', ())
                      if p.get('numeric') and p.get('canonical') in PARAMETERS})
     body = dict(format=FORMAT, name=NAME, version=VERSION, pdk_id=pdk_id, record_sha256=(record or {}).get('sha256'),
                 devices=devices)
-    return dict(body, sha256=hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest())
+    return dict(body, sha256=hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',',
+        ':')).encode()).hexdigest())
 
 
 class FamilyList:
@@ -70,7 +73,7 @@ class FamilyList:
 
     name = NAME
 
-    def __init__(self, block):
+    def __init__(self, block: dict) -> None:
         if not isinstance(block, dict) or block.get('format') != FORMAT:
             raise ValueError('Not a family list')
         self.block, self.devices = block, block['devices']
@@ -78,7 +81,7 @@ class FamilyList:
         self.schema = schema()
 
     @property
-    def label(self):
+    def label(self) -> str:
         return f'device families ({len(KINDS) - 1} kinds)'
 
     def view_graph(self, graph):
@@ -115,6 +118,7 @@ class FamilyList:
                             list(graph.diagnostics), graph.metadata, graph.schema_version)
 
     def view(self, observation):
+        """Return an observation whose graph uses the device-family representation."""
         return replace(observation, graph=self.view_graph(observation.graph))
 
 

@@ -24,6 +24,9 @@ from .ngspice_analysis import instrument
 from .ngspice_backend import NgspiceBackend, NgspiceEnvFactory
 from .ngspice_netlist import parse_text
 
+_CONSISTENCY_REL_TOL = 1e-12
+
+
 COMMIT = '10093e3496ef2c7d06494d91d131b0cc5de6c25b'
 MODULES = {
  'circuit_config_loader':'0e82a1ce8b8cb2639ebe3c57021cd6e46b1c56ecaecefc8ade9c8ba903f1002d',
@@ -62,6 +65,7 @@ def evaluator_modules(root):
 
 
 def evaluate_outputs(bundle, directory, values):
+    """Return the upstream evaluator's metrics (None where not finite), pass verdict and raw result."""
     modules = evaluator_modules(bundle['checkout'])
     cls = modules['LdoEnv'].LdoEnv if bundle['name'].startswith('ldo_') else modules['AmpEnv'].AmpEnv
     env = cls.__new__(cls)
@@ -75,7 +79,8 @@ def evaluate_outputs(bundle, directory, values):
         raise ValueError('Upstream evaluator could not read the candidate outputs')
     aliases = {'phase_margin':'phase_margin (deg)', 'settlingTime':'setting_time', 'Active_Area':'Active Area'}
     metrics = {key: result.get(aliases.get(key, key)) for key in config['performance']}
-    metrics = {key: float(value) if value is not None and math.isfinite(value) else None for key,value in metrics.items()}
+    metrics = {key: float(value) if value is not None and math.isfinite(value) else None for key,
+        value in metrics.items()}
     components = result['reward_components']
     passed = all(components[key] >= -1e-12 for key in
                  ('base_constraint_reward','base_FOML_score','base_FOMS_score','base_Active_Area_score'))
@@ -86,7 +91,8 @@ def physical_graph(parsed):
     """SKY130 primitive W/L inputs are in micrometres; GATOR uses SI lengths."""
     resistors = set()
     for index, device in enumerate(parsed.graph.devices):
-        if device.model_ref in ('sky130_fd_pr__res_high_po_0p35', 'sky130_fd_pr__res_xhigh_po_0p35') and len(device.terminals)==3:
+        if device.model_ref in ('sky130_fd_pr__res_high_po_0p35',
+            'sky130_fd_pr__res_xhigh_po_0p35') and len(device.terminals)==3:
             terminals = ('positive', 'negative', 'bulk')
             parsed.graph.devices[index] = replace(device, kind='resistor', terminals=terminals)
             resistors.add(device.id)
@@ -103,6 +109,7 @@ def physical_graph(parsed):
 
 
 def substitute(text, values):
+    """Return `text` with each .param value replaced; raise ValueError unless each occurs exactly once."""
     for name, value in values.items():
         pattern = rf'(?im)^(\s*\.param\s+{re.escape(name)}\s*=)[^\n]*$'
         text, count = re.subn(pattern, lambda m: m[1] + format(value,'.17g'), text)
@@ -128,7 +135,8 @@ def export_best_decks(text, bundle, device_kinds, members):
                         raise ValueError(f'{device} is missing from exported AC/DC testbench')
                     continue
                 actual = graph.parameters[device].get(parameter)
-                if actual is None or not actual.valid or not math.isclose(actual.value, expected, rel_tol=1e-12):
+                if actual is None or not actual.valid or not math.isclose(actual.value, expected,
+                    rel_tol=_CONSISTENCY_REL_TOL):
                     raise ValueError(f'{device}.{parameter} did not read back from exported benchmark deck')
         primary, count = re.subn(r'(?im)^\s*\.endc\s*$', 'source transient.cir\n.endc', primary, count=1)
         if count != 1:
@@ -144,7 +152,8 @@ def native_values(bundle, parameters):
     for name, value in fixed.items():
         row = bundle['leaders'][name]
         assigned = parameters.get((row['device'], row['parameter']))
-        if assigned is not None and not math.isclose(assigned, value * row['physical_per_native'], rel_tol=1e-12):
+        if assigned is not None and not math.isclose(assigned, value * row['physical_per_native'],
+            rel_tol=_CONSISTENCY_REL_TOL):
             raise ValueError(f'{name} is fixed at the benchmark starting bias')
     return {name: fixed[name] if name in fixed else
             parameters[(row['device'], row['parameter'])] / row['physical_per_native']
@@ -167,6 +176,7 @@ def validate_benchmark_config(config, bundle):
 
 
 class AnalogGymBackend(NgspiceBackend):
+    """A local ngspice backend that preserves AnalogGym parameter mappings and benchmark measurements."""
     def __init__(self, *args, bundle, **kwargs):
         text, graph, link = args
         empty = deepcopy(graph)
@@ -179,13 +189,16 @@ class AnalogGymBackend(NgspiceBackend):
         self.parameters = dict(self.initial)
 
     def native_values(self, parameters=None):
+        """Convert the selected physical assignment to the benchmark's native parameter values."""
         parameters = self.parameters if parameters is None else parameters
         return native_values(self.bundle, parameters)
 
     def deck(self, parameters=None):
+        """Render the benchmark deck with the selected parameter assignment."""
         return substitute(self.text, self.native_values(parameters))
 
     def generate_netlist(self, work_root, *, condition=None):
+        """Write the candidate deck and the transient testbench it sources, recording their parameters."""
         artifact = super().generate_netlist(work_root, condition=condition)
         companion = artifact.path.parent / 'transient.cir'
         companion.write_text(instrument(substitute(self.bundle['transient'], self.native_values())))
@@ -197,23 +210,27 @@ class AnalogGymBackend(NgspiceBackend):
         return artifact
 
     def get_circuit_graph(self, artifact):
+        """Verify the saved candidate deck and return a graph with its checked parameter readback."""
         saved, values = self.exports[artifact.job_id]
         if artifact != saved or hashlib.sha256(artifact.path.read_bytes()).hexdigest() != artifact.sha256:
             raise ValueError('Imported candidate deck changed')
-        parsed = physical_graph(parse_text(artifact.path.read_text(), device_kinds=self.device_kinds, scan_includes=False))
+        parsed = physical_graph(parse_text(artifact.path.read_text(), device_kinds=self.device_kinds,
+            scan_includes=False))
         graph = deepcopy(self.graph)
         for i,group in enumerate(graph.parameter_groups):
             for member in group.members:
                 actual = parsed.graph.parameters[member.device_id][member.parameter]
                 expected = values[(member.device_id, member.parameter)]
-                if not actual.valid or not math.isclose(actual.value, expected, rel_tol=1e-12):
+                if not actual.valid or not math.isclose(actual.value, expected, rel_tol=_CONSISTENCY_REL_TOL):
                     raise ValueError(f'Imported candidate did not read back {member}')
                 graph.parameters[member.device_id][member.parameter] = actual
-            graph.parameter_groups[i] = replace(group, value=values[(group.members[0].device_id,group.members[0].parameter)])
+            graph.parameter_groups[i] = replace(group, value=values[(group.members[0].device_id,
+                group.members[0].parameter)])
         graph.validate()
         return graph
 
     def run_simulation(self, request):
+        """Run the candidate and record upstream benchmark evidence before returning workbench metrics."""
         result = super().run_simulation(replace(request, required_metrics=tuple(self.parsed.result_names)))
         metrics = {key:None for key in self.bundle['metric_units']}
         verdict, failure = False, None
@@ -227,7 +244,8 @@ class AnalogGymBackend(NgspiceBackend):
         # source and the independent benchmark verdict stay explicit in the job evidence.
         (result.artifact_directory/'benchmark.json').write_text(json.dumps(dict(
             benchmark_commit=COMMIT, native_metrics=metrics, upstream_passed=verdict, error=failure,
-            analyses=['AC/DC testbench','transient testbench'], simulator_processes=result.simulator_invocations),allow_nan=False))
+            analyses=['AC/DC testbench','transient testbench'], simulator_processes=result.simulator_invocations),
+            allow_nan=False))
         scale = self.bundle['metric_scales']
         metrics = {key: value * scale[key] if value is not None else None for key,value in metrics.items()}
         return replace(result, metrics=metrics, metric_units=self.bundle['metric_units'],
@@ -238,15 +256,18 @@ class AnalogGymBackend(NgspiceBackend):
 
 @dataclass(frozen=True)
 class AnalogGymFactory(NgspiceEnvFactory):
+    """A factory that builds each lane's sizing environment around an AnalogGym benchmark backend."""
     bundle: dict = None
 
     def __call__(self, lane):
         from analog_optimizer.envs.sizing import CircuitSizingEnv
         backend = AnalogGymBackend(self.text, self.graph, self.link, bundle=self.bundle, units=self.units,
-            device_kinds=self.device_kinds, include_root=self.include_root, circuit_id=self.circuit_id, source=self.source)
+            device_kinds=self.device_kinds, include_root=self.include_root, circuit_id=self.circuit_id,
+            source=self.source)
         if self.plan is not None:
             self.plan.wrap(backend)
-        return CircuitSizingEnv(backend,self.graph,self.specs,Path(self.work_root)/f'worker-{lane}',max_steps=self.max_steps,
+        return CircuitSizingEnv(backend,self.graph,self.specs,Path(self.work_root)/f'worker-{lane}',
+            max_steps=self.max_steps,
             timeout_seconds=self.timeout_seconds,stop_on_success=self.stop_on_success,expected_origin='real',
             reward_settings=self.reward_settings)
 

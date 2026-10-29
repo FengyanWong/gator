@@ -14,6 +14,7 @@ from uuid import uuid4
 
 @dataclass(frozen=True)
 class SimulationArtifacts:
+    # Paths linking a verified export to one simulation attempt's copied deck and result directory.
     export_path: Path
     result_directory: Path
     deck_path: Path

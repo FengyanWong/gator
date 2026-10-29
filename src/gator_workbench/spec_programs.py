@@ -11,15 +11,16 @@ from . import spec_descriptors as descriptors, spec_equations, units
 
 
 def spec_program_schema():
+    """Return the spec-input schema for the measurement-program layout."""
     from analog_optimizer.models.inputs import SpecSetSchema, SPEC_PROGRAM_LAYOUT
     from analog_optimizer.models.measurement_program import PROGRAM_VERSION
     return SpecSetSchema(PROGRAM_VERSION, descriptors.DESCRIPTOR_COLUMNS, descriptors.UNIT_REFERENCES,
                          layout=SPEC_PROGRAM_LAYOUT)
 
 
-def _node(op, children=(), **values):
+def _node(operation, children=(), **values):
     from analog_optimizer.models.measurement_program import OPERATIONS
-    return dict(op=op if op in OPERATIONS else 'unknown', children=list(children), **values)
+    return dict(op=operation if operation in OPERATIONS else 'unknown', children=list(children), **values)
 
 
 def _address(path, kind, role):
@@ -35,7 +36,8 @@ def _ocean(tree):
         return _node(tree.kind, map(_ocean, tree.children))
     if tree.kind in ('name', 'string'):
         # Fixed semantic literals only. A signal path is handled by its probe call.
-        return _node({'t': 'true', 'rise': 'rising', 'fall': 'falling'}.get(str(tree.value).lower(), str(tree.value).lower()))
+        return _node({'t': 'true', 'rise': 'rising', 'fall': 'falling'}.get(str(tree.value).lower(),
+            str(tree.value).lower()))
     if tree.kind == 'keyword':
         return _node(str(tree.value).lower(), map(_ocean, tree.children))
     name = str(tree.value)
@@ -96,8 +98,10 @@ def _arithmetic(tree, name_lookup, patterns=()):
         child = _arithmetic(tree.operand, name_lookup, patterns)
         return _node('neg', [child]) if isinstance(tree.op, ast.USub) else child
     if isinstance(tree, ast.BinOp):
-        op = {ast.Add: 'add', ast.Sub: 'sub', ast.Mult: 'mul', ast.Div: 'div', ast.Pow: 'pow'}.get(type(tree.op), 'unknown')
-        return _node(op, [_arithmetic(tree.left, name_lookup, patterns), _arithmetic(tree.right, name_lookup, patterns)])
+        op = {ast.Add: 'add', ast.Sub: 'sub', ast.Mult: 'mul', ast.Div: 'div', ast.Pow: 'pow'}.get(type(tree.op),
+            'unknown')
+        return _node(op, [_arithmetic(tree.left, name_lookup, patterns), _arithmetic(tree.right, name_lookup,
+            patterns)])
     if isinstance(tree, ast.Call) and isinstance(tree.func, ast.Name):
         return _node(tree.func.id, [_arithmetic(c, name_lookup, patterns) for c in tree.args])
     return _node('unknown')

@@ -13,6 +13,13 @@ from .schema import WorkbenchConfig
 INFRASTRUCTURE_FAILURES = ('timeout', 'transport_error', 'license_error', 'backend_error')
 
 
+# Optimizers that propose the designs instead of the network (record 7.304; the archive comparison's two,
+# docs/plan-bo-mobo-rl-archive-comparison.md): none of them trains an RL model. The comparison's two save their search
+# state with the run's save points and can be resumed; production's Bayesian optimization cannot.
+NON_RL_OPTIMIZERS = ('bayes', 'turbo_archive', 'mobo')
+RESUMABLE_SEARCH_OPTIMIZERS = ('turbo_archive', 'mobo')
+
+
 def optimizer_of(manifest):
     """The recorded optimizer; manifests from before the choice are SAC runs."""
     return (manifest.get('architecture') or {}).get('optimizer', 'sac')
@@ -23,11 +30,35 @@ def saves_rl_model(config: WorkbenchConfig) -> bool:
     return config.run.optimizer == 'sac' and bool(config.output.save_checkpoints)
 
 
+def saves_search_state(config: WorkbenchConfig) -> bool:
+    """The archive comparison's searches save their state (data, region, counters, random generators) with the run's
+    save points, so a stopped run goes on where it was - never with a fresh budget."""
+    return config.run.optimizer in RESUMABLE_SEARCH_OPTIMIZERS and bool(config.output.save_checkpoints)
+
+
+def saves_state(config: WorkbenchConfig) -> bool:
+    """Whether the run writes save points at all: an RL model's, or a resumable search's."""
+    return saves_rl_model(config) or saves_search_state(config)
+
+
 def require_rl_model(manifest):
     """Reject historical Bayesian save points as well as runs that now save none."""
-    if optimizer_of(manifest) == 'bayes':
+    optimizer = optimizer_of(manifest)
+    if optimizer == 'bayes':
         raise RunRejected('Bayesian optimization runs do not train an RL model. Their search cannot be resumed '
                           'and their saved weights cannot be loaded for fine-tuning or evaluation.', code='no_rl_model')
+    if optimizer in NON_RL_OPTIMIZERS:
+        raise RunRejected(
+            f'A {optimizer} run (the archive comparison) does not train an RL model: its save points hold '
+                          'its search, which only that run itself can continue; they cannot be loaded for fine-tuning '
+                          'or evaluation.', code='no_rl_model')
+
+
+def require_resumable(manifest):
+    """Continue (an exact resume) and "Save now": an RL run, or one of the archive comparison's searches, whose save
+    points hold their search. Production's Bayesian optimization saves nothing to go on from."""
+    if optimizer_of(manifest) not in RESUMABLE_SEARCH_OPTIMIZERS:
+        require_rl_model(manifest)
 
 
 def decode_action(z, lower, upper, scale):
@@ -61,6 +92,7 @@ def learner_experiment(config: WorkbenchConfig, task, task_hash):
 
 
 class RunRejected(ValueError):
+    """A rejected run request carrying a machine-readable code and optional validation report."""
     def __init__(self, message, *, report=None, code='rejected'):
         super().__init__(message)
         self.report, self.code = report, code

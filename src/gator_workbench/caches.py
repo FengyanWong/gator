@@ -30,6 +30,7 @@ def register(module_globals, name, *, lock=None) -> str:
 
 
 def names() -> list:
+    """Return the registered cache names in sorted order."""
     return sorted(_CLEARS)
 
 

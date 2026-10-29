@@ -21,24 +21,29 @@ from analog_optimizer.training.sac import SACLearner
 from research_support import cpu
 
 
+# ---- Synthetic task and learner fixtures
 def task(graph, name='train', partition='train', target=.99, transfer='specification'):
+    """Build a toy transfer task with the requested partition, transfer kind and score target."""
     return TransferTask(name, partition, transfer, 'toy_ota', graph,
                         (MetricSpec('score', 'fixture', 'min', 1, lower=target),))
 
 
 def learner(origin='synthetic', mode='local_port_attention', encoder=None):
+    """Build a small learner with explicit test provenance and a selectable encoder or attention mode."""
     return SACLearner(experiment=dict(origin=origin, split='unit-test', designs=['fixture']),
                       model_config=ModelConfig(hidden_dim=16, heads=2, layers=2, attention_mode=None if encoder else mode,
                                                encoder_type=encoder))
 
 
 def make_env(t, steps, output):
+    """Build a synthetic transfer environment with fixed sizing targets and an explicit step budget."""
     return CircuitSizingEnv(SyntheticSizingBackend(t.graph, targets={'w': .4, 'c': -.3}),
                             t.graph, t.specs, output, max_steps=steps, stop_on_success=False,
                             expected_origin='synthetic')
 
 
 def rename(graph):
+    """Rename and reorder graph identities while preserving connections and parameter-group membership."""
     g = deepcopy(graph)
     ids = {d.id: f'device_{i}' for i, d in enumerate(g.devices)}
     nets = {n.id: f'net_{i}' for i, n in enumerate(g.nets)}
@@ -51,6 +56,7 @@ def rename(graph):
     return g
 
 
+# ---- Topology identity and split leakage
 def test_topology_identity_rejects_renaming_and_sizing_as_new(opamp, ldo):
     assert same_topology(opamp, rename(opamp))
     resized = deepcopy(opamp)
@@ -86,6 +92,7 @@ def test_split_rejects_missing_partition_and_wrong_family(opamp, tmp_path):
         freeze_protocol(tmp_path / 'protocol.json', tasks, {})
 
 
+# ---- Frozen policies, validation and transfer isolation
 def test_frozen_policy_never_updates_and_baseline_cost_counts(opamp, tmp_path):
     t = task(opamp, 'test', 'test', target=0)
     model = learner()
@@ -144,11 +151,13 @@ def test_transfer_copies_weights_without_optimizer_replay_or_aliasing(opamp, tmp
         transfer_weights(source, learner(encoder='rgcn'))                     # another architecture is refused
 
 
+# ---- Failure costs and restoration
 def test_infrastructure_failure_is_censored_and_charged(opamp, tmp_path):
     t = task(opamp, 'test', 'test', target=1)
     env = make_env(t, 3, tmp_path)
     original = env.backend.run_simulation
     def fail_second(request):
+        """Replace the second synthetic response with a retryable transport failure."""
         result = original(request)
         if env.backend.calls == 2:
             return replace(result, status=SimulationStatus.TRANSPORT_ERROR, candidate_evaluated=False,
@@ -176,6 +185,7 @@ def test_exception_during_simulation_keeps_cost_and_restores(opamp, tmp_path):
     assert result['restoration']['state'] == 'restored'
 
 
+# ---- Search progress and per-seed reports
 def test_pattern_search_polls_bounds_then_improves(opamp):
     from analog_optimizer.parameters.actions import ActionMapper
     search = PatternSearch(ActionMapper(opamp).groups)
@@ -202,6 +212,7 @@ def test_multi_seed_report_keeps_censoring():
     assert report['success_wilson_95'][0] < 1/3 < report['success_wilson_95'][1]
 
 
+# ---- Suite budgets and incomplete runs
 def test_suite_budget_replay_and_pretrain_isolation(opamp, tmp_path):
     tasks = [task(opamp, target=.9), task(opamp, 'validation', 'validation', .95),
              task(opamp, 'test', 'test', .999)]
@@ -239,6 +250,7 @@ def test_suite_rejects_budget_before_backend_creation(opamp, tmp_path):
 def test_aborted_suite_keeps_failed_run_and_unexecuted_runs(opamp, tmp_path):
     tasks = [task(opamp), task(opamp, 'validation', 'validation', .95), task(opamp, 'test', 'test', .98)]
     def factory(t, steps, output):
+        """Build a synthetic environment that raises during simulation only in the test partition."""
         env = make_env(t, steps, output)
         if t.partition == 'test':
             def fail(request):
@@ -256,6 +268,7 @@ def test_aborted_suite_keeps_failed_run_and_unexecuted_runs(opamp, tmp_path):
     assert report['aggregate'][0]['censored_runs'] == 1
 
 
+# ---- Encoder selection and architecture boundaries
 @pytest.mark.parametrize('encoders', [[], ['gatv2', 'gatv2'], ['unknown'], 'gatv2', ['gat'], ['port_gnn'], ['mlp'], ['gcn'], None])
 def test_invalid_encoder_selection_fails_before_backend_creation(opamp, tmp_path, encoders):
     tasks = [task(opamp), task(opamp, 'validation', 'validation', .95), task(opamp, 'test', 'test', .98)]

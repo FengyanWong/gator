@@ -26,6 +26,7 @@ ENV_ALLOWED_ROOTS = 'GATOR_WORKBENCH_ALLOWED_ROOTS'
 
 
 class PathNotAllowed(PermissionError):
+    """A requested output path is outside the allowed roots or violates their path rules."""
     pass
 
 
@@ -71,7 +72,8 @@ def inside(path, roots) -> bool:
     return any(path == root or root in path.parents for root in roots)
 
 
-SESSIONS_DIR, CELLS_DIR = 'sessions', 'cells'           # in the adapter's state root: a folder per further session, a lock per cell
+# in the adapter's state root: a folder per further session, a lock per cell
+SESSIONS_DIR, CELLS_DIR = 'sessions', 'cells'
 
 
 def _plain(name) -> str:
@@ -80,7 +82,7 @@ def _plain(name) -> str:
     return re.sub(r'[^A-Za-z0-9_.-]', '_', str(name)).lstrip('.') or '_'
 
 
-def bridge_session_key(env_file, profile) -> str | None:
+def bridge_session_key(env_file: str | os.PathLike[str], profile) -> str | None:
     """Which Virtuoso session a connection reaches when it is NOT the first one (record 7.311), else None.
 
     A connection names the bridge's settings file and, in it, a bridge profile: the keys `VB_REMOTE_HOST_<profile>` and
@@ -110,7 +112,8 @@ def bridge_session_key(env_file, profile) -> str | None:
     return _plain(min(name for name in names if target(f'_{name}') == mine))
 
 
-def bridge_session_dir(env_file=None, profile=None, root=None) -> Path:
+def bridge_session_dir(env_file: str | os.PathLike[str] | None=None, profile=None,
+    root: str | os.PathLike[str] | None=None) -> Path:
     """The adapter's state folder of ONE Virtuoso session (record 7.311): its session lock and a folder per adapter
     session with the crash journal of each write. The first session keeps the state root itself, as before; a further
     session (`bridge_session_key`) has `sessions/<name>` in it. One process at a time drives a Virtuoso session, and with
@@ -121,35 +124,38 @@ def bridge_session_dir(env_file=None, profile=None, root=None) -> Path:
     return root if key is None else root / SESSIONS_DIR / key
 
 
-def bridge_session_lock(env_file=None, profile=None, root=None) -> Path:
+def bridge_session_lock(env_file: str | os.PathLike[str] | None=None, profile=None,
+    root: str | os.PathLike[str] | None=None) -> Path:
     """The run adapter's session lock (record 7.167): every process that works in a Virtuoso session takes it - a run, a
     corner check, Save task. Without arguments the first session's; with a connection's settings file and bridge profile,
     the lock of the session that connection reaches (record 7.311)."""
     return bridge_session_dir(env_file, profile, root) / 'session.lock'
 
 
-def bridge_queue_lock(env_file=None, profile=None, root=None) -> Path:
+def bridge_queue_lock(env_file: str | os.PathLike[str] | None=None, profile=None,
+    root: str | os.PathLike[str] | None=None) -> Path:
     """The lock a queue holds for its whole life in the Virtuoso session it works in (record 7.351), beside the session
     lock: between two of its runs the session lock is free for a moment, and the page, which sends its work to whichever
     session is free (`session_routing`), must not take the session then - the queue's next run would find it taken."""
     return bridge_session_dir(env_file, profile, root) / 'queue.lock'
 
 
-def bridge_cell_lock(library, cell, root=None) -> Path:
+def bridge_cell_lock(library, cell, root: str | os.PathLike[str] | None=None) -> Path:
     """The lock of one cell (record 7.311): whoever works on a cell holds it beside its session's lock, so that two
     Virtuoso sessions never work on the same cell - each has its own copy of an open cell in memory, and the second to
     save would write over the first. In `cells/` of the adapter's state root (`root`: that root when the caller holds it,
     as the adapter does)."""
-    return (Path(root) if root is not None else bridge_state_dir()) / CELLS_DIR / _plain(library) / f'{_plain(cell)}.lock'
+    return (Path(root) if root is not None else bridge_state_dir()) / CELLS_DIR / _plain(
+        library) / f'{_plain(cell)}.lock'
 
 
-def bridge_state_root_of(state_dir) -> Path:
+def bridge_state_root_of(state_dir: str | os.PathLike[str]) -> Path:
     """The adapter's state root, from the state folder of one session (`bridge_session_dir`)."""
     state_dir = Path(state_dir)
     return state_dir.parent.parent if state_dir.parent.name == SESSIONS_DIR else state_dir
 
 
-def bridge_locks(root=None) -> list:
+def bridge_locks(root: str | os.PathLike[str] | None=None) -> list:
     """Every lock file there is in an adapter state root: the first session's, the further sessions', the cells'."""
     root = Path(root) if root is not None else bridge_state_dir()
     return [p for p in (root / 'session.lock', *sorted(root.glob(f'{SESSIONS_DIR}/*/session.lock')),
@@ -171,7 +177,7 @@ def bridge_state_dir() -> Path:
     return local_path('adapter_state')
 
 
-def bridge_env_snapshot(env_file) -> Path:
+def bridge_env_snapshot(env_file: str | os.PathLike[str]) -> Path:
     """A private copy of the bridge's settings file that never changes, for one run to bind (record 7.306).
 
     The run adapter binds the settings FILE when it attaches and checks it at every call, so that a run cannot go on
@@ -205,8 +211,10 @@ def bridge_env_snapshot(env_file) -> Path:
         temporary.write_bytes(data)
         os.chmod(temporary, 0o600)
         os.replace(temporary, target)
-        for other in folder.iterdir():                  # copies no run can still hold: a month old, another settings file
-            if other != target and re.fullmatch(r'[0-9a-f]{64}\.env', other.name) and time.time() - other.stat().st_mtime > 30 * 86400:
+        # copies no run can still hold: a month old, another settings file
+        for other in folder.iterdir():
+            if other != target and re.fullmatch(r'[0-9a-f]{64}\.env',
+                other.name) and time.time() - other.stat().st_mtime > 30 * 86400:
                 other.unlink(missing_ok=True)
     return target.resolve()
 
@@ -223,7 +231,8 @@ def append_local_log(name, record) -> None:
 
 
 class OutputRoots:
-    def __init__(self, extra_roots=(), *, include_default=True):
+    """The allowlist of output roots, used to resolve, list and check output directories."""
+    def __init__(self, extra_roots=(), *, include_default: bool=True) -> None:
         roots = [default_output_root()] if include_default else []
         roots += [Path(p) for p in extra_roots]
         roots += [Path(p) for p in os.environ.get(ENV_ALLOWED_ROOTS, '').split(os.pathsep) if p]
@@ -235,7 +244,7 @@ class OutputRoots:
         self._mapping_cache: dict[str, dict] = {}
 
     # ---------------------------------------------------------------- allowlist
-    def resolve(self, path) -> Path:
+    def resolve(self, path: str | os.PathLike[str]) -> Path:
         """Resolve symlinks/.. and require the result to be inside an allowed root."""
         refuse_nul(path)
         candidate = Path(path).expanduser()
@@ -249,14 +258,15 @@ class OutputRoots:
                              + f'. Roots can only be added by the backend operator (--allow-root or '
                                f'{ENV_ALLOWED_ROOTS}).')
 
-    def is_allowed(self, path) -> bool:
+    def is_allowed(self, path: str | os.PathLike[str]) -> bool:
+        """Check whether path resolution succeeds within the configured output roots."""
         try:
             self.resolve(path)
             return True
         except (PathNotAllowed, OSError):
             return False
 
-    def browse(self, path=None):
+    def browse(self, path: str | os.PathLike[str] | None=None) -> dict:
         """Restricted directory listing for the output-root picker (directories only)."""
         if path is None:
             return dict(path=None, parent=None,
@@ -273,7 +283,7 @@ class OutputRoots:
         return dict(path=str(current), parent=parent, entries=entries)
 
     # ---------------------------------------------------------------- checks
-    def check(self, path, *, create=False, verify_windows=True):
+    def check(self, path: str | os.PathLike[str], *, create: bool=False, verify_windows: bool=True) -> dict:
         """Writability is TESTED by creating, fsyncing, reading and removing a probe file."""
         result = dict(requested=str(path), allowed=False, exists=False, writable=False, error=None,
                       resolved=None, free_bytes=None, total_bytes=None, filesystem=None,
@@ -313,7 +323,7 @@ class OutputRoots:
             result['error'] = f'{type(exc).__name__}: {exc}'
         return result
 
-    def _windows_mapping(self, directory: Path, probe: Path, token: str):
+    def _windows_mapping(self, directory: Path, probe: Path, token: str) -> dict:
         key = str(directory)
         if key in self._mapping_cache:
             return self._mapping_cache[key]
@@ -340,7 +350,8 @@ class OutputRoots:
         return outcome
 
     # ---------------------------------------------------------------- mock isolation
-    def data_root(self, output_root, *, mock: bool) -> Path:
+    def data_root(self, output_root: str | os.PathLike[str], *, mock: bool) -> Path:
+        """Return the resolved output root, or its mock/ folder when `mock`; refuse a root within mock/."""
         root = self.resolve(output_root)
         if MOCK_SUBDIR in root.parts[len(self._owning_root(root).parts):]:
             raise PathNotAllowed(f'Select the output root itself, not its {MOCK_SUBDIR}/ directory')
@@ -350,7 +361,8 @@ class OutputRoots:
         return next(r for r in self.roots if resolved == r or r in resolved.parents)
 
 
-def is_mock_path(path) -> bool:
+def is_mock_path(path: str | os.PathLike[str]) -> bool:
+    """Check whether a path contains the reserved synthetic-data directory component."""
     return MOCK_SUBDIR in Path(path).parts
 
 
@@ -360,7 +372,8 @@ def _existing_parent(path: Path) -> Path:
     return path
 
 
-def filesystem_type(path) -> str:
+def filesystem_type(path: str | os.PathLike[str]) -> str:
+    """Identify the filesystem of the deepest matching Linux mount, or return unknown."""
     path = Path(path).resolve()
     best = (-1, 'unknown')
     try:
@@ -375,6 +388,7 @@ def filesystem_type(path) -> str:
 
 
 def environment_label() -> str:
+    """Describe the Linux or WSL kernel from its release string when available."""
     try:
         release = Path('/proc/sys/kernel/osrelease').read_text().strip()
     except OSError:
@@ -382,7 +396,7 @@ def environment_label() -> str:
     return f'WSL2 ({release})' if 'microsoft' in release.lower() else f'Linux ({release})'
 
 
-def directory_bytes(path) -> int:
+def directory_bytes(path: str | os.PathLike[str]) -> int:
     """Bytes of the regular files under `path`; symlinks are neither counted nor followed, an unreadable folder counts
     nothing. One os.scandir pass and one stat per file: rglob + is_file + is_symlink + stat listed every folder twice
     and took 4.4 s for the 406 files of the D: output folder, on every page open (review of 2026-09-29)."""

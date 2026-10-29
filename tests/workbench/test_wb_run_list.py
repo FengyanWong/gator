@@ -15,6 +15,7 @@ from helpers import execute, make_config, MOCK_TASK, roots_for, workbench_app
 
 
 def segment(number, started, ended=None, *, active=None, state=None, entry='start'):
+    """Build a run-segment record with optional end time and active duration."""
     return dict(segment=number, entry=entry, requested_utc=started, started_utc=started, ended_utc=ended, end_state=state,
                 active_seconds=active, load_policy=dict(notes=['not a fact of the run list']))
 
@@ -55,6 +56,7 @@ def test_a_run_whose_worker_never_began_has_no_duration():
 
 
 def fabricate(root, name, manifest, status):
+    """Write minimal mock run-list metadata without starting a worker."""
     run = root / 'mock' / 'exp__0123456789ab' / 'runs' / 'task' / name
     run.mkdir(parents=True)
     (run / 'run_manifest.json').write_text(json.dumps(dict(dict(mock=True, experiment_name='exp', experiment_id='0123456789ab'), **manifest)))
@@ -88,6 +90,7 @@ def test_a_row_names_the_registered_task_its_run_ran(tmp_path):
 
 @pytest.fixture(scope='module')
 def finished(tmp_path_factory):
+    """Provide a completed synthetic run for list and timing checks."""
     root = tmp_path_factory.mktemp('run_list')
     layout, state = execute(make_config(root, run=dict(max_evaluations=8), project=dict(task_name='listed_task')), root)
     assert state == 'completed'
@@ -117,6 +120,7 @@ def test_the_api_serves_the_same_rows(finished):
 
 
 def wait_for(client, run_dir, timeout=180):
+    """Wait until the run reaches a resting state and its detached worker exits."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         status = client.get('/api/runs/status', params=dict(run_dir=run_dir)).json()

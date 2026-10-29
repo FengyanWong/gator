@@ -47,13 +47,16 @@ def test_declared_global_names_are_normalized_once_per_parse(monkeypatch):
     calls = []
 
     class Name(str):
+        """A global-net name that records each lowercase normalization."""
         def lower(self):
+            """Record this name's normalization and return its lowercase text."""
             calls.append(str(self))
             return super().lower()
 
     original = ng.statements
 
     def tracked(lines):
+        """Wrap declared global-net tokens with normalization-counting strings."""
         title, statements, control, control_lines = original(lines)
         statements = [([row[0]] + [replace(token, text=Name(token.text)) for token in row[1:]])
                       if row[0].text.lower() == '.global' else row for row in statements]

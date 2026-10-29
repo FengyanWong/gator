@@ -39,13 +39,19 @@ SYNTHETIC_FIXTURES = _registered_fixtures()
 
 
 # What an entry that names no PDK / description gets (a circuit a test registers for itself, e.g. test_wb_pdk's demo).
-MOCK_PDK, MOCK_DESCRIPTION = 'synthetic-fixture', 'MOCK: the analytic toy backend on a fixture netlist. Its score is not a circuit result.'
+MOCK_PDK, MOCK_DESCRIPTION = (
+    'synthetic-fixture'
+), (
+    'MOCK: the analytic toy backend on a fixture netlist. Its score is not a circuit result.'
+)
 
 
-REMOVED_MOCK_TASKS = ('synthetic:opamp', 'synthetic:opamp_two_stage', 'synthetic:ldo', 'synthetic:vco', 'synthetic:gpdk045_ota5')
+REMOVED_MOCK_TASKS = ('synthetic:opamp', 'synthetic:opamp_two_stage', 'synthetic:ldo', 'synthetic:vco',
+    'synthetic:gpdk045_ota5')
 
 
-MOCK_TASK_REMOVED = ('{task} no longer exists: the workbench has no MOCK task since 2026-09-30 (user request). Choose one of '
+MOCK_TASK_REMOVED = (
+    '{task} no longer exists: the workbench has no MOCK task since 2026-09-30 (user request). Choose one of '
                      'your saved tasks under "Task".')
 
 
@@ -75,28 +81,30 @@ REMOVED_REAL_TASKS = ('real:gpdk045_ota5', 'real:gpdk045_vco', 'real:gpdk045_ota
 
 
 # The TARGETS OF RECORD of the verified circuits: the frozen specification files of the real experiments, as (file, keys
-# down to the list of specs). Pilot goals near each circuit's measured baseline - not product specifications. They are what
-# the Specs tab shows when such a task is chosen (starter_config); `train` is the partition a run from scratch belongs to.
+# down to the list of specs). Pilot goals near each circuit's measured baseline - not product specifications. They are
+# what the Specs tab shows when such a task is chosen (starter_config); `train` is the partition a run from scratch
+# belongs to.
 REAL_TARGETS_OF_RECORD = {
     'gpdk045_ota5': ('configs/m6_real_cross_category.json', 'classes', 'opamp', 'specs', 'train'),
     'gpdk045_vco': ('configs/m6_real_cross_category.json', 'classes', 'vco', 'specs', 'train'),
 }
 
 
-# The VCO results are not in the optimizer's default result registry (score + the op-amp results) and the UI has no editor
-# for the registry, so a target on them could not even be stated. That task brought the registry of record of the real
-# cross-category experiment (so did the LDO task until 2026-09-30), the way a generated profile brings its own
+# The VCO results are not in the optimizer's default result registry (score + the op-amp results) and the UI has no
+# editor for the registry, so a target on them could not even be stated. That task brought the registry of record of the
+# real cross-category experiment (so did the LDO task until 2026-09-30), the way a generated profile brings its own
 # (profiles.task_spec_registry). The OTA task stayed on the default registry.
 REAL_REGISTRY_OF_RECORD = {'gpdk045_vco': 'configs/m6_real_cross_category.json'}
 
 
-# Which analysis of the circuit profiles produces a result: the label on its Probes row. Everything else is a DC operating
-# point, except that an oscillator's results all come from its transient run.
+# Which analysis of the circuit profiles produces a result: the label on its Probes row. Everything else is a DC
+# operating point, except that an oscillator's results all come from its transient run.
 RESULT_ANALYSIS = dict.fromkeys(('gain_db_at_start', 'gain_reference_hz', 'bandwidth_3db_hz', 'unity_gain_hz',
                                  'phase_margin_estimate_deg', 'unity_downward_crossings', 'ldo_psrr_1khz_db'), 'ac')
 
 
-RESULT_ANALYSIS.update(dict.fromkeys(('ldo_step_deviation_v', 'ldo_step_final_shift_v', 'ldo_step_tail_ripple_v'), 'tran'))
+RESULT_ANALYSIS.update(dict.fromkeys(('ldo_step_deviation_v', 'ldo_step_final_shift_v', 'ldo_step_tail_ripple_v'),
+    'tran'))
 
 
 REAL_INTERFACE_CONTRACT = dict(
@@ -119,7 +127,8 @@ REAL_INTERFACE_CONTRACT = dict(
     note='Native CDF preparation is serialized by the existing preparation service; only Spectre runs in parallel.')
 
 
-REAL_AUTHORIZATION_REQUIRED = ('Real Virtuoso/Spectre execution requires an explicit user action with an authorized budget; '
+REAL_AUTHORIZATION_REQUIRED = (
+    'Real Virtuoso/Spectre execution requires an explicit user action with an authorized budget; '
                                'it is never started implicitly.')
 
 
@@ -132,6 +141,7 @@ class TaskBlocked(RuntimeError):
 
 @dataclass
 class TaskRuntime:
+    # A task's circuit, provenance and environment-factory contract with its execution limits and authorization.
     task_key: str
     origin: str                        # 'synthetic' | 'real'
     base_graph: object
@@ -144,7 +154,8 @@ class TaskRuntime:
     max_concurrency: int = 64
     notes: list = field(default_factory=list)
     authorized: bool = True            # False = a real task loaded to be SHOWN and validated only: it cannot execute
-    reference_metrics: dict | None = None   # verified REAL results of the INITIAL design: {metric: {value, unit}}; None if unknown
+    # verified REAL results of the INITIAL design: {metric: {value, unit}}; None if unknown
+    reference_metrics: dict | None = None
     connection_family: str = 'virtuoso'     # which family of connection a real run needs: virtuoso (Spectre) or ngspice
 
     @property
@@ -170,8 +181,10 @@ def offered_real_profiles() -> dict:
 
 
 def real_task_removed(task) -> str:
+    """Explain when a retired built-in task was removed and how to select a saved real task."""
     when = '2026-09-30' if task in ('real:gpdk045_ota7', 'real:gpdk045_ldo') else '2026-09-23'
-    return (f'{task} no longer exists: the built-in verified tasks were removed on user request (this one on {when}). The '
+    return (
+        f'{task} no longer exists: the built-in verified tasks were removed on user request (this one on {when}). The '
             'real tasks are the ones you save from a Virtuoso cell; choose one under "Task".')
 
 
@@ -180,11 +193,13 @@ CORNER_TASKS = frozenset()
 
 
 def training_capabilities(task_key):
+    """Describe whether a task supports corner training and which condition policies it offers."""
     corners = task_key in CORNER_TASKS
     return dict(corners=corners, policies=['off', 'after_nominal', 'always'] if corners else ['off'])
 
 
-NETLIST_SOURCE_REMOVED = ('The workbench no longer imports Spectre netlist files. Choose a registered task or a Virtuoso '
+NETLIST_SOURCE_REMOVED = (
+    'The workbench no longer imports Spectre netlist files. Choose a registered task or a Virtuoso '
                           'cell under "Circuit source".')
 
 
@@ -209,7 +224,10 @@ def verified_profile(name):
 
 
 def verified_spec_registry(circuit):
-    """(version, entries) of the result registry a VERIFIED circuit brings along (REAL_REGISTRY_OF_RECORD), else None."""
+    (
+        '(version, entries) of the result registry a VERIFIED circuit brings along (REAL_REGISTRY_OF_RECORD), '
+        'else None.'
+    )
     task_id = getattr(circuit, 'task_id', None) or ''
     if getattr(circuit, 'source', None) != 'registered_task' or not task_id.startswith('real:'):
         return None
@@ -217,14 +235,16 @@ def verified_spec_registry(circuit):
     if file is None:
         return None
     record = json.loads((repo_root() / file).read_text())['schema']
-    return record['version'], [dict(metric_id=name, unit=unit, reference=reference) for name, unit, reference in record['metrics']]
+    return record['version'], [dict(metric_id=name, unit=unit, reference=reference) for name, unit,
+        reference in record['metrics']]
 
 
 def fixed_by_verified_profile(runtime) -> bool:
     """Whether a loaded task's Parameters rows are fixed by a verified built-in circuit profile (a run accepts exactly
     those): real:<name> of REAL_PROFILES, not a profile generated from a cell."""
     name = runtime.task_key.partition(':')[2]
-    return runtime.task_key.startswith('real:') and name in REAL_PROFILES and not runtime.circuit.get('generated_profile')
+    return runtime.task_key.startswith('real:') and name in REAL_PROFILES and not runtime.circuit.get(
+        'generated_profile')
 
 
 # The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.

@@ -62,6 +62,7 @@ def test_deep_high_gain_program_has_finite_forward_and_gradients(opamp, depth):
 
 
 def described(graph):
+    """Attach matching spec descriptors and distinct measured-net bindings to a copied observation."""
     original = observation(graph)
     graph = deepcopy(original.graph)
     specs = (MetricSpec('first', 'V', 'min', .1, lower=.2), MetricSpec('second', 'V', 'min', .1, lower=.8))
@@ -75,10 +76,12 @@ def described(graph):
 
 
 def batch(*observations, **kwargs):
+    """Batch observations under the structured spec schema shared by these tests."""
     return batch_observations(observations, spec_schema=SCHEMA, **kwargs)
 
 
 def models():
+    """Seed and build the actor and critic with the same structured input contract."""
     torch.manual_seed(724)
     return GroupActor(spec_schema=SCHEMA, config=MODEL), GraphCritic(spec_schema=SCHEMA, config=MODEL)
 
@@ -291,6 +294,7 @@ def test_structured_sac_update_checkpoint_restores_next_update(tmp_path, transit
     learner = SACLearner(experiment=EXPERIMENT, spec_schema=SCHEMA, model_config=MODEL)
     replay = ReplayBuffer(10, origin='synthetic')
     def decorate(obs):
+        """Add minimal analyzer programs and empty spec descriptors to replay observations."""
         graph = deepcopy(obs.graph)
         graph.metadata['spec_descriptors'] = {s.metric_id: () for s in obs.specs}
         graph.metadata[PROGRAM_KEY] = {s.metric_id: dict(op='analyzer', children=[dict(op='unknown')]) for s in obs.specs}
@@ -347,6 +351,7 @@ def test_v3_program_bindings_average_repeated_references():
     nodes = torch.randn(1, h).repeat(8, 1)
 
     def program(k):
+        """Build a single-node packed program with the requested number of bindings."""
         return {'op': torch.zeros(1, dtype=torch.long), 'values': torch.zeros(1, 6),
                 'bindings': (torch.zeros(k, dtype=torch.long), torch.arange(k)),
                 'binding_role': torch.zeros(k, dtype=torch.long),

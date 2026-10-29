@@ -45,6 +45,7 @@ class Save:
         self.answer = None
 
     def mark(self, step, steps):
+        """Record the step that starts now, its start time and the full list of steps this save takes."""
         with _lock:
             self._record.update(steps=list(steps), step=step, step_started=time.monotonic())
 
@@ -57,7 +58,8 @@ def running(task_key):
     with _lock:
         if _running is not None:
             seconds = time.monotonic() - _running['started']
-            raise Busy(f'Another save is running ({_running["task_key"]}, {seconds:.0f} s so far). Save as can be pressed '
+            raise Busy(
+                f'Another save is running ({_running["task_key"]}, {seconds:.0f} s so far). Save as can be pressed '
                        'again when it has ended.')
         record = _running = dict(id=uuid.uuid4().hex[:12], task_key=task_key, started_utc=utcnow().isoformat(),
                                  started=time.monotonic(), steps=[], step=None, step_started=None)
@@ -66,7 +68,8 @@ def running(task_key):
     try:
         yield save
         answer = save.answer or {}
-        outcome = dict(ok=True, answer={key: answer.get(key) for key in ANSWER_KEYS if key != 'baseline' or key in answer})
+        outcome = dict(ok=True,
+            answer={key: answer.get(key) for key in ANSWER_KEYS if key != 'baseline' or key in answer})
     except BaseException as exc:
         outcome = dict(ok=False, problem=_problem(exc))
         raise

@@ -1,5 +1,25 @@
 # GATOR workbench: frontend, run control and data-only outputs
 
+Read the section for the feature you need; `grep -n '^##' docs/workbench.md` still lists the same section headings.
+
+| Section | What it holds | Selected records |
+|---|---|---|
+| [Start](#start) | Environment setup, starting the page and the local test commands. | 7.276, 7.366 |
+| [Start, Pause, Resume, Abort (added 2026-09-21, user request)](#start-pause-resume-abort-added-2026-09-21-user-request) | Run authorization, budgets, saving, pausing, continuing and stopping. | 7.261, 7.269, 7.265, 7.78, 7.188 |
+| [The page's look and layout (record 7.158; one look since record 7.360)](#the-pages-look-and-layout-record-7158-one-look-since-record-7360) | The Roadster page, task card, editors, windows and responsive layout. | 7.158, 7.360, 7.372, 7.264, 7.362 |
+| [What is real and what is mock](#what-is-real-and-what-is-mock) | Task provenance, saved tasks, editor rows, imports and circuit browsing. | 7.128, 7.59, 7.73, 7.246, 7.66 |
+| [Connection profiles (section 2.1)](#connection-profiles-section-21) | Remembered connections, explicit SSH connection, sessions and folders. | 7.115, 7.279, 7.80, 7.182, 7.345 |
+| [Output layout](#output-layout) | Run folders, tables, exports, the run window, Training and Corner check. | 7.377, 7.284, 7.286, 7.369, 7.321 |
+| [Reward and training conditions](#reward-and-training-conditions) | Reward controls, calibration, baselines and simulation accounting. | 7.128, 7.96, 7.171, 7.124, 7.278 |
+| [The right column: settings, saved models and the graph view](#the-right-column-settings-saved-models-and-the-graph-view) | Run settings, saved RL models, network structure and circuit graphs. | 7.226, 7.116, 7.304, 7.325, 7.150 |
+| [The PDK, and what a real run writes back into Virtuoso](#the-pdk-and-what-a-real-run-writes-back-into-virtuoso) | Loaded device vocabularies, transferable inputs and legal parameter writes. | 7.83, 7.279, 7.283, 7.377, 7.378 |
+| [A task's Virtuoso side: the cell it works in, saving, the run](#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-run) | The working copy, Maestro setup, Save as and checks before a run. | 7.226, 7.246, 7.137, 7.315, 7.141 |
+| [Reload saved data](#reload-saved-data) | Reading recorded transitions and training from an offline archive. | 7.365, 7.233, 7.298, 7.317, 7.319 |
+| [Desktop and CLI agents](#desktop-and-cli-agents) | User-started agents for setup, editor changes, troubleshooting and results review; normal workbench validation for readiness. | 7.435 |
+| [What the frontend audit changed (2026-09-30, record 7.125)](#what-the-frontend-audit-changed-2026-09-30-record-7125) | The recorded authorization, editing and navigation corrections. | 7.125, 7.226, 7.131, 7.174, 7.130 |
+| [Code organization](#code-organization) | The backend, frontend and shared test modules by responsibility. | 7.131, 7.297, 7.324, 7.292, 7.280 |
+| [Tests](#tests) | Offline tests, browser checks and their scratch backends. | 7.115, 7.276, 7.56 |
+
 Local web workbench around the existing optimizer. It reads circuits, lets you define
 optimization problems by hand or with agent assistance, runs the existing SAC backend, and
 saves the raw data and model state needed for research analysis.
@@ -10,23 +30,6 @@ Two exceptions ON SCREEN, by user decision: the **circuit graph view** (2026-09-
 below), drawn in the browser with cytoscape (MIT, frontend only, loaded when the view is opened), and the **circuit
 picture** in the circuit column (2026-10-03; shown by **Show circuit** since record 7.362, see "The page's look and layout"), drawn as plain SVG. Both are diagnostic
 pictures; nothing drawn is written into a run folder or an export, so the outputs stay data-only.
-
-**Where things are described** (this file is long: read only the section you need - `grep -n '^##' docs/workbench.md`
-lists every section with its line number; a section says what its feature does NOW):
-[Start](#start) ·
-[Start, Pause, Resume, Abort](#start-pause-resume-abort-added-2026-09-21-user-request) ·
-[The page's looks and layout](#the-pages-looks-and-layout-2026-10-03-record-7158) ·
-[What is real and what is mock](#what-is-real-and-what-is-mock) ·
-[Connection profiles](#connection-profiles-section-21) ·
-[Output layout](#output-layout) ·
-[Reward and training conditions](#reward-and-training-conditions) ·
-[The right column](#the-right-column-settings-saved-models-and-the-graph-view) ·
-[The PDK and what a run writes back](#the-pdk-and-what-a-real-run-writes-back-into-virtuoso) ·
-[A task's Virtuoso side](#a-tasks-virtuoso-side-the-cell-it-works-in-saving-the-run) ·
-[Reload saved data](#reload-saved-data) ·
-[The Agent window](#the-agent-window-claude-code-or-codex-in-a-window-of-its-own-2026-10-06-record-7226-2026-10-07-record-7253) ·
-[Code organization](#code-organization) ·
-[Tests](#tests)
 
 Where each function lives - its button, code, route, record entries, tests and browser checks - is listed in
 [functionality-reference.md](functionality-reference.md) (2026-10-02, record 7.139).
@@ -1502,7 +1505,7 @@ says so). Opening the window checks nothing; every rule above about button press
 Closing the window loses nothing, and the button opens it again. Since record 7.182 the button is the last cell of the
 header's title block (user: "move the conection button to the header"), in view whatever the columns show; the left
 column has none. A line in another window that sends you here - the Virtuoso window without a connection or with the
-link down, the connection's item of "What's missing?" - carries **Connection...**, which opens this same window from
+link down - carries **Connection...**, which opens this same window from
 the window it was pressed in (branch record SIF-108, `openAt.ts` `openConnection`); it checks nothing either. With no
 connection the button reads "Connection" and, where a connection's state stands, "not set up" (the connection file has
 none) or "none chosen" (the configuration names none), its tooltip saying what works without one (branch record SIF-136;
@@ -2877,7 +2880,7 @@ other methods should be launched through agent tab opened agent cli"), together 
 call and cost ceilings, the AI thread and hints of a run, the header's "LLM n / m", the run engine's search session, the
 sizing CLI clients and, with the user's approval, the optimizer package's `search/` and `ActionMapper.encode` (one
 fingerprint step, `docs/decisions.md`). Help from a language model during an optimization - a run that is stuck, a design
-to look at - is asked of Claude Code or Codex from the Agent window, in words (below, "The Agent window").
+to look at - is asked of a desktop or CLI agent that you start yourself in the repository (below, "Desktop and CLI agents").
 
 What stays readable: a run made with one of the methods keeps its folder, tables (`llm_calls` included, with its
 `llm_call_id` and phases in the evaluations) and its data dictionary; the Training tab, Data tables, Output files and
@@ -4197,6 +4200,15 @@ its candidate ledger. The existing SQLite pool is read-only. Recovery checkpoint
 full held-out evaluation at the final budget and numerical guards on actor/critic LayerNorm inputs. The planned recovered
 model is labelled 10,000 v1 updates plus 10,000 v2 updates. See `docs/circuit-gps.md` and the Round 3 plan record.
 
+Record 7.434 (the BO/MOBO/RL archive comparison, docs/plan-bo-mobo-rl-archive-comparison.md) adds optional request
+settings, all off by default so every earlier request pools as before. A target set's row may state its `scale` and its
+`objective` ("none", "min", "max"): a copy then scores exactly as a run of that goal view does. `candidate_ids` in a
+source's entry pools only those transitions of the run (each must be a replay-eligible transition of it).
+`relabel_targets_only` pools only the target-set copies, not the transition under its recorded targets. `balance`
+"target_set" draws from the target sets in turn, uniformly across the sources within each. It needs
+`relabel_targets_only`, the same number of target sets for every task, and `holdout_fraction` 0. With
+`holdout_fraction` 0 there is no holdout, and validation scoring skips an empty set.
+
 Record 7.342 supersedes that continuation at the user's request. The separate `circuitgps-v2-fresh/` experiment
 starts at update zero with new seed-0 weights, empty optimizer states and reset temperature/sampler, using the same
 read-only validated data and fixed runtime. It preserves the failed run and stopped recovery, and retains the
@@ -4232,84 +4244,28 @@ borrows target transitions from the ordinary replay and appends task-balanced so
 enter target replay or the launch ledger. Checkpoints retain the source sampler's RNG, pending task cycle and counts;
 resume requires the same pool. Absent rehearsal preserves old configuration and learner-contract hashes.
 
-## The Agent window: Claude Code or Codex in a window of its own (2026-10-06, record 7.226; 2026-10-07, record 7.253)
+<a id="the-agent-window-claude-code-or-codex-in-a-window-of-its-own-2026-10-06-record-7226-2026-10-07-record-7253"></a>
 
-There is no Agent tab view since 2026-10-07 (record 7.253, user: "make the agent tab pop out window only (no tab view)",
-then "make it still a tab style but not button style"): **Agent...**, first in the bottom panel's tab line and still drawn
-as a tab (never the active one; underlined while its window is open), opens the Agent window instead of showing anything
-in the panel. The window holds, on one line, the folder the CLIs open in, **Claude Code**, **Codex** and, at the right end, **What's
-missing?**; under it one headline (how Claude Code and Codex start, and that "What's missing?" asks no agent and runs no
-simulation; branch record SIF-81) and one closed line, "What to ask it"; and under those, once asked for, the start
-checklist. Opening the window asks the backend which CLIs are installed (free) and nothing else; the page itself never
-asks about agents. Pressed while the window is open, **Agent...** brings it to the front and looks for the CLIs again; a
-reload of the page closes the window, and one opened anew starts clean. The line itself is record 7.226's (user: "rewrite
-the whole agent tab to minimal. Have two buttons to open claude code cli or codex cli in local shell targeting the current
-workbench working directory with the permission of a usual agent launch"), when it was the first bottom tab.
+## Desktop and CLI agents
 
-**A press opens the CLI in a terminal window of its own, in the workbench's folder** (the repository the backend serves,
-where CLAUDE.md and the docs are). The CLI starts as you would start it yourself: the workbench passes no permission
-option, no settings file, no model and no prompt, so what it may do is what your own settings say (Claude Code:
-`~/.claude/settings.json` and the folder's `.claude/`; Codex: `config.toml` in its home), it is signed in with your own
-account, and the session is in your history like any other. The workbench sends it nothing, reads nothing it says and does
-not wait for it. Describe what you need there: "the run shown in the workbench is stuck on the gain spec: look at its
-designs and suggest what to change", "draft the Specs rows from these requirements". Claude Code reads the project's
-rules (CLAUDE.md) by itself; tell Codex to read CLAUDE.md first.
+For agent assistance with circuit setup, editing Parameters, Probes or Specs, troubleshooting runs, or reviewing results,
+use a desktop agent or CLI agent that you start yourself in the repository. Choose your own application, account,
+settings and permissions; for example, use Claude Code or Codex directly.
 
-How (`src/gator_workbench/agent_cli.py`, routes `GET /api/agent/clis`, `POST /api/agent/open` with `{cli}` only):
-- **Claude Code** is the `claude` on the backend's PATH, else the standalone install `~/.local/bin/claude`; its home is
-  `~/.claude`, so `claude --resume` in the folder lists the session.
-- **Codex** is a `codex` on the PATH, else the newest Linux build the Codex desktop app ships for its WSL agent
-  (`<home>/bin/wsl/<build>/codex`). The start sets the environment that app gives its own WSL agent: `CODEX_HOME` = the
-  Windows user's `.codex` (sign-in, `config.toml`, sessions) and `CODEX_SQLITE_HOME` = `~/.codex/sqlite`, with the app's
-  build folders first on the PATH (one holds the `rg` Codex searches with) - so the session is in the app's history. A
-  `$CODEX_HOME` the backend has wins.
-- The backend writes a short start script to `~/.local/state/gator/agent-cli/<cli>.sh` (into the folder, the CLI exactly
-  as typed, then your own login shell, so the window stays open when the CLI ends) and opens a window for it: from WSL
-  Windows Terminal (`wt.exe -w new new-tab --title ... wsl.exe -d <distro> -- bash -l <script>`), else a console through
-  PowerShell's Start-Process, else a Linux desktop's terminal. The window owns nothing of the backend: its own session, no
-  inherited streams, and no variable of the backend travels into it (from WSL `WSLENV` is emptied; on a Linux desktop the
-  markers a Claude Code session sets for its children are taken out), so stopping the server leaves the CLI running.
-  Windows programs start through the WSL interop socket the server inherited; a server that outlived the session that
-  started it uses the distro's own socket (`/run/WSL/1_interop`) instead.
-- A CLI that is not installed is a disabled button with the reason; a window that cannot be opened says why, with the
-  command to type in a terminal of your own (and Copy).
-- `GATOR_AGENT_CLI_LAUNCH=off` makes every launch a dry run that says what it would open and writes nothing: the test suite
-  (`tests/conftest.py`) and the browser checks' backends (`run_checks.sh`) set it, so no test opens a window.
+Tell the agent to read `CLAUDE.md` first, then identify the task, configuration or run folder and describe what you
+want it to do. Review proposed changes and authorize any real simulation or schematic write yourself. The normal
+workbench editors, validation, run controls and budget authorization remain the way to inspect and start a run.
 
-What went with the tab's own agent on 2026-10-06 (records 7.6-7.186 built it): the conversation and its window, the
-provider, model and effort lists, the live answer, proposals with diff and approval, "Review settings" (with publications
-online), "Review results", the export and import of a task description, the kinds `virtuoso_setup` ("Ask the agent to set
-up" in the Virtuoso window) and `virtuoso_work` (the agent's own Virtuoso tools, `agent_tools.py`), and the editors' "Draft
-with agent..." and "Modify selected with agent...". Every one of them was a request to the in-tab agent; the CLIs do the same
-from a description, with the access your own settings give them. The saved `agent` block in `settings.json` is no longer
-read. Two pieces other functions use moved: the row diff (`diffs.py`, Matched devices, Import JSON, rows not saved) and the
-circuit summary (`circuit_summary.py`, the circuit panel).
+The Agent tab entry, popup window, CLI launch buttons and "What's missing?" checklist were removed from the frontend
+on 2026-10-26 (record 7.435). The page neither discovers installed agents nor makes requests to the agent endpoints.
+It sends no prompt or configuration to a desktop or CLI agent. Records 7.226 and 7.253 describe the earlier interfaces.
 
-### What is missing before the run can start
+### Checking readiness
 
-"What's missing?" is answered by the backend, free: no agent, nothing probed (`readiness.py`, `POST /api/agent/readiness`).
-It fills the lower part of the Agent window with the verdict ("Nothing blocks a start", or how many items block it and which
-is next) and the list, in the order a start is gated: circuit, Parameters, Probes, Specs (the three editor tabs, in tab order), other
-blocking issues, run configuration, output folder and - for a real circuit - the connection (the LAST test result; it does
-not test again) and the budget authorization that only you can give. Each line says whose step it is ("yours", or "an agent
-can help" for the three tables) and what to do; for the tables that includes Reload saved values for a saved task and that
-Claude Code or Codex (the Agent window) can draft the rows from your description. It is worked out when the button is
-pressed, from the configuration on the page, and never by itself: press it again after a change (it fills the list anew; a
-window opened anew starts without it). What to do is in the red of an error only under an item that blocks a start, in
-amber under a warning and in grey under the rest, such as a connection not tested yet (branch record SIF-142: every
-step was red, so that one read like a blocker's under "Nothing blocks a start.").
-
-An item whose step is in another window carries the button to it after what to do (branch record SIF-108): the connection
-**Connection...** (the Connection window), a circuit not read **Open Tasks** (the Tasks window, as it is). Each opens its
-window from the Agent window, as the header's Connection button and the "No task yet" line's Open Tasks open them from
-the page; opening it checks and changes nothing. The words of each line are the backend's: three of them still point at
-the page before records 7.182 and 7.362 (a "Circuit source" and a Connection button on the left, "Max evaluations" for
-the Evaluation budget), to be put right in `readiness.py`.
-
-Rows that are there but differ from the saved task - an edit, an applied calibration, an older page - are your press: the
-line gives the issue whole, its last sentence included (Save task, or Reload saved values), and says where the two buttons
-are (record 7.204). For a verified real circuit the optimized variables are not a choice: the profile fixes them, and the
-checklist reports any other set as missing, since the run would be refused the moment it starts.
+Use the workbench's validation and run controls to inspect what blocks a start. For help interpreting a blocker or
+preparing the circuit and editor rows, ask your own desktop or CLI agent with the relevant task or configuration.
+The existing backend readiness and CLI-integration routes remain available for external clients; they have no
+frontend controls. Removing the Agent interface does not change validation, run authorization or the simulator.
 
 ## What the frontend audit changed (2026-09-30, record 7.125)
 
@@ -4355,6 +4311,8 @@ a registered task while a cell is read keeps the task, and a cell's previous loa
 ended run's log is read once more after its worker ended. Overlapping tests of two connections each show "Testing...".
 
 ## Code organization
+
+The [glossary](glossary.md) maps the page's words to code and record names.
 
 `src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and
 connections, circuits and tasks, runs and exports, and agents. `api/models.py` owns HTTP request schemas;
@@ -4411,7 +4369,7 @@ measurement readers' reading of a job folder. `CircuitSizingEnv._evaluate` reads
 episode, start a calibration design and retry through the environment's `continue_from`, `independent_episode` and
 `retry` instead of writing its private attributes.
 
-The frontend keeps the Agent window and its "Agent..." button in `panels/Agent.tsx` and the run tabs in `panels/RunTabs.tsx`.
+The frontend keeps the run tabs in `panels/RunTabs.tsx`; `panels/BottomPanel.tsx` owns their tab line and the Runs window button.
 `CircuitBrowser.tsx` owns the Virtuoso browsing chain and circuit details; `Left.tsx` coordinates task selection, with
 its jobs in `taskChoice.ts` (choosing a registered task), `taskActions.ts` (Check now, Delete task), `testbenchProbes.ts`
 and `taskRows.ts`, and the Virtuoso window in `VirtuosoWindow.tsx`. Shared async actions and stale-response handling live
@@ -4514,7 +4472,7 @@ Some checks get special handling:
 The whole batch took 198 s, instead of about 9 minutes one check after another.
 
 Connection tests use fake bridge clients and a fake probe process. No test opens an agent CLI or contacts a real
-Virtuoso: the Agent window's launcher is tested with fake CLIs and fake terminals (`test_wb_agent_cli.py`, which also runs a
+Virtuoso: the legacy backend CLI launcher is tested with fake CLIs and fake terminals (`test_wb_agent_cli.py`, which also runs a
 start script for real with a fake CLI), and the suite runs with `GATOR_AGENT_CLI_LAUNCH=off`.
 
 The header shows blocking issues as a red button, "N blocking issues": a press lists every one of

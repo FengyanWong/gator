@@ -114,6 +114,7 @@ def test_the_inspection_builds_the_learner_once_for_one_configuration(trained, m
     assert first['compatibility']['compatible'] and first['compatibility'] == second['compatibility'] and len(built) == 1
 
     def wider(raw):
+        """Give the inspection fixture a different upper size bound."""
         raw['parameters'][0]['upper'] = raw['parameters'][0]['upper'] * 1.5
     third = client.post('/api/runs/model', json=dict(body, config=make_config(root, mutate=wider).model_dump(mode='json'))).json()
     assert third['compatibility']['compatible'] and len(built) == 1

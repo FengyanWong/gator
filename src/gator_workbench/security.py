@@ -4,7 +4,8 @@ from __future__ import annotations
 import re
 
 _PATTERNS = [
-    (re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----', re.S), '[REDACTED PRIVATE KEY]'),
+    (re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----', re.S),
+        '[REDACTED PRIVATE KEY]'),
     (re.compile(r'\bsk-ant-[A-Za-z0-9_\-]{8,}'), '[REDACTED API KEY]'),
     (re.compile(r'\bsk-[A-Za-z0-9_\-]{20,}'), '[REDACTED API KEY]'),
     (re.compile(r'\b(gh[pousr]_[A-Za-z0-9]{20,})'), '[REDACTED TOKEN]'),
@@ -15,7 +16,8 @@ _PATTERNS = [
 ]
 
 
-def redact(text, limit=None):
+def redact(text, limit: int | None=None) -> str | None:
+    """Return `text` with secrets masked, cut after `limit` characters when given; None stays None."""
     if text is None:
         return None
     text = str(text)

@@ -28,6 +28,7 @@ CIRCUITS = sorted(BOUNDS)
 
 
 def hand_written(name):
+    """Instantiate the registered profile class using its repository fixture files."""
     info = tasks.REAL_PROFILES[name]
     module_name, _, class_name = info['profile'].partition(':')
     module = importlib.import_module(module_name)
@@ -62,6 +63,7 @@ def generated(name, tmp_path, hand, **changes):
 
 
 def verdict(call):
+    """Capture either an accepted result or the type of a supported validation error."""
     try:
         return 'accepted', call()
     except (ValueError, KeyError) as exc:
@@ -69,6 +71,7 @@ def verdict(call):
 
 
 def instance(snapshot, name):
+    """Select the named instance from a schematic snapshot."""
     return next(item for item in snapshot['instances'] if item['name'] == name)
 
 

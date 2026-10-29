@@ -28,6 +28,7 @@ def _codec():
 
 
 class StateEncoder:
+    """An encoder that turns each distinct observation state of one task into a single archive row."""
     def __init__(self, static_dir, *, task_id, graph, specs, feature_schema_version, spec_schema_version):
         codec = _codec()
         self.static_dir = Path(static_dir)
@@ -99,11 +100,13 @@ class TrajectoryLoader:
         return self._static[name]
 
     def state_rows(self):
+        """Load and cache archived state rows indexed by their state identifiers."""
         if self._states is None:
             self._states = {row['state_id']: row for row in self.reader.rows('states')}
         return self._states
 
     def observation(self, state_id):
+        """Reconstruct an observation from its archived state identifier."""
         return self._observation(self.state_rows()[state_id])
 
     def _observation(self, row):
@@ -127,14 +130,16 @@ class TrajectoryLoader:
         from analog_optimizer.training.replay import Transition
         rows = [row for row in self.transition_rows(candidate_ids=candidate_ids) if row['replay_eligible_archive']]
         if any(row.get('reward_version') != 'constraint_violation_v2' for row in rows):
-            raise ValueError('Legacy transition archive needs an explicit migration; inspect raw tables without training')
+            raise ValueError(
+                'Legacy transition archive needs an explicit migration; inspect raw tables without training')
         states = self._states
         if candidate_ids is not None and states is None:
             references = {row[key] for row in rows for key in ('state_ref', 'next_state_ref')}
             states = {row['state_id']: row for row in self._selected_rows('states', 'state_id', references)}
         result = []
         for row in rows:
-            observation = self.observation(row['state_ref']) if states is None else self._observation(states[row['state_ref']])
+            observation = self.observation(row['state_ref']) if states is None else self._observation(states[row[
+                'state_ref']])
             following = (self.observation(row['next_state_ref']) if states is None
                          else self._observation(states[row['next_state_ref']]))
             transition = Transition(
@@ -165,6 +170,7 @@ class TrajectoryLoader:
         return rows
 
     def transition_rows(self, *, candidate_ids=None):
+        """Read transitions in commit order and mark whether each archived row is eligible for replay."""
         rows = (self.reader.rows('transitions') if candidate_ids is None
                 else self._selected_rows('transitions', 'candidate_id', candidate_ids))
         rows = sorted(rows, key=lambda r: r['commit_seq'])
@@ -185,7 +191,7 @@ class TrajectoryLoader:
         elif vocabulary is not None:
             feature_schema, see = feature_schema or vocabulary.schema, vocabulary.view
         else:
-            see = lambda observation: observation                      # noqa: E731 - the standard list sees states as stored
+            see = lambda observation: observation  # noqa: E731 - the standard list sees states as stored
         feature_schema, spec_schema = feature_schema or FeatureSchema(), spec_schema or SpecSchema()
         return (batch_observations([see(t.observation) for t in transitions], feature_schema, spec_schema),
                 batch_observations([see(t.next_observation) for t in transitions], feature_schema, spec_schema))

@@ -12,6 +12,7 @@ from gator_workbench.storage.atomic import TEMP_MARKER, read_json
 
 @pytest.fixture
 def inventory(tmp_path):
+    """Create a run artifact tree with explicit included and excluded manifest entries."""
     layout = output.RunLayout(tmp_path / 'mock' / 'synthetic-run')
     layout.create()
     kept = {
@@ -90,6 +91,7 @@ def test_scratch_is_never_scanned_and_only_retained_files_are_statted_once(inven
     scan, stat = os.scandir, Path.stat
 
     def scandir(path):
+        """Record scanned paths and reject traversal into the work subtree."""
         path = Path(path)
         assert path != layout.work and layout.work not in path.parents
         scanned.append(path)
@@ -131,6 +133,7 @@ def test_file_removed_while_listing_is_skipped(inventory, monkeypatch, failure):
     original = Path.stat if failure == 'stat' else output.sha256_file
 
     def disappearing(path, *args, **kwargs):
+        """Simulate a file disappearing while the artifact inventory is inspected."""
         if path == vanished:
             raise FileNotFoundError('synthetic concurrent removal')
         return original(path, *args, **kwargs)

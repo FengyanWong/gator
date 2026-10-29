@@ -21,6 +21,7 @@ COMMAND = ('/opt/cadence/SPECTRE231/bin/spectre -64 /tmp/vb/15f61d39/input.scs +
 
 
 def amap(tmp_path):
+    """Build hierarchical simulator-name mapping files and return their name resolver."""
     folder = tmp_path / 'amap'
     folder.mkdir()
     files = {'top_level_map.inst': [('__NEXT_FILE__', 'tb')], 'tb.inst': [('V0n', 'analogLib_vdc_spectre'), ('XU1n', 'ring')],
@@ -73,8 +74,10 @@ def test_a_client_for_ocean_leaves_the_bridge_variables_as_they_were(monkeypatch
     fake = types.ModuleType('virtuoso_bridge')
 
     class Client:
+        """A bridge client stand-in that mutates environment variables while loading."""
         @classmethod
         def from_env(cls, **kwargs):
+            """Simulate environment changes performed while constructing a bridge client."""
             os.environ['VB_ADDED_BY_LOADING'] = '1'                   # what loading an env file could do
             os.environ['VB_PROFILE_SEEN'] = 'changed'
             return cls()
@@ -158,6 +161,7 @@ class RecordingClient:
         self.calls, self.mode = [], mode
 
     def execute_skill(self, text, timeout=60):
+        """Record SKILL calls and return canned Maestro settings for the selected mode."""
         self.calls.append(text)
         answers = [('maeOpenSetup', '"fnxSession1"'), ('?typeName "tests"', '("GATOR")'), ("'uniMode) ", f'"{self.mode}"'),
                    ('maeGetEnabledAnalysis', '("tran")'), ('maeGetAnalysis', '(("stop" "50n"))'), ('?typeName "variables"', 'nil'),

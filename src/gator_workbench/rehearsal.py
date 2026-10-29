@@ -20,6 +20,7 @@ from .trajectory import TrajectoryLoader
 
 
 def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None):
+    """Write a bounded, verified training-only replay snapshot to a new folder and return its manifest."""
     directory, output = Path(training_dir), Path(output)
     request, audit = read_json(directory / 'request.json'), read_json(directory / 'pool.json')
     if identity(request) != audit['request_sha256'] or identity(audit['split']) != audit['split_sha256']:
@@ -32,12 +33,14 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
             rows[row['task']].append(row)
     if capacity < len(rows):
         raise ValueError('Rehearsal capacity must include every source task')
-    # A pool whose rewards were recomputed (`migrate_reward_settings`) is drawn as it was trained on: re-scored the same way,
-    # before any relabelling (record 7.352). The manifest says the migrated settings, and so do its transitions now.
+    # A pool whose rewards were recomputed (`migrate_reward_settings`) is drawn as it was trained on: re-scored the same
+    # way, before any relabelling (record 7.352). The manifest says the migrated settings, and so do its transitions
+    # now.
     migration = audit.get('reward_migration')
     if migration is not None:
         from analog_optimizer.measurements.specs import RewardSettings
         migration = RewardSettings(**migration['settings'])
+    # ---- Allocate bounded samples across source tasks before reading selected transitions.
     rng, selected = random.Random(seed), []
     for i, task in enumerate(sorted(rows)):
         n = capacity // len(rows) + (i < capacity % len(rows))
@@ -61,8 +64,10 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
                 if migration is not None:
                     transition = migrated(transition, migration)
                 if row['relabeled']:
-                    if row.get('target_set'):                      # one of the task's target sets (pretrain.relabel_targets)
-                        specs = retargeted_specs(transition.observation.specs, request['relabel_targets'][row['task']][row['target_set'] - 1], row['task'], stated)
+                    # one of the task's target sets (pretrain.relabel_targets)
+                    if row.get('target_set'):
+                        specs = retargeted_specs(transition.observation.specs,
+                            request['relabel_targets'][row['task']][row['target_set'] - 1], row['task'], stated)
                     else:
                         changes = request['relabel_upper'][row['task']]
                         specs = tuple(replace(s, upper=changes[s.metric_id]) if s.metric_id in changes else s
@@ -76,6 +81,7 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
                 raise ValueError('Source archive changed during rehearsal snapshot')
             if progress:
                 progress(dict(event='rehearsal_source', run_id=source['run_id'], count=len(chosen)))
+    # ---- Publish after checking each selected source archive before and after its read.
     publish(temporary, data)
     manifest = dict(format='gator-rehearsal-v1', origin=audit['origin'], capacity=capacity, count=len(selected),
                     selection=selected, seed=seed, request_sha256=audit['request_sha256'],
@@ -87,6 +93,7 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
 
 
 class Rehearsal:
+    """A learner wrapper that adds a fixed number of verified source-task transitions to every update."""
     def __init__(self, settings, learner, *, origin, seed, batch_size):
         self.learner, self.sha = learner, settings.pool_sha256
         path = Path(settings.pool_manifest)
@@ -101,6 +108,7 @@ class Rehearsal:
         data = (path.parent / manifest['data_file']).resolve()
         if data.parent != path.parent.resolve() or file_sha(data) != manifest['data_sha256']:
             raise ValueError('Rehearsal data path or checksum mismatch')
+        # ---- Validate stored transitions against the pinned training-only selection.
         training, actual, self.digests = defaultdict(list), [], {}
         with gzip.open(data, 'rt', encoding='utf8') as stream:
             for line in stream:
@@ -123,6 +131,7 @@ class Rehearsal:
         if (Counter(map(identity, actual)) != Counter(map(identity, manifest['selection'])) or
                 len(actual) != manifest['count'] or not 0 < len(actual) <= manifest['capacity']):
             raise ValueError('Rehearsal selection or capacity mismatch')
+        # ---- Partition each update batch between source and target samples.
         self.source_size = round(batch_size * settings.fraction)
         self.online_size = batch_size - self.source_size
         if min(self.source_size, self.online_size) < 1:
@@ -130,15 +139,18 @@ class Rehearsal:
         self.sampler = BalancedSampler(dict(training), seed)
 
     def update(self, transitions, *, digests):
+        """Run the learner update on `transitions` plus a balanced sample of source-task transitions."""
         source = self.sampler.sample(self.source_size)
         return self.learner.update(list(transitions) + source,
                                    digests=list(digests) + [self.digests[id(t)] for t in source])
 
     def state_dict(self):
+        """Capture the rehearsal pool identity and sampler state needed for continuation."""
         return dict(pool_sha256=self.sha, rng=self.sampler.rng.getstate(), pending=list(self.sampler.pending),
                     counts=dict(self.sampler.counts))
 
     def load_state_dict(self, state):
+        """Restore the sampler state from a checkpoint; raise ValueError if it names another rehearsal pool."""
         if state['pool_sha256'] != self.sha:
             raise ValueError('Resume rehearsal pool differs from checkpoint')
         self.sampler.rng.setstate(state['rng'])

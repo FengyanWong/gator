@@ -25,8 +25,8 @@ from .storage.atomic import read_json, write_json
 # ------------------------------------------------------------------------------------------ the Virtuoso query
 # One read-only call. `ddGetObj`, `cdfGetBaseCellCDF` and `cdfFindParamByName` open nothing. A cell that has no Spectre
 # entry of its own is netlisted through its schematic: that schematic is opened READ-ONLY and closed again exactly as
-# the bridge's own reader does (virtuoso_bridge/virtuoso/schematic/reader.py, unwindProtect + dbClose), only to see which
-# primitive it places and with which model. Lines are collected in a list and joined once.
+# the bridge's own reader does (virtuoso_bridge/virtuoso/schematic/reader.py, unwindProtect + dbClose), only to see
+# which primitive it places and with which model. Lines are collected in a list and joined once.
 PDK_SKILL = r'''
 let((lib lines cdf sp mp cv)
   lib = ddGetObj("@LIBRARY@")
@@ -62,6 +62,7 @@ let((lib lines cdf sp mp cv)
 
 
 def pdk_skill(library):
+    """Substitute a validated technology-library name into the PDK-readout SKILL program."""
     if not NAME.match(library or ''):
         raise ValueError('The technology library must be a plain Cadence name')
     return PDK_SKILL.replace('@LIBRARY@', library)
@@ -90,6 +91,7 @@ let((lib lines cdf sp mp)
 
 
 def ideal_skill(library=IDEAL_LIBRARY):
+    """Substitute a validated library name into the ideal-component SKILL program."""
     if not NAME.match(library or ''):
         raise ValueError('The library of ideal parts must be a plain Cadence name')
     return IDEAL_SKILL.replace('@LIBRARY@', library)
@@ -165,9 +167,9 @@ class ModelFileCache:
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
             if not (self.folder / digest).is_file():
-                tmp = self.folder / f'{digest}.part'
-                tmp.write_bytes(data)
-                tmp.replace(self.folder / digest)
+                partial_download_path = self.folder / f'{digest}.part'
+                partial_download_path.write_bytes(data)
+                partial_download_path.replace(self.folder / digest)
             self.index[remote] = dict(bytes=stamp[0], modified=stamp[1], sha256=digest)
             write_json(self.folder / 'index.json', self.index)
         except OSError:
@@ -218,7 +220,9 @@ def read_from_virtuoso(client, *, technology_library, model_file, decode=None, c
                     local = scratch / f'{len(files):03d}_{Path(remote).name}'
                     fetched = client.download_file(remote, local, timeout=300)
                     if not fetched.ok or not local.is_file():
-                        raise RuntimeError(f"Cannot read {remote} on the simulator host: {'; '.join(fetched.errors or []) or 'download failed'}")
+                        raise RuntimeError(
+                            f'Cannot read {remote} on the simulator host: '
+                            f"{'; '.join(fetched.errors or []) or 'download failed'}")
                     data = local.read_bytes()
                     cache.put(remote, stamps.get(remote), data)
                 total += len(data)
@@ -228,15 +232,18 @@ def read_from_virtuoso(client, *, technology_library, model_file, decode=None, c
                 files[remote] = text
                 sources.append(dict(path=remote, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
                 for include in includes_of(text):
-                    target = posixpath.normpath(include if include.startswith('/') else posixpath.join(posixpath.dirname(remote), include))
-                    if REMOTE_PATH.match(target) and target not in files and target not in level and target not in following:
+                    target = posixpath.normpath(include if include.startswith('/') else posixpath.join(
+                        posixpath.dirname(remote), include))
+                    if REMOTE_PATH.match(
+                        target) and target not in files and target not in level and target not in following:
                         following.append(target)
             level = following
         scans = [scan_model_text(text, remote) for remote, text in files.items()]
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     return dict(technology_library=technology_library, cdf_text=cdf_text, scans=scans, ideal=ideal,
-                sources=dict(model_files=sources, cdf=dict(library=technology_library, lines=len(cdf_text.splitlines()))))
+                sources=dict(model_files=sources, cdf=dict(library=technology_library,
+                    lines=len(cdf_text.splitlines()))))
 
 
 def read_ideal_parts(client, decode, library=IDEAL_LIBRARY) -> dict:

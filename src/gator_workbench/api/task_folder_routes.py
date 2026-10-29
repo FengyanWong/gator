@@ -10,10 +10,12 @@ from .models import Body
 from .support import fail
 
 
+# Validated display name used when creating or renaming a workbench folder.
 class FolderName(Body):
     name: str = Field(min_length=1, max_length=60)
 
 
+# Task keys and target folder identity used to change task-folder membership.
 class FolderMove(Body):
     task_keys: list[str] = Field(min_length=1, max_length=10000)
     folder_id: str | None
@@ -35,6 +37,7 @@ def _call(operation):
 
 
 def register(app: FastAPI, context):
+    """Register persistent folder endpoints for tasks, runs and saved RL models."""
     @app.get('/api/task-folders')
     def folders():
         return _call(task_folders.read)
@@ -43,6 +46,7 @@ def register(app: FastAPI, context):
     def create(body: FolderName):
         return _call(lambda: task_folders.create(body.name))
 
+    # Supply current task keys when assigning selected tasks to a folder.
     @app.put('/api/task-folders/assign')
     def move(body: FolderMove):
         return _call(lambda: task_folders.move(body.task_keys, body.folder_id,
@@ -78,9 +82,11 @@ def register(app: FastAPI, context):
         def create_in_kind(body: FolderName):
             return _call(lambda: task_folders.create(body.name, kind))
 
+        # Supply existing authorized run directories when assigning runs or saved models to a folder.
         @app.put(f'{prefix}/assign')
         def move_in_kind(body: RunFolderMove):
-            return _call(lambda: task_folders.move(body.run_dirs, body.folder_id, known=runs_that_exist(body.run_dirs), kind=kind))
+            return _call(lambda: task_folders.move(body.run_dirs, body.folder_id, known=runs_that_exist(body.run_dirs),
+                kind=kind))
 
         @app.patch(prefix + '/{folder_id}')
         def rename_in_kind(folder_id: str, body: FolderName):

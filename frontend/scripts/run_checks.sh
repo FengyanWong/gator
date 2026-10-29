@@ -34,7 +34,7 @@ else:
 serve() {   # <settings folder> <default output folder> <port> <log> [serve options...]
   local settings="$1" outputs="$2" port="$3" log="$4"; shift 4
   # The workbench has no MOCK task since 2026-09-30 (record 7.128): the checks' backends register the tests' stand-in. They
-  # never open a terminal window either, whatever a check presses: an Agent-tab launch is a dry run (record 7.226).
+  # never open a terminal window either, whatever a check presses: any legacy CLI-launch endpoint is a dry run (record 7.226).
   (cd "$repo" && GATOR_WORKBENCH_SETTINGS_DIR="$settings" GATOR_WORKBENCH_DEFAULT_OUTPUT_ROOT="$outputs" GATOR_AGENT_CLI_LAUNCH=off \
     GATOR_WORKBENCH_SYNTHETIC_FIXTURES="$repo/tests/workbench/fixtures/synthetic_fixtures.json" PYTHONPATH=src \
     exec "$python" -m gator_workbench.cli serve --port "$port" "$@" > "$log" 2>&1) &

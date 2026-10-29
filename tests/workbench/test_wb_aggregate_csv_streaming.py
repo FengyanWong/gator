@@ -39,6 +39,7 @@ def _before(directory, name, rows, *, inputs, explanation=None, extra_columns=()
 
 
 def _rows(name, extra_columns=()):
+    """Build CSV fixture rows containing scalar, collection, null, and nonfinite values."""
     values = [None, True, False, 0, -4, 1.25, -0.0, float('nan'), float('inf'),
               'synthetic: α,β "quoted"\nline\rCR\r\nCRLF', [], ['a;b', 'c,d', None], ('µ', 4)]
     columns = [column for column, _ in aggregates.COLUMNS[name]] + list(extra_columns)
@@ -47,6 +48,7 @@ def _rows(name, extra_columns=()):
 
 
 def _directory(tmp_path, label):
+    """Create an isolated MOCK run directory for aggregate output fixtures."""
     directory = tmp_path / 'mock' / label
     directory.mkdir(parents=True)
     return directory
@@ -60,6 +62,7 @@ def test_all_six_tables_keep_exact_csv_and_metadata(tmp_path, monkeypatch, name,
     original_open = Path.open
     if translated_newline is not None:
         def translated_open(path, mode='r', *args, **kwargs):
+            """Emulate Windows newline translation for the temporary CSV stream."""
             if f'.csv{TEMP_MARKER}' in path.name and mode in ('w', 'x'):
                 # Emulate Windows text translation on any host. Both paths previously/defaulted to None.
                 assert kwargs.get('newline') is None
@@ -82,6 +85,7 @@ def test_all_six_tables_keep_exact_csv_and_metadata(tmp_path, monkeypatch, name,
 
 
 def _existing(directory):
+    """Write previous CSV and metadata outputs for publication-boundary assertions."""
     path = directory / 'run_summary.csv'
     metadata = path.with_suffix('.meta.json')
     path.write_bytes(b'old CSV\n')
@@ -90,11 +94,13 @@ def _existing(directory):
 
 
 class _BadCell:
+    """A CSV cell whose string conversion raises a fixture error."""
     def __str__(self):
         raise ValueError('synthetic cell cannot be serialized')
 
 
 class _BadRow(dict):
+    """A row whose field lookup raises a fixture error."""
     def get(self, column):
         raise RuntimeError('synthetic row cannot be read')
 
@@ -125,6 +131,7 @@ def test_partial_temporary_write_is_closed_and_removed_without_publishing(tmp_pa
     streams = []
 
     class InterruptedWriter:
+        """A temporary output stream that fails on its third write."""
         def __init__(self, stream):
             self.stream, self.calls = stream, 0
 
@@ -135,6 +142,7 @@ def test_partial_temporary_write_is_closed_and_removed_without_publishing(tmp_pa
             return self.stream.__exit__(*args)
 
         def write(self, text):
+            """Forward initial writes and inject a failure before the third write."""
             self.calls += 1
             self.stream.write(text)
             if self.calls == 3:
@@ -142,6 +150,7 @@ def test_partial_temporary_write_is_closed_and_removed_without_publishing(tmp_pa
             return len(text)
 
     def interrupted_open(file, mode='r', *args, **kwargs):
+        """Wrap only the temporary CSV stream with the interrupted writer."""
         stream = original_open(file, mode, *args, **kwargs)
         if f'.csv{TEMP_MARKER}' in file.name and mode == 'x':
             streams.append(stream)
@@ -165,6 +174,7 @@ def test_failures_keep_existing_csv_then_metadata_publication_boundary(tmp_path,
         path, metadata = _existing(directory)
 
         def failed_publish(temporary, destination):
+            """Inject a persistence error on the selected side of CSV publication."""
             if failure == 'before-rename':
                 raise PersistenceError('synthetic publication failure')
             result = publish(temporary, destination)
@@ -173,6 +183,7 @@ def test_failures_keep_existing_csv_then_metadata_publication_boundary(tmp_path,
             return result
 
         def failed_metadata(destination, value):
+            """Inject a failure while publishing the metadata output."""
             if failure == 'metadata':
                 raise PersistenceError('synthetic metadata failure')
             return write_json(destination, value)
@@ -195,18 +206,21 @@ def test_stream_closes_before_csv_and_metadata_are_published(tmp_path, monkeypat
     streams, events = [], []
 
     def tracked_open(file, mode='r', *args, **kwargs):
+        """Capture the temporary CSV stream so publication can assert that it is closed."""
         stream = original_open(file, mode, *args, **kwargs)
         if f'.csv{TEMP_MARKER}' in file.name and mode == 'x':
             streams.append(stream)
         return stream
 
     def tracked_publish(temporary, destination):
+        """Verify the closed stream and previous outputs before publishing the new CSV."""
         assert len(streams) == 1 and streams[0].closed
         assert path.read_bytes() == b'old CSV\n' and metadata.read_bytes() == b'old metadata\n'
         events.append('csv')
         return publish(temporary, destination)
 
     def tracked_metadata(destination, value):
+        """Verify that CSV publication precedes the metadata update."""
         assert events == ['csv'] and path.read_bytes() != b'old CSV\n'
         assert metadata.read_bytes() == b'old metadata\n'
         events.append('metadata')

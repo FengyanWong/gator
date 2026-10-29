@@ -105,6 +105,7 @@ def saved_records(count=12, metrics=16, checkpoints=(5, 14, 50)):
 
 
 def _saved_experiment(tmp_path, records, *, mock=True):
+    """Write an experiment and its run records for budget-projection tests."""
     directory = tmp_path / 'mock' / 'synthetic-experiment'
     directory.mkdir(parents=True)
     (directory / 'experiment.json').write_text(json.dumps(dict(origin='synthetic', provenance='mock', mock=mock,

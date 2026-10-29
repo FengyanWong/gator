@@ -29,11 +29,13 @@ class CommitRows:
     metrics, simulator jobs and transitions rows."""
 
     # ------------------------------------------------------------------ row builders
-    def _candidate(self, busy, record, metrics, units_map, constraints, valid, feasible, violation, reward, seq):
+    def _candidate(self, busy, record, outcome, reward, commit_seq):
+        """The evaluation as a candidate of the best-design tracker, built from the design's variable values and its
+        `outcome` (engine_commit.Outcome: what it measured, judged against the Specs)."""
         applied = {(r['device'], r['parameter']): r['value'] for r in (record.get('applied_parameters') or [])}
-        # A fixed group (optimized = false) is never sent to the simulator, so no candidate reports it: its members keep the
-        # circuit's values. Read as missing, every candidate of a task with one fixed row was "incomplete" - never valid,
-        # never feasible, no best design (review of 2026-10-03).
+        # A fixed group (optimized = false) is never sent to the simulator, so no candidate reports it: its members keep
+        # the circuit's values. Read as missing, every candidate of a task with one fixed row was "incomplete" - never
+        # valid, never feasible, no best design (review of 2026-10-03).
         fixed = {group.id: group.value for group in self.compiled.graph.parameter_groups if not group.mutable}
         variables, members = [], []
         for variable in self.compiled.variables:
@@ -45,16 +47,18 @@ class CommitRows:
                 if value is not None and group_value is None:
                     group_value = value / member['ratio']
                 members.append(dict(variable_id=variable['variable_id'], member_variable_id=member['variable_id'],
-                                    role='independent' if member['variable_id'] == variable['variable_id'] else 'bound_member',
+                                    role='independent' if member['variable_id'] == variable[
+                                        'variable_id'] else 'bound_member',
                                     instance_path=member['instance_path'], parameter_name=member['parameter_name'],
                                     value=value, unit=variable['unit'], ratio=member['ratio']))
             variables.append(dict(variable_id=variable['variable_id'], value=group_value, unit=variable['unit'],
                                   optimized=variable['optimized']))
         complete = all(m['value'] is not None for m in members)
-        return dict(evaluation_id=busy['evaluation_id'], commit_seq=seq, valid=valid and complete, feasible=feasible and complete,
-                    violation=violation, reward=reward, metrics=metrics,
+        return dict(evaluation_id=busy['evaluation_id'], commit_seq=commit_seq, valid=outcome.valid and complete,
+                    feasible=outcome.feasible and complete,
+                    violation=outcome.violation, reward=reward, metrics=outcome.metric_values,
                     metric_units={t['metric_id']: t['unit'] for t in self.compiled.targets},
-                    variables=variables, members=members, constraints=constraints, conditions=['nominal'],
+                    variables=variables, members=members, constraints=outcome.constraint_rows, conditions=['nominal'],
                     provenance=self.provenance)
     def _source_name(self, member):
         value = self.compiled.graph.parameters[member['instance_path']][member['parameter_name']]
@@ -76,7 +80,8 @@ class CommitRows:
                 executed = applied.get((member['instance_path'], self._source_name(member)))
                 rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, variable_id=variable['variable_id'],
                                  member_variable_id=member['variable_id'],
-                                 role='independent' if member['variable_id'] == variable['variable_id'] else 'bound_member',
+                                 role='independent' if member['variable_id'] == variable[
+                                     'variable_id'] else 'bound_member',
                                  instance_path=member['instance_path'], parameter_name=member['parameter_name'],
                                  unit=variable['unit'],
                                  value_before=before.get((member['instance_path'], member['parameter_name'])),
@@ -84,7 +89,8 @@ class CommitRows:
                                  projected=variable['variable_id'] in projected, ratio=member['ratio'],
                                  lower=variable['lower'], upper=variable['upper'], step=variable['step']))
         return rows
-    def _metric_rows(self, evaluation_id, raw, validity, units_map, derived, spec_values, constraints, status, conditions=None):
+    def _metric_rows(self, evaluation_id, raw, validity, units_map, derived, spec_values, constraints, status,
+        conditions=None):
         """Raw simulator results (condition rows), then one aggregate row per spec - the value of its equation, with its
         thresholds - and one per probe that no spec shows whole. A spec whose equation is one probe is that probe's row
         (measurement_id = the probe), exactly as before specs had equations; a formula's row has no single probe."""
@@ -97,6 +103,7 @@ class CommitRows:
             if status != 'ok':
                 return f'evaluation_status_{status}'
             return 'missing_or_nonfinite' if value is None else 'invalid_measurement'
+        # ---- Emit nominal simulator results before the aggregate spec and probe rows.
         for name in sorted(set(raw) | set(validity)):
             value, ok = raw.get(name), validity.get(name) is True and status in ('ok', 'measurement_error')
             finite = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
@@ -106,6 +113,7 @@ class CommitRows:
                              failure_reason=reason(value if finite else None, ok and finite), threshold_lower=None,
                              threshold_upper=None, hard=None, satisfied=None, violation=None,
                              aggregation_level='condition', aggregation=None))
+        # ---- Attach thresholds to spec rows, then include probes not already represented whole.
         whole = set()
         for target in self.compiled.targets:
             value, probe = spec_values.get(target['metric_id']), target['probe']
@@ -120,7 +128,8 @@ class CommitRows:
                              threshold_upper=target['upper'], hard=target['hard'],
                              satisfied=constraint['satisfied'] if constraint else None,
                              violation=constraint['normalized_violation'] if constraint else None,
-                             aggregation_level='aggregate', aggregation=PROBE_AGGREGATION if definition else 'equation'))
+                             aggregation_level='aggregate',
+                             aggregation=PROBE_AGGREGATION if definition else 'equation'))
         for measurement_id, value in derived.items():
             if measurement_id in whole:
                 continue
@@ -130,24 +139,30 @@ class CommitRows:
                              metric_name=measurement_id, analysis=definition.analysis, condition='aggregate',
                              raw_value=value if ok else None, unit=definition.unit, valid=ok,
                              failure_reason=reason(value, ok), threshold_lower=None, threshold_upper=None, hard=None,
-                             satisfied=None, violation=None, aggregation_level='aggregate', aggregation=PROBE_AGGREGATION))
-        # A training corner's result also carries the specs the lane computed from it (spec_equations): recorded here as that
-        # corner's value of the formula, marked aggregation = equation, so it never passes for a simulator result.
+                             satisfied=None, violation=None, aggregation_level='aggregate',
+                             aggregation=PROBE_AGGREGATION))
+        # A training corner's result also carries the specs the lane computed from it (spec_equations): recorded here as
+        # that corner's value of the formula, marked aggregation = equation, so it never passes for a simulator result.
         computed = set(self.compiled.plan.injected)
         for condition in (conditions or [])[1:]:
             label = condition['condition']['corner']['id']
             for name in sorted(set(condition['metrics']) | set(condition['metric_validity'])):
                 value = condition['metrics'].get(name)
-                ok = (condition['status'] in ('ok', 'measurement_error') and condition['metric_validity'].get(name) is True
+                ok = (condition['status'] in ('ok',
+                    'measurement_error') and condition['metric_validity'].get(name) is True
                       and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value))
-                target = next((t for t in self.compiled.targets if t['metric_id'] == name and not t['nominal_only']), None)
-                checked = hard_constraints((target,), {name: value}, {name: ok})[2][0] if target and target['active'] else None
+                target = next((t for t in self.compiled.targets if t['metric_id'] == name and not t['nominal_only']),
+                    None)
+                checked = hard_constraints((target,), {name: value},
+                    {name: ok})[2][0] if target and target['active'] else None
                 rows.append(dict(run_id=self.run_id, evaluation_id=evaluation_id, measurement_id=None, metric_name=name,
                                  analysis=None, condition=label, raw_value=value if ok else None,
                                  unit=condition['metric_units'].get(name), valid=ok,
                                  failure_reason=None if ok else condition['reason_code'],
-                                 threshold_lower=target['lower'] if target else None, threshold_upper=target['upper'] if target else None,
-                                 hard=target['hard'] if target else None, satisfied=checked['satisfied'] if checked else None,
+                                 threshold_lower=target['lower'] if target else None,
+                                 threshold_upper=target['upper'] if target else None,
+                                 hard=target['hard'] if target else None,
+                                 satisfied=checked['satisfied'] if checked else None,
                                  violation=checked['normalized_violation'] if checked else None,
                                  aggregation_level='condition', aggregation='equation' if name in computed else None))
         return rows
@@ -156,6 +171,7 @@ class CommitRows:
         rows = []
         plan: list[RetentionItem] = []
         attempts = []
+        # ---- Expand recorded jobs and keep unresolved launch leases separate from job rows.
         for retry, attempt in enumerate(busy['attempts'], start=1):
             record = attempt.get('record') or {}
             if record.get('jobs'):
@@ -176,6 +192,7 @@ class CommitRows:
                     write_json(lease_path, leases)
                 elif attempt['launches']:
                     attempts.append(dict(attempt, retry=retry))
+        # ---- Choose retention and build rows for attempts that counted a launch.
         for number, attempt in enumerate(attempts, start=1):
             record = attempt.get('record') or {}
             launched = int(attempt['launches']) > 0
@@ -198,7 +215,8 @@ class CommitRows:
                 decision = 'retained_best'
             else:
                 decision = 'deleted_by_policy'
-            job_id = record.get('job_id') or record.get('export_job_id') or record.get('candidate_id') or f"{busy['evaluation_id']}-a{number}"
+            job_id = record.get('job_id') or record.get('export_job_id') or record.get(
+                'candidate_id') or f"{busy['evaluation_id']}-a{number}"
             relative = (f"waveforms/{busy['evaluation_id']}/attempt-{number}"
                         if decision.startswith('retained') else None)
             status = record.get('status') or ('cancelled' if attempt.get('cancelled') else 'execution_error')
@@ -216,7 +234,8 @@ class CommitRows:
                              runtime_seconds=runtime, launch_counted=launched,
                              invocation_confirmed=(None if attempt.get('launch_unknown') or not launched else
                                                    True) if not self.task.mock else launched,
-                             simulator_version=record.get('simulator_version'), output_path=relative, retention_status=decision,
+                             simulator_version=record.get('simulator_version'), output_path=relative,
+                             retention_status=decision,
                              sync_status='local' if has_output else 'not_applicable', provenance=self.provenance))
             journal = None
             if record.get('candidate_id'):
@@ -241,7 +260,8 @@ class CommitRows:
                          terminated=bool(terminated), truncated=bool(truncated), bootstrap=bool(info.get('bootstrap')),
                          policy_version=busy['policy_version'], step=int(record.get('step') or 0),
                          global_env_step=self.counters['global_env_step'], recorded_at=iso(),
-                         action_version='absolute-group-v1', candidate_id=info.get('candidate_id') or busy['evaluation_id'],
+                         action_version='absolute-group-v1',
+                         candidate_id=info.get('candidate_id') or busy['evaluation_id'],
                          reward_version=record.get('reward_version'),
                          record_path=str(info.get('record_path') or ''), applied_parameters=applied,
                          replay_admitted=admitted, commit_seq=commit_seq))

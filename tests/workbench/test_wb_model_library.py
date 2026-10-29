@@ -10,6 +10,7 @@ import pytest
 from gator_workbench import model_library as ml, profiles, recipes
 from helpers import bridge_is_importable  # noqa: F401 - an imported fixture belongs to this module
 
+# ---- Made-up model library and local shell harness
 TOP = '''// a made-up library in GPDK045's shape
 library toplib
 section tt
@@ -109,6 +110,7 @@ endsection
 
 @pytest.fixture
 def library(tmp_path):
+    """Write an invented model-library tree with MOS, capacitor, resistor and SOA sections."""
     folder = tmp_path / 'lib'
     folder.mkdir()
     for name, text in dict(top=TOP, dev_mos=MOS, dev_cap=CAP, dev_res=RES, soa=SOA).items():
@@ -128,6 +130,7 @@ def runner(tmp_path, awk):
     calls = []
 
     def run(script):
+        """Run and record the model-library script with the selected local awk implementation."""
         calls.append(script)
         done = subprocess.run(['bash'], input=script, capture_output=True, text=True, timeout=60,
                               env=dict(os.environ, PATH=f'{bin_dir}:{os.environ["PATH"]}'))
@@ -137,6 +140,7 @@ def runner(tmp_path, awk):
     return run
 
 
+# ---- Library parsing and section dependencies
 @pytest.mark.parametrize('awk', ['gawk', 'mawk'])
 def test_the_layout_is_read_by_names_in_rounds_and_both_awks_agree(tmp_path, library, awk):
     run = runner(tmp_path, awk)
@@ -181,6 +185,7 @@ def test_nothing_is_trimmed_when_every_part_is_needed(tmp_path, library):
     assert 'tt' not in plan['sections'] and plan['not_trimmed']['tt'] == 'the circuit needs every part it includes'
 
 
+# ---- Deck include replacement and device discovery
 def test_the_deck_s_one_model_include_is_replaced_for_its_own_section_only():
     library = dict(model_file='/pdk/model.scs', sections=dict(tt=['include "/pdk/a.scs" section=tt', 'include "/pdk/b.scs"']),
                    parts=dict(tt=[2, 9]))
@@ -204,7 +209,9 @@ def test_the_devices_of_a_deck_are_its_instances_masters():
         ml.devices_used('simulator lang=spice\nM1 a b c d nch\n')
 
 
+# ---- Run admission with a recorded baseline
 class Profile:
+    """A profile stand-in supplying the nominal model section and temperature."""
     nominal_corner = type('Corner', (), dict(model_section='tt', temperature_c=27.0))()
 
 
@@ -230,17 +237,20 @@ def test_a_run_gets_the_library_only_with_a_recorded_baseline(tmp_path, library,
     monkeypatch.delenv(ml.ENV)
 
     def unreachable(script):
+        """Raise the model-library error for an unavailable simulator-host connection."""
         raise ml.LibraryError('the bridge connection to the simulator host is not running')
     assert ml.attach(profile, config, reference={'gain': 1.0}, structure=structure, run=unreachable) is None
     assert 'could not be read' in profile.model_library_event['note'] and profile.model_library is None
 
 
+# ---- Command-path validation
 def test_a_path_with_shell_characters_never_reaches_the_script():
     with pytest.raises(ml.LibraryError, match='not a plain absolute path'):
         ml.structure_script(['/pdk/x.scs; rm -rf /'])
     assert ml.resolve('/pdk/top.scs', '../lib/$(id).scs') is None and ml.resolve('/pdk/top.scs', 'a.scs') == '/pdk/a.scs'
 
 
+# ---- Library selection in generated decks and run manifests
 LIBRARY = dict(model_file='/pdk/model.scs', sections=dict(tt=['include "/pdk/mos.scs" section=tt']), parts=dict(tt=[1, 23]))
 
 
@@ -283,14 +293,17 @@ def test_a_run_says_which_parts_of_the_model_file_its_decks_load(tmp_path, monke
                  read_seconds=0.5, note='only these parts')
 
     class WithProfile(tasks.SyntheticEnvFactory):          # a real run's factory carries the profile with its library
+        """A synthetic environment factory carrying a real-run-style model-library event."""
         profile = types.SimpleNamespace(model_library_event=event)
     load = tasks.load_task
 
     def loading(*args, **kwargs):
+        """Load a task whose environment factory also exposes the fixture model-library event."""
         task = load(*args, **kwargs)
         build = task.env_factory_builder
 
         def builder(*inputs):
+            """Wrap the task's synthetic factory with the fixture profile."""
             factory = build(*inputs)
             return WithProfile(**{f.name: getattr(factory, f.name) for f in fields(factory)})
         return replace(task, env_factory_builder=builder)

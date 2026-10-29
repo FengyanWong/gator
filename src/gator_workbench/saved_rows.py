@@ -17,19 +17,25 @@ from .profile_store import HISTORY, ProfileError, TASK_FILE, profile_dir
 from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
 from .storage.atomic import UNREADABLE, read_json_quiet
 
+_MAX_DIAGNOSTIC_DETAILS = 4
+
+
 
 # (configuration key, editor name, row ID field, task file part)
-SECTIONS = (('parameters', 'Parameters', 'variable_id', 'parameters'), ('measurements', 'Probes', 'measurement_id', 'probes'),
+SECTIONS = (('parameters', 'Parameters', 'variable_id', 'parameters'), ('measurements', 'Probes', 'measurement_id',
+    'probes'),
             ('targets', 'Specs', 'metric_id', 'specs'))
 # The page's words (record 7.376): its one save button is Save as, a new task (record 7.246); Reload saved values opens
 # from "not saved" beside the task's name (record 7.372).
-FIX_ROWS = ('Press Save as to keep these rows as a new task, or Reload saved values (under "not saved", beside the task\'s '
+FIX_ROWS = (
+    'Press Save as to keep these rows as a new task, or Reload saved values (under "not saved", beside the task\'s '
             'name) to take the saved rows back.')
-# The rows are older than the saved task (record 7.203): saving them would undo what was saved since.
-# Save as makes a new task: it undoes nothing of the saved one (only an update of the task itself would, and it asks first).
-FIX_NEWER = ('These rows are older than the saved task: it was saved again (revision {current}) after they were loaded '
-             '(revision {base}). Press Reload saved values (under "not saved", beside the task\'s name) to take the saved '
-             'rows; Save as keeps these rows as a new task and leaves the saved one as it is.')
+# The rows are older than the saved task (record 7.203): saving them would undo what was saved since. Save as makes a
+# new task: it undoes nothing of the saved one (only an update of the task itself would, and it asks first).
+FIX_NEWER = (
+    'These rows are older than the saved task: it was saved again (revision {current}) after they were loaded '
+    '(revision {base}). Press Reload saved values (under "not saved", beside the task\'s name) to take the saved '
+    'rows; Save as keeps these rows as a new task and leaves the saved one as it is.')
 
 
 def saved_task(config, *, with_entry=True):
@@ -48,7 +54,8 @@ def saved_task(config, *, with_entry=True):
 
 
 # The fields that hold a number in their row's unit: written as the editors write them (record 7.208: 1.3 GHz, 400 uA).
-QUANTITY_FIELDS = dict(parameters=('lower', 'upper', 'step', 'initial_value'), targets=('lower', 'upper', 'normalization_scale'))
+QUANTITY_FIELDS = dict(parameters=('lower', 'upper', 'step', 'initial_value'), targets=('lower', 'upper',
+    'normalization_scale'))
 
 
 def _brief(value, unit=None) -> str:
@@ -66,19 +73,22 @@ def row_differences(config, saved) -> dict:
     """{configuration key: [plain sentences]} for each editor whose rows differ from the task file `saved`. Rows are
     compared as the schema reads them, so a field shown with its default equals one left out."""
     models = dict(parameters=OptimizationParameter, measurements=MeasurementDefinition, targets=PerformanceTarget)
-    normal = lambda model, row: model.model_validate(row if isinstance(row, dict) else row.model_dump()).model_dump(mode='json', exclude_none=True)
+    normal = lambda model, row: model.model_validate(row if isinstance(row,
+        dict) else row.model_dump()).model_dump(mode='json', exclude_none=True)
     found = {}
     for section, _label, key, part in SECTIONS:
         now = [normal(models[section], row) for row in getattr(config, section)]
         try:
             kept = [normal(models[section], row) for row in saved.get(part) or []]
         except ValidationError as exc:
-            found[section] = [f'the saved rows no longer read with this workbench ({exc.errors()[0]["msg"]}): save the task again']
+            found[section] = [
+                f'the saved rows no longer read with this workbench ({exc.errors()[0]["msg"]}): save the task again']
             continue
         if now == kept:
             continue
         unit_of = {row.get(key): row.get('unit') for row in kept + now}
-        in_unit = lambda item, field, value: _brief(value, unit_of.get(item['key']) if field in QUANTITY_FIELDS.get(section, ()) else None)
+        in_unit = lambda item, field, value: _brief(value,
+            unit_of.get(item['key']) if field in QUANTITY_FIELDS.get(section, ()) else None)
         lines = []
         for item in structured_diff({section: kept}, {section: now}):
             if item['change'] == 'added':
@@ -86,7 +96,9 @@ def row_differences(config, saved) -> dict:
             elif item['change'] == 'removed':
                 lines.append(f'{item["key"]} is saved but not here')
             else:
-                fields = ', '.join(f'{f["field"]} {in_unit(item, f["field"], f["after"])} here, {in_unit(item, f["field"], f["before"])} saved'
+                fields = ', '.join(
+                    f"{f['field']} {in_unit(item, f['field'], f['after'])} here, "
+                    f"{in_unit(item, f['field'], f['before'])} saved"
                                    for f in item['fields'][:3])
                 more = len(item['fields']) - 3
                 lines.append(f'{item["key"]}: {fields}' + (f' (and {more} more)' if more > 0 else ''))
@@ -95,15 +107,18 @@ def row_differences(config, saved) -> dict:
 
 
 def describe_rows(section, lines, *, name, revision) -> str:
+    """Summarize a section's differences from a named saved-task revision."""
     label = next(label for key, label, _i, _p in SECTIONS if key == section)
-    shown = '; '.join(lines[:4]) + (f'; and {len(lines) - 4} more' if len(lines) > 4 else '')
+    shown = '; '.join(lines[:_MAX_DIAGNOSTIC_DETAILS]) + (f'; and {len(lines) - _MAX_DIAGNOSTIC_DETAILS} more' if len(
+        lines) > _MAX_DIAGNOSTIC_DETAILS else '')
     return f'{label} differ from the saved task real:{name} (revision {revision}): {shown}.'
 
 
 # ---------------------------------------------------------------------- rows older than the saved task (record 7.203)
 # On 2026-10-05 a page that still held the rows of revision 2 of mscr_ldo2_rgcn pressed Save task twice: it stored those
 # rows over revision 3 and took out the Scale 6 that revision had added (record 7.194). Save task now asks first.
-_FILES: dict = {}                                    # (path, mtime, size) -> the parsed task file: the history never changes
+# (path, mtime, size) -> the parsed task file: the history never changes
+_FILES: dict = {}
 
 
 def _read_json(path):
@@ -177,7 +192,8 @@ def unsaved_rows(config, saved) -> dict | None:
                    for row_id, row in now.items() if row_id in then and row != then[row_id]}
         sections[section] = dict(added=[row_id for row_id in now if row_id not in then],
                                  removed=[row_id for row_id in then if row_id not in now], changed=changed,
-                                 reordered=[row_id for row_id in now if row_id in then] != [row_id for row_id in then if row_id in now])
+                                 reordered=[row_id for row_id in now if row_id in then] != [
+                                     row_id for row_id in then if row_id in now])
     return dict(revision=saved.get('revision'), sections=sections)
 
 
@@ -195,7 +211,8 @@ def undone_by_saving(config, name, saved, base=None) -> dict | None:
     here, now = _rows(lambda section: getattr(config, section)), _file_rows(saved)
     if here is None or now is None or here == now:
         return None
-    origin = next((revision for revision in range(current - 1, 0, -1) if _file_rows(revision_file(name, revision)) == here), None)
+    origin = next((revision for revision in range(current - 1, 0, -1) if _file_rows(revision_file(name,
+        revision)) == here), None)
     then = here
     if origin is None:
         if not isinstance(base, int) or not 1 <= base < current:
@@ -218,19 +235,22 @@ def undone_by_saving(config, name, saved, base=None) -> dict | None:
             else:
                 for field in sorted(set(before or {}) | set(after)):
                     if (before or {}).get(field) != after.get(field) and row.get(field) != after.get(field):
-                        items.append(dict(section=section, row=row_id, change='field', field=field, saved=after.get(field),
+                        items.append(dict(section=section, row=row_id, change='field', field=field,
+                                          saved=after.get(field),
                                           here=row.get(field), unit=after.get('unit')))
     return dict(base=origin, current=current, items=items) if items else None
 
 
 def undone_lines(undone) -> list[str]:
+    """Describe row changes that saving an older configuration would undo."""
     labels = {section: label for section, label, _key, _part in SECTIONS}
     out = []
     for item in undone['items']:
         where = f'{labels[item["section"]]} {item["row"]}'
         if item['change'] == 'field':
             unit = item.get('unit') if item['field'] in QUANTITY_FIELDS.get(item['section'], ()) else None
-            out.append(f'{where}: {item["field"]} {_brief(item["saved"], unit)} saved, {_brief(item["here"], unit)} here')
+            out.append(
+                f'{where}: {item["field"]} {_brief(item["saved"], unit)} saved, {_brief(item["here"], unit)} here')
         elif item['change'] == 'removed':
             out.append(f'{where} is saved but not here')
         else:
@@ -239,10 +259,14 @@ def undone_lines(undone) -> list[str]:
 
 
 def describe_undone(name, undone) -> str:
+    """Explain the stale revision and summarize changes that saving it would undo."""
     lines = undone_lines(undone)
-    shown = '; '.join(lines[:4]) + (f'; and {len(lines) - 4} more' if len(lines) > 4 else '')
-    return (f'real:{name} was saved again after these rows were loaded: it is revision {undone["current"]} now, the rows here '
-            f'are revision {undone["base"]}\'s. Saving them would undo what was saved since: {shown}.')
+    shown = '; '.join(lines[:_MAX_DIAGNOSTIC_DETAILS]) + (f'; and {len(lines) - _MAX_DIAGNOSTIC_DETAILS} more' if len(
+        lines) > _MAX_DIAGNOSTIC_DETAILS else '')
+    return (
+        f"real:{name} was saved again after these rows were loaded: it is revision {undone['current']} now, "
+        f"the rows here are revision {undone['base']}'s. Saving them would undo what was saved since: {shown}"
+        f'.')
 
 
 # The caches of this module: caches.clear_all() empties them with every other one (refactoring package B10).

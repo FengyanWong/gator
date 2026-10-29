@@ -70,7 +70,8 @@ BENCH_COLUMNS = ('idc', 'vrel', 'ac', 'ilow', 'ihigh', 'vlow', 'vhigh')
 BENCH_REFERENCES = (1e-6, 1.0, 1.0, 1e-6, 1e-6, 1.0, 1.0)      # uA, share of the supply, AC magnitude, uA, uA, shares
 RATIO_COLUMNS = ('op_gm_id', 'op_gain', 'op_vov', 'op_sat')
 RATIO_REFERENCES = (10.0, 10.0, 0.1, 1.0)                     # 1/V, gm/gds, V of overdrive, |Vds|/|Vdsat|
-REGION_COLUMNS = ('region_off', 'region_triode', 'region_sat', 'region_subth', 'region_breakdown')    # of the optimizer's own list
+# of the optimizer's own list
+REGION_COLUMNS = ('region_off', 'region_triode', 'region_sat', 'region_subth', 'region_breakdown')
 SOURCE_KINDS = ('vsource', 'isource')
 RULE_ROLES = ('ground', 'supply', 'input', 'output', 'bias')  # the order a net's tags are written in
 SECOND_BUILD_DEFAULTS = dict(bench_features='absolute', net_roles='task', operating_point_ratios=False)
@@ -107,11 +108,13 @@ def reads_operating_points(network) -> bool:
 
 
 def reads_raw_operating_points(network) -> bool:
+    """Check whether dictionary or object settings request raw operating-point inputs."""
     get = (lambda k: network.get(k)) if isinstance(network, dict) else (lambda k: getattr(network, k, None))
     return bool(get('operating_points'))
 
 
 def any_transfer(network) -> bool:
+    """Check whether any transferable network-input representation is enabled."""
     settings = transfer_settings(network)
     return (settings['spec_input'] in ('set', 'structured') or settings['size_features'] == 'pdk_relative'
             or settings['device_model_features'] or second_build(settings))
@@ -123,7 +126,8 @@ def feature_schema(schema, network):
     with them loads only with them - and on any PDK."""
     settings = transfer_settings(network)
     if settings['size_features'] == 'pdk_relative':
-        references = tuple(1.0 if name in SIZE_COLUMNS else ref for name, ref in zip(schema.parameters, schema.references))
+        references = tuple(1.0 if name in SIZE_COLUMNS else ref for name, ref in zip(schema.parameters,
+            schema.references))
         schema = replace(schema, version=schema.version + RELATIVE_SUFFIX, references=references)
     if settings['device_model_features']:
         schema = replace(schema, version=schema.version + MODEL_SUFFIX, parameters=schema.parameters + MODEL_COLUMNS,
@@ -136,8 +140,10 @@ def feature_schema(schema, network):
     if settings['operating_point_ratios']:
         schema = replace(schema, version=schema.version + RATIO_SUFFIX, parameters=schema.parameters + RATIO_COLUMNS,
                          references=schema.references + RATIO_REFERENCES)
-        if not schema.op_columns and reads_raw_operating_points(network):     # both inputs on, and a caller that did not
-            from analog_optimizer.graph.pyg_converter import OPERATING_POINT_COLUMNS, OPERATING_POINT_REFERENCES   # add them itself
+        # both inputs on, and a caller that did not
+        if not schema.op_columns and reads_raw_operating_points(network):
+            # add them itself
+            from analog_optimizer.graph.pyg_converter import OPERATING_POINT_COLUMNS, OPERATING_POINT_REFERENCES
             schema = replace(schema, op_columns=OPERATING_POINT_COLUMNS, op_references=OPERATING_POINT_REFERENCES)
         if not schema.op_columns:                       # the region only; the raw numbers stay with `operating_points`
             schema = replace(schema, op_columns=REGION_COLUMNS, op_references=(1.0,) * len(REGION_COLUMNS))
@@ -175,6 +181,7 @@ class BenchSource:
 
 @dataclass(frozen=True)
 class GraphBench:
+    # Graph-derived ground, supply and source facts used to construct transferable bench features.
     ground: frozenset = frozenset()
     supply_source: str | None = None
     supply_net: str | None = None
@@ -191,7 +198,8 @@ def _number(values, key, variables=None):
     if found.valid:
         return float(found.value)
     named = (variables or {}).get((found.raw or '').strip())
-    return float(named) if isinstance(named, (int, float)) and not isinstance(named, bool) and math.isfinite(named) else None
+    return float(named) if isinstance(named, (int, float)) and not isinstance(named,
+        bool) and math.isfinite(named) else None
 
 
 def _carries_signal(values, variables=None):
@@ -317,21 +325,27 @@ class NetworkView:
     CAPACITY = 8192                       # as many distinct states as the learner's own input cache (record 7.221)
 
     def __init__(self, *, descriptors=None, numbers=None, relative_sizes=False, model_features=False, vocabulary=None,
-                 bench_features=False, net_rule=False, op_ratios=False, measured_nets=(), variables=None, programs=None):
+                 bench_features=False, net_rule=False, op_ratios=False, measured_nets=(), variables=None,
+                 programs=None):
         self.programs = programs
-        self.descriptors = None if descriptors is None else {k: tuple(float(x) for x in v) for k, v in descriptors.items()}
+        self.descriptors = None if descriptors is None else {k: tuple(float(x) for x in v) for k,
+            v in descriptors.items()}
         self.numbers = dict(numbers or {})
-        self.relative_sizes, self.model_features, self.vocabulary = bool(relative_sizes), bool(model_features), vocabulary
+        self.relative_sizes, self.model_features, self.vocabulary = bool(relative_sizes), bool(
+            model_features), vocabulary
         self.bench_features, self.net_rule, self.op_ratios = bool(bench_features), bool(net_rule), bool(op_ratios)
         self.measured_nets = tuple(sorted(set(measured_nets))) if self.net_rule else ()
-        self.variables = {str(k): float(v) for k, v in (variables or {}).items()} if (self.bench_features or self.net_rule) else {}
-        identity = dict(descriptors=self.descriptors, numbers=self.numbers if (relative_sizes or model_features) else None,
+        self.variables = {str(k): float(v) for k,
+            v in (variables or {}).items()} if (self.bench_features or self.net_rule) else {}
+        identity = dict(descriptors=self.descriptors,
+                        numbers=self.numbers if (relative_sizes or model_features) else None,
                         relative_sizes=self.relative_sizes, model_features=self.model_features,
                         vocabulary=None if vocabulary is None else vocabulary.sha256)
         if programs is not None:
             identity['measurement_programs'] = programs
         if self.bench_features or self.net_rule or self.op_ratios:      # only then: a view without them keeps its key
-            identity['second_build'] = dict(bench_features=self.bench_features, net_rule=self.net_rule, op_ratios=self.op_ratios,
+            identity['second_build'] = dict(bench_features=self.bench_features, net_rule=self.net_rule,
+                                            op_ratios=self.op_ratios,
                                             measured_nets=list(self.measured_nets), variables=_keyed(self.variables))
         self.key = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode()).hexdigest()
         self._seen, self._lock = OrderedDict(), threading.Lock()
@@ -349,6 +363,7 @@ class NetworkView:
         groups = list(graph.parameter_groups)
         nets = list(graph.nets)
         bench = bench_of_graph(graph, self.variables) if (self.bench_features or self.net_rule) else None
+        # ---- Scale copied parameter values and group bounds together for relative-size inputs.
         if self.relative_sizes:
             for device_id, values in parameters.items():
                 for column, value in list(values.items()):
@@ -366,7 +381,8 @@ class NetworkView:
                                                  None if m.lower is None else m.lower / r,
                                                  None if m.upper is None else m.upper / r)
                                 for m, r in zip(group.members, own))
-                groups[i] = replace(group, value=group.value / scale, lower=group.lower / scale, upper=group.upper / scale,
+                groups[i] = replace(group, value=group.value / scale, lower=group.lower / scale,
+                                    upper=group.upper / scale,
                                     step=None if group.step is None else group.step / scale, members=members)
         if self.model_features:
             source = SourceSpan('network-view', 1)
@@ -376,13 +392,15 @@ class NetworkView:
                     if numbers and isinstance(numbers.get(name), (int, float)):
                         parameters[device_id][column] = ParameterValue('', float(numbers[name]), source)
         if self.bench_features:
-            self._bench_columns(graph, parameters, bench, lambda value: ParameterValue('', float(value), SourceSpan('network-view', 1)))
+            self._bench_columns(graph, parameters, bench, lambda value: ParameterValue('', float(value),
+                SourceSpan('network-view', 1)))
         if self.net_rule:
             roles = ruled_roles(graph, bench, self.measured_nets)
             nets = [replace(net, roles=roles.get(net.id, ('normal',)), role_source='network-view') for net in nets]
         if self.op_ratios and operating_points:
             self._ratio_columns(devices, parameters, operating_points,
                                 lambda value: ParameterValue('', float(value), SourceSpan('network-view', 1)))
+        # ---- Attach view identity and spec metadata after transforming graph features.
         metadata = dict(graph.metadata)
         metadata[VIEW_KEY] = self.key
         if self.descriptors is not None:
@@ -430,8 +448,10 @@ class NetworkView:
                 continue
             def number(key):
                 value = quantities.get(key)
-                return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
-            ids, gm, gds, vgs, vds, vth, vdsat = (number(key) for key in ('ids', 'gm', 'gds', 'vgs', 'vds', 'vth', 'vdsat'))
+                return float(value) if isinstance(value, (int, float)) and not isinstance(value,
+                    bool) and math.isfinite(value) else None
+            ids, gm, gds, vgs, vds, vth, vdsat = (number(key) for key in ('ids', 'gm', 'gds', 'vgs', 'vds', 'vth',
+                'vdsat'))
             found = dict(op_gm_id=abs(gm) / abs(ids) if gm is not None and ids else None,
                          op_gain=abs(gm) / abs(gds) if gm is not None and gds else None,
                          op_vov=abs(vgs) - abs(vth) if vgs is not None and vth is not None else None,
@@ -445,18 +465,22 @@ class NetworkView:
         list's own reference, so a capacitor's width reads as before)."""
         if column not in SIZE_COLUMNS:
             return None
-        value = (self.numbers.get(device.model_ref) or {}).get(SIZE_COLUMNS[column]) if device.kind in MOS_KINDS else None
+        value = (self.numbers.get(device.model_ref) or {}).get(SIZE_COLUMNS[
+            column]) if device.kind in MOS_KINDS else None
         return float(value) if isinstance(value, (int, float)) and value > 0 else 1e-6
 
     # ---- observations
     def view(self, observation):
-        return replace(observation, graph=self.view_graph(observation.graph, getattr(observation, 'operating_points', None)))
+        """Return an observation with its graph transformed into the configured network view."""
+        return replace(observation, graph=self.view_graph(observation.graph, getattr(observation, 'operating_points',
+            None)))
 
     def derive(self, digest):
         """The digest of a viewed observation from its recorded one: the view is a fixed function of it."""
         return hashlib.sha256(self.key.encode() + digest).digest()
 
     def view_known(self, observation, digest):
+        """Return an observation's network view, reusing the view cached under its replay digest."""
         with self._lock:
             found = self._seen.get(digest)
             if found is not None:
@@ -478,9 +502,11 @@ def learner_class(vocabulary=None, view=None):
     from analog_optimizer.training.sac import SACLearner
 
     class NetworkViewLearner(SACLearner):
+        """A SAC learner that applies the configured network view before batching observations."""
         network_view = view
 
         def batch(self, observations, *, digests=None):
+            """Batch viewed observations with derived digests when replay identities are available."""
             if digests is None:
                 return super().batch([view.view(o) for o in observations])
             digests = list(digests)
@@ -499,7 +525,8 @@ def numbers_for(config, *, required=False):
     pdk_id = getattr(config.circuit, 'pdk_id', None)
     document = device_models.load(pdk_id) if pdk_id else None
     if document is None and required:
-        raise InputsUnavailable(f'The device numbers of PDK {pdk_id or "(none named)"} cannot be read: load that PDK in the '
+        raise InputsUnavailable(
+            f'The device numbers of PDK {pdk_id or "(none named)"} cannot be read: load that PDK in the '
                                 'PDK window (its model files are read from the copy Load PDK keeps).')
     return document
 
@@ -531,6 +558,7 @@ def view_for(config, vocabulary=None):
 
 
 def read_run_record(run_dir):
+    """Return the run's network-input record, or None when the file is missing or in another format."""
     record = read_json(Path(run_dir) / RUN_FILE, default=None)
     return record if isinstance(record, dict) and record.get('format') == FORMAT else None
 
@@ -543,7 +571,8 @@ def coverage(graph, document):
     return dict(models=models,
                 missing_sizes=[m for m in models if not all(isinstance(devices.get(m, {}).get(k), (int, float))
                                                             for k in ('lmin', 'wmin'))],
-                missing_numbers=[m for m in models if not all(k in devices.get(m, {}) for k in ('vth0', 'u0', 'vsat', 'tox'))])
+                missing_numbers=[m for m in models if not all(k in devices.get(m, {}) for k in ('vth0', 'u0', 'vsat',
+                    'tox'))])
 
 
 def run_record(config, view, document=None) -> dict:
@@ -551,7 +580,8 @@ def run_record(config, view, document=None) -> dict:
     the record's checksum - the numbers themselves stay in the PDK folder)."""
     record = dict(format=FORMAT, **as_recorded(transfer_settings(config.run.network)),
                   operating_points=bool(config.run.network.operating_points),
-                  descriptor_version=None if view is None or view.descriptors is None else spec_descriptors.DESCRIPTOR_VERSION,
+                  descriptor_version=None if view is None or view.descriptors is None
+                  else spec_descriptors.DESCRIPTOR_VERSION,
                   spec_descriptors=None if view is None else view.descriptors,
                   pdk_id=getattr(config.circuit, 'pdk_id', None),
                   pdk_record_sha256=(document or {}).get('record_sha256'), view_key=None if view is None else view.key)

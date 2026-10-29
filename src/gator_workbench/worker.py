@@ -17,6 +17,7 @@ from .names import CLEAN_EXIT_STATES
 
 
 def main(argv=None):
+    """Load one saved run, check its task authorization and execute the engine with signal-driven stop requests."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-dir', type=Path, required=True)
     parser.add_argument('--allow-real', action='store_true',

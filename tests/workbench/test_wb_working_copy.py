@@ -11,6 +11,7 @@ from fakes_virtuoso import CELL, COPY, LIB, RING, TB, fake_writer, imported
 
 
 def calls(tmp_path, log='calls.jsonl'):
+    """Read the fake working-copy writer's recorded calls."""
     return [json.loads(line) for line in (tmp_path / log).read_text().splitlines()]
 
 

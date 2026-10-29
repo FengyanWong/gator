@@ -20,10 +20,12 @@ pytestmark = pytest.mark.requires_evidence('artifacts/local/reward-v2-real/20260
 
 
 def baseline():
+    """Read the local reward baseline evidence used by compatibility assertions."""
     return json.loads((ROOT / 'artifacts/local/reward-v2-real/20260926-implementation-01/baseline.json').read_text())
 
 
 def robust_config():
+    """Build a bounded corner configuration with worst-spec reward compression and operating points enabled."""
     raw = deepcopy(baseline()['config'])
     raw['run'].update(max_spectre_launches=42, max_retries=0,
                       reward=dict(violation_shape='compressed', worst_spec_share=.5),
@@ -67,9 +69,10 @@ def test_recorded_real_state_roundtrip_through_workbench_arrow(real_transition, 
 def test_live_commit_condition_json_dependency(real_transition):
     import inspect
     from gator_workbench.engine import RunEngine
-    # Follow the scheduler's delegate: the live commit branch must resolve json in its own module.
+    # Follow the scheduler's delegate: the live commit branch must resolve json in its own module. Since the readability
+    # refactor the serializing step is a helper of `commit`, so the name is looked up in that module, not in `commit`.
     phase = inspect.getclosurevars(RunEngine._commit).globals['engine_commit']
-    serializer = inspect.getclosurevars(phase.commit).globals['json']
+    serializer = vars(phase)['json']
     rows = [asdict(row) for row in real_transition.next_observation.condition_results]
     serialized = serializer.dumps(rows)
     assert json.loads(serialized) == rows

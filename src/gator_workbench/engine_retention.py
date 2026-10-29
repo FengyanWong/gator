@@ -24,7 +24,8 @@ class Retention:
         try:
             resolved = Path(path).resolve()
             if self._work_resolved is None:              # work/, and the run's local scratch when it has one
-                self._work_resolved = [self.layout.work.resolve()] + ([self._scratch.resolve()] if self._scratch else [])
+                self._work_resolved = [self.layout.work.resolve()] + ([
+                    self._scratch.resolve()] if self._scratch else [])
             return any(root in resolved.parents for root in self._work_resolved) and not Path(path).is_symlink()
         except OSError:
             return False
@@ -60,6 +61,7 @@ class Retention:
                         Path(item['journal']).unlink(missing_ok=True)
             except OSError as exc:
                 self._log_error('retention_failed', exc, evaluation_id=item['evaluation_id'])
+        # ---- Remove superseded best-design outputs after applying the new retention plan.
         if role is not None and self.config.output.waveform_retention == 'best_and_failures':
             previous = self.previous_best_waveform
             current = plan[-1]['evaluation_id'] if plan else None
@@ -68,18 +70,21 @@ class Retention:
                     if entry.get('evaluation_id', key) == previous and entry['status'] == 'retained_best':
                         self._remember_host_folder(self.layout.run_dir / entry['path'])
                         shutil.rmtree(self.layout.run_dir / entry['path'], ignore_errors=True)
-                        entry.update(status='deleted_by_policy', updated_utc=iso(), reason='superseded by a better design')
+                        entry.update(status='deleted_by_policy', updated_utc=iso(),
+                            reason='superseded by a better design')
                         changed = True
                 self._event('waveform_retention_changed', evaluation_id=previous, status='deleted_by_policy')
             self.previous_best_waveform = current
         limit = self.config.output.waveform_storage_limit_bytes
         if limit is not None and changed:
-            failures = sorted((v['updated_utc'], k) for k, v in index['entries'].items() if v['status'] == 'retained_failure')
-            # Only failures may be deleted for space, so measure only while one is left: the folder walk grows with every
-            # retained job and cost seconds per evaluation on the 9p mount (review of 2026-09-30).
+            failures = sorted((v['updated_utc'], k) for k,
+                v in index['entries'].items() if v['status'] == 'retained_failure')
+            # Only failures may be deleted for space, so measure only while one is left: the folder walk grows with
+            # every retained job and cost seconds per evaluation on the 9p mount (review of 2026-09-30).
             while failures and directory_bytes(self.layout.waveforms) > limit:
                 _, key = failures.pop(0)
-                self._remember_host_folder(self.layout.run_dir / index['entries'][key]['path'])   # before the copy goes (7.283)
+                # before the copy goes (7.283)
+                self._remember_host_folder(self.layout.run_dir / index['entries'][key]['path'])
                 shutil.rmtree(self.layout.run_dir / index['entries'][key]['path'], ignore_errors=True)
                 index['entries'][key].update(status='deleted_storage_limit', updated_utc=iso())
                 self._event('waveform_retention_changed', evaluation_id=key, status='deleted_storage_limit')

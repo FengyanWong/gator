@@ -5,6 +5,7 @@ from gator_workbench.budget import BudgetError, BudgetLedger
 
 
 def finish(ledger, key, calls):
+    """Complete one ledger evaluation after charging its explicit simulator-call count."""
     ledger.start(key)
     ledger.begin_attempt(key)
     ledger.end_attempt(key, launches=calls)

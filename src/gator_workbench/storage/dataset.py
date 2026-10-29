@@ -45,18 +45,19 @@ if 'dateutil' not in sys.modules and importlib.util.find_spec('dateutil') is Non
     sys.modules['dateutil'] = None
 
 
-def utcnow():
+def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_time(value):
+def _parse_time(value: str | datetime | None) -> datetime | None:
     if value is None or isinstance(value, datetime):
         return value
     return datetime.fromisoformat(value)
 
 
 class RawDataset:
-    def __init__(self, data_dir, *, enabled_tables=None, flush_every=16):
+    """A single-writer dataset that journals evaluation bundles before publishing closed Parquet parts."""
+    def __init__(self, data_dir, *, enabled_tables=None, flush_every: int=16) -> None:
         self.root = Path(data_dir)
         self.journal_dir = self.root / '_journal'
         self.quarantine_dir = self.root / '_quarantine'
@@ -76,7 +77,7 @@ class RawDataset:
         self.failed = None
 
     # ------------------------------------------------------------------ recovery
-    def _recover(self):
+    def _recover(self) -> dict:
         removed = remove_registered_temporaries(self.root)
         flushes = read_jsonl(self.journal_dir / 'flushes.jsonl')
         listed = {(table, name) for flush in flushes for table, name in flush['parts'].items()}
@@ -98,8 +99,9 @@ class RawDataset:
         rebuffered = 0
         for bundle in read_jsonl(self.journal_dir / 'wal.jsonl'):
             key = bundle['evaluation_id']
-            # At the flushed number itself only a record not yet flushed can be unknown: a rows-only record (record_rows)
-            # written after that flush. Every flushed key is known from flushes.jsonl, since the first flush ever written.
+            # At the flushed number itself only a record not yet flushed can be unknown: a rows-only record
+            # (record_rows) written after that flush. Every flushed key is known from flushes.jsonl, since the first
+            # flush ever written.
             if bundle['commit_seq'] >= self.flushed_seq and key not in self._known:
                 self._buffer.append(bundle)
                 self._known.add(key)
@@ -110,6 +112,7 @@ class RawDataset:
 
     # ------------------------------------------------------------------ writes
     def has(self, evaluation_id) -> bool:
+        """Check whether an evaluation identifier is already known to this dataset."""
         return evaluation_id in self._known
 
     def next_seq(self) -> int:
@@ -145,7 +148,8 @@ class RawDataset:
         if not rows or table not in self.enabled:
             return False
         from uuid import uuid4
-        self._append(f'{origin}:{table}:{self.last_seq}:{uuid4().hex[:12]}', self.last_seq, self._normalized({table: rows}))
+        self._append(f'{origin}:{table}:{self.last_seq}:{uuid4().hex[:12]}', self.last_seq,
+            self._normalized({table: rows}))
         return True
 
     def _normalized(self, tables) -> dict:
@@ -161,7 +165,7 @@ class RawDataset:
                             row[name] = row[name].astimezone(timezone.utc).isoformat()
         return rows
 
-    def _append(self, key, seq, rows):
+    def _append(self, key, seq, rows) -> None:
         record = dict(evaluation_id=key, commit_seq=seq, rows=rows)
         try:
             self._wal.append(record)
@@ -174,7 +178,7 @@ class RawDataset:
         if len(self._buffer) >= self.flush_every:
             self.flush()
 
-    def flush(self):
+    def flush(self) -> dict | None:
         """Publish buffered bundles as closed parts. No-op when nothing is buffered."""
         if not self._buffer:
             return None
@@ -185,6 +189,7 @@ class RawDataset:
         flush_id = len(self._flushes) + 1
         first, last = self._buffer[0]['commit_seq'], self._buffer[-1]['commit_seq']
         parts, counts, sizes, checksums = {}, {}, {}, {}
+        # ---- Publish all table parts before recording the completed flush in its journal.
         try:
             for table in FLUSH_ORDER:
                 rows = [row for bundle in self._buffer for row in bundle['rows'].get(table, [])]
@@ -208,6 +213,7 @@ class RawDataset:
         except (OSError, PersistenceError) as exc:
             self.failed = str(exc)
             raise PersistenceError(f'Parquet flush failed; dispatch must pause: {exc}') from exc
+        # ---- Advance in-memory cursors only after the completed flush has been recorded.
         self._flushes.append(record)
         self.flushed_seq = last
         for table, count in counts.items():
@@ -217,11 +223,12 @@ class RawDataset:
         self.last_success = utcnow()
         return record
 
-    def compact_journal(self):
+    def compact_journal(self) -> None:
         """Drop journal entries already covered by a flush record (called at checkpoints)."""
         self._wal.close()
         path = self.journal_dir / 'wal.jsonl'
-        keep = [b for b in read_jsonl(path) if b['commit_seq'] >= self.flushed_seq]      # see _recover: the flushed number too
+        # see _recover: the flushed number too
+        keep = [b for b in read_jsonl(path) if b['commit_seq'] >= self.flushed_seq]
         temporary = temporary_path(path)
         with temporary.open('x', encoding='utf8') as stream:
             import json
@@ -231,18 +238,20 @@ class RawDataset:
         publish(temporary, path)
         self._wal = JsonlAppender(path)
 
-    def cursor(self):
+    def cursor(self) -> dict:
         """Log cursors stored inside a checkpoint so model, data and ledger share one boundary."""
         return dict(commit_seq=self.last_seq, flushed_seq=self.flushed_seq, flushes=len(self._flushes),
                     rows=dict(self.flushed_rows), buffered_bundles=len(self._buffer))
 
-    def status(self):
+    def status(self) -> dict:
+        """Describe the current journal, flush, buffered-bundle and persistence status."""
         return dict(last_commit_seq=self.last_seq, flushed_seq=self.flushed_seq, flushes=len(self._flushes),
                     buffered_bundles=len(self._buffer), rows=dict(self.flushed_rows),
                     bytes_written=self.bytes_written, failed=self.failed,
                     last_successful_save=None if self.last_success is None else self.last_success.isoformat())
 
-    def close(self):
+    def close(self) -> None:
+        """Flush a healthy dataset and close both journal streams even when flushing fails."""
         try:
             if self.failed is None:
                 self.flush()
@@ -256,20 +265,20 @@ def _roundtrip(record):
     return json.loads(json.dumps(record, allow_nan=False, default=_json_default))
 
 
-def _json_default(value):
+def _json_default(value) -> str:
     if isinstance(value, datetime):
         return value.isoformat()
     raise TypeError(type(value).__name__)
 
 
 # ---------------------------------------------------------------------- reading
-def _read_schema(table, columns=None):
+def _read_schema(table: str, columns=None):
     import pyarrow as pa
     schema = arrow_schema(table)
     return schema if columns is None else pa.schema([schema.field(c) for c in columns])
 
 
-def _complete_columns(result, schema, table):
+def _complete_columns(result, schema, table: str) -> list:
     """Keep the same historical-column rules for whole parts and streaming batches."""
     import pyarrow as pa
     arrays = []
@@ -285,7 +294,7 @@ def _complete_columns(result, schema, table):
 
 class DatasetReader:
     """Read a fixed snapshot: only parts listed by flush records up to `cutoff_seq`."""
-    def __init__(self, data_dir, *, cutoff_seq=None):
+    def __init__(self, data_dir, *, cutoff_seq: int | None=None) -> None:
         self.root = Path(data_dir)
         flushes = read_jsonl(self.root / '_journal' / 'flushes.jsonl')
         if cutoff_seq is not None:
@@ -293,11 +302,12 @@ class DatasetReader:
         self.flushes = flushes
         self.cutoff_seq = max((f['last_seq'] for f in flushes), default=0)
 
-    def parts(self, table):
+    def parts(self, table: str) -> list[Path]:
+        """List a table's part paths in published flush order."""
         return [self.root / table / f['parts'][table] for f in self.flushes if table in f['parts']]
 
     @staticmethod
-    def _read_part(path, table, columns=None, *, tail_rows=None):
+    def _read_part(path, table: str, columns=None, *, tail_rows: int | None=None):
         """Old Parquet parts acquire newly added nullable columns on read only. One open of the part serves its schema
         and its data: the second open cost a Data tab read on the 9p mount 20-40 ms (record 7.286)."""
         import pyarrow as pa
@@ -323,17 +333,19 @@ class DatasetReader:
         # Slice after filling historical columns: Arrow cannot slice a zero-column result's row count reliably.
         return result if tail_rows is None else result.slice(max(0, result.num_rows - tail_rows))
 
-    def table(self, table, columns=None):
+    def table(self, table: str, columns=None):
+        """Read and concatenate published table parts, preserving the schema when no parts exist."""
         import pyarrow as pa
         paths = self.parts(table)
         if not paths:
             return _read_schema(table, columns).empty_table()
         return pa.concat_tables([self._read_part(p, table, columns) for p in paths])
 
-    def rows(self, table, columns=None):
+    def rows(self, table: str, columns=None) -> list[dict]:
+        """Materialize the selected table columns as Python row dictionaries."""
         return self.table(table, columns).to_pylist()
 
-    def iter_batches(self, table, columns=None, *, batch_size=1024):
+    def iter_batches(self, table: str, columns=None, *, batch_size: int=1024):
         """Read the fixed snapshot a bounded number of rows at a time, in part order. Close the iterator if stopping
         early so that the current Parquet file is released; no later part is opened until it is needed."""
         import pyarrow as pa
@@ -347,11 +359,12 @@ class DatasetReader:
                 for field in schema:
                     if field.name not in present and not field.nullable:
                         raise ValueError(f'Historical {table} part lacks required column {field.name}')
-                for batch in part.iter_batches(batch_size=batch_size, columns=[c for c in schema.names if c in present]):
+                for batch in part.iter_batches(batch_size=batch_size,
+                    columns=[c for c in schema.names if c in present]):
                     yield (pa.RecordBatch.from_arrays(_complete_columns(batch, schema, table), schema=schema)
                            if len(schema) else batch)
 
-    def head(self, table, limit, columns=None):
+    def head(self, table: str, limit: int, columns=None):
         """The FIRST `limit` rows without materializing the rest of the table."""
         import pyarrow as pa
         schema = _read_schema(table, columns)
@@ -367,7 +380,7 @@ class DatasetReader:
                     break
         return pa.Table.from_batches(taken, schema=schema)
 
-    def tail(self, table, limit, columns=None):
+    def tail(self, table: str, limit: int, columns=None):
         """The LAST `limit` rows: walk parts and row groups backwards, then read only the required groups.
         Single-group parts keep their direct read path. Each visited part is opened only once."""
         import pyarrow as pa
@@ -383,10 +396,11 @@ class DatasetReader:
         whole = pa.concat_tables(list(reversed(taken)))
         return whole.slice(max(0, whole.num_rows - limit))
 
-    def row_counts(self):
+    def row_counts(self) -> dict[str, int]:
+        """Sum each table's published row counts from the flush records."""
         return {table: sum(f['rows'].get(table, 0) for f in self.flushes) for table in TABLES}
 
-    def verify(self):
+    def verify(self) -> list[str]:
         """Checksum every listed part. Returns a list of problems (empty = intact)."""
         problems = []
         for flush in self.flushes:
@@ -398,7 +412,7 @@ class DatasetReader:
                     problems.append(f'checksum mismatch {table}/{name}')
         return problems
 
-    def shown_rows(self, table, limit, tail=True):
+    def shown_rows(self, table: str, limit: int, tail: bool=True) -> tuple[list[str], list[dict]]:
         """(column names, rows) of `table` as the page's Data tab shows them: the newest `limit` rows (`tail`) or the first
         ones, JSON-ready. Only the rows shown are turned into Python: `tail` walks parts from the newest backwards,
         skips older row groups (a partial row group still needs full decoding). Only the columns
@@ -419,9 +433,10 @@ class DatasetReader:
         return names, rows
 
 
-def map_to_dict(pairs):
+def map_to_dict(pairs) -> dict | None:
+    """Return a stored map's key/value pairs as a dict, or None for a null map."""
     return None if pairs is None else {item['key']: item['value'] for item in pairs}
 
 
-def write_data_dictionary(path):
+def write_data_dictionary(path) -> dict:
     return write_json(path, data_dictionary())

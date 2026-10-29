@@ -16,12 +16,14 @@ FAMILIES = dict(vocabulary='families')
 
 
 def with_network(network):
+    """Return a configuration mutator that applies the requested network options."""
     def mutate(raw):
         raw['run']['network'].update(network)
     return mutate
 
 
 def invented_record(devices):
+    """Build a synthetic PDK record for the supplied device descriptions."""
     return dict(format=pdk_record.FORMAT, pdk_id='demo', sha256='d' * 64, devices=devices, sources=dict(model_files=[]))
 
 
@@ -65,6 +67,7 @@ def test_the_classification_rules_the_list_relies_on():
 
 @pytest.fixture(scope='module')
 def family_run(tmp_path_factory):
+    """Provide a completed MOCK run using the family-vocabulary network configuration."""
     root = tmp_path_factory.mktemp('families')
     layout, state = execute(make_config(root, run=dict(max_evaluations=12), mutate=with_network(FAMILIES)), root)
     assert state == 'completed'

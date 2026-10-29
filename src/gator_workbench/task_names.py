@@ -22,14 +22,17 @@ _NAME = re.compile(TASK_NAME)
 
 
 class TaskNameError(ValueError):
+    """Task display names could not be validated, read or changed."""
     pass
 
 
 class TaskNameTaken(TaskNameError):
+    """A requested display name conflicts with another task's name."""
     pass
 
 
 class TaskNameMissing(TaskNameError):
+    """A task targeted for renaming is no longer registered."""
     pass
 
 
@@ -42,7 +45,8 @@ def _read() -> dict:
     """The stored names; FileNotFoundError when none was ever given, TaskNameError for a file that is not ours."""
     state = json.loads((local_settings_dir() / FILE).read_text())
     names = state.get('names') if isinstance(state, dict) and state.get('version') == 1 else None
-    if not isinstance(names, dict) or not all(isinstance(k, str) and isinstance(v, str) and _NAME.match(v) for k, v in names.items()):
+    if not isinstance(names, dict) or not all(isinstance(k, str) and isinstance(v, str) and _NAME.match(v) for k,
+        v in names.items()):
         raise TaskNameError('The task names file contains invalid data; the existing file has been kept.')
     return names
 
@@ -67,7 +71,7 @@ def shown(task_key, given=None, others=()) -> str:
     return name
 
 
-def rename(task_key, name, *, known) -> dict:
+def rename(task_key, name: str, *, known) -> dict:
     """Shows the task `task_key` under `name` from now on. `known`: the keys of the registered tasks. Refused: a task
     that is not registered (TaskNameMissing), a name that is not a task name (TaskNameError), a name another task has
     or is shown under (TaskNameTaken). The task's own name removes its entry."""

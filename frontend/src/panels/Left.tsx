@@ -378,7 +378,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
         <p className="real">ngspice evaluation backend: every evaluation is one real circuit simulation by ngspice (no license). Start asks you to
           confirm the number of simulations first.</p>
         {/* The line that sends the user to the Connection window carries the button to it (states audit of 2026-10-24, branch
-            record SIF-139), as SIF-108's lines in the Virtuoso and Agent windows do: with a connection chosen the header's pill
+            record SIF-139), as SIF-108's line in the Virtuoso window does: with a connection chosen the header's pill
             shows its name, the word "Connection" for screen readers only. Opening the window checks nothing. */}
         {circuit.circuit?.connection_problem && <div className="line-act connection-problem"><p className="warn">{circuit.circuit.connection_problem}</p>
           <button className="open-connection" onClick={() => openConnection()}

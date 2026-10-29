@@ -31,27 +31,27 @@ class PsfError(ValueError):
 
 
 class _Reader:
-    def __init__(self, data):
+    def __init__(self, data: bytes) -> None:
         self.data = data
 
-    def word(self, at):
+    def word(self, at: int) -> int:
         if at < 0 or at + 4 > len(self.data):
             raise PsfError(f'truncated at byte {at}')
         return struct.unpack_from('>i', self.data, at)[0]
 
-    def double(self, at):
+    def double(self, at: int) -> float:
         if at < 0 or at + 8 > len(self.data):
             raise PsfError(f'truncated at byte {at}')
         return struct.unpack_from('>d', self.data, at)[0]
 
-    def string(self, at):
+    def string(self, at: int) -> tuple[str, int]:
         size = self.word(at)
         if size < 0 or at + 4 + size > len(self.data):
             raise PsfError(f'bad string at byte {at}')
         text = self.data[at + 4:at + 4 + size].decode('latin-1')
         return text, at + 4 + (size + 3) // 4 * 4
 
-    def properties(self, at, end, found=None):
+    def properties(self, at: int, end: int, found: dict | None=None) -> int:
         while at < end and self.word(at) in PROPERTIES:
             kind = self.word(at)
             name, at = self.string(at + 4)
@@ -66,7 +66,7 @@ class _Reader:
         return at
 
 
-def _sections(reader):
+def _sections(reader: _Reader) -> dict[int, int]:
     data = reader.data
     if len(data) < 32 or data[-12:-4] != SIGNATURE:
         raise PsfError('not a binary PSF file (no "Clarissa" signature)')
@@ -76,7 +76,7 @@ def _sections(reader):
     return {reader.word(at): reader.word(at + 4) for at in range(table, len(data) - 12, 8)}
 
 
-def _section_items(reader, start):
+def _section_items(reader: _Reader, start: int) -> tuple[int, int]:
     """(first item offset, end offset) of a type or value section: after its major and minor section words."""
     if reader.word(start) != MAJOR:
         raise PsfError(f'no section at byte {start}')
@@ -89,7 +89,7 @@ def _section_items(reader, start):
     return at, end
 
 
-def _type(reader, offset, end, types):
+def _type(reader: _Reader, offset: int, end: int, types: dict) -> tuple[int, int]:
     if reader.word(offset) != ITEM:
         raise PsfError(f'no type definition at byte {offset}')
     type_id = reader.word(offset + 4)
@@ -111,7 +111,7 @@ def _type(reader, offset, end, types):
     return type_id, offset
 
 
-def _value(reader, type_id, offset, types):
+def _value(reader: _Reader, type_id: int, offset: int, types: dict) -> tuple[int | float | complex | dict, int]:
     if type_id not in types:
         raise PsfError(f'value of an undefined type {type_id}')
     name, datatype, members = types[type_id]
@@ -127,7 +127,7 @@ def _value(reader, type_id, offset, types):
     return record, offset
 
 
-def read(data: bytes):
+def read(data: bytes) -> tuple[dict, dict]:
     """(header properties, {item name: value}) of a binary PSF result without a sweep; a struct value is a dict of its
     members (an operating point: {'ids': ..., 'gm': ..., 'region': ...})."""
     reader = _Reader(bytes(data))
@@ -157,7 +157,7 @@ def read(data: bytes):
     return header, values
 
 
-def read_file(path):
+def read_file(path) -> tuple[dict, dict]:
     """Decode an unswept binary PSF result from a file."""
     with open(path, 'rb') as handle:
         return read(handle.read())

@@ -35,7 +35,7 @@ class Outcome(NamedTuple):
     violation: object
 
 
-def commit(engine, lane, busy, result, *, timing_batch):
+def commit(engine, lane, busy, result, *, timing_batch) -> None:
     """Commit a completed evaluation and its learning rows before applying retention and advancing lane state."""
     state = engine.lane_state[lane.lane_id]
     completed_at = utcnow()
@@ -84,7 +84,7 @@ def commit(engine, lane, busy, result, *, timing_batch):
 
 
 def _record_completion(
-    engine, busy, result, record, status, valid, feasible, info, step, completed_at, evaluation_id):
+    engine, busy, result, record, status, valid, feasible, info, step, completed_at, evaluation_id) -> tuple:
     """Account for receipts and evaluation completion, including baseline failure and feasibility disagreement."""
     if op_is_step := busy['op'] != 'reset':
         engine.counters['global_env_step'] += 1
@@ -125,7 +125,7 @@ def _record_completion(
     return op_is_step, failed, infrastructure, env_success
 
 
-def _observe_search(engine, lane, busy, reward, op_is_step, evaluation_id):
+def _observe_search(engine, lane, busy, reward, op_is_step, evaluation_id) -> None:
     """Feed completed step rewards to the Bayesian proposer and record trust-region restarts."""
     # ---- Bayesian optimization (record 7.304): every finished design and its reward, the random warm-up's included;
     # a design without a reward (its simulation failed) counts as the worst seen
@@ -135,7 +135,7 @@ def _observe_search(engine, lane, busy, reward, op_is_step, evaluation_id):
             engine._event('bayes_region_restarted', evaluation_id=evaluation_id, **engine.proposer.search.state())
 
 
-def _admit_to_replay(engine, lane, busy, record, step, observation, reward, info, op_is_step, commit_seq):
+def _admit_to_replay(engine, lane, busy, record, step, observation, reward, info, op_is_step, commit_seq) -> tuple:
     """Admit eligible transitions, prepare archive rows, and run or defer the resulting learner updates."""
     # ---- learner receipt: replay admission and the updates it triggers
     transition_rows, state_rows, update_rows, admitted = [], [], [], False
@@ -163,7 +163,7 @@ def _admit_to_replay(engine, lane, busy, record, step, observation, reward, info
 def _evaluation_row(
     engine, lane, busy, result, record, info, reward, completed_at, committed_at, commit_seq, evaluation_id, valid,
     feasible, violation, env_success, nominal_feasible, best, after_first, in_flight_before, status,
-    infrastructure, terminated, truncated, eligible):
+    infrastructure, terminated, truncated, eligible) -> tuple:
     """Build the evaluation row and its diagnostic text from the completed attempt and current run counters."""
     diagnostics = None
     if result.get('exception'):
@@ -209,7 +209,7 @@ def _evaluation_row(
 
 def _commit_dataset_rows(
     engine, busy, record, evaluation_id, commit_seq, evaluation, raw_metrics, raw_validity, raw_units, derived,
-    spec_values, constraint_rows, status, job_rows, update_rows, state_rows, transition_rows):
+    spec_values, constraint_rows, status, job_rows, update_rows, state_rows, transition_rows) -> tuple:
     """Commit the evaluation bundle together with any learner-update rows waiting for persistence."""
     if engine._update_rows_waiting:                    # updates learned since the last commit go with this one (7.281)
         update_rows, engine._update_rows_waiting = engine._update_rows_waiting + update_rows, []
@@ -222,7 +222,7 @@ def _commit_dataset_rows(
     return bundle, update_rows
 
 
-def _observe_comparison_search(engine, busy, evaluation_id, op_is_step, status, reward, bundle):
+def _observe_comparison_search(engine, busy, evaluation_id, op_is_step, status, reward, bundle) -> None:
     """Tell the archive search about a completed design after its dataset rows are durable."""
     # ---- the archive comparison's search (T0/T+/M+): told each finished design once it is durable; a crash before this
     # line leaves the design in the tables, and the resume tells it (engine_comparison.after_crash)
@@ -235,7 +235,7 @@ def _observe_comparison_search(engine, busy, evaluation_id, op_is_step, status, 
 
 def _persist_retention(
     engine, lane, busy, record, evaluation_id, committed_at, timing_batch, role, commit_seq, retention_plan,
-    retention_role):
+    retention_role) -> None:
     """Record timings and tracker state, then apply retention after the durable dataset commit."""
     timings = record.get('timings')
     if isinstance(timings, dict) and timings:
@@ -250,7 +250,7 @@ def _persist_retention(
 
 
 def _advance_lane(
-    engine, busy, result, state, info, observation, terminated, truncated, diagnostics, evaluation_id, commit_seq):
+    engine, busy, result, state, info, observation, terminated, truncated, diagnostics, evaluation_id, commit_seq) -> None:
     """Advance lane state and checkpoint scheduling after recording the completed evaluation."""
     # ---- lane state for the next dispatch
     if result.get('exception') and not result.get('cancelled'):
@@ -274,7 +274,7 @@ def _advance_lane(
     engine._write_status('running', throttle=0.5)
 
 
-def outcome(engine, record, result, observation, truncated):
+def outcome(engine, record, result, observation, truncated) -> Outcome:
     """What the evaluation measured, judged against the Specs: its status, the simulator's own results, the probes and
     specs worked out from them, and whether the design is valid and feasible (at every condition it ran at)."""
     # The lane's record also carries the computed specs (spec_equations: added to the simulation result so that the
@@ -322,7 +322,7 @@ def outcome(engine, record, result, observation, truncated):
                    valid, feasible, nominal_feasible, violation)
 
 
-def first_feasibility(engine, busy, evaluation_id, commit_seq, nominal_feasible, feasible):
+def first_feasibility(engine, busy, evaluation_id, commit_seq, nominal_feasible, feasible) -> tuple:
     """The run's first (nominally) feasible design, decided when the scheduler receives the result; the stop at the first
     feasible design. Returns (the evaluations in flight at the first feasible one, whether it came before)."""
     in_flight_before = set(engine.ledger.first_feasible['in_flight_evaluation_ids']) if engine.ledger.first_feasible else set()
@@ -342,7 +342,7 @@ def first_feasibility(engine, busy, evaluation_id, commit_seq, nominal_feasible,
     return in_flight_before, after_first
 
 
-def offer(engine, busy, record, info, observation, reward, commit_seq, outcome):
+def offer(engine, busy, record, info, observation, reward, commit_seq, outcome) -> tuple:
     """The evaluation as a candidate of the best-design tracker. Returns (its role there, the tracker's best)."""
     (status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows, valid, feasible,
      nominal_feasible, violation) = outcome

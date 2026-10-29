@@ -21,7 +21,7 @@ from .storage.dataset import RawDataset
 from .trajectory import StateEncoder
 
 
-def prepare(engine, *, local_scratch):
+def prepare(engine, *, local_scratch) -> None:
     """Initialize persisted run state, learning resources, budgets, preparation ownership, and execution lanes."""
     config, out, adv = engine.config, engine.config.output, engine.config.run.advanced
     experiment = _initialize_dataset(out, engine, config)
@@ -45,7 +45,7 @@ def _initialize_dataset(out, engine, config):
     return experiment
 
 
-def _build_learning_resources(engine, config, adv, experiment):
+def _build_learning_resources(engine, config, adv, experiment) -> tuple:
     """Build the learner and replay resources, apply rehearsal and freezing policy, and retain their load metadata."""
     engine.vocabulary = run_vocabulary(engine.layout.run_dir)      # the run's own component list; None = standard
     input_options = modes.runtime_options(config, engine.vocabulary)
@@ -75,7 +75,7 @@ def _build_learning_resources(engine, config, adv, experiment):
     return input_options, built
 
 
-def _checkpoint_source(engine):
+def _checkpoint_source(engine) -> tuple:
     """Resolve checkpoint data and metadata for a resumed run or a task started from saved weights."""
     source_dir = source_meta = None
     if engine.entry == 'resume':
@@ -125,7 +125,7 @@ def _initialize_run_state(config, engine, input_options):
     return run
 
 
-def _restore_run_state(engine, built, out):
+def _restore_run_state(engine, built, out) -> None:
     """Restore resumable state, reject unresolved launch intents, and initialize checkpoint persistence and load-policy records."""
     if engine.entry == 'resume':
         engine._restore(built['run_state'])
@@ -138,7 +138,7 @@ def _restore_run_state(engine, built, out):
     engine._record_load_policy()
 
 
-def _open_run_lanes(engine, run, adv, local_scratch):
+def _open_run_lanes(engine, run, adv, local_scratch) -> None:
     """Enter the preparation context, wrap the lane factory with local scratch, and open and initialize execution lanes."""
     count = min(run.concurrency, engine.task.max_concurrency)
     env_run = run.model_copy(deep=True)
@@ -177,7 +177,7 @@ def _open_run_lanes(engine, run, adv, local_scratch):
     engine.checkpoint_kind, engine.manual_save = 'periodic', None
 
 
-def record_load_policy(engine):
+def record_load_policy(engine) -> None:
     """Persist the current segment's load policy, start time, host, process, and lane mode."""
     segment = engine.manifest['segments'][-1]
     segment.update(load_policy=engine.load_policy, started_utc=iso(engine._wall_started), pid=os.getpid(),

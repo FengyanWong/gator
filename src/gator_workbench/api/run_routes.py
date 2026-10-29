@@ -25,7 +25,7 @@ class ModelBody(ModelStructureBody):
 
 
 
-def start_run(context, config, body, *, baseline_only=False, record=None, session=None):
+def start_run(context, config, body, *, baseline_only: bool=False, record=None, session=None) -> dict:
     """`session`: a Virtuoso session chosen for this run already (Save task hands its own to the baseline it starts,
     record 7.351) - no second choice; this start lets it go, or hands it to its worker, as it would its own choice."""
     config, allow_real, random_only, calibrating = _configure_start(config, body, baseline_only)
@@ -38,7 +38,7 @@ def start_run(context, config, body, *, baseline_only=False, record=None, sessio
     return dict(made, worker_pid=pid)
 
 
-def _configure_start(config, body, baseline_only):
+def _configure_start(config, body, baseline_only) -> tuple:
     """Validate calibration options and copy the configuration for a baseline or calibration run."""
     allow_real = bool(body.authorize_real_simulation)
     designs, calibrating = getattr(body, 'calibration_designs', 0), None
@@ -58,7 +58,7 @@ def _configure_start(config, body, baseline_only):
     return config, allow_real, random_only, calibrating
 
 
-def _select_start_session(config, session, allow_real, context):
+def _select_start_session(config, session, allow_real, context) -> tuple:
     """Attach the supplied session or choose an available session for a real run."""
     if session is not None:
         config = session_routing.with_session(config, session)
@@ -70,7 +70,7 @@ def _select_start_session(config, session, allow_real, context):
     return config, session
 
 
-def _prepare_start_directory(config, context, allow_real, body, session, baseline_only, random_only, calibrating, record):
+def _prepare_start_directory(config, context, allow_real, body, session, baseline_only, random_only, calibrating, record) -> tuple:
     """Prepare the run directory and persist its launch records, releasing the session when either step fails."""
     try:
         layout, manifest = runs.prepare_run(config, context.roots, allow_real=allow_real,
@@ -168,7 +168,7 @@ def once(request_id, kind, work):
     return result
 
 
-def register(app: FastAPI, context: ApiContext):
+def register(app: FastAPI, context: ApiContext) -> None:
     """The run routes, registered in this order: the order of registration is the order of matching."""
     _run_list_and_model_routes(app, context)
     _launch_and_control_routes(app, context)
@@ -177,7 +177,7 @@ def register(app: FastAPI, context: ApiContext):
     _export_routes(app, context)
 
 
-def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
+def _run_list_and_model_routes(app: FastAPI, context: ApiContext) -> None:
     """The run list and the saved models: describe, default, rename, list, structure, graph view."""
     _register_run_list_route(app, context)
 
@@ -194,7 +194,7 @@ def _run_list_and_model_routes(app: FastAPI, context: ApiContext):
     _register_model_graph_view_route(app, context)
 
 
-def _register_run_list_route(app, context):
+def _register_run_list_route(app, context) -> None:
     """Register the run-list endpoint with its existing refresh and output-root choices."""
     @app.get('/api/runs')
     def get_runs(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
@@ -205,7 +205,7 @@ def _register_run_list_route(app, context):
             fail(403, exc)
 
 
-def _register_model_description_route(app, context):
+def _register_model_description_route(app, context) -> None:
     """Register saved-model facts and compatibility with the current configuration."""
     @app.post('/api/runs/model')
     def describe_model(body: ModelBody):
@@ -241,7 +241,7 @@ def _register_model_description_route(app, context):
         return result
 
 
-def _register_default_model_route(app, context):
+def _register_default_model_route(app, context) -> None:
     """Register lookup of the newest saved model under a model or legacy project label."""
     @app.get('/api/runs/default-model')
     def default_model(label: str | None = None, project: str | None = None):
@@ -250,7 +250,7 @@ def _register_default_model_route(app, context):
         return runs.default_model(context.roots, label, project)
 
 
-def _register_model_rename_route(app, context):
+def _register_model_rename_route(app, context) -> None:
     """Register saved-model label changes and name-conflict responses."""
     @app.post('/api/runs/model/rename')
     def rename_model(body: RenameModelBody):
@@ -271,7 +271,7 @@ def _register_model_rename_route(app, context):
         return dict(run_dir=str(run_dir), model_label=record['model_label'], previous=record['previous'])
 
 
-def _register_saved_models_route(app, context):
+def _register_saved_models_route(app, context) -> None:
     """Register the model chooser list with its saved checkpoints."""
     @app.get('/api/runs/models')
     def saved_models(output_root: str | None = None, include_mock: bool = True, fresh: bool = False):
@@ -286,7 +286,7 @@ def _register_saved_models_route(app, context):
             fail(403, exc)
 
 
-def _register_model_structure_route(app, context):
+def _register_model_structure_route(app, context) -> None:
     """Register the saved model network-structure table endpoint."""
     @app.post('/api/runs/model/structure')
     def model_structure_table(body: ModelStructureBody):
@@ -302,7 +302,7 @@ def _register_model_structure_route(app, context):
             fail(409, exc)
 
 
-def _register_model_graph_view_route(app, context):
+def _register_model_graph_view_route(app, context) -> None:
     """Register archived-state graph inspection for a selected saved model."""
     @app.post('/api/runs/model/graph-view')
     def model_graph_view(body: GraphViewBody):
@@ -318,7 +318,7 @@ def _register_model_graph_view_route(app, context):
             fail(409, exc)
 
 
-def _launch_and_control_routes(app: FastAPI, context: ApiContext):
+def _launch_and_control_routes(app: FastAPI, context: ApiContext) -> None:
     """Start, continue, the launch requests, the run commands and the run status."""
     # Reject removed search methods and deduplicate the request before starting the configured run.
     @app.post('/api/runs/start')
@@ -376,7 +376,7 @@ def _launch_and_control_routes(app: FastAPI, context: ApiContext):
         return runs.status_view(path, context.monitor.status)
 
 
-def _corner_check_routes(app: FastAPI, context: ApiContext):
+def _corner_check_routes(app: FastAPI, context: ApiContext) -> None:
     """The corner check of a run: plan, start, status, stop."""
     @app.get('/api/runs/corner-check/plan')
     def corner_check_plan(run_dir: str, designs: int = Query(corner_check.MAX_DESIGNS, ge=1, le=corner_check.MAX_DESIGNS)):
@@ -418,7 +418,7 @@ def _corner_check_routes(app: FastAPI, context: ApiContext):
             fail(404, 'This run has no corner check with that identifier.')
 
 
-def _run_data_routes(app: FastAPI, context: ApiContext):
+def _run_data_routes(app: FastAPI, context: ApiContext) -> None:
     """A run's files, data tables, log, training series and file downloads."""
     # List run files outside the work directory and lock files, including their total size.
     @app.get('/api/runs/files')
@@ -471,7 +471,7 @@ def _run_data_routes(app: FastAPI, context: ApiContext):
                                  headers={'Content-Length': str(size), **attachment(target.name)})
 
 
-def _export_routes(app: FastAPI, context: ApiContext):
+def _export_routes(app: FastAPI, context: ApiContext) -> None:
     """Data-only exports: a run's CSV tables and package, the research aggregates."""
     # Export one known run table as CSV and return its absolute and run-relative paths.
     @app.post('/api/runs/export-csv')

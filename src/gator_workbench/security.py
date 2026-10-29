@@ -15,7 +15,7 @@ _PATTERNS = [
 ]
 
 
-def redact(text, limit=None):
+def redact(text, limit: int | None=None) -> str | None:
     """Apply the configured redaction patterns and optionally truncate the resulting text."""
     if text is None:
         return None

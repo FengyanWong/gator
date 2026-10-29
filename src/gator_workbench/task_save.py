@@ -29,7 +29,7 @@ class NewerSaved(ProfileError):
     """The rows are older than the saved task: saving them would undo what was saved since (record 7.203). `undone`
     goes to the page with the refusal, which asks: Reload saved values, or save anyway."""
 
-    def __init__(self, message, undone):
+    def __init__(self, message, undone) -> None:
         super().__init__(message)
         self.detail_extra = dict(undone=undone)
 
@@ -59,7 +59,7 @@ def measurement_kind(config) -> str:
     raise ProfileError('The probes mix Maestro outputs and results of a circuit type: a task measures one way')
 
 
-def check_saveable(name, config, *, task=None, as_new=False, run_rows=(), replace_newer=False, base_revision=None):
+def check_saveable(name, config, *, task=None, as_new: bool=False, run_rows=(), replace_newer: bool=False, base_revision=None) -> None:
     """The refusals of `save_task` that read nothing from Virtuoso, on their own: the Save route asks them before it
     chooses the Virtuoso session the save goes to (record 7.351), so that a refused save contacts no Virtuoso.
     `save_task` asks them again, unchanged."""
@@ -67,8 +67,8 @@ def check_saveable(name, config, *, task=None, as_new=False, run_rows=(), replac
     measurement_kind(config)
 
 
-def save_task(monitor, profile_id, name, config, *, library=None, cell=None, task=None, as_new=False, extras=None,
-              run_rows=(), commands=None, progress=None, base_revision=None, replace_newer=False) -> dict:
+def save_task(monitor, profile_id, name, config, *, library=None, cell=None, task=None, as_new: bool=False, extras=None,
+              run_rows=(), commands=None, progress=None, base_revision=None, replace_newer: bool=False) -> dict:
     """Explicit press - only a person can do it: store the editors' rows as the task real:<name>.
 
     * First save from a cell: the task takes the cell's working copy. "Save task" on an open task updates THAT task (a
@@ -136,7 +136,7 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
                 maestro_matches=None if maestro is None else True)
 
 
-def _save_target(updating, current, task, mark, monitor, profile_id, name, commands, library, cell):
+def _save_target(updating, current, task, mark, monitor, profile_id, name, commands, library, cell) -> tuple:
     """Choose the existing task copy, clone it for Save as, or claim the cell copy for its first save."""
     claimed = None
     if updating:
@@ -155,7 +155,7 @@ def _save_target(updating, current, task, mark, monitor, profile_id, name, comma
     return target, claimed
 
 
-def _prepare_saved_maestro(config, extras, base, mark, monitor, profile_id, target, commands):
+def _prepare_saved_maestro(config, extras, base, mark, monitor, profile_id, target, commands) -> tuple:
     """Write and verify the working copy Maestro setup, then obtain its measurement probes and exported deck."""
     setup = _maestro_setup(config, extras, base)
     mark('setup')
@@ -172,7 +172,7 @@ def _prepare_saved_maestro(config, extras, base, mark, monitor, profile_id, targ
 
 
 def _stage_task_files(
-    mark, monitor, profile_id, target, commands, extras, saved, kind, updating, staging, maestro):
+    mark, monitor, profile_id, target, commands, extras, saved, kind, updating, staging, maestro) -> tuple:
     """Read the working copy back into the workbench and initialize the revision staging directory and metadata."""
     mark('read')
     bridge_read.read(monitor, profile_id, 'import_cell', library=target['copy']['library'], cell=target['copy']['cell'],
@@ -213,7 +213,7 @@ def _write_saved_task_record(
     return data
 
 
-def _publish_task_revision(updating, name, current, saved, data, staging, directory, kind):
+def _publish_task_revision(updating, name, current, saved, data, staging, directory, kind) -> tuple:
     """Replace the saved revision, publish its staging directory, and check the resulting real-backend profile."""
     changed, baseline_kept = set(), False
     if updating:
@@ -226,7 +226,7 @@ def _publish_task_revision(updating, name, current, saved, data, staging, direct
     return changed, baseline_kept
 
 
-def _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision):
+def _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision) -> tuple:
     """The checks of save_task before anything is written: the name, the task it updates (none running), a name
     still free for a new one, every spec judging Probes the task has, rows not older than the saved task (NewerSaved).
     Returns (the task's folder, the entry of the open task or None, whether the save updates it)."""
@@ -286,7 +286,7 @@ def _maestro_setup(config, extras, base):
     return setup
 
 
-def _maestro_outputs(config, maestro):
+def _maestro_outputs(config, maestro) -> tuple:
     """(the Probes rows by their Maestro output name, the outputs Maestro's deck is netlisted to measure)."""
     probes = {m.source_name: m for m in config.measurements if m.result_source == 'ade_output'}
     outputs = [dict(name=o['name'], expression=o['expression'], analysis=probes[o['name']].analysis if o['name'] in probes
@@ -308,7 +308,7 @@ def _spec_registry(config, deck, probes):
     return registry
 
 
-def _replace_revision(name, current, saved, data, staging):
+def _replace_revision(name, current, saved, data, staging) -> tuple:
     """A new revision of an open task: the old folder's files kept under history/r<N>/ in the new one, the recorded
     baseline kept when nothing it depends on changed, the old folder moved aside. Returns (what changed, whether the
     baseline was kept)."""

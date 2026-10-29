@@ -36,7 +36,7 @@ BLOCKING = ('error', 'blocker')
 VARIABLE_UNITS = ('m', 'count', '1', 'ohm', 'F', 'H', 'V')
 
 
-def native_count_columns(config):
+def native_count_columns(config) -> tuple:
     """Extra ngspice multiplicity names, shared by validation and the saved learner schema."""
     if not (config.circuit.task_id or '').startswith('ngspice:'):
         return ()
@@ -148,7 +148,7 @@ def resolve_leaders(parameters):
     return resolved
 
 
-def independent_action_count(parameters):
+def independent_action_count(parameters) -> int | None:
     """Count optimized binding leaders, returning nothing when parameter bindings cannot be resolved."""
     try:
         leaders = resolve_leaders(parameters)
@@ -159,7 +159,7 @@ def independent_action_count(parameters):
 
 
 # ------------------------------------------------------------------------------ sections
-def _check_pdk_parameter(report, path, parameter, facts, record):
+def _check_pdk_parameter(report, path, parameter, facts, record) -> None:
     """A row that varies a parameter of a PDK component, under that PDK's component list."""
     where = f"{parameter.parameter_name} of {parameter.instance_path} (PDK {record['pdk_id']})"
     if not facts.get('numeric'):
@@ -186,7 +186,7 @@ def _check_pdk_parameter(report, path, parameter, facts, record):
                    f"default there is {facts.get('default')!r} - check that the unit is right.")
 
 
-def _check_parameters(config, report, graph, record):
+def _check_parameters(config, report, graph, record) -> None:
     """`record`: the PDK the network is built with (_pdk_record), loaded once by validate() for every check."""
     count_columns = native_count_columns(config)
     feature_columns = FEATURE_PARAMETER_KINDS + count_columns
@@ -243,7 +243,7 @@ def _check_parameters(config, report, graph, record):
         _check_parameters_against_circuit(config, report, graph, record)
 
 
-def _check_row_bounds(report, path, parameter):
+def _check_row_bounds(report, path, parameter) -> None:
     """One parameter row's bounds, step, scale, initial value and integer constraint (an optimized independent row)."""
     leader_like = not parameter.binding_group
     lower, upper, step = parameter.lower, parameter.upper, parameter.step
@@ -271,7 +271,7 @@ def _check_row_bounds(report, path, parameter):
                 report.add('error', 'integer_constraint', f'{path}.{name}', f'{name} must be an integer')
 
 
-def _check_bindings(report, parameters, count_columns):
+def _check_bindings(report, parameters, count_columns) -> None:
     """The bindings between parameter rows: a resolvable binding graph, and each follower's unit, parameter kind,
     bounds and initial value against its leader times its ratio."""
     try:
@@ -320,7 +320,7 @@ def _check_bindings(report, parameters, count_columns):
                                'requires current values to satisfy declared bindings')
 
 
-def _check_bindings_against_circuit(config, report, graph):
+def _check_bindings_against_circuit(config, report, graph) -> None:
     """Declared bindings must already hold in the circuit as read: the optimizer requires current
     member values to equal ratio x group value, and nothing here 'fixes' the circuit silently."""
     try:
@@ -343,7 +343,7 @@ def _check_bindings_against_circuit(config, report, graph):
                        f'({leader_id}) = {_in(lead * ratio, p.unit)}. Change the ratio, or modify the circuit first.')
 
 
-def _check_parameters_against_circuit(config, report, graph, record):
+def _check_parameters_against_circuit(config, report, graph, record) -> None:
     _check_bindings_against_circuit(config, report, graph)
     devices = {d.id: d for d in graph.devices}
     for i, p in enumerate(config.parameters):
@@ -380,7 +380,7 @@ def _check_parameters_against_circuit(config, report, graph, record):
                 report.add('error', 'start_off_grid', path, words)
 
 
-def _check_size_measurement(config, report, m, path, provided_metrics):
+def _check_size_measurement(config, report, m, path, provided_metrics) -> None:
     """Check a size probe name and formula against the parameters the task varies."""
     if not m.source_name:
         report.add('error', 'missing_source_name', path + '.source_name',
@@ -467,7 +467,7 @@ def check_equation(t, path, report, measurement_ids):
     return None
 
 
-def _check_targets(config, report, measurement_ids, *, registry, extensible=True, provided_metrics=None):
+def _check_targets(config, report, measurement_ids, *, registry, extensible: bool=True, provided_metrics=None) -> None:
     seen, preference, active_hard = set(), [], 0
     for i, t in enumerate(config.targets):
         path = f'targets[{i}]'
@@ -518,7 +518,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible=True
 SAC_LEARNS_AFTER = 300
 
 
-def _check_run(config, report, record):
+def _check_run(config, report, record) -> None:
     run, adv = config.run, config.run.advanced
     if run.mode in ('resume', 'fine_tune', 'frozen') and not run.model_source.run_dir:
         report.add('error', 'missing_model_source', 'run.model_source.run_dir',
@@ -561,7 +561,7 @@ def _check_run(config, report, record):
     _warn_output_settings(report, config.output)
 
 
-def _check_limits(report, path, target):
+def _check_limits(report, path, target) -> None:
     """One spec's limits: those its constraint needs and only those, an interval in order, and a Scale where a limit of
     0 would leave a miss without a size."""
     given = dict(lower=target.lower is not None, upper=target.upper is not None)
@@ -585,7 +585,7 @@ def _check_limits(report, path, target):
                    'the limit that should cost half of the row\'s penalty.')
 
 
-def _check_registry_entry(report, path, target, registry, extensible):
+def _check_registry_entry(report, path, target, registry, extensible) -> None:
     """One spec against the result registry the network reads: new to it (added by this run, or refused), or in it with
     the same unit."""
     if registry is not None and units.known(target.unit) and not units.is_affine(target.unit):
@@ -604,7 +604,7 @@ def _check_registry_entry(report, path, target, registry, extensible):
                        f'Registry expects {entry!r} for {target.metric_id}')
 
 
-def _warn_unused_probes(config, report, measurement_ids):
+def _warn_unused_probes(config, report, measurement_ids) -> None:
     """A warning for each Probes row that no spec equation uses."""
     used = set()
     for t in config.targets:
@@ -614,7 +614,7 @@ def _warn_unused_probes(config, report, measurement_ids):
         if m.measurement_id not in used:
             report.add('warning', 'unused_measurement', f'measurements[{i}]', 'No spec equation uses this probe')
 
-def _warn_learning_values(report, run, adv):
+def _warn_learning_values(report, run, adv) -> None:
     """Warnings for a run that would train with values that learned late or not at all in the tests of 2026-10-05."""
     # Measured on 2026-10-05 (record 7.183, artifacts/local/reviews/defaults-study-2026-10-05): the values a configuration
     # without an Advanced block still gets - starting temperature 0.2, one update per evaluation - leave soft actor-critic
@@ -640,7 +640,7 @@ def _warn_learning_values(report, run, adv):
                    'several hundred.')
 
 
-def _check_vocabulary(report, run, record):
+def _check_vocabulary(report, run, record) -> None:
     """The component list the network is built with: a PDK's needs that PDK loaded."""
     vocabulary = getattr(run.network, 'vocabulary', 'standard') or 'standard'
     if vocabulary.startswith('pdk:'):             # `record` is _pdk_record's load of <name>; the family list: _check_network_inputs
@@ -655,7 +655,7 @@ def _check_vocabulary(report, run, record):
                        'with it loads only with this list, and models trained with the standard list do not load with it.')
 
 
-def _check_second_build(config, report, graph, settings):
+def _check_second_build(config, report, graph, settings) -> None:
     """The second build of the network inputs (record 7.317), said per task: which source the rule takes as the supply,
     what each tagged net is, and what a run with the operating-point ratios reads."""
     bench, rule = settings['bench_features'] == 'relative', settings['net_roles'] == 'rule'
@@ -694,7 +694,7 @@ def _check_second_build(config, report, graph, settings):
                    'there (a failed simulation, a simulator that gives none) shows them as missing.')
 
 
-def _check_network_inputs(config, report, graph):
+def _check_network_inputs(config, report, graph) -> None:
     """The transferable inputs of record 7.298: what the network reads of each spec (on its Specs row), and whether the
     task's PDK gives every MOS model of the circuit the numbers the size and device-model inputs need (names and counts
     only - the numbers are never shown)."""
@@ -711,7 +711,7 @@ def _check_network_inputs(config, report, graph):
     _check_search_input_policy(config, report, network)
 
 
-def _check_structured_specs(settings, config, report):
+def _check_structured_specs(settings, config, report) -> None:
     """Describe structured measurement programs and report how many operations retain unknown semantics."""
     if settings['spec_input'] == 'structured':
         # lazy: only structured spec validation needs the measurement-program compiler.
@@ -728,7 +728,7 @@ def _check_structured_specs(settings, config, report):
                               'they keep explicit unknown tokens.' if unknown else 'Every operation is recognized.'))
 
 
-def _describe_spec_inputs(settings, config, report):
+def _describe_spec_inputs(settings, config, report) -> None:
     """Describe each active specification as the set-based network inputs will represent it."""
     if settings['spec_input'] in ('set', 'structured'):
         described = spec_descriptors.describe_specs(config)
@@ -744,7 +744,7 @@ def _describe_spec_inputs(settings, config, report):
                                                     if units.known(target.unit) else target.unit))
 
 
-def _check_pdk_network_numbers(settings, config, report, graph):
+def _check_pdk_network_numbers(settings, config, report, graph) -> None:
     """Validate the PDK size and device-model numbers required by the selected network inputs."""
     relative, numbers = settings['size_features'] == 'pdk_relative', settings['device_model_features']
     if relative or numbers:
@@ -769,7 +769,7 @@ def _check_pdk_network_numbers(settings, config, report, graph):
                               '; none of this circuit\'s MOS models has them. Switch the device model features off.'))
 
 
-def _check_component_vocabulary(network, config, report, graph):
+def _check_component_vocabulary(network, config, report, graph) -> None:
     """Warn about legacy component lists and explain devices whose family classification is unavailable."""
     vocabulary = getattr(network, 'vocabulary', 'standard') or 'standard'
     if vocabulary == 'standard' and config.run.mode == 'scratch':
@@ -788,7 +788,7 @@ def _check_component_vocabulary(network, config, report, graph):
                           'facts are in the PDK window).'))
 
 
-def _check_search_input_policy(config, report, network):
+def _check_search_input_policy(config, report, network) -> None:
     """Report optimizer, archive-comparison and rehearsal restrictions and any added operating-point analysis."""
     if config.run.optimizer == 'bayes':                       # record 7.304
         if config.run.mode != 'scratch':
@@ -813,7 +813,7 @@ def _check_search_input_policy(config, report, network):
                    'has it.')
 
 
-def _comparison_rules(config, report):
+def _comparison_rules(config, report) -> None:
     """The archive comparison's runs (docs/plan-bo-mobo-rl-archive-comparison.md, run.comparison): every method evaluates
     its start design, then the common first designs, then its own proposals - nothing random in between."""
     run, comparison = config.run, config.run.comparison
@@ -857,7 +857,7 @@ def _comparison_rules(config, report):
                        'the method itself. Set warmup_transitions to 0.')
 
 
-def _warn_output_settings(report, out):
+def _warn_output_settings(report, out) -> None:
     """What the output settings make impossible later (a full resume, a transfer source, a complete history), and a
     save-point interval given twice."""
     if not out.save_replay_snapshots:
@@ -879,7 +879,7 @@ def _warn_output_settings(report, out):
                    'The complete experience archive is off. A replay snapshot is NOT a complete history once the '
                    'circular buffer evicts samples.')
 
-def _check_research(config, report, *, for_generalization=False):
+def _check_research(config, report, *, for_generalization: bool=False) -> None:
     r = config.research
     level = 'error' if for_generalization else 'info'
     missing = [name for name in ('comparison_pair_id', 'method_label')
@@ -897,7 +897,7 @@ def _check_research(config, report, *, for_generalization=False):
                    'The source pretraining seed is kept separate from the target seed; it is not recorded yet')
 
 
-def default_registry():
+def default_registry() -> dict:
     """Return the optimizer's default metric-to-unit registry."""
     from analog_optimizer.models.inputs import SpecSchema
     return {name: unit for name, unit, _ in SpecSchema().metrics}
@@ -920,7 +920,7 @@ def registry_for(config):
 
 
 def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
-             for_generalization=False, rows_from=None) -> Report:
+             for_generalization: bool=False, rows_from=None) -> Report:
     """Full semantic validation. `graph` enables circuit-aware checks; without one they are
     reported as not performed rather than assumed to pass."""
     report = Report()
@@ -978,7 +978,7 @@ def _only_goal_view(config, saved) -> bool:
     return 'targets' not in saved_rows.row_differences(neutral, saved)
 
 
-def _check_saved_task(config, report, rows_from=None):
+def _check_saved_task(config, report, rows_from=None) -> None:
     """A saved task runs exactly as it was saved (task flow part 4, saved_rows.py): Parameters, Probes or Specs rows that
     differ from its task file block a start until "Save task" stores them, or "Reload saved values" takes the saved
     rows back. A resume runs the run's own saved rows, so it is not blocked. Rows older than the saved task - saving

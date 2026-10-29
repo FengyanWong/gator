@@ -50,7 +50,7 @@ let((lib out views)
 '''
 
 
-def parse_cells(decoded):
+def parse_cells(decoded) -> list:
     """`cell|views=a b c` lines -> [{name, views, has_schematic}], sorted by name."""
     cells = []
     for row in filter(None, (line.strip() for line in (decoded or '').splitlines())):
@@ -61,7 +61,7 @@ def parse_cells(decoded):
     return sorted(cells, key=lambda item: item['name'].lower())
 
 
-def summarize_snapshot(snapshot, *, library, cell):
+def summarize_snapshot(snapshot, *, library, cell) -> dict:
     """Turn a ``schematic.read`` snapshot into the hierarchy/parameter view of the left panel."""
     instances = []
     for item in snapshot.get('instances', []):
@@ -82,7 +82,7 @@ def summarize_snapshot(snapshot, *, library, cell):
                      'existing ones are listed under registered real tasks.')
 
 
-def _main(argv=None):
+def _main(argv=None) -> int:
     args = _read_arguments(argv)
     settings = resolve_profile_id(args.profile_id)
     bridge = RealBridge(settings)
@@ -121,7 +121,7 @@ def _read_arguments(argv):
     return args
 
 
-def _list_library_cells(args, client):
+def _list_library_cells(args, client) -> None:
     """Read a library's schematic cells and emit the bounded cell listing."""
     from virtuoso_bridge import decode_skill_output
     info = client.library.get(args.library)               # an unknown library raises here instead of listing nothing
@@ -133,7 +133,7 @@ def _list_library_cells(args, client):
                           cells=cells[:MAX_CELLS], truncated=len(cells) > MAX_CELLS)))
 
 
-def _import_cell_snapshot(args, client):
+def _import_cell_snapshot(args, client) -> None:
     """Export the selected cell and testbench netlists with their schematic and form readbacks."""
     # Read-only: Virtuoso's own netlister writes the netlist of the testbench (or of the cell), and the
     # parameters are read back. The same two calls the run adapter makes for every candidate; no cellview
@@ -171,7 +171,7 @@ def _import_cell_snapshot(args, client):
                           technology_library=info.technology_library)))
 
 
-def _read_pdk_record(args, client, settings, bridge):
+def _read_pdk_record(args, client, settings, bridge) -> None:
     """Read the selected technology description and emit its PDK record."""
     # Read-only: the technology library's own description (CDF) in ONE query, and the model files downloaded into
     # a temporary folder outside the repository, scanned and deleted (pdk.read_from_virtuoso). Empty = the

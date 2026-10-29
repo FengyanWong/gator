@@ -70,7 +70,7 @@ def shown(task_key, given=None, others=()) -> str:
     return name
 
 
-def rename(task_key, name, *, known) -> dict:
+def rename(task_key, name: str, *, known) -> dict:
     """Shows the task `task_key` under `name` from now on. `known`: the keys of the registered tasks. Refused: a task
     that is not registered (TaskNameMissing), a name that is not a task name (TaskNameError), a name another task has
     or is shown under (TaskNameTaken). The task's own name removes its entry."""

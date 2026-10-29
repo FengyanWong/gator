@@ -85,13 +85,13 @@ def _assignments(text):
     return out
 
 
-def includes_of(text):
+def includes_of(text) -> list:
     """The files a model file includes, as written (relative to that file)."""
     # The anchored quoted prefix cannot contain an external comment; comments after it do not affect the match.
     return sorted({m.group(1) for line in text.splitlines() for m in [_INCLUDE.match(line)] if m})
 
 
-def _define(into, name, item, models, subckts, duplicates):
+def _define(into, name, item, models, subckts, duplicates) -> None:
     """The first definition of a name wins, across models and subcircuits; a later one is listed."""
     if name in models or name in subckts:
         duplicates.append(dict(name=name, file=item['file'], line=item['line']))
@@ -99,7 +99,7 @@ def _define(into, name, item, models, subckts, duplicates):
         into[name] = item
 
 
-def scan_model_text(text, file):
+def scan_model_text(text, file) -> dict:
     """Top-level definitions of one Spectre model file: {'models': {name: {...}}, 'subckts': {name: {...}}}.
     Only what classifying a device needs is kept: a model's primitive and `type`; a subcircuit's pins, parameters,
     elements (name, nodes, master, which of r/c/q/l they set) and its own local models. Model parameter blocks
@@ -210,7 +210,7 @@ def _spice_statement(words, line, number, file, scope, models, subckts, duplicat
     return scope
 
 
-def merge_scans(scans):
+def merge_scans(scans) -> dict:
     """Several files' scans -> one namespace (the first definition of a name wins; later ones are listed)."""
     models, subckts, duplicates = {}, {}, []
     for scan in scans:
@@ -223,12 +223,12 @@ def merge_scans(scans):
 
 
 # ------------------------------------------------------------------------------------------ classifying one model
-def file_line(entry):
+def file_line(entry) -> str:
     """Format a source entry as its basename and line number for diagnostics."""
     return f"{Path(entry['file']).name}:{entry['line']}"
 
 
-def _element_family(element, subckt, scan, depth=0):
+def _element_family(element, subckt, scan, depth=0) -> tuple:
     """(family, polarity, basis) of one element inside a subcircuit."""
     master = element['master']
     local = subckt['models'].get(master) or scan['models'].get(master)
@@ -249,7 +249,7 @@ def _element_family(element, subckt, scan, depth=0):
     return None, None, f'{master}: not defined in the model files read'
 
 
-def _paths(subckt, scan, start, end, blocked, *, behavioural=False):
+def _paths(subckt, scan, start, end, blocked, *, behavioural: bool=False):
     """Families of the elements on every simple path from pin `start` to pin `end` through internal nodes only.
     `behavioural`: also a behavioural source with controlling nodes (`bsource` with more than two), through the first two
     nodes its current flows between - labelled by what it sets, else 'behavioural' (record 7.298)."""
@@ -277,7 +277,7 @@ def _paths(subckt, scan, start, end, blocked, *, behavioural=False):
     return found
 
 
-def classify_model(name, scan, *, cdf_units=(), depth=0):
+def classify_model(name, scan, *, cdf_units=(), depth=0) -> dict:
     """What one Spectre model is: {family, polarity, family_basis, core (element whose terminals give the pin roles)}.
     `cdf_units` = the units the cell's CDF declares (decides between passive candidates, never overrides a primitive)."""
     model = scan['models'].get(name)
@@ -354,7 +354,7 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
                 family_basis=f"{where}: {', '.join(sorted(on_path)) or 'nothing'} between its first two pins - not classified")
 
 
-def _passive_path_evidence(subckt, scan, cdf_units, name):
+def _passive_path_evidence(subckt, scan, cdf_units, name) -> tuple:
     """Collect terminal-path families, declared passive units and the source description for classification."""
     paths = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]))
     on_path = {family for path in paths for family in path}

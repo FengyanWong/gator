@@ -50,7 +50,7 @@ RECOVERABLE_BOUNDARY = ('Quiescent scheduler boundary: no evaluation reserved or
 
 class CheckpointIncompatible(RuntimeError):
     """A checkpoint compatibility failure carrying its detailed component report."""
-    def __init__(self, report):
+    def __init__(self, report) -> None:
         self.report = report
         failed = [c for c in report['checks'] if c['status'] == 'incompatible']
         super().__init__('Checkpoint is not compatible: ' + '; '.join(f"{c['component']}: {c['detail']}" for c in failed))
@@ -115,7 +115,7 @@ def weight_digest(learner) -> str:
 
 class CheckpointStore:
     """Publish complete save points and manage retention, save kinds, and policy-selection metadata."""
-    def __init__(self, run_dir, *, run_id, task_id, task_definition_hash, save_replay=True, keep_last=None):
+    def __init__(self, run_dir, *, run_id, task_id, task_definition_hash, save_replay: bool=True, keep_last=None) -> None:
         self.root = Path(run_dir) / 'checkpoints'
         self.root.mkdir(parents=True, exist_ok=True)
         self.run_id, self.task_id, self.task_hash = run_id, task_id, task_definition_hash
@@ -124,7 +124,7 @@ class CheckpointStore:
 
     # ------------------------------------------------------------------ save
     def save(self, learner, replay, *, ledger_state, data_cursor, counters, collector_state, mode,
-             kind='periodic', effective_experiment, frozen=False):
+             kind='periodic', effective_experiment, frozen: bool=False):
         """Write a complete checkpoint, then (and only then) move the ``latest`` pointer."""
         import torch
         from analog_optimizer.training.replay import ReplayBuffer
@@ -176,7 +176,7 @@ class CheckpointStore:
         self._prune(checkpoint_id)
         return metadata
 
-    def _checkpoint_replay(self, learner, replay, frozen, ReplayBuffer):
+    def _checkpoint_replay(self, learner, replay, frozen, ReplayBuffer) -> tuple:
         """Choose replay content and record unavailable or inapplicable restoration components."""
         missing, not_applicable = [], []
         saved_replay = replay
@@ -190,7 +190,7 @@ class CheckpointStore:
             saved_replay = ReplayBuffer(replay.capacity, origin=replay.origin)
         return missing, not_applicable, saved_replay
 
-    def _write_checkpoint_payload(self, learner, saved_replay, run_state, staging, torch, replay):
+    def _write_checkpoint_payload(self, learner, saved_replay, run_state, staging, torch, replay) -> tuple:
         """Write verified learner state, transferable weights and the embedded replay membership manifest."""
         # The package writes the file, reads it back and loads it again to check it (2.5 s for 42 MB): on the local disk.
         # Only the compressed copy - every zip entry the same bytes, a third of the size - goes to the run folder (7.284).
@@ -218,7 +218,7 @@ class CheckpointStore:
         write_json(staging / 'replay_buffer' / 'manifest.json', manifest)
         return contract, manifest
 
-    def _publish_checkpoint_pointers(self, checkpoint_id, metadata, capability, data_cursor, kind):
+    def _publish_checkpoint_pointers(self, checkpoint_id, metadata, capability, data_cursor, kind) -> None:
         """Publish the latest-save pointer and initialize an unselected best-policy record when absent."""
         write_json(self.root / 'latest.json', dict(
             checkpoint_id=checkpoint_id, path=f'checkpoints/{checkpoint_id}', created_utc=metadata['created_utc'],
@@ -345,7 +345,7 @@ def _display_digest(path, identity):
     return sha256_file(path)
 
 
-def verify_files(directory, *, cached=False) -> list[str]:
+def verify_files(directory, *, cached: bool=False) -> list[str]:
     """Report missing or mismatched checkpoint files while accepting recorded pre-compression originals."""
     directory, problems = Path(directory), []
     for relative, info in read_metadata(directory)['files'].items():
@@ -378,7 +378,7 @@ def check_compatibility(metadata, *, mode, task_definition_hash, contract) -> di
                    'It has no RL model to load.')],
             checkpoint_id=metadata['checkpoint_id'], source_run_id=metadata['run_id'], restoration_capability='search_state')
 
-    def add(component, ok, detail, *, fatal=True):
+    def add(component, ok, detail, *, fatal: bool=True) -> None:
         checks.append(dict(component=component, detail=detail,
                            status='ok' if ok else 'incompatible' if fatal else 'warning'))
     strict = mode == 'resume'

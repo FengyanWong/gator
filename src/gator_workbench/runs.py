@@ -62,7 +62,7 @@ def take_lock(run_dir):
 
 
 # ---------------------------------------------------------------------------- preparation
-def _initial_dimensions(compiled):
+def _initial_dimensions(compiled) -> tuple:
     values = {g.id: g.value for g in compiled.graph.parameter_groups}
     return values, hashlib.sha256(canonical_json(values).encode()).hexdigest()
 
@@ -97,7 +97,7 @@ def _input_snapshot(layout: RunLayout, task, compiled, config):
     return notes
 
 
-def _research_block(config, source_manifest):
+def _research_block(config, source_manifest) -> tuple:
     research = config.research.model_dump(mode='json')
     pretrain, origin = research.get('pretrain_seed'), 'user_label'
     if source_manifest:
@@ -184,7 +184,7 @@ def _contract_key(model_config, sac_config, spec_schema, vocabulary, runtime) ->
                                options={name: plain(value) for name, value in (runtime or {}).items()}))
 
 
-def learner_contract(config, task, task_hash, spec_schema, vocabulary, *, cached=False) -> dict:
+def learner_contract(config, task, task_hash, spec_schema, vocabulary, *, cached: bool=False) -> dict:
     """The contract a learner built from this configuration has: what a saved model is checked against. `cached`: the
     page's inspection of a saved model (POST /api/runs/model) takes the kept contract, see above; a start leaves it False
     and builds the learner, so the digest in its verdict is the source's of that moment."""
@@ -205,7 +205,7 @@ def learner_contract(config, task, task_hash, spec_schema, vocabulary, *, cached
     return dict(copy.deepcopy(contract), **ckpt.experiment_fields(experiment))
 
 
-def connection_gate(task, config, monitor, *, acknowledge_unknown=False):
+def connection_gate(task, config, monitor, *, acknowledge_unknown: bool=False):
     """Pre-dispatch gate (section 2.1). Runs BEFORE any directory, reservation or manifest exists, so a
     blocked start leaves nothing behind. Mock runs need no bridge layer: not_applicable."""
     if task.mock:
@@ -272,7 +272,7 @@ def _started(work) -> Future:
     """work() begun in a thread of its own now; .result() waits for its answer, or raises what it raised."""
     future = Future()
 
-    def run():
+    def run() -> None:
         if future.set_running_or_notify_cancel():
             try:
                 future.set_result(work())
@@ -282,8 +282,8 @@ def _started(work) -> Future:
     return future
 
 
-def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False, confirm_transfer=False,
-                monitor=None, acknowledge_unknown=False, remember_concurrency=True, before_write=None):
+def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real: bool=False, confirm_transfer: bool=False,
+                monitor=None, acknowledge_unknown: bool=False, remember_concurrency: bool=True, before_write=None) -> tuple:
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report. `before_write()` is
     called once every refusal has passed and before the run is created or written (record 7.351: a busy Virtuoso
     session lets go of the task's cell then, so a refused start changes nothing in Virtuoso); what it raises refuses
@@ -314,7 +314,7 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real=False
     return layout, manifest
 
 
-def _record_resume_consistency(consistency, manifest, layout):
+def _record_resume_consistency(consistency, manifest, layout) -> None:
     """Persist a resume consistency check and release the held run lock if that write fails."""
     if consistency is not None:
         manifest['segments'][-1]['consistency_check'] = consistency
@@ -325,7 +325,7 @@ def _record_resume_consistency(consistency, manifest, layout):
             raise
 
 
-def _prepare_data_root(config, roots, task):
+def _prepare_data_root(config, roots, task) -> tuple:
     """Validate the selected output root and create the task-specific data directory."""
     output_root = config.output.output_root or remembered_output_root()
     check = roots.check(output_root, create=True, verify_windows=False)
@@ -336,7 +336,7 @@ def _prepare_data_root(config, roots, task):
     return output_root, data_root
 
 
-def _create_run_layout(data_root, config, vocabulary, roots, output_root):
+def _create_run_layout(data_root, config, vocabulary, roots, output_root) -> tuple:
     """Create the run directory, persist its network inputs, and copy the configuration with resolved output identifiers."""
     experiment_dir, experiment_id, created = new_experiment_dir(data_root, config.output.experiment_name,
                                                                  config.output.experiment_id)
@@ -353,7 +353,7 @@ def _create_run_layout(data_root, config, vocabulary, roots, output_root):
 
 def _new_run_manifest(
     config, source_manifest, compiled, experiment_id, run_id, task_hash, task, vocabulary, source_model, parent,
-    gate, consistency, allow_real, provenance, data_root, experiment_dir, layout):
+    gate, consistency, allow_real, provenance, data_root, experiment_dir, layout) -> tuple:
     """Construct the initial run manifest with source lineage, model identity, contracts, budgets, and provenance."""
     research, pretrain_seed, pretrain_origin = _research_block(config, source_manifest)
     initial, initial_hash = _initial_dimensions(compiled)
@@ -410,7 +410,7 @@ def _new_run_manifest(
 
 
 def _persist_prepared_run(
-    manifest, layout, task, compiled, config, run_id, now, experiment_dir, created, remember_concurrency):
+    manifest, layout, task, compiled, config, run_id, now, experiment_dir, created, remember_concurrency) -> None:
     """Write the run input snapshot and records, register the experiment entry, and remember the selected run."""
     manifest['notes'] += _input_snapshot(layout, task, compiled, config)
     write_json(layout.effective_config, config.model_dump(mode='json'))
@@ -423,7 +423,7 @@ def _persist_prepared_run(
     _remember_run(config, layout, remember_concurrency)
 
 
-def _checked_task(config, roots, allow_real):
+def _checked_task(config, roots, allow_real) -> tuple:
     """The refusals of prepare_run before anything is created, reserved or gated: a task that cannot load here, a cell
     without a profile, a real task without the authorization, blocking validation issues, a task that does not compile,
     more concurrent jobs than the task supports. Returns (the configuration with the circuit's content, the task, the
@@ -454,7 +454,7 @@ def _checked_task(config, roots, allow_real):
     return config, task, compiled
 
 
-def _source_model(config, roots, task, task_hash, compiled, confirm_transfer):
+def _source_model(config, roots, task, task_hash, compiled, confirm_transfer) -> tuple:
     """The model a fine-tune or evaluate-only run starts from, checked: never across MOCK and real, a different task only
     with the confirmation, a test task's adaptation only as continual learning, a compatible save point only (no fallback
     to scratch). Returns (the component list the run uses, the source run's manifest, the source_model block of the new
@@ -502,7 +502,7 @@ def _source_model(config, roots, task, task_hash, compiled, confirm_transfer):
     return vocabulary, source_manifest, source_model, parent
 
 
-def _remember_run(config, layout, remember_concurrency):
+def _remember_run(config, layout, remember_concurrency) -> None:
     """The output root and, for a run that saves an RL model, the run under its model's label (Resume, fine_tune and
     frozen start from it), remembered in the settings; the concurrency too unless the start says not to."""
     with SETTINGS_LOCK:             # the last_run merge reads and writes under the lock every other save takes
@@ -535,7 +535,7 @@ def _prepare_resume(config, roots, task, task_hash, gate, before_write=None):
     return result
 
 
-def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifest, run_dir, before_write=None):
+def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifest, run_dir, before_write=None) -> tuple:
     previous, merged, meta, compatibility = _resume_checks(config, task, task_hash, layout, manifest, run_dir)
     if before_write is not None:
         before_write()
@@ -567,7 +567,7 @@ def resumed_session(asked, previous):
     return asked if asked != previous and asked in connection.session_group(previous or '') else previous
 
 
-def _resume_checks(config, task, task_hash, layout, manifest, run_dir):
+def _resume_checks(config, task, task_hash, layout, manifest, run_dir) -> tuple:
     """Everything an exact resume checks before it writes anything - the refusals of Continue. Shared by the press
     (under the run lock, _prepare_resume_locked) and the continuation check (record 7.261, no lock, nothing written).
     Returns (previous configuration, merged configuration, save point metadata, compatibility report)."""
@@ -663,7 +663,7 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
     if isinstance(used, int) and isinstance(total, int):
         answer.update(remaining=max(0, (max_evaluations or total) - used), minimum_total=used + 1, exhausted=used >= total)
 
-    def refused(code, reason):
+    def refused(code, reason) -> dict:
         alternative = None
         if (code in _FINE_TUNE_INSTEAD and point and meta and meta.get('restoration_capability') != 'search_state'
                 and optimizer_of(manifest) not in NON_RL_OPTIMIZERS):      # a search's save point holds no RL model
@@ -707,7 +707,7 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
 
 
 # ---------------------------------------------------------------------------- worker process
-def launch_worker(layout: RunLayout, *, allow_real=False):
+def launch_worker(layout: RunLayout, *, allow_real: bool=False):
     """Detached process (own session). Returns the pid. Never launched by tests or at import time."""
     lock = take_lock(layout.run_dir) or RunLock(layout.run_lock)
     if not lock.held_here:
@@ -751,7 +751,7 @@ def send_command(run_dir, command: str):
     return record
 
 
-def _check_save_now(layout):
+def _check_save_now(layout) -> None:
     """`checkpoint` = "Save now": the RUNNING worker saves its model at the next safe boundary and goes on.
     It is refused, with the reason, whenever nothing would come of it - and it never replaces a pause, stop or
     cancel that is still in the one-slot control file (a run on its way down saves by itself, or was told not to)."""

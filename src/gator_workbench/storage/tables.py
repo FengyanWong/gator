@@ -31,7 +31,7 @@ class Column:
     null: str | None = None        # meaning of null; None = column is never null
 
 
-def _arrow(kind):
+def _arrow(kind: str):
     import pyarrow as pa
     pair = lambda value_type: pa.list_(pa.struct([('key', pa.string()), ('value', value_type)]))
     return {
@@ -288,7 +288,7 @@ TABLES['llm_calls'] = dict(primary_key=('call_id',), purpose='Every sizing reque
 FLUSH_ORDER = ('parameters', 'metrics', 'simulator_jobs', 'learner_updates', 'llm_calls', 'states', 'transitions', 'evaluations')
 
 
-def arrow_schema(table):
+def arrow_schema(table: str):
     """Build a table's Arrow schema with declared nullability and GATOR schema metadata."""
     import pyarrow as pa
     return pa.schema([pa.field(c.name, _arrow(c.type), nullable=c.null is not None or c.type.startswith(('list', 'map')))
@@ -296,12 +296,12 @@ def arrow_schema(table):
                      metadata={'gator_table': table, 'gator_table_schema': TABLE_SCHEMA_VERSION})
 
 
-def empty_row(table):
+def empty_row(table: str) -> dict:
     """Create a row containing every declared column initialized to null."""
     return {c.name: None for c in TABLES[table]['columns']}
 
 
-def normalize_row(table, row):
+def normalize_row(table: str, row) -> dict:
     """Reject unknown columns; convert dict-valued map columns to key/value pairs."""
     columns = {c.name: c for c in TABLES[table]['columns']}
     unknown = set(row) - set(columns)
@@ -318,7 +318,7 @@ def normalize_row(table, row):
     return result
 
 
-def data_dictionary():
+def data_dictionary() -> dict:
     """Describe all raw tables and their storage, type, unit and provenance conventions."""
     tables = {}
     for name, spec in TABLES.items():

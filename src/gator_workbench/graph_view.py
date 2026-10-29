@@ -65,7 +65,7 @@ def _one_row(reader, table, column, value, columns=None, flushes=None):
     return None
 
 
-def _legacy_step_number(reader, wanted, saved_at):
+def _legacy_step_number(reader, wanted, saved_at) -> tuple:
     """The direct path for small archives; also retain the original errors on exceptional input."""
     numbers = sorted(reader.table('transitions', ['commit_seq'])['commit_seq'].to_pylist())
     if not numbers:
@@ -82,7 +82,7 @@ def _legacy_step_number(reader, wanted, saved_at):
     return chosen, dict(first=first, last=last, count=len(numbers))
 
 
-def _small_step_archive(reader):
+def _small_step_archive(reader) -> bool:
     """Keep the direct read for at most 4,096 declared transition rows, without any extra filesystem reads."""
     count = 0
     for flush in reader.flushes:
@@ -139,7 +139,7 @@ def _step_number(reader, wanted, saved_at):
     return (wanted if wanted is not None else last if chosen is None else chosen), dict(first=first, last=last, count=count)
 
 
-def _step(loader, wanted, saved_at):
+def _step(loader, wanted, saved_at) -> tuple:
     """The asked archived evaluation, else the last one the save point had seen.
     Long-archive selection scans numbers in bounded batches; the chosen transition and state are single-row reads.
     """
@@ -162,13 +162,13 @@ def _step(loader, wanted, saved_at):
     return row, steps
 
 
-def capture_attention(actor, run):
+def capture_attention(actor, run) -> tuple:
     """Run `run()` and return (its result, [per attention layer: (edge_index [2,E], alpha [E,H])])."""
     import torch
     from torch_geometric.nn import GATv2Conv, TransformerConv
     captured, handles = [], []
 
-    def hook(module, inputs, output):
+    def hook(module, inputs, output) -> None:
         with torch.no_grad():
             _, (edge_index, alpha) = module.forward(*inputs, return_attention_weights=True)
         captured.append((edge_index, alpha))
@@ -184,12 +184,12 @@ def capture_attention(actor, run):
     return result, captured
 
 
-def capture_dense_attention(actor, run):
+def capture_dense_attention(actor, run) -> tuple:
     """Inspect global/group weights only on demand; leave the policy's output untouched."""
     import torch
     captured, handles = [], []
 
-    def hook(module, inputs, kwargs, output):
+    def hook(module, inputs, kwargs, output) -> None:
         with torch.no_grad():
             _, weights = module.forward(*inputs, **dict(kwargs, need_weights=True, average_attn_weights=False))
         captured.append(dict(kind=module.attention_kind, weights=weights.detach().cpu()))
@@ -294,7 +294,7 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
                      '(a random warm-up action, or the policy of that moment with exploration noise).')
 
 
-def _load_graph_state(run_dir, checkpoint_id, evaluation):
+def _load_graph_state(run_dir, checkpoint_id, evaluation) -> tuple:
     """Verify the selected checkpoint and reconstruct the archived observation and its step metadata."""
     directory = ckpt.resolve_checkpoint(run_dir, checkpoint_id)
     meta, weights = model_structure.load_verified(directory)
@@ -306,7 +306,7 @@ def _load_graph_state(run_dir, checkpoint_id, evaluation):
     return meta, actor, features, spec, row, steps, observation
 
 
-def _network_observation(run_dir, observation, features, spec, batch_observations):
+def _network_observation(run_dir, observation, features, spec, batch_observations) -> tuple:
     """Validate the saved component vocabulary and construct the network batch while retaining the displayed circuit view."""
     # A run built with a PDK's component list saw every circuit through that PDK's view: replay it the same way, and
     # draw what the network saw (the PDK kinds and pin roles). The run's own copy of the list is used, never a newer load.
@@ -324,7 +324,7 @@ def _network_observation(run_dir, observation, features, spec, batch_observation
     return vocabulary, batch, observation
 
 
-def _graph_connections(features, graph, batch, count, net_ids, device_ids):
+def _graph_connections(features, graph, batch, count, net_ids, device_ids) -> tuple:
     """Index physical connections and map both directed network edges to their receiving-node competitors."""
     roles = features.terminal_roles
     # One entry per physical connection; both directions of the network's edge list are folded into it.
@@ -346,7 +346,7 @@ def _graph_connections(features, graph, batch, count, net_ids, device_ids):
     return connections, edge_index, keys
 
 
-def _append_connection_attention(layers, edge_index, connections, keys):
+def _append_connection_attention(layers, edge_index, connections, keys) -> None:
     """Verify each attention layer uses the recorded edges and attach directional head weights to physical connections."""
     for number, (index, alpha) in enumerate(layers):
         if index.tolist() != edge_index:
@@ -360,7 +360,7 @@ def _append_connection_attention(layers, edge_index, connections, keys):
             slot[f'{direction}_uniform'] = 1 / competitors
 
 
-def _graph_parameter_groups(graph, policy, recorded):
+def _graph_parameter_groups(graph, policy, recorded) -> tuple:
     """Build device group membership and decoded policy and recorded values for each parameter group."""
     member_of = {}
     for group in graph.parameter_groups:

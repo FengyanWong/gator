@@ -83,19 +83,19 @@ class RealRunner:
     def which(self, program):
         return shutil.which(program)
 
-    def run(self, argv, *, timeout, stdin_text=None, cwd=None):
+    def run(self, argv, *, timeout, stdin_text=None, cwd=None) -> tuple:
         """Run an argument vector without a local shell and return its exit code and captured output."""
         feed = dict(input=stdin_text) if stdin_text is not None else dict(stdin=subprocess.DEVNULL)
         done = subprocess.run(list(argv), capture_output=True, text=True, timeout=timeout, shell=False, cwd=cwd, **feed)
         return done.returncode, done.stdout or '', done.stderr or ''
 
 
-def ssh_argv(host, remote_command):
+def ssh_argv(host, remote_command) -> list:
     """Build a noninteractive SSH invocation with the configured connection timeout."""
     return ['ssh', '-o', 'BatchMode=yes', '-o', f'ConnectTimeout={SSH_CONNECT_SECONDS}', '--', host, remote_command]
 
 
-def remote_trial_command(program):
+def remote_trial_command(program) -> str:
     """One fixed remote command; `program` has passed PROGRAM, so it needs no quoting. The deck arrives on stdin."""
     return f'deck=$(mktemp) && cat > "$deck" && {program} -b "$deck"; status=$?; rm -f "$deck"; exit $status'
 
@@ -116,7 +116,7 @@ def ssh_config_hosts(home=None) -> list:
     return found
 
 
-def _tail(*texts, lines=3):
+def _tail(*texts, lines=3) -> str:
     kept = [line.strip() for text in texts for line in (text or '').splitlines() if line.strip()]
     return ' | '.join(kept[-lines:])
 
@@ -224,7 +224,7 @@ def run_layers(runner, settings, *, scope='interactive', timeout=5.0):
 
 def _failure_recorder(results, scrub):
     """Build the failure recorder using the shared layer results and diagnostic scrubber."""
-    def fail(name, state, reason, diagnostic=None, *, step=None, **details):
+    def fail(name, state, reason, diagnostic=None, *, step=None, **details) -> list:
         results[name] = layer(name, state, reason, scrub(diagnostic) if diagnostic else None,
                               next_step=NEXT_STEPS.get(step or reason), **details)
         return list(results.values())

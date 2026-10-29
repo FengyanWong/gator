@@ -29,12 +29,12 @@ DEFAULT_SEED = 0
 DEFAULT_UPDATES = 20_000
 
 
-def identity(value):
+def identity(value) -> str:
     """Hash a value's sorted JSON representation while rejecting nonfinite JSON numbers."""
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
-def archive_identity(directory):
+def archive_identity(directory) -> str:
     """Pin tables, journal, static graphs/specs and recorded configuration; no weights/unpickling."""
     directory = Path(directory)
     files = [directory / name for name in ('run_manifest.json', 'effective_config.json', 'run_summary.json')]
@@ -113,7 +113,7 @@ def prepare_pool(request, *, progress=None, storage_dir=None):
         raise
 
 
-def _prepare_pool(request, *, progress=None, storage=None):
+def _prepare_pool(request, *, progress=None, storage=None) -> Pool:
     """Read and validate every eligible transition, then split whole run-scoped episodes."""
     origin, fraction, seed, inputs, missing_points, transfer, migrated_settings = _pool_request_settings(request)
     groups, registries, sources = defaultdict(lambda: defaultdict(list)), [], []
@@ -162,7 +162,7 @@ def _prepare_pool(request, *, progress=None, storage=None):
     return Pool(training, validation, schema, settings, audit, features, storage)
 
 
-def _pool_request_settings(request):
+def _pool_request_settings(request) -> tuple:
     """Validate the pool request and resolve its split, input, and optional reward-migration settings."""
     origin = request['origin']
     if origin not in ('real', 'synthetic'):
@@ -183,7 +183,7 @@ def _pool_request_settings(request):
     return origin, fraction, seed, inputs, missing_points, transfer, migrated_settings
 
 
-def _read_pool_source(source, run_ids, origin, inputs, missing_points, registries):
+def _read_pool_source(source, run_ids, origin, inputs, missing_points, registries) -> tuple:
     """Read one frozen source and validate its identity, origin, network inputs, and specification registry."""
     directory = Path(source['run_dir']).resolve()
     if archive_identity(directory) != source['archive_sha256']:
@@ -219,7 +219,7 @@ def _read_pool_source(source, run_ids, origin, inputs, missing_points, registrie
     return directory, manifest, config, summary, task, run_id, read_points
 
 
-def _load_pool_transitions(directory, source, run_id, shown_as):
+def _load_pool_transitions(directory, source, run_id, shown_as) -> tuple:
     """Verify pinned inputs and archived files, then reconstruct the requested replay-eligible candidates."""
     if source.get('inputs_sha256') not in (None, shown_as):
         raise ValueError(f'Network inputs changed after selection: {run_id} would be shown to the network another way '
@@ -242,7 +242,7 @@ def _load_pool_transitions(directory, source, run_id, shown_as):
     return loader, raw, eligible, transitions, wanted
 
 
-def _validate_pool_transition(row, transition, original_settings, candidates, run_id, manifest, origin, migrated_settings, settings, counts):
+def _validate_pool_transition(row, transition, original_settings, candidates, run_id, manifest, origin, migrated_settings, settings, counts) -> tuple:
     """Validate and optionally migrate one archived transition before it enters the pool."""
     original_settings[identity(asdict(transition.reward_settings))] = asdict(transition.reward_settings)
     if transition.candidate_id in candidates:
@@ -273,7 +273,7 @@ def _validate_pool_transition(row, transition, original_settings, candidates, ru
     return transition, settings, first, last, episode
 
 
-def _append_relabelled_transitions(keep, transition, first, last, episode, groups, task, relabel, target_sets, stated, counts, targets_only, balance):
+def _append_relabelled_transitions(keep, transition, first, last, episode, groups, task, relabel, target_sets, stated, counts, targets_only, balance) -> None:
     """Store the selected transition and its requested relabelled variants within the episode."""
     if not targets_only:
         groups[task][episode].append((keep(transition), False))
@@ -289,7 +289,7 @@ def _append_relabelled_transitions(keep, transition, first, last, episode, group
 
 def _record_pool_source(
     directory, source, run_id, task, read_points, shown_as, summary, transitions, raw, counts, original_settings,
-    migrated_settings, sources, wanted):
+    migrated_settings, sources, wanted) -> None:
     """Recheck the source archive identity and append its loaded-transition audit record."""
     # Detect source mutation during reconstruction, too.
     if archive_identity(directory) != source['archive_sha256']:
@@ -308,7 +308,7 @@ def _record_pool_source(
 
 def _split_and_audit_pool(
     request, origin, seed, fraction, inputs, groups, registries, sources, settings, relabel, target_sets,
-    migrated_settings, storage, progress, seen_tasks, targets_only, balance):
+    migrated_settings, storage, progress, seen_tasks, targets_only, balance) -> tuple:
     """Split whole episodes and describe the frozen source pool, input schemas, and optional reward migration."""
     if (set(relabel) | set(target_sets)) - seen_tasks:
         raise ValueError('Relabel task absent from pool')
@@ -345,7 +345,7 @@ def _shown(transition, view):
     return _shown_type()(**values)
 
 
-def selected_candidates(source, run_id):
+def selected_candidates(source, run_id) -> set | None:
     """A source's `candidate_ids` (the archive comparison: exactly the transitions of a frozen bundle), as a set; None
     when the source pools every replay-eligible transition of its run, as before."""
     if 'candidate_ids' not in source:
@@ -358,7 +358,7 @@ def selected_candidates(source, run_id):
     return set(wanted)
 
 
-def pool_options(request, target_sets, relabel, fraction):
+def pool_options(request, target_sets, relabel, fraction) -> tuple:
     """(relabel_targets_only, balance) of a request; the defaults pool as before.
     relabel_targets_only: only the target-set copies are pooled, not the transition under its recorded targets - a pool
     of exactly the goal views it names (the archive comparison: its four portfolio views).
@@ -382,13 +382,13 @@ def pool_options(request, target_sets, relabel, fraction):
 
 class BalancedSampler:
     """Every task appears once in each shuffled cycle, even across batch boundaries."""
-    def __init__(self, training, seed, *, track_candidates=False):
+    def __init__(self, training, seed, *, track_candidates: bool=False) -> None:
         self.training, self.rng, self.pending = training, random.Random(seed), []
         self.counts = Counter()
         self.candidate_counts = Counter()
         self.track_candidates = track_candidates
 
-    def sample(self, size):
+    def sample(self, size) -> list:
         """Sample transitions while cycling through shuffled tasks to balance their contributions."""
         result = []
         for _ in range(size):
@@ -469,7 +469,7 @@ def stated_scales(config) -> frozenset:
     return frozenset(row['metric_id'] for row in rows if isinstance(row, dict) and row.get('normalization_scale'))
 
 
-def retargeted_specs(specs, changes, task, stated=()):
+def retargeted_specs(specs, changes, task, stated=()) -> tuple:
     """`specs` with the limits of some rows moved (`changes`: metric -> {"lower": x, "upper": y}). A row keeps its kind:
     only a limit it has may be moved (an "at most" row its upper limit, an "at least" row its lower one, a range
     both), and a range stays a range. A row whose scale was the size of its limit - the rule of an empty Scale box,
@@ -527,7 +527,7 @@ def _pool_registry(registries, request):
     return schema
 
 
-def _split_episodes(groups, schema, seed, fraction, *, storage=None, progress=None):
+def _split_episodes(groups, schema, seed, fraction, *, storage=None, progress=None) -> tuple:
     """Whole run-scoped episodes split into training and validation per task, reproducibly from the seed; every
     observation checked against the registry on the way. Returns (training, validation, the split's rows)."""
     from analog_optimizer.models.inputs import SpecSetSchema, context_features, spec_set_features
@@ -596,7 +596,7 @@ def evaluate(learner, pool, batch_size=32):
     return result
 
 
-def execute(request, output, *, audit_only=False, progress=None):
+def execute(request, output, *, audit_only: bool=False, progress=None):
     """Create a new offline artifact; refuse overwrite. Provisional weights are saved periodically."""
     import torch
     from analog_optimizer.models import ModelConfig
@@ -608,7 +608,7 @@ def execute(request, output, *, audit_only=False, progress=None):
     pool = None
     loaded_sources = 0
 
-    def status(state, **extra):
+    def status(state, **extra) -> None:
         record = dict(state=state, updates=0 if learner is None else learner.updates,
                       elapsed_seconds=time.monotonic() - started, new_simulator_launches=0,
                       updated_utc=datetime.now(timezone.utc).isoformat(), **extra)
@@ -616,7 +616,7 @@ def execute(request, output, *, audit_only=False, progress=None):
         if progress:
             progress(record)
 
-    def pool_progress(event):
+    def pool_progress(event) -> None:
         nonlocal loaded_sources
         if event['event'] == 'pool_validation':
             status('loading', phase='validating_pool', **{k: v for k, v in event.items() if k != 'event'})
@@ -651,7 +651,7 @@ def execute(request, output, *, audit_only=False, progress=None):
             pool.storage.close()
 
 
-def _begin_offline_artifact(request, output):
+def _begin_offline_artifact(request, output) -> tuple:
     """Validate offline run settings and create the new artifact directory with its frozen request."""
     output = Path(output).resolve()
     if request['origin'] == 'synthetic' and 'mock' not in output.parts:
@@ -666,7 +666,7 @@ def _begin_offline_artifact(request, output):
     return output, updates, batch_size, interval, started
 
 
-def _save_pool_audit(status, pool, output):
+def _save_pool_audit(status, pool, output) -> None:
     """Report pool-save progress and persist the frozen pool audit and specification registry."""
     status('loading', phase='saving_pool', completed_transitions=len(pool.audit['split']),
            total_transitions=len(pool.audit['split']))
@@ -675,7 +675,7 @@ def _save_pool_audit(status, pool, output):
                                                for n, u, r in getattr(pool.schema, 'metrics', ())])
 
 
-def _offline_training_config(torch, request, pool, ModelConfig, SACConfig):
+def _offline_training_config(torch, request, pool, ModelConfig, SACConfig) -> tuple:
     """Seed offline training and construct its experiment, model, and zero-discount learner configuration."""
     torch.set_num_threads(1)
     seed_everything(request.get('seed', DEFAULT_SEED))
@@ -689,7 +689,7 @@ def _offline_training_config(torch, request, pool, ModelConfig, SACConfig):
 
 
 def _train_offline(
-    request, pool, ReplayBuffer, output, learner, status, experiment, updates, batch_size, interval):
+    request, pool, ReplayBuffer, output, learner, status, experiment, updates, batch_size, interval) -> None:
     """Construct the offline sampler and checkpoint store, then run the requested learner updates with periodic saves."""
     sampler = BalancedSampler(pool.training, request.get('seed', DEFAULT_SEED), track_candidates=True)
     replay = ReplayBuffer(1, origin=request['origin'])
@@ -698,7 +698,7 @@ def _train_offline(
                             task_definition_hash=pool.audit['request_sha256'], save_replay=False, keep_last=2)
     history = []
     candidate_runs = {r['candidate_id']: r['run_id'] for r in pool.audit['split'] if r['subset'] == 'training'}
-    def checkpoint():
+    def checkpoint() -> None:
         status('training', phase='evaluating_validation', validation_transitions=sum(map(len, pool.validation.values())))
         scores = evaluate(learner, pool)
         history.append(dict(updates=learner.updates, scores=scores))

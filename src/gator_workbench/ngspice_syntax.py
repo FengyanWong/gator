@@ -90,7 +90,7 @@ class Parsed:
         return {m.name: m.unit for m in self.measurements}
 
 
-def number(text):
+def number(text: str) -> float | None:
     """A SPICE number, or None. `10uF` = 10e-6 (letters after the scale are ignored), `1Meg` = 1e6, `1M` = 1e-3."""
     match = NUMBER.match(text.strip())
     if not match:
@@ -113,7 +113,7 @@ class Unresolved(ValueError):
     pass
 
 
-def evaluate(text, lookup):
+def evaluate(text: str, lookup) -> float:
     """The value of a SPICE expression (`{2*wn}`, `'wn/2'`, `wn`) with `lookup(name)` for parameters: numbers with SPICE
     scales, + - * / ** and unary signs, brackets and the arithmetic functions ngspice has. A whitelist over the syntax
     tree, never eval(); anything else is Unresolved."""
@@ -131,7 +131,7 @@ def evaluate(text, lookup):
     if plain is not None:
         return plain
 
-    def literal(match):
+    def literal(match: re.Match[str]) -> str:
         value = float(match.group(1)) * SCALES.get((match.group(2) or '').lower(), 1.0)
         return repr(value)
     binary = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv,
@@ -166,7 +166,7 @@ def evaluate(text, lookup):
     return value
 
 
-def strip_comment(line):
+def strip_comment(line: str) -> str:
     """The line without a `$ ...` or `; ...` inline comment (SPICE), keeping quotes and braces whole."""
     depth, quote = 0, None
     for i, char in enumerate(line):
@@ -185,7 +185,7 @@ def strip_comment(line):
     return line
 
 
-def _scan_spice_token(line, i, n):
+def _scan_spice_token(line: str, i: int, n: int) -> tuple[int, int]:
     """Find the end and starting offset of a token while respecting quotes and brackets."""
     start, depth, quote = i, 0, None
     while i < n:
@@ -205,7 +205,7 @@ def _scan_spice_token(line, i, n):
     return i, start
 
 
-def tokenize(line, line_number):
+def tokenize(line: str, line_number: int) -> list[Token]:
     """Tokens of one physical line: split on blanks and commas outside quotes and brackets, then `a = b` joined to `a=b`
     (SPICE allows the spaces). Each token remembers its place, so a value can be replaced in the deck later."""
     raw, i, n = [], 0, len(line)
@@ -225,7 +225,7 @@ def tokenize(line, line_number):
     return tokens
 
 
-def statements(lines):
+def statements(lines) -> tuple:
     """Logical statements of the deck: each a list of tokens across `+` continuation lines. The title line is not a
     statement. Returns (title, statements, has_control, control_lines)."""
     title = lines[0].rstrip() if lines else ''
@@ -259,7 +259,7 @@ def statements(lines):
     return title, result, control, control_lines
 
 
-def _split(tokens, *, first=1):
+def _split(tokens, *, first: int=1) -> tuple[list, dict]:
     """(positional tokens, {name: token of the whole `name=value`}) after the element name."""
     positional, named = [], {}
     for token in tokens[first:]:
@@ -271,7 +271,7 @@ def _split(tokens, *, first=1):
     return positional, named
 
 
-def _value_token(token):
+def _value_token(token: Token) -> Token:
     """The value part of a `name=value` token as a token of its own (for the writeback), or the token itself."""
     head, equals, tail = token.text.partition('=')
     if equals and NAME.match(head or ' '):

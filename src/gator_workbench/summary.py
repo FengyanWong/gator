@@ -16,7 +16,7 @@ from . import OUTPUT_LAYOUT_VERSION
 from .storage.dataset import utcnow
 
 
-def durations(manifest, *, current_active=None):
+def durations(manifest, *, current_active=None) -> tuple:
     """active = sum of segment active times; paused = gaps BETWEEN segments. Parallel job runtime is
     a third, different quantity and is reported separately."""
     segments = manifest.get('segments', [])
@@ -30,7 +30,7 @@ def durations(manifest, *, current_active=None):
     return active, paused
 
 
-def build_run_summary(engine, final_state, checkpoint, persistence_ok):
+def build_run_summary(engine, final_state, checkpoint, persistence_ok) -> dict:
     """Build the run's research summary with feasibility, censoring, costs, provenance and persistence status."""
     ledger, counters, manifest = engine.ledger, engine.counters, engine.manifest
     snapshot = ledger.snapshot()
@@ -96,7 +96,7 @@ def _feasibility_censoring(first, snapshot, engine):
     return censoring
 
 
-def _run_totals(counters, snapshot, engine):
+def _run_totals(counters, snapshot, engine) -> dict:
     """Report completed work, evaluation charges, failures and learner progress."""
     return dict(environment_steps=counters['global_env_step'], episodes=counters['episodes'],
                 candidate_evaluations_charged=snapshot['charged'],
@@ -112,7 +112,7 @@ def _run_totals(counters, snapshot, engine):
                 policy_version_loaded=int(engine.learner.updates) if engine.frozen else None)
 
 
-def _source_model_cost(source, engine):
+def _source_model_cost(source, engine) -> dict:
     """Report known source-model cost without treating missing cost as zero."""
     return dict(status=source.get('cost_status', 'not_applicable' if engine.mode == 'scratch' else 'unknown'),
                 evaluations_charged=source.get('cost_evaluations'),
@@ -121,7 +121,7 @@ def _source_model_cost(source, engine):
                 note='unknown is never treated as 0')
 
 
-def _best_design_record(best):
+def _best_design_record(best) -> dict | None:
     """Describe the best recorded design and its nominal and robust feasibility evidence."""
     return None if best is None else dict(
         evaluation_id=best['evaluation_id'], feasible=best['feasible'], metrics=best['metrics'],
@@ -132,7 +132,7 @@ def _best_design_record(best):
         clearance_margin=best.get('clearance_margin'), tightest_clearance_spec=best.get('tightest_clearance_spec'))
 
 
-def _output_status(complete, persistence_ok, checkpoint, engine):
+def _output_status(complete, persistence_ok, checkpoint, engine) -> dict:
     """Report output completeness, checkpoint resumability and the committed data cursor."""
     return dict(completeness='complete' if complete and persistence_ok else 'partial',
                 persistence_ok=persistence_ok,

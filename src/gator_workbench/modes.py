@@ -40,7 +40,7 @@ def model_config_from(network):
                        architecture_version=network.architecture_version)
 
 
-def seed_everything(seed):
+def seed_everything(seed) -> None:
     """Seed Python, NumPy, and PyTorch random generators from the run seed."""
     import numpy as np
     import torch
@@ -49,7 +49,7 @@ def seed_everything(seed):
     torch.manual_seed(seed)
 
 
-def runtime_options(config, vocabulary=None):
+def runtime_options(config, vocabulary=None) -> dict:
     # ngspice PDK subcircuits can expose additional multiplicity parameters.
     # The compiled action kind is already m/1; retain the native writeback names
     # as separate numeric columns. This does not add current/A action support.
@@ -84,10 +84,10 @@ class EncoderFreeze:
     The freeze is therefore re-applied immediately before each update, and frozen parameters
     never carry a gradient into the clipping norm.
     """
-    def __init__(self, learner):
+    def __init__(self, learner) -> None:
         self.parameters = [p for module in [learner.actor, *learner.critics] for p in module.encoder.parameters()]
 
-    def apply(self):
+    def apply(self) -> None:
         """Freeze the retained encoder parameters and clear their pending gradients."""
         for parameter in self.parameters:
             parameter.requires_grad_(False)
@@ -100,7 +100,7 @@ def current_contract(experiment, model_config, sac_config, spec_schema, vocabula
 
 
 def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, seed, origin,
-          source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None, runtime=None, view=None):
+          source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None, runtime=None, view=None) -> dict:
     """Returns dict(learner, replay, run_state, policy, freeze). `vocabulary`: the run's component list (None = standard);
     `view`: its transferable inputs' NetworkView (record 7.298), or None."""
     from analog_optimizer.training.replay import ReplayBuffer
@@ -163,7 +163,7 @@ def _verify_source_checkpoint(
 
 
 def _resume_training_state(
-    vocabulary, runtime, view, source_dir, experiment, model_config, sac_config, spec_schema, policy):
+    vocabulary, runtime, view, source_dir, experiment, model_config, sac_config, spec_schema, policy) -> tuple:
     """Restore the complete learner and replay state and record that existing run counters are retained."""
     options = model_inputs.learner_options(vocabulary, runtime)
     learner, replay, run_state = network_inputs.learner_class(vocabulary, view).load(
@@ -218,7 +218,7 @@ def _transfer_fine_tune_weights(
     return freeze
 
 
-def _freeze_loaded_weights(learner, weights, torch, policy):
+def _freeze_loaded_weights(learner, weights, torch, policy) -> None:
     """Load and freeze all saved network weights while recording the frozen policy and original update count."""
     learner.actor.load_state_dict(weights['actor'])
     learner.critics.load_state_dict(weights['critics'])
@@ -234,7 +234,7 @@ def _freeze_loaded_weights(learner, weights, torch, policy):
                         'and no learner_updates rows are produced.']
 
 
-def source_cost(source_run_dir):
+def source_cost(source_run_dir) -> dict:
     """Pretraining cost of a source model and the provenance chain for de-duplication.
 
     Unknown stays unknown (None + status); it is never turned into 0.

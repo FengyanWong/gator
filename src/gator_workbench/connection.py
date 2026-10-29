@@ -131,7 +131,7 @@ def kind_of_profile(profile_id) -> str | None:
     return DEFAULT_KIND if settings is None else entry_kind(settings)
 
 
-def kind_problem(settings, local):
+def kind_problem(settings, local) -> tuple | None:
     """(reason_code, diagnostic) when a DECLARED Virtuoso kind and the bridge env file disagree, else None.
     `local` is what the bridge resolved from its env file. An undeclared kind is never second-guessed."""
     declared = (settings or {}).get('kind')
@@ -184,7 +184,7 @@ NEXT_STEPS = {
 }
 
 
-def layer(name, state='not_checked', reason=None, diagnostic=None, **details):
+def layer(name, state='not_checked', reason=None, diagnostic=None, **details) -> dict:
     """Build a connection-layer result with a recognized state and redacted diagnostics."""
     if state not in STATES:
         raise ValueError(state)
@@ -213,7 +213,7 @@ def public_profiles() -> dict:
     """What the browser may see: identifiers and presence flags. Never a value that could be a secret."""
     loaded = load_profiles()
 
-    def public(key, value):
+    def public(key, value) -> dict:
         value = value if isinstance(value, dict) else {}
         kind = profile_kind(value)                       # None = a kind this backend does not know: shown, never guessed
         info = KINDS.get(kind, {})
@@ -293,7 +293,7 @@ def kill_group(process) -> None:
         pass
 
 
-def run_child(argv, timeout):
+def run_child(argv, timeout) -> tuple | None:
     """Run `argv` in the worker environment, in a process group of its own, for at most `timeout` seconds:
     (stdout, stderr, returncode), or None when it did not finish in time - its group is then killed. The one way the
     backend waits for a bridge read, a Virtuoso write, a profile check or a connection probe."""
@@ -308,7 +308,7 @@ def run_child(argv, timeout):
     return stdout, stderr, process.returncode
 
 
-def require_gate(monitor, action, profile_id, what, *, acknowledge_unknown=False) -> dict:
+def require_gate(monitor, action, profile_id, what, *, acknowledge_unknown: bool=False) -> dict:
     """The gate for `action`, or PermissionError('The connection gate blocked <what>') carrying the gate as `.gate` (the
     page shows its blocking layers). Every bridge read, Virtuoso write and profile check asks this way."""
     gate = monitor.gate(action, profile_id, acknowledge_unknown=acknowledge_unknown)
@@ -361,7 +361,7 @@ def single_flight(lock, inflight, key, work):
 class RealBridge:
     """Thin facade over the installed bridge. Only observation methods exist here - there is
     deliberately no start/stop/restart/warm method to call by accident."""
-    def __init__(self, settings):
+    def __init__(self, settings) -> None:
         import site
         if settings.get('bridge_site_packages'):
             site.addsitedir(str(Path(settings['bridge_site_packages']).resolve()))
@@ -372,7 +372,7 @@ class RealBridge:
         import virtuoso_bridge  # noqa: F401  (importability through THIS interpreter and import path)
         return importlib.metadata.version('virtuoso-bridge')
 
-    def bind_env(self, env_file):
+    def bind_env(self, env_file) -> None:
         """Select the resolved environment file for subsequent bridge operations."""
         from virtuoso_bridge.env import set_runtime_env_file
         set_runtime_env_file(Path(env_file).resolve())
@@ -381,7 +381,7 @@ class RealBridge:
         from virtuoso_bridge.profile import resolve_profile
         return resolve_profile(explicit)
 
-    def roles(self, profile):
+    def roles(self, profile) -> dict:
         """Return the daemon host, simulator host, and remote user resolved for the profile."""
         from virtuoso_bridge.transport.remote_roles import remote_host_roles_from_os
         roles = remote_host_roles_from_os(profile)
@@ -391,7 +391,7 @@ class RealBridge:
         from virtuoso_bridge.transport.tunnel import _is_localhost
         return bool(host) and _is_localhost(host)
 
-    def tunnel_state(self, profile):
+    def tunnel_state(self, profile) -> tuple:
         """Return the profile's stored SSH tunnel state and whether its tunnel is running."""
         from virtuoso_bridge.transport.tunnel import SSHClient
         return SSHClient.read_state(profile), SSHClient.is_running(profile)
@@ -401,19 +401,19 @@ class RealBridge:
         from virtuoso_bridge import VirtuosoClient
         return VirtuosoClient.from_env(timeout=timeout, log_to_ciw=False, profile=profile)   # as the adapter does
 
-    def skill_ok(self, client, timeout):
+    def skill_ok(self, client, timeout) -> tuple:
         """Run a read-only SKILL probe and return its success flag and error messages."""
         from virtuoso_bridge.models import ExecutionStatus
         probe = client.execute_skill('1+1', timeout=timeout)                 # trivial and read-only
         return probe.status == ExecutionStatus.SUCCESS, [str(e) for e in (probe.errors or [])]
 
-    def daemon_user(self, client, profile, timeout):
+    def daemon_user(self, client, profile, timeout) -> dict:
         """Return the bridge daemon's user-ownership check result."""
         from virtuoso_bridge.daemon_guard import check_daemon_user
         check = check_daemon_user(client, profile=profile, timeout=timeout)
         return dict(ok=check.ok, skipped=getattr(check, 'skipped', False), error=check.error)
 
-    def readiness(self, client):
+    def readiness(self, client) -> None:
         """The adapter's OWN rule, called on a stand-in: the panel and the adapter cannot disagree."""
         from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend
         VirtuosoBridgeBackend._check_windows(SimpleNamespace(client=client))
@@ -441,7 +441,7 @@ def parse_license_lines(lines):
 
 
 # ---------------------------------------------------------------------------- the layers
-def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, run_active=False, profile_error=None):
+def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, run_active: bool=False, profile_error=None):
     """Check layers in dependency order. Everything downstream of a failure stays `not_checked`.
 
     scope: 'cheap' (layers 1-3, no Virtuoso contact), 'interactive' (1-5), 'full' (1-7).
@@ -558,7 +558,7 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
 
 def _failure_recorder(results, arg):
     """Create the failure recorder that fills one layer and returns the ordered results."""
-    def fail(name, state, reason, diagnostic=None, **details):
+    def fail(name, state, reason, diagnostic=None, **details) -> list:
         results[name] = layer(name, state, reason, diagnostic,
                               next_step=NEXT_STEPS.get(reason, '').format(profile_arg=arg) or None, **details)
         return list(results.values())
@@ -574,7 +574,7 @@ def _daemon_user_check(bridge, client, profile, timeout):
     return user
 
 
-def _close_probe_client(client):
+def _close_probe_client(client) -> None:
     """Close this probe client when present, suppressing close failures."""
     if client is not None:
         try:
@@ -583,7 +583,7 @@ def _close_probe_client(client):
             pass
 
 
-def _record_spectre_results(results, info):
+def _record_spectre_results(results, info) -> None:
     """Record a found Spectre executable and its parsed license availability."""
     results['spectre'] = layer('spectre', 'ok', version=redact(info.get('version'), 120))
     features = parse_license_lines(info.get('licenses'))
@@ -600,7 +600,7 @@ def _record_spectre_results(results, info):
 
 
 # ---------------------------------------------------------------------------- probe process
-def _probe_main(argv=None):
+def _probe_main(argv=None) -> int:
     """Entry point of the short-lived probe process: prints ONE JSON object."""
     import argparse
     parser = argparse.ArgumentParser()
@@ -701,7 +701,7 @@ class ConnectionMonitor:
                 return layers
         return None
 
-    def status(self, profile_id):
+    def status(self, profile_id) -> dict:
         """Last result with its age. Before the first check, or once stale, every layer is `unknown`:
         a cached `ok` is never presented as current."""
         with self._lock:
@@ -719,7 +719,7 @@ class ConnectionMonitor:
                     layers=[dict(item, state='unknown', reason_code='stale_result', previous_state=item['state'])
                             for item in result['layers']])
 
-    def gate(self, action, profile_id, *, acknowledge_unknown=False):
+    def gate(self, action, profile_id, *, acknowledge_unknown: bool=False):
         """Pre-dispatch gate. Blocks on failed/not_ready; unknown/busy/not_checked need an explicit
         acknowledgement. A blocked start reserves nothing and creates nothing."""
         if action not in ACTION_LAYERS:
@@ -785,7 +785,7 @@ class ConnectionMonitor:
         active = self.active_run_lookup(profile_id) if self.active_run_lookup else None
         return result if bool(active) == bool(result.get('run_active')) else None
 
-    def _log(self, result):
+    def _log(self, result) -> None:
         """Application-level diagnostics log. Never a research table, never an aggregate."""
         append_local_log('connection_checks.jsonl', lambda: dict(
             timestamp_utc=result['checked_utc'], profile_id=result['profile_id'], trigger=result['trigger'],

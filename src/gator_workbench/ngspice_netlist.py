@@ -87,7 +87,7 @@ def _unquote(text):
     return text[1:-1] if len(text) >= 2 and text[0] == text[-1] and text[0] in '"\'' else text
 
 
-def scan_models(text, *, root, depth=0, budget=None, seen=None, found=None, subckts=None, notes=None):
+def scan_models(text, *, root, depth=0, budget=None, seen=None, found=None, subckts=None, notes=None) -> tuple:
     """`.model` names -> types and `.subckt` names -> port counts from `text` and the files it includes (relative paths
     under `root`). Model files are read for these two facts only, within MODEL_SCAN_BYTES; a file that cannot be read,
     or the budget, is noted and never an error - the simulator reads the real thing."""
@@ -143,7 +143,7 @@ class _Scope:
 
 
 class _Env:
-    def __init__(self, definitions, parent=None, overrides=None):
+    def __init__(self, definitions, parent=None, overrides=None) -> None:
         self.definitions, self.parent, self.overrides = definitions, parent, overrides or {}
         self.cache, self.active = {}, set()
 
@@ -169,7 +169,7 @@ class _Env:
 
 
 def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=None, include_root=None,
-               scan_includes=True) -> Parsed:
+               scan_includes: bool=True) -> Parsed:
     """Read a deck. `device_kinds`: {model or subckt name: kind} the user declares for what the deck does not say.
     `include_root`: the folder relative includes are resolved from (the netlist's own folder when it came from a file)."""
     lines = text.split('\n')
@@ -194,7 +194,7 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
     nets, sizables, unknown_models, subckt_uses = {}, {}, [], {name: 0 for name in scopes}
     net, resolve, kind_of = _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_types)
 
-    def expand(current, env, path, port_map, ancestry):
+    def expand(current, env, path, port_map, ancestry) -> None:
         if len(ancestry) > 32:
             raise NetlistError('subcircuit nesting deeper than 32')
         seen = set()
@@ -255,7 +255,7 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                   unknown, model_types)
 
 
-def _collect_deck_statements(stmts, source):
+def _collect_deck_statements(stmts, source) -> tuple:
     """Collect circuit scopes, directives and element statements while preserving their source order."""
     root = _Scope(None)
     scopes, scope = {}, root
@@ -321,7 +321,7 @@ def _open_subcircuit(scope, root, tokens, head, scopes):
     return scope
 
 
-def _record_scope_parameters(tokens, scope):
+def _record_scope_parameters(tokens, scope) -> None:
     """Record named parameter definitions in the current circuit scope."""
     for token in tokens[1:]:
         key, equals, value = token.text.partition('=')
@@ -329,7 +329,7 @@ def _record_scope_parameters(tokens, scope):
             scope.params[key.lower()] = value
 
 
-def _read_control_outputs(control_lines, source, measurements, analyses):
+def _read_control_outputs(control_lines, source, measurements, analyses) -> None:
     """Collect control-block analyses and measurements in their original order."""
     control_units, last_analysis = {}, 'other'
     for line, statement in control_lines:
@@ -355,7 +355,7 @@ def _read_control_outputs(control_lines, source, measurements, analyses):
                     measurements.append(Measurement(name, last_analysis, unit_from_name(name) or control_units.get(name, '1'), line, statement))
 
 
-def _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_types):
+def _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_types) -> tuple:
     """Create the name, parameter and device-kind resolvers for one parsed circuit."""
     # ngspice reads a node's name without regard to case (IN and in are one wire): one net per name, under the spelling
     # the deck gives first - a deck of one spelling reads as it always did. Until record 7.322 each spelling was a net.
@@ -371,7 +371,7 @@ def _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_typ
             nets[key] = Net(key, ('ground',) if key.lower() in GROUND else ('normal',), 'default')
         return key
 
-    def resolve(token, env, label, *, numeric=True):
+    def resolve(token, env, label, *, numeric: bool=True) -> ParameterValue:
         raw = token.text
         try:
             return ParameterValue(raw, evaluate(raw, env.lookup), SourceSpan(source, token.line, token.column + 1))
@@ -381,7 +381,7 @@ def _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_typ
                                               SourceSpan(source, token.line, token.column + 1), 'warning'))
             return ParameterValue(raw, None, SourceSpan(source, token.line, token.column + 1), str(exc))
 
-    def kind_of(letter, model, positional):
+    def kind_of(letter, model, positional) -> tuple:
         """(kind, roles, node count) of an element from its letter and model."""
         if letter == 'M':
             declared = kinds_given.get(model) or MODEL_KINDS.get(model_types.get(model, ''), None)
@@ -408,7 +408,7 @@ def _subcircuit_overrides(named, resolve, env, identifier):
     return overrides
 
 
-def _external_subcircuit_terminals(kinds_given, sub, external_subckts, ports, diagnostics, identifier, span, unknown_models):
+def _external_subcircuit_terminals(kinds_given, sub, external_subckts, ports, diagnostics, identifier, span, unknown_models) -> tuple:
     """Classify an external subcircuit's terminals and record missing-kind or port-count diagnostics."""
     # an instance of a subcircuit the deck does not define: a PDK cell (its kind from device_kinds)
     kind = kinds_given.get(sub, 'unknown')
@@ -442,7 +442,7 @@ def _external_subcircuit_parameters(named, kind, resolve, env, identifier, sizab
     return values
 
 
-def _element_nodes_and_model(letter, positional, model_types, head, name, named):
+def _element_nodes_and_model(letter, positional, model_types, head, name, named) -> tuple:
     """Determine an element's node count and model while enforcing its required positional tokens."""
     # nodes and model: the first `count` positional tokens are nodes; the next one, if any, the model
     model = None
@@ -475,7 +475,7 @@ def _element_nodes_and_model(letter, positional, model_types, head, name, named)
     return model, count
 
 
-def _element_terminals(letter, model, positional, count, kind_of, unknown_models, diagnostics, identifier, span, model_types):
+def _element_terminals(letter, model, positional, count, kind_of, unknown_models, diagnostics, identifier, span, model_types) -> tuple:
     """Classify an element's terminals and record diagnostics for unknown device kinds."""
     kind, roles, _ = kind_of(letter, model, [t.text.lower() for t in positional])
     if kind == 'unknown' and letter in ('M', 'D', 'Q', 'J', 'Z', 'S') and model:
@@ -553,7 +553,7 @@ def _finish_circuit_graph(graph, nets, diagnostics, subckt_uses, sizables, unkno
     return unknown
 
 
-def _with_name(value, source_name):
+def _with_name(value, source_name) -> tuple:
     return value.raw, value.value, value.source, value.reason, source_name
 
 

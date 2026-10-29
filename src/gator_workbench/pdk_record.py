@@ -90,7 +90,7 @@ def build_record(pdk_id, cdf, scans, *, sources=None, technology_library=None):
     return record
 
 
-def _netlisted_models(cells, leaves):
+def _netlisted_models(cells, leaves) -> tuple:
     """Group netlisted cells by Spectre model and record why remaining cells have no usable model."""
     by_model, not_netlisted = {}, []
     for name in sorted(cells):
@@ -115,7 +115,7 @@ def _netlisted_models(cells, leaves):
     return by_model, not_netlisted
 
 
-def _record_model(model, by_model, cells, scan, pdk_id, devices):
+def _record_model(model, by_model, cells, scan, pdk_id, devices) -> None:
     """Choose the representative cell and assemble the classified model record with its pins, parameters, and problems."""
     uses = by_model[model]
     # The cell whose pins are all named in its own mapping describes the pins (nmos1v rather than nmos1v_3 with its
@@ -146,7 +146,7 @@ def _record_model(model, by_model, cells, scan, pdk_id, devices):
         problems=problems)
 
 
-def _model_pins(model, found, scan, lead, problems):
+def _model_pins(model, found, scan, lead, problems) -> tuple:
     """Reconcile symbol pin order and mapping with model-file pins and record any unresolved roles."""
     roles = pin_roles(model, found, scan) if found['family'] != 'other' else None
     order = [str(t) for t in lead['spectre'].get('term_order') or []]
@@ -172,7 +172,7 @@ def _model_pins(model, found, scan, lead, problems):
     return pins, subckt
 
 
-def _model_parameters(lead, cells):
+def _model_parameters(lead, cells) -> tuple:
     """Read netlisted parameter defaults and determine their units, numeric status, and writable CDF sources."""
     parameters = []
     leaf_cell, parent = lead['leaf_cell'], lead['parent']
@@ -232,7 +232,7 @@ def _typical(entries, family):
     return 10.0 ** (sum(decades) / len(decades)) if decades else None
 
 
-def _assign_columns(devices):
+def _assign_columns(devices) -> None:
     """Give every numeric parameter a canonical name and a network column (in place).
 
     canonical: the netlist name, unless that name is one of the eight standard parameters with another meaning (an
@@ -258,7 +258,7 @@ def _assign_columns(devices):
                 p['unit'], p['unit_basis'] = STANDARD_UNITS[p['canonical']], 'same name and scale as the standard parameter'
             groups.setdefault(p['canonical'], []).append((device, p))
 
-    def agree(entries):
+    def agree(entries) -> bool:
         return all(_compatible(a[1], b[1]) for i, a in enumerate(entries) for b in entries[i + 1:])
 
     for name, entries in sorted(groups.items()):
@@ -287,7 +287,7 @@ def _assign_columns(devices):
                     p['action_class'] = 'w'
 
 
-def _vocabulary(pdk_id, devices):
+def _vocabulary(pdk_id, devices) -> dict:
     """The component list the network is built with, and what the network view does per Spectre model."""
     standard = standard_schema()
     roles = list(standard.terminal_roles)
@@ -312,7 +312,7 @@ def _vocabulary(pdk_id, devices):
     return dict(body, version=f'pdk-{pdk_id}-{sha[:16]}', sha256=sha)
 
 
-def _summary(devices):
+def _summary(devices) -> dict:
     counts = {}
     for device in devices.values():
         key = device['family'] if device['family'] not in ('mos', 'bjt') or not device.get('polarity') \
@@ -425,7 +425,7 @@ def ideal_models(record, node_counts=None) -> dict:
     return models
 
 
-def describe_ideal_parts(record, *, brief=False):
+def describe_ideal_parts(record, *, brief: bool=False):
     """What the page shows about the ideal parts read with a PDK; None for a PDK loaded before they were read."""
     parts = (record or {}).get('ideal_parts')
     if not isinstance(parts, dict):
@@ -487,7 +487,7 @@ def list_pdks() -> list:
     return found
 
 
-def describe(record, *, brief=False):
+def describe(record, *, brief: bool=False):
     """What the page shows about a loaded PDK."""
     out = dict(pdk_id=record['pdk_id'], vocabulary=f"pdk:{record['pdk_id']}", sha256=record['sha256'],
                version=record['vocabulary']['version'], loaded_utc=record['loaded_utc'],

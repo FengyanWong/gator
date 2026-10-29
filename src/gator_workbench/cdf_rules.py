@@ -181,11 +181,11 @@ def _group_step(members, wanted):
     raise RowError('no step keeps every bound value on its grid: simplify the ratios')
 
 
-def _short(value):
+def _short(value) -> float:
     return float(format(value, '.12g'))
 
 
-def adjust(config, graph, core, facts, reference):
+def adjust(config, graph, core, facts, reference) -> tuple:
     """Rows of the parameter editor -> (rows a real run honours, optimized leader ids, leaders, {key: spec}).
     Raises RowError with the reason."""
     rows, leaders, optimized = _checked_adjustment_rows(config)
@@ -202,7 +202,7 @@ def adjust(config, graph, core, facts, reference):
     return adjusted, optimized, leaders, specs
 
 
-def _checked_adjustment_rows(config):
+def _checked_adjustment_rows(config) -> tuple:
     """Copy editor rows and require valid binding leaders with at least one optimized variable."""
     rows = [row.model_copy() for row in config.parameters]
     try:
@@ -270,7 +270,7 @@ def _adjust_leader(row, specs, by_id, leaders, reference):
     return row
 
 
-def _check_declared_ranges(members, lower, upper, row):
+def _check_declared_ranges(members, lower, upper, row) -> None:
     """Reject a bound group whose requested range exceeds any member property form range."""
     # The PDK's own declared range, when it states one: the property form refuses a value outside it, so a row
     # that leaves it would die on its first clamped candidate - after a real evaluation was paid for.
@@ -287,7 +287,7 @@ def _check_declared_ranges(members, lower, upper, row):
                            + (f' (ratio {ratio:g})' if ratio != 1 else ''))
 
 
-def _snap_leader_range(members, step, row, integer, choice, spec, lower, upper):
+def _snap_leader_range(members, step, row, integer, choice, spec, lower, upper) -> tuple:
     """Resolve a shared step, snap bounds inward, and check the present value and count constraints."""
     try:
         step = _group_step([(ratio, m['grid']) for ratio, m in members], step)
@@ -315,7 +315,7 @@ def _snap_leader_range(members, step, row, integer, choice, spec, lower, upper):
     return step, lower, upper
 
 
-def _check_finger_widths(members, reference, step, lower, upper, row):
+def _check_finger_widths(members, reference, step, lower, upper, row) -> None:
     """Reject finger-count ranges that would place the recorded total width off the verified length grid."""
     for ratio, member in members:                  # a finger count must keep the finger width on the grid
         params = _instance_params(reference, member['instance'])

@@ -64,7 +64,7 @@ def _group_step(ratios, wanted):
     raise ProfileError('No width step up to 2 um keeps every bound transistor on the 5 nm grid: simplify the ratios')
 
 
-def _adjust_rows(config, graph, core):
+def _adjust_rows(config, graph, core) -> tuple:
     """Rows of the parameter editor -> the rows a real run can honour. Raises ProfileError with the reason."""
     rows = [row.model_copy() for row in config.parameters]
     try:
@@ -115,7 +115,7 @@ def _adjust_rows(config, graph, core):
     return adjusted, optimized, leaders
 
 
-def _checked_import(imported, name):
+def _checked_import(imported, name) -> tuple:
     """(netlist text, device mapping, core CDF readback) of an import a profile can be made from, or a plain refusal."""
     text = Path(imported['netlist_path']).read_text()
     # The verified models, and what was read from Virtuoso with the cell: every component of its PDK (pins as the PDK
@@ -178,7 +178,7 @@ def scaled_conditions_for(technology_library, supply_v):
     if not math.isfinite(supply) or supply <= 0:
         raise ProfileError(f'The testbench supply must be a positive number to scale the {technology_library} conditions; got {supply_v!r}')
 
-    def scaled(corner):
+    def scaled(corner) -> dict:
         return dict(corner, supply_v=round(float(corner['supply_v']) * supply, 9))
     policy = dict(template['model_policy'],
                   screening_supply_v_bounds=[round(float(b) * supply, 9) for b in template['model_policy']['screening_supply_v_bounds']])
@@ -188,7 +188,7 @@ def scaled_conditions_for(technology_library, supply_v):
     return out
 
 
-def largest_supply(graph):
+def largest_supply(graph) -> tuple:
     """(source name, supply net, dc) of the testbench's supply when the bench has several DC voltage sources: the one with
     the largest dc value, its minus terminal on ground; refused in words when none, or when two share the largest value."""
     roles = {}
@@ -232,7 +232,7 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
     return dict(entry=entry, rows=rows)
 
 
-def _compile_profile_rows(imported, config, graph, core, reference):
+def _compile_profile_rows(imported, config, graph, core, reference) -> tuple:
     """Adjust editor rows through the verified width or form writer and compile their graph contract."""
     facts, specs = _form_facts(imported), None
     try:                                              # the verified width writer, when it can do what the rows ask
@@ -257,7 +257,7 @@ def _compile_profile_rows(imported, config, graph, core, reference):
     return rows, optimized, facts, specs, compiled
 
 
-def _profile_devices(graph, reference, core, compiled):
+def _profile_devices(graph, reference, core, compiled) -> tuple:
     """Collect recorded instances and the writable ranges of mutable parameter-group members."""
     kinds = {device.id: device.kind for device in graph.devices}
     instances = [item['name'] for item in reference['instances']]
@@ -270,7 +270,7 @@ def _profile_devices(graph, reference, core, compiled):
     return instances, mos, writable
 
 
-def _profile_design(recipe, imported, expected_frequency_hz, graph, core):
+def _profile_design(recipe, imported, expected_frequency_hz, graph, core) -> tuple:
     """Build circuit-specific design metadata and net roles using the existing timing and supply checks."""
     design = dict(topology=f'generated:{recipe}', pdk_library=imported.get('technology_library'), library=imported['library'],
                   core_cell=imported['cell'], testbench_cell=imported['testbench_cell'])
@@ -306,7 +306,7 @@ def _profile_design(recipe, imported, expected_frequency_hz, graph, core):
     return design, net_roles
 
 
-def _check_profile_measurements(recipe, config):
+def _check_profile_measurements(recipe, config) -> None:
     """Reject backend-profile measurements that the selected circuit recipe does not provide."""
     available = recipes.provided_metrics(recipe)
     unknown = [f'{m.measurement_id} ({m.source_name})' for m in config.measurements
@@ -316,7 +316,7 @@ def _check_profile_measurements(recipe, config):
                            f'Available: {", ".join(available)}')
 
 
-def _write_profile_data(mapping, net_roles, compiled, staging, design, reference, imported):
+def _write_profile_data(mapping, net_roles, compiled, staging, design, reference, imported) -> None:
     """Persist the adjusted mapping, design, readback, and any supply-scaled conditions for the profile."""
     # No `value` in a group, as in the verified mappings: the parser takes it from the netlist it reads. A recorded value
     # made every export of a changed candidate fail its own graph check ("Binding/current value mismatch").
@@ -331,7 +331,7 @@ def _write_profile_data(mapping, net_roles, compiled, staging, design, reference
         write_json(staging / FILES['conditions'], conditions)
 
 
-def _write_profile_rules(specs, staging, recipe, core, mos, instances, writable, facts, reference, compiled):
+def _write_profile_rules(specs, staging, recipe, core, mos, instances, writable, facts, reference, compiled) -> None:
     """Write verified width rules or form-derived rules while retaining their existing refusal messages."""
     if specs is None:
         write_json(staging / FILES['rules'], dict(

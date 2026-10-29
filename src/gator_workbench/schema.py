@@ -59,7 +59,7 @@ def _without_retired(data, retired):
     return data
 
 
-def uniform_grid(candidates):
+def uniform_grid(candidates) -> tuple | None:
     """Return (lower, upper, step) when sorted unique candidates form a uniform grid, else None."""
     values = sorted(set(candidates))
     if len(values) < 2 or len(values) != len(candidates):
@@ -795,7 +795,7 @@ def _name_pattern(name):
     return re.compile(rf'(?<![A-Za-z0-9_.]){re.escape(name)}(?![A-Za-z0-9_])')
 
 
-def _equation_uses(text, name):
+def _equation_uses(text, name) -> bool:
     return isinstance(text, str) and bool(_name_pattern(name).search(text))
 
 
@@ -857,7 +857,7 @@ def _hashed(data):
         and _ONE_PROBE.match(row['equation']) else row for row in targets])
 
 
-def _hash_output_and_research(data):
+def _hash_output_and_research(data) -> None:
     """Preserve the historical identity defaults for output retention and research labels."""
     output = data.get('output') if isinstance(data, dict) else None
     if isinstance(output, dict) and output.get('keep_simulator_host_folders') is False:          # record 7.282

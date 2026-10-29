@@ -26,7 +26,7 @@ class BudgetLedger:
     """Track reserved and charged evaluations, simulator launches, retries, and feasibility milestones under a lock."""
     VERSION = 'budget-ledger-v1'
 
-    def __init__(self, max_evaluations, *, max_launches=None, max_retries=0):
+    def __init__(self, max_evaluations: int, *, max_launches: int | None=None, max_retries: int=0) -> None:
         if type(max_evaluations) is not int or max_evaluations < 1:
             raise ValueError('max_evaluations must be a positive integer')
         if max_launches is not None and (type(max_launches) is not int or max_launches < 1):
@@ -55,13 +55,13 @@ class BudgetLedger:
         with self._lock:
             return self.max_evaluations - self.charged - len(self._reserved)
 
-    def _launch_room(self, extra=0) -> bool:
+    def _launch_room(self, extra: int=0) -> bool:
         if self.max_launches is None:
             return True
         pending_first = sum(item['allowance'] for item in self._in_flight.values() if item['attempts'] == 0)
         return self.launches + self._launch_holds + pending_first + sum(self._reserved.values()) + extra <= self.max_launches
 
-    def reserve(self, evaluation_id=None, *, launches=1):
+    def reserve(self, evaluation_id=None, *, launches: int=1):
         """Reserve one evaluation before dispatch. Returns its ID, or None when exhausted."""
         with self._lock:
             if type(launches) is not int or launches < 1:
@@ -126,7 +126,7 @@ class BudgetLedger:
                 self.retries += 1
             return item['attempts']
 
-    def attempt_allowance(self, evaluation_id):
+    def attempt_allowance(self, evaluation_id) -> int:
         """Return the simulator-launch allowance of an active attempt or reject an inactive one."""
         with self._lock:
             item = self._in_flight[evaluation_id]
@@ -134,7 +134,7 @@ class BudgetLedger:
                 raise BudgetError('No active attempt allowance')
             return item['allowance']
 
-    def end_attempt(self, evaluation_id, *, launches: int, uncertain=0) -> None:
+    def end_attempt(self, evaluation_id, *, launches: int, uncertain: int=0) -> None:
         """Record how many simulator launches the attempt actually made (0 if it failed earlier)."""
         with self._lock:
             if type(launches) is not int or launches < 0:
@@ -152,7 +152,7 @@ class BudgetLedger:
             self.launches += launches
             self.uncertain_launches += uncertain
 
-    def complete(self, evaluation_id, *, failed=False, cache_hit=False) -> dict:
+    def complete(self, evaluation_id, *, failed: bool=False, cache_hit: bool=False) -> dict:
         """Finish an evaluation after all attempts settle and update completion, failure, and cache-hit counters."""
         with self._lock:
             item = self._in_flight.get(evaluation_id)
@@ -169,7 +169,7 @@ class BudgetLedger:
             return item
 
     # ------------------------------------------------------------------ first feasibility
-    def mark_first_feasible(self, evaluation_id, *, dispatch_index, commit_seq, active_seconds, wall_seconds, nominal=False):
+    def mark_first_feasible(self, evaluation_id, *, dispatch_index, commit_seq, active_seconds, wall_seconds, nominal: bool=False) -> dict | None:
         """Called when the scheduler RECEIVES a result and confirms every hard constraint.
 
         Primary convention: evaluations charged at that moment, INCLUDING those started and
@@ -194,7 +194,7 @@ class BudgetLedger:
             setattr(self, field, first)
             return deepcopy(first)
 
-    def restore_first_feasible(self, first, *, nominal=False) -> bool:
+    def restore_first_feasible(self, first, *, nominal: bool=False) -> bool:
         """After a crash: the first (nominally) feasible design was found after the last save point, so the restored
         ledger does not know it. `first`: its record as `mark_first_feasible` made it (the run's log), or as the
         evaluations table gives it. Never replaces one the ledger holds. True when taken."""
@@ -206,7 +206,7 @@ class BudgetLedger:
             return True
 
     # ------------------------------------------------------------------ views / persistence
-    def in_flight_ids(self):
+    def in_flight_ids(self) -> list:
         """Return a sorted snapshot of evaluation identifiers still in flight."""
         with self._lock:
             return sorted(self._in_flight)

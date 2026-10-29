@@ -18,7 +18,7 @@ class Vocabulary:
     """A loaded PDK's component list, as the learner uses it. Built from the `vocabulary` block of a record (or of a
     run's own copy), never from the live PDK folder: what a run used is fixed at its start."""
 
-    def __init__(self, block):
+    def __init__(self, block: dict) -> None:
         if not isinstance(block, dict) or block.get('format') != VOCABULARY_FORMAT:
             raise PdkError('Not a PDK component list')
         self.block = block
@@ -31,7 +31,7 @@ class Vocabulary:
         self.name = f'pdk:{self.pdk_id}'
 
     @property
-    def label(self):
+    def label(self) -> str:
         return label(self.block)
 
     def view_graph(self, graph):
@@ -101,7 +101,7 @@ def parameter_facts(record, model_ref, name):
 
 
 # ------------------------------------------------------------------------------------------ learner
-def learner_class(vocabulary):
+def learner_class(vocabulary) -> type:
     """The optimizer's own SACLearner, or - with a PDK list - a subclass whose only change is that the observations are
     shown to the network through the PDK's view. Weights, losses, saving and the contract are the package's own."""
     from analog_optimizer.training.sac import SACLearner
@@ -152,7 +152,7 @@ def run_vocabulary(run_dir) -> Vocabulary | None:
     return Vocabulary(block)
 
 
-def write_run_vocabulary(run_dir, vocabulary):
+def write_run_vocabulary(run_dir, vocabulary) -> None:
     """Persist a selected vocabulary's block in the run directory when one is present."""
     if vocabulary is not None:
         write_json(Path(run_dir) / RUN_FILE, vocabulary.block)

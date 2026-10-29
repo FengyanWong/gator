@@ -21,7 +21,7 @@ from .support import bridge_call, fail, load_runtime, validate_loaded
 COPY_REFUSED = ((working_copy.CopyError, virtuoso_setup.SetupError), 'refused')
 
 
-def _saved_cell(body):
+def _saved_cell(body) -> tuple | None:
     """(library, cell) a Save task writes: the working copy of the open task, else the cell being saved; None unknown."""
     entry = profile_store.profile_entry(body.task) if body.task else None
     if entry and entry.get('library') and entry.get('core_cell'):
@@ -29,7 +29,7 @@ def _saved_cell(body):
     return (body.library, body.cell) if body.library and body.cell else None
 
 
-def register(app: FastAPI, context: ApiContext):
+def register(app: FastAPI, context: ApiContext) -> None:
     """The task and circuit routes, registered in this order: the order of registration is the order of matching."""
     _task_routes(app, context)
     _virtuoso_cell_routes(app, context)
@@ -38,7 +38,7 @@ def register(app: FastAPI, context: ApiContext):
     _configuration_routes(app, context)
 
 
-def _task_routes(app: FastAPI, context: ApiContext):
+def _task_routes(app: FastAPI, context: ApiContext) -> None:
     """The task list, a task's starter configuration, Save task progress, the baseline, loading a circuit."""
     _register_task_list_route(app)
 
@@ -53,7 +53,7 @@ def _task_routes(app: FastAPI, context: ApiContext):
     _register_circuit_load_route(app, context)
 
 
-def _register_task_list_route(app):
+def _register_task_list_route(app) -> None:
     """Register the task list and real-backend contract endpoint."""
     # List available tasks together with the interface contract required for real backends.
     @app.get('/api/tasks')
@@ -61,7 +61,7 @@ def _register_task_list_route(app):
         return dict(tasks=tasks.list_tasks(), real_interface_contract=tasks.REAL_INTERFACE_CONTRACT)
 
 
-def _register_task_starter_route(app):
+def _register_task_starter_route(app) -> None:
     """Register the starter editor rows and saved-revision endpoint."""
     @app.get('/api/tasks/starter')
     def starter(task_key: str):
@@ -79,7 +79,7 @@ def _register_task_starter_route(app):
             fail(409, redact(f'The starting rows of {task_key} cannot be built: {type(exc).__name__}: {exc}', 600))
 
 
-def _register_task_rename_route(app):
+def _register_task_rename_route(app) -> None:
     """Register task display-name changes and their existing conflict responses."""
     @app.post('/api/tasks/rename')
     def rename_task(body: RenameTaskBody):
@@ -98,7 +98,7 @@ def _register_task_rename_route(app):
             fail(422, exc)
 
 
-def _register_task_save_status_route(app):
+def _register_task_save_status_route(app) -> None:
     """Register the in-memory Save task progress endpoint."""
     @app.get('/api/tasks/saving')
     def tasks_saving():
@@ -108,7 +108,7 @@ def _register_task_save_status_route(app):
         return task_saving.status()
 
 
-def _register_task_baseline_route(app, context):
+def _register_task_baseline_route(app, context) -> None:
     """Register the saved-task baseline request endpoint."""
     # Request the saved task baseline using its optional connection and output-root overrides.
     @app.post('/api/tasks/baseline')
@@ -117,7 +117,7 @@ def _register_task_baseline_route(app, context):
                                                 output_root=body.output_root))
 
 
-def _register_circuit_load_route(app, context):
+def _register_circuit_load_route(app, context) -> None:
     """Register circuit loading with saved baseline adoption and native-task details."""
     # Load circuit details and baseline status, adopting an existing completed baseline when eligible.
     @app.post('/api/circuit/load')
@@ -157,7 +157,7 @@ def _register_circuit_load_route(app, context):
                     training_capabilities=tasks.training_capabilities(runtime.task_key), **loaded_circuit(runtime), **native)
 
 
-def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
+def _virtuoso_cell_routes(app: FastAPI, context: ApiContext) -> None:
     """Browsing and reading Virtuoso cells, importing one, its reference and its deletion."""
     def _native(body, op):
         return bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, op, library=body.library, cell=body.cell,
@@ -225,7 +225,7 @@ def _virtuoso_cell_routes(app: FastAPI, context: ApiContext):
         return answer
 
 
-def _ngspice_routes(app: FastAPI, context: ApiContext):
+def _ngspice_routes(app: FastAPI, context: ApiContext) -> None:
     """ngspice decks: read, check, save as a task, read the task, delete it."""
     def _ngspice_kinds(body):
         try:
@@ -234,7 +234,7 @@ def _ngspice_routes(app: FastAPI, context: ApiContext):
         except ngspice_tasks.NgspiceTaskError as exc:
             fail(422, exc)
 
-    def _ngspice_source(path):
+    def _ngspice_source(path) -> str | None:
         """The file a deck was loaded from, for its relative includes: only a path under the input roots counts - the
         browser names no other file (it got this one from /api/ngspice/read)."""
         if not path or '\x00' in str(path):         # a NUL byte is no file (the OS refuses it with ValueError)
@@ -293,7 +293,7 @@ def _ngspice_routes(app: FastAPI, context: ApiContext):
         return answer
 
 
-def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
+def _virtuoso_task_routes(app: FastAPI, context: ApiContext) -> None:
     """A task's Virtuoso side: the copy refusal, the setup read, Save task, the task file, Check now."""
     _register_virtuoso_copy_route(app)
 
@@ -308,7 +308,7 @@ def _virtuoso_task_routes(app: FastAPI, context: ApiContext):
     _register_virtuoso_task_file_check_route(app)
 
 
-def _register_virtuoso_copy_route(app):
+def _register_virtuoso_copy_route(app) -> None:
     """Register the endpoint that explains why automatic cell copying is refused."""
     @app.post('/api/virtuoso/copy')
     def virtuoso_copy(body: CopyBody):
@@ -321,7 +321,7 @@ def _register_virtuoso_copy_route(app):
                   'is a copy you made and works in it.', code='copies_not_made')
 
 
-def _register_virtuoso_setup_read_route(app, context):
+def _register_virtuoso_setup_read_route(app, context) -> None:
     """Register the working-copy Maestro setup read and editor-comparison endpoint."""
     @app.post('/api/virtuoso/setup/read')
     def virtuoso_setup_read(body: SetupBody):
@@ -344,7 +344,7 @@ def _register_virtuoso_setup_read_route(app, context):
         return bridge_call(read, COPY_REFUSED)
 
 
-def _register_virtuoso_task_save_route(app, context):
+def _register_virtuoso_task_save_route(app, context) -> None:
     """Register saved-task writes and their baseline handoff through the existing session flow."""
     @app.post('/api/virtuoso/task/save')
     def virtuoso_task_save(body: TaskSaveBody):
@@ -397,7 +397,7 @@ def _register_virtuoso_task_save_route(app, context):
         return save.answer
 
 
-def _register_virtuoso_task_file_route(app, context):
+def _register_virtuoso_task_file_route(app, context) -> None:
     """Register rendering of the current editor rows as a task file."""
     @app.post('/api/virtuoso/task/file')
     def virtuoso_task_file(body: TaskFileBody):
@@ -412,7 +412,7 @@ def _register_virtuoso_task_file_route(app, context):
         return dict(text=task_files.render(data), name=name, revision=(saved or {}).get('revision', 0), saved=saved is not None)
 
 
-def _register_virtuoso_task_check_route(app, context):
+def _register_virtuoso_task_check_route(app, context) -> None:
     """Register the saved-task and working-copy consistency check endpoint."""
     @app.post('/api/virtuoso/task/check')
     def virtuoso_task_check(body: TaskCheckBody):
@@ -439,7 +439,7 @@ def _register_virtuoso_task_check_route(app, context):
         return result
 
 
-def _register_virtuoso_task_file_check_route(app):
+def _register_virtuoso_task_file_check_route(app) -> None:
     """Register parsing and validation of edited task-file text."""
     @app.post('/api/virtuoso/task/file/check')
     def virtuoso_task_file_check(body: TaskFileTextBody):
@@ -449,7 +449,7 @@ def _register_virtuoso_task_file_check_route(app):
         return dict(rows=rows, extras=extras, problems=problems, ok=not problems)
 
 
-def _configuration_routes(app: FastAPI, context: ApiContext):
+def _configuration_routes(app: FastAPI, context: ApiContext) -> None:
     """Validating and comparing a configuration, and Matched devices."""
     # Validate editor rows against the loaded task and return hashes, blockers and unsaved-row status.
     @app.post('/api/config/validate')

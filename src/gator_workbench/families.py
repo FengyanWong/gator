@@ -71,7 +71,7 @@ class FamilyList:
 
     name = NAME
 
-    def __init__(self, block):
+    def __init__(self, block: dict) -> None:
         if not isinstance(block, dict) or block.get('format') != FORMAT:
             raise ValueError('Not a family list')
         self.block, self.devices = block, block['devices']
@@ -79,7 +79,7 @@ class FamilyList:
         self.schema = schema()
 
     @property
-    def label(self):
+    def label(self) -> str:
         return f'device families ({len(KINDS) - 1} kinds)'
 
     def view_graph(self, graph):

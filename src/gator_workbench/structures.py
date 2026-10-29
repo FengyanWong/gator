@@ -44,7 +44,7 @@ class Structure:
         return dict(kind=self.kind, devices=list(self.devices), text=self.text)
 
 
-def _natural(text: str):
+def _natural(text: str) -> list:
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r'(\d+)', text)]
 
 
@@ -114,7 +114,7 @@ def recognize(graph) -> list:
     order = list(mos)
     structures, seen = [], set()
 
-    def add(kind, devices, text):
+    def add(kind, devices, text) -> None:
         key = (kind, tuple(devices))
         if key not in seen:
             seen.add(key)
@@ -160,7 +160,7 @@ def _find_seed_pairs(mos, order, diode, rails, on_net, kinds, add):
     return seeds
 
 
-def _follow_matched_branches(seeds, order, mos, diode, rails, add):
+def _follow_matched_branches(seeds, order, mos, diode, rails, add) -> None:
     """Extend each matched pair through its cascodes and loads in circuit order."""
     # Spread along the two branches of every matched pair.
     matched = {tuple(s[0]) for s in seeds}
@@ -182,7 +182,7 @@ def _follow_matched_branches(seeds, order, mos, diode, rails, add):
             _match_branch_partners(pair, left, right, c, kc, mc, pc, touching, mos, matched, add, work, diode, rails)
 
 
-def _match_branch_partners(pair, left, right, c, kc, mc, pc, touching, mos, matched, add, work, diode, rails):
+def _match_branch_partners(pair, left, right, c, kc, mc, pc, touching, mos, matched, add, work, diode, rails) -> None:
     """Record the matched cascodes or loads that continue the current pair's right branch."""
     for d in touching.get(right, ()):
         if d == c or c in pair or d in pair:
@@ -219,7 +219,7 @@ def _match_branch_partners(pair, left, right, c, kc, mc, pc, touching, mos, matc
                 work.append((found, (pc['source'], pd['source'])))
 
 
-def _add_bias_mirrors(structures, mos, diode, add):
+def _add_bias_mirrors(structures, mos, diode, add) -> None:
     """Add current mirrors that are not already represented by a matched load."""
     # Current mirrors: one gate, one source, a diode-connected reference. One that already is a load is not listed twice.
     loads = {frozenset(s.devices) for s in structures if s.kind == 'active_load'}

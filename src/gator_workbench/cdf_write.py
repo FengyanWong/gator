@@ -83,7 +83,7 @@ class Field:
     choices: tuple | None = None
 
     # Validate the field identity, editability rule, callback type, and numeric choices.
-    def check(self, where):
+    def check(self, where) -> None:
         if not NAME.match(self.instance or '') or not FIELD.match(self.cdf or ''):
             raise RulesError(f'{where}: invalid instance or form field name')
         if self.kind not in KINDS:
@@ -97,7 +97,7 @@ class Field:
 
     # Return the instance-qualified CDF field name.
     @property
-    def name(self):
+    def name(self) -> str:
         return f'{self.instance}.{self.cdf}'
 
     # Return the recorded choice spelling that represents the requested numeric value.
@@ -188,7 +188,7 @@ class Held:
 
 
 # ------------------------------------------------------------------------------------------ the SKILL of one candidate
-def _validated_form_procedures(item, targets):
+def _validated_form_procedures(item, targets) -> tuple:
     """Resolve and validate an instance's form procedures and target fields."""
     name, form = item['instance'], item.get('form') or {}
     init, done = form.get('init') or None, form.get('done') or None      # '' = the form has no such procedure (a second foundry PDK's CDF, 2026-10-09)
@@ -200,7 +200,7 @@ def _validated_form_procedures(item, targets):
             raise ValueError(f'{name}: invalid form field {field.name}')
     return name, init, done
 
-def _append_instance_transaction(name, init, done, targets, blocks):
+def _append_instance_transaction(name, init, done, targets, blocks) -> None:
     """Append one instance's guarded form transaction in initialization, callback and completion order."""
     lines = [f'inst = car(setof(x cv~>instances x~>name == {_skill_string(name)}))',
              f'unless(inst error("%s" {_skill_string(f"instance {name} not found")}))',
@@ -317,7 +317,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
     `GenericMosWidthProfile` generalized. Combined with a recipe class the recipe's deck and measurement stay its own."""
 
     def __init__(self, *, rules_file, design_file, mapping_file, reference_structure, reference_readback,
-                 conditions_file=None):
+                 conditions_file=None) -> None:
         rules = json.loads(Path(rules_file).read_text())
         if rules.get('format') != RULES_FORMAT:
             raise RulesError(f'Unknown rules format {rules.get("format")!r}')
@@ -330,7 +330,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
         self.instance_cells = {str(k): v for k, v in (rules.get('instances') or {}).items()}
         self.cells = dict(rules.get('cells') or {})
 
-        def field(item):
+        def field(item) -> Field:
             return Field(item['instance'], item['cdf'], item['kind'], item['rule'], item.get('callback'),
                          tuple(item['choices']) if item.get('choices') else None)
         self.writes = tuple(Write(w['device'], w['parameter'], field(w), float(w['lower']), float(w['upper']),
@@ -383,7 +383,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
     def _write(self, key):
         return self.writes[self.writable_keys.index(key)]
 
-    def _check_group_contract(self):
+    def _check_group_contract(self) -> None:
         seen = {}
         for group in self.graph.parameter_groups:
             if not group.mutable:
@@ -413,7 +413,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
 
     # ------------------------------------------------------------------ what the adapter calls
     # Require a complete legal parameter assignment that preserves every mutable group's fixed ratios.
-    def validate_assignment(self, parameters):
+    def validate_assignment(self, parameters) -> None:
         if set(parameters) != set(self.writable_keys):
             raise ValueError('A complete assignment of every writable parameter is required')
         for key, value in parameters.items():
@@ -426,7 +426,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
                 if any(not equal(shared[0], other) for other in shared[1:]):
                     raise ValueError(f'Group {group.id}: members no longer keep their fixed ratio')
 
-    def cdf_plan(self, parameters):
+    def cdf_plan(self, parameters) -> list:
         """{(device, parameter): value} -> the writer's plan: per written instance its requested and its held values."""
         order, plan = [], {}
         for w in self.writes:
@@ -441,10 +441,10 @@ class CdfWritableProfile(GenericMosWidthProfile):
                 plan[h.field.instance]['targets'].append((h.field, h.value))
         return [plan[name] for name in order]
 
-    def _internal(self, name):
+    def _internal(self, name) -> set:
         return set((self.cells.get(self.instance_cells.get(name)) or {}).get('internal') or ())
 
-    def _differences(self, name, a, b, keys=None, *, skip_internal=True):
+    def _differences(self, name, a, b, keys=None, *, skip_internal: bool=True) -> list:
         """The fields of instance `name` that differ between two readbacks. The form's own bookkeeping (fields it never
         shows) is left out where the form ran; an instance that is never opened is compared field for field."""
         keys = (set(a) | set(b)) if keys is None else set(keys)
@@ -494,7 +494,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
         return result
 
     # Verify requested values and reject stale derived geometry after a parameter write.
-    def verify_transition(self, before, after, expected):
+    def verify_transition(self, before, after, expected) -> None:
         actual = self.validate_readback(after)
         for key, value in expected.items():
             if not equal(actual[key], value):
@@ -507,7 +507,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
                     if key in a and key in b and same_value(a[key], b[key]):
                         raise ValueError(f'Stale derived geometry {name}.{key}')
 
-    def compare_written(self, snapshot, reference):
+    def compare_written(self, snapshot, reference) -> None:
         """Every field of every written instance as in `reference` (restoration, and the live cell at connect)."""
         a, b = self.instances(snapshot), self.instances(reference)
         for name in self.written_instances:
@@ -552,10 +552,10 @@ class CdfWritableProfile(GenericMosWidthProfile):
         return significant_digit_spelling(text)
 
     @property
-    def _derived_slots(self):
+    def _derived_slots(self) -> set:
         return {(instance, cdf) for (_, _), (instance, cdf) in self.derived.items()}
 
-    def render_export(self, template, snapshot):
+    def render_export(self, template, snapshot) -> str:
         """The export `snapshot` would give, built without Virtuoso from `template`, an export of this cell (record 7.140).
         The values a run changes - the written parameters and those the PDK callbacks derive - are the form's own text in
         `snapshot`, bracketed as in the template; every other value stays as the template has it, which `validate_export`
@@ -659,7 +659,7 @@ class CellLocked:
         if value:
             self.__dict__['_wrote'] = True
 
-    def connect(self):
+    def connect(self) -> None:
         """The adapter's own connect, holding the cell's lock from before it to after `close`."""
         config, circuit = getattr(self, 'config', None), getattr(self, 'circuit', None)
         if getattr(self, 'client', None) is None and self._cell_lock is None and config is not None and circuit is not None:
@@ -674,7 +674,7 @@ class CellLocked:
             raise
 
     # Restore the cell as needed, release its ownership lock, and try to release its edit lock safely.
-    def close(self):
+    def close(self) -> None:
         self._closing = True
         try:
             if getattr(self, 'client', None) is not None and self.__dict__.get('_wrote') and not self._dirty:
@@ -685,12 +685,12 @@ class CellLocked:
             self._release_cell()
 
     # Restore recorded values and, during closure, try to release the edit lock without discarding user edits.
-    def restore(self):
+    def restore(self) -> None:
         super().restore()
         if getattr(self, '_closing', False) and self.__dict__.get('_wrote') and not self._dirty:
             self._let_go_of_edit()
 
-    def _let_go_of_edit(self):
+    def _let_go_of_edit(self) -> None:
         """The cell back at its recorded sizes, this Virtuoso reopens it read-only (record 7.351): the form writer opened it
         for editing and Virtuoso kept it so - the simulation setup holds one more reference - and a cell held open for
         editing in one Virtuoso session cannot be written through another (`cell_hold`). Left as it is when it has unsaved
@@ -704,7 +704,7 @@ class CellLocked:
         except Exception:
             self.edit_lock_released = None
 
-    def _release_cell(self):
+    def _release_cell(self) -> None:
         lock, self._cell_lock = self._cell_lock, None
         if lock is not None:
             lock.close()
@@ -719,7 +719,7 @@ class CdfBridgeBackend(CellLocked, VirtuosoBridgeBackend):
         # Virtuoso on mscr_vco_lin_c, and every candidate reads the cell before and after its write (schematic_read).
         return read_cell(self.client, self.config.library, self.circuit.design['core_cell'])
 
-    def _write_widths(self, parameters):
+    def _write_widths(self, parameters) -> None:
         skill = write_skill(self.config.library, self.circuit.design['core_cell'], self.circuit.cdf_plan(parameters))
         if skill is None:
             return
@@ -727,7 +727,7 @@ class CdfBridgeBackend(CellLocked, VirtuosoBridgeBackend):
         if not result.ok or (result.output or '').strip() != 't':
             raise RuntimeError('The form write failed: ' + ('; '.join(str(e) for e in result.errors or []) or str(result.output)))
 
-    def _verify_restored(self, snapshot, reference):
+    def _verify_restored(self, snapshot, reference) -> None:
         self.circuit.validate_readback(snapshot)
         self.circuit.compare_written(snapshot, reference)
 

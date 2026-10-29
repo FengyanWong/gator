@@ -694,3 +694,4 @@ One row per commit, newest last.
 | `2a6dd42` | 10-29 13:50 | 7.394 | P8-start-directory: name the values that steps share |
 | `c3775ba` | 10-29 13:56 | 7.394 | P8-model-scan: name the values that steps share |
 | `f8dd00f` | 10-29 14:01 | 7.394 | P8-cdf-rules: name the values that steps share |
+| `7bd2115` | 10-29 15:35 | 7.395 | Add local NVIDIA Agent with verified lifecycle and undoable proposals |

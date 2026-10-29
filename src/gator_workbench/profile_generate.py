@@ -32,6 +32,7 @@ import math
 from pathlib import Path
 import re
 import shutil
+from typing import Any, NamedTuple
 
 from . import cdf_facts, cdf_rules, native_cells, pdk_record, recipes, units
 from .circuit_types import (MAESTRO, NEEDS_FREQUENCY, NeedsFrequency, OPAMP_NETS, RECIPES, core_instance, opamp_fit,
@@ -245,18 +246,27 @@ def write_profile_files(name, config, *, recipe, imported, staging, expected_fre
     (staging / FILES['structure']).write_text(text)
     graph = SpectreParser(ParserConfig.from_file(staging / FILES['mapping'])).parse_file(staging / FILES['structure'])
     core = core_instance(imported, graph)
-    rows, optimized, facts, specs, compiled = _compile_profile_rows(imported, config, graph, core, reference)
-    instances, mos, writable = _profile_devices(graph, reference, core, compiled)
+    profile_rows = _compile_profile_rows(imported, config, graph, core, reference)
+    devices = _profile_devices(graph, reference, core, profile_rows.compiled)
     design, net_roles = _profile_design(recipe, imported, expected_frequency_hz, graph, core)
     _check_profile_measurements(recipe, config)
-    _write_profile_data(mapping, net_roles, compiled, staging, design, reference, imported)
-    _write_profile_rules(specs, staging, recipe, core, mos, instances, writable, facts, reference, compiled)
-    entry = _write_profile_entry(
-        staging, imported, design, recipe, config, name, core, optimized, specs, entry_extra)
-    return dict(entry=entry, rows=rows)
+    profile = _NewProfile(name, recipe, imported, staging)
+    _write_profile_data(profile, mapping, net_roles, profile_rows.compiled, design, reference)
+    _write_profile_rules(profile, core, reference, profile_rows, devices)
+    entry = _write_profile_entry(profile, config, core, design, profile_rows, entry_extra)
+    return dict(entry=entry, rows=profile_rows.rows)
 
 
-def _compile_profile_rows(imported, config, graph, core, reference) -> tuple:
+class _ProfileRows(NamedTuple):
+    """The adjusted editor rows with their optimized leaders, form facts, form specs and compiled graph."""
+    rows: list
+    optimized: set
+    facts: dict | None
+    specs: dict | None
+    compiled: Any
+
+
+def _compile_profile_rows(imported, config, graph, core, reference) -> _ProfileRows:
     """Adjust editor rows through the verified width or form writer and compile their graph contract."""
     facts, specs = _form_facts(imported), None
     try:                                              # the verified width writer, when it can do what the rows ask
@@ -280,10 +290,17 @@ def _compile_profile_rows(imported, config, graph, core, reference) -> tuple:
         compiled, _ = build_graph(adjusted, graph)
     except (CompileError, ValueError) as exc:
         raise ProfileError(str(exc))
-    return rows, optimized, facts, specs, compiled
+    return _ProfileRows(rows, optimized, facts, specs, compiled)
 
 
-def _profile_devices(graph, reference, core, compiled) -> tuple:
+class _ProfileDevices(NamedTuple):
+    """The core cell's recorded instances, its transistors and the writable range of each varied instance."""
+    instances: list
+    mos: list
+    writable: dict
+
+
+def _profile_devices(graph, reference, core, compiled) -> _ProfileDevices:
     """Collect recorded instances and the writable ranges of mutable parameter-group members."""
     kinds = {device.id: device.kind for device in graph.devices}
     instances = [item['name'] for item in reference['instances']]
@@ -293,7 +310,7 @@ def _profile_devices(graph, reference, core, compiled) -> tuple:
         if group.mutable:
             for member in group.members:
                 writable[member.device_id.split('/')[1]] = (group.lower * member.ratio, group.upper * member.ratio)
-    return instances, mos, writable
+    return _ProfileDevices(instances, mos, writable)
 
 
 def _profile_design(recipe, imported, expected_frequency_hz, graph, core) -> tuple:
@@ -345,7 +362,15 @@ def _check_profile_measurements(recipe, config) -> None:
                            f'Available: {", ".join(available)}')
 
 
-def _write_profile_data(mapping, net_roles, compiled, staging, design, reference, imported) -> None:
+class _NewProfile(NamedTuple):
+    """The profile being written: its name, circuit type, source cell import and staging folder."""
+    name: str
+    recipe: str
+    imported: dict
+    staging: Path
+
+
+def _write_profile_data(profile, mapping, net_roles, compiled, design, reference) -> None:
     """Persist the adjusted mapping, design, readback, and any supply-scaled conditions for the profile."""
     # No `value` in a group, as in the verified mappings: the parser takes it from the netlist it reads. A recorded
     # value made every export of a changed candidate fail its own graph check ("Binding/current value mismatch").
@@ -353,33 +378,34 @@ def _write_profile_data(mapping, net_roles, compiled, staging, design, reference
                    parameter_groups=[dict({k: v for k, v in asdict(group).items() if k != 'value'},
                        members=[asdict(m) for m in group.members])
                                      for group in compiled.parameter_groups])
-    write_json(staging / FILES['mapping'], mapping)
-    write_json(staging / FILES['design'], design)
-    write_json(staging / FILES['readback'], reference)
-    conditions = scaled_conditions_for(imported.get('technology_library'), design['supply_v'])
+    write_json(profile.staging / FILES['mapping'], mapping)
+    write_json(profile.staging / FILES['design'], design)
+    write_json(profile.staging / FILES['readback'], reference)
+    conditions = scaled_conditions_for(profile.imported.get('technology_library'), design['supply_v'])
     if conditions is not None:                        # the task's own PVT conditions: a PDK with a relative template
-        write_json(staging / FILES['conditions'], conditions)
+        write_json(profile.staging / FILES['conditions'], conditions)
 
 
-def _write_profile_rules(specs, staging, recipe, core, mos, instances, writable, facts, reference, compiled) -> None:
+def _write_profile_rules(profile, core, reference, profile_rows, devices) -> None:
     """Write verified width rules or form-derived rules while retaining their existing refusal messages."""
-    if specs is None:
-        write_json(staging / FILES['rules'], dict(
-            format=RULES_FORMAT, recipe=recipe, core_instance=core, width_step=VERIFIED_WIDTH_STEP, mos_instances=mos,
-            fixed_instances=[n for n in instances if n not in mos],
-            writable=[dict(instance=n, lower=lo, upper=hi) for n, (lo, hi) in writable.items()]))
+    if profile_rows.specs is None:
+        write_json(profile.staging / FILES['rules'], dict(
+            format=RULES_FORMAT, recipe=profile.recipe, core_instance=core, width_step=VERIFIED_WIDTH_STEP,
+            mos_instances=devices.mos, fixed_instances=[n for n in devices.instances if n not in devices.mos],
+            writable=[dict(instance=n, lower=lo, upper=hi) for n, (lo, hi) in devices.writable.items()]))
     else:
         try:
-            rules = cdf_rules.rules_v2(recipe=recipe, core=core, facts=facts, reference=reference, compiled=compiled,
-                specs=specs)
+            rules = cdf_rules.rules_v2(recipe=profile.recipe, core=core, facts=profile_rows.facts,
+                reference=reference, compiled=profile_rows.compiled, specs=profile_rows.specs)
         except cdf_rules.RowError as exc:
             raise ProfileError(str(exc)) from None
-        write_json(staging / FILES['rules'], dict(rules, mos_instances=mos))
+        write_json(profile.staging / FILES['rules'], dict(rules, mos_instances=devices.mos))
 
 
-def _write_profile_entry(staging, imported, design, recipe, config, name, core, optimized, specs, entry_extra):
+def _write_profile_entry(profile, config, core, design, profile_rows, entry_extra):
     """Write the creation receipt and registry entry for the generated profile."""
-    write_json(staging / FILES['receipt'], dict(
+    imported, recipe = profile.imported, profile.recipe
+    write_json(profile.staging / FILES['receipt'], dict(
         library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'],
         config=design,
         receipt_recorded_at=utcnow().isoformat(), source_netlist_sha256=imported['netlist_sha256'],
@@ -389,16 +415,18 @@ def _write_profile_entry(staging, imported, design, recipe, config, name, core, 
             'create the cell.'))
     circuit_class = RECIPES[recipe]['circuit_class'] if recipe in RECIPES else (
         config.circuit.circuit_class or 'unspecified')
-    entry = dict(format=FORMAT, name=name, task_key=f'real:{name}', recipe=recipe, circuit_class=circuit_class,
+    entry = dict(format=FORMAT, name=profile.name, task_key=f'real:{profile.name}', recipe=recipe,
+                 circuit_class=circuit_class,
                  library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'],
                  core_instance=core,
                  pdk_id=imported.get('technology_library') or 'unspecified', created_utc=utcnow().isoformat(),
-                 provided_metrics=list(recipes.provided_metrics(recipe)), optimized_variables=sorted(optimized),
-                 writer='widths' if specs is None else 'form',
+                 provided_metrics=list(recipes.provided_metrics(recipe)),
+                 optimized_variables=sorted(profile_rows.optimized),
+                 writer='widths' if profile_rows.specs is None else 'form',
                  spec_registry=recipes.spec_registry(recipe, design) if recipe in RECIPES else None,
                  status='unverified: no real baseline simulation has been recorded for this profile yet')
     entry.update(entry_extra or {})                   # what the task adds: its cells, copy, revision, measurement
-    write_json(staging / FILES['entry'], entry)
+    write_json(profile.staging / FILES['entry'], entry)
     return entry
 
 

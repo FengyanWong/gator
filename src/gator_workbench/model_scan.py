@@ -311,12 +311,7 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
                         family_basis=f'subcircuit {name} ({file_line(subckt)}) holds {len(cores)} {wanted} elements')
     if len(subckt['pins']) < 2:
         return dict(family='other', polarity=None, core=None, family_basis=f'subcircuit {name} has fewer than two pins')
-    paths = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]))
-    on_path = {family for path in paths for family in path}
-    candidates = on_path & set(PASSIVE)
-    declared = {CDF_UNITS.get(u) for u in cdf_units}
-    by_unit = {'ohm': 'resistor', 'F': 'capacitor', 'H': 'inductor'}
-    where = f'subcircuit {name} ({file_line(subckt)})'
+    paths, on_path, candidates, declared, by_unit, where = _passive_path_evidence(subckt, scan, cdf_units, name)
     if not paths:
         # Only behavioural sources may join them (a diffusion resistor modelled as a chain of `bsource` segments): that
         # names a family only when the cell's own CDF declares exactly one passive quantity (record 7.298).
@@ -357,6 +352,17 @@ def classify_model(name, scan, *, cdf_units=(), depth=0):
                     family_basis=f"{where}: an inductor lies between its first two pins (with {', '.join(sorted(candidates - {'inductor'})) or 'nothing else'})")
     return dict(family='other', polarity=None, core=None,
                 family_basis=f"{where}: {', '.join(sorted(on_path)) or 'nothing'} between its first two pins - not classified")
+
+
+def _passive_path_evidence(subckt, scan, cdf_units, name):
+    """Collect terminal-path families, declared passive units and the source description for classification."""
+    paths = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]))
+    on_path = {family for path in paths for family in path}
+    candidates = on_path & set(PASSIVE)
+    declared = {CDF_UNITS.get(u) for u in cdf_units}
+    by_unit = {'ohm': 'resistor', 'F': 'capacitor', 'H': 'inductor'}
+    where = f'subcircuit {name} ({file_line(subckt)})'
+    return paths, on_path, candidates, declared, by_unit, where
 
 
 def pin_roles(name, found, scan):

@@ -185,6 +185,26 @@ def strip_comment(line):
     return line
 
 
+def _scan_spice_token(line, i, n):
+    """Find the end and starting offset of a token while respecting quotes and brackets."""
+    start, depth, quote = i, 0, None
+    while i < n:
+        char = line[i]
+        if quote:
+            if char == quote:
+                quote = None
+        elif char in "'\"":
+            quote = char
+        elif char in '{(':
+            depth += 1
+        elif char in '})':
+            depth -= 1
+        elif char in ' \t,' and depth <= 0:
+            break
+        i += 1
+    return i, start
+
+
 def tokenize(line, line_number):
     """Tokens of one physical line: split on blanks and commas outside quotes and brackets, then `a = b` joined to `a=b`
     (SPICE allows the spaces). Each token remembers its place, so a value can be replaced in the deck later."""
@@ -193,21 +213,7 @@ def tokenize(line, line_number):
         if line[i] in ' \t,':
             i += 1
             continue
-        start, depth, quote = i, 0, None
-        while i < n:
-            char = line[i]
-            if quote:
-                if char == quote:
-                    quote = None
-            elif char in "'\"":
-                quote = char
-            elif char in '{(':
-                depth += 1
-            elif char in '})':
-                depth -= 1
-            elif char in ' \t,' and depth <= 0:
-                break
-            i += 1
+        i, start = _scan_spice_token(line, i, n)
         raw.append(Token(line[start:i], line_number, start))
     tokens = []
     for token in raw:

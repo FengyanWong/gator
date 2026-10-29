@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 
 # ------------------------------------------------------------------------------------------ what the families are
@@ -99,12 +100,21 @@ def _define(into, name, item, models, subckts, duplicates) -> None:
         into[name] = item
 
 
+class _FileScan(NamedTuple):
+    """One model file being scanned: its path, and the models, subcircuits and repeated names found in it so far."""
+    file: str                                    # the path each definition records
+    models: dict                                 # name -> model defined outside any subcircuit
+    subckts: dict                                # name -> subcircuit
+    duplicates: list                             # a name defined again, and where (`_define`)
+
+
 def scan_model_text(text, file) -> dict:
     """Top-level definitions of one Spectre model file: {'models': {name: {...}}, 'subckts': {name: {...}}}.
     Only what classifying a device needs is kept: a model's primitive and `type`; a subcircuit's pins, parameters,
     elements (name, nodes, master, which of r/c/q/l they set) and its own local models. Model parameter blocks
     `{ ... }` (binned BSIM cards, thousands of lines) are skipped except for their `type=`."""
     models, subckts, duplicates = {}, {}, []
+    file_scan = _FileScan(file, models, subckts, duplicates)  # the same file and tables, for the SPICE statements
     scope, brace, brace_model, language = None, 0, None, 'spectre'
     for number, line in _logical_lines(text):
         if brace:
@@ -126,7 +136,7 @@ def scan_model_text(text, file) -> dict:
                 language = found.group(1).lower()
             continue
         if language == 'spice':
-            scope = _spice_statement(words, line, number, file, scope, models, subckts, duplicates)
+            scope = _spice_statement(words, line, number, scope, file_scan)
             continue
         if head in ('inline', 'subckt') and (head == 'subckt' or (len(words) > 1 and words[1].lower() == 'subckt')):
             inline = head == 'inline'
@@ -177,15 +187,15 @@ def scan_model_text(text, file) -> dict:
     return dict(models=models, subckts=subckts, duplicates=duplicates)
 
 
-def _spice_statement(words, line, number, file, scope, models, subckts, duplicates):
+def _spice_statement(words, line, number, scope, file_scan):
     """The few SPICE statements a model file may switch to: .subckt/.ends/.model and element lines inside a .subckt."""
     head = words[0].lower() if words else ''
     if head == '.subckt' and len(words) >= 2:
         pins = [w for w in words[2:] if '=' not in w and w.lower() != 'params:']
-        scope = dict(name=words[1], inline=False, pins=pins, parameters=_assignments(line.split(None,
-            2)[2] if len(words) > 2 else ''),
-                     elements=[], models={}, file=file, line=number)
-        _define(subckts, words[1], scope, models, subckts, duplicates)
+        scope = dict(name=words[1], inline=False, pins=pins,
+                     parameters=_assignments(line.split(None, 2)[2] if len(words) > 2 else ''),
+                     elements=[], models={}, file=file_scan.file, line=number)
+        _define(file_scan.subckts, words[1], scope, file_scan.models, file_scan.subckts, file_scan.duplicates)
         return scope
     if head == '.ends':
         return None
@@ -194,9 +204,9 @@ def _spice_statement(words, line, number, file, scope, models, subckts, duplicat
         primitive = {'nmos': 'bsim4', 'pmos': 'bsim4', 'npn': 'bjt', 'pnp': 'bjt', 'd': 'diode', 'r': 'resistor',
                      'c': 'capacitor', 'l': 'inductor'}.get(primitive, primitive)
         kind = words[2].split('(')[0].lower()
-        model = dict(name=words[1], primitive=primitive, file=file, line=number,
+        model = dict(name=words[1], primitive=primitive, file=file_scan.file, line=number,
                      type={'nmos': 'n', 'pmos': 'p', 'npn': 'npn', 'pnp': 'pnp'}.get(kind))
-        (scope['models'] if scope is not None else models).setdefault(words[1], model)
+        (scope['models'] if scope is not None else file_scan.models).setdefault(words[1], model)
         return scope
     if scope is not None and words and words[0][:1].isalpha():
         letter = words[0][0].lower()

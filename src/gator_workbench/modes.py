@@ -16,6 +16,7 @@ A compatibility failure raises; nothing here ever falls back to scratch.
 from __future__ import annotations
 
 import random
+from typing import Any, NamedTuple
 
 from . import checkpoints as ckpt, model_inputs, network_inputs
 from .compile import reward_settings, training_conditions
@@ -109,7 +110,6 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
     import torch
     seed_everything(seed)
     policy = dict(mode=mode, source_checkpoint=None, loaded=[], reset=[], frozen_modules=[], notes=[])
-    freeze = None
     if mode == 'scratch':
         learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime, view)
         replay = ReplayBuffer(advanced.replay_capacity, origin=origin, seed=seed)
@@ -118,20 +118,18 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
         policy['notes'].append('Random initialization; no weights loaded.')
         return dict(learner=learner, replay=replay, run_state=None, policy=policy, freeze=None)
 
-    contract = _verify_source_checkpoint(
-        source_dir, source_metadata, mode, experiment, model_config, sac_config, spec_schema, vocabulary, runtime,
-        task_definition_hash, policy)
+    settings = _LearnerSettings(experiment, model_config, sac_config, spec_schema, advanced, vocabulary, runtime, view)
+    verified = _verify_source_checkpoint(source_dir, source_metadata, mode, settings, task_definition_hash, policy)
 
     if mode == 'resume':
-        learner, replay, run_state = _resume_training_state(
-            vocabulary, runtime, view, source_dir, experiment, model_config, sac_config, spec_schema, policy)
-        return dict(learner=learner, replay=replay, run_state=run_state, policy=policy, freeze=None)
+        restored = _resume_training_state(settings, source_dir, policy)
+        return dict(learner=restored.learner, replay=restored.replay, run_state=restored.run_state, policy=policy,
+                    freeze=None)
 
     weights = ckpt.load_weights(source_dir)
     learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime, view)
     if mode == 'fine_tune':
-        freeze = _transfer_fine_tune_weights(
-            advanced, learner, weights, policy, source_metadata, contract, sac_config, torch, experiment, freeze)
+        freeze = _transfer_fine_tune_weights(learner, weights, verified, settings, torch, policy)
         replay = ReplayBuffer(advanced.replay_capacity, origin=origin, seed=seed)
         return dict(learner=learner, replay=replay, run_state=None, policy=policy, freeze=freeze)
 
@@ -141,9 +139,26 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
     raise ValueError(f'Unknown mode {mode!r}')
 
 
+class _LearnerSettings(NamedTuple):
+    """The learner settings build was given: what a learner is built from and how weights transfer."""
+    experiment: dict
+    model_config: Any
+    sac_config: Any
+    spec_schema: Any
+    advanced: Any
+    vocabulary: Any
+    runtime: dict | None
+    view: Any
+
+
+class _VerifiedSource(NamedTuple):
+    """A source checkpoint's metadata and the current learner contract it was verified against."""
+    source_metadata: dict
+    contract: dict
+
+
 def _verify_source_checkpoint(
-    source_dir, source_metadata, mode, experiment, model_config, sac_config, spec_schema, vocabulary, runtime,
-    task_definition_hash, policy):
+    source_dir, source_metadata, mode, settings, task_definition_hash, policy) -> _VerifiedSource:
     """Verify source checkpoint files and compatibility, recording its identity before refusing an incompatible load."""
     if source_dir is None or source_metadata is None:
         raise ValueError(f'mode={mode} requires a source checkpoint')
@@ -151,7 +166,8 @@ def _verify_source_checkpoint(
     if problems:
         raise ckpt.CheckpointIncompatible(dict(checks=[dict(component='checkpoint files', status='incompatible',
                                                             detail='; '.join(problems))]))
-    contract = current_contract(experiment, model_config, sac_config, spec_schema, vocabulary, runtime)
+    contract = current_contract(settings.experiment, settings.model_config, settings.sac_config, settings.spec_schema,
+                                settings.vocabulary, settings.runtime)
     report = ckpt.check_compatibility(source_metadata, mode=mode, task_definition_hash=task_definition_hash,
                                       contract=contract)
     policy.update(source_checkpoint=dict(checkpoint_id=source_metadata['checkpoint_id'], path=str(source_dir),
@@ -161,37 +177,42 @@ def _verify_source_checkpoint(
                   compatibility=report)
     if not report['compatible']:
         raise ckpt.CheckpointIncompatible(report)
-    return contract
+    return _VerifiedSource(source_metadata, contract)
 
 
-def _resume_training_state(
-    vocabulary, runtime, view, source_dir, experiment, model_config, sac_config, spec_schema, policy) -> tuple:
+class _TrainingState(NamedTuple):
+    """The learner, replay buffer and run state restored from a full training-state checkpoint."""
+    learner: Any
+    replay: Any
+    run_state: dict
+
+
+def _resume_training_state(settings, source_dir, policy) -> _TrainingState:
     """Restore the complete learner and replay state and record that existing run counters are retained."""
-    options = model_inputs.learner_options(vocabulary, runtime)
-    learner, replay, run_state = network_inputs.learner_class(vocabulary, view).load(
-        source_dir / 'training_state.pt', experiment=experiment, model_config=model_config,
-        config=sac_config, spec_schema=spec_schema, **options)
+    options = model_inputs.learner_options(settings.vocabulary, settings.runtime)
+    learner, replay, run_state = network_inputs.learner_class(settings.vocabulary, settings.view).load(
+        source_dir / 'training_state.pt', experiment=settings.experiment, model_config=settings.model_config,
+        config=settings.sac_config, spec_schema=settings.spec_schema, **options)
     policy['loaded'] = list(ckpt.FULL_COMPONENTS)
     policy['notes'].append('Full training state restored; existing counters are retained.')
-    return learner, replay, run_state
+    return _TrainingState(learner, replay, run_state)
 
 
-def _transfer_fine_tune_weights(
-    advanced, learner, weights, policy, source_metadata, contract, sac_config, torch, experiment, freeze):
+def _transfer_fine_tune_weights(learner, weights, verified, settings, torch, policy):
     """Transfer compatible weights and apply the configured critic, temperature, and encoder-freeze policies."""
-    only_encoder = advanced.encoder_only_transfer
+    only_encoder = settings.advanced.encoder_only_transfer
     learner.actor.load_state_dict(_encoder_state(weights['actor'], only_encoder=only_encoder),
                                   strict=not only_encoder)
     policy['loaded'].append('actor.encoder' if only_encoder else 'actor (encoder + head)')
     if only_encoder:
         policy['reset'].append('actor.head (random)')
-    changed_reward = any(source_metadata['contract'].get(key) != contract.get(key) for key in (
+    changed_reward = any(verified.source_metadata['contract'].get(key) != verified.contract.get(key) for key in (
         'reward_version', 'reward_settings', 'clearance_rule', 'failure_policy', 'condition_policy',
         'planned_conditions'))
     if changed_reward:
         policy['notes'].append(
             'Reward or condition contract changed: actor transfer only; critics/targets, replay and optimizers reset.')
-    if advanced.reset_critic or changed_reward:
+    if settings.advanced.reset_critic or changed_reward:
         policy['reset'] += ['critics (random)', 'target_networks (copy of the new critics)']
     else:
         learner.critics.load_state_dict(_encoder_state(weights['critics'], only_encoder=only_encoder),
@@ -202,8 +223,8 @@ def _transfer_fine_tune_weights(
             'twin critics', 'target_networks']
         if only_encoder:
             policy['reset'] += ['critic heads (random)', 'target heads (random)']
-    if advanced.reset_temperature:
-        policy['reset'].append(f'temperature (initial_alpha={sac_config.initial_alpha})')
+    if settings.advanced.reset_temperature:
+        policy['reset'].append(f'temperature (initial_alpha={settings.sac_config.initial_alpha})')
     else:
         with torch.no_grad():
             learner.log_alpha.copy_(weights['log_alpha'])
@@ -212,10 +233,11 @@ def _transfer_fine_tune_weights(
                         'task_counters (new)']
     policy['notes'] += ['Preprocessing/normalization definitions are fixed references and unchanged.',
                         ('Pinned source training transitions are mixed with target replay in each update; '
-                         'target replay itself starts empty.' if experiment.get('rehearsal') else
+                         'target replay itself starts empty.' if settings.experiment.get('rehearsal') else
                          'No source replay data and no source-task dimensions are mixed in.'),
                         'The source checkpoint was opened read-only; this is a new run with a parent.']
-    if advanced.freeze_encoder:
+    freeze = None
+    if settings.advanced.freeze_encoder:
         freeze = EncoderFreeze(learner)
         freeze.apply()
         policy['frozen_modules'] = ['actor.encoder', 'critics[0].encoder', 'critics[1].encoder']

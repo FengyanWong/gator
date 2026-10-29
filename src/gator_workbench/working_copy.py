@@ -468,10 +468,10 @@ def _request_dir(target) -> Path:
     return directory
 
 
-def _run_setup(op, profile_id, target, request, *, command=None):
+def _run_setup(operation, profile_id, target, request, *, command=None):
     out = _request_dir(target)
     (out / 'request.json').write_text(json.dumps(request, indent=1))
-    answer = bridge_setup.run(profile_id, op, args=['--library', target['original']['library'], '--cell', target['copy']['cell'],
+    answer = bridge_setup.run(profile_id, operation, args=['--library', target['original']['library'], '--cell', target['copy']['cell'],
                                                      '--testbench', target['copy']['testbench'], '--copy-library', target['copy']['library'],
                                                      '--request', str(out / 'request.json')],
                               output=out, command=command, timeout=300.0)

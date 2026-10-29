@@ -695,3 +695,4 @@ One row per commit, newest last.
 | `c3775ba` | 10-29 13:56 | 7.394 | P8-model-scan: name the values that steps share |
 | `f8dd00f` | 10-29 14:01 | 7.394 | P8-cdf-rules: name the values that steps share |
 | `7bd2115` | 10-29 15:35 | 7.395 | Add local NVIDIA Agent with verified lifecycle and undoable proposals |
+| `d5a2126` | 10-29 15:43 | 7.396 | Integrate verified local Bolt 74B profile on 74B-latest |

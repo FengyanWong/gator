@@ -507,3 +507,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.437 | The readability plan carried out on codex/latest by Claude: P2-P7 (51 packages, Codex's frozen proofs plus ngspice and evidence gates), the P1 docstrings revised (85 of 319) and P8 (16 hand-written packages bundling wide parameter lists); workbench functions of 80+ lines 27 -> 11, with 8+ parameters 22 -> 20; not landed or pushed |
 | 7.438 | `codex/latest` landed on `workbench`: readability P2-P8, Agent-window removal, archive steps; its 7.390-7.394 renumbered 7.434-7.437 |
 | 7.439 | Model scan: a subcircuit that places itself stops at the nesting limit instead of recursing until RecursionError |
+| 7.440 | Live again: page built, 8765 restarted, workbench pushed to GitHub, eight merged branches deleted |

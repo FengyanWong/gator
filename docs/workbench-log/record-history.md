@@ -697,3 +697,4 @@ One row per commit, newest last.
 | `88133e0` | 10-29 14:42 | 7.390-7.433 | Records 7.390-7.433 as written in the live checkout: the readability plan, Codex's seed-0 campaign and M0, and the log rollovers |
 | `0e6802f` | 10-29 16:00 | 7.438 | Land codex/latest on workbench: the readability plan, the Agent-window removal and the archive-comparison steps (record 7.438) |
 | `22c1a69` | 10-29 16:04 | 7.438 | Record: workbench fast-forwarded to the landing merge 0e6802f (record 7.438), and its table row |
+| `6288fbc` | 10-29 16:29 | 7.439 | Model scan: a subcircuit that places itself stops at the nesting limit (record 7.439) |

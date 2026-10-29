@@ -16,6 +16,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+from typing import NamedTuple
 from uuid import uuid4
 
 from . import (CONFIG_SCHEMA_VERSION, OUTPUT_LAYOUT_VERSION, caches, calibration, checkpoints as ckpt, connection,
@@ -319,18 +320,14 @@ def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real: bool
         _record_resume_consistency(consistency, manifest, layout)
         return layout, manifest
     output_root, data_root = _prepare_data_root(config, roots, task)
-    vocabulary, source_manifest, source_model, parent = _source_model(config, roots, task, task_hash, compiled,
-                                                                      confirm_transfer)
+    source = _Source(*_source_model(config, roots, task, task_hash, compiled, confirm_transfer))
     if before_write is not None:
         before_write()
-    experiment_dir, experiment_id, created, layout, run_id, config = _create_run_layout(
-        data_root, config, vocabulary, roots, output_root)
-    manifest, now = _new_run_manifest(
-        config, source_manifest, compiled, experiment_id, run_id, task_hash, task, vocabulary, source_model,
-        parent, gate, consistency, allow_real, provenance, data_root, experiment_dir, layout)
-    _persist_prepared_run(
-        manifest, layout, task, compiled, config, run_id, now, experiment_dir, created, remember_concurrency)
-    return layout, manifest
+    new_run = _create_run_layout(data_root, config, source.vocabulary, roots, output_root)
+    start = _CheckedStart(task, compiled, task_hash, gate, consistency, allow_real, provenance)
+    manifest, now = _new_run_manifest(start, source, new_run, data_root)
+    _persist_prepared_run(manifest, now, start, new_run, remember_concurrency)
+    return new_run.layout, manifest
 
 
 def _record_resume_consistency(consistency, manifest, layout) -> None:
@@ -355,7 +352,17 @@ def _prepare_data_root(config, roots, task) -> tuple:
     return output_root, data_root
 
 
-def _create_run_layout(data_root, config, vocabulary, roots, output_root) -> tuple:
+class _NewRun(NamedTuple):
+    """A new run's experiment and run folders, their identifiers, and the configuration that names them."""
+    experiment_dir: Path
+    experiment_id: str
+    created: bool                   # the experiment folder was made now (False: the run joins an existing one)
+    layout: RunLayout
+    run_id: str
+    config: WorkbenchConfig         # a copy with the resolved output root and experiment id
+
+
+def _create_run_layout(data_root, config, vocabulary, roots, output_root) -> _NewRun:
     (
         'Create the run directory, persist its network inputs, and copy the configuration with resolved output '
         'identifiers.'
@@ -370,14 +377,32 @@ def _create_run_layout(data_root, config, vocabulary, roots, output_root) -> tup
         write_json(layout.run_dir / network_inputs.RUN_FILE, inputs_record)
     config = config.model_copy(deep=True)
     config.output.output_root, config.output.experiment_id = str(roots.resolve(output_root)), experiment_id
-    return experiment_dir, experiment_id, created, layout, run_id, config
+    return _NewRun(experiment_dir, experiment_id, created, layout, run_id, config)
 
 
-def _new_run_manifest(
-    config, source_manifest, compiled, experiment_id, run_id, task_hash, task, vocabulary, source_model, parent,
-    gate, consistency, allow_real, provenance, data_root, experiment_dir, layout) -> tuple:
+class _CheckedStart(NamedTuple):
+    """A start past every refusal: its task, compiled task and hash, checks, authorization and code facts."""
+    task: object
+    compiled: object
+    task_hash: str
+    gate: dict
+    consistency: dict | None
+    allow_real: bool
+    provenance: Future              # code_provenance(), read in a thread of its own while the connection is checked
+
+
+class _Source(NamedTuple):
+    """The component list a new run uses and the model it starts from, as _source_model checks them."""
+    vocabulary: object
+    source_manifest: dict | None
+    source_model: dict              # the source_model block of the new manifest
+    parent: dict | None
+
+
+def _new_run_manifest(start, source, new_run, data_root) -> tuple:
     """Construct the initial run manifest with source lineage, model identity, contracts, budgets, and provenance."""
-    research, pretrain_seed, pretrain_origin = _research_block(config, source_manifest)
+    config, task, compiled = new_run.config, start.task, start.compiled
+    research, pretrain_seed, pretrain_origin = _research_block(config, source.source_manifest)
     initial, initial_hash = _initial_dimensions(compiled)
     # The name this run's model goes by (record 7.225): the label in use, numbered when a model under this output root
     # carries it already - "ota7t", "ota7t (2)", "ota7t (3)". The label itself stays the key the run is remembered
@@ -389,10 +414,10 @@ def _new_run_manifest(
     now = utcnow().isoformat()
     manifest = dict(
         layout_version=OUTPUT_LAYOUT_VERSION, config_schema_version=CONFIG_SCHEMA_VERSION,
-        experiment_id=experiment_id, experiment_name=config.output.experiment_name, run_id=run_id,
-        task_id=f'{config.project.task_name}:{task_hash[:16]}', task_name=config.project.task_name,
+        experiment_id=new_run.experiment_id, experiment_name=config.output.experiment_name, run_id=new_run.run_id,
+        task_id=f'{config.project.task_name}:{start.task_hash[:16]}', task_name=config.project.task_name,
         model_label=given_label,
-        task_definition_hash=task_hash, config_sha256=config_hash(config),
+        task_definition_hash=start.task_hash, config_sha256=config_hash(config),
         comparison_pair_id=research['comparison_pair_id'], task_order=research['task_order'],
         run_kind='optimization', mode=config.run.mode, provenance='mock' if task.mock else 'real', mock=task.mock,
         mock_notice=('MOCK DATA: produced by a synthetic analytic backend. Not a circuit result; excluded from '
@@ -411,10 +436,10 @@ def _new_run_manifest(
                                             metrics=[list(m) for m in compiled.spec_schema.metrics])
                                        if hasattr(compiled.spec_schema, 'metrics') else
                                        dict(asdict(compiled.spec_schema), version=compiled.spec_schema.version)),
-                          vocabulary=vocabulary_record(vocabulary),
+                          vocabulary=vocabulary_record(source.vocabulary),
                           # record 7.304
                           **({} if config.run.optimizer == 'sac' else dict(optimizer=config.run.optimizer))),
-        source_model=source_model, parent=parent,
+        source_model=source.source_model, parent=source.parent,
         research=research, split=research['split'], generalization_level=research['generalization_level'],
         seeds=dict(target_seed=config.run.seed, pretrain_seed=pretrain_seed, pretrain_seed_origin=pretrain_origin,
                    note='target_seed drives this run; pretrain_seed belongs to the SOURCE run. Never merged.'),
@@ -423,27 +448,27 @@ def _new_run_manifest(
                      max_wall_seconds=config.run.max_wall_seconds, max_retries=config.run.max_retries),
         execution=dict(concurrency=config.run.concurrency, cache_policy=config.run.cache_policy,
                        frozen_action=config.run.frozen_action if config.run.mode == 'frozen' else None),
-        connection_gate=gate, consistency_check=consistency,
-        authorization=dict(real_simulation=bool(allow_real and not task.mock),
-                           authorized_max_evaluations=config.run.max_evaluations if allow_real and not task.mock
+        connection_gate=start.gate, consistency_check=start.consistency,
+        authorization=dict(real_simulation=bool(start.allow_real and not task.mock),
+                           authorized_max_evaluations=config.run.max_evaluations if start.allow_real and not task.mock
                            else None),
-        code=provenance.result(), environment=environment_versions(), created_utc=now, state='created',
+        code=start.provenance.result(), environment=environment_versions(), created_utc=now, state='created',
         output=dict(output_root=config.output.output_root, data_root=str(data_root),
-                    experiment_dir=str(experiment_dir), run_dir=str(layout.run_dir),
-                    relative_run_dir=str(layout.run_dir.relative_to(experiment_dir))),
+                    experiment_dir=str(new_run.experiment_dir), run_dir=str(new_run.layout.run_dir),
+                    relative_run_dir=str(new_run.layout.run_dir.relative_to(new_run.experiment_dir))),
         segments=[dict(segment=1, entry='start', requested_utc=now)], notes=list(task.notes))
     return manifest, now
 
 
-def _persist_prepared_run(
-    manifest, layout, task, compiled, config, run_id, now, experiment_dir, created, remember_concurrency) -> None:
+def _persist_prepared_run(manifest, now, start, new_run, remember_concurrency) -> None:
     """Write the run input snapshot and records, register the experiment entry, and remember the selected run."""
-    manifest['notes'] += _input_snapshot(layout, task, compiled, config)
+    layout, config, task = new_run.layout, new_run.config, start.task
+    manifest['notes'] += _input_snapshot(layout, task, start.compiled, config)
     write_json(layout.effective_config, config.model_dump(mode='json'))
     write_json(layout.manifest, manifest)
-    write_json(layout.status, dict(state='created', run_id=run_id, mode=config.run.mode, mock=task.mock,
+    write_json(layout.status, dict(state='created', run_id=new_run.run_id, mode=config.run.mode, mock=task.mock,
                                    paths=layout.subpaths(), heartbeat_utc=now))
-    register_in_experiment(experiment_dir, manifest, compiled, task, created)
+    register_in_experiment(new_run.experiment_dir, manifest, start.compiled, task, new_run.created)
     # The newest run that saves an RL model is remembered under the model's label (record 7.159): Resume, fine_tune and
     # frozen start from it. A run that saves no model (a Baseline simulation) leaves the label alone.
     _remember_run(config, layout, remember_concurrency)

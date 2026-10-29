@@ -1,5 +1,6 @@
 """Local same-origin FastAPI backend. Compose feature routes after preloading the optimizer."""
 from __future__ import annotations
+from contextlib import asynccontextmanager
 from pathlib import Path
 import threading
 import time
@@ -13,7 +14,7 @@ from ..paths import OutputRoots, repo_root
 from ..preload import preload
 from ..security import redact
 from .context import ApiContext
-from . import agent_routes, circuit_routes, run_routes, settings_routes, task_folder_routes
+from . import agent_routes, circuit_routes, run_routes, settings_routes, task_folder_routes, local_agent_routes
 from .support import attachment, file_snapshot  # compatibility exports
 
 WILDCARD_HOSTS = ('0.0.0.0', '::', '')
@@ -39,7 +40,15 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     # torch_geometric for the life of the process. Import it here, before any thread or request exists.
     """Compose the local API, connection services and optional frontend after preloading the optimizer."""
     preload()
-    app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json')
+    @asynccontextmanager
+    async def lifespan(app):
+        try:
+            yield
+        finally:
+            if service := getattr(app.state, 'local_agent', None):
+                service.close()
+    app = FastAPI(title='GATOR workbench', version=__version__, docs_url='/api/docs', openapi_url='/api/openapi.json',
+                  lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts(host))
     roots = OutputRoots(extra_output_roots)
     input_roots = [repo_root().resolve()] + [Path(p).expanduser().resolve() for p in extra_input_roots]
@@ -83,7 +92,7 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
 
     # ------------------------------------------------------------------ helpers
     context = ApiContext(roots, input_roots, monitor, connector)
-    for routes in (settings_routes, circuit_routes, run_routes, agent_routes, task_folder_routes):
+    for routes in (settings_routes, circuit_routes, run_routes, agent_routes, task_folder_routes, local_agent_routes):
         routes.register(app, context)
     # Once at backend start (record 7.271 addendum): a launch request left on its way by the previous backend is let go
     # of, unless it is a launching one whose worker is there. Must never prevent the backend from starting.

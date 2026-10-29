@@ -698,3 +698,8 @@ One row per commit, newest last.
 | `0e6802f` | 10-29 16:00 | 7.438 | Land codex/latest on workbench: the readability plan, the Agent-window removal and the archive-comparison steps (record 7.438) |
 | `22c1a69` | 10-29 16:04 | 7.438 | Record: workbench fast-forwarded to the landing merge 0e6802f (record 7.438), and its table row |
 | `6288fbc` | 10-29 16:29 | 7.439 | Model scan: a subcircuit that places itself stops at the nesting limit (record 7.439) |
+| `7bd2115` | 10-29 15:35 | 7.441 | Add local NVIDIA Agent with verified lifecycle and undoable proposals |
+| `d5a2126` | 10-29 15:43 | 7.442 | Integrate verified local Bolt 74B profile on 74B-latest |
+| `199bb93` | 10-29 15:39 | 7.441 | Record local Agent implementation commit |
+| `64ff8f1` | 10-29 15:43 | 7.442 | Record verified 74B profile commit |
+| `3f88952` | 10-29 16:34 | 7.440 | Record 7.440: live again (page built, 8765 restarted), workbench pushed, merged old branches deleted |

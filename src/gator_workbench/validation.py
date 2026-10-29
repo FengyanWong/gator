@@ -1005,6 +1005,17 @@ def validate(config: WorkbenchConfig, *, graph=None, provided_metrics=None,
     return report
 
 
+def validate_with_circuit(config: WorkbenchConfig, runtime, *, rows_from=None) -> Report:
+    """Static validation against the loaded circuit `runtime` (None: none loaded), without the corner-reachability
+    evidence: the part of the API's `validate_loaded` that callers outside the API share, such as the local Agent's
+    proposal review (record 7.443). A cell read from Virtuoso that has no task yet (a native draft) provides metrics
+    nobody knows: they are not checked."""
+    draft = runtime is not None and bool(runtime.circuit.get('native_draft'))
+    return validate(config, graph=None if runtime is None else runtime.base_graph,
+                    provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics),
+                    rows_from=rows_from)
+
+
 def _in(value, unit) -> str:
     """A number in the canonical unit of `unit`, written as the editors write quantities (record 7.208: 450 nm, 1.1 GHz); in a
     unit the registry does not know, as before."""

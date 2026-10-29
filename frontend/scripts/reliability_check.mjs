@@ -109,7 +109,7 @@ await runChecks(browser, async () => {
   await page.evaluate('JSON.stringify = window.realStringify');
   for (const width of [960, 640]) {
     await page.viewport(width, 900); await sleep(100);
-    // Runs is the tab line's only window opener; the Agent entry was removed.
+    // Runs is the tab line's only window opener; the local Agent is an inline panel.
     const geometry = await page.evaluate(`({ main: document.querySelector('main').getBoundingClientRect().width,
       page: document.documentElement.scrollWidth, width: innerWidth,
       windows: [...document.querySelectorAll('footer .tabs button.run-list-button')].map(b => Math.round(b.getBoundingClientRect().width)),

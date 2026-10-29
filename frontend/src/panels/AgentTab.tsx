@@ -1,0 +1,216 @@
+import { useEffect, useRef, useState } from 'react';
+import { call, type Json } from '../api';
+import { Icon } from './Icons';
+import './AgentTab.css';
+
+type Model = { id: string; name: string; provider: string; source: string; description: string; size: number;
+  installed: boolean; deployed: boolean; storage: string | null; error: string | null; runtime: string; vram_gib: number; ram_gib: number };
+type Status = { models: Model[]; active_job: string | null; deployed: string | null; default_model: string | null; mode: string };
+type Check = { compatible: boolean; errors: string[]; note: string; local_asset_available: boolean; runtime_ready: boolean; disk_needed: number;
+  host: { disk_free: number | null; ram_total: number | null; ram_free: number | null; gpus: { name: string; free: number; total: number }[] } };
+type Change = { path: string; label: string; before: Json; after: Json; unit: string | null };
+type Review = { config: Json; changes: Change[]; warnings: { message: string }[] };
+type Result = { message: string; proposal: Json; proposal_error: string | null; preview?: Review; omitted_messages: number };
+type Job = { id: string; kind: string; model_id: string; state: string; phase: string; bytes: number; total: number | null;
+  error: string | null; output: string; offset: number; result: Result | null };
+type Message = { role: 'user' | 'assistant'; content: string; job?: string; result?: Result };
+const root = '/api/local-agent';
+const gib = (n: number | null) => n === null ? 'unknown' : `${(n / 1024 ** 3).toFixed(1)} GiB`;
+const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
+
+/** Kept mounted with the bottom panel: switching tabs does not discard an answer or its cancellation control. */
+export function AgentTab({ hidden, config, setConfig }: { hidden: boolean; config: Json; setConfig: (next: Json | ((c: Json) => Json)) => void }) {
+  const [opened, setOpened] = useState(false), [status, setStatus] = useState<Status | null>(null);
+  const [checks, setChecks] = useState<Record<string, Check>>({}), [busy, setBusy] = useState(false);
+  const [error, setError] = useState(''), [notice, setNotice] = useState('');
+  const [jobId, setJobId] = useState<string | null>(null), [job, setJob] = useState<Job | null>(null);
+  const [stream, setStream] = useState(''), [messages, setMessages] = useState<Message[]>([]), [draft, setDraft] = useState('');
+  const [applied, setApplied] = useState<Record<string, boolean>>({});
+  const [pendingApply, setPendingApply] = useState<{ id: string; next: Json } | null>(null);
+  const generation = useRef<Record<string, { revision: number; config: Json }>>({});
+  const current = useRef({ config, revision: 0 });
+  if (current.current.config !== config) current.current = { config, revision: current.current.revision + 1 };
+  const finished = useRef(new Set<string>()), offset = useRef(0);
+  const active = !!jobId;
+
+  useEffect(() => {
+    if (!pendingApply) return;
+    if (config === pendingApply.next) {
+      setApplied(v => ({ ...v, [pendingApply.id]: true }));
+      setNotice('Changes applied as one Undo step. Save the task normally when ready.');
+    } else {
+      setError('The editor changed before application. No proposed changes were applied.');
+    }
+    setPendingApply(null);
+  }, [config, pendingApply]);
+
+  useEffect(() => { if (!hidden) setOpened(true); }, [hidden]);
+  const refresh = async () => {
+    const next = await call<Status>('GET', root);
+    setStatus(next);
+    if (next.active_job) setJobId(next.active_job);
+    return next;
+  };
+  useEffect(() => {
+    if (!opened || hidden && !active) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const next = await call<Status>('GET', root);
+        if (!stopped) { setStatus(next); if (next.active_job) setJobId(next.active_job); }
+      } catch (e) { if (!stopped) setError(errorText(e)); }
+      if (!stopped) timer = setTimeout(poll, 4000);
+    };
+    void poll();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [opened, hidden, active]);
+
+  useEffect(() => {
+    if (!jobId) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    offset.current = 0; setStream('');
+    const poll = async () => {
+      try {
+        const next = await call<Job>('GET', `${root}/jobs/${jobId}?offset=${offset.current}`);
+        if (stopped) return;
+        offset.current = next.offset;
+        setJob(next); setStream(s => s + next.output);
+        if (next.state !== 'running') {
+          if (!finished.current.has(jobId)) {
+            finished.current.add(jobId);
+            if (next.kind === 'chat' && next.state === 'completed' && next.result) {
+              const result = next.result;
+              setMessages(m => [...m, { role: 'assistant', content: result.message, job: jobId, result }]);
+            }
+            if (next.error) setError(next.error);
+            if (next.state === 'cancelled') setNotice('Operation cancelled. No suggestion was applied.');
+            if (next.kind === 'install' && next.state === 'completed') setNotice('Model installed. Deploy verifies its actual load before enabling chat.');
+          }
+          setJobId(null); await refresh(); return;
+        }
+      } catch (e) { if (!stopped) setError(errorText(e)); }
+      if (!stopped) timer = setTimeout(poll, 600);
+    };
+    void poll();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [jobId]);
+
+  const check = async (id: string) => {
+    const result = await call<Check>('GET', `${root}/models/${id}/compatibility`);
+    setChecks(c => ({ ...c, [id]: result }));
+    return result;
+  };
+  const operate = async (model: Model, action: 'install' | 'deploy' | 'undeploy' | 'delete' | 'check') => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      if (action === 'check') { await check(model.id); return; }
+      if (action === 'install' || action === 'deploy') {
+        const result = await check(model.id);
+        if (!result.compatible) { setError(result.errors.join(' ')); return; }
+      }
+      const result = await call<{ job_id?: string; external_file_preserved?: boolean }>('POST', `${root}/models/${model.id}`, { action });
+      if (result.job_id) { setJob(null); setJobId(result.job_id); }
+      if (action === 'delete') setNotice(result.external_file_preserved ? 'Model registration deleted. The external benchmark file was preserved.' : 'Managed model deleted.');
+      if (action === 'undeploy') setNotice('Model undeployed. Any active inference is being cancelled.');
+      await refresh();
+    } catch (e) { setError(errorText(e)); }
+    finally { setBusy(false); }
+  };
+  const send = async () => {
+    const text = draft.trim(), model = status?.deployed;
+    if (!text || !model || busy || active) return;
+    setBusy(true); setError(''); setNotice('');
+    const snapshot = { ...current.current };
+    const next: Message[] = [...messages, { role: 'user', content: text }];
+    try {
+      const response = await call<{ job_id: string }>('POST', `${root}/chat`, { model_id: model, config: snapshot.config,
+        messages: next.map(m => ({ role: m.role, content: m.content })) });
+      generation.current[response.job_id] = snapshot;
+      setMessages(next); setDraft(''); setJob(null); setJobId(response.job_id);
+    } catch (e) { setError(errorText(e)); }
+    finally { setBusy(false); }
+  };
+  const apply = async (id: string) => {
+    setBusy(true); setError('');
+    try {
+      const snapshot = generation.current[id];
+      if (!snapshot || current.current.revision !== snapshot.revision) throw new Error('Suggestion is stale. Ask again with the current configuration.');
+      const reviewed = await call<Review>('POST', `${root}/jobs/${id}/review`, { config: snapshot.config });
+      if (current.current.revision !== snapshot.revision) throw new Error('The editor changed during validation. No changes applied.');
+      // Recheck at reducer execution too: an already queued editor change must never be overwritten.
+      setConfig((now: Json) => now === snapshot.config ? reviewed.config : now);
+      setPendingApply({ id, next: reviewed.config });
+    } catch (e) { setError(errorText(e)); }
+    finally { setBusy(false); }
+  };
+  const cancel = async () => {
+    if (!jobId) return;
+    try { await call('POST', `${root}/jobs/${jobId}/cancel`); }
+    catch (e) { setError(errorText(e)); }
+  };
+
+  return <section className="agent-panel" hidden={hidden} aria-label="Local Agent">
+    <div className="agent-heading"><strong>Agent</strong><span>Local advice for parameter setup and optimization settings</span></div>
+    <p className="agent-note">Choose a model, check compatibility, install and deploy. Answers have no token limit. You review every change before applying it.</p>
+    {error && <p className="agent-error" role="alert">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
+    {!status && <p>Loading local model catalog…</p>}
+    <div className="agent-columns">
+      <div className="agent-catalog" aria-label="NVIDIA model catalog">
+        {status?.models.map(model => <article className="agent-model" key={model.id}>
+          <div className="agent-model-heading"><strong>{model.name}</strong><span>{model.deployed ? 'Ready · loads per reply' : model.installed ? 'Installed' : 'Not installed'}</span></div>
+          <p>{model.description} <a href={model.source} target="_blank" rel="noreferrer">NVIDIA model card</a></p>
+          <p className="agent-note">{gib(model.size)} download · {model.vram_gib} GiB free VRAM · {model.ram_gib} GiB RAM<br />{model.runtime}</p>
+          <div className="agent-controls">
+            <button title={`Check compatibility for ${model.name}`} disabled={busy || active} onClick={() => void operate(model, 'check')}><Icon name="refresh" label={`Check compatibility for ${model.name}`} /></button>
+            <button title={`Install ${model.name}`} disabled={busy || active || model.installed} onClick={() => void operate(model, 'install')}><Icon name="download" label={`Install ${model.name}`} /></button>
+            <button title={`Deploy ${model.name}`} disabled={busy || active || !model.installed || !!status.deployed} onClick={() => void operate(model, 'deploy')}><Icon name="play" label={`Deploy ${model.name}`} /></button>
+            <button title={`Undeploy ${model.name}`} disabled={busy || !(model.deployed || active && job?.kind === 'deploy' && job.model_id === model.id)} onClick={() => void operate(model, 'undeploy')}><Icon name="stop" label={`Undeploy ${model.name}`} /></button>
+            <button title={model.storage === 'external' ? `Delete registration for ${model.name}; keep external file` : `Delete ${model.name}`} disabled={busy || active || !model.installed || model.deployed} onClick={() => void operate(model, 'delete')}><Icon name="delete" label={`Delete ${model.name}`} /></button>
+          </div>
+          {model.storage === 'external' && <p className="agent-note">Uses verified external weights. Delete removes registration and preserves the file.</p>}
+          {checks[model.id] && <div className="agent-check" role="status">
+            <strong>{checks[model.id].compatible ? 'Compatibility check passed' : 'Not compatible now'}</strong>
+            <p>{checks[model.id].host.gpus.map(g => `${g.name}: ${gib(g.free)} free VRAM`).join('; ') || 'GPU unknown'}<br />
+              RAM: {gib(checks[model.id].host.ram_free)} available / {gib(checks[model.id].host.ram_total)} total. Storage: {gib(checks[model.id].host.disk_free)} free.</p>
+            {checks[model.id].errors.map((e, i) => <p key={i}>{e}</p>)}
+            <p>{checks[model.id].local_asset_available ? 'An existing local artifact will be checked by SHA-256 and reused.' : 'The pinned NVIDIA artifact will be downloaded.'} {checks[model.id].note}</p>
+          </div>}
+          {model.error && <p className="agent-error">{model.error}</p>}
+        </article>)}
+      </div>
+      <div className="agent-conversation">
+        {active && <div className="agent-operation" role="status"><strong>{job?.phase || 'Starting…'}</strong>
+          {job?.total ? <><progress max={job.total} value={job.bytes} aria-label="Installation progress" /><span>{gib(job.bytes)} / {gib(job.total)}</span></> : <span>Waiting for local operation</span>}
+          <button onClick={() => void cancel()} title="Cancel Agent operation"><Icon name="stop" label="Cancel Agent operation" /></button>
+        </div>}
+        {active && stream && <details className="agent-live"><summary>Live model output</summary><pre>{stream}</pre></details>}
+        <div className="agent-messages" aria-label="Agent conversation">
+          {messages.map((m, i) => <article key={i} className={`agent-message ${m.role}`}>
+            <strong>{m.role === 'user' ? 'You' : 'Agent'}</strong><p>{m.content}</p>
+            {m.result?.omitted_messages ? <p className="agent-note">Continued with current configuration and recent messages; {m.result.omitted_messages} older messages were outside this input window.</p> : null}
+            {m.result?.proposal_error && <p className="agent-error" role="alert">Suggestion rejected: {m.result.proposal_error}</p>}
+            {m.result?.preview && m.job && <div className="agent-proposal">
+              <strong>Proposed editor changes</strong><table><thead><tr><th>Setting</th><th>Current</th><th>Proposed</th></tr></thead><tbody>
+                {m.result.preview.changes.map(c => <tr key={c.path}><th>{c.label}</th><td>{String(c.before ?? 'unset')} {c.unit}</td><td>{String(c.after)} {c.unit}</td></tr>)}
+              </tbody></table>
+              {m.result.preview.warnings.map((w, n) => <p key={n} className="agent-note">{w.message}</p>)}
+              <button disabled={busy || active || applied[m.job] || generation.current[m.job]?.revision !== current.current.revision}
+                onClick={() => void apply(m.job!)}>Apply proposed changes</button>
+              {applied[m.job] ? <span> Applied through the editor</span> : generation.current[m.job]?.revision !== current.current.revision ? <span> Stale suggestion — ask again</span> : <span> Revalidated when applied · Undo available</span>}
+            </div>}
+          </article>)}
+        </div>
+        {status?.deployed ? <form className="agent-compose" onSubmit={e => { e.preventDefault(); void send(); }}>
+          <label htmlFor="agent-message">Ask about parameter setup or optimization settings</label>
+          <textarea id="agent-message" value={draft} onChange={e => setDraft(e.target.value)} rows={3} disabled={busy || active} />
+          <div><button type="submit" disabled={busy || active || !draft.trim()}>Send</button>
+            <button type="button" disabled={busy || active} onClick={() => { setMessages([]); setStream(''); setNotice('New conversation. Current editor configuration will be included.'); }}>New conversation</button></div>
+          <p className="agent-note">8,192-token context with shifting; no answer-token budget. Older turns may leave the input window. Cancel stops the owned local process.</p>
+        </form> : <p className="agent-empty">Install and deploy a model to start a conversation.</p>}
+      </div>
+    </div>
+  </section>;
+}

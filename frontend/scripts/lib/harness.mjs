@@ -348,7 +348,8 @@ export async function launchEdge(tag = 'check', { width = 1680, height = 1050, l
   const temps = [], sessions = [];
   // --disable-extensions / --disable-sync: a fresh profile on this machine opens extension onboarding tabs (and a sync
   // dialog) some 60-90 s after start; the workbench tab is then hidden and Page.captureScreenshot never answers.
-  const edge = spawn(EDGE, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
+  // Edge 156 otherwise relaunches through its compatibility layer and the owned launcher exits before CDP is ready.
+  const edge = spawn(EDGE, ['--headless=new', '--edge-skip-compat-layer-relaunch', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
     '--no-default-browser-check', '--disable-gpu', '--disable-extensions', '--disable-sync', `--window-size=${width},${height}`, 'about:blank'], { stdio: 'ignore' });
   let exited = false, spawnError = null;
   const gone = new Promise(resolve => edge.on('exit', () => { exited = true; resolve(); }));

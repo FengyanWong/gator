@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from .. import runs, tasks
 from ..reachability import check
 from ..security import redact
-from ..validation import validate
+from ..validation import validate_with_circuit
 
 
 def compatibility_unchecked(exc) -> dict:
@@ -220,10 +220,7 @@ def validate_loaded(config, runtime, *, roots=None, reachability=True, rows_from
     from Virtuoso that has no task yet (a native draft) provides metrics nobody knows: they are not checked - an empty
     list reported every probe as `metric_not_provided` in the checklist while the page showed none. `reachability=False` leaves out the corner reachability evidence, a warning
     that reads recorded runs: for a caller that keeps only the errors and blockers."""
-    draft = runtime is not None and bool(runtime.circuit.get('native_draft'))
-    report = validate(config, graph=None if runtime is None else runtime.base_graph,
-                      provided_metrics=None if runtime is None or draft else set(runtime.provided_metrics),
-                      rows_from=rows_from)
+    report = validate_with_circuit(config, runtime, rows_from=rows_from)
     if reachability and config.run.conditions.policy != 'off' and not report.blocks_run:
         try:
             evidence = check(config, roots=roots)

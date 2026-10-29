@@ -1,5 +1,5 @@
-// The frontend has no Agent tab, popup, CLI launcher or readiness checklist. Agent assistance is started by the user
-// in a desktop app or terminal. Check the absence across navigation, narrow layouts and an old kept Agent tab value.
+// The local Agent tab does not restore desktop/paid CLI launchers, their popup or readiness checklist.
+// Check that separation across navigation, narrow layouts and the kept local Agent tab value.
 // Hermetic: every /api/agent/* call is captured and refused, validation is canned, all other writes are refused.
 // Run against a scratch backend: bash frontend/scripts/run_checks.sh --only external_agents_check.
 import path from 'node:path';
@@ -15,9 +15,10 @@ await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, consoleErrors } = page;
   const requests = [];
-  await page.intercept(['*/api/agent/*', '*/api/config/validate'], ({ requestId, request }) => {
+  await page.intercept(['*/api/agent/*', '*/api/local-agent*', '*/api/config/validate'], ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
     if (name === '/api/config/validate') return page.fulfil(requestId, 200, validConfiguration());
+    if (name === '/api/local-agent') return page.fulfil(requestId, 200, { models: [], active_job: null, deployed: null, default_model: null, mode: 'synthetic catalog' });
     requests.push({ method: request.method, name });
     return page.fulfil(requestId, 418, { detail: { message: 'Agent operations must not be requested by the frontend.' } });
   }, { others: 'read' });
@@ -28,13 +29,13 @@ await runChecks(browser, async () => {
   const strip = "Array.from(document.querySelectorAll('footer .tabs > button'))";
   const button = label => strip + '.find(b => b.textContent.trim() === ' + JSON.stringify(label) + ')';
   const names = await evaluate(strip + '.map(b => b.textContent.trim())');
-  check('Run status is first and Runs remains last; there is no Agent entry',
-    names[0] === 'Run status' && names.at(-1) === 'Runs...' && !names.some(n => /^Agent/.test(n)), JSON.stringify(names));
+  check('Run status is first, Runs remains last, and local Agent is present',
+    names[0] === 'Run status' && names.at(-1) === 'Runs...' && names.includes('Agent'), JSON.stringify(names));
   check('no Agent popup, checklist or CLI controls remain',
     await evaluate("!document.querySelector('.agent-tab, .agent-window, #agent-root, .agent-cli, .missing-list, ul.checklist')"
       + " && !Array.from(document.querySelectorAll('button')).some(b => ['Claude Code', 'Codex', \"What's missing?\"].includes(b.textContent.trim()))"));
-  check('no Agent stylesheet rules remain', await evaluate("(() => { const found = []; const walk = rules => { for (const r of rules) {"
-    + "if (r.selectorText && /[.#]agent-|\\.missing-list|ul\\.checklist|\\.check-(mark|who|detail|action|done|missing|warning|not_applicable)/.test(r.selectorText)) found.push(r.selectorText);"
+  check('no legacy CLI popup stylesheet rules remain', await evaluate("(() => { const found = []; const walk = rules => { for (const r of rules) {"
+    + "if (r.selectorText && /[.#]agent-(window|cli|tab)|\\.missing-list|ul\\.checklist|\\.check-(mark|who|detail|action|done|missing|warning|not_applicable)/.test(r.selectorText)) found.push(r.selectorText);"
     + "if (r.cssRules) walk(r.cssRules); } }; for (const sheet of document.styleSheets) walk(sheet.cssRules); return found.length === 0; })()"));
 
   for (const label of ['Logs', 'Data tables', 'Output files', 'Training', 'Run status']) {
@@ -52,10 +53,10 @@ await runChecks(browser, async () => {
   }
   await evaluate('sessionStorage.setItem(' + JSON.stringify(BOTTOM_TAB_KEY) + ", 'agent')");
   await send('Page.reload');
-  check('an obsolete kept Agent tab falls back to Run status on reload',
-    await page.until("document.querySelector('footer .tabs > button.active')?.textContent.trim() === 'Run status'", 200));
+  check('the local Agent tab is kept on reload',
+    await page.until("document.querySelector('footer .tabs > button.active')?.textContent.trim() === 'Agent'", 200));
   await sleep(500);
-  check('navigation and reload never ask the backend about agents', requests.length === 0, JSON.stringify(requests));
+  check('navigation and reload never ask the backend to discover or launch external agents', requests.length === 0, JSON.stringify(requests));
   check('no Agent window was opened', !(await browser.pages()).some(p => p.title === 'GATOR - agent'));
   await page.shot(path.join(out, 'external-agents-removed.png'));
   reportRefused(page.refused, NEVER_ASKED_OR_SAVED);

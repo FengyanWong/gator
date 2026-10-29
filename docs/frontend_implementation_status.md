@@ -508,3 +508,6 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.438 | `codex/latest` landed on `workbench`: readability P2-P8, Agent-window removal, archive steps; its 7.390-7.394 renumbered 7.434-7.437 |
 | 7.439 | Model scan: a subcircuit that places itself stops at the nesting limit instead of recursing until RecursionError |
 | 7.440 | Live again: page built, 8765 restarted, workbench pushed to GitHub, eight merged branches deleted |
+| 7.441 | Local NVIDIA Agent tab: verified installation and resource checks, explicit deployment, uncapped cancellable conversation, strict current-circuit proposals and undoable application; latest defaults empty; tested 74B lifecycle and synthetic parameter/run suggestion; optimizer and live experiments preserved |
+| 7.442 | 74B-latest profile: verify and register the existing Bolt 74B assets on first Agent visit, explicit deployment, remembered deletion and truthful missing-resource errors; same tested Agent implementation as latest |
+| 7.443 | Codex's local Agent tab (`74B-latest`) merged into workbench; its 7.395/7.396 renumbered 7.441/7.442; all proofs pass |

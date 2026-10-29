@@ -703,3 +703,4 @@ One row per commit, newest last.
 | `199bb93` | 10-29 15:39 | 7.441 | Record local Agent implementation commit |
 | `64ff8f1` | 10-29 15:43 | 7.442 | Record verified 74B profile commit |
 | `3f88952` | 10-29 16:34 | 7.440 | Record 7.440: live again (page built, 8765 restarted), workbench pushed, merged old branches deleted |
+| `048905b` | 10-29 17:20 | 7.443 | Land Codex's local Agent (74B-latest) on workbench (record 7.443) |

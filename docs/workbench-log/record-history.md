@@ -695,3 +695,4 @@ One row per commit, newest last.
 | `c3775ba` | 10-29 13:56 | 7.437 | P8-model-scan: name the values that steps share |
 | `f8dd00f` | 10-29 14:01 | 7.437 | P8-cdf-rules: name the values that steps share |
 | `88133e0` | 10-29 14:42 | 7.390-7.433 | Records 7.390-7.433 as written in the live checkout: the readability plan, Codex's seed-0 campaign and M0, and the log rollovers |
+| `0e6802f` | 10-29 16:00 | 7.438 | Land codex/latest on workbench: the readability plan, the Agent-window removal and the archive-comparison steps (record 7.438) |

@@ -231,7 +231,7 @@ class MoboSearch:
 
     @classmethod
     def from_state(cls, state: dict, problem: Problem) -> 'MoboSearch':
-        """Restore a search after checking its version and objective contract."""
+        """Restore a saved search; raise ValueError for another version or a problem other than `problem`."""
         import torch
         if state.get('version') != VERSION:
             raise ValueError(f"a {state.get('version')!r} search state is not {VERSION}")

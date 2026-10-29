@@ -231,7 +231,7 @@ def append_local_log(name, record) -> None:
 
 
 class OutputRoots:
-    """Resolve and inspect output directories against the configured root allowlist."""
+    """The allowlist of output roots, used to resolve, list and check output directories."""
     def __init__(self, extra_roots=(), *, include_default: bool=True) -> None:
         roots = [default_output_root()] if include_default else []
         roots += [Path(p) for p in extra_roots]
@@ -351,7 +351,7 @@ class OutputRoots:
 
     # ---------------------------------------------------------------- mock isolation
     def data_root(self, output_root: str | os.PathLike[str], *, mock: bool) -> Path:
-        """Resolve an output root and select its synthetic-data subdirectory when requested."""
+        """Return the resolved output root, or its mock/ folder when `mock`; refuse a root within mock/."""
         root = self.resolve(output_root)
         if MOCK_SUBDIR in root.parts[len(self._owning_root(root).parts):]:
             raise PathNotAllowed(f'Select the output root itself, not its {MOCK_SUBDIR}/ directory')

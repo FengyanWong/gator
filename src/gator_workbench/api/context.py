@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ApiContext:
-    """Per-application services for authorized paths, configuration loading and cached run readiness."""
+    """Per-application services for authorized paths, configuration loading and the run start checklist."""
     roots: OutputRoots
     input_roots: list[Path]
     monitor: connection.ConnectionMonitor

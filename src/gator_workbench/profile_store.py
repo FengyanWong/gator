@@ -41,7 +41,7 @@ def profile_dir(name) -> Path:
 
 
 def list_profiles() -> dict:
-    """Read recognizable stored profile entries and attach their directory paths."""
+    """Return every well-formed stored profile entry, keyed by name, each with its folder path added."""
     found = {}
     root = store_root()
     for entry_file in sorted(root.glob(f'*/{FILES["entry"]}')) if root.is_dir() else ():
@@ -99,7 +99,7 @@ HISTORY = 'history'
 
 
 def task_file(name) -> dict | None:
-    """Read a profile's task JSON, returning nothing when the name or file cannot be read."""
+    """Return the parsed task.json of saved task `name`, or None for an invalid name or unreadable file."""
     try:
         return json.loads((profile_dir(name) / TASK_FILE).read_text())
     except (OSError, ValueError, ProfileError):

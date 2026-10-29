@@ -98,7 +98,7 @@ def vocabulary_of_record(record) -> Vocabulary:
 
 
 def parameter_facts(record, model_ref, name):
-    """Find a device parameter by its recorded name or canonical alias."""
+    """Return a PDK record's entry for one device parameter, found by name or canonical alias, or None."""
     device = (record or {}).get('devices', {}).get(model_ref)
     if device is None:
         return None
@@ -118,7 +118,7 @@ def learner_class(vocabulary) -> type:
         def batch(self, observations, *, digests=None):
             # The network sees new objects (the PDK's view): digests of the recorded observations do not describe
             # them, so the input cache keys the viewed observations by their own content (record 7.221).
-            """Batch viewed observations using their own content identities instead of recorded-state digests."""
+            """Batch the observations as the PDK view shows them; `digests` is ignored."""
             return super().batch([vocabulary.view(o) for o in observations])
     return PdkViewLearner
 

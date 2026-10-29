@@ -6,7 +6,7 @@ from .schema import SECTION_KEYS
 
 
 def structured_diff(before: dict, after: dict) -> list:
-    """Compare identified configuration rows and report added, removed, and modified fields."""
+    """Return the rows added, removed or changed between two configurations, each with its field changes."""
     diff = []
     for section, id_field in SECTION_KEYS.items():
         old = {row[id_field]: row for row in before.get(section, [])}

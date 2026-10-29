@@ -53,7 +53,7 @@ def runtime_options(config, vocabulary=None) -> dict:
     # ngspice PDK subcircuits can expose additional multiplicity parameters.
     # The compiled action kind is already m/1; retain the native writeback names
     # as separate numeric columns. This does not add current/A action support.
-    """Build feature, reward, and condition settings for the configured network inputs."""
+    """Build the learner's feature schema, reward settings and condition plan from a run's settings."""
     schema = model_inputs.feature_schema(config.run.network, None if vocabulary is None else vocabulary.schema,
                                         native_counts=native_count_columns(config) if vocabulary is None else (),
                                         operating_points=config.run.network.operating_points)

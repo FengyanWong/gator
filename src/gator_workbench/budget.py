@@ -23,7 +23,7 @@ class BudgetError(RuntimeError):
 
 
 class BudgetLedger:
-    """Track reserved and charged evaluations, simulator launches, retries, and feasibility milestones under a lock."""
+    """A thread-safe ledger of a run's evaluations, simulator launches, retries and first feasible designs."""
     VERSION = 'budget-ledger-v1'
 
     def __init__(self, max_evaluations: int, *, max_launches: int | None=None, max_retries: int=0) -> None:
@@ -154,7 +154,7 @@ class BudgetLedger:
             self.uncertain_launches += uncertain
 
     def complete(self, evaluation_id, *, failed: bool=False, cache_hit: bool=False) -> dict:
-        """Finish an evaluation after all attempts settle and update completion, failure, and cache-hit counters."""
+        """Finish an evaluation whose attempts have ended, updating the completed, failed and cache-hit counts."""
         with self._lock:
             item = self._in_flight.get(evaluation_id)
             if item is None:

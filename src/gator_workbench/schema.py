@@ -846,7 +846,7 @@ SECTION_KEYS = {'parameters': 'variable_id', 'targets': 'metric_id', 'measuremen
 
 
 def canonical_json(value) -> str:
-    """Serialize sorted compact JSON without ASCII escaping or non-finite numbers."""
+    """Return `value` as compact key-sorted JSON, non-ASCII kept as is; NaN or infinity raises ValueError."""
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
 
 

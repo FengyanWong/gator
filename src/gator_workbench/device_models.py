@@ -280,7 +280,7 @@ def _number_of(text):
 
 
 def read_library(read, entry, section):
-    """Load the selected model-library section through the supplied file reader."""
+    """Return a model library section parsed with its includes, listing the files that could not be read."""
     library = _Library(read)
     library.load(entry, section)
     return library

@@ -77,7 +77,7 @@ REMOTE_PATH = re.compile(r'^~?(?:/[A-Za-z0-9_.+\-]+)+$')
 
 
 class InvalidDirectory(ValueError):
-    """An invalid folder setting carrying its field key and a labeled diagnostic."""
+    """The error for a rejected folder setting, keeping its field key and naming the field in its message."""
     def __init__(self, key, message):
         super().__init__(f'{FIELDS[key].label if key in FIELDS else key}: {message}')
         self.key = key

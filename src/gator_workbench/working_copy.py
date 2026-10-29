@@ -47,7 +47,7 @@ def store_root() -> Path:
 
 
 def copy_library_name(library) -> str:
-    """Build and validate the derived working-copy library name."""
+    """Return the name of the library the workbench copies `library` into; raise CopyError if invalid."""
     name = f'{library}{bridge_setup.SUFFIX}'
     if not native_cells.NAME.match(name) or len(name) > MAX_LIBRARY:
         raise CopyError(f'{library} is too long a library name to add "{bridge_setup.SUFFIX}" to')
@@ -93,7 +93,7 @@ def _json_or_empty(path) -> dict:
 
 
 def own_libraries() -> dict:
-    """Read the recorded working-copy library ownership mapping."""
+    """Return the facts of each library the workbench created, by name; {} when the file cannot be read."""
     return _json_or_empty(store_root() / LIBRARIES)
 
 

@@ -17,7 +17,7 @@ _PATTERNS = [
 
 
 def redact(text, limit: int | None=None) -> str | None:
-    """Apply the configured redaction patterns and optionally truncate the resulting text."""
+    """Return `text` with secrets masked, cut after `limit` characters when given; None stays None."""
     if text is None:
         return None
     text = str(text)

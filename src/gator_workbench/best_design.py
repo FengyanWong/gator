@@ -25,10 +25,7 @@ from .storage.dataset import utcnow
 
 
 class BestDesignTracker:
-    (
-        'Track the best observed designs separately for complete feasibility, nominal feasibility, and '
-        'constraint violation.'
-    )
+    """The run's best observed design per class: feasible, nominally feasible, least-violating infeasible."""
     def __init__(self, preference=None, state=None):
         self.preference = preference
         self.feasible = self.infeasible = None
@@ -38,7 +35,7 @@ class BestDesignTracker:
             self.nominal_feasible = state.get('nominal_feasible')
 
     def state_dict(self):
-        """Return the three retained design classes for persistence."""
+        """Return the best design held in each of the three classes, for saving and restoring the tracker."""
         return dict(feasible=self.feasible, nominal_feasible=self.nominal_feasible, infeasible=self.infeasible)
 
     def _better_feasible(self, new, old):
@@ -79,7 +76,7 @@ class BestDesignTracker:
 
     @property
     def best(self):
-        """Select a completely feasible design, then a nominally feasible one, then a valid infeasible one."""
+        """Return the best feasible, else nominally feasible, else least-violating design, or None if none yet."""
         return self.feasible or self.nominal_feasible or self.infeasible
 
     def selection_rule(self):
@@ -122,7 +119,7 @@ def _record(candidate, *, status, tracker, task, config_summary):
 
 def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary, netlist_text, graph,
                   reparse=None, netlist_name='optimized_dut.scs', exporter=None):
-    """Write best-design records and verified feasible exports while removing obsolete export files."""
+    """Write the best-design records and feasible-design exports, delete stale ones, and return file notes."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     notes = {}

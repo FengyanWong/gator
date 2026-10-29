@@ -434,7 +434,7 @@ class DatasetReader:
 
 
 def map_to_dict(pairs) -> dict | None:
-    """Convert stored key-value structs to a dictionary while preserving a missing map."""
+    """Return a stored map's key/value pairs as a dict, or None for a null map."""
     return None if pairs is None else {item['key']: item['value'] for item in pairs}
 
 

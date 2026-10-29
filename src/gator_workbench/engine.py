@@ -67,7 +67,7 @@ STOPPED_BEFORE_LAUNCH = 'Candidate stopped before nominal evaluation'
 
 
 class RunEngine(HostMaintenance, CommitRows, Retention):
-    """Coordinate one run's lanes, budgets, learning, persistence, and final restoration."""
+    """The scheduler of one run: its lanes, shared budget, learning, saving and final restoration."""
     def __init__(self, run_dir, *, task, use_processes=None, lane_factory=None, clock=time.monotonic, lock=None):
         self.layout = RunLayout(Path(run_dir))
         self.manifest = read_json(self.layout.manifest)
@@ -98,7 +98,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
 
     # ================================================================== lifecycle
     def run(self):
-        """Hold the run lock while preparing, executing, and finalizing the current run segment."""
+        """Run this segment under the run lock and return its end state; failures in it are logged, not raised."""
         if not self.lock.held_here:
             self.lock.acquire()
         self._segment_started, self._wall_started = self._clock(), utcnow()

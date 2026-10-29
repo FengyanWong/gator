@@ -70,7 +70,7 @@ PARAMETER_KIND_UNITS = {'w': 'm', 'l': 'm', 'm': 'count', 'nf': 'count', 'r': 'o
 
 
 class UnitError(ValueError):
-    """A unit or conversion is outside the explicitly supported unit registry."""
+    """The error for an unknown unit, or for converting a value that is not a finite number."""
     pass
 
 
@@ -96,7 +96,7 @@ def to_canonical(value: float, unit: str) -> float:
 
 
 def compatible(first: str, second: str) -> bool:
-    """Check whether two recognized units share the same canonical unit."""
+    """Check whether both units are registered and have the same canonical unit."""
     return known(first) and known(second) and canonical_unit(first) == canonical_unit(second)
 
 

@@ -31,7 +31,7 @@ DEFAULT_UPDATES = 20_000
 
 
 def identity(value) -> str:
-    """Hash a value's sorted JSON representation while rejecting nonfinite JSON numbers."""
+    """Return the SHA-256 hex digest of a value's key-sorted JSON; NaN or infinity raises ValueError."""
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 

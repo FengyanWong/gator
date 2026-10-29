@@ -26,7 +26,7 @@ def _directory(task_key):
 
 
 def status(task_key):
-    """Read the saved baseline setup and refresh its state from the associated run when present."""
+    """Return the task's saved baseline launch record, updated from its run, or None if there is none."""
     try:
         result = read_json(_directory(task_key) / FILE, default=None)
     except ValueError:

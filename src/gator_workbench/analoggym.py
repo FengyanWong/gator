@@ -65,7 +65,7 @@ def evaluator_modules(root):
 
 
 def evaluate_outputs(bundle, directory, values):
-    """Read upstream benchmark outputs and return metrics as finite values or None with the independent pass verdict."""
+    """Return the upstream evaluator's metrics (None where not finite), pass verdict and raw result."""
     modules = evaluator_modules(bundle['checkout'])
     cls = modules['LdoEnv'].LdoEnv if bundle['name'].startswith('ldo_') else modules['AmpEnv'].AmpEnv
     env = cls.__new__(cls)
@@ -109,7 +109,7 @@ def physical_graph(parsed):
 
 
 def substitute(text, values):
-    """Replace each requested deck parameter exactly once or reject an ambiguous definition."""
+    """Return `text` with each .param value replaced; raise ValueError unless each occurs exactly once."""
     for name, value in values.items():
         pattern = rf'(?im)^(\s*\.param\s+{re.escape(name)}\s*=)[^\n]*$'
         text, count = re.subn(pattern, lambda m: m[1] + format(value,'.17g'), text)
@@ -198,7 +198,7 @@ class AnalogGymBackend(NgspiceBackend):
         return substitute(self.text, self.native_values(parameters))
 
     def generate_netlist(self, work_root, *, condition=None):
-        """Export the candidate deck and companion transient testbench while recording their parameter assignment."""
+        """Write the candidate deck and the transient testbench it sources, recording their parameters."""
         artifact = super().generate_netlist(work_root, condition=condition)
         companion = artifact.path.parent / 'transient.cir'
         companion.write_text(instrument(substitute(self.bundle['transient'], self.native_values())))
@@ -256,7 +256,7 @@ class AnalogGymBackend(NgspiceBackend):
 
 @dataclass(frozen=True)
 class AnalogGymFactory(NgspiceEnvFactory):
-    """A factory that creates lane environments using the imported benchmark backend and measurement plan."""
+    """A factory that builds each lane's sizing environment around an AnalogGym benchmark backend."""
     bundle: dict = None
 
     def __call__(self, lane):

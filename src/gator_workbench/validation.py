@@ -103,7 +103,7 @@ class Issue:
 
 
 class Report:
-    """Collect semantic issues and facts while keeping editor-only unsaved-row details separate."""
+    """The issues and facts of one validation, with the editors' unsaved-row details kept apart."""
     def __init__(self):
         self.issues: list[Issue] = []
         self.facts: dict = {}
@@ -947,7 +947,7 @@ def default_registry() -> dict:
 
 
 def registry_for(config):
-    """Select the configuration's custom, task-specific or default metric registry."""
+    """Return the configuration's metric-to-unit registry, or None when a Virtuoso cell has none yet."""
     custom = config.run.advanced.spec_registry
     if custom is None:
         if config.circuit.source == 'virtuoso':

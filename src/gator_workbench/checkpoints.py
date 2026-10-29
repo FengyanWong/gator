@@ -116,7 +116,7 @@ def weight_digest(learner) -> str:
 
 
 class CheckpointStore:
-    """Publish complete save points and manage retention, save kinds, and policy-selection metadata."""
+    """The store of a run's complete save points, with their retention, save kinds and best-policy record."""
     def __init__(self, run_dir, *, run_id, task_id, task_definition_hash, save_replay: bool=True,
         keep_last=None) -> None:
         self.root = Path(run_dir) / 'checkpoints'

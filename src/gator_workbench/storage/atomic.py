@@ -33,7 +33,7 @@ def sha256_file(path: str | os.PathLike[str], chunk: int=1 << 20) -> str:
 
 
 def fsync_directory(path) -> None:
-    """Sync directory metadata through a descriptor that is closed even on failure."""
+    """Flush a directory's entries to disk so renames and new files in it survive a crash."""
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(fd)
@@ -253,7 +253,7 @@ class JsonlAppender:
 
 
 def read_jsonl(path: str | os.PathLike[str]) -> list:
-    """Read complete JSONL records, ignoring an incomplete tail and rejecting corrupt complete lines."""
+    """Return a JSONL file's complete records ([] if missing); a corrupt line raises PersistenceError."""
     path = Path(path)
     if not path.exists():
         return []

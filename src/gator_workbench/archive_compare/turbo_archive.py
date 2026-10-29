@@ -88,7 +88,7 @@ class ArchiveTrustRegionBO:
 
     # -------------------------------------------------------------------------------------------------- ask
     def ask(self):
-        """Propose a unit-cube design, using all archived and online observations when fitting the current region."""
+        """Return the next unit-cube design, using every archived and online design when it fits the model."""
         told = len(self.X) - self.start
         self.asked += 1
         fit_X, fit_y = self._fit_data()
@@ -162,7 +162,7 @@ class ArchiveTrustRegionBO:
 
     # ------------------------------------------------------------------------------------------- save/restore
     def state_dict(self) -> dict:
-        """Serialize observations, trust-region state and random generator positions needed for exact continuation."""
+        """Serialize observations, trust-region state and random-generator positions needed to resume exactly."""
         return dict(version=VERSION, dim=self.dim, seed=self.seed, n_init=self.n_init, n_candidates=self.n_candidates,
                     length_init=self.length_init, length_min=self.length_min, length_max=self.length_max,
                     success_tolerance=self.success_tolerance, failure_tolerance=self.failure_tolerance,

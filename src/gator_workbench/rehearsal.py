@@ -20,7 +20,7 @@ from .trajectory import TrajectoryLoader
 
 
 def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None):
-    """Publish a bounded training-only replay snapshot after verifying its offline split and source archives."""
+    """Write a bounded, verified training-only replay snapshot to a new folder and return its manifest."""
     directory, output = Path(training_dir), Path(output)
     request, audit = read_json(directory / 'request.json'), read_json(directory / 'pool.json')
     if identity(request) != audit['request_sha256'] or identity(audit['split']) != audit['split_sha256']:
@@ -93,7 +93,7 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
 
 
 class Rehearsal:
-    """Mix a verified source replay pool into learner updates while retaining resumable sampling state."""
+    """A learner wrapper that adds a fixed number of verified source-task transitions to every update."""
     def __init__(self, settings, learner, *, origin, seed, batch_size):
         self.learner, self.sha = learner, settings.pool_sha256
         path = Path(settings.pool_manifest)
@@ -139,7 +139,7 @@ class Rehearsal:
         self.sampler = BalancedSampler(dict(training), seed)
 
     def update(self, transitions, *, digests):
-        """Append a balanced sample of source transitions and their digests to a learner update."""
+        """Run the learner update on `transitions` plus a balanced sample of source-task transitions."""
         source = self.sampler.sample(self.source_size)
         return self.learner.update(list(transitions) + source,
                                    digests=list(digests) + [self.digests[id(t)] for t in source])
@@ -150,7 +150,7 @@ class Rehearsal:
                     counts=dict(self.sampler.counts))
 
     def load_state_dict(self, state):
-        """Restore sampler state only when the checkpoint names the same rehearsal pool."""
+        """Restore the sampler state from a checkpoint; raise ValueError if it names another rehearsal pool."""
         if state['pool_sha256'] != self.sha:
             raise ValueError('Resume rehearsal pool differs from checkpoint')
         self.sampler.rng.setstate(state['rng'])

@@ -442,7 +442,7 @@ class RealBridge:
         VirtuosoBridgeBackend._check_windows(SimpleNamespace(client=client))
 
     def license(self, profile):
-        """Run the profile's Spectre license check through its simulator configuration."""
+        """Return the bridge's Spectre check for the profile: executable path, version and license lines."""
         from virtuoso_bridge.spectre.runner import SpectreSimulator
         return SpectreSimulator.from_env(profile=profile).check_license()
 
@@ -683,7 +683,7 @@ class ConnectionMonitor:
 
     def check(self, profile_id, *, scope='interactive', trigger='user'):
         # run_safety: the single in-run check made after repeated infrastructure failures, once dispatch stopped.
-        """Validate the requested check and share an in-flight probe for the same profile and scope."""
+        """Probe the profile's connection layers for `scope`, joining a probe in flight; return the result."""
         if trigger not in ('user', 'gate', 'auto', 'run_safety'):
             raise ValueError('trigger must be user, gate, auto or run_safety')
         if trigger == 'auto' and scope != 'cheap':

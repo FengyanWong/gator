@@ -17,10 +17,7 @@ from .units import canonical_unit
 
 
 def assess(config, designs):
-    (
-        'Assess whether recorded designs meet every planned hard spec using only valid measurements with '
-        'matching units.'
-    )
+    """Return a verdict on whether one of `designs` meets all hard specs at all planned conditions."""
     specs, _, _ = build_specs(config)
     hard = [s for s in specs if s.active and s.required]
     plan = SpecPlan.from_config(config)
@@ -201,10 +198,7 @@ def _stage_runs(root, versions):
 
 
 def check(config, *, roots=None):
-    (
-        'Gather compatible recorded designs and return nonblocking corner-reachability evidence when corners are '
-        'enabled.'
-    )
+    """Return the corner-reachability verdict for this task's recorded designs, or None if corners are off."""
     if config.run.conditions.policy == 'off':
         return None
     roots = roots or OutputRoots()

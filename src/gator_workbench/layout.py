@@ -75,7 +75,7 @@ class RunLayout:
             getattr(self, name).mkdir(parents=True, exist_ok=True)
 
     def subpaths(self) -> dict[str, str]:
-        """Describe run artifact locations for persisted output metadata."""
+        """Return the path of each kind of run output (data, checkpoints, logs and more) as text."""
         return dict(run=str(self.run_dir), raw_data=str(self.data), checkpoints=str(self.checkpoints),
                     replay='checkpoints/<checkpoint_id>/training_state.pt (embedded) + replay_buffer/manifest.json',
                     best_designs=str(self.best_design), csv_exports=str(self.exports),
@@ -171,7 +171,7 @@ def code_provenance() -> dict:
 
 
 def environment_versions() -> dict:
-    """Record interpreter, host, and dependency versions, marking unavailable dependencies explicitly."""
+    """Return the interpreter, host and dependency versions, with 'unavailable' for a missing dependency."""
     versions = dict(python=sys.version.split()[0], platform=platform.platform(), host=socket.gethostname(),
                     environment=environment_label(), executable=sys.executable, pid=os.getpid())
     for module in ('torch', 'torch_geometric', 'numpy', 'pyarrow', 'pydantic', 'networkx'):

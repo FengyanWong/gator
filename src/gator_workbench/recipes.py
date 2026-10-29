@@ -135,7 +135,7 @@ class GenericRingOscillatorProfile(GenericMosWidthProfile):
                     iabstol=1e-13)
 
     def build_deck(self, structure, model_file, section='tt', *, temperature_c=27.):
-        """Build a ring-oscillator deck with initial conditions, selected saves and transient analysis."""
+        """Build the ring-oscillator deck: circuit, DC operating point, initial conditions, saves, transient."""
         from analog_optimizer.backends.virtuoso_bridge import build_deck_header
         design, settings = self.design, self.analysis_settings
         deck = model_library.apply(build_deck_header(structure, model_file, section, temperature_c=temperature_c),

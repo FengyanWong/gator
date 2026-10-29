@@ -1,4 +1,4 @@
-"""An experiment folder's registry of its runs (experiment_registry.json) and its split manifest (split_manifest.json),
+"""An experiment folder's registry of its runs (experiment.json) and its split manifest (split_manifest.json),
 updated as each run is created; the data dictionary written beside them.
 
 Moved from runs.py by the refactoring (docs/plan-refactoring.md); runs.py re-exports both names.
@@ -15,7 +15,7 @@ from .storage.dataset import write_data_dictionary
 
 
 def register_in_experiment(experiment_dir, manifest, compiled, task, created):
-    """Register a run and its split metadata while holding the experiment's update lock."""
+    """Add the run to the experiment's run list and split manifest; raise RunRejected if the lock is busy."""
     experiment_dir = Path(experiment_dir)
     lock = RunLock(experiment_dir / '.experiment.lock')
     import time

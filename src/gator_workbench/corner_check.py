@@ -104,7 +104,7 @@ def screening_corners(profile=None):
 
 
 def corner_record(corner) -> dict:
-    """Serialize a corner with its model section, temperature, and supply label."""
+    """Return a corner's fields plus a readable label of its model section, temperature and supply."""
     return dict(asdict(corner),
         label=f'{corner.model_section.upper()}, {corner.temperature_c:g} °C, {corner.supply_v:g} V')
 
@@ -444,7 +444,7 @@ def launch(directory, *, allow_real=False) -> int:
 
 
 def request_stop(run_dir, check_id) -> dict:
-    """Write a stop request only when the selected corner check holds its run lock."""
+    """Write and return a stop request for a running corner check; raise CheckRefused if it is not running."""
     directory = check_directory(run_dir, check_id)
     if not RunLock.held(directory / 'control' / 'check.lock'):
         raise CheckRefused('This corner check is not running.', code='not_running')
@@ -537,7 +537,7 @@ def grade(result, evaluator, targets):
 
 
 class Worker:
-    """A worker for a persisted corner-check request, its results, restoration and final status."""
+    """The worker that runs one saved corner-check request and records its results, restoration and status."""
     def __init__(self, directory, *, allow_real=False):
         self.directory = Path(directory)
         self.request = read_json(self.directory / 'request.json')
@@ -830,7 +830,7 @@ def execute(directory, *, allow_real=False, lock_fd=None) -> str:
 
 
 def main(argv=None):
-    """Run the corner-check worker with signal-driven stop requests and a completion exit status."""
+    """Run the corner-check worker with SIGTERM and SIGINT as stop requests; return 0 unless it failed."""
     parser = argparse.ArgumentParser(description='Corner check worker: python -m gator_workbench.corner_check')
     parser.add_argument('--check-dir', type=Path, required=True)
     parser.add_argument('--allow-real', action='store_true',

@@ -480,7 +480,7 @@ class NetworkView:
         return hashlib.sha256(self.key.encode() + digest).digest()
 
     def view_known(self, observation, digest):
-        """Reuse or cache a viewed observation by its replay digest."""
+        """Return an observation's network view, reusing the view cached under its replay digest."""
         with self._lock:
             found = self._seen.get(digest)
             if found is not None:
@@ -558,7 +558,7 @@ def view_for(config, vocabulary=None):
 
 
 def read_run_record(run_dir):
-    """Read the run's network-input record only when its stored format is recognized."""
+    """Return the run's network-input record, or None when the file is missing or in another format."""
     record = read_json(Path(run_dir) / RUN_FILE, default=None)
     return record if isinstance(record, dict) and record.get('format') == FORMAT else None
 

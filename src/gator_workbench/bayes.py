@@ -246,7 +246,7 @@ class Proposer:
         return len(self.search.X)
 
     def propose(self) -> dict:
-        """Return a search proposal mapped to the workbench's normalized action coordinates."""
+        """Return the next design to try as a number in [-1, 1] per parameter group."""
         point = self.search.ask()
         release_freed_memory()
         return {group: float(2.0 * point[index] - 1.0) for index, group in enumerate(self.group_ids)}

@@ -231,7 +231,7 @@ class ThreadLane:
         return _Handle(future)
 
     def close(self, timeout=30.0):
-        """Request environment closure and wait for the lane thread to finish."""
+        """Close the environment, wait for the lane thread to end, and return the restoration outcome."""
         if not self._thread.is_alive():
             return dict(lane_id=self.lane_id, state='already_closed')
         outcome = self.submit('close')._future.result(timeout=timeout)
@@ -281,7 +281,7 @@ class ProcessLane:
         return self._worker.submit(_process_run, op, proposal, allowance, stop_file)
 
     def close(self, timeout=None):
-        """Request environment closure and always shut down the owned child process."""
+        """Close the environment, always shut down the child process, and return the restoration outcome."""
         outcome = dict(lane_id=self.lane_id, state='unknown')
         try:
             outcome = self._worker.submit(_process_close, timeout=timeout or self.limits.shutdown_seconds).result()

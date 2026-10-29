@@ -73,7 +73,7 @@ class Parsed:
 
     @property
     def sha256(self) -> str:
-        """Hash the retained physical deck lines joined by newline characters."""
+        """Return the SHA-256 hex digest of the deck text exactly as it was given to the parser."""
         return hashlib.sha256('\n'.join(self.lines).encode()).hexdigest()
 
     @property

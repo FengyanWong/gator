@@ -180,7 +180,7 @@ def bridge_importable() -> bool:
 
 
 def profile_settings(profile_id=None):
-    """Return loaded connection state and settings for the named or active profile."""
+    """Return the loaded connection file and the named or active profile's settings, None if unconfigured."""
     loaded, _, settings = named_or_active(profile_id)
     return loaded, settings
 

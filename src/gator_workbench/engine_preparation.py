@@ -22,7 +22,7 @@ from .trajectory import StateEncoder
 
 
 def prepare(engine, *, local_scratch) -> None:
-    """Initialize persisted run state, learning resources, budgets, preparation ownership, and execution lanes."""
+    """Set up the run's dataset, learner, budget and save points, restore a resumed run and open its lanes."""
     config, out, adv = engine.config, engine.config.output, engine.config.run.advanced
     experiment = _initialize_dataset(out, engine, config)
     input_options, built = _build_learning_resources(engine, config, adv, experiment)

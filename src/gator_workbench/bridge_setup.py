@@ -122,7 +122,7 @@ def parse_hierarchy(decoded):
 
 
 def fingerprint(snapshot) -> str:
-    """Return a deterministic digest of the serialized setup snapshot."""
+    """Return the SHA-256 hex digest of a snapshot's key-sorted JSON form."""
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
 
 

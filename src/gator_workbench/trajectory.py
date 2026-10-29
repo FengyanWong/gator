@@ -28,10 +28,7 @@ def _codec():
 
 
 class StateEncoder:
-    (
-        'An encoder for unique observation states using shared graph and spec templates with exact '
-        'reconstruction checks.'
-    )
+    """An encoder that turns each distinct observation state of one task into a single archive row."""
     def __init__(self, static_dir, *, task_id, graph, specs, feature_schema_version, spec_schema_version):
         codec = _codec()
         self.static_dir = Path(static_dir)

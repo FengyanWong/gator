@@ -245,7 +245,7 @@ def reward_settings(config):
 
 
 def training_conditions(config):
-    """Return the configured verified training corners or reject an unsupported task."""
+    """Return () when corners are off, else nominal plus chosen corners; raise CompileError if unsupported."""
     if config.run.conditions.policy == 'off':
         return ()
     from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition

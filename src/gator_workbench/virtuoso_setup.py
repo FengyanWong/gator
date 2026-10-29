@@ -104,7 +104,7 @@ def check_expression(expression, variables=()) -> list[str]:
 
 
 def outermost_function(expression):
-    """Read a leading function-call name from an expression without evaluating it."""
+    """Return the name of the function call an expression starts with, or None when it starts otherwise."""
     match = re.match(r'\s*([A-Za-z_]\w*)\s*\(', expression or '')
     return match.group(1) if match else None
 

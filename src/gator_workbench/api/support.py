@@ -202,7 +202,7 @@ def bridge_call(action, *refusals):
 
 
 def load_runtime(config, *, allow_real=False):
-    """Load a task or cached page view with a structured blocker for loading failures."""
+    """Load the task for `config`; return (task, None), or (None, blocker details) instead of raising."""
     try:
         if allow_real:
             return tasks.load_task(config.circuit, allow_real=True, profile_id=config.run.connection_profile_id), None

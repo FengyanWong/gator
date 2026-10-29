@@ -69,7 +69,7 @@ class RunLock:
 
     @classmethod
     def adopt(cls, path: str | os.PathLike[str], descriptor: int) -> RunLock:
-        """Create a run lock around an inherited descriptor."""
+        """Return a RunLock over an inherited descriptor that already holds the lock, without locking again."""
         lock = cls(path)
         lock._stream = os.fdopen(descriptor, 'a+')
         return lock

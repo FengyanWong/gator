@@ -195,7 +195,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         return self.condition
 
     def validate_condition(self, condition):
-        """Accept an omitted or nominal condition and reject other deck conditions."""
+        """Accept no condition or the deck's own nominal one; raise UnsupportedCapability for any other."""
         if condition is not None and condition != self.condition:
             raise UnsupportedCapability('The ngspice backend runs the deck as written: only its own nominal condition')
 
@@ -248,7 +248,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         return graph
 
     def run_simulation(self, request):
-        """Evaluate an exported deck and classify its measurements, artifacts and simulator failures."""
+        """Run an exported deck in ngspice and return the result, whose status reports any failed run."""
         self._check()
         self.validate_condition(request.condition)
         started = perf_counter()

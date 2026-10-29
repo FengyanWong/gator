@@ -202,7 +202,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
                     raise ValueError(f'Group {group.id}: matched widths / fixed ratio violated')
 
     def optimization_graph(self, structure=None):
-        """Return a validated optimization graph with parameter-group bounds aligned to the grid."""
+        """Return the validated optimization graph, raising a group's upper bound to its top grid point if above."""
         graph = self.parser.parse_file(structure) if structure is not None else deepcopy(self.graph)
         # The groups a run gets are the ones compile makes from the task's rows, also from a mapping saved before
         # compile took a group's top grid point as its upper bound: otherwise such a task's own rows no longer matched
@@ -268,7 +268,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         return graph
 
     def validate_export(self, structure, snapshot):
-        """Compare exported parameters with schematic readback and the recorded fixed circuit values."""
+        """Check an exported netlist against the readback and recorded circuit; return the validated widths."""
         graph = self._exported_graph(structure)
         actual = self.instances(snapshot)
         writable = {device for device, _ in self.writable_keys}

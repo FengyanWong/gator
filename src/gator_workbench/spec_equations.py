@@ -98,7 +98,7 @@ def evaluate(text, lookup):
 
 
 def is_finite_number(value):
-    """Check that a value is a finite Python integer or float, excluding booleans."""
+    """Return whether `value` is a finite int or float, booleans excluded."""
     return value is not None and not isinstance(value, bool) and isinstance(value, (int,
         float)) and math.isfinite(value)
 
@@ -420,7 +420,7 @@ class EquationNativeFactory:
         return self.create_recorded(lane, None)
 
     def create_recorded(self, lane, recorder):
-        """Create an equation-aware recorded environment while checking baseline equality on simulator results only."""
+        """Build the lane's recorded environment; computed specs are added and left out of the baseline check."""
         reference = self.inner.reference_metrics
         env = replace(self.inner, reference_metrics=None).create_recorded(lane, recorder)
         self.plan.wrap(env.backend)
@@ -445,7 +445,7 @@ class EquationNativeFactory:
 
 # ---------------------------------------------------------------------------------- the result registry
 def magnitude(unit) -> float:
-    """Return the reference magnitude for a recognized canonical unit, defaulting to one."""
+    """Return the reference magnitude of `unit`'s canonical form, or 1.0 for a unit without one."""
     canonical = units.canonical_unit(unit) if isinstance(unit, str) and units.known(unit) else unit
     return float(UNIT_MAGNITUDE.get(canonical, 1.0))
 

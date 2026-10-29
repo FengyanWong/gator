@@ -825,12 +825,50 @@ def _hashed(data):
     tolerance and the Probes' expression retired the same day (RETIRED_TARGET_FIELDS, RETIRED_MEASUREMENT_FIELDS): a spec
     that used them, or a probe computed from others, was rewritten when it loaded and hashes differently since."""
     data = dict(data)
+    _hash_output_and_research(data)
+    run = _hash_run_defaults(data)
+    network = run.get('network') if isinstance(run, dict) else None
+    if isinstance(network, dict):
+        network = dict(network)
+        if network.get('vocabulary') == STANDARD_VOCABULARY:
+            network.pop('vocabulary')
+        if network.get('operating_points') is False:
+            network.pop('operating_points')
+        for key, default in (('spec_input', 'slots'), ('size_features', 'absolute'), ('device_model_features', False),
+                             ('bench_features', 'absolute'), ('net_roles', 'task'), ('operating_point_ratios', False)):
+            if network.get(key) == default and type(network.get(key)) is type(default):      # records 7.298, 7.317
+                network.pop(key)
+        if network.get('structural_encoding') in (None, 'none') and network.get('encoder_type') not in GLOBAL_ENCODERS:
+            network.pop('structural_encoding', None)
+        version = network.get('architecture_version')
+        if version is None or type(version) is int and version == (2 if network.get('encoder_type') == 'circuit_gps' else 1):
+            network.pop('architecture_version', None)                                   # record 7.356
+        data['run'] = dict(run, network=network)
+    data = _hash_retired_row_fields(data)
+    targets = data.get('targets') if isinstance(data, dict) else None
+    if not isinstance(targets, list):
+        return data
+    targets = [{k: v for k, v in dict(RETIRED_TARGET_FIELDS, **row).items()
+                if not (k in ('nominal_only', 'missing_is_failure') and v is False or k == 'margin_sides' and v == 'both')}
+               if isinstance(row, dict) else row for row in targets]
+    return dict(data, targets=[
+        {('measurement_id' if key == 'equation' else key): value for key, value in row.items()}
+        if isinstance(row, dict) and 'measurement_id' not in row and isinstance(row.get('equation'), str)
+        and _ONE_PROBE.match(row['equation']) else row for row in targets])
+
+
+def _hash_output_and_research(data):
+    """Preserve the historical identity defaults for output retention and research labels."""
     output = data.get('output') if isinstance(data, dict) else None
     if isinstance(output, dict) and output.get('keep_simulator_host_folders') is False:          # record 7.282
         data['output'] = {k: v for k, v in output.items() if k != 'keep_simulator_host_folders'}
     research = data.get('research') if isinstance(data, dict) else None
     if isinstance(research, dict):
         data['research'] = dict(research, **{key: research.get(key, default) for key, default in RETIRED_RESEARCH_FIELDS.items()})
+
+
+def _hash_run_defaults(data):
+    """Normalize run settings to the form used by existing configuration identities."""
     run = data.get('run') if isinstance(data, dict) else None
     if isinstance(run, dict):
         run = dict(run, **{key: run.get(key, default) for key, default in RETIRED_RUN_FIELDS.items()})
@@ -861,37 +899,16 @@ def _hashed(data):
         if run.get('conditions') == ConditionsConfig().model_dump(mode='json'):
             run.pop('conditions')
         data['run'] = run
-    network = run.get('network') if isinstance(run, dict) else None
-    if isinstance(network, dict):
-        network = dict(network)
-        if network.get('vocabulary') == STANDARD_VOCABULARY:
-            network.pop('vocabulary')
-        if network.get('operating_points') is False:
-            network.pop('operating_points')
-        for key, default in (('spec_input', 'slots'), ('size_features', 'absolute'), ('device_model_features', False),
-                             ('bench_features', 'absolute'), ('net_roles', 'task'), ('operating_point_ratios', False)):
-            if network.get(key) == default and type(network.get(key)) is type(default):      # records 7.298, 7.317
-                network.pop(key)
-        if network.get('structural_encoding') in (None, 'none') and network.get('encoder_type') not in GLOBAL_ENCODERS:
-            network.pop('structural_encoding', None)
-        version = network.get('architecture_version')
-        if version is None or type(version) is int and version == (2 if network.get('encoder_type') == 'circuit_gps' else 1):
-            network.pop('architecture_version', None)                                   # record 7.356
-        data['run'] = dict(run, network=network)
+    return run
+
+
+def _hash_retired_row_fields(data):
+    """Restore retired row defaults used by existing configuration identities."""
     for section, retired in (('parameters', RETIRED_PARAMETER_FIELDS), ('measurements', RETIRED_MEASUREMENT_FIELDS)):
         rows = data.get(section) if isinstance(data, dict) else None
         if isinstance(rows, list):
             data = dict(data, **{section: [dict(retired, **row) if isinstance(row, dict) else row for row in rows]})
-    targets = data.get('targets') if isinstance(data, dict) else None
-    if not isinstance(targets, list):
-        return data
-    targets = [{k: v for k, v in dict(RETIRED_TARGET_FIELDS, **row).items()
-                if not (k in ('nominal_only', 'missing_is_failure') and v is False or k == 'margin_sides' and v == 'both')}
-               if isinstance(row, dict) else row for row in targets]
-    return dict(data, targets=[
-        {('measurement_id' if key == 'equation' else key): value for key, value in row.items()}
-        if isinstance(row, dict) and 'measurement_id' not in row and isinstance(row.get('equation'), str)
-        and _ONE_PROBE.match(row['equation']) else row for row in targets])
+    return data
 
 
 def config_hash(config: WorkbenchConfig | dict) -> str:

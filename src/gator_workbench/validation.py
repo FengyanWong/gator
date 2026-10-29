@@ -698,6 +698,16 @@ def _check_network_inputs(config, report, graph):
     if (network.encoder_type == 'circuit_gps') != (settings['spec_input'] == 'structured'):
         report.add('blocker', 'encoder_spec_input_mismatch', 'run.network.spec_input',
                    'CircuitGPS needs Structured network inputs. Other encoders use Standard, Transferable or Transferable 2.')
+    _check_structured_specs(settings, config, report)
+    _describe_spec_inputs(settings, config, report)
+    _check_pdk_network_numbers(settings, config, report, graph)
+    _check_second_build(config, report, graph, settings)
+    _check_component_vocabulary(network, config, report, graph)
+    _check_search_input_policy(config, report, network)
+
+
+def _check_structured_specs(settings, config, report):
+    """Describe structured measurement programs and report how many operations retain unknown semantics."""
     if settings['spec_input'] == 'structured':
         # lazy: only structured spec validation needs the measurement-program compiler.
         from .spec_programs import describe_programs
@@ -711,6 +721,10 @@ def _check_network_inputs(config, report, graph):
                            'CircuitGPS preserves the measurement program, its circuit bindings and reward scale. '
                            + (f'{unknown} part(s) have unknown semantics (including opaque analyzer results); '
                               'they keep explicit unknown tokens.' if unknown else 'Every operation is recognized.'))
+
+
+def _describe_spec_inputs(settings, config, report):
+    """Describe each active specification as the set-based network inputs will represent it."""
     if settings['spec_input'] in ('set', 'structured'):
         described = spec_descriptors.describe_specs(config)
         report.add('info', 'spec_input_set', 'targets',
@@ -723,6 +737,10 @@ def _check_network_inputs(config, report, graph):
                            f'The network reads {target.metric_id} as: '
                            + spec_descriptors.words(described[target.metric_id], units.canonical_unit(target.unit)
                                                     if units.known(target.unit) else target.unit))
+
+
+def _check_pdk_network_numbers(settings, config, report, graph):
+    """Validate the PDK size and device-model numbers required by the selected network inputs."""
     relative, numbers = settings['size_features'] == 'pdk_relative', settings['device_model_features']
     if relative or numbers:
         path = 'run.network.size_features' if relative else 'run.network.device_model_features'
@@ -744,7 +762,10 @@ def _check_network_inputs(config, report, graph):
                            f"four technology numbers of {', '.join(found['missing_numbers'])}"
                            + ('; the network sees those inputs as missing on these devices.' if level == 'warning' else
                               '; none of this circuit\'s MOS models has them. Switch the device model features off.'))
-    _check_second_build(config, report, graph, settings)
+
+
+def _check_component_vocabulary(network, config, report, graph):
+    """Warn about legacy component lists and explain devices whose family classification is unavailable."""
     vocabulary = getattr(network, 'vocabulary', 'standard') or 'standard'
     if vocabulary == 'standard' and config.run.mode == 'scratch':
         report.add('warning', 'standard_list_new_model', 'run.network.vocabulary',
@@ -760,6 +781,10 @@ def _check_network_inputs(config, report, graph):
                        + (f'PDK {pdk_id} is not loaded; loading it (PDK window) gives its bipolars, diodes and varactors their '
                           'families.' if not loaded else 'the rules of the family list could not classify them (their model '
                           'facts are in the PDK window).'))
+
+
+def _check_search_input_policy(config, report, network):
+    """Report optimizer, archive-comparison and rehearsal restrictions and any added operating-point analysis."""
     if config.run.optimizer == 'bayes':                       # record 7.304
         if config.run.mode != 'scratch':
             report.add('blocker', 'bayes_needs_scratch', 'run.mode',

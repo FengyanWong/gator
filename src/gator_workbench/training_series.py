@@ -430,11 +430,11 @@ class _FlushLog:
         self.tail, self.pending = data[window - start:offset - start], data[offset - start:]
 
 
-def _pread(fd, size, offset):
+def _pread(file_descriptor, size, offset):
     """`size` bytes from `offset`; fewer only at the end of the file."""
     chunks = []
     while size > 0:
-        chunk = os.pread(fd, size, offset)
+        chunk = os.pread(file_descriptor, size, offset)
         if not chunk:
             break
         chunks.append(chunk)

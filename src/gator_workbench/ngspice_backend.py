@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 from time import perf_counter
+from typing import NamedTuple
 from uuid import uuid4
 
 from analog_optimizer.backends.backend import (BackendNotConnected, HeldParameters, NetlistArtifact, SimulationResult,
@@ -147,21 +148,26 @@ def deck_condition(text) -> SimulationCondition:
     return SimulationCondition(PVTCorner('nominal', 'nominal', temperature, supply if supply > 0 else 1.0))
 
 
-def _classify_ngspice_measurement_failure(failure, evidence, found, wanted, status, reason, evaluated, summary):
-    """Classify simulator and missing-measurement failures while retaining the current result fields."""
+class _RunFailure(NamedTuple):
+    """The status, reason and summary of a failed ngspice run, and whether it evaluated the design."""
+    status: SimulationStatus
+    reason: str
+    summary: str
+    evaluated: bool | None = None       # None: the run keeps the value it already has
+
+
+def _classify_ngspice_measurement_failure(failure, evidence, found, wanted):
+    """Return the simulator or missing-measurement failure of a finished run, or None if there is none."""
     if failure == 'nonconverged':
-        status, reason, evaluated = SimulationStatus.NONCONVERGED, 'ngspice_nonconverged', True
-        summary = evidence
-    elif failure == 'deck_error':
-        status, reason, evaluated = SimulationStatus.BACKEND_ERROR, 'ngspice_deck_error', False
-        summary = evidence
-    elif failure == 'measurement_error' and not found:
-        status, reason = SimulationStatus.MEASUREMENT_ERROR, 'ngspice_measurement_failed'
-        summary = evidence
-    elif not found and wanted:
-        status, reason = SimulationStatus.MEASUREMENT_ERROR, 'no_results_printed'
-        summary = 'ngspice printed none of the results the task reads: ' + ', '.join(wanted[:8])
-    return status, reason, evaluated, summary
+        return _RunFailure(SimulationStatus.NONCONVERGED, 'ngspice_nonconverged', evidence, evaluated=True)
+    if failure == 'deck_error':
+        return _RunFailure(SimulationStatus.BACKEND_ERROR, 'ngspice_deck_error', evidence, evaluated=False)
+    if failure == 'measurement_error' and not found:
+        return _RunFailure(SimulationStatus.MEASUREMENT_ERROR, 'ngspice_measurement_failed', evidence)
+    if not found and wanted:
+        return _RunFailure(SimulationStatus.MEASUREMENT_ERROR, 'no_results_printed',
+                           'ngspice printed none of the results the task reads: ' + ', '.join(wanted[:8]))
+    return None
 
 
 class NgspiceBackend(HeldParameters, VirtuosoBackend):
@@ -307,8 +313,11 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
                 summary = _scrub(_last_line(err) or f'exit code {code}', self.link.ssh_host)
             else:
                 failure, evidence = ngspice_netlist.classify_failure(out, err, code)
-                status, reason, evaluated, summary = _classify_ngspice_measurement_failure(failure, evidence, found,
-                    wanted, status, reason, evaluated, summary)
+                run_failure = _classify_ngspice_measurement_failure(failure, evidence, found, wanted)
+                if run_failure is not None:
+                    status, reason, summary = run_failure.status, run_failure.reason, run_failure.summary
+                    if run_failure.evaluated is not None:
+                        evaluated = run_failure.evaluated
         metrics = {name: found.get(name) for name in wanted}
         units = {name: self.units.get(name) or self.parsed.units.get(name) or '1' for name in wanted}
         validity = {name: name in found for name in wanted}

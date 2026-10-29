@@ -475,6 +475,19 @@ def _cumulative(rows):
     return result
 
 
+def _write_csv_row(row, table, json, writer):
+    """Write a detailed table row as CSV using the table column order."""
+    cells = []
+    for column in TABLES[table]['columns']:
+        value = row[column.name]
+        if column.type.startswith('map') and value is not None:
+            value = json.dumps(map_to_dict(value), allow_nan=False)
+        elif column.type.startswith('list') and value is not None:
+            value = json.dumps(value, allow_nan=False, default=str)
+        cells.append(_cell(value) if not hasattr(value, 'isoformat') else value.isoformat())
+    writer.writerow(cells)
+
+
 def export_table_csv(run_dir, table, *, cutoff_seq=None):
     """On-demand detailed CSV copy into <run>/exports: stream bounded batches from a fixed snapshot, then publish."""
     import json
@@ -493,15 +506,7 @@ def export_table_csv(run_dir, table, *, cutoff_seq=None):
             writer.writerow(columns)
             for batch in batches:
                 for row in batch.to_pylist():
-                    cells = []
-                    for column in TABLES[table]['columns']:
-                        value = row[column.name]
-                        if column.type.startswith('map') and value is not None:
-                            value = json.dumps(map_to_dict(value), allow_nan=False)
-                        elif column.type.startswith('list') and value is not None:
-                            value = json.dumps(value, allow_nan=False, default=str)
-                        cells.append(_cell(value) if not hasattr(value, 'isoformat') else value.isoformat())
-                    writer.writerow(cells)
+                    _write_csv_row(row, table, json, writer)
                     count += 1
         publish(temporary, path)
     finally:

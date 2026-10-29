@@ -188,6 +188,83 @@ class Held:
 
 
 # ------------------------------------------------------------------------------------------ the SKILL of one candidate
+def _validated_form_procedures(item, targets):
+    """Resolve and validate an instance's form procedures and target fields."""
+    name, form = item['instance'], item.get('form') or {}
+    init, done = form.get('init') or None, form.get('done') or None      # '' = the form has no such procedure (a second foundry PDK's CDF, 2026-10-09)
+    for proc in (init, done):
+        if proc is not None and not PROC.match(proc):
+            raise ValueError(f'{name}: invalid form procedure {proc!r}')
+    for field, _ in targets:
+        if not NAME.match(field.instance or '') or not FIELD.match(field.cdf or '') or field.instance != name:
+            raise ValueError(f'{name}: invalid form field {field.name}')
+    return name, init, done
+
+def _append_instance_transaction(name, init, done, targets, blocks):
+    """Append one instance's guarded form transaction in initialization, callback and completion order."""
+    lines = [f'inst = car(setof(x cv~>instances x~>name == {_skill_string(name)}))',
+             f'unless(inst error("%s" {_skill_string(f"instance {name} not found")}))',
+             'cdfgData = cdfGetInstCDF(inst)', 'cdfgForm = nil',
+             f'unless(cdfgData error("%s" {_skill_string(f"{name} has no CDF")}))']
+    steps = []
+    steps = _append_form_initialization(name, init, steps)
+    steps = _append_field_rounds(targets, steps)
+    for field, value in targets:
+        steps.append(f'unless({field.holds(value)} error("%s" {_skill_string(f"{field.name} did not keep the value {value:.12g} after the PDK callbacks")}))')
+    steps = _append_form_completion(name, done, steps)
+    steps.append('changed = t')
+    pending = ' '.join(f'!{field.holds(value)}' for field, value in targets)
+    lines.append(f'when(or({pending})\n      ' + '\n      '.join(steps) + ')')
+    blocks.append('\n    '.join(lines))
+
+def _append_form_initialization(name, init, steps):
+    """Append the declared form initialization call or a guard against an unexpected procedure."""
+    if init:
+        steps += [f'unless(cdfgData~>formInitProc == {_skill_string(init)} '
+                  f'error("%s" {_skill_string(f"{name}: its form no longer starts with {init}")}))',
+                  f'funcall(stringToSymbol({_skill_string(init)}) cdfgData)']
+    else:      # none: nil, or the empty string a PDK may state (a second foundry PDK: formInitProc = "", which SKILL takes as true)
+        steps.append(f'when(and(cdfgData~>formInitProc cdfgData~>formInitProc != "") '
+                     f'error("%s" {_skill_string(f"{name}: its form has an init procedure now")}))')
+    return steps
+
+def _append_field_rounds(targets, steps):
+    """Append bounded value-setting rounds that retype width after a changed length."""
+    # ... and its width typed again, at its own value, in a round that typed the length: only the width, finger width
+    # and finger count callbacks recompute those values, so a task that writes lengths and holds the widths (the MScR
+    # OTA7T, the LDO pass device) ran every candidate with the build's values (MScR session, 2026-09-30).
+    retype = any(field.cdf == 'l' for field, _ in targets) and any(field.cdf == 'w' for field, _ in targets)
+    rounds = []
+    for field, value in targets:
+        one = []
+        if isinstance(field.rule, str):
+            one += [f'rule = errsetstring({_skill_string(field.rule)})',
+                    f'when(and(rule !car(rule)) error("%s" {_skill_string(f"{field.name} cannot be typed in the form now (its rule: {field.rule})")}))']
+        one.append(f'cdfgData~>{field.cdf}~>value = {field.literal(value)}')
+        if field.callback and field.callback.strip() not in ('', 'nil'):
+            one.append(f'unless(errsetstring({_skill_string(field.callback)}) '
+                       f'error("%s" {_skill_string(f"the callback of {field.name} failed: {field.callback}")}))')
+        if retype and field.cdf in ('l', 'w'):
+            one.append('lengthTyped = ' + ('t' if field.cdf == 'l' else 'nil'))
+        one.append('unsettled = t')
+        test = f'and({field.holds(value)} !lengthTyped)' if retype and field.cdf == 'w' else field.holds(value)
+        rounds.append(f'unless({test}\n          ' + '\n          '.join(one) + ')')
+    steps += ['lengthTyped = nil', 'unsettled = t', 'rounds = 0', f'while(and(unsettled rounds < {PASSES})',
+              '  rounds = rounds + 1', '  unsettled = nil', '  ' + '\n        '.join(rounds) + ')']
+    return steps
+
+def _append_form_completion(name, done, steps):
+    """Append the declared form completion call or a guard against an unexpected procedure."""
+    if done:
+        steps += [f'unless(cdfgData~>doneProc == {_skill_string(done)} '
+                  f'error("%s" {_skill_string(f"{name}: its form no longer ends with {done}")}))',
+                  f'funcall(stringToSymbol({_skill_string(done)}) inst)']
+    else:      # none: nil or "" (as for the init procedure above)
+        steps.append(f'when(and(cdfgData~>doneProc cdfgData~>doneProc != "") '
+                     f'error("%s" {_skill_string(f"{name}: its form has a done procedure now")}))')
+    return steps
+
+
 def write_skill(library, cell, plan) -> str | None:
     """The whole candidate as ONE SKILL transaction. plan = [dict(instance, form=dict(init, done), targets=[(Field, value)])]
     in a fixed order. None when there is nothing to write. Every name has passed NAME / FIELD / PROC; a rule or callback
@@ -204,60 +281,8 @@ def write_skill(library, cell, plan) -> str | None:
         targets = sorted(item['targets'], key=lambda target: target[0].cdf != 'l')
         if not targets:
             continue
-        name, form = item['instance'], item.get('form') or {}
-        init, done = form.get('init') or None, form.get('done') or None      # '' = the form has no such procedure (a second foundry PDK's CDF, 2026-10-09)
-        for proc in (init, done):
-            if proc is not None and not PROC.match(proc):
-                raise ValueError(f'{name}: invalid form procedure {proc!r}')
-        for field, _ in targets:
-            if not NAME.match(field.instance or '') or not FIELD.match(field.cdf or '') or field.instance != name:
-                raise ValueError(f'{name}: invalid form field {field.name}')
-        lines = [f'inst = car(setof(x cv~>instances x~>name == {_skill_string(name)}))',
-                 f'unless(inst error("%s" {_skill_string(f"instance {name} not found")}))',
-                 'cdfgData = cdfGetInstCDF(inst)', 'cdfgForm = nil',
-                 f'unless(cdfgData error("%s" {_skill_string(f"{name} has no CDF")}))']
-        steps = []
-        if init:
-            steps += [f'unless(cdfgData~>formInitProc == {_skill_string(init)} '
-                      f'error("%s" {_skill_string(f"{name}: its form no longer starts with {init}")}))',
-                      f'funcall(stringToSymbol({_skill_string(init)}) cdfgData)']
-        else:      # none: nil, or the empty string a PDK may state (a second foundry PDK: formInitProc = "", which SKILL takes as true)
-            steps.append(f'when(and(cdfgData~>formInitProc cdfgData~>formInitProc != "") '
-                         f'error("%s" {_skill_string(f"{name}: its form has an init procedure now")}))')
-        # ... and its width typed again, at its own value, in a round that typed the length: only the width, finger width
-        # and finger count callbacks recompute those values, so a task that writes lengths and holds the widths (the MScR
-        # OTA7T, the LDO pass device) ran every candidate with the build's values (MScR session, 2026-09-30).
-        retype = any(field.cdf == 'l' for field, _ in targets) and any(field.cdf == 'w' for field, _ in targets)
-        rounds = []
-        for field, value in targets:
-            one = []
-            if isinstance(field.rule, str):
-                one += [f'rule = errsetstring({_skill_string(field.rule)})',
-                        f'when(and(rule !car(rule)) error("%s" {_skill_string(f"{field.name} cannot be typed in the form now (its rule: {field.rule})")}))']
-            one.append(f'cdfgData~>{field.cdf}~>value = {field.literal(value)}')
-            if field.callback and field.callback.strip() not in ('', 'nil'):
-                one.append(f'unless(errsetstring({_skill_string(field.callback)}) '
-                           f'error("%s" {_skill_string(f"the callback of {field.name} failed: {field.callback}")}))')
-            if retype and field.cdf in ('l', 'w'):
-                one.append('lengthTyped = ' + ('t' if field.cdf == 'l' else 'nil'))
-            one.append('unsettled = t')
-            test = f'and({field.holds(value)} !lengthTyped)' if retype and field.cdf == 'w' else field.holds(value)
-            rounds.append(f'unless({test}\n          ' + '\n          '.join(one) + ')')
-        steps += ['lengthTyped = nil', 'unsettled = t', 'rounds = 0', f'while(and(unsettled rounds < {PASSES})',
-                  '  rounds = rounds + 1', '  unsettled = nil', '  ' + '\n        '.join(rounds) + ')']
-        for field, value in targets:
-            steps.append(f'unless({field.holds(value)} error("%s" {_skill_string(f"{field.name} did not keep the value {value:.12g} after the PDK callbacks")}))')
-        if done:
-            steps += [f'unless(cdfgData~>doneProc == {_skill_string(done)} '
-                      f'error("%s" {_skill_string(f"{name}: its form no longer ends with {done}")}))',
-                      f'funcall(stringToSymbol({_skill_string(done)}) inst)']
-        else:      # none: nil or "" (as for the init procedure above)
-            steps.append(f'when(and(cdfgData~>doneProc cdfgData~>doneProc != "") '
-                         f'error("%s" {_skill_string(f"{name}: its form has a done procedure now")}))')
-        steps.append('changed = t')
-        pending = ' '.join(f'!{field.holds(value)}' for field, value in targets)
-        lines.append(f'when(or({pending})\n      ' + '\n      '.join(steps) + ')')
-        blocks.append('\n    '.join(lines))
+        name, init, done = _validated_form_procedures(item, targets)
+        _append_instance_transaction(name, init, done, targets, blocks)
     if not blocks:
         return None
     return ('let((cv inst cdfgData cdfgForm rule unsettled rounds same changed lengthTyped)\n'
@@ -274,6 +299,16 @@ def write_skill(library, cell, plan) -> str | None:
             + '\n    '.join(blocks) +
             '\n    when(changed\n      schCheck(cv)\n      unless(dbSave(cv) error("%s" "Save failed")))\n    t\n'
             '  ) when(cv dbClose(cv))))')
+
+
+
+
+
+
+
+
+
+
 
 
 # ------------------------------------------------------------------------------------------ the profile

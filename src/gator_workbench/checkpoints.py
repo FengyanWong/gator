@@ -134,45 +134,13 @@ class CheckpointStore:
         if staging.exists():
             shutil.rmtree(staging)
         (staging / 'replay_buffer').mkdir(parents=True)
-        missing, not_applicable = [], []
-        saved_replay = replay
-        if frozen:
-            # Nothing is learned in frozen mode, so there is no replay to restore: not a deficiency.
-            not_applicable += ['replay_snapshot (frozen mode trains nothing and keeps no replay)',
-                               'optimizer progress (no optimizer step is ever taken)']
-            saved_replay = ReplayBuffer(1, origin=learner.experiment['origin'])
-        elif not self.save_replay:
-            missing += ['replay_snapshot (disabled in output settings)']
-            saved_replay = ReplayBuffer(replay.capacity, origin=replay.origin)
+        missing, not_applicable, saved_replay = self._checkpoint_replay(learner, replay, frozen, ReplayBuffer)
         run_state = dict(version='workbench-run-state-v1', run_id=self.run_id, task_id=self.task_id,
                          task_definition_hash=self.task_hash, mode=mode, ledger=ledger_state,
                          data_cursor=data_cursor, counters=counters, collector=collector_state,
                          boundary=RECOVERABLE_BOUNDARY)
         try:
-            # The package writes the file, reads it back and loads it again to check it (2.5 s for 42 MB): on the local disk.
-            # Only the compressed copy - every zip entry the same bytes, a third of the size - goes to the run folder (7.284).
-            with tempfile.TemporaryDirectory(prefix='gator-save-point-') as local:
-                with _one_source_digest():
-                    learner.save(Path(local) / 'training_state.pt', saved_replay, run_state=run_state)
-                    contract = contract_summary(learner)
-                write_compressed(Path(local) / 'training_state.pt', staging / 'training_state.pt')
-            weights = dict(format='gator-workbench-weights-v1', contract=contract,
-                           actor=learner.actor.state_dict(), critics=learner.critics.state_dict(),
-                           targets=learner.targets.state_dict(), log_alpha=learner.log_alpha.detach().clone(),
-                           updates=int(learner.updates))
-            temporary = temporary_path(staging / 'model_weights.pt')
-            torch.save(weights, temporary)
-            publish(temporary, staging / 'model_weights.pt')
-            members = [] if saved_replay is not replay else [t.candidate_id for t in replay._items]
-            manifest = dict(format='embedded in training_state.pt (replay embedded-v1)',
-                            included=saved_replay is replay, capacity=replay.capacity if replay is not None else None,
-                            size=len(members), insertions=getattr(replay, 'insertions', 0),
-                            position=getattr(replay, '_position', 0),
-                            evicted=max(0, getattr(replay, 'insertions', 0) - len(members)),
-                            member_candidate_ids=members,
-                            note='A finite circular buffer. Once insertions exceed capacity it no longer holds the '
-                                 'complete history; the complete archive is data/transitions.')
-            write_json(staging / 'replay_buffer' / 'manifest.json', manifest)
+            contract, manifest = self._write_checkpoint_payload(learner, saved_replay, run_state, staging, torch, replay)
             capability = 'full_state' if not missing else 'weights_only'
             files = {}
             for path in sorted(p for p in staging.rglob('*') if p.is_file()):
@@ -203,6 +171,55 @@ class CheckpointStore:
                 raise PersistenceError(f'Checkpoint could not be saved: {exc}') from exc
             raise
         # Every file is complete and verified in place: only now move the pointer.
+        self._publish_checkpoint_pointers(checkpoint_id, metadata, capability, data_cursor, kind)
+        self.last_saved_at = utcnow()
+        self._prune(checkpoint_id)
+        return metadata
+
+    def _checkpoint_replay(self, learner, replay, frozen, ReplayBuffer):
+        """Choose replay content and record unavailable or inapplicable restoration components."""
+        missing, not_applicable = [], []
+        saved_replay = replay
+        if frozen:
+            # Nothing is learned in frozen mode, so there is no replay to restore: not a deficiency.
+            not_applicable += ['replay_snapshot (frozen mode trains nothing and keeps no replay)',
+                               'optimizer progress (no optimizer step is ever taken)']
+            saved_replay = ReplayBuffer(1, origin=learner.experiment['origin'])
+        elif not self.save_replay:
+            missing += ['replay_snapshot (disabled in output settings)']
+            saved_replay = ReplayBuffer(replay.capacity, origin=replay.origin)
+        return missing, not_applicable, saved_replay
+
+    def _write_checkpoint_payload(self, learner, saved_replay, run_state, staging, torch, replay):
+        """Write verified learner state, transferable weights and the embedded replay membership manifest."""
+        # The package writes the file, reads it back and loads it again to check it (2.5 s for 42 MB): on the local disk.
+        # Only the compressed copy - every zip entry the same bytes, a third of the size - goes to the run folder (7.284).
+        with tempfile.TemporaryDirectory(prefix='gator-save-point-') as local:
+            with _one_source_digest():
+                learner.save(Path(local) / 'training_state.pt', saved_replay, run_state=run_state)
+                contract = contract_summary(learner)
+            write_compressed(Path(local) / 'training_state.pt', staging / 'training_state.pt')
+        weights = dict(format='gator-workbench-weights-v1', contract=contract,
+                       actor=learner.actor.state_dict(), critics=learner.critics.state_dict(),
+                       targets=learner.targets.state_dict(), log_alpha=learner.log_alpha.detach().clone(),
+                       updates=int(learner.updates))
+        temporary = temporary_path(staging / 'model_weights.pt')
+        torch.save(weights, temporary)
+        publish(temporary, staging / 'model_weights.pt')
+        members = [] if saved_replay is not replay else [t.candidate_id for t in replay._items]
+        manifest = dict(format='embedded in training_state.pt (replay embedded-v1)',
+                        included=saved_replay is replay, capacity=replay.capacity if replay is not None else None,
+                        size=len(members), insertions=getattr(replay, 'insertions', 0),
+                        position=getattr(replay, '_position', 0),
+                        evicted=max(0, getattr(replay, 'insertions', 0) - len(members)),
+                        member_candidate_ids=members,
+                        note='A finite circular buffer. Once insertions exceed capacity it no longer holds the '
+                             'complete history; the complete archive is data/transitions.')
+        write_json(staging / 'replay_buffer' / 'manifest.json', manifest)
+        return contract, manifest
+
+    def _publish_checkpoint_pointers(self, checkpoint_id, metadata, capability, data_cursor, kind):
+        """Publish the latest-save pointer and initialize an unselected best-policy record when absent."""
         write_json(self.root / 'latest.json', dict(
             checkpoint_id=checkpoint_id, path=f'checkpoints/{checkpoint_id}', created_utc=metadata['created_utc'],
             restoration_capability=capability, commit_seq=data_cursor['commit_seq'], kind=kind,
@@ -211,9 +228,6 @@ class CheckpointStore:
             write_json(self.root / 'best_policy.json', dict(
                 selected=None, status='not_selected',
                 reason='No validation-set policy evaluation has occurred in this run; a best policy is never invented.'))
-        self.last_saved_at = utcnow()
-        self._prune(checkpoint_id)
-        return metadata
 
     def relabel(self, checkpoint_id, kind, *, was):
         """Give an existing save another kind when the state it holds is exactly the one a new save would write (a run

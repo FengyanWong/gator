@@ -83,6 +83,31 @@ def summarize_snapshot(snapshot, *, library, cell):
 
 
 def _main(argv=None):
+    args = _read_arguments(argv)
+    settings = resolve_profile_id(args.profile_id)
+    bridge = RealBridge(settings)
+    bridge.version()
+    bridge.bind_env(settings['env_file'])
+    client = bridge.client(settings.get('profile') or None, 30)
+    try:
+        if args.op == 'libraries':
+            print(json.dumps(dict(libraries=sorted(client.library.list()))))
+        elif args.op == 'cells':
+            _list_library_cells(args, client)
+        elif args.op == 'import_cell':
+            _import_cell_snapshot(args, client)
+        elif args.op == 'pdk':
+            _read_pdk_record(args, client, settings, bridge)
+        else:
+            snapshot = read_cell(client, args.library, args.cell, include_positions=False)
+            print(json.dumps(dict(snapshot=snapshot), default=str))
+    finally:
+        client.close()
+    return 0
+
+
+def _read_arguments(argv):
+    """Parse the requested bridge operation and its circuit selection."""
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--profile-id', required=True)
@@ -93,77 +118,73 @@ def _main(argv=None):
     parser.add_argument('--output')
     parser.add_argument('--model-file')
     args = parser.parse_args(argv)
-    settings = resolve_profile_id(args.profile_id)
-    bridge = RealBridge(settings)
-    bridge.version()
-    bridge.bind_env(settings['env_file'])
-    client = bridge.client(settings.get('profile') or None, 30)
-    try:
-        if args.op == 'libraries':
-            print(json.dumps(dict(libraries=sorted(client.library.list()))))
-        elif args.op == 'cells':
+    return args
+
+
+def _list_library_cells(args, client):
+    """Read a library's schematic cells and emit the bounded cell listing."""
+    from virtuoso_bridge import decode_skill_output
+    info = client.library.get(args.library)               # an unknown library raises here instead of listing nothing
+    listed = client.execute_skill(CELLS_SKILL % args.library, timeout=60)
+    if not listed.ok:
+        raise RuntimeError('; '.join(listed.errors) or 'listing the cells failed')
+    cells = parse_cells(decode_skill_output(listed.output))
+    print(json.dumps(dict(library=args.library, technology_library=info.technology_library,
+                          cells=cells[:MAX_CELLS], truncated=len(cells) > MAX_CELLS)))
+
+
+def _import_cell_snapshot(args, client):
+    """Export the selected cell and testbench netlists with their schematic and form readbacks."""
+    # Read-only: Virtuoso's own netlister writes the netlist of the testbench (or of the cell), and the
+    # parameters are read back. The same two calls the run adapter makes for every candidate; no cellview
+    # is edited. The bridge prints progress, so stdout is kept for the one JSON line below.
+    from contextlib import redirect_stderr, redirect_stdout
+    from pathlib import Path
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=False)
+    info = client.library.get(args.library)
+    with (out / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
+        exported = client.schematic.export_netlist(args.library, args.testbench or args.cell, out / 'package', timeout=120)
+        # include_positions=True as in the run adapter's _read_snapshot: it is what adds `view` to every instance,
+        # and a profile's reference readback must have the shape the adapter compares at run time.
+        readbacks = {'core_readback.json': read_cell(client, args.library, args.cell)}
+        if args.testbench:
+            readbacks['testbench_readback.json'] = read_cell(client, args.library, args.testbench, include_positions=False)
+        # What the property form of every instance lets a user type (cdf_facts: one more read-only query). A
+        # failed query leaves the import as before - transistor widths only - and keeps the reason.
+        from . import cdf_facts
+        try:
             from virtuoso_bridge import decode_skill_output
-            info = client.library.get(args.library)               # an unknown library raises here instead of listing nothing
-            listed = client.execute_skill(CELLS_SKILL % args.library, timeout=60)
-            if not listed.ok:
-                raise RuntimeError('; '.join(listed.errors) or 'listing the cells failed')
-            cells = parse_cells(decode_skill_output(listed.output))
-            print(json.dumps(dict(library=args.library, technology_library=info.technology_library,
-                                  cells=cells[:MAX_CELLS], truncated=len(cells) > MAX_CELLS)))
-        elif args.op == 'import_cell':
-            # Read-only: Virtuoso's own netlister writes the netlist of the testbench (or of the cell), and the
-            # parameters are read back. The same two calls the run adapter makes for every candidate; no cellview
-            # is edited. The bridge prints progress, so stdout is kept for the one JSON line below.
-            from contextlib import redirect_stderr, redirect_stdout
-            from pathlib import Path
-            out = Path(args.output)
-            out.mkdir(parents=True, exist_ok=False)
-            info = client.library.get(args.library)
-            with (out / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
-                exported = client.schematic.export_netlist(args.library, args.testbench or args.cell, out / 'package', timeout=120)
-                # include_positions=True as in the run adapter's _read_snapshot: it is what adds `view` to every instance,
-                # and a profile's reference readback must have the shape the adapter compares at run time.
-                readbacks = {'core_readback.json': read_cell(client, args.library, args.cell)}
-                if args.testbench:
-                    readbacks['testbench_readback.json'] = read_cell(client, args.library, args.testbench, include_positions=False)
-                # What the property form of every instance lets a user type (cdf_facts: one more read-only query). A
-                # failed query leaves the import as before - transistor widths only - and keeps the reason.
-                from . import cdf_facts
-                try:
-                    from virtuoso_bridge import decode_skill_output
-                    answer = client.execute_skill(cdf_facts.facts_skill(args.library, args.cell), timeout=120)
-                    readbacks[cdf_facts.FILE] = (cdf_facts.parse_facts(decode_skill_output(answer.output), library=args.library,
-                                                                       cell=args.cell) if answer.ok else
-                                                 dict(format=cdf_facts.FORMAT, library=args.library, cell=args.cell,
-                                                      error=redact('; '.join(map(str, answer.errors)) or 'the query failed', 400)))
-                except Exception as exc:
-                    readbacks[cdf_facts.FILE] = dict(format=cdf_facts.FORMAT, library=args.library, cell=args.cell,
-                                                     error=redact(f'{type(exc).__name__}: {exc}', 400))
-            structure = Path(exported['input_file']).parent / 'netlist'      # the structure-only file, as the run adapter uses it
-            (out / 'netlist.scs').write_text(structure.read_text())
-            for name, snapshot in readbacks.items():
-                (out / name).write_text(json.dumps(snapshot, default=str, indent=1))
-            print(json.dumps(dict(library=args.library, cell=args.cell, testbench_cell=args.testbench,
-                                  technology_library=info.technology_library)))
-        elif args.op == 'pdk':
-            # Read-only: the technology library's own description (CDF) in ONE query, and the model files downloaded into
-            # a temporary folder outside the repository, scanned and deleted (pdk.read_from_virtuoso). Empty = the
-            # technology library of the connection's design library, and the connection's model file.
-            from contextlib import redirect_stdout
-            from .pdk import read_from_virtuoso  # lazy: in the try: a failure of the import is handled with the rest
-            with redirect_stdout(sys.stderr):                      # the bridge prints progress; stdout keeps the one JSON line
-                library = args.library or (client.library.get(settings['library']).technology_library if settings.get('library') else None)
-                if not library:
-                    raise ValueError('Name the technology library: the connection states no design library to take it from')
-                raw = read_from_virtuoso(client, technology_library=library, model_file=args.model_file or settings.get('model_file'),
-                                         cache_host=host_identity(bridge, settings, args.profile_id))
-            print(json.dumps(raw))
-        else:
-            snapshot = read_cell(client, args.library, args.cell, include_positions=False)
-            print(json.dumps(dict(snapshot=snapshot), default=str))
-    finally:
-        client.close()
-    return 0
+            answer = client.execute_skill(cdf_facts.facts_skill(args.library, args.cell), timeout=120)
+            readbacks[cdf_facts.FILE] = (cdf_facts.parse_facts(decode_skill_output(answer.output), library=args.library,
+                                                               cell=args.cell) if answer.ok else
+                                         dict(format=cdf_facts.FORMAT, library=args.library, cell=args.cell,
+                                              error=redact('; '.join(map(str, answer.errors)) or 'the query failed', 400)))
+        except Exception as exc:
+            readbacks[cdf_facts.FILE] = dict(format=cdf_facts.FORMAT, library=args.library, cell=args.cell,
+                                             error=redact(f'{type(exc).__name__}: {exc}', 400))
+    structure = Path(exported['input_file']).parent / 'netlist'      # the structure-only file, as the run adapter uses it
+    (out / 'netlist.scs').write_text(structure.read_text())
+    for name, snapshot in readbacks.items():
+        (out / name).write_text(json.dumps(snapshot, default=str, indent=1))
+    print(json.dumps(dict(library=args.library, cell=args.cell, testbench_cell=args.testbench,
+                          technology_library=info.technology_library)))
+
+
+def _read_pdk_record(args, client, settings, bridge):
+    """Read the selected technology description and emit its PDK record."""
+    # Read-only: the technology library's own description (CDF) in ONE query, and the model files downloaded into
+    # a temporary folder outside the repository, scanned and deleted (pdk.read_from_virtuoso). Empty = the
+    # technology library of the connection's design library, and the connection's model file.
+    from contextlib import redirect_stdout
+    from .pdk import read_from_virtuoso  # lazy: in the try: a failure of the import is handled with the rest
+    with redirect_stdout(sys.stderr):                      # the bridge prints progress; stdout keeps the one JSON line
+        library = args.library or (client.library.get(settings['library']).technology_library if settings.get('library') else None)
+        if not library:
+            raise ValueError('Name the technology library: the connection states no design library to take it from')
+        raw = read_from_virtuoso(client, technology_library=library, model_file=args.model_file or settings.get('model_file'),
+                                 cache_host=host_identity(bridge, settings, args.profile_id))
+    print(json.dumps(raw))
 
 
 def host_identity(bridge, settings, profile_id) -> str:

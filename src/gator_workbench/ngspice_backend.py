@@ -145,6 +145,23 @@ def deck_condition(text) -> SimulationCondition:
     return SimulationCondition(PVTCorner('nominal', 'nominal', temperature, supply if supply > 0 else 1.0))
 
 
+def _classify_ngspice_measurement_failure(failure, evidence, found, wanted, status, reason, evaluated, summary):
+    """Classify simulator and missing-measurement failures while retaining the current result fields."""
+    if failure == 'nonconverged':
+        status, reason, evaluated = SimulationStatus.NONCONVERGED, 'ngspice_nonconverged', True
+        summary = evidence
+    elif failure == 'deck_error':
+        status, reason, evaluated = SimulationStatus.BACKEND_ERROR, 'ngspice_deck_error', False
+        summary = evidence
+    elif failure == 'measurement_error' and not found:
+        status, reason = SimulationStatus.MEASUREMENT_ERROR, 'ngspice_measurement_failed'
+        summary = evidence
+    elif not found and wanted:
+        status, reason = SimulationStatus.MEASUREMENT_ERROR, 'no_results_printed'
+        summary = 'ngspice printed none of the results the task reads: ' + ', '.join(wanted[:8])
+    return status, reason, evaluated, summary
+
+
 class NgspiceBackend(HeldParameters, VirtuosoBackend):
     """One deck, one connection; sizes set and read back through the deck's own tokens."""
     def __init__(self, text, graph, link: NgspiceLink, *, units=None, device_kinds=None, include_root=None,
@@ -269,18 +286,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
                 summary = _scrub(_last_line(err) or f'exit code {code}', self.link.ssh_host)
             else:
                 failure, evidence = ngspice_netlist.classify_failure(out, err, code)
-                if failure == 'nonconverged':
-                    status, reason, evaluated = SimulationStatus.NONCONVERGED, 'ngspice_nonconverged', True
-                    summary = evidence
-                elif failure == 'deck_error':
-                    status, reason, evaluated = SimulationStatus.BACKEND_ERROR, 'ngspice_deck_error', False
-                    summary = evidence
-                elif failure == 'measurement_error' and not found:
-                    status, reason = SimulationStatus.MEASUREMENT_ERROR, 'ngspice_measurement_failed'
-                    summary = evidence
-                elif not found and wanted:
-                    status, reason = SimulationStatus.MEASUREMENT_ERROR, 'no_results_printed'
-                    summary = 'ngspice printed none of the results the task reads: ' + ', '.join(wanted[:8])
+                status, reason, evaluated, summary = _classify_ngspice_measurement_failure(failure, evidence, found, wanted, status, reason, evaluated, summary)
         metrics = {name: found.get(name) for name in wanted}
         units = {name: self.units.get(name) or self.parsed.units.get(name) or '1' for name in wanted}
         validity = {name: name in found for name in wanted}

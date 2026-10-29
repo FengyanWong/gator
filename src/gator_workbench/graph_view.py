@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from contextlib import closing
 from pathlib import Path
+from typing import NamedTuple
 
 from . import checkpoints as ckpt, model_structure, network_inputs
 from .pdk import run_vocabulary
@@ -252,28 +253,27 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
     """Return a recorded circuit state with its actions and the saved policy's predictions and attention."""
     from analog_optimizer.models.inputs import batch_observations
     run_dir = Path(run_dir)
-    meta, actor, features, spec, row, steps, observation = _load_graph_state(run_dir, checkpoint_id, evaluation)
-    vocabulary, batch, observation = _network_observation(run_dir, observation, features, spec, batch_observations)
+    state = _load_graph_state(run_dir, checkpoint_id, evaluation)
+    vocabulary, batch, observation = _network_observation(run_dir, state, batch_observations)
     # ---- Evaluate the saved policy on the recorded observation before assembling graph display rows.
-    (sample, layers), dense_layers = capture_dense_attention(actor,
-        lambda: capture_attention(actor, lambda: actor.sample(batch, deterministic=True)))
+    (sample, layers), dense_layers = capture_dense_attention(state.actor,
+        lambda: capture_attention(state.actor, lambda: state.actor.sample(batch, deterministic=True)))
     policy = batch.proposals(sample.actions)[0]
-    recorded = map_to_dict(row['action']) if row.get('action') is not None else {}
+    recorded = map_to_dict(state.row['action']) if state.row.get('action') is not None else {}
 
     graph = observation.graph
     device_ids, net_ids = [d.id for d in graph.devices], [n.id for n in graph.nets]
-    count = len(device_ids)
-    connections, edge_index, keys = _graph_connections(features, graph, batch, count, net_ids, device_ids)
+    connections, edge_index, keys = _graph_connections(state.features, graph, batch, device_ids, net_ids)
     _append_connection_attention(layers, edge_index, connections, keys)
     member_of, groups = _graph_parameter_groups(graph, policy, recorded)
-    config = meta['contract']['model_config']
+    config = state.meta['contract']['model_config']
     has_attention = bool(layers)
     return dict(
-        checkpoint_id=meta['checkpoint_id'], run_dir=str(run_dir), task_id=meta.get('task_id'), network=config,
-        circuit_id=graph.circuit_id, origin=observation.origin,
-        step=dict(evaluation=row['commit_seq'], policy_version_then=row.get('policy_version'),
-                  saved_at=(meta.get('counters') or {}).get('evaluations_committed'), status=observation.status,
-                  **steps),
+        checkpoint_id=state.meta['checkpoint_id'], run_dir=str(run_dir), task_id=state.meta.get('task_id'),
+        network=config, circuit_id=graph.circuit_id, origin=observation.origin,
+        step=dict(evaluation=state.row['commit_seq'], policy_version_then=state.row.get('policy_version'),
+                  saved_at=(state.meta.get('counters') or {}).get('evaluations_committed'), status=observation.status,
+                  **state.steps),
         metrics=[dict(id=k, value=v, unit=observation.metric_units.get(k, ''),
             valid=bool(observation.metric_validity.get(k)))
                  for k, v in sorted(observation.metrics.items())],
@@ -304,7 +304,18 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
                      '(a random warm-up action, or the policy of that moment with exploration noise).')
 
 
-def _load_graph_state(run_dir, checkpoint_id, evaluation) -> tuple:
+class _GraphState(NamedTuple):
+    """A save point's metadata, actor and schemas, with the archived step it is replayed on."""
+    meta: dict
+    actor: object
+    features: object
+    spec: object
+    row: dict                       # the archived transition (commit_seq, state_ref, action, policy_version)
+    steps: dict                     # the archived evaluations: first, last, count
+    observation: object             # the observation before that evaluation, as archived (TrajectoryLoader)
+
+
+def _load_graph_state(run_dir, checkpoint_id, evaluation) -> _GraphState:
     """Verify the selected checkpoint and reconstruct the archived observation and its step metadata."""
     directory = ckpt.resolve_checkpoint(run_dir, checkpoint_id)
     meta, weights = model_structure.load_verified(directory)
@@ -313,10 +324,17 @@ def _load_graph_state(run_dir, checkpoint_id, evaluation) -> tuple:
     loader = TrajectoryLoader(run_dir)
     row, steps = _step(loader, evaluation, (meta.get('counters') or {}).get('evaluations_committed'))
     observation = loader.observation(row['state_ref'])
-    return meta, actor, features, spec, row, steps, observation
+    return _GraphState(meta, actor, features, spec, row, steps, observation)
 
 
-def _network_observation(run_dir, observation, features, spec, batch_observations) -> tuple:
+class _NetworkObservation(NamedTuple):
+    """The run's component list, the batch the network is given, and the observation the page draws."""
+    vocabulary: object
+    batch: object
+    observation: object
+
+
+def _network_observation(run_dir, state, batch_observations) -> _NetworkObservation:
     (
         'Validate the saved component vocabulary and construct the network batch while retaining the displayed '
         'circuit view.'
@@ -326,19 +344,26 @@ def _network_observation(run_dir, observation, features, spec, batch_observation
     # load.
     vocabulary = run_vocabulary(run_dir)
     if vocabulary is not None:
-        if network_inputs.feature_schema(vocabulary.schema, _network_of(run_dir)) != features:
+        if network_inputs.feature_schema(vocabulary.schema, _network_of(run_dir)) != state.features:
             raise GraphViewUnavailable('The component list kept in this run folder is not the one this save point was '
                                        'trained with, so the circuit cannot be shown to it the same way.')
     # The transferable inputs (record 7.298) are shown to the network only: the page draws the circuit as recorded (its
     # sizes as simulated, never a PDK's device numbers), with the PDK kinds and pin roles of the list when there is one.
     seen = _network_view(run_dir, vocabulary)
-    shown = vocabulary.view(observation) if vocabulary is not None else observation
-    batch = batch_observations([seen.view(observation) if seen is not None else shown], features, spec)
-    observation = shown
-    return vocabulary, batch, observation
+    shown = vocabulary.view(state.observation) if vocabulary is not None else state.observation
+    batch = batch_observations([seen.view(state.observation) if seen is not None else shown], state.features,
+                               state.spec)
+    return _NetworkObservation(vocabulary, batch, shown)
 
 
-def _graph_connections(features, graph, batch, count, net_ids, device_ids) -> tuple:
+class _GraphConnections(NamedTuple):
+    """Physical connections, the network's edge list, and each edge's connection, direction, competitors."""
+    connections: dict               # (device, net, role, ordinal) -> the connection as the page gets it
+    edge_index: list                # the network's directed edges: [sources, receivers]
+    keys: list                      # per edge: (its connection's key, direction, edges arriving at its receiver)
+
+
+def _graph_connections(features, graph, batch, device_ids, net_ids) -> _GraphConnections:
     """Index physical connections and map both directed network edges to their receiving-node competitors."""
     roles = features.terminal_roles
     # One entry per physical connection; both directions of the network's edge list are folded into it.
@@ -351,6 +376,7 @@ def _graph_connections(features, graph, batch, count, net_ids, device_ids) -> tu
     edge_index, edge_role, edge_ordinal = (
         batch.edge_index.tolist(), batch.edge_role.tolist(), batch.edge_ordinal.tolist()
     )
+    count = len(device_ids)                                         # the nets are numbered after the devices
     incoming = [0] * (count + len(net_ids))
     for receiver in edge_index[1]:
         incoming[receiver] += 1
@@ -360,7 +386,7 @@ def _graph_connections(features, graph, batch, count, net_ids, device_ids) -> tu
         device, net = (source, receiver - count) if to_net else (receiver, source - count)
         keys.append(((device_ids[device], net_ids[net], roles[edge_role[position] // 2], int(edge_ordinal[position])),
                      'to_net' if to_net else 'to_device', incoming[receiver]))
-    return connections, edge_index, keys
+    return _GraphConnections(connections, edge_index, keys)
 
 
 def _append_connection_attention(layers, edge_index, connections, keys) -> None:

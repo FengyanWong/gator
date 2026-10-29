@@ -389,6 +389,23 @@ def environment_label() -> str:
     return f'WSL2 ({release})' if 'microsoft' in release.lower() else f'Linux ({release})'
 
 
+def _scan_directory_entries(pending, total):
+    """Scan one pending directory, queue its subdirectories and count readable regular files."""
+    try:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(entry.path)
+                    elif entry.is_file(follow_symlinks=False):
+                        total += entry.stat(follow_symlinks=False).st_size
+                except OSError:
+                    pass
+    except PermissionError:          # as rglob did: a folder that cannot be listed is skipped
+        pass
+    return total
+
+
 def directory_bytes(path) -> int:
     """Bytes of the regular files under `path`; symlinks are neither counted nor followed, an unreadable folder counts
     nothing. One os.scandir pass and one stat per file: rglob + is_file + is_symlink + stat listed every folder twice
@@ -399,18 +416,7 @@ def directory_bytes(path) -> int:
         return 0
     pending = [path]
     while pending:
-        try:
-            with os.scandir(pending.pop()) as entries:
-                for entry in entries:
-                    try:
-                        if entry.is_dir(follow_symlinks=False):
-                            pending.append(entry.path)
-                        elif entry.is_file(follow_symlinks=False):
-                            total += entry.stat(follow_symlinks=False).st_size
-                    except OSError:
-                        pass
-        except PermissionError:          # as rglob did: a folder that cannot be listed is skipped
-            pass
+        total = _scan_directory_entries(pending, total)
     return total
 
 

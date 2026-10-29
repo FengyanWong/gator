@@ -283,6 +283,43 @@ def bench_of_task(config):
 
 
 # ------------------------------------------------------------------------------------------ one probe
+def _describe_probe_call(node, analysis, bench, found):
+    """Add signal, reduction and position facts for one measurement-expression call."""
+    if node.value in _VOLTAGE:
+        found['signal_voltage'] = 1.0
+        if analysis == 'ac' and bench.supply and bench.supply in bench.ac_sources:
+            found['ac_stimulus_on_supply'] = 1.0
+    elif node.value in _CURRENT:
+        found['signal_current'] = 1.0
+        terminal = (_first_string(node) or '').strip('/').split('/')[0]
+        if terminal:
+            found['from_supply' if terminal == bench.supply else 'from_other_source'] = 1.0
+    elif node.value == 'getData':
+        result = _keyword(node, 'result')
+        result = result.value if result is not None and result.kind == 'string' else ''
+        name = (_first_string(node) or '').strip('/')
+        if result == 'stb' and name == 'loopGain':
+            found['signal_loop_gain'] = 1.0
+        elif result == 'xf':
+            found['signal_transfer_xf'] = 1.0
+            if name:
+                found['from_supply' if name == bench.supply else 'from_other_source'] = 1.0
+        elif result == 'noise':
+            found['signal_noise'] = 1.0
+        else:
+            found['signal_other_data'] = 1.0
+    reduction = _REDUCTION_OF.get(node.value)
+    if reduction:
+        found[f'reduction_{reduction}'] = 1.0
+    if analysis in PLACED_ANALYSES and 'has_position' not in found:
+        place = _place(node)
+        if place is not None:
+            low, high = place
+            found['position'] = math.log10(math.sqrt(low * high)) / 10
+            found['span'] = math.log10(high / low) / 10
+            found['has_position'] = 1.0
+
+
 def probe_facts(analysis, expression, bench=Bench(), *, measured_by_analyzer=False):
     """The description columns of one probe, as a dict column -> number (only the ones it sets)."""
     found = {f'analysis_{analysis if analysis in ANALYSES else "other"}': 1.0}
@@ -295,39 +332,7 @@ def probe_facts(analysis, expression, bench=Bench(), *, measured_by_analyzer=Fal
         return found
     for node in _walk(tree):
         if node.kind == 'call':
-            if node.value in _VOLTAGE:
-                found['signal_voltage'] = 1.0
-                if analysis == 'ac' and bench.supply and bench.supply in bench.ac_sources:
-                    found['ac_stimulus_on_supply'] = 1.0
-            elif node.value in _CURRENT:
-                found['signal_current'] = 1.0
-                terminal = (_first_string(node) or '').strip('/').split('/')[0]
-                if terminal:
-                    found['from_supply' if terminal == bench.supply else 'from_other_source'] = 1.0
-            elif node.value == 'getData':
-                result = _keyword(node, 'result')
-                result = result.value if result is not None and result.kind == 'string' else ''
-                name = (_first_string(node) or '').strip('/')
-                if result == 'stb' and name == 'loopGain':
-                    found['signal_loop_gain'] = 1.0
-                elif result == 'xf':
-                    found['signal_transfer_xf'] = 1.0
-                    if name:
-                        found['from_supply' if name == bench.supply else 'from_other_source'] = 1.0
-                elif result == 'noise':
-                    found['signal_noise'] = 1.0
-                else:
-                    found['signal_other_data'] = 1.0
-            reduction = _REDUCTION_OF.get(node.value)
-            if reduction:
-                found[f'reduction_{reduction}'] = 1.0
-            if analysis in PLACED_ANALYSES and 'has_position' not in found:
-                place = _place(node)
-                if place is not None:
-                    low, high = place
-                    found['position'] = math.log10(math.sqrt(low * high)) / 10
-                    found['span'] = math.log10(high / low) / 10
-                    found['has_position'] = 1.0
+            _describe_probe_call(node, analysis, bench, found)
         elif node.kind == 'div' and all(_signal_calls(child) for child in node.children):
             found['form_ratio'] = 1.0
         elif node.kind == 'sub' and all(any(c.value in _VOLTAGE for c in _signal_calls(child)) for child in node.children):

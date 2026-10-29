@@ -89,42 +89,42 @@ def _section_items(reader, start):
     return at, end
 
 
-def _type(reader, at, end, types):
-    if reader.word(at) != ITEM:
-        raise PsfError(f'no type definition at byte {at}')
-    type_id = reader.word(at + 4)
-    name, at = reader.string(at + 8)
-    datatype = reader.word(at + 4)
-    at += 8
+def _type(reader, offset, end, types):
+    if reader.word(offset) != ITEM:
+        raise PsfError(f'no type definition at byte {offset}')
+    type_id = reader.word(offset + 4)
+    name, offset = reader.string(offset + 8)
+    datatype = reader.word(offset + 4)
+    offset += 8
     members = []
     if datatype == STRUCT:
-        while reader.word(at) == ITEM:
-            member, at = _type(reader, at, end, types)
+        while reader.word(offset) == ITEM:
+            member, offset = _type(reader, offset, end, types)
             members.append(member)
-        if reader.word(at) not in (STRUCT_END, STRUCT_END - 1):
+        if reader.word(offset) not in (STRUCT_END, STRUCT_END - 1):
             raise PsfError(f'unclosed struct type {name!r}')
-        at += 4
+        offset += 4
     elif datatype not in (INT8, INT32, DOUBLE, COMPLEX):
         raise PsfError(f'type {name!r} has a data type ({datatype}) this reader does not read')
-    at = reader.properties(at, end)
+    offset = reader.properties(offset, end)
     types[type_id] = (name, datatype, tuple(members))
-    return type_id, at
+    return type_id, offset
 
 
-def _value(reader, type_id, at, types):
+def _value(reader, type_id, offset, types):
     if type_id not in types:
         raise PsfError(f'value of an undefined type {type_id}')
     name, datatype, members = types[type_id]
     if datatype in (INT8, INT32):
-        return reader.word(at), at + 4
+        return reader.word(offset), offset + 4
     if datatype == DOUBLE:
-        return reader.double(at), at + 8
+        return reader.double(offset), offset + 8
     if datatype == COMPLEX:
-        return complex(reader.double(at), reader.double(at + 8)), at + 16
+        return complex(reader.double(offset), reader.double(offset + 8)), offset + 16
     record = {}
     for member in members:
-        record[types[member][0]], at = _value(reader, member, at, types)
-    return record, at
+        record[types[member][0]], offset = _value(reader, member, offset, types)
+    return record, offset
 
 
 def read(data: bytes):

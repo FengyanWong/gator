@@ -583,7 +583,8 @@ def _prepare_resume(config, roots, task, task_hash, gate, before_write=None):
     except RuntimeError:
         raise RunRejected('This run already has an active worker; a duplicate is never started', code='already_running')
     try:
-        result = _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifest, run_dir, before_write)
+        resumed = _ResumedRun(run_dir, layout, manifest)
+        result = _prepare_resume_locked(config, task, task_hash, gate, resumed, before_write)
     except BaseException:
         lock.release()
         raise
@@ -591,8 +592,16 @@ def _prepare_resume(config, roots, task, task_hash, gate, before_write=None):
     return result
 
 
-def _prepare_resume_locked(config, roots, task, task_hash, gate, layout, manifest, run_dir, before_write=None) -> tuple:
-    previous, merged, meta, compatibility = _resume_checks(config, task, task_hash, layout, manifest, run_dir)
+class _ResumedRun(NamedTuple):
+    """The run a resume continues: its folder, its layout and the manifest read from it."""
+    run_dir: Path
+    layout: RunLayout
+    manifest: dict
+
+
+def _prepare_resume_locked(config, task, task_hash, gate, resumed, before_write=None) -> tuple:
+    layout, manifest = resumed.layout, resumed.manifest
+    previous, merged, meta, compatibility = _resume_checks(config, task, task_hash, layout, manifest, resumed.run_dir)
     if before_write is not None:
         before_write()
     history = layout.control / 'config_history'

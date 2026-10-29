@@ -174,6 +174,20 @@ def host_runner(config, *, timeout=120):
     return run
 
 
+def _read_structure_section(tag, rest, entry):
+    """Apply a section record to the collected model-library structure."""
+    if tag == 'S' and len(rest) == 4:
+        entry(rest[0], rest[1])['span'] = (int(rest[2]), int(rest[3]))
+    elif tag == 'I' and len(rest) == 4:
+        entry(rest[0], rest[1])['includes'].append((rest[2], None if rest[3] == '-' else rest[3]))
+    elif tag == 'D' and len(rest) == 3:
+        entry(rest[0], rest[1])['defines'].add(rest[2])
+    elif tag == 'R' and len(rest) == 3:
+        entry(rest[0], rest[1])['refs'].add(rest[2])
+    elif tag == 'O' and len(rest) == 3:
+        entry(rest[0], rest[1])['own'] = int(rest[2])
+
+
 def parse_structure(text):
     """(files, sections) from the script's output. files: {path: (size, mtime) or None when unreadable};
     sections: {(file, section or '-'): dict(includes=[(target as written, section or None)], defines, refs, own, span)}."""
@@ -190,16 +204,8 @@ def parse_structure(text):
             files[rest[0]] = tuple(rest[1:3])
         elif tag == 'X' and len(rest) == 1:
             files[rest[0]] = None
-        elif tag == 'S' and len(rest) == 4:
-            entry(rest[0], rest[1])['span'] = (int(rest[2]), int(rest[3]))
-        elif tag == 'I' and len(rest) == 4:
-            entry(rest[0], rest[1])['includes'].append((rest[2], None if rest[3] == '-' else rest[3]))
-        elif tag == 'D' and len(rest) == 3:
-            entry(rest[0], rest[1])['defines'].add(rest[2])
-        elif tag == 'R' and len(rest) == 3:
-            entry(rest[0], rest[1])['refs'].add(rest[2])
-        elif tag == 'O' and len(rest) == 3:
-            entry(rest[0], rest[1])['own'] = int(rest[2])
+        else:
+            _read_structure_section(tag, rest, entry)
     return files, sections
 
 

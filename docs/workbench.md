@@ -4254,6 +4254,12 @@ verifies and registers the already-present Nemotron 3.5 Bolt 74B-A9B 24GB weight
 It never downloads missing weights automatically or starts inference on page load. **Deploy** remains explicit.
 Deleting the registration is remembered; a restart does not reinstall it.
 
+This checkout's `74B-latest` profile (7.396) selects `bolt-74b` in
+`src/gator_workbench/local_agent/profile.py`. On this workstation it discovers the preserved assets in
+`D:\gator\artifacts\local\nemotron-test`, including from the managed worktree or a WSL backend. Other installations
+can set `GATOR_AGENT_ASSET_ROOT` to their existing verified asset directory. If the weights are absent or resources
+are incompatible, setup reports the reason; **Install** remains available for an explicit retry. E4B stays uninstalled.
+
 The catalog currently contains NVIDIA's Bolt 74B-A9B 24GB GGUF and Bolt E4B 4GB Q4_K_M GGUF. The latter's actual
 download is 6.18 GB, despite its product name. Model cards, pinned revisions, sizes and SHA-256 identities live in
 `src/gator_workbench/local_agent/catalog.py`. The E4B option is not installed merely because it is listed.

@@ -541,3 +541,156 @@ One row per commit, newest last.
 | `e513bc0` | 10-26 13:00 | 7.393 | Preserve sif-backend-words-2 history; equivalent changes already integrated |
 | `de54083` | 10-26 13:00 | 7.393 | Preserve sif-help-text history; equivalent changes already integrated |
 | `9192e9b` | 10-26 13:14 | 7.393 | Integrate pending work and remove the frontend Agent interface |
+| `8694d05` | 10-26 13:48 | 7.394 | T2-BO: document archive-comparison test helpers |
+| `871213a` | 10-26 14:04 | 7.394 | P1-06: document api/models.py |
+| `68d934d` | 10-26 14:08 | 7.394 | P1-07: document api/run_routes.py |
+| `4ada3b2` | 10-26 14:12 | 7.394 | P1-08: document api/settings_routes.py |
+| `3066e96` | 10-26 14:16 | 7.394 | P1-09: document Task API operations |
+| `f16ec90` | 10-26 14:20 | 7.394 | P1-10: document bayes.py |
+| `d9cc6e3` | 10-26 14:24 | 7.394 | P1-11: document best_design.py |
+| `7a55fd7` | 10-26 14:28 | 7.394 | P1-12: document bridge_connect.py |
+| `4f7d6f6` | 10-26 14:32 | 7.394 | P1-13: document bridge_setup.py |
+| `1b8e302` | 10-26 14:35 | 7.394 | P1-14: document budget.py |
+| `9a1da30` | 10-26 14:39 | 7.394 | P1-15: document caches.py |
+| `afeb28b` | 10-26 14:43 | 7.394 | P1-16: document CDF preparation ownership |
+| `9edf91c` | 10-26 14:46 | 7.394 | P1-17: document cdf_facts.py |
+| `87e355a` | 10-26 14:50 | 7.394 | P1-18: document cdf_text.py |
+| `d70d0b9` | 10-26 14:54 | 7.394 | P1-19: document cdf_write.py |
+| `78fd7b9` | 10-26 14:58 | 7.394 | P1-20: document checkpoints.py |
+| `71c050b` | 10-26 15:02 | 7.394 | P1-21: document Native circuit import |
+| `2d427f8` | 10-26 15:07 | 7.394 | P1-22: document compile.py |
+| `e0d1da2` | 10-26 15:11 | 7.394 | P1-23: document connection.py |
+| `ecaa255` | 10-26 15:15 | 7.394 | P1-24: document Task readiness evidence |
+| `c8cb99e` | 10-26 15:19 | 7.394 | P1-25: document corner_check.py |
+| `2e4e7f2` | 10-26 15:22 | 7.394 | P1-26: document deck_ops.py |
+| `0d059a6` | 10-26 15:27 | 7.394 | P1-27: document device_models.py |
+| `b5adea9` | 10-26 16:45 | 7.394 | P1-28: document diffs.py |
+| `3016b88` | 10-26 16:49 | 7.394 | P1-29: document Remembered directories |
+| `d4e3677` | 10-26 16:54 | 7.394 | P1-30: document engine.py |
+| `41ca01f` | 10-26 16:59 | 7.394 | P1-31: document engine_commit.py |
+| `a0d835b` | 10-26 17:04 | 7.394 | P1-32: document Run preparation and finalization |
+| `acb5d0b` | 10-26 18:25 | 7.394 | P1-33: document experiments.py |
+| `1051fa4` | 10-26 18:28 | 7.394 | P1-34: document Device vocabularies |
+| `2804e5b` | 10-26 18:33 | 7.394 | P1-35: document generic_profile.py |
+| `4bd5702` | 10-26 18:36 | 7.394 | P1-36: document graph_view.py |
+| `acb5cae` | 10-26 18:41 | 7.394 | P1-37: document lanes.py |
+| `cac1cca` | 10-27 00:06 | 7.394 | P1-38: document layout.py |
+| `538a373` | 10-27 00:11 | 7.394 | P1-39: document model_library.py |
+| `efdbed5` | 10-27 00:15 | 7.394 | P1-40: document model_scan.py |
+| `ffbd9af` | 10-27 00:20 | 7.394 | P1-41: document model_structure.py |
+| `3e50e19` | 10-27 00:25 | 7.394 | P1-42: document modes.py |
+| `d75a139` | 10-27 11:57 | 7.394 | P1-43: document network_inputs.py |
+| `cfffb64` | 10-27 12:02 | 7.394 | P1-44: document network_presets.py |
+| `55fc985` | 10-27 12:07 | 7.394 | P1-45: document ngspice instrumentation |
+| `73243e5` | 10-27 16:32 | 7.394 | P1-46: document ngspice_backend.py |
+| `facaeb0` | 10-27 16:37 | 7.394 | P1-47: document ngspice_link.py |
+| `e2dc80d` | 10-27 17:35 | 7.394 | P1-48: document ngspice_netlist.py |
+| `a27ce84` | 10-27 18:19 | 7.394 | P1-49: document ngspice_syntax.py |
+| `6e85da9` | 10-27 18:27 | 7.394 | P1-50: document ngspice_tasks.py |
+| `60a97de` | 10-27 18:35 | 7.394 | P1-51: document ocean.py |
+| `9883c72` | 10-27 18:43 | 7.394 | P1-52: document Offline replay support |
+| `e1a9cca` | 10-27 18:51 | 7.394 | P1-53: document paths.py |
+| `ba5f235` | 10-27 18:59 | 7.394 | P1-54: document pdk_record.py |
+| `066d815` | 10-27 19:08 | 7.394 | P1-55: document pdk_remote.py |
+| `78698ca` | 10-27 19:16 | 7.394 | P1-56: document pretrain.py |
+| `025ba19` | 10-27 19:23 | 7.394 | P1-57: document Saved-task documents |
+| `31409f1` | 10-27 23:27 | 7.394 | P1-58: document psf_binary.py |
+| `0edbb43` | 10-27 23:35 | 7.394 | P1-59: document recipes.py |
+| `a8e5c57` | 10-27 23:46 | 7.394 | P1-60: document Run ownership |
+| `bdef87c` | 10-28 06:56 | 7.394 | P1-61: document runs.py |
+| `fe02dd1` | 10-28 07:05 | 7.394 | P1-62: document saved_rows.py |
+| `d5260c0` | 10-28 09:04 | 7.394 | P1-63: document schema.py |
+| `de0b5ab` | 10-28 09:43 | 7.394 | P1-64: document security.py |
+| `3d8be8b` | 10-28 10:35 | 7.394 | P1-65: document session_routing.py |
+| `6b33bb3` | 10-28 10:42 | 7.394 | P1-66: document simulation_artifacts.py |
+| `e2d7ee3` | 10-28 10:49 | 7.394 | P1-67: document spec_descriptors.py |
+| `ffc1148` | 10-28 11:35 | 7.394 | P1-68: document spec_equations.py |
+| `48a10e8` | 10-28 11:42 | 7.394 | P1-69: document spec_programs.py |
+| `6363e80` | 10-28 11:50 | 7.394 | P1-70: document storage/atomic.py |
+| `5442531` | 10-28 11:58 | 7.394 | P1-71: document storage/dataset.py |
+| `ef38073` | 10-28 12:09 | 7.394 | P1-72: document storage/tables.py |
+| `ad639a9` | 10-28 12:17 | 7.394 | P1-73: document structures.py |
+| `858c085` | 10-28 13:02 | 7.394 | P1-74: document Task organization |
+| `ae07dcd` | 10-28 13:11 | 7.394 | P1-75: document task_registry.py |
+| `cdac340` | 10-28 13:18 | 7.394 | P1-76: document tasks.py |
+| `522849d` | 10-28 13:28 | 7.394 | P1-77: document trajectory.py |
+| `5495a9a` | 10-28 13:35 | 7.394 | P1-78: document units.py |
+| `ad8aa6a` | 10-28 13:44 | 7.394 | P1-79: document validation.py |
+| `3c0fded` | 10-28 13:52 | 7.394 | P1-80: document virtuoso_setup.py |
+| `71d547f` | 10-28 14:03 | 7.394 | P1-81: document worker.py |
+| `9fab5a2` | 10-28 14:13 | 7.394 | P1-82: document working_copy.py |
+| `8089170` | 10-28 14:25 | 7.394 | P1-83: document archive_compare/views.py |
+| `a02a1b7` | 10-28 15:02 | 7.394 | P1-84: document archive_compare/mobo.py |
+| `e175ccb` | 10-28 15:13 | 7.394 | P1-85: document archive_compare/turbo_archive.py |
+| `575a1a1` | 10-28 15:30 | 7.394 | P1-86: document archive_compare/contract.py |
+| `443722a` | 10-28 15:44 | 7.394 | P1-87: document archive_compare/coords.py |
+| `3765be0` | 10-28 15:58 | 7.394 | P1-88: document archive_compare/runtime.py |
+| `42786e5` | 10-28 17:28 | 7.394 | P2-parse-text-outer: extract reviewed named steps |
+| `0a17074` | 10-28 17:48 | 7.394 | P2-engine-commit: extract reviewed named steps |
+| `916b1dd` | 10-28 17:56 | 7.394 | P2-pretrain-prepare-pool: extract reviewed named steps |
+| `c4bce98` | 10-28 18:02 | 7.394 | P2-ngspice-expand: extract reviewed named steps |
+| `5f0997a` | 10-28 18:11 | 7.394 | P2-connection-run-layers: extract reviewed named steps |
+| `fb74811` | 10-28 18:33 | 7.394 | P2-ngspice-link-run-layers: extract reviewed named steps |
+| `9e2cf72` | 10-28 18:42 | 7.394 | P2-virtuoso-task-routes: extract reviewed named steps |
+| `00bf473` | 10-28 18:54 | 7.394 | P2-run-list-model-routes: extract reviewed named steps |
+| `0a03dd3` | 10-28 19:27 | 7.394 | P2-task-routes: extract reviewed named steps |
+| `8131552` | 10-28 21:07 | 7.394 | TF-commit-json-test: follow the live commit step into its module in a structural test |
+| `0b347b2` | 10-28 21:18 | 7.394 | P2-task-save: extract reviewed named steps |
+| `be23e36` | 10-28 21:28 | 7.394 | P2-engine-preparation: extract reviewed named steps |
+| `f7a32a1` | 10-28 21:38 | 7.394 | P2-structures-recognize: extract reviewed named steps |
+| `4516bc9` | 10-28 21:47 | 7.394 | P2-profile-generate: extract reviewed named steps |
+| `bbb1606` | 10-28 22:01 | 7.394 | P2-pretrain-execute: extract reviewed named steps |
+| `00c3ea5` | 10-28 22:11 | 7.394 | P2-cdf-rules: extract reviewed named steps |
+| `411d2bc` | 10-28 22:35 | 7.394 | P2-runs-prepare-run: extract reviewed named steps |
+| `08126cf` | 10-29 01:00 | 7.394 | P2-modes-build: extract reviewed named steps |
+| `fa935f0` | 10-29 01:42 | 7.394 | P2-graph-view: extract reviewed named steps |
+| `2e13a00` | 10-29 01:55 | 7.394 | P2-pdk-record: extract reviewed named steps |
+| `95144b1` | 10-29 02:07 | 7.394 | P2-validation-network-inputs: extract reviewed named steps |
+| `20903f1` | 10-29 02:18 | 7.394 | P2-checkpoints-save: extract reviewed named steps |
+| `b44d618` | 10-29 02:29 | 7.394 | P2-schema-hashed: extract reviewed named steps |
+| `5d950fc` | 10-29 02:38 | 7.394 | P2-cdf-write: extract reviewed named steps |
+| `10e4e29` | 10-29 02:45 | 7.394 | P2-summary-build: extract reviewed named steps |
+| `de1b9fe` | 10-29 02:55 | 7.394 | P2-bridge-read-main: extract reviewed named steps |
+| `8f0cd93` | 10-29 03:01 | 7.394 | P2-start-run: extract reviewed named steps |
+| `5c4e1af` | 10-29 03:07 | 7.394 | P2-model-classify: extract reviewed named steps |
+| `830da7e` | 10-29 03:14 | 7.394 | P3-calibration-scale: simplify reviewed nested control flow |
+| `00b3d78` | 10-29 03:20 | 7.394 | P3-probe-facts: simplify reviewed nested control flow |
+| `a9c76ab` | 10-29 03:25 | 7.394 | P3-model-structure: simplify reviewed nested control flow |
+| `12994d2` | 10-29 03:31 | 7.394 | P3-ngspice-result: simplify reviewed nested control flow |
+| `9dbf1cb` | 10-29 03:37 | 7.394 | P3-measurement-checks: simplify reviewed nested control flow |
+| `28687ea` | 10-29 03:43 | 7.394 | P3-export-cells: simplify reviewed nested control flow |
+| `ae07b99` | 10-29 03:48 | 7.394 | P3-token-scanner: simplify reviewed nested control flow |
+| `5adec8d` | 10-29 03:54 | 7.394 | P3-directory-bytes: simplify reviewed nested control flow |
+| `aaab8c9` | 10-29 04:00 | 7.394 | P4-engine-preparation: clarify private local names |
+| `d1ab080` | 10-29 04:06 | 7.394 | P4-schema: clarify private local names |
+| `84c0098` | 10-29 04:12 | 7.394 | P4-cdf-write: clarify private local names |
+| `d0f3561` | 10-29 04:18 | 7.394 | P4-consistency: clarify private local names |
+| `777d787` | 10-29 04:23 | 7.394 | P4-pdk-remote: clarify private local names |
+| `4548bf9` | 10-29 04:30 | 7.394 | P4-bridge-setup: clarify private local names |
+| `63a3f1b` | 10-29 04:36 | 7.394 | P4-cell-hold: clarify private local names |
+| `eef5a5c` | 10-29 04:42 | 7.394 | P4-lanes: clarify private local names |
+| `4685d75` | 10-29 04:50 | 7.394 | P4-psf-binary: clarify private local names |
+| `33fff8d` | 10-29 04:56 | 7.394 | P4-spec-programs: clarify private local names |
+| `a4d5f16` | 10-29 05:02 | 7.394 | P4-training-series: clarify private local names |
+| `a722733` | 10-29 05:34 | 7.394 | P4-validation: clarify private local names |
+| `917307d` | 10-29 05:42 | 7.394 | P4-working-copy: clarify private local names |
+| `952ab6b` | 10-29 05:49 | 7.394 | P5-signature-hints: add reviewed signature type hints |
+| `d6b19d3` | 10-29 05:58 | 7.394 | P6-comments-constants: explain steps and name repeated constants |
+| `7d3f628` | 10-29 06:06 | 7.394 | P7-line-wrapping: wrap previously edited source to 120 columns |
+| `acab2cc` | 10-29 06:16 | 7.394 | P1R-docstring-revision: revise P1 docstrings after review |
+| `216f7a1` | 10-29 06:23 | 7.394 | P8-paths: name the values that steps share |
+| `89b13ca` | 10-29 12:05 | 7.394 | P8-ngspice-backend: name the values that steps share |
+| `b20f32a` | 10-29 12:11 | 7.394 | P8-ngspice-netlist: name the values that steps share |
+| `f921d41` | 10-29 12:17 | 7.394 | P8-structures: name the values that steps share |
+| `b9c6515` | 10-29 12:23 | 7.394 | P8-task-save: name the values that steps share |
+| `febae89` | 10-29 12:29 | 7.394 | P8-graph-view: name the values that steps share |
+| `679555c` | 10-29 12:35 | 7.394 | P8-runs: name the values that steps share |
+| `d948a81` | 10-29 12:40 | 7.394 | P8-profile-generate: name the values that steps share |
+| `8dac847` | 10-29 12:46 | 7.394 | P8-modes: name the values that steps share |
+| `c2003d8` | 10-29 12:52 | 7.394 | P8-pretrain: name the values that steps share |
+| `99022ca` | 10-29 12:58 | 7.394 | P8-engine-commit: name the values that steps share |
+| `27f30d9` | 10-29 13:06 | 7.394 | P8-engine-rows: name the values that steps share |
+| `7c6cfe2` | 10-29 13:12 | 7.394 | P8-runs-resume: name the values that steps share |
+| `2a6dd42` | 10-29 13:50 | 7.394 | P8-start-directory: name the values that steps share |
+| `c3775ba` | 10-29 13:56 | 7.394 | P8-model-scan: name the values that steps share |
+| `f8dd00f` | 10-29 14:01 | 7.394 | P8-cdf-rules: name the values that steps share |

@@ -29,33 +29,33 @@ The source block preserves all fourteen paragraphs byte for byte, including thei
 Use the working reference links below when reading this archive outside the repository root.
 
 ````markdown
-已实现离线基础链路：`VirtuosoBackend` 抽象 → synthetic `MockBackend` 导出网表 → Spectre 子集解析器 → `CircuitGraph` → PyTorch Geometric `HeteroData`。包含 op-amp、两级 op-amp、LDO、VCO 四个小型 synthetic fixture。另外已在真实 Virtuoso 中创建 GPDK045 五管 OTA 和测试台，完成 Spectre DC/AC、负载扰动、原参数复跑以及真实网表到 PyG 的验收；见 [运放基线](docs/opamp-baseline.md)。
+已实现离线基础链路：`VirtuosoBackend` 抽象 → synthetic `MockBackend` 导出网表 → Spectre 子集解析器 → `CircuitGraph` → PyTorch Geometric `HeteroData`。包含 op-amp、两级 op-amp、LDO、VCO 四个小型 synthetic fixture。另外已在真实 Virtuoso 中创建 GPDK045 五管 OTA 和测试台，完成 Spectre DC/AC、负载扰动、原参数复跑以及真实网表到 PyG 的验收；见 [运放基线](opamp-baseline.md)。
 
-真实接口使用已有的 **Virtuoso Bridge**（发行包 `virtuoso-bridge`，import `virtuoso_bridge`）。已实现专用于当前 GPDK045 OTA 的 `VirtuosoBridgeBackend` 薄适配层，完成 M1/M2 宽度 4 → 4.4 → 4 µm 的真实回写、仿真和恢复；见 [后端验收](docs/opamp-backend.md)。本项目的 `VirtuosoBackend` 方法属于自有接口，底层继续调用上游连接、导出和 Spectre API；尚未实现通用 PDK 适配。
+真实接口使用已有的 **Virtuoso Bridge**（发行包 `virtuoso-bridge`，import `virtuoso_bridge`）。已实现专用于当前 GPDK045 OTA 的 `VirtuosoBridgeBackend` 薄适配层，完成 M1/M2 宽度 4 → 4.4 → 4 µm 的真实回写、仿真和恢复；见 [后端验收](opamp-backend.md)。本项目的 `VirtuosoBackend` 方法属于自有接口，底层继续调用上游连接、导出和 Spectre API；尚未实现通用 PDK 适配。
 
-已进一步实现单 worker 的 **`CircuitSizingEnv.reset/step` → 参数合法化 → 真实仿真 → 规格评价/奖励 → 候选记录与恢复**。M3 完整验收实际运行 8 次 Spectre，覆盖宽度边界、3 个随机候选、重复候选和恢复基线。真实 CDF 的宽度取整已纳入 5 nm 动作网格。详见 [环境与随机候选验收](docs/opamp-environment.md)。
+已进一步实现单 worker 的 **`CircuitSizingEnv.reset/step` → 参数合法化 → 真实仿真 → 规格评价/奖励 → 候选记录与恢复**。M3 完整验收实际运行 8 次 Spectre，覆盖宽度边界、3 个随机候选、重复候选和恢复基线。真实 CDF 的宽度取整已纳入 5 nm 动作网格。详见 [环境与随机候选验收](opamp-environment.md)。
 
-M3 已补充 typed PVT/Monte Carlo 工况接口、GPDK045 来源配置、nominal-only 环境约束及 top 3／corner 汇总纯函数。MC 执行仍明确不支持，后验证调度尚未实现。详见 [PVT／MC 接口说明](docs/pvt-mc-interfaces.md)。 (Since 2026-09-22 the workbench's Corner check simulates a run's best designs again at the five GPDK045 corners - see [docs/workbench.md](docs/workbench.md); Monte Carlo is still not supported.)
+M3 已补充 typed PVT/Monte Carlo 工况接口、GPDK045 来源配置、nominal-only 环境约束及 top 3／corner 汇总纯函数。MC 执行仍明确不支持，后验证调度尚未实现。详见 [PVT／MC 接口说明](pvt-mc-interfaces.md)。 (Since 2026-09-22 the workbench's Corner check simulates a run's best designs again at the five GPDK045 corners - see [docs/workbench.md](workbench.md); Monte Carlo is still not supported.)
 
-2026-09-19 用户继续授权 **M4**：已实现局部端口感知 Graph Transformer、参数组 actor、独立 action-conditioned twin critics、连续 proposal SAC、nominal-only replay 和完整训练 checkpoint。**231 项离线测试通过，零失败、零跳过。** 双拓扑 synthetic demo 支持同 batch 的 2 维／1 维动作及精确恢复；真实小验收新增 **5 次 Spectre、3 条经验、2 次 SAC 更新**，恢复后的基线网表与指标一致。实测候选之一达到当前 smoke specs；这不证明收敛或优化优势。实现、测试和复现命令见 [M4 验收记录](docs/m4-graph-sac.md)。
+2026-09-19 用户继续授权 **M4**：已实现局部端口感知 Graph Transformer、参数组 actor、独立 action-conditioned twin critics、连续 proposal SAC、nominal-only replay 和完整训练 checkpoint。**231 项离线测试通过，零失败、零跳过。** 双拓扑 synthetic demo 支持同 batch 的 2 维／1 维动作及精确恢复；真实小验收新增 **5 次 Spectre、3 条经验、2 次 SAC 更新**，恢复后的基线网表与指标一致。实测候选之一达到当前 smoke specs；这不证明收敛或优化优势。实现、测试和复现命令见 [M4 验收记录](m4-graph-sac.md)。
 
-**M5 首轮**新增冻结 train/validation/test 划分、精确端口图同构防泄漏、独立任务微调与六方法对照：GT 从零／冻结／微调、随机搜索、坐标模式搜索、端口 GNN 微调。首轮验收 **246 项离线测试通过，零失败、零跳过**；三种子合成实验完成 534 次解析评价，覆盖同拓扑新规格和 2→3 维动作的新拓扑。真实规格试验完成 **97 次 Spectre**，基线参数、网表和指标已恢复一致；GT 微调 1/3、随机搜索 2/3、坐标搜索 3/3 达标，当前没有迁移优势证据。该首轮未覆盖真实新拓扑；完整结果、成本与限制见 [M5 验收记录](docs/m5-transfer.md)。
+**M5 首轮**新增冻结 train/validation/test 划分、精确端口图同构防泄漏、独立任务微调与六方法对照：GT 从零／冻结／微调、随机搜索、坐标模式搜索、端口 GNN 微调。首轮验收 **246 项离线测试通过，零失败、零跳过**；三种子合成实验完成 534 次解析评价，覆盖同拓扑新规格和 2→3 维动作的新拓扑。真实规格试验完成 **97 次 Spectre**，基线参数、网表和指标已恢复一致；GT 微调 1/3、随机搜索 2/3、坐标搜索 3/3 达标，当前没有迁移优势证据。该首轮未覆盖真实新拓扑；完整结果、成本与限制见 [M5 验收记录](m5-transfer.md)。
 
-**M5 真实新拓扑补验已完成**：新增独立 GPDK045 七管 Miller 两级 OTA，真实动作维度 1→2；3 seeds × 6 methods 完成同拓扑规格及新拓扑对照。本轮 **585 次真实 Spectre、288 次 SAC 更新**，完整回归 **440 passed，0 failed，0 skipped**；24 个 checkpoint 审计及两个电路完整 CDF/网表/指标恢复均通过。新拓扑 GT 微调 1/3、随机 1/3、坐标搜索 3/3、port-GNN 微调 2/3 达标，仍没有 GT 迁移优势证据。详见 [M5 真实拓扑验收](docs/m5-real-topology.md)。
+**M5 真实新拓扑补验已完成**：新增独立 GPDK045 七管 Miller 两级 OTA，真实动作维度 1→2；3 seeds × 6 methods 完成同拓扑规格及新拓扑对照。本轮 **585 次真实 Spectre、288 次 SAC 更新**，完整回归 **440 passed，0 failed，0 skipped**；24 个 checkpoint 审计及两个电路完整 CDF/网表/指标恢复均通过。新拓扑 GT 微调 1/3、随机 1/3、坐标搜索 3/3、port-GNN 微调 2/3 达标，仍没有 GT 迁移优势证据。详见 [M5 真实拓扑验收](m5-real-topology.md)。
 
-**M6 前编码器接口**已支持 `graph_transformer / mlp / rgcn / gat` 切换，并保留 M5 的 `port_gnn`（`port_gnn` 已于 2026-09-24 从包中删除，见 docs/decisions.md；最后含它的源码提交为 bbdfe36）。共用参数组 actor、动作条件化 critics 和 SAC；显式选择编码器后，每种都运行从零／冻结／微调三种模式，记录独立成本与参数量。完整离线回归 **296 项通过，零失败、零跳过**；四架构 synthetic smoke 已完成 116 次解析评价，没有新增真实仿真或迁移优势结论。接口、命令、兼容边界见 [编码器对照说明](docs/encoder-ablation.md)。
+**M6 前编码器接口**已支持 `graph_transformer / mlp / rgcn / gat` 切换，并保留 M5 的 `port_gnn`（`port_gnn` 已于 2026-09-24 从包中删除，见 docs/decisions.md；最后含它的源码提交为 bbdfe36）。共用参数组 actor、动作条件化 critics 和 SAC；显式选择编码器后，每种都运行从零／冻结／微调三种模式，记录独立成本与参数量。完整离线回归 **296 项通过，零失败、零跳过**；四架构 synthetic smoke 已完成 116 次解析评价，没有新增真实仿真或迁移优势结论。接口、命令、兼容边界见 [编码器对照说明](encoder-ablation.md)。
 
-**M1 神经网络输入复核**进一步增加 `to_homogeneous_pyg()`：固定语义的 `x / edge_index / edge_type / edge_attr / edge_weight`、正确的参数组 batch 偏移，以及带 mask 的 dense 节点视图；训练层复用同一端口边转换。新增普通 `gcn` 对照，与 `rgcn` 分开。该次验收 **319 项离线测试通过，零失败、零跳过**，六编码器完成 168 次 synthetic 流程评价。原 parser/HeteroData 保持兼容，详见 [M1 通用输入契约](docs/m1-neural-inputs.md)。
+**M1 神经网络输入复核**进一步增加 `to_homogeneous_pyg()`：固定语义的 `x / edge_index / edge_type / edge_attr / edge_weight`、正确的参数组 batch 偏移，以及带 mask 的 dense 节点视图；训练层复用同一端口边转换。新增普通 `gcn` 对照，与 `rgcn` 分开。该次验收 **319 项离线测试通过，零失败、零跳过**，六编码器完成 168 次 synthetic 流程评价。原 parser/HeteroData 保持兼容，详见 [M1 通用输入契约](m1-neural-inputs.md)。
 
-**训练输入缓存**已默认启用：同一拓扑复用连接与端口，同一历史观测复用原始张量；更新尺寸/规格/测量时刷新输入，每次训练重新计算网络表示。354 项离线测试通过；本机合成 batch=32 的 GT 完整 SAC 更新实测约 112→62 ms，未新增真实仿真。容量、失效规则和计时边界见 [输入缓存说明](docs/input-tensor-cache.md)。
+**训练输入缓存**已默认启用：同一拓扑复用连接与端口，同一历史观测复用原始张量；更新尺寸/规格/测量时刷新输入，每次训练重新计算网络表示。354 项离线测试通过；本机合成 batch=32 的 GT 完整 SAC 更新实测约 112→62 ms，未新增真实仿真。容量、失效规则和计时边界见 [输入缓存说明](input-tensor-cache.md)。
 
-**并行 Spectre SAC**改为按实际候选调用 CDF 并导出原生网表：一个专用 Virtuoso 准备进程串行处理完整候选，各环境独立并行运行 Spectre，共享主进程 learner/replay。默认及最大并发均为 **4**；不再预计算或依赖 CDF 表。新版真实验收通过 **24 次 Spectre、18 条新经验、16 次 SAC 更新**，覆盖单 worker、默认四 worker 和 checkpoint 续跑；实际 Spectre 并发峰值为 2，原理图已恢复。参数语义与运行见 [并行训练说明](docs/parallel-spectre-sac.md)，证据与限制见 [真实验收](docs/native-cdf-real-verification.md)。
+**并行 Spectre SAC**改为按实际候选调用 CDF 并导出原生网表：一个专用 Virtuoso 准备进程串行处理完整候选，各环境独立并行运行 Spectre，共享主进程 learner/replay。默认及最大并发均为 **4**；不再预计算或依赖 CDF 表。新版真实验收通过 **24 次 Spectre、18 条新经验、16 次 SAC 更新**，覆盖单 worker、默认四 worker 和 checkpoint 续跑；实际 Spectre 并发峰值为 2，原理图已恢复。参数语义与运行见 [并行训练说明](parallel-spectre-sac.md)，证据与限制见 [真实验收](native-cdf-real-verification.md)。
 
-**轻量实验记录**可通过训练入口的 `--recording-root` 开启：单 writer SQLite 保存所有 evaluation、静态资产引用和完整动态 transition，独立于内存 replay；checkpoint 使用 replay 成员 ID，默认保留最近两份及一份 final policy。带容量门槛、提交确认后的附件/工作目录清理、只读查询和按需 Parquet+ZSTD 导出。数据库使用 WSL 本机 ext4 目录；配置与恢复边界见 [实验记录说明](docs/experiment-recording.md)。后续真实验收完成 16 次 Spectre，覆盖单 worker、2-worker 和 checkpoint 续跑；实际波形保留、远端清理、数据及恢复审计通过，完整回归 413 项通过。见 [真实记录验收](docs/recording-real-verification.md)。
+**轻量实验记录**可通过训练入口的 `--recording-root` 开启：单 writer SQLite 保存所有 evaluation、静态资产引用和完整动态 transition，独立于内存 replay；checkpoint 使用 replay 成员 ID，默认保留最近两份及一份 final policy。带容量门槛、提交确认后的附件/工作目录清理、只读查询和按需 Parquet+ZSTD 导出。数据库使用 WSL 本机 ext4 目录；配置与恢复边界见 [实验记录说明](experiment-recording.md)。后续真实验收完成 16 次 Spectre，覆盖单 worker、2-worker 和 checkpoint 续跑；实际波形保留、远端清理、数据及恢复审计通过，完整回归 413 项通过。见 [真实记录验收](recording-real-verification.md)。
 
-日常查看：`python -m analog_optimizer.recording /path/to/records summary`；加 `--json` 可给自动控制脚本使用。已减少 replay 全量回读、重复静态登记与状态写入，检查清单见 [重复 I/O 审查](docs/recording-io-audit.md)；`examples/benchmark_recording_overhead.py` 可复测记录开销。
+日常查看：`python -m analog_optimizer.recording /path/to/records summary`；加 `--json` 可给自动控制脚本使用。已减少 replay 全量回读、重复静态登记与状态写入，检查清单见 [重复 I/O 审查](recording-io-audit.md)；`examples/benchmark_recording_overhead.py` 可复测记录开销。
 
-**运行可靠性与迁移入口**已补齐周期 checkpoint 续训、累计计数、初始化/异常清理和 worker 等待上限；记录模式的报告历史有界。迁移入口使用逐候选 CDF 与原生导出，可接入 SQLite 和独立 seed 并行，保持各任务 learner/replay 隔离。参数、恢复边界及离线验收见 [运行说明](docs/runtime-reliability.md)。
+**运行可靠性与迁移入口**已补齐周期 checkpoint 续训、累计计数、初始化/异常清理和 worker 等待上限；记录模式的报告历史有界。迁移入口使用逐候选 CDF 与原生导出，可接入 SQLite 和独立 seed 并行，保持各任务 learner/replay 隔离。参数、恢复边界及离线验收见 [运行说明](runtime-reliability.md)。
 
 ````
 
@@ -103,7 +103,7 @@ analog-graph-demo tests/fixtures/synthetic/opamp.scs --config configs/opamp.json
 PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs --config configs/synthetic.json --no-pyg
 ```
 
-本次验收使用 `/tmp/analog-optimizer-venv`，没有修改系统 Python。该临时目录已在 2026-09-24 的 WSL 重启中被清空（`/tmp` 每次启动都会清空），环境已按 `constraints.txt` 的原版本重建于 `~/analog-optimizer-venv`（步骤见 `docs/workbench.md` 的 Start）；上面的安装步骤用于建立持久环境。实际版本和结果见 [验收记录](docs/verification.md)。未安装图依赖时，pytest 会明确 skip `test_pyg.py`；未安装 web/webtest extra 时，工作台测试（`tests/workbench`）同样被 skip。完整验收必须安装这些 extra 并确认 **零 skip**。
+本次验收使用 `/tmp/analog-optimizer-venv`，没有修改系统 Python。该临时目录已在 2026-09-24 的 WSL 重启中被清空（`/tmp` 每次启动都会清空），环境已按 `constraints.txt` 的原版本重建于 `~/analog-optimizer-venv`（步骤见 `docs/workbench.md` 的 Start）；上面的安装步骤用于建立持久环境。实际版本和结果见 [验收记录](verification.md)。未安装图依赖时，pytest 会明确 skip `test_pyg.py`；未安装 web/webtest extra 时，工作台测试（`tests/workbench`）同样被 skip。完整验收必须安装这些 extra 并确认 **零 skip**。
 
 ## 目录与接口
 
@@ -113,7 +113,7 @@ PYTHONPATH=src python3 -m analog_optimizer.demo tests/fixtures/synthetic/vco.scs
 | `src/analog_optimizer/netlist/` | tokenizer、白名单表达式、JSON 配置、层次解析 |
 | `src/analog_optimizer/graph/` | 独立数据类、参数组校验、异构 PyG 与固定语义同构/dense 输入转换 |
 | `configs/` | synthetic model/端口映射、net 角色、可调参数组; also the GPDK045 real-circuit configs. The M5/M6 audits pin these files by hash: do not edit, reformat or move them |
-| `src/gator_workbench/`, `frontend/` | the workbench (web UI): backend and page; see [docs/workbench.md](docs/workbench.md) |
+| `src/gator_workbench/`, `frontend/` | the workbench (web UI): backend and page; see [docs/workbench.md](workbench.md) |
 | `constraints.txt` | exact library versions that saved models need |
 | `src/analog_optimizer/parameters/` | 按独立可调组映射 normalized proposal，执行边界/网格/整数合法化 |
 | `src/analog_optimizer/measurements/specs.py` | 单位、有效性、min/max/range 规格和有限奖励 |
@@ -158,7 +158,7 @@ M4 新增的 `SyntheticSizingBackend` 是独立、显式的解析二次函数测
 
 真实环境只开放 `input_pair_width`，范围 3.6–4.4 µm、linear 映射、5 nm 网格；镜像与尾管参数组在环境图中为 `mutable=False`。通用图解析配置 `gpdk045_opamp.json` 中较宽的参数范围仅用于表示，不能直接作为真实动作权限。提议动作和实际执行值分开记录；连续提议加网格投影不等于严格的离散 SAC。
 
-M5's same-class real topology verification and encoder interfaces are complete. M6 now has an offline cross-category protocol, qualified nominal LDO/VCO baselines and one executed, audited physical cross-category pilot; the pilot does not establish transfer or encoder superiority, a [strict-mode requalification](docs/m6-vco-requalification.md) confirmed the first feasible design of all 36 successful VCO runs with the reference deck (28 further Spectre calls), and M6 was then closed at pilot scale. A larger prospectively defined circuit set, the experiment that could answer the transfer question, was not run and needs a new decision and budget. Training is nominal-only by default; since reward v2 (2026-09-26) the `real:gpdk045_ota7` task can also train at the four PVT screening corners (`always`, and since reward v2.1 `after_nominal`), qualified on real Spectre runs (workbench records 7.95 and 7.108; see [reward v2](docs/reward-v2.md)). The existing real parallel path serializes native CDF preparation and permits at most four Spectre workers; the M5 multi-circuit and M6 category experiments run sequentially. Monte Carlo and surrogate extensions are not implemented. The latest milestone status is recorded in [project decisions](docs/decisions.md), [M6 protocol](docs/m6-cross-category.md), [LDO qualification](docs/m6-ldo-baseline.md), [VCO qualification](docs/m6-vco-baseline.md) and [physical pilot results](docs/m6-real-results.md).
+M5's same-class real topology verification and encoder interfaces are complete. M6 now has an offline cross-category protocol, qualified nominal LDO/VCO baselines and one executed, audited physical cross-category pilot; the pilot does not establish transfer or encoder superiority, a [strict-mode requalification](m6-vco-requalification.md) confirmed the first feasible design of all 36 successful VCO runs with the reference deck (28 further Spectre calls), and M6 was then closed at pilot scale. A larger prospectively defined circuit set, the experiment that could answer the transfer question, was not run and needs a new decision and budget. Training is nominal-only by default; since reward v2 (2026-09-26) the `real:gpdk045_ota7` task can also train at the four PVT screening corners (`always`, and since reward v2.1 `after_nominal`), qualified on real Spectre runs (workbench records 7.95 and 7.108; see [reward v2](reward-v2.md)). The existing real parallel path serializes native CDF preparation and permits at most four Spectre workers; the M5 multi-circuit and M6 category experiments run sequentially. Monte Carlo and surrogate extensions are not implemented. The latest milestone status is recorded in [project decisions](decisions.md), [M6 protocol](m6-cross-category.md), [LDO qualification](m6-ldo-baseline.md), [VCO qualification](m6-vco-baseline.md) and [physical pilot results](m6-real-results.md).
 ````
 
 ## Original references

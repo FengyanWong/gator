@@ -220,10 +220,10 @@ def _session_open(client, library, testbench, mode='a'):
     return raw
 
 
-def _read_model_files(client, test, s):
+def _read_model_files(client, test, session_option):
     """The test's model files as [[file, section]]; an entry without a section is a one-element list in Virtuoso's
     answer (live 2026-09-22: `(("<ic file>") ("<pdk>" "tt"))`), and its section comes back empty."""
-    listed = _skill(client, f'maeGetEnvOption({_q(test)} ?option "modelFiles"{s})', 'reading the model files')
+    listed = _skill(client, f'maeGetEnvOption({_q(test)} ?option "modelFiles"{session_option})', 'reading the model files')
     return [[file, section] for file, section in re.findall(r'\(\s*"([^"]*)"(?:\s+"([^"]*)")?\s*\)', listed or '')]
 
 

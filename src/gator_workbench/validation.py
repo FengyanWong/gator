@@ -29,6 +29,9 @@ from .spec_equations import parse, parse_size_formula, size_matches
 from .start_grid import row_start_issue
 from .task_registry import verified_spec_registry
 
+_PARAMETER_REL_TOL = 1e-09
+
+
 FEATURE_PARAMETER_KINDS = ('w', 'l', 'm', 'nf', 'r', 'c', 'ind', 'dc')
 BLOCKING = ('error', 'blocker')
 # The units the optimizer can vary a group in (analog_optimizer.models.inputs): a PDK parameter is varied in the standard
@@ -234,6 +237,7 @@ def _check_parameters(config, report, graph, record) -> None:
         if p.binding_group == p.variable_id:
             report.add('error', 'self_binding', path + '.binding_group', 'A variable cannot be bound to itself')
         _check_row_bounds(report, path, p)
+    # ---- Validate cross-row bindings, then compare the configuration with the circuit.
     _check_bindings(report, parameters, count_columns)
     report.facts['independent_action_variables'] = independent_action_count(parameters)
     report.facts['parameter_rows'] = len(parameters)
@@ -299,6 +303,7 @@ def _check_bindings(report, parameters, count_columns) -> None:
                 report.add('blocker', 'mixed_parameter_kind_group', path,
                            'The optimizer groups members of one parameter kind; binding different parameter '
                            'names in one group is not supported')
+            # ---- Compare follower limits and initial values in canonical units at the declared ratio.
             if (leader.lower is not None and leader.upper is not None and units.known(p.unit)
                     and units.compatible(p.unit, leader.unit)):
                 low = units.to_canonical(leader.lower, leader.unit) * ratio
@@ -313,7 +318,7 @@ def _check_bindings(report, parameters, count_columns) -> None:
                     and units.compatible(p.unit, leader.unit)):
                 expected = units.to_canonical(leader.initial_value, leader.unit) * ratio
                 actual = units.to_canonical(p.initial_value, p.unit)
-                if not math.isclose(actual, expected, rel_tol=1e-9, abs_tol=1e-18):
+                if not math.isclose(actual, expected, rel_tol=_PARAMETER_REL_TOL, abs_tol=1e-18):
                     report.add('error', 'binding_initial_mismatch', path + '.initial_value',
                                f'Initial value {_in(actual, p.unit)} is not ratio x leader '
                                f'({_in(expected, p.unit)}); the optimizer '
@@ -337,7 +342,7 @@ def _check_bindings_against_circuit(config, report, graph) -> None:
         if leader_id == p.variable_id:
             continue
         own, lead = circuit_value(p), circuit_value(by_id[leader_id])
-        if own is not None and lead is not None and not math.isclose(own, lead * ratio, rel_tol=1e-9, abs_tol=1e-18):
+        if own is not None and lead is not None and not math.isclose(own, lead * ratio, rel_tol=_PARAMETER_REL_TOL, abs_tol=1e-18):
             report.add('error', 'binding_initial_mismatch', f'parameters[{i}]',
                        f'In the circuit {p.instance_path}.{p.parameter_name} = {_in(own, p.unit)}, but ratio x leader '
                        f'({leader_id}) = {_in(lead * ratio, p.unit)}. Change the ratio, or modify the circuit first.')
@@ -368,7 +373,7 @@ def _check_parameters_against_circuit(config, report, graph, record) -> None:
                        f'({value.reason}); confirm its value before optimizing')
         elif p.initial_value is not None and units.known(p.unit) and not units.is_affine(p.unit):
             actual = units.to_canonical(p.initial_value, p.unit)
-            if not math.isclose(actual, value.value, rel_tol=1e-9, abs_tol=1e-24):
+            if not math.isclose(actual, value.value, rel_tol=_PARAMETER_REL_TOL, abs_tol=1e-24):
                 report.add('error', 'initial_differs_from_circuit', path + '.initial_value',
                            f'Configuration says {_in(actual, p.unit)} but the circuit has '
                            f'{_in(value.value, p.unit)}')
@@ -503,6 +508,7 @@ def _check_targets(config, report, measurement_ids, *, registry, extensible: boo
         _check_registry_entry(report, path, t, registry, extensible)
         if not t.basis.strip():
             report.add('info', 'basis_not_stated', path + '.basis', 'The source of this requirement is not recorded')
+    # ---- Check constraints that apply to the target set as a whole.
     if len(preference) > 1:
         report.add('error', 'multiple_preferences', 'targets',
                    f'Only one target may set direction_after_feasible; found {preference}')
@@ -536,6 +542,7 @@ def _check_run(config, report, record) -> None:
         report.add('info', 'redundant_reset_critic', 'run.advanced.reset_critic',
                    'encoder_only_transfer already leaves critic heads random; critic encoders are still loaded '
                    'unless reset_critic is set')
+    # ---- Check model shape and whether the configured budget can reach learning.
     net = run.network
     if net.encoder_type != 'rgcn' and net.hidden_dim % net.heads:
         report.add('error', 'heads_divisibility', 'run.network', 'hidden_dim must be divisible by heads')

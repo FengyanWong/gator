@@ -299,6 +299,7 @@ def classify_model(name, scan, *, cdf_units=(), depth=0) -> dict:
             if family:
                 return dict(family=family, polarity=polarity, core=main,
                             family_basis=f'inline subcircuit {name} ({file_line(subckt)}): its own element uses {basis}')
+    # ---- Prefer a unique active-device core before considering passive paths.
     active = [(e, *_element_family(e, subckt, scan, depth)) for e in subckt['elements']]
     for wanted in ('mos', 'bjt'):
         cores = [item for item in active if item[1] == wanted and len(item[0]['nodes']) >= (4 if wanted == 'mos' else 3)]

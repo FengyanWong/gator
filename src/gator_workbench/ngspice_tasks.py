@@ -282,6 +282,7 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
     directory = Path(entry['directory'])
     netlist_file = directory / FILES['netlist']
 
+    # ---- Build the simulator environment later, after checking run authorization and connection.
     def builder(compiled, work_root, run_settings):
         if not authorized:
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED)
@@ -306,6 +307,7 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
                                  dict(entry.get('device_kinds') or {}), _include_root(entry), name, str(netlist_file),
                                  plan=compiled.plan if compiled.plan is not None and compiled.plan.injected else None,
                                  reward_settings=RewardSettings(**run_settings.reward.model_dump()), **options)
+    # ---- Describe the saved deck and connection limitations without building an environment.
     notes = [f'ngspice netlist task, revision {entry.get("revision")}: {len(graph.devices)} elements, '
              f'{len(parsed.measurements)} results ({", ".join(parsed.result_names[:8])}{"..." if len(parsed.result_names) > 8 else ""}).']
     if entry.get('source_path'):

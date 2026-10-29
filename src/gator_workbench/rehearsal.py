@@ -39,6 +39,7 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
     if migration is not None:
         from analog_optimizer.measurements.specs import RewardSettings
         migration = RewardSettings(**migration['settings'])
+    # ---- Allocate bounded samples across source tasks before reading selected transitions.
     rng, selected = random.Random(seed), []
     for i, task in enumerate(sorted(rows)):
         n = capacity // len(rows) + (i < capacity % len(rows))
@@ -77,6 +78,7 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
                 raise ValueError('Source archive changed during rehearsal snapshot')
             if progress:
                 progress(dict(event='rehearsal_source', run_id=source['run_id'], count=len(chosen)))
+    # ---- Publish after checking each selected source archive before and after its read.
     publish(temporary, data)
     manifest = dict(format='gator-rehearsal-v1', origin=audit['origin'], capacity=capacity, count=len(selected),
                     selection=selected, seed=seed, request_sha256=audit['request_sha256'],
@@ -103,6 +105,7 @@ class Rehearsal:
         data = (path.parent / manifest['data_file']).resolve()
         if data.parent != path.parent.resolve() or file_sha(data) != manifest['data_sha256']:
             raise ValueError('Rehearsal data path or checksum mismatch')
+        # ---- Validate stored transitions against the pinned training-only selection.
         training, actual, self.digests = defaultdict(list), [], {}
         with gzip.open(data, 'rt', encoding='utf8') as stream:
             for line in stream:
@@ -125,6 +128,7 @@ class Rehearsal:
         if (Counter(map(identity, actual)) != Counter(map(identity, manifest['selection'])) or
                 len(actual) != manifest['count'] or not 0 < len(actual) <= manifest['capacity']):
             raise ValueError('Rehearsal selection or capacity mismatch')
+        # ---- Partition each update batch between source and target samples.
         self.source_size = round(batch_size * settings.fraction)
         self.online_size = batch_size - self.source_size
         if min(self.source_size, self.online_size) < 1:

@@ -46,10 +46,13 @@ from .storage.dataset import utcnow
 from .task_registry import REAL_PROFILES
 from .validation import resolve_leaders
 
+_GRID_ROUNDING_TOL = 1e-07
+
+
 
 # ---------------------------------------------------------------------------------- creation
 def _on_grid(value, step=VERIFIED_WIDTH_STEP) -> bool:
-    return math.isclose(value / step, round(value / step), rel_tol=0, abs_tol=1e-7)
+    return math.isclose(value / step, round(value / step), rel_tol=0, abs_tol=_GRID_ROUNDING_TOL)
 
 
 def _group_step(ratios, wanted):
@@ -75,6 +78,7 @@ def _adjust_rows(config, graph, core) -> tuple:
     optimized = {row.variable_id for row in rows if row.optimized and not row.binding_group}
     if not optimized:
         raise ProfileError('Nothing is marked as optimized: the parameter editor needs at least one variable that may change')
+    # ---- Validate every member of an optimized group before adjusting its ranges.
     for row in rows:
         leader_id, _ = leaders[row.variable_id]
         if leader_id not in optimized:
@@ -87,6 +91,7 @@ def _adjust_rows(config, graph, core) -> tuple:
             raise ProfileError(f'{where}: only transistors directly inside the core cell ({core}/...) can be sized')
         if units.canonical_unit(row.unit) != 'm':
             raise ProfileError(f'{where}: a width needs a length unit (um, nm, m)')
+    # ---- Normalize leader ranges on the shared grid and clear followers' independent bounds.
     adjusted = []
     for row in rows:
         leader_id, _ = leaders[row.variable_id]
@@ -100,8 +105,8 @@ def _adjust_rows(config, graph, core) -> tuple:
             scale = units.scale_to_canonical(1.0, row.unit)
             ratios = [ratio for other, (lead, ratio) in leaders.items() if lead == row.variable_id]
             step = _group_step(ratios, None if row.step is None else units.scale_to_canonical(row.step, row.unit))
-            lower = math.ceil(units.to_canonical(row.lower, row.unit) / step - 1e-7) * step
-            upper = math.floor(units.to_canonical(row.upper, row.unit) / step + 1e-7) * step
+            lower = math.ceil(units.to_canonical(row.lower, row.unit) / step - _GRID_ROUNDING_TOL) * step
+            upper = math.floor(units.to_canonical(row.upper, row.unit) / step + _GRID_ROUNDING_TOL) * step
             current = graph.parameters.get(row.instance_path, {}).get('w')
             if current is None or not current.valid:
                 raise ProfileError(f'{row.variable_id}: the width of {row.instance_path} could not be read from the netlist')

@@ -167,6 +167,7 @@ def reconstruct_from_tables(run_dir, manifest):
     first = feasible = best = None
     failures = retries = cache_hits = 0
     unordered_violation = False
+    # ---- Reduce committed evaluations to totals and candidate best-design rows.
     with closing(reader.iter_batches('evaluations', columns=columns)) as batches:
         for batch in batches:
             for row in batch.to_pylist():
@@ -187,6 +188,7 @@ def reconstruct_from_tables(run_dir, manifest):
                     elif best is None or (violation, row['commit_seq']) < (
                             best['normalized_constraint_violation'], best['commit_seq']):
                         best = row
+    # ---- Prefer the first valid feasible result; otherwise resolve the violation ordering.
     if feasible is not None:
         best = feasible
     elif unordered_violation:
@@ -329,6 +331,7 @@ def export_aggregates(experiment_dir, *, include_mock=None, budgets=None):
     empty = None if rows else ('No eligible runs. ' + ('Mock runs exist but are excluded from real-experiment aggregates.'
                                                        if any('mock' in s.get('reason', '') for s in skipped) else
                                                        'The experiment has no runs yet.'))
+    # ---- Write per-run rows before deriving budget and cross-run tables.
     paths = {}
     metric_columns = sorted({f'best_metric:{k}' for r in rows for k in r['best_metrics']})
     for r in rows:
@@ -352,6 +355,7 @@ def export_aggregates(experiment_dir, *, include_mock=None, budgets=None):
                                     cost_evaluations=cost, cost_convention=FIRST_FEASIBLE_CONVENTION))
     paths['budget_success'] = _write(directory, 'budget_success', budget_rows, inputs=inputs,
                                      explanation=empty or 'No budget checkpoints are defined for these runs.')
+    # ---- Group budget outcomes before writing paired and transfer comparisons.
     grouped = {}
     for b in budget_rows:
         grouped.setdefault((b['task_id'], b['mode'], b['optimizer'], b['method_label'], b['provenance'], b['budget']), []).append(b)

@@ -122,6 +122,7 @@ def _prepare_pool(request, *, progress=None, storage=None) -> Pool:
     target_sets = relabel_targets(request)
     targets_only, balance = pool_options(request, target_sets, relabel, fraction)
     seen_tasks = set()
+    # ---- Read each archive under the required origin, input schema, and run identity.
     for source in request['runs']:
         directory, manifest, config, summary, task, run_id, read_points = _read_pool_source(
             source, run_ids, origin, inputs, missing_points, registries)
@@ -137,6 +138,7 @@ def _prepare_pool(request, *, progress=None, storage=None) -> Pool:
         seen_tasks.add(task)
         counts = Counter()
         original_settings = {}
+        # ---- Validate and relabel transitions before persisting the source audit.
         for row, transition in zip(eligible, transitions, strict=True):
             transition, settings, first, last, episode = _validate_pool_transition(
                 row, transition, original_settings, candidates, run_id, manifest, origin, migrated_settings, settings, counts)
@@ -156,6 +158,7 @@ def _prepare_pool(request, *, progress=None, storage=None) -> Pool:
         del transitions, loader
         if progress:
             progress(dict(event='source_loaded', **sources[-1]))
+    # ---- Split complete episodes only after all requested sources are admitted.
     training, validation, schema, features, audit = _split_and_audit_pool(
         request, origin, seed, fraction, inputs, groups, registries, sources, settings, relabel, target_sets,
         migrated_settings, storage, progress, seen_tasks, targets_only, balance)
@@ -537,6 +540,7 @@ def _split_episodes(groups, schema, seed, fraction, *, storage=None, progress=No
     last_report = time.monotonic()
     if progress:
         progress(dict(event='pool_validation', completed_transitions=0, total_transitions=total))
+    # ---- Choose holdout episodes per task, then validate every transition against the shared schema.
     for task, episodes in sorted(groups.items()):
         keys = sorted(episodes)
         if fraction and len(keys) < 2:
@@ -698,6 +702,7 @@ def _train_offline(
                             task_definition_hash=pool.audit['request_sha256'], save_replay=False, keep_last=2)
     history = []
     candidate_runs = {r['candidate_id']: r['run_id'] for r in pool.audit['split'] if r['subset'] == 'training'}
+    # ---- Keep validation and sampling evidence aligned with each saved checkpoint.
     def checkpoint() -> None:
         status('training', phase='evaluating_validation', validation_transitions=sum(map(len, pool.validation.values())))
         scores = evaluate(learner, pool)
@@ -722,6 +727,7 @@ def _train_offline(
                source_evaluations=pool.audit['source_evaluations'],
                parameter_counts={k: sum(p.numel() for p in v.parameters()) for k, v in
                                  [('actor', learner.actor), ('critics', learner.critics)]})
+    # ---- Save the initial learner before running the requested updates.
     checkpoint()
     for _ in range(updates):
         losses = learner.update(sampler.sample(batch_size))

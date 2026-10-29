@@ -36,6 +36,9 @@ from .paths import bridge_cell_lock, bridge_session_lock
 from .schematic_read import read_cell
 from .security import skill_string as _q
 
+_DEFAULT_BRIDGE_TIMEOUT_SECONDS = 60
+
+
 NAME = re.compile(CADENCE_NAME)
 COPIED_VIEWS = ('schematic', 'symbol')
 SUFFIX = '_GATOR'
@@ -122,7 +125,7 @@ def fingerprint(snapshot) -> str:
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def _skill(client, text, what, timeout=60):
+def _skill(client, text, what, timeout=_DEFAULT_BRIDGE_TIMEOUT_SECONDS):
     from virtuoso_bridge import decode_skill_output
     result = client.execute_skill(text, timeout=timeout)
     if not result.ok or result.errors:
@@ -146,6 +149,7 @@ def make_copy(client, *, library, cell, testbench, copy_library, reuse_library, 
         progress.update(changes)
         (out / 'progress.json').write_text(json.dumps(progress, indent=1))
 
+    # ---- Validate the source hierarchy and destination names before creating or copying views.
     info = client.library.get(library)
     working_dir = _skill(client, 'getWorkingDir()', 'reading the working directory').strip().strip('"')
     cells = parse_hierarchy(_skill(client, HIERARCHY_SKILL % dict(library=library, testbench=testbench), 'reading the hierarchy'))
@@ -165,6 +169,7 @@ def make_copy(client, *, library, cell, testbench, copy_library, reuse_library, 
             raise RuntimeError(f'{dst!r} is not a plain Cadence cell name')
     targets = [(rename[c['cell']], view) for c in cells for view in COPIED_VIEWS if view in c['views']]
     before = _originals(client, library, cells)
+    # ---- Resolve destination conflicts or create a backed-up library registration.
     existing = set(client.library.list())
     cds_lib = f'{working_dir}/cds.lib'
     if copy_library in existing:
@@ -182,6 +187,7 @@ def make_copy(client, *, library, cell, testbench, copy_library, reuse_library, 
         copy_info = client.library.create(copy_library, f'{working_dir}/{copy_library}', technology_library=info.technology_library)
         note(created_library=True, copy_path=copy_info.path, copy_technology_library=copy_info.technology_library)
         client.download_file(cds_lib, out / 'cds.lib.after')
+    # ---- Copy the views before redirecting their schematic references to the copies.
     source_of = {dst: src for src, dst in rename.items()}
     for name, view in targets:
         _skill(client, COPY_VIEW_SKILL % dict(library=library, cell=source_of[name], dest=name, view=view, copy_library=copy_library,
@@ -228,7 +234,7 @@ def _read_model_files(client, test, session_option):
 
 
 def _session_close(client, session):
-    client.execute_skill(f'maeCloseSession(?session {_q(session)} ?forceClose t)', timeout=60)
+    client.execute_skill(f'maeCloseSession(?session {_q(session)} ?forceClose t)', timeout=_DEFAULT_BRIDGE_TIMEOUT_SECONDS)
     _reap_helpers(client)
 
 
@@ -273,7 +279,7 @@ def _helper_sweep(client, remove=()):
             'out = makeTempFileName("/tmp/gator_maestro_helpers") '
             f'sh(strcat({_q(script)} out " 2>/dev/null")) '
             'p = infile(out) when(p while(gets(line p) all = strcat(all line)) close(p)) '
-            'when(isFile(out) deleteFile(out))) all)', timeout=60)
+            'when(isFile(out) deleteFile(out))) all)', timeout=_DEFAULT_BRIDGE_TIMEOUT_SECONDS)
         raw = str(getattr(result, 'output', '') or '')
     except Exception:
         return []
@@ -319,6 +325,7 @@ def read_maestro(client, library, testbench, *, test):
         answer['test'] = test
         answer['simulator_mode'] = _skill(client, f"let((th) th = maeGetTestSession({_q(test)}{s}) if(th asiGetHighPerformanceOptionVal(th 'uniMode) \"\"))",
                                           'reading the simulator mode').strip().strip('"') or None
+        # ---- Separate the initial-condition file from ordinary model includes.
         listed_files, ic_folders = _read_model_files(client, test, s), _ic_folders()
         answer['model_files'] = [m for m in listed_files if not _is_ic_file(m[0], ic_folders)]
         for path, _section in listed_files:                       # the ic file, if the test carries one
@@ -330,6 +337,7 @@ def read_maestro(client, library, testbench, *, test):
             answer['analyses'][name] = {k: v for k, v in re.findall(r'\(\s*"([^"]*)"\s+"([^"]*)"\s*\)', options or '')}
         for name in _list(_skill(client, f'maeGetSetup(?typeName "variables"{s})', 'reading the variables')):
             answer['variables'][name] = _skill(client, f'maeGetVar({_q(name)}{s})', f'reading {name}').strip().strip('"')
+        # ---- Read output expressions first, then attach their saved specs.
         listed = _skill(client, f'let((out) out = "" foreach(o maeGetTestOutputs({_q(test)}{s}) out = strcat(out o~>name "\\t" '
                                 f'cond((stringp(o~>expression) o~>expression) (o~>expression sprintf(nil "%L" o~>expression)) (t "")) "\\n")) out)',
                                 'reading the outputs')
@@ -450,6 +458,7 @@ def write_maestro(client, library, testbench, setup):
             entries = [m for m in base if not _is_ic_file(m[0], ic_folders)] + keep_ic + ([[ic_path, '']] if conditions else [])
             files = ' '.join(f'({_q(f)} {_q(section)})' for f, section in entries)
             _skill(client, f'maeSetEnvOption({_q(test)} ?options `(("modelFiles" ({files}))){s})', 'setting the model files')
+        # ---- Reconcile enabled analyses, then replace outputs and their specs.
         for name in _list(_skill(client, f'maeGetEnabledAnalysis({_q(test)}{s})', 'reading the analyses')) if setup['analyses'] is not None else ():
             if name not in setup['analyses']:
                 _skill(client, f'maeSetAnalysis({_q(test)} {_q(name)} ?enable nil{s})', f'switching {name} off')
@@ -588,7 +597,7 @@ def _main(argv=None):
         bridge = RealBridge(settings)
         bridge.version()
         bridge.bind_env(settings['env_file'])
-        client = bridge.client(settings.get('profile') or None, 60)
+        client = bridge.client(settings.get('profile') or None, _DEFAULT_BRIDGE_TIMEOUT_SECONDS)
         try:
             from contextlib import redirect_stderr, redirect_stdout
             with (out / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):

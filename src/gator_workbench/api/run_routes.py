@@ -72,6 +72,7 @@ def _select_start_session(config, session, allow_real, context) -> tuple:
 
 def _prepare_start_directory(config, context, allow_real, body, session, baseline_only, random_only, calibrating, record) -> tuple:
     """Prepare the run directory and persist its launch records, releasing the session when either step fails."""
+    # ---- Release the selected session if directory preparation fails.
     try:
         layout, manifest = runs.prepare_run(config, context.roots, allow_real=allow_real,
                                             confirm_transfer=getattr(body, 'confirm_transfer', False), monitor=context.monitor,
@@ -90,6 +91,7 @@ def _prepare_start_directory(config, context, allow_real, body, session, baselin
     except BaseException:
         session_routing.finished(session)
         raise
+    # ---- Record the session and run kind before reporting a successful start.
     try:
         if session is not None:                    # which session, and why, in the run's record (its current segment)
             manifest['segments'][-1]['virtuoso_session'] = session.record()

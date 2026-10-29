@@ -51,6 +51,9 @@ from .schematic_read import read_cell
 from .security import skill_string as _skill_string
 from .storage.atomic import read_json_quiet
 
+_INTEGER_TOL = 1e-07
+
+
 NAME = re.compile(CADENCE_NAME)       # library / cell / instance, as everywhere in the workbench
 FIELD = re.compile(r'^[A-Za-z_]\w{0,63}$')                        # a CDF parameter (form field)
 PROC = re.compile(r'^[A-Za-z_]\w{0,127}$')                        # a form procedure
@@ -61,7 +64,7 @@ STALE = ('ad', 'as', 'pd', 'ps', 'nrd', 'nrs')                    # what a trans
 
 
 def _whole(value):
-    return math.isfinite(value) and math.isclose(value, round(value), rel_tol=0, abs_tol=1e-7)
+    return math.isfinite(value) and math.isclose(value, round(value), rel_tol=0, abs_tol=_INTEGER_TOL)
 
 
 def _num(value):
@@ -171,7 +174,7 @@ class Write:
             return False
         if self.step is not None:
             k = (value - self.lower) / self.step
-            if not math.isclose(k, round(k), rel_tol=0, abs_tol=1e-7):
+            if not math.isclose(k, round(k), rel_tol=0, abs_tol=_INTEGER_TOL):
                 return False
         return True
 
@@ -398,7 +401,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
                 if group.lower * member.ratio < write.lower - span or group.upper * member.ratio > write.upper + span:
                     raise RulesError(f'Group {group.id} lets {write.field.name} leave its bounds')
                 if write.step is not None and (group.step is None or not math.isclose(
-                        group.step * member.ratio / write.step, round(group.step * member.ratio / write.step), rel_tol=0, abs_tol=1e-7)):
+                        group.step * member.ratio / write.step, round(group.step * member.ratio / write.step), rel_tol=0, abs_tol=_INTEGER_TOL)):
                     raise RulesError(f'Group {group.id}: its step does not keep {write.field.name} on its grid')
                 if write.field.kind == 'choice':
                     count = int(round((group.upper - group.lower) / group.step)) + 1 if group.step else 0
@@ -484,6 +487,7 @@ class CdfWritableProfile(GenericMosWidthProfile):
                     raise ValueError(f'Stale finger width on {name}')
                 if any((_num(params[k]) or 0) <= 0 for k in GEOMETRY if k in params):
                     raise ValueError(f'Invalid derived geometry on {name}')
+        # ---- Collect writable values only after structural and held-field checks pass.
         result = {}
         for w in self.writes:
             value = _num(actual[w.field.instance]['params'].get(w.field.cdf))

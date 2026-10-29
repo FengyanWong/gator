@@ -352,6 +352,7 @@ class NetworkView:
         groups = list(graph.parameter_groups)
         nets = list(graph.nets)
         bench = bench_of_graph(graph, self.variables) if (self.bench_features or self.net_rule) else None
+        # ---- Scale copied parameter values and group bounds together for relative-size inputs.
         if self.relative_sizes:
             for device_id, values in parameters.items():
                 for column, value in list(values.items()):
@@ -386,6 +387,7 @@ class NetworkView:
         if self.op_ratios and operating_points:
             self._ratio_columns(devices, parameters, operating_points,
                                 lambda value: ParameterValue('', float(value), SourceSpan('network-view', 1)))
+        # ---- Attach view identity and spec metadata after transforming graph features.
         metadata = dict(graph.metadata)
         metadata[VIEW_KEY] = self.key
         if self.descriptors is not None:

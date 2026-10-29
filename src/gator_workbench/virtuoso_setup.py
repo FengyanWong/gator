@@ -166,6 +166,7 @@ def validate(setup, *, bindable=None) -> list[str]:
     s, problems = normalize(setup), []
     if not NAME.match(s['test']):
         problems.append(f'Test name {s["test"]!r} is not a plain name')
+    # ---- Check output identities, expressions, and the specs that refer to them.
     names = [o['name'] for o in s['outputs']]
     for name in names:
         if not NAME.match(name):
@@ -181,6 +182,7 @@ def validate(setup, *, bindable=None) -> list[str]:
             problems.append(f'{spec["output"]}: spec kind {spec["op"]!r} is not one of {", ".join(SPEC_OPS)}')
         elif (spec['op'] == 'range') != isinstance(spec['value'], list):
             problems.append(f'{spec["output"]}: a range spec needs two values, the others one')
+    # ---- Check variable names, initial conditions, and writable device bindings.
     for name in s['variables']:
         if not NAME.match(name):
             problems.append(f'Variable name {name!r} must be letters, digits and "_"')

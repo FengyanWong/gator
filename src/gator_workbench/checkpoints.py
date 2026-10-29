@@ -412,6 +412,7 @@ def check_compatibility(metadata, *, mode, task_definition_hash, contract) -> di
         'identical' if saved['sac_config'] == contract['sac_config'] else
         'differ' + (' (a resumed run must keep its training configuration)' if strict else
                     ' (allowed: new optimizers are created for the target task)'), fatal=strict)
+    # ---- Apply run-identity and full-state requirements only for exact resume.
     same_task = metadata['task_definition_hash'] == task_definition_hash
     if strict:
         add('task definition (circuit, variables, targets, measurements)', same_task,

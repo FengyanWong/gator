@@ -123,6 +123,7 @@ def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary
     feasible = tracker.feasible
     reason = {} if feasible else {
         'reason': 'No evaluated design satisfied every hard constraint. This is an explicit null, not a result.'}
+    # ---- Write design-status records even when no feasible export can be produced.
     for name, candidate, extra in (('best_feasible', feasible, reason), ('best_infeasible', tracker.infeasible, {}),
                                    ('best_nominal_feasible', tracker.nominal_feasible, {})):
         write_json(directory / f'{name}.json', _record(candidate, status='found' if candidate else 'none_found',
@@ -138,6 +139,7 @@ def write_outputs(directory, tracker: BestDesignTracker, *, task, config_summary
     if feasible is None:
         notes['parameters.csv'] = notes[netlist_name] = 'not created: no feasible design exists'
         return notes
+    # ---- Export feasible parameters first; publish a netlist only if verification succeeds.
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator='\n')
     writer.writerow(['variable_id', 'member_variable_id', 'role', 'instance_path', 'parameter_name', 'value', 'unit',
@@ -208,6 +210,7 @@ def export_netlist(netlist_text, graph, members, *, reparse=None):
             index += 1
         if not replaced:
             return dict(status='unsupported', reason=f'could not locate {source_name}={value.raw} on the line of {path}')
+    # ---- Reparse the edited text and check both targeted and untouched parameter values.
     text = '\n'.join(lines)
     if reparse is None:
         return dict(status='unsupported', reason='no parser available to verify the rewritten netlist')

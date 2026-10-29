@@ -95,6 +95,7 @@ def check(m) -> list:
         problems.append(f"{len(a)} Panel A jobs, expected {expect['panel_a_jobs']}")
     if len(b) != expect['portfolio_children']:
         problems.append(f"{len(b)} portfolio children, expected {expect['portfolio_children']}")
+    # ---- Check search budgets and portfolio composition before the shared job rules.
     for job in a:
         if (job['max_evaluations'], job['max_launches']) != (SEARCH_BUDGET, SEARCH_BUDGET) or job['view'] != 'panel_a':
             problems.append(f"{job['job_id']}: a Panel A search has 800/800 on view panel_a")
@@ -113,6 +114,7 @@ def check(m) -> list:
             problems.append(f'{parent}: its children do not add up to 800')
         if len({(c['method'], c['case'], c['replicate']) for c in children}) != 1:
             problems.append(f'{parent}: its children differ in method, case or replicate')
+    # ---- Apply replicate seeds, lane counts, and archive policy to every job.
     for job in jobs:
         seeds = REPLICATES[job['replicate']]
         if (job['pretrain_seed'], job['rollout_seed']) != seeds:
@@ -123,6 +125,7 @@ def check(m) -> list:
             problems.append(f"{job['job_id']}: an SAC arm loads the model of its pretraining seed")
         if job['uses_archive'] != ARCHIVE[job['method']]:
             problems.append(f"{job['job_id']}: archive use differs from its method")
+    # ---- Reconcile analysis-cell aliases and totals with the executable job matrix.
     aliases = [cell for cell in cells if cell.get('alias_of')]
     if len(aliases) != len(REPLICATES) * n_cases or any(cell['alias_of'] not in ids or cell['jobs'] for cell in aliases):
         problems.append('every case and replicate has exactly one M+ Panel B alias of its Panel A M+ search, with no job')

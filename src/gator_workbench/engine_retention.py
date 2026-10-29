@@ -60,6 +60,7 @@ class Retention:
                         Path(item['journal']).unlink(missing_ok=True)
             except OSError as exc:
                 self._log_error('retention_failed', exc, evaluation_id=item['evaluation_id'])
+        # ---- Remove superseded best-design outputs after applying the new retention plan.
         if role is not None and self.config.output.waveform_retention == 'best_and_failures':
             previous = self.previous_best_waveform
             current = plan[-1]['evaluation_id'] if plan else None

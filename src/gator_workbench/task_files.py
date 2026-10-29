@@ -112,6 +112,7 @@ def parse(text) -> tuple[dict, dict, list[str]]:
     problems = []
     if data.get('format', FORMAT) != FORMAT:
         problems.append(f'format is {data.get("format")!r}; this workbench reads {FORMAT!r}')
+    # ---- Validate editor rows independently and retain diagnostics for invalid rows.
     rows = {}
     for part, key, model in (('parameters', 'parameters', OptimizationParameter), ('probes', 'measurements', MeasurementDefinition),
                              ('specs', 'targets', PerformanceTarget)):
@@ -126,6 +127,7 @@ def parse(text) -> tuple[dict, dict, list[str]]:
             except ValidationError as exc:
                 problems += [f'{part}[{index}] {".".join(map(str, e["loc"]))}: {e["msg"]}' for e in exc.errors()[:4]]
         rows[key] = good
+    # ---- Validate extra measurement and Maestro settings separately from the editor rows.
     extras = {}
     measurement = data.get('measurement') or {}
     if not isinstance(measurement, dict):

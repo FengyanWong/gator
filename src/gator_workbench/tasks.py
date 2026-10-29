@@ -153,6 +153,7 @@ def list_tasks():
                                       + ('' if reference else 'No real baseline recorded yet.')))
     from . import ngspice_tasks  # lazy: ngspice_tasks imports the optimizer (torch)
     tasks.extend(ngspice_tasks.task_entries())                 # SPICE decks saved in the ngspice window
+    # ---- Apply display names and capabilities after collecting all task types.
     given, keys = task_names.names(), [task['task_key'] for task in tasks]
     for task in tasks:
         # The name the windows show (record 7.302): the task's own unless it was renamed. Its key never changes.
@@ -488,6 +489,7 @@ def _generated_runtime(task_key, name, profile_id=None, *, authorized=False):
         return _with_computed_specs(factory_class(profile)(config, profile, compiled.specs, Path(work_root), adv.episode_length,
                                                            adv.simulation_timeout_seconds, reference,
                                                            reward_settings=RewardSettings(**run_settings.reward.model_dump())), compiled)
+    # ---- Describe the saved task independently of the deferred environment builder.
     structure, mapping = directory / profiles.FILES['structure'], directory / profiles.FILES['mapping']
     circuit = dict(circuit_class=entry['circuit_class'], pdk_id=entry.get('pdk_id') or 'gpdk045', dut_hierarchy=None,
                    netlist_sha256=_sha256(structure), parser_config_sha256=_sha256(mapping), netlist_file=str(structure),
@@ -528,6 +530,7 @@ def _real_runtime(task_key, name, profile_id=None, *, authorized=False):
         raise TaskBlocked('reference_measurements must be verified REAL baseline measurements')
     graph = profile.optimization_graph()
 
+    # ---- Defer simulator construction until authorization and graph checks pass.
     def builder(compiled, work_root, run_settings):
         if not authorized:
             raise TaskBlocked(REAL_AUTHORIZATION_REQUIRED, contract=REAL_INTERFACE_CONTRACT)
@@ -672,6 +675,7 @@ def starter_config(task_key: str) -> dict:
     root, info = repo_root(), task_registry.SYNTHETIC_FIXTURES[name]
     parser_config = ParserConfig.from_file(root / info['config'])
     parameters = []
+    # ---- Use the first member as the group leader and tie later members to its variable.
     for group in parser_config.parameter_groups:
         leader = None
         for member in group['members']:

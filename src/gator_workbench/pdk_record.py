@@ -261,6 +261,7 @@ def _assign_columns(devices) -> None:
     def agree(entries) -> bool:
         return all(_compatible(a[1], b[1]) for i, a in enumerate(entries) for b in entries[i + 1:])
 
+    # ---- Assign shared or family-specific columns after resolving canonical parameter names.
     for name, entries in sorted(groups.items()):
         if name in standard_ref:
             for _, p in entries:

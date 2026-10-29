@@ -296,6 +296,7 @@ def outcome(engine, record, result, observation, truncated) -> Outcome:
         metric_values[target['metric_id']], metric_valid[target['metric_id']] = (value if ok else None), ok
     valid, feasible, constraint_rows, violation = hard_constraints(engine.compiled.targets, metric_values, metric_valid)
     nominal_feasible = feasible
+    # ---- Combine condition checks after deriving the nominal result and its raw measurements.
     if observation is not None and observation.condition_results:
         evaluation = observation.evaluation
         checks = []

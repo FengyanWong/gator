@@ -160,6 +160,7 @@ class _EnvDriver:
                                        cleanup_error=getattr(exc, 'cleanup_error', None))
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 result['interrupted'] = True
+        # ---- Collect launch records even when the requested operation failed.
         records = self._new_records()
         result.update(ended_at=_now(), launches=env.simulation_calls - calls_before, records=records,
                       record=records[-1] if records else None, episode=env.episode, episode_step=env.steps)

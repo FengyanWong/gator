@@ -63,6 +63,9 @@ from .storage.dataset import utcnow
 # re-exported: moved to paths.py by the refactoring (docs/plan-refactoring.md)
 from .paths import connection_file
 
+_MAX_DIAGNOSTIC_CHARS = 300
+
+
 VERIFIED_BRIDGE_VERSION = '0.8.0'      # mirrors the pin in analog_optimizer/backends/virtuoso_bridge.py (a test pins both)
 LAYERS = ('bridge_package', 'connection_profile', 'tunnel', 'daemon', 'session_readiness', 'spectre', 'spectre_license')
 STATES = ('ok', 'failed', 'not_ready', 'not_applicable', 'not_checked', 'busy', 'unknown')
@@ -526,7 +529,7 @@ def run_layers(bridge_factory, settings, *, scope='interactive', timeout=5.0, ru
                 return fail('daemon', 'failed', 'auth_failed', 'the daemon rejected the request')
             if run_active:
                 return fail('daemon', 'busy', 'busy_active_run', 'the CIW is occupied by the active run')
-            return fail('daemon', 'failed', 'no_response', '; '.join(errors)[:300] or 'no successful answer')
+            return fail('daemon', 'failed', 'no_response', '; '.join(errors)[:_MAX_DIAGNOSTIC_CHARS] or 'no successful answer')
         user = _daemon_user_check(bridge, client, profile, timeout)
         if not user['ok']:
             return fail('daemon', 'failed', 'daemon_user_mismatch', 'the answering daemon belongs to another user')
@@ -674,7 +677,7 @@ class ConnectionMonitor:
             stdout, stderr, _ = finished
             layers = self._parse(stdout, names)
             if layers is None:
-                layers = [layer(n, 'unknown', 'unparseable_probe_output', stderr[-300:] if stderr else 'no JSON on stdout')
+                layers = [layer(n, 'unknown', 'unparseable_probe_output', stderr[-_MAX_DIAGNOSTIC_CHARS:] if stderr else 'no JSON on stdout')
                           for n in names]
         else:                                                           # only the probe's own process group was killed
             state, reason = ('busy', 'busy_active_run') if active and family == 'virtuoso' else ('unknown', 'probe_timeout')
@@ -791,7 +794,7 @@ class ConnectionMonitor:
             timestamp_utc=result['checked_utc'], profile_id=result['profile_id'], trigger=result['trigger'],
             duration_seconds=result['duration_seconds'], overall=result['overall'], refusal=result.get('refusal'),
             layers=[dict(layer=i['layer'], state=i['state'], reason_code=i['reason_code'],
-                         diagnostic=redact(i['diagnostic'], 300)) for i in result['layers']]))
+                         diagnostic=redact(i['diagnostic'], _MAX_DIAGNOSTIC_CHARS)) for i in result['layers']]))
 
 
 def _parse_time(text):

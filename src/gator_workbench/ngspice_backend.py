@@ -254,6 +254,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         self.calls += 1
         status, reason, retryable, evaluated, invocations = SimulationStatus.OK, 'ngspice_batch', False, True, 1
         code, out, err = None, '', ''
+        # ---- Launch the copied deck and translate process failures into simulator status.
         try:
             if self.link.remote:
                 code, out, err = self.runner.remote(self.link.ssh_host, self.link.program, deck.read_text(encoding='utf8'),
@@ -271,6 +272,7 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         except OSError as exc:
             status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'launch_failed', True, False, 0
             err = f'{type(exc).__name__}: {exc}'
+        # ---- Persist launch evidence before interpreting the measured results.
         (directory / 'ngspice.log').write_text(f'# exit code: {code}\n# stdout:\n{out}\n# stderr:\n{err}\n', encoding='utf8')
         write_json(directory / 'analysis-counts.json', counts(out, complete=code is not None))
         version = VERSION.search(out + '\n' + err)

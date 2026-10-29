@@ -262,6 +262,7 @@ def plan_ties(graph, rows, structures=None) -> list:
         leaders = {}
     by_key = {(r.instance_path, r.parameter_name): r for r in rows if r.instance_path}
     suggestions = []
+    # ---- Compare existing bindings within each structure before proposing new ties.
     for structure in structures:
         if structure.kind not in TIE_KINDS:
             continue

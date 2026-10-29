@@ -171,6 +171,7 @@ def structure(directory) -> dict:
             problem, built = 'The network rebuilt from the recorded settings does not hold the same tensors as the file.', {}
     except Exception as exc:          # an older contract, another source version: the tensors are still listed
         problem, built = f'The network could not be rebuilt from the recorded settings ({type(exc).__name__}).', {}
+    # ---- Summarize tensor rows by layer section before counting the model's saved copies.
     parts = []
     for part, title, about in PARTS:
         rows = _rows(part, states[part], built.get(part))

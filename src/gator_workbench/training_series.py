@@ -322,6 +322,7 @@ def journal_page(path, after_seq, objective, cursor=None, *, max_rows=MAX_ROWS):
         stat = os.fstat(stream.fileno())
         identity = [stat.st_dev, stat.st_ino]
         offset, row_offset, seq = 0, 0, after_seq
+        # ---- Reuse a cursor only while its flush boundary and file identity still match.
         try:
             saved = json.loads(cursor) if cursor else {}
             if (saved.get('base') == after_seq and saved.get('file') == identity
@@ -338,6 +339,7 @@ def journal_page(path, after_seq, objective, cursor=None, *, max_rows=MAX_ROWS):
                 offset = next((end for line, end in _journal_lines(stream)
                                if json.loads(line)['commit_seq'] <= after_seq), 0)
             stream.seek(offset)
+            # ---- Page acknowledged bundles, retaining a row offset when a bundle spans pages.
             while remaining > 0:
                 offset = stream.tell()
                 line = stream.readline()
@@ -504,6 +506,7 @@ def _flush_records(path):
         with _CACHE_LOCK:
             entry = _FLUSH_LOGS.get(key)
             _STATS['flush_reads'] += 1
+        # ---- Check file identity, size/time consistency, and byte anchors before reusing cached rows.
         if (entry is not None and entry.identity == (info.st_dev, info.st_ino) and info.st_size >= entry.offset
                 and (info.st_size != entry.size or entry.times == (info.st_mtime_ns, info.st_ctime_ns))):
             start = entry.offset - len(entry.tail)                  # 0 when the tail holds the head as well
@@ -666,6 +669,7 @@ def read_training(run_dir, flushes=0, *, max_rows=MAX_ROWS, tail_cursor=None, ca
     start = max(0, min(int(flushes), total))
     manifest = read_dict(layout.manifest)
     config, objective = _config(layout.effective_config, cached)
+    # ---- Take whole flushed records first, then use the remaining row budget for the journal tail.
     chosen, rows = [], 0
     for record in records[start:]:
         if chosen and rows + sum(record['rows'].get(t, 0) for t in ('evaluations', 'learner_updates', 'metrics')) > max_rows:

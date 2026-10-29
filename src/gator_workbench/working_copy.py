@@ -294,6 +294,7 @@ def make(monitor, profile_id, library, cell, *, command=None, timeout=600.0) -> 
     attempt = _json_or_empty(attempt_file)
     incoming = target.parent / f'.incoming-{uuid4().hex}'
     incoming.mkdir(parents=True)
+    # ---- Run the copy in staging and retain partial progress if bridge work fails.
     try:
         args = ['--library', library, '--cell', cell, '--testbench', testbench, '--copy-library', copy_library,
                 '--overwrite', json.dumps(sorted(attempt.get('copied', [])))]
@@ -306,6 +307,8 @@ def make(monitor, profile_id, library, cell, *, command=None, timeout=600.0) -> 
             raise
         if answer.get('created_library'):
             _own(copy_library, answer['copy_path'], answer['copy_technology_library'], library, profile_id)
+        # ---- Compare the copied netlist, original-cell digests, and technology binding before recording
+        # verification.
         copy_netlist = (incoming / 'netlist.scs').read_text()
         copied_cells = sorted({item['cell'] for item in answer['copied']})
         problems = compare(Path(imported['netlist_path']).read_text(), copy_netlist, copy_library=copy_library,
@@ -438,6 +441,7 @@ def make_task_copy(monitor, profile_id, source, task, *, source_netlist, command
         except BaseException:
             _keep_attempt(incoming, attempt_file, attempt, library, library, profile_id)
             raise
+        # ---- Map copied names back to the source before comparing netlists and source-cell digests.
         text = (incoming / 'netlist.scs').read_text()
         for old, new in sorted(rename.items(), key=lambda item: -len(item[1])):
             text = re.sub(rf'\b{re.escape(new)}\b', old, text)
@@ -447,6 +451,7 @@ def make_task_copy(monitor, profile_id, source, task, *, source_netlist, command
             problems.append(f'The source copy read back differently afterwards: {", ".join(touched)}')
         if problems:
             raise CopyError('The new copy did not pass its checks: ' + '; '.join(problems))
+        # ---- Publish the new task's copy record only after those checks pass.
         target = dict(original=source['original'], copy=dict(library=library, cell=answer['copy_cell'], testbench=answer['copy_testbench']),
                       names=names, schematics=[names[o] for o, c in source['names'].items() if c in source['schematics']],
                       state_dir=str(directory))

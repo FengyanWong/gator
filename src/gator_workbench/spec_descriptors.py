@@ -31,6 +31,9 @@ from dataclasses import dataclass, field
 from . import spec_equations, units
 from .profile_store import FILES, profile_entry
 
+_LOG_RANGE_SCALE = 10
+
+
 DESCRIPTOR_VERSION = 'gator-spec-descriptor-v2'           # v2: position + span replace the frequency point
 ANALYSES = ('dc', 'ac', 'tran', 'noise', 'stb', 'pss', 'pnoise', 'other')
 SIGNALS = ('voltage', 'current', 'loop_gain', 'transfer_xf', 'noise', 'other_data', 'no_expression')
@@ -315,8 +318,8 @@ def _describe_probe_call(node, analysis, bench, found):
         place = _place(node)
         if place is not None:
             low, high = place
-            found['position'] = math.log10(math.sqrt(low * high)) / 10
-            found['span'] = math.log10(high / low) / 10
+            found['position'] = math.log10(math.sqrt(low * high)) / _LOG_RANGE_SCALE
+            found['span'] = math.log10(high / low) / _LOG_RANGE_SCALE
             found['has_position'] = 1.0
 
 
@@ -464,7 +467,7 @@ def words(described, unit):
         parts.append('as ' + ', '.join(reductions))
     if columns['has_position']:
         unit = 's' if columns['analysis_tran'] and not any(columns[f'analysis_{a}'] for a in FREQUENCY_ANALYSES) else 'Hz'
-        centre, span = 10 ** (columns['position'] * 10), 10 ** (columns['span'] * 10)
+        centre, span = 10 ** (columns['position'] * _LOG_RANGE_SCALE), 10 ** (columns['span'] * _LOG_RANGE_SCALE)
         low, high = (float(f'{x:.4g}') for x in (centre / math.sqrt(span), centre * math.sqrt(span)))
         parts.append(f"at {units.text(float(f'{centre:.4g}'), unit)}" if columns['span'] == 0 else
                      f'over {units.text(low, unit)} to {units.text(high, unit)}')

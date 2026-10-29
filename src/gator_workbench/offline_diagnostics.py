@@ -83,6 +83,7 @@ def qualify(training_dir, *, progress=None):
     if recorded.get('reward_migration'):
         raise ValueError('The specialist comparison scores each specialist on the rewards it was trained with; a pool whose '
                          'rewards were recomputed (migrate_reward_settings) is not compared yet')
+    # ---- Rebuild and verify the recorded pool before comparing checkpoints.
     pool = prepare_pool(request, progress=progress)
     if recorded['request_sha256'] != pool.audit['request_sha256'] or recorded['split_sha256'] != pool.audit['split_sha256']:
         raise ValueError('Qualification must use exactly the training pool and split')
@@ -101,6 +102,7 @@ def qualify(training_dir, *, progress=None):
                   interpretation='Specialists may have trained on source holdout episodes: descriptive reference, not '
                                  'an independent validation baseline. Predicted proposal Q is not a circuit result.')
     sources = pool.audit['sources']
+    # ---- Compare each task with its specialist and inspect the proposed designs.
     for task, heldout in pool.validation.items():
         base = task[:-2] if task.endswith('_b') else task
         source = next(s for s in sources if s['task'] == base)
@@ -127,6 +129,7 @@ def qualify(training_dir, *, progress=None):
             progress(dict(task=task, checks=len(checks), flagged=report['tasks'][task]['proposals_above_best_plus_three_rmse'],
                           general_mse=max(scores[task]['q1_mse'], scores[task]['q2_mse']),
                           specialist_mse=max(specialist_scores['q1_mse'], specialist_scores['q2_mse'])))
+    # ---- Mark completion only after every task's diagnostic rows have been written.
     report['complete'] = True
     report['requires_review'] = [task for task, r in report['tasks'].items()
                                   if r['proposals_above_best_plus_three_rmse'] or not all(p['legal'] for p in r['proposal_rows'])]

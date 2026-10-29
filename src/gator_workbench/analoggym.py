@@ -24,6 +24,9 @@ from .ngspice_analysis import instrument
 from .ngspice_backend import NgspiceBackend, NgspiceEnvFactory
 from .ngspice_netlist import parse_text
 
+_CONSISTENCY_REL_TOL = 1e-12
+
+
 COMMIT = '10093e3496ef2c7d06494d91d131b0cc5de6c25b'
 MODULES = {
  'circuit_config_loader':'0e82a1ce8b8cb2639ebe3c57021cd6e46b1c56ecaecefc8ade9c8ba903f1002d',
@@ -130,7 +133,7 @@ def export_best_decks(text, bundle, device_kinds, members):
                         raise ValueError(f'{device} is missing from exported AC/DC testbench')
                     continue
                 actual = graph.parameters[device].get(parameter)
-                if actual is None or not actual.valid or not math.isclose(actual.value, expected, rel_tol=1e-12):
+                if actual is None or not actual.valid or not math.isclose(actual.value, expected, rel_tol=_CONSISTENCY_REL_TOL):
                     raise ValueError(f'{device}.{parameter} did not read back from exported benchmark deck')
         primary, count = re.subn(r'(?im)^\s*\.endc\s*$', 'source transient.cir\n.endc', primary, count=1)
         if count != 1:
@@ -146,7 +149,7 @@ def native_values(bundle, parameters):
     for name, value in fixed.items():
         row = bundle['leaders'][name]
         assigned = parameters.get((row['device'], row['parameter']))
-        if assigned is not None and not math.isclose(assigned, value * row['physical_per_native'], rel_tol=1e-12):
+        if assigned is not None and not math.isclose(assigned, value * row['physical_per_native'], rel_tol=_CONSISTENCY_REL_TOL):
             raise ValueError(f'{name} is fixed at the benchmark starting bias')
     return {name: fixed[name] if name in fixed else
             parameters[(row['device'], row['parameter'])] / row['physical_per_native']
@@ -213,7 +216,7 @@ class AnalogGymBackend(NgspiceBackend):
             for member in group.members:
                 actual = parsed.graph.parameters[member.device_id][member.parameter]
                 expected = values[(member.device_id, member.parameter)]
-                if not actual.valid or not math.isclose(actual.value, expected, rel_tol=1e-12):
+                if not actual.valid or not math.isclose(actual.value, expected, rel_tol=_CONSISTENCY_REL_TOL):
                     raise ValueError(f'Imported candidate did not read back {member}')
                 graph.parameters[member.device_id][member.parameter] = actual
             graph.parameter_groups[i] = replace(group, value=values[(group.members[0].device_id,group.members[0].parameter)])

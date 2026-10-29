@@ -31,6 +31,7 @@ def publish(training_dir, output_root, *, label, review):
             meta['counters']['learner_updates'] != status['updates'] or
             pretrain.identity(meta['contract']['spec_schema']) != pretrain.identity(pool['spec_schema'])):
         raise ValueError('Checkpoint does not match the completed offline request')
+    # ---- Create the publication only after request and checkpoint identity checks succeed.
     if pool['origin'] == 'synthetic':
         root = root / 'mock'
     run_id, now = meta['run_id'], datetime.now(timezone.utc).isoformat()
@@ -53,6 +54,7 @@ def publish(training_dir, output_root, *, label, review):
     # PDK's mapping - a pool may hold several PDKs, and a run that loads the model maps its own task's.
     listed = published_vocabulary(meta['contract'])
     write_run_vocabulary(directory, listed)
+    # ---- Record offline provenance and source cost separately from target simulation cost.
     mock = pool['origin'] == 'synthetic'
     manifest = dict(layout_version=OUTPUT_LAYOUT_VERSION, run_id=run_id, task_id=meta['task_id'],
         task_name=label, model_label=label, task_definition_hash=meta['task_definition_hash'],

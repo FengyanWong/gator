@@ -53,6 +53,7 @@ def finalize(engine, final_state):
         engine._persist_waiting_rows()                 # no commit comes after them: their rows go as their own record (7.283)
     except Exception as exc:
         engine._log_error('pending_updates_failed', exc)
+    # ---- Close lane resources and collect restoration failures before final persistence.
     problems = []
     for lane in engine.lanes:
         try:
@@ -76,6 +77,7 @@ def finalize(engine, final_state):
         engine._log_virtuoso_memory('end')
     except Exception as exc:
         engine._log_error('simulator_host_cleanup_failed', exc)
+    # ---- Flush the dataset and save a final checkpoint when the run state permits it.
     checkpoint = None
     persistence_ok = engine.dataset is not None and engine.dataset.failed is None
     if persistence_ok and hasattr(engine, 'ledger'):
@@ -106,6 +108,7 @@ def finalize(engine, final_state):
             engine.dataset.close()
         except BaseException:
             pass
+    # ---- Publish the final segment state after output and dataset cleanup.
     ended = utcnow()
     segment = engine.manifest['segments'][-1]
     segment.update(ended_utc=iso(ended), end_state=final_state, stop_reason=engine.stop_reason,

@@ -56,6 +56,9 @@ from .engine_rows import PROBE_AGGREGATION
 # re-exported: the evaluation value is now defined beside its commit operations.
 from .engine_commit import Outcome
 
+_MAX_ERROR_CHARS = 4000
+
+
 TERMINAL_STATES = ('completed', 'paused', 'stopped', 'cancelled', 'failed')
 TIMING_BATCH = 16                                   # evaluations per append to logs/timings.jsonl (record 7.280)
 # What the environment raises when the run's stop file reached a candidate before its first launch (analog_optimizer.envs.
@@ -126,7 +129,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             self.stop_reason, self.error = 'persistence_failure', redact(str(exc), 2000)
             self._log_error('persistence_failure', exc)
         except ckpt.CheckpointIncompatible as exc:
-            self.stop_reason, self.error = 'checkpoint_incompatible', redact(str(exc), 4000)
+            self.stop_reason, self.error = 'checkpoint_incompatible', redact(str(exc), _MAX_ERROR_CHARS)
             self._log_error('checkpoint_incompatible', exc, report=exc.report)
         except BaseException as exc:
             self.stop_reason = self.stop_reason or 'exception'
@@ -329,7 +332,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         try:
             result = handle.result()
         except BaseException as exc:                 # the lane itself failed; the next (simulated) reset will say so
-            result = dict(ok=False, exception=dict(type=type(exc).__name__, message=str(exc)[:4000]))
+            result = dict(ok=False, exception=dict(type=type(exc).__name__, message=str(exc)[:_MAX_ERROR_CHARS]))
         if result.get('ok'):
             state.update(observation=result['step'][0], needs_reset=False,
                          resets_since_check=state.get('resets_since_check', 0) + 1)
@@ -346,6 +349,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         state = self.lane_state[lane.lane_id]
         if not self.calibration_only and state['needs_reset'] and self._reuse_reset(lane, state):
             return self._dispatch_reused_reset(lane, state)
+        # ---- Reserve the launch allowance and honor a stop before choosing a new design.
         allowance = 1 if state['needs_reset'] and not self.calibration_only else lane.info.get('step_launches', 1)
         evaluation_id = self.ledger.reserve(launches=allowance)
         if evaluation_id is None:
@@ -355,6 +359,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         if self.stop_reason is not None:            # cancelled before it started: refund the reservation
             self.ledger.release(evaluation_id)
             return
+        # ---- Choose the operation and proposal from calibration, reset, or search state.
         proposed_at = utcnow()
         policy_version = None
         if self.calibration_only:
@@ -393,6 +398,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
                     proposal = self.learner.act([state['observation']])[0]
                     source, policy_version = 'sac_policy', self.learner.updates
                     phase = 'adapt' if self.mode == 'fine_tune' else 'search'
+        # ---- Record the charged dispatch before submitting work to the lane.
         dispatch_index = self.ledger.start(evaluation_id)
         started_at = utcnow()
         busy = dict(evaluation_id=evaluation_id, proposal_id=uuid4().hex, op=op, proposal=proposal,
@@ -421,13 +427,14 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         except BaseException as exc:                 # the lane itself failed (worker died, deadline exceeded)
             result = dict(op=busy['op'], ok=False, step=None, record=None, records=[], launches=0,
                           started_at=iso(busy['attempt_dispatched_at']), ended_at=iso(),
-                          exception=dict(type=type(exc).__name__, message=str(exc)[:4000]), lane_failure=True,
+                          exception=dict(type=type(exc).__name__, message=str(exc)[:_MAX_ERROR_CHARS]), lane_failure=True,
                           episode=None, episode_step=None)
         if (self.stop_reason is not None and not result['ok'] and not result.get('launches')
                 and (result.get('exception') or {}).get('message') == STOPPED_BEFORE_LAUNCH):
             # Dispatched just before the run stopped, stopped by it before any launch: recorded as cancelled, like a forced
             # cancel, not as an infrastructure failure - one more "failure" of the link that never happened.
             result['cancelled'] = True
+        # ---- Account for uncertain launches before deciding whether another attempt is allowed.
         if result.get('lane_failure') and not self.task.mock:
             result['launches'] = busy['launch_allowance']         # conservative: the physical launch state is unknown
             result['launch_unknown'] = True
@@ -648,7 +655,7 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
     def _log_error(self, name, exc, **fields):
         self.errors.append(dict(time_utc=iso(), error=name, run_id=self.run_id,
                                 type=None if exc is None else type(exc).__name__,
-                                message=None if exc is None else redact(str(exc), 4000),
+                                message=None if exc is None else redact(str(exc), _MAX_ERROR_CHARS),
                                 traceback=None if exc is None else redact(traceback.format_exc(), 8000), **fields))
 
     def _write_status(self, state, throttle=0.0):

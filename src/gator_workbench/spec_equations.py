@@ -144,6 +144,7 @@ def _size_tree(text):
         if not math.isfinite(value):
             raise ValueError('a number is too large')
         return repr(value)
+    # ---- Protect instance patterns while converting numeric suffixes into Python literals.
     try:
         pieces = _STRING.split(_STRING.sub(keep, source))              # text, index, text, index, ...
         expression = ''.join(NUMBER.sub(number, piece) if i % 2 == 0 else f'"{piece}"' for i, piece in enumerate(pieces))
@@ -152,6 +153,7 @@ def _size_tree(text):
         return None, None, 'not a formula (check the brackets, quotes and operators)'
     except (ValueError, RecursionError) as exc:
         return None, None, str(exc)
+    # ---- Validate supported calls and their patterns before checking the remaining syntax.
     nodes = list(ast.walk(tree))
     if len(nodes) > 128:
         return None, None, 'too complex'

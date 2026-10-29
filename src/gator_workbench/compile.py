@@ -94,6 +94,7 @@ def build_graph(config: WorkbenchConfig, graph):
     parameters = list(config.parameters)
     leaders = resolve_leaders(parameters)
     by_id = {p.variable_id: p for p in parameters}
+    # ---- Collect each leader's followers before constructing canonical parameter groups.
     members = {}
     for p in parameters:
         leader_id, ratio = leaders[p.variable_id]
@@ -145,6 +146,7 @@ def build_graph(config: WorkbenchConfig, graph):
                               parameter_kind=kind, parameter_name=leader.parameter_name,
                               members=[dict(variable_id=row.variable_id, instance_path=row.instance_path,
                                             parameter_name=row.parameter_name, ratio=ratio) for row, ratio in rows]))
+    # ---- Validate the rebuilt graph before accepting any configured starting values.
     graph.parameter_groups = groups
     try:
         graph.validate()

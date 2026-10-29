@@ -28,6 +28,10 @@ from .generic_profile import VERIFIED_WIDTH_STEP
 from .cdf_text import cdf_number
 from .validation import resolve_leaders
 
+_GRID_ROUNDING_TOL = 1e-07
+_GRID_ABS_TOL = 1e-18
+
+
 RULES_FORMAT = 'gator-profile-rules-2'
 LENGTH_GRID = VERIFIED_WIDTH_STEP
 
@@ -141,7 +145,7 @@ def member_grid(spec, facts, reference, written) -> tuple:
     write of the task, because a grid can depend on another written value of the same instance."""
     if spec['kind'] == 'choice':
         values = sorted(cdf_number(c) for c in spec['choices'])
-        if len(values) < 2 or any(not math.isclose(b - a, values[1] - values[0], rel_tol=1e-9, abs_tol=1e-18)
+        if len(values) < 2 or any(not math.isclose(b - a, values[1] - values[0], rel_tol=1e-9, abs_tol=_GRID_ABS_TOL)
                                   for a, b in zip(values, values[1:])):
             raise RowError(f'{spec["device"]}.{spec["parameter"]}: its choices {spec["choices"]} are not evenly spaced')
         return values[1] - values[0], False
@@ -162,7 +166,7 @@ def member_grid(spec, facts, reference, written) -> tuple:
 
 
 def _multiple(value, grid):
-    return math.isclose(value / grid, round(value / grid), rel_tol=0, abs_tol=1e-7)
+    return math.isclose(value / grid, round(value / grid), rel_tol=0, abs_tol=_GRID_ROUNDING_TOL)
 
 
 def _group_step(members, wanted):
@@ -261,7 +265,7 @@ def _adjust_leader(row, specs, by_id, leaders, reference):
     if choice:
         allowed = [cdf_number(c) for c in spec['choices']]
         grid_points = [lower + k * step for k in range(int(round((upper - lower) / step)) + 1)]
-        if any(not any(math.isclose(p, a, rel_tol=1e-9, abs_tol=1e-18) for a in allowed) for p in grid_points):
+        if any(not any(math.isclose(p, a, rel_tol=1e-9, abs_tol=_GRID_ABS_TOL) for a in allowed) for p in grid_points):
             raise RowError(f'{row.variable_id}: every value of the range must be one of the choices {spec["choices"]}')
     scale = units.scale_to_canonical(1.0, row.unit)
     row = row.model_copy(update=dict(
@@ -279,7 +283,7 @@ def _check_declared_ranges(members, lower, upper, row) -> None:
         if not allowed or not ratio:
             continue
         low, high = min(lower * ratio, upper * ratio), max(lower * ratio, upper * ratio)
-        if low < allowed[0] - 1e-18 or high > allowed[1] + 1e-18:
+        if low < allowed[0] - _GRID_ABS_TOL or high > allowed[1] + _GRID_ABS_TOL:
             scale = units.scale_to_canonical(1.0, row.unit) or 1.0        # canonical -> the row's own unit
             raise RowError(f'{row.variable_id}: the property form of {member["device"]} accepts '
                            f'{allowed[0] / scale:g} to {allowed[1] / scale:g} {row.unit} for {member["cdf"]}; '
@@ -302,8 +306,8 @@ def _snap_leader_range(members, step, row, integer, choice, spec, lower, upper) 
             raise RowError(f'{row.variable_id}: the range holds fewer than two of the choices {spec["choices"]}')
         lower, upper = inside[0], inside[-1]
     elif step is not None:                                       # snapped INWARD onto the grid
-        lower = math.ceil(lower / step - 1e-7) * step
-        upper = math.floor(upper / step + 1e-7) * step
+        lower = math.ceil(lower / step - _GRID_ROUNDING_TOL) * step
+        upper = math.floor(upper / step + _GRID_ROUNDING_TOL) * step
     current = spec['value']
     if not lower < upper or not lower - 1e-15 * abs(lower) - 1e-30 <= current <= upper + 1e-15 * abs(upper) + 1e-30:
         raise RowError(f'{row.variable_id}: the range {lower:g} .. {upper:g} {spec["unit"]} (after snapping onto the '

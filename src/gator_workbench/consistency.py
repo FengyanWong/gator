@@ -30,6 +30,9 @@ from .saved_rows import (SECTIONS, FIX_ROWS, FIX_NEWER, saved_task, QUANTITY_FIE
                          describe_rows, _FILES, _read_json, revision_file, _models, _rows, _file_rows, unsaved_rows,
                          undone_by_saving, undone_lines, describe_undone)
 
+_MAX_MAESTRO_DETAILS = 8
+
+
 FIX_COPY = ('The working copy was changed in Virtuoso after the task was saved: undo the change in Virtuoso, or press Save '
             'as to make a new task from the copy as it is now.')
 # Another real run or check holds the run adapter's session lock (record 7.207): nothing is wrong with the task.
@@ -176,6 +179,7 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
             fix = (_connect_fix(item.get('detail')) if step == 'connect' else FIX_COPY if step == 'export'
                    else 'Save it as a new task (Save as).' if step == 'profile' else 'See the reason; then check again.')
             steps.append(_step(step, False, detail=item.get('detail'), fix=fix))
+    # ---- Compare Maestro setup only after the working-copy preflight succeeds.
     if entry.get('recipe') == profiles.MAESTRO and all(s['ok'] for s in steps):
         expected = saved.get('maestro') or {}
         try:
@@ -189,7 +193,7 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
             return steps
         told = ['the working copy has no Maestro test GATOR any more'] if not found.get('test') else differences(expected, found)
         steps.append(_step('maestro', True, detail='Read back from the working copy: it matches the task file.') if not told else
-                     _step('maestro', False, detail='; '.join(told[:8]) + (f'; and {len(told) - 8} more' if len(told) > 8 else ''),
+                     _step('maestro', False, detail='; '.join(told[:_MAX_MAESTRO_DETAILS]) + (f'; and {len(told) - _MAX_MAESTRO_DETAILS} more' if len(told) > _MAX_MAESTRO_DETAILS else ''),
                            fix='Undo the change in Maestro, or press Save as: it makes a new task and writes these rows\' setup '
                                'into its own copy. If the change in Maestro is what you want, make it in Probes and Specs (or '
                                'the Task file) first.'))

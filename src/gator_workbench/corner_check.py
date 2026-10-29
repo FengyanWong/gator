@@ -61,6 +61,9 @@ from .storage.atomic import JsonlAppender, read_dict, read_json, read_jsonl, wri
 from .storage.dataset import DatasetReader
 from .tasks import MOCK_TARGETS
 
+_MAX_ERROR_CHARS = 2000
+
+
 CHECK_DIR = 'corner_checks'
 MAX_DESIGNS = 3
 LIVE = ('starting', 'running', 'stopping')
@@ -222,6 +225,7 @@ def candidates(context: Context):
             values.setdefault(row['evaluation_id'], {})[row['metric_name']] = row['raw_value']
     hard = [t for t in context.compiled.targets if t['active'] and t['hard']]
     seen, ranked, feasible, skipped = set(), [], 0, []
+    # ---- Filter complete feasible assignments and deduplicate physical designs before ranking.
     for row in sorted(evaluations, key=lambda r: (r['completion_index'] is None, r['completion_index'] or 0)):
         if not (row['valid'] and row['all_hard_constraints_satisfied'] and row['status'] == 'ok'):
             continue
@@ -561,7 +565,7 @@ class Worker:
                       violations=evaluation.violations, evaluation_errors=evaluation.errors, failing=failing,
                       job_id=result.job_id, elapsed_seconds=result.elapsed_seconds,
                       simulator_invocations=result.simulator_invocations,
-                      error_summary=redact(result.error_summary or '', 2000) or None,
+                      error_summary=redact(result.error_summary or '', _MAX_ERROR_CHARS) or None,
                       artifact_directory=(str(artifact.relative_to(self.directory))
                                           if self.directory in artifact.parents else str(artifact)),
                       started_utc=started_utc, ended_utc=iso())
@@ -598,13 +602,14 @@ class Worker:
                                        code='plan_changed')
                 if self.context.profile is not None:
                     self.context.profile.validate_assignment(assignment)
+            # ---- Execute only after rechecking authorized designs, corners, and simulation count.
             (self._run_mock if self.request['mock'] else self._run_real)()
             final = 'stopped' if self.stop_requested and self.done < self.request['simulations'] else (
                 'failed' if self.error else 'completed')
         except CheckRefused as exc:
             self.error = dict(code=exc.code, message=str(exc))
         except BaseException as exc:
-            self.error = dict(code='exception', message=redact(f'{type(exc).__name__}: {exc}', 2000))
+            self.error = dict(code='exception', message=redact(f'{type(exc).__name__}: {exc}', _MAX_ERROR_CHARS))
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 final = 'stopped'
         finally:
@@ -692,7 +697,7 @@ class Worker:
                             'The check stopped so that no more budget is spent; the cell was restored.'))
                         return
         except BaseException as exc:
-            self.error = dict(code='exception', message=redact(f'{type(exc).__name__}: {exc}', 2000))
+            self.error = dict(code='exception', message=redact(f'{type(exc).__name__}: {exc}', _MAX_ERROR_CHARS))
         finally:
             self.restoration = self._restore(backend, connected, initial)
 
@@ -710,7 +715,7 @@ class Worker:
                 if not same:
                     record['error'] = 'The widths read back after restoring differ from the ones recorded at the start.'
         except BaseException as exc:
-            record = dict(state='recovery_required', error=redact(f'{type(exc).__name__}: {exc}', 2000))
+            record = dict(state='recovery_required', error=redact(f'{type(exc).__name__}: {exc}', _MAX_ERROR_CHARS))
         finally:
             try:
                 backend.close()

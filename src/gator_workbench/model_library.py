@@ -282,6 +282,7 @@ def plan_library(structure, model_file, devices) -> dict:
                 raise LibraryError(f'{file} includes {target!r}, not a plain path')
             closure(path, inner, seen)
 
+    # ---- Plan each top-level section separately and retain reasons a section cannot be trimmed.
     found, plans, parts, why = set(), {}, {}, {}
     for (file, section), info in sections.items():
         if file != model_file or section == '-':

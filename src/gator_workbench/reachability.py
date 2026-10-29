@@ -23,6 +23,7 @@ def assess(config, designs):
     plan = SpecPlan.from_config(config)
     conditions = ['nominal', *config.run.conditions.corners]
     ranked = []
+    # ---- Check every planned condition before claiming a recorded design is feasible.
     for design in designs:
         misses, unknown = [], 0
         for condition in conditions:
@@ -55,6 +56,7 @@ def assess(config, designs):
             return dict(observed_feasible=True, design=design['id'], checked_designs=len(designs), warning=None)
         ranked.append((unknown, max((m['normalized'] for m in misses), default=0.),
                        sum(m['normalized'] for m in misses), design['id'], misses))
+    # ---- Rank the remaining designs by missing results, worst miss, then total miss.
     best = min(ranked, key=lambda item: item[:3]) if ranked else None
     detail = ''
     if best:

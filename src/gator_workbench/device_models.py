@@ -194,6 +194,7 @@ class _Library:
                 continue
             if head in ('library', 'endlibrary', 'endl'):
                 continue
+            # ---- Filter by section before following includes or collecting model definitions.
             inside = current == section if section is not None else current is None
             if not (inside or (active and current is None)):
                 continue
@@ -206,6 +207,7 @@ class _Library:
                     target = target if target.is_absolute() else path.parent / target
                     self.load(target, match.group(2))
                 continue
+            # ---- Keep wrapper-local parameters and model cards separate from the library scope.
             if head == 'inline' and len(words) > 2 and words[1].lower() == 'subckt':
                 wrapper = dict(name=words[2].split('(')[0], parameters={}, cards={}, devices=[])
                 continue

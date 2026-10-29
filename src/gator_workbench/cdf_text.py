@@ -39,6 +39,7 @@ def skill_value(text):
     """A value printed by SKILL's %L (as the bridge returns it: its backslashes doubled once more).
     nil -> None, t -> True, "s" -> str, (a b) -> list, symbols -> str, numbers -> int/float."""
     text = (text or '').strip().replace('\\\\', '\\')
+    # ---- Tokenize strings and atoms before interpreting parentheses as nested lists.
     tokens, i = [], 0
     while i < len(text):
         char = text[i]
@@ -83,6 +84,7 @@ def skill_value(text):
         except ValueError:
             return value
 
+    # ---- Assemble list structure from the completed token stream.
     def parse(position):
         token = tokens[position]
         if token == '(':

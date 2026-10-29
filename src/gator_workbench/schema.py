@@ -20,6 +20,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serial
 from . import CONFIG_SCHEMA_VERSION
 from .names import PROFILE_ID
 
+_MAX_UNIT_CHARS = 32
+_MAX_CELLVIEW_NAME_CHARS = 200
+_MAX_PATH_CHARS = 1000
+_MAX_NOTE_CHARS = 1000
+_MAX_IDENTIFIER_CHARS = 120
+_MAX_DISPLAY_NAME_CHARS = 80
+_NUMERIC_REL_TOL = 1e-09
+
+
 ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps')
 GLOBAL_ENCODERS = ('graph_gps', 'group_cross_attention', 'circuit_gps')
 REMOVED_ENCODERS = {'port_gnn': ('2026-09-24', 'bbdfe36'),
@@ -65,7 +74,7 @@ def uniform_grid(candidates) -> tuple | None:
     if len(values) < 2 or len(values) != len(candidates):
         return None
     step = values[1] - values[0]
-    if step <= 0 or any(not math.isclose(b - a, step, rel_tol=1e-9, abs_tol=1e-18)
+    if step <= 0 or any(not math.isclose(b - a, step, rel_tol=_NUMERIC_REL_TOL, abs_tol=1e-18)
                         for a, b in zip(values, values[1:])):
         return None
     return values[0], values[-1], step
@@ -88,15 +97,15 @@ def linear_ratio(expression):
         f0, f1, f2, f3 = at(0.0), at(1.0), at(2.0), at(3.5)
     except (UnresolvedExpression, ZeroDivisionError):
         return None
-    if (abs(f0) > 1e-15 or f1 <= 0 or not math.isclose(f2, 2 * f1, rel_tol=1e-9)
-            or not math.isclose(f3, 3.5 * f1, rel_tol=1e-9)):
+    if (abs(f0) > 1e-15 or f1 <= 0 or not math.isclose(f2, 2 * f1, rel_tol=_NUMERIC_REL_TOL)
+            or not math.isclose(f3, 3.5 * f1, rel_tol=_NUMERIC_REL_TOL)):
         return None
     return f1
 
 
 # One Parameters row defining a circuit variable, its legal action range and any explicit leader binding.
 class OptimizationParameter(_Model):
-    variable_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
+    variable_id: str = Field(min_length=1, max_length=_MAX_IDENTIFIER_CHARS, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
         description='Stable ID of this variable. Used in data tables; it is an identifier, never a learned feature.')
     instance_path: Optional[str] = Field(None, max_length=400,
         description='Full hierarchical instance path exactly as read from the circuit (e.g. XU1/M1). Never inferred '
@@ -107,7 +116,7 @@ class OptimizationParameter(_Model):
         description='The value read from the circuit, in `unit`. The editors show it and take no typed value; empty '
                     'means the value the circuit has. A stated value is checked against the circuit at validation; a '
                     'mismatch is an error, not silently overwritten.')
-    unit: str = Field(min_length=0, max_length=32,
+    unit: str = Field(min_length=0, max_length=_MAX_UNIT_CHARS,
         description='Unit of initial value, bounds and step (e.g. um, nm, pF, kohm, count).')
     optimized: bool = Field(True, description='Whether the optimizer may change this variable.')
     value_type: Literal['continuous', 'integer'] = Field('continuous',
@@ -123,7 +132,7 @@ class OptimizationParameter(_Model):
         description='variable_id of the leader this variable is tied to. Empty = independent action variable. '
                     'Equal initial values never imply a binding; bindings must be declared here.')
     ratio: float = Field(1.0, gt=0, description='follower = ratio * leader. Must be positive.')
-    notes: str = Field('', max_length=1000, description='Free text; not used by the optimizer.')
+    notes: str = Field('', max_length=_MAX_NOTE_CHARS, description='Free text; not used by the optimizer.')
 
     @model_validator(mode='before')
     @classmethod
@@ -162,7 +171,7 @@ class OptimizationParameter(_Model):
 # --------------------------------------------------------------------------- targets
 # One Spec row defining an equation, feasibility limits and reward preferences.
 class PerformanceTarget(_Model):
-    metric_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
+    metric_id: str = Field(min_length=1, max_length=_MAX_IDENTIFIER_CHARS, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
         description='Name of this spec: the value its equation gives is recorded, scored and shown under this name. It '
                     'may be the name of a result the simulation returns only when the equation is exactly the Probe of '
                     'that result. A name the RL specification registry does not know adds an entry to it.')
@@ -172,7 +181,7 @@ class PerformanceTarget(_Model):
                     'simplest equation is one Probe ID. Probe values are in canonical units (W, Hz, V...), so W / Hz gives '
                     'J. A missing or invalid probe, or a failed operation such as a division by zero, makes the spec '
                     'invalid - never a number. Evaluated by a whitelist, never eval().')
-    unit: str = Field(max_length=32, description='Unit of the thresholds and the normalization scale.')
+    unit: str = Field(max_length=_MAX_UNIT_CHARS, description='Unit of the thresholds and the normalization scale.')
     constraint: Literal['>=', '<=', 'interval'] = Field(
         description='>= lower; <= upper; interval [lower, upper].')
     lower: Optional[float] = Field(None, description='Lower threshold (>=, interval).')
@@ -191,7 +200,7 @@ class PerformanceTarget(_Model):
         description='Violation is (threshold distance)/scale, capped at 1. Empty = the size of the threshold: the larger '
                     'of |lower| and |upper|, or 1 when both are zero. Give a physically meaningful scale to use another.')
     active: bool = Field(True, description='Inactive targets affect neither reward nor feasibility.')
-    basis: str = Field('', max_length=1000,
+    basis: str = Field('', max_length=_MAX_NOTE_CHARS,
         description='Where this requirement comes from (datasheet, user statement...). Agent suggestions must '
                     'state their basis; requirements are never inferred from the circuit alone.')
 
@@ -241,7 +250,7 @@ class PerformanceTarget(_Model):
 # --------------------------------------------------------------------------- measurements
 # One Probe row describing a backend result, Maestro output or size estimate available to spec equations.
 class MeasurementDefinition(_Model):
-    measurement_id: str = Field(min_length=1, max_length=120, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
+    measurement_id: str = Field(min_length=1, max_length=_MAX_IDENTIFIER_CHARS, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
         description='Stable ID. Spec equations refer to it. A Maestro output\'s ID is m_ + its output name.')
     analysis: Literal['dc', 'ac', 'tran', 'noise', 'stb', 'pss', 'pnoise', 'other'] = Field(
         description='Analysis that produces the raw data.')
@@ -255,9 +264,9 @@ class MeasurementDefinition(_Model):
     signal: Optional[str] = Field(None, max_length=300,
         description='For a Maestro output: its expression, e.g. ymax(VT("/OUT")) or getData("loopGain" ?result "stb"). '
                     'For a profile metric: a label of what is measured, e.g. VOUT.')
-    unit: str = Field(max_length=32,
+    unit: str = Field(max_length=_MAX_UNIT_CHARS,
         description='Unit of the measured value. A target using this measurement must have a compatible unit.')
-    notes: str = Field('', max_length=1000, description='Free text; not used by the optimizer.')
+    notes: str = Field('', max_length=_MAX_NOTE_CHARS, description='Free text; not used by the optimizer.')
 
     @model_validator(mode='before')
     @classmethod
@@ -286,14 +295,14 @@ class CircuitReference(_Model):
                     'through the bridge. netlist: the REMOVED Spectre netlist import - still read, so configurations '
                     'and runs saved before stay readable (and keep their hashes), but no circuit is loaded from it.')
     task_id: Optional[str] = Field(None, max_length=200)
-    netlist_path: Optional[str] = Field(None, max_length=1000,
+    netlist_path: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
         description='Removed netlist source only (kept for configurations saved before). Backend-side path.')
-    parser_config_path: Optional[str] = Field(None, max_length=1000,
+    parser_config_path: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
         description='Removed netlist source only (kept for configurations saved before). Device/port mapping.')
-    library: Optional[str] = Field(None, max_length=200)
-    cell: Optional[str] = Field(None, max_length=200)
-    view: Optional[str] = Field(None, max_length=200)
-    testbench_cell: Optional[str] = Field(None, max_length=200,
+    library: Optional[str] = Field(None, max_length=_MAX_CELLVIEW_NAME_CHARS)
+    cell: Optional[str] = Field(None, max_length=_MAX_CELLVIEW_NAME_CHARS)
+    view: Optional[str] = Field(None, max_length=_MAX_CELLVIEW_NAME_CHARS)
+    testbench_cell: Optional[str] = Field(None, max_length=_MAX_CELLVIEW_NAME_CHARS,
         description='Existing testbench cell. A DUT may instead be identified inside one testbench.')
     dut_hierarchy: Optional[str] = Field(None, max_length=400,
         description='Instance path or subcircuit name of the DUT inside the testbench/netlist.')
@@ -453,7 +462,7 @@ class AdvancedRL(_Model):
 
 # Source run, save point and optional external pretraining cost for loading a saved RL model.
 class ModelSource(_Model):
-    run_dir: Optional[str] = Field(None, max_length=1000,
+    run_dir: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
         description='Run directory whose checkpoint is loaded (resume / fine_tune / frozen).')
     checkpoint_id: str = Field('latest', max_length=120,
         description='`latest` = most recently safely saved state (default, not automatically `best`), '
@@ -513,7 +522,7 @@ def removed_search_method(config) -> str | None:
 
 # Pinned offline source pool and the batch fraction mixed with target-task transitions.
 class RehearsalSettings(_Model):
-    pool_manifest: str = Field(min_length=1, max_length=1000)
+    pool_manifest: str = Field(min_length=1, max_length=_MAX_PATH_CHARS)
     pool_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     fraction: float = Field(0.5, gt=0, lt=1)
 
@@ -529,10 +538,10 @@ class ArchiveComparison(_Model):
     """The matched archive comparison's settings of one run (docs/plan-bo-mobo-rl-archive-comparison.md): the common first
     designs every method evaluates after its start design, the archived designs a transfer arm may use, and for the
     Pareto arm its two objectives. Each file is pinned by its sha256 and checked against the compiled task at the start."""
-    initial_designs: Optional[str] = Field(None, max_length=1000,
+    initial_designs: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
         description='JSON file of the common first designs (archive_compare.initial): proposals in [-1, 1] per group.')
     initial_designs_sha256: Optional[str] = Field(None, pattern=r'^[0-9a-f]{64}$')
-    archive: Optional[str] = Field(None, max_length=1000,
+    archive: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
         description='JSON file of the archived designs a transfer arm imports (unit-cube points with their rewards under '
                     'this run\'s goal view, or with every output for the Pareto arm). None: no archive (T0).')
     archive_sha256: Optional[str] = Field(None, pattern=r'^[0-9a-f]{64}$')
@@ -560,7 +569,7 @@ class RunSettings(_Model):
         return _without_retired(data, dict(RETIRED_RUN_FIELDS, search=None))
 
     mode: Literal['scratch', 'resume', 'fine_tune', 'frozen'] = 'scratch'
-    model_label: Optional[str] = Field(None, max_length=80,
+    model_label: Optional[str] = Field(None, max_length=_MAX_DISPLAY_NAME_CHARS,
         description='The name the RL model of this run is filed under (record 7.159, independent of any project name). '
                     'resume, fine_tune and frozen start from the newest model saved under it. Empty: the task\'s run label.')
     concurrency: int = Field(1, ge=1, le=64,
@@ -642,9 +651,9 @@ class RunSettings(_Model):
 # --------------------------------------------------------------------------- output
 # Run output location, persistence cadence, retention rules and storage limits.
 class OutputSettings(_Model):
-    output_root: Optional[str] = Field(None, max_length=1000,
+    output_root: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
         description='Backend directory. Empty = <repo_root>/outputs. Must be inside an allowed root and writable.')
-    experiment_name: str = Field('experiment', min_length=1, max_length=80, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]*$')
+    experiment_name: str = Field('experiment', min_length=1, max_length=_MAX_DISPLAY_NAME_CHARS, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]*$')
     experiment_id: Optional[str] = Field(None, max_length=64,
         description='Set to append runs to an existing experiment; empty creates a new unique ID.')
     save_learner_updates: bool = True
@@ -716,7 +725,7 @@ class ResearchLabels(_Model):
 # Project and task display labels with optional descriptive notes.
 class ProjectInfo(_Model):
     name: str = Field('gator-project', min_length=1, max_length=120)
-    task_name: str = Field('task', min_length=1, max_length=80, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]*$')
+    task_name: str = Field('task', min_length=1, max_length=_MAX_DISPLAY_NAME_CHARS, pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]*$')
     notes: str = Field('', max_length=2000)
 
 

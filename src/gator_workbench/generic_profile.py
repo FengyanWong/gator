@@ -81,6 +81,7 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         step = rules.get('width_step')
         if step != VERIFIED_WIDTH_STEP:
             raise RulesError(f'Only the verified {VERIFIED_WIDTH_STEP:g} m width grid is supported')
+        # ---- Establish writable instance bounds before the base class validates the reference files.
         writable = rules.get('writable') or []
         names = [item.get('instance') for item in writable]
         if not writable or len(set(names)) != len(names) or any(not isinstance(n, str) or not n for n in names):

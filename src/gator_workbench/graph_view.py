@@ -251,6 +251,7 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
     run_dir = Path(run_dir)
     meta, actor, features, spec, row, steps, observation = _load_graph_state(run_dir, checkpoint_id, evaluation)
     vocabulary, batch, observation = _network_observation(run_dir, observation, features, spec, batch_observations)
+    # ---- Evaluate the saved policy on the recorded observation before assembling graph display rows.
     (sample, layers), dense_layers = capture_dense_attention(actor,
         lambda: capture_attention(actor, lambda: actor.sample(batch, deterministic=True)))
     policy = batch.proposals(sample.actions)[0]

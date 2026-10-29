@@ -12,6 +12,9 @@ from . import families
 from .pdk_record import PdkError, STANDARD, VOCABULARY_FORMAT, label, load_record, standard_schema
 from .storage.atomic import read_json, write_json
 
+_PDK_PREFIX_CHARS = 4
+
+
 
 # ------------------------------------------------------------------------------------------ the network's view
 class Vocabulary:
@@ -136,9 +139,9 @@ def current_vocabulary(name, pdk_id=None) -> Vocabulary | None:
         return families.FamilyList(families.block_for(pdk_id))
     if not name.startswith('pdk:'):
         raise PdkError(f'Unknown component list {name!r}')
-    record = load_record(name[4:])
+    record = load_record(name[_PDK_PREFIX_CHARS:])
     if record is None:
-        raise PdkError(f'PDK {name[4:]} is not loaded. Read it in the Virtuoso window first ("PDK window..." reads one by name).')
+        raise PdkError(f'PDK {name[_PDK_PREFIX_CHARS:]} is not loaded. Read it in the Virtuoso window first ("PDK window..." reads one by name).')
     return vocabulary_of_record(record)
 
 
@@ -171,7 +174,7 @@ def schema_label(feature_schema) -> str:
         return f'device families ({len(families.KINDS) - 1} kinds)' + extra
     if version.startswith('pdk-'):
         kinds = len((feature_schema or {}).get('device_kinds') or ()) - len(standard_schema().device_kinds)
-        return f"PDK {version[4:].rsplit('-', 1)[0]} ({kinds} components, version {version.rsplit('-', 1)[-1][:8]}){extra}"
+        return f"PDK {version[_PDK_PREFIX_CHARS:].rsplit('-', 1)[0]} ({kinds} components, version {version.rsplit('-', 1)[-1][:8]}){extra}"
     return 'standard (8 generic kinds)' + extra
 
 

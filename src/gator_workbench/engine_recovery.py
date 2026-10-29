@@ -40,6 +40,7 @@ def restore(engine, run_state):
     if later and (later.get('last_commit_seq') or 0) > cursor['commit_seq']:
         engine.tracker = best_design.BestDesignTracker(engine.compiled.preference, later)
         report['best_design_after_checkpoint'] = later['last_commit_seq']
+    # ---- Reconcile durable evaluations and unresolved launches beyond the checkpoint.
     engine.dataset.flush()
     if engine.dataset.last_seq > cursor['commit_seq']:
         report['counters_after_checkpoint'] = engine._count_since(cursor['commit_seq'])

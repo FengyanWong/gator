@@ -231,6 +231,7 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
         incoming.parent.mkdir(parents=True, exist_ok=True)
         argv += ['--library', library, '--cell', cell, '--output', str(incoming)] + (['--testbench', testbench] if testbench else [])
         timeout = max(timeout, 300.0)                              # a netlist export alone may take two minutes
+    # ---- Run the reader and interpret its results while staging cleanup remains guaranteed.
     try:
         finished = run_child(argv, timeout)
         if finished is None:

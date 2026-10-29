@@ -97,6 +97,7 @@ class CommitRows:
             if status != 'ok':
                 return f'evaluation_status_{status}'
             return 'missing_or_nonfinite' if value is None else 'invalid_measurement'
+        # ---- Emit nominal simulator results before the aggregate spec and probe rows.
         for name in sorted(set(raw) | set(validity)):
             value, ok = raw.get(name), validity.get(name) is True and status in ('ok', 'measurement_error')
             finite = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
@@ -106,6 +107,7 @@ class CommitRows:
                              failure_reason=reason(value if finite else None, ok and finite), threshold_lower=None,
                              threshold_upper=None, hard=None, satisfied=None, violation=None,
                              aggregation_level='condition', aggregation=None))
+        # ---- Attach thresholds to spec rows, then include probes not already represented whole.
         whole = set()
         for target in self.compiled.targets:
             value, probe = spec_values.get(target['metric_id']), target['probe']
@@ -156,6 +158,7 @@ class CommitRows:
         rows = []
         plan: list[RetentionItem] = []
         attempts = []
+        # ---- Expand recorded jobs and keep unresolved launch leases separate from job rows.
         for retry, attempt in enumerate(busy['attempts'], start=1):
             record = attempt.get('record') or {}
             if record.get('jobs'):
@@ -176,6 +179,7 @@ class CommitRows:
                     write_json(lease_path, leases)
                 elif attempt['launches']:
                     attempts.append(dict(attempt, retry=retry))
+        # ---- Choose retention and build rows for attempts that counted a launch.
         for number, attempt in enumerate(attempts, start=1):
             record = attempt.get('record') or {}
             launched = int(attempt['launches']) > 0

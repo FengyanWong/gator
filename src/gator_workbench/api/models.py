@@ -9,6 +9,9 @@ from ..launch_requests import ID_PATTERN as LAUNCH_REQUEST_ID
 
 from ..names import CADENCE_NAME, PROFILE_ID, TASK_NAME   # the patterns of a Virtuoso name, a connection, a task
 
+_MAX_PATH_CHARS = 1000
+
+
 
 # Shared request-body contract that rejects unknown fields.
 class Body(BaseModel):
@@ -120,7 +123,7 @@ class NetworkSettingsBody(Body):
 class PdkLoadBody(Body):
     profile_id: str = Field(pattern=PROFILE_ID)
     technology_library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$')   # empty = the connection's design library's
-    model_file: str | None = Field(None, max_length=1000)                                        # empty = the connection's model file
+    model_file: str | None = Field(None, max_length=_MAX_PATH_CHARS)                                        # empty = the connection's model file
 
 
 # Connection and cell selection for browsing, reading or importing a native circuit.
@@ -193,14 +196,14 @@ class ProfileActionBody(Body):
 
 # Backend path submitted for reading an ngspice deck.
 class NgspiceReadBody(Body):
-    path: str = Field(min_length=1, max_length=1000)       # a file on the backend machine, inside an allowed input root
+    path: str = Field(min_length=1, max_length=_MAX_PATH_CHARS)       # a file on the backend machine, inside an allowed input root
 
 
 # ngspice deck text, device-kind hints and source location used for import checks.
 class NgspiceCheckBody(Body):
     text: str = Field(max_length=ngspice_tasks.MAX_NETLIST_BYTES)
     device_kinds: str | dict | None = None                  # "name=kind ..." as typed in the window, or a mapping
-    source_path: str | None = Field(None, max_length=1000)  # where the deck was loaded from: its folder resolves relative includes
+    source_path: str | None = Field(None, max_length=_MAX_PATH_CHARS)  # where the deck was loaded from: its folder resolves relative includes
 
 
 # ngspice deck input with saved-task labels and connection or output choices.

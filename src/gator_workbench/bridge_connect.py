@@ -463,6 +463,7 @@ def perform_connect(bridge_factory, settings, *, settle_seconds=1.0, profile_err
     disagreement = connection.kind_problem(settings, local)
     if disagreement:                                     # "this machine" must never open a tunnel to another one
         return failed(*disagreement)
+    # ---- Inspect or start the tunnel only after bridge and profile checks succeed.
     try:
         state, running = bridge.tunnel_state(profile)
     except Exception as exc:

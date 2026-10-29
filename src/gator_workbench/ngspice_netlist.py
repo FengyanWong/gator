@@ -107,6 +107,7 @@ def scan_models(text, *, root, depth=0, budget=None, seen=None, found=None, subc
         subckts.setdefault(match.group(1).lower(), len(ports))
     if depth >= MAX_INCLUDE_DEPTH:
         return found, subckts, notes
+    # ---- Follow includes within the shared depth, file-identity, and byte-budget limits.
     for match in _INCLUDE_LINE.finditer(text):
         target = _unquote(match.group(2))
         path = Path(target)
@@ -186,6 +187,7 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
     for note in notes:
         diagnostics.append(Diagnostic('include_not_scanned', note, SourceSpan(source, 1), 'warning'))
 
+    # ---- Build graph state and resolvers before recursively expanding instances.
     graph = CircuitGraph(circuit_id, [], [], [], {}, metadata={
         'parser_version': PARSER_VERSION, 'simulator': 'ngspice', 'title': title, 'analysis_context': analyses,
         'source_manifest': {source: hashlib.sha256(text.encode()).hexdigest()}, 'selected_top': None,
@@ -214,6 +216,8 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                 sub = positional[-1].text.lower()
                 ports = [t.text for t in positional[:-1]]
                 child = scopes.get(sub)
+                # ---- Expand declared subcircuits; otherwise describe the external instance from available
+                # model facts.
                 if child is not None:
                     if sub in ancestry:
                         raise NetlistError(f'line {head.line}: subcircuit {sub} instantiates itself')
@@ -528,6 +532,7 @@ def _element_parameters(letter, named, resolve, env, identifier, kind, sizables,
             values[canonical] = ParameterValue(*_with_name(resolve(value_token, env, f'{identifier}.{canonical}'), canonical))
             if values[canonical].valid and kind != 'unknown':
                 sizables[(identifier, canonical)] = Sizable(identifier, canonical, canonical, value_token, current.name)
+        # ---- Keep additional named parameters without treating them as sizing controls.
         for key, token in named.items():
             if key == {'R': 'r', 'C': 'c', 'L': 'l', 'V': 'dc', 'I': 'dc'}[letter]:
                 continue

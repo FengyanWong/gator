@@ -187,6 +187,7 @@ class RawDataset:
         flush_id = len(self._flushes) + 1
         first, last = self._buffer[0]['commit_seq'], self._buffer[-1]['commit_seq']
         parts, counts, sizes, checksums = {}, {}, {}, {}
+        # ---- Publish all table parts before recording the completed flush in its journal.
         try:
             for table in FLUSH_ORDER:
                 rows = [row for bundle in self._buffer for row in bundle['rows'].get(table, [])]
@@ -210,6 +211,7 @@ class RawDataset:
         except (OSError, PersistenceError) as exc:
             self.failed = str(exc)
             raise PersistenceError(f'Parquet flush failed; dispatch must pause: {exc}') from exc
+        # ---- Advance in-memory cursors only after the completed flush has been recorded.
         self._flushes.append(record)
         self.flushed_seq = last
         for table, count in counts.items():

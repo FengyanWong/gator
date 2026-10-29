@@ -17,6 +17,9 @@ from .profile_store import HISTORY, ProfileError, TASK_FILE, profile_dir
 from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTarget
 from .storage.atomic import UNREADABLE, read_json_quiet
 
+_MAX_DIAGNOSTIC_DETAILS = 4
+
+
 
 # (configuration key, editor name, row ID field, task file part)
 SECTIONS = (('parameters', 'Parameters', 'variable_id', 'parameters'), ('measurements', 'Probes', 'measurement_id', 'probes'),
@@ -97,7 +100,7 @@ def row_differences(config, saved) -> dict:
 def describe_rows(section, lines, *, name, revision) -> str:
     """Summarize a section's differences from a named saved-task revision."""
     label = next(label for key, label, _i, _p in SECTIONS if key == section)
-    shown = '; '.join(lines[:4]) + (f'; and {len(lines) - 4} more' if len(lines) > 4 else '')
+    shown = '; '.join(lines[:_MAX_DIAGNOSTIC_DETAILS]) + (f'; and {len(lines) - _MAX_DIAGNOSTIC_DETAILS} more' if len(lines) > _MAX_DIAGNOSTIC_DETAILS else '')
     return f'{label} differ from the saved task real:{name} (revision {revision}): {shown}.'
 
 
@@ -243,7 +246,7 @@ def undone_lines(undone) -> list[str]:
 def describe_undone(name, undone) -> str:
     """Explain the stale revision and summarize changes that saving it would undo."""
     lines = undone_lines(undone)
-    shown = '; '.join(lines[:4]) + (f'; and {len(lines) - 4} more' if len(lines) > 4 else '')
+    shown = '; '.join(lines[:_MAX_DIAGNOSTIC_DETAILS]) + (f'; and {len(lines) - _MAX_DIAGNOSTIC_DETAILS} more' if len(lines) > _MAX_DIAGNOSTIC_DETAILS else '')
     return (f'real:{name} was saved again after these rows were loaded: it is revision {undone["current"]} now, the rows here '
             f'are revision {undone["base"]}\'s. Saving them would undo what was saved since: {shown}.')
 

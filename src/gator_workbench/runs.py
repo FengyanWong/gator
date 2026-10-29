@@ -482,6 +482,7 @@ def _source_model(config, roots, task, task_hash, compiled, confirm_transfer) ->
             raise RunRejected('The selected source was itself fine-tuned on a test task. Each test task starts from the '
                               'fixed source checkpoint by default; enable run.continual_learning to label this '
                               'explicitly as continual learning.', code='continual_learning')
+        # ---- Verify load compatibility before recording parentage and source training cost.
         contract = learner_contract(config, task, task_hash, compiled.spec_schema, vocabulary)
         compatibility = ckpt.check_compatibility(source_meta, mode=config.run.mode, task_definition_hash=task_hash,
                                                  contract=contract)
@@ -606,6 +607,7 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir) -> tuple:
         raise RunRejected('What this run showed its network has changed since it started: the spec descriptions of its task, '
                           'or the device numbers of its PDK (the PDK was loaded again). Start a new run - Fine-tune from '
                           "this run's model keeps what it learned.", code='network_inputs_changed')
+    # ---- Merge permitted resume settings before rebuilding the learner contract.
     merged = previous.model_copy(deep=True)
     for name in RESUMABLE_RUN_FIELDS:
         setattr(merged.run, name, getattr(config.run, name))
@@ -671,6 +673,7 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
                                label='Fine-tune from its newest save point (a new run)')
         return dict(answer, code=code, reason=reason, alternative=alternative)
 
+    # ---- Check worker and save-point eligibility before validating a resumed configuration.
     if status.get('worker_alive'):
         return refused('already_running', 'This run is running now: a run is never continued twice.')
     if not point:

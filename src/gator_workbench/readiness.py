@@ -15,6 +15,9 @@ from __future__ import annotations
 from . import tasks
 from .security import redact
 
+_MAX_ISSUE_MESSAGES = 3
+
+
 TABLES = ('parameters', 'measurements', 'targets')                                  # checklist order = the editor tab order
 BLOCKING = ('error', 'blocker')
 TITLES = dict(parameters='Parameters', measurements='Probes', targets='Specs')      # = the editor tab names (frontend Editors.tsx)
@@ -100,7 +103,7 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
 
 def _say(found) -> str:
     """The first three issues' messages, each cut at 200 characters, and how many more there are."""
-    return '; '.join(str(i.get('message'))[:200] for i in found[:3]) + (f' (+{len(found) - 3} more)' if len(found) > 3 else '')
+    return '; '.join(str(i.get('message'))[:200] for i in found[:_MAX_ISSUE_MESSAGES]) + (f' (+{len(found) - _MAX_ISSUE_MESSAGES} more)' if len(found) > _MAX_ISSUE_MESSAGES else '')
 
 
 def _table_items(config, by_section, profile) -> list:

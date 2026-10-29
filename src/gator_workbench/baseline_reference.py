@@ -40,6 +40,7 @@ def record_reference(name, run_dir) -> dict:
         raise ProfileError('Not a finished run directory')
     if (config.get('circuit') or {}).get('task_id') != f'real:{name}' or manifest.get('mock'):
         raise ProfileError(f'That run did not simulate real:{name}')
+    # ---- Select the real baseline and require complete recipe metrics before writing a reference.
     reader = DatasetReader(run_dir / 'data')
     baselines = [row for row in reader.rows('evaluations', ['evaluation_id', 'phase', 'provenance', 'result_source', 'completed_at'])
                  if row['phase'] == 'baseline' and row['provenance'] == 'real' and row['result_source'] == 'simulation']

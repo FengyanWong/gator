@@ -116,6 +116,33 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
         policy['notes'].append('Random initialization; no weights loaded.')
         return dict(learner=learner, replay=replay, run_state=None, policy=policy, freeze=None)
 
+    contract = _verify_source_checkpoint(
+        source_dir, source_metadata, mode, experiment, model_config, sac_config, spec_schema, vocabulary, runtime,
+        task_definition_hash, policy)
+
+    if mode == 'resume':
+        learner, replay, run_state = _resume_training_state(
+            vocabulary, runtime, view, source_dir, experiment, model_config, sac_config, spec_schema, policy)
+        return dict(learner=learner, replay=replay, run_state=run_state, policy=policy, freeze=None)
+
+    weights = ckpt.load_weights(source_dir)
+    learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime, view)
+    if mode == 'fine_tune':
+        freeze = _transfer_fine_tune_weights(
+            advanced, learner, weights, policy, source_metadata, contract, sac_config, torch, experiment, freeze)
+        replay = ReplayBuffer(advanced.replay_capacity, origin=origin, seed=seed)
+        return dict(learner=learner, replay=replay, run_state=None, policy=policy, freeze=freeze)
+
+    if mode == 'frozen':
+        _freeze_loaded_weights(learner, weights, torch, policy)
+        return dict(learner=learner, replay=None, run_state=None, policy=policy, freeze=None)
+    raise ValueError(f'Unknown mode {mode!r}')
+
+
+def _verify_source_checkpoint(
+    source_dir, source_metadata, mode, experiment, model_config, sac_config, spec_schema, vocabulary, runtime,
+    task_definition_hash, policy):
+    """Verify source checkpoint files and compatibility, recording its identity before refusing an incompatible load."""
     if source_dir is None or source_metadata is None:
         raise ValueError(f'mode={mode} requires a source checkpoint')
     problems = ckpt.verify_files(source_dir)
@@ -132,75 +159,79 @@ def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, 
                   compatibility=report)
     if not report['compatible']:
         raise ckpt.CheckpointIncompatible(report)
+    return contract
 
-    if mode == 'resume':
-        options = model_inputs.learner_options(vocabulary, runtime)
-        learner, replay, run_state = network_inputs.learner_class(vocabulary, view).load(
-            source_dir / 'training_state.pt', experiment=experiment, model_config=model_config,
-            config=sac_config, spec_schema=spec_schema, **options)
-        policy['loaded'] = list(ckpt.FULL_COMPONENTS)
-        policy['notes'].append('Full training state restored; existing counters are retained.')
-        return dict(learner=learner, replay=replay, run_state=run_state, policy=policy, freeze=None)
 
-    weights = ckpt.load_weights(source_dir)
-    learner = _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary, runtime, view)
-    if mode == 'fine_tune':
-        only_encoder = advanced.encoder_only_transfer
-        learner.actor.load_state_dict(_encoder_state(weights['actor'], only_encoder=only_encoder),
-                                      strict=not only_encoder)
-        policy['loaded'].append('actor.encoder' if only_encoder else 'actor (encoder + head)')
+def _resume_training_state(
+    vocabulary, runtime, view, source_dir, experiment, model_config, sac_config, spec_schema, policy):
+    """Restore the complete learner and replay state and record that existing run counters are retained."""
+    options = model_inputs.learner_options(vocabulary, runtime)
+    learner, replay, run_state = network_inputs.learner_class(vocabulary, view).load(
+        source_dir / 'training_state.pt', experiment=experiment, model_config=model_config,
+        config=sac_config, spec_schema=spec_schema, **options)
+    policy['loaded'] = list(ckpt.FULL_COMPONENTS)
+    policy['notes'].append('Full training state restored; existing counters are retained.')
+    return learner, replay, run_state
+
+
+def _transfer_fine_tune_weights(
+    advanced, learner, weights, policy, source_metadata, contract, sac_config, torch, experiment, freeze):
+    """Transfer compatible weights and apply the configured critic, temperature, and encoder-freeze policies."""
+    only_encoder = advanced.encoder_only_transfer
+    learner.actor.load_state_dict(_encoder_state(weights['actor'], only_encoder=only_encoder),
+                                  strict=not only_encoder)
+    policy['loaded'].append('actor.encoder' if only_encoder else 'actor (encoder + head)')
+    if only_encoder:
+        policy['reset'].append('actor.head (random)')
+    changed_reward = any(source_metadata['contract'].get(key) != contract.get(key) for key in (
+        'reward_version', 'reward_settings', 'clearance_rule', 'failure_policy', 'condition_policy', 'planned_conditions'))
+    if changed_reward:
+        policy['notes'].append('Reward or condition contract changed: actor transfer only; critics/targets, replay and optimizers reset.')
+    if advanced.reset_critic or changed_reward:
+        policy['reset'] += ['critics (random)', 'target_networks (copy of the new critics)']
+    else:
+        learner.critics.load_state_dict(_encoder_state(weights['critics'], only_encoder=only_encoder),
+                                        strict=not only_encoder)
+        learner.targets.load_state_dict(_encoder_state(weights['targets'], only_encoder=only_encoder),
+                                        strict=not only_encoder)
+        policy['loaded'] += ['critics.encoder', 'target_networks.encoder'] if only_encoder else [
+            'twin critics', 'target_networks']
         if only_encoder:
-            policy['reset'].append('actor.head (random)')
-        changed_reward = any(source_metadata['contract'].get(key) != contract.get(key) for key in (
-            'reward_version', 'reward_settings', 'clearance_rule', 'failure_policy', 'condition_policy', 'planned_conditions'))
-        if changed_reward:
-            policy['notes'].append('Reward or condition contract changed: actor transfer only; critics/targets, replay and optimizers reset.')
-        if advanced.reset_critic or changed_reward:
-            policy['reset'] += ['critics (random)', 'target_networks (copy of the new critics)']
-        else:
-            learner.critics.load_state_dict(_encoder_state(weights['critics'], only_encoder=only_encoder),
-                                            strict=not only_encoder)
-            learner.targets.load_state_dict(_encoder_state(weights['targets'], only_encoder=only_encoder),
-                                            strict=not only_encoder)
-            policy['loaded'] += ['critics.encoder', 'target_networks.encoder'] if only_encoder else [
-                'twin critics', 'target_networks']
-            if only_encoder:
-                policy['reset'] += ['critic heads (random)', 'target heads (random)']
-        if advanced.reset_temperature:
-            policy['reset'].append(f'temperature (initial_alpha={sac_config.initial_alpha})')
-        else:
-            with torch.no_grad():
-                learner.log_alpha.copy_(weights['log_alpha'])
-            policy['loaded'].append('temperature (log_alpha)')
-        policy['reset'] += ['actor/critic/temperature optimizers (new)', 'replay_buffer (new, target task only)',
-                            'task_counters (new)']
-        policy['notes'] += ['Preprocessing/normalization definitions are fixed references and unchanged.',
-                            ('Pinned source training transitions are mixed with target replay in each update; '
-                             'target replay itself starts empty.' if experiment.get('rehearsal') else
-                             'No source replay data and no source-task dimensions are mixed in.'),
-                            'The source checkpoint was opened read-only; this is a new run with a parent.']
-        if advanced.freeze_encoder:
-            freeze = EncoderFreeze(learner)
-            freeze.apply()
-            policy['frozen_modules'] = ['actor.encoder', 'critics[0].encoder', 'critics[1].encoder']
-        replay = ReplayBuffer(advanced.replay_capacity, origin=origin, seed=seed)
-        return dict(learner=learner, replay=replay, run_state=None, policy=policy, freeze=freeze)
-
-    if mode == 'frozen':
-        learner.actor.load_state_dict(weights['actor'])
-        learner.critics.load_state_dict(weights['critics'])
-        learner.targets.load_state_dict(weights['targets'])
+            policy['reset'] += ['critic heads (random)', 'target heads (random)']
+    if advanced.reset_temperature:
+        policy['reset'].append(f'temperature (initial_alpha={sac_config.initial_alpha})')
+    else:
         with torch.no_grad():
             learner.log_alpha.copy_(weights['log_alpha'])
-        for module in (learner.actor, learner.critics, learner.targets):
-            module.requires_grad_(False).eval()
-        learner.updates = int(weights['updates'])     # policy_version of the loaded policy
-        policy['loaded'] = ['actor', 'twin critics', 'target_networks', 'temperature (log_alpha)']
-        policy['frozen_modules'] = ['all']
-        policy['notes'] += ['No weight, entropy-coefficient or normalization updates. No replay, no optimizer steps, '
-                            'and no learner_updates rows are produced.']
-        return dict(learner=learner, replay=None, run_state=None, policy=policy, freeze=None)
-    raise ValueError(f'Unknown mode {mode!r}')
+        policy['loaded'].append('temperature (log_alpha)')
+    policy['reset'] += ['actor/critic/temperature optimizers (new)', 'replay_buffer (new, target task only)',
+                        'task_counters (new)']
+    policy['notes'] += ['Preprocessing/normalization definitions are fixed references and unchanged.',
+                        ('Pinned source training transitions are mixed with target replay in each update; '
+                         'target replay itself starts empty.' if experiment.get('rehearsal') else
+                         'No source replay data and no source-task dimensions are mixed in.'),
+                        'The source checkpoint was opened read-only; this is a new run with a parent.']
+    if advanced.freeze_encoder:
+        freeze = EncoderFreeze(learner)
+        freeze.apply()
+        policy['frozen_modules'] = ['actor.encoder', 'critics[0].encoder', 'critics[1].encoder']
+    return freeze
+
+
+def _freeze_loaded_weights(learner, weights, torch, policy):
+    """Load and freeze all saved network weights while recording the frozen policy and original update count."""
+    learner.actor.load_state_dict(weights['actor'])
+    learner.critics.load_state_dict(weights['critics'])
+    learner.targets.load_state_dict(weights['targets'])
+    with torch.no_grad():
+        learner.log_alpha.copy_(weights['log_alpha'])
+    for module in (learner.actor, learner.critics, learner.targets):
+        module.requires_grad_(False).eval()
+    learner.updates = int(weights['updates'])     # policy_version of the loaded policy
+    policy['loaded'] = ['actor', 'twin critics', 'target_networks', 'temperature (log_alpha)']
+    policy['frozen_modules'] = ['all']
+    policy['notes'] += ['No weight, entropy-coefficient or normalization updates. No replay, no optimizer steps, '
+                        'and no learner_updates rows are produced.']
 
 
 def source_cost(source_run_dir):

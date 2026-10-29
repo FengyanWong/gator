@@ -1025,7 +1025,7 @@ def _given(value) -> str:
 
 
 def _plain_error(error) -> tuple[str, str]:
-    kind, value, ctx = error['type'], error.get('input'), error.get('ctx') or {}
+    kind, value, context = error['type'], error.get('input'), error.get('ctx') or {}
     names = [part for part in error['loc'] if isinstance(part, str)]
     field = names[-1] if names else 'The configuration'
     given = _given(value)
@@ -1038,9 +1038,9 @@ def _plain_error(error) -> tuple[str, str]:
     if kind == 'string_too_short':
         return 'schema', f'{field} is empty: it needs a value.'
     if kind == 'string_too_long':
-        return 'schema', f'{field} is too long: at most {ctx.get("max_length")} characters.'
+        return 'schema', f'{field} is too long: at most {context.get("max_length")} characters.'
     if kind == 'too_long':
-        return 'schema', f'{field} has too many entries: at most {ctx.get("max_length")}.'
+        return 'schema', f'{field} has too many entries: at most {context.get("max_length")}.'
     if kind == 'extra_forbidden':
         return 'schema', f'{field} is not a field of this part of the configuration: remove it.'
     if kind in ('float_parsing', 'float_type'):
@@ -1052,10 +1052,10 @@ def _plain_error(error) -> tuple[str, str]:
     if kind == 'finite_number':
         return 'schema', f'{field} needs a finite number, not NaN or infinity.'
     if kind == 'literal_error':
-        return 'schema', f'{field} must be one of {ctx.get("expected")}{given}.'
-    if kind in _BOUNDS and _BOUNDS[kind][0] in ctx:
+        return 'schema', f'{field} must be one of {context.get("expected")}{given}.'
+    if kind in _BOUNDS and _BOUNDS[kind][0] in context:
         key, words = _BOUNDS[kind]
-        return 'schema', f'{field} must be {words} {_number(ctx[key])}{given}.'
+        return 'schema', f'{field} must be {words} {_number(context[key])}{given}.'
     if kind == 'value_error':
         return 'schema', str(error['msg']).removeprefix('Value error, ')
     return 'schema', f'{field}: {error["msg"]}.'

@@ -40,7 +40,7 @@ export async function readWithDeadline<T>(read: (signal: AbortSignal) => Promise
   }
 }
 
-async function call<T = Json>(method: string, url: string, body?: Json, signal?: AbortSignal): Promise<T> {
+export async function call<T = Json>(method: string, url: string, body?: Json, signal?: AbortSignal): Promise<T> {
   const request = async (readSignal?: AbortSignal) => answer(await fetch(url, {
     method, signal: readSignal,
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },

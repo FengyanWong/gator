@@ -4246,6 +4246,75 @@ resume requires the same pool. Absent rehearsal preserves old configuration and 
 
 <a id="the-agent-window-claude-code-or-codex-in-a-window-of-its-own-2026-10-06-record-7226-2026-10-07-record-7253"></a>
 
+## Local Agent (7.395)
+
+The bottom **Agent** tab offers local NVIDIA models for parameter setup and optimization-setting advice.
+`codex/latest` starts with no LLM installed. `74B-latest` uses the same implementation with a profile that
+verifies and registers the already-present Nemotron 3.5 Bolt 74B-A9B 24GB weights on its first Agent visit.
+It never downloads missing weights automatically or starts inference on page load. **Deploy** remains explicit.
+Deleting the registration is remembered; a restart does not reinstall it.
+
+The catalog currently contains NVIDIA's Bolt 74B-A9B 24GB GGUF and Bolt E4B 4GB Q4_K_M GGUF. The latter's actual
+download is 6.18 GB, despite its product name. Model cards, pinned revisions, sizes and SHA-256 identities live in
+`src/gator_workbench/local_agent/catalog.py`. The E4B option is not installed merely because it is listed.
+
+Each model has labelled icon controls: **Check compatibility**, **Install**, **Deploy**, **Undeploy** and **Delete**.
+Install checks the host that will execute the model: free VRAM on one NVIDIA GPU, compute capability and driver,
+total and available RAM, free storage for the artifact and installation workspace, and the runtime version.
+Unknown resources fail the check. The supported installation recipe is Windows x64 CUDA 12.4, also usable from a
+WSL backend through Windows interop. Native Linux/macOS runtime installation is not provided by this recipe.
+The preflight estimates are followed by an actual model-load and inference probe at Deploy; a failed probe does
+not enable chat. Deployment means **ready to answer, loading per reply**: the GPU is released after every answer,
+and the first tokens include model loading time. This does not claim a resident HTTP server.
+
+Install streams pinned HTTPS downloads with byte progress, verifies SHA-256, and publishes a model only after
+verification. The pinned llama.cpp b11669 runtime and CUDA DLL archives are verified and staged before publication.
+An interrupted/failed download does not become an installed model. Existing benchmark weights under the original
+checkout's `artifacts/local/nemotron-test` are verified and registered as **external**, without copying or modifying
+them. Delete removes an external registration only; for managed downloads it removes only the exact owned GGUF.
+Undeploy cancels owned inference; deletion waits until it exits. Neither control stops optimizer workers.
+
+Agent state and owned jobs live under `GATOR_WORKBENCH_SETTINGS_DIR/local-agent` (normally
+`configs/local/workbench/local-agent`). One backend owns that store at a time. Operator overrides are
+`GATOR_AGENT_ASSET_ROOT` (the benchmark asset root) and `GATOR_AGENT_RUNTIME` (the completion executable).
+These are process environment settings, never browser/model-provided command paths. On WSL, use files on a
+Windows-mounted drive so the native runtime can read them. A backend restart keeps installed models and requires
+Deploy again. Conversations and outstanding proposals belong to the current page/backend session; scratch job
+output remains in the local settings folder. No model weights, prompts or credentials belong in Git.
+
+The conversation includes numeric editor context and allowed setting names, not netlists, PDK model files,
+connection credentials or freeform configuration notes. Direct `llama-completion` uses `-n -1 --context-shift
+--keep -1`; there is no answer-token budget or generation timeout. The tested context is 8,192 tokens. Exact
+tokenization checks a 6,144-token **input** allowance, leaving room for context shifting. Recent conversation turns
+continue with the current configuration; omitted older turns are disclosed. An oversized current prompt fails with
+an instruction to shorten it or start a new conversation, rather than silently truncating the answer. **Cancel**
+signals a fixed native supervisor which terminates its own child process. Its lease also cleans up after a backend
+crash. A missing normal end-of-text marker, runtime error or cancellation cannot produce an applicable proposal.
+
+A model reply has no tool-execution path. A proposal must be one strict JSON object, with unique keys and finite
+values. The only parameter edits are bounds, step and scale of existing independently optimized groups. Initial
+values are circuit readback, not editable suggestions. Fixed groups, tied followers, identifiers, topology, units
+and tie definitions stay under the normal editor workflow. Compatible submitted units are converted to the row's
+unit; bounds must stay inside the current domain, and new grids must preserve the existing lattice. The run
+allowlist is evaluation budget, concurrency, seed, stop-at-first-feasible, batch size, warm-up transitions, learning
+rate, updates per transition and episode length. Source/checkpoint, optimizer and mode changes are excluded.
+
+GATOR validates the complete candidate with the current schema and the page's circuit-aware static validator,
+including bounds, integer values, grids, ties, units and run constraints. The loaded circuit must be available.
+The preview lists old/new values and warnings. **Apply proposed changes** rechecks the schema, current configuration
+and circuit-evidence identity, then uses the existing editor setter as one Undo step. Any intervening editor change,
+even followed by Undo, makes the proposal stale. A concurrent edit during revalidation wins. Unsaved task rows are
+allowed in this preview, with the normal Save task reminder; applying does not save a task or authorize a run.
+Model replies never apply changes, launch a simulator, change a schematic or spend an external LLM budget.
+
+Checks: `tests/workbench/test_local_agent.py` (synthetic lifecycle, downloads, resources, validation and stale
+evidence), `frontend/scripts/local_agent_check.mjs` (hermetic UI interactions), and the explicit opt-in
+`tests/workbench/local_agent_live_check.py <scratch-folder>` (existing local 74B assets only), followed by
+`tests/workbench/local_agent_advice_check.py <scratch-folder>` for a real reply checked against a synthetic circuit.
+Keep settings/output
+overrides isolated and browser checks away from the live port. The tested direct CLI replaces the earlier
+unverified llama-server path; no persistent HTTP serving claim is made.
+
 ## Desktop and CLI agents
 
 For agent assistance with circuit setup, editing Parameters, Probes or Specs, troubleshooting runs, or reviewing results,
@@ -4256,16 +4325,17 @@ Tell the agent to read `CLAUDE.md` first, then identify the task, configuration 
 want it to do. Review proposed changes and authorize any real simulation or schematic write yourself. The normal
 workbench editors, validation, run controls and budget authorization remain the way to inspect and start a run.
 
-The Agent tab entry, popup window, CLI launch buttons and "What's missing?" checklist were removed from the frontend
-on 2026-10-26 (record 7.391). The page neither discovers installed agents nor makes requests to the agent endpoints.
-It sends no prompt or configuration to a desktop or CLI agent. Records 7.226 and 7.253 describe the earlier interfaces.
+The old Agent popup, CLI launch buttons and "What's missing?" checklist were removed from the frontend on
+2026-10-26 (record 7.391). The new local Agent tab (7.395) uses its own model lifecycle and advisory routes;
+it does not discover, launch or send prompts to desktop/paid CLI agents. Records 7.226 and 7.253 describe those
+earlier interfaces.
 
 ### Checking readiness
 
 Use the workbench's validation and run controls to inspect what blocks a start. For help interpreting a blocker or
 preparing the circuit and editor rows, ask your own desktop or CLI agent with the relevant task or configuration.
 The existing backend readiness and CLI-integration routes remain available for external clients; they have no
-frontend controls. Removing the Agent interface does not change validation, run authorization or the simulator.
+frontend controls. The local Agent tab does not change validation, run authorization or the simulator.
 
 ## What the frontend audit changed (2026-09-30, record 7.125)
 

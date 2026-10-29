@@ -9,14 +9,15 @@ import { CornerCheckTab } from './CornerCheck';
 import { type RunChoice, RunListButton } from './RunList';
 import { DATA_CHOICE, type DataChoice, DataTab, FilesTab, LogsTab, StatusTab } from './RunTabs';
 import { TrainingTab } from './TrainingTab';
+import { AgentTab } from './AgentTab';
 
 // The bottom panel (plan-refactoring C5, out of App.tsx): its height and fold, kept in this browser, the splitter above it,
 // its tab line and the tab it shows. The page holds the tab (useBottomTab) and the run shown; useBottomPanel holds the rest.
 
-export type BottomTab = 'status' | 'logs' | 'data' | 'files' | 'training' | 'corners';
+export type BottomTab = 'status' | 'logs' | 'data' | 'files' | 'training' | 'corners' | 'agent';
 /** The tabs a reload comes back on. Not Corner check: it is offered only where corners can be used, which the page learns
  *  after it opens (page/shownRun.ts shows Run status meanwhile). */
-const KEPT_TABS: BottomTab[] = ['status', 'logs', 'data', 'files', 'training'];
+const KEPT_TABS: BottomTab[] = ['status', 'logs', 'data', 'files', 'training', 'agent'];
 /** The tab the panel shows (branch record SIF-105): it went back to Run status at every reload, while the panel's height and
  *  fold and the Training tab's charts were kept. Kept in THIS browser tab (sessionStorage): a reload comes back on it, and a
  *  page opened anew starts on Run status, as before. */
@@ -133,8 +134,8 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
         title="Drag to give the bottom panel more or less room. Double-click: fold it down to its tab line, or open it again. Kept in this browser."
         onPointerDown={dragBottom} onDoubleClick={toggleBottom} onKeyDown={keyBottom} />
       <div className="tabs">
-        {(['status', 'logs', 'data', 'files', 'training', 'corners'] as BottomTab[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
-          {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check' }[t]}</button>)}
+        {(['status', 'logs', 'data', 'files', 'training', 'corners', 'agent'] as BottomTab[]).filter(t => t !== 'corners' || cornersUsable).map(t => <button key={t} className={t === tab ? 'active' : ''} onClick={() => { setTab(t); unfold(); }}>
+          {{ status: 'Run status', logs: 'Logs', data: 'Data tables', files: 'Output files', training: 'Training', corners: 'Corner check', agent: 'Agent' }[t]}</button>)}
         <span className="spacer" />
         <RunListButton runs={runs} runsError={runsError} runDir={runDir} shownState={status?.run_dir === runDir ? status?.state ?? null : null}
           onChoose={runWindow.choose} onRefresh={refreshRuns} onLoad={runWindow.load} onNewLike={runWindow.newLike} onContinue={runWindow.continueFrom} headerDir={headerDir} />
@@ -155,6 +156,7 @@ export function BottomPanel({ panel, tab, setTab, cornersUsable, config, setConf
             list calls live waits for its status before its first read, and one whose status cannot be read is read all the
             same (branch record SIF-126). */}
         <TrainingTab hidden={tab !== 'training' || folded} runDir={runDir} status={status} statusError={statusError} runs={runs} />
+        <AgentTab hidden={tab !== 'agent' || folded} config={config} setConfig={setConfig} />
         {tab === 'corners' && cornersUsable && <CornerCheckTab runDir={runDir} />}
       </div>
     </footer>

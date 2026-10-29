@@ -18,12 +18,14 @@ from .security import redact
 _MAX_ISSUE_MESSAGES = 3
 
 
-TABLES = ('parameters', 'measurements', 'targets')                                  # checklist order = the editor tab order
+# checklist order = the editor tab order
+TABLES = ('parameters', 'measurements', 'targets')
 BLOCKING = ('error', 'blocker')
-TITLES = dict(parameters='Parameters', measurements='Probes', targets='Specs')      # = the editor tab names (frontend Editors.tsx)
+# = the editor tab names (frontend Editors.tsx)
+TITLES = dict(parameters='Parameters', measurements='Probes', targets='Specs')
 LEARNING_WARNINGS = ('budget_within_warmup', 'budget_below_batch')
-# An item an agent can help with: Claude Code or Codex, opened from the Agent window in this folder, can draft its rows from a
-# description. Everything else is the user's own step.
+# An item an agent can help with: Claude Code or Codex, opened from the Agent window in this folder, can draft its rows
+# from a description. Everything else is the user's own step.
 AGENT_HELP = ' Claude Code or Codex (the Agent window) can also draft the rows from your description.'
 
 
@@ -36,7 +38,8 @@ def _item(item_id, title, status, who, detail, action=''):
     return dict(id=item_id, title=title, status=status, who=who, detail=detail, action=action)
 
 
-def build(config: dict, *, task=None, task_blocker=None, validation=None, connection=None, output=None, profile=None) -> dict:
+def build(config: dict, *, task=None, task_blocker=None, validation=None, connection=None, output=None,
+    profile=None) -> dict:
     """``config`` and ``validation`` are plain dicts (JSON form). ``task`` is the loaded runtime or None,
     ``connection`` the monitor's cached status dict or None, ``output`` the result of the output-root check.
     ``profile`` = dict(rows, matches) for a REAL circuit whose profile fixes its optimized variables: the rows it
@@ -53,9 +56,11 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     # 1. circuit
     if task is not None:
         items.append(_item('circuit', 'Circuit', 'done', 'you',
-                           f"{'Synthetic (MOCK)' if mock else 'REAL'} circuit read: {len(task.base_graph.devices)} devices."))
+                           f"{('Synthetic (MOCK)' if mock else 'REAL')} circuit read: "
+                           f'{len(task.base_graph.devices)} devices.'))
     else:
-        items.append(_item('circuit', 'Circuit', 'missing', 'you', str(task_blocker or 'No circuit could be read.')[:400],
+        items.append(_item('circuit', 'Circuit', 'missing', 'you',
+                           str(task_blocker or 'No circuit could be read.')[:400],
                            'Open a task in the Tasks window, or make one there with "New task".'))
 
     # 2-4. the three tables
@@ -70,12 +75,14 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
     # 6. run configuration
     mode, budget = run.get('mode', 'scratch'), run.get('max_evaluations')
     starving = [i for i in issues if i.get('code') in LEARNING_WARNINGS]
-    detail = f"Mode {mode}, budget {budget} evaluation{'' if budget == 1 else 's'}, concurrency {run.get('concurrency', 1)}."
+    detail = (
+        f"Mode {mode}, budget {budget} evaluation{('' if budget == 1 else 's')}, concurrency "
+        f"{run.get('concurrency', 1)}."
+    )
     if starving:
         items.append(_item('run', 'Run configuration', 'warning', 'you', detail + ' ' + _say(starving),
-                           'Raise "Evaluation budget" under Run configuration, or lower batch size / warm-up under Advanced in '
-                           'the RL model window: as set, '
-                           'the run would not learn.'))
+                           'Raise "Evaluation budget" under Run configuration, or lower batch size / warm-up '
+                           'under Advanced in the RL model window: as set, the run would not learn.'))
     else:
         items.append(_item('run', 'Run configuration', 'done', 'you', detail))
 
@@ -103,7 +110,8 @@ def build(config: dict, *, task=None, task_blocker=None, validation=None, connec
 
 def _say(found) -> str:
     """The first three issues' messages, each cut at 200 characters, and how many more there are."""
-    return '; '.join(str(i.get('message'))[:200] for i in found[:_MAX_ISSUE_MESSAGES]) + (f' (+{len(found) - _MAX_ISSUE_MESSAGES} more)' if len(found) > _MAX_ISSUE_MESSAGES else '')
+    return '; '.join(str(i.get('message'))[:200] for i in found[:_MAX_ISSUE_MESSAGES]) + (
+        f' (+{len(found) - _MAX_ISSUE_MESSAGES} more)' if len(found) > _MAX_ISSUE_MESSAGES else '')
 
 
 def _table_items(config, by_section, profile) -> list:
@@ -119,38 +127,47 @@ def _table_items(config, by_section, profile) -> list:
     for name in TABLES:
         found = by_section.get(name, [])
         if name == 'parameters' and fixed and (mismatch or not rows['parameters']) and not found:
-            detail = (f'This verified circuit fixes its optimized variables ({len(fixed)} rows: which sizes may be written, their range and '
-                      'grid). ' + (f'The configuration does not compile, so they could not be compared: {uncompiled}' if uncompiled
-                                  else 'The configured variables differ from them, so the run would be refused the moment it starts.'
+            detail = (
+                f'This verified circuit fixes its optimized variables ({len(fixed)} rows: which sizes may be '
+                f'written, their range and grid). ' + (
+                          f'The configuration does not compile, so they could not be compared: {uncompiled}'
+                          if uncompiled
+                                  else
+                                      'The configured variables differ from them, so the run would be refused '
+                                      'the moment it starts.'
                                   if mismatch else 'None is configured yet.'))
             items.append(_item(name, TITLES[name], 'missing', 'agent', detail,
                                'Double-click the task in the Tasks window: it brings exactly these rows, free.'))
             continue
         unsaved = [i for i in found if i.get('code') == 'task_not_saved']
         if unsaved and len(unsaved) == len(found):
-            # The rows are there and differ from the saved task (an edit, an applied calibration, an older page): the fix
-            # is ONE press, and the issue itself says which. Said whole here: cut at 200 characters it lost exactly that
-            # sentence, and the general advice below ("Reload saved values ... or the agent writes the rows") told the
-            # user to throw away what they had just applied (found with the calibration, record 7.204).
+            # The rows are there and differ from the saved task (an edit, an applied calibration, an older page): the
+            # fix is ONE press, and the issue itself says which. Said whole here: cut at 200 characters it lost exactly
+            # that sentence, and the general advice below ("Reload saved values ... or the agent writes the rows") told
+            # the user to throw away what they had just applied (found with the calibration, record 7.204).
             items.append(_item(name, TITLES[name], 'missing', 'you', ' '.join(str(i.get('message')) for i in unsaved),
-                               '"Save as" is on the editors\' tab line; "Reload saved values" is under "not saved", beside '
-                               'the task\'s name.'))
+                               '"Save as" is on the editors\' tab line; "Reload saved values" is under "not '
+                               'saved", beside the task\'s name.'))
             continue
         empty = dict(parameters=not rows['parameters'], targets=not hard, measurements=not rows['measurements'])[name]
         if found or empty:
             detail = _say(found) if found else dict(
-                parameters='No optimized variable yet.', targets='No active hard constraint yet, so nothing defines "feasible".',
+                parameters='No optimized variable yet.',
+                targets='No active hard constraint yet, so nothing defines "feasible".',
                 measurements='No probe is defined; every spec is an equation over probes.')[name]
             action = ('Write each requirement in the "Specs" tab, with where it comes from.' if name == 'targets'
                       else f'Fill in the "{TITLES[name]}" tab.')
-            if registered:                  # a registered task brings its own rows: free, exact, and the first thing to try
-                action = 'Double-click the task in the Tasks window for its own rows, or ' + action[0].lower() + action[1:]
+            # a registered task brings its own rows: free, exact, and the first thing to try
+            if registered:
+                action = 'Double-click the task in the Tasks window for its own rows, or ' + action[0].lower() + action[
+                    1:]
             action += AGENT_HELP
             items.append(_item(name, TITLES[name], 'missing', 'agent', detail, action))
         else:
             count = len(hard) if name == 'targets' else rows[name]
             items.append(_item(name, TITLES[name], 'done', 'agent',
-                               f"{count} {'active hard constraint' if name == 'targets' else 'row'}{'' if count == 1 else 's'}."))
+                               f"{count} {('active hard constraint' if name == 'targets' else 'row')}"
+                               f"{('' if count == 1 else 's')}."))
     return items
 
 
@@ -160,7 +177,8 @@ def _output_items(output) -> list:
     if output is None:
         items.append(_item('output', 'Output folder', 'unknown', 'you', 'Not checked.'))
     elif not output.get('allowed') or output.get('error'):
-        items.append(_item('output', 'Output folder', 'missing', 'you', 'The folder is outside the allowed roots or cannot be used.',
+        items.append(_item('output', 'Output folder', 'missing', 'you',
+                           'The folder is outside the allowed roots or cannot be used.',
                            'Choose another folder under "Output settings" (right).'))
     elif output.get('exists') and not output.get('writable'):
         items.append(_item('output', 'Output folder', 'missing', 'you', 'The folder exists but is not writable.',
@@ -181,18 +199,22 @@ def _connection_items(mock, run, connection, budget) -> list:
                                'connect, then "Test connection".'))
         else:
             overall = (connection or {}).get('overall', 'unknown')
-            layers = ', '.join(f"{layer.get('layer')} {layer.get('state')}" for layer in (connection or {}).get('layers') or [])
+            layers = ', '.join(f"{layer.get('layer')} {layer.get('state')}" for layer in (connection or {}).get(
+                'layers') or [])
             status = dict(ok='done', failed='missing', not_ready='missing').get(overall, 'unknown')
             age = (connection or {}).get('age_seconds')
             when = 'never tested in this backend session' if age is None else f'last test {round(age)} s ago'
             items.append(_item('connection', 'Connection', status, 'you', f'{overall} ({when}). {layers}'.strip(),
-                               '' if status == 'done' else 'Press the connection button in the header, then "Test connection" '
-                               'in its window. A '
-                               'start tests again by itself and asks you to acknowledge layers that stay unknown.'))
+                               '' if status ==
+                                   'done' else
+                                   'Press the connection button in the header, then "Test connection" in its '
+                                   'window. A start tests again by itself and asks you to acknowledge layers '
+                                   'that stay unknown.'))
         items.append(_item('authorization', 'Real simulation budget', 'at_start', 'you',
                            f'Pressing Start asks you to authorize {budget} real evaluation(s). Only you can.'))
     elif mock is True:
-        items.append(_item('connection', 'Connection', 'not_applicable', 'you', 'A synthetic (MOCK) circuit needs no connection.'))
+        items.append(_item('connection', 'Connection', 'not_applicable', 'you',
+            'A synthetic (MOCK) circuit needs no connection.'))
     return items
 
 
@@ -204,13 +226,15 @@ def profile_rows_check(config, runtime, report):
     profile = None
     if fixed:
         matches = problem = None
-        broken = any(i['level'] in ('error', 'blocker') and str(i['path']).startswith('parameters') for i in report['issues'])
+        broken = any(i['level'] in ('error',
+            'blocker') and str(i['path']).startswith('parameters') for i in report['issues'])
         if config.parameters and not broken:
             try:
                 from analog_optimizer.envs.sizing import graph_contract
                 # lazy: in the try: a failure of the import is handled with the rest
                 from .compile import compile_task
-                matches = graph_contract(compile_task(config, runtime.base_graph).graph) == graph_contract(runtime.base_graph)
+                matches = graph_contract(compile_task(config,
+                    runtime.base_graph).graph) == graph_contract(runtime.base_graph)
             except Exception as exc:                   # it does not compile: a start would be refused for that alone
                 problem = redact(f'{type(exc).__name__}: {exc}', 300)
         profile = dict(rows=fixed, matches=matches, error=problem)

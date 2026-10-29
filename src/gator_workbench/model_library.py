@@ -164,7 +164,8 @@ def host_runner(config, *, timeout=120):
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):     # the runner echoes its command
                     code, out, err = runner.run_command(command, timeout=timeout)
             if code != 0:
-                raise LibraryError(f'reading the model library on the simulator host failed (exit {code}): {err.strip()[-300:]}')
+                raise LibraryError(
+                    f'reading the model library on the simulator host failed (exit {code}): {err.strip()[-300:]}')
             return out
         finally:
             set_runtime_env_file(prior_file)
@@ -212,7 +213,8 @@ def parse_structure(text):
 def resolve(including, target):
     """An include's file as an absolute path: relative to the including file's folder, as Spectre resolves it. None
     when it is not a plain path."""
-    path = posixpath.normpath(target if target.startswith('/') else posixpath.join(posixpath.dirname(including), target))
+    path = posixpath.normpath(target if target.startswith('/') else posixpath.join(posixpath.dirname(including),
+        target))
     return path if REMOTE_PATH.match(path) else None
 
 
@@ -379,7 +381,9 @@ def attach(profile, config, *, reference, structure, run=None):
             else:
                 library['read_seconds'] = perf_counter() - started
         except Exception as exc:                          # the run goes on with the whole model file
-            library, note = None, f'The model library could not be read, so the decks include the whole model file: {exc}'
+            library, note = None, (
+                f'The model library could not be read, so the decks include the whole model file: {exc}'
+            )
     profile.model_library = library
     profile.model_library_event = summary(library, note)
     return library

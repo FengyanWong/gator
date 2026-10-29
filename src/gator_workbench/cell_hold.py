@@ -85,7 +85,8 @@ def parse_rows(decoded) -> dict:
 
 def _call(operation, profile_id, library, cell, timeout):
     what = 'the look at the cell' if operation == 'look' else 'letting go of the cell'
-    finished = run_child([sys.executable, '-m', 'gator_workbench.cell_hold', '--profile-id', profile_id, '--op', operation,
+    finished = run_child([sys.executable, '-m', 'gator_workbench.cell_hold', '--profile-id', profile_id, '--op',
+        operation,
                           '--library', library, '--cell', cell], timeout)
     if finished is None:
         raise TimeoutError(f'Virtuoso did not answer within {timeout:.0f} s')

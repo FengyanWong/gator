@@ -59,7 +59,8 @@ class BudgetLedger:
         if self.max_launches is None:
             return True
         pending_first = sum(item['allowance'] for item in self._in_flight.values() if item['attempts'] == 0)
-        return self.launches + self._launch_holds + pending_first + sum(self._reserved.values()) + extra <= self.max_launches
+        return self.launches + self._launch_holds + pending_first + sum(
+            self._reserved.values()) + extra <= self.max_launches
 
     def reserve(self, evaluation_id=None, *, launches: int=1):
         """Reserve one evaluation before dispatch. Returns its ID, or None when exhausted."""
@@ -169,7 +170,8 @@ class BudgetLedger:
             return item
 
     # ------------------------------------------------------------------ first feasibility
-    def mark_first_feasible(self, evaluation_id, *, dispatch_index, commit_seq, active_seconds, wall_seconds, nominal: bool=False) -> dict | None:
+    def mark_first_feasible(self, evaluation_id, *, dispatch_index, commit_seq, active_seconds, wall_seconds,
+        nominal: bool=False) -> dict | None:
         """Called when the scheduler RECEIVES a result and confirms every hard constraint.
 
         Primary convention: evaluations charged at that moment, INCLUDING those started and
@@ -233,7 +235,8 @@ class BudgetLedger:
             return dict(version=self.VERSION, charged=self.charged, completed=self.completed, failed=self.failed,
                         released=self.released, launches=self.launches, retries=self.retries,
                         cache_hits=self.cache_hits, first_feasible=deepcopy(self.first_feasible),
-                        uncertain_launches=self.uncertain_launches, first_nominal_feasible=deepcopy(self.first_nominal_feasible))
+                        uncertain_launches=self.uncertain_launches,
+                        first_nominal_feasible=deepcopy(self.first_nominal_feasible))
 
     def load_state(self, state) -> None:
         """resume keeps the existing counters (fine_tune creates a fresh ledger instead)."""

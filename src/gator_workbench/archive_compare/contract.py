@@ -74,10 +74,12 @@ def budget(jobs, cases) -> dict:
     return dict(search_launches=search, qualification_launches=qualification,
                 confirmation_launches=CONFIRMATIONS_PER_SEARCH * searches,
                 maximum_physical_launches=search + qualification + CONFIRMATIONS_PER_SEARCH * searches,
-                seed0_stage=dict(search_launches=stage0, confirmation_launches=CONFIRMATIONS_PER_SEARCH * stage0_searches,
+                seed0_stage=dict(search_launches=stage0,
+                                 confirmation_launches=CONFIRMATIONS_PER_SEARCH * stage0_searches,
                                  qualification_launches=qualification,
                                  maximum=stage0 + CONFIRMATIONS_PER_SEARCH * stage0_searches + qualification),
-                assumption='one nominal simulator launch per candidate (to be confirmed per bench before authorization)')
+                assumption=
+                    'one nominal simulator launch per candidate (to be confirmed per bench before authorization)')
 
 
 def check(m) -> list:
@@ -118,7 +120,8 @@ def check(m) -> list:
     for job in jobs:
         seeds = REPLICATES[job['replicate']]
         if (job['pretrain_seed'], job['rollout_seed']) != seeds:
-            problems.append(f"{job['job_id']}: seeds {job['pretrain_seed']}/{job['rollout_seed']} are not replicate {seeds}")
+            problems.append(
+                f"{job['job_id']}: seeds {job['pretrain_seed']}/{job['rollout_seed']} are not replicate {seeds}")
         if job['lanes'] != LANES:
             problems.append(f"{job['job_id']}: {job['lanes']} lanes")
         if job['method'] in ('RA+', 'RF+') and job['model_seed'] != job['pretrain_seed']:
@@ -127,8 +130,10 @@ def check(m) -> list:
             problems.append(f"{job['job_id']}: archive use differs from its method")
     # ---- Reconcile analysis-cell aliases and totals with the executable job matrix.
     aliases = [cell for cell in cells if cell.get('alias_of')]
-    if len(aliases) != len(REPLICATES) * n_cases or any(cell['alias_of'] not in ids or cell['jobs'] for cell in aliases):
-        problems.append('every case and replicate has exactly one M+ Panel B alias of its Panel A M+ search, with no job')
+    if len(aliases) != len(REPLICATES) * n_cases or any(cell['alias_of'] not in ids or cell[
+        'jobs'] for cell in aliases):
+        problems.append(
+            'every case and replicate has exactly one M+ Panel B alias of its Panel A M+ search, with no job')
     searches = {cell['search'] for cell in cells}
     if len(cells) != (len(PANEL_A_METHODS) + len(PORTFOLIO_METHODS) + 1) * len(REPLICATES) * n_cases:
         problems.append(f'{len(cells)} analysis cells')

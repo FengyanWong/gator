@@ -66,7 +66,8 @@ def _new_learner(experiment, model_config, sac_config, spec_schema, vocabulary=N
     `view`: the transferable inputs' NetworkView (record 7.298), which then includes the PDK list's view. Either way the
     learner is the package's own SACLearner (network_inputs.learner_class only adds a view at its input)."""
     options = model_inputs.learner_options(vocabulary, runtime)
-    return network_inputs.learner_class(vocabulary, view)(experiment=experiment, model_config=model_config, config=sac_config,
+    return network_inputs.learner_class(vocabulary, view)(experiment=experiment, model_config=model_config,
+                                                          config=sac_config,
                                                           spec_schema=spec_schema, **options)
 
 
@@ -100,7 +101,8 @@ def current_contract(experiment, model_config, sac_config, spec_schema, vocabula
 
 
 def build(mode, *, experiment, model_config, sac_config, spec_schema, advanced, seed, origin,
-          source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None, runtime=None, view=None) -> dict:
+          source_dir=None, source_metadata=None, task_definition_hash=None, vocabulary=None, runtime=None,
+          view=None) -> dict:
     """Returns dict(learner, replay, run_state, policy, freeze). `vocabulary`: the run's component list (None = standard);
     `view`: its transferable inputs' NetworkView (record 7.298), or None."""
     from analog_optimizer.training.replay import ReplayBuffer
@@ -184,9 +186,11 @@ def _transfer_fine_tune_weights(
     if only_encoder:
         policy['reset'].append('actor.head (random)')
     changed_reward = any(source_metadata['contract'].get(key) != contract.get(key) for key in (
-        'reward_version', 'reward_settings', 'clearance_rule', 'failure_policy', 'condition_policy', 'planned_conditions'))
+        'reward_version', 'reward_settings', 'clearance_rule', 'failure_policy', 'condition_policy',
+        'planned_conditions'))
     if changed_reward:
-        policy['notes'].append('Reward or condition contract changed: actor transfer only; critics/targets, replay and optimizers reset.')
+        policy['notes'].append(
+            'Reward or condition contract changed: actor transfer only; critics/targets, replay and optimizers reset.')
     if advanced.reset_critic or changed_reward:
         policy['reset'] += ['critics (random)', 'target_networks (copy of the new critics)']
     else:

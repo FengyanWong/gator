@@ -50,7 +50,8 @@ def finalize(engine, final_state):
     engine._write_timings()
     try:
         engine._run_pending_updates()                  # before the last save point and its "unchanged" check (7.281)
-        engine._persist_waiting_rows()                 # no commit comes after them: their rows go as their own record (7.283)
+        # no commit comes after them: their rows go as their own record (7.283)
+        engine._persist_waiting_rows()
     except Exception as exc:
         engine._log_error('pending_updates_failed', exc)
     # ---- Close lane resources and collect restoration failures before final persistence.
@@ -146,7 +147,8 @@ def adopt_baseline(engine):
     if outcome:
         engine.manifest.setdefault('notes', []).append(outcome['note'])
         engine.manifest_notes = [*getattr(engine, 'manifest_notes', []), outcome['note']]
-        engine._event('baseline_reference', recorded=outcome['recorded'], task=f"real:{outcome['name']}", note=outcome['note'])
+        engine._event('baseline_reference', recorded=outcome['recorded'], task=f"real:{outcome['name']}",
+            note=outcome['note'])
 
 
 def calibrate(engine):
@@ -178,14 +180,16 @@ def write_outputs(engine, final_state, checkpoint, persistence_ok):
             from analog_optimizer.netlist.spectre_parser import SpectreParser
             return SpectreParser(ParserConfig.from_file(task.parser_config_path)).parse_text(
                 text, source=task.netlist_path, top=task.circuit.get('dut_hierarchy'))
-    elif task.circuit.get('simulator') == 'ngspice':          # a SPICE deck: its own writer, values also inside a once-used subcircuit
+    # a SPICE deck: its own writer, values also inside a once-used subcircuit
+    elif task.circuit.get('simulator') == 'ngspice':
         from .ngspice_tasks import export_deck  # lazy: ngspice_tasks imports the optimizer
         exporter, netlist_name = export_deck(task), 'optimized_dut.cir'
     notes = best_design.write_outputs(
         engine.layout.best_design, engine.tracker,
         task=dict(task_id=engine.task_id, task_key=task.task_key, circuit=task.circuit, provenance=engine.provenance),
         config_summary=dict(targets=list(engine.compiled.targets), variables=list(engine.compiled.variables)),
-        netlist_text=task.netlist_text, graph=engine.compiled.graph, reparse=reparse, exporter=exporter, netlist_name=netlist_name)
+        netlist_text=task.netlist_text, graph=engine.compiled.graph, reparse=reparse, exporter=exporter,
+        netlist_name=netlist_name)
     engine.manifest_notes = [f'best_design/{k}: {v}' for k, v in notes.items()]
     summary = build_run_summary(engine, final_state, checkpoint, persistence_ok)
     write_json(engine.layout.summary, summary)

@@ -109,7 +109,8 @@ class ArchiveTrustRegionBO:
         low = (center - weights * self.length / 2.0).clamp(0.0, 1.0)
         high = (center + weights * self.length / 2.0).clamp(0.0, 1.0)
         moved = low + (high - low) * self.inside.draw(self.n_candidates).to(DTYPE)
-        change = torch.rand(self.n_candidates, self.dim, generator=self.generator, dtype=DTYPE) <= min(20.0 / self.dim, 1.0)
+        change = torch.rand(self.n_candidates, self.dim, generator=self.generator, dtype=DTYPE) <= min(20.0 / self.dim,
+            1.0)
         none = ~change.any(1)
         if none.any():
             change[none, torch.randint(0, self.dim, (int(none.sum()),), generator=self.generator)] = True
@@ -153,9 +154,11 @@ class ArchiveTrustRegionBO:
 
     def summary(self) -> dict:
         """Describe archive counts, online progress, the current trust region and the best known reward."""
-        return dict(version=VERSION, archived=len(self.source_y), archived_failed=self.source_failed, online=len(self.X),
+        return dict(version=VERSION, archived=len(self.source_y), archived_failed=self.source_failed,
+                    online=len(self.X),
                     in_this_region=len(self.X) - self.start, region=self.region, restarts=self.restarts,
-                    length=self.length, best=max(list(self.source_y) + list(self.y)) if (self.source_y or self.y) else None)
+                    length=self.length,
+                    best=max(list(self.source_y) + list(self.y)) if (self.source_y or self.y) else None)
 
     # ------------------------------------------------------------------------------------------- save/restore
     def state_dict(self) -> dict:

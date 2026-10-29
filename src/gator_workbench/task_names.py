@@ -45,7 +45,8 @@ def _read() -> dict:
     """The stored names; FileNotFoundError when none was ever given, TaskNameError for a file that is not ours."""
     state = json.loads((local_settings_dir() / FILE).read_text())
     names = state.get('names') if isinstance(state, dict) and state.get('version') == 1 else None
-    if not isinstance(names, dict) or not all(isinstance(k, str) and isinstance(v, str) and _NAME.match(v) for k, v in names.items()):
+    if not isinstance(names, dict) or not all(isinstance(k, str) and isinstance(v, str) and _NAME.match(v) for k,
+        v in names.items()):
         raise TaskNameError('The task names file contains invalid data; the existing file has been kept.')
     return names
 

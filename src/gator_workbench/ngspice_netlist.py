@@ -63,7 +63,8 @@ PARSER_VERSION = 'ngspice-subset-1'
 # The network's vocabulary (analog_optimizer.graph.pyg_converter.FeatureSchema): a kind outside it cannot be encoded.
 KINDS = ('unknown', 'nmos', 'pmos', 'resistor', 'capacitor', 'inductor', 'vsource', 'isource')
 ROLES = {'nmos': ('drain', 'gate', 'source', 'bulk'), 'pmos': ('drain', 'gate', 'source', 'bulk'),
-         'resistor': ('positive', 'negative'), 'capacitor': ('positive', 'negative'), 'inductor': ('positive', 'negative'),
+         'resistor': ('positive', 'negative'), 'capacitor': ('positive', 'negative'), 'inductor': ('positive',
+             'negative'),
          'vsource': ('positive', 'negative'), 'isource': ('positive', 'negative')}
 # .model types -> the kind the network can see. Everything else (npn, pnp, njf, sw, ...) is unknown.
 MODEL_KINDS = {'nmos': 'nmos', 'pmos': 'pmos', 'r': 'resistor', 'c': 'capacitor', 'l': 'inductor'}
@@ -71,9 +72,11 @@ MODEL_KINDS = {'nmos': 'nmos', 'pmos': 'pmos', 'r': 'resistor', 'c': 'capacitor'
 MOS_PARAMETERS = {'w': 'w', 'l': 'l', 'm': 'm', 'nf': 'nf'}
 VALUE_PARAMETER = {'R': 'r', 'C': 'c', 'L': 'ind', 'V': 'dc', 'I': 'dc'}
 ELEMENT_KINDS = {'R': 'resistor', 'C': 'capacitor', 'L': 'inductor', 'V': 'vsource', 'I': 'isource'}
-NODE_COUNT = {'R': 2, 'C': 2, 'L': 2, 'V': 2, 'I': 2, 'D': 2, 'J': 3, 'Z': 3, 'S': 4, 'B': 2, 'E': 2, 'G': 2, 'F': 2, 'H': 2}
+NODE_COUNT = {'R': 2, 'C': 2, 'L': 2, 'V': 2, 'I': 2, 'D': 2, 'J': 3, 'Z': 3, 'S': 4, 'B': 2, 'E': 2, 'G': 2, 'F': 2,
+    'H': 2}
 GROUND = ('0', 'gnd')
-MODEL_SCAN_BYTES = 48 * 1024 * 1024        # how much of the included model files is read for their .model types, at most
+# how much of the included model files is read for their .model types, at most
+MODEL_SCAN_BYTES = 48 * 1024 * 1024
 MAX_INCLUDE_DEPTH = 8
 
 
@@ -130,7 +133,8 @@ def scan_models(text, *, root, depth=0, budget=None, seen=None, found=None, subc
         except OSError as exc:
             notes.append(f'{target}: cannot be read here ({type(exc).__name__}); its model types stay unknown')
             continue
-        scan_models(included, root=key.parent, depth=depth + 1, budget=budget, seen=seen, found=found, subckts=subckts, notes=notes)
+        scan_models(included, root=key.parent, depth=depth + 1, budget=budget, seen=seen, found=found, subckts=subckts,
+            notes=notes)
     return found, subckts, notes
 
 
@@ -183,7 +187,8 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
      has_end, diagnostics) = _collect_deck_statements(stmts, source)
     _read_control_outputs(control_lines, source, measurements, analyses)
     # model types: the deck itself, then its included files (read for their .model / .subckt lines only)
-    model_types, external_subckts, notes = scan_models(text, root=include_root) if scan_includes else scan_models(text, root=None, depth=MAX_INCLUDE_DEPTH)
+    model_types, external_subckts, notes = scan_models(text, root=include_root) if scan_includes else scan_models(text,
+        root=None, depth=MAX_INCLUDE_DEPTH)
     for note in notes:
         diagnostics.append(Diagnostic('include_not_scanned', note, SourceSpan(source, 1), 'warning'))
 
@@ -222,7 +227,9 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                     if sub in ancestry:
                         raise NetlistError(f'line {head.line}: subcircuit {sub} instantiates itself')
                     if len(ports) != len(child.ports):
-                        raise NetlistError(f'line {head.line}: {name} connects {len(ports)} nodes, subcircuit {sub} has {len(child.ports)} ports')
+                        raise NetlistError(
+                            f'line {head.line}: {name} connects {len(ports)} nodes, subcircuit {sub} has '
+                            f'{len(child.ports)} ports')
                     subckt_uses[sub] += 1
                     overrides = _subcircuit_overrides(named, resolve, env, identifier)
                     actual = [net(p, path, port_map) for p in ports]
@@ -234,11 +241,13 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                 graph.devices.append(Device(identifier, kind, sub, terminals, span))
                 values = _external_subcircuit_parameters(named, kind, resolve, env, identifier, sizables, current)
                 graph.parameters[identifier] = values
-                for ordinal, (terminal, role, target) in enumerate(zip(terminals, roles, [net(p, path, port_map) for p in ports])):
+                for ordinal, (terminal, role, target) in enumerate(zip(terminals, roles, [net(p, path,
+                    port_map) for p in ports])):
                     graph.connections.append(Connection(identifier, target, terminal, ordinal, role))
                 continue
             if letter in ('K', 'T', 'O', 'U', 'A', 'N', 'P', 'Y', 'W'):
-                diagnostics.append(Diagnostic('unsupported_element', f'{identifier}: a {letter} element is simulated by ngspice '
+                diagnostics.append(Diagnostic('unsupported_element',
+                    f'{identifier}: a {letter} element is simulated by ngspice '
                                               'but not shown to the network', span, 'warning'))
                 continue
             if letter not in 'RCLMDQJZVIEGFHBS':
@@ -251,11 +260,13 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                                          positional, count, model)
             graph.parameters[identifier] = values
             for ordinal, (terminal, role, token) in enumerate(zip(terminals, roles, node_tokens)):
-                graph.connections.append(Connection(identifier, net(token.text, path, port_map), terminal, ordinal, role))
+                graph.connections.append(Connection(identifier, net(token.text, path, port_map), terminal, ordinal,
+                    role))
 
     expand(root, _Env(root.params), '', {}, ())
     unknown = _finish_circuit_graph(graph, nets, diagnostics, subckt_uses, sizables, unknown_models)
-    return Parsed(graph, measurements, analyses, sizables, lines, title, dict(subckt_uses), includes, has_control, has_end,
+    return Parsed(graph, measurements, analyses, sizables, lines, title, dict(subckt_uses), includes, has_control,
+                  has_end,
                   unknown, model_types)
 
 
@@ -355,8 +366,10 @@ def _read_control_outputs(control_lines, source, measurements, analyses) -> None
         elif command in ('print', 'echo') and command == 'print':
             for word in words[1:]:
                 name = word.lower()
-                if re.match(r'^[a-z_]\w*$', name) and name not in ('all',) and name not in {m.name for m in measurements}:
-                    measurements.append(Measurement(name, last_analysis, unit_from_name(name) or control_units.get(name, '1'), line, statement))
+                if re.match(r'^[a-z_]\w*$',
+                    name) and name not in ('all',) and name not in {m.name for m in measurements}:
+                    measurements.append(Measurement(name, last_analysis, unit_from_name(name) or control_units.get(name,
+                        '1'), line, statement))
 
 
 def _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_types) -> tuple:
@@ -412,7 +425,8 @@ def _subcircuit_overrides(named, resolve, env, identifier):
     return overrides
 
 
-def _external_subcircuit_terminals(kinds_given, sub, external_subckts, ports, diagnostics, identifier, span, unknown_models) -> tuple:
+def _external_subcircuit_terminals(kinds_given, sub, external_subckts, ports, diagnostics, identifier, span,
+    unknown_models) -> tuple:
     """Classify an external subcircuit's terminals and record missing-kind or port-count diagnostics."""
     # an instance of a subcircuit the deck does not define: a PDK cell (its kind from device_kinds)
     kind = kinds_given.get(sub, 'unknown')
@@ -440,7 +454,8 @@ def _external_subcircuit_parameters(named, kind, resolve, env, identifier, sizab
     values = {}
     for key, token in named.items():
         canonical = MOS_PARAMETERS.get(key, key) if kind in ('nmos', 'pmos') else key
-        values[canonical] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}', numeric=False), key))
+        values[canonical] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}',
+            numeric=False), key))
         if canonical in ('w', 'l', 'm', 'nf') and values[canonical].valid and kind in ('nmos', 'pmos'):
             sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token), current.name)
     return values
@@ -471,23 +486,40 @@ def _element_nodes_and_model(letter, positional, model_types, head, name, named)
             model = positional[count].text.lower()
         elif letter in ELEMENT_KINDS and len(positional) > count and number(positional[count].text) is None \
                 and not positional[count].text.startswith(('{', "'", '"')) \
-                and positional[count].text.lower() not in ('dc', 'ac', 'pulse', 'sin', 'pwl', 'exp', 'sffm', 'am', 'trnoise', 'trrandom') \
-                and (positional[count].text.lower() in model_types or letter in 'RCL' and len(positional) == count + 1 and 'r' not in named and 'c' not in named and 'l' not in named):
+                and positional[count].text.lower() not in (
+                    'dc',
+                    'ac',
+                    'pulse',
+                    'sin',
+                    'pwl',
+                    'exp',
+                    'sffm',
+                    'am',
+                    'trnoise',
+                    'trrandom') \
+                and (positional[count].text.lower() in model_types or letter in
+                    'RCL' and len(positional) == count + 1 and
+                    'r' not in named and
+                    'c' not in named and
+                    'l' not in named):
             model = positional[count].text.lower()
     if len(positional) < count:
         raise NetlistError(f'line {head.line}: {name} needs {count} nodes')
     return model, count
 
 
-def _element_terminals(letter, model, positional, count, kind_of, unknown_models, diagnostics, identifier, span, model_types) -> tuple:
+def _element_terminals(letter, model, positional, count, kind_of, unknown_models, diagnostics, identifier, span,
+    model_types) -> tuple:
     """Classify an element's terminals and record diagnostics for unknown device kinds."""
     kind, roles, _ = kind_of(letter, model, [t.text.lower() for t in positional])
     if kind == 'unknown' and letter in ('M', 'D', 'Q', 'J', 'Z', 'S') and model:
         unknown_models.append(model)
         diagnostics.append(Diagnostic('unknown_device', f'{identifier}: model {model} has no known kind '
-                                      + ('' if model in model_types else '(no .model line for it was found)'), span, 'warning'))
+                                      + ('' if model in model_types else '(no .model line for it was found)'), span,
+                                      'warning'))
     elif kind == 'unknown' and letter in 'EGFHB':
-        diagnostics.append(Diagnostic('unknown_device', f'{identifier}: a {letter} source is shown as unknown', span, 'warning'))
+        diagnostics.append(Diagnostic('unknown_device', f'{identifier}: a {letter} source is shown as unknown', span,
+            'warning'))
     node_tokens = positional[:count]
     if letter in ('M', 'D', 'Q', 'J', 'Z', 'S') or roles is None:
         terminals = ('d', 'g', 's', 'b') if letter == 'M' else tuple(f'port_{i}' for i in range(count))
@@ -509,7 +541,8 @@ def _element_parameters(letter, named, resolve, env, identifier, kind, sizables,
             values[canonical] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}',
                                                                    numeric=key in MOS_PARAMETERS), key))
             if canonical in MOS_PARAMETERS.values() and values[canonical].valid and kind != 'unknown':
-                sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token), current.name)
+                sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token),
+                    current.name)
     elif letter in ELEMENT_KINDS:
         canonical = VALUE_PARAMETER[letter]
         value_token = None
@@ -518,7 +551,8 @@ def _element_parameters(letter, named, resolve, env, identifier, kind, sizables,
             lowered = [t.text.lower() for t in tail]
             if 'dc' in lowered and lowered.index('dc') + 1 < len(tail):
                 value_token = tail[lowered.index('dc') + 1]
-            elif tail and tail[0].text.lower() not in ('ac', 'pulse', 'sin', 'pwl', 'exp', 'sffm', 'am', 'trnoise', 'trrandom'):
+            elif tail and tail[0].text.lower() not in ('ac', 'pulse', 'sin', 'pwl', 'exp', 'sffm', 'am', 'trnoise',
+                'trrandom'):
                 value_token = tail[0]
             if 'dc' in named:
                 value_token = _value_token(named['dc'])
@@ -529,17 +563,20 @@ def _element_parameters(letter, named, resolve, env, identifier, kind, sizables,
             elif tail:
                 value_token = tail[0]
         if value_token is not None:
-            values[canonical] = ParameterValue(*_with_name(resolve(value_token, env, f'{identifier}.{canonical}'), canonical))
+            values[canonical] = ParameterValue(*_with_name(resolve(value_token, env, f'{identifier}.{canonical}'),
+                canonical))
             if values[canonical].valid and kind != 'unknown':
                 sizables[(identifier, canonical)] = Sizable(identifier, canonical, canonical, value_token, current.name)
         # ---- Keep additional named parameters without treating them as sizing controls.
         for key, token in named.items():
             if key == {'R': 'r', 'C': 'c', 'L': 'l', 'V': 'dc', 'I': 'dc'}[letter]:
                 continue
-            values[key] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}', numeric=False), key))
+            values[key] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}',
+                numeric=False), key))
     else:
         for key, token in named.items():
-            values[key] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}', numeric=False), key))
+            values[key] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}',
+                numeric=False), key))
     return values
 
 

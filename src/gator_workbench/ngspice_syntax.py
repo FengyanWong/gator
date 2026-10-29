@@ -12,7 +12,8 @@ import re
 
 from analog_optimizer.graph.circuit_graph import CircuitGraph
 
-SCALES = {'t': 1e12, 'g': 1e9, 'meg': 1e6, 'k': 1e3, 'm': 1e-3, 'u': 1e-6, 'n': 1e-9, 'p': 1e-12, 'f': 1e-15, 'a': 1e-18,
+SCALES = {'t': 1e12, 'g': 1e9, 'meg': 1e6, 'k': 1e3, 'm': 1e-3, 'u': 1e-6, 'n': 1e-9, 'p': 1e-12, 'f': 1e-15,
+    'a': 1e-18,
           'mil': 25.4e-6}
 
 
@@ -105,7 +106,8 @@ _FUNCTIONS = {'sqrt': math.sqrt, 'exp': math.exp, 'log': math.log, 'ln': math.lo
               'sinh': math.sinh, 'cosh': math.cosh, 'tanh': math.tanh, 'nint': lambda x: float(round(x))}
 
 
-_EXPRESSION_NUMBER = re.compile(r'(?<![\w.])((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(meg|mil|[tgkmunpfa])?(?![\w.])', re.IGNORECASE)
+_EXPRESSION_NUMBER = re.compile(r'(?<![\w.])((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(meg|mil|[tgkmunpfa])?(?![\w.])',
+    re.IGNORECASE)
 
 
 class Unresolved(ValueError):
@@ -149,7 +151,8 @@ def evaluate(text: str, lookup) -> float:
             if isinstance(node.op, ast.Pow) and abs(right) > 100:
                 raise Unresolved('exponent too large')
             return binary[type(node.op)](left, right)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id.lower() in _FUNCTIONS and not node.keywords:
+        if isinstance(node, ast.Call) and isinstance(node.func,
+            ast.Name) and node.func.id.lower() in _FUNCTIONS and not node.keywords:
             return float(_FUNCTIONS[node.func.id.lower()](*[visit(a) for a in node.args]))
         raise Unresolved(f'unsupported {type(node).__name__}')
     try:
@@ -217,7 +220,8 @@ def tokenize(line: str, line_number: int) -> list[Token]:
         raw.append(Token(line[start:i], line_number, start))
     tokens = []
     for token in raw:
-        if tokens and (token.text.startswith('=') or tokens[-1].text.endswith('=')) and not (tokens[-1].text == '=' and len(tokens) == 1):
+        if tokens and (token.text.startswith('=') or tokens[-1].text.endswith('=')) and not (tokens[
+            -1].text == '=' and len(tokens) == 1):
             previous = tokens.pop()
             tokens.append(Token(previous.text + token.text, previous.line, previous.column))
         else:

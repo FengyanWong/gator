@@ -61,8 +61,8 @@ _MAX_ERROR_CHARS = 4000
 
 TERMINAL_STATES = ('completed', 'paused', 'stopped', 'cancelled', 'failed')
 TIMING_BATCH = 16                                   # evaluations per append to logs/timings.jsonl (record 7.280)
-# What the environment raises when the run's stop file reached a candidate before its first launch (analog_optimizer.envs.
-# sizing): nothing was simulated, the run itself stopped it.
+# What the environment raises when the run's stop file reached a candidate before its first launch
+# (analog_optimizer.envs. sizing): nothing was simulated, the run itself stopped it.
 STOPPED_BEFORE_LAUNCH = 'Candidate stopped before nominal evaluation'
 
 
@@ -90,9 +90,9 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         self.forced = False
         self.error = None
         self._status_written = 0.0
-        # Raw-output retention, read once per engine: the work folder does not move during a run, and waveforms/index.json
-        # has no writer but this engine (_apply_retention) while it holds the run lock. A MOCK evaluation re-resolved the
-        # folder three times and re-read the index every time.
+        # Raw-output retention, read once per engine: the work folder does not move during a run, and
+        # waveforms/index.json has no writer but this engine (_apply_retention) while it holds the run lock. A MOCK
+        # evaluation re-resolved the folder three times and re-read the index every time.
         self._work_resolved = self._waveform_index = None
         self._scratch = None              # the run's simulator scratch on the local disk, when it has one (_prepare)
 
@@ -106,12 +106,12 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         self.errors = JsonlAppender(self.layout.logs / 'errors.jsonl')
         self.dispatch_log = JsonlAppender(self.layout.data / '_journal' / 'dispatch.jsonl')
         self._timings = []                               # what each evaluation's stages took, for logs/timings.jsonl
-        # Record 7.281 (switch run.advanced.update_after_dispatch): updates that wait until their lane has its next design,
-        # and the rows of updates learned since the last commit, which go with the next one.
+        # Record 7.281 (switch run.advanced.update_after_dispatch): updates that wait until their lane has its next
+        # design, and the rows of updates learned since the last commit, which go with the next one.
         self._learn_after_dispatch = bool(self.config.run.advanced.update_after_dispatch)
         self._pending_updates, self._update_rows_waiting = [], []
-        # Record 7.282: the simulator host's folders of designs whose raw output this run did not keep, removed at each save
-        # point and at the end, and the runner on that host (False: not looked for yet).
+        # Record 7.282: the simulator host's folders of designs whose raw output this run did not keep, removed at each
+        # save point and at the end, and the runner on that host (False: not looked for yet).
         self._host_folders, self._host_run = [], False
         final_state = 'failed'
         self.lanes, self.dataset = [], None
@@ -145,7 +145,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
     def _final_state(self):
         if self.forced:
             return 'cancelled'
-        return {'pause': 'paused', 'stop': 'stopped'}.get(self.requested, 'completed' if self.error is None else 'failed')
+        return {'pause': 'paused', 'stop': 'stopped'}.get(self.requested,
+            'completed' if self.error is None else 'failed')
 
     # ================================================================== preparation
     def _prepare(self):
@@ -248,7 +249,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             self.checkpoint_due, self.checkpoint_kind = True, 'manual'
             self.manual_save = dict(id=command.get('id'), state='waiting', requested_utc=command.get('issued_utc'),
                                     checkpoint_id=None, saved_utc=None, evaluations=None)
-            self._event('control', command='checkpoint', note='save requested; taken at the next boundary with nothing in flight')
+            self._event('control', command='checkpoint',
+                note='save requested; taken at the next boundary with nothing in flight')
             self._write_status('running')
 
     def _check_limits(self):
@@ -260,7 +262,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         elif self.counters['consecutive_infrastructure_failures'] >= run.max_consecutive_infrastructure_failures:
             # A dead link, not a bad design: pause (resumable) rather than fail, and record which layer broke.
             self.requested, self.stop_reason = 'pause', 'infrastructure_failures'
-            self.error = (f"{self.counters['consecutive_infrastructure_failures']} consecutive infrastructure failures; "
+            self.error = (
+                f"{self.counters['consecutive_infrastructure_failures']} consecutive infrastructure failures; "
                           'paused safely. Continuing requires the connection gate to pass again.')
             self._record_connection_check()
         elif self.counters['consecutive_failures'] >= run.max_consecutive_failures:
@@ -287,7 +290,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             profile = self.config.run.connection_profile_id
             result = ConnectionMonitor().check(profile, scope='interactive', trigger='run_safety')
             self._event('connection_check', overall=result['overall'],
-                        layers=[dict(layer=i['layer'], state=i['state'], reason_code=i['reason_code']) for i in result['layers']])
+                        layers=[dict(layer=i['layer'], state=i['state'],
+                            reason_code=i['reason_code']) for i in result['layers']])
         except Exception as exc:
             self._event('connection_check', status='unavailable', error=redact(str(exc), 300))
 
@@ -310,11 +314,16 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
 
     def _reuse_reset(self, lane, state):
         return (self._resets_are_reused() and self.counters['baseline_done'] and state.get('reset_cache_valid')
-                and lane.info.get('supports_reset_reuse') and state.get('resets_since_check', 0) + 1 < self.RESET_RECHECK_EVERY)
+                and lane.info.get('supports_reset_reuse') and state.get('resets_since_check',
+                    0) + 1 < self.RESET_RECHECK_EVERY)
 
     def _dispatch_reused_reset(self, lane, state):
-        """A reset from the lane's last valid one: nothing is reserved, charged, launched or recorded as an evaluation."""
-        if self.ledger.remaining() < 1:              # no step could follow it: the lane is done, as a refused reservation says
+        (
+            "A reset from the lane's last valid one: nothing is reserved, charged, launched or recorded as an "
+            'evaluation.'
+        )
+        # no step could follow it: the lane is done, as a refused reservation says
+        if self.ledger.remaining() < 1:
             state['finished'] = True
             return
         self._poll_control()
@@ -324,7 +333,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         state['episode_id'] = f'{lane.lane_id}-{self.counters["episodes"]:06d}'
         state['busy'] = dict(evaluation_id=None, op='reset_reused', phase='episode_reset_reused', attempts=[],
                              episode_id=state['episode_id'], attempt_dispatched_at=utcnow(),
-                             handle=lane.submit('reset_reused', None, allowance=0, stop_file=str(self._condition_stop_file)))
+                             handle=lane.submit('reset_reused', None, allowance=0,
+                                 stop_file=str(self._condition_stop_file)))
 
     def _on_reused_reset(self, lane, busy, handle):
         state = self.lane_state[lane.lane_id]
@@ -344,7 +354,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
                         error=redact(str((result.get('exception') or {}).get('message')), 300))
 
     def _dispatch(self, lane):
-        if not self._baseline_checked and self.counters['baseline_done']:      # the baseline is in flight: see `_commit`
+        # the baseline is in flight: see `_commit`
+        if not self._baseline_checked and self.counters['baseline_done']:
             return
         state = self.lane_state[lane.lane_id]
         if not self.calibration_only and state['needs_reset'] and self._reuse_reset(lane, state):
@@ -382,9 +393,11 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             elif self.frozen:
                 deterministic = self.config.run.frozen_action == 'deterministic'
                 proposal = self.learner.act([state['observation']], deterministic=deterministic)[0]
-                source, phase, policy_version = ('mean_policy' if deterministic else 'sampled_policy'), 'frozen_eval', self.learner.updates
+                source, phase, policy_version = (
+                    'mean_policy' if deterministic else 'sampled_policy'), 'frozen_eval', self.learner.updates
             else:
-                pending = sum(1 for s in self.lane_state.values() if s['busy'] and s['busy']['op'] not in ('reset', 'reset_reused'))
+                pending = sum(1 for s in self.lane_state.values() if s['busy'] and s['busy']['op'] not in ('reset',
+                    'reset_reused'))
                 if engine_comparison.is_search(self.config):         # T0/T+/M+: no random warm-up of their own
                     proposal = engine_comparison.propose(self, evaluation_id)
                     source, policy_version, phase = self.proposer.SOURCE, self.proposer.observations, 'search'
@@ -427,12 +440,13 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         except BaseException as exc:                 # the lane itself failed (worker died, deadline exceeded)
             result = dict(op=busy['op'], ok=False, step=None, record=None, records=[], launches=0,
                           started_at=iso(busy['attempt_dispatched_at']), ended_at=iso(),
-                          exception=dict(type=type(exc).__name__, message=str(exc)[:_MAX_ERROR_CHARS]), lane_failure=True,
+                          exception=dict(type=type(exc).__name__, message=str(exc)[:_MAX_ERROR_CHARS]),
+                          lane_failure=True,
                           episode=None, episode_step=None)
         if (self.stop_reason is not None and not result['ok'] and not result.get('launches')
                 and (result.get('exception') or {}).get('message') == STOPPED_BEFORE_LAUNCH):
-            # Dispatched just before the run stopped, stopped by it before any launch: recorded as cancelled, like a forced
-            # cancel, not as an infrastructure failure - one more "failure" of the link that never happened.
+            # Dispatched just before the run stopped, stopped by it before any launch: recorded as cancelled, like a
+            # forced cancel, not as an infrastructure failure - one more "failure" of the link that never happened.
             result['cancelled'] = True
         # ---- Account for uncertain launches before deciding whether another attempt is allowed.
         if result.get('lane_failure') and not self.task.mock:
@@ -456,7 +470,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
         if retryable and self.stop_reason is None and not self.forced and self.ledger.may_retry(busy['evaluation_id']):
             self.ledger.begin_attempt(busy['evaluation_id'])
             busy['retry_reason'] = f"retryable {record.get('status')}: {record.get('reason_code')}"
-            busy['handle'] = lane.submit('retry', allowance=busy['launch_allowance'], stop_file=str(self._condition_stop_file))
+            busy['handle'] = lane.submit('retry', allowance=busy['launch_allowance'],
+                stop_file=str(self._condition_stop_file))
             busy['attempt_dispatched_at'] = utcnow()
             return
         state['busy'] = None
@@ -470,7 +485,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             if busy['handle'].done():
                 self._on_attempt(lane, busy['handle'])
                 continue
-            if busy['op'] == 'reset_reused':         # it launches nothing and charges nothing: there is nothing to record
+            # it launches nothing and charges nothing: there is nothing to record
+            if busy['op'] == 'reset_reused':
                 state['busy'] = None
                 continue
             unknown = 0 if self.task.mock else busy['launch_allowance']     # only a real launch can be left unresolved
@@ -503,15 +519,19 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
 
     def _updates_due(self):
         adv = self.config.run.advanced
-        if self.config.run.optimizer != 'sac':          # another method proposes: the network is neither asked nor trained
+        # another method proposes: the network is neither asked nor trained
+        if self.config.run.optimizer != 'sac':
             return False
         return len(self.replay) >= adv.batch_size and not self.replay.insertions % adv.update_every
 
     def _proposer(self, group_ids):
         if self.proposer is None:
-            self.proposer = bayes.Proposer(group_ids, seed=self.config.run.seed, warmup=self.config.run.advanced.warmup_transitions)
-            self._event('bayes_started', variables=len(self.proposer.group_ids), initial_designs=self.proposer.search.n_init,
-                        candidates=self.proposer.search.n_candidates, failure_tolerance=self.proposer.search.failure_tolerance)
+            self.proposer = bayes.Proposer(group_ids, seed=self.config.run.seed,
+                warmup=self.config.run.advanced.warmup_transitions)
+            self._event('bayes_started', variables=len(self.proposer.group_ids),
+                        initial_designs=self.proposer.search.n_init,
+                        candidates=self.proposer.search.n_candidates,
+                        failure_tolerance=self.proposer.search.failure_tolerance)
         return self.proposer
 
     def _maybe_update(self, commit_seq):
@@ -628,7 +648,8 @@ class RunEngine(HostMaintenance, CommitRows, Retention):
             return None
         metadata = self.checkpoints.relabel(last['checkpoint_id'], kind, was=last['kind'])
         self.last_checkpoint = metadata
-        self._event('checkpoint_saved', checkpoint_id=metadata['checkpoint_id'], kind=kind, relabelled_from=last['kind'],
+        self._event('checkpoint_saved', checkpoint_id=metadata['checkpoint_id'], kind=kind,
+                    relabelled_from=last['kind'],
                     capability=metadata['restoration_capability'], commit_seq=self.dataset.last_seq)
         return metadata
 

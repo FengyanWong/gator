@@ -71,7 +71,8 @@ def read(kind: str='tasks') -> dict:
         if not all(isinstance(key, str) and folder in folders for key, folder in assignments.items()):
             raise ValueError('Invalid assignment')
     except (ValueError, KeyError, TypeError, AttributeError) as exc:
-        raise FolderError(f'{noun.capitalize()} folders contain invalid data; the existing file has been kept.') from exc
+        raise FolderError(
+            f'{noun.capitalize()} folders contain invalid data; the existing file has been kept.') from exc
     return state
 
 

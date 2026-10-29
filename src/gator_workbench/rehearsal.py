@@ -33,8 +33,9 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
             rows[row['task']].append(row)
     if capacity < len(rows):
         raise ValueError('Rehearsal capacity must include every source task')
-    # A pool whose rewards were recomputed (`migrate_reward_settings`) is drawn as it was trained on: re-scored the same way,
-    # before any relabelling (record 7.352). The manifest says the migrated settings, and so do its transitions now.
+    # A pool whose rewards were recomputed (`migrate_reward_settings`) is drawn as it was trained on: re-scored the same
+    # way, before any relabelling (record 7.352). The manifest says the migrated settings, and so do its transitions
+    # now.
     migration = audit.get('reward_migration')
     if migration is not None:
         from analog_optimizer.measurements.specs import RewardSettings
@@ -63,8 +64,10 @@ def build_snapshot(training_dir, output, *, capacity=2048, seed=0, progress=None
                 if migration is not None:
                     transition = migrated(transition, migration)
                 if row['relabeled']:
-                    if row.get('target_set'):                      # one of the task's target sets (pretrain.relabel_targets)
-                        specs = retargeted_specs(transition.observation.specs, request['relabel_targets'][row['task']][row['target_set'] - 1], row['task'], stated)
+                    # one of the task's target sets (pretrain.relabel_targets)
+                    if row.get('target_set'):
+                        specs = retargeted_specs(transition.observation.specs,
+                            request['relabel_targets'][row['task']][row['target_set'] - 1], row['task'], stated)
                     else:
                         changes = request['relabel_upper'][row['task']]
                         specs = tuple(replace(s, upper=changes[s.metric_id]) if s.metric_id in changes else s

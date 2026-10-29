@@ -18,7 +18,8 @@ import time
 
 from . import families, network_inputs, spec_descriptors
 from .checkpoints import CheckpointStore
-from .model_inputs import INPUT_KEYS, pool_feature_schema, request_inputs, source_view  # input helpers remain importable here
+# input helpers remain importable here
+from .model_inputs import INPUT_KEYS, pool_feature_schema, request_inputs, source_view
 from .modes import seed_everything
 from .offline_storage import DiskSequence, DiskTransitions, shown_type as _shown_type
 from .storage.atomic import read_json, write_json
@@ -127,29 +128,34 @@ def _prepare_pool(request, *, progress=None, storage=None) -> Pool:
         directory, manifest, config, summary, task, run_id, read_points = _read_pool_source(
             source, run_ids, origin, inputs, missing_points, registries)
         view = source_view(config, inputs) if transfer else None
-        stated = stated_scales(config)                 # the Scale boxes this task filled: a moved limit leaves them alone
+        # the Scale boxes this task filled: a moved limit leaves them alone
+        stated = stated_scales(config)
         # What the designs of this source are shown is read from the PDK and the task's files as they stand now, which
         # neither the request nor the archive's checksum covers (record 7.319): the audit says which view it was, and
         # a request that pinned one (`inputs_sha256`, from `inputs_identity`) is refused when it is another now.
         shown_as = None if view is None else view.key
         loader, raw, eligible, transitions, wanted = _load_pool_transitions(directory, source, run_id, shown_as)
         if targets_only and task not in target_sets:
-            raise ValueError(f'{task} has no relabel_targets: with relabel_targets_only its transitions would not be pooled')
+            raise ValueError(
+                f'{task} has no relabel_targets: with relabel_targets_only its transitions would not be pooled')
         seen_tasks.add(task)
         counts = Counter()
         original_settings = {}
         # ---- Validate and relabel transitions before persisting the source audit.
         for row, transition in zip(eligible, transitions, strict=True):
             transition, settings, first, last, episode = _validate_pool_transition(
-                row, transition, original_settings, candidates, run_id, manifest, origin, migrated_settings, settings, counts)
-            # What the network is shown of this archive (network_inputs, record 7.298) - applied last: a copy under other
-            # limits is re-scored and validated as recorded first (a shown observation no longer holds the recorded sizes).
+                row, transition, original_settings, candidates, run_id, manifest, origin, migrated_settings, settings,
+                counts)
+            # What the network is shown of this archive (network_inputs, record 7.298) - applied last: a copy under
+            # other limits is re-scored and validated as recorded first (a shown observation no longer holds the
+            # recorded sizes).
             shown = (lambda t: t) if view is None else (lambda t: _shown(t, view))
             def keep(t):
                 viewed = shown(t)
                 return storage.append(viewed) if storage is not None else viewed
             _append_relabelled_transitions(
-                keep, transition, first, last, episode, groups, task, relabel, target_sets, stated, counts, targets_only, balance)
+                keep, transition, first, last, episode, groups, task, relabel, target_sets, stated, counts,
+                targets_only, balance)
         _record_pool_source(
             directory, source, run_id, task, read_points, shown_as, summary, transitions, raw, counts,
             original_settings, migrated_settings, sources, wanted)
@@ -217,7 +223,8 @@ def _read_pool_source(source, run_ids, origin, inputs, missing_points, registrie
     if inputs['spec_input'] == 'slots':
         metrics = manifest['architecture']['spec_schema'].get('metrics')
         if metrics is None:
-            raise ValueError(f'{run_id} read its specs as a set and has no result registry: pool it with inputs.spec_input "set"')
+            raise ValueError(
+                f'{run_id} read its specs as a set and has no result registry: pool it with inputs.spec_input "set"')
         registries.append(metrics)
     return directory, manifest, config, summary, task, run_id, read_points
 
@@ -240,12 +247,14 @@ def _load_pool_transitions(directory, source, run_id, shown_as) -> tuple:
     if not transitions:
         raise ValueError(f'No replay-eligible transitions: {run_id}')
     if wanted is not None and wanted - {t.candidate_id for t in transitions}:
-        raise ValueError(f'{run_id}: {len(wanted - {t.candidate_id for t in transitions})} of the selected candidate_ids '
+        raise ValueError(
+            f'{run_id}: {len(wanted - {t.candidate_id for t in transitions})} of the selected candidate_ids '
                          'are not replay-eligible transitions of this run')
     return loader, raw, eligible, transitions, wanted
 
 
-def _validate_pool_transition(row, transition, original_settings, candidates, run_id, manifest, origin, migrated_settings, settings, counts) -> tuple:
+def _validate_pool_transition(row, transition, original_settings, candidates, run_id, manifest, origin,
+    migrated_settings, settings, counts) -> tuple:
     """Validate and optionally migrate one archived transition before it enters the pool."""
     original_settings[identity(asdict(transition.reward_settings))] = asdict(transition.reward_settings)
     if transition.candidate_id in candidates:
@@ -276,7 +285,8 @@ def _validate_pool_transition(row, transition, original_settings, candidates, ru
     return transition, settings, first, last, episode
 
 
-def _append_relabelled_transitions(keep, transition, first, last, episode, groups, task, relabel, target_sets, stated, counts, targets_only, balance) -> None:
+def _append_relabelled_transitions(keep, transition, first, last, episode, groups, task, relabel, target_sets, stated,
+    counts, targets_only, balance) -> None:
     """Store the selected transition and its requested relabelled variants within the episode."""
     if not targets_only:
         groups[task][episode].append((keep(transition), False))
@@ -286,7 +296,8 @@ def _append_relabelled_transitions(keep, transition, first, last, episode, group
         counts['relabeled'] += 1
     for number, changes in enumerate(target_sets.get(task, ()), 1):       # one more copy per target set (record 7.312)
         key = f'target_set:{number}' if balance == 'target_set' else task
-        groups[key][episode].append((keep(_retargeted(transition, first, last, changes, task, stated)), ('set', number)))
+        groups[key][episode].append((keep(_retargeted(transition, first, last, changes, task, stated)), ('set',
+            number)))
         counts['relabeled'] += 1
 
 
@@ -318,12 +329,14 @@ def _split_and_audit_pool(
     # lazy: program schemas are needed here only when reconstructing an archive pool.
     from .spec_programs import spec_program_schema
     schema = (spec_program_schema() if inputs['spec_input'] == 'structured' else
-              spec_descriptors.spec_set_schema() if inputs['spec_input'] == 'set' else _pool_registry(registries, request))
+              spec_descriptors.spec_set_schema() if inputs['spec_input'] == 'set' else _pool_registry(registries,
+                  request))
     features = pool_feature_schema(inputs)
     training, validation, split = _split_episodes(groups, schema, seed, fraction, storage=storage, progress=progress)
     audit = dict(format='gator-offline-pool-v1', origin=origin, seed=seed, holdout_fraction=fraction,
                  request_sha256=identity(request), sources=sources, spec_schema=asdict(schema),
-                 feature_schema=asdict(features), inputs=network_inputs.as_recorded(inputs), reward_settings=asdict(settings),
+                 feature_schema=asdict(features), inputs=network_inputs.as_recorded(inputs),
+                 reward_settings=asdict(settings),
                  source_evaluations=sum(s['evaluations'] for s in sources), new_simulator_launches=0,
                  eligible=sum(s['eligible'] for s in sources), excluded=sum(s['excluded'] for s in sources),
                  relabeled=sum(s['relabeled'] for s in sources),
@@ -344,7 +357,8 @@ def _split_and_audit_pool(
 def _shown(transition, view):
     """Validate physical transitions before viewing; relative sizes cannot be validated as physical actions."""
     values = {f.name: getattr(transition, f.name) for f in fields(transition)}
-    values.update(observation=view.view(transition.observation), next_observation=view.view(transition.next_observation))
+    values.update(observation=view.view(transition.observation),
+        next_observation=view.view(transition.next_observation))
     return _shown_type()(**values)
 
 
@@ -412,7 +426,8 @@ def migrated(transition, settings):
     and the transition carry them, and the reward is the next observation's under them; the recorded measurements stay as
     they are. The pool and the rehearsal snapshot drawn from it (`rehearsal.build_snapshot`) both use it (record 7.352)."""
     first, last = (replace(o, reward_settings=settings) for o in (transition.observation, transition.next_observation))
-    moved = replace(transition, observation=first, next_observation=last, reward_settings=settings, reward=last.evaluation.reward)
+    moved = replace(transition, observation=first, next_observation=last, reward_settings=settings,
+        reward=last.evaluation.reward)
     moved.validate()
     return moved
 
@@ -450,7 +465,8 @@ def relabel_targets(request) -> dict:
     target_sets = request.get('relabel_targets') or {}
     for task, sets in target_sets.items():
         if not isinstance(sets, list) or not sets or not all(isinstance(changes, dict) and changes for changes in sets):
-            raise ValueError(f'relabel_targets of {task} must be a list of target sets, each naming at least one metric')
+            raise ValueError(
+                f'relabel_targets of {task} must be a list of target sets, each naming at least one metric')
         for changes in sets:
             for metric, limits in changes.items():
                 if not isinstance(limits, dict) or not limits or set(limits) - set(TARGET_KEYS):
@@ -493,16 +509,20 @@ def retargeted_specs(specs, changes, task, stated=()) -> tuple:
             continue
         sides = [side for side in ('lower', 'upper') if side in limits]
         if any(getattr(spec, side) is None for side in sides):
-            raise ValueError(f'{spec.metric_id} in {task} has no {"/".join(side for side in sides if getattr(spec, side) is None)} limit to move')
+            raise ValueError(
+                f'{spec.metric_id} in {task} has no '
+                f"{'/'.join((side for side in sides if getattr(spec, side) is None))} limit to move")
         lower, upper = limits.get('lower', spec.lower), limits.get('upper', spec.upper)
         if lower is not None and upper is not None and not lower < upper:
             raise ValueError(f'The new limits of {spec.metric_id} in {task} are not a range')
         if 'scale' in limits:
             scale = float(limits['scale'])
         else:
-            follows = spec.metric_id not in stated and math.isclose(spec.scale, size(spec.lower, spec.upper), rel_tol=1e-12)
+            follows = spec.metric_id not in stated and math.isclose(spec.scale, size(spec.lower, spec.upper),
+                rel_tol=1e-12)
             scale = size(lower, upper) if follows else spec.scale
-        result.append(replace(spec, lower=lower, upper=upper, scale=scale, objective=limits.get('objective', spec.objective)))
+        result.append(replace(spec, lower=lower, upper=upper, scale=scale, objective=limits.get('objective',
+            spec.objective)))
     return tuple(result)
 
 
@@ -561,7 +581,8 @@ def _split_episodes(groups, schema, seed, fraction, *, storage=None, progress=No
                 target[task].append(reference)
                 row = dict(task=task, run_id=key[0], worker_id=key[1], episode_id=key[2],
                            candidate_id=transition.candidate_id, relabeled=bool(derived), subset=subset)
-                if isinstance(derived, tuple):                     # which of the task's target sets (relabel_targets), from 1
+                # which of the task's target sets (relabel_targets), from 1
+                if isinstance(derived, tuple):
                     row['target_set'] = derived[1]
                 split.append(row)
                 if progress:
@@ -694,7 +715,10 @@ def _offline_training_config(torch, request, pool, ModelConfig, SACConfig) -> tu
 
 def _train_offline(
     request, pool, ReplayBuffer, output, learner, status, experiment, updates, batch_size, interval) -> None:
-    """Construct the offline sampler and checkpoint store, then run the requested learner updates with periodic saves."""
+    (
+        'Construct the offline sampler and checkpoint store, then run the requested learner updates with '
+        'periodic saves.'
+    )
     sampler = BalancedSampler(pool.training, request.get('seed', DEFAULT_SEED), track_candidates=True)
     replay = ReplayBuffer(1, origin=request['origin'])
     # This path has no online collector or replay. Do not advertise RunEngine resume.
@@ -704,7 +728,8 @@ def _train_offline(
     candidate_runs = {r['candidate_id']: r['run_id'] for r in pool.audit['split'] if r['subset'] == 'training'}
     # ---- Keep validation and sampling evidence aligned with each saved checkpoint.
     def checkpoint() -> None:
-        status('training', phase='evaluating_validation', validation_transitions=sum(map(len, pool.validation.values())))
+        status('training', phase='evaluating_validation', validation_transitions=sum(map(len,
+            pool.validation.values())))
         scores = evaluate(learner, pool)
         history.append(dict(updates=learner.updates, scores=scores))
         write_json(output / 'validation.json', history)
@@ -714,7 +739,8 @@ def _train_offline(
         per_run = Counter()
         for candidate, count in sampler.candidate_counts.items():
             per_run[candidate_runs[candidate]] += count
-        write_json(output / 'sampling.json', dict(learner_updates=learner.updates, sampled_per_task=dict(sampler.counts),
+        write_json(output / 'sampling.json', dict(learner_updates=learner.updates,
+                   sampled_per_task=dict(sampler.counts),
                    sampled_per_run=dict(per_run), unique_training_candidates=len(sampler.candidate_counts),
                    available_training_candidates=len(candidate_runs),
                    candidate_counts=dict(sampler.candidate_counts),

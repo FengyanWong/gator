@@ -97,7 +97,8 @@ class NgspiceLink:
 def remote_run_command(program):
     """One fixed remote command: the deck arrives on stdin into a temporary folder that is removed again, whatever
     the outcome. `program` passed PROGRAM, so it needs no quoting."""
-    return (f'd=$(mktemp -d) && cat > "$d/deck.cir" && cd "$d" && {program} -b deck.cir; s=$?; cd / ; rm -rf "$d"; exit $s')
+    return (
+        f'd=$(mktemp -d) && cat > "$d/deck.cir" && cd "$d" && {program} -b deck.cir; s=$?; cd / ; rm -rf "$d"; exit $s')
 
 
 class RealRunner:
@@ -115,7 +116,8 @@ class RealRunner:
         """Send a deck to the remote ngspice command over SSH and capture its result."""
         if not shutil.which('ssh'):
             raise FileNotFoundError('no `ssh` on the PATH of the run worker')
-        done = subprocess.run(ssh_argv(host, remote_run_command(program)), input=deck_text, capture_output=True, text=True,
+        done = subprocess.run(ssh_argv(host, remote_run_command(program)), input=deck_text, capture_output=True,
+                              text=True,
                               timeout=timeout + SSH_COMMAND_SECONDS, shell=False)
         return done.returncode, done.stdout or '', done.stderr or ''
 
@@ -168,8 +170,10 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
                  circuit_id='ngspice', runner=None, source='<task>'):
         graph.validate()
         self.text, self.link, self.units = text, link, dict(units or {})
-        self.device_kinds, self.include_root, self.circuit_id, self.source = dict(device_kinds or {}), include_root, circuit_id, source
-        self.parsed = ngspice_netlist.parse_text(text, source=source, circuit_id=circuit_id, device_kinds=self.device_kinds,
+        self.device_kinds, self.include_root, self.circuit_id, self.source = dict(
+            device_kinds or {}), include_root, circuit_id, source
+        self.parsed = ngspice_netlist.parse_text(text, source=source, circuit_id=circuit_id,
+                                                device_kinds=self.device_kinds,
                                                 include_root=include_root)
         self.graph = deepcopy(graph)
         self.condition = deck_condition(text)
@@ -223,8 +227,10 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         saved, values = self.exports[artifact.job_id]
         if artifact != saved or hashlib.sha256(artifact.path.read_bytes()).hexdigest() != artifact.sha256:
             raise ValueError('ngspice deck identity changed')
-        again = ngspice_netlist.parse_text(artifact.path.read_text(encoding='utf8'), source=self.source, circuit_id=self.circuit_id,
-                                           device_kinds=self.device_kinds, include_root=self.include_root, scan_includes=False)
+        again = ngspice_netlist.parse_text(artifact.path.read_text(encoding='utf8'), source=self.source,
+                                           circuit_id=self.circuit_id,
+                                           device_kinds=self.device_kinds, include_root=self.include_root,
+                                           scan_includes=False)
         graph = deepcopy(self.graph)
         for i, group in enumerate(graph.parameter_groups):
             if not group.mutable:
@@ -233,7 +239,8 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
                 old = graph.parameters[member.device_id][member.parameter]
                 key = (member.device_id, old.source_name or member.parameter)
                 read = again.graph.parameters.get(member.device_id, {}).get(member.parameter)
-                if read is None or not read.valid or not math.isclose(read.value, values[key], rel_tol=1e-9, abs_tol=1e-30):
+                if read is None or not read.valid or not math.isclose(read.value, values[key], rel_tol=1e-9,
+                    abs_tol=1e-30):
                     raise ValueError(f'{member.device_id}.{member.parameter} did not read back from the written deck')
                 graph.parameters[member.device_id][member.parameter] = replace(old, value=read.value, raw=read.raw)
             graph.parameter_groups[i] = replace(group, value=values[key] / member.ratio)
@@ -257,23 +264,31 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         # ---- Launch the copied deck and translate process failures into simulator status.
         try:
             if self.link.remote:
-                code, out, err = self.runner.remote(self.link.ssh_host, self.link.program, deck.read_text(encoding='utf8'),
+                code, out, err = self.runner.remote(self.link.ssh_host, self.link.program,
+                                                    deck.read_text(encoding='utf8'),
                                                     request.timeout_seconds)
             else:
                 code, out, err = self.runner.local(self.link.program, deck, request.timeout_seconds)
         except subprocess.TimeoutExpired as exc:
-            status, reason, retryable, evaluated, invocations = SimulationStatus.TIMEOUT, 'ngspice_timeout', True, False, 1
+            status, reason, retryable, evaluated, invocations = SimulationStatus.TIMEOUT, (
+                'ngspice_timeout'
+            ), True, False, 1
             out, err = exc.stdout or '', exc.stderr or ''
             out = out.decode(errors='replace') if isinstance(out, bytes) else out
             err = err.decode(errors='replace') if isinstance(err, bytes) else err
         except FileNotFoundError as exc:
-            status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'program_not_found', True, False, 0
+            status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, (
+                'program_not_found'
+            ), True, False, 0
             err = str(exc)
         except OSError as exc:
-            status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'launch_failed', True, False, 0
+            status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, (
+                'launch_failed'
+            ), True, False, 0
             err = f'{type(exc).__name__}: {exc}'
         # ---- Persist launch evidence before interpreting the measured results.
-        (directory / 'ngspice.log').write_text(f'# exit code: {code}\n# stdout:\n{out}\n# stderr:\n{err}\n', encoding='utf8')
+        (directory / 'ngspice.log').write_text(f'# exit code: {code}\n# stdout:\n{out}\n# stderr:\n{err}\n',
+            encoding='utf8')
         write_json(directory / 'analysis-counts.json', counts(out, complete=code is not None))
         version = VERSION.search(out + '\n' + err)
         self.version = version.group(1) if version else self.version
@@ -281,19 +296,25 @@ class NgspiceBackend(HeldParameters, VirtuosoBackend):
         summary = ''
         if status == SimulationStatus.OK:
             if self.link.remote and code == 255:
-                status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'ssh_failed', True, False, 0
+                status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, (
+                    'ssh_failed'
+                ), True, False, 0
                 summary = _scrub(_last_line(err) or 'ssh ended with exit code 255', self.link.ssh_host)
             elif code in (126, 127) and self.link.remote:
-                status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, 'program_not_found', True, False, 0
+                status, reason, retryable, evaluated, invocations = SimulationStatus.TRANSPORT_ERROR, (
+                    'program_not_found'
+                ), True, False, 0
                 summary = _scrub(_last_line(err) or f'exit code {code}', self.link.ssh_host)
             else:
                 failure, evidence = ngspice_netlist.classify_failure(out, err, code)
-                status, reason, evaluated, summary = _classify_ngspice_measurement_failure(failure, evidence, found, wanted, status, reason, evaluated, summary)
+                status, reason, evaluated, summary = _classify_ngspice_measurement_failure(failure, evidence, found,
+                    wanted, status, reason, evaluated, summary)
         metrics = {name: found.get(name) for name in wanted}
         units = {name: self.units.get(name) or self.parsed.units.get(name) or '1' for name in wanted}
         validity = {name: name in found for name in wanted}
         operating_points = read_operating_points(out, self.graph) if evaluated else {}
-        return SimulationResult(directory.name, BACKEND_KIND, 'real', status, reason, retryable, evaluated, metrics, units,
+        return SimulationResult(directory.name, BACKEND_KIND, 'real', status, reason, retryable, evaluated, metrics,
+                                units,
                                 validity, dict(exported), directory, perf_counter() - started, condition=self.condition,
                                 simulator_invocations=invocations, error_summary=summary[:400],
                                 simulator_version=f'ngspice-{self.version}' if self.version else None,

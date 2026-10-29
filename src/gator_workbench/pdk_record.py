@@ -35,9 +35,11 @@ FAMILY_LABEL = {'mos': 'MOS transistor', 'bjt': 'bipolar transistor', 'diode': '
 UNIT_REFERENCE = {'m': 1e-6, 'F': 1e-12, 'ohm': 1e3, 'H': 1e-9, 'V': 1.0, 'A': 1e-6, 's': 1e-9, 'Hz': 1e9, 'W': 1e-3,
                   'degC': 1.0, 'deg': 1.0, 'count': 1.0}
 # The optimizer can vary a group only in one of its eight standard parameter kinds, each with a fixed unit
-# (analog_optimizer.models.inputs). A PDK parameter is varied in the kind of its unit: its own name stays on the binding.
+# (analog_optimizer.models.inputs). A PDK parameter is varied in the kind of its unit: its own name stays on the
+# binding.
 ACTION_CLASS = {'m': 'l', 'count': 'm', 'ohm': 'r', 'F': 'c', 'H': 'ind', 'V': 'dc'}
-SCALE_TOLERANCE_DECADES = 1.5          # two parameters of one name share a column only if their scales agree this closely
+# two parameters of one name share a column only if their scales agree this closely
+SCALE_TOLERANCE_DECADES = 1.5
 
 
 def standard_schema():
@@ -61,9 +63,12 @@ IDEAL_FORMAT = 'gator-ideal-parts-1'
 # current probe is a 0 V source in series, which is how the project's own mapping always read it. Every other component
 # of the library is still read and named - pins as the library orders them - and reaches the network as "unknown", as a
 # PDK's diode or bipolar does under the standard list.
-MAX_IDEAL_PINS = 64             # analogLib's `nport` states 2,000 pins, `vcvsp` 42: an order longer than this is counted, not kept
-IDEAL_KINDS = {'vsource': ('vsource', {'dc': 'dc'}), 'isource': ('isource', {'dc': 'dc'}), 'resistor': ('resistor', {'r': 'r'}),
-               'capacitor': ('capacitor', {'c': 'c'}), 'inductor': ('inductor', {'l': 'ind'}), 'iprobe': ('vsource', {})}
+# analogLib's `nport` states 2,000 pins, `vcvsp` 42: an order longer than this is counted, not kept
+MAX_IDEAL_PINS = 64
+IDEAL_KINDS = {'vsource': ('vsource', {'dc': 'dc'}), 'isource': ('isource', {'dc': 'dc'}), 'resistor': ('resistor',
+    {'r': 'r'}),
+               'capacitor': ('capacitor', {'c': 'c'}), 'inductor': ('inductor', {'l': 'ind'}), 'iprobe': ('vsource',
+                   {})}
 
 
 class PdkError(ValueError):
@@ -82,8 +87,10 @@ def build_record(pdk_id, cdf, scans, *, sources=None, technology_library=None):
     unused = sorted((set(scan['subckts']) | set(scan['models'])) - used)
     _assign_columns(devices)
     vocabulary = _vocabulary(pdk_id, devices)
-    record = dict(format=FORMAT, pdk_id=pdk_id, technology_library=technology_library or pdk_id, loaded_utc=utcnow().isoformat(),
-                  sources=sources or {}, devices=devices, not_netlisted=not_netlisted, layout_only=cdf.get('layout_only', []),
+    record = dict(format=FORMAT, pdk_id=pdk_id, technology_library=technology_library or pdk_id,
+                  loaded_utc=utcnow().isoformat(),
+                  sources=sources or {}, devices=devices, not_netlisted=not_netlisted,
+                  layout_only=cdf.get('layout_only', []),
                   model_file_definitions_not_used=unused,
                   duplicates=scan['duplicates'][:50], vocabulary=vocabulary, summary=_summary(devices))
     record['sha256'] = vocabulary['sha256']
@@ -100,14 +107,17 @@ def _netlisted_models(cells, leaves) -> tuple:
         if spectre is None:
             leaf = leaf_of(cells, leaves, name)
             if leaf is None:
-                not_netlisted.append(dict(cell=name, reason='no Spectre entry and no netlisted primitive in its schematic'
-                                          if 'schematic' in cell.get('views', []) else 'no Spectre entry (not netlisted)'))
+                not_netlisted.append(dict(cell=name,
+                    reason='no Spectre entry and no netlisted primitive in its schematic'
+                                          if 'schematic' in cell.get('views',
+                                              []) else 'no Spectre entry (not netlisted)'))
                 continue
             parent, via, model = name, leaf, leaf['model']
             spectre = cells[leaf['cell']]['spectre']
         if not model or not isinstance(model, str):
             placed = any(leaf['cell'] == name for entries in leaves.values() for leaf in entries)
-            not_netlisted.append(dict(cell=name, reason='a primitive placed inside other cells, which name its model' if placed
+            not_netlisted.append(dict(cell=name,
+                reason='a primitive placed inside other cells, which name its model' if placed
                                       else 'its description names no Spectre model'))
             continue
         by_model.setdefault(model, []).append(dict(cell=name, spectre=spectre, parent=parent, via=via,
@@ -116,7 +126,10 @@ def _netlisted_models(cells, leaves) -> tuple:
 
 
 def _record_model(model, by_model, cells, scan, pdk_id, devices) -> None:
-    """Choose the representative cell and assemble the classified model record with its pins, parameters, and problems."""
+    (
+        'Choose the representative cell and assemble the classified model record with its pins, parameters, and '
+        'problems.'
+    )
     uses = by_model[model]
     # The cell whose pins are all named in its own mapping describes the pins (nmos1v rather than nmos1v_3 with its
     # inherited bulk); ties go to the shortest, then alphabetical name.
@@ -125,7 +138,8 @@ def _record_model(model, by_model, cells, scan, pdk_id, devices) -> None:
     lead = uses[0]
     units_declared = sorted({str(p.get('units')) for u in uses for p in cells[u['leaf_cell']]['parameters'].values()
                              if p.get('units')} | {str(p.get('units')) for u in uses if u['parent']
-                                                    for p in cells[u['parent']]['parameters'].values() if p.get('units')})
+                                                    for p in cells[u['parent']]['parameters'].values() if p.get(
+                                                        'units')})
     found = classify_model(model, scan, cdf_units=units_declared)
     problems = []
     pins, subckt = _model_pins(model, found, scan, lead, problems)
@@ -164,7 +178,8 @@ def _model_pins(model, found, scan, lead, problems) -> tuple:
         role = roles[index]['role'] if roles and index < len(roles) else 'unknown'
         basis = roles[index]['basis'] if roles and index < len(roles) else 'no role established'
         allowed = {model_pin, str(index + 1)} | ({PRIMITIVE_PINS[found['family']][index]}
-                                                 if subckt is None and index < len(PRIMITIVE_PINS.get(found['family'], ())) else set())
+                                                 if subckt is None and index < len(PRIMITIVE_PINS.get(found['family'],
+                                                     ())) else set())
         if target and model_pin is not None and target not in allowed and not target.startswith('('):
             problems.append(f'pin {symbol} maps to {target} but position {index + 1} of {model} is {model_pin}')
             role, basis = 'unknown', 'pin order and mapping disagree'
@@ -185,7 +200,8 @@ def _model_parameters(lead, cells) -> tuple:
         kind = (entry or {}).get('type')
         unit = CDF_UNITS.get((entry or {}).get('units'))
         numeric = kind in NUMERIC_CDF_TYPES and (default is not None or unit is not None or netlist in STANDARD_UNITS)
-        source = write_source(cells, leaf_cell, cdf_name if entry is not None and cdf_name in cells[leaf_cell]['parameters']
+        source = write_source(cells, leaf_cell,
+            cdf_name if entry is not None and cdf_name in cells[leaf_cell]['parameters']
                                else netlist, parent)
         parameters.append(dict(name=netlist, cdf=cdf_name, type=kind, unit=unit, unit_declared=unit is not None,
                                default=default, prompt=(entry or {}).get('prompt'), numeric=bool(numeric),
@@ -249,13 +265,18 @@ def _assign_columns(devices) -> None:
                 p.update(canonical=None, column=None, reference=None, action_class=None)
                 continue
             probe = dict(unit=STANDARD_UNITS.get(p['name']), default=standard_ref.get(p['name']))
-            if p['name'] in STANDARD_UNITS and not _compatible(dict(p, unit=p['unit'] if p['unit'] != 'count' else None),
-                                                               dict(probe, unit=probe['unit'] if probe['unit'] != 'count' else None)):
-                p['canonical'] = p['cdf'] if p['cdf'] != p['name'] and p['cdf'] not in STANDARD_UNITS else f"{p['name']}_{device['family']}"
+            if p['name'] in STANDARD_UNITS and not _compatible(dict(p,
+                unit=p['unit'] if p['unit'] != 'count' else None),
+                                                               dict(probe,
+                                                                   unit=probe['unit'] if probe[
+                                                                   'unit'] != 'count' else None)):
+                p['canonical'] = p['cdf'] if p['cdf'] != p['name'] and p[
+                    'cdf'] not in STANDARD_UNITS else f"{p['name']}_{device['family']}"
             else:
                 p['canonical'] = p['name']
             if p['canonical'] in STANDARD_UNITS and not p['unit']:
-                p['unit'], p['unit_basis'] = STANDARD_UNITS[p['canonical']], 'same name and scale as the standard parameter'
+                p['unit'], p['unit_basis'] = STANDARD_UNITS[p[
+                    'canonical']], 'same name and scale as the standard parameter'
             groups.setdefault(p['canonical'], []).append((device, p))
 
     def agree(entries) -> bool:
@@ -274,7 +295,8 @@ def _assign_columns(devices) -> None:
         if len(families) == 1 or agree([(d, dict(p, default=_typical(entries, d['family']))) for d, p in firsts]):
             columns = {name: entries}
         else:
-            columns = {f'{family}.{name}': [item for item in entries if item[0]['family'] == family] for family in families}
+            columns = {f'{family}.{name}': [item for item in entries if item[0][
+                'family'] == family] for family in families}
         for column, members in columns.items():
             reference = _reference([p for _, p in members])
             for _, p in members:
@@ -350,7 +372,8 @@ def build_ideal_parts(library, cdf) -> dict:
             not_components.append(dict(cell=name, reason='netlists with a model named on the instance' if spectre
                                        else 'no Spectre entry (not netlisted)'))
             continue
-        by_component.setdefault(component, {}).setdefault(tuple(_pin_names(spectre.get('term_order')) or ()), []).append(name)
+        by_component.setdefault(component, {}).setdefault(tuple(_pin_names(spectre.get('term_order')) or ()),
+            []).append(name)
     components = {}
     for component in sorted(by_component):
         orders = by_component[component]
@@ -363,7 +386,10 @@ def build_ideal_parts(library, cdf) -> dict:
         if not stated:
             basis = 'the library states no pin order for it'
         elif kind == 'unknown':
-            basis = f'Spectre component {component}: the standard list has no kind for it, so the network sees "unknown"'
+            basis = (
+                f'Spectre component {component}: the standard list has no kind for it, so the network sees '
+                f'"unknown"'
+            )
         else:
             basis = f'Spectre component {component} with two nodes: the first is the positive one' + (
                 ' (a current probe is a 0 V source in series)' if component == 'iprobe' else '')
@@ -372,14 +398,16 @@ def build_ideal_parts(library, cdf) -> dict:
             parameters=dict(aliases), basis=basis,
             pin_orders=[dict(pins=list(pins), cells=sorted(orders[pins])) for pins in stated],
             cells_without_pin_order=sorted(orders.get((), [])),
-            cells_with_too_many_pins=sorted(cell for pins, cells in orders.items() if len(pins) > MAX_IDEAL_PINS for cell in cells))
+            cells_with_too_many_pins=sorted(cell for pins,
+                cells in orders.items() if len(pins) > MAX_IDEAL_PINS for cell in cells))
     body = dict(format=IDEAL_FORMAT, library=library, components=components)
     sha = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     usable = [c for c in components.values() if c['pin_orders']]
     return dict(body, sha256=sha, read_utc=utcnow().isoformat(), not_components=not_components,
                 layout_only=cdf.get('layout_only', []),
                 summary=dict(cells=len(cdf['cells']) + len(cdf.get('layout_only', [])), components=len(components),
-                             recognized=len(usable), with_a_kind=sorted(c['component'] for c in usable if c['kind'] != 'unknown'),
+                             recognized=len(usable),
+                             with_a_kind=sorted(c['component'] for c in usable if c['kind'] != 'unknown'),
                              as_unknown=sum(1 for c in usable if c['kind'] == 'unknown'),
                              without_pins=sorted(c['component'] for c in components.values() if not c['pin_orders'])))
 
@@ -434,7 +462,8 @@ def describe_ideal_parts(record, *, brief: bool=False):
     out = dict(library=parts.get('library'), read_utc=parts.get('read_utc'), sha256=parts.get('sha256'),
                summary=parts.get('summary'), error=parts.get('error'), not_read_again=parts.get('not_read_again'))
     if not brief:
-        out.update(components=list((parts.get('components') or {}).values()), not_components=parts.get('not_components', []))
+        out.update(components=list((parts.get('components') or {}).values()), not_components=parts.get('not_components',
+            []))
     return out
 
 

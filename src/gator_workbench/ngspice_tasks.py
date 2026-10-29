@@ -57,7 +57,8 @@ def store_root() -> Path:
 def task_dir(name) -> Path:
     """Validate a task name and return its local storage directory."""
     if not isinstance(name, str) or not NAME.match(name):
-        raise NgspiceTaskError('The task name must be lowercase letters, digits and "_" (2-40 characters, starting with a letter)')
+        raise NgspiceTaskError(
+            'The task name must be lowercase letters, digits and "_" (2-40 characters, starting with a letter)')
     return store_root() / name
 
 
@@ -89,8 +90,13 @@ def _include_root(entry) -> str | None:
 
 def parse_entry(entry, text) -> Parsed:
     """Parse a saved task deck and apply its AnalogGym graph conversion when required."""
-    parsed = parse_text(text, source=str(Path(entry['directory']) / FILES['netlist']) if entry.get('directory') else 'netlist.cir',
-                      circuit_id=entry['name'], device_kinds=entry.get('device_kinds') or {}, include_root=_include_root(entry))
+    parsed = parse_text(
+        text,
+        source=str(Path(entry['directory']) / FILES['netlist']) if entry.get('directory') else 'netlist.cir',
+        circuit_id=entry['name'],
+        device_kinds=entry.get('device_kinds') or {},
+        include_root=_include_root(entry)
+    )
     if entry.get('analoggym'):
         physical_graph(parsed)
     return parsed
@@ -103,7 +109,8 @@ def check(text, *, device_kinds=None, include_root=None) -> dict:
     if len(text.encode('utf8', errors='replace')) > MAX_NETLIST_BYTES:
         return dict(ok=False, problem=f'The netlist is larger than {MAX_NETLIST_BYTES // (1024 * 1024)} MB.')
     try:
-        parsed = parse_text(text, source='netlist.cir', circuit_id='check', device_kinds=device_kinds or {}, include_root=include_root)
+        parsed = parse_text(text, source='netlist.cir', circuit_id='check', device_kinds=device_kinds or {},
+            include_root=include_root)
     except NetlistError as exc:
         return dict(ok=False, problem=str(exc))
     return dict(ok=True, **summary(parsed))
@@ -117,8 +124,10 @@ def summary(parsed: Parsed) -> dict:
         kinds[device.kind] = kinds.get(device.kind, 0) + 1
     return dict(title=parsed.title.lstrip('* ').strip(), devices=len(graph.devices), nets=len(graph.nets), kinds=kinds,
                 sizable=sorted(f'{d}.{p}' for d, p in parsed.sizables),
-                measurements=[dict(name=m.name, analysis=m.analysis, unit=m.unit, line=m.line, text=m.text) for m in parsed.measurements],
-                analyses=[a['text'] for a in parsed.analyses], includes=[dict(kind=k, path=p, line=n) for k, p, n in parsed.includes],
+                measurements=[dict(name=m.name, analysis=m.analysis, unit=m.unit, line=m.line,
+                    text=m.text) for m in parsed.measurements],
+                analyses=[a['text'] for a in parsed.analyses], includes=[dict(kind=k, path=p, line=n) for k, p,
+                    n in parsed.includes],
                 unknown_models=list(parsed.unknown_models), subckt_uses=dict(parsed.subckt_uses),
                 has_control=parsed.has_control, has_end=parsed.has_end,
                 diagnostics=[dict(code=d.code, severity=d.severity, message=d.message) for d in graph.diagnostics],
@@ -131,17 +140,23 @@ def _problems(parsed: Parsed) -> list:
     if not parsed.graph.devices:
         problems.append('No element was found: a deck needs at least one element line (the first line is the title).')
     if not parsed.measurements:
-        problems.append('Nothing is measured: add .meas statements (or a .control block that prints named values), so that a '
+        problems.append(
+            'Nothing is measured: add .meas statements (or a .control block that prints named values), so that a '
                         'run has results to judge.')
     if not parsed.analyses and not parsed.has_control:
         problems.append('No analysis was found (.op, .ac, .tran ...): ngspice would simulate nothing.')
     if not parsed.sizables:
-        problems.append('No value can be varied: every element sits in a subcircuit used more than once, or every model is unknown.')
+        problems.append(
+            'No value can be varied: every element sits in a subcircuit used more than once, or every model '
+            'is unknown.')
     return problems
 
 
 def save(name, text, *, device_kinds=None, source_path=None, circuit_class='unspecified', pdk_id='unspecified') -> dict:
-    """Store the deck as task ngspice:<name> (a new task, or the next revision of an existing one). Returns the entry."""
+    (
+        'Store the deck as task ngspice:<name> (a new task, or the next revision of an existing one). Returns '
+        'the entry.'
+    )
     directory = task_dir(name)
     if not isinstance(text, str) or not text.strip():
         raise NgspiceTaskError('The netlist is empty.')
@@ -150,7 +165,8 @@ def save(name, text, *, device_kinds=None, source_path=None, circuit_class='unsp
     kinds = clean_kinds(device_kinds)
     root = str(Path(source_path).parent) if source_path else None
     try:
-        parsed = parse_text(text, source=str(directory / FILES['netlist']), circuit_id=name, device_kinds=kinds, include_root=root)
+        parsed = parse_text(text, source=str(directory / FILES['netlist']), circuit_id=name, device_kinds=kinds,
+            include_root=root)
     except NetlistError as exc:
         raise NgspiceTaskError(f'The netlist cannot be read: {exc}')
     if not parsed.graph.devices:
@@ -218,7 +234,9 @@ def delete(name, *, run_rows=()) -> dict:
         if manifest is UNREADABLE:
             continue
         if (manifest.get('circuit') or {}).get('task_key') == task_key:
-            raise NgspiceTaskError(f'Run {row.get("run_id") or row["run_dir"]} of {task_key} is working right now: abort it or let it finish first')
+            raise NgspiceTaskError(
+                f"Run {row.get('run_id') or row['run_dir']} of {task_key} is working right now: abort it or "
+                f'let it finish first')
     directory = Path(entry['directory'])
     kept = directory.parent / TRASH / f'{name}.{utcnow().strftime(TRASH_STAMP)}'
     kept.parent.mkdir(parents=True, exist_ok=True)
@@ -238,7 +256,8 @@ def read_file(path, roots) -> dict:
         raise NgspiceTaskError(f'{resolved} is not a file.')
     if resolved.stat().st_size > MAX_NETLIST_BYTES:
         raise NgspiceTaskError(f'{resolved.name} is larger than {MAX_NETLIST_BYTES // (1024 * 1024)} MB.')
-    return dict(path=str(resolved), text=resolved.read_text(encoding='utf8', errors='replace'), size=resolved.stat().st_size)
+    return dict(path=str(resolved), text=resolved.read_text(encoding='utf8', errors='replace'),
+        size=resolved.stat().st_size)
 
 
 # ------------------------------------------------------------------------------------------------ the connection
@@ -248,7 +267,9 @@ def connection_problem(profile_id=None) -> str | None:
     from .connection import KINDS, entry_kind, family_of
     _, key, settings = named_or_active(profile_id)
     if settings is None:
-        return NEEDS_NGSPICE_CONNECTION if not key else f'Connection {key!r} is not configured. ' + NEEDS_NGSPICE_CONNECTION
+        return NEEDS_NGSPICE_CONNECTION if not key else (
+            f'Connection {key!r} is not configured. '
+        ) + NEEDS_NGSPICE_CONNECTION
     kind = entry_kind(settings)
     if kind is None or family_of(kind) != 'ngspice':
         label = KINDS[kind]['label'] if kind in KINDS else 'of an unknown kind'
@@ -308,17 +329,22 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
                                  plan=compiled.plan if compiled.plan is not None and compiled.plan.injected else None,
                                  reward_settings=RewardSettings(**run_settings.reward.model_dump()), **options)
     # ---- Describe the saved deck and connection limitations without building an environment.
-    notes = [f'ngspice netlist task, revision {entry.get("revision")}: {len(graph.devices)} elements, '
-             f'{len(parsed.measurements)} results ({", ".join(parsed.result_names[:8])}{"..." if len(parsed.result_names) > 8 else ""}).']
+    notes = [
+        f"ngspice netlist task, revision {entry.get('revision')}: {len(graph.devices)} elements, "
+        f"{len(parsed.measurements)} results ({', '.join(parsed.result_names[:8])}"
+        f"{('...' if len(parsed.result_names) > 8 else '')})."]
     if entry.get('source_path'):
-        notes.append(f'Loaded from {entry["source_path"]}; relative .include paths resolve from that folder on this machine '
+        notes.append(
+            f'Loaded from {entry["source_path"]}; relative .include paths resolve from that folder on this machine '
                      '(over SSH, paths in the deck are the other machine\'s).')
     if parsed.unknown_models:
         notes.append('Shown as unknown (simulated by ngspice, not sized): ' + ', '.join(parsed.unknown_models[:10])
                      + '. Declare their kinds in the ngspice window (name=nmos ...) to size them.')
     shared = [s for s, uses in parsed.subckt_uses.items() if uses > 1]
     if shared:
-        notes.append('Values inside subcircuits used more than once cannot be varied for one instance alone: ' + ', '.join(shared))
+        notes.append(
+            'Values inside subcircuits used more than once cannot be varied for one instance alone: ' + ', '.join(
+            shared))
     if problem:
         notes.append(problem)
     else:
@@ -327,17 +353,20 @@ def runtime(task_key, name, profile_id=None, *, authorized=False):
         except Exception:
             pass
     if not authorized:
-        notes.append('Loaded for viewing and validation. Start asks you to confirm the number of ngspice simulations first.')
+        notes.append(
+            'Loaded for viewing and validation. Start asks you to confirm the number of ngspice simulations first.')
     try:
         link = link_for(profile_id)
         concurrency = link.max_concurrency
     except Exception:
         concurrency = LOCAL_CONCURRENCY
     provided = tuple(entry['analoggym']['metric_units']) if entry.get('analoggym') else tuple(parsed.result_names)
-    circuit = dict(circuit_class=entry.get('circuit_class') or 'unspecified', pdk_id=entry.get('pdk_id') or 'unspecified',
+    circuit = dict(circuit_class=entry.get('circuit_class') or 'unspecified',
+                   pdk_id=entry.get('pdk_id') or 'unspecified',
                    dut_hierarchy=None, netlist_sha256=entry['netlist_sha256'], parser_config_sha256=None,
                    netlist_file=str(netlist_file), parser_config_file=None, topology_id=f'ngspice:{name}',
-                   complete=graph.complete, evaluation_backend=EVALUATION_BACKEND, simulator='ngspice', ngspice_task=True,
+                   complete=graph.complete, evaluation_backend=EVALUATION_BACKEND, simulator='ngspice',
+                   ngspice_task=True,
                    analoggym_task=bool(entry.get('analoggym')),
                    title=entry.get('title'), revision=entry.get('revision'), source_path=entry.get('source_path'),
                    device_kinds=dict(entry.get('device_kinds') or {}), measurements=list(provided),
@@ -365,11 +394,13 @@ def export_deck(task):
         kinds = (task.circuit or {}).get('device_kinds') or {}
         root = str(Path(task.circuit['source_path']).parent) if (task.circuit or {}).get('source_path') else None
         try:
-            parsed = parse_text(netlist_text, source=task.netlist_path or 'netlist.cir', circuit_id=task.task_key.partition(':')[2] or 'ngspice',
+            parsed = parse_text(netlist_text, source=task.netlist_path or 'netlist.cir',
+                                circuit_id=task.task_key.partition(':')[2] or 'ngspice',
                                 device_kinds=kinds, include_root=root, scan_includes=False)
             assignments = {(m['instance_path'], m['parameter_name']): float(m['value']) for m in members}
             text, _ = rewrite(parsed, assignments)
-            again = parse_text(text, source=task.netlist_path or 'netlist.cir', device_kinds=kinds, include_root=root, scan_includes=False)
+            again = parse_text(text, source=task.netlist_path or 'netlist.cir', device_kinds=kinds, include_root=root,
+                scan_includes=False)
         except (NetlistError, ValueError) as exc:
             return dict(status='unsupported', reason=str(exc))
         for (device, parameter), value in assignments.items():
@@ -395,10 +426,12 @@ def parameter_rows(parsed: Parsed) -> list:
             unit = 'A'                                   # a current source's value
         shown = value * scale
         integer = parameter in ('m', 'nf')
-        row = dict(variable_id=f'{_NOT_IN_AN_ID.sub("_", device_id)}_{parameter}', instance_path=device_id, parameter_name=parameter,
+        row = dict(variable_id=f'{_NOT_IN_AN_ID.sub("_", device_id)}_{parameter}', instance_path=device_id,
+                   parameter_name=parameter,
                    unit=unit, scale='linear', value_type='integer' if integer else 'continuous',
                    optimized=parameter in OPTIMIZED_BY_DEFAULT and shown != 0,
-                   notes=f'{sizable.source_name} on line {sizable.token.line}' + (f' of subcircuit {sizable.subckt}' if sizable.subckt else ''))
+                   notes=f'{sizable.source_name} on line {sizable.token.line}' + (
+                       f' of subcircuit {sizable.subckt}' if sizable.subckt else ''))
         if shown != 0:
             low, high = sorted((shown / 2, shown * 2))
             if integer:
@@ -414,7 +447,8 @@ def probe_rows(parsed: Parsed) -> list:
     """Build starter probe rows from the deck's recorded measurements."""
     rows = []
     for m in parsed.measurements:
-        rows.append(dict(measurement_id=f'm_{m.name}', analysis=m.analysis, result_source='backend_profile', source_name=m.name,
+        rows.append(dict(measurement_id=f'm_{m.name}', analysis=m.analysis, result_source='backend_profile',
+                         source_name=m.name,
                          unit=m.unit, notes=f'line {m.line}: {m.text}'[:1000]))
     return rows
 
@@ -427,7 +461,8 @@ def starter_config(task_key) -> dict:
         return entry['starter']
     parsed = parse_entry(entry, text)
     return dict(project=starter_project(task_key),
-                circuit=dict(source='registered_task', task_id=task_key, circuit_class=entry.get('circuit_class') or 'unspecified',
+                circuit=dict(source='registered_task', task_id=task_key,
+                             circuit_class=entry.get('circuit_class') or 'unspecified',
                              pdk_id=entry.get('pdk_id') or 'unspecified'),
                 parameters=parameter_rows(parsed), measurements=probe_rows(parsed), targets=[])
 
@@ -437,11 +472,14 @@ def task_entries() -> list:
     problem = connection_problem(None)
     entries = []
     for name, entry in list_tasks().items():
-        entries.append(dict(task_key=entry['task_key'], kind='ngspice', circuit_class=entry.get('circuit_class') or 'unspecified',
+        entries.append(dict(task_key=entry['task_key'], kind='ngspice',
+                            circuit_class=entry.get('circuit_class') or 'unspecified',
                             pdk_id=entry.get('pdk_id') or 'unspecified', available=problem is None, blocker=problem,
                             revision=entry.get('revision'), title=entry.get('title'), simulator='ngspice',
-                            description=f"ngspice netlist ({entry.get('devices')} elements, {len(entry.get('measurements') or [])} results), "
-                                        f"revision {entry.get('revision')}. Runs on an ngspice connection; no license."))
+                            description=
+                                f"ngspice netlist ({entry.get('devices')} elements, "
+                                f"{len(entry.get('measurements') or [])} results), revision "
+                                f"{entry.get('revision')}. Runs on an ngspice connection; no license."))
     return entries
 
 

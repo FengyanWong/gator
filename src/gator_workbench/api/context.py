@@ -65,9 +65,12 @@ class ApiContext:
         except (KeyError, ValueError):
             link = None
         try:
-            output = self.roots.check(config.output.output_root or runs.remembered_output_root(), create=False, verify_windows=False)
-        except Exception:                                  # a checklist must never fail because one line cannot be filled in
+            output = self.roots.check(config.output.output_root or runs.remembered_output_root(), create=False,
+                verify_windows=False)
+        # a checklist must never fail because one line cannot be filled in
+        except Exception:
             output = None
         profile = readiness.profile_rows_check(config, runtime, report)
-        return readiness.build(config.model_dump(mode='json'), task=runtime, task_blocker=(blocked or {}).get('blocker'),
+        return readiness.build(config.model_dump(mode='json'), task=runtime,
+                                     task_blocker=(blocked or {}).get('blocker'),
                                      validation=report, connection=link, output=output, profile=profile)

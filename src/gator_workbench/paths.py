@@ -72,7 +72,8 @@ def inside(path, roots) -> bool:
     return any(path == root or root in path.parents for root in roots)
 
 
-SESSIONS_DIR, CELLS_DIR = 'sessions', 'cells'           # in the adapter's state root: a folder per further session, a lock per cell
+# in the adapter's state root: a folder per further session, a lock per cell
+SESSIONS_DIR, CELLS_DIR = 'sessions', 'cells'
 
 
 def _plain(name) -> str:
@@ -111,7 +112,8 @@ def bridge_session_key(env_file: str | os.PathLike[str], profile) -> str | None:
     return _plain(min(name for name in names if target(f'_{name}') == mine))
 
 
-def bridge_session_dir(env_file: str | os.PathLike[str] | None=None, profile=None, root: str | os.PathLike[str] | None=None) -> Path:
+def bridge_session_dir(env_file: str | os.PathLike[str] | None=None, profile=None,
+    root: str | os.PathLike[str] | None=None) -> Path:
     """The adapter's state folder of ONE Virtuoso session (record 7.311): its session lock and a folder per adapter
     session with the crash journal of each write. The first session keeps the state root itself, as before; a further
     session (`bridge_session_key`) has `sessions/<name>` in it. One process at a time drives a Virtuoso session, and with
@@ -122,14 +124,16 @@ def bridge_session_dir(env_file: str | os.PathLike[str] | None=None, profile=Non
     return root if key is None else root / SESSIONS_DIR / key
 
 
-def bridge_session_lock(env_file: str | os.PathLike[str] | None=None, profile=None, root: str | os.PathLike[str] | None=None) -> Path:
+def bridge_session_lock(env_file: str | os.PathLike[str] | None=None, profile=None,
+    root: str | os.PathLike[str] | None=None) -> Path:
     """The run adapter's session lock (record 7.167): every process that works in a Virtuoso session takes it - a run, a
     corner check, Save task. Without arguments the first session's; with a connection's settings file and bridge profile,
     the lock of the session that connection reaches (record 7.311)."""
     return bridge_session_dir(env_file, profile, root) / 'session.lock'
 
 
-def bridge_queue_lock(env_file: str | os.PathLike[str] | None=None, profile=None, root: str | os.PathLike[str] | None=None) -> Path:
+def bridge_queue_lock(env_file: str | os.PathLike[str] | None=None, profile=None,
+    root: str | os.PathLike[str] | None=None) -> Path:
     """The lock a queue holds for its whole life in the Virtuoso session it works in (record 7.351), beside the session
     lock: between two of its runs the session lock is free for a moment, and the page, which sends its work to whichever
     session is free (`session_routing`), must not take the session then - the queue's next run would find it taken."""
@@ -141,7 +145,8 @@ def bridge_cell_lock(library, cell, root: str | os.PathLike[str] | None=None) ->
     Virtuoso sessions never work on the same cell - each has its own copy of an open cell in memory, and the second to
     save would write over the first. In `cells/` of the adapter's state root (`root`: that root when the caller holds it,
     as the adapter does)."""
-    return (Path(root) if root is not None else bridge_state_dir()) / CELLS_DIR / _plain(library) / f'{_plain(cell)}.lock'
+    return (Path(root) if root is not None else bridge_state_dir()) / CELLS_DIR / _plain(
+        library) / f'{_plain(cell)}.lock'
 
 
 def bridge_state_root_of(state_dir: str | os.PathLike[str]) -> Path:
@@ -206,8 +211,10 @@ def bridge_env_snapshot(env_file: str | os.PathLike[str]) -> Path:
         temporary.write_bytes(data)
         os.chmod(temporary, 0o600)
         os.replace(temporary, target)
-        for other in folder.iterdir():                  # copies no run can still hold: a month old, another settings file
-            if other != target and re.fullmatch(r'[0-9a-f]{64}\.env', other.name) and time.time() - other.stat().st_mtime > 30 * 86400:
+        # copies no run can still hold: a month old, another settings file
+        for other in folder.iterdir():
+            if other != target and re.fullmatch(r'[0-9a-f]{64}\.env',
+                other.name) and time.time() - other.stat().st_mtime > 30 * 86400:
                 other.unlink(missing_ok=True)
     return target.resolve()
 

@@ -133,7 +133,8 @@ class _EnvDriver:
                 observation, info = env.reset()
                 self._last = ('reset', None)
                 step = (observation, None, info['terminated'], info['truncated'], info)
-            elif op == 'reset_reused':                     # the engine's every-5th-reset rule (2026-09-30): nothing runs
+            # the engine's every-5th-reset rule (2026-09-30): nothing runs
+            elif op == 'reset_reused':
                 observation, info = env.reset_reused()
                 self._last = None                          # so there is nothing to retry either
                 step = (observation, None, info['terminated'], info['truncated'], info)

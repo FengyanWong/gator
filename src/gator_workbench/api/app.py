@@ -28,7 +28,8 @@ def trusted_hosts(host=None) -> list[str]:
     process cannot know (the machine's network address or name): the operator has chosen exposure, and nothing is checked."""
     if host in WILDCARD_HOSTS:
         return ['*']
-    names = [*LOOPBACK_HOSTS, 'testserver'] + ([host, host.lower()] if host else [])      # browsers send a name in lower case
+    # browsers send a name in lower case
+    names = [*LOOPBACK_HOSTS, 'testserver'] + ([host, host.lower()] if host else [])
     return list(dict.fromkeys(f'[{name}]' if ':' in name else name for name in names))
 
 
@@ -76,7 +77,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
         except Exception:                      # a diagnostic must never prevent the backend from starting
             pass
     if auto_check_on_start:
-        app.state.auto_check_thread = threading.Thread(target=auto_check, name='gator-connection-auto-check', daemon=True)
+        app.state.auto_check_thread = threading.Thread(target=auto_check, name='gator-connection-auto-check',
+            daemon=True)
         app.state.auto_check_thread.start()
 
     # ------------------------------------------------------------------ helpers
@@ -93,7 +95,8 @@ def create_app(*, extra_output_roots=(), extra_input_roots=(), serve_frontend=Tr
     # Return a bounded, redacted error response for uncaught request failures.
     @app.exception_handler(Exception)
     async def unexpected(request, exc):
-        return JSONResponse(status_code=500, content=dict(detail=dict(message=redact(f'{type(exc).__name__}: {exc}', 1000))))
+        return JSONResponse(status_code=500, content=dict(detail=dict(message=redact(f'{type(exc).__name__}: {exc}',
+            1000))))
 
     dist = repo_root() / 'frontend' / 'dist'
     if serve_frontend and dist.is_dir():

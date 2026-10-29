@@ -25,7 +25,8 @@ class ConfigBody(Body):
 
 # Configuration validation input with the optional saved revision from which the editor rows were loaded.
 class ValidateBody(ConfigBody):
-    rows_from: int | None = Field(None, ge=1)     # the saved revision the page's rows came from, when it knows (record 7.203)
+    # the saved revision the page's rows came from, when it knows (record 7.203)
+    rows_from: int | None = Field(None, ge=1)
 
 
 # Circuit selection payload validated by the circuit-loading endpoint.
@@ -82,8 +83,8 @@ class CornerStopBody(Body):
 class PathBody(Body):
     path: str
     create: bool = False
-    # The folder's size is walked only when asked (record 7.189): on D: the walk took 0.7 to 2 s, on every page open, for
-    # one number inside a closed fold; the page asks for it with its "Measure" button.
+    # The folder's size is walked only when asked (record 7.189): on D: the walk took 0.7 to 2 s, on every page open,
+    # for one number inside a closed fold; the page asks for it with its "Measure" button.
     usage: bool = False
 
 
@@ -122,8 +123,10 @@ class NetworkSettingsBody(Body):
 # Connection identity and optional technology or model overrides for loading a PDK record.
 class PdkLoadBody(Body):
     profile_id: str = Field(pattern=PROFILE_ID)
-    technology_library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$')   # empty = the connection's design library's
-    model_file: str | None = Field(None, max_length=_MAX_PATH_CHARS)                                        # empty = the connection's model file
+    # empty = the connection's design library's
+    technology_library: str | None = Field(None, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$')
+    # empty = the connection's model file
+    model_file: str | None = Field(None, max_length=_MAX_PATH_CHARS)
 
 
 # Connection and cell selection for browsing, reading or importing a native circuit.
@@ -132,7 +135,8 @@ class NativeReadBody(Body):
     library: str | None = None
     cell: str | None = None
     testbench: str | None = None        # import only: the cell whose netlist is exported (the testbench around `cell`)
-    work_here: bool = False             # import only: the user said this cell is a copy they made - the task flow works in it (working_copy.declare)
+    # import only: the user said this cell is a copy they made - the task flow works in it (working_copy.declare)
+    work_here: bool = False
 
 
 # Library and cell selection with an optional configured connection for working-copy operations.
@@ -156,8 +160,10 @@ class TaskSaveBody(Body):
     cell: str | None = Field(None, pattern=CADENCE_NAME)
     task: str | None = Field(None, pattern=TASK_NAME)     # the open task: updated, or the source of Save as
     as_new: bool = False
-    extras: dict | None = None          # what the task file holds beside the rows: analyses, variables, bindings, frequency, notes
-    base_revision: int | None = Field(None, ge=1)   # the saved revision the rows came from, when the page knows (record 7.203)
+    # what the task file holds beside the rows: analyses, variables, bindings, frequency, notes
+    extras: dict | None = None
+    # the saved revision the rows came from, when the page knows (record 7.203)
+    base_revision: int | None = Field(None, ge=1)
     replace_newer: bool = False         # the user answered "Save anyway": rows older than the saved task may replace it
 
 
@@ -196,14 +202,16 @@ class ProfileActionBody(Body):
 
 # Backend path submitted for reading an ngspice deck.
 class NgspiceReadBody(Body):
-    path: str = Field(min_length=1, max_length=_MAX_PATH_CHARS)       # a file on the backend machine, inside an allowed input root
+    # a file on the backend machine, inside an allowed input root
+    path: str = Field(min_length=1, max_length=_MAX_PATH_CHARS)
 
 
 # ngspice deck text, device-kind hints and source location used for import checks.
 class NgspiceCheckBody(Body):
     text: str = Field(max_length=ngspice_tasks.MAX_NETLIST_BYTES)
     device_kinds: str | dict | None = None                  # "name=kind ..." as typed in the window, or a mapping
-    source_path: str | None = Field(None, max_length=_MAX_PATH_CHARS)  # where the deck was loaded from: its folder resolves relative includes
+    # where the deck was loaded from: its folder resolves relative includes
+    source_path: str | None = Field(None, max_length=_MAX_PATH_CHARS)
 
 
 # ngspice deck input with saved-task labels and connection or output choices.
@@ -221,7 +229,10 @@ class NgspiceNameBody(Body):
 
 
 class OpenCliBody(Body):
-    """The Agent window's buttons: which CLI to open. Nothing else: the folder, the window and how the CLI starts are fixed."""
+    (
+        "The Agent window's buttons: which CLI to open. Nothing else: the folder, the window and how the CLI "
+        'starts are fixed.'
+    )
     cli: str = Field(pattern='^(claude|codex)$')
 
 
@@ -232,7 +243,10 @@ class DiffBody(Body):
 
 
 class MatchedBody(Body):
-    """Matched devices... (status record 7.103): the configuration, and - to see the change - the suggestions to make."""
+    (
+        'Matched devices... (status record 7.103): the configuration, and - to see the change - the suggestions '
+        'to make.'
+    )
     config: dict
     apply: list[str] | None = Field(None, max_length=500)
 
@@ -263,4 +277,5 @@ class RenameModelBody(Body):
 
 # Saved-model selection with an optional archived evaluation for graph inspection.
 class GraphViewBody(ModelStructureBody):
-    evaluation: int | None = Field(None, ge=1)      # which archived evaluation of that run; empty = the last one the save point had seen
+    # which archived evaluation of that run; empty = the last one the save point had seen
+    evaluation: int | None = Field(None, ge=1)

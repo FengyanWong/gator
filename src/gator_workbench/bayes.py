@@ -64,7 +64,8 @@ class GaussianProcess:
         """(length scales, signal variance, noise variance), each inside its bounds."""
         raw = self.raw if raw is None else raw
         bound = lambda r, lo_hi: lo_hi[0] + (lo_hi[1] - lo_hi[0]) * torch.sigmoid(r)
-        return bound(raw[:self.dim], self.LENGTH), bound(raw[self.dim], self.SIGNAL), bound(raw[self.dim + 1], self.NOISE)
+        return bound(raw[:self.dim], self.LENGTH), bound(raw[self.dim], self.SIGNAL), bound(raw[self.dim + 1],
+            self.NOISE)
 
     @staticmethod
     def _kernel(A, B, length, signal):
@@ -119,7 +120,8 @@ class GaussianProcess:
             length, signal, _ = self.parameters()
             cross = self._kernel(candidates, self.X, length, signal)
             mean = cross @ self.alpha
-            covariance = self._kernel(candidates, candidates, length, signal) - cross @ torch.cholesky_solve(cross.T, self.L)
+            covariance = self._kernel(candidates, candidates, length, signal) - cross @ torch.cholesky_solve(cross.T,
+                self.L)
             return mean, 0.5 * (covariance + covariance.T)
 
     def sample(self, candidates, generator):
@@ -136,7 +138,8 @@ class TrustRegionBO:
     """TuRBO-1, asked for one design at a time (ask) and told results in any order (tell). Maximizes. Designs are
     points of the unit cube. A design told without a value (its simulation failed) counts as the worst seen so far."""
 
-    def __init__(self, dim, *, seed=0, n_init=None, n_candidates=None, length_init=0.8, length_min=0.5 ** 7, length_max=1.6,
+    def __init__(self, dim, *, seed=0, n_init=None, n_candidates=None, length_init=0.8, length_min=0.5 ** 7,
+        length_max=1.6,
                  success_tolerance=3, failure_tolerance=None, fit_steps=40, max_fit_points=600):
         if dim < 1:
             raise ValueError('Bayesian optimization needs at least one variable')
@@ -184,7 +187,8 @@ class TrustRegionBO:
         low = (center - weights * self.length / 2.0).clamp(0.0, 1.0)
         high = (center + weights * self.length / 2.0).clamp(0.0, 1.0)
         moved = low + (high - low) * self.inside.draw(self.n_candidates).to(DTYPE)
-        change = torch.rand(self.n_candidates, self.dim, generator=self.generator, dtype=DTYPE) <= min(20.0 / self.dim, 1.0)
+        change = torch.rand(self.n_candidates, self.dim, generator=self.generator, dtype=DTYPE) <= min(20.0 / self.dim,
+            1.0)
         none = ~change.any(1)                       # every candidate differs from the centre in at least one variable
         if none.any():
             change[none, torch.randint(0, self.dim, (int(none.sum()),), generator=self.generator)] = True
@@ -222,7 +226,8 @@ class TrustRegionBO:
 
     def state(self) -> dict:
         """Summarize the observed designs, current trust region, restarts, and best reward."""
-        return dict(designs=len(self.X), in_this_region=len(self.X) - self.start, restarts=self.restarts, length=self.length,
+        return dict(designs=len(self.X), in_this_region=len(self.X) - self.start, restarts=self.restarts,
+                    length=self.length,
                     best=max(self.y) if self.y else None)
 
 

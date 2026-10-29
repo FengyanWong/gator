@@ -29,7 +29,8 @@ WINDOWS_USERS = Path('/mnt/c/Users')
 INTEROP_DIR = Path('/run/WSL')                   # WSL's interop sockets, through which Windows programs start
 # Where the start scripts are written: on the WSL disk, beside the run adapter's state (paths.bridge_state_dir).
 SCRIPT_DIR = Path('~/.local/state/gator/agent-cli')
-# Linux terminals tried in this order when the backend runs on a Linux desktop (not WSL): each takes the command after it.
+# Linux terminals tried in this order when the backend runs on a Linux desktop (not WSL): each takes the command after
+# it.
 LINUX_TERMINALS = (('x-terminal-emulator', '-e'), ('gnome-terminal', '--'), ('konsole', '-e'), ('xfce4-terminal', '-x'),
                    ('xterm', '-e'))
 
@@ -73,7 +74,8 @@ def _codex_app_binaries(home: Path | None) -> list:
     if home is None:
         return []
     try:
-        found = [(path.stat().st_mtime, path) for path in (home / 'bin' / 'wsl').glob('*/codex') if os.access(path, os.X_OK)]
+        found = [(path.stat().st_mtime, path) for path in (home / 'bin' / 'wsl').glob('*/codex') if os.access(path,
+            os.X_OK)]
     except OSError:
         return []
     return [path for _, path in sorted(found, reverse=True)]
@@ -97,8 +99,10 @@ def find(cli, env=None) -> dict:
     found = dict(cli=cli, name=NAMES[cli], executable=None, environment={}, path_prepend=[], note=None)
     if cli == 'claude':
         local = Path.home() / '.local' / 'bin' / 'claude'           # where the standalone install puts it
-        found['executable'] = shutil.which('claude', path=env.get('PATH')) or (str(local) if os.access(local, os.X_OK) else None)
-        found['note'] = None if found['executable'] else 'Claude Code is not installed for this user (no `claude` on the PATH).'
+        found['executable'] = shutil.which('claude', path=env.get('PATH')) or (str(local) if os.access(local,
+            os.X_OK) else None)
+        found['note'] = None if found[
+            'executable'] else 'Claude Code is not installed for this user (no `claude` on the PATH).'
         return found
     home = codex_home(env)
     on_path = shutil.which('codex', path=env.get('PATH'))
@@ -110,8 +114,8 @@ def find(cli, env=None) -> dict:
         if sqlite is not None:
             found['environment']['CODEX_SQLITE_HOME'] = str(sqlite)
     if not on_path and bundled:
-        # As the app starts its own agent: its build folders first on the PATH, the newest codex first (another one holds
-        # the `rg` codex searches with).
+        # As the app starts its own agent: its build folders first on the PATH, the newest codex first (another one
+        # holds the `rg` codex searches with).
         first = [str(path.parent) for path in bundled]
         try:
             others = [str(d) for d in sorted((home / 'bin' / 'wsl').iterdir()) if d.is_dir() and str(d) not in first]
@@ -119,7 +123,8 @@ def find(cli, env=None) -> dict:
             others = []
         found['path_prepend'] = first + others
     if not found['executable']:
-        found['note'] = 'Codex is not installed for this user: no `codex` on the PATH, and no Codex app build was found.'
+        found[
+            'note'] = 'Codex is not installed for this user: no `codex` on the PATH, and no Codex app build was found.'
     return found
 
 
@@ -131,7 +136,9 @@ def start_script(found: dict, directory: Path) -> str:
     """The shell lines the new window runs: into the folder, the CLI exactly as you would type it, then your own shell
     (the window stays open after the CLI ends)."""
     name = found['name']
-    lines = ['# Written by the GATOR workbench for the Agent window\'s "%s" button; the window it opened ran it once.' % name,
+    lines = [
+        '# Written by the GATOR workbench for the Agent window\'s "%s" button; the window it opened ran it '
+        'once.' % name,
              '# The CLI starts as you start it yourself: your own settings decide what it may do.',
              f'cd {_quoted(directory)} || exit 1']
     lines += [f'export {key}={_quoted(value)}' for key, value in found['environment'].items()]
@@ -139,7 +146,8 @@ def start_script(found: dict, directory: Path) -> str:
         lines.append('export PATH=' + ':'.join(_quoted(d) for d in found['path_prepend']) + ':"$PATH"')
     lines += [f"printf '\\n%s in %s\\n\\n' {_quoted(name)} \"$PWD\"",
               _quoted(found['executable']),
-              f"printf '\\n%s has ended. This window is a shell in %s; \"exit\" closes it.\\n' {_quoted(name)} \"$PWD\"",
+              f"""printf '\\n%s has ended. This window is a shell in %s; "exit" closes it.\\n' """
+              f'{_quoted(name)} "$PWD"',
               'exec bash -li']
     return '\n'.join(lines) + '\n'
 
@@ -186,12 +194,14 @@ def availability(env=None) -> dict:
     clis = []
     for cli in CLIS:
         found = find(cli, env)
-        clis.append(dict(cli=cli, name=found['name'], available=bool(found['executable']), executable=found['executable'],
+        clis.append(dict(cli=cli, name=found['name'], available=bool(found['executable']),
+                         executable=found['executable'],
                          codex_home=found['environment'].get('CODEX_HOME'), note=found['note'],
                          command=by_hand(found, directory)))
     return dict(directory=str(directory), clis=clis, launch=_launch_mode(env),
-                note='Each button opens the CLI in a terminal window of its own, in this folder, as you start it yourself: '
-                     'your own settings decide what it may do, and the session is in your history.')
+                note=
+                    'Each button opens the CLI in a terminal window of its own, in this folder, as you start it '
+                    'yourself: your own settings decide what it may do, and the session is in your history.')
 
 
 def interop_socket(env) -> str | None:
@@ -202,12 +212,14 @@ def interop_socket(env) -> str | None:
     if current and os.path.exists(current):
         return current
     folder = INTEROP_DIR
-    candidates = [folder / '1_interop'] + sorted(folder.glob('*_interop'), key=lambda s: s.stat().st_mtime if s.exists() else 0, reverse=True)
+    candidates = [folder / '1_interop'] + sorted(folder.glob('*_interop'),
+        key=lambda s: s.stat().st_mtime if s.exists() else 0, reverse=True)
     return next((str(c) for c in candidates if c.exists()), current)
 
 
 def _session_marker(key) -> bool:
-    return key == 'CLAUDECODE' or key.startswith(('CLAUDE_CODE_', 'CLAUDE_SSH_')) or key in ('CLAUDE_PID', 'CLAUDE_AGENT_SDK_VERSION')
+    return key == 'CLAUDECODE' or key.startswith(('CLAUDE_CODE_', 'CLAUDE_SSH_')) or key in ('CLAUDE_PID',
+        'CLAUDE_AGENT_SDK_VERSION')
 
 
 def _launch_mode(env) -> str:
@@ -240,11 +252,11 @@ def open_cli(cli, *, env=None, script_dir=None, run=subprocess.Popen) -> dict:
     written = script.with_name(script.name + '.new')        # a new file each time: a window still running the old one
     written.write_text(text)                                 # keeps reading its own copy
     os.replace(written, script)
-    # The window's process owns nothing of the backend's: no inherited standard streams, and its own session, so stopping
-    # the workbench server leaves the CLI running. From WSL the window is a new WSL session that builds its environment as
-    # any terminal does (WSLENV emptied: no variable of the backend travels into it). On a Linux desktop the terminal
-    # inherits the backend's environment, less the markers a Claude Code session sets for its own child processes - a
-    # backend started from such a session would otherwise start the CLI as that session's child.
+    # The window's process owns nothing of the backend's: no inherited standard streams, and its own session, so
+    # stopping the workbench server leaves the CLI running. From WSL the window is a new WSL session that builds its
+    # environment as any terminal does (WSLENV emptied: no variable of the backend travels into it). On a Linux desktop
+    # the terminal inherits the backend's environment, less the markers a Claude Code session sets for its own child
+    # processes - a backend started from such a session would otherwise start the CLI as that session's child.
     child_env = {key: value for key, value in env.items() if not _session_marker(key)}
     child_env['WSLENV'] = ''
     if in_wsl(env):

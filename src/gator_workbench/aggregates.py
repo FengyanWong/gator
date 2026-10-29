@@ -38,20 +38,23 @@ COLUMNS = {
         ('optimizer', 'sac | bayes; historical manifests without this field mean sac'),
         ('method_label', 'Research method label'), ('encoder_type', 'Encoder architecture'),
         ('ablation_labels', 'Ablation labels, ;-separated'), ('split', 'train | validation | test | unspecified'),
-        ('generalization_level', 'Generalization level label'), ('training_sources', 'Source training set, ;-separated'),
+        ('generalization_level', 'Generalization level label'), ('training_sources',
+            'Source training set, ;-separated'),
         ('comparison_pair_id', 'Comparison pair'), ('task_order', 'Position K in a fixed task order'),
         ('target_seed', 'Seed of THIS run'), ('pretrain_seed', 'Seed of the SOURCE pretraining run'),
         ('source_run_id', 'Source model run'), ('source_checkpoint_id', 'Source checkpoint'),
         ('source_cost_status', 'known | unknown | declared_by_user | not_applicable'),
         ('source_cost_evaluations', 'Source pretraining cost; empty = unknown, never 0'),
-        ('status', 'Final run state'), ('stop_reason', 'Why the run ended'), ('success', 'A feasible design was confirmed'),
+        ('status', 'Final run state'), ('stop_reason', 'Why the run ended'), ('success',
+            'A feasible design was confirmed'),
         ('first_feasible_eval_count', 'Primary first-feasibility cost; empty = none found'),
         ('first_feasible_dispatch_index', 'dispatch_index of the successful candidate'),
         ('first_feasible_completed_count', 'Evaluations completed at the event'),
         ('first_feasible_in_flight_count', 'Evaluations in flight at the event'),
         ('first_feasible_launches', 'Simulator launches at the event'),
         ('first_feasible_active_seconds', 'Active seconds at the event'),
-        ('censoring_status', 'observed | right_censored'), ('observation_limit', 'Evaluations charged when observation ended'),
+        ('censoring_status', 'observed | right_censored'), ('observation_limit',
+            'Evaluations charged when observation ended'),
         ('max_evaluations', 'Configured budget'), ('total_evaluations_charged', 'FINAL cost: evaluations started'),
         ('total_spectre_launches', 'FINAL cost: simulator launches incl. retries/failures'),
         ('confirmed_spectre_launches', 'Confirmed physical calls; empty in historical runs'),
@@ -63,19 +66,24 @@ COLUMNS = {
         ('best_clearance_margin', 'Tightest eligible hard-spec margin; empty in historical runs'),
         ('failures', 'Failed evaluations'), ('retries', 'Retry attempts'), ('cache_hits', 'Cache hits'),
         ('interrupted_evaluations', 'Charged evaluations lost to a crash'), ('environment_steps', 'Environment steps'),
-        ('gradient_updates', 'Learner updates'), ('active_seconds', 'Active wall-clock'), ('paused_seconds', 'Paused wall-clock'),
+        ('gradient_updates', 'Learner updates'), ('active_seconds', 'Active wall-clock'), ('paused_seconds',
+            'Paused wall-clock'),
         ('sum_job_runtime_seconds', 'Summed job runtime (not elapsed time)'), ('concurrency', 'Concurrent jobs'),
         ('best_is_feasible', 'Best design is feasible'), ('best_evaluation_id', 'Best design evaluation'),
         ('best_normalized_violation', 'Best design violation'), ('completeness', 'complete | partial'),
-        ('resumability', 'full_state | weights_only | none'), ('summary_source', 'run_summary.json | reconstructed_from_raw_tables'),
+        ('resumability', 'full_state | weights_only | none'), ('summary_source',
+            'run_summary.json | reconstructed_from_raw_tables'),
         ('cutoff_commit_seq', 'Data snapshot used'), ('relative_run_dir', 'Run directory inside the experiment')],
     'budget_success': [
         ('run_id', 'Run'), ('task_id', 'Task'), ('mode', 'Mode'), ('optimizer', 'Optimizer'),
         ('method_label', 'Method'), ('target_seed', 'Target seed'),
-        ('pretrain_seed', 'Pretraining seed'), ('provenance', 'real | mock'), ('budget', 'Evaluation-budget checkpoint B'),
+        ('pretrain_seed', 'Pretraining seed'), ('provenance', 'real | mock'), ('budget',
+            'Evaluation-budget checkpoint B'),
         ('success_within_budget', 'true | false | empty when not known'),
-        ('observation_status', 'observed | unknown (budget never reached B by design) | censored (ended early before B)'),
-        ('cost_evaluations', 'first_feasible_eval_count when success within B'), ('cost_convention', 'Accounting convention'),
+        ('observation_status',
+            'observed | unknown (budget never reached B by design) | censored (ended early before B)'),
+        ('cost_evaluations', 'first_feasible_eval_count when success within B'), ('cost_convention',
+            'Accounting convention'),
         ('observation_limit', 'Evaluations observed'), ('stop_reason', 'Why observation ended')],
     'budget_success_grouped': [
         ('task_id', 'Task'), ('mode', 'Mode'), ('optimizer', 'Optimizer'),
@@ -83,8 +91,10 @@ COLUMNS = {
         ('runs', 'Runs in the group'), ('successes', 'Known successes'), ('failures', 'Known failures'),
         ('unknown', 'Unknown'), ('censored', 'Censored'), ('run_ids', 'Contributing runs, ;-separated')],
     'paired_runs': [
-        ('comparison_pair_id', 'Pair ID'), ('target_seed', 'Shared target seed'), ('baseline_run_id', 'Baseline (scratch) run'),
-        ('treatment_run_id', 'Treatment run'), ('treatment_mode', 'Treatment mode'), ('treatment_method_label', 'Method'),
+        ('comparison_pair_id', 'Pair ID'), ('target_seed', 'Shared target seed'), ('baseline_run_id',
+            'Baseline (scratch) run'),
+        ('treatment_run_id', 'Treatment run'), ('treatment_mode', 'Treatment mode'), ('treatment_method_label',
+            'Method'),
         ('baseline_optimizer', 'Baseline optimizer'), ('treatment_optimizer', 'Treatment optimizer'),
         ('treatment_pretrain_seed', 'Source pretraining seed of the treatment'),
         ('pairing_criteria', 'Criteria checked'), ('controlled', 'All pairing criteria equal'),
@@ -104,13 +114,17 @@ COLUMNS = {
         ('median_cost_of_successes', 'Median cost of successes'), ('costs_of_successes', 'Every cost, ;-separated'),
         ('run_ids', 'Links to the original runs, ;-separated')],
     'cumulative_cost': [
-        ('stream', 'Method stream: mode | optimizer | method | source model | pretrain seed | target seed'), ('task_order', 'K'),
-        ('run_id', 'Run at position K'), ('task_id', 'Task'), ('mode', 'Mode'), ('optimizer', 'Optimizer'), ('method_label', 'Method'),
-        ('target_seed', 'Target seed'), ('pretrain_seed', 'Pretraining seed'), ('source_checkpoint', 'run_id/checkpoint_id'),
+        ('stream', 'Method stream: mode | optimizer | method | source model | pretrain seed | target seed'),
+        ('task_order', 'K'),
+        ('run_id', 'Run at position K'), ('task_id', 'Task'), ('mode', 'Mode'), ('optimizer', 'Optimizer'),
+        ('method_label', 'Method'),
+        ('target_seed', 'Target seed'), ('pretrain_seed', 'Pretraining seed'), ('source_checkpoint',
+            'run_id/checkpoint_id'),
         ('source_pretraining_cost', 'Source cost of THIS run; empty = unknown'),
         ('target_task_cost', 'Evaluations charged by this run'), ('success', 'Success'),
         ('cumulative_target_cost', 'Sum of target costs up to K'),
-        ('cumulative_source_cost_deduplicated', 'Distinct source runs excluding targets already counted up to K; empty if any is unknown'),
+        ('cumulative_source_cost_deduplicated',
+            'Distinct source runs excluding targets already counted up to K; empty if any is unknown'),
         ('cumulative_total_cost', 'Target + de-duplicated source; empty when not computable'),
         ('total_cost_status', 'computable | non_computable_unknown_source_cost'),
         ('cumulative_success_count', 'Successes up to K'), ('counted_source_runs', 'Distinct source runs counted')],
@@ -211,7 +225,8 @@ def reconstruct_from_tables(run_dir, manifest):
         time=dict(active_seconds=None, paused_seconds=None, sum_job_runtime_seconds=None),
         best_design=None if best is None else dict(evaluation_id=best['evaluation_id'],
                                                    feasible=best['all_hard_constraints_satisfied'], metrics={},
-                                                   normalized_constraint_violation=best['normalized_constraint_violation']),
+                                                   normalized_constraint_violation=best[
+                                                       'normalized_constraint_violation']),
         output=dict(completeness='partial', resumability=None, data_cursor=dict(commit_seq=reader.cutoff_seq)),
         source_model_cost=dict(status=(manifest.get('source_model') or {}).get('cost_status'),
                                evaluations_charged=(manifest.get('source_model') or {}).get('cost_evaluations'),
@@ -230,14 +245,16 @@ def collect_runs(experiment_dir, *, include_mock=False):
             skipped.append(dict(run_dir=str(run_dir), reason='unreadable run_manifest.json'))
             continue
         if manifest.get('mock') and not include_mock:
-            skipped.append(dict(run_id=manifest.get('run_id'), reason='mock data excluded from real-experiment aggregates'))
+            skipped.append(dict(run_id=manifest.get('run_id'),
+                reason='mock data excluded from real-experiment aggregates'))
             continue
         summary = read_json(RunLayout(run_dir).summary, default=None)
         if summary is None:
             try:
                 summary = reconstruct_from_tables(run_dir, manifest)
             except Exception as exc:
-                skipped.append(dict(run_id=manifest.get('run_id'), reason=f'no summary and raw tables unreadable: {exc}'))
+                skipped.append(dict(run_id=manifest.get('run_id'),
+                    reason=f'no summary and raw tables unreadable: {exc}'))
                 continue
         runs.append(dict(run_dir=run_dir, manifest=manifest, summary=summary))
     return runs, skipped
@@ -249,15 +266,18 @@ def _flat(run):
     totals, time_, best = s.get('totals') or {}, s.get('time') or {}, s.get('best_design')
     source = s.get('source_model_cost') or {}
     return dict(
-        experiment_id=m.get('experiment_id'), run_id=m['run_id'], task_id=m.get('task_id'), task_name=m.get('task_name'),
+        experiment_id=m.get('experiment_id'), run_id=m['run_id'], task_id=m.get('task_id'),
+        task_name=m.get('task_name'),
         task_definition_hash=m.get('task_definition_hash'), circuit_class=(m.get('circuit') or {}).get('circuit_class'),
         topology_id=(m.get('circuit') or {}).get('topology_id'), provenance=m.get('provenance'), mode=m.get('mode'),
         optimizer=optimizer_of(m),
-        method_label=research.get('method_label'), encoder_type=((m.get('architecture') or {}).get('network') or {}).get('encoder_type'),
+        method_label=research.get('method_label'),
+        encoder_type=((m.get('architecture') or {}).get('network') or {}).get('encoder_type'),
         ablation_labels=research.get('ablation_labels') or [], split=m.get('split'),
         generalization_level=m.get('generalization_level'), training_sources=research.get('training_sources') or [],
         comparison_pair_id=m.get('comparison_pair_id'), task_order=m.get('task_order'),
-        target_seed=(m.get('seeds') or {}).get('target_seed'), pretrain_seed=(m.get('seeds') or {}).get('pretrain_seed'),
+        target_seed=(m.get('seeds') or {}).get('target_seed'),
+        pretrain_seed=(m.get('seeds') or {}).get('pretrain_seed'),
         source_run_id=(m.get('source_model') or {}).get('run_id'),
         source_checkpoint_id=(m.get('source_model') or {}).get('checkpoint_id'),
         source_cost_status=source.get('status'), source_cost_evaluations=source.get('evaluations_charged'),
@@ -283,7 +303,8 @@ def _flat(run):
         best_conditions_complete=(best or {}).get('conditions_complete'),
         best_clearance_margin=(best or {}).get('clearance_margin'),
         retries=totals.get('retries'), cache_hits=totals.get('cache_hits'),
-        interrupted_evaluations=totals.get('interrupted_evaluations'), environment_steps=totals.get('environment_steps'),
+        interrupted_evaluations=totals.get('interrupted_evaluations'),
+        environment_steps=totals.get('environment_steps'),
         gradient_updates=totals.get('gradient_updates'), active_seconds=time_.get('active_seconds'),
         paused_seconds=time_.get('paused_seconds'), sum_job_runtime_seconds=time_.get('sum_job_runtime_seconds'),
         concurrency=(m.get('execution') or {}).get('concurrency'),
@@ -326,9 +347,11 @@ def export_aggregates(experiment_dir, *, include_mock=None, budgets=None):
     directory.mkdir(parents=True, exist_ok=True)
     inputs = dict(experiment_id=experiment.get('experiment_id'), include_mock=include_mock, skipped=skipped,
                   runs=[dict(run_id=r['run_id'], relative_run_dir=r['relative_run_dir'],
-                             cutoff_commit_seq=r['cutoff_commit_seq'], summary_source=r['summary_source']) for r in rows],
+                             cutoff_commit_seq=r['cutoff_commit_seq'],
+                             summary_source=r['summary_source']) for r in rows],
                   contains_mock_data=any(r['provenance'] == 'mock' for r in rows))
-    empty = None if rows else ('No eligible runs. ' + ('Mock runs exist but are excluded from real-experiment aggregates.'
+    empty = None if rows else ('No eligible runs. ' + (
+        'Mock runs exist but are excluded from real-experiment aggregates.'
                                                        if any('mock' in s.get('reason', '') for s in skipped) else
                                                        'The experiment has no runs yet.'))
     # ---- Write per-run rows before deriving budget and cross-run tables.
@@ -343,7 +366,8 @@ def export_aggregates(experiment_dir, *, include_mock=None, budgets=None):
     budget_columns = [name for name, _ in COLUMNS['budget_success']] + [
         'training_sources', 'circuit_class', 'topology_id', 'generalization_level', 'encoder_type', 'ablation_labels']
     for r in rows:
-        checkpoints = sorted(set(budgets or r['budget_checkpoints'] or ([r['max_evaluations']] if r['max_evaluations'] else [])))
+        checkpoints = sorted(set(budgets or r['budget_checkpoints'] or ([r['max_evaluations']] if r[
+            'max_evaluations'] else [])))
         if not checkpoints:
             continue
         # Only the budget table, its grouped counts and transfer summary consume these copies. Keep the full
@@ -358,18 +382,24 @@ def export_aggregates(experiment_dir, *, include_mock=None, budgets=None):
     # ---- Group budget outcomes before writing paired and transfer comparisons.
     grouped = {}
     for b in budget_rows:
-        grouped.setdefault((b['task_id'], b['mode'], b['optimizer'], b['method_label'], b['provenance'], b['budget']), []).append(b)
-    grouped_rows = [dict(task_id=k[0], mode=k[1], optimizer=k[2], method_label=k[3], provenance=k[4], budget=k[5], runs=len(v),
+        grouped.setdefault((b['task_id'], b['mode'], b['optimizer'], b['method_label'], b['provenance'], b['budget']),
+            []).append(b)
+    grouped_rows = [dict(task_id=k[0], mode=k[1], optimizer=k[2], method_label=k[3], provenance=k[4], budget=k[5],
+                         runs=len(v),
                          successes=sum(1 for x in v if x['success_within_budget'] is True),
                          failures=sum(1 for x in v if x['success_within_budget'] is False),
                          unknown=sum(1 for x in v if x['observation_status'] == 'unknown'),
                          censored=sum(1 for x in v if x['observation_status'] == 'censored'),
-                         run_ids=[x['run_id'] for x in v]) for k, v in sorted(grouped.items(), key=lambda i: tuple(map(str, i[0])))]
-    paths['budget_success_grouped'] = _write(directory, 'budget_success_grouped', grouped_rows, inputs=inputs, explanation=empty)
+                         run_ids=[x['run_id'] for x in v]) for k, v in sorted(grouped.items(),
+                             key=lambda i: tuple(map(str, i[0])))]
+    paths['budget_success_grouped'] = _write(directory, 'budget_success_grouped', grouped_rows, inputs=inputs,
+        explanation=empty)
     paths['paired_runs'] = _write(directory, 'paired_runs', _paired(rows), inputs=inputs,
-                                  explanation=empty or 'No runs share a comparison_pair_id with both a scratch baseline '
-                                                       'and a treatment at the same target seed.')
-    paths['transfer_summary'] = _write(directory, 'transfer_summary', _transfer(budget_rows), inputs=inputs, explanation=empty)
+                                  explanation=empty or
+                                      'No runs share a comparison_pair_id with both a scratch baseline and a '
+                                      'treatment at the same target seed.')
+    paths['transfer_summary'] = _write(directory, 'transfer_summary', _transfer(budget_rows), inputs=inputs,
+        explanation=empty)
     paths['cumulative_cost'] = _write(directory, 'cumulative_cost', _cumulative(rows), inputs=inputs,
                                       explanation=empty or 'No run carries a task_order label.')
     return {name: str(path) for name, path in paths.items()}
@@ -400,7 +430,8 @@ def _paired(rows):
                     treatment_run_id=other['run_id'], treatment_mode=other['mode'],
                     baseline_optimizer=baseline_optimizer, treatment_optimizer=treatment_optimizer,
                     treatment_method_label=other['method_label'], treatment_pretrain_seed=other['pretrain_seed'],
-                    pairing_criteria=criteria + soft + ['optimizer'], controlled=not differences, uncontrolled_differences=differences,
+                    pairing_criteria=criteria + soft + ['optimizer'], controlled=not differences,
+                    uncontrolled_differences=differences,
                     baseline_success=base['success'], treatment_success=other['success'],
                     baseline_first_feasible_eval_count=base['first_feasible_eval_count'],
                     treatment_first_feasible_eval_count=other['first_feasible_eval_count'], step_ratio=ratio,
@@ -469,7 +500,8 @@ def _cumulative(rows):
                 stream=key, task_order=r['task_order'], run_id=r['run_id'], task_id=r['task_id'], mode=r['mode'],
                 optimizer=r.get('optimizer', 'sac'),
                 method_label=r['method_label'], target_seed=r['target_seed'], pretrain_seed=r['pretrain_seed'],
-                source_checkpoint=None if not r['source_run_id'] else f"{r['source_run_id']}/{r['source_checkpoint_id']}",
+                source_checkpoint=None if not r[
+                    'source_run_id'] else f"{r['source_run_id']}/{r['source_checkpoint_id']}",
                 source_pretraining_cost=r['source_cost_evaluations'], target_task_cost=r['total_evaluations_charged'],
                 success=r['success'], cumulative_target_cost=target_total,
                 cumulative_source_cost_deduplicated=None if unknown else source_total,
@@ -520,5 +552,6 @@ def export_table_csv(run_dir, table, *, cutoff_seq=None):
             pass
     write_json(layout.exports / f'{table}__seq{reader.cutoff_seq}.meta.json', dict(
         table=table, rows=count, cutoff_commit_seq=reader.cutoff_seq, exporter_version=EXPORTER_VERSION,
-        generated_utc=utcnow().isoformat(), note='Derived copy. Nested cells are JSON. Parquet stays the source of truth.'))
+        generated_utc=utcnow().isoformat(),
+        note='Derived copy. Nested cells are JSON. Parquet stays the source of truth.'))
     return path

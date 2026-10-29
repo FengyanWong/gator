@@ -98,7 +98,8 @@ def count_since(engine, checkpoint_seq):
                'global_env_step', 'episode_id', 'completed_at', 'dispatch_index', 'cumulative_evaluations_charged',
                'cumulative_completed', 'cumulative_launches', 'in_flight_at_commit']
     later = sorted((row for row in DatasetReader(engine.layout.data).rows('evaluations', columns)
-                    if row['commit_seq'] > checkpoint_seq and row['status'] != 'interrupted'), key=lambda row: row['commit_seq'])
+                    if row['commit_seq'] > checkpoint_seq and row['status'] != 'interrupted'),
+                    key=lambda row: row['commit_seq'])
     try:        # the record made at the event (its seconds, what was in flight); the table's own numbers without it
         logged = {(e.get('event'), e.get('evaluation_id')): e for e in read_jsonl(engine.layout.logs / 'events.jsonl')}
     except (OSError, ValueError):
@@ -117,7 +118,8 @@ def count_since(engine, checkpoint_seq):
         number = (row['episode_id'] or '').rpartition('-')[2]
         if number.isdigit():
             engine.counters['episodes'] = max(engine.counters['episodes'], int(number))
-        for field, column in (('first_nominal_feasible', 'nominal_feasible'), ('first_feasible', 'all_hard_constraints_satisfied')):
+        for field, column in (('first_nominal_feasible', 'nominal_feasible'), ('first_feasible',
+            'all_hard_constraints_satisfied')):
             if not row[column] or getattr(engine.ledger, field) is not None:
                 continue
             event = logged.get((field, row['evaluation_id']))
@@ -133,7 +135,8 @@ def count_since(engine, checkpoint_seq):
                 found = row['evaluation_id']
     if found and engine.config.run.stop_at_first_feasible:        # the stop it asked for was cut off by the crash
         engine.stop_reason = 'first_feasible'
-    return dict(evaluations=len(later), consecutive_failures=engine.counters['consecutive_failures'], first_feasible=found)
+    return dict(evaluations=len(later), consecutive_failures=engine.counters['consecutive_failures'],
+        first_feasible=found)
 
 
 def record_interrupted(engine):
@@ -172,7 +175,8 @@ def record_interrupted(engine):
                    in_flight_at_commit=0, after_first_feasible=engine.ledger.first_feasible is not None,
                    in_flight_at_first_feasible=False, status='interrupted', failure_type='interrupted_by_crash',
                    diagnostics='The worker process ended while this evaluation was running. It stays charged. ' + (
-                               'Whether the toy backend was called is unknown; nothing physical happened.' if engine.task.mock else
+                               'Whether the toy backend was called is unknown; nothing physical happened.'
+                               if engine.task.mock else
                                'Its full launch allowance remains charged as unresolved, separately from confirmed '
                                'jobs. Reconcile the worker launch journals before any resume.'),
                    terminated=False, truncated=True, replay_eligible=False, duplicate_of=None)

@@ -39,7 +39,8 @@ def _pinned(path, sha256, what) -> dict:
 def _groups_match(found, groups, what):
     expected = [g['id'] for g in groups]
     if list(found) != expected:
-        raise ComparisonFileError(f'The {what} file names groups {list(found)[:5]}... but the compiled task varies {expected[:5]}...')
+        raise ComparisonFileError(
+            f'The {what} file names groups {list(found)[:5]}... but the compiled task varies {expected[:5]}...')
 
 
 def initial_designs(comparison, groups, mapper) -> list:
@@ -63,7 +64,8 @@ def problem_for(config, compiled):
     rows = []
     for spec in compiled.specs:
         if spec.active and spec.required:
-            rows.append(dict(metric=spec.metric_id, unit=spec.unit, lower=spec.lower, upper=spec.upper, scale=spec.scale))
+            rows.append(dict(metric=spec.metric_id, unit=spec.unit, lower=spec.lower, upper=spec.upper,
+                scale=spec.scale))
     objectives = [o.model_dump() for o in config.run.comparison.objectives]
     return Problem(rows, objectives, energy_rule=config.run.comparison.energy_rule)
 
@@ -82,7 +84,8 @@ def build_proposer(config, compiled, *, state=None):
             proposer = ArchiveProposer.from_state(state)
         else:
             if archive is not None and archive.get('format') != TURBO_ARCHIVE_FORMAT:
-                raise ComparisonFileError(f"A turbo_archive run reads a {TURBO_ARCHIVE_FORMAT} archive, not {archive.get('format')!r}")
+                raise ComparisonFileError(
+                    f"A turbo_archive run reads a {TURBO_ARCHIVE_FORMAT} archive, not {archive.get('format')!r}")
             proposer = ArchiveProposer(groups, seed=config.run.seed, archive=archive, **comparison.settings)
         if proposer.group_ids != [g['id'] for g in groups]:
             raise ComparisonFileError('The saved search varies other groups than the compiled task')
@@ -94,9 +97,11 @@ def build_proposer(config, compiled, *, state=None):
         source = None
         if archive is not None:
             if archive.get('format') != MOBO_ARCHIVE_FORMAT:
-                raise ComparisonFileError(f"A mobo run reads a {MOBO_ARCHIVE_FORMAT} archive, not {archive.get('format')!r}")
+                raise ComparisonFileError(
+                    f"A mobo run reads a {MOBO_ARCHIVE_FORMAT} archive, not {archive.get('format')!r}")
             source = dict(u=archive['u'], y=[problem.outcome(m, v, s)[0]
-                                             for m, v, s in zip(archive['metrics'], archive['validity'], archive['status'])])
+                                             for m, v, s in zip(archive['metrics'], archive['validity'],
+                                                 archive['status'])])
         return MoboProposer(groups, problem, seed=config.run.seed, archive=source, settings=comparison.settings)
     raise ValueError(f'{optimizer} is not a comparison search')
 

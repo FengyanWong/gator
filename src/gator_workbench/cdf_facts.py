@@ -114,10 +114,12 @@ def parse_facts(text, *, library, cell) -> dict:
         if tag == 'INST' and len(parts) >= 4:
             instances[parts[1]] = dict(library=parts[2], cell=parts[3])
         elif tag == 'RULE' and len(parts) >= 5 and parts[3] in ('E', 'D') and parts[4] in ('yes', 'no', 'form'):
-            rules.setdefault(parts[1], {}).setdefault(parts[2], {})['editable' if parts[3] == 'E' else 'display'] = parts[4]
+            rules.setdefault(parts[1], {}).setdefault(parts[2],
+                {})['editable' if parts[3] == 'E' else 'display'] = parts[4]
         elif tag == 'MASTER' and len(parts) >= 3:
             if parts[1] in masters and masters[parts[1]] != parts[2]:
-                conflicts.append(parts[1])                 # one cell name in two libraries: its facts cannot be told apart
+                # one cell name in two libraries: its facts cannot be told apart
+                conflicts.append(parts[1])
             masters[parts[1]] = parts[2]
         elif tag == 'OPENED':
             opened = parts[1:]
@@ -138,7 +140,8 @@ def _device(facts, core, device):
     """(instance, its master cell, the cell whose Spectre entry netlists the device, parent cell or None)."""
     parts = (device or '').split('/')
     if len(parts) not in (2, 3) or parts[0] != core:
-        raise NotWritable(f'{device}: only parts directly inside the core cell ({core}/...) - or the one primitive a PDK cell '
+        raise NotWritable(
+            f'{device}: only parts directly inside the core cell ({core}/...) - or the one primitive a PDK cell '
                           'of the core cell places - can be written')
     instance = parts[1]
     placed = facts['instances'].get(instance)
@@ -152,7 +155,8 @@ def _device(facts, core, device):
         raise NotWritable(f'{device}: its cell {placed["library"]}/{master} has no description (CDF) to edit it by')
     if len(parts) == 2:
         if not cells[master].get('spectre'):
-            raise NotWritable(f'{device}: {master} is netlisted through the parts inside it; name the part (e.g. {device}/R0)')
+            raise NotWritable(
+                f'{device}: {master} is netlisted through the parts inside it; name the part (e.g. {device}/R0)')
         return instance, master, master, None
     leaf = next((item for item in facts['leaves'].get(master, []) if item['instance'] == parts[2]), None)
     if leaf is None or leaf['cell'] not in cells or not cells[leaf['cell']].get('spectre'):
@@ -196,13 +200,17 @@ def _rule_state(facts, instance, cdf_name, which):
     return ((facts.get('rules') or {}).get(instance) or {}).get(cdf_name, {}).get(which)
 
 
-# analogLib's display rule asks whether the simulator the form is opened for lists the parameter. Read outside ADE it says
-# no, yet every parameter written here is one of Spectre's instance parameters (`sources`), so Spectre's form shows it.
+# analogLib's display rule asks whether the simulator the form is opened for lists the parameter. Read outside ADE it
+# says no, yet every parameter written here is one of Spectre's instance parameters (`sources`), so Spectre's form shows
+# it.
 TOOL_DISPLAY = re.compile(r"\s*artParameterInToolDisplay\(\s*'?\w+\s*\)\s*")
 
 
 def editable(facts, instance, source) -> str | None:
-    """None when the form lets a user type this value into `instance` now (or only the open form can tell), else why not."""
+    (
+        'None when the form lets a user type this value into `instance` now (or only the open form can tell), '
+        'else why not.'
+    )
     if source['editable'] is None:
         return 'this PDK was read before the form rules were: read the cell again'
     if source['editable'] is False:
@@ -211,7 +219,8 @@ def editable(facts, instance, source) -> str | None:
         return 'the form never shows it'
     if _rule_state(facts, instance, source['cdf'], 'editable') == 'no':
         return f'the form greys it out in the setting {instance} has now (its rule: {source["editable"]})'
-    if _rule_state(facts, instance, source['cdf'], 'display') == 'no' and not TOOL_DISPLAY.fullmatch(str(source['display'])):
+    if _rule_state(facts, instance, source['cdf'],
+        'display') == 'no' and not TOOL_DISPLAY.fullmatch(str(source['display'])):
         return f'the form hides it in the setting {instance} has now (its rule: {source["display"]})'
     return None
 

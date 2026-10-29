@@ -59,7 +59,8 @@ def _one_row(reader, table, column, value, columns=None, flushes=None):
     import pyarrow.parquet as pq
     for flush in reader.flushes if flushes is None else flushes:
         if table in flush['parts']:
-            found = pq.read_table(reader.root / table / flush['parts'][table], columns=columns, filters=[(column, '=', value)])
+            found = pq.read_table(reader.root / table / flush['parts'][table], columns=columns, filters=[(column, '=',
+                value)])
             if found.num_rows:
                 return found.to_pylist()[0]
     return None
@@ -136,7 +137,8 @@ def _step_number(reader, wanted, saved_at):
         return _legacy_step_number(reader, wanted, saved_at)
     if wanted is not None and not found:
         raise GraphViewUnavailable(f'This run has no archived evaluation {wanted}: it holds {first} to {last}.')
-    return (wanted if wanted is not None else last if chosen is None else chosen), dict(first=first, last=last, count=count)
+    return (wanted if wanted is not None else last if chosen is None else chosen), dict(first=first, last=last,
+        count=count)
 
 
 def _step(loader, wanted, saved_at) -> tuple:
@@ -145,10 +147,10 @@ def _step(loader, wanted, saved_at) -> tuple:
     """
     chosen, steps = _step_number(loader.reader, wanted, saved_at)
     # A transition is committed with its evaluation number, so it sits in the part of the flush whose range holds that
-    # number; its state was written in that flush or an earlier one (once, with the first transition that saw it). One read
-    # for the transition and the states newest first from there, instead of every part of a long run oldest first (the
-    # default view of a 400-evaluation run: 96 parquet reads, ~1.2 s on the 9p mount). Anything not found there is looked
-    # for in the other parts, as before.
+    # number; its state was written in that flush or an earlier one (once, with the first transition that saw it). One
+    # read for the transition and the states newest first from there, instead of every part of a long run oldest first
+    # (the default view of a 400-evaluation run: 96 parquet reads, ~1.2 s on the 9p mount). Anything not found there is
+    # looked for in the other parts, as before.
     flushes = loader.reader.flushes
     at = next((i for i, f in enumerate(flushes) if f['first_seq'] <= chosen <= f['last_seq']), len(flushes) - 1)
     columns = ['commit_seq', 'state_ref', 'action', 'policy_version']
@@ -240,8 +242,9 @@ def _network_view(run_dir, vocabulary):
         raise GraphViewUnavailable('What this run showed its network (its spec descriptions or its PDK\'s device '
                                    f'numbers) cannot be rebuilt here ({type(exc).__name__}).') from exc
     if view is None or view.key != recorded.get('view_key'):
-        raise GraphViewUnavailable('What this run showed its network has changed since it ran (its task\'s spec '
-                                   "descriptions or its PDK's device numbers), so the circuit cannot be shown to it the same way.")
+        raise GraphViewUnavailable(
+            "What this run showed its network has changed since it ran (its task's spec descriptions or its "
+            "PDK's device numbers), so the circuit cannot be shown to it the same way.")
     return view
 
 
@@ -269,12 +272,18 @@ def graph_view(run_dir, checkpoint_id='latest', *, evaluation=None) -> dict:
         checkpoint_id=meta['checkpoint_id'], run_dir=str(run_dir), task_id=meta.get('task_id'), network=config,
         circuit_id=graph.circuit_id, origin=observation.origin,
         step=dict(evaluation=row['commit_seq'], policy_version_then=row.get('policy_version'),
-                  saved_at=(meta.get('counters') or {}).get('evaluations_committed'), status=observation.status, **steps),
-        metrics=[dict(id=k, value=v, unit=observation.metric_units.get(k, ''), valid=bool(observation.metric_validity.get(k)))
+                  saved_at=(meta.get('counters') or {}).get('evaluations_committed'), status=observation.status,
+                  **steps),
+        metrics=[dict(id=k, value=v, unit=observation.metric_units.get(k, ''),
+            valid=bool(observation.metric_validity.get(k)))
                  for k, v in sorted(observation.metrics.items())],
-        vocabulary=dict(name=vocabulary.name, label=vocabulary.label) if vocabulary is not None else dict(name='standard', label='standard (8 generic kinds)'),
-        devices=[dict(id=d.id, kind=d.kind, model=d.model_ref, groups=member_of.get(d.id, []), family=_family(d, vocabulary),
-                      parameters={name: p.value for name, p in (graph.parameters.get(d.id) or {}).items() if p.value is not None})
+        vocabulary=dict(name=vocabulary.name,
+            label=vocabulary.label) if vocabulary is not None else dict(name='standard',
+            label='standard (8 generic kinds)'),
+        devices=[dict(id=d.id, kind=d.kind, model=d.model_ref, groups=member_of.get(d.id, []), family=_family(d,
+            vocabulary),
+                      parameters={name: p.value for name,
+                          p in (graph.parameters.get(d.id) or {}).items() if p.value is not None})
                  for d in graph.devices],
         nets=[dict(id=n.id, roles=list(n.roles)) for n in graph.nets],
         connections=list(connections.values()), groups=groups,
@@ -308,9 +317,13 @@ def _load_graph_state(run_dir, checkpoint_id, evaluation) -> tuple:
 
 
 def _network_observation(run_dir, observation, features, spec, batch_observations) -> tuple:
-    """Validate the saved component vocabulary and construct the network batch while retaining the displayed circuit view."""
+    (
+        'Validate the saved component vocabulary and construct the network batch while retaining the displayed '
+        'circuit view.'
+    )
     # A run built with a PDK's component list saw every circuit through that PDK's view: replay it the same way, and
-    # draw what the network saw (the PDK kinds and pin roles). The run's own copy of the list is used, never a newer load.
+    # draw what the network saw (the PDK kinds and pin roles). The run's own copy of the list is used, never a newer
+    # load.
     vocabulary = run_vocabulary(run_dir)
     if vocabulary is not None:
         if network_inputs.feature_schema(vocabulary.schema, _network_of(run_dir)) != features:
@@ -332,9 +345,12 @@ def _graph_connections(features, graph, batch, count, net_ids, device_ids) -> tu
     connections = {}
     for c in graph.connections:
         connections[(c.device_id, c.net_id, c.role, c.ordinal)] = dict(
-            id=f'{c.device_id}.{c.terminal}#{c.ordinal}->{c.net_id}', device=c.device_id, net=c.net_id, terminal=c.terminal,
+            id=f'{c.device_id}.{c.terminal}#{c.ordinal}->{c.net_id}', device=c.device_id, net=c.net_id,
+            terminal=c.terminal,
             role=c.role, ordinal=c.ordinal, attention=[])
-    edge_index, edge_role, edge_ordinal = batch.edge_index.tolist(), batch.edge_role.tolist(), batch.edge_ordinal.tolist()
+    edge_index, edge_role, edge_ordinal = (
+        batch.edge_index.tolist(), batch.edge_role.tolist(), batch.edge_ordinal.tolist()
+    )
     incoming = [0] * (count + len(net_ids))
     for receiver in edge_index[1]:
         incoming[receiver] += 1
@@ -348,7 +364,10 @@ def _graph_connections(features, graph, batch, count, net_ids, device_ids) -> tu
 
 
 def _append_connection_attention(layers, edge_index, connections, keys) -> None:
-    """Verify each attention layer uses the recorded edges and attach directional head weights to physical connections."""
+    (
+        'Verify each attention layer uses the recorded edges and attach directional head weights to physical '
+        'connections.'
+    )
     for number, (index, alpha) in enumerate(layers):
         if index.tolist() != edge_index:
             raise GraphViewUnavailable('An attention layer reported other connections than the network was given.')
@@ -374,7 +393,8 @@ def _graph_parameter_groups(graph, policy, recorded) -> tuple:
             id=group.id, parameter=group.parameter_kind, unit=group.unit, value=group.value, lower=group.lower,
             upper=group.upper, scale=group.scale, mutable=group.mutable,
             members=[dict(device=m.device_id, parameter=m.parameter, ratio=m.ratio) for m in group.members],
-            policy_action=z, policy_value=None if z is None else decode_action(z, group.lower, group.upper, group.scale),
+            policy_action=z, policy_value=None if z is None else decode_action(z, group.lower, group.upper,
+                group.scale),
             recorded_action=done,
             recorded_value=None if done is None else decode_action(done, group.lower, group.upper, group.scale)))
     return member_of, groups

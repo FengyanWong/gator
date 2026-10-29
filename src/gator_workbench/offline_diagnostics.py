@@ -81,15 +81,19 @@ def qualify(training_dir, *, progress=None):
         raise ValueError('The specialist comparison reads the pool as its specialists saw it; a pool read with the '
                          'transferable network inputs (record 7.298) is not compared yet')
     if recorded.get('reward_migration'):
-        raise ValueError('The specialist comparison scores each specialist on the rewards it was trained with; a pool whose '
+        raise ValueError(
+            'The specialist comparison scores each specialist on the rewards it was trained with; a pool whose '
                          'rewards were recomputed (migrate_reward_settings) is not compared yet')
     # ---- Rebuild and verify the recorded pool before comparing checkpoints.
     pool = prepare_pool(request, progress=progress)
-    if recorded['request_sha256'] != pool.audit['request_sha256'] or recorded['split_sha256'] != pool.audit['split_sha256']:
+    if recorded['request_sha256'] != pool.audit['request_sha256'] or recorded['split_sha256'] != pool.audit[
+        'split_sha256']:
         raise ValueError('Qualification must use exactly the training pool and split')
     was, now = ({s['run_id']: s.get('inputs_sha256') for s in audit['sources']} for audit in (recorded, pool.audit))
-    if any(was[run] is not None and was[run] != now.get(run) for run in was):         # record 7.319; older pools pinned none
-        raise ValueError('Qualification must show the pool as the training saw it: the network inputs of a source changed '
+    # record 7.319; older pools pinned none
+    if any(was[run] is not None and was[run] != now.get(run) for run in was):
+        raise ValueError(
+            'Qualification must show the pool as the training saw it: the network inputs of a source changed '
                          '(its PDK was loaded again, or its task\'s spec descriptions or test variables changed)')
     learner, meta = load_model(checkpoints.resolve_checkpoint(directory, 'latest'))
     if identity(asdict(learner.spec_schema)) != identity(recorded['spec_schema']):
@@ -119,19 +123,23 @@ def qualify(training_dir, *, progress=None):
         checks = proposals(learner, states, best_recorded_reward=best, reward_rmse=rmse)
         errors = [max(row['scores'][task]['q1_mse'], row['scores'][task]['q2_mse']) for row in curve]
         report['tasks'][task] = dict(general=scores[task], specialist=specialist_scores,
-                                    specialist_run=source['run_id'], specialist_code=specialist_meta['contract']['code_sha256'],
+                                    specialist_run=source['run_id'],
+                                    specialist_code=specialist_meta['contract']['code_sha256'],
                                     specialist_training_overlap_possible=True, best_recorded_reward=best,
                                     proposal_rows=checks, proposals_above_best_plus_three_rmse=sum(
                                         r['exceeds_best_by_three_rmse'] for r in checks),
-                                    final_over_best_validation=max(scores[task]['q1_mse'], scores[task]['q2_mse']) / min(errors))
+                                    final_over_best_validation=max(scores[task]['q1_mse'],
+                                        scores[task]['q2_mse']) / min(errors))
         write_json(directory / 'qualification.json', report)
         if progress:
-            progress(dict(task=task, checks=len(checks), flagged=report['tasks'][task]['proposals_above_best_plus_three_rmse'],
+            progress(dict(task=task, checks=len(checks),
+                          flagged=report['tasks'][task]['proposals_above_best_plus_three_rmse'],
                           general_mse=max(scores[task]['q1_mse'], scores[task]['q2_mse']),
                           specialist_mse=max(specialist_scores['q1_mse'], specialist_scores['q2_mse'])))
     # ---- Mark completion only after every task's diagnostic rows have been written.
     report['complete'] = True
     report['requires_review'] = [task for task, r in report['tasks'].items()
-                                  if r['proposals_above_best_plus_three_rmse'] or not all(p['legal'] for p in r['proposal_rows'])]
+                                  if r['proposals_above_best_plus_three_rmse'] or not all(p['legal'] for p in r[
+                                      'proposal_rows'])]
     write_json(directory / 'qualification.json', report)
     return report

@@ -69,9 +69,11 @@ def summarize_snapshot(snapshot, *, library, cell) -> dict:
         if isinstance(terms, list):
             terms = {t.get('name'): t.get('net') for t in terms if isinstance(t, dict)}
         instances.append(dict(
-            instance_path=item.get('name'), master=dict(library=item.get('lib'), cell=item.get('cell'), view=item.get('view')),
+            instance_path=item.get('name'), master=dict(library=item.get('lib'), cell=item.get('cell'),
+                view=item.get('view')),
             terminals=[dict(terminal=k, net=v) for k, v in terms.items()],
-            parameters={k: dict(raw=v, value=None, note='CDF string as read; not converted') for k, v in (item.get('params') or {}).items()}))
+            parameters={k: dict(raw=v, value=None, note='CDF string as read; not converted') for k,
+                v in (item.get('params') or {}).items()}))
     return dict(source='virtuoso', library=library, cell=cell, origin=snapshot.get('origin', 'bridge_readback'),
                 instances=instances, instance_count=len(instances),
                 nets=sorted({t['net'] for i in instances for t in i['terminals'] if t['net']}),
@@ -144,12 +146,14 @@ def _import_cell_snapshot(args, client) -> None:
     out.mkdir(parents=True, exist_ok=False)
     info = client.library.get(args.library)
     with (out / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
-        exported = client.schematic.export_netlist(args.library, args.testbench or args.cell, out / 'package', timeout=120)
+        exported = client.schematic.export_netlist(args.library, args.testbench or args.cell, out / 'package',
+            timeout=120)
         # include_positions=True as in the run adapter's _read_snapshot: it is what adds `view` to every instance,
         # and a profile's reference readback must have the shape the adapter compares at run time.
         readbacks = {'core_readback.json': read_cell(client, args.library, args.cell)}
         if args.testbench:
-            readbacks['testbench_readback.json'] = read_cell(client, args.library, args.testbench, include_positions=False)
+            readbacks['testbench_readback.json'] = read_cell(client, args.library, args.testbench,
+                include_positions=False)
         # What the property form of every instance lets a user type (cdf_facts: one more read-only query). A
         # failed query leaves the import as before - transistor widths only - and keeps the reason.
         from . import cdf_facts
@@ -159,11 +163,13 @@ def _import_cell_snapshot(args, client) -> None:
             readbacks[cdf_facts.FILE] = (cdf_facts.parse_facts(decode_skill_output(answer.output), library=args.library,
                                                                cell=args.cell) if answer.ok else
                                          dict(format=cdf_facts.FORMAT, library=args.library, cell=args.cell,
-                                              error=redact('; '.join(map(str, answer.errors)) or 'the query failed', 400)))
+                                              error=redact('; '.join(map(str, answer.errors)) or 'the query failed',
+                                                  400)))
         except Exception as exc:
             readbacks[cdf_facts.FILE] = dict(format=cdf_facts.FORMAT, library=args.library, cell=args.cell,
                                              error=redact(f'{type(exc).__name__}: {exc}', 400))
-    structure = Path(exported['input_file']).parent / 'netlist'      # the structure-only file, as the run adapter uses it
+    # the structure-only file, as the run adapter uses it
+    structure = Path(exported['input_file']).parent / 'netlist'
     (out / 'netlist.scs').write_text(structure.read_text())
     for name, snapshot in readbacks.items():
         (out / name).write_text(json.dumps(snapshot, default=str, indent=1))
@@ -179,10 +185,12 @@ def _read_pdk_record(args, client, settings, bridge) -> None:
     from contextlib import redirect_stdout
     from .pdk import read_from_virtuoso  # lazy: in the try: a failure of the import is handled with the rest
     with redirect_stdout(sys.stderr):                      # the bridge prints progress; stdout keeps the one JSON line
-        library = args.library or (client.library.get(settings['library']).technology_library if settings.get('library') else None)
+        library = args.library or (client.library.get(settings['library']).technology_library if settings.get(
+            'library') else None)
         if not library:
             raise ValueError('Name the technology library: the connection states no design library to take it from')
-        raw = read_from_virtuoso(client, technology_library=library, model_file=args.model_file or settings.get('model_file'),
+        raw = read_from_virtuoso(client, technology_library=library,
+                                 model_file=args.model_file or settings.get('model_file'),
                                  cache_host=host_identity(bridge, settings, args.profile_id))
     print(json.dumps(raw))
 
@@ -200,14 +208,16 @@ def host_identity(bridge, settings, profile_id) -> str:
     return profile_id
 
 
-def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, timeout=90.0, command=None, model_file=None):
+def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, timeout=90.0, command=None,
+    model_file=None):
     """Gate, then run the reader process. Raises PermissionError when the gate blocks."""
     for value in (library, cell, testbench):
         if value is not None and not NAME.match(value):
             raise ValueError('library and cell must be plain Cadence names')
     if model_file is not None:
         if not REMOTE_PATH.match(model_file) or '/../' in model_file:
-            raise ValueError('The model file must be an absolute path on the simulator host (letters, digits, / . _ - +)')
+            raise ValueError(
+                'The model file must be an absolute path on the simulator host (letters, digits, / . _ - +)')
     require_gate(monitor, 'read_cellview', profile_id, 'reading the native design')
     argv = (command or [sys.executable, '-m', 'gator_workbench.bridge_read']) + ['--profile-id', profile_id, '--op', op]
     if op == 'cells':
@@ -229,7 +239,8 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
         native_cells.cell_dir(library, cell)                       # validates both names before anything is created
         incoming = native_cells.store_root() / f'.incoming-{uuid4().hex}'       # same filesystem as its final place
         incoming.parent.mkdir(parents=True, exist_ok=True)
-        argv += ['--library', library, '--cell', cell, '--output', str(incoming)] + (['--testbench', testbench] if testbench else [])
+        argv += ['--library', library, '--cell', cell, '--output', str(incoming)] + (['--testbench',
+            testbench] if testbench else [])
         timeout = max(timeout, 300.0)                              # a netlist export alone may take two minutes
     # ---- Run the reader and interpret its results while staging cleanup remains guaranteed.
     try:
@@ -241,17 +252,19 @@ def read(monitor, profile_id, op, *, library=None, cell=None, testbench=None, ti
             raise child_error(stderr, 'bridge read failed')
         data = json.loads(stdout.strip().splitlines()[-1])
         if op == 'import_cell':
-            # The PDK - and the ideal parts read with it - before the cell's device mapping is built: a part that this very
-            # press describes for the first time is then recognized in the cell at once, not only at the next read.
+            # The PDK - and the ideal parts read with it - before the cell's device mapping is built: a part that this
+            # very press describes for the first time is then recognized in the cell at once, not only at the next read.
             read_pdk = pdk_with_import(monitor, profile_id, data.get('technology_library'), command=command)
             imported = native_cells.finish_import(incoming, library=library, cell=cell, testbench_cell=testbench,
-                                                  technology_library=data.get('technology_library'), profile_id=profile_id)
+                                                  technology_library=data.get('technology_library'),
+                                                  profile_id=profile_id)
             return dict(imported, pdk=read_pdk)
         if op == 'pdk':
             from . import pdk  # lazy: in the try: a failure of the import is handled with the rest
             return pdk.describe(pdk.finish_load(data))
     finally:
-        if incoming is not None and incoming.exists():             # a failed or unparseable import leaves nothing behind
+        # a failed or unparseable import leaves nothing behind
+        if incoming is not None and incoming.exists():
             import shutil
             shutil.rmtree(incoming, ignore_errors=True)
     if op == 'read_schematic':
@@ -266,15 +279,20 @@ def pdk_with_import(monitor, profile_id, technology_library, *, command=None) ->
     cell, never instead of it: whatever fails here leaves the import as it is and says why. `state`: read / not_read /
     skipped."""
     if not technology_library:
-        return dict(state='skipped', reason='The design library states no technology library, so no PDK was read with the '
+        return dict(state='skipped',
+            reason='The design library states no technology library, so no PDK was read with the '
                                             'cell. Name the PDK in the PDK window.')
     try:
         described = read(monitor, profile_id, 'pdk', library=technology_library, command=command)
-    except Exception as exc:                      # the gate, a timeout, the reader, a PDK nothing was recognized in: all in words
+    # the gate, a timeout, the reader, a PDK nothing was recognized in: all in words
+    except Exception as exc:
         return dict(state='not_read', technology_library=technology_library, reason=str(exc) or exc.__class__.__name__)
-    return dict(state='read', technology_library=technology_library, pdk_id=described['pdk_id'], vocabulary=described['vocabulary'],
-                label=described['label'], version=described['version'], sha256=described['sha256'], summary=described['summary'],
-                loaded_utc=described['loaded_utc'], ideal_parts=pdk.describe_ideal_parts(pdk.load_record(described['pdk_id']), brief=True))
+    return dict(state='read', technology_library=technology_library, pdk_id=described['pdk_id'],
+                vocabulary=described['vocabulary'],
+                label=described['label'], version=described['version'], sha256=described['sha256'],
+                summary=described['summary'],
+                loaded_utc=described['loaded_utc'],
+                ideal_parts=pdk.describe_ideal_parts(pdk.load_record(described['pdk_id']), brief=True))
 
 
 if __name__ == '__main__':

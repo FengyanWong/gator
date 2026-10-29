@@ -27,7 +27,9 @@ from .paths import OutputRoots, is_mock_path, repo_root
 from .vocabulary import run_vocabulary, write_run_vocabulary
 from .model_inputs import source_vocabulary as _vocabulary_for, vocabulary_record  # compatibility exports
 from .reward_diagnostics import load as steering_check
-from .run_definitions import NON_RL_OPTIMIZERS, learner_experiment, optimizer_of, require_resumable, require_rl_model, saves_rl_model
+from .run_definitions import (
+    NON_RL_OPTIMIZERS, learner_experiment, optimizer_of, require_resumable, require_rl_model, saves_rl_model
+)
 from .run_lock import RunLock
 from .schema import REMOVED_SEARCH_METHODS, WorkbenchConfig, canonical_json, config_hash, task_definition_hash
 from .storage.atomic import read_dict, read_json, write_json
@@ -36,7 +38,9 @@ from .task_registry import NATIVE_DRAFT_NOT_EXECUTABLE, REAL_AUTHORIZATION_REQUI
 from .tasks import TaskBlocked, load_task, load_task_view
 from .validation import validate
 # re-exported: moved to settings_store.py by the refactoring (docs/plan-refactoring.md)
-from .settings_store import SETTINGS_LOCK, _SETTINGS_LOCK, read_settings, load_settings, save_settings, remembered_output_root
+from .settings_store import (
+    SETTINGS_LOCK, _SETTINGS_LOCK, read_settings, load_settings, save_settings, remembered_output_root
+)
 # (not current_source_digest and the caches' own state: they are read and patched as run_index.<name>)
 # re-exported: moved to run_index.py by the refactoring (docs/plan-refactoring.md)
 from .run_index import (SEGMENT_FACTS, run_timing, lineage, _RunRow, _code_of, save_point_code, save_point_facts,
@@ -79,7 +83,8 @@ def _input_snapshot(layout: RunLayout, task, compiled, config):
         diagnostics=[dict(code=d.code, message=d.message, severity=d.severity) for d in graph.diagnostics]))
     notes = []
     if task.netlist_text is not None:
-        name = 'netlist.cir' if task.circuit.get('simulator') == 'ngspice' else 'netlist.scs'   # a SPICE deck is not .scs
+        # a SPICE deck is not .scs
+        name = 'netlist.cir' if task.circuit.get('simulator') == 'ngspice' else 'netlist.scs'
         (snapshot / name).write_text(task.netlist_text, encoding='utf8')
         write_json(snapshot / 'hierarchy.json', dict(
             combined_netlist=name, dut_hierarchy=task.circuit.get('dut_hierarchy'),
@@ -89,7 +94,9 @@ def _input_snapshot(layout: RunLayout, task, compiled, config):
                      'Separate dut.scs / testbench.scs do not exist and no empty placeholders were created.')
     write_json(snapshot / 'parameter_mapping.json', dict(variables=list(compiled.variables),
                                                          action_version='absolute-group-v1',
-                                                         rule='absolute linear/log -> clamp -> nearest grid -> bindings'))
+                                                         rule=
+                                                             'absolute linear/log -> clamp -> nearest grid -> '
+                                                             'bindings'))
     write_json(snapshot / 'pdk_reference.json', dict(
         pdk_id=task.circuit.get('pdk_id'), parser_config_file=task.parser_config_path,
         parser_config_sha256=task.circuit.get('parser_config_sha256'),
@@ -145,7 +152,9 @@ def suggest_mode(config: WorkbenchConfig, source_run_dir=None, task=None) -> dic
         return dict(mode='resume', reason='Full training state exists for the same task.', requires_confirmation=False)
     if same:
         return dict(mode='fine_tune', requires_confirmation=True,
-                    reason=f"Same task but the checkpoint is {meta['restoration_capability']}; a full resume is impossible.")
+                    reason=
+                        f"Same task but the checkpoint is {meta['restoration_capability']}; a full resume is "
+                        f'impossible.')
     return dict(mode='fine_tune', requires_confirmation=True,
                 reason='The model was trained on a different task. Loading it is a transfer: a new run is created and '
                        'the source recorded as its parent.')
@@ -177,10 +186,12 @@ def _contract_key(model_config, sac_config, spec_schema, vocabulary, runtime) ->
         if isinstance(value, (list, tuple)):
             return [plain(v) for v in value]
         return value
-    return canonical_json(dict(code=run_index.current_source_digest(), torch=str(torch.__version__), pyg=str(torch_geometric.__version__),
+    return canonical_json(dict(code=run_index.current_source_digest(), torch=str(torch.__version__),
+                               pyg=str(torch_geometric.__version__),
                                model_config=model_config.to_dict(), sac_config=asdict(sac_config),
                                spec_schema=None if spec_schema is None else asdict(spec_schema),
-                               vocabulary=None if vocabulary is None else dict(name=vocabulary.name, sha256=vocabulary.sha256),
+                               vocabulary=None if vocabulary is None else dict(name=vocabulary.name,
+                                   sha256=vocabulary.sha256),
                                options={name: plain(value) for name, value in (runtime or {}).items()}))
 
 
@@ -197,7 +208,8 @@ def learner_contract(config, task, task_hash, spec_schema, vocabulary, *, cached
     with _CONTRACTS_LOCK:
         contract = _CONTRACTS.get(key)
     if contract is None:
-        contract = modes.current_contract(experiment, model_config, sac_config, spec_schema, vocabulary, runtime=runtime)
+        contract = modes.current_contract(experiment, model_config, sac_config, spec_schema, vocabulary,
+            runtime=runtime)
         with _CONTRACTS_LOCK:
             while len(_CONTRACTS) >= CONTRACT_CACHE_MAX:
                 _CONTRACTS.pop(next(iter(_CONTRACTS)))
@@ -211,7 +223,8 @@ def connection_gate(task, config, monitor, *, acknowledge_unknown: bool=False):
     if task.mock:
         return dict(status='not_applicable', allowed=True, reason='mock run: no bridge layer is involved')
     if monitor is None:
-        raise RunRejected('A real run needs the connection gate; no connection monitor was supplied', code='connection_gate')
+        raise RunRejected('A real run needs the connection gate; no connection monitor was supplied',
+            code='connection_gate')
     profile_id = config.run.connection_profile_id
     if not profile_id:
         raise RunRejected('A real task needs run.connection_profile_id (the identifier of a configured profile). '
@@ -223,17 +236,21 @@ def connection_gate(task, config, monitor, *, acknowledge_unknown: bool=False):
     if settings is not None and connection.family_of(connection.entry_kind(settings)) != family:
         label = connection.KINDS.get(connection.entry_kind(settings) or '', {}).get('label', 'of an unknown kind')
         raise RunRejected(f'Connection {profile_id!r} is "{label}", but this task runs on '
-                          + ('ngspice: choose an ngspice connection ("ngspice on this machine" or "ngspice over SSH") in the '
-                             'Connection window, or add one there.' if family == 'ngspice' else
-                             'Virtuoso + Spectre: choose a Virtuoso connection in the Connection window.'), code='connection_gate')
+                          + (
+                              'ngspice: choose an ngspice connection ("ngspice on this machine" or "ngspice over '
+                              'SSH") in the Connection window, or add one there.' if family == 'ngspice' else
+                             'Virtuoso + Spectre: choose a Virtuoso connection in the Connection window.'),
+                             code='connection_gate')
     try:
         gate = monitor.gate('real_simulation', profile_id, acknowledge_unknown=acknowledge_unknown)
     except (KeyError, ValueError) as exc:
         raise RunRejected(f'Unknown connection profile: {exc}', code='connection_gate')
     if not gate['allowed']:
-        raise RunRejected('The connection gate blocked this action. Nothing was reserved or created.' if gate['status'] == 'blocked'
+        raise RunRejected('The connection gate blocked this action. Nothing was reserved or created.' if gate[
+            'status'] == 'blocked'
                           else 'Some connection layers are unknown; acknowledge them to proceed.', report=gate,
-                          code='connection_gate_blocked' if gate['status'] == 'blocked' else 'connection_gate_acknowledge')
+                          code='connection_gate_blocked' if gate[
+                              'status'] == 'blocked' else 'connection_gate_acknowledge')
     return gate
 
 
@@ -245,7 +262,8 @@ def _check_consistency(config, task, monitor, acknowledge_unknown):
         return None
     if consistency.saved_task(config, with_entry=False) is None:
         return None
-    result = consistency.check(monitor, config.run.connection_profile_id, config, rows=False, acknowledge_unknown=acknowledge_unknown)
+    result = consistency.check(monitor, config.run.connection_profile_id, config, rows=False,
+        acknowledge_unknown=acknowledge_unknown)
     if not result['ok']:
         raise RunRejected(consistency.summary(result), report=result, code='consistency')
     return result
@@ -283,7 +301,8 @@ def _started(work) -> Future:
 
 
 def prepare_run(config: WorkbenchConfig, roots: OutputRoots, *, allow_real: bool=False, confirm_transfer: bool=False,
-                monitor=None, acknowledge_unknown: bool=False, remember_concurrency: bool=True, before_write=None) -> tuple:
+                monitor=None, acknowledge_unknown: bool=False, remember_concurrency: bool=True,
+                before_write=None) -> tuple:
     """Returns (RunLayout, manifest). Raises RunRejected with the validation/compatibility report. `before_write()` is
     called once every refusal has passed and before the run is created or written (record 7.351: a busy Virtuoso
     session lets go of the task's cell then, so a refused start changes nothing in Virtuoso); what it raises refuses
@@ -337,7 +356,10 @@ def _prepare_data_root(config, roots, task) -> tuple:
 
 
 def _create_run_layout(data_root, config, vocabulary, roots, output_root) -> tuple:
-    """Create the run directory, persist its network inputs, and copy the configuration with resolved output identifiers."""
+    (
+        'Create the run directory, persist its network inputs, and copy the configuration with resolved output '
+        'identifiers.'
+    )
     experiment_dir, experiment_id, created = new_experiment_dir(data_root, config.output.experiment_name,
                                                                  config.output.experiment_id)
     layout, run_id = new_run_dir(experiment_dir, config.project.task_name, config.run.mode, config.run.seed)
@@ -358,7 +380,8 @@ def _new_run_manifest(
     research, pretrain_seed, pretrain_origin = _research_block(config, source_manifest)
     initial, initial_hash = _initial_dimensions(compiled)
     # The name this run's model goes by (record 7.225): the label in use, numbered when a model under this output root
-    # carries it already - "ota7t", "ota7t (2)", "ota7t (3)". The label itself stays the key the run is remembered under.
+    # carries it already - "ota7t", "ota7t (2)", "ota7t (3)". The label itself stays the key the run is remembered
+    # under.
     given_label = None
     if saves_rl_model(config):
         taken = set(ckpt.unique_model_labels(model_label_rows(config.output.output_root)).values())
@@ -379,7 +402,8 @@ def _new_run_manifest(
         definitions=dict(location='effective_config.json', variables=list(compiled.variables),
                          targets=list(compiled.targets), preference=compiled.preference,
                          reward=dict(version='constraint_violation_v2', settings=config.run.reward.model_dump(),
-                                     conditions=config.run.conditions.model_dump(), clearance_rule='tightest_eligible_hard_spec_v1'),
+                                     conditions=config.run.conditions.model_dump(),
+                                     clearance_rule='tightest_eligible_hard_spec_v1'),
                          feasibility='all active hard constraints, decided from raw values independently of reward',
                          action='absolute-group-v1: normalized proposal -> legalized physical assignment'),
         architecture=dict(network=config.run.network.model_dump(), sac=config.run.advanced.model_dump(mode='json'),
@@ -388,7 +412,8 @@ def _new_run_manifest(
                                        if hasattr(compiled.spec_schema, 'metrics') else
                                        dict(asdict(compiled.spec_schema), version=compiled.spec_schema.version)),
                           vocabulary=vocabulary_record(vocabulary),
-                          **({} if config.run.optimizer == 'sac' else dict(optimizer=config.run.optimizer))),   # record 7.304
+                          # record 7.304
+                          **({} if config.run.optimizer == 'sac' else dict(optimizer=config.run.optimizer))),
         source_model=source_model, parent=parent,
         research=research, split=research['split'], generalization_level=research['generalization_level'],
         seeds=dict(target_seed=config.run.seed, pretrain_seed=pretrain_seed, pretrain_seed_origin=pretrain_origin,
@@ -400,7 +425,8 @@ def _new_run_manifest(
                        frozen_action=config.run.frozen_action if config.run.mode == 'frozen' else None),
         connection_gate=gate, consistency_check=consistency,
         authorization=dict(real_simulation=bool(allow_real and not task.mock),
-                           authorized_max_evaluations=config.run.max_evaluations if allow_real and not task.mock else None),
+                           authorized_max_evaluations=config.run.max_evaluations if allow_real and not task.mock
+                           else None),
         code=provenance.result(), environment=environment_versions(), created_utc=now, state='created',
         output=dict(output_root=config.output.output_root, data_root=str(data_root),
                     experiment_dir=str(experiment_dir), run_dir=str(layout.run_dir),
@@ -434,8 +460,10 @@ def _checked_task(config, roots, allow_real) -> tuple:
         task = load_task(config.circuit, allow_real=allow_real, profile_id=config.run.connection_profile_id)
     except TaskBlocked as exc:
         raise RunRejected(str(exc), report=dict(blocker=str(exc), interface_contract=exc.contract), code='task_blocked')
-    if task.circuit.get('native_draft'):                  # read from Virtuoso, no profile: not even an authorization question
-        raise RunRejected(NATIVE_DRAFT_NOT_EXECUTABLE, report=dict(blocker=NATIVE_DRAFT_NOT_EXECUTABLE), code='task_blocked')
+    # read from Virtuoso, no profile: not even an authorization question
+    if task.circuit.get('native_draft'):
+        raise RunRejected(NATIVE_DRAFT_NOT_EXECUTABLE, report=dict(blocker=NATIVE_DRAFT_NOT_EXECUTABLE),
+            code='task_blocked')
     if not task.mock and not allow_real:                  # before anything is created, reserved or gated
         raise RunRejected(REAL_AUTHORIZATION_REQUIRED, code='real_authorization_required',
                           report=dict(blocker=REAL_AUTHORIZATION_REQUIRED, task_key=task.task_key,
@@ -469,7 +497,8 @@ def _source_model(config, roots, task, task_hash, compiled, confirm_transfer) ->
         require_rl_model(source_manifest)
         vocabulary = _vocabulary_for(config, source_run)
         if is_mock_path(source_run) != task.mock:
-            raise RunRejected('A mock-trained model cannot be loaded for a real task (or vice versa)', code='mock_isolation')
+            raise RunRejected('A mock-trained model cannot be loaded for a real task (or vice versa)',
+                code='mock_isolation')
         source_dir = ckpt.resolve_checkpoint(source_run, config.run.model_source.checkpoint_id)
         source_meta = ckpt.read_metadata(source_dir)
         different = source_meta['task_definition_hash'] != task_hash
@@ -479,7 +508,8 @@ def _source_model(config, roots, task, task_hash, compiled, confirm_transfer) ->
         source_is_test_adaptation = (source_manifest.get('mode') == 'fine_tune'
                                      and (source_manifest.get('research') or {}).get('split') == 'test')
         if source_is_test_adaptation and not config.run.continual_learning:
-            raise RunRejected('The selected source was itself fine-tuned on a test task. Each test task starts from the '
+            raise RunRejected(
+                'The selected source was itself fine-tuned on a test task. Each test task starts from the '
                               'fixed source checkpoint by default; enable run.continual_learning to label this '
                               'explicitly as continual learning.', code='continual_learning')
         # ---- Verify load compatibility before recording parentage and source training cost.
@@ -581,13 +611,17 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir) -> tuple:
         raise RunRejected('Mock/real provenance differs from the run being resumed', code='mock_isolation')
     removed = (manifest.get('search_settings') or {}).get('method')
     if removed:
-        # A run keeps the search method it started with: one of the LLM methods removed on 2026-10-06 is not continued as
-        # SAC. Its records stay readable, and its RL model (all but LLM only have one) can start a new run.
-        raise RunRejected(f'This run used the search method "{REMOVED_SEARCH_METHODS.get(removed, removed)}", which was removed '
+        # A run keeps the search method it started with: one of the LLM methods removed on 2026-10-06 is not continued
+        # as SAC. Its records stay readable, and its RL model (all but LLM only have one) can start a new run.
+        raise RunRejected(
+            f'This run used the search method "{REMOVED_SEARCH_METHODS.get(removed, removed)}", which was removed '
                           'on 2026-10-06: SAC is the only search method now, and a run is never continued with another '
                           'method than it started with. Its results stay readable. '
-                          + ('It holds no RL model.' if removed == 'llm' else 'To go on from its RL model, start a new run in '
-                             'Fine-tune with its model chosen in the RL model window.'), code='search_method_removed')
+                          + (
+                              'It holds no RL model.' if removed ==
+                              'llm' else
+                              'To go on from its RL model, start a new run in Fine-tune with its model chosen in '
+                              'the RL model window.'), code='search_method_removed')
     try:
         meta = ckpt.read_metadata(ckpt.resolve_checkpoint(run_dir, 'latest'))
     except FileNotFoundError as exc:
@@ -595,23 +629,28 @@ def _resume_checks(config, task, task_hash, layout, manifest, run_dir) -> tuple:
     previous = WorkbenchConfig.model_validate(read_json(layout.effective_config))
     if (config.run.reward != previous.run.reward or config.run.conditions != previous.run.conditions
             or config.run.network.operating_points != previous.run.network.operating_points
-            or network_inputs.transfer_settings(config.run.network) != network_inputs.transfer_settings(previous.run.network)):
-        raise RunRejected('Reward settings, condition plan and the network inputs (operating points, spec input, sizes, '
-                          'device model features, bench sources, net tags, operating-point ratios) cannot change on exact resume. Use fine_tune with a compatible actor and '
-                          'fresh critics/replay.', code='reward_contract_changed')
+            or network_inputs.transfer_settings(config.run.network) != network_inputs.transfer_settings(
+                previous.run.network)):
+        raise RunRejected(
+            'Reward settings, condition plan and the network inputs (operating points, spec input, sizes, '
+            'device model features, bench sources, net tags, operating-point ratios) cannot change on exact '
+            'resume. Use fine_tune with a compatible actor and fresh critics/replay.', code='reward_contract_changed')
     recorded = network_inputs.read_run_record(run_dir)
     # The view is asked for as the start asked (prepare_run): with the run's own component list, which its key holds.
     # Without it (until record 7.319) every run with a PDK's list or the family list was refused here, unchanged.
     own_list = run_vocabulary(run_dir)
-    if recorded is not None and recorded.get('view_key') != getattr(network_inputs.view_for(previous, own_list), 'key', None):
-        raise RunRejected('What this run showed its network has changed since it started: the spec descriptions of its task, '
-                          'or the device numbers of its PDK (the PDK was loaded again). Start a new run - Fine-tune from '
-                          "this run's model keeps what it learned.", code='network_inputs_changed')
+    if recorded is not None and recorded.get('view_key') != getattr(network_inputs.view_for(previous, own_list), 'key',
+        None):
+        raise RunRejected(
+            'What this run showed its network has changed since it started: the spec descriptions of its '
+            'task, or the device numbers of its PDK (the PDK was loaded again). Start a new run - Fine-tune '
+            "from this run's model keeps what it learned.", code='network_inputs_changed')
     # ---- Merge permitted resume settings before rebuilding the learner contract.
     merged = previous.model_copy(deep=True)
     for name in RESUMABLE_RUN_FIELDS:
         setattr(merged.run, name, getattr(config.run, name))
-    merged.run.connection_profile_id = resumed_session(config.run.connection_profile_id, previous.run.connection_profile_id)
+    merged.run.connection_profile_id = resumed_session(config.run.connection_profile_id,
+        previous.run.connection_profile_id)
     if merged.run.max_evaluations < meta['ledger']['charged']:
         raise RunRejected(f"max_evaluations ({merged.run.max_evaluations}) is below the {meta['ledger']['charged']} "
                           'evaluations this run already consumed; resume keeps existing counters', code='budget')
@@ -663,7 +702,8 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
     total = (manifest.get('budgets') or {}).get('max_evaluations')
     answer.update(state=status.get('state'), save_point=point, used=used, total=total)
     if isinstance(used, int) and isinstance(total, int):
-        answer.update(remaining=max(0, (max_evaluations or total) - used), minimum_total=used + 1, exhausted=used >= total)
+        answer.update(remaining=max(0, (max_evaluations or total) - used), minimum_total=used + 1,
+            exhausted=used >= total)
 
     def refused(code, reason) -> dict:
         alternative = None
@@ -680,8 +720,9 @@ def continuation(run_dir, *, max_evaluations=None) -> dict:
         return refused('no_checkpoint', 'This run folder holds no save point - none was written, or a copy was made '
                                         'without them, or they were deleted - so there is nothing to go on from.')
     if save_point_code(run_dir) == 'older':
-        return refused('older_code', 'This run was saved by an older version of the optimizer code, and continuing it '
-                                     'needs exactly that version. Its model still loads in a new run: fine-tune or frozen.')
+        return refused('older_code',
+            'This run was saved by an older version of the optimizer code, and continuing it needs exactly that '
+            'version. Its model still loads in a new run: fine-tune or frozen.')
     try:
         config = WorkbenchConfig.model_validate(read_json(layout.effective_config))
     except (OSError, ValueError) as exc:          # a pydantic ValidationError is a ValueError
@@ -728,9 +769,11 @@ def spawn_detached(module, args, lock, log_path) -> int:
     Run workers and corner-check workers start this way."""
     log = Path(log_path).open('ab')
     try:
-        process = subprocess.Popen([sys.executable, '-m', f'gator_workbench.{module}', *args, '--lock-fd', str(lock.fileno())],
+        process = subprocess.Popen([sys.executable, '-m', f'gator_workbench.{module}', *args, '--lock-fd',
+            str(lock.fileno())],
                                    stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, cwd=str(repo_root()),
-                                   env=worker_environment(), start_new_session=True, close_fds=True, pass_fds=(lock.fileno(),))
+                                   env=worker_environment(), start_new_session=True, close_fds=True,
+                                   pass_fds=(lock.fileno(),))
     except BaseException:
         lock.release()
         raise
@@ -762,13 +805,16 @@ def _check_save_now(layout) -> None:
     status = run_status(layout.run_dir)
     if not status['worker_alive']:
         ended = dict(paused='paused', stopped='stopped', completed='finished').get(status.get('state'), 'ended')
-        raise RunRejected(f'This run is not running, so there is nothing new to save: its state was saved when it {ended}.',
-                          code='not_running')
+        raise RunRejected(
+            f'This run is not running, so there is nothing new to save: its state was saved when it {ended}.',
+            code='not_running'
+        )
     pending = read_dict(layout.command).get('command')
     if pending in ('pause', 'stop', 'cancel') or status.get('state') in ('pausing', 'stopping'):
         raise RunRejected('This run is already on its way to a stop' + (
             ' (forced cancel): nothing more is saved.' if pending == 'cancel' else
-            ': it saves everything by itself as soon as the simulation in flight has finished.'), code='already_stopping')
+            ': it saves everything by itself as soon as the simulation in flight has finished.'),
+            code='already_stopping')
     output = read_dict(layout.effective_config).get('output') or {}
     if output.get('save_checkpoints') is False:
         raise RunRejected('This run was started with "Model checkpoints" switched off, so it keeps no saved model. '
@@ -819,7 +865,8 @@ def default_model(roots, label=None, project=None) -> dict:
     """Default = the newest model saved under this RL model label (record 7.159), and that run's `latest`, not
     `best`. `project`: the project name runs were remembered under before the label, asked when the label has none."""
     remembered = load_settings().get('last_run') or {}
-    last = (remembered.get(label.strip()) if label and label.strip() else None) or (remembered.get(project) if project else None)
+    last = (remembered.get(label.strip()) if label and label.strip() else None) or (remembered.get(
+        project) if project else None)
     if not last and label and label.strip():
         # No run was started under this label: a model that CARRIES the name (given at a start or by a rename,
         # record 7.225) answers instead - the newest one under the remembered output root.
@@ -844,20 +891,24 @@ def status_view(path, connection) -> dict:
     result = run_status(path)
     try:
         result['steering'] = steering_check(path)
-    except Exception:                   # a diagnostic line: a missing or damaged data part leaves it empty, never the status
+    # a diagnostic line: a missing or damaged data part leaves it empty, never the status
+    except Exception:
         result['steering'] = None
     manifest = read_dict(layout.manifest)
     # The lineage (record 7.264): the run list's fields, and an offline model's recorded source runs for its Details.
     pretraining = manifest.get('pretraining') or {}
-    sources = [dict(run_dir=s.get('run_dir'), run_id=s.get('run_id'), task=s.get('task'), evaluations=s.get('evaluations'))
+    sources = [dict(run_dir=s.get('run_dir'), run_id=s.get('run_id'), task=s.get('task'),
+        evaluations=s.get('evaluations'))
                for s in pretraining.get('sources') or [] if isinstance(s, dict)]
     result.update(manifest=dict(mode=manifest.get('mode'), mock=manifest.get('mock'), task_id=manifest.get('task_id'),
                                 seeds=manifest.get('seeds'), source_model=manifest.get('source_model'),
                                 budgets=manifest.get('budgets'), output=manifest.get('output'),
-                                connection_gate=manifest.get('connection_gate'), mock_notice=manifest.get('mock_notice'),
+                                connection_gate=manifest.get('connection_gate'),
+                                mock_notice=manifest.get('mock_notice'),
                                 **lineage(manifest), task_definition_hash=manifest.get('task_definition_hash'),
                                 created_utc=manifest.get('created_utc'),
-                                pretraining=dict(sources=sources, source_evaluations=pretraining.get('source_evaluations'))
+                                pretraining=dict(sources=sources,
+                                    source_evaluations=pretraining.get('source_evaluations'))
                                 if pretraining else None),
                   summary=read_json(layout.summary, default=None))
     # What Continue would go on from (None: there is none, 7.215) and whether that code is older (no Continue, 7.221):
@@ -865,8 +916,8 @@ def status_view(path, connection) -> dict:
     result['save_point'], result['save_point_code'] = save_point_facts(path)
     profile = (result.get('connection_profile_id') or None)
     result['connection'] = connection(profile) if profile else dict(overall='not_applicable')
-    # A baseline run asked to calibrate (record 7.197): what it was asked, and its proposals once the run has written them.
-    # A file written under an older rule is worked out again from the run's recorded designs (record 7.217).
+    # A baseline run asked to calibrate (record 7.197): what it was asked, and its proposals once the run has written
+    # them. A file written under an older rule is worked out again from the run's recorded designs (record 7.217).
     result['calibration'] = None if not manifest.get('calibration') else dict(
         request=manifest['calibration'], result=calibration.current(path, manifest))
     return result

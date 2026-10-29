@@ -58,12 +58,14 @@ def block_for(pdk_id) -> dict:
     for model, device in sorted(((record or {}).get('devices') or {}).items()):
         devices[model] = dict(
             kind=family_kind(device.get('family'), device.get('polarity')), family=device.get('family'),
-            polarity=device.get('polarity'), roles=[pin['role'] if pin.get('role') in ROLES else 'unknown' for pin in device['pins']],
+            polarity=device.get('polarity'),
+            roles=[pin['role'] if pin.get('role') in ROLES else 'unknown' for pin in device['pins']],
             columns={p['name']: p['canonical'] for p in device.get('parameters', ())
                      if p.get('numeric') and p.get('canonical') in PARAMETERS})
     body = dict(format=FORMAT, name=NAME, version=VERSION, pdk_id=pdk_id, record_sha256=(record or {}).get('sha256'),
                 devices=devices)
-    return dict(body, sha256=hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest())
+    return dict(body, sha256=hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',',
+        ':')).encode()).hexdigest())
 
 
 class FamilyList:

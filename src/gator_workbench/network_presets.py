@@ -45,7 +45,8 @@ DEFAULT_ENCODER = 'graph_transformer'
 ATTENTION_ENCODERS = tuple(name for name in ENCODER_TYPES if name != 'rgcn')
 NETWORK_FIELDS = ('hidden_dim', 'heads', 'layers', 'structural_encoding')
 ENCODER_LABELS = dict(graph_transformer='Graph Transformer', rgcn='RGCN', gatv2='GATv2',
-                      graph_gps='GraphGPS — port-aware', group_cross_attention='Parameter-group attention — experimental',
+                      graph_gps='GraphGPS — port-aware',
+                      group_cross_attention='Parameter-group attention — experimental',
                       circuit_gps='CircuitGPS — joint spec and parameter attention')
 ADVANCED_FIELDS = ('learning_rate', 'gamma', 'tau', 'initial_alpha', 'target_entropy_per_action', 'max_grad_norm',
                    'batch_size', 'warmup_transitions', 'update_every', 'updates_per_transition', 'replay_capacity',
@@ -56,73 +57,82 @@ ADVANCED_FIELDS = ('learning_rate', 'gamma', 'tau', 'initial_alpha', 'target_ent
 # gator_tested: compared on GATOR circuits and chosen (COMPARED: TESTED, record 7.183; learning rate, record 7.199).
 # gator_measured_with: the value the measurements of record 7.183 were made with, not a compared optimum (LEARNED).
 # not_used: the encoder ignores the field; the value only keeps checkpoints comparable.
-BASES = ('paper', 'official_code', 'adapted', 'gator_default', 'gator_tested', 'gator_measured_with', 'not_used', 'experimental')
+BASES = ('paper', 'official_code', 'adapted', 'gator_default', 'gator_tested', 'gator_measured_with', 'not_used',
+    'experimental')
 # same: the cited work uses this kind of network. closest: no publication uses this network for the
 # purpose, so the closest published network is cited instead (the note says which and why).
 MATCHES = ('same', 'closest')
 _LOCK = threading.Lock()
 
 # The soft actor-critic values compared and chosen on 2026-10-05 (record 7.183; numbers, scripts and run data in
-# artifacts/local/reviews/defaults-study-2026-10-05/README.md): 175 runs on two ngspice circuits and five Spectre runs on
-# real:mscr_ota7t. With the schema defaults (0.2, 1, 0.99) the designs are a uniform random search under every reward
+# artifacts/local/reviews/defaults-study-2026-10-05/README.md): 175 runs on two ngspice circuits and five Spectre runs
+# on real:mscr_ota7t. With the schema defaults (0.2, 1, 0.99) the designs are a uniform random search under every reward
 # setting; with these, the share of passing designs in the last third of 1,500 evaluations went from 1 % to 98 %.
 TESTED = dict(initial_alpha=0.01, updates_per_transition=8, gamma=0.0)
 # Every training value of the runs that learned there: TESTED and the values those measurements were made with (the
 # schema defaults). Each preset takes all of them in place of its published ones (record 7.192, the user: "merge the
 # publication preset and overwrite those settings with the previous learned settings", then "All training numbers":
 # network shape from the papers, every training number from the runs that learned). Target smoothing, target entropy,
-# gradient limit and update interval are left out: every preset already has the runs' values (0.005, 1, 10, 1).
-# Learning rate 1e-3 instead of those runs' 3e-4 (record 7.199, the user: "use learning rate 1e-3 in the starting preset"):
+# gradient limit and update interval are left out: every preset already has the runs' values (0.005, 1, 10, 1). Learning
+# rate 1e-3 instead of those runs' 3e-4 (record 7.199, the user: "use learning rate 1e-3 in the starting preset"):
 # compared with 8 updates and discount 0 the same day (calibration study), it learned earlier.
 LEARNED = dict(TESTED, batch_size=8, learning_rate=1e-3, warmup_transitions=8, replay_capacity=10000, episode_length=4)
 COMPARED = (*TESTED, 'learning_rate')          # the LEARNED values that were compared on GATOR circuits and chosen
 TESTED_SINCE = '2026-10-05T05:00:00+00:00'
-# The GATOR baseline was deleted on 2026-10-05 (record 7.191); a backend not yet restarted could still store it that day.
+# The GATOR baseline was deleted on 2026-10-05 (record 7.191); a backend not yet restarted could still store it that
+# day.
 BASELINE_DELETED = '2026-10-06T00:00:00+00:00'
 _MADE_WITH = 'The value the measurements of 2026-10-05 were made with (record 7.183).'
 LEARNED_NOTES = dict(
-    initial_alpha='Measured on GATOR circuits (record 7.183): at 0.2 the exploration term is several times any reward '
-                  'difference and never comes down within a run. 0.05 learns as early but ends lower (88 % passing against '
-                  '97 %); 0.002 learns twice as late.',
-    updates_per_transition='Measured on GATOR circuits (record 7.183): with 1 nothing learns, whatever the temperature, batch '
-                           'or learning rate. 4 learns at about evaluation 1,000, 8 at about 470, 16 at about 330. One '
-                           'update takes 0.1 to 0.15 s.',
+    initial_alpha=
+        'Measured on GATOR circuits (record 7.183): at 0.2 the exploration term is several times any reward '
+        'difference and never comes down within a run. 0.05 learns as early but ends lower (88 % passing against '
+        '97 %); 0.002 learns twice as late.',
+    updates_per_transition=
+        'Measured on GATOR circuits (record 7.183): with 1 nothing learns, whatever the temperature, batch or '
+        'learning rate. 4 learns at about evaluation 1,000, 8 at about 470, 16 at about 330. One update takes '
+        '0.1 to 0.15 s.',
     gamma='Measured on GATOR circuits (record 7.183): an action is a whole design and its reward is that design\'s own '
           'measurement, so later steps add only noise. With 8 updates: learned at evaluation 269 instead of 466.',
-    batch_size=_MADE_WITH + ' Batch 32 was tried: with 4 updates per evaluation it learned a little earlier than 8 (at '
-                            'evaluation 785 and 887 against 956 to 1,101) at four times the cost per update. Batch 64 with 8 '
-                            'updates took 4 s per design and was stopped.',
-    learning_rate='Compared on GATOR circuits and chosen (record 7.199): with 8 updates per evaluation and discount 0 '
-                  '(ngspice ota5, Graph Transformer 32 / 4 / 2, 1,000 evaluations, three seeds; '
-                  'artifacts/local/reviews/calibration-study-2026-10-05) 1e-3 learned at evaluation 139 to 179 against 251 '
-                  'to 294 with 3e-4, and 98 % of the last third passed against 93 %; its passing designs drew about 5 % more '
-                  'power. The user chose 1e-3 on 2026-10-05.',
-    warmup_transitions=_MADE_WITH + ' Warm-up 64 with 8 updates brought no gain (learned at evaluation 412 to 595 against '
-                                    '439 to 500).',
+    batch_size=_MADE_WITH +
+        ' Batch 32 was tried: with 4 updates per evaluation it learned a little earlier than 8 (at evaluation '
+        '785 and 887 against 956 to 1,101) at four times the cost per update. Batch 64 with 8 updates took 4 s '
+        'per design and was stopped.',
+    learning_rate=
+        'Compared on GATOR circuits and chosen (record 7.199): with 8 updates per evaluation and discount 0 '
+        '(ngspice ota5, Graph Transformer 32 / 4 / 2, 1,000 evaluations, three seeds; '
+        'artifacts/local/reviews/calibration-study-2026-10-05) 1e-3 learned at evaluation 139 to 179 against 251 '
+        'to 294 with 3e-4, and 98 % of the last third passed against 93 %; its passing designs drew about 5 % '
+        'more power. The user chose 1e-3 on 2026-10-05.',
+    warmup_transitions=_MADE_WITH +
+        ' Warm-up 64 with 8 updates brought no gain (learned at evaluation 412 to 595 against 439 to 500).',
     replay_capacity=_MADE_WITH + ' Every design of a run stays in memory (the runs had at most 1,500 evaluations). Not '
                                  'varied.',
     episode_length=_MADE_WITH + ' Not varied. With discount 0 the end of an episode changes no learning target.')
-TESTED_NOTE = ('GATOR\'s own measurement (record 7.183, 2026-10-05): with a starting temperature of 0.2 and one update per '
-               'evaluation - the values behind every earlier GATOR run, and what a published one-update setting amounts to at '
-               'these budgets - soft actor-critic stayed a uniform random search for 1,500 evaluations on two ngspice '
-               'circuits and for 922 designs on Spectre (real:mscr_ota7t, none passing). With temperature 0.01 and 8 updates '
-               'per evaluation it learned after 250 to 600 evaluations (36 of 760 Spectre designs passing); discount 0 '
-               'halved that on ngspice. Every preset takes these three, learning rate 1e-3 (compared later that day, record '
-               '7.199: learning started about 100 evaluations earlier than with those runs\' 3e-4) and the other training '
-               'values those runs were made with - batch 8, warm-up 8, replay 10,000, episode length 4 - in place of the '
-               'published ones (record 7.192). The runs used a 32 / 4 / 2 network; the presets keep the published network '
-               'sizes, which learned as early with these values on ngspice; on Spectre the Graph Transformer preset passed '
-               '469 of 760 designs against 36 (record 7.199).')
+TESTED_NOTE = (
+    "GATOR's own measurement (record 7.183, 2026-10-05): with a starting temperature of 0.2 and one update "
+    'per evaluation - the values behind every earlier GATOR run, and what a published one-update setting '
+    'amounts to at these budgets - soft actor-critic stayed a uniform random search for 1,500 evaluations on '
+    'two ngspice circuits and for 922 designs on Spectre (real:mscr_ota7t, none passing). With temperature '
+    '0.01 and 8 updates per evaluation it learned after 250 to 600 evaluations (36 of 760 Spectre designs '
+    'passing); discount 0 halved that on ngspice. Every preset takes these three, learning rate 1e-3 '
+    '(compared later that day, record 7.199: learning started about 100 evaluations earlier than with those '
+    "runs' 3e-4) and the other training values those runs were made with - batch 8, warm-up 8, replay "
+    '10,000, episode length 4 - in place of the published ones (record 7.192). The runs used a 32 / 4 / 2 '
+    'network; the presets keep the published network sizes, which learned as early with these values on '
+    'ngspice; on Spectre the Graph Transformer preset passed 469 of 760 designs against 36 (record 7.199).')
 
-SCALE_NOTE = ('Scale: the cited studies spent between 300 steps (CAN) and about 50,000 simulations per run, and the only '
-              'published soft actor-critic settings (PPAAS) were used with 8,000 to 24,000 steps. GATOR real runs so '
-              'far used tens to hundreds of evaluations each, so their training numbers do not transfer: every preset '
-              'takes the training values of the runs that learned on GATOR circuits instead (records 7.192, 7.199), with '
-              'which learning started after about 150 to 600 evaluations. The network sizes are still the published ones; '
-              'with these training values each of them learned as early as 32 / 4 / 2 on ngspice, and on Spectre '
-              '(real:mscr_ota7t) the Graph Transformer preset passed 469 of 760 designs, the first at design 202, against 36 '
-              'and 591 for the setting measured before (record 7.199). For an equal-size encoder comparison give every '
-              'encoder the same sizes. A saved model always loads with the network it was trained with.')
+SCALE_NOTE = (
+    'Scale: the cited studies spent between 300 steps (CAN) and about 50,000 simulations per run, and the '
+    'only published soft actor-critic settings (PPAAS) were used with 8,000 to 24,000 steps. GATOR real runs '
+    'so far used tens to hundreds of evaluations each, so their training numbers do not transfer: every '
+    'preset takes the training values of the runs that learned on GATOR circuits instead (records 7.192, '
+    '7.199), with which learning started after about 150 to 600 evaluations. The network sizes are still the '
+    'published ones; with these training values each of them learned as early as 32 / 4 / 2 on ngspice, and '
+    'on Spectre (real:mscr_ota7t) the Graph Transformer preset passed 469 of 760 designs, the first at '
+    'design 202, against 36 and 591 for the setting measured before (record 7.199). For an equal-size '
+    'encoder comparison give every encoder the same sizes. A saved model always loads with the network it '
+    'was trained with.')
 
 
 def _field(value, basis, source=None, note='', match='same'):
@@ -130,7 +140,10 @@ def _field(value, basis, source=None, note='', match='same'):
 
 
 def _learned(name, why=''):
-    """A training value of the runs that learned on GATOR circuits (LEARNED), saying whether it was compared and chosen."""
+    (
+        'A training value of the runs that learned on GATOR circuits (LEARNED), saying whether it was compared '
+        'and chosen.'
+    )
     return _field(LEARNED[name], 'gator_tested' if name in COMPARED else 'gator_measured_with',
                   note=(why + ' ' if why else '') + LEARNED_NOTES[name])
 
@@ -198,10 +211,11 @@ _NOT_USED = _field(NetworkConfig().heads, 'not_used', note='This encoder has no 
 _NO_ENTROPY = 'The cited study uses {algorithm}, which has no entropy temperature; GATOR default kept.'
 
 
-MEASURED_SUMMARY = (' The training values are those of the runs that learned on GATOR circuits (records 7.183, 7.199) and replace '
-                    'the published ones (record 7.192); each field\'s note keeps the published value. The network sizes '
-                    'above stay as published; those runs used 32 / 4 / 2, and this size learned as early with the same '
-                    'values on ngspice (record 7.199).')
+MEASURED_SUMMARY = (
+    ' The training values are those of the runs that learned on GATOR circuits (records 7.183, 7.199) and '
+    "replace the published ones (record 7.192); each field's note keeps the published value. The network "
+    'sizes above stay as published; those runs used 32 / 4 / 2, and this size learned as early with the same '
+    'values on ngspice (record 7.199).')
 
 
 def _preset(summary, **fields):
@@ -219,7 +233,8 @@ def _preset(summary, **fields):
             merged[name] = dict(published, note=published['note'] + ' Also the GATOR value. ' + LEARNED_NOTES[name])
             continue
         cited = REFERENCES[published['source']]['short'] if published['source'] else 'GATOR default'
-        merged[name] = dict(_learned(name, f"Published: {published['value']:g} ({cited}); replaced by the GATOR value."),
+        merged[name] = dict(_learned(name,
+            f"Published: {published['value']:g} ({cited}); replaced by the GATOR value."),
                             published=published)
     return dict(summary=summary + MEASURED_SUMMARY, fields=merged)
 
@@ -317,7 +332,8 @@ def _experimental_preset(encoder):
     fields = _defaults()
     for name, value in dict(hidden_dim=48, heads=4, layers=4,
                             structural_encoding='rwse' if encoder in ('graph_gps', 'circuit_gps') else 'none').items():
-        fields[name] = _field(value, 'experimental', note='Project starting value; not a published or measured optimum.')
+        fields[name] = _field(value, 'experimental',
+            note='Project starting value; not a published or measured optimum.')
     for name in ADVANCED_FIELDS:
         fields[name] = _field(fields[name]['value'], 'experimental',
             note='Inherited from the existing SAC starting settings; not validated for this encoder.')
@@ -328,10 +344,13 @@ def _experimental_preset(encoder):
                'all nodes using its bound devices, parameter features and goals. A custom adaptation of query-based '
                'pooling, not a claim of novelty.')
     if encoder == 'circuit_gps':
-        summary = ('Port-aware local and structurally biased global attention, ordered measurement programs bound to '
-                   'their circuit nodes, and repeated attention between specs, parameter groups and circuit motifs. '
-                   'Independent action-conditioned graph critics. Select Structured network inputs for the complete representation.')
-    return dict(fields=fields, architecture_reference=source, summary=summary + ' Experimental: no measured transfer advantage. '
+        summary = (
+            'Port-aware local and structurally biased global attention, ordered measurement programs bound to '
+            'their circuit nodes, and repeated attention between specs, parameter groups and circuit motifs. '
+            'Independent action-conditioned graph critics. Select Structured network inputs for the complete '
+            'representation.')
+    return dict(fields=fields, architecture_reference=source,
+        summary=summary + ' Experimental: no measured transfer advantage. '
                 '48 / 4 / 4 matches the Graph Transformer starting size for an initial comparison. '
                 'Full global attention costs O(N²); group attention adds O(GN).')
 
@@ -432,7 +451,8 @@ def entry(encoder) -> dict:
             problem = f'The saved {encoder} values were ignored: {exc}'
     origin = 'publication' if values == preset else 'custom'
     return dict(encoder_type=encoder, label=ENCODER_LABELS[encoder], uses_heads=encoder in ATTENTION_ENCODERS,
-                supports_structural_encoding=encoder in GLOBAL_ENCODERS, experimental=encoder in GLOBAL_ENCODERS, origin=origin,
+                supports_structural_encoding=encoder in GLOBAL_ENCODERS, experimental=encoder in GLOBAL_ENCODERS,
+                origin=origin,
                 network=values['network'], advanced=values['advanced'], publication=preset,
                 provenance=PRESETS[encoder]['fields'], summary=PRESETS[encoder]['summary'],
                 architecture_reference=REFERENCES.get(PRESETS[encoder].get('architecture_reference')),

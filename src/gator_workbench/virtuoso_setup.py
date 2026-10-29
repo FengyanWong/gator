@@ -34,7 +34,8 @@ from . import units
 
 TEST = 'GATOR'
 # The Maestro simulator mode of a task's test: plain Spectre, what the optimizer's runs use (the run adapter passes no
-# +aps). Maestro's default APS takes other time steps, so its numbers would differ from the runs' (seen live 2026-09-22).
+# +aps). Maestro's default APS takes other time steps, so its numbers would differ from the runs' (seen live
+# 2026-09-22).
 SIMULATOR_MODE = 'Spectre'
 MAX_EXPRESSION = 300                                   # schema.MeasurementDefinition.signal
 # Cadence calculator functions an output may call. Anything else is refused, never evaluated.
@@ -52,10 +53,12 @@ IC_NET = re.compile(r'^[A-Za-z_0-9][A-Za-z0-9_.]{0,127}$')
 IC_HEADER = '// GATOR initial conditions - written with the task, do not edit\n'
 TOKEN = re.compile(r'''\s*(?:(?P<string>"(?:[^"\\]|\\.)*")|(?P<number>(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?[a-zA-Z]?)
                        |(?P<key>\?[A-Za-z_]\w*)|(?P<name>[A-Za-z_]\w*)|(?P<op>[-+*/(),])|(?P<bad>\S))''', re.X)
-ANALYSIS_OF = {'VT': 'tran', 'IT': 'tran', 'VF': 'ac', 'IF': 'ac', 'VDC': 'dc', 'IDC': 'dc', 'OP': 'dc', 'VN': 'noise', 'VN2': 'noise',
+ANALYSIS_OF = {'VT': 'tran', 'IT': 'tran', 'VF': 'ac', 'IF': 'ac', 'VDC': 'dc', 'IDC': 'dc', 'OP': 'dc', 'VN': 'noise',
+    'VN2': 'noise',
                'VS': 'dc', 'IS': 'dc'}
 # The analyses a `?result "..."` names (getData, value, ...): an info result such as dcOpInfo or element names none.
-RESULT_ANALYSIS = {'dc': 'dc', 'dcOp': 'dc', 'ac': 'ac', 'tran': 'tran', 'noise': 'noise', 'stb': 'stb', 'pss': 'pss', 'pnoise': 'pnoise'}
+RESULT_ANALYSIS = {'dc': 'dc', 'dcOp': 'dc', 'ac': 'ac', 'tran': 'tran', 'noise': 'noise', 'stb': 'stb', 'pss': 'pss',
+    'pnoise': 'pnoise'}
 RESULT_NAME = re.compile(r'''\?result\s+(?:"([^"]*)"|'([A-Za-z_]\w*))''')
 # A unit SUGGESTED from the outermost function of an expression; a Probes row always says it is a suggestion.
 UNIT_OF = {'frequency': 'Hz', 'bandwidth': 'Hz', 'unityGainFreq': 'Hz', 'gainBwProd': 'Hz', 'harmonicFreq': 'Hz',
@@ -147,12 +150,17 @@ def normalize(setup) -> dict:
         test=setup.get('test') or TEST, simulator_mode=setup.get('simulator_mode') or SIMULATOR_MODE,
         model_files=sorted([str(f), str(s)] for f, s in setup.get('model_files') or []),
         initial_conditions={str(k): canonical(v) for k, v in sorted((setup.get('initial_conditions') or {}).items())},
-        analyses={name: {str(k): canonical(v) for k, v in (options or {}).items()} for name, options in sorted((setup.get('analyses') or {}).items())},
+        analyses={name: {str(k): canonical(v) for k, v in (options or {}).items()} for name,
+            options in sorted((setup.get('analyses') or {}).items())},
         variables={str(k): canonical(v) for k, v in sorted((setup.get('variables') or {}).items())},
         bindings=sorted((dict(cell=b['cell'], instance=b['instance'], parameter=b['parameter'], variable=b['variable'])
-                         for b in setup.get('bindings') or []), key=lambda b: (b['cell'], b['instance'], b['parameter'])),
-        outputs=[dict(name=o['name'], expression=' '.join(str(o['expression']).split())) for o in setup.get('outputs') or []],
-        specs=sorted((dict(output=s['output'], op=s['op'], value=[canonical(v) for v in s['value']] if isinstance(s['value'], (list, tuple)) else canonical(s['value']))
+                         for b in setup.get('bindings') or []), key=lambda b: (b['cell'], b['instance'],
+                             b['parameter'])),
+        outputs=[dict(name=o['name'],
+            expression=' '.join(str(o['expression']).split())) for o in setup.get('outputs') or []],
+        specs=sorted((dict(output=s['output'], op=s['op'],
+            value=[canonical(v) for v in s['value']] if isinstance(s['value'], (list,
+            tuple)) else canonical(s['value']))
                       for s in setup.get('specs') or []), key=lambda s: s['output']))
 
 
@@ -188,22 +196,28 @@ def validate(setup, *, bindable=None) -> list[str]:
             problems.append(f'Variable name {name!r} must be letters, digits and "_"')
     for net, value in s['initial_conditions'].items():
         if not IC_NET.match(net):
-            problems.append(f'Initial condition on {net!r}: a net is named as Virtuoso spells it (OUT, XU1.N1), without spaces')
+            problems.append(
+                f'Initial condition on {net!r}: a net is named as Virtuoso spells it (OUT, XU1.N1), without spaces')
         try:
             _plain(value)
         except (SetupError, ValueError):
             problems.append(f'Initial condition on {net}: {value!r} is not a voltage')
     for binding in s['bindings']:
         if binding['variable'] not in s['variables']:
-            problems.append(f'{binding["instance"]}.{binding["parameter"]} is bound to {binding["variable"]}, which is not a variable of the setup')
+            problems.append(
+                f"{binding['instance']}.{binding['parameter']} is bound to {binding['variable']}, which is "
+                f'not a variable of the setup')
         if bindable is not None:
             key = (binding['cell'], binding['instance'])
             if key not in bindable:
-                problems.append(f'{binding["instance"]} in {binding["cell"]} cannot be set by a variable: only analogLib resistors, '
-                                'capacitors, inductors and sources can (a PDK device derives other values from its parameters or '
-                                'clamps them; transistor sizes are written as numbers instead)')
+                problems.append(
+                    f"{binding['instance']} in {binding['cell']} cannot be set by a variable: only analogLib "
+                    f'resistors, capacitors, inductors and sources can (a PDK device derives other values '
+                    f'from its parameters or clamps them; transistor sizes are written as numbers instead)')
             elif binding['parameter'] not in bindable[key]:
-                problems.append(f'{binding["instance"]} has no parameter {binding["parameter"]!r} (it has: {", ".join(sorted(bindable[key]))})')
+                problems.append(
+                    f"{binding['instance']} has no parameter {binding['parameter']!r} (it has: "
+                    f"{', '.join(sorted(bindable[key]))})")
     for name, options in s['analyses'].items():
         if not NAME.match(name):
             problems.append(f'Analysis name {name!r} is not a plain name')
@@ -218,7 +232,9 @@ def differences(expected, found) -> list[str]:
     def compare(what, left, right):
         for name in sorted(set(left) | set(right)):
             if left.get(name) != right.get(name):
-                out.append(f'{what} {name}: the task says {left.get(name, "(none)")}, Virtuoso has {right.get(name, "(none)")}')
+                out.append(
+                    f"{what} {name}: the task says {left.get(name, '(none)')}, Virtuoso has "
+                    f"{right.get(name, '(none)')}")
     if e['simulator_mode'] != f['simulator_mode']:
         out.append(f'Simulator mode: the task says {e["simulator_mode"]}, Virtuoso has {f["simulator_mode"]}')
     if e['model_files'] != f['model_files']:
@@ -238,9 +254,13 @@ def differences(expected, found) -> list[str]:
     eb, fb = {key(b): b['variable'] for b in e['bindings']}, {key(b): b['variable'] for b in f['bindings']}
     for k in sorted(set(eb) | set(fb)):
         if eb.get(k) != fb.get(k):
-            out.append(f'{k[1]}.{k[2]} in {k[0]}: the task binds it to {eb.get(k, "(nothing)")}, Virtuoso to {fb.get(k, "(nothing)")}')
-    compare('Output', {o['name']: o['expression'] for o in e['outputs']}, {o['name']: o['expression'] for o in f['outputs']})
-    compare('Spec on', {s['output']: (s['op'], s['value']) for s in e['specs']}, {s['output']: (s['op'], s['value']) for s in f['specs']})
+            out.append(
+                f"{k[1]}.{k[2]} in {k[0]}: the task binds it to {eb.get(k, '(nothing)')}, Virtuoso to "
+                f"{fb.get(k, '(nothing)')}")
+    compare('Output', {o['name']: o['expression'] for o in e['outputs']},
+        {o['name']: o['expression'] for o in f['outputs']})
+    compare('Spec on', {s['output']: (s['op'], s['value']) for s in e['specs']}, {s['output']: (s['op'],
+        s['value']) for s in f['specs']})
     return out
 
 
@@ -249,7 +269,8 @@ def probe_id(output_name) -> str:
     return f'm_{output_name}'
 
 
-def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=None, bindings=None, initial_conditions=None) -> dict:
+def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=None, bindings=None,
+    initial_conditions=None) -> dict:
     """The setup a configuration's rows ask for: every `ade_output` Probes row is an output (its `signal` holds the
     expression), every active Specs row whose equation is exactly one such probe is that output's spec. Specs over
     several probes, and every optimizer-only field, stay in the workbench."""
@@ -269,8 +290,10 @@ def from_rows(config, *, test=TEST, model_files=(), analyses=None, variables=Non
             specs.append(dict(output=probe.source_name, op='range',
                               value=[_number_text(target.lower, target.unit), _number_text(target.upper, target.unit)]))
     # None = "keep what the copy has": the write leaves that part of the Maestro setup alone.
-    return dict(test=test, model_files=[list(m) for m in model_files], analyses=None if analyses is None else dict(analyses),
-                variables=None if variables is None else dict(variables), bindings=None if bindings is None else list(bindings),
+    return dict(test=test, model_files=[list(m) for m in model_files],
+                analyses=None if analyses is None else dict(analyses),
+                variables=None if variables is None else dict(variables),
+                bindings=None if bindings is None else list(bindings),
                 initial_conditions=None if initial_conditions is None else dict(initial_conditions),
                 outputs=outputs, specs=specs)
 
@@ -291,7 +314,8 @@ def to_rows(setup) -> dict:
     for output in s['outputs']:
         unit = suggested_unit(output['expression'])
         probes.append(dict(measurement_id=probe_id(output['name']), analysis=analysis_of(output['expression']),
-                           result_source='ade_output', source_name=output['name'], signal=output['expression'], unit=unit,
+                           result_source='ade_output', source_name=output['name'], signal=output['expression'],
+                           unit=unit,
                            notes=f'Maestro output {output["name"]} of the working copy (test {s["test"]}). '
                                  f'Unit {unit!r} suggested from the expression - check it.'))
     units_of = {p['source_name']: p['unit'] for p in probes}
@@ -322,7 +346,8 @@ def _plain(text) -> float:
     return float(match.group(1)) * SUFFIX.get(match.group(2), 1.0)
 
 
-# ---------------------------------------------------------------------------------- Maestro's own deck (task flow part 5)
+# ---------------------------------------------------------------------------------- Maestro's own deck (task flow part
+# 5)
 DECK_FORMAT = 'gator-maestro-deck-1'
 ANALYSIS_STATEMENT = re.compile(r'^\s*[A-Za-z_]\w*\s+(?:\([^)]*\)\s*)?'     # terminals of e.g. `noise ( VOUT 0 ) noise`
                                 r'(tran|ac|dc|noise|xf|sp|stb|pss|pac|pnoise|pxf|hb|hbac|hbnoise)\b')
@@ -335,7 +360,8 @@ def split_deck(deck, circuit) -> tuple[str, str]:
     A deck whose circuit part is not there exactly once is refused, not guessed at."""
     body = str(circuit).strip('\n')
     if not body or deck.count(body) != 1:
-        raise SetupError('Maestro\'s netlist does not hold its circuit part exactly once: its layout is not the one this '
+        raise SetupError(
+            'Maestro\'s netlist does not hold its circuit part exactly once: its layout is not the one this '
                          'workbench reads')
     index = deck.index(body)
     head, tail = deck[:index], deck[index + len(body):]

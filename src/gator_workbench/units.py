@@ -115,21 +115,26 @@ def scale_to_canonical(value: float, unit: str) -> float:
 
 
 # ---------------------------------------------------------------------- the written form of a quantity (record 7.208)
-# One way of writing a quantity in the whole workbench (user: "a unified way of unit representation in the parameters probes
-# and specs windows considering the convenience usage of users", chose "Prefix per value"): the number, an SI prefix and the
-# unit, as Virtuoso's forms write them - 1.2 um, 45 nm, 9.535 kohm, 400 uA, 100 MHz, -30 dB, 60 deg. In English letters only
-# (user: "dont use greek characters for unit, use english letters instead"): u for micro, ohm, deg; the Greek spellings
-# (µm, kΩ, °) are still read. The digits are the stored number's own, moved and never computed. The page writes and reads
-# quantities with the same table (`written_forms`, sent with /api/schema); stored numbers and units never change.
-PREFIXABLE = {'m', 'F', 'ohm', 'H', 'V', 'A', 'W', 'J', 'Hz', 's', 'Vrms', 'V/s', 'Hz/V', 'V/sqrt(Hz)', 'A/sqrt(Hz)', 'V/A'}
-SYMBOLS = {'Ohm': 'ohm', 'Ω': 'ohm', 'degree': 'deg', '°': 'deg', 'C': 'degC', '°C': 'degC', '1': '', 'ratio': '', 'unitless': '',
+# One way of writing a quantity in the whole workbench (user: "a unified way of unit representation in the parameters
+# probes and specs windows considering the convenience usage of users", chose "Prefix per value"): the number, an SI
+# prefix and the unit, as Virtuoso's forms write them - 1.2 um, 45 nm, 9.535 kohm, 400 uA, 100 MHz, -30 dB, 60 deg. In
+# English letters only (user: "dont use greek characters for unit, use english letters instead"): u for micro, ohm, deg;
+# the Greek spellings (µm, kΩ, °) are still read. The digits are the stored number's own, moved and never computed. The
+# page writes and reads quantities with the same table (`written_forms`, sent with /api/schema); stored numbers and
+# units never change.
+PREFIXABLE = {'m', 'F', 'ohm', 'H', 'V', 'A', 'W', 'J', 'Hz', 's', 'Vrms', 'V/s', 'Hz/V', 'V/sqrt(Hz)', 'A/sqrt(Hz)',
+    'V/A'}
+SYMBOLS = {'Ohm': 'ohm', 'Ω': 'ohm', 'degree': 'deg', '°': 'deg', 'C': 'degC', '°C': 'degC', '1': '', 'ratio': '',
+    'unitless': '',
            '': '', 'count': '', 'fixture': ''}
 QUANTITIES = {'m': 'a length', 'F': 'a capacitance', 'ohm': 'a resistance', 'H': 'an inductance', 'V': 'a voltage',
               'A': 'a current', 'W': 'a power', 'J': 'an energy', 'Hz': 'a frequency', 's': 'a time', 'deg': 'an angle',
-              'rad': 'an angle', 'dB': 'a level in dB', 'dBc/Hz': 'a phase noise', 'V/sqrt(Hz)': 'a voltage noise density',
+              'rad': 'an angle', 'dB': 'a level in dB', 'dBc/Hz': 'a phase noise',
+              'V/sqrt(Hz)': 'a voltage noise density',
               'A/sqrt(Hz)': 'a current noise density', 'V^2/Hz': 'a noise power density', 'Vrms': 'an rms voltage',
               'V/s': 'a slew rate', 'Hz/V': 'a tuning gain', 'V/V': 'a voltage ratio', 'V/A': 'a regulation in V/A',
-              '%': 'a percentage', 'count': 'a count', '1': 'a plain number', 'degC': 'a temperature', 'fixture': 'a fixture value'}
+              '%': 'a percentage', 'count': 'a count', '1': 'a plain number', 'degC': 'a temperature',
+              'fixture': 'a fixture value'}
 _PREFIXES = {-18: 'a', -15: 'f', -12: 'p', -9: 'n', -6: 'u', -3: 'm', 0: '', 3: 'k', 6: 'M', 9: 'G', 12: 'T'}
 
 
@@ -137,10 +142,12 @@ def written_forms() -> dict:
     """The table the page writes and reads quantities with: every accepted spelling -> [canonical, factor, offset], the
     canonical units that take an SI prefix, how a unit is written (Ω as ohm), what quantity it is, and the unit of each
     parameter kind."""
-    return dict(spellings={spelling: list(rule) for spelling, rule in sorted(LOOKUP.items())}, prefixable=sorted(PREFIXABLE),
+    return dict(spellings={spelling: list(rule) for spelling, rule in sorted(LOOKUP.items())},
+                prefixable=sorted(PREFIXABLE),
                 symbols=SYMBOLS, quantities=QUANTITIES,
-                # the unit a parameter of these names is sized in (w and l lengths, m and nf counts...): the editors have no
-                # Unit column for Parameters since record 7.208, so this decides what a value typed in such a row must be
+                # the unit a parameter of these names is sized in (w and l lengths, m and nf counts...): the editors
+                # have no Unit column for Parameters since record 7.208, so this decides what a value typed in such a
+                # row must be
                 kinds={name: unit for name, unit in PARAMETER_KIND_UNITS.items() if unit})
 
 
@@ -178,7 +185,8 @@ def text(value, unit: str | None) -> str:
     digits = ''.join(map(str, digits))
     exponent += shift
     lead = exponent + len(digits) - 1
-    if not -18 <= lead < 15:                                   # beyond the prefixes: the exponent form, in the canonical unit
+    # beyond the prefixes: the exponent form, in the canonical unit
+    if not -18 <= lead < 15:
         number = f'{digits[0]}{"." + digits[1:] if len(digits) > 1 else ""}e{lead}'
         return _join(f'{"-" if value < 0 else ""}{number}', symbol(canonical))
     prefix = lead // 3 * 3

@@ -53,7 +53,8 @@ class CheckpointIncompatible(RuntimeError):
     def __init__(self, report) -> None:
         self.report = report
         failed = [c for c in report['checks'] if c['status'] == 'incompatible']
-        super().__init__('Checkpoint is not compatible: ' + '; '.join(f"{c['component']}: {c['detail']}" for c in failed))
+        super().__init__('Checkpoint is not compatible: ' + '; '.join(
+            f"{c['component']}: {c['detail']}" for c in failed))
 
 
 def _digest(value) -> str:
@@ -98,7 +99,8 @@ def _contract_fields(contract) -> dict:
     return dict(checkpoint_version=contract['checkpoint_version'], graph_schema=contract['graph_schema'],
                 reward_version=contract.get('reward_version'), reward_settings=contract.get('reward_settings'),
                 clearance_rule=contract.get('clearance_rule'), failure_policy=contract.get('failure_policy'),
-                condition_policy=contract.get('condition_policy'), planned_conditions=contract.get('planned_conditions'),
+                condition_policy=contract.get('condition_policy'),
+                planned_conditions=contract.get('planned_conditions'),
                 feature_schema=contract['feature_schema'], spec_schema=contract['spec_schema'],
                 normalizer=contract['normalizer'], action_version=contract['action_version'],
                 critic_action=contract['critic_action'], budget_semantics=contract['budget'],
@@ -115,7 +117,8 @@ def weight_digest(learner) -> str:
 
 class CheckpointStore:
     """Publish complete save points and manage retention, save kinds, and policy-selection metadata."""
-    def __init__(self, run_dir, *, run_id, task_id, task_definition_hash, save_replay: bool=True, keep_last=None) -> None:
+    def __init__(self, run_dir, *, run_id, task_id, task_definition_hash, save_replay: bool=True,
+        keep_last=None) -> None:
         self.root = Path(run_dir) / 'checkpoints'
         self.root.mkdir(parents=True, exist_ok=True)
         self.run_id, self.task_id, self.task_hash = run_id, task_id, task_definition_hash
@@ -140,7 +143,8 @@ class CheckpointStore:
                          data_cursor=data_cursor, counters=counters, collector=collector_state,
                          boundary=RECOVERABLE_BOUNDARY)
         try:
-            contract, manifest = self._write_checkpoint_payload(learner, saved_replay, run_state, staging, torch, replay)
+            contract, manifest = self._write_checkpoint_payload(learner, saved_replay, run_state, staging, torch,
+                replay)
             capability = 'full_state' if not missing else 'weights_only'
             files = {}
             for path in sorted(p for p in staging.rglob('*') if p.is_file()):
@@ -192,8 +196,9 @@ class CheckpointStore:
 
     def _write_checkpoint_payload(self, learner, saved_replay, run_state, staging, torch, replay) -> tuple:
         """Write verified learner state, transferable weights and the embedded replay membership manifest."""
-        # The package writes the file, reads it back and loads it again to check it (2.5 s for 42 MB): on the local disk.
-        # Only the compressed copy - every zip entry the same bytes, a third of the size - goes to the run folder (7.284).
+        # The package writes the file, reads it back and loads it again to check it (2.5 s for 42 MB): on the local
+        # disk. Only the compressed copy - every zip entry the same bytes, a third of the size - goes to the run folder
+        # (7.284).
         with tempfile.TemporaryDirectory(prefix='gator-save-point-') as local:
             with _one_source_digest():
                 learner.save(Path(local) / 'training_state.pt', saved_replay, run_state=run_state)
@@ -227,7 +232,9 @@ class CheckpointStore:
         if not (self.root / 'best_policy.json').exists():
             write_json(self.root / 'best_policy.json', dict(
                 selected=None, status='not_selected',
-                reason='No validation-set policy evaluation has occurred in this run; a best policy is never invented.'))
+                reason=
+                    'No validation-set policy evaluation has occurred in this run; a best policy is never '
+                    'invented.'))
 
     def relabel(self, checkpoint_id, kind, *, was):
         """Give an existing save another kind when the state it holds is exactly the one a new save would write (a run
@@ -251,9 +258,9 @@ class CheckpointStore:
             meta = read_json(directory / 'metadata.json', default={})
             if meta.get('kind') == 'periodic' and directory.name not in (keep_id, best):
                 periodic.append((meta.get('created_utc') or '', directory.name, directory))
-        # Oldest first BY SAVE TIME. A name is the evaluation count plus a random suffix, so names alone put the saves made
-        # at one count - every save of an offline pretraining - in random order, and pruning kept random ones (review of
-        # 2026-10-07).
+        # Oldest first BY SAVE TIME. A name is the evaluation count plus a random suffix, so names alone put the saves
+        # made at one count - every save of an offline pretraining - in random order, and pruning kept random ones
+        # (review of 2026-10-07).
         periodic.sort()
         removed = []
         for _, _, directory in periodic[:max(0, len(periodic) - (self.keep_last - 1))]:
@@ -355,7 +362,8 @@ def verify_files(directory, *, cached: bool=False) -> list[str]:
         else:
             if cached:
                 st = path.stat()
-                digest = _display_digest(str(path.resolve()), (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns))
+                digest = _display_digest(str(path.resolve()), (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns,
+                    st.st_ctime_ns))
             else:
                 digest = sha256_file(path)
             # The original a one-time compression replaces is recorded too: a pass stopped between writing metadata.json
@@ -372,11 +380,13 @@ def check_compatibility(metadata, *, mode, task_definition_hash, contract) -> di
     targets) and the number of action dimensions (equal dimensions prove nothing).
     """
     saved, checks = metadata['contract'], []
-    if metadata.get('restoration_capability') == 'search_state':      # an LLM-only run's save (method removed 2026-10-06)
+    # an LLM-only run's save (method removed 2026-10-06)
+    if metadata.get('restoration_capability') == 'search_state':
         return dict(mode=mode, compatible=False, checks=[dict(component='policy weights', status='incompatible',
             detail='This save holds the search progress of an LLM-only run, a search method removed on 2026-10-06. '
                    'It has no RL model to load.')],
-            checkpoint_id=metadata['checkpoint_id'], source_run_id=metadata['run_id'], restoration_capability='search_state')
+            checkpoint_id=metadata['checkpoint_id'], source_run_id=metadata['run_id'],
+            restoration_capability='search_state')
 
     def add(component, ok, detail, *, fatal: bool=True) -> None:
         checks.append(dict(component=component, detail=detail,
@@ -384,14 +394,19 @@ def check_compatibility(metadata, *, mode, task_definition_hash, contract) -> di
     strict = mode == 'resume'
     add('checkpoint version', saved.get('checkpoint_version') == contract.get('checkpoint_version') == 'graph-sac-v2',
         'Reward v2 requires graph-sac-v2; v1 input/checkpoint migration is not implemented.')
-    for key in ('reward_version', 'reward_settings', 'clearance_rule', 'failure_policy', 'condition_policy', 'planned_conditions'):
+    for key in ('reward_version', 'reward_settings', 'clearance_rule', 'failure_policy', 'condition_policy',
+        'planned_conditions'):
         same = saved.get(key) == contract.get(key)
-        add(key, same, 'identical' if same else 'Different reward/condition contract; fine-tune resets critics, targets and replay.',
+        add(key, same,
+            'identical' if same else
+                'Different reward/condition contract; fine-tune resets critics, targets and replay.',
             fatal=strict)
     same = saved['feature_schema'] == contract['feature_schema']
     add('graph feature schema (components the network knows)', same,
-        'identical' if same else f"this model knows the {schema_label(saved['feature_schema'])} component list; this run "
-        f"uses the {schema_label(contract['feature_schema'])} list. A model only loads with the list it was trained with.")
+        'identical' if same else
+            f"this model knows the {schema_label(saved['feature_schema'])} component list; this run uses the "
+            f"{schema_label(contract['feature_schema'])} list. A model only loads with the list it was trained "
+            f'with.')
     for key, label in [('spec_schema', 'goal/spec input schema'),
                        ('model_config', 'network architecture'), ('action_version', 'action semantics'),
                        ('graph_schema', 'circuit graph schema'), ('normalizer', 'preprocessing/normalization'),
@@ -516,8 +531,8 @@ def saved_models(run_entries, read_listing=None) -> list[dict]:
         newest = next((p for p in listing['checkpoints'] if p['is_latest']), listing['checkpoints'][-1])
         circuit = manifest.get('circuit') or {}
         models.append(dict(
-            # The model's name: the run row carries it, unique under the output root (runs.list_runs, record 7.225); a row
-            # built elsewhere falls back to the manifest's.
+            # The model's name: the run row carries it, unique under the output root (runs.list_runs, record 7.225); a
+            # row built elsewhere falls back to the manifest's.
             entry, task_name=manifest.get('task_name'), circuit_task=circuit.get('task_key'),
             model_label=entry.get('model_label') or model_label_of(entry['run_dir'], manifest)['model_label'],
             circuit_class=circuit.get('circuit_class'), latest=listing['latest'], best_policy=listing['best_policy'],
@@ -530,9 +545,10 @@ def saved_models(run_entries, read_listing=None) -> list[dict]:
 # ---------------------------------------------------------------------------- the model's name (record 7.225)
 # A run's model is named by the manifest's `model_label` (the label in use at the start, record 7.159). No two models
 # under one output root carry the same name: at the start a name already given gets the first free number, "ota7t (2)",
-# "ota7t (3)" (the user's request of 2026-10-06: "for saved rl models with same names add numbering to them by default");
-# models from before are numbered the same way when they are listed, oldest first. A rename writes `model_label.json`
-# in the run folder: the engine rewrites the manifest from memory while a run lives, and never that file.
+# "ota7t (3)" (the user's request of 2026-10-06: "for saved rl models with same names add numbering to them by
+# default"); models from before are numbered the same way when they are listed, oldest first. A rename writes
+# `model_label.json` in the run folder: the engine rewrites the manifest from memory while a run lives, and never that
+# file.
 MODEL_LABEL_FILE = 'model_label.json'
 MODEL_LABEL_MAX = 80
 
@@ -621,7 +637,8 @@ def rename_model(run_dir, label, *, taken) -> dict:
     previous = model_label_of(run_dir)['model_label']
     given = read_dict(run_dir / 'run_manifest.json').get('model_label')
     record = dict(model_label=label, previous=previous, given_at_start=given, renamed_utc=utcnow().isoformat(),
-                  history=[*(before.get('history') or []), *([dict(model_label=previous, until_utc=utcnow().isoformat())] if previous else [])])
+                  history=[*(before.get('history') or []), *([dict(model_label=previous,
+                      until_utc=utcnow().isoformat())] if previous else [])])
     write_json(run_dir / MODEL_LABEL_FILE, record)
     return record
 

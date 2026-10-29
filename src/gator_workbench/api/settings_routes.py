@@ -29,7 +29,8 @@ def _meta_and_network_routes(app: FastAPI, context: ApiContext):
         settings, settings_problem = runs.read_settings()      # a hand-edited file with a typo: said, not an HTTP 500
         return dict(version=__version__, repo_root=str(repo_root()), environment=environment_versions(),
                     default_output_root=str(default_output_root()), remembered=settings,
-                    output_root=runs.remembered_output_root(), allowed_output_roots=[str(r) for r in context.roots.roots],
+                    output_root=runs.remembered_output_root(),
+                    allowed_output_roots=[str(r) for r in context.roots.roots],
                     allowed_input_roots=[str(r) for r in context.input_roots],
                     produces='data, configurations, models, netlists and logs only - no plots, images or reports',
                     settings_problem=settings_problem,
@@ -83,8 +84,10 @@ def _pdk_routes(app: FastAPI, context: ApiContext):
     def load_pdk(body: PdkLoadBody):
         """Explicit click: read one technology library's own description and its Spectre model files through the
         connection (read-only, no simulation), and store what the network needs. PDK files are not kept."""
-        return bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, 'pdk', library=body.technology_library or None,
-                                                     model_file=body.model_file or None))          # a PdkError is a ValueError: 422
+        return bridge_call(lambda: bridge_read.read(context.monitor, body.profile_id, 'pdk',
+                                                     library=body.technology_library or None,
+                                                     # a PdkError is a ValueError: 422
+                                                     model_file=body.model_file or None))
 
 
 def _output_routes(app: FastAPI, context: ApiContext):
@@ -102,7 +105,8 @@ def _output_routes(app: FastAPI, context: ApiContext):
         result = context.roots.check(body.path, create=body.create)
         if result['allowed'] and result['resolved']:
             result['mock_data_root'] = str(Path(result['resolved']) / 'mock')
-            result['bytes_used'] = (directory_bytes(result['resolved']) if Path(result['resolved']).is_dir() else 0) if body.usage else None
+            result['bytes_used'] = (directory_bytes(result['resolved']) if Path(result[
+                'resolved']).is_dir() else 0) if body.usage else None
         return result
 
 
@@ -123,7 +127,8 @@ def _connection_routes(app: FastAPI, context: ApiContext):
         to the cheap layers by the monitor itself. The answer carries a one-sentence `summary` and, once the
         tunnel layer is known, the `ciw` line to load in Virtuoso."""
         try:
-            return bridge_connect.describe(context.monitor.check(body.profile_id, scope=body.scope, trigger=body.trigger))
+            return bridge_connect.describe(context.monitor.check(body.profile_id, scope=body.scope,
+                trigger=body.trigger))
         except ValueError as exc:
             fail(422, exc)
 
@@ -184,4 +189,5 @@ def _connection_routes(app: FastAPI, context: ApiContext):
         if connection.family_of(connection.profile_kind(settings)) == 'ngspice':
             fail(409, bridge_connect.NEXT_STEPS['nothing_to_connect'], code='nothing_to_connect')
         result = context.connector.connect(body.profile_id)
-        return dict(connect=result, status=bridge_connect.describe(context.monitor.check(body.profile_id, scope='cheap', trigger='user')))
+        return dict(connect=result, status=bridge_connect.describe(context.monitor.check(body.profile_id, scope='cheap',
+            trigger='user')))

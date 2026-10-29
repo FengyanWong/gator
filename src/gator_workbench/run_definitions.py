@@ -48,7 +48,8 @@ def require_rl_model(manifest):
         raise RunRejected('Bayesian optimization runs do not train an RL model. Their search cannot be resumed '
                           'and their saved weights cannot be loaded for fine-tuning or evaluation.', code='no_rl_model')
     if optimizer in NON_RL_OPTIMIZERS:
-        raise RunRejected(f'A {optimizer} run (the archive comparison) does not train an RL model: its save points hold '
+        raise RunRejected(
+            f'A {optimizer} run (the archive comparison) does not train an RL model: its save points hold '
                           'its search, which only that run itself can continue; they cannot be loaded for fine-tuning '
                           'or evaluation.', code='no_rl_model')
 

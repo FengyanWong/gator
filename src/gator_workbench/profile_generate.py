@@ -77,7 +77,8 @@ def _adjust_rows(config, graph, core) -> tuple:
     kinds = {device.id: device.kind for device in graph.devices}
     optimized = {row.variable_id for row in rows if row.optimized and not row.binding_group}
     if not optimized:
-        raise ProfileError('Nothing is marked as optimized: the parameter editor needs at least one variable that may change')
+        raise ProfileError(
+            'Nothing is marked as optimized: the parameter editor needs at least one variable that may change')
     # ---- Validate every member of an optimized group before adjusting its ranges.
     for row in rows:
         leader_id, _ = leaders[row.variable_id]
@@ -85,7 +86,8 @@ def _adjust_rows(config, graph, core) -> tuple:
             continue                                              # a fixed variable: recorded, never written
         where = f'{row.variable_id} ({row.instance_path}.{row.parameter_name})'
         if row.parameter_name != 'w' or kinds.get(row.instance_path) not in ('nmos', 'pmos'):
-            raise ProfileError(f'{where}: the real backend can only change transistor widths (parameter "w" of an nmos/pmos). '
+            raise ProfileError(
+                f'{where}: the real backend can only change transistor widths (parameter "w" of an nmos/pmos). '
                                'Mark anything else as not optimized.')
         if not (row.instance_path or '').startswith(f'{core}/') or (row.instance_path or '').count('/') != 1:
             raise ProfileError(f'{where}: only transistors directly inside the core cell ({core}/...) can be sized')
@@ -96,10 +98,12 @@ def _adjust_rows(config, graph, core) -> tuple:
     for row in rows:
         leader_id, _ = leaders[row.variable_id]
         if leader_id in optimized and row.binding_group:          # a follower keeps the ratio and nothing else
-            row = row.model_copy(update=dict(lower=None, upper=None, step=None, scale='linear', value_type='continuous'))
+            row = row.model_copy(update=dict(lower=None, upper=None, step=None, scale='linear',
+                value_type='continuous'))
         elif row.variable_id in optimized:
             if row.scale != 'linear' or row.value_type != 'continuous':
-                raise ProfileError(f'{row.variable_id}: use a linear, continuous range - widths move on a fixed 5 nm grid')
+                raise ProfileError(
+                    f'{row.variable_id}: use a linear, continuous range - widths move on a fixed 5 nm grid')
             if row.lower is None or row.upper is None:
                 raise ProfileError(f'{row.variable_id}: a lower and an upper bound are required')
             scale = units.scale_to_canonical(1.0, row.unit)
@@ -109,9 +113,11 @@ def _adjust_rows(config, graph, core) -> tuple:
             upper = math.floor(units.to_canonical(row.upper, row.unit) / step + _GRID_ROUNDING_TOL) * step
             current = graph.parameters.get(row.instance_path, {}).get('w')
             if current is None or not current.valid:
-                raise ProfileError(f'{row.variable_id}: the width of {row.instance_path} could not be read from the netlist')
+                raise ProfileError(
+                    f'{row.variable_id}: the width of {row.instance_path} could not be read from the netlist')
             if not lower < upper or not lower - 1e-15 <= current.value <= upper + 1e-15:
-                raise ProfileError(f'{row.variable_id}: the range {lower:g} .. {upper:g} m (after snapping onto the grid) must '
+                raise ProfileError(
+                    f'{row.variable_id}: the range {lower:g} .. {upper:g} m (after snapping onto the grid) must '
                                    f'contain the present width {current.value:g} m')
             digits = 6                                            # 1e-6 of the unit: far below 5 nm in um, exact in nm
             row = row.model_copy(update=dict(lower=round(lower / scale, digits), upper=round(upper / scale, digits),
@@ -125,15 +131,20 @@ def _checked_import(imported, name) -> tuple:
     text = Path(imported['netlist_path']).read_text()
     # The verified models, and what was read from Virtuoso with the cell: every component of its PDK (pins as the PDK
     # states them) and every ideal part of analogLib (pdk.ideal_models, record 7.190).
-    mapping, unverified = native_cells.build_mapping(text, circuit_id=name, technology_library=imported.get('technology_library'))
+    mapping, unverified = native_cells.build_mapping(text, circuit_id=name,
+        technology_library=imported.get('technology_library'))
     if unverified:
-        raise ProfileError(f'Device type(s) {", ".join(unverified)} are described neither by the cell\'s PDK nor by the ideal parts of '
-                           'analogLib that are read with it, and this project has not verified them: their pin order is unknown, so '
-                           'the circuit cannot be described to the optimizer. Read the PDK again in the PDK window (it reads both '
-                           'descriptions); a part from another library is not read yet.')
+        raise ProfileError(
+            f"Device type(s) {', '.join(unverified)} are described neither by the cell's PDK nor by the "
+            f'ideal parts of analogLib that are read with it, and this project has not verified them: their '
+            f'pin order is unknown, so the circuit cannot be described to the optimizer. Read the PDK again '
+            f'in the PDK window (it reads both descriptions); a part from another library is not read yet.')
     reference = json.loads((Path(imported['directory']) / native_cells.FILES['core_readback']).read_text())
-    if any(key not in item for item in reference.get('instances', []) for key in ('name', 'lib', 'cell', 'view', 'terms', 'params')):
-        raise ProfileError('This copy of the cell lacks details a profile needs (it was read by an older version): press "Read the cell again"')
+    if any(key not in item for item in reference.get('instances', []) for key in ('name', 'lib', 'cell', 'view',
+        'terms', 'params')):
+        raise ProfileError(
+            'This copy of the cell lacks details a profile needs (it was read by an older version): press '
+            '"Read the cell again"')
     return text, mapping, reference
 
 
@@ -143,7 +154,8 @@ def _form_facts(imported):
     facts = read_json_quiet(Path(imported['directory']) / cdf_facts.FILE, UNREADABLE)
     if facts is UNREADABLE:
         return None
-    if facts.get('format') != cdf_facts.FORMAT or (facts.get('library'), facts.get('cell')) != (imported['library'], imported['cell']):
+    if facts.get('format') != cdf_facts.FORMAT or (facts.get('library'), facts.get('cell')) != (imported['library'],
+        imported['cell']):
         return None
     return facts
 
@@ -181,14 +193,18 @@ def scaled_conditions_for(technology_library, supply_v):
         return None
     supply = float(supply_v)
     if not math.isfinite(supply) or supply <= 0:
-        raise ProfileError(f'The testbench supply must be a positive number to scale the {technology_library} conditions; got {supply_v!r}')
+        raise ProfileError(
+            f'The testbench supply must be a positive number to scale the {technology_library} conditions; '
+            f'got {supply_v!r}')
 
     def scaled(corner) -> dict:
         return dict(corner, supply_v=round(float(corner['supply_v']) * supply, 9))
     policy = dict(template['model_policy'],
-                  screening_supply_v_bounds=[round(float(b) * supply, 9) for b in template['model_policy']['screening_supply_v_bounds']])
+                  screening_supply_v_bounds=[round(float(b) * supply,
+                      9) for b in template['model_policy']['screening_supply_v_bounds']])
     out = {k: v for k, v in template.items() if k not in ('supply_scale', 'note')}
-    out.update(nominal=scaled(template['nominal']), screening_corners=[scaled(c) for c in template['screening_corners']], model_policy=policy,
+    out.update(nominal=scaled(template['nominal']),
+               screening_corners=[scaled(c) for c in template['screening_corners']], model_policy=policy,
                scaled_from=dict(template=f'configs/{technology_library}_conditions.json', testbench_supply_v=supply))
     return out
 
@@ -207,15 +223,18 @@ def largest_supply(graph) -> tuple:
         if dc is not None and dc.valid and roles.get(d.id, {}).get('negative') == '0' and dc.value > 0:
             found.append((dc.value, d.id, roles[d.id]['positive'], dc))
     if not found:
-        raise ProfileError('No DC voltage source with its minus terminal on ground: the testbench needs its supply as one')
+        raise ProfileError(
+            'No DC voltage source with its minus terminal on ground: the testbench needs its supply as one')
     found.sort(key=lambda item: -item[0])
     if len(found) > 1 and math.isclose(found[0][0], found[1][0], rel_tol=1e-9):
-        raise ProfileError(f'Two DC voltage sources share the largest value ({found[0][1]}, {found[1][1]}): which one is the supply?')
+        raise ProfileError(
+            f'Two DC voltage sources share the largest value ({found[0][1]}, {found[1][1]}): which one is the supply?')
     _, name, net, dc = found[0]
     return name, net, dc
 
 
-def write_profile_files(name, config, *, recipe, imported, staging, expected_frequency_hz=None, entry_extra=None) -> dict:
+def write_profile_files(name, config, *, recipe, imported, staging, expected_frequency_hz=None,
+    entry_extra=None) -> dict:
     """Write the profile files of `imported` (the import of the cell a task runs on - its working copy - or, on the
     older route, the original) into the new folder `staging`: device mapping, netlist, CDF readback, design, rules,
     receipt and registry entry. Refuses, in plain words, whatever the verified real backend cannot do."""
@@ -246,9 +265,11 @@ def _compile_profile_rows(imported, config, graph, core, reference) -> tuple:
                                                  if leaders[row.variable_id][0] in optimized}))
     except ValueError as refused:                     # else the form writer, by the form rules read with the cell
         if facts is None or facts.get('error'):
-            hint = (' (Read the cell again: reading it now also records what its property form lets you type, and then '
-                    'such values can vary too.)' if facts is None else f' (What its property form lets you type could not be '
-                    f'read with the cell: {facts["error"]})')
+            hint = (
+                ' (Read the cell again: reading it now also records what its property form lets you type, and '
+                'then such values can vary too.)' if facts is None else
+                        f' (What its property form lets you type could not be read with the cell: '
+                        f"{facts['error']})")
             raise ProfileError(str(refused) + hint) from None
         try:
             rows, optimized, leaders, specs = cdf_rules.adjust(config, graph, core, facts, reference)
@@ -277,7 +298,8 @@ def _profile_devices(graph, reference, core, compiled) -> tuple:
 
 def _profile_design(recipe, imported, expected_frequency_hz, graph, core) -> tuple:
     """Build circuit-specific design metadata and net roles using the existing timing and supply checks."""
-    design = dict(topology=f'generated:{recipe}', pdk_library=imported.get('technology_library'), library=imported['library'],
+    design = dict(topology=f'generated:{recipe}', pdk_library=imported.get('technology_library'),
+                  library=imported['library'],
                   core_cell=imported['cell'], testbench_cell=imported['testbench_cell'])
     if recipe == 'ring_oscillator':
         if expected_frequency_hz is None:
@@ -296,8 +318,10 @@ def _profile_design(recipe, imported, expected_frequency_hz, graph, core) -> tup
             source, supply_net, dc = supply_of(graph)
             design.update(supply_v=format(dc.value, '.12g'), supply_source=source, supply_net=supply_net)
             net_roles = {supply_net: ['supply']}
-        except ProfileError:                           # more than one source: the verified nominal supply, no role guessed...
-            if conditions_template(imported.get('technology_library')) is not None:     # ...unless the PDK scales its conditions to the supply
+        # more than one source: the verified nominal supply, no role guessed...
+        except ProfileError:
+            # ...unless the PDK scales its conditions to the supply
+            if conditions_template(imported.get('technology_library')) is not None:
                 source, supply_net, dc = largest_supply(graph)
                 design.update(supply_v=format(dc.value, '.12g'), supply_source=source, supply_net=supply_net)
                 net_roles = {supply_net: ['supply']}
@@ -323,10 +347,11 @@ def _check_profile_measurements(recipe, config) -> None:
 
 def _write_profile_data(mapping, net_roles, compiled, staging, design, reference, imported) -> None:
     """Persist the adjusted mapping, design, readback, and any supply-scaled conditions for the profile."""
-    # No `value` in a group, as in the verified mappings: the parser takes it from the netlist it reads. A recorded value
-    # made every export of a changed candidate fail its own graph check ("Binding/current value mismatch").
+    # No `value` in a group, as in the verified mappings: the parser takes it from the netlist it reads. A recorded
+    # value made every export of a changed candidate fail its own graph check ("Binding/current value mismatch").
     mapping.update(net_roles={'0': ['ground'], **net_roles},
-                   parameter_groups=[dict({k: v for k, v in asdict(group).items() if k != 'value'}, members=[asdict(m) for m in group.members])
+                   parameter_groups=[dict({k: v for k, v in asdict(group).items() if k != 'value'},
+                       members=[asdict(m) for m in group.members])
                                      for group in compiled.parameter_groups])
     write_json(staging / FILES['mapping'], mapping)
     write_json(staging / FILES['design'], design)
@@ -345,7 +370,8 @@ def _write_profile_rules(specs, staging, recipe, core, mos, instances, writable,
             writable=[dict(instance=n, lower=lo, upper=hi) for n, (lo, hi) in writable.items()]))
     else:
         try:
-            rules = cdf_rules.rules_v2(recipe=recipe, core=core, facts=facts, reference=reference, compiled=compiled, specs=specs)
+            rules = cdf_rules.rules_v2(recipe=recipe, core=core, facts=facts, reference=reference, compiled=compiled,
+                specs=specs)
         except cdf_rules.RowError as exc:
             raise ProfileError(str(exc)) from None
         write_json(staging / FILES['rules'], dict(rules, mos_instances=mos))
@@ -354,12 +380,18 @@ def _write_profile_rules(specs, staging, recipe, core, mos, instances, writable,
 def _write_profile_entry(staging, imported, design, recipe, config, name, core, optimized, specs, entry_extra):
     """Write the creation receipt and registry entry for the generated profile."""
     write_json(staging / FILES['receipt'], dict(
-        library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], config=design,
-        receipt_recorded_at=utcnow().isoformat(), source_netlist_sha256=imported['netlist_sha256'], imported_utc=imported['imported_utc'],
-        note='Generated by the workbench from a cell that already existed in Virtuoso; the workbench did not create the cell.'))
-    circuit_class = RECIPES[recipe]['circuit_class'] if recipe in RECIPES else (config.circuit.circuit_class or 'unspecified')
+        library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'],
+        config=design,
+        receipt_recorded_at=utcnow().isoformat(), source_netlist_sha256=imported['netlist_sha256'],
+        imported_utc=imported['imported_utc'],
+        note=
+            'Generated by the workbench from a cell that already existed in Virtuoso; the workbench did not '
+            'create the cell.'))
+    circuit_class = RECIPES[recipe]['circuit_class'] if recipe in RECIPES else (
+        config.circuit.circuit_class or 'unspecified')
     entry = dict(format=FORMAT, name=name, task_key=f'real:{name}', recipe=recipe, circuit_class=circuit_class,
-                 library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'], core_instance=core,
+                 library=imported['library'], core_cell=imported['cell'], testbench_cell=imported['testbench_cell'],
+                 core_instance=core,
                  pdk_id=imported.get('technology_library') or 'unspecified', created_utc=utcnow().isoformat(),
                  provided_metrics=list(recipes.provided_metrics(recipe)), optimized_variables=sorted(optimized),
                  writer='widths' if specs is None else 'form',
@@ -378,30 +410,37 @@ def create_profile(name, config, *, recipe, expected_frequency_hz=None) -> dict:
     if recipe not in RECIPES:
         raise ProfileError(f'Unknown circuit type {recipe!r}; available: {", ".join(RECIPES)}')
     circuit = config.circuit
-    imported = native_cells.load_import(circuit.library, circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
+    imported = native_cells.load_import(circuit.library,
+        circuit.cell) if circuit.source == 'virtuoso' and circuit.library and circuit.cell else None
     if imported is None:
         raise ProfileError('Read the cell into the workbench first (Circuit source: Virtuoso library / cell / view)')
     if not imported.get('testbench_cell'):
-        raise ProfileError('Choose the testbench cell and read the cell again: a profile simulates the testbench, not the bare cell')
+        raise ProfileError(
+            'Choose the testbench cell and read the cell again: a profile simulates the testbench, not the bare cell')
     existing = task_for_cell(imported['library'], imported['cell'])
     if existing:
-        raise ProfileError(f'{imported["library"]}/{imported["cell"]} already has the registered task {existing["task_key"]}'
-                           + ('' if existing['generated'] else ' (a verified built-in circuit): choose it in the Tasks window'))
+        raise ProfileError(
+            f'{imported["library"]}/{imported["cell"]} already has the registered task {existing["task_key"]}'
+                           + ('' if existing[
+                               'generated'] else ' (a verified built-in circuit): choose it in the Tasks window'))
     staging = directory.with_name(f'.{name}.creating')
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)
     try:
-        result = write_profile_files(name, config, recipe=recipe, imported=imported, staging=staging, expected_frequency_hz=expected_frequency_hz)
+        result = write_profile_files(name, config, recipe=recipe, imported=imported, staging=staging,
+            expected_frequency_hz=expected_frequency_hz)
         staging.rename(directory)
         try:
-            load_profile(name)                                    # every check of the verified classes, against the recorded files
+            # every check of the verified classes, against the recorded files
+            load_profile(name)
         except Exception as exc:
             raise ProfileError(f'The generated profile does not pass the checks of the real backend: {exc}')
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         shutil.rmtree(directory, ignore_errors=True)
         raise
-    return dict(result['entry'], directory=str(directory), parameters=[row.model_dump(mode='json') for row in result['rows']])
+    return dict(result['entry'], directory=str(directory),
+        parameters=[row.model_dump(mode='json') for row in result['rows']])
 
 
 # The name this had before refactoring package B9 (2026-10-09), kept for code that still uses it.

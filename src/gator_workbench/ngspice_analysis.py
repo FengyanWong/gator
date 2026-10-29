@@ -29,4 +29,6 @@ def counts(stdout, *, complete):
     known = bool(reached) and not any(k in reached for k in ('run', 'resume', 'source'))
     return dict(commands=dict(reached), analyses=sum(reached.values()) if complete and known else None,
                 complete=bool(complete and known),
-                meaning='Reached analysis command invocations, including failed attempts; incomplete output gives only a lower bound.')
+                meaning=
+                    'Reached analysis command invocations, including failed attempts; incomplete output gives '
+                    'only a lower bound.')

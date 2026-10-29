@@ -33,16 +33,19 @@ from .saved_rows import (SECTIONS, FIX_ROWS, FIX_NEWER, saved_task, QUANTITY_FIE
 _MAX_MAESTRO_DETAILS = 8
 
 
-FIX_COPY = ('The working copy was changed in Virtuoso after the task was saved: undo the change in Virtuoso, or press Save '
+FIX_COPY = (
+    'The working copy was changed in Virtuoso after the task was saved: undo the change in Virtuoso, or press Save '
             'as to make a new task from the copy as it is now.')
 # Another real run or check holds the run adapter's session lock (record 7.207): nothing is wrong with the task.
-FIX_BUSY = ('Nothing in the task or its working copy needs changing: check again when that run has ended. A run started '
+FIX_BUSY = (
+    'Nothing in the task or its working copy needs changing: check again when that run has ended. A run started '
             'from this page stops with Abort; one started from a command line stops there.')
 TITLES = dict(
     editors='The editors hold the rows of the saved task',
     profile='The task\'s files pass the checks of the real backend',
-    connect='The run adapter reaches the working copy: its creation record matches, no ADE/Maestro window is open on it, '
-            'and it still has the recorded sizes',
+    connect=
+        'The run adapter reaches the working copy: its creation record matches, no ADE/Maestro window is open on '
+        'it, and it still has the recorded sizes',
     export='The netlist Virtuoso exports from the working copy matches the saved task: topology and every parameter',
     deck='The simulation deck is written (not run)',
     close='The run adapter let go of the working copy',
@@ -63,27 +66,34 @@ FAILED = dict(
     busy='Another real run is using Virtuoso, so the working copy could not be checked')
 # What a holder of the session lock is, by its command line: the page's run worker, a command-line run, a Corner check,
 # another check (profile_preflight). `lock_holder` names the process that started a multiprocessing lane.
-_HOLDERS = (('gator_workbench.worker', 'a run started from a workbench page'), ('gator_workbench.cli run', 'a run started from a command line'),
-            ('gator_workbench.corner_check', 'a Corner check'), ('gator_workbench.profile_preflight', 'another check or a run\'s start check'))
+_HOLDERS = (('gator_workbench.worker', 'a run started from a workbench page'), ('gator_workbench.cli run',
+    'a run started from a command line'),
+            ('gator_workbench.corner_check', 'a Corner check'), ('gator_workbench.profile_preflight',
+                'another check or a run\'s start check'))
 
 
 def _step(step, ok, *, detail=None, fix=None, **more) -> dict:
-    return dict(step=step, ok=ok, title=TITLES[step] if ok else FAILED[step], detail=detail, **({} if ok else dict(fix=fix)), **more)
+    return dict(step=step, ok=ok, title=TITLES[step] if ok else FAILED[step], detail=detail,
+        **({} if ok else dict(fix=fix)), **more)
 
 
 def editors_step(config, name, saved) -> dict:
     """Report whether the Parameters, Probes, and Specs rows match the saved task revision."""
     differences = row_differences(config, saved)
     if not differences:
-        return _step('editors', True, detail=f'Parameters, Probes and Specs are those of revision {saved.get("revision")}.')
-    return _step('editors', False, fix=FIX_ROWS, detail=' '.join(describe_rows(section, lines, name=name, revision=saved.get('revision'))
+        return _step('editors', True,
+            detail=f'Parameters, Probes and Specs are those of revision {saved.get("revision")}.')
+    return _step('editors', False, fix=FIX_ROWS, detail=' '.join(describe_rows(section, lines, name=name,
+        revision=saved.get('revision'))
                                                                   for section, lines in differences.items()))
 
 
 def _gate_step(exc) -> dict:
     gate = getattr(exc, 'gate', None) or {}
-    layers = ', '.join([*(gate.get('blocking') or []), *(gate.get('uncertain') or [])]) or gate.get('status') or 'unknown'
-    return _step('gate', False, detail=f'{exc} ({layers}).', fix='Bring the link up in the Connection window, then check again.')
+    layers = ', '.join([*(gate.get('blocking') or []),
+        *(gate.get('uncertain') or [])]) or gate.get('status') or 'unknown'
+    return _step('gate', False, detail=f'{exc} ({layers}).',
+        fix='Bring the link up in the Connection window, then check again.')
 
 
 def lock_holder(path) -> str | None:
@@ -97,8 +107,10 @@ def lock_holder(path) -> str | None:
     try:
         stat = Path(path).stat()
         key = f'{os.major(stat.st_dev):02x}:{os.minor(stat.st_dev):02x}:{stat.st_ino}'
-        # "19: FLOCK  ADVISORY  WRITE 3034112 08:30:143825 0 EOF"; a process waiting for the lock has "->" before its type
-        pids = [int(f[f.index(key) - 1]) for f in map(str.split, Path('/proc/locks').read_text().splitlines()) if key in f and '->' not in f]
+        # "19: FLOCK  ADVISORY  WRITE 3034112 08:30:143825 0 EOF"; a process waiting for the lock has "->" before its
+        # type
+        pids = [int(f[f.index(key) - 1]) for f in map(str.split,
+            Path('/proc/locks').read_text().splitlines()) if key in f and '->' not in f]
         if not pids:
             return None
         pid = pids[0]
@@ -107,8 +119,10 @@ def lock_holder(path) -> str | None:
             if not any('multiprocessing' in a for a in argv):
                 break
             pid = int(process_file(pid, 'stat').read_text().rsplit(')', 1)[1].split()[1])
-        fields = process_file(pid, 'stat').read_text().rsplit(')', 1)[1].split()     # fields[0] is field 3 of proc(5): state
-        boot = next(int(line.split()[1]) for line in Path('/proc/stat').read_text().splitlines() if line.startswith('btime '))
+        # fields[0] is field 3 of proc(5): state
+        fields = process_file(pid, 'stat').read_text().rsplit(')', 1)[1].split()
+        boot = next(int(line.split()[1]) for line in Path('/proc/stat').read_text().splitlines() if line.startswith(
+            'btime '))
         started = datetime.fromtimestamp(boot + int(fields[19]) / os.sysconf('SC_CLK_TCK')).strftime('%H:%M')
     except (OSError, ValueError, IndexError, StopIteration):
         return None
@@ -121,12 +135,16 @@ def _busy_step(reason=None, locks=None) -> dict:
     """Another real run or check holds the lock of the task's Virtuoso session, or of its cell: one process at a time
     drives a Virtuoso session, and one works on a cell whatever the session (record 7.311)."""
     session, cell = locks or (bridge_session_lock(), None)
-    if cell is not None and not lock_holder(session) and (lock_holder(cell) or 'is in use by another run' in (reason or '')):
+    if cell is not None and not lock_holder(session) and (lock_holder(cell) or 'is in use by another run' in (
+        reason or '')):
         holder = lock_holder(cell) or f'another process ({reason})'
-        return _step('busy', False, fix=FIX_BUSY, detail=f'The cell\'s lock ({cell}) is held by {holder}, working on this cell through '
-                     'another Virtuoso session. Only one real run or check works on a cell at a time; nothing was read from it.')
+        return _step('busy', False, fix=FIX_BUSY,
+            detail=
+                f"The cell's lock ({cell}) is held by {holder}, working on this cell through another Virtuoso "
+                f'session. Only one real run or check works on a cell at a time; nothing was read from it.')
     holder = lock_holder(session) or f'another process ({reason or "it did not say which"})'
-    return _step('busy', False, fix=FIX_BUSY, detail=f'The run adapter\'s session lock ({session}) is held by {holder}. Only one real '
+    return _step('busy', False, fix=FIX_BUSY,
+        detail=f'The run adapter\'s session lock ({session}) is held by {holder}. Only one real '
                  'run or check works in a Virtuoso session at a time; nothing was read from it.')
 
 
@@ -137,15 +155,20 @@ def task_locks(profile_id, entry) -> tuple:
         settings = named_or_active(profile_id)[2] or {}
     except Exception:
         settings = {}
-    session = bridge_session_lock(settings.get('env_file'), settings.get('profile')) if settings.get('env_file') else bridge_session_lock()
-    cell = bridge_cell_lock(entry['library'], entry['core_cell']) if entry and entry.get('library') and entry.get('core_cell') else None
+    session = bridge_session_lock(settings.get('env_file'),
+        settings.get('profile')) if settings.get('env_file') else bridge_session_lock()
+    cell = bridge_cell_lock(entry['library'],
+        entry['core_cell']) if entry and entry.get('library') and entry.get('core_cell') else None
     return session, cell
 
 
 def _connect_fix(detail) -> str:
     text = (detail or '').lower()
     if 'ade/maestro window' in text:
-        return 'Close those ADE/Maestro windows in Virtuoso (the run exports through OCEAN, which they block), then check again.'
+        return (
+            'Close those ADE/Maestro windows in Virtuoso (the run exports through OCEAN, which they block), then '
+            'check again.'
+        )
     if 'tunnel' in text:
         return 'Bring the link up in the Connection window, then check again.'
     if 'creation receipt' in text or 'receipt' in text:
@@ -158,7 +181,8 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
     from . import profile_preflight, profiles, working_copy  # lazy: profiles imports the optimizer (torch)
     commands = commands or {}
     locks = task_locks(profile_id, entry)
-    if any(lock is not None and lock_holder(lock) for lock in locks):     # record 7.207: the adapter could not take a lock
+    # record 7.207: the adapter could not take a lock
+    if any(lock is not None and lock_holder(lock) for lock in locks):
         return [_busy_step(locks=locks)]
     try:
         result = profile_preflight.preflight(monitor, name, profile_id, acknowledge_unknown=acknowledge_unknown,
@@ -166,24 +190,31 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
     except PermissionError as exc:
         return [_gate_step(exc)]
     except Exception as exc:                                       # timeout, no answer: the check itself could not run
-        return [_step('connect', False, detail=redact(f'{type(exc).__name__}: {exc}', 600), fix='Try again; if it persists, '
+        return [_step('connect', False, detail=redact(f'{type(exc).__name__}: {exc}', 600),
+            fix='Try again; if it persists, '
                       'use "Test" in the Connection window.')]
     steps = []
     for item in result['steps']:
         step = item['step'] if item['step'] in TITLES else 'connect'
-        if step == 'connect' and not item['ok'] and (item.get('detail') or '').startswith(('BlockingIOError', 'CellBusy')):
+        if step == 'connect' and not item['ok'] and (item.get('detail') or '').startswith(('BlockingIOError',
+            'CellBusy')):
             steps.append(_busy_step(item.get('detail'), locks))    # taken between the look above and the connect
         elif item['ok']:
-            steps.append(_step(step, True, detail=item.get('detail'), **({'skipped': True} if item.get('skipped') else {})))
+            steps.append(_step(step, True, detail=item.get('detail'),
+                **({'skipped': True} if item.get('skipped') else {})))
         else:
             fix = (_connect_fix(item.get('detail')) if step == 'connect' else FIX_COPY if step == 'export'
-                   else 'Save it as a new task (Save as).' if step == 'profile' else 'See the reason; then check again.')
+                   else
+                       'Save it as a new task (Save as).' if step ==
+                       'profile' else
+                       'See the reason; then check again.')
             steps.append(_step(step, False, detail=item.get('detail'), fix=fix))
     # ---- Compare Maestro setup only after the working-copy preflight succeeds.
     if entry.get('recipe') == profiles.MAESTRO and all(s['ok'] for s in steps):
         expected = saved.get('maestro') or {}
         try:
-            found = working_copy.read_setup_on(monitor, profile_id, entry['copy_target'], acknowledge_unknown=acknowledge_unknown,
+            found = working_copy.read_setup_on(monitor, profile_id, entry['copy_target'],
+                                               acknowledge_unknown=acknowledge_unknown,
                                                command=commands.get('setup'))
         except PermissionError as exc:
             steps.append(_gate_step(exc))
@@ -191,12 +222,17 @@ def copy_steps(monitor, profile_id, name, entry, saved, *, acknowledge_unknown=F
         except Exception as exc:
             steps.append(_step('maestro', False, detail=redact(f'{type(exc).__name__}: {exc}', 600), fix='Try again.'))
             return steps
-        told = ['the working copy has no Maestro test GATOR any more'] if not found.get('test') else differences(expected, found)
-        steps.append(_step('maestro', True, detail='Read back from the working copy: it matches the task file.') if not told else
-                     _step('maestro', False, detail='; '.join(told[:_MAX_MAESTRO_DETAILS]) + (f'; and {len(told) - _MAX_MAESTRO_DETAILS} more' if len(told) > _MAX_MAESTRO_DETAILS else ''),
-                           fix='Undo the change in Maestro, or press Save as: it makes a new task and writes these rows\' setup '
-                               'into its own copy. If the change in Maestro is what you want, make it in Probes and Specs (or '
-                               'the Task file) first.'))
+        told = ['the working copy has no Maestro test GATOR any more'] if not found.get('test') else differences(
+            expected, found)
+        steps.append(_step('maestro', True,
+            detail='Read back from the working copy: it matches the task file.') if not told else
+                     _step('maestro', False,
+                         detail='; '.join(told[:_MAX_MAESTRO_DETAILS]) + (
+                         f'; and {len(told) - _MAX_MAESTRO_DETAILS} more' if len(told) > _MAX_MAESTRO_DETAILS else ''),
+                         fix=
+                             'Undo the change in Maestro, or press Save as: it makes a new task and writes '
+                             "these rows' setup into its own copy. If the change in Maestro is what you want, "
+                             'make it in Probes and Specs (or the Task file) first.'))
     return steps
 
 
@@ -209,10 +245,13 @@ def check(monitor, profile_id, config, *, rows=True, acknowledge_unknown=False, 
     name, entry, saved = found
     steps = [editors_step(config, name, saved)] if rows else []
     if not profile_id:
-        steps.append(_step('connection', False, detail='Nothing was read from Virtuoso.', fix='Choose a connection in the Connection window.'))
+        steps.append(_step('connection', False, detail='Nothing was read from Virtuoso.',
+            fix='Choose a connection in the Connection window.'))
     else:
-        steps += copy_steps(monitor, profile_id, name, entry, saved, acknowledge_unknown=acknowledge_unknown, commands=commands)
-    return dict(consistency_check=True, task=f'real:{name}', revision=saved.get('revision'), ok=all(s['ok'] for s in steps),
+        steps += copy_steps(monitor, profile_id, name, entry, saved, acknowledge_unknown=acknowledge_unknown,
+            commands=commands)
+    return dict(consistency_check=True, task=f'real:{name}', revision=saved.get('revision'),
+                ok=all(s['ok'] for s in steps),
                 steps=steps, simulated=False, checked_utc=utcnow().isoformat())
 
 
@@ -222,4 +261,5 @@ def summary(result) -> str:
     if not failed:
         return f'{result["task"]} is consistent.'
     first = failed[0]
-    return ' '.join(filter(None, [f'Not started: {first["title"][0].lower()}{first["title"][1:]}.', first['detail'], first['fix']]))
+    return ' '.join(filter(None, [f'Not started: {first["title"][0].lower()}{first["title"][1:]}.', first['detail'],
+        first['fix']]))

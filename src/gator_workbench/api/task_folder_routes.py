@@ -85,7 +85,8 @@ def register(app: FastAPI, context):
         # Supply existing authorized run directories when assigning runs or saved models to a folder.
         @app.put(f'{prefix}/assign')
         def move_in_kind(body: RunFolderMove):
-            return _call(lambda: task_folders.move(body.run_dirs, body.folder_id, known=runs_that_exist(body.run_dirs), kind=kind))
+            return _call(lambda: task_folders.move(body.run_dirs, body.folder_id, known=runs_that_exist(body.run_dirs),
+                kind=kind))
 
         @app.patch(prefix + '/{folder_id}')
         def rename_in_kind(folder_id: str, body: FolderName):

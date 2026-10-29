@@ -83,8 +83,8 @@ class RunLayout:
                     logs=str(self.logs), simulator_work=str(self.work))
 
 
-# Simulator scratch on the local disk (record 7.149). The D: drive seen from WSL is a 9p mount, about 100 times slower per
-# file operation: replayed offline, a lane's job folder (the 19 files of an mscr_ota7t job) took 0.15 s there and
+# Simulator scratch on the local disk (record 7.149). The D: drive seen from WSL is a 9p mount, about 100 times slower
+# per file operation: replayed offline, a lane's job folder (the 19 files of an mscr_ota7t job) took 0.15 s there and
 # 0.002 s on the WSL disk, the preparation's export files 0.03 s and 0.0015 s.
 SLOW_FILESYSTEMS = frozenset({'9p', 'drvfs', 'cifs', 'smb3', 'nfs', 'nfs4', 'fuse.sshfs'})
 
@@ -156,8 +156,8 @@ def code_provenance() -> dict:
                                   check=True).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return None
-    # --no-optional-locks: a plain `git status` may take .git/index.lock and rewrite the index to refresh its stat cache -
-    # on every run start, in a working tree and index that several sessions share. The answer is the same without it.
+    # --no-optional-locks: a plain `git status` may take .git/index.lock and rewrite the index to refresh its stat cache
+    # - on every run start, in a working tree and index that several sessions share. The answer is the same without it.
     commit, status = git('rev-parse', 'HEAD'), git('--no-optional-locks', 'status', '--porcelain')
     try:
         from analog_optimizer.training.sac import source_digest
@@ -218,8 +218,10 @@ def build_artifact_manifest(layout: RunLayout, *, run_id, final: bool, dataset_s
                 continue
             entries.append(dict(path=relative, purpose=PURPOSES.get(top, PURPOSES.get(relative, 'run file')),
                                 format=path.suffix.lstrip('.') or 'none', bytes=info.st_size,
-                                sha256=None if own_checksum else (sha256_file(path) if final or status == 'final' else None),
-                                checksum_in=f'checkpoints/{relative.split("/")[1]}/metadata.json' if own_checksum else None,
+                                sha256=None if own_checksum else (sha256_file(
+                                    path) if final or status == 'final' else None),
+                                checksum_in=
+                                    f"checkpoints/{relative.split('/')[1]}/metadata.json" if own_checksum else None,
                                 write_status=status))
         except OSError:
             continue
@@ -260,7 +262,8 @@ def find_runs(data_root, *, manifest: bool=True) -> list[Path]:
     found = []
     for experiment in _subfolders(data_root, experiments=True):
         for task in _subfolders(os.path.join(experiment, 'runs')):
-            found += [Path(run) for run in _subfolders(task) if not manifest or os.path.isfile(os.path.join(run, 'run_manifest.json'))]
+            found += [Path(run) for run in _subfolders(task) if not manifest or os.path.isfile(os.path.join(run,
+                'run_manifest.json'))]
     return sorted(found)
 
 

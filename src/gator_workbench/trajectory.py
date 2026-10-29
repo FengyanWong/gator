@@ -28,7 +28,10 @@ def _codec():
 
 
 class StateEncoder:
-    """An encoder for unique observation states using shared graph and spec templates with exact reconstruction checks."""
+    (
+        'An encoder for unique observation states using shared graph and spec templates with exact '
+        'reconstruction checks.'
+    )
     def __init__(self, static_dir, *, task_id, graph, specs, feature_schema_version, spec_schema_version):
         codec = _codec()
         self.static_dir = Path(static_dir)
@@ -130,14 +133,16 @@ class TrajectoryLoader:
         from analog_optimizer.training.replay import Transition
         rows = [row for row in self.transition_rows(candidate_ids=candidate_ids) if row['replay_eligible_archive']]
         if any(row.get('reward_version') != 'constraint_violation_v2' for row in rows):
-            raise ValueError('Legacy transition archive needs an explicit migration; inspect raw tables without training')
+            raise ValueError(
+                'Legacy transition archive needs an explicit migration; inspect raw tables without training')
         states = self._states
         if candidate_ids is not None and states is None:
             references = {row[key] for row in rows for key in ('state_ref', 'next_state_ref')}
             states = {row['state_id']: row for row in self._selected_rows('states', 'state_id', references)}
         result = []
         for row in rows:
-            observation = self.observation(row['state_ref']) if states is None else self._observation(states[row['state_ref']])
+            observation = self.observation(row['state_ref']) if states is None else self._observation(states[row[
+                'state_ref']])
             following = (self.observation(row['next_state_ref']) if states is None
                          else self._observation(states[row['next_state_ref']]))
             transition = Transition(
@@ -189,7 +194,7 @@ class TrajectoryLoader:
         elif vocabulary is not None:
             feature_schema, see = feature_schema or vocabulary.schema, vocabulary.view
         else:
-            see = lambda observation: observation                      # noqa: E731 - the standard list sees states as stored
+            see = lambda observation: observation  # noqa: E731 - the standard list sees states as stored
         feature_schema, spec_schema = feature_schema or FeatureSchema(), spec_schema or SpecSchema()
         return (batch_observations([see(t.observation) for t in transitions], feature_schema, spec_schema),
                 batch_observations([see(t.next_observation) for t in transitions], feature_schema, spec_schema))

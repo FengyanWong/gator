@@ -21,11 +21,13 @@ def durations(manifest, *, current_active=None) -> tuple:
     a third, different quantity and is reported separately."""
     segments = manifest.get('segments', [])
     active = sum(s.get('active_seconds') or 0.0 for s in segments[:-1])
-    active += current_active if current_active is not None else (segments[-1].get('active_seconds') or 0.0 if segments else 0.0)
+    active += current_active if current_active is not None else (segments[-1].get(
+        'active_seconds') or 0.0 if segments else 0.0)
     paused = 0.0
     for before, after in zip(segments, segments[1:]):
         if before.get('ended_utc') and after.get('started_utc'):
-            gap = (datetime.fromisoformat(after['started_utc']) - datetime.fromisoformat(before['ended_utc'])).total_seconds()
+            gap = (datetime.fromisoformat(after['started_utc']) - datetime.fromisoformat(before[
+                'ended_utc'])).total_seconds()
             paused += max(0.0, gap)
     return active, paused
 

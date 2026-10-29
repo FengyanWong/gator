@@ -64,7 +64,8 @@ def view_config(template: dict, view: dict, reward: dict) -> dict:
         raise ValueError(f"The template's active rows {sorted(t['metric_id'] for t in active)} are not the view's "
                          f'{sorted(rows)}')
     if view['preferred_metric'] not in rows or view['preferred_direction'] not in DIRECTIONS:
-        raise ValueError(f"Unknown preferred metric or direction: {view['preferred_metric']!r} {view['preferred_direction']!r}")
+        raise ValueError(
+            f"Unknown preferred metric or direction: {view['preferred_metric']!r} {view['preferred_direction']!r}")
     for target in active:
         row = rows[target['metric_id']]
         if (units.canonical_unit(target['unit']) != row['unit'] or target['constraint'] != row['constraint']
@@ -73,13 +74,15 @@ def view_config(template: dict, view: dict, reward: dict) -> dict:
                              f"hard={target['hard']}) differs from the view's ({row['unit']}, {row['constraint']})")
         for side in ('lower', 'upper'):
             if (row[side] is None) != (side not in SIDES[row['constraint']]):
-                raise ValueError(f"{target['metric_id']}: a {row['constraint']} row states exactly its {SIDES[row['constraint']]}")
+                raise ValueError(
+                    f"{target['metric_id']}: a {row['constraint']} row states exactly its {SIDES[row['constraint']]}")
         own_scale = normalization_scale(SimpleNamespace(normalization_scale=target.get('normalization_scale'),
                                                         lower=target['lower'], upper=target['upper']))
         target.update(lower=_in_unit(row['lower'], target['unit'], target['lower']),
                       upper=_in_unit(row['upper'], target['unit'], target['upper']),
                       normalization_scale=_in_unit(row['scale'], target['unit'], own_scale, difference=True),
-                      direction_after_feasible=view['preferred_direction'] if target['metric_id'] == view['preferred_metric'] else 'none')
+                      direction_after_feasible=view['preferred_direction'] if target['metric_id'] == view[
+                          'preferred_metric'] else 'none')
     config['run']['reward'] = dict(reward)
     return config
 

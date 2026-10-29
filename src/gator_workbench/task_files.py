@@ -30,29 +30,34 @@ from .schema import MeasurementDefinition, OptimizationParameter, PerformanceTar
 
 FORMAT = 'gator-task-1'
 HELP = {
-    'what this is': 'The task file: everything this task is, in one place. Edit it here or in the three editors. '
-                    '"Apply to editors" checks it and puts the rows into the editors; "Save as" stores them as a new task. '
-                    'Nothing is written to Virtuoso or saved until you press "Save as".',
+    'what this is':
+        'The task file: everything this task is, in one place. Edit it here or in the three editors. "Apply to '
+        'editors" checks it and puts the rows into the editors; "Save as" stores them as a new task. Nothing is '
+        'written to Virtuoso or saved until you press "Save as".',
     'cell': 'The Virtuoso cell this task was read from. Shown only: "Apply to editors" does not change it; to use '
             'another cell, read that cell in the Virtuoso window.',
-    'copy': 'The cell the task simulates and writes its Maestro test into. It is the cell above, except in a task saved '
-            'before 2026-09-23, which keeps running on the copy the workbench made then (<library>_GATOR). Shown only, '
-            'like cell.',
-    'measurement': 'kind = maestro: the Maestro outputs of the copy are the probes. kind = ring_oscillator or opamp_ac: '
-                   'the two verified circuit types, measured by the workbench. Found from the probes when you save. '
-                   'expected_frequency_hz (ring_oscillator only): a rough oscillation frequency; it sizes the transient.',
-    'maestro': 'The copy\'s Maestro test. Edit analyses (e.g. {"tran": {"stop": "50n"}}), variables '
-               '({"VSUP": "1.0"}), bindings ([{"cell": ..., "instance": "V0", "parameter": "vdc", "variable": "VSUP"}]; '
-               'only analogLib resistors, capacitors, inductors and sources) and initial_conditions here. Outputs and '
-               'specs come from the Probes and Specs rows. initial_conditions ({"OUT": "0.9", "N1": "0"}) give nets a '
-               'start voltage, which a circuit that does not start by itself needs - an oscillator stays in its '
-               'symmetric DC point without them. They are stored in a small file on the simulator host and registered '
-               'with the test, so Maestro\'s own runs and every run of the workbench start the same way.',
-    'parameters': 'Parameters rows: what may vary - instance_path (Instance: the path as in the circuit, e.g. XU1/MN1), '
-                  'parameter_name (Parameter), unit, lower and upper (Lower, Upper: the range searched), step, '
-                  'binding_group (Tied to: the row this one follows, times its ratio). In Virtuoso a run writes any '
-                  'value the property form of the instance lets you type (read with the cell): widths, lengths, '
-                  'finger counts, multipliers, capacitor sides ...',
+    'copy':
+        'The cell the task simulates and writes its Maestro test into. It is the cell above, except in a task '
+        'saved before 2026-09-23, which keeps running on the copy the workbench made then (<library>_GATOR). '
+        'Shown only, like cell.',
+    'measurement':
+        'kind = maestro: the Maestro outputs of the copy are the probes. kind = ring_oscillator or opamp_ac: the '
+        'two verified circuit types, measured by the workbench. Found from the probes when you save. '
+        'expected_frequency_hz (ring_oscillator only): a rough oscillation frequency; it sizes the transient.',
+    'maestro':
+        'The copy\'s Maestro test. Edit analyses (e.g. {"tran": {"stop": "50n"}}), variables ({"VSUP": "1.0"}), '
+        'bindings ([{"cell": ..., "instance": "V0", "parameter": "vdc", "variable": "VSUP"}]; only analogLib '
+        'resistors, capacitors, inductors and sources) and initial_conditions here. Outputs and specs come from '
+        'the Probes and Specs rows. initial_conditions ({"OUT": "0.9", "N1": "0"}) give nets a start voltage, '
+        'which a circuit that does not start by itself needs - an oscillator stays in its symmetric DC point '
+        'without them. They are stored in a small file on the simulator host and registered with the test, so '
+        "Maestro's own runs and every run of the workbench start the same way.",
+    'parameters':
+        'Parameters rows: what may vary - instance_path (Instance: the path as in the circuit, e.g. XU1/MN1), '
+        'parameter_name (Parameter), unit, lower and upper (Lower, Upper: the range searched), step, '
+        'binding_group (Tied to: the row this one follows, times its ratio). In Virtuoso a run writes any value '
+        'the property form of the instance lets you type (read with the cell): widths, lengths, finger counts, '
+        'multipliers, capacitor sides ...',
     'probes': 'Probes rows: what is measured. result_source (Result source): ade_output = a Maestro output '
               '(source_name = its Output name, signal = its Expression); backend_profile = a result of the circuit '
               'type; expression = arithmetic over other probes.',
@@ -82,7 +87,8 @@ def draft(config, *, name, cell, copy, saved=None, extras=None, setup=None) -> d
     saved, extras = saved or {}, extras or {}
     base_maestro = saved.get('maestro') or {}
     if setup and setup.get('test'):
-        base_maestro = dict(base_maestro, **{part: base_maestro.get(part) or setup.get(part) for part in _MAESTRO_PARTS})
+        base_maestro = dict(base_maestro,
+            **{part: base_maestro.get(part) or setup.get(part) for part in _MAESTRO_PARTS})
     maestro = {part: extras.get(part, base_maestro.get(part) or empty()) for part, empty in _MAESTRO_PARTS.items()}
     measurement = dict(saved.get('measurement') or {})
     if 'expected_frequency_hz' in extras:
@@ -114,7 +120,8 @@ def parse(text) -> tuple[dict, dict, list[str]]:
         problems.append(f'format is {data.get("format")!r}; this workbench reads {FORMAT!r}')
     # ---- Validate editor rows independently and retain diagnostics for invalid rows.
     rows = {}
-    for part, key, model in (('parameters', 'parameters', OptimizationParameter), ('probes', 'measurements', MeasurementDefinition),
+    for part, key, model in (('parameters', 'parameters', OptimizationParameter), ('probes', 'measurements',
+        MeasurementDefinition),
                              ('specs', 'targets', PerformanceTarget)):
         items = data.get(part, [])
         if not isinstance(items, list):
@@ -144,11 +151,13 @@ def parse(text) -> tuple[dict, dict, list[str]]:
     if not isinstance(maestro, dict):
         problems.append('maestro must be an object')
     else:
-        analyses, variables, bindings = maestro.get('analyses', {}), maestro.get('variables', {}), maestro.get('bindings', [])
+        analyses, variables, bindings = maestro.get('analyses', {}), maestro.get('variables',
+            {}), maestro.get('bindings', [])
         if not isinstance(analyses, dict) or any(not isinstance(v, dict) for v in analyses.values()):
             problems.append('maestro.analyses must map an analysis name to its options, e.g. {"tran": {"stop": "50n"}}')
         else:
-            extras['analyses'] = {str(k): {str(o): str(v) for o, v in options.items()} for k, options in analyses.items()}
+            extras['analyses'] = {str(k): {str(o): str(v) for o, v in options.items()} for k,
+                options in analyses.items()}
         if not isinstance(variables, dict):
             problems.append('maestro.variables must map a variable name to its value')
         else:
@@ -159,13 +168,15 @@ def parse(text) -> tuple[dict, dict, list[str]]:
         else:
             problems += virtuoso_setup.validate(dict(initial_conditions=conditions))
             extras['initial_conditions'] = {str(k): str(v) for k, v in conditions.items()}
-        if not isinstance(bindings, list) or any(not isinstance(b, dict) or set(b) != {'cell', 'instance', 'parameter', 'variable'}
+        if not isinstance(bindings, list) or any(not isinstance(b, dict) or set(b) != {'cell', 'instance', 'parameter',
+            'variable'}
                                                    for b in bindings):
             problems.append('maestro.bindings must list {"cell", "instance", "parameter", "variable"} objects')
         else:
             extras['bindings'] = [dict(b) for b in bindings]
         if isinstance(maestro.get('model_files'), list):
-            extras['model_files'] = [list(item) for item in maestro['model_files'] if isinstance(item, (list, tuple)) and len(item) == 2]
+            extras['model_files'] = [list(item) for item in maestro['model_files'] if isinstance(item, (list,
+                tuple)) and len(item) == 2]
     if isinstance(data.get('notes'), str):
         extras['notes'] = data['notes'][:4000]
     return rows, extras, problems
@@ -186,7 +197,8 @@ def what_changed(old, new) -> set[str]:
     for part in ('parameters', 'probes', 'specs', 'notes'):
         if json.dumps(old.get(part), sort_keys=True) != json.dumps(new.get(part), sort_keys=True):
             same_but_notes = part in ('parameters', 'probes') and json.dumps(
-                _without_row_notes(old.get(part)), sort_keys=True) == json.dumps(_without_row_notes(new.get(part)), sort_keys=True)
+                _without_row_notes(old.get(part)), sort_keys=True) == json.dumps(_without_row_notes(new.get(part)),
+                    sort_keys=True)
             changed.add('notes' if same_but_notes else part)
     om, nm = old.get('measurement') or {}, new.get('measurement') or {}
     if (om.get('kind'), om.get('expected_frequency_hz')) != (nm.get('kind'), nm.get('expected_frequency_hz')):
@@ -198,4 +210,5 @@ def what_changed(old, new) -> set[str]:
     return changed
 
 
-BASELINE_PARTS = {'parameters', 'probes', 'measurement', 'analyses', 'variables', 'bindings', 'initial_conditions', 'model_files'}
+BASELINE_PARTS = {'parameters', 'probes', 'measurement', 'analyses', 'variables', 'bindings', 'initial_conditions',
+    'model_files'}

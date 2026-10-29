@@ -34,14 +34,16 @@ class NewerSaved(ProfileError):
         self.detail_extra = dict(undone=undone)
 
 
-# ---------------------------------------------------------------------------------- saving a task: "Save task" / "Save as"
+# ---------------------------------------------------------------------------------- saving a task: "Save task" / "Save
+# as"
 def measurement_kind(config) -> str:
     """How a task measures, read from its Probes: all Maestro outputs -> 'maestro'; all results of one circuit type ->
     that type."""
     measured = list(config.measurements)
     if not measured:
         raise ProfileError('Probes is empty: say what the simulation measures (Probes tab) before saving the task')
-    measured = [m for m in measured if m.result_source != 'size_estimate'] or measured   # not simulated: beside either way
+    # not simulated: beside either way
+    measured = [m for m in measured if m.result_source != 'size_estimate'] or measured
     sources = {m.result_source for m in measured}
     if sources == {'size_estimate'}:
         raise ProfileError('Probes holds only size estimates: add what the simulation measures before saving the task')
@@ -53,13 +55,15 @@ def measurement_kind(config) -> str:
         if len(fitting) == 1:
             return fitting[0]
         if not fitting:
-            raise ProfileError(f'The probes name results that no circuit type gives together: {", ".join(sorted(names))}')
+            raise ProfileError(
+                f'The probes name results that no circuit type gives together: {", ".join(sorted(names))}')
         raise ProfileError('The probes fit both circuit types (only supply results): add a probe that says which one, '
                            'e.g. osc_frequency_hz or gain_db_at_start')
     raise ProfileError('The probes mix Maestro outputs and results of a circuit type: a task measures one way')
 
 
-def check_saveable(name, config, *, task=None, as_new: bool=False, run_rows=(), replace_newer: bool=False, base_revision=None) -> None:
+def check_saveable(name, config, *, task=None, as_new: bool=False, run_rows=(), replace_newer: bool=False,
+    base_revision=None) -> None:
     """The refusals of `save_task` that read nothing from Virtuoso, on their own: the Save route asks them before it
     chooses the Virtuoso session the save goes to (record 7.351), so that a refused save contacts no Virtuoso.
     `save_task` asks them again, unchanged."""
@@ -89,17 +93,19 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
     commands, extras = commands or {}, dict(extras or {})
     directory, current, updating = _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision)
     kind = measurement_kind(config)
-    steps = (['copy'] if current and not updating else []) + (['setup', 'deck'] if kind == MAESTRO else []) + ['read', 'files']
+    steps = (['copy'] if current and not updating else []) + (['setup', 'deck'] if kind == MAESTRO else []) + ['read',
+        'files']
     mark = (lambda step: progress(step, steps)) if progress else (lambda step: None)
     saved = task_file(task) if current else None
     target, claimed = _save_target(
         updating, current, task, mark, monitor, profile_id, name, commands, library, cell)
     staging = directory.with_name(f'.{name}.saving')
     try:
-        # What the task file adds beside the rows: sent with this save, else what the copy was last written with (by the last
-        # save, "Write to Virtuoso" or an approved agent setup - so never older than the saved task's), else the saved task's;
-        # a part none of them names stays as the copy has it. Save as starts from the open task's copy.
-        base = working_copy.last_written(current['copy_target'] if current else target) or (saved or {}).get('maestro') or {}
+        # What the task file adds beside the rows: sent with this save, else what the copy was last written with (by the
+        # last save, "Write to Virtuoso" or an approved agent setup - so never older than the saved task's), else the
+        # saved task's; a part none of them names stays as the copy has it. Save as starts from the open task's copy.
+        base = working_copy.last_written(current['copy_target'] if current else target) or (saved or {}).get(
+            'maestro') or {}
         maestro = None
         if kind == MAESTRO:
             maestro, probes, deck = _prepare_saved_maestro(
@@ -110,12 +116,14 @@ def save_task(monitor, profile_id, name, config, *, library=None, cell=None, tas
             # Maestro's circuit part and the export the task is generated from must be the same circuit.
             exported = Path(imported['netlist_path']).read_text()
             if working_copy.structure(deck['circuit']) != working_copy.structure(exported):
-                raise ProfileError('Maestro netlists the working copy differently from its schematic export: look at the copy in '
+                raise ProfileError(
+                    'Maestro netlists the working copy differently from its schematic export: look at the copy in '
                                    'Virtuoso, then save again')
             extra['maestro_deck_sha256'] = deck['sha256']
             # The network's result registry: exactly the task's outputs, each with the scale its spec normalizes by.
             extra['spec_registry'] = _spec_registry(config, deck, probes)
-        result = write_profile_files(name, config, recipe=kind, imported=imported, staging=staging, expected_frequency_hz=frequency, entry_extra=extra)
+        result = write_profile_files(name, config, recipe=kind, imported=imported, staging=staging,
+            expected_frequency_hz=frequency, entry_extra=extra)
         if kind == MAESTRO:
             write_json(staging / FILES['maestro_deck'], {k: v for k, v in deck.items() if k != 'circuit'})
         data = _write_saved_task_record(
@@ -143,11 +151,13 @@ def _save_target(updating, current, task, mark, monitor, profile_id, name, comma
         target = current['copy_target']
     elif current:
         if not current.get('copy_target'):
-            raise ProfileError(f'real:{task} was made before tasks had working copies: read its cell in the Virtuoso window (confirming '
-                               'that it is a copy you made) and save a new task')
+            raise ProfileError(
+                f'real:{task} was made before tasks had working copies: read its cell in the Virtuoso window '
+                f'(confirming that it is a copy you made) and save a new task')
         mark('copy')
         target = working_copy.make_task_copy(monitor, profile_id, current['copy_target'], name,
-                                             source_netlist=(Path(current['directory']) / FILES['structure']).read_text(),
+                                             source_netlist=(Path(current['directory']) / FILES[
+                                                 'structure']).read_text(),
                                              command=commands.get('copy'))
     else:
         target = _first_save_target(library, cell, name)
@@ -161,7 +171,8 @@ def _prepare_saved_maestro(config, extras, base, mark, monitor, profile_id, targ
     mark('setup')
     written = working_copy.write_setup_on(monitor, profile_id, target, setup, command=commands.get('setup'))
     if not written['matches']:
-        raise ProfileError('The copy\'s Maestro setup reads back differently from the rows: ' + '; '.join(written['differences']))
+        raise ProfileError('The copy\'s Maestro setup reads back differently from the rows: ' + '; '.join(written[
+            'differences']))
     maestro = virtuoso_setup.normalize(written)
     # Maestro's own deck of the test, netlisted once: every evaluation runs it around the circuit it exports,
     # and OCEAN measures the outputs with their signal names translated by Maestro's own name maps.
@@ -181,8 +192,10 @@ def _stage_task_files(
     imported = native_cells.load_import(target['copy']['library'], target['copy']['cell'])
     if imported is None:
         raise ProfileError('The working copy could not be read back into the workbench')
-    frequency = extras.get('expected_frequency_hz', ((saved or {}).get('measurement') or {}).get('expected_frequency_hz'))
-    measurement = dict(kind=kind, **({'expected_frequency_hz': float(frequency)} if kind == 'ring_oscillator' and frequency else {}))
+    frequency = extras.get('expected_frequency_hz',
+        ((saved or {}).get('measurement') or {}).get('expected_frequency_hz'))
+    measurement = dict(kind=kind,
+        **({'expected_frequency_hz': float(frequency)} if kind == 'ring_oscillator' and frequency else {}))
     revision = (saved or {}).get('revision', 0) + 1 if updating else 1
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)
@@ -199,7 +212,8 @@ def _write_saved_task_record(
     data = task_files.build(
         name=name, revision=revision, saved_utc=extra['saved_utc'], cell=target['original'], copy=target['copy'],
         measurement=measurement,
-        maestro=None if maestro is None else dict(test=maestro['test'], model_files=maestro['model_files'], analyses=maestro['analyses'],
+        maestro=None if maestro is None else dict(test=maestro['test'], model_files=maestro['model_files'],
+                                                  analyses=maestro['analyses'],
                                                   variables=maestro['variables'], bindings=maestro['bindings'],
                                                   initial_conditions=maestro['initial_conditions'],
                                                   outputs=maestro['outputs'], specs=maestro['specs']),
@@ -220,7 +234,8 @@ def _publish_task_revision(updating, name, current, saved, data, staging, direct
         changed, baseline_kept = _replace_revision(name, current, saved, data, staging)
     staging.rename(directory)
     try:
-        load_profile(name).check_deck() if kind == MAESTRO else load_profile(name)   # every check of the verified classes
+        # every check of the verified classes
+        load_profile(name).check_deck() if kind == MAESTRO else load_profile(name)
     except Exception as exc:
         raise ProfileError(f'The task does not pass the checks of the real backend: {exc}')
     return changed, baseline_kept
@@ -240,11 +255,15 @@ def _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision
             raise ProfileError('Save task keeps the task name: use Save as for a task under another name')
         working = working_run_of(name, run_rows)
         if working is not None:
-            raise ProfileError(f'Run {working.get("run_id") or working["run_dir"]} of real:{name} is working right now: let it finish first')
+            raise ProfileError(
+                f"Run {working.get('run_id') or working['run_dir']} of real:{name} is working right now: let "
+                f'it finish first')
         if not current.get('copy_target'):
-            raise ProfileError(f'real:{name} was made before tasks had working copies: read its cell in the Virtuoso window (confirming '
-                               'that it is a copy you made) and save a new task')
-    elif name in REAL_PROFILES or f'real:{name}' in REMOVED_REAL_TASKS or directory.exists():   # a removed one's name stays reserved
+            raise ProfileError(
+                f'real:{name} was made before tasks had working copies: read its cell in the Virtuoso window '
+                f'(confirming that it is a copy you made) and save a new task')
+    # a removed one's name stays reserved
+    elif name in REAL_PROFILES or f'real:{name}' in REMOVED_REAL_TASKS or directory.exists():
         raise ProfileError(f'A task called real:{name} already exists: choose another name')
     # a spec must judge Probes the task has (the editors' check)
     probes, refused = {m.measurement_id: m for m in config.measurements}, []
@@ -256,7 +275,8 @@ def _saveable(name, config, task, as_new, run_rows, replace_newer, base_revision
     if updating and not replace_newer:
         undone = undone_by_saving(config, name, task_file(name), base=base_revision)
         if undone:
-            raise NewerSaved(describe_undone(name, undone) + ' Press Reload saved values to take the saved rows, or save anyway.',
+            raise NewerSaved(describe_undone(name,
+                undone) + ' Press Reload saved values to take the saved rows, or save anyway.',
                              undone)
     return directory, current, updating
 
@@ -267,7 +287,9 @@ def _first_save_target(library, cell, name):
         raise ProfileError('Say which cell the task is of')
     existing = [t for t in tasks_for_cell(library, cell)]
     if existing:
-        raise ProfileError(f'{library}/{cell} already has the task(s) {", ".join(t["task_key"] for t in existing)}: open one and use Save as')
+        raise ProfileError(
+            f"{library}/{cell} already has the task(s) {', '.join((t['task_key'] for t in existing))}: open "
+            f'one and use Save as')
     target = working_copy.draft_target(library, cell)
     working_copy.claim(library, cell, name)
     return target
@@ -289,21 +311,27 @@ def _maestro_setup(config, extras, base):
 def _maestro_outputs(config, maestro) -> tuple:
     """(the Probes rows by their Maestro output name, the outputs Maestro's deck is netlisted to measure)."""
     probes = {m.source_name: m for m in config.measurements if m.result_source == 'ade_output'}
-    outputs = [dict(name=o['name'], expression=o['expression'], analysis=probes[o['name']].analysis if o['name'] in probes
-                    else virtuoso_setup.analysis_of(o['expression']), unit=probes[o['name']].unit if o['name'] in probes else '1')
+    outputs = [dict(name=o['name'], expression=o['expression'],
+                    analysis=probes[o['name']].analysis if o['name'] in probes
+                    else virtuoso_setup.analysis_of(o['expression']),
+                    unit=probes[o['name']].unit if o['name'] in probes else '1')
                for o in maestro['outputs']]
     return probes, outputs
 
 
 def _spec_registry(config, deck, probes):
-    """The result registry of a Maestro-measured task: exactly its outputs, each with the scale its spec normalizes by."""
+    (
+        'The result registry of a Maestro-measured task: exactly its outputs, each with the scale its spec '
+        'normalizes by.'
+    )
     by_probe = {t.equation.strip(): t for t in config.targets}
     registry = []
     for output in deck['outputs']:
         probe = probes.get(output['name'])
         spec = by_probe.get(probe.measurement_id) if probe is not None else None
         scale = units.scale_to_canonical(normalization_scale(spec), spec.unit) if spec is not None else 1.0
-        registry.append(dict(metric_id=output['name'], unit=units.canonical_unit(output['unit']) if units.known(output['unit'])
+        registry.append(dict(metric_id=output['name'],
+            unit=units.canonical_unit(output['unit']) if units.known(output['unit'])
                              else output['unit'], reference=abs(float(scale)) or 1.0))
     return registry
 

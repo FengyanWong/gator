@@ -17,7 +17,10 @@ from .units import canonical_unit
 
 
 def assess(config, designs):
-    """Assess whether recorded designs meet every planned hard spec using only valid measurements with matching units."""
+    (
+        'Assess whether recorded designs meet every planned hard spec using only valid measurements with '
+        'matching units.'
+    )
     specs, _, _ = build_specs(config)
     hard = [s for s in specs if s.active and s.required]
     plan = SpecPlan.from_config(config)
@@ -62,11 +65,13 @@ def assess(config, designs):
     if best:
         name = 'The reference' if best[3] == 'reference' else f'The best recorded design ({best[3]})'
         detail = ' ' + name + ' misses ' + '; '.join(
-            f"{m['metric']} at {m['condition']} by {m['distance']:.3g} {m['unit']}" for m in best[4][:3]) + '.' if best[4] else ''
+            f"{m['metric']} at {m['condition']} by {m['distance']:.3g} {m['unit']}" for m in best[4][:3]) + '.' if best[
+                4] else ''
         if best[0]:
             detail += f' {best[0]} required condition/spec results are unavailable for that design.'
     message = ('No recorded design of this task meets every hard spec at every planned condition.' + detail +
-               ' Use Corner check on the reference or a recorded design before choosing targets or wider parameter ranges. This warning does not block a start.')
+               ' Use Corner check on the reference or a recorded design before choosing targets or wider '
+               'parameter ranges. This warning does not block a start.')
     return dict(observed_feasible=False, checked_designs=len(designs), best_design=None if best is None else best[3],
                 worst_misses=[] if best is None else best[4][:3], warning=message)
 
@@ -76,7 +81,8 @@ def _recorded_designs(run_dir):
     reader = DatasetReader(Path(run_dir) / 'data')
     grouped = defaultdict(lambda: defaultdict(lambda: dict(status='ok', candidate_evaluated=True,
         metrics={}, metric_units={}, metric_validity={})))
-    status_by_id = {r['evaluation_id']: r.get('status') for r in reader.rows('evaluations', ['evaluation_id', 'status'])}
+    status_by_id = {r['evaluation_id']: r.get('status') for r in reader.rows('evaluations', ['evaluation_id',
+        'status'])}
     for row in reader.rows('metrics'):
         if row.get('aggregation_level') != 'condition':
             continue
@@ -133,7 +139,8 @@ def _qualification_reference(config, *, all_candidates=False):
         names += [row['candidate'] for row in report.get('aggregates', []) if row['candidate'] != 'baseline']
     designs = []
     for name in names:
-        labels = (['baseline_nominal_1', *[f'derived_{c}' for c in config.run.conditions.corners]] if name == 'reference'
+        labels = (['baseline_nominal_1',
+            *[f'derived_{c}' for c in config.run.conditions.corners]] if name == 'reference'
                   else [f'{name}_{c}' for c in ['nominal', *config.run.conditions.corners]])
         rows = {}
         for label in labels:
@@ -152,8 +159,8 @@ def _qualification_reference(config, *, all_candidates=False):
 
 
 # The retained qualification is read once per version of its reports (their stat), not on every validation: each resolve
-# and read there costs milliseconds on the 9p-mounted repository (0.7 s per validation of OTA7 with four corners). The job
-# results are written before the report that names them, and never after, so the report's stat stands for them too.
+# and read there costs milliseconds on the 9p-mounted repository (0.7 s per validation of OTA7 with four corners). The
+# job results are written before the report that names them, and never after, so the report's stat stands for them too.
 @lru_cache(maxsize=4)
 def _stage_a_report(root, version):
     """The stage-A report. `version`, its stat, only keys the cache."""
@@ -174,12 +181,16 @@ def _qualification_runs(config):
     if config.circuit.task_id != 'real:gpdk045_ota7':
         return []
     root = repo_root() / 'artifacts/local/reward-v2-real/20260926-qualification-05'
-    return list(_stage_runs(str(root), tuple(file_identity(root / f'stage-{stage}/report.json') for stage in ('b', 'c'))))
+    return list(_stage_runs(str(root), tuple(file_identity(root / f'stage-{stage}/report.json') for stage in ('b',
+        'c'))))
 
 
 @lru_cache(maxsize=4)
 def _stage_runs(root, versions):
-    """The run folders the stage-B and stage-C reports name inside `root`. `versions`, their stats, only key the cache."""
+    (
+        'The run folders the stage-B and stage-C reports name inside `root`. `versions`, their stats, only key '
+        'the cache.'
+    )
     root, paths = Path(root), []
     for stage in ('b', 'c'):
         report = read_dict(root / f'stage-{stage}/report.json')
@@ -190,7 +201,10 @@ def _stage_runs(root, versions):
 
 
 def check(config, *, roots=None):
-    """Gather compatible recorded designs and return nonblocking corner-reachability evidence when corners are enabled."""
+    (
+        'Gather compatible recorded designs and return nonblocking corner-reachability evidence when corners are '
+        'enabled.'
+    )
     if config.run.conditions.policy == 'off':
         return None
     roots = roots or OutputRoots()
@@ -200,9 +214,9 @@ def check(config, *, roots=None):
     if roots.is_allowed(root):
         run_dirs.update(find_runs(root))
     for run in sorted(run_dirs):
-        # A run that cannot be read is no evidence, and never a failed validation: one saved with an option removed since
-        # (an encoder) used to make every validation of this task an HTTP 500 (review of 2026-09-29), and a damaged file
-        # or data part did too.
+        # A run that cannot be read is no evidence, and never a failed validation: one saved with an option removed
+        # since (an encoder) used to make every validation of this task an HTTP 500 (review of 2026-09-29), and a
+        # damaged file or data part did too.
         try:
             saved = _saved(run)
             if saved.get('circuit', {}).get('task_id') != config.circuit.task_id:

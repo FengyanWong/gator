@@ -38,7 +38,8 @@ from .compile import grid_top
 RULES_FORMAT = 'gator-profile-rules-1'
 VERIFIED_WIDTH_STEP = 5e-9
 MOS_FIXED = ('l', 'm', 'fingers')                       # never written by this profile: equal to the record, always
-MOS_SIZE = ('w', 'fw') + GEOMETRY                       # follow the width of a writable transistor; fixed on every other
+# follow the width of a writable transistor; fixed on every other
+MOS_SIZE = ('w', 'fw') + GEOMETRY
 
 
 class RulesError(ValueError):
@@ -51,7 +52,8 @@ def _to_grid_top(group):
     top = grid_top(group.lower, group.upper, group.step, group.domain == 'integer') if group.mutable else group.upper
     if not top > group.upper:
         return group
-    members = tuple(replace(m, upper=top * m.ratio) if m.upper is not None and group.upper * m.ratio <= m.upper < top * m.ratio
+    members = tuple(replace(m,
+        upper=top * m.ratio) if m.upper is not None and group.upper * m.ratio <= m.upper < top * m.ratio
                     else m for m in group.members)
     return replace(group, upper=top, members=members)
 
@@ -74,7 +76,8 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         if rules.get('format') != RULES_FORMAT:
             raise RulesError(f'Unknown rules format {rules.get("format")!r}')
         if rules.get('recipe', 'opamp_ac') != self.recipe:
-            raise RulesError(f'These rules ask for the {rules.get("recipe")!r} recipe; this class provides {self.recipe!r}')
+            raise RulesError(
+                f'These rules ask for the {rules.get("recipe")!r} recipe; this class provides {self.recipe!r}')
         core = rules.get('core_instance')
         if not isinstance(core, str) or not core or '/' in core:
             raise RulesError('core_instance must name the instance of the core cell in the testbench (e.g. "XU1")')
@@ -90,12 +93,14 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         self.mos_names = tuple(rules.get('mos_instances') or ())
         self.fixed_instances = tuple(rules.get('fixed_instances') or ())
         if set(names) - set(self.mos_names) or set(self.mos_names) & set(self.fixed_instances):
-            raise RulesError('Every writable instance must be one of mos_instances, and no instance can be both MOS and fixed')
+            raise RulesError(
+                'Every writable instance must be one of mos_instances, and no instance can be both MOS and fixed')
         self.writable_keys = tuple((f'{core}/{name}', 'w') for name in names)
         self.bounds = {}
         for item in writable:
             lower, upper = item.get('lower'), item.get('upper')
-            if (any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (lower, upper))
+            if (any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (lower,
+                upper))
                     or not 0 < lower < upper):
                 raise RulesError(f'Invalid width bounds for {item["instance"]}')
             self.bounds[f'{core}/{item["instance"]}'] = (float(lower), float(upper))
@@ -141,7 +146,9 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
                 seen[key] = group.id
                 # One group step must move EVERY member by whole grid steps (a 1:4 pair needs a 20 nm group step).
                 if not self._on_width_grid(group.step * member.ratio):
-                    raise RulesError(f'Group {group.id}: its step does not keep {member.device_id} on the {self.width_step:g} m grid')
+                    raise RulesError(
+                        f'Group {group.id}: its step does not keep {member.device_id} on the '
+                        f'{self.width_step:g} m grid')
                 lower, upper = self.bounds[member.device_id]
                 # group value * ratio = member width, so the group range must map inside the member's bounds
                 if group.lower * member.ratio < lower - 1e-15 or group.upper * member.ratio > upper + 1e-15:
@@ -188,7 +195,8 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
         for group in self.graph.parameter_groups:          # members of one group keep their recorded ratio
             if group.mutable:
                 if any((m.device_id, m.parameter) not in parameters for m in group.members):
-                    raise RulesError(f'Group {group.id} of the mapping moves a parameter that the rules do not make writable')
+                    raise RulesError(
+                        f'Group {group.id} of the mapping moves a parameter that the rules do not make writable')
                 shared = [parameters[m.device_id, m.parameter] / m.ratio for m in group.members]
                 if any(not equal(shared[0], other) for other in shared[1:]):
                     raise ValueError(f'Group {group.id}: matched widths / fixed ratio violated')
@@ -196,8 +204,9 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
     def optimization_graph(self, structure=None):
         """Return a validated optimization graph with parameter-group bounds aligned to the grid."""
         graph = self.parser.parse_file(structure) if structure is not None else deepcopy(self.graph)
-        # The groups a run gets are the ones compile makes from the task's rows, also from a mapping saved before compile
-        # took a group's top grid point as its upper bound: otherwise such a task's own rows no longer matched it at Start.
+        # The groups a run gets are the ones compile makes from the task's rows, also from a mapping saved before
+        # compile took a group's top grid point as its upper bound: otherwise such a task's own rows no longer matched
+        # it at Start.
         graph.parameter_groups = [_to_grid_top(group) for group in graph.parameter_groups]
         graph.validate()
         self.validate_assignment(graph.assignments({g.id: g.value for g in graph.parameter_groups if g.mutable}))
@@ -216,7 +225,8 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
                     raise ValueError(f'Unexpected {name} {key}')
             params = inst['params']
             if name in self.fixed_instances:               # not a transistor: nothing about it may change
-                if params.keys() != ref['params'].keys() or any(not same_value(params[k], ref['params'][k]) for k in params):
+                if params.keys() != ref['params'].keys() or any(not same_value(params[k],
+                    ref['params'][k]) for k in params):
                     raise ValueError(f'Fixed instance {name} changed')
                 continue
             for key in MOS_FIXED + (() if name in writable else MOS_SIZE):
@@ -226,7 +236,8 @@ class GenericMosWidthProfile(Gpdk045OtaProfile):
                 raise ValueError(f'Stale finger width on {name}')
             if any(number(params[key]) <= 0 for key in GEOMETRY):
                 raise ValueError(f'Invalid derived geometry on {name}')
-        result = {(device, key): number(actual[device.split('/')[1]]['params'][key]) for device, key in self.writable_keys}
+        result = {(device, key): number(actual[device.split('/')[1]]['params'][key]) for device,
+            key in self.writable_keys}
         self.validate_assignment(result)
         return result
 
@@ -284,7 +295,8 @@ def check_writable_record(reference, names):
         params = (instances.get(name) or {}).get('params') or {}
         for key in ('fingers', 'm'):
             if key not in params or not equal(number(params[key]), 1.0):
-                raise RulesError(f'{name} has {key}={params.get(key)!r}: the write path sets {key}=1, so only single-finger, '
+                raise RulesError(
+                    f'{name} has {key}={params.get(key)!r}: the write path sets {key}=1, so only single-finger, '
                                  'm=1 transistors can be sized')
 
 

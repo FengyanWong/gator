@@ -41,7 +41,8 @@ def fsync_directory(path) -> None:
         os.close(fd)
 
 
-def _await_visible(path: Path, size: int | None, attempts: int=8, delay: float=0.025, identity: tuple[int, int] | None=None) -> None:
+def _await_visible(path: Path, size: int | None, attempts: int=8, delay: float=0.025, identity: tuple[int,
+    int] | None=None) -> None:
     """`identity` = (st_dev, st_ino) of the file this writer renamed into place. When another writer's rename landed
     after ours, the path holds a DIFFERENT file of another size: that is no failure of ours - every writer publishes a
     whole, fsynced file by rename, so the newer one is complete too - and it used to be reported as one (two saves of
@@ -174,7 +175,8 @@ def read_json(path: str | os.PathLike[str], default=_MISSING):
     raise FileNotFoundError(path)
 
 
-UNREADABLE = object()      # read_json_quiet's default where a file holding null must not read as one that cannot be read
+# read_json_quiet's default where a file holding null must not read as one that cannot be read
+UNREADABLE = object()
 
 
 def read_json_quiet(path: str | os.PathLike[str], default=None):
@@ -235,7 +237,8 @@ class JsonlAppender:
 
     def append(self, record) -> None:
         """Append and sync one JSON record before updating the acknowledged byte count."""
-        line = (json.dumps(jsonable(record), allow_nan=False, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf8')
+        line = (json.dumps(jsonable(record), allow_nan=False, ensure_ascii=False, separators=(',',
+            ':')) + '\n').encode('utf8')
         try:
             self._stream.write(line)
             self._stream.flush()

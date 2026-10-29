@@ -99,8 +99,9 @@ class RawDataset:
         rebuffered = 0
         for bundle in read_jsonl(self.journal_dir / 'wal.jsonl'):
             key = bundle['evaluation_id']
-            # At the flushed number itself only a record not yet flushed can be unknown: a rows-only record (record_rows)
-            # written after that flush. Every flushed key is known from flushes.jsonl, since the first flush ever written.
+            # At the flushed number itself only a record not yet flushed can be unknown: a rows-only record
+            # (record_rows) written after that flush. Every flushed key is known from flushes.jsonl, since the first
+            # flush ever written.
             if bundle['commit_seq'] >= self.flushed_seq and key not in self._known:
                 self._buffer.append(bundle)
                 self._known.add(key)
@@ -147,7 +148,8 @@ class RawDataset:
         if not rows or table not in self.enabled:
             return False
         from uuid import uuid4
-        self._append(f'{origin}:{table}:{self.last_seq}:{uuid4().hex[:12]}', self.last_seq, self._normalized({table: rows}))
+        self._append(f'{origin}:{table}:{self.last_seq}:{uuid4().hex[:12]}', self.last_seq,
+            self._normalized({table: rows}))
         return True
 
     def _normalized(self, tables) -> dict:
@@ -225,7 +227,8 @@ class RawDataset:
         """Drop journal entries already covered by a flush record (called at checkpoints)."""
         self._wal.close()
         path = self.journal_dir / 'wal.jsonl'
-        keep = [b for b in read_jsonl(path) if b['commit_seq'] >= self.flushed_seq]      # see _recover: the flushed number too
+        # see _recover: the flushed number too
+        keep = [b for b in read_jsonl(path) if b['commit_seq'] >= self.flushed_seq]
         temporary = temporary_path(path)
         with temporary.open('x', encoding='utf8') as stream:
             import json
@@ -356,7 +359,8 @@ class DatasetReader:
                 for field in schema:
                     if field.name not in present and not field.nullable:
                         raise ValueError(f'Historical {table} part lacks required column {field.name}')
-                for batch in part.iter_batches(batch_size=batch_size, columns=[c for c in schema.names if c in present]):
+                for batch in part.iter_batches(batch_size=batch_size,
+                    columns=[c for c in schema.names if c in present]):
                     yield (pa.RecordBatch.from_arrays(_complete_columns(batch, schema, table), schema=schema)
                            if len(schema) else batch)
 

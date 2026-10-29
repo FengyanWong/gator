@@ -16,7 +16,8 @@ def publish(training_dir, output_root, *, label, review):
     source, root = Path(training_dir), Path(output_root)
     request, pool, status = (read_json(source / f'{name}.json') for name in ('request', 'pool', 'status'))
     seed = request.get('seed', pretrain.DEFAULT_SEED)
-    if status['state'] != 'trained_unqualified' or status['updates'] != request.get('updates', pretrain.DEFAULT_UPDATES):
+    if status['state'] != 'trained_unqualified' or status['updates'] != request.get('updates',
+        pretrain.DEFAULT_UPDATES):
         raise ValueError('Offline training has not finished')
     if not review or not review.get('allow_planned_probes') or not review.get('reason'):
         raise ValueError('Publication requires a recorded diagnostic review')

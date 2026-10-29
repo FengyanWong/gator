@@ -18,7 +18,8 @@ FILE = 'baseline_launch.json'
 def _directory(task_key):
     from .. import profiles, ngspice_tasks  # lazy: profiles and ngspice_tasks import the optimizer (torch)
     kind, _, name = task_key.partition(':')
-    entry = profiles.profile_entry(name) if kind == 'real' else (ngspice_tasks.list_tasks() if kind == 'ngspice' else {}).get(name)
+    entry = profiles.profile_entry(name) if kind == 'real' else (
+        ngspice_tasks.list_tasks() if kind == 'ngspice' else {}).get(name)
     if entry is None:
         raise ValueError('Choose a saved circuit task for its baseline.')
     return Path(entry['directory'])
@@ -91,7 +92,8 @@ def _start(context, task_key, *, profile_id, output_root, session=None):
         config = configuration(task_key, profile_id=profile_id, output_root=output_root)
         # Creation authorizes one bounded attempt. A probe's unknown result may be
         # resolved by that attempt; known connection/readiness failures still block.
-        body = SimpleNamespace(authorize_real_simulation=True, acknowledge_unknown_connection=True, automatic_baseline=True)
+        body = SimpleNamespace(authorize_real_simulation=True, acknowledge_unknown_connection=True,
+            automatic_baseline=True)
         started = start_run(context, config, body, baseline_only=True, session=session)
         result = dict(state='started', **started)
     except Exception as exc:

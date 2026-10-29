@@ -25,10 +25,13 @@ def core_instance(imported, graph) -> str:
     try:
         testbench = json.loads((Path(imported['directory']) / native_cells.FILES['testbench_readback']).read_text())
     except (OSError, ValueError):
-        raise ProfileError('The testbench readback is missing: read the cell into the workbench again, with its testbench cell chosen')
-    names = [item['name'] for item in testbench.get('instances', []) if item.get('cell') == imported['cell'] and item.get('lib') == imported['library']]
+        raise ProfileError(
+            'The testbench readback is missing: read the cell into the workbench again, with its testbench cell chosen')
+    names = [item['name'] for item in testbench.get('instances',
+        []) if item.get('cell') == imported['cell'] and item.get('lib') == imported['library']]
     if len(names) != 1:
-        raise ProfileError(f'The testbench must contain the cell {imported["cell"]} exactly once (found {len(names)} times)')
+        raise ProfileError(
+            f'The testbench must contain the cell {imported["cell"]} exactly once (found {len(names)} times)')
     if not any(device.id.startswith(f'{names[0]}/') for device in graph.devices):
         raise ProfileError(f'The exported netlist has no devices under {names[0]}/ - was the right testbench exported?')
     return names[0]
@@ -41,11 +44,14 @@ def supply_of(graph):
         roles.setdefault(c.device_id, {})[c.role] = c.net_id
     sources = [d.id for d in graph.devices if d.kind == 'vsource' and '/' not in d.id]
     if len(sources) != 1:
-        raise ProfileError(f'The free-running oscillator recipe expects exactly one voltage source in the testbench (the supply); found {len(sources)}')
+        raise ProfileError(
+            f'The free-running oscillator recipe expects exactly one voltage source in the testbench (the '
+            f'supply); found {len(sources)}')
     name = sources[0]
     dc = graph.parameters[name].get('dc')
     if dc is None or not dc.valid or roles[name].get('negative') != '0':
-        raise ProfileError(f'The supply source {name} needs a numeric dc value and its minus terminal on ground (net 0)')
+        raise ProfileError(
+            f'The supply source {name} needs a numeric dc value and its minus terminal on ground (net 0)')
     return name, roles[name]['positive'], dc
 
 
@@ -68,17 +74,24 @@ def ring_stages(graph, core, supply_text) -> dict:
         order.append(net)
         net = chain.get(net)
     if net != outputs[0] or len(order) != len(chain) or len(order) < 3 or len(order) % 2 == 0:
-        raise ProfileError('Not a plain inverter ring with an odd number of stages (3, 5, ...): this recipe does not fit the cell')
+        raise ProfileError(
+            'Not a plain inverter ring with an odd number of stages (3, 5, ...): this recipe does not fit the cell')
     spectre = [name.replace('/', '.') for name in order]
-    return dict(stage_nets=spectre, initial_conditions={name: ('0' if index % 2 == 0 else supply_text) for index, name in enumerate(spectre)})
+    return dict(stage_nets=spectre, initial_conditions={name: ('0' if index % 2 == 0 else supply_text) for index,
+        name in enumerate(spectre)})
 
 
 def opamp_fit(graph, core):
-    """Raises unless the testbench is wired like the verified OTA's: the op-amp recipe reads exactly these nets and source."""
+    (
+        "Raises unless the testbench is wired like the verified OTA's: the op-amp recipe reads exactly these "
+        'nets and source.'
+    )
     nets = {net.id for net in graph.nets}
-    missing = sorted(({*OPAMP_NETS, f'{core}/NTAIL', f'{core}/NLOAD'} - nets) | ({'source VDD'} - {f'source {d.id}' for d in graph.devices if d.kind == 'vsource'}))
+    missing = sorted(({*OPAMP_NETS, f'{core}/NTAIL',
+        f'{core}/NLOAD'} - nets) | ({'source VDD'} - {f'source {d.id}' for d in graph.devices if d.kind == 'vsource'}))
     if missing:
-        raise ProfileError('The op-amp recipe expects the testbench of the verified OTA (nets VDD, VINP, VINN, VOUT, VBIAS, a supply '
+        raise ProfileError(
+            'The op-amp recipe expects the testbench of the verified OTA (nets VDD, VINP, VINN, VOUT, VBIAS, a supply '
                            f'source named VDD, internal nets NTAIL and NLOAD). Missing here: {", ".join(missing)}')
 
 
@@ -95,13 +108,15 @@ PROBES = {
         osc_duty_cycle=('output', 'duty cycle at {output}'),
         osc_max_period_spread=('stages', 'largest period spread of the ring nets (a check of regular cycles)'),
         osc_max_window_drift=('stages', 'largest frequency drift between the two halves of the measurement window'),
-        osc_startup_detection_s=('stages', 'time by which every ring net oscillates regularly, from the declared start voltages')),
+        osc_startup_detection_s=('stages',
+            'time by which every ring net oscillates regularly, from the declared start voltages')),
     'opamp_ac': dict(
         gain_db_at_start=('output', 'gain from VINP - VINN to {output} at the lowest AC frequency'),
         gain_reference_hz=('output', 'the frequency at which that gain is read'),
         bandwidth_3db_hz=('output', '-3 dB bandwidth of that gain'),
         unity_gain_hz=('output', 'unity-gain frequency of that gain'),
-        phase_margin_estimate_deg=('output', 'phase margin estimated at the unity-gain frequency (unity feedback, not an stb analysis)'),
+        phase_margin_estimate_deg=('output',
+            'phase margin estimated at the unity-gain frequency (unity feedback, not an stb analysis)'),
         unity_downward_crossings=('output', 'how often the gain falls through 0 dB'),
         supply_current_a=('supply', 'DC current delivered by the supply {source}'),
         supply_power_w=('supply', 'DC power delivered by the supply {source}'),
@@ -143,10 +158,12 @@ def probe_rows(recipe, results, signals, testbench) -> list:
     label, rows = RECIPES[recipe]['label'], []
     for metric, unit in results.items():
         where, meaning = PROBES[recipe][metric]
-        signal = f'{signals["source"]}:p' if where == 'supply' else signals['output'] if where == 'output' else ' '.join(signals['stages'])
+        signal = f'{signals["source"]}:p' if where == 'supply' else signals[
+            'output'] if where == 'output' else ' '.join(signals['stages'])
         if len(signal) > SIGNAL_LENGTH:
             signal = f'{signals["output"]} and {len(signals["stages"]) - 1} more ring nets'
-        rows.append(dict(measurement_id=f'm_{metric}', analysis='tran' if recipe == recipes.RING else RESULT_ANALYSIS.get(metric, 'dc'),
+        rows.append(dict(measurement_id=f'm_{metric}',
+                         analysis='tran' if recipe == recipes.RING else RESULT_ANALYSIS.get(metric, 'dc'),
                          result_source='backend_profile', source_name=metric, signal=signal, unit=unit,
                          notes=f'Testbench {testbench}, circuit type {label}: {meaning.format(**signals)}.'))
     return rows
@@ -175,10 +192,12 @@ def testbench_probes(imported, graph=None) -> dict:
         try:
             fitting[recipe] = _type_signals(recipe, graph, core)
         except (ProfileError, KeyError) as exc:                  # KeyError: a transistor without a drain or gate net
-            answer['not_fitting'][RECIPES[recipe]['label']] = str(exc) if isinstance(exc, ProfileError) else 'The netlist does not fit this type'
+            answer['not_fitting'][RECIPES[recipe]['label']] = str(exc) if isinstance(exc,
+                ProfileError) else 'The netlist does not fit this type'
     if len(fitting) != 1:
         answer['reason'] = (f'The testbench {testbench} fits none of the circuit types.' if not fitting else
-                            f'The testbench {testbench} fits more than one circuit type ({", ".join(fitting)}): choose the probes yourself.')
+                            f"The testbench {testbench} fits more than one circuit type ({', '.join(fitting)}"
+                            f'): choose the probes yourself.')
         return answer
     (recipe, signals), = fitting.items()
     answer.update(circuit_type=recipe, circuit_type_label=RECIPES[recipe]['label'],
@@ -186,11 +205,14 @@ def testbench_probes(imported, graph=None) -> dict:
     return answer
 
 
-MAESTRO = 'maestro'                     # a task whose probes are Maestro outputs of its working copy (runs: OCEAN, coming)
-MAESTRO_NOT_RUNNABLE = ('This task measures the Maestro outputs of its working copy, and it was saved before such tasks could '
-                        'run: save it as a new task (Save as) - Maestro then netlists its test, and every run of the new '
-                        'task uses that deck.')
-NEEDS_FREQUENCY = ('The ring-oscillator measurement needs a rough expected oscillation frequency: it sizes the transient '
+# a task whose probes are Maestro outputs of its working copy (runs: OCEAN, coming)
+MAESTRO = 'maestro'
+MAESTRO_NOT_RUNNABLE = (
+    'This task measures the Maestro outputs of its working copy, and it was saved before such tasks could '
+    'run: save it as a new task (Save as) - Maestro then netlists its test, and every run of the new task '
+    'uses that deck.')
+NEEDS_FREQUENCY = (
+    'The ring-oscillator measurement needs a rough expected oscillation frequency: it sizes the transient '
                    '(60 periods, measured after 20). Give it once; the task file keeps it.')
 
 

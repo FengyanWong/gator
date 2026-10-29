@@ -79,7 +79,8 @@ def evaluate_outputs(bundle, directory, values):
         raise ValueError('Upstream evaluator could not read the candidate outputs')
     aliases = {'phase_margin':'phase_margin (deg)', 'settlingTime':'setting_time', 'Active_Area':'Active Area'}
     metrics = {key: result.get(aliases.get(key, key)) for key in config['performance']}
-    metrics = {key: float(value) if value is not None and math.isfinite(value) else None for key,value in metrics.items()}
+    metrics = {key: float(value) if value is not None and math.isfinite(value) else None for key,
+        value in metrics.items()}
     components = result['reward_components']
     passed = all(components[key] >= -1e-12 for key in
                  ('base_constraint_reward','base_FOML_score','base_FOMS_score','base_Active_Area_score'))
@@ -90,7 +91,8 @@ def physical_graph(parsed):
     """SKY130 primitive W/L inputs are in micrometres; GATOR uses SI lengths."""
     resistors = set()
     for index, device in enumerate(parsed.graph.devices):
-        if device.model_ref in ('sky130_fd_pr__res_high_po_0p35', 'sky130_fd_pr__res_xhigh_po_0p35') and len(device.terminals)==3:
+        if device.model_ref in ('sky130_fd_pr__res_high_po_0p35',
+            'sky130_fd_pr__res_xhigh_po_0p35') and len(device.terminals)==3:
             terminals = ('positive', 'negative', 'bulk')
             parsed.graph.devices[index] = replace(device, kind='resistor', terminals=terminals)
             resistors.add(device.id)
@@ -133,7 +135,8 @@ def export_best_decks(text, bundle, device_kinds, members):
                         raise ValueError(f'{device} is missing from exported AC/DC testbench')
                     continue
                 actual = graph.parameters[device].get(parameter)
-                if actual is None or not actual.valid or not math.isclose(actual.value, expected, rel_tol=_CONSISTENCY_REL_TOL):
+                if actual is None or not actual.valid or not math.isclose(actual.value, expected,
+                    rel_tol=_CONSISTENCY_REL_TOL):
                     raise ValueError(f'{device}.{parameter} did not read back from exported benchmark deck')
         primary, count = re.subn(r'(?im)^\s*\.endc\s*$', 'source transient.cir\n.endc', primary, count=1)
         if count != 1:
@@ -149,7 +152,8 @@ def native_values(bundle, parameters):
     for name, value in fixed.items():
         row = bundle['leaders'][name]
         assigned = parameters.get((row['device'], row['parameter']))
-        if assigned is not None and not math.isclose(assigned, value * row['physical_per_native'], rel_tol=_CONSISTENCY_REL_TOL):
+        if assigned is not None and not math.isclose(assigned, value * row['physical_per_native'],
+            rel_tol=_CONSISTENCY_REL_TOL):
             raise ValueError(f'{name} is fixed at the benchmark starting bias')
     return {name: fixed[name] if name in fixed else
             parameters[(row['device'], row['parameter'])] / row['physical_per_native']
@@ -210,7 +214,8 @@ class AnalogGymBackend(NgspiceBackend):
         saved, values = self.exports[artifact.job_id]
         if artifact != saved or hashlib.sha256(artifact.path.read_bytes()).hexdigest() != artifact.sha256:
             raise ValueError('Imported candidate deck changed')
-        parsed = physical_graph(parse_text(artifact.path.read_text(), device_kinds=self.device_kinds, scan_includes=False))
+        parsed = physical_graph(parse_text(artifact.path.read_text(), device_kinds=self.device_kinds,
+            scan_includes=False))
         graph = deepcopy(self.graph)
         for i,group in enumerate(graph.parameter_groups):
             for member in group.members:
@@ -219,7 +224,8 @@ class AnalogGymBackend(NgspiceBackend):
                 if not actual.valid or not math.isclose(actual.value, expected, rel_tol=_CONSISTENCY_REL_TOL):
                     raise ValueError(f'Imported candidate did not read back {member}')
                 graph.parameters[member.device_id][member.parameter] = actual
-            graph.parameter_groups[i] = replace(group, value=values[(group.members[0].device_id,group.members[0].parameter)])
+            graph.parameter_groups[i] = replace(group, value=values[(group.members[0].device_id,
+                group.members[0].parameter)])
         graph.validate()
         return graph
 
@@ -238,7 +244,8 @@ class AnalogGymBackend(NgspiceBackend):
         # source and the independent benchmark verdict stay explicit in the job evidence.
         (result.artifact_directory/'benchmark.json').write_text(json.dumps(dict(
             benchmark_commit=COMMIT, native_metrics=metrics, upstream_passed=verdict, error=failure,
-            analyses=['AC/DC testbench','transient testbench'], simulator_processes=result.simulator_invocations),allow_nan=False))
+            analyses=['AC/DC testbench','transient testbench'], simulator_processes=result.simulator_invocations),
+            allow_nan=False))
         scale = self.bundle['metric_scales']
         metrics = {key: value * scale[key] if value is not None else None for key,value in metrics.items()}
         return replace(result, metrics=metrics, metric_units=self.bundle['metric_units'],
@@ -255,10 +262,12 @@ class AnalogGymFactory(NgspiceEnvFactory):
     def __call__(self, lane):
         from analog_optimizer.envs.sizing import CircuitSizingEnv
         backend = AnalogGymBackend(self.text, self.graph, self.link, bundle=self.bundle, units=self.units,
-            device_kinds=self.device_kinds, include_root=self.include_root, circuit_id=self.circuit_id, source=self.source)
+            device_kinds=self.device_kinds, include_root=self.include_root, circuit_id=self.circuit_id,
+            source=self.source)
         if self.plan is not None:
             self.plan.wrap(backend)
-        return CircuitSizingEnv(backend,self.graph,self.specs,Path(self.work_root)/f'worker-{lane}',max_steps=self.max_steps,
+        return CircuitSizingEnv(backend,self.graph,self.specs,Path(self.work_root)/f'worker-{lane}',
+            max_steps=self.max_steps,
             timeout_seconds=self.timeout_seconds,stop_on_success=self.stop_on_success,expected_origin='real',
             reward_settings=self.reward_settings)
 

@@ -28,14 +28,18 @@ from .coords import to_proposal
 
 VERSION = 'mobo_qlognehvi_v1'
 # Frozen 2026-10-23 at the step-6 resource gate, before any target run (WORKPLAN item 6c; step6/mobo_settings.json): the
-# first settings (10 restarts, 512 raw samples, 128 MC samples, 200 iterations, a full refit every 8 designs) cost 1-2 min
-# per proposal and 200 s per refit on the LDO archive (600 rows, 27 dims, 6 outputs) - one to two days of compute per
-# 800-design run. These reach the same front on the unit tests' known problem at a third of the cost; refits follow the
-# online designs (16, 32, ..., 512), warm-started and capped at 200 iterations.
+# first settings (10 restarts, 512 raw samples, 128 MC samples, 200 iterations, a full refit every 8 designs) cost 1-2
+# min per proposal and 200 s per refit on the LDO archive (600 rows, 27 dims, 6 outputs) - one to two days of compute
+# per 800-design run. These reach the same front on the unit tests' known problem at a third of the cost; refits follow
+# the online designs (16, 32, ..., 512), warm-started and capped at 200 iterations.
 SETTINGS = dict(num_restarts=2, raw_samples=64, mc_samples=64, maxiter=30, batch_limit=5, refit_every=8,
-                refit_at=(16, 32, 64, 128, 256, 512), fit_maxiter=200, cache_root=True, validity_threshold=0.5, kernel='ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=d))',
-                outcome_transform='Standardize(m=1)', noise='learned homoskedastic Gaussian likelihood (BoTorch default)',
-                batch_rule='one new design per call, valued with the designs in flight (X_pending); at most 4 with 4 lanes',
+                refit_at=(16, 32, 64, 128, 256, 512), fit_maxiter=200, cache_root=True, validity_threshold=0.5,
+                kernel='ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=d))',
+                outcome_transform='Standardize(m=1)',
+                noise='learned homoskedastic Gaussian likelihood (BoTorch default)',
+                batch_rule=
+                    'one new design per call, valued with the designs in flight (X_pending); at most 4 with 4 '
+                    'lanes',
                 infrastructure_statuses='every status but ok, measurement_error, nonconverged, invalid_design')
 SCORED_STATUSES = ('ok', 'measurement_error', 'nonconverged', 'invalid_design')
 DFF_ENERGY_WINDOW = ('tcq_r', 'tcq_f', 'tcqn_f', 'tcqn_r', 'm_tcq_r_late', 'm_tcq_f_late')
@@ -50,16 +54,21 @@ class Problem:
         if len(objectives) != 2 or any(o['metric'] not in by_metric for o in objectives):
             raise ValueError('M+ needs two objectives, each a row of the view')
         self.objectives = [dict(metric=o['metric'], sign=1.0 if o['orientation'] == 'maximize' else -1.0,
-                                scale=float(by_metric[o['metric']]['scale']), limit=float(o['base_limit'])) for o in objectives]
+                                scale=float(by_metric[o['metric']]['scale']),
+                                limit=float(o['base_limit'])) for o in objectives]
         names = {o['metric'] for o in objectives}
         self.constraint_rows = [row for row in rows if row['metric'] not in names]
         self.required = [row['metric'] for row in rows]
-        self.outputs = [o['metric'] for o in self.objectives] + [row['metric'] for row in self.constraint_rows] + ['__valid__']
+        self.outputs = [o['metric'] for o in self.objectives] + [row['metric'] for row in self.constraint_rows] + [
+            '__valid__']
         self.energy_rule = energy_rule
         self.ref_point = [o['sign'] * o['limit'] / o['scale'] for o in self.objectives]
 
     def outcome(self, metrics: dict, validity: dict, status: str):
-        """(y: one number or None per output, infrastructure: bool). None = missing (left out of that output's model)."""
+        (
+            "(y: one number or None per output, infrastructure: bool). None = missing (left out of that output's "
+            'model).'
+        )
         if status not in SCORED_STATUSES:
             return [None] * len(self.outputs), True
         good = lambda m: (validity.get(m) is True and isinstance(metrics.get(m), (int, float))
@@ -187,20 +196,22 @@ class MoboSearch:
         pending_X = torch.tensor([list(p) for p in pending], dtype=torch.float64) if len(pending) else None
         seed = self.seed * 1000003 + 7 * index
         bounds = torch.stack([torch.zeros(self.dim, dtype=torch.float64), torch.ones(self.dim, dtype=torch.float64)])
-        # Every random draw of a proposal comes from its own seed: the acquisition's construction draws too (BoTorch prunes
-        # the baseline with posterior samples seeded from torch's global generator), so it is built inside the fork as
-        # well - outside it, a proposal depended on whatever had used that generator before, and a resumed search
-        # proposed other designs than an unbroken one.
+        # Every random draw of a proposal comes from its own seed: the acquisition's construction draws too (BoTorch
+        # prunes the baseline with posterior samples seeded from torch's global generator), so it is built inside the
+        # fork as well - outside it, a proposal depended on whatever had used that generator before, and a resumed
+        # search proposed other designs than an unbroken one.
         with torch.random.fork_rng():
             torch.manual_seed(seed)
             model = self._models(torch)
             refitted = self._fit(torch, model)
             acquisition = qLogNoisyExpectedHypervolumeImprovement(
                 model=model, ref_point=self.problem.ref_point, X_baseline=baseline,
-                objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]), constraints=self.problem.constraint_functions(),
+                objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
+                constraints=self.problem.constraint_functions(),
                 X_pending=pending_X, prune_baseline=True, cache_root=bool(self.settings.get('cache_root', False)),
                 sampler=SobolQMCNormalSampler(sample_shape=torch.Size([self.settings['mc_samples']]), seed=seed))
-            candidate, value = optimize_acqf(acquisition, bounds=bounds, q=1, num_restarts=self.settings['num_restarts'],
+            candidate, value = optimize_acqf(acquisition, bounds=bounds, q=1,
+                                             num_restarts=self.settings['num_restarts'],
                                              raw_samples=self.settings['raw_samples'],
                                              options=dict(batch_limit=self.settings['batch_limit'],
                                                           maxiter=self.settings['maxiter']))
@@ -212,7 +223,8 @@ class MoboSearch:
         """Serialize observations, search settings and fitted model state needed for continuation."""
         import torch
         hyper = None if self.hyper is None else [{k: v.tolist() for k, v in state.items()} for state in self.hyper]
-        return dict(version=VERSION, dim=self.dim, seed=self.seed, settings=self.settings, problem=self.problem.describe(),
+        return dict(version=VERSION, dim=self.dim, seed=self.seed, settings=self.settings,
+                    problem=self.problem.describe(),
                     X=self.X, Y=self.Y, archived=self.archived, asked=self.asked, proposals=self.proposals,
                     refits=self.refits, since_refit=self.since_refit, fitted_online=self.fitted_online, hyper=hyper,
                     torch=torch.__version__)

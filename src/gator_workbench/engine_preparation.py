@@ -54,7 +54,8 @@ def _build_learning_resources(engine, config, adv, experiment) -> tuple:
                         model_config=modes.model_config_from(config.run.network),
                         sac_config=modes.sac_config_from(adv), spec_schema=engine.compiled.spec_schema,
                         advanced=adv, seed=config.run.seed, origin=engine.task.origin, source_dir=source_dir,
-                        source_metadata=source_meta, task_definition_hash=engine.task_hash, vocabulary=engine.vocabulary,
+                        source_metadata=source_meta, task_definition_hash=engine.task_hash,
+                        vocabulary=engine.vocabulary,
                         runtime=input_options, view=network_inputs.view_for(config, engine.vocabulary))
     engine.learner, engine.replay, engine.freeze = built['learner'], built['replay'], built['freeze']
     engine.load_policy = built['policy']
@@ -102,7 +103,8 @@ def _initialize_run_state(config, engine, input_options):
         raise ValueError('A Bayesian-optimization run (run.optimizer "bayes") is a from-scratch run and cannot be '
                          'resumed or started from a saved model: its search state is not saved. Start a new run.')
     if engine_comparison.is_search(config) and engine.mode != 'scratch':
-        raise ValueError(f'A {run.optimizer} run (the archive comparison) starts its own search and loads no saved model: '
+        raise ValueError(
+            f'A {run.optimizer} run (the archive comparison) starts its own search and loads no saved model: '
                          'its mode is scratch (a resume continues it from its own save point).')
     engine.tracker = best_design.BestDesignTracker(engine.compiled.preference)
     engine.counters = dict(global_env_step=0, completion_index=0, episodes=0, baseline_done=False,
@@ -114,24 +116,30 @@ def _initialize_run_state(config, engine, input_options):
     engine.previous_best_waveform = None
     # A baseline run asked to calibrate (record 7.197): until its baseline evaluation is committed and valid, no other
     # lane starts and no random design is drawn (`_dispatch`, `_commit`). Any other run never waits.
-    engine._baseline_checked = engine.calibration_only or not engine.manifest.get('calibration') or engine.entry == 'resume'
+    engine._baseline_checked = engine.calibration_only or not engine.manifest.get(
+        'calibration') or engine.entry == 'resume'
     engine.encoder = None
     if engine.archive:
         engine.encoder = StateEncoder(engine.layout.data / 'states' / 'static', task_id=engine.task_id,
                                     graph=engine.compiled.graph, specs=engine.compiled.specs,
                                     feature_schema_version=input_options['feature_schema'].version,
                                     spec_schema_version=engine.compiled.spec_schema.version)
-    engine_comparison.prepare(engine)           # the archive comparison's first designs and search (a resume restores it)
+    # the archive comparison's first designs and search (a resume restores it)
+    engine_comparison.prepare(engine)
     return run
 
 
 def _restore_run_state(engine, built, out) -> None:
-    """Restore resumable state, reject unresolved launch intents, and initialize checkpoint persistence and load-policy records."""
+    (
+        'Restore resumable state, reject unresolved launch intents, and initialize checkpoint persistence and '
+        'load-policy records.'
+    )
     if engine.entry == 'resume':
         engine._restore(built['run_state'])
     if engine.ledger.uncertain_launches:
         write_json(engine._condition_stop_file, dict(reason='unresolved_launch_intent'))
-        raise RuntimeError('Unresolved physical launch intents/leases must be reconciled before resume; no lanes opened')
+        raise RuntimeError(
+            'Unresolved physical launch intents/leases must be reconciled before resume; no lanes opened')
     engine.checkpoints = ckpt.CheckpointStore(engine.layout.run_dir, run_id=engine.run_id, task_id=engine.task_id,
                                             task_definition_hash=engine.task_hash,
                                             save_replay=out.save_replay_snapshots, keep_last=out.keep_last_checkpoints)
@@ -139,7 +147,10 @@ def _restore_run_state(engine, built, out) -> None:
 
 
 def _open_run_lanes(engine, run, adv, local_scratch) -> None:
-    """Enter the preparation context, wrap the lane factory with local scratch, and open and initialize execution lanes."""
+    (
+        'Enter the preparation context, wrap the lane factory with local scratch, and open and initialize '
+        'execution lanes.'
+    )
     count = min(run.concurrency, engine.task.max_concurrency)
     env_run = run.model_copy(deep=True)
     factory = engine._lane_factory or engine.task.env_factory_builder(engine.compiled, engine.layout.work, env_run)
@@ -156,13 +167,17 @@ def _open_run_lanes(engine, run, adv, local_scratch) -> None:
         engine.preparation_report = {}
         engine._preparation = ExitStack()
         factory = engine._preparation.enter_context(prepare_context(WorkerLimits(), engine.preparation_report))
-        engine._event('preparation_service_started', session=(engine.preparation_report.get('preparation') or {}).get('session_dir'))
-    limits = WorkerLimits(operation_seconds=max(300., (1 + len(run.conditions.corners)) * adv.simulation_timeout_seconds + 180.))
+        engine._event('preparation_service_started',
+            session=(engine.preparation_report.get('preparation') or {}).get('session_dir'))
+    limits = WorkerLimits(operation_seconds=max(300.,
+        (1 + len(run.conditions.corners)) * adv.simulation_timeout_seconds + 180.))
     engine._scratch = local_scratch(engine.layout)
     if engine._scratch is not None:                    # wrapped last: it keeps the preparation service's factory as is
         factory = ScratchLinked(factory, engine._scratch)
         engine._event('simulator_scratch', path=str(engine._scratch),
-                    note='export packages and per-job folders on the local disk; kept job folders move to the run folder')
+                    note=
+                        'export packages and per-job folders on the local disk; kept job folders move to the run '
+                        'folder')
     engine.lanes = open_lanes(factory, count, use_processes=engine.use_processes, limits=limits)
     engine.lane_state = {lane.lane_id: dict(observation=None, needs_reset=True, busy=None, finished=False,
                                           episode_id=None, reset_cache_valid=False, resets_since_check=0)

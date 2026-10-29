@@ -14,7 +14,8 @@ from .storage.atomic import read_json, write_json
 
 # ---------------------------------------------------------------------------- settings memory
 # One writer at a time: two saves at once (Agent settings and a run start) each read the file, and the later write
-# dropped the earlier one's keys (review of 2026-09-29). Reentrant, so prepare_run can hold it across its last_run merge.
+# dropped the earlier one's keys (review of 2026-09-29). Reentrant, so prepare_run can hold it across its last_run
+# merge.
 SETTINGS_LOCK = threading.RLock()
 
 

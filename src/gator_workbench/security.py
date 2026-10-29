@@ -4,7 +4,8 @@ from __future__ import annotations
 import re
 
 _PATTERNS = [
-    (re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----', re.S), '[REDACTED PRIVATE KEY]'),
+    (re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----', re.S),
+        '[REDACTED PRIVATE KEY]'),
     (re.compile(r'\bsk-ant-[A-Za-z0-9_\-]{8,}'), '[REDACTED API KEY]'),
     (re.compile(r'\bsk-[A-Za-z0-9_\-]{20,}'), '[REDACTED API KEY]'),
     (re.compile(r'\b(gh[pousr]_[A-Za-z0-9]{20,})'), '[REDACTED TOKEN]'),

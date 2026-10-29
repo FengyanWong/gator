@@ -249,8 +249,8 @@ def _process_open(factory, lane_id):
     return _DRIVER.describe()
 
 
-def _process_run(op, proposal=None, allowance=1, stop_file=None):
-    return _DRIVER.run(op, proposal, allowance, stop_file)
+def _process_run(operation, proposal=None, allowance=1, stop_file=None):
+    return _DRIVER.run(operation, proposal, allowance, stop_file)
 
 
 def _process_close():

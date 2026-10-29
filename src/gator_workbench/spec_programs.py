@@ -18,9 +18,9 @@ def spec_program_schema():
                          layout=SPEC_PROGRAM_LAYOUT)
 
 
-def _node(op, children=(), **values):
+def _node(operation, children=(), **values):
     from analog_optimizer.models.measurement_program import OPERATIONS
-    return dict(op=op if op in OPERATIONS else 'unknown', children=list(children), **values)
+    return dict(op=operation if operation in OPERATIONS else 'unknown', children=list(children), **values)
 
 
 def _address(path, kind, role):

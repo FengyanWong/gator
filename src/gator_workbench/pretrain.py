@@ -15,6 +15,7 @@ import math
 from pathlib import Path
 import random
 import time
+from typing import NamedTuple
 
 from . import families, network_inputs, spec_descriptors
 from .checkpoints import CheckpointStore
@@ -114,38 +115,56 @@ def prepare_pool(request, *, progress=None, storage_dir=None):
         raise
 
 
+class _PoolOptions(NamedTuple):
+    """The validated settings of a pool request, resolved once before any source is read."""
+    origin: str
+    fraction: float
+    seed: int
+    inputs: dict
+    missing_points: str
+    transfer: bool
+    migrated_settings: object
+    relabel: dict
+    target_sets: dict
+    targets_only: bool
+    balance: str
+
+
+@dataclass
+class _PoolState:
+    """The pool gathered so far across sources, with the first transition's reward `settings`."""
+    groups: defaultdict
+    registries: list
+    sources: list
+    run_ids: set
+    candidates: set
+    settings: object
+    seen_tasks: set
+
+
 def _prepare_pool(request, *, progress=None, storage=None) -> Pool:
     """Read and validate every eligible transition, then split whole run-scoped episodes."""
-    origin, fraction, seed, inputs, missing_points, transfer, migrated_settings = _pool_request_settings(request)
-    groups, registries, sources = defaultdict(lambda: defaultdict(list)), [], []
-    run_ids, candidates, settings = set(), set(), None
-    relabel = request.get('relabel_upper', {})
-    target_sets = relabel_targets(request)
-    targets_only, balance = pool_options(request, target_sets, relabel, fraction)
-    seen_tasks = set()
+    options = _pool_request_settings(request)
+    state = _PoolState(groups=defaultdict(lambda: defaultdict(list)), registries=[], sources=[], run_ids=set(),
+                       candidates=set(), settings=None, seen_tasks=set())
     # ---- Read each archive under the required origin, input schema, and run identity.
     for source in request['runs']:
-        directory, manifest, config, summary, task, run_id, read_points = _read_pool_source(
-            source, run_ids, origin, inputs, missing_points, registries)
-        view = source_view(config, inputs) if transfer else None
+        archive = _read_pool_source(source, options, state.run_ids, state.registries)
+        view = source_view(archive.config, options.inputs) if options.transfer else None
         # the Scale boxes this task filled: a moved limit leaves them alone
-        stated = stated_scales(config)
+        stated = stated_scales(archive.config)
         # What the designs of this source are shown is read from the PDK and the task's files as they stand now, which
         # neither the request nor the archive's checksum covers (record 7.319): the audit says which view it was, and
         # a request that pinned one (`inputs_sha256`, from `inputs_identity`) is refused when it is another now.
         shown_as = None if view is None else view.key
-        loader, raw, eligible, transitions, wanted = _load_pool_transitions(directory, source, run_id, shown_as)
-        if targets_only and task not in target_sets:
+        loaded = _load_pool_transitions(archive, shown_as)
+        if options.targets_only and archive.task not in options.target_sets:
             raise ValueError(
-                f'{task} has no relabel_targets: with relabel_targets_only its transitions would not be pooled')
-        seen_tasks.add(task)
-        counts = Counter()
-        original_settings = {}
+                f'{archive.task} has no relabel_targets: with relabel_targets_only its transitions would not be pooled')
+        state.seen_tasks.add(archive.task)
         # ---- Validate and relabel transitions before persisting the source audit.
-        for row, transition in zip(eligible, transitions, strict=True):
-            transition, settings, first, last, episode = _validate_pool_transition(
-                row, transition, original_settings, candidates, run_id, manifest, origin, migrated_settings, settings,
-                counts)
+        for row, transition in zip(loaded.eligible, loaded.transitions, strict=True):
+            validated = _validate_pool_transition(row, transition, archive, options, state)
             # What the network is shown of this archive (network_inputs, record 7.298) - applied last: a copy under
             # other limits is re-scored and validated as recorded first (a shown observation no longer holds the
             # recorded sizes).
@@ -153,26 +172,19 @@ def _prepare_pool(request, *, progress=None, storage=None) -> Pool:
             def keep(t):
                 viewed = shown(t)
                 return storage.append(viewed) if storage is not None else viewed
-            _append_relabelled_transitions(
-                keep, transition, first, last, episode, groups, task, relabel, target_sets, stated, counts,
-                targets_only, balance)
-        _record_pool_source(
-            directory, source, run_id, task, read_points, shown_as, summary, transitions, raw, counts,
-            original_settings, migrated_settings, sources, wanted)
+            _append_relabelled_transitions(keep, validated, state.groups, archive, stated, options)
+        _record_pool_source(archive, loaded, shown_as, options.migrated_settings, state.sources)
         if storage is not None:
             storage.commit()
-        del transitions, loader
+        del loaded
         if progress:
-            progress(dict(event='source_loaded', **sources[-1]))
+            progress(dict(event='source_loaded', **state.sources[-1]))
     # ---- Split complete episodes only after all requested sources are admitted.
-    training, validation, schema, features, audit = _split_and_audit_pool(
-        request, origin, seed, fraction, inputs, groups, registries, sources, settings, relabel, target_sets,
-        migrated_settings, storage, progress, seen_tasks, targets_only, balance)
-    return Pool(training, validation, schema, settings, audit, features, storage)
+    return _split_and_audit_pool(request, options, state, storage, progress)
 
 
-def _pool_request_settings(request) -> tuple:
-    """Validate the pool request and resolve its split, input, and optional reward-migration settings."""
+def _pool_request_settings(request) -> _PoolOptions:
+    """Validate the pool request and resolve its split, input, relabelling and reward-migration settings."""
     origin = request['origin']
     if origin not in ('real', 'synthetic'):
         raise ValueError('Pool origin must be real or synthetic')
@@ -189,10 +201,28 @@ def _pool_request_settings(request) -> tuple:
     if 'migrate_reward_settings' in request:
         from analog_optimizer.measurements.specs import RewardSettings
         migrated_settings = RewardSettings(**request['migrate_reward_settings'])
-    return origin, fraction, seed, inputs, missing_points, transfer, migrated_settings
+    relabel = request.get('relabel_upper', {})
+    target_sets = relabel_targets(request)
+    targets_only, balance = pool_options(request, target_sets, relabel, fraction)
+    return _PoolOptions(origin, fraction, seed, inputs, missing_points, transfer, migrated_settings, relabel,
+                        target_sets, targets_only, balance)
 
 
-def _read_pool_source(source, run_ids, origin, inputs, missing_points, registries) -> tuple:
+class _SourceArchive(NamedTuple):
+    """One source: its request entry, the files read from its archive, and its audit counts and settings."""
+    source: dict
+    directory: Path
+    manifest: dict
+    config: dict
+    summary: dict
+    task: str
+    run_id: str
+    read_points: bool
+    counts: Counter
+    original_settings: dict
+
+
+def _read_pool_source(source, options, run_ids, registries) -> _SourceArchive:
     """Read one frozen source and validate its identity, origin, network inputs, and specification registry."""
     directory = Path(source['run_dir']).resolve()
     if archive_identity(directory) != source['archive_sha256']:
@@ -207,8 +237,8 @@ def _read_pool_source(source, run_ids, origin, inputs, missing_points, registrie
     run_ids.add(run_id)
     if manifest.get('state') not in ('completed', 'stopped', 'failed', 'paused'):
         raise ValueError('Source run must be quiescent before freezing its archive')
-    if manifest.get('mock') != (origin == 'synthetic') or manifest.get('provenance') != (
-            'mock' if origin == 'synthetic' else 'real'):
+    if manifest.get('mock') != (options.origin == 'synthetic') or manifest.get('provenance') != (
+            'mock' if options.origin == 'synthetic' else 'real'):
         raise ValueError(f'Origin mismatch for {run_id}')
     network = manifest['architecture']['network']
     if network.get('vocabulary', 'standard') not in ('standard', families.NAME):
@@ -216,54 +246,71 @@ def _read_pool_source(source, run_ids, origin, inputs, missing_points, registrie
     # A source that read operating points keeps them in its recorded designs; the pool shows them only as the ratios
     # of the second build (record 7.317), never as the raw input. Until then such a source was refused.
     read_points = network_inputs.reads_operating_points(network)
-    if inputs['operating_point_ratios'] and not read_points and missing_points != 'mask':
+    if options.inputs['operating_point_ratios'] and not read_points and options.missing_points != 'mask':
         raise ValueError(f'{run_id} read no operating points, and this request trains with the operating-point ratios: '
                          'leave the run out, or say missing_operating_points "mask" (its designs then show the ratios '
                          'as missing)')
-    if inputs['spec_input'] == 'slots':
+    if options.inputs['spec_input'] == 'slots':
         metrics = manifest['architecture']['spec_schema'].get('metrics')
         if metrics is None:
             raise ValueError(
                 f'{run_id} read its specs as a set and has no result registry: pool it with inputs.spec_input "set"')
         registries.append(metrics)
-    return directory, manifest, config, summary, task, run_id, read_points
+    return _SourceArchive(source, directory, manifest, config, summary, task, run_id, read_points,
+                          counts=Counter(), original_settings={})
 
 
-def _load_pool_transitions(directory, source, run_id, shown_as) -> tuple:
+class _SourceTransitions(NamedTuple):
+    """One source's archive loader, transition rows, rebuilt eligible transitions, and selected candidates."""
+    loader: TrajectoryLoader        # held until `del loaded`, which frees its caches with the transitions
+    raw: list
+    eligible: list
+    transitions: list
+    wanted: set | None
+
+
+def _load_pool_transitions(archive, shown_as) -> _SourceTransitions:
     """Verify pinned inputs and archived files, then reconstruct the requested replay-eligible candidates."""
-    if source.get('inputs_sha256') not in (None, shown_as):
-        raise ValueError(f'Network inputs changed after selection: {run_id} would be shown to the network another way '
-                         'than the request pinned (its PDK was loaded again, or its task\'s spec descriptions or test '
-                         'variables changed)')
-    loader = TrajectoryLoader(directory)
+    if archive.source.get('inputs_sha256') not in (None, shown_as):
+        raise ValueError(f'Network inputs changed after selection: {archive.run_id} would be shown to the network '
+                         'another way than the request pinned (its PDK was loaded again, or its task\'s spec '
+                         'descriptions or test variables changed)')
+    loader = TrajectoryLoader(archive.directory)
     problems = loader.reader.verify()
     if problems:
         raise ValueError(f'Archive checksum failure: {problems}')
-    wanted = selected_candidates(source, run_id)
+    wanted = selected_candidates(archive.source, archive.run_id)
     selection = {} if wanted is None else dict(candidate_ids=wanted)        # without one: read as before
     raw = loader.transition_rows(**selection)
     eligible = [row for row in raw if row['replay_eligible_archive']]
     transitions = loader.transitions(**selection)
     if not transitions:
-        raise ValueError(f'No replay-eligible transitions: {run_id}')
+        raise ValueError(f'No replay-eligible transitions: {archive.run_id}')
     if wanted is not None and wanted - {t.candidate_id for t in transitions}:
         raise ValueError(
-            f'{run_id}: {len(wanted - {t.candidate_id for t in transitions})} of the selected candidate_ids '
+            f'{archive.run_id}: {len(wanted - {t.candidate_id for t in transitions})} of the selected candidate_ids '
                          'are not replay-eligible transitions of this run')
-    return loader, raw, eligible, transitions, wanted
+    return _SourceTransitions(loader, raw, eligible, transitions, wanted)
 
 
-def _validate_pool_transition(row, transition, original_settings, candidates, run_id, manifest, origin,
-    migrated_settings, settings, counts) -> tuple:
+class _ValidatedTransition(NamedTuple):
+    """One checked, possibly migrated transition with its two observations and its episode key."""
+    transition: object
+    first: object
+    last: object
+    episode: tuple
+
+
+def _validate_pool_transition(row, transition, archive, options, state) -> _ValidatedTransition:
     """Validate and optionally migrate one archived transition before it enters the pool."""
-    original_settings[identity(asdict(transition.reward_settings))] = asdict(transition.reward_settings)
-    if transition.candidate_id in candidates:
+    archive.original_settings[identity(asdict(transition.reward_settings))] = asdict(transition.reward_settings)
+    if transition.candidate_id in state.candidates:
         raise ValueError(f'Duplicate archived candidate: {transition.candidate_id}')
-    candidates.add(transition.candidate_id)
-    if row['run_id'] != run_id or row['task_id'] != manifest['task_id']:
+    state.candidates.add(transition.candidate_id)
+    if row['run_id'] != archive.run_id or row['task_id'] != archive.manifest['task_id']:
         raise ValueError('Transition provenance differs from source manifest')
     first, last = transition.observation, transition.next_observation
-    if first.origin != origin or last.origin != origin:
+    if first.origin != options.origin or last.origin != options.origin:
         raise ValueError('Mixed observation origins in pool')
     if (first.condition_policy != 'off' or len(first.planned_conditions) > 1 or
             any(c is not None and not c.nominal_only for c in first.planned_conditions)):
@@ -271,87 +318,88 @@ def _validate_pool_transition(row, transition, original_settings, candidates, ru
     # Stronger than Transition.validate's numerical tolerance: the relabelling gate.
     if last.evaluation.reward != transition.reward:
         raise ValueError('Unchanged-goal re-scoring does not exactly reproduce the archived reward')
-    if migrated_settings is not None:
-        transition = migrated(transition, migrated_settings)
+    if options.migrated_settings is not None:
+        transition = migrated(transition, options.migrated_settings)
         first, last = transition.observation, transition.next_observation
-        counts['reward_migrated'] += 1
-    if settings is None:
-        settings = transition.reward_settings
-    if transition.reward_settings != settings:
+        archive.counts['reward_migrated'] += 1
+    if state.settings is None:
+        state.settings = transition.reward_settings
+    if transition.reward_settings != state.settings:
         raise ValueError('Mixed reward settings need an explicit migration; cannot pool as recorded')
-    episode = (run_id, row['worker_id'], row['episode_id'])
+    episode = (archive.run_id, row['worker_id'], row['episode_id'])
     if not row['episode_id']:
         raise ValueError('Episode identity required for leakage-free holdout')
-    return transition, settings, first, last, episode
+    return _ValidatedTransition(transition, first, last, episode)
 
 
-def _append_relabelled_transitions(keep, transition, first, last, episode, groups, task, relabel, target_sets, stated,
-    counts, targets_only, balance) -> None:
+def _append_relabelled_transitions(keep, validated, groups, archive, stated, options) -> None:
     """Store the selected transition and its requested relabelled variants within the episode."""
-    if not targets_only:
+    transition, first, last, episode = validated
+    task = archive.task
+    if not options.targets_only:
         groups[task][episode].append((keep(transition), False))
-    if task in relabel:
-        derived = _relabeled(transition, first, last, relabel[task], task)
+    if task in options.relabel:
+        derived = _relabeled(transition, first, last, options.relabel[task], task)
         groups[task][episode].append((keep(derived), True))
-        counts['relabeled'] += 1
-    for number, changes in enumerate(target_sets.get(task, ()), 1):       # one more copy per target set (record 7.312)
-        key = f'target_set:{number}' if balance == 'target_set' else task
+        archive.counts['relabeled'] += 1
+    # one more copy per target set (record 7.312)
+    for number, changes in enumerate(options.target_sets.get(task, ()), 1):
+        key = f'target_set:{number}' if options.balance == 'target_set' else task
         groups[key][episode].append((keep(_retargeted(transition, first, last, changes, task, stated)), ('set',
             number)))
-        counts['relabeled'] += 1
+        archive.counts['relabeled'] += 1
 
 
-def _record_pool_source(
-    directory, source, run_id, task, read_points, shown_as, summary, transitions, raw, counts, original_settings,
-    migrated_settings, sources, wanted) -> None:
+def _record_pool_source(archive, loaded, shown_as, migrated_settings, sources) -> None:
     """Recheck the source archive identity and append its loaded-transition audit record."""
     # Detect source mutation during reconstruction, too.
-    if archive_identity(directory) != source['archive_sha256']:
-        raise ValueError(f'Archive changed while loading: {directory}')
-    sources.append(dict(run_dir=str(directory), run_id=run_id, task=task,
-                        archive_sha256=source['archive_sha256'], **({'operating_points': True} if read_points else {}),
+    if archive_identity(archive.directory) != archive.source['archive_sha256']:
+        raise ValueError(f'Archive changed while loading: {archive.directory}')
+    sources.append(dict(run_dir=str(archive.directory), run_id=archive.run_id, task=archive.task,
+                        archive_sha256=archive.source['archive_sha256'],
+                        **({'operating_points': True} if archive.read_points else {}),
                         **({} if shown_as is None else {'inputs_sha256': shown_as}),
-                        evaluations=summary['totals']['candidate_evaluations_charged'],
-                        eligible=len(transitions), excluded=len(raw) - len(transitions),
-                        **({} if wanted is None else {'selected': len(wanted)}),
-                        relabeled=counts['relabeled'],
-                        **({'reward_migrated': counts['reward_migrated'],
-                            'original_reward_settings': list(original_settings.values())}
+                        evaluations=archive.summary['totals']['candidate_evaluations_charged'],
+                        eligible=len(loaded.transitions), excluded=len(loaded.raw) - len(loaded.transitions),
+                        **({} if loaded.wanted is None else {'selected': len(loaded.wanted)}),
+                        relabeled=archive.counts['relabeled'],
+                        **({'reward_migrated': archive.counts['reward_migrated'],
+                            'original_reward_settings': list(archive.original_settings.values())}
                            if migrated_settings is not None else {})))
 
 
-def _split_and_audit_pool(
-    request, origin, seed, fraction, inputs, groups, registries, sources, settings, relabel, target_sets,
-    migrated_settings, storage, progress, seen_tasks, targets_only, balance) -> tuple:
+def _split_and_audit_pool(request, options, state, storage, progress) -> Pool:
     """Split whole episodes and describe the frozen source pool, input schemas, and optional reward migration."""
-    if (set(relabel) | set(target_sets)) - seen_tasks:
+    if (set(options.relabel) | set(options.target_sets)) - state.seen_tasks:
         raise ValueError('Relabel task absent from pool')
     # lazy: program schemas are needed here only when reconstructing an archive pool.
     from .spec_programs import spec_program_schema
+    inputs, sources = options.inputs, state.sources
     schema = (spec_program_schema() if inputs['spec_input'] == 'structured' else
-              spec_descriptors.spec_set_schema() if inputs['spec_input'] == 'set' else _pool_registry(registries,
-                  request))
+              spec_descriptors.spec_set_schema() if inputs['spec_input'] == 'set' else
+              _pool_registry(state.registries, request))
     features = pool_feature_schema(inputs)
-    training, validation, split = _split_episodes(groups, schema, seed, fraction, storage=storage, progress=progress)
-    audit = dict(format='gator-offline-pool-v1', origin=origin, seed=seed, holdout_fraction=fraction,
-                 request_sha256=identity(request), sources=sources, spec_schema=asdict(schema),
-                 feature_schema=asdict(features), inputs=network_inputs.as_recorded(inputs),
-                 reward_settings=asdict(settings),
+    training, validation, split = _split_episodes(state.groups, schema, options.seed, options.fraction,
+                                                  storage=storage, progress=progress)
+    audit = dict(format='gator-offline-pool-v1', origin=options.origin, seed=options.seed,
+                 holdout_fraction=options.fraction, request_sha256=identity(request), sources=sources,
+                 spec_schema=asdict(schema), feature_schema=asdict(features),
+                 inputs=network_inputs.as_recorded(inputs), reward_settings=asdict(state.settings),
                  source_evaluations=sum(s['evaluations'] for s in sources), new_simulator_launches=0,
                  eligible=sum(s['eligible'] for s in sources), excluded=sum(s['excluded'] for s in sources),
                  relabeled=sum(s['relabeled'] for s in sources),
                  per_task={t: dict(training=len(training[t]), validation=len(validation[t])) for t in training},
                  split=split, split_sha256=identity(split), unchanged_reward_gate='exact_match',
                  diagnostic_scope='within-source episode holdout; not an unseen-circuit transfer result')
-    if target_sets:
-        audit['relabel_target_sets'] = {task: len(sets) for task, sets in sorted(target_sets.items())}
-    if targets_only or balance != 'task':
-        audit.update(relabel_targets_only=targets_only, balance=balance)
-    if migrated_settings is not None:
-        audit['reward_migration'] = dict(settings=asdict(migrated_settings),
+    if options.target_sets:
+        audit['relabel_target_sets'] = {task: len(sets) for task, sets in sorted(options.target_sets.items())}
+    if options.targets_only or options.balance != 'task':
+        audit.update(relabel_targets_only=options.targets_only, balance=options.balance)
+    if options.migrated_settings is not None:
+        audit['reward_migration'] = dict(settings=asdict(options.migrated_settings),
                                        count=sum(s['reward_migrated'] for s in sources),
                                        source_archives_unchanged=True)
-    return training, validation, schema, features, audit
+    return Pool(training, validation, schema, state.settings, audit, features, storage)
 
 
 def _shown(transition, view):
@@ -628,16 +676,16 @@ def execute(request, output, *, audit_only: bool=False, progress=None):
     from analog_optimizer.training.replay import ReplayBuffer
     from analog_optimizer.training.sac import SACConfig, SACLearner
 
-    output, updates, batch_size, interval, started = _begin_offline_artifact(request, output)
+    artifact = _begin_offline_artifact(request, output)
     learner = None
     pool = None
     loaded_sources = 0
 
     def status(state, **extra) -> None:
         record = dict(state=state, updates=0 if learner is None else learner.updates,
-                      elapsed_seconds=time.monotonic() - started, new_simulator_launches=0,
+                      elapsed_seconds=time.monotonic() - artifact.started, new_simulator_launches=0,
                       updated_utc=datetime.now(timezone.utc).isoformat(), **extra)
-        write_json(output / 'status.json', record)
+        write_json(artifact.output / 'status.json', record)
         if progress:
             progress(record)
 
@@ -654,16 +702,15 @@ def execute(request, output, *, audit_only: bool=False, progress=None):
 
     try:
         status('loading', phase='loading_sources', completed_sources=0, total_sources=len(request.get('runs', ())))
-        pool = prepare_pool(request, progress=pool_progress, storage_dir=output)
-        _save_pool_audit(status, pool, output)
+        pool = prepare_pool(request, progress=pool_progress, storage_dir=artifact.output)
+        _save_pool_audit(status, pool, artifact.output)
         if audit_only:
             status('audited', source_evaluations=pool.audit['source_evaluations'], eligible=pool.audit['eligible'])
             return pool.audit
         experiment, model, sac = _offline_training_config(torch, request, pool, ModelConfig, SACConfig)
         learner = SACLearner(experiment=experiment, spec_schema=pool.schema, model_config=model,
                              config=sac, reward_settings=pool.reward_settings, feature_schema=pool.feature_schema)
-        _train_offline(
-            request, pool, ReplayBuffer, output, learner, status, experiment, updates, batch_size, interval)
+        _train_offline(request, pool, artifact, learner, experiment, status, ReplayBuffer)
         status('trained_unqualified', source_evaluations=pool.audit['source_evaluations'],
                pending_gates=['specialist critic comparison', 'actor proposal diagnostics',
                               'forgetting-curve review', 'workbench model publication', 'online rehearsal'])
@@ -676,7 +723,16 @@ def execute(request, output, *, audit_only: bool=False, progress=None):
             pool.storage.close()
 
 
-def _begin_offline_artifact(request, output) -> tuple:
+class _OfflineArtifact(NamedTuple):
+    """The new offline artifact's directory, its update and checkpoint settings, and its start time."""
+    output: Path
+    updates: int
+    batch_size: int
+    interval: int
+    started: float
+
+
+def _begin_offline_artifact(request, output) -> _OfflineArtifact:
     """Validate offline run settings and create the new artifact directory with its frozen request."""
     output = Path(output).resolve()
     if request['origin'] == 'synthetic' and 'mock' not in output.parts:
@@ -688,7 +744,7 @@ def _begin_offline_artifact(request, output) -> tuple:
     output.mkdir(parents=True, exist_ok=False)
     write_json(output / 'request.json', request)
     started = time.monotonic()
-    return output, updates, batch_size, interval, started
+    return _OfflineArtifact(output, updates, batch_size, interval, started)
 
 
 def _save_pool_audit(status, pool, output) -> None:
@@ -713,8 +769,7 @@ def _offline_training_config(torch, request, pool, ModelConfig, SACConfig) -> tu
     return experiment, model, sac
 
 
-def _train_offline(
-    request, pool, ReplayBuffer, output, learner, status, experiment, updates, batch_size, interval) -> None:
+def _train_offline(request, pool, artifact, learner, experiment, status, ReplayBuffer) -> None:
     (
         'Construct the offline sampler and checkpoint store, then run the requested learner updates with '
         'periodic saves.'
@@ -722,7 +777,7 @@ def _train_offline(
     sampler = BalancedSampler(pool.training, request.get('seed', DEFAULT_SEED), track_candidates=True)
     replay = ReplayBuffer(1, origin=request['origin'])
     # This path has no online collector or replay. Do not advertise RunEngine resume.
-    store = CheckpointStore(output, run_id=pool.audit['request_sha256'][:24], task_id='offline:general',
+    store = CheckpointStore(artifact.output, run_id=pool.audit['request_sha256'][:24], task_id='offline:general',
                             task_definition_hash=pool.audit['request_sha256'], save_replay=False, keep_last=2)
     history = []
     candidate_runs = {r['candidate_id']: r['run_id'] for r in pool.audit['split'] if r['subset'] == 'training'}
@@ -732,14 +787,14 @@ def _train_offline(
             pool.validation.values())))
         scores = evaluate(learner, pool)
         history.append(dict(updates=learner.updates, scores=scores))
-        write_json(output / 'validation.json', history)
+        write_json(artifact.output / 'validation.json', history)
         # The sampler's record of this save, written BEFORE the save point, with the update count it belongs to and the
         # sampler's own state (record 7.352): written after it, a stop between the two left the newest save point with
         # the record of the one before, and nothing in the record said so.
         per_run = Counter()
         for candidate, count in sampler.candidate_counts.items():
             per_run[candidate_runs[candidate]] += count
-        write_json(output / 'sampling.json', dict(learner_updates=learner.updates,
+        write_json(artifact.output / 'sampling.json', dict(learner_updates=learner.updates,
                    sampled_per_task=dict(sampler.counts),
                    sampled_per_run=dict(per_run), unique_training_candidates=len(sampler.candidate_counts),
                    available_training_candidates=len(candidate_runs),
@@ -755,9 +810,9 @@ def _train_offline(
                                  [('actor', learner.actor), ('critics', learner.critics)]})
     # ---- Save the initial learner before running the requested updates.
     checkpoint()
-    for _ in range(updates):
-        losses = learner.update(sampler.sample(batch_size))
-        if learner.updates % interval == 0 or learner.updates == updates:
+    for _ in range(artifact.updates):
+        losses = learner.update(sampler.sample(artifact.batch_size))
+        if learner.updates % artifact.interval == 0 or learner.updates == artifact.updates:
             checkpoint()
         elif learner.updates % 100 == 0:
             status('training', losses=losses, sampled_per_task=dict(sampler.counts))

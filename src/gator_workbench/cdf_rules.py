@@ -20,6 +20,7 @@ continuous.
 from __future__ import annotations
 
 import math
+from typing import NamedTuple
 
 from . import cdf_facts, units
 from .cdf_facts import NotWritable
@@ -272,7 +273,8 @@ def _adjust_leader(row, specs, by_id, leaders, reference):
     if row.scale == 'log' and lower <= 0:
         raise RowError(f'{row.variable_id}: a logarithmic range needs a positive lower bound')
     _check_declared_ranges(members, lower, upper, row)
-    step, lower, upper = _snap_leader_range(members, step, row, integer, choice, spec, lower, upper)
+    group = _BoundGroup(members, integer, choice)
+    step, lower, upper = _snap_leader_range(group, row, spec, step, lower, upper)
     _check_finger_widths(members, reference, step, lower, upper, row)
     if choice:
         allowed = [cdf_number(c) for c in spec['choices']]
@@ -303,15 +305,22 @@ def _check_declared_ranges(members, lower, upper, row) -> None:
                            + (f' (ratio {ratio:g})' if ratio != 1 else ''))
 
 
-def _snap_leader_range(members, step, row, integer, choice, spec, lower, upper) -> tuple:
+class _BoundGroup(NamedTuple):
+    """The values bound to one leader (its own value included), and whether any is a count or a choice list."""
+    members: list                                # (ratio, spec) of each bound value
+    integer: bool                                # one of them is a count
+    choice: list                                 # the specs of those that are choice lists
+
+
+def _snap_leader_range(group, row, spec, step, lower, upper) -> tuple:
     """Resolve a shared step, snap bounds inward, and check the present value and count constraints."""
     try:
-        step = _group_step([(ratio, m['grid']) for ratio, m in members], step)
+        step = _group_step([(ratio, m['grid']) for ratio, m in group.members], step)
     except RowError as exc:
         raise RowError(f'{row.variable_id}: {exc}')
-    if integer and step is not None and step != int(step):
+    if group.integer and step is not None and step != int(step):
         raise RowError(f'{row.variable_id}: a count moves in whole steps')
-    if choice:                                                    # snapped INWARD onto the choices
+    if group.choice:                                              # snapped INWARD onto the choices
         inside = [a for a in sorted(cdf_number(c) for c in spec['choices'])
                   if lower - 1e-12 * abs(lower) <= a <= upper + 1e-12 * abs(upper)]
         if len(inside) < 2:
@@ -326,7 +335,7 @@ def _snap_leader_range(members, step, row, integer, choice, spec, lower, upper) 
                        f'grid) must contain the present value {current:g}')
     if step is not None and not _multiple((current - lower), step):
         raise RowError(f'{row.variable_id}: the present value {current:g} is not on the grid {lower:g} + k x {step:g}')
-    if integer and lower < 1:
+    if group.integer and lower < 1:
         raise RowError(f'{row.variable_id}: a count starts at 1')
     return step, lower, upper
 

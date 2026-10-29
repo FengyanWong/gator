@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 import hashlib
 from pathlib import Path
 import re
+from typing import Callable, NamedTuple
 
 from analog_optimizer.graph.circuit_graph import (CircuitGraph, Connection, Device, Diagnostic, Net, ParameterValue,
                                                     SourceSpan)
@@ -183,9 +184,9 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
     for name, kind in kinds_given.items():
         if kind not in KINDS:
             raise NetlistError(f'device kind {kind!r} for {name!r} is not one of {", ".join(KINDS)}')
-    (root, scopes, globals_, analyses, measurements, includes,
-     has_end, diagnostics) = _collect_deck_statements(stmts, source)
-    _read_control_outputs(control_lines, source, measurements, analyses)
+    diagnostics = []
+    deck = _collect_deck_statements(stmts, source)
+    _read_control_outputs(control_lines, source, deck.measurements, deck.analyses)
     # model types: the deck itself, then its included files (read for their .model / .subckt lines only)
     model_types, external_subckts, notes = scan_models(text, root=include_root) if scan_includes else scan_models(text,
         root=None, depth=MAX_INCLUDE_DEPTH)
@@ -194,12 +195,15 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
 
     # ---- Build graph state and resolvers before recursively expanding instances.
     graph = CircuitGraph(circuit_id, [], [], [], {}, metadata={
-        'parser_version': PARSER_VERSION, 'simulator': 'ngspice', 'title': title, 'analysis_context': analyses,
+        'parser_version': PARSER_VERSION, 'simulator': 'ngspice', 'title': title, 'analysis_context': deck.analyses,
         'source_manifest': {source: hashlib.sha256(text.encode()).hexdigest()}, 'selected_top': None,
-        'globals': sorted(globals_), 'measurements': [m.name for m in measurements],
-        'scope_parameters': {name or '<root>': dict(s.params) for name, s in [(None, root), *scopes.items()]}})
-    nets, sizables, unknown_models, subckt_uses = {}, {}, [], {name: 0 for name in scopes}
-    net, resolve, kind_of = _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_types)
+        'globals': sorted(deck.globals_), 'measurements': [m.name for m in deck.measurements],
+        'scope_parameters': {name or '<root>': dict(s.params)
+                             for name, s in [(None, deck.root), *deck.scopes.items()]}})
+    nets, sizables, unknown_models, subckt_uses = {}, {}, [], {name: 0 for name in deck.scopes}
+    net, resolve, kind_of = _graph_resolvers(deck.globals_, nets, source, diagnostics, kinds_given, model_types)
+    context = _ParseContext(resolve, kind_of, kinds_given, model_types, external_subckts, diagnostics, unknown_models,
+                            sizables)
 
     def expand(current, env, path, port_map, ancestry) -> None:
         if len(ancestry) > 32:
@@ -215,12 +219,13 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
             identifier = f'{path}/{name}' if path else name
             positional, named = _split(tokens)
             span = SourceSpan(source, head.line, head.column + 1)
+            element = _Element(head, name, letter, identifier, positional, named, span, current, env)
             if letter == 'X':
                 if not positional:
                     raise NetlistError(f'line {head.line}: {name} names no subcircuit')
                 sub = positional[-1].text.lower()
                 ports = [t.text for t in positional[:-1]]
-                child = scopes.get(sub)
+                child = deck.scopes.get(sub)
                 # ---- Expand declared subcircuits; otherwise describe the external instance from available
                 # model facts.
                 if child is not None:
@@ -231,15 +236,14 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                             f'line {head.line}: {name} connects {len(ports)} nodes, subcircuit {sub} has '
                             f'{len(child.ports)} ports')
                     subckt_uses[sub] += 1
-                    overrides = _subcircuit_overrides(named, resolve, env, identifier)
+                    overrides = _subcircuit_overrides(context, element)
                     actual = [net(p, path, port_map) for p in ports]
                     expand(child, _Env(child.params, env, overrides), identifier,
                            {p.lower(): n for p, n in zip(child.ports, actual)}, (*ancestry, sub))
                     continue
-                kind, terminals, roles = _external_subcircuit_terminals(
-                    kinds_given, sub, external_subckts, ports, diagnostics, identifier, span, unknown_models)
+                kind, terminals, roles = _external_subcircuit_terminals(context, element, sub, ports)
                 graph.devices.append(Device(identifier, kind, sub, terminals, span))
-                values = _external_subcircuit_parameters(named, kind, resolve, env, identifier, sizables, current)
+                values = _external_subcircuit_parameters(context, element, kind)
                 graph.parameters[identifier] = values
                 for ordinal, (terminal, role, target) in enumerate(zip(terminals, roles, [net(p, path,
                     port_map) for p in ports])):
@@ -252,32 +256,39 @@ def parse_text(text, *, source='<memory>', circuit_id='ngspice', device_kinds=No
                 continue
             if letter not in 'RCLMDQJZVIEGFHBS':
                 raise NetlistError(f'line {head.line}: {name!r} is not an element the reader knows')
-            model, count = _element_nodes_and_model(letter, positional, model_types, head, name, named)
-            kind, roles, node_tokens, terminals = _element_terminals(
-                letter, model, positional, count, kind_of, unknown_models, diagnostics, identifier, span, model_types)
+            model, count = _element_nodes_and_model(context, element)
+            kind, roles, node_tokens, terminals = _element_terminals(context, element, model, count)
             graph.devices.append(Device(identifier, kind, model or letter.lower(), terminals, span))
-            values = _element_parameters(letter, named, resolve, env, identifier, kind, sizables, current,
-                                         positional, count, model)
+            values = _element_parameters(context, element, kind, model, count)
             graph.parameters[identifier] = values
             for ordinal, (terminal, role, token) in enumerate(zip(terminals, roles, node_tokens)):
                 graph.connections.append(Connection(identifier, net(token.text, path, port_map), terminal, ordinal,
                     role))
 
-    expand(root, _Env(root.params), '', {}, ())
+    expand(deck.root, _Env(deck.root.params), '', {}, ())
     unknown = _finish_circuit_graph(graph, nets, diagnostics, subckt_uses, sizables, unknown_models)
-    return Parsed(graph, measurements, analyses, sizables, lines, title, dict(subckt_uses), includes, has_control,
-                  has_end,
-                  unknown, model_types)
+    return Parsed(graph, deck.measurements, deck.analyses, sizables, lines, title, dict(subckt_uses), deck.includes,
+                  has_control, deck.has_end, unknown, model_types)
 
 
-def _collect_deck_statements(stmts, source) -> tuple:
+class _DeckStatements(NamedTuple):
+    """The circuit scopes and directives that a deck's statements declare, in source order."""
+    root: _Scope
+    scopes: dict
+    globals_: set
+    analyses: list
+    measurements: list
+    includes: list
+    has_end: bool
+
+
+def _collect_deck_statements(stmts, source) -> _DeckStatements:
     """Collect circuit scopes, directives and element statements while preserving their source order."""
     root = _Scope(None)
     scopes, scope = {}, root
     globals_ = set(GROUND)
     analyses, measurements, includes = [], [], []
     has_end = False
-    diagnostics = []
     for tokens in stmts:
         head = tokens[0]
         word = head.text.lower()
@@ -309,7 +320,7 @@ def _collect_deck_statements(stmts, source) -> tuple:
         scope.body.append(tokens)
     if scope is not root:
         raise NetlistError(f'subcircuit {scope.name} is not closed with .ends')
-    return root, scopes, globals_, analyses, measurements, includes, has_end, diagnostics
+    return _DeckStatements(root, scopes, globals_, analyses, measurements, includes, has_end)
 
 
 def _open_subcircuit(scope, root, tokens, head, scopes):
@@ -415,22 +426,47 @@ def _graph_resolvers(globals_, nets, source, diagnostics, kinds_given, model_typ
     return net, resolve, kind_of
 
 
-def _subcircuit_overrides(named, resolve, env, identifier):
+class _ParseContext(NamedTuple):
+    """The resolvers, device facts and registries that the element readers of one parse share."""
+    resolve: Callable
+    kind_of: Callable
+    kinds_given: dict
+    model_types: dict
+    external_subckts: dict
+    diagnostics: list
+    unknown_models: list
+    sizables: dict
+
+
+class _Element(NamedTuple):
+    """One element statement as read in place: its tokens, names and span, and the scope it sits in."""
+    head: Token
+    name: str
+    letter: str
+    identifier: str
+    positional: list
+    named: dict
+    span: SourceSpan
+    current: _Scope
+    env: _Env
+
+
+def _subcircuit_overrides(context, element):
     """Resolve valid parameter overrides for an instantiated subcircuit."""
     overrides = {}
-    for key, token in named.items():
-        value = resolve(_value_token(token), env, f'{identifier}.{key}')
+    for key, token in element.named.items():
+        value = context.resolve(_value_token(token), element.env, f'{element.identifier}.{key}')
         if value.valid:
             overrides[key] = value.value
     return overrides
 
 
-def _external_subcircuit_terminals(kinds_given, sub, external_subckts, ports, diagnostics, identifier, span,
-    unknown_models) -> tuple:
+def _external_subcircuit_terminals(context, element, sub, ports) -> tuple:
     """Classify an external subcircuit's terminals and record missing-kind or port-count diagnostics."""
+    identifier, span, diagnostics = element.identifier, element.span, context.diagnostics
     # an instance of a subcircuit the deck does not define: a PDK cell (its kind from device_kinds)
-    kind = kinds_given.get(sub, 'unknown')
-    expected = external_subckts.get(sub)
+    kind = context.kinds_given.get(sub, 'unknown')
+    expected = context.external_subckts.get(sub)
     if expected is not None and expected != len(ports):
         diagnostics.append(Diagnostic('port_count', f'{identifier}: {len(ports)} nodes, but {sub} has {expected} ports',
                                       span, 'warning'))
@@ -440,7 +476,7 @@ def _external_subcircuit_terminals(kinds_given, sub, external_subckts, ports, di
                                       f'but connects {len(ports)} nodes', span, 'warning'))
         roles, kind = None, 'unknown'
     if kind == 'unknown':
-        unknown_models.append(sub)
+        context.unknown_models.append(sub)
         diagnostics.append(Diagnostic('unknown_device', f'{identifier}: subcircuit {sub} is not defined in the '
                                       'netlist and its kind is not declared', span, 'warning'))
     terminals = tuple(f'port_{i}' for i in range(len(ports))) if roles is None else \
@@ -449,20 +485,24 @@ def _external_subcircuit_terminals(kinds_given, sub, external_subckts, ports, di
     return kind, terminals, roles
 
 
-def _external_subcircuit_parameters(named, kind, resolve, env, identifier, sizables, current):
+def _external_subcircuit_parameters(context, element, kind):
     """Resolve external-subcircuit parameters and register valid declared MOS sizes."""
+    resolve, sizables, env, identifier = context.resolve, context.sizables, element.env, element.identifier
     values = {}
-    for key, token in named.items():
+    for key, token in element.named.items():
         canonical = MOS_PARAMETERS.get(key, key) if kind in ('nmos', 'pmos') else key
         values[canonical] = ParameterValue(*_with_name(resolve(_value_token(token), env, f'{identifier}.{key}',
             numeric=False), key))
         if canonical in ('w', 'l', 'm', 'nf') and values[canonical].valid and kind in ('nmos', 'pmos'):
-            sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token), current.name)
+            sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token),
+                                                        element.current.name)
     return values
 
 
-def _element_nodes_and_model(letter, positional, model_types, head, name, named) -> tuple:
+def _element_nodes_and_model(context, element) -> tuple:
     """Determine an element's node count and model while enforcing its required positional tokens."""
+    letter, positional, named = element.letter, element.positional, element.named
+    head, name, model_types = element.head, element.name, context.model_types
     # nodes and model: the first `count` positional tokens are nodes; the next one, if any, the model
     model = None
     if letter == 'M':
@@ -508,15 +548,16 @@ def _element_nodes_and_model(letter, positional, model_types, head, name, named)
     return model, count
 
 
-def _element_terminals(letter, model, positional, count, kind_of, unknown_models, diagnostics, identifier, span,
-    model_types) -> tuple:
+def _element_terminals(context, element, model, count) -> tuple:
     """Classify an element's terminals and record diagnostics for unknown device kinds."""
-    kind, roles, _ = kind_of(letter, model, [t.text.lower() for t in positional])
+    letter, positional, identifier, span = element.letter, element.positional, element.identifier, element.span
+    diagnostics = context.diagnostics
+    kind, roles, _ = context.kind_of(letter, model, [t.text.lower() for t in positional])
     if kind == 'unknown' and letter in ('M', 'D', 'Q', 'J', 'Z', 'S') and model:
-        unknown_models.append(model)
+        context.unknown_models.append(model)
         diagnostics.append(Diagnostic('unknown_device', f'{identifier}: model {model} has no known kind '
-                                      + ('' if model in model_types else '(no .model line for it was found)'), span,
-                                      'warning'))
+                                      + ('' if model in context.model_types else '(no .model line for it was found)'),
+                                      span, 'warning'))
     elif kind == 'unknown' and letter in 'EGFHB':
         diagnostics.append(Diagnostic('unknown_device', f'{identifier}: a {letter} source is shown as unknown', span,
             'warning'))
@@ -531,8 +572,10 @@ def _element_terminals(letter, model, positional, count, kind_of, unknown_models
     return kind, roles, node_tokens, terminals
 
 
-def _element_parameters(letter, named, resolve, env, identifier, kind, sizables, current, positional, count, model):
+def _element_parameters(context, element, kind, model, count):
     """Resolve an element's parameter values and register the values eligible for sizing."""
+    letter, named, env, identifier = element.letter, element.named, element.env, element.identifier
+    resolve, sizables = context.resolve, context.sizables
     values = {}
     # the sized value: MOS W/L/M/NF, or the positional value of R C L V I (`R1 a b 1k`, `V1 a 0 dc 1.8`)
     if letter == 'M':
@@ -542,11 +585,11 @@ def _element_parameters(letter, named, resolve, env, identifier, kind, sizables,
                                                                    numeric=key in MOS_PARAMETERS), key))
             if canonical in MOS_PARAMETERS.values() and values[canonical].valid and kind != 'unknown':
                 sizables[(identifier, canonical)] = Sizable(identifier, canonical, key, _value_token(token),
-                    current.name)
+                    element.current.name)
     elif letter in ELEMENT_KINDS:
         canonical = VALUE_PARAMETER[letter]
         value_token = None
-        tail = positional[count + (1 if model else 0):]
+        tail = element.positional[count + (1 if model else 0):]
         if letter in ('V', 'I'):
             lowered = [t.text.lower() for t in tail]
             if 'dc' in lowered and lowered.index('dc') + 1 < len(tail):
@@ -566,7 +609,8 @@ def _element_parameters(letter, named, resolve, env, identifier, kind, sizables,
             values[canonical] = ParameterValue(*_with_name(resolve(value_token, env, f'{identifier}.{canonical}'),
                 canonical))
             if values[canonical].valid and kind != 'unknown':
-                sizables[(identifier, canonical)] = Sizable(identifier, canonical, canonical, value_token, current.name)
+                sizables[(identifier, canonical)] = Sizable(identifier, canonical, canonical, value_token,
+                                                            element.current.name)
         # ---- Keep additional named parameters without treating them as sizing controls.
         for key, token in named.items():
             if key == {'R': 'r', 'C': 'c', 'L': 'l', 'V': 'dc', 'I': 'dc'}[letter]:

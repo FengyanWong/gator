@@ -29,7 +29,9 @@ class CommitRows:
     metrics, simulator jobs and transitions rows."""
 
     # ------------------------------------------------------------------ row builders
-    def _candidate(self, busy, record, metrics, units_map, constraints, valid, feasible, violation, reward, seq):
+    def _candidate(self, busy, record, outcome, reward, commit_seq):
+        """The evaluation as a candidate of the best-design tracker, built from the design's variable values and its
+        `outcome` (engine_commit.Outcome: what it measured, judged against the Specs)."""
         applied = {(r['device'], r['parameter']): r['value'] for r in (record.get('applied_parameters') or [])}
         # A fixed group (optimized = false) is never sent to the simulator, so no candidate reports it: its members keep
         # the circuit's values. Read as missing, every candidate of a task with one fixed row was "incomplete" - never
@@ -52,11 +54,11 @@ class CommitRows:
             variables.append(dict(variable_id=variable['variable_id'], value=group_value, unit=variable['unit'],
                                   optimized=variable['optimized']))
         complete = all(m['value'] is not None for m in members)
-        return dict(evaluation_id=busy['evaluation_id'], commit_seq=seq, valid=valid and complete,
-                    feasible=feasible and complete,
-                    violation=violation, reward=reward, metrics=metrics,
+        return dict(evaluation_id=busy['evaluation_id'], commit_seq=commit_seq, valid=outcome.valid and complete,
+                    feasible=outcome.feasible and complete,
+                    violation=outcome.violation, reward=reward, metrics=outcome.metric_values,
                     metric_units={t['metric_id']: t['unit'] for t in self.compiled.targets},
-                    variables=variables, members=members, constraints=constraints, conditions=['nominal'],
+                    variables=variables, members=members, constraints=outcome.constraint_rows, conditions=['nominal'],
                     provenance=self.provenance)
     def _source_name(self, member):
         value = self.compiled.graph.parameters[member['instance_path']][member['parameter_name']]

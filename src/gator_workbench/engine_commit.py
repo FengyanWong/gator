@@ -418,8 +418,7 @@ def first_feasibility(engine, busy, evaluation_id, commit_seq, nominal_feasible,
 
 def offer(engine, busy, record, info, observation, reward, commit_seq, outcome) -> tuple:
     """The evaluation as a candidate of the best-design tracker. Returns (its role there, the tracker's best)."""
-    candidate = engine._candidate(busy, record, outcome.metric_values, outcome.raw_units, outcome.constraint_rows,
-                                  outcome.valid, outcome.feasible, outcome.violation, reward, commit_seq)
+    candidate = engine._candidate(busy, record, outcome, reward, commit_seq)
     candidate.update(nominal_feasible=outcome.nominal_feasible, nominal_metrics=record.get('metrics'),
                      robust_feasible=outcome.feasible if engine.config.run.conditions.policy != 'off' else None,
                      worst_metrics=outcome.metric_values, conditions_complete=info.get('conditions_complete'),

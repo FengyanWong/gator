@@ -192,9 +192,9 @@ def _validated_form_procedures(item, targets):
     """Resolve and validate an instance's form procedures and target fields."""
     name, form = item['instance'], item.get('form') or {}
     init, done = form.get('init') or None, form.get('done') or None      # '' = the form has no such procedure (a second foundry PDK's CDF, 2026-10-09)
-    for proc in (init, done):
-        if proc is not None and not PROC.match(proc):
-            raise ValueError(f'{name}: invalid form procedure {proc!r}')
+    for procedure in (init, done):
+        if procedure is not None and not PROC.match(procedure):
+            raise ValueError(f'{name}: invalid form procedure {procedure!r}')
     for field, _ in targets:
         if not NAME.match(field.instance or '') or not FIELD.match(field.cdf or '') or field.instance != name:
             raise ValueError(f'{name}: invalid form field {field.name}')

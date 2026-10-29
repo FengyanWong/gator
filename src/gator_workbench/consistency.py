@@ -90,7 +90,7 @@ def lock_holder(path) -> str | None:
     import os
     from datetime import datetime
     from pathlib import Path
-    proc = lambda pid, part: Path(f'/proc/{pid}/{part}')
+    process_file = lambda pid, part: Path(f'/proc/{pid}/{part}')
     try:
         stat = Path(path).stat()
         key = f'{os.major(stat.st_dev):02x}:{os.minor(stat.st_dev):02x}:{stat.st_ino}'
@@ -100,11 +100,11 @@ def lock_holder(path) -> str | None:
             return None
         pid = pids[0]
         for _ in range(3):                                         # a lane of a run: name the process that started it
-            argv = [a for a in proc(pid, 'cmdline').read_bytes().decode(errors='replace').split('\0') if a]
+            argv = [a for a in process_file(pid, 'cmdline').read_bytes().decode(errors='replace').split('\0') if a]
             if not any('multiprocessing' in a for a in argv):
                 break
-            pid = int(proc(pid, 'stat').read_text().rsplit(')', 1)[1].split()[1])
-        fields = proc(pid, 'stat').read_text().rsplit(')', 1)[1].split()     # fields[0] is field 3 of proc(5): state
+            pid = int(process_file(pid, 'stat').read_text().rsplit(')', 1)[1].split()[1])
+        fields = process_file(pid, 'stat').read_text().rsplit(')', 1)[1].split()     # fields[0] is field 3 of proc(5): state
         boot = next(int(line.split()[1]) for line in Path('/proc/stat').read_text().splitlines() if line.startswith('btime '))
         started = datetime.fromtimestamp(boot + int(fields[19]) / os.sysconf('SC_CLK_TCK')).strftime('%H:%M')
     except (OSError, ValueError, IndexError, StopIteration):

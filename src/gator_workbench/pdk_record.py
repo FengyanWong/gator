@@ -74,6 +74,24 @@ def build_record(pdk_id, cdf, scans, *, sources=None, technology_library=None):
     """The PDK record: one entry per Spectre model a cell of the library netlists to, and the component list."""
     scan = merge_scans(scans)
     cells, leaves = cdf['cells'], cdf['leaves']
+    by_model, not_netlisted = _netlisted_models(cells, leaves)
+    devices = {}
+    for model in sorted(by_model):
+        _record_model(model, by_model, cells, scan, pdk_id, devices)
+    used = set(devices)
+    unused = sorted((set(scan['subckts']) | set(scan['models'])) - used)
+    _assign_columns(devices)
+    vocabulary = _vocabulary(pdk_id, devices)
+    record = dict(format=FORMAT, pdk_id=pdk_id, technology_library=technology_library or pdk_id, loaded_utc=utcnow().isoformat(),
+                  sources=sources or {}, devices=devices, not_netlisted=not_netlisted, layout_only=cdf.get('layout_only', []),
+                  model_file_definitions_not_used=unused,
+                  duplicates=scan['duplicates'][:50], vocabulary=vocabulary, summary=_summary(devices))
+    record['sha256'] = vocabulary['sha256']
+    return record
+
+
+def _netlisted_models(cells, leaves):
+    """Group netlisted cells by Spectre model and record why remaining cells have no usable model."""
     by_model, not_netlisted = {}, []
     for name in sorted(cells):
         cell = cells[name]
@@ -94,80 +112,85 @@ def build_record(pdk_id, cdf, scans, *, sources=None, technology_library=None):
             continue
         by_model.setdefault(model, []).append(dict(cell=name, spectre=spectre, parent=parent, via=via,
                                                    leaf_cell=via['cell'] if via else name))
-    devices = {}
-    for model in sorted(by_model):
-        uses = by_model[model]
-        # The cell whose pins are all named in its own mapping describes the pins (nmos1v rather than nmos1v_3 with its
-        # inherited bulk); ties go to the shortest, then alphabetical name.
-        uses.sort(key=lambda u: (not all(str(t) in u['spectre']['term_mapping'] for t in u['spectre']['term_order'] or []),
-                                 len(u['cell']), u['cell']))
-        lead = uses[0]
-        units_declared = sorted({str(p.get('units')) for u in uses for p in cells[u['leaf_cell']]['parameters'].values()
-                                 if p.get('units')} | {str(p.get('units')) for u in uses if u['parent']
-                                                        for p in cells[u['parent']]['parameters'].values() if p.get('units')})
-        found = classify_model(model, scan, cdf_units=units_declared)
-        problems = []
-        roles = pin_roles(model, found, scan) if found['family'] != 'other' else None
-        order = [str(t) for t in lead['spectre'].get('term_order') or []]
-        mapping = {str(k): str(v) for k, v in lead['spectre'].get('term_mapping', {}).items()}
-        pins = []
-        subckt = scan['subckts'].get(model)
-        model_pins = subckt['pins'] if subckt else [str(i + 1) for i in range(len(order))]
-        if not order:
-            problems.append('the description gives no pin order')
-        if subckt is not None and order and len(order) != len(model_pins):
-            problems.append(f'{len(order)} pins in the description, {len(model_pins)} in the model file')
-        for index, symbol in enumerate(order):
-            target = mapping.get(symbol, '').lstrip(':')
-            model_pin = model_pins[index] if index < len(model_pins) else None
-            role = roles[index]['role'] if roles and index < len(roles) else 'unknown'
-            basis = roles[index]['basis'] if roles and index < len(roles) else 'no role established'
-            allowed = {model_pin, str(index + 1)} | ({PRIMITIVE_PINS[found['family']][index]}
-                                                     if subckt is None and index < len(PRIMITIVE_PINS.get(found['family'], ())) else set())
-            if target and model_pin is not None and target not in allowed and not target.startswith('('):
-                problems.append(f'pin {symbol} maps to {target} but position {index + 1} of {model} is {model_pin}')
-                role, basis = 'unknown', 'pin order and mapping disagree'
-            pins.append(dict(name=symbol, model_pin=model_pin, role=role, basis=basis))
-        parameters = []
-        leaf_cell, parent = lead['leaf_cell'], lead['parent']
-        prop = {str(k): str(v) for k, v in lead['spectre'].get('prop_mapping', {}).items()}
-        for netlist in [str(p) for p in lead['spectre'].get('inst_parameters') or []]:
-            cdf_name = prop.get(netlist, netlist)
-            entry, default = cdf_entry(cells, leaf_cell, cdf_name, parent)
-            if entry is None:
-                entry, default = cdf_entry(cells, leaf_cell, netlist, parent)
-            kind = (entry or {}).get('type')
-            unit = CDF_UNITS.get((entry or {}).get('units'))
-            numeric = kind in NUMERIC_CDF_TYPES and (default is not None or unit is not None or netlist in STANDARD_UNITS)
-            source = write_source(cells, leaf_cell, cdf_name if entry is not None and cdf_name in cells[leaf_cell]['parameters']
-                                   else netlist, parent)
-            parameters.append(dict(name=netlist, cdf=cdf_name, type=kind, unit=unit, unit_declared=unit is not None,
-                                   default=default, prompt=(entry or {}).get('prompt'), numeric=bool(numeric),
-                                   write=source, writable=writability(source, numeric)))
-        standard = dict(mos={'n': 'nmos', 'p': 'pmos'}.get(found.get('polarity')), resistor='resistor',
-                        capacitor='capacitor', inductor='inductor').get(found['family']) or 'unknown'
-        known = {p['role'] for p in pins}
-        if 'unknown' in known and found['family'] != 'other':
-            problems.append('the role of some pins could not be established')
-        forms = dict(self=cells[leaf_cell].get('form'), parent=cells[parent].get('form') if parent else None)
-        devices[model] = dict(
-            model=model, kind=f'{pdk_id}:{model}', cells=[u['cell'] for u in uses], form=forms,
-            netlisted_through=sorted({u['via']['cell'] for u in uses if u['via']}),
-            family=found['family'], family_label=FAMILY_LABEL[found['family']], polarity=found.get('polarity'),
-            family_basis=found['family_basis'], pins=pins, parameters=parameters,
-            standard_kind=standard, standard_roles=_standard_roles(standard, pins),
-            source=file_line(subckt) if subckt else file_line(scan['models'][model]) if model in scan['models'] else None,
-            problems=problems)
-    used = set(devices)
-    unused = sorted((set(scan['subckts']) | set(scan['models'])) - used)
-    _assign_columns(devices)
-    vocabulary = _vocabulary(pdk_id, devices)
-    record = dict(format=FORMAT, pdk_id=pdk_id, technology_library=technology_library or pdk_id, loaded_utc=utcnow().isoformat(),
-                  sources=sources or {}, devices=devices, not_netlisted=not_netlisted, layout_only=cdf.get('layout_only', []),
-                  model_file_definitions_not_used=unused,
-                  duplicates=scan['duplicates'][:50], vocabulary=vocabulary, summary=_summary(devices))
-    record['sha256'] = vocabulary['sha256']
-    return record
+    return by_model, not_netlisted
+
+
+def _record_model(model, by_model, cells, scan, pdk_id, devices):
+    """Choose the representative cell and assemble the classified model record with its pins, parameters, and problems."""
+    uses = by_model[model]
+    # The cell whose pins are all named in its own mapping describes the pins (nmos1v rather than nmos1v_3 with its
+    # inherited bulk); ties go to the shortest, then alphabetical name.
+    uses.sort(key=lambda u: (not all(str(t) in u['spectre']['term_mapping'] for t in u['spectre']['term_order'] or []),
+                             len(u['cell']), u['cell']))
+    lead = uses[0]
+    units_declared = sorted({str(p.get('units')) for u in uses for p in cells[u['leaf_cell']]['parameters'].values()
+                             if p.get('units')} | {str(p.get('units')) for u in uses if u['parent']
+                                                    for p in cells[u['parent']]['parameters'].values() if p.get('units')})
+    found = classify_model(model, scan, cdf_units=units_declared)
+    problems = []
+    pins, subckt = _model_pins(model, found, scan, lead, problems)
+    parameters, leaf_cell, parent = _model_parameters(lead, cells)
+    standard = dict(mos={'n': 'nmos', 'p': 'pmos'}.get(found.get('polarity')), resistor='resistor',
+                    capacitor='capacitor', inductor='inductor').get(found['family']) or 'unknown'
+    known = {p['role'] for p in pins}
+    if 'unknown' in known and found['family'] != 'other':
+        problems.append('the role of some pins could not be established')
+    forms = dict(self=cells[leaf_cell].get('form'), parent=cells[parent].get('form') if parent else None)
+    devices[model] = dict(
+        model=model, kind=f'{pdk_id}:{model}', cells=[u['cell'] for u in uses], form=forms,
+        netlisted_through=sorted({u['via']['cell'] for u in uses if u['via']}),
+        family=found['family'], family_label=FAMILY_LABEL[found['family']], polarity=found.get('polarity'),
+        family_basis=found['family_basis'], pins=pins, parameters=parameters,
+        standard_kind=standard, standard_roles=_standard_roles(standard, pins),
+        source=file_line(subckt) if subckt else file_line(scan['models'][model]) if model in scan['models'] else None,
+        problems=problems)
+
+
+def _model_pins(model, found, scan, lead, problems):
+    """Reconcile symbol pin order and mapping with model-file pins and record any unresolved roles."""
+    roles = pin_roles(model, found, scan) if found['family'] != 'other' else None
+    order = [str(t) for t in lead['spectre'].get('term_order') or []]
+    mapping = {str(k): str(v) for k, v in lead['spectre'].get('term_mapping', {}).items()}
+    pins = []
+    subckt = scan['subckts'].get(model)
+    model_pins = subckt['pins'] if subckt else [str(i + 1) for i in range(len(order))]
+    if not order:
+        problems.append('the description gives no pin order')
+    if subckt is not None and order and len(order) != len(model_pins):
+        problems.append(f'{len(order)} pins in the description, {len(model_pins)} in the model file')
+    for index, symbol in enumerate(order):
+        target = mapping.get(symbol, '').lstrip(':')
+        model_pin = model_pins[index] if index < len(model_pins) else None
+        role = roles[index]['role'] if roles and index < len(roles) else 'unknown'
+        basis = roles[index]['basis'] if roles and index < len(roles) else 'no role established'
+        allowed = {model_pin, str(index + 1)} | ({PRIMITIVE_PINS[found['family']][index]}
+                                                 if subckt is None and index < len(PRIMITIVE_PINS.get(found['family'], ())) else set())
+        if target and model_pin is not None and target not in allowed and not target.startswith('('):
+            problems.append(f'pin {symbol} maps to {target} but position {index + 1} of {model} is {model_pin}')
+            role, basis = 'unknown', 'pin order and mapping disagree'
+        pins.append(dict(name=symbol, model_pin=model_pin, role=role, basis=basis))
+    return pins, subckt
+
+
+def _model_parameters(lead, cells):
+    """Read netlisted parameter defaults and determine their units, numeric status, and writable CDF sources."""
+    parameters = []
+    leaf_cell, parent = lead['leaf_cell'], lead['parent']
+    prop = {str(k): str(v) for k, v in lead['spectre'].get('prop_mapping', {}).items()}
+    for netlist in [str(p) for p in lead['spectre'].get('inst_parameters') or []]:
+        cdf_name = prop.get(netlist, netlist)
+        entry, default = cdf_entry(cells, leaf_cell, cdf_name, parent)
+        if entry is None:
+            entry, default = cdf_entry(cells, leaf_cell, netlist, parent)
+        kind = (entry or {}).get('type')
+        unit = CDF_UNITS.get((entry or {}).get('units'))
+        numeric = kind in NUMERIC_CDF_TYPES and (default is not None or unit is not None or netlist in STANDARD_UNITS)
+        source = write_source(cells, leaf_cell, cdf_name if entry is not None and cdf_name in cells[leaf_cell]['parameters']
+                               else netlist, parent)
+        parameters.append(dict(name=netlist, cdf=cdf_name, type=kind, unit=unit, unit_declared=unit is not None,
+                               default=default, prompt=(entry or {}).get('prompt'), numeric=bool(numeric),
+                               write=source, writable=writability(source, numeric)))
+    return parameters, leaf_cell, parent
 
 
 def _standard_roles(kind, pins):

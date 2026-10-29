@@ -167,9 +167,9 @@ class ModelFileCache:
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
             if not (self.folder / digest).is_file():
-                tmp = self.folder / f'{digest}.part'
-                tmp.write_bytes(data)
-                tmp.replace(self.folder / digest)
+                partial_download_path = self.folder / f'{digest}.part'
+                partial_download_path.write_bytes(data)
+                partial_download_path.replace(self.folder / digest)
             self.index[remote] = dict(bytes=stamp[0], modified=stamp[1], sha256=digest)
             write_json(self.folder / 'index.json', self.index)
         except OSError:

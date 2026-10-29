@@ -1,6 +1,7 @@
 """Run control, saved models and data-only exports."""
 from __future__ import annotations
 import mimetypes
+from typing import NamedTuple
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from .. import (aggregates, calibration, checkpoints as ckpt, connection, corner_check, graph_view, launch_requests,
@@ -33,8 +34,8 @@ def start_run(context, config, body, *, baseline_only: bool=False, record=None, 
     # A connection with two Virtuoso sessions: the run goes to whichever is free (record 7.351, session_routing). A busy
     # session that holds the task's cell lets go of it once prepare_run's refusals have passed (`before_write`).
     config, session = _select_start_session(config, session, allow_real, context)
-    layout, manifest, made = _prepare_start_directory(
-        config, context, allow_real, body, session, baseline_only, random_only, calibrating, record)
+    kind = _RunKind(baseline_only, random_only, calibrating)
+    layout, manifest, made = _prepare_start_directory(config, context, allow_real, body, session, kind, record)
     pid = _launch_start_worker(layout, allow_real, manifest, session)
     return dict(made, worker_pid=pid)
 
@@ -73,8 +74,14 @@ def _select_start_session(config, session, allow_real, context) -> tuple:
     return config, session
 
 
-def _prepare_start_directory(config, context, allow_real, body, session, baseline_only, random_only, calibrating,
-    record) -> tuple:
+class _RunKind(NamedTuple):
+    """What a start runs: a Baseline simulation, a Calibration or an optimization run, and its calibration designs."""
+    baseline_only: bool
+    random_only: bool               # a Calibration: random designs only, no starting-design evaluation
+    calibrating: dict | None        # calibration.prepare's request when calibration designs were asked for, else None
+
+
+def _prepare_start_directory(config, context, allow_real, body, session, kind, record) -> tuple:
     """Prepare the run directory and persist its launch records, releasing the session when either step fails."""
     # ---- Release the selected session if directory preparation fails.
     try:
@@ -102,20 +109,20 @@ def _prepare_start_directory(config, context, allow_real, body, session, baselin
         if session is not None:                    # which session, and why, in the run's record (its current segment)
             manifest['segments'][-1]['virtuoso_session'] = session.record()
             manifest['notes'].append(session.said)
-        if baseline_only or random_only:
-            manifest['run_kind'] = 'calibration' if random_only else 'baseline_preflight'
+        if kind.baseline_only or kind.random_only:
+            manifest['run_kind'] = 'calibration' if kind.random_only else 'baseline_preflight'
             manifest['notes'].append(
-                'Calibration: random designs only; no starting-design evaluation.' if random_only else
+                'Calibration: random designs only; no starting-design evaluation.' if kind.random_only else
                                      'Baseline simulation: a costed preflight evaluation, not a free check.')
-            if calibrating:
-                manifest['calibration'] = calibrating
+            if kind.calibrating:
+                manifest['calibration'] = kind.calibrating
                 manifest['notes'].append((
-                    f'Calibration: {calibrating["designs"]} random designs over the ' if random_only else
-                                          f"With calibration: after the baseline, {calibrating['designs']} "
+                    f'Calibration: {kind.calibrating["designs"]} random designs over the ' if kind.random_only else
+                                          f"With calibration: after the baseline, {kind.calibrating['designs']} "
                                           f'random designs over the ') +
                                          'Parameters ranges (each of them a costed evaluation; nothing is '
                                          'learned from them).')
-        if session is not None or baseline_only or random_only:
+        if session is not None or kind.baseline_only or kind.random_only:
             write_json(layout.manifest, manifest)  # one write for both (the manifest is on the D: drive)
         made = dict(run_dir=str(layout.run_dir), run_id=manifest['run_id'], mock=manifest['mock'], worker_pid=None,
                     paths=layout.subpaths(), connection_gate=manifest.get('connection_gate'),

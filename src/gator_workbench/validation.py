@@ -380,6 +380,26 @@ def _check_parameters_against_circuit(config, report, graph, record):
                 report.add('error', 'start_off_grid', path, words)
 
 
+def _check_size_measurement(config, report, m, path, provided_metrics):
+    """Check a size probe name and formula against the parameters the task varies."""
+    if not m.source_name:
+        report.add('error', 'missing_source_name', path + '.source_name',
+                   'A probe that measures the sizes needs a name for its value (source name)')
+    elif provided_metrics is not None and m.source_name in provided_metrics:
+        report.add('error', 'size_probe_name_is_a_result', path + '.source_name',
+                   f'{m.source_name!r} is the name of a result the simulation returns: give the size probe its own name')
+    patterns, why = parse_size_formula(m.signal)
+    if why is not None:
+        report.add('error', 'size_formula_rejected', path + '.signal', f'{m.measurement_id}: the size formula - {why}')
+    else:
+        varied = [p.instance_path for p in config.parameters if p.parameter_name == 'w' and p.optimized]
+        for pattern in patterns:
+            if not any(size_matches(pattern, instance) for instance in varied):
+                report.add('error', 'size_pattern_matches_nothing', path + '.signal',
+                           f'{m.measurement_id}: no width the task varies is on an instance named {pattern!r} '
+                           '(a size formula sees only the widths in the Parameters rows)')
+
+
 def _check_measurements(config, report, *, provided_metrics):
     ids = {}
     for i, m in enumerate(config.measurements):
@@ -407,22 +427,7 @@ def _check_measurements(config, report, *, provided_metrics):
                            f'The Maestro output {m.source_name!r} is measured only by a task saved with it: this circuit '
                            'does not measure it.')
         elif m.result_source == 'size_estimate':                   # worked out from the sizes, never simulated (record 7.308)
-            if not m.source_name:
-                report.add('error', 'missing_source_name', path + '.source_name',
-                           'A probe that measures the sizes needs a name for its value (source name)')
-            elif provided_metrics is not None and m.source_name in provided_metrics:
-                report.add('error', 'size_probe_name_is_a_result', path + '.source_name',
-                           f'{m.source_name!r} is the name of a result the simulation returns: give the size probe its own name')
-            patterns, why = parse_size_formula(m.signal)
-            if why is not None:
-                report.add('error', 'size_formula_rejected', path + '.signal', f'{m.measurement_id}: the size formula - {why}')
-            else:
-                varied = [p.instance_path for p in config.parameters if p.parameter_name == 'w' and p.optimized]
-                for pattern in patterns:
-                    if not any(size_matches(pattern, instance) for instance in varied):
-                        report.add('error', 'size_pattern_matches_nothing', path + '.signal',
-                                   f'{m.measurement_id}: no width the task varies is on an instance named {pattern!r} '
-                                   '(a size formula sees only the widths in the Parameters rows)')
+            _check_size_measurement(config, report, m, path, provided_metrics)
     return ids
 
 

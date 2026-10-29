@@ -7,7 +7,10 @@ only the live backend on 8765 was running). Optimizer source digest at HEAD:
 `6ebf5ba532b279aa83b7b9b63d7e7c2573551691384575336bd24f91bc195da3` (it must read the same after every package).
 The plan is written for Codex to execute; appendix A is the prompt to give it.
 
-**State (2026-10-29, record 7.394):** carried out on `codex/latest` - D, T and P1 by Codex; P2-P7 by Claude with Codex's frozen proof kit (51 packages, one commit each), the P1 docstrings revised (P1R) and P8 (16 packages: wide parameter lists bundled into small named records); F by the frontend session (SIF-146..162, on the live `workbench` branch); E not chosen. Not landed or pushed.
+**State (2026-10-29, record 7.394):** carried out on `codex/latest` - D, T and P1 by Codex; P2-P7 by Claude with Codex's
+frozen proof kit (51 packages, one commit each), the P1 docstrings revised (P1R) and P8 (16 packages: wide parameter
+lists bundled into small named records); F by the frontend session (SIF-146..162, on the live `workbench` branch); E not
+chosen. Not landed or pushed.
 
 ## 0. In plain words
 

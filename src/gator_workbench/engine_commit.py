@@ -37,6 +37,46 @@ class Outcome(NamedTuple):
 
 def commit(engine, lane, busy, result, *, timing_batch) -> None:
     """Commit a completed evaluation and its learning rows before applying retention and advancing lane state."""
+    received = _receive(engine, lane, busy, result)
+    completion = _record_completion(received)
+    _observe_search(received, completion.op_is_step)
+    admission = _admit_to_replay(received, completion.op_is_step)
+    standing = _standing(received)
+    job_rows, retention_plan = engine._job_rows(busy, lane, standing.retention_role, completion.failed)
+    if completion.infrastructure and job_rows:
+        # distinguishable in simulator_jobs
+        job_rows[-1]['exit_status'] = f"{job_rows[-1]['exit_status']}:{completion.infrastructure}"
+    engine.counters['retries'] = engine.ledger.retries
+    committed_at = utcnow()
+    diagnostics, evaluation = _evaluation_row(received, completion, admission.eligible, standing, committed_at)
+    bundle = _commit_dataset_rows(received, evaluation, job_rows, admission)
+    _observe_comparison_search(received, completion.op_is_step, bundle)
+    _persist_retention(received, committed_at, timing_batch, standing, retention_plan)
+    _advance_lane(received, diagnostics)
+
+
+class _Received(NamedTuple):
+    """The facts of one received evaluation that every commit step reads."""
+    engine: object
+    lane: object
+    busy: dict
+    result: dict
+    state: dict                   # the lane's scheduler state (engine.lane_state)
+    completed_at: object
+    commit_seq: int
+    evaluation_id: str
+    record: dict
+    step: object                  # (observation, reward, terminated, truncated, info), or None
+    observation: object
+    reward: object
+    terminated: bool
+    truncated: bool
+    info: dict
+    outcome: Outcome
+
+
+def _receive(engine, lane, busy, result) -> _Received:
+    """Count the result as received, take its commit number and read what the attempt measured."""
     state = engine.lane_state[lane.lane_id]
     completed_at = utcnow()
     engine.counters['completion_index'] += 1
@@ -49,46 +89,24 @@ def commit(engine, lane, busy, result, *, timing_batch) -> None:
     terminated, truncated = (bool(step[2]), bool(step[3])) if step else (False, True)
     info = step[4] if step else {}
     outcome = engine._outcome(record, result, observation, truncated)
-    (status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows, valid,
-        feasible,
-     nominal_feasible, violation) = outcome
-    op_is_step, failed, infrastructure, env_success = _record_completion(
-        engine, busy, result, record, status, valid, feasible, info, step, completed_at, evaluation_id)
-    _observe_search(engine, lane, busy, reward, op_is_step, evaluation_id)
-    transition_rows, state_rows, update_rows, eligible = _admit_to_replay(
-        engine, lane, busy, record, step, observation, reward, info, op_is_step, commit_seq)
-    # ---- first feasibility: decided when the scheduler receives the result
-    in_flight_before, after_first = engine._first_feasibility(busy, evaluation_id, commit_seq, nominal_feasible,
-        feasible)
-    role, best = engine._offer(busy, record, info, observation, reward, commit_seq, outcome)
-    # A class may improve without replacing the overall best (e.g. an infeasible design after a feasible one).
-    # Keep recording every class improvement, but replace raw outputs only for the selected design.
-    retention_role = role if best is not None and best['evaluation_id'] == evaluation_id else None
-    job_rows, retention_plan = engine._job_rows(busy, lane, retention_role, failed)
-    if infrastructure and job_rows:
-        # distinguishable in simulator_jobs
-        job_rows[-1]['exit_status'] = f"{job_rows[-1]['exit_status']}:{infrastructure}"
-    engine.counters['retries'] = engine.ledger.retries
-    committed_at = utcnow()
-    diagnostics, evaluation = _evaluation_row(
-        engine, lane, busy, result, record, info, reward, completed_at, committed_at, commit_seq, evaluation_id,
-        valid, feasible, violation, env_success, nominal_feasible, best, after_first, in_flight_before, status,
-        infrastructure, terminated, truncated, eligible)
-    bundle, update_rows = _commit_dataset_rows(
-        engine, busy, record, evaluation_id, commit_seq, evaluation, raw_metrics, raw_validity, raw_units, derived,
-        spec_values, constraint_rows, status, job_rows, update_rows, state_rows, transition_rows)
-    _observe_comparison_search(engine, busy, evaluation_id, op_is_step, status, reward, bundle)
-    _persist_retention(
-        engine, lane, busy, record, evaluation_id, committed_at, timing_batch, role, commit_seq, retention_plan,
-        retention_role)
-    _advance_lane(
-        engine, busy, result, state, info, observation, terminated, truncated, diagnostics, evaluation_id,
-        commit_seq)
+    return _Received(engine=engine, lane=lane, busy=busy, result=result, state=state, completed_at=completed_at,
+                     commit_seq=commit_seq, evaluation_id=evaluation_id, record=record, step=step,
+                     observation=observation, reward=reward, terminated=terminated, truncated=truncated, info=info,
+                     outcome=outcome)
 
 
-def _record_completion(
-    engine, busy, result, record, status, valid, feasible, info, step, completed_at, evaluation_id) -> tuple:
+class _Completion(NamedTuple):
+    """The completion facts: step or reset, failure, its infrastructure cause, the environment's success."""
+    op_is_step: bool
+    failed: bool
+    infrastructure: object        # the infrastructure failure type, or None
+    env_success: object           # the environment's own success flag, or None
+
+
+def _record_completion(received) -> _Completion:
     """Account for receipts and evaluation completion, including baseline failure and feasibility disagreement."""
+    engine, busy, result, record = received.engine, received.busy, received.result, received.record
+    outcome, evaluation_id = received.outcome, received.evaluation_id
     if op_is_step := busy['op'] != 'reset':
         engine.counters['global_env_step'] += 1
     if not engine._baseline_checked and busy['phase'] == 'baseline':
@@ -96,15 +114,15 @@ def _record_completion(
         # every further evaluation would be the same failing reset. The run ends here as a baseline run of one
         # evaluation.
         engine._baseline_checked = True
-        if not valid and engine.stop_reason is None:
+        if not outcome.valid and engine.stop_reason is None:
             engine.stop_reason = 'baseline_invalid'
             engine._event('limit_reached', reason=engine.stop_reason,
                         note='the starting design gave no valid result: no calibration design is simulated')
-    failed = not valid
-    infrastructure = None if valid else classify_infrastructure_failure(
-        status, record.get('reason_code'), ' '.join(str(x) for x in (record.get('error'),
+    failed = not outcome.valid
+    infrastructure = None if outcome.valid else classify_infrastructure_failure(
+        outcome.status, record.get('reason_code'), ' '.join(str(x) for x in (record.get('error'),
             (result.get('exception') or {}).get('message')) if x))
-    receipts = record.get('jobs') or [dict(status=status, reason_code=record.get('reason_code'))]
+    receipts = record.get('jobs') or [dict(status=outcome.status, reason_code=record.get('reason_code'))]
     for receipt_index, job in enumerate(receipts):
         job_failure = classify_infrastructure_failure(job.get('status'), job.get('reason_code'), '')
         if job_failure and not result.get('cancelled'):
@@ -116,39 +134,50 @@ def _record_completion(
         engine._event('condition_receipt', evaluation_id=evaluation_id, job_id=job.get('job_id'),
                     candidate_receipt_index=engine.counters['completion_index'], condition_receipt_index=receipt_index,
                     status=job.get('status'), infrastructure_failure=job_failure)
-    if valid:
-        engine.counters['last_successful_evaluation_utc'] = iso(completed_at)
+    if outcome.valid:
+        engine.counters['last_successful_evaluation_utc'] = iso(received.completed_at)
     engine.ledger.complete(evaluation_id, failed=failed)
     engine.counters['failures'] += int(failed)
-    engine.counters['valid_evaluations'] += int(valid)
-    engine.counters['feasible_evaluations'] += int(feasible)
+    engine.counters['valid_evaluations'] += int(outcome.valid)
+    engine.counters['feasible_evaluations'] += int(outcome.feasible)
     engine.counters['consecutive_failures'] = engine.counters['consecutive_failures'] + 1 if failed else 0
-    env_success = info.get('success') if step else None
-    if valid and env_success is not None and bool(env_success) != feasible:
-        engine._event('feasibility_disagreement', evaluation_id=evaluation_id, independent=feasible,
+    env_success = received.info.get('success') if received.step else None
+    if outcome.valid and env_success is not None and bool(env_success) != outcome.feasible:
+        engine._event('feasibility_disagreement', evaluation_id=evaluation_id, independent=outcome.feasible,
                     environment=bool(env_success), note='The independent threshold check is authoritative')
-    return op_is_step, failed, infrastructure, env_success
+    return _Completion(op_is_step, failed, infrastructure, env_success)
 
 
-def _observe_search(engine, lane, busy, reward, op_is_step, evaluation_id) -> None:
+def _observe_search(received, op_is_step) -> None:
     """Feed completed step rewards to the Bayesian proposer and record trust-region restarts."""
+    engine, busy = received.engine, received.busy
     # ---- Bayesian optimization (record 7.304): every finished design and its reward, the random warm-up's included;
     # a design without a reward (its simulation failed) counts as the worst seen
     if engine.config.run.optimizer == 'bayes' and not engine.calibration_only and op_is_step and busy[
         'proposal'] is not None:
         asked = busy['action_source'] == bayes.Proposer.SOURCE
-        if engine._proposer(lane.info['group_ids']).observe(busy['proposal'], reward, asked=asked):
-            engine._event('bayes_region_restarted', evaluation_id=evaluation_id, **engine.proposer.search.state())
+        if engine._proposer(received.lane.info['group_ids']).observe(busy['proposal'], received.reward, asked=asked):
+            engine._event('bayes_region_restarted', evaluation_id=received.evaluation_id,
+                          **engine.proposer.search.state())
 
 
-def _admit_to_replay(engine, lane, busy, record, step, observation, reward, info, op_is_step, commit_seq) -> tuple:
+class _Admission(NamedTuple):
+    """The archive rows, learner-update rows and replay eligibility that replay admission produced."""
+    transition_rows: list
+    state_rows: list
+    update_rows: list
+    eligible: bool
+
+
+def _admit_to_replay(received, op_is_step) -> _Admission:
     """Admit eligible transitions, prepare archive rows, and run or defer the resulting learner updates."""
+    engine, busy, step, commit_seq = received.engine, received.busy, received.step, received.commit_seq
     # ---- learner receipt: replay admission and the updates it triggers
     transition_rows, state_rows, update_rows, admitted = [], [], [], False
-    eligible = bool(info.get('replay_eligible')) if step else False
+    eligible = bool(received.info.get('replay_eligible')) if step else False
     if (
-        not engine.calibration_only and op_is_step and step is not None and observation is not None
-        and reward is not None
+        not engine.calibration_only and op_is_step and step is not None and received.observation is not None
+        and received.reward is not None
     ):
         transition = None
         if eligible:
@@ -158,7 +187,8 @@ def _admit_to_replay(engine, lane, busy, record, step, observation, reward, info
                 engine.replay.add(transition)
                 admitted = True
         if engine.archive:
-            transition_rows, state_rows = engine._transition_rows(busy, step, lane, commit_seq, admitted, record)
+            transition_rows, state_rows = engine._transition_rows(busy, step, received.lane, commit_seq, admitted,
+                                                                  received.record)
         if engine._pending_updates and not engine._defer_updates():
             # no later commit is sure to come: earlier results' updates now (7.281)
             engine._run_pending_updates()
@@ -167,14 +197,38 @@ def _admit_to_replay(engine, lane, busy, record, step, observation, reward, info
                 engine._pending_updates.append(commit_seq)
         elif admitted:
             update_rows = engine._maybe_update(commit_seq)
-    return transition_rows, state_rows, update_rows, eligible
+    return _Admission(transition_rows, state_rows, update_rows, eligible)
 
 
-def _evaluation_row(
-    engine, lane, busy, result, record, info, reward, completed_at, committed_at, commit_seq, evaluation_id, valid,
-    feasible, violation, env_success, nominal_feasible, best, after_first, in_flight_before, status,
-    infrastructure, terminated, truncated, eligible) -> tuple:
+class _Standing(NamedTuple):
+    """The evaluation's first-feasibility facts and its role in the best-design tracker."""
+    in_flight_before: set
+    after_first: bool
+    role: object                  # the class it improved in the tracker, or None
+    best: object                  # the tracker's best design after the offer, or None
+    retention_role: object        # role, when this evaluation is that best design; else None
+
+
+def _standing(received) -> _Standing:
+    """Decide first feasibility and offer the evaluation to the best-design tracker."""
+    engine, busy, outcome, evaluation_id = received.engine, received.busy, received.outcome, received.evaluation_id
+    # ---- first feasibility: decided when the scheduler receives the result
+    in_flight_before, after_first = engine._first_feasibility(busy, evaluation_id, received.commit_seq,
+                                                              outcome.nominal_feasible, outcome.feasible)
+    role, best = engine._offer(busy, received.record, received.info, received.observation, received.reward,
+                               received.commit_seq, outcome)
+    # A class may improve without replacing the overall best (e.g. an infeasible design after a feasible one).
+    # Keep recording every class improvement, but replace raw outputs only for the selected design.
+    retention_role = role if best is not None and best['evaluation_id'] == evaluation_id else None
+    return _Standing(in_flight_before, after_first, role, best, retention_role)
+
+
+def _evaluation_row(received, completion, eligible, standing, committed_at) -> tuple:
     """Build the evaluation row and its diagnostic text from the completed attempt and current run counters."""
+    engine, busy, result, record, info = received.engine, received.busy, received.result, received.record, received.info
+    outcome, evaluation_id, reward, completed_at = (received.outcome, received.evaluation_id, received.reward,
+                                                    received.completed_at)
+    best = standing.best
     diagnostics = None
     if result.get('exception'):
         diagnostics = f"{result['exception']['type']}: {result['exception']['message']}"
@@ -182,9 +236,10 @@ def _evaluation_row(
         diagnostics = f"{record.get('reason_code') or ''} {record.get('error') or ''}".strip()
     evaluation = dict(
         run_id=engine.run_id, evaluation_id=evaluation_id, task_id=engine.task_id, proposal_id=busy['proposal_id'],
-        worker_id=lane.lane_id, episode_id=busy['episode_id'], episode_step=int(result.get('episode_step') or 0),
+        worker_id=received.lane.lane_id, episode_id=busy['episode_id'],
+        episode_step=int(result.get('episode_step') or 0),
         global_env_step=engine.counters['global_env_step'], dispatch_index=busy['dispatch_index'],
-        completion_index=engine.counters['completion_index'], commit_seq=commit_seq, phase=busy['phase'],
+        completion_index=engine.counters['completion_index'], commit_seq=received.commit_seq, phase=busy['phase'],
         action_source=busy['action_source'], policy_version=busy['policy_version'],
         proposed_at=iso(busy['proposed_at']), started_at=iso(busy['started_at']), completed_at=iso(completed_at),
         committed_at=iso(committed_at),
@@ -194,12 +249,13 @@ def _evaluation_row(
         parameters_ref=evaluation_id, metrics_ref=evaluation_id, reward=reward,
         reward_components=None if reward is None else {k: v for k, v in (info.get('violations') or {}).items()
                                                        if v is not None},
-        valid=valid, all_hard_constraints_satisfied=feasible, normalized_constraint_violation=violation,
-        env_success=None if env_success is None else bool(env_success),
+        valid=outcome.valid, all_hard_constraints_satisfied=outcome.feasible,
+        normalized_constraint_violation=outcome.violation,
+        env_success=None if completion.env_success is None else bool(completion.env_success),
         reward_version=record.get('reward_version'), condition_policy=record.get('condition_policy'),
         conditions_planned=info.get('conditions_planned'), conditions_evaluated=info.get('conditions_evaluated'),
-        conditions_complete=info.get('conditions_complete'), nominal_feasible=nominal_feasible,
-        robust_feasible=feasible if engine.config.run.conditions.policy != 'off' else None,
+        conditions_complete=info.get('conditions_complete'), nominal_feasible=outcome.nominal_feasible,
+        robust_feasible=outcome.feasible if engine.config.run.conditions.policy != 'off' else None,
         clearance_margin=info.get('clearance_margin'), tightest_clearance_spec=info.get('tightest_clearance_spec'),
         clearance_rule=record.get('clearance_rule'),
         condition_results_json=json.dumps(record['condition_results']) if record.get('condition_results') else None,
@@ -209,77 +265,81 @@ def _evaluation_row(
         best_so_far_metrics=None if best is None else {k: v for k, v in best['metrics'].items() if v is not None},
         cumulative_evaluations_charged=engine.ledger.charged, cumulative_completed=engine.ledger.completed,
         cumulative_launches=engine.ledger.launches, in_flight_at_commit=len(engine.ledger.in_flight_ids()),
-        after_first_feasible=after_first, in_flight_at_first_feasible=evaluation_id in in_flight_before,
-        status=status, failure_type=None if valid else (
-            infrastructure or ('invalid_measurement' if status == 'ok' else (record.get('reason_code') or status))),
-        diagnostics=redact(diagnostics, 2000), terminated=terminated, truncated=truncated,
+        after_first_feasible=standing.after_first,
+        in_flight_at_first_feasible=evaluation_id in standing.in_flight_before,
+        status=outcome.status, failure_type=None if outcome.valid else (
+            completion.infrastructure
+            or ('invalid_measurement' if outcome.status == 'ok' else (record.get('reason_code') or outcome.status))),
+        diagnostics=redact(diagnostics, 2000), terminated=received.terminated, truncated=received.truncated,
         replay_eligible=eligible, duplicate_of=record.get('duplicate_of'))
     return diagnostics, evaluation
 
 
-def _commit_dataset_rows(
-    engine, busy, record, evaluation_id, commit_seq, evaluation, raw_metrics, raw_validity, raw_units, derived,
-    spec_values, constraint_rows, status, job_rows, update_rows, state_rows, transition_rows) -> tuple:
+def _commit_dataset_rows(received, evaluation, job_rows, admission) -> dict:
     """Commit the evaluation bundle together with any learner-update rows waiting for persistence."""
+    engine, record, outcome, evaluation_id = received.engine, received.record, received.outcome, received.evaluation_id
+    update_rows = admission.update_rows
     if engine._update_rows_waiting:                    # updates learned since the last commit go with this one (7.281)
         update_rows, engine._update_rows_waiting = engine._update_rows_waiting + update_rows, []
-    bundle = dict(evaluation_id=evaluation_id, commit_seq=commit_seq, rows=dict(
-        evaluations=[evaluation], parameters=engine._parameter_rows(busy, record, evaluation_id),
-        metrics=engine._metric_rows(evaluation_id, raw_metrics, raw_validity, raw_units, derived, spec_values,
-                                  constraint_rows, status, record.get('condition_results')),
-        simulator_jobs=job_rows, learner_updates=update_rows, states=state_rows, transitions=transition_rows))
+    bundle = dict(evaluation_id=evaluation_id, commit_seq=received.commit_seq, rows=dict(
+        evaluations=[evaluation], parameters=engine._parameter_rows(received.busy, record, evaluation_id),
+        metrics=engine._metric_rows(evaluation_id, outcome.raw_metrics, outcome.raw_validity, outcome.raw_units,
+                                    outcome.derived, outcome.spec_values, outcome.constraint_rows, outcome.status,
+                                    record.get('condition_results')),
+        simulator_jobs=job_rows, learner_updates=update_rows, states=admission.state_rows,
+        transitions=admission.transition_rows))
     engine.dataset.commit(bundle)                              # <- durable acknowledgement
-    return bundle, update_rows
+    return bundle
 
 
-def _observe_comparison_search(engine, busy, evaluation_id, op_is_step, status, reward, bundle) -> None:
+def _observe_comparison_search(received, op_is_step, bundle) -> None:
     """Tell the archive search about a completed design after its dataset rows are durable."""
+    engine, busy = received.engine, received.busy
     # ---- the archive comparison's search (T0/T+/M+): told each finished design once it is durable; a crash before this
     # line leaves the design in the tables, and the resume tells it (engine_comparison.after_crash)
     if (engine_comparison.is_search(engine.config) and not engine.calibration_only and op_is_step
             and busy['proposal'] is not None):
-        engine_comparison.observe(engine, evaluation_id=evaluation_id, action_source=busy['action_source'],
-                                  proposal=busy['proposal'], status=status, reward=reward,
+        engine_comparison.observe(engine, evaluation_id=received.evaluation_id, action_source=busy['action_source'],
+                                  proposal=busy['proposal'], status=received.outcome.status, reward=received.reward,
                                   parameter_rows=bundle['rows']['parameters'], metric_rows=bundle['rows']['metrics'])
 
 
-def _persist_retention(
-    engine, lane, busy, record, evaluation_id, committed_at, timing_batch, role, commit_seq, retention_plan,
-    retention_role) -> None:
+def _persist_retention(received, committed_at, timing_batch, standing, retention_plan) -> None:
     """Record timings and tracker state, then apply retention after the durable dataset commit."""
-    timings = record.get('timings')
+    engine = received.engine
+    timings = received.record.get('timings')
     if isinstance(timings, dict) and timings:
-        engine._timings.append(dict(evaluation_id=evaluation_id, worker_id=lane.lane_id, phase=busy['phase'],
-                                  committed_at=iso(committed_at), seconds=timings))
+        engine._timings.append(dict(evaluation_id=received.evaluation_id, worker_id=received.lane.lane_id,
+                                    phase=received.busy['phase'], committed_at=iso(committed_at), seconds=timings))
         if len(engine._timings) >= timing_batch:
             engine._write_timings()
-    if role is not None:
+    if standing.role is not None:
         write_json(engine.layout.best_design / 'tracker_state.json',
-                   dict(last_commit_seq=commit_seq, **engine.tracker.state_dict()))
-    engine._apply_retention(retention_plan, retention_role)
+                   dict(last_commit_seq=received.commit_seq, **engine.tracker.state_dict()))
+    engine._apply_retention(retention_plan, standing.retention_role)
 
 
-def _advance_lane(
-    engine, busy, result, state, info, observation, terminated, truncated, diagnostics, evaluation_id,
-    commit_seq) -> None:
+def _advance_lane(received, diagnostics) -> None:
     """Advance lane state and checkpoint scheduling after recording the completed evaluation."""
+    engine, result, state, info = received.engine, received.result, received.state, received.info
+    observation, terminated, truncated = received.observation, received.terminated, received.truncated
     # ---- lane state for the next dispatch
     if result.get('exception') and not result.get('cancelled'):
         state['finished'] = True
         if engine.stop_reason is None:
             engine.stop_reason = 'evaluation_exception'
             engine.error = redact(diagnostics, 2000)
-            engine._log_error('evaluation_exception', None, evaluation_id=evaluation_id, detail=diagnostics)
+            engine._log_error('evaluation_exception', None, evaluation_id=received.evaluation_id, detail=diagnostics)
     else:
         state['observation'] = observation
         state['needs_reset'] = terminated or truncated or observation is None
-        if busy['op'] == 'reset':                # the lane keeps a valid simulated reset for the next reused ones
+        if received.busy['op'] == 'reset':       # the lane keeps a valid simulated reset for the next reused ones
             state['reset_cache_valid'] = bool(result['ok'] and info.get('evaluation_valid') and observation is not None
                                               and not terminated and not truncated)
             state['resets_since_check'] = 0
     every, seconds = engine.config.output.checkpoint_every_evaluations, engine.config.output.checkpoint_every_seconds
     if saves_state(engine.config) and (
-            (every and commit_seq - engine.counters['last_checkpoint_commit'] >= every)
+            (every and received.commit_seq - engine.counters['last_checkpoint_commit'] >= every)
             or (seconds and engine._clock() - engine.last_checkpoint_time >= seconds)):
         engine.checkpoint_due = True
     engine._write_status('running', throttle=0.5)
@@ -358,14 +418,11 @@ def first_feasibility(engine, busy, evaluation_id, commit_seq, nominal_feasible,
 
 def offer(engine, busy, record, info, observation, reward, commit_seq, outcome) -> tuple:
     """The evaluation as a candidate of the best-design tracker. Returns (its role there, the tracker's best)."""
-    (status, raw_metrics, raw_validity, raw_units, derived, spec_values, metric_values, constraint_rows, valid,
-        feasible,
-     nominal_feasible, violation) = outcome
-    candidate = engine._candidate(busy, record, metric_values, raw_units, constraint_rows, valid, feasible,
-                                violation, reward, commit_seq)
-    candidate.update(nominal_feasible=nominal_feasible, nominal_metrics=record.get('metrics'),
-                     robust_feasible=feasible if engine.config.run.conditions.policy != 'off' else None,
-                     worst_metrics=metric_values, conditions_complete=info.get('conditions_complete'),
+    candidate = engine._candidate(busy, record, outcome.metric_values, outcome.raw_units, outcome.constraint_rows,
+                                  outcome.valid, outcome.feasible, outcome.violation, reward, commit_seq)
+    candidate.update(nominal_feasible=outcome.nominal_feasible, nominal_metrics=record.get('metrics'),
+                     robust_feasible=outcome.feasible if engine.config.run.conditions.policy != 'off' else None,
+                     worst_metrics=outcome.metric_values, conditions_complete=info.get('conditions_complete'),
                      conditions_evaluated=info.get('conditions_evaluated'),
                      conditions_planned=info.get('conditions_planned'),
                      clearance_margin=info.get('clearance_margin'),
@@ -379,7 +436,7 @@ def offer(engine, busy, record, info, observation, reward, commit_seq, outcome) 
         applicable = observation.condition_results[:1] if spec.nominal_only else observation.condition_results
         values = [row.metrics.get(spec.metric_id) for row in applicable
                   if row.metric_validity.get(spec.metric_id) is True]
-        candidate['worst_metrics'] = dict(metric_values)
+        candidate['worst_metrics'] = dict(outcome.metric_values)
         candidate['worst_metrics'][spec.metric_id] = ((max(values) if preference['direction'] == 'min' else min(values))
                                                      if len(values) == len(applicable) else None)
     role = engine.tracker.offer(candidate)

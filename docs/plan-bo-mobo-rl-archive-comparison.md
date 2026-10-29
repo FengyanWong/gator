@@ -571,3 +571,127 @@ Primary sources checked on 2026-10-21; pin actual implementation versions during
 - Related-task surrogate transfer, outside this same-function reuse primary protocol:
   [Multi-Task Bayesian Optimization](https://proceedings.neurips.cc/paper_files/paper/2013/hash/f33ba15effa5c10e873bf3842afb46a6-Abstract.html)
   and [RGPE](https://botorch.org/docs/next/tutorials/meta_learning_with_rgpe).
+
+## 12. Amendment A1 (2026-10-28): M0, the Pareto search without the archive
+
+Written before any M0 run, on the user's word: "add M0 as a written plan amendment. run it for seed 0 now"
+(2026-10-28). The original sections stay as they were; this section only adds an arm.
+
+**Why.** TuRBO is run with and without the archive (T0, T+), so the archive's effect on it can be read off. M+ only
+runs with the archive, so its seed-0 results mix the multi-objective method with the head start from the archived
+designs. The seed-0 report shows the archive effect is not one-directional (amplifier: T0 reached the Panel A target,
+T+ did not), and M+ was mixed across cases (Panel B flip-flop +17.8 %, amplifier -38 %, LDO -23 % against the T+
+portfolio). M0 separates the two.
+
+**Arm.** M0 is M+ with exactly one difference: no archive (`run.comparison.archive` and its sha256 absent). Everything
+else is M+'s, unchanged: `mobo_qlognehvi_v1` and its frozen settings (WORKPLAN 6c), objectives, base constraints,
+energy rule, failure handling (a failed design is a missing output), start design, the case's 8 common first designs
+of the rollout seed, the 800-evaluation and 800-launch caps, lanes, reset contract, the frozen runtime
+`gator-runtime-bmr-f143d691` and the comparison environment. Like M+, one M0 trajectory serves both panels. No code
+changes: the frozen search already accepts no archive.
+
+**Scope.** Seed 0 (replicate 0, rollout seed 101) now: three runs (amplifier, flip-flop, LDO), at most 2,400 charged
+evaluations and launches. M0 joins seeds 1-2 only if those are authorized. No confirmation batch is part of this
+amendment (the 74 seed-0 confirmations reproduced every selected value exactly); M0's values are reported as measured.
+
+**Scoring, fixed now.**
+
+- Panel A, exactly as the seed-0 report scores the other arms: best fresh base-feasible preferred metric, first reach
+  of the frozen `q_goal` (right-censored at the cap) and the failure share. M0 is read against T0 (the other
+  cold start) and against M+ (the archive's effect on MOBO).
+- Panel B, two numbers per case with the frozen orientations, scales and base-limit reference:
+  (1) online-only HV of M0's base-feasible designs, against M+'s online-only HV; (2) source-plus-online HV (the
+  archive's front plus M0's designs) beside the existing Panel B rows, labelled as using a front M0 never saw.
+- One replicate is descriptive only: no default changes on seed 0 alone. Under section 7 a Pareto-mode replacement
+  needs replicated medians; M0 is judged by the same rule as M+ if seeds 1-2 run.
+
+**Running it.** Configurations are the M+ seed-0 configurations with the two archive keys removed (checked by a
+diff), in `step7/jobs-M0.json` and `step7/configs/<case>-A-M0-r0.json` of the experiment folder. A separate queue,
+`step7/queue-seed-0-M0`, uses the existing queue script and gates (resume from save points, 5 GiB WSL admission);
+M0 is not under the one-M+-at-a-time rule (no 600-row archive, much smaller memory). The run and its results are
+recorded in the workbench log.
+
+### Revision 2 (2026-10-28, before any complete M0 result; on the user's word "go on")
+
+**What happened to the first attempt.** Unchanged, M could not run without the archive: on the amplifier and the
+flip-flop it stopped with `OptimizationGradientError` (NaN gradients of the acquisition) after 51 and 23 designs
+(OptimizationGradientError raised by BoTorch; its model held about 9-16 working designs for 19 and 22 parameter groups,
+most early designs having failed measurement). The LDO run never started. Both stopped cleanly (no uncertain launch);
+their 74 charged designs stay in the cost record, and the crash is itself reported: the frozen M needs the archive (or a
+cold-start procedure) on circuits where many designs fail measurement. It is not reported as "did not reach the
+target": it never used 94-97 % of its budget.
+
+**The change (standard cold-start practice, code `archive_compare/mobo.py`).** Two optional settings, present only in
+M0's configurations:
+
+- `cold_start_designs`: space-filling (Sobol) designs until the search knows 2(d+1) designs, archive included: 40
+  (amplifier, 19 groups), 46 (flip-flop, 22), 56 (LDO, 27). Charged like every design.
+- `numerical_fallback`: a numerical breakdown of the model or its acquisition (NaN gradients, a matrix not positive
+  definite, an output with fewer than 2 values) gives the next Sobol design instead of stopping the run, recorded as
+  `sobol_fallback` with its reason.
+
+**M+ is unchanged, proven.** Neither setting is in any M+ configuration, so M+ takes the old code path; its 600
+archived designs exceed every cold-start size anyway. Replay check: one real save point of each M+ run (designs
+1,314-1,335 known, 600 archived) proposes the identical next design and acquisition value in the frozen seed-0
+runtime and in the changed code (`amendment-A1-M0/replay_mplus.py`, `replay-*.json`).
+
+**Runtime and runs.** M0 runs in `gator-runtime-bmr-e7135c3c` (= branch commit 6bc49f4 + the change and its tests;
+optimizer digest 6ebf5ba5 unchanged; 69 comparison tests pass from the copy; record `step6/runtime-M0.json`, locks
+`step6/locks-M0/`, package versions as seed 0's). The three runs start fresh (`bmr-<case>-A-M0-r0-v2`,
+`step7/jobs-M0-v2.json`, queue `step7/queue-seed-0-M0-v2`), never as a continuation of the first attempt.
+
+**Reporting additions.** The number of `sobol_cold_start` and `sobol_fallback` designs per run; if fallbacks are more than
+10 % of the designs after the cold start, M0's result is labelled as closer to space-filling search than to M. Panel B
+has no T0 portfolio in this run: M0's trade-off result is compared with M+ only. The earlier from-scratch TuRBO runs of
+2026-10-18/19 (`turbo-compare-2026-10-18`: amplifier, flip-flop, other code, goals and starts) are cited as unmatched
+background only.
+
+### Revision 3 (2026-10-28, before any complete M0 result; continuing on the user's "go on")
+
+**What happened.** The revision-2 runs were stopped by VM freezes and a dropped `/mnt/d` link (clean stops, continued
+from save points taken at the stop). Then the amplifier's run stopped at design 146 (143 measured, 93 of them failed
+measurement) on `ModelFittingError` ("All attempts to fit the model have failed"). BoTorch raises it as a plain
+exception, and revision 2's fallback only covered NaN gradients, a matrix that is not positive definite and an output
+with fewer than 2 values. Before that, 18 of its proposals had already fallen back on "matrix not positive definite"
+(from about 104 known designs on). The stop was clean (no uncertain launch). The flip-flop run went on.
+
+**Two changes (code `archive_compare/mobo.py`, `engine_comparison.py`), both active only under M0's settings.**
+
+- The fallback covers every model breakdown: every BoTorch error (`ModelFittingError` included) and every runtime or
+  value error of the model step. Each fallback still records its reason, so a breakdown caused by a bug stays visible.
+- A resume after a crash continues numbering proposals after the last number already used. After a crash, a run's
+  newest save point is behind its tables: the resume restores the search from that save point, then tells it every
+  design that came after. Revision 2 also restored the proposal count, so the proposals made after the save point
+  would be numbered again, and each Sobol design among them proposed a second time. The amplifier's save point is at
+  design 112 with 96 proposals, and all 18 of its fallback designs came after it (proposals 100-126). The count now goes
+  on after the highest number in the run's event log (synced after every record), or, if higher, after one number per
+  own design committed after the save point. On the mock task, a run resumed from a save point 12 proposals back
+  proposed 6 of its 22 designs twice before this change and none after it (`test_archive_compare_engine.py`).
+
+**M+ is unchanged.** Without the A1 settings, the resume change does nothing: tested, an M+ search resumed after a
+crash keeps its restored count as before. The wider fallback acts only under `numerical_fallback`. Revision 2's
+replay proof stands.
+
+**Runtime and runs.** M0 now runs in `gator-runtime-bmr-93927147` (record `step6/runtime-M0-r3b.json`, locks
+`step6/locks-M0-r3b/`; branch commit 6bc49f4 plus both changes and their tests; optimizer digest 6ebf5ba5 unchanged;
+73 comparison tests pass from the copy). A first freeze of revision 3 with only the first change
+(`gator-runtime-bmr-e47b7561`, `step6/runtime-M0-r3.json`) was replaced before any run used it, when the repeated
+numbers were found while preparing the amplifier's resume. Jobs, names and configurations stay revision 2's
+(`step7/jobs-M0-v3.json`, queue `step7/queue-seed-0-M0-v3`):
+
+- the amplifier's run continues in place from its save point: designs 1-146 under revision 2, the rest under revision 3;
+- the LDO run starts fresh under revision 3;
+- the flip-flop run continues under revision 2 in its own queue. Its designs are the ones revision 3 would propose
+  unless it meets a breakdown outside revision 2's list, or it needs a resume after a crash: if it stops, it continues
+  under revision 3.
+
+**Three launches settled by hand (zero cost).** The 20:57 stop left three start designs (resets) in flight. The first
+resume under revision 3 (22:29) recorded them as interrupted (charged, no result) and refused to continue: their launches
+were unresolved. Each lane's own launch record shows one simulation of the start design, completed with one confirmed
+call (status ok), started 1-3 s after its dispatch. `step7/ops/reconcile_leases.py` checked this for each lease and
+settled all three: the original lease journal is kept, `data/_journal/reconciled-launch-leases.json` holds the
+evidence, and the queue resumes a stopped run only when such a record covers every uncertain launch. The run's own
+ledger no longer counts these three launches, so the report adds them to its launch total.
+
+**Reporting additions.** The runtime of each run segment, the fallback reasons by kind, any design proposed twice
+(expected: none) and the three reconciled launches.

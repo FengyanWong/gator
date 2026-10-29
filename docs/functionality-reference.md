@@ -186,6 +186,25 @@ record (`docs/frontend_implementation_status.md` is the index).
 | Folding the module | **Output settings** folds like Run configuration, and starts folded until this browser keeps a choice (7.360, `defaultOpen`) | `fe/fields.tsx` (`Module`), `fe/OutputPanel.tsx` | - | 7.45, 7.360 | `fs/module_fold_check.mjs` |
 | **Research experiments** | Labels that group runs for the research tables: method label, comparison pair, budget checkpoints in view; split, generalization level, sources, task order K, pretrain seed and ablation labels under a closed "Transfer study" line (7.163: experiment group and test tasks retired, nothing read them). Cumulative costs count each run once across source chains and target runs, including a continual fine-tuning chain; unknown source costs remain non-computable. Every research CSV carries optimizer identity; budget/transfer groups and cumulative streams separate SAC from Bayesian runs, and pairing flags an optimizer mismatch (7.325). | `fe/ResearchPanel.tsx` (`ResearchPanel`); `wb/schema.py` (`ResearchLabels`), `wb/aggregates.py` (`_flat`, `_paired`, `_transfer`, `_cumulative`), `wb/__init__.py` (`EXPORTER_VERSION`, v3) | - | first build (specification section 11); 7.321 | `tw/test_wb_aggregates.py` |
 
+Experiment-only reporting helper (no UI or run-output change):
+`artifacts/local/reviews/simulation-search-report-2026-10-28-1137-v2/build_search_report.py` reads frozen seed-0
+Parquet/WAL and source tables into provisional Panel A/B JSON/CSV, cost ledgers, curves and frontiers outside run
+directories. `check_report.py` independently checks counts, hashes and rectangle-union HV. Confirmations remain
+pending; no dispatch/configuration capability. Plan sections9.8/10 and record7.430.
+
+Experiment-only confirmation owner (record7.431):
+`artifacts/local/reviews/simulation-confirmations-2026-10-28-1040/run_confirmations.py` wraps the unchanged frozen
+native queue for the three fixed seed-0 confirmation batches. The explicit human-approved episode exception
+covers six new configs only (24/24/23),74 total calls,zero retries. The owner preserves search HOLD, enforces
+original sustained8/12/2-GiB admission and active guards, verifies native gates and ordered finalist coverage,
+and stops for evidence review on failures. It has no automatic costed retry/resume or selection capability.
+
+Completed evidence (7.432): `simulation-confirmations-2026-10-28-1040/verify_confirmations.py` reads live receipts,
+and `audit_confirmations.py` independently verifies settled budgets,physical coverage,checkpoint hashes and exits.
+`artifacts/local/reviews/simulation-final-report-2026-10-28/` contains read-only cost/integration/check helpers and
+the final original seed0 report:51searches,74confirmations,71unique finalists,72role mappings,PanelA/B CSV/JSON,
+curves,physical metrics,cost/amortization tables and explicit scope limits. No ongoing dispatcher or extra seed.
+
 ### 2.9 Bottom tabs and the run window
 
 | Function | What it does | Code | Route | Docs and record | Tests and checks |
@@ -365,6 +384,7 @@ Old configurations that name a removed function still load with their hashes unc
 | Bayesian optimization as a comparison method (configuration file only) | `wb/bayes.py` (`GaussianProcess`, `TrustRegionBO`, `Proposer`, `release_freed_memory`), `wb/engine.py` (`_proposer`, `_dispatch`, `_commit`, `_updates_due`), `wb/schema.py` (`run.optimizer`, hashed as absent for SAC), `wb/validation.py` (`bayes_needs_scratch`, `bayes_run`), `wb/storage/tables.py` (`bayes_opt`), `wb/runs.py` (`architecture.optimizer`), `wb/run_definitions.py` (`optimizer_of`, `saves_rl_model`, `require_rl_model`); 7.304, 7.325, 7.382 | `run.optimizer: "bayes"`: the same run but for who proposes the designs after the warm-up (TuRBO-1, torch only); no network update or saved RL model, from scratch only, not resumable; historical Bayesian checkpoints cannot be selected or loaded; no page control. Each proposal hands the memory it freed back to the system (glibc `malloc_trim`, 7.382). Tests `tw/test_wb_bayes.py` (the method on Hartmann-6, freed memory given back, a MOCK run with the SAC run's own warm-up designs, hashes, refusals). |
 | The transfer experiment: encoder, spec, optimizer, PDK and general-model comparisons | `docs/plan-transfer-experiment.md`; 7.301, 7.305, 7.336, 7.338, 7.339, 7.342 | Round 1 results are recorded; Step 1 adds 12 authorized RGCN-SAC scratch runs (9,600 designs), queued after fresh CircuitGPS v2 training/review with the original Transferable inputs and frozen runtime. Round 2 is conditional. Round 3 trains GraphGPS and CircuitGPS on the same eligible saved-run snapshot, with explicit reward migration; CircuitGPS restarts from seed 0 with normalized trees and zero legacy updates, preserving the failed and recovery runs. Matched frozen/adapt/scratch comparisons are planned. Sections 14-15 add the prospective journal matrix and timeline: submission 31 January 2027, online publication by 31 August 2027 subject to review. New Round 3 and journal simulations remain planned. |
 | Refactoring: the same behaviour, a structure that is easier to change | `docs/plan-refactoring.md`; 7.287, executed 7.290 | Done in a clean copy (2026-10-09, record 7.290): groups A, B, C (C11 left out) and D, one commit per package, each proved to change nothing (move identity, routes and OpenAPI, MOCK runs, validation, calibrations, HTTP answers, the same 1,826 tests, DOM identity, the browser checks against the refactored backend); landed on 2026-10-09; the follow-up (record 7.292) did the seven small fixes, group E (the optimizer: a new source digest, the user's choice) and C11 |
+| Readability: the same behaviour, code and documents a person can read | `docs/plan-readability.md`; 7.390 | Plan 2026-10-25; Codex executes D, T and P on branch `codex/latest` (not landed, 2026-10-28); group F assigned to the `self-improving-frontend` session by the user (2026-10-28); P8 and E not chosen; the prompt for Codex is its appendix A |
 
 ## 10. Where things are recorded
 
@@ -375,7 +395,7 @@ Old configurations that name a removed function still load with their hashes unc
 | `docs/functionality-reference.md` | This file: every function and where it is (maintained in place) |
 | [Graph transformer reading guide](graph-transformers-reading-guide.md) | Circuit-to-action walkthrough of Graph Transformer, GraphGPS v1 and CircuitGPS v2; attention, RWSE, measurement trees, residuals, normalization, SAC and pretraining limits, with code and primary-source links (7.343) |
 | `docs/frontend_implementation_status.md` | The index of the development record: one row per entry |
-| `docs/workbench-log/` | The entries themselves (open file: `7.389-and-later.md`), and `record-history.md` (the record's history and the commit table) |
+| `docs/workbench-log/` | The entries themselves (open file: `7.428-and-later.md`), and `record-history.md` (the record's history and the commit table) |
 | `gator_claude_code_fable51_frontend_data_outputs_en.md` | The workbench specification (untracked on purpose) |
 | `CLAUDE.md` | Rules for sessions: digest, evidence pinning, real-simulation authorization, data-only outputs |
 | `.agents/skills/analog-optimizer/` | The research-side rules for M1-M6 (a Codex-style skill; read it as documentation) |

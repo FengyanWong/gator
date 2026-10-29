@@ -32,19 +32,26 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.353-7.364.md`](workbench-log/7.353-7.364.md) | entries 7.353–7.364 |
 | [`7.365-7.375.md`](workbench-log/7.365-7.375.md) | entries 7.365–7.375 |
 | [`7.376-7.388.md`](workbench-log/7.376-7.388.md) | entries 7.376–7.388 |
-| [`7.389-and-later.md`](workbench-log/7.389-and-later.md) | entries 7.389 onwards: the OPEN file |
+| [`7.389-7.400.md`](workbench-log/7.389-7.400.md) | entries 7.389–7.400 |
+| [`7.401-7.416.md`](workbench-log/7.401-7.416.md) | entries 7.401–7.416 |
+| [`7.417-7.427.md`](workbench-log/7.417-7.427.md) | entries 7.417–7.427 |
+| [`7.428-and-later.md`](workbench-log/7.428-and-later.md) | entries 7.428 onwards: the OPEN file |
 | [`self-improving-frontend.md`](workbench-log/self-improving-frontend.md) | the branch self-improving-frontend: its own records SIF-1 onwards (not 7.N), merged into workbench 2026-10-22 and 2026-10-24 |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
-`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md`, `7.336-and-later.md`, `7.353-and-later.md`, `7.365-and-later.md` and `7.376-and-later.md` are pointers kept for old links.
+`7.61-and-later.md`, `7.81-and-later.md`, `7.101-and-later.md`, `7.119-and-later.md`, `7.266-and-later.md`, `7.279-and-later.md`, `7.291-and-later.md`, `7.301-and-later.md`, `7.324-and-later.md`, `7.336-and-later.md`, `7.353-and-later.md`, `7.365-and-later.md`, `7.376-and-later.md` and `7.389-and-later.md` are pointers kept for old links.
+
+`7.401-and-later.md` is also a pointer: entries 7.401–7.416 were archived unchanged at 94.6 kB on 2026-10-28 (7.417).
+
+`7.417-and-later.md` is also a pointer: entries 7.417–7.427 were archived unchanged at 56.3 kB before the final-search audit entry (7.428).
 
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.410 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.389-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.447 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.428-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
@@ -447,3 +454,47 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.387 | Plan refined from Compare random forest calibration: matched-transfer-BO decision rule, archive-only RF diagnostics, optional graph-prior TuRBO (+7,227) and common RF-screen (+28,908); primary ceiling unchanged |
 | 7.388 | Round 3 seeds 1 and 2 results: 72 runs complete (45,600 designs, two same-run resumes), audited with seed 0 - all 36 blocks complete, parity passes, seed 0 unchanged; feasible designs per arm for seeds 0/1/2 |
 | 7.389 | Final save skipped when a run stops while being prepared: only the original error; log rolled over |
+| 7.390 | A readability plan for Codex (`docs/plan-readability.md`, session "Readability plan for Codex"): measured at HEAD a82f950 - 63 functions of 80+ lines, 42% of the workbench's public definitions without a docstring (73% optimizer, 88% tests), 8% of parameters typed, 48 page files without a header comment, the README's second half in Chinese, no docs index or glossary; groups D documents, T tests, P workbench Python, F page, E optimizer advice; per-package machine proofs (normalized AST and literal identity, digest, test IDs, OpenAPI, DOM, MOCK runs); seven decisions; the Codex prompt in appendix A; plan only, nothing changed |
+| 7.391 | User-requested Virtuoso stop: two runs saved, queue held, zero Spectre processes; both Virtuosos open |
+| 7.392 | Both SSH links restored, nonce caches 32768; seed-0 queue continued from 561/800 and 8/200, Claude handoff |
+| 7.393 | Seed-0 blocked after two M+ OOM kills: 15/51 jobs complete; no live simulations; recovery evidence saved |
+| 7.394 | Peer heavy tests deferred; temporary swap 16 GiB, orphan/cell and launch-cost recovery, seed-0 restarted serially with memory guard |
+| 7.395 | Status: 23/51 seed-0 jobs complete (+8); amplifier M+ finished 800/800, flip-flop resume queued, healthy memory and no new OOM/guard stop |
+| 7.396 | Status: 23/51, stopped at zero-cost preflight with both SSH tunnels down; memory healthy, no live queue/guard; detailed Claude recovery handoff |
+| 7.397 | Both SSH tunnels supervised with keepalives; serial s1 experiment verified by 32 confirmed launches, memory guard active, s2 CIW unresponsive and held; completed claims and flip-flop 687/800 preserved; Claude handoff |
+| 7.398 | s2 responsive again, full readiness and nonce 32768 pass without interruption; amplifier RA+ child 4 complete 200/200, 24/51 total; serial memory guard and s2 hold retained |
+| 7.399 | Status: 27/51 complete (+3); amplifier RF+ child 4 at 105 completed, flip-flop resume 687/800; Windows 4.91 GiB / WSL 12.95 GiB free, both SSH links and memory guard active, no new OOM |
+| 7.400 | Guard stopped DFF cleanly at 699/800 after Windows free RAM fell below 1.5 GiB; 32/51 complete, checkpoint saved, no new OOM; queue/guard exited, SSH healthy, memory recovered; Claude continuation recorded |
+| 7.401 | Both Virtuoso workers enabled with memory guard and peer hold; preserved checkpoint, SSH diagnostics and Claude handoff |
+| 7.402 | Ten-minute experiment follow-up enabled; memory guard saved DFF at 713/800 and LDO at 257/800 |
+| 7.403 | User approved DFF then LDO sequential resumes; 22:20 check DFF 781 complete / 782 charged of 800, checkpoint 765; LDO held at 257/800; memory guard and both SSH links retained |
+| 7.404 | DFF M+ completed 800/800 with final checkpoint and post-check passed; 33/51 complete; LDO native resume verified at 283 durable evaluations, guard and both tunnels healthy |
+| 7.405 | User permits both active sessions if memory fits; second workload deferred below sustained admission, LDO advancing at 467 durable evaluations; next original DFF/LDO pair recorded |
+| 7.406 | 34/51 complete; both sessions simulating after guarded admission: DFF T+ 21/200 and LDO M+ 9/800 durable evaluations verified, native gates and completed claims preserved |
+| 7.407 | Final DFF job audited complete at 200/200; 35/51 complete, all amplifier/DFF work finished; LDO M+ advancing at 62 durable evaluations, remaining LDO jobs share cells |
+| 7.408 | LDO M+ advancing at 223/800, checkpoint 207, guard and both tunnels healthy; peer's newer human-authorized guarded continuation verified, superseding its historical paired-phase hold |
+| 7.409 | User requested both sessions if possible: 35/51 complete, LDO M+ at 388/800, checkpoint 361; connections/guard healthy, shared LDO cells prevent concurrency; narrower memory headroom sent to peer for existing guard enforcement |
+| 7.410 | User ETA at 01:27: about 8-14 hours excluding delays/audit; 01:28 check LDO M+ 414/800, checkpoint 412, guard/tunnels healthy; peer waiting for memory admission, original budgets preserved |
+| 7.411 | LDO M+ 482/800, checkpoint 464, guard/tunnels healthy; Windows free 3.02 GiB, recent minimum 2.45; peer admission record remains stopped without heavy child, no experiment intervention |
+| 7.412 | LDO M+ 588/800, checkpoint 567, 35/51 jobs complete; Windows free 4.53 GiB, guard/tunnels healthy after earlier 1.67 dip; newer peer admission policy recorded, peer still not started, both connections retained |
+| 7.413 | LDO M+ 597/800; process RSS grew from 4.79 to 9.25 GiB, host/WSL headroom narrowed; diagnostics saved and peer informed, original guard and both connections healthy, no intervention or retry |
+| 7.414 | User memory diagnosis: frozen MOBO rebuilds models on growing data; same process RSS fell 9.25 to 4.66 GiB then rose to 8.50 GiB; 688/800, checkpoint 669, Windows free 3.94 GiB, guard/tunnels healthy; peer informed |
+| 7.415 | LDO M+ 788/800, checkpoint 773, 35/51 complete; earlier CLI peak 10.97 GiB, current Windows free 4.75 GiB / WSL available 8.11 GiB; guard and both connections healthy, peer still not started, no intervention or retry |
+| 7.416 | LDO M+ and RF+ audited 800/800 each, 37/51 complete; T+ active with 22 durable receipts, 14 LDO jobs remain; peer P1-62 active, guards unchanged |
+| 7.417 | T+ 764/800 durable, checkpoint 730, guard healthy; peer P1-63 waits for memory, current owner retained |
+| 7.418 | T+ audited 800/800 complete; 38/51 jobs complete, T0 active at 539/800 with checkpoint 524; 13 original LDO jobs remain, peer reports P1-63 stopped, experiment guard and frozen budgets unchanged |
+| 7.419 | T0 audited 800/800 complete; 39/51 complete, twelve original LDO portfolio children remain at 200 each; first RA+ child active at36/200, native gates, identities and memory guard passed |
+| 7.420 | First LDO RA+ child audited 200/200; 40/51 complete, second RA+ child at 62/200 with checkpoint 52; eleven original children remain, guard and native checks healthy |
+| 7.421 | Second and third RA+ children audited 200/200 each; 42/51 complete, final RA+ child now active at 18/200 after natural admission recovery; nine original jobs remain, guard healthy |
+| 7.422 | Final RA+ child and first RF+ child audited 200/200 each; 44/51 complete, second RF+ child active at 50/200; seven original children remain, native gates and guard healthy |
+| 7.423 | RF+ children 2 and 3 audited 200/200 each; 46/51 complete, final RF+ child at 149/200; five original jobs remain, native gates and guard healthy |
+| 7.424 | All RF+ audited complete, 47/51 searches; T+ child1 at23/200; original approval also covers bounded confirmations and final report |
+| 7.425 | First T+ child audited200/200,48/51 searches; child2 on s2 at170/200, guard healthy; confirmation setup interfaces reviewed read-only |
+| 7.426 | Second T+ child audited200/200,49/51 searches; child3 on s2 at150/200; two original searches remain, guard healthy |
+| 7.427 | Third T+ child audited200/200,50/51 searches; final child on s2 at75/200; s1 exited normally, controller and guard healthy |
+| 7.428 | All51 searches audited; 19,200 evaluations/19,188 launches; 74-call confirmation selection, episode-reset mismatch blocks dispatch |
+| 7.429 | Confirmation preparation and native zero-cost validation passed; only episode-length exception pending, zero launches |
+| 7.430 | Provisional search tables/19,200-point curves independently verified; costs preserved, confirmations still held |
+| 7.431 | Human approved confirmation-only episode exception; six configs re-pinned/validated, guarded admission in progress |
+| 7.432 | All74 confirmations and final seed0 report audited;71 finalists confirmed,original scope complete,no extra calls |
+| 7.433 | M0 (amendment A1) seed 0 done: archive helps M on all 3 cases; rev 3 fixes, 3 launches settled by hand |

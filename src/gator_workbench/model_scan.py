@@ -266,16 +266,18 @@ def _element_family(element, subckt, scan, depth=0) -> tuple:
     return None, None, f'{master}: not defined in the model files read'
 
 
-def _paths(subckt, scan, start, end, blocked, *, behavioural: bool=False):
+def _paths(subckt, scan, start, end, blocked, *, behavioural: bool=False, depth: int=0):
     """Families of the elements on every simple path from pin `start` to pin `end` through internal nodes only.
     `behavioural`: also a behavioural source with controlling nodes (`bsource` with more than two), through the first two
-    nodes its current flows between - labelled by what it sets, else 'behavioural' (record 7.298)."""
+    nodes its current flows between - labelled by what it sets, else 'behavioural' (record 7.298). `depth`: how deeply
+    the subcircuit being classified is nested, passed on so that a subcircuit placing itself stops at the nesting limit
+    (record 7.439)."""
     adjacent = {}
     for element in subckt['elements']:
         if len(element['nodes']) == 2:
-            family = _element_family(element, subckt, scan)[0] or 'other'
+            family = _element_family(element, subckt, scan, depth)[0] or 'other'
         elif behavioural and element['master'].lower() == 'bsource' and len(element['nodes']) > 2:
-            family = _element_family(element, subckt, scan)[0]
+            family = _element_family(element, subckt, scan, depth)[0]
             family = 'behavioural' if family in (None, 'other') else family
         else:
             continue
@@ -336,11 +338,12 @@ def classify_model(name, scan, *, cdf_units=(), depth=0) -> dict:
                         family_basis=f'subcircuit {name} ({file_line(subckt)}) holds {len(cores)} {wanted} elements')
     if len(subckt['pins']) < 2:
         return dict(family='other', polarity=None, core=None, family_basis=f'subcircuit {name} has fewer than two pins')
-    paths, on_path, candidates, declared, by_unit, where = _passive_path_evidence(subckt, scan, cdf_units, name)
+    paths, on_path, candidates, declared, by_unit, where = _passive_path_evidence(subckt, scan, cdf_units, name, depth)
     if not paths:
         # Only behavioural sources may join them (a diffusion resistor modelled as a chain of `bsource` segments): that
         # names a family only when the cell's own CDF declares exactly one passive quantity (record 7.298).
-        through = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]), behavioural=True)
+        through = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]), behavioural=True,
+                         depth=depth)
         on_path = {family for path in through for family in path}
         if through and on_path == {'resistor'}:            # every segment sets a resistance (`bsource ... r=`)
             return dict(family='resistor', polarity=None, core=None,
@@ -391,9 +394,9 @@ def classify_model(name, scan, *, cdf_units=(), depth=0) -> dict:
                     f'classified')
 
 
-def _passive_path_evidence(subckt, scan, cdf_units, name) -> tuple:
+def _passive_path_evidence(subckt, scan, cdf_units, name, depth=0) -> tuple:
     """Collect terminal-path families, declared passive units and the source description for classification."""
-    paths = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]))
+    paths = _paths(subckt, scan, subckt['pins'][0], subckt['pins'][1], set(subckt['pins'][2:]), depth=depth)
     on_path = {family for path in paths for family in path}
     candidates = on_path & set(PASSIVE)
     declared = {CDF_UNITS.get(u) for u in cdf_units}

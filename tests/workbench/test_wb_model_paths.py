@@ -7,15 +7,16 @@ import pytest
 from gator_workbench import model_scan
 
 
-def _before(subckt, scan, start, end, blocked, *, behavioural=False):
-    """The previous traversal, independent of the adjacency implementation."""
+def _before(subckt, scan, start, end, blocked, *, behavioural=False, depth=0):
+    """The previous traversal, independent of the adjacency implementation (it passes the nesting depth on, as `_paths`
+    does since record 7.439)."""
     edges = []
     for element in subckt['elements']:
         if len(element['nodes']) == 2:
-            family = model_scan._element_family(element, subckt, scan)[0]
+            family = model_scan._element_family(element, subckt, scan, depth)[0]
             edges.append((element['nodes'][0], element['nodes'][1], family or 'other'))
         elif behavioural and element['master'].lower() == 'bsource' and len(element['nodes']) > 2:
-            family = model_scan._element_family(element, subckt, scan)[0]
+            family = model_scan._element_family(element, subckt, scan, depth)[0]
             edges.append((element['nodes'][0], element['nodes'][1], 'behavioural' if family in (None, 'other') else family))
     found, stack = [], [(start, (), frozenset([start]))]
     while stack and len(found) < 64:
@@ -191,3 +192,21 @@ def test_full_classification_and_pin_roles_match_previous_traversal(monkeypatch,
     assert actual_roles == expected_roles
     assert actual['family'] == family
     assert scan == unchanged
+
+
+def test_a_subcircuit_that_places_itself_stops_at_the_nesting_limit():
+    """A subcircuit placing itself, directly or through another, used to recurse until RecursionError: the path search
+    classified its elements from depth 0 again (record 7.439). It now stops at the nesting limit the rest of the
+    classification already used, as 'other'; a subcircuit nested the ordinary way is classified as before."""
+    text = '\n'.join([
+        'subckt mock_self (s t)', 'x1 (s inner) mock_self', 'r1 (inner t) resistor', 'ends mock_self',
+        'subckt mock_ping (s t)', 'x1 (s t) mock_pong', 'ends mock_ping',
+        'subckt mock_pong (s t)', 'x1 (s t) mock_ping', 'ends mock_pong',
+        'subckt mock_leaf (s t)', 'r1 (s t) resistor', 'ends mock_leaf',
+        'subckt mock_nested (s t)', 'x1 (s inner) mock_leaf', 'r1 (inner t) resistor', 'ends mock_nested',
+    ])
+    scan = model_scan.scan_model_text(text, '/mock/invented.scs')
+    for name in ('mock_self', 'mock_ping', 'mock_pong'):
+        found = model_scan.classify_model(name, scan)
+        assert (found['family'], found['polarity'], found['core']) == ('other', None, None), (name, found)
+    assert model_scan.classify_model('mock_nested', scan)['family'] == 'resistor'

@@ -35,7 +35,8 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.389-7.400.md`](workbench-log/7.389-7.400.md) | entries 7.389–7.400 |
 | [`7.401-7.416.md`](workbench-log/7.401-7.416.md) | entries 7.401–7.416 |
 | [`7.417-7.427.md`](workbench-log/7.417-7.427.md) | entries 7.417–7.427 |
-| [`7.428-and-later.md`](workbench-log/7.428-and-later.md) | entries 7.428 onwards: the OPEN file |
+| [`7.428-7.438.md`](workbench-log/7.428-7.438.md) | entries 7.428–7.438 |
+| [`7.439-and-later.md`](workbench-log/7.439-and-later.md) | entries 7.439 onwards: the OPEN file |
 | [`self-improving-frontend.md`](workbench-log/self-improving-frontend.md) | the branch self-improving-frontend: its own records SIF-1 onwards (not 7.N), merged into workbench 2026-10-22 and 2026-10-24 |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
@@ -45,13 +46,15 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 
 `7.417-and-later.md` is also a pointer: entries 7.417–7.427 were archived unchanged at 56.3 kB before the final-search audit entry (7.428).
 
+`7.428-and-later.md` is also a pointer: entries 7.428–7.438 were archived unchanged at 59.4 kB before the model-scan fix (7.439).
+
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.447 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.428-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.458 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.439-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
@@ -502,4 +505,5 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.435 | Frontend Agent entry, popup, launch controls and readiness checklist removed; guidance uses user-started desktop/CLI agents. Original isolated checks: type-check, build and 377 browser checks passed; integrated into codex/latest in 7.436 |
 | 7.436 | Combine all non-main histories and captured pending work on codex/latest; original worktrees and live experiment untouched. Full offline suite: 2,743 passed/29 skipped, both failures passed focused reruns; 19 optional MOBO tests and 377 browser checks passed; publication destination origin/codex/latest |
 | 7.437 | The readability plan carried out on codex/latest by Claude: P2-P7 (51 packages, Codex's frozen proofs plus ngspice and evidence gates), the P1 docstrings revised (85 of 319) and P8 (16 hand-written packages bundling wide parameter lists); workbench functions of 80+ lines 27 -> 11, with 8+ parameters 22 -> 20; not landed or pushed |
-| 7.438 | `codex/latest` merged into `workbench` (`88133e0` holds the live checkout's pending records; codex/latest's 7.390/7.391/7.393/7.394 are 7.434-7.437): digest unchanged, 2,745 passed/29 skipped with identical test IDs, ngspice and evidence gates, tsc and 3,031 browser checks passed; fast-forwarded 10-29 16:03 on the user's word; push waits for the user |
+| 7.438 | `codex/latest` landed on `workbench`: readability P2-P8, Agent-window removal, archive steps; its 7.390-7.394 renumbered 7.434-7.437 |
+| 7.439 | Model scan: a subcircuit that places itself stops at the nesting limit instead of recursing until RecursionError |

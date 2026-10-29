@@ -161,6 +161,40 @@ def calibrate(config, evaluations, metric_rows) -> dict:
 
 
 
+def _limit_scale_to_bounds(from_limit, empty_box, scale, row, target):
+    """Limit a typical miss to the configured range and record why it was limited."""
+    if from_limit:
+        low, high = (bound * empty_box for bound in SCALE_WITHIN)
+        if scale < low:
+            scale, row['limited'] = low, 'low'
+        elif scale > high:
+            scale, row['limited'] = high, 'high'
+        if row['limited']:
+            row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}; the proposal is kept within '
+                           f'{SCALE_WITHIN[0]:g} to {SCALE_WITHIN[1]:g} times the size of the limit.')
+    return scale
+
+
+def _limit_scale_to_window(window, scale, half, inside, row, target, measured, misses):
+    """Limit a proposed scale to a feasible window or explain why a wider scale is retained."""
+    if window and scale > half and inside:
+        # Most designs are inside the window already: what its Scale still decides is the margin bonus.
+        scale, row['limited'] = half, 'window'
+        row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}, more than half the window, and '
+                       f'{len(measured) - len(misses)} of {len(measured)} random designs are inside it. The proposal is half the '
+                       'window: a design inside it has at most that much room, and with a larger Scale the margin bonus of the '
+                       'whole task could not pay for more.')
+    elif window and scale > half:
+        # Most designs miss the window: it has to be found first, and the typical miss as its Scale is what tells a
+        # near design from a far one. Half the window - many times smaller - would make nearly all of them count the same.
+        wider = (f'{len(misses)} of {len(measured)} random designs miss this window, so its Scale is their typical miss: the '
+                 f'search has to find the window first. While that is wider than half the window ({_text(half, target.unit)}), a '
+                 f'design inside counts as at most {half / scale:.2g} of a Scale clear, and the margin bonus of the whole task stays '
+                 'that small.')
+        row['note'] = f'{row["note"]} {wider}' if row['note'] else wider
+    return scale
+
+
 def _propose_scale(target, spec, designs, values, compressed, proposed):
     """One active Specs row: what the random designs measured and missed, and the Scale proposed for it (also put into
     `proposed`), or why none is. Returns the row of the result."""
@@ -206,31 +240,9 @@ def _propose_scale(target, spec, designs, values, compressed, proposed):
                        'whole task cannot pay for more room than that.')
     else:
         scale = row['median_miss']
-        if from_limit:
-            low, high = (bound * empty_box for bound in SCALE_WITHIN)
-            if scale < low:
-                scale, row['limited'] = low, 'low'
-            elif scale > high:
-                scale, row['limited'] = high, 'high'
-            if row['limited']:
-                row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}; the proposal is kept within '
-                               f'{SCALE_WITHIN[0]:g} to {SCALE_WITHIN[1]:g} times the size of the limit.')
+        scale = _limit_scale_to_bounds(from_limit, empty_box, scale, row, target)
         scale = _round(scale)
-        if window and scale > half and inside:
-            # Most designs are inside the window already: what its Scale still decides is the margin bonus.
-            scale, row['limited'] = half, 'window'
-            row['note'] = (f'The typical miss is {_text(row["median_miss"], target.unit)}, more than half the window, and '
-                           f'{len(measured) - len(misses)} of {len(measured)} random designs are inside it. The proposal is half the '
-                           'window: a design inside it has at most that much room, and with a larger Scale the margin bonus of the '
-                           'whole task could not pay for more.')
-        elif window and scale > half:
-            # Most designs miss the window: it has to be found first, and the typical miss as its Scale is what tells a
-            # near design from a far one. Half the window - many times smaller - would make nearly all of them count the same.
-            wider = (f'{len(misses)} of {len(measured)} random designs miss this window, so its Scale is their typical miss: the '
-                     f'search has to find the window first. While that is wider than half the window ({_text(half, target.unit)}), a '
-                     f'design inside counts as at most {half / scale:.2g} of a Scale clear, and the margin bonus of the whole task stays '
-                     'that small.')
-            row['note'] = f'{row["note"]} {wider}' if row['note'] else wider
+        scale = _limit_scale_to_window(window, scale, half, inside, row, target, measured, misses)
         row['proposed_scale'] = proposed[target.metric_id] = scale
     return row
 

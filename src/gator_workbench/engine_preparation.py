@@ -23,15 +23,15 @@ from .trajectory import StateEncoder
 
 def prepare(engine, *, local_scratch):
     """Initialize persisted run state, learning resources, budgets, preparation ownership, and execution lanes."""
-    cfg, out, adv = engine.config, engine.config.output, engine.config.run.advanced
-    experiment = _initialize_dataset(out, engine, cfg)
-    input_options, built = _build_learning_resources(engine, cfg, adv, experiment)
-    run = _initialize_run_state(cfg, engine, input_options)
+    config, out, adv = engine.config, engine.config.output, engine.config.run.advanced
+    experiment = _initialize_dataset(out, engine, config)
+    input_options, built = _build_learning_resources(engine, config, adv, experiment)
+    run = _initialize_run_state(config, engine, input_options)
     _restore_run_state(engine, built, out)
     _open_run_lanes(engine, run, adv, local_scratch)
 
 
-def _initialize_dataset(out, engine, cfg):
+def _initialize_dataset(out, engine, config):
     """Open the configured dataset tables and record the learner experiment and transition-archive policy."""
     enabled = {'evaluations', 'parameters', 'metrics', 'simulator_jobs'}
     if out.save_learner_updates and not engine.frozen:
@@ -40,29 +40,29 @@ def _initialize_dataset(out, engine, cfg):
         enabled |= {'transitions', 'states'}
     engine.dataset = RawDataset(engine.layout.data, enabled_tables=enabled, flush_every=out.flush_every_evaluations)
     engine.archive = out.save_transition_archive
-    experiment = learner_experiment(cfg, engine.task, engine.task_hash)
+    experiment = learner_experiment(config, engine.task, engine.task_hash)
     engine.experiment = experiment
     return experiment
 
 
-def _build_learning_resources(engine, cfg, adv, experiment):
+def _build_learning_resources(engine, config, adv, experiment):
     """Build the learner and replay resources, apply rehearsal and freezing policy, and retain their load metadata."""
     engine.vocabulary = run_vocabulary(engine.layout.run_dir)      # the run's own component list; None = standard
-    input_options = modes.runtime_options(cfg, engine.vocabulary)
+    input_options = modes.runtime_options(config, engine.vocabulary)
     source_dir, source_meta = _checkpoint_source(engine)
     built = modes.build('resume' if engine.entry == 'resume' else engine.mode, experiment=experiment,
-                        model_config=modes.model_config_from(cfg.run.network),
+                        model_config=modes.model_config_from(config.run.network),
                         sac_config=modes.sac_config_from(adv), spec_schema=engine.compiled.spec_schema,
-                        advanced=adv, seed=cfg.run.seed, origin=engine.task.origin, source_dir=source_dir,
+                        advanced=adv, seed=config.run.seed, origin=engine.task.origin, source_dir=source_dir,
                         source_metadata=source_meta, task_definition_hash=engine.task_hash, vocabulary=engine.vocabulary,
-                        runtime=input_options, view=network_inputs.view_for(cfg, engine.vocabulary))
+                        runtime=input_options, view=network_inputs.view_for(config, engine.vocabulary))
     engine.learner, engine.replay, engine.freeze = built['learner'], built['replay'], built['freeze']
     engine.load_policy = built['policy']
     engine.rehearsal = None
-    if cfg.run.rehearsal is not None:
+    if config.run.rehearsal is not None:
         from .rehearsal import Rehearsal  # lazy: rehearsal imports torch
-        engine.rehearsal = Rehearsal(cfg.run.rehearsal, engine.learner, origin=engine.task.origin,
-                                   seed=cfg.run.seed, batch_size=adv.batch_size)
+        engine.rehearsal = Rehearsal(config.run.rehearsal, engine.learner, origin=engine.task.origin,
+                                   seed=config.run.seed, batch_size=adv.batch_size)
     if engine.frozen:
         for module in (engine.learner.actor, engine.learner.critics, engine.learner.targets):
             module.requires_grad_(False).eval()
@@ -88,9 +88,9 @@ def _checkpoint_source(engine):
     return source_dir, source_meta
 
 
-def _initialize_run_state(cfg, engine, input_options):
+def _initialize_run_state(config, engine, input_options):
     """Initialize budgets, counters, calibration gating, the optional state encoder and comparison search."""
-    run = cfg.run
+    run = config.run
     engine.ledger = BudgetLedger(run.max_evaluations, max_launches=run.max_spectre_launches,
                                max_retries=run.max_retries)
     engine.rng = random.Random(run.seed)
@@ -101,7 +101,7 @@ def _initialize_run_state(cfg, engine, input_options):
     if run.optimizer == 'bayes' and (engine.mode != 'scratch' or engine.entry == 'resume'):
         raise ValueError('A Bayesian-optimization run (run.optimizer "bayes") is a from-scratch run and cannot be '
                          'resumed or started from a saved model: its search state is not saved. Start a new run.')
-    if engine_comparison.is_search(cfg) and engine.mode != 'scratch':
+    if engine_comparison.is_search(config) and engine.mode != 'scratch':
         raise ValueError(f'A {run.optimizer} run (the archive comparison) starts its own search and loads no saved model: '
                          'its mode is scratch (a resume continues it from its own save point).')
     engine.tracker = best_design.BestDesignTracker(engine.compiled.preference)

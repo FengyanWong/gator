@@ -30,6 +30,7 @@ from analog_optimizer.parameters.actions import ActionMapper
 from .archive_compare import coords, runtime
 from .archive_compare.mobo import SCORED_STATUSES
 from .run_definitions import RESUMABLE_SEARCH_OPTIMIZERS
+from .storage.atomic import read_jsonl
 from .storage.dataset import DatasetReader
 
 INITIAL_SOURCE = 'common_initial'           # the evaluations' action_source of a common first design
@@ -188,4 +189,14 @@ def after_crash(engine, checkpoint_seq):
                     status=e['status'], reward=e['reward'], parameter_rows=rows,
                     metric_rows=metrics.get(e['evaluation_id'], []), asked=False)
     report.update(retold=len(later), observations=engine.proposer.observations)
+    if engine.config.run.optimizer == 'mobo':
+        # Plan amendment A1 revision 3: the proposal numbers used before the crash stay used - every number the event log
+        # shows (each record is synced as it is written) and, as a floor, one per design of the search's own committed
+        # after the save point - so a resumed M0 search never proposes a Sobol design twice. M+ keeps its count.
+        logged = [int(e['proposal']) + 1 for e in read_jsonl(engine.layout.logs / 'events.jsonl')
+                  if e.get('event') == 'search_proposal' and e.get('proposal') is not None]
+        own = sum(1 for e in evaluations if e['commit_seq'] > checkpoint_seq and e['action_source'] == engine.proposer.SOURCE)
+        moved = engine.proposer.search.continue_after_crash(max([engine.proposer.search.proposals + own] + logged))
+        if moved is not None:
+            report['proposals'] = moved
     return report

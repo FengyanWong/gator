@@ -294,6 +294,38 @@ def test_an_m_plus_run_stopped_and_continued_proposes_exactly_the_designs_of_one
     assert saved_search(halves)['collector']['comparison'] == saved_search(straight)['collector']['comparison']
 
 
+@pytest.mark.parametrize('arm', ['M0', 'M+'])
+def test_after_a_crash_an_m0_run_never_uses_a_proposal_number_twice_and_an_m_plus_run_keeps_its_count(tmp_path, arm):
+    """Plan amendment A1 revision 3: resumed from a save point 12 proposals before the crash, an M0 run (all of whose
+    proposals here are cold-start Sobol designs) goes on after the 16 numbers it used, so it proposes no design twice.
+    M+ resumes as before: its restored count."""
+    pytest.importorskip('botorch')
+    block, _, _ = first_designs(tmp_path, mutate=two_objectives)
+    settings = dict(FAST_MOBO, cold_start_designs=40, numerical_fallback=True) if arm == 'M0' else FAST_MOBO
+    layout, state = execute(search_config(tmp_path, dict(block, objectives=MOBO_OBJECTIVES, settings=settings),
+                                          optimizer='mobo', mutate=two_objectives, evaluations=32,
+                                          output=dict(checkpoint_every_evaluations=8, keep_last_checkpoints=None)), tmp_path)
+    assert state == 'completed'
+    older = next(d.name for d in layout.checkpoints.glob('ckpt-*')    # as a crash leaves a run (see the T0 test above)
+                 if read_json(d / 'metadata.json')['data_cursor']['commit_seq'] == 16)
+    latest = read_json(layout.checkpoints / 'latest.json')
+    write_json(layout.checkpoints / 'latest.json', dict(latest, checkpoint_id=older, path=f'checkpoints/{older}',
+                                                        commit_seq=16, kind='periodic'))
+    assert saved_search(layout)['collector']['comparison']['proposer']['search']['proposals'] == 4
+    assert resume(layout, tmp_path, 40) == 'completed'
+    report = events(layout, 'resumed')[-1]['comparison']
+    proposals = events(layout, 'search_proposal')
+    numbers = [p['proposal'] for p in proposals]
+    assert report['retold'] == 12 and len(numbers) == 22
+    if arm == 'M0':
+        assert report['proposals'] == 16 and sorted(numbers) == list(range(22))
+        assert {p['source'] for p in proposals} == {'sobol_cold_start'}
+        designs = [tuple(sorted(values.items())) for source, _, values, _ in executed(layout) if source == 'bayes_opt']
+        assert len(designs) == len(set(designs)) == 22
+    else:
+        assert 'proposals' not in report and numbers[16:] == list(range(4, 10))    # numbers 4-9 again, as before
+
+
 # --------------------------------------------------------------------------------------------- goal views of a saved task
 def test_a_comparison_run_may_differ_from_its_saved_task_only_in_a_goal_views_four_fields(tmp_path, bridge_is_importable):
     """A saved task runs exactly as it was saved - except that a comparison run (run.comparison) scores the saved task's

@@ -42,6 +42,36 @@ SETTINGS = dict(num_restarts=2, raw_samples=64, mc_samples=64, maxiter=30, batch
                     'lanes',
                 infrastructure_statuses='every status but ok, measurement_error, nonconverged, invalid_design')
 SCORED_STATUSES = ('ok', 'measurement_error', 'nonconverged', 'invalid_design')
+# Two optional settings for plan amendment A1 (M0, the Pareto search without the archive), absent by default:
+#   cold_start_designs  - propose space-filling Sobol designs until the search knows this many designs (archive included;
+#                         2(d+1) for M0: 40 / 46 / 56 for the amplifier's 19, the flip-flop's 22 and the LDO's 27
+#                         parameter groups - never reached by M+, which starts with 600 archived designs);
+#   numerical_fallback  - when the model or its acquisition breaks down numerically (NaN gradients, a fit that fails every
+#                         attempt, a matrix that is not positive definite, an output with fewer than 2 values: see
+#                         `numerical_failures`), propose the next Sobol design instead of stopping the run, recorded as
+#                         source "sobol_fallback" with the reason.
+# With either setting, a resume after a crash goes on after every proposal number the run used (`continue_after_crash`,
+# revision 3), so no Sobol design is proposed twice.
+# Seed 0, 2026-10-28: without them, M0 stopped on the amplifier and the flip-flop after 51 and 23 designs
+# (OptimizationGradientError: NaN gradients of the acquisition, its model fitted on about 9-16 working designs in 19 and
+# 22 dimensions).
+
+
+class TooFewValues(ValueError):
+    """An output with fewer than two known values: nothing to fit (a ValueError, as it always was)."""
+
+
+def numerical_failures():
+    """The model breakdowns `numerical_fallback` answers with a Sobol design (BoTorch imported only when needed): every
+    BoTorch error (NaN gradients: OptimizationGradientError; a fit that fails every attempt: ModelFittingError) and every
+    runtime or value error of the model step (a matrix not positive definite: NotPSDError/NanError, a failed Cholesky
+    factorization, an output with fewer than 2 values: TooFewValues). Each fallback records its reason, so a breakdown
+    that is a bug rather than numerics stays visible. Amendment A1 revision 3 (2026-10-28): revision 2 listed only the
+    first four, and the amplifier's M0 run stopped at design 146 on ModelFittingError."""
+    from botorch.exceptions.errors import BotorchError, ModelFittingError     # ModelFittingError is a plain Exception
+    return (BotorchError, ModelFittingError, RuntimeError, ValueError)
+
+
 DFF_ENERGY_WINDOW = ('tcq_r', 'tcq_f', 'tcqn_f', 'tcqn_r', 'm_tcq_r_late', 'm_tcq_f_late')
 
 
@@ -134,6 +164,19 @@ class MoboSearch:
         self._add(x, y)
         self.since_refit += 1
 
+    def continue_after_crash(self, handed_out):
+        """Plan amendment A1 revision 3 (2026-10-28). A resume after a crash restores the search from its save point, so the
+        proposal numbers handed out after that point would be handed out again, and each Sobol design among them (cold
+        start, fallback) proposed twice: the amplifier's M0 run stopped at design 146 with its save point at 112, after
+        18 fallback designs. With either A1 setting the count goes on after `handed_out`, the numbers the run's records
+        show as used; M+ (neither setting) keeps its restored count, as before. Returns the new count when it moved."""
+        if self.settings.get('cold_start_designs') is None and not self.settings.get('numerical_fallback'):
+            return None
+        if int(handed_out) <= self.proposals:
+            return None
+        self.proposals = int(handed_out)
+        return self.proposals
+
     def _models(self, torch):
         from botorch.models import ModelListGP, SingleTaskGP
         from botorch.models.transforms.outcome import Standardize
@@ -142,7 +185,7 @@ class MoboSearch:
         for i in range(len(self.problem.outputs)):
             rows = [(x, y[i]) for x, y in zip(self.X, self.Y) if y[i] is not None]
             if len(rows) < 2:
-                raise ValueError(f'output {self.problem.outputs[i]} has fewer than 2 values')
+                raise TooFewValues(f'output {self.problem.outputs[i]} has fewer than 2 values')
             X = torch.tensor([r[0] for r in rows], dtype=torch.float64)
             Y = torch.tensor([[r[1]] for r in rows], dtype=torch.float64)
             covar = ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=self.dim))
@@ -177,21 +220,41 @@ class MoboSearch:
         self.fitted_online = len(self.X) - self.archived
         return True
 
+    def _sobol(self, torch, index, source, **extra):
+        """The proposal's design from the search's own scrambled Sobol sequence (one point per proposal index)."""
+        engine = torch.quasirandom.SobolEngine(self.dim, scramble=True, seed=self.seed + 7919)
+        engine.fast_forward(index)
+        return engine.draw(1, dtype=torch.float64)[0].tolist(), dict(source=source, proposal=index, **extra)
+
     def ask(self, pending=()):
         """Return the next unit-cube design and proposal details, accounting for designs still in flight."""
         import torch
-        from botorch.acquisition.multi_objective.logei import qLogNoisyExpectedHypervolumeImprovement
-        from botorch.acquisition.multi_objective.objective import IdentityMCMultiOutputObjective
-        from botorch.optim import optimize_acqf
-        from botorch.sampling import SobolQMCNormalSampler
         self.asked += 1
         index = self.proposals
         self.proposals += 1
         objective_known = [y[0] is not None and y[1] is not None for y in self.Y]
         if sum(objective_known) < 2:                 # nothing to model yet: a Sobol design (recorded as such)
-            engine = torch.quasirandom.SobolEngine(self.dim, scramble=True, seed=self.seed + 7919)
-            engine.fast_forward(index)
-            return engine.draw(1, dtype=torch.float64)[0].tolist(), dict(source='sobol', proposal=index)
+            return self._sobol(torch, index, 'sobol')
+        # Plan amendment A1 (M0, no archive): both settings are absent from every M+ configuration, so M+ takes exactly
+        # the path below as before; an M+ search starts with its 600 archived designs anyway.
+        cold = self.settings.get('cold_start_designs')
+        if cold is not None and len(self.X) < int(cold):   # a space-filling start before the model is trusted
+            return self._sobol(torch, index, 'sobol_cold_start')
+        if not self.settings.get('numerical_fallback'):
+            return self._propose(torch, index, pending)
+        try:
+            point, info = self._propose(torch, index, pending)
+        except numerical_failures() as exc:          # the model or its acquisition broke down: the next Sobol design
+            return self._sobol(torch, index, 'sobol_fallback', reason=f'{type(exc).__name__}: {exc}'[:300])
+        if not all(math.isfinite(v) for v in point):
+            return self._sobol(torch, index, 'sobol_fallback', reason='the acquisition gave a non-finite design')
+        return point, info
+
+    def _propose(self, torch, index, pending):
+        from botorch.acquisition.multi_objective.logei import qLogNoisyExpectedHypervolumeImprovement
+        from botorch.acquisition.multi_objective.objective import IdentityMCMultiOutputObjective
+        from botorch.optim import optimize_acqf
+        from botorch.sampling import SobolQMCNormalSampler
         baseline = torch.tensor(self.X, dtype=torch.float64)
         pending_X = torch.tensor([list(p) for p in pending], dtype=torch.float64) if len(pending) else None
         seed = self.seed * 1000003 + 7 * index

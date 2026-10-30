@@ -1,6 +1,7 @@
 // The configuration with its Undo history, kept in this browser (plan-refactoring C3, out of store.ts).
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { Json } from './api';
+import type { WorkbenchConfig } from './contracts';
 import { CONFIG_KEY as STORAGE_KEY } from './contract';
 import { migrateConfig } from './migrations';
 import { typingField } from './windows';
@@ -29,7 +30,7 @@ const MERGE_MS = 1500;
 
 /** The last Undo or Redo and the two configurations it moved between, until the next recorded change (branch record SIF-97):
  *  the editors name what it changed, from whichever panel or window it was pressed in. */
-export type HistoryStep = { kind: 'Undo' | 'Redo'; from: Json; to: Json };
+export type HistoryStep = { kind: 'Undo' | 'Redo'; from: WorkbenchConfig; to: WorkbenchConfig };
 type History = { config: Json; past: Json[]; future: Json[]; field: Element | null; at: number; step: HistoryStep | null };
 type HistoryAction = { type: 'set'; next: Json | ((c: Json) => Json); record: boolean; field: Element | null; at: number }
   | { type: 'undo' | 'redo' } | { type: 'blur'; field: Element };

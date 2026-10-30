@@ -2,7 +2,8 @@
 // the Specs' limit list, typed numbers, the tooltip of a cell that differs from the saved task, the fields that follow a
 // change of a row, and the row Add makes. No React.
 import type { Json } from '../api';
-import { kindUnit, PREFIX_POWERS as SUFFIX, sameQuantity } from '../units';
+import type { ConfigRow, EditorRow, EditorSchema, WorkbenchConfig } from '../contracts';
+import { kindUnit, PREFIX_POWERS as SUFFIX, sameQuantity } from '../units.ts';
 
 export type Section = 'parameters' | 'targets' | 'measurements';
 
@@ -80,14 +81,14 @@ export const LIMIT_CHOICES: [string, string][] = [['>=', 'none'], ['>=', 'maximi
 const LIMIT_TEXT: Record<string, string> = { '>=': '≥ lower', '<=': '≤ upper', interval: 'interval' };
 // A row without a constraint read "undefined", and an objective this list does not know read like a plain limit (review of
 // 2026-10-01): both are shown as they are.
-export const limitLabel = (constraint: string, objective: string) => (constraint ? LIMIT_TEXT[constraint] ?? String(constraint) : '(not set)')
+export const limitLabel = (constraint: unknown, objective: unknown) => (constraint ? LIMIT_TEXT[String(constraint)] ?? String(constraint) : '(not set)')
   + (objective === 'minimize' ? ', then lower is better' : objective === 'maximize' ? ', then higher is better'
     : objective && objective !== 'none' ? `, then ${objective}` : '');
 // The bounds each limit uses, as validation.py `_check_limits` asks for them.
 const LIMIT_BOUNDS: Record<string, string[]> = { '>=': ['lower'], '<=': ['upper'], interval: ['lower', 'upper'] };
 /** Whether a Specs row's limit uses a bound (lower, upper): its empty box reads "needed", the other side's "no limit" (branch
  *  record SIF-135; a spec made with Add, "≥ lower" with no lower yet, showed "no limit" in the box its error asked for). */
-export const limitUses = (constraint: string, bound: string): boolean => !!LIMIT_BOUNDS[constraint]?.includes(bound);
+export const limitUses = (constraint: unknown, bound: string): boolean => !!LIMIT_BOUNDS[String(constraint)]?.includes(bound);
 
 /** A cell's tooltip with the saved task's value first, when the value here differs from it (record 7.222). */
 export const withSaved = (saved: string | null | undefined, title: Json): Json =>
@@ -121,7 +122,7 @@ const equationRenamer = (from: string, to: string) => {
  *  the Specs whose equation a deleted Probe breaks, on a tab not in view). */
 export const usesProbe = (equation: string, id: string): boolean => !!id && nameIn(id).test(equation);
 
-export const exact = (v: Json) => (v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+export const exact = (v: unknown) => (v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
 
 /** Fields that follow a change with it, in the same Undo step (review of 2026-10-03): a Maestro output's Probe ID follows its
  * output name, and the spec equations that use the ID follow it; a spec whose equation becomes one Probe takes that Probe's
@@ -129,7 +130,7 @@ export const exact = (v: Json) => (v == null ? '' : typeof v === 'object' ? JSON
  * only a field that really changes - picking an objective re-sends the unchanged limit, and an empty (backend-sized) scale
  * must not be frozen into the row by that. One path for a typed cell, a pasted block and a fill since record 7.184 (a pasted
  * output name had left its Probe ID behind); a limit written without its objective keeps the objective where they still pair. */
-export function withFollowers(tab: Section, c: Json, changes: Map<number, Json>): Json {
+export function withFollowers(tab: Section, c: WorkbenchConfig, changes: Map<number, ConfigRow>): WorkbenchConfig {
   const renames: ((equation: string) => string)[] = [], moves: [string, string][] = [];
   const next = { ...c, [tab]: c[tab].map((r: Json, i: number) => {
     const fields = changes.get(i);
@@ -144,8 +145,9 @@ export function withFollowers(tab: Section, c: Json, changes: Map<number, Json>)
       if (r.measurement_id && r.measurement_id !== row.measurement_id) renames.push(equationRenamer(String(r.measurement_id), row.measurement_id));
     }
     if (tab === 'targets') {
-      const probe = typeof fields.equation === 'string' && !('unit' in fields)
-        ? (c.measurements ?? []).find((m: Json) => m.measurement_id === fields.equation.trim()) : null;
+      const equation = fields.equation;
+      const probe = typeof equation === 'string' && !('unit' in fields)
+        ? (c.measurements ?? []).find(m => m.measurement_id === equation.trim()) : null;
       if (probe?.unit && (!r.unit || !sameQuantity(r.unit, probe.unit))) row.unit = probe.unit;   // the Probe's quantity (7.208)
       if ('constraint' in fields && !('direction_after_feasible' in fields)
           && !LIMIT_CHOICES.some(([limit, objective]) => limit === row.constraint && objective === (row.direction_after_feasible ?? 'none'))) row.direction_after_feasible = 'none';
@@ -173,11 +175,11 @@ export function withFollowers(tab: Section, c: Json, changes: Map<number, Json>)
  *  "." or "-" is a whole equation alone, spec_equations.py). `specs`: the Specs (their IDs) naming `from` (Probe `index`'s ID
  *  before); none when nothing is lost - the same ID, an old one that is no plain name, or one another Probe still holds.
  *  `refused`: why they stay on it, in words, or null when they follow. */
-export function probeRename(c: Json, index: number, from: string, to: string): { specs: string[]; refused: string | null } {
+export function probeRename(c: WorkbenchConfig, index: number, from: string, to: string): { specs: string[]; refused: string | null } {
   const plain = /^[A-Za-z_][A-Za-z0-9_]*$/;
-  const others = (c.measurements ?? []).filter((_: Json, i: number) => i !== index).map((m: Json) => m?.measurement_id);
+  const others = (c.measurements ?? []).filter((_, i) => i !== index).map(m => m?.measurement_id);
   const specs: string[] = from === to || !plain.test(from) || others.includes(from) ? []
-    : (c.targets ?? []).filter((t: Json) => typeof t?.equation === 'string' && usesProbe(t.equation, from)).map((t: Json) => String(t.metric_id ?? ''));
+    : (c.targets ?? []).filter(t => typeof t?.equation === 'string' && usesProbe(t.equation, from)).map(t => String(t.metric_id ?? ''));
   const refused = !specs.length ? null : !to ? 'the Probe ID is empty'
     : !plain.test(to) ? `"${to}" is not letters, digits and _ alone, with a letter or _ first`
     : others.includes(to) ? `${to} is another Probe's ID` : null;
@@ -187,10 +189,10 @@ export function probeRename(c: Json, index: number, from: string, to: string): {
 /** `c` with every Spec equation that names the Probe `from` as a whole name naming `to` instead, as withFollowers rewrites
  *  them for a renamed output (branch record SIF-106); a Spec that does not name it stays the same row, and `c` itself when
  *  none does. */
-export function renameProbe(c: Json, from: string, to: string): Json {
+export function renameProbe(c: WorkbenchConfig, from: string, to: string): WorkbenchConfig {
   const rename = equationRenamer(from, to);
   let renamed = false;
-  const targets = (c.targets ?? []).map((t: Json) => {
+  const targets = (c.targets ?? []).map(t => {
     if (typeof t?.equation !== 'string') return t;
     const equation = rename(t.equation);
     if (equation === t.equation) return t;
@@ -205,11 +207,11 @@ const NEW_ID: Record<Section, string> = { parameters: 'parameter', measurements:
 /** The row Add puts at the end of a table of `config` (`schema`: /api/schema, its columns and each table's ID field). Here, out
  *  of Editors.tsx, since branch record SIF-104: the Virtuoso window's "Add to Parameters" makes this row too, with a size's
  *  instance and parameter, so the two cannot differ. */
-export function newRow(tab: Section, config: Json, schema: Json): Json {
-  const row: Json = {}, keyField: string = schema.section_keys[tab], rows: Json[] = config[tab] ?? [];
+export function newRow(tab: Section, config: WorkbenchConfig, schema: EditorSchema): EditorRow {
+  const row: EditorRow = {}, keyField: string = schema.section_keys[tab], rows: EditorRow[] = config[tab] ?? [];
   // A required field without a default comes as `default: null` from the schema: that means "none", not null - a new
   // Specs row used to get constraint = null and normalization_scale = null, and the whole configuration failed validation.
-  for (const c of schema.editors[tab] as Json[]) row[c.name] = c.default !== undefined && (c.default !== null || c.nullable) ? c.default
+  for (const c of schema.editors[tab]) row[c.name] = c.default !== undefined && (c.default !== null || c.nullable) ? c.default
     : c.nullable ? null : c.options ? c.options[0] : c.type === 'number' ? 1 : c.type === 'boolean' ? false : '';
   // A new probe measures the way the task's other probes do - a task measures one way, Save task refuses a mix - where it
   // used to take result_source's default, backend_profile, in a Maestro task too (review of 2026-10-03). The first probe of a

@@ -20,6 +20,8 @@ function replaceOne(text, from, to) {
 const afterHelper = "const equationRenamer = (from: string, to: string) => {\n  // An edit may touch many Specs. Compile once for this rename, only when a string equation needs it.\n  let pattern: RegExp | undefined;\n  return (equation: string) => equation.replace(pattern ??= new RegExp(`(?<![A-Za-z0-9_.])${from.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?![A-Za-z0-9_])`, 'g'), to);\n};";
 const beforeHelper = "const renameInEquation = (equation: string, from: string, to: string) =>\n  equation.replace(new RegExp(`(?<![A-Za-z0-9_.])${from.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?![A-Za-z0-9_])`, 'g'), to);";
 let restored = replaceOne(source, afterHelper, beforeHelper);
+// The original oracle used an extensionless import; the rules now also load directly under Node's type stripping.
+restored = replaceOne(restored, "from '../units.ts';", "from '../units';");
 restored = replaceOne(restored,
   '  const renames: ((equation: string) => string)[] = [], moves: [string, string][] = [];',
   '  const renames: [string, string][] = [], moves: [string, string][] = [];');
@@ -62,7 +64,7 @@ function load(code, before, rejectPatterns = false) {
     ? '(from: string, to: string) => (equation: string) => renameInEquation(equation, from, to)' : 'equationRenamer';
   const moduleSource = compiled(code + '\nexport const __renamer = ' + helper + ';\n', sourcePath);
   new Function('exports', 'require', 'RegExp', moduleSource)(out, name => {
-    assert.equal(name, '../units', 'Only the local pure units module may load');
+    assert.ok(name === '../units' || name === '../units.ts', 'Only the local pure units module may load');
     return units;
   }, countedRegExp);
   return { ...out, counts, patterns };

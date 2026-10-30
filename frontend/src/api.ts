@@ -1,7 +1,7 @@
 // Thin typed client for the local backend. Every request is same-origin JSON. What is not a request moved out (plan-refactoring
 // C10): the number formatters to format.ts (si to units.ts), the shared cached reads to shared.ts.
 // The browser never sends hosts, ports, commands or arbitrary paths: the backend has no such fields.
-import type { ModelReply, RunSummary, TaskStarter, TaskSummary, WorkbenchConfig } from './contracts';
+import type { EditorSchema, ModelReply, RowDiff, RunSummary, TaskStarter, TaskSummary, ValidationReply, WorkbenchConfig } from './contracts';
 import { placeOf } from './panels/issuePlace';
 
 export type Json = any;
@@ -64,7 +64,7 @@ const q = (params: Record<string, string | number | boolean | undefined | null>)
 
 export const api = {
   meta: () => call('GET', '/api/meta'),
-  schema: () => call('GET', '/api/schema'),
+  schema: () => call<EditorSchema>('GET', '/api/schema'),
   networkSettings: () => call('GET', '/api/network-settings'),
   saveNetworkSettings: (encoder: string, body: Json) => call('PUT', '/api/network-settings/' + encodeURIComponent(encoder), body),
   tasks: () => call<{ tasks: TaskSummary[] }>('GET', '/api/tasks'),
@@ -102,8 +102,8 @@ export const api = {
   taskFileCheck: (text: string) => call('POST', '/api/virtuoso/task/file/check', { text }),
   taskCheck: (profile_id: string | null, config: Json) => call('POST', '/api/virtuoso/task/check', { profile_id, config }),
   validate: (config: Json, signal?: AbortSignal, rowsFrom?: number | null) =>
-    call('POST', '/api/config/validate', rowsFrom ? { config, rows_from: rowsFrom } : { config }, signal),
-  diff: (before: Json, after: Json) => call('POST', '/api/config/diff', { before, after }),
+    call<ValidationReply>('POST', '/api/config/validate', rowsFrom ? { config, rows_from: rowsFrom } : { config }, signal),
+  diff: (before: Json, after: Json) => call<{ diff: RowDiff[] }>('POST', '/api/config/diff', { before, after }),
   // Matched devices... (Parameters tab, record 7.103): the circuit's structures and the ties they suggest; with `apply`, the rows with those made.
   matchedDevices: (config: Json, apply: string[] | null = null) => call('POST', '/api/parameters/matched', { config, apply }),
   browse: (path?: string) => call('GET', '/api/output/browse' + q({ path })),

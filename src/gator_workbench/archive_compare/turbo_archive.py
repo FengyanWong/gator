@@ -23,7 +23,7 @@ import math
 
 import torch
 
-from ..bayes import DTYPE, GaussianProcess, release_freed_memory
+from ..bayes import DTYPE, GaussianProcess, release_freed_memory, trust_region_candidate, update_trust_region
 from .coords import to_proposal
 
 VERSION = 'turbo_archive_v1'
@@ -103,20 +103,7 @@ class ArchiveTrustRegionBO:
         if len(region_z) == 0:                      # a new region with no design yet: its first Sobol design
             return self.initial.draw(1).to(DTYPE)[0]
         center = fit_X[offset + int(region_z.argmax())]
-        length = self.process.parameters()[0].detach()
-        weights = length / length.mean()
-        weights = weights / torch.exp(torch.log(weights).mean())
-        low = (center - weights * self.length / 2.0).clamp(0.0, 1.0)
-        high = (center + weights * self.length / 2.0).clamp(0.0, 1.0)
-        moved = low + (high - low) * self.inside.draw(self.n_candidates).to(DTYPE)
-        change = torch.rand(self.n_candidates, self.dim, generator=self.generator, dtype=DTYPE) <= min(20.0 / self.dim,
-            1.0)
-        none = ~change.any(1)
-        if none.any():
-            change[none, torch.randint(0, self.dim, (int(none.sum()),), generator=self.generator)] = True
-        candidates = center.expand(self.n_candidates, self.dim).clone()
-        candidates[change] = moved[change]
-        return candidates[int(self.process.sample(candidates, self.generator).argmax())]
+        return trust_region_candidate(self, center)
 
     # -------------------------------------------------------------------------------------------------- tell
     def tell(self, x, value, *, asked=True, infrastructure=False):
@@ -138,14 +125,7 @@ class ArchiveTrustRegionBO:
         if initial or self.best is None:
             self.best = max(self._region_values())
             return
-        if value > self.best + 1e-3 * abs(self.best):
-            self.successes, self.failures, self.best = self.successes + 1, 0, value
-        else:
-            self.successes, self.failures = 0, self.failures + 1
-        if self.successes >= self.success_tolerance:
-            self.length, self.successes = min(2.0 * self.length, self.length_max), 0
-        elif self.failures >= self.failure_tolerance:
-            self.length, self.failures = self.length / 2.0, 0
+        update_trust_region(self, value)
         if self.length < self.length_min:           # a new region from fresh Sobol designs; the fit keeps every design
             self.restarts += 1
             self.region += 1

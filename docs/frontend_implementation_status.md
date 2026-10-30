@@ -513,3 +513,5 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.443 | Codex's local Agent tab (`74B-latest`) merged into workbench; its 7.395/7.396 renumbered 7.441/7.442; all proofs pass |
 | 7.444 | The local Agent tab live: workbench at 7.443's merge, page built, 8765 restarted, pushed, merged Codex branches deleted |
 | 7.445 | Thesis sources and all revisions preserved in private gator-thesis; both thesis directories purged from GATOR history by explicit user request; non-thesis files, optimizer and main unchanged |
+| 7.446 | Branch cleanup: shared graph/search primitives and typed editor operations; 396 exact search comparisons, 59 browser scripts passed after a harness import fix; Python 2,818 passed/24 skipped, one worker timeout passed on module rerun |
+| 7.447 | Typed editor callbacks/rows and Undo snapshots, shared unsaved-row summaries, offline native fixture journal fix; full Python 2,819 passed/24 skipped, 757 browser checks and 11 editor tests passed, no retries |

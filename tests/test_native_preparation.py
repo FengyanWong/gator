@@ -20,6 +20,7 @@ from analog_optimizer.backends.native_preparation import NativeCandidateBackend,
 from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend, BridgeConfig, digest
 from analog_optimizer.training.parallel import NativeEnvironmentFactory, collect_parallel_episodes
 from analog_optimizer.measurements.specs import MetricSpec
+from analog_optimizer.envs.sizing import CircuitSizingEnv, write_record
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -189,13 +190,21 @@ class OfflineLane(NativeCandidateBackend):
             request.condition, simulator_invocations=1)
 
 
+class OfflineSizingEnv(CircuitSizingEnv):
+    """Exercise the real-backend protocol using temporary fixture journals, not durable evidence."""
+    def _record(self, path, value):
+        # Spawned lanes do not inherit conftest's cheap fsync. Disk flushes under host load can exceed the
+        # production close deadline even after a fake backend restores successfully. Preserve atomic JSON
+        # writes and the complete recovery records without testing disk durability in this scheduling fixture.
+        write_record(path, value, durable=False)
+
+
 @dataclass(frozen=True)
 class OfflineNativeFactory(NativeEnvironmentFactory):
     """A native environment factory that substitutes the offline lane for simulator execution."""
     def create_recorded(self, lane, recorder):
         """Build a lane-specific sizing environment with the fake backend and optional recorder."""
-        from analog_optimizer.envs.sizing import CircuitSizingEnv
-        return CircuitSizingEnv(OfflineLane(self.config, self.profile, self.preparation),
+        return OfflineSizingEnv(OfflineLane(self.config, self.profile, self.preparation),
             self.profile.optimization_graph(), self.specs, self.output / f'worker-{lane}',
             max_steps=self.max_steps, stop_on_success=False, recorder=recorder)
 
@@ -235,6 +244,9 @@ def test_serial_native_preparation_overlaps_four_simulators_with_independent_rep
         if recorded:
             assert store.call('read', 'run', recorder.run_id)['summary']['evaluations'] == 12
     assert report['passed'] and report['simulation_calls'] == 12 and len(replay) == 8
+    assert len(report['restorations']) == 4 and all(r['state'] == 'restored' for r in report['restorations'])
+    assert len(report['worker_shutdown']) == 4 and all(
+        r['state'] == 'closed' and not r['forced'] for r in report['worker_shutdown'])
     assert report['preparation_restoration']['prepared_candidates'] == 12
     preparations = [json.loads(p.read_text()) for p in config.state_root.glob('prepare-*.json')]
     simulations = [json.loads(p.read_text()) for p in config.state_root.glob('simulate-*.json')]

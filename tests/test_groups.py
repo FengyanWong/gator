@@ -1,3 +1,5 @@
+"""Parameter-group bindings and legal domains checked on synthetic graphs, without simulator calls."""
+
 from dataclasses import replace
 
 import pytest

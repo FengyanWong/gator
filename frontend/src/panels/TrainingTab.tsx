@@ -1,0 +1,671 @@
+// The bottom panel's Training tab (record 7.193): live charts of the shown run's recorded numbers, other runs on the
+// same charts (record 7.200), up to eight charts (record 7.205) and the key numbers (record 7.215).
+import { Dispatch, memo, MutableRefObject, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { api, ApiError, Json, OLDER_BACKEND, plainError, readWithDeadline } from '../api';
+import { count, createdAt as created, plural, runName, runTaskOrBlank as taskOf, stopWords, timeOfDay as clock,
+  TRAINING_STATE_CLASS as STATE_CLASS } from '../format';
+import { si, unitLabel } from '../units';
+import { Icon } from './Icons';
+import { KeyTile } from './fields';
+import { ENDED, LIVE_STATES, shownLive } from '../runState';
+import { TRAINING_CAPS_KEY, TRAINING_COMPARE_KEY } from '../contract';
+import { TrainingChart } from './TrainingChart';
+import { runMode } from './rlModelText';
+import { build, buildCompare, catalog, ChartSpec, COMPARE_MAX, Context, ENDS, keyNumbers, LearnerX,
+  RECENT, setCaps, TrainingStore, View } from './trainingData';
+import type { Built, KeyNumbers } from './trainingData';
+import type { Answer } from './trainingData';
+import { keep, readKept } from '../kept';
+
+/** The Training tab (record 7.193, user request): live charts of the shown run's RECORDED training numbers - step reward,
+ *  the share of designs meeting every hard spec, the specs against their limits, the best design, and the SAC learner's
+ *  losses, temperature and entropy - beside Output files. Logs and errors stay in the Logs tab.
+ *
+ *  Where the numbers come from: GET /api/runs/training (backend training_series.py) reads the run's own tables and the
+ *  journal of results not yet published as a part; nothing in the training loop was added for it, nothing is simulated.
+ *  The page asks for what is new since its last answer (a cursor of flush records), every 2 s while the run's worker
+ *  lives, once when it ends, and never while this tab is hidden: opened again, one answer brings it up to date. Charts
+ *  are redrawn at most once a second, and only when something changed.
+ *
+ *  Several runs on one chart (record 7.200, the user's choice of "what next"): up to three other runs beside the shown one,
+ *  each its own colour, read the same way (history once, then every 2 s while its worker lives - the answer says so).
+ *
+ *  More than two charts (record 7.205, user: "add multiple charts same page support. more than the current 2"): up to
+ *  eight, each choosing what it shows in its own title; + adds one, × takes one off.
+ *
+ *  Learner by evaluation (record 7.213, the user's choice of "what next"): the learner's charts drawn over the evaluations
+ *  collected instead of the update count, so runs that learn 1 and 8 times per evaluation line up; units in the chart
+ *  titles are written as everywhere on the page (units.ts, record 7.208: English letters).
+ *
+ *  Key numbers (record 7.215, the user's choice of "what next"): a table of each run's first passing design, its passing
+ *  share of the last 100 evaluations, its best design's worst miss and how far its entropy estimate and temperature fell -
+ *  read from the recorded rows like the charts, so the runs on the charts can be compared at a glance.
+ *
+ *  Kept in this browser: the charts chosen, the smoothing, the learner's x, whether the key numbers are open and the
+ *  compared runs (like the folded modules); not the zoom. */
+const SETTINGS_KEY = 'gator-workbench-training-v1';
+const SMOOTHING = [0, 10, 20, 50, 100, 200];
+const MAX_CHARTS = 8;
+type Settings = { charts: string[]; smoothing: number; learnerX: LearnerX; keys: boolean };
+const DEFAULTS: Settings = { charts: ['reward', 'pass'], smoothing: 20, learnerX: 'update', keys: true };
+function storedSettings(): Settings {
+  return readKept(storage => {
+    const s = JSON.parse(storage.getItem(SETTINGS_KEY) ?? 'null');
+    // any number of charts since 7.205; before it two, the second possibly null
+    const charts = Array.isArray(s?.charts) ? s.charts.filter((c: unknown) => typeof c === 'string').slice(0, MAX_CHARTS) : [];
+    return { charts: charts.length ? charts : DEFAULTS.charts, smoothing: SMOOTHING.includes(s?.smoothing) ? s.smoothing : DEFAULTS.smoothing,
+      learnerX: s?.learnerX === 'evaluation' ? 'evaluation' : DEFAULTS.learnerX, keys: s?.keys !== false };
+  }, () => DEFAULTS);
+}
+/** How many charts stand side by side: up to three in a row, four as two by two, then rows of three or four. */
+const columnsFor = (n: number) => (n <= 3 ? n : n === 4 ? 2 : n <= 6 ? 3 : 4);
+const chartName = (id: string) => (id.startsWith('spec:') ? id.slice(5) : id.replace(/_/g, ' '));
+keep(s => {      // a browser check of the memory bound sets lower caps for its own page (trainingData.ts setCaps)
+  const caps = JSON.parse(s.getItem(TRAINING_CAPS_KEY) ?? 'null');
+  if (caps) setCaps(caps);
+});                 // blocked storage: the default caps
+
+function storedCompare(): string[] {
+  return readKept(s => { const list = JSON.parse(s.getItem(TRAINING_COMPARE_KEY) ?? '[]');
+    return Array.isArray(list) ? list.filter(d => typeof d === 'string').slice(0, COMPARE_MAX - 1) : []; }, () => []);
+}
+const readError = (e: unknown) => (e instanceof ApiError && (e.status === 405 || (e.status === 404 && e.detail === 'Not Found'))
+  ? OLDER_BACKEND : plainError(e));
+/** A run in the Compare list, as the run window names it: when, task, mode and seed, state, evaluations. Worked out once
+ *  per row: a row stays the same object until the run list changes (App.tsx keeps an unchanged list, record 7.275). */
+const CHOICES = new WeakMap<object, string>();
+const runChoice = (r: Json) => {
+  let text = CHOICES.get(r);
+  if (text === undefined) {
+    // As the run shown is named left of Runs... (branch records SIF-6, SIF-11): dots, the Mode in words, "seed 2".
+    text = `${created(r.created_utc)} · ${taskOf(r)} · ${runMode(r)}, seed ${r.seed} · ${r.state ?? 'not started'}${r.evaluations != null
+      ? ` · ${plural(r.evaluations, 'evaluation')}` : ''}${r.mock ? ' · MOCK' : ''}`;
+    CHOICES.set(r, text);
+  }
+  return text;
+};
+
+const POLL_MS = 2000, RETRY_MS = 5000, FRAME_MS = 1000;
+const NONE: View = { mode: 'all' };
+// a unit that is a quantity gets its SI prefix (si in api.ts); a count, a share or a normalized number is a plain number
+const PLAIN = new Set(['', 'share', 'normalized', 'nats']);
+const formatFor = (unit: string) => (v: number) => (PLAIN.has(unit) ? String(+v.toPrecision(4)) : si(v, unit));
+const plain = (v: number) => String(+v.toPrecision(3));
+/** What "Passing, last 100" counts: its "95 of 96" said nothing of why it was not of 100 (branch record SIF-77), so the
+ *  number reads "of 96 judged" and this says which designs are left out (keys.ts: episode starts and those without a verdict). */
+const RECENT_TIP = `Of the designs of the last ${RECENT} evaluations, how many met every hard spec, of those judged: episode starts and designs without a verdict (a timeout or a lost link is none) are left out.`;
+/** What "First passing design" counts (branch record SIF-116): for one run Run status read "First feasible design at 4
+ *  evaluations" and this tab "evaluation 35", and neither said how it counts. Run status gives the evaluations used when that
+ *  design came back, those in flight included, and counts episode starts; this gives an evaluation number and leaves them
+ *  out (keys.ts), as the charts do. An episode start that passed before any design the run proposed is said under the number. */
+const FIRST_PASS_TIP = 'The evaluation number of the first design the run proposed that met every hard spec. Episode starts (the design each episode '
+  + 'begins from) are left out, as on the charts. Run status\'s "First feasible design" counts them too, and gives the evaluations used by the time '
+  + 'that design came back, those still in flight included.';
+const startPassedWords = (evaluation: number) => `an episode start passed first, at evaluation ${evaluation}`;
+/** A row's phase and its design's status, in words for the line above a chart (branch record SIF-47: an Evaluate-only run
+ *  read "frozen_eval" on every chart, an episode start "episode_reset", a design "status invalid_design"). The data keep
+ *  the keys: store.ts sorts the rows by them. A phase or status these lists do not know (search, adapt, validation,
+ *  baseline; measurement_error; the learner's initial and online) reads as it is, with spaces for its underscores. */
+const PHASE_WORDS: Record<string, string> = { warmup: 'random warm-up', episode_reset: 'episode start', frozen_eval: 'evaluation (no learning)',
+  preflight: 'pre-flight', llm_warmup: 'AI warm-up', llm_search: 'AI search', llm_rescue: 'AI rescue' };
+const STATUS_WORDS: Record<string, string> = { invalid_design: 'invalid design', nonconverged: 'did not converge', timeout: 'timed out' };
+const inWords = (key: string | undefined, words: Record<string, string> = {}) => (key ? words[key] ?? key.replace(/_/g, ' ') : key);
+
+/** Whether the browser tab itself is in the background: then nothing is read and nothing drawn either. */
+function usePageHidden() {
+  const [hidden, setHidden] = useState(() => document.visibilityState === 'hidden');
+  useEffect(() => {
+    const change = () => setHidden(document.visibilityState === 'hidden');
+    document.addEventListener('visibilitychange', change);
+    return () => document.removeEventListener('visibilitychange', change);
+  }, []);
+  return hidden;
+}
+
+/** What a read loop of the Training tab does besides reading (plan-refactoring C10: the shown run's loop and the compared
+ *  runs' loop were one loop with these differences). `done`: an answer applied - whether to read again in POLL_MS.
+ *  `failed`: a read failed (not cancelled) - how long until it is tried again, or null for never. */
+type ReadLoop = { done: (dir: string, answer: Answer) => boolean; failed: (dir: string, e: unknown) => number | null };
+/** Reads each run's recorded numbers that are new since its last answer - the history in pages, then again while `done`
+ *  says so - for as long as the effect stands (`deps`). `runs()` is asked when it starts: the runs to read, or null for none. */
+function useTrainingReads(runs: () => { dir: string; store: TrainingStore }[] | null, loop: ReadLoop, requestFrame: () => void, deps: unknown[]) {
+  useEffect(() => {
+    const list = runs();
+    if (!list) return;
+    let alive = true;
+    const timers: number[] = [], controller = new AbortController();
+    for (const { dir, store: run } of list) {
+      const read = async () => {
+        try {
+          const answer: Answer = await readWithDeadline(signal => api.training(dir, run.flushes, signal, run.tailCursor), controller.signal, 60000);
+          if (!alive) return;
+          if (run.apply(answer)) requestFrame();
+          const again = loop.done(dir, answer);
+          if (answer.flushes.served < answer.flushes.total || answer.tail_page?.more) { void read(); return; }
+          if (again) timers.push(window.setTimeout(read, POLL_MS));
+        } catch (e) {
+          if (!alive || controller.signal.aborted) return;
+          const after = loop.failed(dir, e);
+          if (after !== null) timers.push(window.setTimeout(read, after));
+        }
+      };
+      void read();
+    }
+    return () => { alive = false; controller.abort(); timers.forEach(t => window.clearTimeout(t)); };
+  }, deps);
+}
+
+/** A chart on the page: a stable key (so taking one off keeps the others' charts as they are) and what it shows. */
+type Slot = { key: number; id: string };
+/** The shown run's reading: the last read's error, and when the last good read came back. */
+type Reading = { error: string | null; at: number | null };
+/** A compared run's last read: its error, and whether it found the run's worker alive. */
+type ComparedState = { error: string | null; live: boolean };
+/** A run's key numbers, null until its first answer. */
+type KeyRow = { dir: string; numbers: KeyNumbers | null };
+
+/** The tab, as its steps in the order they run. React keeps a hook's state by its place in that order, so the hooks (use...)
+ *  are called unconditionally and in the order this body called them before it was split (branch record SIF-149); what it
+ *  draws comes from plain functions called inline, never drawn as components of their own, which could start a chart's
+ *  state anew (plan-readability rule 12). */
+function TrainingTabBody({ hidden, runDir, status, statusError, runs }: {
+  hidden: boolean; runDir: string | null; status: Json; statusError: string | null; runs: Json[] }) {
+  const pageHidden = usePageHidden();
+  const active = !hidden && !pageHidden && !!runDir;
+  const live = shownLive(status, runDir);
+  const { nextKey, slots, setSlots, smoothing, setSmoothing, learnerX, setLearnerX, keysOpen, setKeysOpen } = useChartSettings();
+  const { store, frame, setFrame, reading, setReading, views, setViews, widths, setWidths, retry, setRetry } = useTabState(runDir);
+  const requestFrame = useFrameRequests(active, setFrame);
+
+  // ---- reading: what is new since the last answer; again every 2 s while the run is live; nothing while hidden
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  // Each run's row of the run list, by its folder: up here because the shown run's first read asks it whether the run is live
+  // (branch record SIF-126); the names and the Compare list below read it too.
+  const rowOf = useMemo(() => new Map(runs.map(row => [row.run_dir, row] as [string, Json])), [runs]);
+  useShownRunReads({ active, runDir, live, liveRef, rowOf, status, statusError, store, setReading, retry, requestFrame });
+  const { keepCompare, others, othersKey, compared, comparedState } = useComparedRuns({ active, runDir, retry, requestFrame });
+  const runLabel = useRunLabel({ rowOf, runDir, others, othersKey });
+  const compareSelect = useCompareList({ runs, rowOf, runDir, others, othersKey, keepCompare });
+
+  const own = store.current;
+  // a baseline run that calibrates (record 7.197): its random designs are not training, and nothing learns
+  const calibration = !!status?.calibration;
+  const { context, charts, chartOptions } = useChartCatalog({ own, frame, calibration });
+  const keyRows = useKeyRows({ own, runDir, frame, others, othersKey, compared, context });
+  const specOf = (id: string | null) => (id ? charts.find(chart => chart.id === id) ?? null : null);
+  const viewOf = (key: number) => views[key] ?? NONE;
+  const built = useBuiltCharts({ runs, slots, specOf, viewOf, widths, frame, runDir, smoothing, learnerX, calibration, othersKey, own, others, context,
+    runLabel, compared });
+  const { setView, choose, addChart, removeChart, shown, following, follow, reset, chooseLearnerX, learnerShown } = chartActions({
+    setViews, setSlots, charts, nextKey, slots, built, viewOf, setLearnerX, specOf });
+  const describe = rowFacts(own, learnerX);
+
+  if (!runDir || !own) return <div className="training" style={hidden ? { display: 'none' } : undefined}><p className="hint">No run selected.</p></div>;
+  const { evaluations, updates } = own.counts();
+  const last = own.lastTime();
+  const state: string | undefined = status?.state;
+  // "none yet" only while a run can still pass (branch record SIF-54: an ended run said it too), as Run status's tile: the
+  // shown run by its status, a compared one by its row in the run list - unless its last read found its worker alive.
+  // That read counts only while the run is compared (SIF-54 review): a run compared live and then shown keeps its old entry.
+  const noPassWord = (dir: string) => { const facts: Json = status?.run_dir === dir ? status : rowOf.get(dir);
+    return facts && ENDED.includes(facts.state) && !facts.worker_alive && !(others.includes(dir) && comparedState[dir]?.live) ? 'none' : 'none yet'; };
+  const empty = own.answers > 0 && evaluations === 0 && updates === 0 && !others.length;
+  const unavailable = charts.filter(chart => !chart.available);
+  const { counts, countsTip } = countsWords({ own, evaluations, updates, last, live, reading });
+  return (<div className="training" style={hidden ? { display: 'none' } : undefined}>
+    <div className="row training-head">
+      {/* what is shown on the left (it wraps onto a second line, never cut: branch record SIF-77), the controls on the right
+          (below it only when the window leaves them no room beside it) */}
+      {whatIsShown({ rowOf, runDir, runLabel, state, status, countsTip, counts })}
+      {headControls({ slots, addChart, smoothing, setSmoothing, learnerShown, learnerX, chooseLearnerX, compareSelect, following, shown, follow,
+        viewOf, reset })}
+    </div>
+    {others.length > 0 && comparedChips({ runDir, runLabel, others, comparedState, keepCompare })}
+    {own.answers > 0 && !empty && keyNumbersBox({ keysOpen, setKeysOpen, keyRows, runDir, noPassWord, others, runLabel })}
+    {state === 'failed' && status?.error && <p className="error training-note">The run failed: {status.error}</p>}
+    {reading.error && <p className="error training-note">The training numbers could not be read: {reading.error} <button
+      onClick={() => setRetry(tries => tries + 1)}>Retry read</button></p>}
+    {!own.tailComplete && <p className="hint training-note">The run's journal was being rewritten at a save point; its newest results
+      come with the next read.</p>}
+    {unavailable.length > 0 && <details className="training-note"><summary>Not in this run: {unavailable.map(chart => chart.title).join(', ')}</summary>
+      <ul>{unavailable.map(chart => <li key={chart.id}><b>{chart.title}</b>: {chart.reason}</li>)}</ul></details>}
+    {(own.thinnedEvaluations > 0 || own.thinnedUpdates > 0) && <p className="hint training-note">The oldest part of this long run is shown thinned to its
+      extremes (shaded): every point drawn is a recorded one, some in between are left out on screen only. The run's tables keep every row.</p>}
+    {empty ? <p className="hint">{live ? 'Waiting for metrics: the charts start with the run\'s first recorded result.'
+      : 'This run recorded no evaluations and no learner updates.'}</p>
+      : own.answers === 0 ? <p className="hint">{reading.error ? '' : 'Reading the run\'s recorded training numbers...'}</p>
+      : <div className="training-charts" style={{ gridTemplateColumns: `repeat(${columnsFor(slots.length)}, minmax(0, 1fr))` }}>
+        {slots.map((slot, index) => chartCard({ slot, index, specOf, built, choose, chartOptions, slots, removeChart, own, active, learnerX, describe,
+          setWidths, setView }))}
+      </div>}
+  </div>);
+}
+/** Drawn again only when its own props change (branch record SIF-125): the bottom panel takes the page's configuration, so a
+ *  key typed in the editors drew the whole tab again - its Compare list of every run and each chart's choices - hidden or not.
+ *  Typing changes none of these: the run list is the same array until it changes (page/shownRun.ts), and the status is the
+ *  last answer's. Everything else the tab shows is its own state. */
+export const TrainingTab = memo(TrainingTabBody);
+
+/** The charts on the page, the smoothing, the learner's x and whether the key numbers are open: read from this browser
+ *  once, and kept there at each change. */
+function useChartSettings() {
+  // the charts on the page: a stable key each (so taking one off keeps the others' charts as they are) and what it shows
+  const nextKey = useRef(0);
+  const [slots, setSlots] = useState<Slot[]>(() => storedSettings().charts.map(id => ({ key: nextKey.current++, id })));
+  const [smoothing, setSmoothing] = useState<number>(() => storedSettings().smoothing);
+  const [learnerX, setLearnerX] = useState<LearnerX>(() => storedSettings().learnerX);
+  const [keysOpen, setKeysOpen] = useState<boolean>(() => storedSettings().keys);
+  useEffect(() => {
+    // a private window: not remembered
+    keep(storage => storage.setItem(SETTINGS_KEY, JSON.stringify({ charts: slots.map(slot => slot.id), smoothing, learnerX, keys: keysOpen })));
+  }, [slots, smoothing, learnerX, keysOpen]);
+  return { nextKey, slots, setSlots, smoothing, setSmoothing, learnerX, setLearnerX, keysOpen, setKeysOpen };
+}
+
+/** The tab's own state: the shown run's store, the frame count, the shown run's reading, each chart's zoom and width, and
+ *  Retry read's count. */
+function useTabState(runDir: string | null) {
+  const store = useRef<TrainingStore | null>(null);
+  const [frame, setFrame] = useState(0);                         // one more each time the charts take the store's rows
+  const [reading, setReading] = useState<Reading>({ error: null, at: null });
+  const [views, setViews] = useState<Record<number, View>>({});           // by chart key; none = the whole run
+  const [widths, setWidths] = useState<Record<number, number>>({});
+  const [retry, setRetry] = useState(0);
+
+  // Another run: its own store, whole charts, the zoom let go. The previous run's rows are dropped with its store.
+  if (runDir && store.current?.runDir !== runDir) store.current = new TrainingStore(runDir);
+  if (!runDir && store.current) store.current = null;
+  useEffect(() => { setViews({}); setReading({ error: null, at: null }); }, [runDir]);
+  return { store, frame, setFrame, reading, setReading, views, setViews, widths, setWidths, retry, setRetry };
+}
+
+/** Drawing: at most once a second, only when something changed, never while hidden (then caught up when shown). The
+ *  `requestFrame` it gives says the store took new rows: the charts take them at the next frame. */
+function useFrameRequests(active: boolean, setFrame: Dispatch<SetStateAction<number>>) {
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const dirty = useRef(false), lastFrame = useRef(0), frameTimer = useRef<number | null>(null);
+  const requestFrame = useCallback(() => {
+    dirty.current = true;
+    if (frameTimer.current != null || !activeRef.current) return;
+    frameTimer.current = window.setTimeout(() => {
+      frameTimer.current = null;
+      if (!activeRef.current || !dirty.current) return;
+      dirty.current = false; lastFrame.current = Date.now(); setFrame(frame => frame + 1);
+    }, Math.max(0, lastFrame.current + FRAME_MS - Date.now()));
+  }, []);
+  useEffect(() => { if (active && dirty.current) requestFrame(); }, [active, requestFrame]);
+  useEffect(() => () => { if (frameTimer.current != null) window.clearTimeout(frameTimer.current); }, []);
+  return requestFrame;
+}
+
+/** The shown run's reads, once it is ready to be read: each answer notes when it came, a failed read its error, and a live
+ *  run is read again. */
+function useShownRunReads({ active, runDir, live, liveRef, rowOf, status, statusError, store, setReading, retry, requestFrame }: {
+  active: boolean; runDir: string | null; live: boolean; liveRef: MutableRefObject<boolean>; rowOf: Map<string, Json>; status: Json;
+  statusError: string | null; store: MutableRefObject<TrainingStore | null>; setReading: Dispatch<SetStateAction<Reading>>; retry: number;
+  requestFrame: () => void }) {
+  // A run the run list calls live is first read once its status is in (branch record SIF-126). Read at once, it was read as a
+  // run at rest; its status - the cheaper read, so back first - then made it live, and that started the read again from the
+  // start: the backend read the whole history twice, side by side, and the first chart came later. A run at rest is read at
+  // once, as before, and so is one the list does not have (yet: after a reload); one whose status cannot be read, once that
+  // failure is in.
+  const statusKnown = status?.run_dir === runDir || !!statusError;
+  const listedLive = !!runDir && LIVE_STATES.includes(rowOf.get(runDir)?.state);
+  const ready = statusKnown || !listedLive;
+  // Nothing is noted as a read starts (branch record SIF-125): a "busy" mark that nothing showed drew the whole tab once more
+  // at every 2 s read of a live run. The answer's own update below draws what it brings.
+  useTrainingReads(() => { const own = store.current; return active && ready && own ? [{ dir: own.runDir, store: own }] : null; }, {
+    done: () => { setReading({ error: null, at: Date.now() }); return liveRef.current; },
+    // a backend started before this tab existed has no such route (FastAPI's own 404 "Not Found"): said as such. The time
+    // stays the last good read's: the head says "numbers read at" it (branch record SIF-77 review), and nothing was read now.
+    failed: (_dir, e) => { setReading(previous => ({ error: readError(e), at: previous.at })); return liveRef.current ? RETRY_MS : null; },
+  }, requestFrame, [active, runDir, live, ready, retry, requestFrame]);
+}
+
+/** Other runs on the same charts (record 7.200): each its own store, read like the shown one, apart from it; the list is
+ *  kept in this browser. */
+function useComparedRuns({ active, runDir, retry, requestFrame }: { active: boolean; runDir: string | null; retry: number; requestFrame: () => void }) {
+  const [compare, setCompare] = useState<string[]>(storedCompare);
+  // not remembered without storage
+  const keepCompare = (next: string[]) => { setCompare(next); keep(storage => storage.setItem(TRAINING_COMPARE_KEY, JSON.stringify(next))); };
+  const others = compare.filter(dir => dir !== runDir).slice(0, COMPARE_MAX - 1);
+  const othersKey = others.join('\n');
+  const compared = useRef(new Map<string, TrainingStore>());
+  for (const dir of others) if (!compared.current.has(dir)) compared.current.set(dir, new TrainingStore(dir));
+  for (const dir of [...compared.current.keys()]) if (!others.includes(dir)) compared.current.delete(dir);
+  const [comparedState, setComparedState] = useState<Record<string, ComparedState>>({});
+  useTrainingReads(() => (active && others.length
+    ? others.flatMap(dir => { const run = compared.current.get(dir); return run ? [{ dir, store: run }] : []; }) : null), {
+    done: (dir, answer) => {
+      const working = !!answer.worker_alive;
+      setComparedState(state => ({ ...state, [dir]: { error: null, live: working } }));
+      return working;
+    },
+    failed: (dir, e) => { setComparedState(state => ({ ...state, [dir]: { error: readError(e), live: false } })); return null; },
+  }, requestFrame, [active, othersKey, retry, requestFrame]);
+  return { keepCompare, others, othersKey, compared, comparedState };
+}
+
+/** A run's name on a compared chart, as the run window and the Compare list show it: its task, its experiment in brackets
+ *  when that has a name of its own, its seed and when it was made; the start of its folder's id only when two compared
+ *  runs would read the same. Record 7.213: four Spectre runs of one task and seed read alike by folder id alone. The task
+ *  first (branch record SIF-77): the head read "tx1-vco-gatv2 · seed 0 · ..." beside a tab strip naming the task. */
+function useRunLabel({ rowOf, runDir, others, othersKey }: { rowOf: Map<string, Json>; runDir: string | null; others: string[]; othersKey: string }) {
+  const labels = useMemo(() => {
+    const base = (dir: string) => {
+      const row = rowOf.get(dir);
+      if (!row) return runName(dir);
+      const task = taskOf(row), folder = String(row.experiment ?? '').split('__')[0];
+      const experiment = folder && !['experiment', 'None', task].includes(folder) ? folder : '';
+      return `${task && experiment ? `${task} (${experiment})` : task || experiment} \u00b7 seed ${row.seed ?? '?'} \u00b7 ${created(row.created_utc)}`;
+    };
+    const dirs = runDir ? [runDir, ...others] : others, named = dirs.map(base);
+    return new Map(dirs.map((dir, index) => [dir, named.indexOf(named[index]) === named.lastIndexOf(named[index]) ? named[index]
+      : `${named[index]} \u00b7 ${(runName(dir).split('__').pop() ?? '').slice(0, 6)}`]));
+  }, [rowOf, runDir, othersKey]);
+  const runLabel = (dir: string) => labels.get(dir) ?? runName(dir);
+  return runLabel;
+}
+
+/** The Compare list, made again only when the runs, the shown run or the compared ones change (branch record SIF-125): each
+ *  status answer of a live run (every 1.5 s) and each key typed in the editors made it anew, an option per run - 548 with
+ *  the user's 549 - hidden or not. `others` goes with othersKey; keepCompare only sets the list and keeps it. */
+function useCompareList({ runs, rowOf, runDir, others, othersKey, keepCompare }: {
+  runs: Json[]; rowOf: Map<string, Json>; runDir: string | null; others: string[]; othersKey: string; keepCompare: (next: string[]) => void }) {
+  const compareSelect = useMemo(() => {
+    if (!runDir) return null;                                                 // no run shown: no list
+    const candidates = runs.filter(row => row.run_dir !== runDir && !others.includes(row.run_dir));
+    // The shown run's task first (branch record SIF-105): the list held every run under the output root newest first (612 in
+    // the user's folder), and the runs worth comparing - the task's other seeds and Modes - stood scattered among them. By the
+    // registered task's key; a shown run the list has no key for (not listed, or a row without one) keeps the one list, and
+    // the tooltip says "the shown run's task first" only over the groups (SIF-105 review: it said so over the one list too).
+    const shownRow = rowOf.get(runDir), task: string | null = shownRow?.task_key ?? null;
+    const sameTask = task ? candidates.filter(row => row.task_key === task) : [], otherTasks = task ? candidates.filter(row => row.task_key !== task) : [];
+    const compareOption = (row: Json) => <option key={row.run_dir} value={row.run_dir}>{runChoice(row)}</option>;
+    return <select aria-label="Compare with another run" className="training-compare" value="" disabled={others.length >= COMPARE_MAX - 1 || !candidates.length}
+      onChange={e => { if (e.target.value) keepCompare([...others, e.target.value]); }}
+      title={`Compare: draw up to ${COMPARE_MAX - 1} other runs on the same charts, each in its own colour (the list of the run window, Runs...${task
+        ? ', the shown run\'s task first' : ''}).`}>
+      <option value="">Compare...</option>
+      {!task ? candidates.map(compareOption) : <>
+        {sameTask.length > 0 && <optgroup label={`Same task (${taskOf(shownRow) || task})`}>{sameTask.map(compareOption)}</optgroup>}
+        {otherTasks.length > 0 && <optgroup label="Other tasks">{otherTasks.map(compareOption)}</optgroup>}</>}</select>;
+  }, [runs, rowOf, runDir, othersKey]);
+  return compareSelect;
+}
+
+/** What the shown run's numbers offer, again with each frame: its charts, and the choices in every chart's title. */
+function useChartCatalog({ own, frame, calibration }: { own: TrainingStore | null; frame: number; calibration: boolean }) {
+  const context: Context = useMemo(() => ({ calibration }), [calibration]);
+  const charts = useMemo(() => (own ? catalog(own, context) : []), [own, frame, context]);
+  // the choices in every chart's title, made once per change of the run's charts (branch record SIF-125: once per chart at
+  // every drawing of the tab); one list of elements serves every chart's title
+  const chartOptions = useMemo(() => options(charts), [charts]);
+  return { context, charts, chartOptions };
+}
+
+/** The key numbers of every run on the charts, the shown one first (record 7.215); again with each frame. */
+function useKeyRows({ own, runDir, frame, others, othersKey, compared, context }: {
+  own: TrainingStore | null; runDir: string | null; frame: number; others: string[]; othersKey: string;
+  compared: MutableRefObject<Map<string, TrainingStore>>; context: Context }) {
+  const keyRows = useMemo(() => (own && runDir
+    ? [{ dir: runDir, store: own, context }, ...others.map(dir => ({ dir, store: compared.current.get(dir), context: {} }))]
+      .map(({ dir, store: run, context: known }) => ({ dir, numbers: run && run.answers > 0 ? keyNumbers(run, known) : null }))
+    : []), [own, runDir, frame, othersKey, context]);
+  return keyRows;
+}
+
+/** Each chart's data, rebuilt only when what it shows changed: new numbers (frame), its choice, its zoom or its width - so a
+ *  chart whose own things stayed put keeps its data object and is not drawn again. A chart chosen for another run that
+ *  this one does not have (a spec of another circuit) says so in its place; the choice is kept for the runs that have it. */
+function useBuiltCharts({ runs, slots, specOf, viewOf, widths, frame, runDir, smoothing, learnerX, calibration, othersKey, own, others, context, runLabel,
+  compared }: {
+  runs: Json[]; slots: Slot[]; specOf: (id: string | null) => ChartSpec | null; viewOf: (key: number) => View; widths: Record<number, number>;
+  frame: number; runDir: string | null; smoothing: number; learnerX: LearnerX; calibration: boolean; othersKey: string; own: TrainingStore | null;
+  others: string[]; context: Context; runLabel: (dir: string) => string; compared: MutableRefObject<Map<string, TrainingStore>> }) {
+  const builtCache = useRef(new Map<number, { sig: string; built: Built | null }>());
+  // what the labels are made of
+  const runsSig = useMemo(() => runs.map(row => `${row.run_dir}|${row.task_name}|${row.seed}|${row.experiment}|${row.created_utc}`).join('\n'), [runs]);
+  const built = slots.map(slot => {
+    const spec = specOf(slot.id), view = viewOf(slot.key), width = widths[slot.key] ?? 600;
+    const sig = [frame, runDir, slot.id, !!spec?.available, smoothing, learnerX, JSON.stringify(view), width, calibration, othersKey, runsSig].join('\u0001');
+    const hit = builtCache.current.get(slot.key);
+    if (hit && hit.sig === sig) return hit.built;
+    let made: Built | null = null;
+    if (own && runDir && spec?.available) {
+      made = !others.length ? build(own, spec.id, smoothing, view, width, context, learnerX)
+        : buildCompare([{ store: own, label: runLabel(runDir), context }, ...others.map(dir => ({ store: compared.current.get(dir)!, label: runLabel(dir) }))],
+          spec.id, smoothing, view, width, learnerX);
+    }
+    builtCache.current.set(slot.key, { sig, built: made });
+    return made;
+  });
+  for (const key of [...builtCache.current.keys()]) if (!slots.some(slot => slot.key === key)) builtCache.current.delete(key);
+  return built;
+}
+
+/** What the head's buttons and each chart's title and × do - choose, add or take off a chart, zoom, follow the newest, let go
+ *  of the zoom, the learner's x - and what they show of the charts. */
+function chartActions({ setViews, setSlots, charts, nextKey, slots, built, viewOf, setLearnerX, specOf }: {
+  setViews: Dispatch<SetStateAction<Record<number, View>>>; setSlots: Dispatch<SetStateAction<Slot[]>>; charts: ChartSpec[];
+  nextKey: MutableRefObject<number>; slots: Slot[]; built: (Built | null)[]; viewOf: (key: number) => View;
+  setLearnerX: Dispatch<SetStateAction<LearnerX>>; specOf: (id: string | null) => ChartSpec | null }) {
+  const setView = (key: number, view: View) => setViews(views => ({ ...views, [key]: view }));
+  const choose = (key: number, id: string) => { setSlots(list => list.map(slot => (slot.key === key ? { ...slot, id } : slot))); setView(key, NONE); };
+  /** One more chart: the first chart of this run not on the page yet that it can draw. */
+  const addChart = () => setSlots(list => {
+    if (list.length >= MAX_CHARTS) return list;
+    const next = charts.find(chart => chart.available && !list.some(slot => slot.id === chart.id))?.id ?? 'reward';
+    return [...list, { key: nextKey.current++, id: next }];
+  });
+  const removeChart = (key: number) => setSlots(list => (list.length <= 1 ? list : list.filter(slot => slot.key !== key)));
+  const shown = slots.filter((_, index) => built[index]);
+  const following = shown.every(slot => viewOf(slot.key).mode !== 'fixed');
+  const follow = () => setViews(views => Object.fromEntries(slots.map((slot, index) => {
+    const view = views[slot.key] ?? NONE;
+    // freeze where it is
+    if (following) { const range = built[index]?.range; return [slot.key, range ? { mode: 'fixed', min: range[0], max: range[1] } : view]; }
+    // slide to the newest, same width
+    return [slot.key, view.mode === 'fixed' ? { mode: 'follow', width: view.max - view.min } : view];
+  })));
+  const reset = () => setViews({});
+  /** The learner's x changed: its charts' zoom was in the other unit, so they show the whole run again. */
+  const chooseLearnerX = (next: LearnerX) => {
+    setLearnerX(next);
+    setViews(views => Object.fromEntries(Object.entries(views)
+      .filter(([key]) => specOf(slots.find(slot => slot.key === Number(key))?.id ?? null)?.axis !== 'update')));
+  };
+  const learnerShown = slots.some(slot => specOf(slot.id)?.axis === 'update');
+  return { setView, choose, addChart, removeChart, shown, following, follow, reset, chooseLearnerX, learnerShown };
+}
+
+/** The facts of a recorded row, for the line above a chart. */
+function rowFacts(own: TrainingStore | null, learnerX: LearnerX) {
+  return (axis: 'evaluation' | 'update') => (row: number) => {
+    if (!own) return '';
+    if (axis === 'update') {
+      const table = own.updates, phase = own.words.updatePhase.list[table.cols.phase[row]];
+      return `${learnerX === 'evaluation' ? `update ${table.cols.cum[row]}` : `after ${table.cols.collected[row]} evaluations`}${phase
+        ? ` · ${inWords(phase)} learning` : ''}`;
+    }
+    const table = own.evaluations, words = own.words, cols = table.cols;
+    const status = words.status.list[cols.status[row]];
+    return [inWords(words.phase.list[cols.phase[row]], PHASE_WORDS), `episode ${words.episode.list[cols.episode[row]] ?? '?'} step ${cols.episodeStep[row]}`,
+      Number.isFinite(cols.index[row]) && cols.index[row] !== cols.k[row] ? `completion index ${cols.index[row]}` : '',
+      status && status !== 'ok' ? `result ${inWords(status, STATUS_WORDS)}` : ''].filter(Boolean).join(' · ');
+  };
+}
+
+/** The counts line under the run's name, and its tooltip. */
+function countsWords({ own, evaluations, updates, last, live, reading }: {
+  own: TrainingStore; evaluations: number; updates: number; last: number | null; live: boolean; reading: Reading }) {
+  // its two times in words, said in the tooltip (branch record SIF-77: "last metric 18:20:50 · read 20:53:08", and the
+  // tooltip only repeated the line); the tooltip explains only the words the line shows (SIF-77 review). Its counts as the page
+  // writes every count (branch record SIF-117: the RL model window read "6,024 learner updates" for this line's 6024).
+  const counts = own.answers === 0 ? (reading.error ? '' : 'Reading the recorded numbers...')
+    : `${plural(evaluations, 'evaluation')} · ${plural(updates, 'learner update')}${last ? ` · last recorded at ${clock(last)}` : ''}`
+      + (live ? ' · live' : reading.at ? ` · numbers read at ${clock(reading.at / 1000)}` : '');
+  const countsTip = own.answers === 0 ? undefined : [last ? 'Last recorded at: when the run recorded its newest evaluation or learner update.' : '',
+    live ? 'Live: this tab reads the run\'s recorded numbers again every 2 s while it works.'
+      : reading.at ? 'Numbers read at: when this tab last read the run\'s recorded numbers.' : ''].filter(Boolean).join(' ') || undefined;
+  return { counts, countsTip };
+}
+
+/** What is shown, on the left of the head: the run's name, its state and the counts line. */
+function whatIsShown({ rowOf, runDir, runLabel, state, status, countsTip, counts }: {
+  rowOf: Map<string, Json>; runDir: string; runLabel: (dir: string) => string; state: string | undefined; status: Json;
+  countsTip: string | undefined; counts: string }) {
+  return <span className="training-what">
+    {/* named as its "(shown)" chip and the legends name it (branch record SIF-47: it read the folder, "scratch__seed1__..."
+        with the Mode's key); the folder until the run list has the run, the whole path in the tooltip */}
+    <span className="training-run" title={rowOf.has(runDir)
+      ? `Task (experiment, when it has a name of its own) · seed · when the run was made.\nFolder: ${runDir}` : runDir}>{runLabel(runDir)}</span>
+    {state && <span className={`badge ${STATE_CLASS[state] ?? 'state-unknown'}`}>{state}{status?.stop_reason
+      ? ` (${stopWords(status.stop_reason)})` : ''}</span>}
+    <span className="hint training-counts" title={countsTip}>{counts}</span>
+  </span>;
+}
+
+/** The head's controls, on the right: Add chart, Smoothing, Learner by, the Compare list, Follow latest and Reset zoom. */
+function headControls({ slots, addChart, smoothing, setSmoothing, learnerShown, learnerX, chooseLearnerX, compareSelect, following, shown, follow, viewOf,
+  reset }: {
+  slots: Slot[]; addChart: () => void; smoothing: number; setSmoothing: Dispatch<SetStateAction<number>>; learnerShown: boolean; learnerX: LearnerX;
+  chooseLearnerX: (next: LearnerX) => void; compareSelect: JSX.Element | null; following: boolean; shown: Slot[]; follow: () => void;
+  viewOf: (key: number) => View; reset: () => void }) {
+  return <span className="training-controls">
+    <button disabled={slots.length >= MAX_CHARTS} onClick={addChart}
+      title={`Add chart: one more chart on the page (up to ${MAX_CHARTS}). Each chart chooses what it shows in its title; × there takes it off.`}>
+      <Icon name="add" label="Add chart" /></button>
+    <label className="inline">Smoothing <select value={smoothing} onChange={e => setSmoothing(Number(e.target.value))}>
+      {SMOOTHING.map(points => <option key={points} value={points}>{points ? `mean of last ${points}` : 'off'}</option>)}</select></label>
+    <label className="inline" title={'Learner by: the x axis of the learner\'s charts (losses, temperature, entropy). "update": the learner\'s update count. '
+      + '"evaluation": the number of evaluations collected when each update ran - the x of the other charts - so runs that learn 1 and 8 times per '
+      + 'evaluation line up; the updates after one evaluation share its x, and smoothing averages the updates of the last evaluations.'
+      + (learnerShown ? '' : ' No learner chart is on the page now.')}>Learner by <select aria-label="Learner charts by" value={learnerX}
+        onChange={e => chooseLearnerX(e.target.value === 'evaluation' ? 'evaluation' : 'update')}>
+        <option value="update">update</option><option value="evaluation">evaluation</option></select></label>
+    {compareSelect}
+    <button aria-pressed={following} disabled={!shown.length} onClick={follow}
+      title={following ? 'Follow latest: on - the charts keep the newest results in view. Press to hold them where they are.'
+        : 'Follow latest: off - you zoomed in, so new results do not move the charts. Press to slide back to the newest results, keeping the zoom width.'}>
+      <Icon name="follow" label="Follow latest" /></button>
+    <button disabled={!shown.some(slot => viewOf(slot.key).mode !== 'all')} onClick={reset}
+      title="Reset zoom: show the whole run again (a double click on a chart does the same). Drag across a chart to zoom in.">
+      <Icon name="zoom-reset" label="Reset zoom" /></button>
+  </span>;
+}
+
+/** The runs on the charts, each in its colour, the shown one first; × takes a compared one off (record 7.200). */
+function comparedChips({ runDir, runLabel, others, comparedState, keepCompare }: {
+  runDir: string; runLabel: (dir: string) => string; others: string[]; comparedState: Record<string, ComparedState>;
+  keepCompare: (next: string[]) => void }) {
+  return <div className="training-compared">
+    {/* the runs on the charts, each in its colour; × takes one off (record 7.200). Its tooltip starts with its label, as
+        every icon button's does (branch record SIF-115: it read "Remove: take <run> off the charts"). */}
+    <span className="training-chip key-run0" title={runDir}><span className="swatch" />{runLabel(runDir)} (shown)</span>
+    {others.map((dir, index) => <span key={dir} className={`training-chip key-run${index + 1}`} title={dir}><span className="swatch" />{runLabel(dir)}
+      {comparedState[dir]?.live ? ' \u00b7 live' : ''}{comparedState[dir]?.error ? <span className="error"> - {comparedState[dir].error}</span> : null}
+      <button type="button" className="training-chip-remove" onClick={() => keepCompare(others.filter(other => other !== dir))}
+        title={`Remove ${runLabel(dir)}: take it off the charts`}><Icon name="close" label={`Remove ${runLabel(dir)}`} /></button></span>)}
+  </div>;
+}
+
+/** Key numbers (record 7.215): what each run on the charts reached, read from its recorded rows; folded or open as kept. */
+function keyNumbersBox({ keysOpen, setKeysOpen, keyRows, runDir, noPassWord, others, runLabel }: {
+  keysOpen: boolean; setKeysOpen: Dispatch<SetStateAction<boolean>>; keyRows: KeyRow[]; runDir: string; noPassWord: (dir: string) => string;
+  others: string[]; runLabel: (dir: string) => string }) {
+  return <details className="training-keys" open={keysOpen} onToggle={e => setKeysOpen(e.currentTarget.open)}>
+    <summary title="Key numbers: what each run on the charts reached, read from its recorded rows (episode starts left out, as on the charts).">
+      Key numbers</summary>
+    {/* One run: its numbers as tiles (record 7.360, user: "make it more compact but keeping the style"); several: one row each. */}
+    {keyRows.length === 1 && keyRows[0].numbers ? keyTiles({ numbers: keyRows[0].numbers!, noPassWord, runDir })
+      : keyTable({ keyRows, others, runLabel, noPassWord })}
+  </details>;
+}
+
+/** One run's key numbers, as tiles. */
+function keyTiles({ numbers, noPassWord, runDir }: { numbers: KeyNumbers; noPassWord: (dir: string) => string; runDir: string }) {
+  return <div className="key-tiles training-key-tiles">
+    <KeyTile label="Evaluations" value={count(numbers.evaluations)} title="Evaluations recorded so far." />
+    <KeyTile label="First passing design" value={numbers.firstPass ?? noPassWord(runDir)} before={numbers.firstPass != null ? 'evaluation' : undefined}
+      note={numbers.startPassed != null ? startPassedWords(numbers.startPassed) : undefined} title={FIRST_PASS_TIP} />
+    <KeyTile label={`Passing, last ${RECENT}`}
+      value={!numbers.recent ? '-' : numbers.recent.judged ? `${numbers.recent.passed} of ${numbers.recent.judged}` : 'no verdict'}
+      after={numbers.recent?.judged ? `judged · ${Math.round((100 * numbers.recent.passed) / numbers.recent.judged)} %` : undefined}
+      title={`${RECENT_TIP}${numbers.recent ? ` Evaluations ${numbers.recent.from} to ${numbers.recent.to}.` : ''}`} />
+    <KeyTile label="Best design's worst miss" value={numbers.bestMiss != null ? plain(numbers.bestMiss) : '-'}
+      title="The worst-spec miss of the design the run keeps as its best, at the newest evaluation: 0 = it has a design that meets every hard spec." />
+    <KeyTile label={'Entropy estimate, first \u2192 last'} value={numbers.entropy ? `${plain(numbers.entropy[0])} \u2192 ${plain(numbers.entropy[1])}` : '-'}
+      title={`The policy's entropy estimate (-mean_log_prob): the mean of the learner updates of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}. Fallen far = the policy has settled; level = it still explores.`} />
+    <KeyTile label={'Temperature \u03b1, first \u2192 last'} value={numbers.alpha ? `${plain(numbers.alpha[0])} \u2192 ${plain(numbers.alpha[1])}` : '-'}
+      title={`The temperature \u03b1 the same way: the mean of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}.`} />
+  </div>;
+}
+
+/** Several runs' key numbers, one row each, named and coloured as its chip. */
+function keyTable({ keyRows, others, runLabel, noPassWord }: {
+  keyRows: KeyRow[]; others: string[]; runLabel: (dir: string) => string; noPassWord: (dir: string) => string }) {
+  return <table className="grid training-keys-table"><thead><tr><th>Run</th><th title="Evaluations recorded so far.">Evaluations</th>
+    <th title={FIRST_PASS_TIP}>First passing design</th>
+    <th title={RECENT_TIP}>Passing, last {RECENT}</th>
+    <th title="The worst-spec miss of the design the run keeps as its best, at the newest evaluation: 0 = it has a design that meets every hard spec.">
+      Best design's worst miss</th>
+    <th title={`The policy's entropy estimate (-mean_log_prob): the mean of the learner updates of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}. Fallen far = the policy has settled; level = it still explores.`}>Entropy estimate</th>
+    <th title={`The temperature α the same way: the mean of the first ${ENDS} evaluations it learned at, then of the last ${ENDS}.`}>
+      Temperature α</th></tr></thead>
+    <tbody>{keyRows.map(({ dir, numbers }, index) => <tr key={dir}>
+      <td title={dir}>{others.length ? <span className={`training-chip key-run${index}`}><span className="swatch" />{runLabel(dir)}</span> : runLabel(dir)}</td>
+      {!numbers ? <td colSpan={6} className="hint">Reading...</td> : <>
+        <td>{count(numbers.evaluations)}</td>
+        <td>{numbers.firstPass != null ? `evaluation ${numbers.firstPass}` : noPassWord(dir)}
+          {numbers.startPassed != null && <span className="key-tile-note">{startPassedWords(numbers.startPassed)}</span>}</td>
+        <td title={numbers.recent ? `evaluations ${numbers.recent.from} to ${numbers.recent.to}` : undefined}>{!numbers.recent ? '-' : numbers.recent.judged
+          ? `${numbers.recent.passed} of ${numbers.recent.judged} judged (${Math.round((100 * numbers.recent.passed) / numbers.recent.judged)} %)`
+          : 'no verdict'}</td>
+        <td>{numbers.bestMiss != null ? plain(numbers.bestMiss) : '-'}</td>
+        <td>{numbers.entropy ? `${plain(numbers.entropy[0])} \u2192 ${plain(numbers.entropy[1])}` : '-'}</td>
+        <td>{numbers.alpha ? `${plain(numbers.alpha[0])} \u2192 ${plain(numbers.alpha[1])}` : '-'}</td></>}
+    </tr>)}</tbody></table>;
+}
+
+/** One chart: what it shows chosen in its title and × to take it off, then the chart, or why there is none. */
+function chartCard({ slot, index, specOf, built, choose, chartOptions, slots, removeChart, own, active, learnerX, describe, setWidths, setView }: {
+  slot: Slot; index: number; specOf: (id: string | null) => ChartSpec | null; built: (Built | null)[]; choose: (key: number, id: string) => void;
+  chartOptions: (JSX.Element | null)[]; slots: Slot[]; removeChart: (key: number) => void; own: TrainingStore; active: boolean; learnerX: LearnerX;
+  describe: (axis: 'evaluation' | 'update') => (row: number) => string; setWidths: Dispatch<SetStateAction<Record<number, number>>>;
+  setView: (key: number, view: View) => void }) {
+  const spec = specOf(slot.id), made = built[index];
+  return <figure key={slot.key} className="training-chart">
+    {/* what this chart shows is chosen in its title; × takes the chart off the page (one always stays), its tooltip
+        starting with its label, "Remove chart 2" (branch record SIF-115: it read "Remove chart: ...") */}
+    <figcaption>
+      <select aria-label={`Chart ${index + 1}`} className="training-chart-choice" value={slot.id} onChange={e => choose(slot.key, e.target.value)}
+        title={spec ? `${spec.about} Recorded as ${spec.source}.` : 'This run has no such chart.'}>
+        {!spec && <option value={slot.id} disabled>{chartName(slot.id)} - not in this run</option>}{chartOptions}</select>
+      <span className="spacer" />
+      <button type="button" className="training-chart-remove" disabled={slots.length <= 1} onClick={() => removeChart(slot.key)}
+        title={`Remove chart ${index + 1}: take this chart off the page`}><Icon name="close" label={`Remove chart ${index + 1}`} /></button>
+    </figcaption>
+    {!spec ? <p className="hint training-empty">{own.answers > 0
+      ? `This run has no ${chartName(slot.id)} chart (a spec of another task?). Choose another in the title.` : 'Reading...'}</p>
+      : !spec.available ? <p className="hint training-empty">{spec.reason}</p>
+      : <>{made?.missing?.length
+        ? <p className="hint training-missing">Not on this chart: {made.missing.map(run => `${run.label} (${run.reason})`).join('; ')}</p> : null}
+        <TrainingChart built={made} hidden={!active} xLabel={spec.axis === 'update' && learnerX === 'update' ? 'Learner update' : 'Evaluation'}
+          format={formatFor(spec.unit)} describe={describe(spec.axis)}
+          onWidth={width => setWidths(widths => (Math.abs((widths[slot.key] ?? 600) - width) < 8 ? widths : { ...widths, [slot.key]: width }))}
+          onZoom={(min, max) => setView(slot.key, { mode: 'fixed', min, max })} onReset={() => setView(slot.key, NONE)} /></>}
+  </figure>;
+}
+
+/** The chart choices, grouped; one the run cannot draw stays choosable and says why in its place. */
+function options(charts: ChartSpec[]) {
+  const groups: ChartSpec['group'][] = ['Results', 'Specs', 'Learner (SAC)', 'Not recorded'];
+  return groups.map(group => {
+    const list = charts.filter(c => c.group === group);
+    return list.length ? <optgroup key={group} label={group}>{list.map(c => <option key={c.id} value={c.id} title={c.available ? c.about : c.reason ?? ''}>
+      {c.title}{c.unit && !['', 'share'].includes(c.unit) ? ` (${unitLabel(c.unit)})` : ''}{c.available ? '' : ' - not recorded'}</option>)}</optgroup> : null;
+  });
+}

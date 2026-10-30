@@ -1,0 +1,14 @@
+# Exact versions of the libraries that saved models depend on. Install torch first (CPU index, below), then:  pip install -c constraints.txt -e '.[graph,test,web,webtest]'
+#
+# Why exact: every saved model (SACLearner.contract() in src/analog_optimizer/training/sac.py) records torch.__version__ and
+# torch_geometric.__version__, and loading it requires the SAME strings. The frozen M6 plan also records torch,
+# torch-geometric, numpy and networkx (evaluation/real_category.py). A newer version - even a CUDA build of the same torch
+# release, which is "2.14.0" instead of "2.14.0+cpu" - makes the 162 M6 checkpoints and every model the workbench saved
+# unloadable, and the M6 audit refuses to re-validate its plan. These are the versions in use on 2026-09-22
+# (then /tmp/analog-optimizer-venv; rebuilt identically at ~/analog-optimizer-venv on 2026-09-24 after a WSL restart
+# had emptied /tmp; Python 3.10.12). torch comes from the CPU index:
+#   pip install -c constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
+torch==2.14.0+cpu
+torch-geometric==2.8.0.post1
+numpy==2.2.6
+networkx==3.4.2

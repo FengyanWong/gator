@@ -1,0 +1,80 @@
+{
+ "instances": [
+  {
+   "name": "XU1",
+   "lib": "GPDK045_RINGOSC",
+   "cell": "ring_osc_3stage",
+   "params": {},
+   "terms": {
+    "VDD": "VDD",
+    "VSS": "gnd!",
+    "OUT": "OUT"
+   }
+  },
+  {
+   "name": "V0",
+   "lib": "analogLib",
+   "cell": "vdc",
+   "params": {
+    "FNpairs": "0",
+    "vdc": "1.0",
+    "srcType": "dc",
+    "srcTypeDC": "dc"
+   },
+   "terms": {
+    "PLUS": "VDD",
+    "MINUS": "gnd!"
+   }
+  },
+  {
+   "name": "GND",
+   "lib": "analogLib",
+   "cell": "gnd",
+   "params": {},
+   "terms": {
+    "gnd!": "gnd!"
+   }
+  },
+  {
+   "name": "NC_OUT",
+   "lib": "basic",
+   "cell": "noConn",
+   "params": {},
+   "terms": {
+    "noConn": "OUT"
+   }
+  }
+ ],
+ "nets": {
+  "OUT": {
+   "connections": [
+    "NC_OUT.noConn",
+    "XU1.OUT"
+   ],
+   "numBits": 1,
+   "sigType": "signal",
+   "isGlobal": false
+  },
+  "VDD": {
+   "connections": [
+    "V0.PLUS",
+    "XU1.VDD"
+   ],
+   "numBits": 1,
+   "sigType": "signal",
+   "isGlobal": false
+  },
+  "gnd!": {
+   "connections": [
+    "GND.gnd!",
+    "V0.MINUS",
+    "XU1.VSS"
+   ],
+   "numBits": 1,
+   "sigType": "signal",
+   "isGlobal": true
+  }
+ },
+ "pins": {},
+ "notes": []
+}

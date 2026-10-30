@@ -9,7 +9,6 @@ from contextlib import redirect_stdout, redirect_stderr
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 import fcntl
-import hashlib
 import importlib.metadata
 import json
 import math
@@ -22,42 +21,15 @@ from uuid import uuid4
 
 from .backend import (BackendNotConnected, NetlistArtifact, SimulationRequest,
                       SimulationResult, SimulationStatus, UnsupportedCapability, VirtuosoBackend)
-from .gpdk045 import Gpdk045OtaProfile, INPUT_KEYS, GEOMETRY, equal, number, set_gpdk_mos
-from .conditions import PVTCorner, SimulationCondition, finite_number
+# The generic helpers live in their own modules since 2026-10-09 (plan-refactoring E6); they are still read from here.
+from .common import file_digest, parameter_rows, write_json
+from .delegation import _captured, _delegation, delegated_owner
+from .spectre_deck import build_deck, build_deck_header
+from .gpdk045 import Gpdk045OtaProfile, GEOMETRY, equal, number, set_gpdk_mos
+from .conditions import PVTCorner, SimulationCondition
 from analog_optimizer.measurements.opamp import analyze
 
-
-def digest(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def write_json(path, value):
-    path = Path(path)
-    temporary = path.with_name(path.name + '.tmp')
-    temporary.write_text(json.dumps(value, indent=2, allow_nan=False, default=str) + '\n')
-    temporary.replace(path)
-
-
-def parameter_rows(parameters):
-    return [{'device': d, 'parameter': p, 'value': value} for (d, p), value in sorted(parameters.items())]
-
-
-def build_deck(structure, model_file, section='tt', *, temperature_c=27.0):
-    if not model_file.startswith('/') or any(c in model_file for c in '\n\r"'):
-        raise ValueError('Model file must be an absolute Spectre-host path')
-    if not re.fullmatch(r'[A-Za-z_]\w*', section):
-        raise ValueError('Invalid model section')
-    if re.search(r'^\s*(include|ahdl_include|simulator|global)\b', structure, re.M):
-        raise ValueError('Expected structure-only export')
-    if not finite_number(temperature_c) or temperature_c <= -273.15:
-        raise ValueError('Invalid simulation temperature')
-    return ('simulator lang=spectre\nglobal 0\n'
-            + f'include "{model_file}" section={section}\n' + structure + '\n'
-            + f'simulatorOptions options reltol=1e-5 vabstol=1e-8 iabstol=1e-13 temp={temperature_c:.12g} tnom=27\n'
-            + 'dcOp dc\ndcOpInfo info what=oppoint where=rawfile\n'
-            + 'ac ac start=10 stop=1G dec=60\n'
-            + 'save VOUT VINP VINN VDD VBIAS XU1.NTAIL XU1.NLOAD VDD:p\n'
-            + 'saveOptions options save=allpub\n')
+digest = file_digest       # the name the pinned examples and the tests read here (a file's bytes; plan-refactoring E8)
 
 
 @dataclass(frozen=True)
@@ -79,6 +51,9 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     Cadence session, and do not manipulate it while this backend is connected.
     """
     _process_lock = threading.Lock()
+    # Condition jobs of one candidate at a time: this is the verified single-owner adapter. A lane backend
+    # (native_preparation.NativeCandidateBackend) may allow more; the environment then runs them through `delegated`.
+    concurrent_condition_jobs = 1
 
     def __init__(self, config: BridgeConfig, circuit: Gpdk045OtaProfile):
         self.config, self.circuit = config, circuit
@@ -87,8 +62,10 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         self._owns_process_lock = False
         self._dirty = False
         self._exports = {}
+        self._simulator_lock = threading.Lock()      # the per-evaluation recording workspaces run_simulation hands out
         self._op = None
         self.timings = {}
+        self._netlist_ready = False                  # OCEAN set up for this testbench (`_export_netlist`)
 
     def _attach(self):
         from virtuoso_bridge import VirtuosoClient
@@ -129,7 +106,7 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                 if receipt[key] != expected:
                     raise ValueError('Creation receipt does not match the selected test circuit')
             build_deck('', self.config.model_file, self.config.section)
-            self._env_hash = digest(self.config.env_file)
+            self._env_hash = file_digest(self.config.env_file)
             self.client = self._attach()
             self._thread = threading.get_ident()
             self._bound_env = self._vb_env()
@@ -151,14 +128,37 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     def _vb_env():
         return {k: v for k, v in os.environ.items() if k.startswith('VB_')}
 
-    def _require_connection(self):
+    def delegated(self, call):
+        """`call` wrapped to run on a helper thread of this backend's owner - a candidate's condition jobs side by side.
+        Inside it run_simulation accepts the helper as the owner; nothing else does."""
+        owner = (self._thread, os.getpid())
+
+        def run(*args, **kwargs):
+            _delegation.owner = owner
+            try:
+                return call(*args, **kwargs)
+            finally:
+                _delegation.owner = None
+        return run
+
+    def _delegated_here(self):
+        return delegated_owner() is not None and delegated_owner() == (getattr(self, '_thread', None), os.getpid())
+
+    def _require_connection(self, *, delegable=False):
         if self.client is None:
             raise BackendNotConnected('Call connect() before using the real backend')
-        if threading.get_ident() != self._thread:
+        if threading.get_ident() != self._thread and not (delegable and self._delegated_here()):
             raise RuntimeError('Use the backend only from its owning thread')
-        if digest(self.config.env_file) != self._env_hash or self._vb_env() != self._bound_env:
-            raise RuntimeError('Bridge configuration changed during an active session')
-        if self.bridge_version == '0.8.0':
+        self._check_binding('Bridge configuration changed during an active session')
+
+    def _check_binding(self, changed):
+        """The bridge configuration bound at attach still holds: the env file and the VB_ variables (else RuntimeError
+        `changed`, each backend's own words) and, with bridge 0.8.0, the runtime env binding. Shared by this adapter
+        and native_preparation's lane backend (plan-refactoring E7); `bridge_version` is set whenever either is
+        connected, so reading it with getattr changes nothing for the adapter."""
+        if file_digest(self.config.env_file) != self._env_hash or self._vb_env() != self._bound_env:
+            raise RuntimeError(changed)
+        if getattr(self, 'bridge_version', None) == '0.8.0':
             from virtuoso_bridge.env import get_runtime_env_file
             if get_runtime_env_file() != self.config.env_file.resolve():
                 raise RuntimeError('Runtime bridge environment binding changed')
@@ -177,6 +177,17 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     def read_parameters(self):
         self._require_connection()
         return self.circuit.validate_readback(self._read_snapshot())
+
+    def written_parameters(self):
+        """The values the last `set_parameters` read back right after writing them, without reading the cell again: a
+        second whole-cell read straight after that one added nothing (record 7.137, user decision of 2026-10-01)."""
+        self._require_connection()
+        return self.circuit.validate_readback(self._current)
+
+    def written_snapshot(self):
+        """The whole readback of the last `set_parameters` (record 7.140: what a netlist is built from)."""
+        self._require_connection()
+        return deepcopy(self._current)
 
     def read_cdf_snapshot(self):
         """Return a verified full snapshot of the current native candidate."""
@@ -201,9 +212,10 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                     raise RuntimeError(f'Restoration mismatch: {name}.{key}')
 
     def set_parameters(self, parameters):
+        # No window check here: an open ADE/Maestro window conflicts with OCEAN's export, not with a write, so it is
+        # checked before each export (`generate_netlist`). A netlist built from the readback needs none (record 7.149).
         self._require_connection()
         self.circuit.validate_assignment(parameters)
-        self._check_windows()
         before = self._read_snapshot()
         previous = self.circuit.validate_readback(before)
         self._verify_restored(before, self._current)
@@ -264,7 +276,42 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
     def validate_condition(self, condition):
         self.circuit.validate_condition(condition or self.nominal_condition())
 
-    def generate_netlist(self, work_root, *, condition=None):
+    def _skill(self, text, timeout=120):
+        answer = self.client.execute_skill(text, timeout=timeout)
+        if not answer.ok:
+            raise RuntimeError('SKILL failed: ' + ('; '.join(str(e) for e in answer.errors or []) or str(answer.output)))
+        text = (answer.output or '').strip()
+        if len(text) >= 2 and text[0] == text[-1] == '"':
+            return bytes(text[1:-1], 'utf-8').decode('unicode_escape')
+        return text
+
+    def _export_netlist(self, output_dir):
+        """Virtuoso's own netlister, its package downloaded into `output_dir`. The bridge's export sets OCEAN up again on
+        every call (simulator, design, a library refresh): 0.27 s per export where `createNetlist` alone takes 0.18 s
+        (record 7.140). A client that can run SKILL and download files therefore sets OCEAN up once and then only
+        netlists (record 7.142, user decision of 2026-10-02); when the netlist it returns is not this testbench's -
+        something else set OCEAN to another design meanwhile - it sets up again. A task measured inside the Virtuoso
+        session shares OCEAN with that measurement and keeps the bridge's export, as does a client without those calls."""
+        library, testbench = self.config.library, self.circuit.design['testbench_cell']
+        if (getattr(self.circuit, 'measures_in_virtuoso', False) or not callable(getattr(self.client, 'execute_skill', None))
+                or not callable(getattr(self.client, 'download_file', None))):
+            return self.client.schematic.export_netlist(library, testbench, output_dir, timeout=120)
+        for _ in range(2):
+            if not self._netlist_ready:
+                self._skill(f"progn(simulator('spectre) design({json.dumps(library)} {json.dumps(testbench)} \"schematic\" \"r\") t)")
+                self._netlist_ready = True
+            source = self._skill('let((r) r = createNetlist(?recreateAll t ?display nil) when(r simplifyFilename(r)))')
+            if source.startswith('/') and f'/{testbench}/' in source:
+                break
+            self._netlist_ready = False
+        else:
+            raise RuntimeError(f'createNetlist did not netlist {library}/{testbench}: {source!r}')
+        result = self.client.download_file(source.rsplit('/', 1)[0], output_dir, timeout=120, recursive=True)
+        if not (output_dir / 'input.scs').is_file() or not (output_dir / 'netlist').is_file():
+            raise RuntimeError(f'The netlist package did not download: {result}')
+        return {'input_file': str(output_dir / 'input.scs')}
+
+    def generate_netlist(self, work_root, *, condition=None, just_written=False, built=None):
         # Preflight unsupported MC/voltage requests before any remote operation.
         if condition is None:
             corner = self.circuit.nominal_corner
@@ -275,95 +322,174 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                 condition = self.nominal_condition()
         self.validate_condition(condition)
         self._require_connection()
-        self._check_windows()
-        started = perf_counter()
-        snapshot = self._read_snapshot()
-        self._verify_restored(snapshot, self._current)
+        if just_written:
+            # Straight after `set_parameters`, which read the cell before and after its write in the same transaction:
+            # the cell is that readback. The export is still checked against it, and the read after the export still
+            # proves the cell holds it (record 7.137, user decision of 2026-10-01). The windows are checked only when an
+            # export follows: a netlist built from the readback runs no OCEAN (record 7.149).
+            if built is None:
+                self._check_windows()
+            started = perf_counter()
+            snapshot = deepcopy(self._current)
+        else:
+            self._check_windows()
+            started = perf_counter()
+            snapshot = self._read_snapshot()
+            self._verify_restored(snapshot, self._current)
         job_id = uuid4().hex
         directory = Path(work_root).resolve() / job_id
         directory.mkdir(parents=True, exist_ok=False)
         write_json(directory / 'readback.json', snapshot)
-        with (directory / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
-            exported = self.client.schematic.export_netlist(
-                self.config.library, self.circuit.design['testbench_cell'], directory / 'package', timeout=120)
-        structure = Path(exported['input_file']).parent / 'netlist'
-        parameters = self.circuit.validate_export(structure, snapshot)
-        self._verify_restored(self._read_snapshot(), snapshot)
+        if built is not None:
+            # The netlist built from the write's readback (record 7.142): no export, and nothing done in Virtuoso since
+            # that readback, so nothing to read again. It is held to the cell exactly as an export is.
+            if not just_written:
+                raise ValueError('A built netlist follows the readback of its own write')
+            structure = directory / 'package' / 'netlist'
+            structure.parent.mkdir()
+            structure.write_text(built)
+            parameters = self.circuit.validate_export(structure, snapshot)
+        else:
+            with (directory / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
+                exported = self._export_netlist(directory / 'package')
+            structure = Path(exported['input_file']).parent / 'netlist'
+            parameters = self.circuit.validate_export(structure, snapshot)
+            self._verify_restored(self._read_snapshot(), snapshot)
         original_structure = structure
         prepared = self.circuit.structure_for_condition(structure.read_text(), condition)
         # Keep the raw export as evidence; the graph reflects the executed supply.
         structure = directory / 'conditioned_structure.scs'
         structure.write_text(prepared)
-        deck = directory / 'opamp.scs'
+        deck = directory / getattr(self.circuit, 'deck_name', 'opamp.scs')
         corner = condition.corner
-        deck.write_text(build_deck(prepared, self.config.model_file, corner.model_section,
-                                   temperature_c=corner.temperature_c))
+        builder = getattr(self.circuit, 'build_deck', build_deck)
+        deck.write_text(builder(prepared, self.config.model_file, corner.model_section,
+                               temperature_c=corner.temperature_c))
         self.timings['netlisting'] = perf_counter() - started
-        artifact = NetlistArtifact(deck, job_id, digest(deck), 'real', condition)
+        artifact = NetlistArtifact(deck, job_id, file_digest(deck), 'real', condition)
         metadata = {'job_id': job_id, 'origin': 'real', 'bridge_version': self.bridge_version,
                     'library': self.config.library, 'cell': self.circuit.design['testbench_cell'],
                     'section': corner.model_section, 'temperature_c': corner.temperature_c,
                     'supply_v': corner.supply_v, 'condition': asdict(condition),
                     'condition_fingerprint': condition.fingerprint, 'model_file': self.config.model_file,
                     'original_structure_path': str(original_structure.resolve()),
-                    'original_structure_sha256': digest(original_structure),
-                    'source_sha256': digest(structure), 'executed_sha256': artifact.sha256,
+                    'original_structure_sha256': file_digest(original_structure),
+                    'netlist_source': 'built from the readback' if built is not None else 'native export',
+                    'source_sha256': file_digest(structure), 'executed_sha256': artifact.sha256,
                     'structure_path': str(structure.resolve()),
                     'applied_parameters': parameter_rows(parameters), 'timings': dict(self.timings),
-                    'files': {str(p.relative_to(directory)): digest(p) for p in directory.rglob('*') if p.is_file()}}
+                    'files': {str(p.relative_to(directory)): file_digest(p) for p in directory.rglob('*') if p.is_file()}}
+        if hasattr(self.circuit, 'analysis_settings'):
+            metadata['analysis_settings'] = self.circuit.analysis_settings
         write_json(directory / 'manifest.json', metadata)
         self._exports[job_id] = (artifact, deepcopy(parameters), metadata)
+        return artifact
+
+    def derive_condition_artifact(self, base, work_root, *, condition):
+        self.validate_condition(condition)
+        self._require_connection()
+        saved, parameters, metadata = self._exports.get(base.job_id, (None, None, None))
+        if saved != base or base.origin != 'real' or base.condition != self.nominal_condition():
+            raise ValueError('Derivation requires this candidate\'s registered nominal export')
+        if condition.purpose != 'pvt_training' or condition.monte_carlo is not None:
+            raise UnsupportedCapability('Derived candidate decks require a deterministic training condition')
+        if file_digest(base.path) != base.sha256:
+            raise ValueError('Nominal deck changed before derivation')
+        original = Path(metadata['original_structure_path'])
+        if file_digest(original) != metadata['original_structure_sha256']:
+            raise ValueError('Original native export changed before derivation')
+        self.circuit.validate_assignment(parameters)
+        prepared = self.circuit.structure_for_condition(original.read_text(), condition)
+        job_id = uuid4().hex
+        directory = Path(work_root).resolve() / job_id
+        directory.mkdir(parents=True, exist_ok=False)
+        structure = directory / 'conditioned_structure.scs'
+        structure.write_text(prepared)
+        deck = directory / getattr(self.circuit, 'deck_name', 'opamp.scs')
+        corner = condition.corner
+        builder = getattr(self.circuit, 'build_deck', build_deck)
+        deck.write_text(builder(prepared, self.config.model_file, corner.model_section, temperature_c=corner.temperature_c))
+        artifact = NetlistArtifact(deck, job_id, file_digest(deck), 'real', condition)
+        derived = dict(metadata, job_id=job_id, derived_from_export_job_id=base.job_id,
+                       section=corner.model_section, temperature_c=corner.temperature_c, supply_v=corner.supply_v,
+                       condition=asdict(condition), condition_fingerprint=condition.fingerprint,
+                       source_sha256=file_digest(structure), executed_sha256=artifact.sha256,
+                       structure_path=str(structure),
+                       files={p.name: file_digest(p) for p in (structure, deck)})
+        write_json(directory / 'manifest.json', derived)
+        self._exports[job_id] = (artifact, deepcopy(parameters), derived)
         return artifact
 
     def get_circuit_graph(self, artifact):
         self._require_connection()
         saved, _, metadata = self._exports.get(artifact.job_id, (None, None, None))
-        if saved != artifact or digest(artifact.path) != artifact.sha256:
+        if saved != artifact or file_digest(artifact.path) != artifact.sha256:
             raise ValueError('Unknown or modified netlist artifact')
         structure = Path(metadata['structure_path'])
-        if digest(structure) != metadata['source_sha256']:
+        if file_digest(structure) != metadata['source_sha256']:
             raise ValueError('Exported structure changed after validation')
         graph = self.circuit.optimization_graph(structure)
         graph.metadata['simulation_condition'] = asdict(artifact.condition)
         return graph
 
+    def _raw_format(self):
+        """The Spectre results format asked for. A circuit measured inside the Virtuoso session (OCEAN,
+        `measures_in_virtuoso`) never reads its results here, so it keeps Spectre's own binary format and the bridge skips
+        parsing the downloaded text (user decision of 2026-09-30: about 0.45 s of a Maestro-measured evaluation)."""
+        return None if getattr(self.circuit, 'measures_in_virtuoso', False) else 'psfascii'
+
     def _new_simulator(self, work_dir, timeout):
         if getattr(self, '_recording_scratch', None) is not None:
-            return self._recording_scratch.simulator(work_dir, math.ceil(timeout))
+            if self._recording_scratch_used:
+                from analog_optimizer.recording.remote import BridgeScratch
+                recorder, eval_id = self._recording_binding
+                self._recording_scratch = BridgeScratch(recorder, eval_id, profile=self.config.profile)
+                self._recording_workspaces.append(self._recording_scratch)
+            self._recording_scratch_used = True
+            return self._recording_scratch.simulator(work_dir, math.ceil(timeout), output_format=self._raw_format())
         from virtuoso_bridge.spectre.runner import SpectreSimulator
         return SpectreSimulator.from_env(work_dir=work_dir, timeout=math.ceil(timeout),
-                                        output_format='psfascii', spectre_args=[], keep_remote_files=True,
+                                        output_format=self._raw_format(), spectre_args=[], keep_remote_files=True,
                                         profile=self.config.profile)
 
     def prepare_recording(self, recorder, eval_id):
         from analog_optimizer.recording.remote import BridgeScratch
         self._recording_scratch = BridgeScratch(recorder, eval_id, profile=self.config.profile)
+        self._recording_binding = (recorder, eval_id)
+        self._recording_scratch_used = False
+        self._recording_workspaces = [self._recording_scratch]
 
     def finish_recording(self, receipt):
         if getattr(self, '_recording_scratch', None) is not None:
-            self._recording_scratch.cleanup(receipt)
+            for workspace in self._recording_workspaces:
+                workspace.cleanup(receipt)
+            self._recording_workspaces = []
             self._recording_scratch = None
 
     def run_simulation(self, request: SimulationRequest):
         condition = request.condition or request.netlist.condition
         self.validate_condition(condition)
-        self._require_connection()
+        # A helper thread of the owner may run this (condition jobs side by side, `delegated`): it touches no Virtuoso
+        # session, only this candidate's exports, a fresh job folder and a simulator of its own.
+        self._require_connection(delegable=True)
+        owner_thread = not self._delegated_here()
         if request.analysis:
-            raise UnsupportedCapability('Only the prepared DC/AC analyses are supported; use typed conditions for PVT')
+            raise UnsupportedCapability('Only the analyses prepared by the circuit profile are supported')
         artifact, applied, metadata = self._exports.get(request.netlist.job_id, (None, None, None))
-        if artifact != request.netlist or artifact is None or digest(artifact.path) != artifact.sha256:
+        if artifact != request.netlist or artifact is None or file_digest(artifact.path) != artifact.sha256:
             raise ValueError('Unknown or modified netlist artifact')
         if request.parameters and (request.parameters.keys() != applied.keys() or
                                    any(not equal(v, applied[k]) for k, v in request.parameters.items())):
             raise ValueError('Requested parameters differ from the values verified in this export')
-        self._op = None
+        if owner_thread:                               # side by side, each result carries its own operating points
+            self._op = None
         started = perf_counter()
         job_id = uuid4().hex
         job = Path(request.work_root).resolve() / job_id
         job.mkdir(parents=True, exist_ok=False)
-        deck = job / 'opamp.scs'
+        deck = job / getattr(self.circuit, 'deck_name', 'opamp.scs')
         deck.write_bytes(artifact.path.read_bytes())
-        if digest(deck) != artifact.sha256:
+        if file_digest(deck) != artifact.sha256:
             raise ValueError('Netlist changed while preparing the simulation')
         manifest = {**metadata, 'job_id': job_id, 'export_job_id': artifact.job_id,
                     'proposed_parameters': parameter_rows(request.parameters),
@@ -374,8 +500,9 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
         status, reason = SimulationStatus.BACKEND_ERROR, 'unclassified_bridge_failure'
         invocations, error_summary, operating_points = None, '', None
         try:
-            simulator = self._new_simulator(job / 'results', request.timeout_seconds)
-            with (job / 'bridge.log').open('w') as log, redirect_stdout(log), redirect_stderr(log):
+            with self._simulator_lock:
+                simulator = self._new_simulator(job / 'results', request.timeout_seconds)
+            with (job / 'bridge.log').open('w') as log, _captured(log):
                 raw = simulator.run_simulation(deck)  # Never pass sizing assignments as bridge params.
             # An intended command is not proof of execution: Bridge also returns
             # it when upload/transport fails before launching Spectre.
@@ -387,7 +514,8 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                 status, reason = SimulationStatus.BACKEND_ERROR, 'bridge_reported_failure'
             else:
                 try:
-                    measured = analyze(job, result_name='bridge_result.json', mos_names=self.circuit.mos_names)
+                    analyzer = getattr(self.circuit, 'analyze', analyze)
+                    measured = analyzer(job, result_name='bridge_result.json', mos_names=self.circuit.mos_names)
                     metrics, units, validity = (measured[k] for k in ('metrics', 'metric_units', 'metric_validity'))
                     operating_points = measured['operating_points']
                     for key in request.required_metrics:
@@ -398,7 +526,8 @@ class VirtuosoBridgeBackend(VirtuosoBackend):
                     required = request.required_metrics or tuple(metrics)
                     if not required or not all(validity[k] for k in required):
                         raise ValueError('A required metric is missing or invalid')
-                    self._op = operating_points
+                    if owner_thread:
+                        self._op = operating_points
                     status, reason = SimulationStatus.OK, 'validated_spectre_completion'
                 except (ValueError, KeyError, FileNotFoundError) as exc:
                     status, reason = SimulationStatus.MEASUREMENT_ERROR, 'measurement_validation_failed'

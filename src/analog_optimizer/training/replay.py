@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 import json
 import math
 from pathlib import Path
 import random
 
 from analog_optimizer.envs.sizing import Observation, graph_contract, same_parameters, parameter_rows
-from analog_optimizer.measurements.specs import SpecificationEvaluator
-from analog_optimizer.models.inputs import validate_observation
+from analog_optimizer.measurements.specs import REWARD_VERSION, RewardSettings
+from analog_optimizer.models.inputs import observation_digest, validate_observation
 from analog_optimizer.parameters.actions import ActionMapper
 
 
@@ -27,22 +27,31 @@ class Transition:
     candidate_id: str
     record_path: str
     action_version: str = 'absolute-group-v1'
+    reward_version: str = REWARD_VERSION
+    reward_settings: RewardSettings = field(default_factory=RewardSettings)
 
     def fingerprint(self):
         """Hash every replay field, including exact dynamic arrays and provenance."""
         from analog_optimizer.recording.codec import identity
-        return 'transition-v1:' + identity(vars(self))
+        return 'transition-v2:' + identity(vars(self))
 
     def validate(self):
         first, last = self.observation, self.next_observation
         validate_observation(first)
         validate_observation(last)
-        if first.status != 'ok' or first.remaining_steps < 1:
+        robust = first.condition_policy != 'off'
+        allowed = ('ok', 'invalid_design', 'nonconverged', 'measurement_error')
+        if first.status not in allowed or first.remaining_steps < 1:
             raise ValueError('Cannot act from a terminal or failed state')
         if first.origin != last.origin or first.condition != last.condition:
             raise ValueError('Transition origin/nominal condition changed')
         if first.specs != last.specs or graph_contract(first.graph) != graph_contract(last.graph):
             raise ValueError('Transition changed topology, action contract or goal')
+        if (self.reward_version != REWARD_VERSION or first.reward_settings != last.reward_settings
+                or self.reward_settings != first.reward_settings
+                or first.planned_conditions != last.planned_conditions
+                or first.condition_policy != last.condition_policy):
+            raise ValueError('Transition changed reward settings, failure policy or condition plan')
         if self.action_version != 'absolute-group-v1':
             raise ValueError('Unsupported action semantics')
         if any(type(flag) is not bool for flag in (self.terminated, self.truncated, self.bootstrap)):
@@ -51,18 +60,23 @@ class Transition:
             raise ValueError('Truncated/invalid bootstrap transition cannot enter nominal replay')
         if last.remaining_steps != first.remaining_steps - 1 or (last.remaining_steps == 0 and not self.terminated):
             raise ValueError('Finite-horizon budget must terminate without bootstrap')
-        action = ActionMapper(first.graph).legalize(self.proposal)
+        action = ActionMapper(first.graph, copy=False).legalize(self.proposal)
         actual = last.graph.assignments({g.id: g.value for g in last.graph.parameter_groups if g.mutable})
         if not same_parameters(actual, action.assignments) or not same_parameters(actual, self.applied_parameters):
             raise ValueError('Proposed, executed and next-state parameters differ')
-        initial_evaluation = SpecificationEvaluator(first.specs).evaluate(
-            first.metrics, first.metric_units, first.metric_validity)
+        initial_evaluation = first.evaluation
         if not initial_evaluation.valid:
             raise ValueError('Initial observation has no valid required measurements')
-        evaluation = SpecificationEvaluator(last.specs).evaluate(last.metrics, last.metric_units, last.metric_validity)
-        expected = evaluation.reward if last.status == 'ok' and evaluation.valid else None
-        if last.status in ('invalid_design', 'nonconverged') and self.terminated:
-            expected = -1.0
+        evaluation = last.evaluation
+        expected = evaluation.reward if evaluation.valid else None
+        if (last.status in ('invalid_design', 'nonconverged') and self.terminated and last.remaining_steps > 0):
+            raise ValueError('Attributed failure must not terminate the episode early')
+        gated = last.condition_policy == 'after_nominal' and not evaluation.nominal_success
+        if gated and len(last.condition_results) != 1:
+            raise ValueError('A failed nominal gate must skip every corner')
+        if robust and not evaluation.complete and not any(
+                r.candidate_evaluated and r.status in ('invalid_design', 'nonconverged') for r in last.condition_results) and not gated:
+            raise ValueError('Incomplete non-failed candidate cannot enter replay')
         if (expected is None or isinstance(self.reward, bool) or not math.isfinite(self.reward)
                 or not math.isclose(self.reward, expected, rel_tol=1e-10, abs_tol=1e-12)):
             raise ValueError('Reward/status/measurement contract mismatch')
@@ -80,9 +94,9 @@ class Transition:
             record = json.loads(Path(path).read_text())
         applied = {(p['device'], p['parameter']): p['value'] for p in record['applied_parameters']}
         transition = cls(deepcopy(observation), dict(proposal), reward, deepcopy(next_observation),
-                         terminated, truncated, info['bootstrap'], applied, info['candidate_id'], str(path))
+                         terminated, truncated, info['bootstrap'], applied, info['candidate_id'], str(path),
+                         reward_settings=next_observation.reward_settings)
         transition.validate()
-        from dataclasses import asdict
         expected = {
             'state': 'completed', 'kind': 'step', 'replay_eligible': True,
             'evaluation_purpose': 'nominal', 'origin': observation.origin,
@@ -93,6 +107,13 @@ class Transition:
             'status': next_observation.status, 'metrics': next_observation.metrics,
             'metric_validity': next_observation.metric_validity,
             'applied_parameters': parameter_rows(applied),
+            'reward_version': REWARD_VERSION, 'reward_settings': asdict(transition.reward_settings),
+            'condition_policy': next_observation.condition_policy,
+            'failure_policy': 'continue_attributed',
+            'planned_conditions': [None if c is None else asdict(c) for c in next_observation.planned_conditions],
+            'condition_results': [asdict(r) for r in next_observation.condition_results],
+            'success': next_observation.evaluation.success,
+            'conditions_complete': next_observation.evaluation.complete,
         }
         if any(record.get(key) != value for key, value in expected.items()):
             raise ValueError('Candidate journal differs from the replay transition')
@@ -107,6 +128,7 @@ class ReplayBuffer:
         self.store = store
         self._items, self._position, self.insertions = [], 0, 0
         self._rng = random.Random(seed)
+        self._digests = {}   # id(stored transition) -> (it, its observations' digests); disposable, never saved
 
     def __len__(self):
         return len(self._items)
@@ -120,6 +142,7 @@ class ReplayBuffer:
         if len(self._items) < self.capacity:
             self._items.append(transition)
         else:
+            self._digests.pop(id(self._items[self._position]), None)
             self._items[self._position] = transition
         self._position = (self._position + 1) % self.capacity
         self.insertions += 1
@@ -130,14 +153,39 @@ class ReplayBuffer:
             # and both states. Admission need not reconstruct graphs from SQLite.
             self.store.call('verify_transition', transition.candidate_id, transition.fingerprint())
 
-    def sample(self, batch_size):
+    def _draw(self, batch_size):
         if type(batch_size) is not int or not 1 <= batch_size <= len(self):
             raise ValueError('Insufficient replay for sampling without replacement')
-        return deepcopy(self._rng.sample(self._items, batch_size))
+        return self._rng.sample(self._items, batch_size)
 
-    def state_dict(self):
-        return deepcopy(dict(capacity=self.capacity, origin=self.origin, items=self._items,
-                             position=self._position, insertions=self.insertions, rng=self._rng.getstate()))
+    def sample(self, batch_size):
+        """Deep copies: a caller may change what it gets without changing the replay."""
+        return deepcopy(self._draw(batch_size))
+
+    def update_learner(self, learner, batch_size):
+        """``learner.update`` on a sample drawn exactly as ``sample`` draws it (same generator, items and order), WITHOUT
+        the deep copy: 8 recorded Spectre transitions took ~28 ms to copy, a third of a Graph Transformer update
+        (record 7.221).
+
+        The stored transitions are lent to ``learner.update`` for this call only and are never returned to the caller.
+        SACLearner.update only reads them (validation, batching, rewards); the tests fingerprint the whole replay around
+        updates. Every other caller keeps ``sample``. The observations' content digests are worked out once per stored
+        transition and passed along, so the learner's input cache does not hash them again on every update."""
+        transitions = self._draw(batch_size)
+        return learner.update(transitions, digests=[self._observation_digests(t) for t in transitions])
+
+    def _observation_digests(self, transition):
+        entry = self._digests.get(id(transition))
+        if entry is None or entry[0] is not transition:
+            entry = self._digests[id(transition)] = (transition, (observation_digest(transition.observation),
+                                                                  observation_digest(transition.next_observation)))
+        return entry[1]
+
+    def state_dict(self, *, copy=True):
+        """copy=False for a checkpoint written at once: pickling makes its own copy (the same bytes)."""
+        state = dict(capacity=self.capacity, origin=self.origin, items=self._items,
+                     position=self._position, insertions=self.insertions, rng=self._rng.getstate())
+        return deepcopy(state) if copy else state
 
     def manifest(self):
         if self.store is None:

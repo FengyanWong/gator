@@ -1,5 +1,6 @@
 """Read-only run inspection and streaming on-demand Parquet+ZSTD export."""
 from pathlib import Path
+import math
 import shutil
 import sqlite3
 import time
@@ -64,47 +65,11 @@ class RunReader:
             run_id = row['id']
             summary = unpack(row['summary'])
             if not summary.get('breakdown_complete', False):
-                from analog_optimizer.measurements.specs import SpecificationEvaluator
-                evaluators = {}
-                for name in ('status_counts', 'source_counts', 'error_counts', 'outcome_counts'):
-                    summary[name] = {}
-                for evaluation in self.evaluations(run_id):
-                    result = evaluation['result']
-                    if result is None:
-                        continue
-                    task_id = evaluation['task_id']
-                    if task_id not in evaluators:
-                        task = self.call('read', 'asset', task_id)
-                        evaluators[task_id] = SpecificationEvaluator(self.call('read', 'asset', task['spec_id']))
-                    verdict = evaluators[task_id].evaluate(result['metrics'], result.get('metric_units', {}),
-                                                          result['metric_validity'])
-                    valid = verdict.valid and result['status'] == 'ok'
-                    ExperimentStore._count_result(summary, result, evaluation['request'], valid, valid and verdict.success)
+                self._recount(run_id, summary)
             pending = {r['state']: r['n'] for r in self.db.execute(
                 'SELECT state,count(*) n FROM evaluations WHERE run_id=? AND result IS NULL GROUP BY state', (run_id,))}
-            recent_rows = []
-            for item in self.db.execute('SELECT * FROM evaluations WHERE run_id=? ORDER BY seq DESC LIMIT ?', (run_id, recent)):
-                request = unpack(item['request'])
-                result = unpack(item['result']) if item['result'] is not None else {}
-                recent_rows.append(dict(eval_id=item['id'], state=item['state'], started=item['started'], ended=item['ended'],
-                    **{k: request.get(k) for k in ('worker_id', 'episode_id', 'step', 'phase', 'source')},
-                    **{k: result.get(k) for k in ('status', 'error_class', 'error_summary', 'metrics', 'metric_validity')}))
-            # Include units and bounds for the few selected designs, not whole configs/graphs.
-            for name in ('initial', 'best_feasible', 'best_infeasible'):
-                candidate = summary[name]
-                if candidate is None:
-                    continue
-                evaluation = self.call('read', 'evaluation', candidate['eval_id'])
-                task = self.call('read', 'asset', candidate['task_id'])
-                result = evaluation['result']
-                candidate['constraints'] = []
-                for spec in self.call('read', 'asset', task['spec_id']):
-                    value = result['metrics'].get(spec.metric_id)
-                    valid = (result['metric_validity'].get(spec.metric_id, False) and value is not None
-                             and result.get('metric_units', {}).get(spec.metric_id) == spec.unit)
-                    met = (spec.lower is None or value >= spec.lower) and (spec.upper is None or value <= spec.upper) if valid else None
-                    candidate['constraints'].append(dict(metric=spec.metric_id, unit=spec.unit, lower=spec.lower,
-                        upper=spec.upper, value=value, valid=valid, met=met, required=spec.required, active=spec.active))
+            recent_rows = self._recent(run_id, recent)
+            self._selected_designs(summary)
             summary['wall_seconds'] = (row['ended'] or time.time()) - row['started']
             full = self.db.execute("SELECT step,path FROM checkpoints WHERE run_id=? AND kind='full' AND status='retained' "
                                    'ORDER BY step DESC,rowid DESC LIMIT 1', (run_id,)).fetchone()
@@ -136,94 +101,200 @@ class RunReader:
             'evaluations': ('SELECT * FROM evaluations WHERE run_id=? ORDER BY seq', (run_id,)),
             'transitions': ('SELECT t.* FROM transitions t JOIN evaluations e ON t.eval_id=e.id WHERE e.run_id=? ORDER BY t.seq', (run_id,)),
         }
+        if self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='simulation_jobs'").fetchone():
+            queries['simulation_jobs'] = ('SELECT j.* FROM simulation_jobs j JOIN evaluations e ON j.eval_id=e.id '
+                                          'WHERE e.run_id=? ORDER BY e.seq,j.job_index', (run_id,))
         self.db.execute('BEGIN')
         try:
-            # Include only this run's static definitions and their explicit references.
-            run = self.call('read', 'run', run_id)
-            asset_ids = {run['config_id']}
-            state_ids, task_ids = set(), set()
-            for row in self.evaluations(run_id):
-                asset_ids.update((row['task_id'], row['graph_id']))
-                if row['request'].get('condition_id'):
-                    asset_ids.add(row['request']['condition_id'])
-                if row['result'] and row['result'].get('simulator_version_asset_id'):
-                    asset_ids.add(row['result']['simulator_version_asset_id'])
-                if row['result'] and row['result'].get('state_id'):
-                    state_ids.add(row['result']['state_id'])
-                task_ids.add(row['task_id'])
-            for task_id in task_ids:
-                asset_ids.add(self.call('read', 'asset', task_id)['spec_id'])
-            for row in self.db.execute('SELECT t.state_id,t.next_state_id FROM transitions t JOIN evaluations e ON t.eval_id=e.id WHERE e.run_id=?', (run_id,)):
-                state_ids.update(key for key in row if key is not None)
-            # Explicit asset references in run configuration (e.g. project snapshot/template).
-            def references(value):
-                if isinstance(value, dict):
-                    for key, val in value.items():
-                        if key.endswith('_asset_id') and isinstance(val, str):
-                            asset_ids.add(val)
-                        references(val)
-                elif isinstance(value, (list, tuple)):
-                    for val in value:
-                        references(val)
-            references(run['configuration'])
-            # Keep SQL parameter counts bounded, and do not include another run's
-            # observations merely because it shares this task's static graph.
-            for table, selected in [('assets', asset_ids), ('states', state_ids)]:
-                writer = None
-                keys = sorted(selected)
-                chunk_size = min(batch_size, 512)
-                try:
-                    for offset in range(0, len(keys), chunk_size):
-                        chunk = keys[offset:offset + chunk_size]
-                        rows = [dict(r) for r in self.db.execute(
-                            f'SELECT * FROM {table} WHERE id IN (' + ','.join('?' * len(chunk)) + ')', chunk)]
-                        arrow = pa.Table.from_pylist(rows)
-                        if writer is None:
-                            writer = pq.ParquetWriter(destination / f'{table}.parquet', arrow.schema, compression='zstd')
-                        writer.write_table(arrow)
-                finally:
-                    if writer:
-                        writer.close()
-            for name, (sql, args) in queries.items():
-                cursor = self.db.execute(sql, args)
-                writer = None
-                try:
-                    while rows := cursor.fetchmany(batch_size):
-                        rows = [dict(row) for row in rows]
-                        # Explicit SQL schema prevents all-null first batches from fixing Arrow null types.
-                        columns = {}
-                        schema = {r['name']: r['type'] for r in self.db.execute(f'PRAGMA table_info({name})')}
-                        for key in rows[0]:
-                            dtype = {'TEXT': pa.string(), 'BLOB': pa.binary(), 'INTEGER': pa.int64(), 'REAL': pa.float64()}[schema[key]]
-                            columns[key] = pa.array([r[key] for r in rows], type=dtype)
-                        table = pa.table(columns)
-                        if writer is None:
-                            writer = pq.ParquetWriter(destination / f'{name}.parquet', table.schema, compression='zstd')
-                        writer.write_table(table)
-                finally:
-                    if writer:
-                        writer.close()
-            # A compact, convenient long numeric table; original typed payloads remain authoritative.
-            schema = pa.schema([('eval_id', pa.string()), ('metric', pa.string()), ('value', pa.float64()),
-                                ('valid', pa.bool_()), ('unit', pa.string()), ('status', pa.string())])
-            with pq.ParquetWriter(destination / 'metrics.parquet', schema, compression='zstd') as writer:
-                rows = []
-                for evaluation in self.evaluations(run_id):
-                    result = evaluation['result']
-                    if result is None:
-                        continue
-                    for key, value in result['metrics'].items():
-                        rows.append(dict(eval_id=evaluation['id'], metric=key, value=value,
-                                         valid=result['metric_validity'][key], unit=result.get('metric_units', {}).get(key),
-                                         status=result['status']))
-                    if len(rows) >= batch_size:
-                        writer.write_table(pa.Table.from_pylist(rows, schema=schema))
-                        rows.clear()
-                if rows:
-                    writer.write_table(pa.Table.from_pylist(rows, schema=schema))
+            asset_ids, state_ids = self._export_references(run_id)
+            self._export_static(pa, pq, destination, batch_size, asset_ids, state_ids)
+            self._export_tables(pa, pq, destination, batch_size, queries)
+            self._export_metrics(pa, pq, destination, batch_size, run_id)
         finally:
             self.db.rollback()
         return destination
+
+    def _recount(self, run_id, summary):
+        """An old database's run summary without cumulative breakdowns: its status, source, error and outcome counts
+        recounted from the evaluations (read only)."""
+        from analog_optimizer.measurements.specs import SpecificationEvaluator
+        evaluators = {}
+        for name in ('status_counts', 'source_counts', 'error_counts', 'outcome_counts'):
+            summary[name] = {}
+        for evaluation in self.evaluations(run_id):
+            result = evaluation['result']
+            if result is None:
+                continue
+            task_id = evaluation['task_id']
+            if task_id not in evaluators:
+                task = self.call('read', 'asset', task_id)
+                evaluators[task_id] = SpecificationEvaluator(self.call('read', 'asset', task['spec_id']))
+            observation = self._decoder._load_state(result.get('state_id'))
+            verdict = (observation.evaluation if observation is not None else
+                       evaluators[task_id].evaluate(result['metrics'], result.get('metric_units', {}),
+                                                    result['metric_validity']))
+            valid = verdict.valid and result['status'] == 'ok'
+            ExperimentStore._count_result(summary, result, evaluation['request'], valid, valid and verdict.success)
+
+    def _recent(self, run_id, recent):
+        """The run's `recent` newest evaluations, each as a small row."""
+        recent_rows = []
+        for item in self.db.execute('SELECT * FROM evaluations WHERE run_id=? ORDER BY seq DESC LIMIT ?', (run_id, recent)):
+            request = unpack(item['request'])
+            result = unpack(item['result']) if item['result'] is not None else {}
+            recent_rows.append(dict(eval_id=item['id'], state=item['state'], started=item['started'], ended=item['ended'],
+                **{k: request.get(k) for k in ('worker_id', 'episode_id', 'step', 'phase', 'source')},
+                **{k: result.get(k) for k in ('status', 'error_class', 'error_summary', 'metrics', 'metric_validity')}))
+        return recent_rows
+
+    def _selected_designs(self, summary):
+        """The summary's few selected designs (initial, best feasible, best nominal feasible, best infeasible) with each
+        constraint's units, bounds and per-condition values - not whole configs or graphs."""
+        for name in ('initial', 'best_feasible', 'best_nominal_feasible', 'best_infeasible'):
+            candidate = summary.get(name)
+            if candidate is None:
+                continue
+            evaluation = self.call('read', 'evaluation', candidate['eval_id'])
+            task = self.call('read', 'asset', candidate['task_id'])
+            result = evaluation['result']
+            observation = self._decoder._load_state(result.get('state_id'))
+            recorded_conditions = observation is not None and bool(observation.condition_results)
+            verdict = observation.evaluation if recorded_conditions else None
+            candidate.update(coverage_complete=verdict.complete if verdict else None,
+                condition_policy=observation.condition_policy if recorded_conditions else 'off',
+                robust_feasible=verdict.success if recorded_conditions and observation.condition_policy != 'off' else None,
+                missing_coverage=verdict.missing_coverage if verdict else {})
+            if verdict:
+                candidate.update(nominal_feasible=verdict.nominal_success,
+                    clearance_margin=verdict.clearance_margin,
+                    tightest_clearance_spec=verdict.tightest_clearance_spec)
+            candidate['constraints'] = []
+            for spec in self.call('read', 'asset', task['spec_id']):
+                def measured(metrics, validity, units, available=True):
+                    value = metrics.get(spec.metric_id)
+                    valid = (available and validity.get(spec.metric_id, False) and value is not None
+                             and math.isfinite(value) and units.get(spec.metric_id) == spec.unit)
+                    met = ((spec.lower is None or value >= spec.lower) and
+                           (spec.upper is None or value <= spec.upper)) if valid else None
+                    return dict(value=value, valid=bool(valid), met=met)
+
+                details = []
+                aggregate = measured(result['metrics'], result['metric_validity'], result.get('metric_units', {}),
+                                     result['status'] == 'ok')
+                if recorded_conditions and spec.active:
+                    rows = observation.condition_results[:1] if spec.nominal_only else observation.condition_results
+                    for condition_result in rows:
+                        condition = condition_result.condition
+                        details.append(dict(condition=condition.corner.id if condition else 'nominal',
+                            **measured(condition_result.metrics, condition_result.metric_validity,
+                                       condition_result.metric_units,
+                                       condition_result.status in ('ok', 'measurement_error') and condition_result.candidate_evaluated)))
+                    valid = verdict.worst_valid[spec.metric_id] and not verdict.missing_coverage[spec.metric_id]
+                    # Bounds on every actual value are authoritative, not rounded reward penalties.
+                    aggregate = dict(value=verdict.worst_values[spec.metric_id], valid=valid,
+                                     met=all(item['met'] is True for item in details) if valid else None)
+                candidate['constraints'].append(dict(metric=spec.metric_id, unit=spec.unit, lower=spec.lower,
+                    upper=spec.upper, **aggregate, required=spec.required, active=spec.active,
+                    nominal_only=spec.nominal_only, conditions=details,
+                    binding_condition=verdict.worst_conditions.get(spec.metric_id) if verdict else None,
+                    missing_coverage=verdict.missing_coverage.get(spec.metric_id, ()) if verdict else ()))
+
+    def _export_references(self, run_id):
+        """The assets and states the run's export includes: its own static definitions and the assets its configuration
+        names explicitly (asset_ids, state_ids)."""
+        run = self.call('read', 'run', run_id)
+        asset_ids = {run['config_id']}
+        state_ids, task_ids = set(), set()
+        for row in self.evaluations(run_id):
+            asset_ids.update((row['task_id'], row['graph_id']))
+            if row['request'].get('condition_id'):
+                asset_ids.add(row['request']['condition_id'])
+            if row['result'] and row['result'].get('simulator_version_asset_id'):
+                asset_ids.add(row['result']['simulator_version_asset_id'])
+            if row['result'] and row['result'].get('state_id'):
+                state_ids.add(row['result']['state_id'])
+            task_ids.add(row['task_id'])
+        for task_id in task_ids:
+            asset_ids.add(self.call('read', 'asset', task_id)['spec_id'])
+        for row in self.db.execute('SELECT t.state_id,t.next_state_id FROM transitions t JOIN evaluations e ON t.eval_id=e.id WHERE e.run_id=?', (run_id,)):
+            state_ids.update(key for key in row if key is not None)
+        # Explicit asset references in run configuration (e.g. project snapshot/template).
+        def references(value):
+            if isinstance(value, dict):
+                for key, val in value.items():
+                    if key.endswith('_asset_id') and isinstance(val, str):
+                        asset_ids.add(val)
+                    references(val)
+            elif isinstance(value, (list, tuple)):
+                for val in value:
+                    references(val)
+        references(run['configuration'])
+        return asset_ids, state_ids
+
+    def _export_static(self, pa, pq, destination, batch_size, asset_ids, state_ids):
+        """assets.parquet and states.parquet: the selected rows, in chunks of at most 512 SQL parameters."""
+        # Keep SQL parameter counts bounded, and do not include another run's
+        # observations merely because it shares this task's static graph.
+        for table, selected in [('assets', asset_ids), ('states', state_ids)]:
+            writer = None
+            keys = sorted(selected)
+            chunk_size = min(batch_size, 512)
+            try:
+                for offset in range(0, len(keys), chunk_size):
+                    chunk = keys[offset:offset + chunk_size]
+                    rows = [dict(r) for r in self.db.execute(
+                        f'SELECT * FROM {table} WHERE id IN (' + ','.join('?' * len(chunk)) + ')', chunk)]
+                    arrow = pa.Table.from_pylist(rows)
+                    if writer is None:
+                        writer = pq.ParquetWriter(destination / f'{table}.parquet', arrow.schema, compression='zstd')
+                    writer.write_table(arrow)
+            finally:
+                if writer:
+                    writer.close()
+
+    def _export_tables(self, pa, pq, destination, batch_size, queries):
+        """One parquet file per queried table, written in batches with the SQL schema's explicit column types (an
+        all-null first batch cannot fix Arrow null types)."""
+        for name, (sql, args) in queries.items():
+            cursor = self.db.execute(sql, args)
+            writer = None
+            try:
+                while rows := cursor.fetchmany(batch_size):
+                    rows = [dict(row) for row in rows]
+                    # Explicit SQL schema prevents all-null first batches from fixing Arrow null types.
+                    columns = {}
+                    schema = {r['name']: r['type'] for r in self.db.execute(f'PRAGMA table_info({name})')}
+                    for key in rows[0]:
+                        dtype = {'TEXT': pa.string(), 'BLOB': pa.binary(), 'INTEGER': pa.int64(), 'REAL': pa.float64()}[schema[key]]
+                        columns[key] = pa.array([r[key] for r in rows], type=dtype)
+                    table = pa.table(columns)
+                    if writer is None:
+                        writer = pq.ParquetWriter(destination / f'{name}.parquet', table.schema, compression='zstd')
+                    writer.write_table(table)
+            finally:
+                if writer:
+                    writer.close()
+
+    def _export_metrics(self, pa, pq, destination, batch_size, run_id):
+        """metrics.parquet: a compact, convenient long numeric table; the original typed payloads remain
+        authoritative."""
+        schema = pa.schema([('eval_id', pa.string()), ('metric', pa.string()), ('value', pa.float64()),
+                            ('valid', pa.bool_()), ('unit', pa.string()), ('status', pa.string())])
+        with pq.ParquetWriter(destination / 'metrics.parquet', schema, compression='zstd') as writer:
+            rows = []
+            for evaluation in self.evaluations(run_id):
+                result = evaluation['result']
+                if result is None:
+                    continue
+                for key, value in result['metrics'].items():
+                    rows.append(dict(eval_id=evaluation['id'], metric=key, value=value,
+                                     valid=result['metric_validity'][key], unit=result.get('metric_units', {}).get(key),
+                                     status=result['status']))
+                if len(rows) >= batch_size:
+                    writer.write_table(pa.Table.from_pylist(rows, schema=schema))
+                    rows.clear()
+            if rows:
+                writer.write_table(pa.Table.from_pylist(rows, schema=schema))
 
     def close(self):
         self.db.close()

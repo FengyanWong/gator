@@ -1,0 +1,70 @@
+CELL|nmos|"dm_nch"|(D G S B)|(nil D \\:d G \\:g S \\:s B \\:b)|(w l nf m trise region)|(model)|(nil m simM w simW trise dtemp)|nil|""|("spectre" "symbol" "layout")
+PARAM|nmos|model|"string"|nil|"dm_nch"|"Model name"
+PARAM|nmos|w|"string"|"lengthMetric"|"1u"|"Total Width"
+PARAM|nmos|simW|"string"|"lengthMetric"|"iPar(\\"w\\")"|"Simulation Width"
+PARAM|nmos|l|"string"|"lengthMetric"|"100n"|"Length"
+PARAM|nmos|nf|"string"|nil|"1"|"Fingers"
+PARAM|nmos|m|"string"|nil|"1"|"Multiplier"
+PARAM|nmos|simM|"string"|nil|"iPar(\\"m\\")"|"Simulation Multiplier"
+PARAM|nmos|region|"cyclic"|nil|" "|"Estimated operating region"
+PARAM|nmos|dtemp|"string"|nil|""|"Temperature difference"
+PARAM|nmos|AreaFormula|"string"|"lengthMetric"|"iPar(\\"w\\")*iPar(\\"l\\")"|"Area | formula"
+CELL|nmos_3|"dm_nch"|(D G S bulkn)|(nil D \\:d G \\:g S \\:s B \\:b)|(w l nf m trise region)|(model)|(nil m simM w simW trise dtemp)|nil|""|("spectre" "symbol")
+PARAM|nmos_3|model|"string"|nil|"dm_nch"|"Model name"
+PARAM|nmos_3|w|"string"|"lengthMetric"|"1u"|"Total Width"
+PARAM|nmos_3|simW|"string"|"lengthMetric"|"iPar(\\"w\\")"|"Simulation Width"
+PARAM|nmos_3|l|"string"|"lengthMetric"|"100n"|"Length"
+PARAM|nmos_3|nf|"string"|nil|"1"|"Fingers"
+PARAM|nmos_3|m|"string"|nil|"1"|"Multiplier"
+PARAM|nmos_3|simM|"string"|nil|"iPar(\\"m\\")"|"Simulation Multiplier"
+CELL|pmos|"dm_pch"|(D G S B)|(nil D \\:d G \\:g S \\:s B \\:b)|(w l nf m)|(model)|(nil m simM w simW)|nil|""|("spectre" "symbol")
+PARAM|pmos|model|"string"|nil|"dm_pch"|"Model name"
+PARAM|pmos|w|"string"|"lengthMetric"|"2u"|"Total Width"
+PARAM|pmos|simW|"string"|"lengthMetric"|"iPar(\\"w\\")"|"Simulation Width"
+PARAM|pmos|l|"string"|"lengthMetric"|"100n"|"Length"
+PARAM|pmos|nf|"string"|nil|"1"|"Fingers"
+PARAM|pmos|m|"string"|nil|"1"|"Multiplier"
+PARAM|pmos|simM|"string"|nil|"iPar(\\"m\\")"|"Simulation Multiplier"
+CELL|ncap|"dm_ncap"|(D G S B)|(nil D \\:d G \\:g S \\:s B \\:b)|(w l m)|(model)|nil|nil|""|("spectre" "symbol")
+PARAM|ncap|model|"string"|nil|"dm_ncap"|"Model Name"
+PARAM|ncap|w|"string"|"lengthMetric"|"10u"|"Width"
+PARAM|ncap|l|"string"|"lengthMetric"|"1u"|"Length"
+PARAM|ncap|m|"string"|nil|"1"|"Multiplier"
+CELL|npn|"dm_npn"|(C B E S)|(nil C \\:c B \\:b E \\:e S \\:s)|(area m trise region)|(model)|(nil trise dtemp)|nil|""|("spectre" "symbol")
+PARAM|npn|model|"string"|nil|"dm_npn"|"Model name"
+PARAM|npn|area|"string"|nil|"25.0"|"Device area"
+PARAM|npn|m|"string"|nil|"1"|"Multiplier"
+PARAM|npn|region|"cyclic"|nil|" "|"Estimated operating region"
+CELL|dio|"dm_dio"|(PLUS MINUS)|(nil PLUS \\:1 MINUS \\:2)|(area pj m)|(model)|nil|nil|""|("spectre" "symbol")
+PARAM|dio|model|"string"|nil|"dm_dio"|"Model name"
+PARAM|dio|area|"string"|nil|"40f"|"Device area"
+PARAM|dio|pj|"string"|nil|"800n"|"Periphery of junction"
+PARAM|dio|m|"string"|nil|"1"|"Multiplier"
+CELL|rpoly|"dm_rpoly"|nil|nil|nil|nil|nil|nil|""|("schematic" "symbol" "layout")
+PARAM|rpoly|model|"string"|nil|"dm_rpoly"|"Model"
+PARAM|rpoly|segL|"string"|"lengthMetric"|"8u"|"Segment Length"
+PARAM|rpoly|segW|"string"|"lengthMetric"|"2u"|"Segment Width"
+PARAM|rpoly|r|"string"|"resistance"|"400"|"Resistance"
+LEAF|rpoly|PIN0|basic|iopin|nil
+LEAF|rpoly|R0|demo045|primres3|"dm_rpoly"
+CELL|primres3|""|(PLUS MINUS B)|(nil PLUS ":1" MINUS ":2" B ":3")|(l w)|(model)|nil|nil|""|("spectre" "symbol")
+PARAM|primres3|model|"string"|nil|""|"Model name"
+PARAM|primres3|l|"string"|"lengthMetric"|"pPar(\\"segL\\")"|"Length"
+PARAM|primres3|w|"string"|"lengthMetric"|"pPar(\\"segW\\")"|"Width"
+CELL|ind|"dm_ind"|(PLUS MINUS B)|(nil PLUS \\:1 MINUS \\:2 B \\:3)|(w s r nr m)|(model)|(nil r rad w width s space)|nil|nil|("spectre" "symbol")
+PARAM|ind|model|"string"|nil|"dm_ind"|"Model"
+PARAM|ind|rad|"string"|"lengthMetric"|"10u"|"Inner Radius"
+PARAM|ind|width|"string"|nil|"iPar(\\"width_c\\")"|"Width"
+PARAM|ind|width_c|"cyclic"|nil|"3u"|"Inductor Width"
+PARAM|ind|space|"string"|"lengthMetric"|"1.5u"|"Inductor Space"
+PARAM|ind|nr|"string"|nil|"3.5"|"Turns"
+PARAM|ind|m|"string"|nil|"1"|"multiplier"
+CELL|mim|"dm_mim"|(PLUS MINUS B)|(nil PLUS \\:1 MINUS "(FUNCTION minus(root(\\"PLUS\\")))")|(w l m ic)|(model)|nil|"dm_mim"|"C"|("spectre" "symbol")
+PARAM|mim|model|"string"|nil|"dm_mim"|"Model name"
+PARAM|mim|w|"string"|"lengthMetric"|"1u"|"Width"
+PARAM|mim|l|"string"|"lengthMetric"|"1u"|"Length"
+PARAM|mim|m|"string"|nil|"1"|"Multiplier"
+PARAM|mim|ic|"string"|"voltage"|""|"Initial condition"
+CELL|guard|nil|nil|nil|nil|nil|nil|nil|nil|("layout" "symbol")
+PARAM|guard|width|"string"|nil|"0.1u"|"Width"
+NOCDF|xcross|("layout")

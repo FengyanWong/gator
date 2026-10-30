@@ -24,9 +24,10 @@ class ActionMapper:
     Fixed groups are never sent to the backend. Invalid proposals fail before I/O.
     """
 
-    def __init__(self, graph: CircuitGraph):
+    def __init__(self, graph: CircuitGraph, *, copy: bool = True):
         graph.validate()
-        self._graph = deepcopy(graph)
+        # copy=False: a mapper used at once and dropped (a replay check) reads the graph as it is - nothing here changes it.
+        self._graph = deepcopy(graph) if copy else graph
         self.groups = tuple(g for g in graph.parameter_groups if g.mutable)
         self.group_ids = tuple(g.id for g in self.groups)
         if not self.groups:

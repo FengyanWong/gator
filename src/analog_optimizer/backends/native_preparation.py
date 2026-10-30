@@ -1,13 +1,18 @@
 """One Virtuoso owner prepares actual candidates for isolated Spectre workers.
 
 The manager exposes local IPC only. Its queue runs the complete CDF/readback/
-native export transaction on one owning thread; simulator workers never attach
-to Virtuoso. There is no parameter enumeration or candidate cache.
+netlist transaction on one owning thread; simulator workers never attach
+to Virtuoso. There is no parameter enumeration or candidate cache. A netlist is
+Virtuoso's own export, or built from the write's readback with an export to
+compare every NATIVE_EVERY-th candidate (GATOR_NETLIST_BUILD, record 7.142).
+The comparison takes a parameter's number as a number: 14.05u and 14.050u are
+one value (record 7.309).
 """
 from concurrent.futures import Future
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from decimal import Decimal
 import importlib.metadata
 import math
 import multiprocessing
@@ -15,6 +20,7 @@ from multiprocessing.managers import BaseManager
 import os
 from pathlib import Path
 import queue
+import re
 import tempfile
 import threading
 from time import perf_counter
@@ -22,15 +28,77 @@ from uuid import uuid4
 
 from .backend import BackendNotConnected, UnsupportedCapability
 from .provenance import content_hash, profile_contract
-from .virtuoso_bridge import VirtuosoBridgeBackend, digest, parameter_rows, write_json
+from .common import file_digest, parameter_rows, write_json
+from .delegation import delegated_owner
+from .virtuoso_bridge import VirtuosoBridgeBackend
 
-MAX_SPECTRE_WORKERS = 4
+MAX_SPECTRE_WORKERS = 6       # 4 until record 7.143 (user decision of 2026-10-02): the simulator host has 8 cores
+# GATOR_NETLIST_BUILD (record 7.142, user decision of 2026-10-02): "skip" (default) builds a candidate's netlist from its
+# readback and exports natively - comparing the two - for the session's first candidate and every NATIVE_EVERY-th after;
+# "check" exports every candidate natively and compares each (7.140); "native" exports every candidate, building nothing.
+NETLIST_MODES = ('skip', 'check', 'native')
+NATIVE_EVERY = 5
 
 
 def validate_workers(value):
     if type(value) is not int or not 1 <= value <= MAX_SPECTRE_WORKERS:
-        raise ValueError('max_workers must be an integer between 1 and 4')
+        raise ValueError(f'max_workers must be an integer between 1 and {MAX_SPECTRE_WORKERS}')
     return value
+
+
+def netlist_statements(text):
+    """A netlist as its statements: continuation lines joined, white space collapsed, comments and empty lines left out
+    (a netlister's line breaks follow the length of the values, and its header carries a date)."""
+    statements, current = [], ''
+    for line in text.splitlines():
+        if line.lstrip().startswith('//'):
+            continue
+        if line.rstrip().endswith('\\'):
+            current += line.rstrip()[:-1] + ' '
+            continue
+        statement = ' '.join((current + line).split())
+        current = ''
+        if statement:
+            statements.append(statement)
+    return statements
+
+
+# One parameter of a statement whose value is a single number: its name with the opening bracket, the number, and the
+# scale letters with the closing bracket (w=(14.05u), l=180n, c=1.5e-12).
+_NUMBER_PARAMETER = re.compile(r'(\w+=\(?)([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)([A-Za-z%]*\)?)')
+
+
+def same_statement(built, native):
+    """Two statements that are the same but for how a parameter's number is spelled (record 7.309, user decision of
+    2026-10-11: "14.05 is the same as 14.050"): one netlister prints the form's 14.05u as 14.050u, another exponent as
+    1.0E-12 for 1e-12. The numbers are compared exactly, as decimals, never rounded; the parameter's name, its brackets
+    and its scale letters must be the same text, and so must every other word of the statement."""
+    if built == native:
+        return True
+    a, b = built.split(), native.split()
+    if len(a) != len(b):
+        return False
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        p, q = _NUMBER_PARAMETER.fullmatch(x), _NUMBER_PARAMETER.fullmatch(y)
+        if not (p and q and p.group(1) == q.group(1) and p.group(3) == q.group(3) and Decimal(p.group(2)) == Decimal(q.group(2))):
+            return False
+    return True
+
+
+def first_difference(built, native):
+    """None when two netlists have the same statements - a number spelled in two ways is one value (same_statement) -
+    else where they first differ, in words."""
+    a, b = netlist_statements(built), netlist_statements(native)
+    if a == b:
+        return None
+    if len(a) != len(b):
+        return f'{len(a)} statements built, {len(b)} exported'
+    index = next((i for i, (x, y) in enumerate(zip(a, b)) if not same_statement(x, y)), None)
+    if index is None:
+        return None
+    return f'statement {index + 1}: built {a[index][:200]!r}, exported {b[index][:200]!r}'
 
 
 @dataclass(frozen=True)
@@ -56,7 +124,11 @@ class PreparationService:
     def _serve(self):
         backend = None
         prepared = 0
+        template = None
         try:
+            mode = os.environ.get('GATOR_NETLIST_BUILD', 'skip')
+            if mode not in NETLIST_MODES:
+                raise ValueError(f'GATOR_NETLIST_BUILD must be one of {", ".join(NETLIST_MODES)}, not {mode!r}')
             backend = self.factory()
             backend.connect()
             initial = backend.read_parameters()
@@ -78,24 +150,45 @@ class PreparationService:
                         raise RuntimeError('Preparation service stopped after a failed candidate') from self._failure
                     parameters, root, condition, candidate_id, submitted = args
                     # One transaction: no other lane can interleave a write or export.
+                    if condition != backend.nominal_condition():
+                        raise ValueError('Native candidate preparation must be nominal; derive training corners from its export')
                     backend.validate_condition(condition)
                     backend.circuit.validate_assignment(parameters)
                     started = perf_counter()
                     backend.set_parameters(parameters)
-                    applied = backend.read_parameters()
+                    # The write's own readback: the cell is read before and after the write and after the export, not
+                    # twice more in between (record 7.137, user decision of 2026-10-01).
+                    applied = backend.written_parameters()
                     if applied.keys() != parameters.keys() or any(
                             not math.isclose(applied[k], v, rel_tol=1e-8, abs_tol=1e-24)
                             for k, v in parameters.items()):
                         raise ValueError('CDF readback differs from requested candidate')
-                    artifact = backend.generate_netlist(root, condition=condition)
+                    render = getattr(backend.circuit, 'render_export', None) if mode != 'native' else None
+                    build = callable(render) and mode == 'skip' and template is not None and bool(prepared % NATIVE_EVERY)
+                    if build:                       # built from the readback, no export (record 7.142)
+                        artifact = backend.generate_netlist(root, condition=condition, just_written=True,
+                                                            built=render(template, backend.written_snapshot()))
+                    else:
+                        artifact = backend.generate_netlist(root, condition=condition, just_written=True)
                     _, verified, metadata = backend._exports.pop(artifact.job_id)
                     if applied != verified:
                         raise ValueError('Native export differs from CDF readback')
+                    if callable(render) and not build:
+                        # A native export: the netlist built from the readback must have its statements (7.140); the
+                        # native export is the one simulated, and the session's first one is the template. A difference
+                        # stops the run.
+                        native = Path(metadata['original_structure_path']).read_text()
+                        template = native if template is None else template
+                        difference = first_difference(render(template, backend.written_snapshot()), native)
+                        if difference:
+                            raise ValueError(f'The netlist built from the readback differs from the native export: {difference}')
+                        metadata['built_export'] = 'matches the native export'
                     metadata.update(candidate_id=candidate_id, preparation_pid=os.getpid(),
                         queue_wait_seconds=started - submitted,
                         proposed_parameters=parameter_rows(parameters),
                         preparation_seconds=perf_counter() - started,
-                        preparation='actual-candidate-cdf-native-export', cache_hit=False)
+                        preparation='actual-candidate-cdf-built-netlist' if build else 'actual-candidate-cdf-native-export',
+                        cache_hit=False)
                     write_json(artifact.path.parent / 'manifest.json', metadata)
                     prepared += 1
                     future.set_result((artifact, applied, metadata))
@@ -150,15 +243,17 @@ PreparationManager.register('PreparationService', PreparationService, exposed=('
 
 
 @contextmanager
-def preparation_session(config, circuit, limits, report):
-    """Keep the dedicated schematic owner alive until all Spectre lanes close."""
+def preparation_session(config, circuit, limits, report, *, factory=None):
+    """Keep the dedicated schematic owner alive until all Spectre lanes close. `factory(config, circuit)` makes the
+    session owner's backend factory: BridgePreparationFactory by default; the workbench's CDF writer passes its own."""
     address = str(Path(tempfile.gettempdir()) / ('gator-preparation-' + uuid4().hex + '.sock'))
     manager = PreparationManager(address=address, ctx=multiprocessing.get_context('spawn'))
     service = None
     original = None
     manager.start()
     try:
-        service = manager.PreparationService(BridgePreparationFactory(config, circuit), limits.operation_seconds)
+        owner = (factory or BridgePreparationFactory)(config, circuit)
+        service = manager.PreparationService(owner, limits.operation_seconds)
         report['preparation'] = service.baseline()
         # Tuple-key dictionaries are kept in IPC, not JSON reports.
         report['preparation']['initial_parameters'] = parameter_rows(report['preparation']['initial_parameters'])
@@ -187,6 +282,13 @@ class NativeCandidateBackend(VirtuosoBridgeBackend):
         self._active = False
         self._parameters = circuit.validate_readback(circuit.reference)
 
+    @property
+    def concurrent_condition_jobs(self):
+        """A candidate's condition jobs may run two at a time (user decision of 2026-09-30: two Spectre runs at once
+        have run on this simulator host). A circuit whose measurement runs inside the Virtuoso session (OCEAN,
+        `measures_in_virtuoso`) keeps one at a time: that session takes one command at a time."""
+        return 1 if getattr(self.circuit, 'measures_in_virtuoso', False) else 2
+
     def connect(self):
         if self._active:
             self._require_connection()
@@ -207,7 +309,7 @@ class NativeCandidateBackend(VirtuosoBridgeBackend):
             load_vb_env()
             if resolve_profile(self.config.profile) != self.config.profile:
                 raise RuntimeError('Explicit bridge profile required')
-            self._env_hash, self._bound_env = digest(self.config.env_file), self._vb_env()
+            self._env_hash, self._bound_env = file_digest(self.config.env_file), self._vb_env()
             self._thread, self._pid = threading.get_ident(), os.getpid()
             self._active = True
         except BaseException:
@@ -216,34 +318,32 @@ class NativeCandidateBackend(VirtuosoBridgeBackend):
             raise
         self._env_after_attach = self._vb_env()
 
-    def _require_connection(self):
+    def _require_connection(self, *, delegable=False):
         if not self._active:
             raise BackendNotConnected('Native candidate backend is not connected')
-        if (threading.get_ident(), os.getpid()) != (self._thread, self._pid):
+        if (threading.get_ident(), os.getpid()) != (self._thread, self._pid) \
+                and not (delegable and delegated_owner() == (self._thread, self._pid)):
             raise RuntimeError('Native backend must stay in its owning worker process/thread')
-        if digest(self.config.env_file) != self._env_hash or self._vb_env() != self._bound_env:
-            raise RuntimeError('Bridge configuration changed during an active worker')
-        if getattr(self, 'bridge_version', None) == '0.8.0':
-            from virtuoso_bridge.env import get_runtime_env_file
-            if get_runtime_env_file() != self.config.env_file.resolve():
-                raise RuntimeError('Runtime bridge environment binding changed')
+        self._check_binding('Bridge configuration changed during an active worker')
 
     def validate_condition(self, condition):
         condition = condition or self.nominal_condition()
         self.circuit.validate_condition(condition)
-        if condition != self.nominal_condition():
-            raise UnsupportedCapability('Native parallel training is nominal-only')
+        if condition != self.nominal_condition() and condition.purpose != 'pvt_training':
+            raise UnsupportedCapability('Native workers accept only nominal or explicit training corners')
 
     def prepare_candidate(self, work_root, parameters, *, condition=None, candidate_id):
         self._require_connection()
         condition = condition or self.nominal_condition()
         self.validate_condition(condition)
+        if condition != self.nominal_condition():
+            raise UnsupportedCapability('Candidate preparation is nominal-only; derive corners from its original export')
         self.circuit.validate_assignment(parameters)
         artifact, applied, metadata = self.preparation.prepare(parameters, str(work_root), condition, candidate_id)
         if (metadata['candidate_id'] != candidate_id or artifact.condition != condition
                 or applied.keys() != parameters.keys()
                 or any(not math.isclose(applied[k], v, rel_tol=1e-8, abs_tol=1e-24) for k, v in parameters.items())
-                or digest(artifact.path) != artifact.sha256):
+                or file_digest(artifact.path) != artifact.sha256):
             raise ValueError('Prepared candidate identity/parameters/hash mismatch')
         # At most one export is needed by a lane. Records own historical artifacts.
         self._exports = {artifact.job_id: (artifact, dict(applied), metadata)}

@@ -13,6 +13,11 @@ from torch_geometric.data import HeteroData
 from .circuit_graph import CircuitGraph
 
 
+OPERATING_POINT_COLUMNS = ('ids', 'gm', 'gds', 'vgs', 'vds', 'vth', 'vdsat',
+                           'region_off', 'region_triode', 'region_sat', 'region_subth', 'region_breakdown')
+OPERATING_POINT_REFERENCES = (1e-6, 1e-6, 1e-6, 1., 1., 1., 1., 1., 1., 1., 1., 1.)
+
+
 @dataclass(frozen=True)
 class FeatureSchema:
     version: str = "1.0"
@@ -22,6 +27,8 @@ class FeatureSchema:
     parameters: tuple[str, ...] = ("w", "l", "m", "nf", "r", "c", "ind", "dc")
     # Values in canonical SI units, divided by explicit reference scales. No fitted statistics.
     references: tuple[float, ...] = (1e-6, 1e-6, 1.0, 1.0, 1e3, 1e-12, 1e-9, 1.0)
+    op_columns: tuple[str, ...] = ()
+    op_references: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         for vocabulary in (self.device_kinds, self.terminal_roles, self.net_roles, self.parameters):
@@ -29,6 +36,11 @@ class FeatureSchema:
                 raise ValueError("Feature vocabularies must be nonempty and unique")
         if len(self.references) != len(self.parameters) or any(not math.isfinite(x) or x <= 0 for x in self.references):
             raise ValueError("Each numeric feature needs a positive finite reference")
+        if (len(set(self.op_columns)) != len(self.op_columns)
+                or any(c not in OPERATING_POINT_COLUMNS for c in self.op_columns)
+                or len(self.op_columns) != len(self.op_references)
+                or any(isinstance(x, bool) or not math.isfinite(x) or x <= 0 for x in self.op_references)):
+            raise ValueError('Operating-point columns require known unique names and finite positive references')
 
 
 @dataclass(frozen=True)
@@ -92,12 +104,10 @@ class TopologyTensorCache:
             return self._items[key].clone()
         self.misses += 1
         data = _static_features(graph, schema)
-        if self.capacity:
-            self._items[key] = data
-            if len(self._items) > self.capacity:
-                self._items.popitem(last=False)
-            return data.clone()  # Public results never expose a cached tensor.
-        return data
+        self._items[key] = data
+        if len(self._items) > self.capacity:
+            self._items.popitem(last=False)
+        return data.clone()  # Public results never expose a cached tensor.
 
 
 def _static_features(graph, schema):
@@ -146,7 +156,7 @@ def _static_features(graph, schema):
 
 def to_pyg(graph: CircuitGraph, schema: FeatureSchema | None = None,
            *, allow_incomplete: bool = False,
-           topology_cache: TopologyTensorCache | None = None) -> CircuitHeteroData:
+           topology_cache: TopologyTensorCache | None = None, operating_points=None) -> CircuitHeteroData:
     """Refresh sizes/masks/metadata, optionally reusing a validated static template."""
     graph.validate(require_complete=not allow_incomplete)
     schema = schema or FeatureSchema()
@@ -169,6 +179,24 @@ def to_pyg(graph: CircuitGraph, schema: FeatureSchema | None = None,
     data["device"].x = values
     data["device"].parameter_mask = mask
     data["device"].parameter_present = present
+    op = torch.zeros((len(device_ids), len(schema.op_columns)), dtype=torch.float32)
+    op_mask = torch.zeros_like(op, dtype=torch.bool)
+    for device_id, row in device_ids.items():
+        quantities = (operating_points or {}).get(device_id, {})
+        for col, (key, reference) in enumerate(zip(schema.op_columns, schema.op_references)):
+            value = quantities.get('region') if key.startswith('region_') else quantities.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                continue
+            if key.startswith('region_'):
+                if value not in range(5):
+                    continue
+                value = float(value == OPERATING_POINT_COLUMNS.index(key) - 7)
+            scaled = value / reference
+            # log(|value|/reference) remains finite even if the division overflows.
+            normalized = math.log1p(abs(scaled)) if math.isfinite(scaled) else math.log(abs(value)) - math.log(reference)
+            op[row, col] = math.copysign(normalized, value)
+            op_mask[row, col] = True
+    data['device'].op, data['device'].op_mask = op, op_mask
     # Group physical values remain float64 with units/domains stored in metadata.
     data.group_x = torch.tensor([[g.value, g.lower, g.upper] for g in graph.parameter_groups], dtype=torch.float64).reshape(-1, 3)
     data.graph_metadata = GraphMetadata(graph.circuit_id, tuple(device_ids), tuple(net_ids),

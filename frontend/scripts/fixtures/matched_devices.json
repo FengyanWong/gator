@@ -1,0 +1,356 @@
+{
+ "label": "FIXTURE: answers of the real /api/parameters/matched (status record 7.103) for `parameters`, a MOCK OTA5 whose five widths are each their own variable",
+ "parameters": [
+  {
+   "variable_id": "w_in_a",
+   "instance_path": "XU1/M1",
+   "parameter_name": "w",
+   "unit": "m",
+   "scale": "log",
+   "value_type": "continuous",
+   "lower": 1e-06,
+   "upper": 1e-05,
+   "optimized": true
+  },
+  {
+   "variable_id": "w_in_b",
+   "instance_path": "XU1/M2",
+   "parameter_name": "w",
+   "unit": "m",
+   "scale": "log",
+   "value_type": "continuous",
+   "lower": 1e-06,
+   "upper": 1e-05,
+   "optimized": true
+  },
+  {
+   "variable_id": "w_load_a",
+   "instance_path": "XU1/M3",
+   "parameter_name": "w",
+   "unit": "m",
+   "scale": "log",
+   "value_type": "continuous",
+   "lower": 2e-06,
+   "upper": 2e-05,
+   "optimized": true
+  },
+  {
+   "variable_id": "w_load_b",
+   "instance_path": "XU1/M4",
+   "parameter_name": "w",
+   "unit": "m",
+   "scale": "log",
+   "value_type": "continuous",
+   "lower": 2e-06,
+   "upper": 2e-05,
+   "optimized": true
+  },
+  {
+   "variable_id": "w_tail",
+   "instance_path": "XU1/M5",
+   "parameter_name": "w",
+   "unit": "m",
+   "scale": "log",
+   "value_type": "continuous",
+   "lower": 1e-06,
+   "upper": 1e-05,
+   "optimized": true
+  }
+ ],
+ "found": {
+  "structures": [
+   {
+    "kind": "differential_pair",
+    "devices": [
+     "XU1/M1",
+     "XU1/M2"
+    ],
+    "text": "XU1/M1 and XU1/M2 are a differential pair (gates VINP / VINN, shared source XU1/NTAIL)."
+   },
+   {
+    "kind": "tail_source",
+    "devices": [
+     "XU1/M5"
+    ],
+    "text": "XU1/M5 is the tail current source of the pair XU1/M1 / XU1/M2."
+   },
+   {
+    "kind": "active_load",
+    "devices": [
+     "XU1/M3",
+     "XU1/M4"
+    ],
+    "text": "XU1/M3 (diode-connected) and XU1/M4 are the current-mirror load of XU1/M1 / XU1/M2."
+   }
+  ],
+  "suggestions": [
+   {
+    "id": "differential_pair:XU1/M1+XU1/M2",
+    "kind": "differential_pair",
+    "devices": [
+     "XU1/M1",
+     "XU1/M2"
+    ],
+    "text": "XU1/M1 and XU1/M2 are a differential pair (gates VINP / VINN, shared source XU1/NTAIL).",
+    "default": true,
+    "note": "",
+    "changes": [
+     {
+      "device": "XU1/M2",
+      "parameter": "w",
+      "variable_id": "w_in_b",
+      "leader": "w_in_a",
+      "leader_device": "XU1/M1",
+      "action": "tie",
+      "ratio": 1.0
+     }
+    ],
+    "acts": true
+   },
+   {
+    "id": "active_load:XU1/M3+XU1/M4",
+    "kind": "active_load",
+    "devices": [
+     "XU1/M3",
+     "XU1/M4"
+    ],
+    "text": "XU1/M3 (diode-connected) and XU1/M4 are the current-mirror load of XU1/M1 / XU1/M2.",
+    "default": true,
+    "note": "",
+    "changes": [
+     {
+      "device": "XU1/M4",
+      "parameter": "w",
+      "variable_id": "w_load_b",
+      "leader": "w_load_a",
+      "leader_device": "XU1/M3",
+      "action": "tie",
+      "ratio": 1.0
+     }
+    ],
+    "acts": true
+   }
+  ],
+  "applicable": true,
+  "independent_before": 5,
+  "note": ""
+ },
+ "shown": {
+  "structures": [
+   {
+    "kind": "differential_pair",
+    "devices": [
+     "XU1/M1",
+     "XU1/M2"
+    ],
+    "text": "XU1/M1 and XU1/M2 are a differential pair (gates VINP / VINN, shared source XU1/NTAIL)."
+   },
+   {
+    "kind": "tail_source",
+    "devices": [
+     "XU1/M5"
+    ],
+    "text": "XU1/M5 is the tail current source of the pair XU1/M1 / XU1/M2."
+   },
+   {
+    "kind": "active_load",
+    "devices": [
+     "XU1/M3",
+     "XU1/M4"
+    ],
+    "text": "XU1/M3 (diode-connected) and XU1/M4 are the current-mirror load of XU1/M1 / XU1/M2."
+   }
+  ],
+  "suggestions": [
+   {
+    "id": "differential_pair:XU1/M1+XU1/M2",
+    "kind": "differential_pair",
+    "devices": [
+     "XU1/M1",
+     "XU1/M2"
+    ],
+    "text": "XU1/M1 and XU1/M2 are a differential pair (gates VINP / VINN, shared source XU1/NTAIL).",
+    "default": true,
+    "note": "",
+    "changes": [
+     {
+      "device": "XU1/M2",
+      "parameter": "w",
+      "variable_id": "w_in_b",
+      "leader": "w_in_a",
+      "leader_device": "XU1/M1",
+      "action": "tie",
+      "ratio": 1.0
+     }
+    ],
+    "acts": true
+   },
+   {
+    "id": "active_load:XU1/M3+XU1/M4",
+    "kind": "active_load",
+    "devices": [
+     "XU1/M3",
+     "XU1/M4"
+    ],
+    "text": "XU1/M3 (diode-connected) and XU1/M4 are the current-mirror load of XU1/M1 / XU1/M2.",
+    "default": true,
+    "note": "",
+    "changes": [
+     {
+      "device": "XU1/M4",
+      "parameter": "w",
+      "variable_id": "w_load_b",
+      "leader": "w_load_a",
+      "leader_device": "XU1/M3",
+      "action": "tie",
+      "ratio": 1.0
+     }
+    ],
+    "acts": true
+   }
+  ],
+  "parameters": [
+   {
+    "variable_id": "w_in_a",
+    "instance_path": "XU1/M1",
+    "parameter_name": "w",
+    "initial_value": null,
+    "unit": "m",
+    "optimized": true,
+    "value_type": "continuous",
+    "lower": 1e-06,
+    "upper": 1e-05,
+    "step": null,
+    "scale": "log",
+    "binding_group": null,
+    "ratio": 1.0,
+    "notes": ""
+   },
+   {
+    "variable_id": "w_in_b",
+    "instance_path": "XU1/M2",
+    "parameter_name": "w",
+    "initial_value": null,
+    "unit": "m",
+    "optimized": true,
+    "value_type": "continuous",
+    "lower": null,
+    "upper": null,
+    "step": null,
+    "scale": "log",
+    "binding_group": "w_in_a",
+    "ratio": 1.0,
+    "notes": "Tied to w_in_a (differential pair, ratio 1) by Matched devices. Its own range was 1e-06 .. 1e-05 m."
+   },
+   {
+    "variable_id": "w_load_a",
+    "instance_path": "XU1/M3",
+    "parameter_name": "w",
+    "initial_value": null,
+    "unit": "m",
+    "optimized": true,
+    "value_type": "continuous",
+    "lower": 2e-06,
+    "upper": 2e-05,
+    "step": null,
+    "scale": "log",
+    "binding_group": null,
+    "ratio": 1.0,
+    "notes": ""
+   },
+   {
+    "variable_id": "w_load_b",
+    "instance_path": "XU1/M4",
+    "parameter_name": "w",
+    "initial_value": null,
+    "unit": "m",
+    "optimized": true,
+    "value_type": "continuous",
+    "lower": null,
+    "upper": null,
+    "step": null,
+    "scale": "log",
+    "binding_group": "w_load_a",
+    "ratio": 1.0,
+    "notes": "Tied to w_load_a (current-mirror load, ratio 1) by Matched devices. Its own range was 2e-06 .. 2e-05 m."
+   },
+   {
+    "variable_id": "w_tail",
+    "instance_path": "XU1/M5",
+    "parameter_name": "w",
+    "initial_value": null,
+    "unit": "m",
+    "optimized": true,
+    "value_type": "continuous",
+    "lower": 1e-06,
+    "upper": 1e-05,
+    "step": null,
+    "scale": "log",
+    "binding_group": null,
+    "ratio": 1.0,
+    "notes": ""
+   }
+  ],
+  "applicable": true,
+  "independent_before": 5,
+  "note": "",
+  "diff": [
+   {
+    "section": "parameters",
+    "key": "w_in_b",
+    "change": "modified",
+    "fields": [
+     {
+      "field": "binding_group",
+      "before": null,
+      "after": "w_in_a"
+     },
+     {
+      "field": "lower",
+      "before": 1e-06,
+      "after": null
+     },
+     {
+      "field": "notes",
+      "before": "",
+      "after": "Tied to w_in_a (differential pair, ratio 1) by Matched devices. Its own range was 1e-06 .. 1e-05 m."
+     },
+     {
+      "field": "upper",
+      "before": 1e-05,
+      "after": null
+     }
+    ]
+   },
+   {
+    "section": "parameters",
+    "key": "w_load_b",
+    "change": "modified",
+    "fields": [
+     {
+      "field": "binding_group",
+      "before": null,
+      "after": "w_load_a"
+     },
+     {
+      "field": "lower",
+      "before": 2e-06,
+      "after": null
+     },
+     {
+      "field": "notes",
+      "before": "",
+      "after": "Tied to w_load_a (current-mirror load, ratio 1) by Matched devices. Its own range was 2e-06 .. 2e-05 m."
+     },
+     {
+      "field": "upper",
+      "before": 2e-05,
+      "after": null
+     }
+    ]
+   }
+  ],
+  "independent_after": 3,
+  "problems": []
+ }
+}

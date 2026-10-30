@@ -1,0 +1,223 @@
+{
+ "made_with": "The code of commit c3b9691 (2026-09-21, the last one before Specs had equations, record 7.52), run from a git archive of that commit: tasks.starter_config(\"synthetic:opamp\") with run.max_evaluations = 5, validated and dumped by that schema; pins = its schema.config_hash and schema.task_definition_hash. Never regenerate it with newer code: it stands for what was saved then.",
+ "raw": {
+  "schema_version": "gator-workbench-config-v1",
+  "project": {
+   "name": "mock-opamp",
+   "task_name": "mock_opamp",
+   "notes": ""
+  },
+  "circuit": {
+   "source": "registered_task",
+   "task_id": "synthetic:opamp",
+   "netlist_path": null,
+   "parser_config_path": null,
+   "library": null,
+   "cell": null,
+   "view": null,
+   "testbench_cell": null,
+   "dut_hierarchy": null,
+   "circuit_class": "opamp",
+   "pdk_id": "synthetic-fixture",
+   "content_sha256": null
+  },
+  "parameters": [
+   {
+    "variable_id": "input_pair_width",
+    "name": "",
+    "target_kind": "instance_parameter",
+    "instance_path": "input_left",
+    "parameter_name": "w",
+    "initial_value": null,
+    "unit": "m",
+    "optimized": true,
+    "value_type": "continuous",
+    "lower": 1e-06,
+    "upper": 8e-06,
+    "step": null,
+    "candidates": null,
+    "scale": "log",
+    "binding_group": null,
+    "relation": "ratio",
+    "ratio": 1.0,
+    "expression": null,
+    "notes": ""
+   },
+   {
+    "variable_id": "input_pair_width__input_right",
+    "name": "",
+    "target_kind": "instance_parameter",
+    "instance_path": "input_right",
+    "parameter_name": "w",
+    "initial_value": null,
+    "unit": "m",
+    "optimized": true,
+    "value_type": "continuous",
+    "lower": null,
+    "upper": null,
+    "step": null,
+    "candidates": null,
+    "scale": "log",
+    "binding_group": "input_pair_width",
+    "relation": "ratio",
+    "ratio": 1.0,
+    "expression": null,
+    "notes": ""
+   },
+   {
+    "variable_id": "load_capacitance",
+    "name": "",
+    "target_kind": "instance_parameter",
+    "instance_path": "CL",
+    "parameter_name": "c",
+    "initial_value": null,
+    "unit": "F",
+    "optimized": true,
+    "value_type": "continuous",
+    "lower": 1e-13,
+    "upper": 5e-12,
+    "step": null,
+    "candidates": null,
+    "scale": "log",
+    "binding_group": null,
+    "relation": "ratio",
+    "ratio": 1.0,
+    "expression": null,
+    "notes": ""
+   }
+  ],
+  "targets": [
+   {
+    "metric_id": "score",
+    "measurement_id": "m_score",
+    "unit": "fixture",
+    "constraint": ">=",
+    "lower": 0.95,
+    "upper": null,
+    "target": null,
+    "tolerance": 0.0,
+    "hard": true,
+    "direction_after_feasible": "none",
+    "soft_weight": 1.0,
+    "normalization_scale": 1.0,
+    "active": true,
+    "basis": "Mock acceptance threshold for plumbing tests only."
+   }
+  ],
+  "measurements": [
+   {
+    "measurement_id": "m_score",
+    "analysis": "other",
+    "result_source": "backend_profile",
+    "source_name": "score",
+    "signal": null,
+    "function": null,
+    "expression": null,
+    "window": null,
+    "at_frequency_hz": null,
+    "integration_band_hz": null,
+    "branch_direction": null,
+    "loop_definition": null,
+    "crossover": null,
+    "unit": "fixture",
+    "validity": [
+     {
+      "kind": "finite",
+      "value": null,
+      "note": ""
+     }
+    ],
+    "on_failure": "invalid",
+    "conditions": [
+     "nominal"
+    ],
+    "aggregation": "nominal_only",
+    "notes": "Analytic toy score from the MOCK backend; not a circuit measurement."
+   }
+  ],
+  "run": {
+   "mode": "scratch",
+   "concurrency": 1,
+   "threads_per_job": 1,
+   "max_evaluations": 5,
+   "max_spectre_launches": null,
+   "max_wall_seconds": null,
+   "max_retries": 0,
+   "max_consecutive_failures": 5,
+   "max_consecutive_infrastructure_failures": 3,
+   "connection_profile_id": null,
+   "seed": 0,
+   "stop_at_first_feasible": false,
+   "frozen_action": "deterministic",
+   "network": {
+    "encoder_type": "graph_transformer",
+    "hidden_dim": 32,
+    "heads": 4,
+    "layers": 2
+   },
+   "model_source": {
+    "run_dir": null,
+    "checkpoint_id": "latest",
+    "source_pretraining_cost_evaluations": null
+   },
+   "advanced": {
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "tau": 0.005,
+    "initial_alpha": 0.2,
+    "target_entropy_per_action": 1.0,
+    "max_grad_norm": 10.0,
+    "batch_size": 8,
+    "warmup_transitions": 8,
+    "update_every": 1,
+    "updates_per_transition": 1,
+    "replay_capacity": 10000,
+    "episode_length": 4,
+    "episode_terminates_on_success": false,
+    "freeze_encoder": false,
+    "encoder_only_transfer": false,
+    "reset_critic": false,
+    "reset_temperature": false,
+    "spec_registry": null,
+    "simulation_timeout_seconds": 120.0
+   },
+   "cache_policy": "disabled",
+   "continual_learning": false
+  },
+  "output": {
+   "output_root": null,
+   "experiment_name": "experiment",
+   "experiment_id": null,
+   "save_learner_updates": true,
+   "save_checkpoints": true,
+   "save_replay_snapshots": true,
+   "save_transition_archive": true,
+   "export_summary_csv": true,
+   "checkpoint_every_evaluations": 50,
+   "checkpoint_every_seconds": null,
+   "keep_last_checkpoints": null,
+   "learner_update_log_every": 1,
+   "flush_every_evaluations": 16,
+   "waveform_retention": "best_and_failures",
+   "waveform_storage_limit_bytes": 2147483648,
+   "min_free_bytes": 1073741824
+  },
+  "research": {
+   "experiment_group": "unspecified",
+   "split": "unspecified",
+   "generalization_level": "unspecified",
+   "training_sources": [],
+   "test_tasks": [],
+   "comparison_pair_id": "unspecified",
+   "task_order": null,
+   "pretrain_seed": null,
+   "budget_checkpoints": [],
+   "ablation_labels": [],
+   "method_label": "unspecified"
+  }
+ },
+ "pins": {
+  "config": "2126ce0b60d2cf753515051a26826abd8b1fb2405b370711cf314a83e82c8123",
+  "task": "f2f2d85521910f854996d57cdbd86d4c129b84f2517a81c4f3450123332b0bf4"
+ }
+}

@@ -1,0 +1,2643 @@
+{
+ "cell": "ring_osc_3stage",
+ "cells": {
+  "mimcap": {
+   "form": {
+    "done": null,
+    "init": "PasCdfFormInit"
+   },
+   "model": "g45cmim",
+   "name": "mimcap",
+   "parameters": {
+    "AreaFormula": {
+     "callback": null,
+     "choices": null,
+     "default": "(0.5u+iPar(\"w\")*(0.5u+iPar(\"l\"))*iPar(\"m\")",
+     "display": true,
+     "editable": true,
+     "prompt": "AreaFormula",
+     "type": "string",
+     "units": null
+    },
+    "area": {
+     "callback": null,
+     "choices": null,
+     "default": "iPar(\"w\")*iPar(\"l\")",
+     "display": true,
+     "editable": false,
+     "prompt": "Area",
+     "type": "string",
+     "units": null
+    },
+    "c": {
+     "callback": "gpdk045_capCB('c)",
+     "choices": null,
+     "default": "1.995f",
+     "display": true,
+     "editable": "cdfgData->calcParam->value!=\"capacitance\"",
+     "prompt": "Capacitance",
+     "type": "string",
+     "units": "capacitance"
+    },
+    "c1": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 1",
+     "type": "string",
+     "units": null
+    },
+    "c10": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 10",
+     "type": "string",
+     "units": null
+    },
+    "c11": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 11",
+     "type": "string",
+     "units": null
+    },
+    "c12": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 12",
+     "type": "string",
+     "units": null
+    },
+    "c13": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 13",
+     "type": "string",
+     "units": null
+    },
+    "c14": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 14",
+     "type": "string",
+     "units": null
+    },
+    "c15": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 15",
+     "type": "string",
+     "units": null
+    },
+    "c16": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 16",
+     "type": "string",
+     "units": null
+    },
+    "c17": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 17",
+     "type": "string",
+     "units": null
+    },
+    "c18": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 18",
+     "type": "string",
+     "units": null
+    },
+    "c19": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 19",
+     "type": "string",
+     "units": null
+    },
+    "c2": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 2",
+     "type": "string",
+     "units": null
+    },
+    "c20": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 20",
+     "type": "string",
+     "units": null
+    },
+    "c3": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 3",
+     "type": "string",
+     "units": null
+    },
+    "c4": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 4",
+     "type": "string",
+     "units": null
+    },
+    "c5": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 5",
+     "type": "string",
+     "units": null
+    },
+    "c6": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 6",
+     "type": "string",
+     "units": null
+    },
+    "c7": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 7",
+     "type": "string",
+     "units": null
+    },
+    "c8": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 8",
+     "type": "string",
+     "units": null
+    },
+    "c9": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Poly Coeff 9",
+     "type": "string",
+     "units": null
+    },
+    "ca": {
+     "callback": null,
+     "choices": null,
+     "default": 0.001025,
+     "display": "gpdk045_capDisplay('ca)",
+     "editable": false,
+     "prompt": "Area capacitance (F/M^2)",
+     "type": "float",
+     "units": null
+    },
+    "calcParam": {
+     "callback": null,
+     "choices": [
+      "capacitance",
+      "length",
+      "width"
+     ],
+     "default": "capacitance",
+     "display": true,
+     "editable": true,
+     "prompt": "Calculate Parameter",
+     "type": "cyclic",
+     "units": null
+    },
+    "cf": {
+     "callback": null,
+     "choices": null,
+     "default": 2.425e-10,
+     "display": "gpdk045_capDisplay('cf)",
+     "editable": false,
+     "prompt": "Fringe capacitance (F/M)",
+     "type": "float",
+     "units": null
+    },
+    "dtemp": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": true,
+     "editable": true,
+     "prompt": "Temperature difference",
+     "type": "string",
+     "units": null
+    },
+    "freq": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Frequency",
+     "type": "string",
+     "units": "frequency"
+    },
+    "ic": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": true,
+     "editable": true,
+     "prompt": "Initial condition",
+     "type": "string",
+     "units": "voltage"
+    },
+    "l": {
+     "callback": "gpdk045_capCB('l)",
+     "choices": null,
+     "default": "1u",
+     "display": true,
+     "editable": "cdfgData->calcParam->value!=\"length\"",
+     "prompt": "Length",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "m": {
+     "callback": null,
+     "choices": null,
+     "default": "1",
+     "display": true,
+     "editable": true,
+     "prompt": "Multiplier",
+     "type": "string",
+     "units": null
+    },
+    "model": {
+     "callback": null,
+     "choices": null,
+     "default": "g45cmim",
+     "display": "gpdk045_capDisplay('model)",
+     "editable": false,
+     "prompt": "Model name",
+     "type": "string",
+     "units": null
+    },
+    "pasUpdateParamList": {
+     "callback": null,
+     "choices": null,
+     "default": "c w l",
+     "display": false,
+     "editable": true,
+     "prompt": "CDF Param Update List",
+     "type": "string",
+     "units": null
+    },
+    "perim": {
+     "callback": null,
+     "choices": null,
+     "default": "2*iPar(\"w\")+2*iPar(\"l\")",
+     "display": true,
+     "editable": false,
+     "prompt": "Perim",
+     "type": "string",
+     "units": null
+    },
+    "polyCoef": {
+     "callback": null,
+     "choices": null,
+     "default": 0,
+     "display": false,
+     "editable": true,
+     "prompt": "Number of Polynomial Coeffs",
+     "type": "int",
+     "units": null
+    },
+    "q": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Quality",
+     "type": "string",
+     "units": null
+    },
+    "qmode": {
+     "callback": null,
+     "choices": [
+      "ideal",
+      "Constant Conductance",
+      "Square Root",
+      "Constant Q"
+     ],
+     "default": "ideal",
+     "display": false,
+     "editable": true,
+     "prompt": "Quality type",
+     "type": "cyclic",
+     "units": null
+    },
+    "scale": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Scale factor",
+     "type": "string",
+     "units": null
+    },
+    "showSimParams": {
+     "callback": null,
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_capDisplay('showSimParams)",
+     "editable": true,
+     "prompt": "Show Sim Parameters",
+     "type": "boolean",
+     "units": null
+    },
+    "source": {
+     "callback": null,
+     "choices": null,
+     "default": null,
+     "display": false,
+     "editable": true,
+     "prompt": "Source component",
+     "type": "boolean",
+     "units": null
+    },
+    "tc1": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Temperature coefficient 1",
+     "type": "string",
+     "units": null
+    },
+    "tc2": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Temperature coefficient 2",
+     "type": "string",
+     "units": null
+    },
+    "trise": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Temp rise from ambient",
+     "type": "string",
+     "units": null
+    },
+    "w": {
+     "callback": "gpdk045_capCB('w)",
+     "choices": null,
+     "default": "1u",
+     "display": true,
+     "editable": "cdfgData->calcParam->value!=\"width\"",
+     "prompt": "Width",
+     "type": "string",
+     "units": "lengthMetric"
+    }
+   },
+   "spectre": {
+    "component_name": "g45cmim",
+    "inst_parameters": [
+     "w",
+     "l",
+     "m",
+     "trise",
+     "ic"
+    ],
+    "name_prefix": "C",
+    "other_parameters": [
+     "model"
+    ],
+    "prop_mapping": {
+     "trise": "dtemp"
+    },
+    "term_mapping": {
+     "MINUS": "(FUNCTION minus(root(\"PLUS\")))",
+     "PLUS": ":1"
+    },
+    "term_order": [
+     "PLUS",
+     "MINUS",
+     "B"
+    ]
+   },
+   "views": [
+    "hspiced",
+    "hspiceD",
+    "spectre",
+    "ivpcell",
+    "symbol",
+    "auLvs",
+    "layout",
+    "auCdl"
+   ]
+  },
+  "nmos1v": {
+   "form": {
+    "done": "PasCdfDone",
+    "init": "PasCdfFormInit"
+   },
+   "model": "g45n1svt",
+   "name": "nmos1v",
+   "parameters": {
+    "AreaFormula": {
+     "callback": null,
+     "choices": null,
+     "default": "((iPar(\"fingers\")+1)*0.5u+iPar(\"fingers\")*iPar(\"l\"))*(iPar(\"fw\")+0.5u)*iPar(\"m\")",
+     "display": "artParameterInToolDisplay('AreaFormula)",
+     "editable": true,
+     "prompt": "AreaFormula",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "Vbs": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'Vbs )",
+     "editable": true,
+     "prompt": "Bulk source initial voltage",
+     "type": "string",
+     "units": "voltage"
+    },
+    "Vds": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'Vds )",
+     "editable": true,
+     "prompt": "Drain source initial voltage",
+     "type": "string",
+     "units": "voltage"
+    },
+    "Vgs": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'Vgs )",
+     "editable": true,
+     "prompt": "Gate source initial voltage",
+     "type": "string",
+     "units": "voltage"
+    },
+    "ad": {
+     "callback": "gpdk045_mosCB( 'ad )",
+     "choices": null,
+     "default": "16.8f",
+     "display": "gpdk045_mosDisplay('ad)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Drain diffusion area",
+     "type": "string",
+     "units": null
+    },
+    "as": {
+     "callback": "gpdk045_mosCB( 'as )",
+     "choices": null,
+     "default": "16.8f",
+     "display": "gpdk045_mosDisplay('as)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Source diffusion area",
+     "type": "string",
+     "units": null
+    },
+    "bottomTap": {
+     "callback": "gpdk045_mosCB( 'bottomTap )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay( 'bottomTap )",
+     "editable": true,
+     "prompt": "Bottom Tap",
+     "type": "boolean",
+     "units": null
+    },
+    "connectGates": {
+     "callback": "gpdk045_mosCB( 'connectGates )",
+     "choices": [
+      "None",
+      "Top",
+      "Bottom",
+      "Both"
+     ],
+     "default": "None",
+     "display": true,
+     "editable": true,
+     "prompt": "Gate Connection",
+     "type": "cyclic",
+     "units": null
+    },
+    "connectSD": {
+     "callback": "gpdk045_mosCB( 'connectSD )",
+     "choices": [
+      "None",
+      "Source",
+      "Drain",
+      "Both"
+     ],
+     "default": "None",
+     "display": "gpdk045_mosDisplay('connectSD)",
+     "editable": true,
+     "prompt": "S/D Connection",
+     "type": "cyclic",
+     "units": null
+    },
+    "degradation": {
+     "callback": null,
+     "choices": [
+      "",
+      "no",
+      "yes"
+     ],
+     "default": "",
+     "display": "gpdk045_mosDisplay('degradation)",
+     "editable": true,
+     "prompt": "Hot-electron degradation",
+     "type": "cyclic",
+     "units": null
+    },
+    "dfm": {
+     "callback": "gpdk045_mosCB( 'dfm )",
+     "choices": [
+      "Minimum",
+      "DFM"
+     ],
+     "default": "Minimum",
+     "display": true,
+     "editable": true,
+     "prompt": "Use DFM Rules",
+     "type": "cyclic",
+     "units": null
+    },
+    "diffCont": {
+     "callback": null,
+     "choices": null,
+     "default": true,
+     "display": true,
+     "editable": true,
+     "prompt": "Diff Cont",
+     "type": "boolean",
+     "units": null
+    },
+    "dtemp": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'dtemp )",
+     "editable": true,
+     "prompt": "Temperature difference",
+     "type": "string",
+     "units": null
+    },
+    "editAreaPerim": {
+     "callback": "gpdk045_mosCB( 'editAreaPerim )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay('editAreaPerim)",
+     "editable": true,
+     "prompt": "Edit Area & Perim",
+     "type": "boolean",
+     "units": null
+    },
+    "fingers": {
+     "callback": "gpdk045_mosCB( 'fingers )",
+     "choices": null,
+     "default": "1",
+     "display": true,
+     "editable": true,
+     "prompt": "Fingers",
+     "type": "string",
+     "units": null
+    },
+    "fw": {
+     "callback": "gpdk045_mosCB( 'fw )",
+     "choices": null,
+     "default": "120n",
+     "display": true,
+     "editable": "gpdk045_mosEditable( 'fw )",
+     "prompt": "Finger Width",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "geo": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'geo )",
+     "editable": true,
+     "prompt": "Source/drain selector",
+     "type": "string",
+     "units": null
+    },
+    "isnoisy": {
+     "callback": null,
+     "choices": [
+      "",
+      "no",
+      "yes"
+     ],
+     "default": "",
+     "display": "gpdk045_mosDisplay('isnoisy)",
+     "editable": true,
+     "prompt": "Generate Noise?",
+     "type": "cyclic",
+     "units": null
+    },
+    "l": {
+     "callback": "gpdk045_mosCB( 'l )",
+     "choices": null,
+     "default": "45n",
+     "display": true,
+     "editable": "gpdk045_mosEditable( 'l )",
+     "prompt": "Length",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "ld": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'ld )",
+     "editable": true,
+     "prompt": "Drain diffusion length",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "leftAbut": {
+     "callback": "gpdk045_mosCB( 'leftAbut)",
+     "choices": null,
+     "default": 0,
+     "display": false,
+     "editable": true,
+     "prompt": "Left Abutment",
+     "type": "int",
+     "units": null
+    },
+    "leftTap": {
+     "callback": "gpdk045_mosCB( 'leftTap )",
+     "choices": null,
+     "default": true,
+     "display": "gpdk045_mosDisplay( 'leftTap )",
+     "editable": true,
+     "prompt": "Left Tap",
+     "type": "boolean",
+     "units": null
+    },
+    "ls": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'ls )",
+     "editable": true,
+     "prompt": "Source diffusion length",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "m": {
+     "callback": "gpdk045_mosCB( 'm )",
+     "choices": null,
+     "default": "1",
+     "display": true,
+     "editable": "gpdk045_mosEditable( 'm )",
+     "prompt": "Multiplier",
+     "type": "string",
+     "units": null
+    },
+    "model": {
+     "callback": null,
+     "choices": null,
+     "default": "g45n1svt",
+     "display": "gpdk045_mosDisplay('model)",
+     "editable": false,
+     "prompt": "Model Name",
+     "type": "string",
+     "units": null
+    },
+    "mtlCvg": {
+     "callback": "gpdk045_mosCB( 'mtlCvg )",
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Metal Coverage",
+     "type": "string",
+     "units": null
+    },
+    "nrd": {
+     "callback": null,
+     "choices": null,
+     "default": "1.16667",
+     "display": "gpdk045_mosDisplay( 'nrd )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Drain diffusion res squares",
+     "type": "string",
+     "units": null
+    },
+    "nrs": {
+     "callback": null,
+     "choices": null,
+     "default": "1.16667",
+     "display": "gpdk045_mosDisplay( 'nrs )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Source diffusion res squares",
+     "type": "string",
+     "units": null
+    },
+    "off": {
+     "callback": null,
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay( 'off )",
+     "editable": true,
+     "prompt": "Device initially off",
+     "type": "boolean",
+     "units": null
+    },
+    "pasUpdateParamList": {
+     "callback": null,
+     "choices": null,
+     "default": "fw, l",
+     "display": false,
+     "editable": false,
+     "prompt": "PAS Update Param List",
+     "type": "string",
+     "units": null
+    },
+    "pd": {
+     "callback": "gpdk045_mosCB( 'pd )",
+     "choices": null,
+     "default": "520n",
+     "display": "gpdk045_mosDisplay('pd)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Drain diffusion periphery",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "ps": {
+     "callback": "gpdk045_mosCB( 'ps )",
+     "choices": null,
+     "default": "520n",
+     "display": "gpdk045_mosDisplay('ps)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Source diffusion periphery",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "region": {
+     "callback": null,
+     "choices": [
+      " ",
+      "off",
+      "triode",
+      "sat",
+      "subth"
+     ],
+     "default": " ",
+     "display": "gpdk045_mosDisplay( 'region )",
+     "editable": true,
+     "prompt": "Estimated operating region",
+     "type": "cyclic",
+     "units": null
+    },
+    "rightAbut": {
+     "callback": "gpdk045_mosCB( 'rightAbut)",
+     "choices": null,
+     "default": 0,
+     "display": false,
+     "editable": true,
+     "prompt": "Right Abutment",
+     "type": "int",
+     "units": null
+    },
+    "rightTap": {
+     "callback": "gpdk045_mosCB( 'rightTap )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay( 'rightTap )",
+     "editable": true,
+     "prompt": "Right Tap",
+     "type": "boolean",
+     "units": null
+    },
+    "sa": {
+     "callback": null,
+     "choices": null,
+     "default": "140n",
+     "display": "gpdk045_mosDisplay( 'sa )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Left S/D Length (SA)",
+     "type": "string",
+     "units": null
+    },
+    "sb": {
+     "callback": null,
+     "choices": null,
+     "default": "140n",
+     "display": "gpdk045_mosDisplay( 'sb )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Right S/D Length (SB)",
+     "type": "string",
+     "units": null
+    },
+    "sca": {
+     "callback": "gpdk045_mosCB( 'sca )",
+     "choices": null,
+     "default": "226.00151",
+     "display": "gpdk045_mosDisplay('sca)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "SCA",
+     "type": "string",
+     "units": null
+    },
+    "scb": {
+     "callback": "gpdk045_mosCB( 'scb )",
+     "choices": null,
+     "default": "0.11734",
+     "display": "gpdk045_mosDisplay('scb)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "SCB",
+     "type": "string",
+     "units": null
+    },
+    "scc": {
+     "callback": "gpdk045_mosCB( 'scc )",
+     "choices": null,
+     "default": "0.02767",
+     "display": "gpdk045_mosDisplay('scc)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "SCC",
+     "type": "string",
+     "units": null
+    },
+    "sd": {
+     "callback": null,
+     "choices": null,
+     "default": "160n",
+     "display": "gpdk045_mosDisplay( 'sd )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Gate Spacing (SD)",
+     "type": "string",
+     "units": null
+    },
+    "sdMtlWidth": {
+     "callback": "gpdk045_mosCB( 'sdMtlWidth)",
+     "choices": null,
+     "default": "60n",
+     "display": true,
+     "editable": true,
+     "prompt": "S/D Metal Width",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "showSimParams": {
+     "callback": null,
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay('showSimParams)",
+     "editable": true,
+     "prompt": "Show Sim Parameters",
+     "type": "boolean",
+     "units": null
+    },
+    "simM": {
+     "callback": null,
+     "choices": null,
+     "default": "iPar(\"m\")",
+     "display": false,
+     "editable": false,
+     "prompt": "Simulation Multiplier",
+     "type": "string",
+     "units": null
+    },
+    "simW": {
+     "callback": null,
+     "choices": null,
+     "default": "iPar(\"w\")",
+     "display": false,
+     "editable": false,
+     "prompt": "Simulation Width",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "switchSD": {
+     "callback": "gpdk045_mosCB( 'switchSD )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay('switchSD)",
+     "editable": true,
+     "prompt": "Switch S/D",
+     "type": "boolean",
+     "units": null
+    },
+    "tap": {
+     "callback": "gpdk045_mosCB( 'tap )",
+     "choices": [
+      "None",
+      "Integrated",
+      "Detached"
+     ],
+     "default": "None",
+     "display": true,
+     "editable": true,
+     "prompt": "Bodytie Type",
+     "type": "cyclic",
+     "units": null
+    },
+    "tapCntRows": {
+     "callback": "gpdk045_mosCB( 'tapCntRows )",
+     "choices": null,
+     "default": 1,
+     "display": "gpdk045_mosDisplay( 'tapCntRows )",
+     "editable": true,
+     "prompt": "Tap Contact Rows",
+     "type": "int",
+     "units": null
+    },
+    "tapExtension": {
+     "callback": "gpdk045_mosCB( 'tapExtension )",
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'tapExtension )",
+     "editable": true,
+     "prompt": "Tap Extension",
+     "type": "string",
+     "units": null
+    },
+    "threshold": {
+     "callback": "gpdk045_mosCB( 'threshold )",
+     "choices": null,
+     "default": "10u",
+     "display": true,
+     "editable": true,
+     "prompt": "Folding Threshold",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "topTap": {
+     "callback": "gpdk045_mosCB( 'topTap )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay( 'topTap )",
+     "editable": true,
+     "prompt": "Top Tap",
+     "type": "boolean",
+     "units": null
+    },
+    "w": {
+     "callback": "gpdk045_mosCB( 'w )",
+     "choices": null,
+     "default": "120n",
+     "display": true,
+     "editable": "gpdk045_mosEditable( 'w )",
+     "prompt": "Total Width",
+     "type": "string",
+     "units": "lengthMetric"
+    }
+   },
+   "spectre": {
+    "component_name": null,
+    "inst_parameters": [
+     "w",
+     "l",
+     "nf",
+     "as",
+     "ad",
+     "ps",
+     "pd",
+     "nrd",
+     "nrs",
+     "sa",
+     "sb",
+     "sd",
+     "sca",
+     "scb",
+     "scc",
+     "m",
+     "trise",
+     "region",
+     "degradation",
+     "geo",
+     "isnoisy"
+    ],
+    "name_prefix": "",
+    "other_parameters": [
+     "model"
+    ],
+    "prop_mapping": {
+     "m": "simM",
+     "nf": "fingers",
+     "trise": "dtemp",
+     "w": "simW"
+    },
+    "term_mapping": {
+     "B": ":b",
+     "D": ":d",
+     "G": ":g",
+     "S": ":s"
+    },
+    "term_order": [
+     "D",
+     "G",
+     "S",
+     "B"
+    ]
+   },
+   "views": [
+    "hspiceD",
+    "spectre",
+    "ivpcell",
+    "symbol",
+    "auLvs",
+    "layout",
+    "auCdl"
+   ]
+  },
+  "pmos1v": {
+   "form": {
+    "done": "PasCdfDone",
+    "init": "PasCdfFormInit"
+   },
+   "model": "g45p1svt",
+   "name": "pmos1v",
+   "parameters": {
+    "AreaFormula": {
+     "callback": null,
+     "choices": null,
+     "default": "((iPar(\"fingers\")+1)*0.5u+iPar(\"fingers\")*iPar(\"l\"))*(iPar(\"fw\")+0.5u)*iPar(\"m\")",
+     "display": "artParameterInToolDisplay('AreaFormula)",
+     "editable": true,
+     "prompt": "AreaFormula",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "Vbs": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'Vbs )",
+     "editable": true,
+     "prompt": "Bulk source initial voltage",
+     "type": "string",
+     "units": "voltage"
+    },
+    "Vds": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'Vds )",
+     "editable": true,
+     "prompt": "Drain source initial voltage",
+     "type": "string",
+     "units": "voltage"
+    },
+    "Vgs": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'Vgs )",
+     "editable": true,
+     "prompt": "Gate source initial voltage",
+     "type": "string",
+     "units": "voltage"
+    },
+    "ad": {
+     "callback": "gpdk045_mosCB( 'ad )",
+     "choices": null,
+     "default": "16.8f",
+     "display": "gpdk045_mosDisplay('ad)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Drain diffusion area",
+     "type": "string",
+     "units": null
+    },
+    "as": {
+     "callback": "gpdk045_mosCB( 'as )",
+     "choices": null,
+     "default": "16.8f",
+     "display": "gpdk045_mosDisplay('as)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Source diffusion area",
+     "type": "string",
+     "units": null
+    },
+    "bottomTap": {
+     "callback": "gpdk045_mosCB( 'bottomTap )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay( 'bottomTap )",
+     "editable": true,
+     "prompt": "Bottom Tap",
+     "type": "boolean",
+     "units": null
+    },
+    "connectGates": {
+     "callback": "gpdk045_mosCB( 'connectGates )",
+     "choices": [
+      "None",
+      "Top",
+      "Bottom",
+      "Both"
+     ],
+     "default": "None",
+     "display": true,
+     "editable": true,
+     "prompt": "Gate Connection",
+     "type": "cyclic",
+     "units": null
+    },
+    "connectSD": {
+     "callback": "gpdk045_mosCB( 'connectSD )",
+     "choices": [
+      "None",
+      "Source",
+      "Drain",
+      "Both"
+     ],
+     "default": "None",
+     "display": "gpdk045_mosDisplay('connectSD)",
+     "editable": true,
+     "prompt": "S/D Connection",
+     "type": "cyclic",
+     "units": null
+    },
+    "degradation": {
+     "callback": null,
+     "choices": [
+      "",
+      "no",
+      "yes"
+     ],
+     "default": "",
+     "display": "gpdk045_mosDisplay('degradation)",
+     "editable": true,
+     "prompt": "Hot-electron degradation",
+     "type": "cyclic",
+     "units": null
+    },
+    "dfm": {
+     "callback": "gpdk045_mosCB( 'dfm )",
+     "choices": [
+      "Minimum",
+      "DFM"
+     ],
+     "default": "Minimum",
+     "display": true,
+     "editable": true,
+     "prompt": "Use DFM Rules",
+     "type": "cyclic",
+     "units": null
+    },
+    "diffCont": {
+     "callback": null,
+     "choices": null,
+     "default": true,
+     "display": true,
+     "editable": true,
+     "prompt": "Diff Cont",
+     "type": "boolean",
+     "units": null
+    },
+    "dtemp": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'dtemp )",
+     "editable": true,
+     "prompt": "Temperature difference",
+     "type": "string",
+     "units": null
+    },
+    "editAreaPerim": {
+     "callback": "gpdk045_mosCB( 'editAreaPerim )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay('editAreaPerim)",
+     "editable": true,
+     "prompt": "Edit Area & Perim",
+     "type": "boolean",
+     "units": null
+    },
+    "fingers": {
+     "callback": "gpdk045_mosCB( 'fingers )",
+     "choices": null,
+     "default": "1",
+     "display": true,
+     "editable": true,
+     "prompt": "Fingers",
+     "type": "string",
+     "units": null
+    },
+    "fw": {
+     "callback": "gpdk045_mosCB( 'fw )",
+     "choices": null,
+     "default": "120n",
+     "display": true,
+     "editable": "gpdk045_mosEditable( 'fw )",
+     "prompt": "Finger Width",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "geo": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'geo )",
+     "editable": true,
+     "prompt": "Source/drain selector",
+     "type": "string",
+     "units": null
+    },
+    "isnoisy": {
+     "callback": null,
+     "choices": [
+      "",
+      "no",
+      "yes"
+     ],
+     "default": "",
+     "display": "gpdk045_mosDisplay('isnoisy)",
+     "editable": true,
+     "prompt": "Generate Noise?",
+     "type": "cyclic",
+     "units": null
+    },
+    "l": {
+     "callback": "gpdk045_mosCB( 'l )",
+     "choices": null,
+     "default": "45n",
+     "display": true,
+     "editable": "gpdk045_mosEditable( 'l )",
+     "prompt": "Length",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "ld": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'ld )",
+     "editable": true,
+     "prompt": "Drain diffusion length",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "leftAbut": {
+     "callback": "gpdk045_mosCB( 'leftAbut)",
+     "choices": null,
+     "default": 0,
+     "display": false,
+     "editable": true,
+     "prompt": "Left Abutment",
+     "type": "int",
+     "units": null
+    },
+    "leftTap": {
+     "callback": "gpdk045_mosCB( 'leftTap )",
+     "choices": null,
+     "default": true,
+     "display": "gpdk045_mosDisplay( 'leftTap )",
+     "editable": true,
+     "prompt": "Left Tap",
+     "type": "boolean",
+     "units": null
+    },
+    "ls": {
+     "callback": null,
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'ls )",
+     "editable": true,
+     "prompt": "Source diffusion length",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "m": {
+     "callback": "gpdk045_mosCB( 'm )",
+     "choices": null,
+     "default": "1",
+     "display": true,
+     "editable": "gpdk045_mosEditable( 'm )",
+     "prompt": "Multiplier",
+     "type": "string",
+     "units": null
+    },
+    "model": {
+     "callback": null,
+     "choices": null,
+     "default": "g45p1svt",
+     "display": "gpdk045_mosDisplay('model)",
+     "editable": false,
+     "prompt": "Model Name",
+     "type": "string",
+     "units": null
+    },
+    "mtlCvg": {
+     "callback": "gpdk045_mosCB( 'mtlCvg )",
+     "choices": null,
+     "default": "",
+     "display": false,
+     "editable": true,
+     "prompt": "Metal Coverage",
+     "type": "string",
+     "units": null
+    },
+    "nrd": {
+     "callback": null,
+     "choices": null,
+     "default": "1.16667",
+     "display": "gpdk045_mosDisplay( 'nrd )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Drain diffusion res squares",
+     "type": "string",
+     "units": null
+    },
+    "nrs": {
+     "callback": null,
+     "choices": null,
+     "default": "1.16667",
+     "display": "gpdk045_mosDisplay( 'nrs )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Source diffusion res squares",
+     "type": "string",
+     "units": null
+    },
+    "off": {
+     "callback": null,
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay( 'off )",
+     "editable": true,
+     "prompt": "Device initially off",
+     "type": "boolean",
+     "units": null
+    },
+    "pasUpdateParamList": {
+     "callback": null,
+     "choices": null,
+     "default": "fw, l",
+     "display": false,
+     "editable": false,
+     "prompt": "PAS Update Param List",
+     "type": "string",
+     "units": null
+    },
+    "pd": {
+     "callback": "gpdk045_mosCB( 'pd )",
+     "choices": null,
+     "default": "520n",
+     "display": "gpdk045_mosDisplay('pd)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Drain diffusion periphery",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "ps": {
+     "callback": "gpdk045_mosCB( 'ps )",
+     "choices": null,
+     "default": "520n",
+     "display": "gpdk045_mosDisplay('ps)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Source diffusion periphery",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "region": {
+     "callback": null,
+     "choices": [
+      " ",
+      "off",
+      "triode",
+      "sat",
+      "subth"
+     ],
+     "default": " ",
+     "display": "gpdk045_mosDisplay( 'region )",
+     "editable": true,
+     "prompt": "Estimated operating region",
+     "type": "cyclic",
+     "units": null
+    },
+    "rightAbut": {
+     "callback": "gpdk045_mosCB( 'rightAbut)",
+     "choices": null,
+     "default": 0,
+     "display": false,
+     "editable": true,
+     "prompt": "Right Abutment",
+     "type": "int",
+     "units": null
+    },
+    "rightTap": {
+     "callback": "gpdk045_mosCB( 'rightTap )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay( 'rightTap )",
+     "editable": true,
+     "prompt": "Right Tap",
+     "type": "boolean",
+     "units": null
+    },
+    "sa": {
+     "callback": null,
+     "choices": null,
+     "default": "140n",
+     "display": "gpdk045_mosDisplay( 'sa )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Left S/D Length (SA)",
+     "type": "string",
+     "units": null
+    },
+    "sb": {
+     "callback": null,
+     "choices": null,
+     "default": "140n",
+     "display": "gpdk045_mosDisplay( 'sb )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Right S/D Length (SB)",
+     "type": "string",
+     "units": null
+    },
+    "sca": {
+     "callback": "gpdk045_mosCB( 'sca )",
+     "choices": null,
+     "default": "226.00151",
+     "display": "gpdk045_mosDisplay('sca)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "SCA",
+     "type": "string",
+     "units": null
+    },
+    "scb": {
+     "callback": "gpdk045_mosCB( 'scb )",
+     "choices": null,
+     "default": "0.11734",
+     "display": "gpdk045_mosDisplay('scb)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "SCB",
+     "type": "string",
+     "units": null
+    },
+    "scc": {
+     "callback": "gpdk045_mosCB( 'scc )",
+     "choices": null,
+     "default": "0.02767",
+     "display": "gpdk045_mosDisplay('scc)",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "SCC",
+     "type": "string",
+     "units": null
+    },
+    "sd": {
+     "callback": null,
+     "choices": null,
+     "default": "160n",
+     "display": "gpdk045_mosDisplay( 'sd )",
+     "editable": "cdfgData->editAreaPerim->value",
+     "prompt": "Gate Spacing (SD)",
+     "type": "string",
+     "units": null
+    },
+    "sdMtlWidth": {
+     "callback": "gpdk045_mosCB( 'sdMtlWidth)",
+     "choices": null,
+     "default": "60n",
+     "display": true,
+     "editable": true,
+     "prompt": "S/D Metal Width",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "showSimParams": {
+     "callback": null,
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay('showSimParams)",
+     "editable": true,
+     "prompt": "Show Sim Parameters",
+     "type": "boolean",
+     "units": null
+    },
+    "simM": {
+     "callback": null,
+     "choices": null,
+     "default": "iPar(\"m\")",
+     "display": false,
+     "editable": false,
+     "prompt": "Simulation Multiplier",
+     "type": "string",
+     "units": null
+    },
+    "simW": {
+     "callback": null,
+     "choices": null,
+     "default": "iPar(\"w\")",
+     "display": false,
+     "editable": false,
+     "prompt": "Simulation Width",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "switchSD": {
+     "callback": "gpdk045_mosCB( 'switchSD )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay('switchSD)",
+     "editable": true,
+     "prompt": "Switch S/D",
+     "type": "boolean",
+     "units": null
+    },
+    "tap": {
+     "callback": "gpdk045_mosCB( 'tap )",
+     "choices": [
+      "None",
+      "Integrated",
+      "Detached"
+     ],
+     "default": "None",
+     "display": true,
+     "editable": true,
+     "prompt": "Bodytie Type",
+     "type": "cyclic",
+     "units": null
+    },
+    "tapCntRows": {
+     "callback": "gpdk045_mosCB( 'tapCntRows )",
+     "choices": null,
+     "default": 1,
+     "display": "gpdk045_mosDisplay( 'tapCntRows )",
+     "editable": true,
+     "prompt": "Tap Contact Rows",
+     "type": "int",
+     "units": null
+    },
+    "tapExtension": {
+     "callback": "gpdk045_mosCB( 'tapExtension )",
+     "choices": null,
+     "default": "",
+     "display": "gpdk045_mosDisplay( 'tapExtension )",
+     "editable": true,
+     "prompt": "Tap Extension",
+     "type": "string",
+     "units": null
+    },
+    "threshold": {
+     "callback": "gpdk045_mosCB( 'threshold )",
+     "choices": null,
+     "default": "10u",
+     "display": true,
+     "editable": true,
+     "prompt": "Folding Threshold",
+     "type": "string",
+     "units": "lengthMetric"
+    },
+    "topTap": {
+     "callback": "gpdk045_mosCB( 'topTap )",
+     "choices": null,
+     "default": null,
+     "display": "gpdk045_mosDisplay( 'topTap )",
+     "editable": true,
+     "prompt": "Top Tap",
+     "type": "boolean",
+     "units": null
+    },
+    "w": {
+     "callback": "gpdk045_mosCB( 'w )",
+     "choices": null,
+     "default": "120n",
+     "display": true,
+     "editable": "gpdk045_mosEditable( 'w )",
+     "prompt": "Total Width",
+     "type": "string",
+     "units": "lengthMetric"
+    }
+   },
+   "spectre": {
+    "component_name": null,
+    "inst_parameters": [
+     "w",
+     "l",
+     "nf",
+     "as",
+     "ad",
+     "ps",
+     "pd",
+     "nrd",
+     "nrs",
+     "sa",
+     "sb",
+     "sd",
+     "sca",
+     "scb",
+     "scc",
+     "m",
+     "trise",
+     "region",
+     "degradation",
+     "geo",
+     "isnoisy"
+    ],
+    "name_prefix": "",
+    "other_parameters": [
+     "model"
+    ],
+    "prop_mapping": {
+     "m": "simM",
+     "nf": "fingers",
+     "trise": "dtemp",
+     "w": "simW"
+    },
+    "term_mapping": {
+     "B": ":b",
+     "D": ":d",
+     "G": ":g",
+     "S": ":s"
+    },
+    "term_order": [
+     "D",
+     "G",
+     "S",
+     "B"
+    ]
+   },
+   "views": [
+    "hspiceD",
+    "spectre",
+    "ivpcell",
+    "symbol",
+    "auLvs",
+    "layout",
+    "auCdl"
+   ]
+  }
+ },
+ "conflicts": [],
+ "format": "gator-cdf-facts-1",
+ "instances": {
+  "C1": {
+   "cell": "mimcap",
+   "library": "gpdk045"
+  },
+  "C2": {
+   "cell": "mimcap",
+   "library": "gpdk045"
+  },
+  "C3": {
+   "cell": "mimcap",
+   "library": "gpdk045"
+  },
+  "MN1": {
+   "cell": "nmos1v",
+   "library": "gpdk045"
+  },
+  "MN2": {
+   "cell": "nmos1v",
+   "library": "gpdk045"
+  },
+  "MN3": {
+   "cell": "nmos1v",
+   "library": "gpdk045"
+  },
+  "MP1": {
+   "cell": "pmos1v",
+   "library": "gpdk045"
+  },
+  "MP2": {
+   "cell": "pmos1v",
+   "library": "gpdk045"
+  },
+  "MP3": {
+   "cell": "pmos1v",
+   "library": "gpdk045"
+  }
+ },
+ "leaves": {},
+ "library": "GPDK045_RINGOSC",
+ "masters": {
+  "mimcap": "gpdk045",
+  "nmos1v": "gpdk045",
+  "pmos1v": "gpdk045"
+ },
+ "modified_after": false,
+ "opened_mode": "a",
+ "recorded": "REAL read-only query of GPDK045_RINGOSC/ring_osc_3stage, 2026-09-22 (cdf_facts.FACTS_SKILL)",
+ "rules": {
+  "C1": {
+   "c": {
+    "editable": "no"
+   },
+   "ca": {
+    "display": "form"
+   },
+   "cf": {
+    "display": "form"
+   },
+   "l": {
+    "editable": "yes"
+   },
+   "model": {
+    "display": "form"
+   },
+   "showSimParams": {
+    "display": "form"
+   },
+   "w": {
+    "editable": "yes"
+   }
+  },
+  "C2": {
+   "c": {
+    "editable": "no"
+   },
+   "ca": {
+    "display": "form"
+   },
+   "cf": {
+    "display": "form"
+   },
+   "l": {
+    "editable": "yes"
+   },
+   "model": {
+    "display": "form"
+   },
+   "showSimParams": {
+    "display": "form"
+   },
+   "w": {
+    "editable": "yes"
+   }
+  },
+  "C3": {
+   "c": {
+    "editable": "no"
+   },
+   "ca": {
+    "display": "form"
+   },
+   "cf": {
+    "display": "form"
+   },
+   "l": {
+    "editable": "yes"
+   },
+   "model": {
+    "display": "form"
+   },
+   "showSimParams": {
+    "display": "form"
+   },
+   "w": {
+    "editable": "yes"
+   }
+  },
+  "MN1": {
+   "AreaFormula": {
+    "display": "no"
+   },
+   "Vbs": {
+    "display": "form"
+   },
+   "Vds": {
+    "display": "form"
+   },
+   "Vgs": {
+    "display": "form"
+   },
+   "ad": {
+    "display": "form",
+    "editable": "no"
+   },
+   "as": {
+    "display": "form",
+    "editable": "no"
+   },
+   "bottomTap": {
+    "display": "form"
+   },
+   "connectSD": {
+    "display": "form"
+   },
+   "degradation": {
+    "display": "form"
+   },
+   "dtemp": {
+    "display": "form"
+   },
+   "editAreaPerim": {
+    "display": "form"
+   },
+   "fw": {
+    "editable": "form"
+   },
+   "geo": {
+    "display": "form"
+   },
+   "isnoisy": {
+    "display": "form"
+   },
+   "l": {
+    "editable": "form"
+   },
+   "ld": {
+    "display": "form"
+   },
+   "leftTap": {
+    "display": "form"
+   },
+   "ls": {
+    "display": "form"
+   },
+   "m": {
+    "editable": "form"
+   },
+   "model": {
+    "display": "form"
+   },
+   "nrd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "nrs": {
+    "display": "form",
+    "editable": "no"
+   },
+   "off": {
+    "display": "form"
+   },
+   "pd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "ps": {
+    "display": "form",
+    "editable": "no"
+   },
+   "region": {
+    "display": "form"
+   },
+   "rightTap": {
+    "display": "form"
+   },
+   "sa": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sca": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scc": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "showSimParams": {
+    "display": "form"
+   },
+   "switchSD": {
+    "display": "form"
+   },
+   "tapCntRows": {
+    "display": "form"
+   },
+   "tapExtension": {
+    "display": "form"
+   },
+   "topTap": {
+    "display": "form"
+   },
+   "w": {
+    "editable": "form"
+   }
+  },
+  "MN2": {
+   "AreaFormula": {
+    "display": "no"
+   },
+   "Vbs": {
+    "display": "form"
+   },
+   "Vds": {
+    "display": "form"
+   },
+   "Vgs": {
+    "display": "form"
+   },
+   "ad": {
+    "display": "form",
+    "editable": "no"
+   },
+   "as": {
+    "display": "form",
+    "editable": "no"
+   },
+   "bottomTap": {
+    "display": "form"
+   },
+   "connectSD": {
+    "display": "form"
+   },
+   "degradation": {
+    "display": "form"
+   },
+   "dtemp": {
+    "display": "form"
+   },
+   "editAreaPerim": {
+    "display": "form"
+   },
+   "fw": {
+    "editable": "form"
+   },
+   "geo": {
+    "display": "form"
+   },
+   "isnoisy": {
+    "display": "form"
+   },
+   "l": {
+    "editable": "form"
+   },
+   "ld": {
+    "display": "form"
+   },
+   "leftTap": {
+    "display": "form"
+   },
+   "ls": {
+    "display": "form"
+   },
+   "m": {
+    "editable": "form"
+   },
+   "model": {
+    "display": "form"
+   },
+   "nrd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "nrs": {
+    "display": "form",
+    "editable": "no"
+   },
+   "off": {
+    "display": "form"
+   },
+   "pd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "ps": {
+    "display": "form",
+    "editable": "no"
+   },
+   "region": {
+    "display": "form"
+   },
+   "rightTap": {
+    "display": "form"
+   },
+   "sa": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sca": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scc": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "showSimParams": {
+    "display": "form"
+   },
+   "switchSD": {
+    "display": "form"
+   },
+   "tapCntRows": {
+    "display": "form"
+   },
+   "tapExtension": {
+    "display": "form"
+   },
+   "topTap": {
+    "display": "form"
+   },
+   "w": {
+    "editable": "form"
+   }
+  },
+  "MN3": {
+   "AreaFormula": {
+    "display": "no"
+   },
+   "Vbs": {
+    "display": "form"
+   },
+   "Vds": {
+    "display": "form"
+   },
+   "Vgs": {
+    "display": "form"
+   },
+   "ad": {
+    "display": "form",
+    "editable": "no"
+   },
+   "as": {
+    "display": "form",
+    "editable": "no"
+   },
+   "bottomTap": {
+    "display": "form"
+   },
+   "connectSD": {
+    "display": "form"
+   },
+   "degradation": {
+    "display": "form"
+   },
+   "dtemp": {
+    "display": "form"
+   },
+   "editAreaPerim": {
+    "display": "form"
+   },
+   "fw": {
+    "editable": "form"
+   },
+   "geo": {
+    "display": "form"
+   },
+   "isnoisy": {
+    "display": "form"
+   },
+   "l": {
+    "editable": "form"
+   },
+   "ld": {
+    "display": "form"
+   },
+   "leftTap": {
+    "display": "form"
+   },
+   "ls": {
+    "display": "form"
+   },
+   "m": {
+    "editable": "form"
+   },
+   "model": {
+    "display": "form"
+   },
+   "nrd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "nrs": {
+    "display": "form",
+    "editable": "no"
+   },
+   "off": {
+    "display": "form"
+   },
+   "pd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "ps": {
+    "display": "form",
+    "editable": "no"
+   },
+   "region": {
+    "display": "form"
+   },
+   "rightTap": {
+    "display": "form"
+   },
+   "sa": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sca": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scc": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "showSimParams": {
+    "display": "form"
+   },
+   "switchSD": {
+    "display": "form"
+   },
+   "tapCntRows": {
+    "display": "form"
+   },
+   "tapExtension": {
+    "display": "form"
+   },
+   "topTap": {
+    "display": "form"
+   },
+   "w": {
+    "editable": "form"
+   }
+  },
+  "MP1": {
+   "AreaFormula": {
+    "display": "no"
+   },
+   "Vbs": {
+    "display": "form"
+   },
+   "Vds": {
+    "display": "form"
+   },
+   "Vgs": {
+    "display": "form"
+   },
+   "ad": {
+    "display": "form",
+    "editable": "no"
+   },
+   "as": {
+    "display": "form",
+    "editable": "no"
+   },
+   "bottomTap": {
+    "display": "form"
+   },
+   "connectSD": {
+    "display": "form"
+   },
+   "degradation": {
+    "display": "form"
+   },
+   "dtemp": {
+    "display": "form"
+   },
+   "editAreaPerim": {
+    "display": "form"
+   },
+   "fw": {
+    "editable": "form"
+   },
+   "geo": {
+    "display": "form"
+   },
+   "isnoisy": {
+    "display": "form"
+   },
+   "l": {
+    "editable": "form"
+   },
+   "ld": {
+    "display": "form"
+   },
+   "leftTap": {
+    "display": "form"
+   },
+   "ls": {
+    "display": "form"
+   },
+   "m": {
+    "editable": "form"
+   },
+   "model": {
+    "display": "form"
+   },
+   "nrd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "nrs": {
+    "display": "form",
+    "editable": "no"
+   },
+   "off": {
+    "display": "form"
+   },
+   "pd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "ps": {
+    "display": "form",
+    "editable": "no"
+   },
+   "region": {
+    "display": "form"
+   },
+   "rightTap": {
+    "display": "form"
+   },
+   "sa": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sca": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scc": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "showSimParams": {
+    "display": "form"
+   },
+   "switchSD": {
+    "display": "form"
+   },
+   "tapCntRows": {
+    "display": "form"
+   },
+   "tapExtension": {
+    "display": "form"
+   },
+   "topTap": {
+    "display": "form"
+   },
+   "w": {
+    "editable": "form"
+   }
+  },
+  "MP2": {
+   "AreaFormula": {
+    "display": "no"
+   },
+   "Vbs": {
+    "display": "form"
+   },
+   "Vds": {
+    "display": "form"
+   },
+   "Vgs": {
+    "display": "form"
+   },
+   "ad": {
+    "display": "form",
+    "editable": "no"
+   },
+   "as": {
+    "display": "form",
+    "editable": "no"
+   },
+   "bottomTap": {
+    "display": "form"
+   },
+   "connectSD": {
+    "display": "form"
+   },
+   "degradation": {
+    "display": "form"
+   },
+   "dtemp": {
+    "display": "form"
+   },
+   "editAreaPerim": {
+    "display": "form"
+   },
+   "fw": {
+    "editable": "form"
+   },
+   "geo": {
+    "display": "form"
+   },
+   "isnoisy": {
+    "display": "form"
+   },
+   "l": {
+    "editable": "form"
+   },
+   "ld": {
+    "display": "form"
+   },
+   "leftTap": {
+    "display": "form"
+   },
+   "ls": {
+    "display": "form"
+   },
+   "m": {
+    "editable": "form"
+   },
+   "model": {
+    "display": "form"
+   },
+   "nrd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "nrs": {
+    "display": "form",
+    "editable": "no"
+   },
+   "off": {
+    "display": "form"
+   },
+   "pd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "ps": {
+    "display": "form",
+    "editable": "no"
+   },
+   "region": {
+    "display": "form"
+   },
+   "rightTap": {
+    "display": "form"
+   },
+   "sa": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sca": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scc": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "showSimParams": {
+    "display": "form"
+   },
+   "switchSD": {
+    "display": "form"
+   },
+   "tapCntRows": {
+    "display": "form"
+   },
+   "tapExtension": {
+    "display": "form"
+   },
+   "topTap": {
+    "display": "form"
+   },
+   "w": {
+    "editable": "form"
+   }
+  },
+  "MP3": {
+   "AreaFormula": {
+    "display": "no"
+   },
+   "Vbs": {
+    "display": "form"
+   },
+   "Vds": {
+    "display": "form"
+   },
+   "Vgs": {
+    "display": "form"
+   },
+   "ad": {
+    "display": "form",
+    "editable": "no"
+   },
+   "as": {
+    "display": "form",
+    "editable": "no"
+   },
+   "bottomTap": {
+    "display": "form"
+   },
+   "connectSD": {
+    "display": "form"
+   },
+   "degradation": {
+    "display": "form"
+   },
+   "dtemp": {
+    "display": "form"
+   },
+   "editAreaPerim": {
+    "display": "form"
+   },
+   "fw": {
+    "editable": "form"
+   },
+   "geo": {
+    "display": "form"
+   },
+   "isnoisy": {
+    "display": "form"
+   },
+   "l": {
+    "editable": "form"
+   },
+   "ld": {
+    "display": "form"
+   },
+   "leftTap": {
+    "display": "form"
+   },
+   "ls": {
+    "display": "form"
+   },
+   "m": {
+    "editable": "form"
+   },
+   "model": {
+    "display": "form"
+   },
+   "nrd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "nrs": {
+    "display": "form",
+    "editable": "no"
+   },
+   "off": {
+    "display": "form"
+   },
+   "pd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "ps": {
+    "display": "form",
+    "editable": "no"
+   },
+   "region": {
+    "display": "form"
+   },
+   "rightTap": {
+    "display": "form"
+   },
+   "sa": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sca": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scb": {
+    "display": "form",
+    "editable": "no"
+   },
+   "scc": {
+    "display": "form",
+    "editable": "no"
+   },
+   "sd": {
+    "display": "form",
+    "editable": "no"
+   },
+   "showSimParams": {
+    "display": "form"
+   },
+   "switchSD": {
+    "display": "form"
+   },
+   "tapCntRows": {
+    "display": "form"
+   },
+   "tapExtension": {
+    "display": "form"
+   },
+   "topTap": {
+    "display": "form"
+   },
+   "w": {
+    "editable": "form"
+   }
+  }
+ }
+}

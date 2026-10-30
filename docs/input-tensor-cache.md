@@ -20,9 +20,9 @@
 
 - `graph/pyg_converter.py` 的 `TopologyTensorCache` 提供静态模板。`to_pyg(graph, topology_cache=cache)` 返回独立张量，并刷新尺寸、mask、group value/bounds、回写与来源 metadata。省略缓存仍支持原调用方式。
 - `models/inputs.py` 的 `ObservationTensorCache` 管理准备好的 CPU 输入；`batch_observations(..., cache=cache)` 复用输入，省略参数则每次转换。
-- `SACLearner` 默认配置 `input_cache_capacity=2048`、`topology_cache_capacity=64`。两层均为有容量上限的 LRU，超限淘汰最久未使用条目；容量按条目计，实际内存随图及 metadata 大小变化。两项都设为 `0` 可关闭复用，结果不变。
-- `learner.input_cache.info()` 返回两层命中/未命中、当前条目数和容量；`clear()` 释放条目并重置计数。统计不进入训练损失或随机状态。
-- 完整观测缓存使用 `(FeatureSchema, SpecSchema, Observation)` 的本地 pickle 序列化 SHA-256；只序列化计算摘要，不读取 pickle 文件。它覆盖嵌套可变内容、数值、mask、目标、预算、状态、origin、工况和来源信息。不能改成对象地址或单独的 job ID，否则 replay 深拷贝会失效，原地变更也可能误读旧值。字典插入顺序等表示差异可能造成额外未命中，只影响成本。
+- `SACLearner` 默认配置 `input_cache_capacity=8192`（2026-10-06 记录 7.221 起，原为 2048）、`input_cache_max_bytes=256 MiB`、`topology_cache_capacity=64`。两层均为有容量上限的 LRU，超限淘汰最久未使用条目；容量按条目计，实际内存随图及 metadata 大小变化。两项都设为 `0` 可关闭复用，结果不变。
+- `learner.input_cache.info()` 返回两层命中/未命中、当前条目数和容量（记录 7.221 起另有淘汰次数、张量字节和字节上限）；`clear()` 释放条目并重置计数。统计不进入训练损失或随机状态。
+- 完整观测缓存的键是内容摘要（记录 7.221 起为 schema 摘要 + `observation_digest(observation)`，见文末；此前为 `(FeatureSchema, SpecSchema, Observation)` 整体的本地 pickle 序列化 SHA-256）；只序列化计算摘要，不读取 pickle 文件。它覆盖嵌套可变内容、数值、mask、目标、预算、状态、origin、工况和来源信息。不能改成对象地址或单独的 job ID，否则 replay 深拷贝会失效，原地变更也可能误读旧值。字典插入顺序等表示差异可能造成额外未命中，只影响成本。
 - 静态键保留有序节点/边/组身份、器件模型/端口、net roles、绑定比例及 schema；名字只用来确认索引与回写位置，不作为学习语义或图同构证明。来源文件路径和尺寸不属于静态键。
 - 缓存未命中时完整校验观测；SAC 的 transition 校验仍每次执行。命中返回的是先前已经校验的相同内容。对外 batch 张量及 opaque metadata 与缓存隔离，调用方修改 batch 不会污染后续采样。
 - 缓存属于派生运行时数据，不写入 checkpoint。恢复后按需重建；`SACLearner.load()` 可重新指定两项容量。缓存容量不改变学习契约，严格代码/schema/依赖校验仍保留，因此此次改码前的 checkpoint 不会自动迁移。
@@ -64,3 +64,19 @@ print(cache.info())
   --batch-size 32 --repeats 30 --updates 8 \
   --output artifacts/local/input-cache-benchmark
 ```
+
+## 2026-10-06 记录 7.221：内容摘要键、借出样本、字节计数与容量
+
+- 键 = `sha256(schema 摘要 + observation_digest(观测))`。schema 摘要按 (FeatureSchema, SpecSchema) 记忆（两者为深度不可变的 frozen dataclass，拓扑缓存的键本已要求可哈希）；`observation_digest` 是整条观测的 pickle SHA-256，覆盖此前键所覆盖的全部内容。内容相同的观测（含深拷贝）仍命中同一条目。
+- `ReplayBuffer.update_learner(learner, n)` 把已入库的 transition 借给 `learner.update`（不深拷贝），并把每条 transition 两个观测的摘要只算一次（`_digests`，按对象身份并校验同一对象，环形覆盖时删除；不写入 checkpoint，冷恢复后按需重算）后经 `batch(..., digests=...)` 传入。其他调用（`act()`、公共 `sample()` 之后的 `update()`）每次完整摘要。`PdkViewLearner` 的视图生成新对象，忽略传入摘要，按视图自身内容摘要。
+- `info()` 新增 `evictions`、`tensor_bytes`（每条目张量字节之和；拓扑缓存返回独立张量，故每条目自有）与 `max_bytes`；可选字节上限超出时淘汰最久未用条目，但总保留刚加入的一条。
+- 容量研究（记录的 GATv2 `mscr_ota7t` replay 复制 1/3/7/14 倍，副本在图 metadata 中标记以得到新内容；GT 预设、gamma 0、batch 8、单线程；`artifacts/local/reviews/learner-step-7221-2026-10-06/`）：
+
+| replay transition 数 | 不同当前状态 | 容量 2048 | 4096 | 12000 |
+| ---: | ---: | --- | --- | --- |
+| 751 | 598 | 100 %，44.5 ms | 100 %，43.1 ms | 100 %，44.2 ms |
+| 2,253 | 1,794 | 100 %，45.4 ms | 100 %，45.4 ms | 100 %，45.8 ms |
+| 5,257 | 4,186 | 52 %，52.7 ms | 97 %，46.8 ms | 100 %，45.5 ms |
+| 10,000 | 7,964 | 29 %，58.6 ms | 55 %，61.5 ms（负载 3.3） | 100 %，48.0 ms |
+
+  每个条目约 4.6 kB 张量（7,964 条共 36.4 MB），一次未命中的转换约 1.3 ms；进程内存主要是 replay 本身（10,000 条约 3.5 GB RSS）。因此 `SACLearner` 默认容量由 2048 改为 8192（覆盖满 10,000 条 replay 的全部当前状态），并设 256 MiB 字节上限以防异常大的图。

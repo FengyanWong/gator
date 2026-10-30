@@ -10,12 +10,12 @@ from time import perf_counter
 from uuid import uuid4
 
 from .backend import (
-    BackendNotConnected, NetlistArtifact, SimulationRequest, SimulationResult,
+    LocalConnection, NetlistArtifact, SimulationRequest, SimulationResult,
     SimulationStatus, UnsupportedCapability, VirtuosoBackend,
 )
 
 
-class MockBackend(VirtuosoBackend):
+class MockBackend(LocalConnection, VirtuosoBackend):
     """Exports an immutable netlist and returns explicitly supplied test measurements.
 
     No device physics or parameter writeback is claimed. Nonempty candidate
@@ -31,15 +31,10 @@ class MockBackend(VirtuosoBackend):
         self.status = status
         self.connected = False
 
-    def connect(self) -> None:
-        self.connected = True
-
-    def close(self) -> None:
-        self.connected = False
+    not_connected = "Call connect() before using the synthetic backend"
 
     def _require_connection(self) -> None:
-        if not self.connected:
-            raise BackendNotConnected("Call connect() before using the synthetic backend")
+        self._check()
 
     @staticmethod
     def _job(work_root: Path) -> tuple[str, Path]:

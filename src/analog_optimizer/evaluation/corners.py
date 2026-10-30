@@ -109,6 +109,21 @@ def summarize_corners(design: NominalDesign, corners: tuple[PVTCorner, ...],
     still count toward an execution budget in the future caller. Circuit failures
     count only when the backend explicitly attributes an evaluated candidate.
     """
+    evaluator, indexed = _indexed_results(design, corners, results, specs, lambda_failed)
+    passed, failed, unknown, details, observations = _corner_states(corners, indexed, evaluator)
+    worst = _worst_cases(observations, corners)
+    complete = not unknown
+    score = design.nominal_reward - lambda_failed * failed if complete else None
+    if score is not None and not math.isfinite(score):
+        raise ValueError('robust_score overflow; use a smaller lambda_failed')
+    disposition = 'rejected' if failed else ('accepted' if complete else 'inconclusive')
+    return CornerSummary(design.candidate_id, complete, disposition, passed, failed, tuple(unknown),
+                         passed / len(corners) if complete else None, score, worst, details)
+
+
+def _indexed_results(design, corners, results, specs, lambda_failed):
+    """The inputs checked (lambda_failed, unique corners, one matching deterministic PVT validation result per corner at
+    the design's executed parameters): (evaluator, indexed results by corner id)."""
     if not finite_number(lambda_failed) or lambda_failed < 0:
         raise ValueError('lambda_failed must be finite and nonnegative')
     expected = {c.id: c for c in corners}
@@ -129,6 +144,12 @@ def summarize_corners(design: NominalDesign, corners: tuple[PVTCorner, ...],
                 not math.isclose(actual[k], v, rel_tol=1e-8, abs_tol=1e-24) for k, v in proposed.items()):
             raise ValueError('Corner result belongs to different executed parameters')
         indexed[corner.id] = result
+    return evaluator, indexed
+
+
+def _corner_states(corners, indexed, evaluator):
+    """Each corner's state (passed, failed, unknown or missing) with its evaluation, and per active spec the
+    (severity, corner id, value) of every corner that measured it: (passed, failed, unknown, details, observations)."""
     passed, failed, unknown, details = 0, 0, [], {}
     observations = {s.metric_id: [] for s in evaluator.specs if s.active}
     for corner in corners:
@@ -145,7 +166,9 @@ def summarize_corners(design: NominalDesign, corners: tuple[PVTCorner, ...],
             for spec in evaluator.specs:
                 if not spec.active or evaluation.violations[spec.metric_id] is None:
                     continue
-                value = result.metrics[spec.metric_id]
+                value = result.metrics.get(spec.metric_id)
+                if value is None:       # "Missing value = failed": the corner fails, and there is no value to rank
+                    continue
                 # Unclipped distance chooses the true worst failing sample;
                 # min/max tie-breaking also selects the weakest passing margin.
                 if spec.comparator == 'min':
@@ -164,6 +187,11 @@ def summarize_corners(design: NominalDesign, corners: tuple[PVTCorner, ...],
         details[corner.id] = {'state': state, 'job_id': result.job_id, 'status': result.status.value,
                               'reason_code': result.reason_code, 'violations': evaluation.violations,
                               'evaluation_errors': evaluation.errors}
+    return passed, failed, unknown, details, observations
+
+
+def _worst_cases(observations, corners):
+    """Per spec, the value of greatest violation over the corners that measured it, and whether every corner did."""
     worst = {}
     for name, points in observations.items():
         if points:
@@ -172,10 +200,4 @@ def summarize_corners(design: NominalDesign, corners: tuple[PVTCorner, ...],
                            'valid_corner_count': len(points), 'complete': len(points) == len(corners)}
         else:
             worst[name] = {'value': None, 'corner_id': None, 'valid_corner_count': 0, 'complete': False}
-    complete = not unknown
-    score = design.nominal_reward - lambda_failed * failed if complete else None
-    if score is not None and not math.isfinite(score):
-        raise ValueError('robust_score overflow; use a smaller lambda_failed')
-    disposition = 'rejected' if failed else ('accepted' if complete else 'inconclusive')
-    return CornerSummary(design.candidate_id, complete, disposition, passed, failed, tuple(unknown),
-                         passed / len(corners) if complete else None, score, worst, details)
+    return worst

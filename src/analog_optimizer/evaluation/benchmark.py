@@ -12,35 +12,42 @@ from time import perf_counter
 import torch
 
 from analog_optimizer.envs.sizing import graph_contract, write_record
-from analog_optimizer.models import ENCODER_TYPES, ModelConfig
+from analog_optimizer.models import ENCODER_TYPES, REMOVED_ENCODERS, ModelConfig
+from analog_optimizer.models.inputs import SpecSchema
+from analog_optimizer.training.collect import random_proposal
 from analog_optimizer.training.replay import ReplayBuffer, Transition
 from analog_optimizer.training.sac import SACLearner, source_digest
 from analog_optimizer.training.runtime import write_report_preserving_error
-from .transfer import aggregate_runs, digest, freeze_protocol
+from .transfer import aggregate_runs, freeze_protocol, validate_split
 
 
-METHODS = ('gt_scratch', 'gt_frozen', 'gt_adapt', 'random', 'pattern_search', 'gnn_adapt')
-ENCODER_LABELS = dict(graph_transformer='gt', mlp='mlp', rgcn='rgcn', gat='gat', port_gnn='gnn', gcn='gcn')
+ENCODER_LABELS = dict(graph_transformer='gt', rgcn='rgcn', gatv2='gatv2',
+                      graph_gps='gps', group_cross_attention='group_ca', circuit_gps='circuit_gps')
 
 
 def benchmark_models(settings):
-    """Explicit selections get scratch/frozen/adapt for EVERY encoder.
+    """The selected encoders get scratch/frozen/adapt each, plus random and pattern search.
 
-    Omitted selection retains the six-method M5 protocol and its call budget.
+    `settings['encoders']` is required. Until 2026-09-24 an omitted selection meant the six-method M5 protocol
+    (graph_transformer + port_gnn); port_gnn was removed that day, so that protocol runs only from source commit bbdfe36.
     """
     selected = settings.get('encoders')
-    legacy = selected is None
-    if legacy:
-        selected = ('graph_transformer', 'port_gnn')
+    if selected is None:
+        raise ValueError("settings['encoders'] is required: the omitted selection used to mean the M5 six-method "
+                         'protocol with port_gnn, which was removed on 2026-09-24 (source commit bbdfe36 still runs it)')
+    if isinstance(selected, (list, tuple)):
+        for name in selected:
+            if isinstance(name, str) and name in REMOVED_ENCODERS:
+                raise ValueError(f'encoders: {REMOVED_ENCODERS[name]}')
     if (not isinstance(selected, (list, tuple)) or not selected
             or any(not isinstance(name, str) or name not in ENCODER_TYPES for name in selected)
             or len(set(selected)) != len(selected)):
         raise ValueError('encoders must be a nonempty, unique list of supported encoder types')
     models = {ENCODER_LABELS[name]: ModelConfig(
         encoder_type=name, hidden_dim=settings.get('hidden_dim', 32),
-        heads=settings.get('heads', 4), layers=settings.get('layers', 2)) for name in selected}
-    names = METHODS if legacy else tuple(f'{key}_{phase}' for key in models
-                                         for phase in ('scratch', 'frozen', 'adapt')) + ('random', 'pattern_search')
+        heads=settings.get('heads', 4), layers=settings.get('layers', 2),
+        structural_encoding=settings.get('structural_encodings', {}).get(name)) for name in selected}
+    names = tuple(f'{key}_{phase}' for key in models for phase in ('scratch', 'frozen', 'adapt')) + ('random', 'pattern_search')
     methods = {}
     for name in names:
         if name in ('random', 'pattern_search'):
@@ -48,7 +55,27 @@ def benchmark_models(settings):
         else:
             model, suffix = name.rsplit('_', 1)
             methods[name] = (model, 'adaptation' if suffix == 'adapt' else suffix)
-    return models, methods, ('gt',) if legacy else tuple(models)
+    return models, methods, tuple(models)
+
+
+def benchmark_call_budget(tasks, settings):
+    """Validate and count a complete matrix before constructing any backend."""
+    validate_split(tasks)
+    seeds = settings['seeds']
+    if (not seeds or len(set(seeds)) != len(seeds) or any(type(s) is not int or not 0 <= s < 2**32 for s in seeds)
+            or any(type(settings[k]) is not int or settings[k] < 1 for k in
+                   ('pretrain_steps', 'test_steps', 'batch_size', 'max_calls'))):
+        raise ValueError('Invalid seed or call/update budgets')
+    if settings['batch_size'] > min(settings['pretrain_steps'], settings['test_steps']):
+        raise ValueError('Budget must allow learning in both pretraining and adaptation')
+    models, methods, validation_models = benchmark_models(settings)
+    counts = {p: sum(t.partition == p for t in tasks) for p in ('train', 'validation', 'test')}
+    planned = len(seeds) * (len(models)*counts['train']*(1+settings['pretrain_steps']) +
+                           2*len(validation_models)*counts['validation'] +
+                           len(methods)*counts['test']*(1+settings['test_steps']))
+    if planned > settings['max_calls']:
+        raise ValueError(f'Planned {planned} calls exceed max_calls={settings["max_calls"]}')
+    return planned
 
 
 def seed_all(seed):
@@ -142,7 +169,8 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
     statistics = RunStatistics(limit)
     last_recorded = None
     before = weight_digest(learner) if learner else None
-    summary = dict(task=task.id, partition=task.partition, transfer=task.transfer, method=method,
+    summary = dict(task=task.id, partition=task.partition, transfer=task.transfer,
+                   circuit_class=task.circuit_class, family=task.family, method=method,
                    seed=seed, phase=phase, origin=env.expected_origin, records=[],
                    actions=[], inference_seconds=0., update_seconds=0., updates=0, completed=False)
     summary['model_config'] = asdict(learner.model_config) if learner else None
@@ -184,7 +212,7 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
                 for _ in range(env.max_steps):
                     start = perf_counter()
                     if method == 'random' or (phase in ('pretrain', 'scratch') and replay.insertions < warmup):
-                        proposal = {g: rng.uniform(-1, 1) for g in env.mapper.group_ids}
+                        proposal = random_proposal(rng, env.mapper.group_ids)
                         action_source = 'random'
                     elif method == 'pattern_search':
                         proposal, action_source = search.propose(), 'coordinate_poll'
@@ -237,16 +265,16 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
                 summary['unconfirmed_evaluation'] = dict(id=env.recorder.last_eval_id, error=str(recording_error))
         raise
     finally:
-        summary.update(statistics.summary(calls=env.simulation_calls,
-                                     wall_seconds=perf_counter()-started, budget=1+env.max_steps))
-        summary.update(updates=history['updates_count'], update_log=updates, weight_before=before,
-                       weight_after=weight_digest(learner) if learner else None,
-                       replay_insertions=0 if replay is None else replay.insertions)
-        restore = env.directory / 'restoration.json'
-        summary['restoration'] = json.loads(restore.read_text()) if restore.exists() else {'state': 'unknown'}
-        write_report_preserving_error(env.directory / 'run.json', summary)
+        _finish_episode(summary, statistics, env, started, history, updates, before, learner, replay)
     if not training and summary['weight_before'] != summary['weight_after']:
         raise RuntimeError('Frozen evaluation changed model weights')
+    _save_episode(training, task, phase, seed, env, summary, checkpoints, learner, replay, checkpoint)
+    return summary
+
+
+def _save_episode(training, task, phase, seed, env, summary, checkpoints, learner, replay, checkpoint):
+    """A learning episode's model and replay saved at its end: a forced save point and the policy (checkpoints), or the
+    one checkpoint file asked for."""
     if training:
         state = dict(task=task.id, phase=phase, seed=seed, simulation_calls=env.simulation_calls,
                      boundary='completed_benchmark_episode', summary=summary)
@@ -256,7 +284,19 @@ def run_episode(env, task, method, *, learner=None, replay=None, seed=0, batch_s
             summary['checkpoint'] = str(path)
         elif checkpoint:
             learner.save(checkpoint, replay, run_state=state)
-    return summary
+
+
+def _finish_episode(summary, statistics, env, started, history, updates, before, learner, replay):
+    """The episode's summary completed - statistics, updates, the weights before and after, the restoration record - and
+    written to run.json, preserving an error already recorded."""
+    summary.update(statistics.summary(calls=env.simulation_calls,
+                                 wall_seconds=perf_counter()-started, budget=1+env.max_steps))
+    summary.update(updates=history['updates_count'], update_log=updates, weight_before=before,
+                   weight_after=weight_digest(learner) if learner else None,
+                   replay_insertions=0 if replay is None else replay.insertions)
+    restore = env.directory / 'restoration.json'
+    summary['restoration'] = json.loads(restore.read_text()) if restore.exists() else {'state': 'unknown'}
+    write_report_preserving_error(env.directory / 'run.json', summary)
 
 
 def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance, progress=print,
@@ -270,33 +310,8 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
         raise ValueError('Parallel benchmark requires isolated immutable-netlist or synthetic environments')
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    seeds = settings['seeds']
-    if (not seeds or len(set(seeds)) != len(seeds) or any(type(s) is not int or not 0 <= s < 2**32 for s in seeds)
-            or any(type(settings[k]) is not int or settings[k] < 1 for k in
-                   ('pretrain_steps', 'test_steps', 'batch_size', 'max_calls'))):
-        raise ValueError('Invalid seed or call/update budgets')
-    if settings['batch_size'] > min(settings['pretrain_steps'], settings['test_steps']):
-        raise ValueError('Budget must allow learning in both pretraining and adaptation')
-    train = [t for t in tasks if t.partition == 'train']
-    validation = [t for t in tasks if t.partition == 'validation']
-    test = [t for t in tasks if t.partition == 'test']
-    models, methods, validation_models = benchmark_models(settings)
-    planned = len(seeds) * (len(models)*len(train)*(1+settings['pretrain_steps']) +
-                           2*len(validation_models)*len(validation) +
-                           len(methods)*len(test)*(1+settings['test_steps']))
-    if planned > settings['max_calls']:
-        raise ValueError(f'Planned {planned} calls exceed max_calls={settings["max_calls"]}')
-    frozen = dict(**settings, origin=origin, methods=tuple(methods), planned_calls=planned,
-                  models={k: asdict(v) for k, v in models.items()}, provenance=provenance,
-                  method_models={k: dict(model=v[0], phase=v[1]) for k, v in methods.items()},
-                  validation_models=validation_models,
-                  capacity_control='common width/depth; report actual actor+Q1+Q2 parameters, not parameter matched',
-                  source_sha256=source_digest(), adaptation='fresh optimizers/replay; copied weights and alpha',
-                  validation='frozen diagnostic only; no model/hyperparameter selection',
-                  frozen_policy='deterministic mean, no parameter updates',
-                  budget_unit='one nominal DC/AC candidate package including reset, no cache/retries',
-                  normalizer='fixed physical references; no data fitting', stop_on_success=False)
-    protocol_sha = freeze_protocol(directory / 'protocol.json', tasks, frozen)
+    (planned, spec_schema, seeds, train, validation, test, models, methods, validation_models,
+     protocol_sha) = _frozen_protocol(tasks, settings, directory, origin, provenance)
     report = {} if report is None else report
     report.update(origin=origin, protocol_sha256=protocol_sha, completed=False, phases=[], methods=tuple(methods),
                   models={k: asdict(v) for k, v in models.items()},
@@ -314,7 +329,8 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
     def fresh(model, seed, phase, task_ids):
         seed_all(seed)
         return SACLearner(experiment=dict(origin=origin, split=phase, designs=task_ids,
-                                         protocol_sha256=protocol_sha), model_config=models[model])
+                                         protocol_sha256=protocol_sha), model_config=models[model],
+                          spec_schema=spec_schema)
 
     def execute(task, method, steps, **kwargs):
         if report['calls'] + 1 + steps > settings['max_calls']:
@@ -402,6 +418,8 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
                             run_state=dict(phase='pretrain', tasks=[t.id for t in train],
                                            protocol_sha256=protocol_sha, seed=seed))
                 costs[model] = dict(model=model, seed=seed, calls=sum(p['calls'] for p in phases),
+                                    tasks=[t.id for t in train],
+                                    circuit_classes=sorted({t.circuit_class for t in train if t.circuit_class}),
                                     wall_seconds=sum(p['wall_seconds'] for p in phases), updates=source.updates,
                                     parameters=sum(p.numel() for module in (source.actor, source.critics)
                                                    for p in module.parameters()), weight_sha256=weight_digest(source))
@@ -434,14 +452,55 @@ def run_benchmark(tasks, env_factory, directory, *, origin, settings, provenance
         report.update(exception_type=type(exc).__name__, error=str(exc))
         raise
     finally:
-        finished = {(r['task'], r['method'], r['seed']) for r in report['test_runs']}
-        report['unexecuted_test_runs'] = [dict(task=t.id, method=m, seed=s) for t in test
-                                         for m in methods for s in execution_seeds if (t.id, m, s) not in finished]
-        report['cost_by_partition'] = {part: dict(calls=sum(r['calls'] for r in report['phases'] if r['partition'] == part),
-                                                  wall_seconds=sum(r['wall_seconds'] for r in report['phases'] if r['partition'] == part))
-                                       for part in ('train', 'validation', 'test')}
-        report.update(aggregate=aggregate_runs(report['test_runs']), elapsed_seconds=perf_counter()-started,
-                      real_simulation_calls=report['calls'] if origin == 'real' else 0,
-                      synthetic_calls=report['calls'] if origin == 'synthetic' else 0)
-        write_report_preserving_error(directory / 'report.json', report)
+        _finish_report(report, test, methods, execution_seeds, started, origin, directory)
     return report
+
+
+def _finish_report(report, test, methods, execution_seeds, started, origin, directory):
+    """The report's closing facts - the test runs left unexecuted, the cost by partition, the aggregate, the elapsed
+    time and the call kinds - written, preserving an error already recorded."""
+    finished = {(r['task'], r['method'], r['seed']) for r in report['test_runs']}
+    report['unexecuted_test_runs'] = [dict(task=t.id, method=m, seed=s) for t in test
+                                     for m in methods for s in execution_seeds if (t.id, m, s) not in finished]
+    report['cost_by_partition'] = {part: dict(calls=sum(r['calls'] for r in report['phases'] if r['partition'] == part),
+                                              wall_seconds=sum(r['wall_seconds'] for r in report['phases'] if r['partition'] == part))
+                                   for part in ('train', 'validation', 'test')}
+    report.update(aggregate=aggregate_runs(report['test_runs']), elapsed_seconds=perf_counter()-started,
+                  real_simulation_calls=report['calls'] if origin == 'real' else 0,
+                  synthetic_calls=report['calls'] if origin == 'synthetic' else 0)
+    write_report_preserving_error(directory / 'report.json', report)
+
+
+def _frozen_protocol(tasks, settings, directory, origin, provenance):
+    """The benchmark's protocol, checked against the frozen specification schema and frozen in protocol.json before any
+    call: the planned call budget, the schema, the seeds, the train/validation/test tasks, the models and methods, and
+    the protocol's sha256."""
+    planned = benchmark_call_budget(tasks, settings)
+    schema_settings = settings.get('spec_schema')
+    spec_schema = (SpecSchema() if schema_settings is None else SpecSchema(
+        version=schema_settings['version'], metrics=tuple(tuple(m) for m in schema_settings['metrics'])))
+    registry = {name: unit for name, unit, _ in spec_schema.metrics}
+    for task in tasks:
+        if any(registry.get(s.metric_id) != s.unit for s in task.specs):
+            raise ValueError('Task metric identity/unit is absent from the frozen specification schema')
+    seeds = settings['seeds']
+    train = [t for t in tasks if t.partition == 'train']
+    validation = [t for t in tasks if t.partition == 'validation']
+    test = [t for t in tasks if t.partition == 'test']
+    models, methods, validation_models = benchmark_models(settings)
+    frozen = dict(**settings, origin=origin, methods=tuple(methods), planned_calls=planned,
+                  models={k: asdict(v) for k, v in models.items()}, provenance=provenance,
+                  method_models={k: dict(model=v[0], phase=v[1]) for k, v in methods.items()},
+                  validation_models=validation_models,
+                  capacity_control='common width/depth; report actual actor+Q1+Q2 parameters, not parameter matched',
+                  source_sha256=source_digest(), adaptation='fresh optimizers/replay; copied weights and alpha',
+                  validation='frozen diagnostic only; no model/hyperparameter selection',
+                  frozen_policy='deterministic mean, no parameter updates',
+                  budget_unit=('one analytic toy evaluation including reset, no cache/retries' if origin == 'synthetic'
+                               else 'one nominal candidate package including reset, no cache/retries'),
+                  resolved_spec_schema=asdict(spec_schema),
+                  source_task_order=[t.id for t in train],
+                  source_sampling='sequential episodes; one shared learner/replay per encoder and seed',
+                  normalizer='fixed physical references; no data fitting', stop_on_success=False)
+    protocol_sha = freeze_protocol(directory / 'protocol.json', tasks, frozen)
+    return planned, spec_schema, seeds, train, validation, test, models, methods, validation_models, protocol_sha

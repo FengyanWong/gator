@@ -11,14 +11,13 @@ from torch.distributions import Normal
 
 from .inputs import SpecSchema
 from analog_optimizer.graph.pyg_converter import FeatureSchema
-from .encoders import ModelConfig, PortGraphEncoder, build_encoder, mlp, segment_sum, segment_mean
+from .encoders import ModelConfig, build_encoder, mlp, segment_sum, segment_mean
 
 
 @dataclass
 class PolicySample:
     actions: torch.Tensor
     log_prob: torch.Tensor
-    mean_actions: torch.Tensor
 
 
 class GroupActor(nn.Module):
@@ -41,7 +40,7 @@ class GroupActor(nn.Module):
         # Stable log(1 - tanh(raw)^2), even for saturated actions.
         correction = 2 * (math.log(2) - raw - F.softplus(-2 * raw))
         per_group = distribution.log_prob(raw) - correction
-        return PolicySample(actions, segment_sum(per_group, batch.action_batch, batch.size), mu.tanh())
+        return PolicySample(actions, segment_sum(per_group, batch.action_batch, batch.size))
 
 
 class GraphCritic(nn.Module):

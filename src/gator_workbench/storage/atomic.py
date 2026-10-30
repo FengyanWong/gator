@@ -1,0 +1,334 @@
+"""Atomic, verified file publication and an fsynced JSONL appender.
+
+Observed on this project's 9p/drvfs output mount: a ``stat`` issued immediately
+after an atomic rename can transiently fail with ENOENT although the data is
+durable. Publication therefore verifies with a short bounded retry instead of
+reporting a false write failure. A file that still cannot be seen after the
+retries IS reported as a failure.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import time
+from uuid import uuid4
+
+TEMP_MARKER = '.gwtmp-'   # only files carrying this marker are ever auto-removed
+
+
+class PersistenceError(OSError):
+    """Core persistence failed. Callers must pause dispatch safely, not continue silently."""
+
+
+def sha256_file(path: str | os.PathLike[str], chunk: int=1 << 20) -> str:
+    """Hash a file incrementally without reading its complete contents into memory."""
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        while block := stream.read(chunk):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def fsync_directory(path) -> None:
+    """Flush a directory's entries to disk so renames and new files in it survive a crash."""
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _await_visible(path: Path, size: int | None, attempts: int=8, delay: float=0.025, identity: tuple[int,
+    int] | None=None) -> None:
+    """`identity` = (st_dev, st_ino) of the file this writer renamed into place. When another writer's rename landed
+    after ours, the path holds a DIFFERENT file of another size: that is no failure of ours - every writer publishes a
+    whole, fsynced file by rename, so the newer one is complete too - and it used to be reported as one (two saves of
+    settings.json at once, review of 2026-09-29). A missing file (the 9p stat right after a rename) is still retried."""
+    last = None
+    for attempt in range(attempts):
+        try:
+            info = path.stat()
+            if size is None or info.st_size == size:
+                return
+            if identity is not None and (info.st_dev, info.st_ino) != identity:
+                return
+            last = f'size {info.st_size} != expected {size}'
+        except FileNotFoundError as exc:
+            last = str(exc)
+        time.sleep(delay * (attempt + 1))
+    raise PersistenceError(f'Published file is not visible/complete: {path} ({last})')
+
+
+def temporary_path(path: Path) -> Path:
+    """Choose a unique temporary sibling path without creating the file."""
+    return path.with_name(f'{path.name}{TEMP_MARKER}{uuid4().hex}')
+
+
+def publish(temporary: Path, destination: Path) -> int:
+    """fsync + rename + directory fsync + bounded visibility check. Returns byte size.
+    The ONE fsync of the file's bytes happens here, whoever wrote them (write_json does not fsync a second time)."""
+    renamed = False
+    try:
+        with temporary.open('rb') as stream:
+            os.fsync(stream.fileno())
+        info = temporary.stat()             # a rename keeps the inode: this is the identity the published file has
+        size = info.st_size
+        temporary.replace(destination)
+        renamed = True
+        fsync_directory(destination.parent)
+        _await_visible(destination, size, identity=(info.st_dev, info.st_ino))
+        return size
+    except PersistenceError:
+        raise
+    except OSError as exc:
+        raise PersistenceError(f'Cannot publish {destination}: {exc}') from exc
+    finally:
+        if not renamed:                  # after a rename there is no temporary left to remove
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+
+
+def jsonable(value):
+    """Machine-readable JSON only. Non-finite numbers become null; the caller records why.
+
+    Tuples become lists, Paths become strings, tuple dict keys are rejected (use rows).
+    Never falls back to repr() of arbitrary objects.
+    """
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError(f'JSON object keys must be strings, got {type(key).__name__}')
+            result[key] = jsonable(item)
+        return result
+    if isinstance(value, (list, tuple)):
+        return [jsonable(item) for item in value]
+    if type(value).__module__.startswith('numpy'):
+        return jsonable(value.tolist())
+    if hasattr(value, 'model_dump'):
+        return jsonable(value.model_dump(mode='json'))
+    raise TypeError(f'Not a machine-readable JSON value: {type(value).__name__}')
+
+
+def nonfinite_paths(value, prefix: str='') -> list[str]:
+    """Paths of NaN/inf numbers, so a manifest can state WHY a value became null."""
+    found = []
+    if isinstance(value, float) and not math.isfinite(value):
+        found.append(prefix or '$')
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            found += nonfinite_paths(item, f'{prefix}.{key}' if prefix else str(key))
+    elif isinstance(value, (list, tuple)):
+        for i, item in enumerate(value):
+            found += nonfinite_paths(item, f'{prefix}[{i}]')
+    return found
+
+
+def write_json(path: str | os.PathLike[str], value, *, indent=2) -> dict:
+    """Atomically publish JSON. Returns {bytes, sha256, null_reasons}."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    reasons = {p: 'non_finite_number' for p in nonfinite_paths(value)}
+    payload = jsonable(value)
+    if reasons and isinstance(payload, dict):
+        payload = dict(payload, _null_reasons={**payload.get('_null_reasons', {}), **reasons})
+    text = json.dumps(payload, indent=indent, allow_nan=False, ensure_ascii=False, sort_keys=False) + '\n'
+    temporary = temporary_path(path)
+    try:
+        with temporary.open('x', encoding='utf8') as stream:
+            stream.write(text)
+    except OSError as exc:
+        raise PersistenceError(f'Cannot write {path}: {exc}') from exc
+    size = publish(temporary, path)             # fsyncs the bytes before the rename
+    return dict(bytes=size, sha256=hashlib.sha256(text.encode('utf8')).hexdigest(), null_reasons=reasons)
+
+
+_MISSING = object()
+
+
+def read_json(path: str | os.PathLike[str], default=_MISSING):
+    """Read JSON. With `default` (None included) a missing file returns it; otherwise a missing file
+    is retried briefly (stale 9p directory entries) and then raised."""
+    path = Path(path)
+    attempts = 1 if default is not _MISSING else 4
+    for attempt in range(attempts):
+        try:
+            return json.loads(path.read_text(encoding='utf8'))
+        except FileNotFoundError:
+            if attempt + 1 < attempts:
+                time.sleep(0.02 * (attempt + 1))
+    if default is not _MISSING:
+        return default
+    raise FileNotFoundError(path)
+
+
+# read_json_quiet's default where a file holding null must not read as one that cannot be read
+UNREADABLE = object()
+
+
+def read_json_quiet(path: str | os.PathLike[str], default=None):
+    """json.loads(Path(path).read_text()), or `default` when that raises OSError or ValueError: no file, a folder, bytes
+    that are not text in the locale's encoding, not JSON. Read in the locale's encoding like the code it replaced
+    (read_json reads UTF-8 and lets a broken file raise). Pass UNREADABLE as `default` where the caller must tell a
+    file that holds null from one that cannot be read."""
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return default
+
+
+def read_dict(path: str | os.PathLike[str]):
+    """read_json(path, default=None) or {}: the JSON of a file that holds an object; {} when the file is missing or holds
+    null, false, 0, "" or []. A file that is not JSON raises, as with read_json."""
+    return read_json(path, default=None) or {}
+
+
+class JsonlAppender:
+    """Append-only JSONL with one fsync per record (the durable acknowledgement boundary).
+
+    The caller serializes writers (the run lock for datasets). A torn final line is
+    discarded before appending again; complete lines are never rewritten. Opening a
+    healthy log reads only its final byte, not the whole journal.
+    """
+    def __init__(self, path: str | os.PathLike[str]) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._stream = self.path.open('a+b')
+        try:
+            end = self._stream.seek(0, os.SEEK_END)
+            boundary = end
+            while boundary:
+                start = max(0, boundary - 65536)
+                self._stream.seek(start)
+                # A healthy log needs one byte; scan blocks only after finding a torn tail.
+                if boundary == end:
+                    self._stream.seek(end - 1)
+                    if self._stream.read(1) == b'\n':
+                        break
+                    self._stream.seek(start)
+                block = self._stream.read(boundary - start)
+                newline = block.rfind(b'\n')
+                if newline >= 0:
+                    boundary = start + newline + 1
+                    break
+                boundary = start
+            if boundary != end:
+                self._stream.truncate(boundary)
+                self._stream.flush()
+                os.fsync(self._stream.fileno())
+            self._stream.seek(0, os.SEEK_END)
+        except OSError:
+            self._stream.close()
+            raise
+        self.bytes_written = 0
+
+    def append(self, record) -> None:
+        """Append and sync one JSON record before updating the acknowledged byte count."""
+        line = (json.dumps(jsonable(record), allow_nan=False, ensure_ascii=False, separators=(',',
+            ':')) + '\n').encode('utf8')
+        try:
+            self._stream.write(line)
+            self._stream.flush()
+            os.fsync(self._stream.fileno())
+        except OSError as exc:
+            raise PersistenceError(f'Cannot append to {self.path}: {exc}') from exc
+        self.bytes_written += len(line)
+
+    def close(self) -> None:
+        if not self._stream.closed:
+            self._stream.close()
+
+
+def read_jsonl(path: str | os.PathLike[str]) -> list:
+    """Return a JSONL file's complete records ([] if missing); a corrupt line raises PersistenceError."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    records = []
+    with path.open('rb') as stream:
+        for number, line in enumerate(stream, 1):
+            if not line.endswith(b'\n'):
+                break            # torn tail from an interrupted append: not acknowledged
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except (ValueError, UnicodeError) as exc:
+                raise PersistenceError(f'Corrupt JSONL record in {path} at line {number}') from exc
+    return records
+
+
+def read_jsonl_tail(path: str | os.PathLike[str], limit: int, *, block_size: int=65536) -> list:
+    """Newest complete log records, without scanning the journal's entire history.
+
+    Display only: skip malformed log lines and an unfinished final line. Discard that unfinished
+    suffix block by block instead of accumulating bytes that cannot be returned. Recovery still
+    uses read_jsonl, which refuses a malformed complete record in the journal.
+    """
+    if limit <= 0:
+        return []
+    try:
+        stream = Path(path).open('rb')
+    except FileNotFoundError:
+        return []
+    records, pending, at_end = [], b'', True
+
+    def take(line: bytes) -> None:
+        if line.strip():
+            try:
+                records.append(json.loads(line))
+            except (ValueError, UnicodeError):
+                pass
+
+    with stream:
+        position = stream.seek(0, os.SEEK_END)
+        while position and len(records) < limit:
+            size = min(position, block_size)
+            position -= size
+            stream.seek(position)
+            block = stream.read(size)
+            if at_end:
+                if b'\n' not in block:
+                    del block
+                    continue                         # the whole block is an uncommitted tail: retain none of it
+                pieces = block.split(b'\n')
+                pieces.pop()                         # the suffix after its final newline is not a committed record
+                at_end = False
+            else:
+                pieces = (block + pending).split(b'\n')
+            del block
+            pending = pieces.pop(0)
+            for line in reversed(pieces):
+                take(line)
+                if len(records) == limit:
+                    break
+        if not position and not at_end and len(records) < limit:
+            take(pending)
+    return records[::-1]
+
+
+def remove_registered_temporaries(directory: str | os.PathLike[str]) -> list[str]:
+    """Delete only this package's own temporary files. Never models or primary data."""
+    removed = []
+    directory = Path(directory)
+    if not directory.exists():
+        return removed
+    for path in directory.rglob(f'*{TEMP_MARKER}*'):
+        if path.is_file() and not path.is_symlink():
+            path.unlink()
+            removed.append(str(path))
+    return removed

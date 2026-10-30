@@ -1,15 +1,27 @@
-# 可切换编码器、SAC 与动作契约
+# Selectable encoders, SAC and the action contract
 
-本文给出项目设计与验证要求；当前实现状态见 [项目决策](project-decisions.md)，不能把接口验收当作迁移效果证据。
-算法基础参考 [S5](sources.md)，图算子事实参考 [S4、S6](sources.md)；参数组化、mask、奖励和跨电路组合是本项目的设计选择。
+The reward-v2 update of 2026-09-26 takes precedence over this document's older nominal-only/encoder descriptions: the user authorized
+optimizer changes under `docs/plan-reward-v2-real-flow.md`; the current encoders are GT/RGCN/GATv2/GraphGPS/parameter-group cross-attention (the last two added on 2026-10-06, record 7.228).
+The v2 evaluator, 21N+11 inputs, optional nominal OP, complete condition plan, replay and checkpoint
+contracts are integrated and passed bounded real OTA7 A/B/C acceptance: 73 Spectre calls (A21, B44 including one recorded failure, C8),
+with a total cap of 77 and B44 separately and explicitly authorized by the user. After acknowledging unknown license status, the user proceeded through the normal licensing process;
+licensing was not bypassed. B produced 8 transitions and 7 SAC updates; the 6 update cases for GT/RGCN/GATv2 with OP on/off,
+and exact recovery of the next update, used B's real replay, rather than six new on-policy experiments.
+No robust-feasible design was found, and no advantage of the new reward was demonstrated. See `docs/reward-v2.md`;
+do not automatically migrate old checkpoints, substitute MOCK for acceptance or start an unauthorized 999-call study.
+On 2026-09-29, reward v2.1 (digest `3f00832c...`, commit `8cf53ae`) also added `after_nominal`, optional failure on missing values,
+continuing episodes after failure, objective shapes and margin sides, and a separate alpha learning rate; the OTA7 physical gate check used 10 Spectre calls (record 7.108).
 
-## 1. 状态、规格和模型输入
+This document defines project design and verification requirements; see [Project decisions](project-decisions.md) for the implementation state. Interface acceptance is not evidence of transfer effectiveness.
+Algorithm foundations are in [S5](sources.md), and graph-operator facts in [S4, S6](sources.md); parameter grouping, masks, rewards and their cross-circuit combination are project design choices.
 
-建议状态：`s = (G_static, x_current, context, measurements, validity, status, budget_state)`。
-规格 `g` 与状态分别传入；状态里的测量必须来自当前执行参数，而不是旧候选。
-`budget_state` 仅在剩余步数影响任务终止/决策时需要，但一旦使用就要明确其 Markov/终止语义。
+## 1. State, specifications and model inputs
 
-每条规格至少包含：
+Suggested state: `s = (G_static, x_current, context, measurements, validity, status, budget_state)`.
+Pass specifications `g` separately from state; state measurements must come from the currently executed parameters, not an old candidate.
+`budget_state` is needed only when remaining steps affect task termination/decisions, but its Markov/termination meaning must be explicit once used.
+
+Each specification contains at least:
 
 ```text
 metric_id / unit / comparator: min | max | range
@@ -17,131 +29,141 @@ lower_target / upper_target / positive_normalization_scale
 weight / required / active
 ```
 
-LDO/VCO/OpAmp 不共用无语义的“第一个指标”。规格身份、方向、数值和 mask 都应进入条件化表示。
-可选实现是固定注册表+mask，或共享 spec-token encoder；具体根据现有代码与测试决定。
-规格归一化不从完整测试集估计统计量。
+LDO/VCO/OpAmp do not share a meaningless "first metric". Specification identity, direction, values and masks all enter the conditioned representation.
+Possible implementations include a fixed registry+mask or a shared spec-token encoder; decide from existing code and tests.
+Do not estimate specification-normalization statistics from the complete test set.
 
-先确保输入包含尺寸、目标与有效性信息，再增加 OP、偏置工作区或历史特征；每次增加有 ablation 和缺失值策略。
+Ensure inputs contain sizes, targets and validity before adding OP, bias regions or history features; each addition needs an ablation and a missing-value policy.
 
-当前策略为 nominal-only：PVT/MC context 在基础设施中保留，但只有已验证 nominal 的 transition 可以进入训练 replay 和 normalizer。后验证结果属于独立记录；robust_score 不替换 nominal_reward。M4/M5 及编码器接口已实现 nominal SAC；以后若用户明确启用工况抽样训练，才扩展条件输入、reward 与数据版本，并按 [工况与统计验证](pvt-monte-carlo.md) 单独验收。
+Nominal-only remains the default; the accepted OTA7 with explicit reward-v2 `always` may put complete five-condition evaluations into
+training reward/replay. Input graphs and OP come only from nominal, with the full condition plan and results retained separately; missing required
+measurements/infrastructure failures produce no reward/replay. Post-validation remains a separate record, and the old `robust_score` does not replace
+training reward. MC, skip-on-fail and training corners on other profiles did not receive physical acceptance in this round.
+(Synchronized 2026-09-30: reward v2.1's `after_nominal` runs corners only after nominal passes all hard specs and
+has passed a physical gate check on OTA7; MC and training corners on other profiles remain unimplemented.)
 
 ## 2. Port-aware Graph Transformer
 
-需要满足：
+Requirements:
 
-- 器件/net 类型、D/G/S/B 或等价 terminal 关系确实参与 attention 的 key/value/bias 或 typed relation 运算。
-- 不使用由原始节点序号或实例名产生的语义 positional embedding。
-- 有 residual、normalization、feed-forward 等稳定模块时，写出具体数据流并测试；不要只堆一个名称叫 Transformer 的类。
-- 节点级表示保留到 actor/critic，不能只给一个固定 pooled vector 再接固定维度动作头。
-- 跨图 attention 被禁止；padding mask 同时影响 attention、pooling 和 loss。
+- Device/net types and D/G/S/B or equivalent terminal relations actually participate in attention key/value/bias or typed-relation operations.
+- Do not derive semantic positional embeddings from original node indices or instance names.
+- When using stabilizing modules such as residuals, normalization and feed-forward layers, specify and test their actual data flow; do not merely stack a class named Transformer.
+- Retain node representations through actor/critic; do not provide only one fixed pooled vector followed by a fixed-dimensional action head.
+- Prohibit attention across graphs; padding masks affect attention, pooling and loss.
 
-实现时明确标注 attention 范围：
+Explicitly identify the attention scope:
 
 ```text
-local_port_attention       # 沿真实连接的多头图注意力
-structural_global_attention # 同一图内全局 attention，带已定义结构偏置
-hybrid_attention            # 明确组合顺序的局部/全局方案
+local_port_attention       # multi-head graph attention along actual connections
+structural_global_attention # global attention within one graph, with defined structural bias
+hybrid_attention            # local/global combination in an explicit order
 ```
 
-先采用哪种是待测试工程选择，不强行把“全局越多越先进”写成规则。
-PyG `TransformerConv` 是基于邻域的 message-passing attention，并支持 edge features；只使用该层不能宣称实现了全局 Graphormer/DEGT。[S6](sources.md)
+The first choice is an engineering decision to test; do not impose a rule that "more global is more advanced".
+PyG `TransformerConv` is neighborhood-based message-passing attention with edge-feature support; that layer alone does not implement global Graphormer/DEGT. [S6](sources.md)
 
-结构距离、扩散/谱特征等属于后续选项。增加前明确其图定义、缓存、复杂度、置换一致性以及是否确实提升独立测试结果。
+Structural distances, diffusion/spectral features and similar additions are later options. Before adding them, define their graph meaning, caching, complexity, permutation consistency and whether they improve independent test results.
 
-### 编码器切换契约（M6 前已实现）
+### Encoder-selection contract (implemented before M6)
 
-通过 `models.ModelConfig(encoder_type=...)` 和 `models.build_encoder()` 选择。共同接口为 `encoder(GraphBatch, actions=None) → (nodes[N,H], groups[G,H], context[B,H])`。actor/Q1/Q2 使用同一种配置但独立权重；保留共同特征、规格、动作注入、参数组 readout 和 SAC heads，仅替换节点处理。
+Select through `models.ModelConfig(encoder_type=...)` and `models.build_encoder()`. The common interface is `encoder(GraphBatch, actions=None) → (nodes[N,H], groups[G,H], context[B,H])`. Actor/Q1/Q2 use the same configuration with independent weights; retain common features, specifications, action injection, parameter-group readout and SAC heads, replacing only node processing.
 
-| encoder_type | 当前节点处理与语义 |
+Currently (synchronized 2026-09-30; see `ENCODER_TYPES` in `src/analog_optimizer/models/encoders.py`), only the first five rows remain; the others were removed, their names are explicitly rejected and old weights are not migrated:
+
+| encoder_type | Current node processing and meaning |
 |---|---|
-| `graph_transformer`（默认） | `TransformerConv` 局部多头注意力，role/direction/ordinal 进入边特征 |
-| `mlp` | 共享逐节点 MLP；忽略电路边/端口/ordinal，保留器件与参数组特征和组绑定 |
-| `rgcn` | `RGCNConv`，terminal role × direction 为 relation，逐关系 mean；不额外编码 ordinal |
-| `gat` | `GATConv` 加性多头注意力，端口边特征进入 logits；不增加自环，以 residual 保留自身表示 |
-| `port_gnn` | M5 原有的端口 MLP message 与 destination mean |
-| `gcn` | 普通 `GCNConv`，`cached=False`；保留多重边与连通性，忽略 role/ordinal，用 residual 保留自身信息 |
+| `graph_transformer` (default) | `TransformerConv` local multi-head attention with role/direction/ordinal in edge features |
+| `rgcn` | `RGCNConv`, terminal role × direction as relations, mean per relation; no extra ordinal encoding |
+| `gatv2` | `GATv2Conv` multi-head attention (`share_weights=False`), terminal edge features enter attention; no added self-loops, with the outer residual preserving self-representation |
+| `graph_gps` | GraphGPS-style (`PortGPSBlock`, 2026-10-06, record 7.228): each layer combines parallel local terminal-attention messages (as in GT) and global self-attention within the circuit (`CircuitAttention`); default `structural_encoding='rwse'` |
+| `group_cross_attention` | GT local layers plus parameter-group-to-node cross-attention readout (`GroupAttentionReadout`, 2026-10-06, record 7.228); optional RWSE |
+| ~~`port_gnn`~~ | Removed on 2026-09-24 (the former M5 terminal MLP messages and destination mean); available only at source commit bbdfe36 and earlier |
+| ~~`mlp`~~ | Removed on 2026-09-26 (the former shared node-wise MLP, ignoring circuit edges/terminals/ordinal); the last five-encoder source containing it is commit 9bc488f |
+| ~~`gcn`~~ | Removed on 2026-09-26 (the former ordinary `GCNConv`, ignoring role/ordinal); same source as above |
+| ~~`gat`~~ | GATv1 (`GATConv`), replaced by `gatv2` on 2026-09-26; GATv1 weights cannot load into GATv2 |
 
-- MLP 是适配可变节点数/动作数的无连接信息消融，不等同于固定拓扑展平 MLP；不能把缺少图 message passing 当作其实现错误。
-- GT/GAT 的 hidden_dim 须能被 heads 整除；MLP/GCN/RGCN/port-GNN 不使用 heads。同宽度/层数不保证参数量匹配。
-- 不为新拓扑创建专用最终层。验证混合 batch 与单图输出一致、重命名/重排等变、动作归属及梯度、精确恢复；另验证 MLP 对删边/换端口不变，普通 GCN 对结构变化敏感但对换端口标签不变，端口感知图编码器对结构/端口变化敏感。
-- 原 `models.graph_transformer` 导入与旧 `attention_mode` 两个取值保留兼容；新调用使用 `encoder_type`。冲突配置拒绝，不能静默回退到 GT。
-- checkpoint 保存编码器配置。不同架构不能直接互载；代码摘要/schema/依赖仍严格校验，不默认兼容改码前的 checkpoint。
+- The former MLP control (removed) was a connectivity-free ablation supporting variable node/action counts, distinct from a flattened fixed-topology MLP.
+- GT/GATv2 hidden_dim must be divisible by heads; RGCN does not use heads. Equal widths/depths do not guarantee matched parameter counts.
+- Do not create a dedicated final layer for new topologies. Verify agreement between mixed batches and single graphs, renaming/reordering equivariance, action ownership and gradients, and exact recovery. Also verify sensitivity of port-aware graph encoders (GT/RGCN/GATv2) to structural/terminal changes.
+- Retain the original `models.graph_transformer` import; old `attention_mode='local_port_attention'` still maps to GT, while `port_message_passing` (port-GNN) is rejected. New calls use `encoder_type`. Reject conflicting configurations; never silently fall back to GT.
+- Checkpoints save encoder configuration. Different architectures cannot load each other's weights directly; code digests/schema/dependencies remain strictly checked, without default compatibility for checkpoints from before a code change.
 
-具体命令与验收记录以项目 `docs/encoder-ablation.md` 为准；迁移模式与比较规则见 [实验与审查](evaluation.md)。
+The project's `docs/encoder-ablation.md` is authoritative for specific commands and acceptance records; see [Experiments and review](evaluation.md) for transfer modes and comparison rules.
 
-M1 已补齐独立于 RL 的同构张量导出、dense 节点 mask 与 batch 组索引校验，详见 [图契约](graph-contract.md)。通用原始 x 的列宽与模型 hidden_dim 不同，使用相应输入投影；不要修改 canonical 图去适应某个网络的最终层。GCN 必须关闭跨调用的邻接缓存，避免混合拓扑误用上一张图。
+M1 now provides homogeneous tensor export independent of RL, dense node masks and batch group-index validation; see the [Graph contract](graph-contract.md). General raw x column widths differ from model hidden_dim, so use the corresponding input projection; do not alter the canonical graph to fit a network's final layer. Every operator with an adjacency cache (such as the removed GCN) must disable caching across calls to prevent mixed topologies from reusing the previous graph.
 
-训练输入现已使用 learner 内有界缓存：静态模板及完整历史观测的原始张量可以复用；batch、当前参数下的网络表示/attention 与梯度仍每次重新计算。缓存容量不改变学习契约，冷 checkpoint 恢复保持精确训练结果；不可把原始输入缓存扩展为 stale embedding 或跨任务 fitted statistics。实现与失效约定见 [图契约](graph-contract.md)，项目计时见 `docs/input-tensor-cache.md`。
+Training inputs now use bounded caches within the learner: static templates and raw tensors of complete historical observations can be reused; batches, network representations/attention under current parameters and gradients are still recomputed each time. Cache capacities do not change the learning contract, and cold checkpoint recovery retains exact training results; do not extend raw-input caching to stale embeddings or statistics fitted across tasks. Implementation/invalidation conventions are in the [Graph contract](graph-contract.md); project timings are in `docs/input-tensor-cache.md`.
 
-## 3. 可变维度 Actor
+## 3. Variable-dimensional actor
 
-独立参数组 `j` 聚合其所有成员的节点表示，结合参数种类、当前值、边界、域与目标条件，经过共享 head 输出 `mu_j, log_std_j`。
-聚合对成员顺序不敏感；对所有可调参数组应用同一组共享权重或明确的类型条件化 head。
-不要为每一个新拓扑重新分配一套最后输出层。
+Each independent parameter group `j` aggregates node representations of all its members, combines them with parameter kind, current value, bounds, domain and target conditioning, and uses a shared head to output `mu_j, log_std_j`.
+Aggregation is insensitive to member order; apply the same shared weights or an explicitly type-conditioned head to all adjustable groups.
+Do not allocate a new set of final output layers for each new topology.
 
-连续部分：
+Continuous part:
 
 ```text
 u_j = mu_j + exp(log_std_j) * epsilon_j
 z_j = tanh(u_j)                          # normalized proposal in (-1, 1)
 ```
 
-使用数值稳定的 tanh log-Jacobian 修正，限制 `log_std` 到配置允许范围。
-每个图的 `log_pi` 对有效独立参数组求和，组内绑定器件只算一次。
-无有效动作的图禁止进入普通 SAC 训练；明确跳过/报错，而不是生成虚假的零维熵损失。
-若 padding，先将无效项设置为安全有限值，再 masked reduce，避免 `0 * NaN` 仍产生 NaN。
+Use a numerically stable tanh log-Jacobian correction and limit `log_std` to the configured range.
+For each graph, sum `log_pi` over valid independent parameter groups, counting bound devices within a group only once.
+Graphs with no valid actions must not enter ordinary SAC training; explicitly skip/error rather than create a meaningless zero-dimensional entropy loss.
+With padding, first set invalid entries to safe finite values, then apply masked reduction to avoid `0 * NaN` still producing NaN.
 
-## 4. 动作到物理参数
+## 4. From actions to physical parameters
 
-建议先实现一种动作语义并在配置中明确：
+Suggested first implementation: one action meaning, made explicit in configuration:
 
-**绝对线性映射：**
+**Absolute linear mapping:**
 
 ```text
 p = lower + (z + 1) / 2 * (upper - lower)
 ```
 
-**正值参数的绝对对数映射：**
+**Absolute logarithmic mapping for positive parameters:**
 
 ```text
 p = exp(log(lower) + (z + 1) / 2 * (log(upper) - log(lower)))
 ```
 
-对数映射要求 `0 < lower < upper`；零/负值不能偷加很小常数后混入同一种语义。
-相对增量模式必须另行定义步长、clipping 和 state 依赖，并用独立测试验证，不与绝对模式混用。
+Logarithmic mapping requires `0 < lower < upper`; do not silently add a small constant to zero/negative values and mix them into the same semantics.
+A relative-increment mode needs separately defined step sizes, clipping and state dependence, verified by independent tests; do not mix it with absolute mode.
 
-之后执行明确的合法化：整数/网格/枚举投影、组绑定、边界与交叉约束校验。
-保存 `proposal z`、`applied physical parameters`、投影原因、量化/裁剪统计及转换版本。
-缓存和真实电路状态以实际执行参数为准。
+Then perform explicit legalization: integer/grid/enumeration projection, group bindings, bounds and cross-constraint validation.
+Save `proposal z`, `applied physical parameters`, projection reasons, quantization/clipping statistics and conversion version.
+Caches and real circuit state use actual executed parameters.
 
-### 连续 SAC 遇到离散参数
+### Continuous SAC with discrete parameters
 
-首个连续学习基线可固定离散参数；以后把整数用连续提议再量化，应标记为**连续代理+投影**。
-投影会造成多个提议映射到同一物理候选，不能宣称是严格的混合动作 SAC。
+The first continuous-learning baseline may fix discrete parameters; later continuous proposals followed by integer quantization must be labelled **continuous proxy + projection**.
+Projection maps several proposals to the same physical candidate; do not call this strict mixed-action SAC.
 
-建议先固定如下约定：critic 对 normalized proposal `z` 定义 Q；环境内部做确定性合法化。
-replay 存储该 `z` 和实际参数，policy loss 也以同一 `z` 语义查询 critic。
-这样不需要对 round 求导，但 critic 对投影引起的不连续仍只是函数近似，需测试。
+Suggested initial convention: the critic defines Q over normalized proposals `z`; the environment performs deterministic legalization internally.
+Replay stores that `z` and actual parameters, and policy loss queries the critic with the same `z` meaning.
+This avoids differentiating round, but the critic remains a function approximation across projection-induced discontinuities and needs tests.
 
-若以后改成 applied-action critic，必须同时重新设计 policy gradient、概率/熵和量化语义；不可只替换 replay 中的一列。
-环境不对 Spectre、网表编辑或外部仿真反向传播；policy 通过可微 critic 获得梯度。
+A later change to an applied-action critic requires redesigning policy gradients, probability/entropy and quantization semantics together; replacing one replay column is insufficient.
+The environment does not backpropagate through Spectre, netlist editing or external simulation; the policy obtains gradients through the differentiable critic.
 
 ## 5. Action-conditioned Twin Critics
 
-每个 critic 接收 `s, g, z`，先将组动作绑定到参数 token 或其器件成员，再做 action-conditioned 节点处理和图级 pooling，输出每图一个 Q。图编码器传播邻域消息；MLP 对照只做逐节点处理，动作归属与组 readout 同样保留。
-动作的归属关系不可丢失；不能把任意顺序动作向量拼在 pooled graph 后，随后声称天然跨拓扑。
-同一图改变动作应有可追踪的 critic 输入变化；梯度测试应能检测 actor→action→Q 通路。
+Each critic receives `s, g, z`, first binds group actions to parameter tokens or their device members, then performs action-conditioned node processing and graph-level pooling to output one Q per graph. The graph encoder propagates neighborhood messages while retaining action ownership and group readout.
+Do not lose action ownership; appending an arbitrarily ordered action vector to a pooled graph does not provide inherent cross-topology support.
+Changing actions on the same graph must cause traceable changes to critic inputs; gradient tests must detect the actor→action→Q path.
 
-默认 Q1/Q2 为独立参数集合；actor 与 critics 可复用结构代码，但不默认共享可训练张量。
-若共享 encoder，必须写明每项 loss 更新哪些参数、梯度是否停止、target 对应哪个状态，避免重复 step。
-跨电路共享同一模型，与同一次训练中 actor/critics 的 encoder 共享，是两种不同问题。
+Q1/Q2 have independent parameter sets by default; actor and critics may share structural code but do not share trainable tensors by default.
+With a shared encoder, specify which parameters each loss updates, whether gradients stop and which state the target corresponds to, avoiding duplicate steps.
+Sharing one model across circuits and sharing actor/critic encoders within one training run are different questions.
 
-## 6. SAC 更新与 mask
+## 6. SAC updates and masks
 
-采用无单独 V 网络的连续 SAC 变体作为起点：双 Q、target Q、重参数化 actor、熵项、replay 与 Polyak/soft update。[S5](sources.md)
-自动温度可作为本项目默认实现选择，但需记录其配置和测试。
+Start with the continuous SAC variant without a separate V network: twin Q, target Q, a reparameterized actor, entropy term, replay and Polyak/soft updates. [S5](sources.md)
+Automatic temperature may be the project's default implementation choice, but its configuration and tests must be recorded.
 
-项目目标约定：
+Project target convention:
 
 ```text
 y = r + gamma * bootstrap_mask * (
@@ -151,24 +173,24 @@ y = r + gamma * bootstrap_mask * (
 L_actor = mean(alpha * log_pi - min(Q1(s, g, z), Q2(s, g, z)))
 ```
 
-target 分支不反传，next action 从当前 actor 重新采样；target Q 软更新需要包含对应 encoder。
-温度更新对 actor 输出使用适当 detach，写清 loss 符号，测试其在高/低熵情况下调整方向。
+Do not backpropagate through the target branch; resample next actions from the current actor. Target Q soft updates include the corresponding encoder.
+Temperature updates appropriately detach actor outputs; state the loss sign and test adjustment directions under high/low entropy.
 
-每图有效动作维度可以不同：`target_entropy = -c * active_action_count` 可作为需测试的起点，`c` 是配置项。
-熵、Q target、奖励尺度须在大图/小图混合 batch 上校验；不能用全局 padded 维度当所有电路的 entropy target。
+Graphs may have different valid action counts: `target_entropy = -c * active_action_count` is a starting point to test, with configurable `c`.
+Check entropy, Q targets and reward scales in mixed batches of large/small graphs; do not use the global padded dimension as every circuit's entropy target.
 
-区分 `terminated` 与 `truncated`。外部采样时间上限不自动等于 MDP 终止；明确何时 bootstrap。
-若步数预算就是任务定义的一部分，把剩余预算纳入状态，并按该有限时域任务定义终止。
-基础设施失效不应随意构造 next state 和 reward 放入 replay。
+Distinguish `terminated` from `truncated`. An external sampling time limit is not automatically MDP termination; specify when to bootstrap.
+If the step budget is part of the task definition, include remaining budget in state and define termination for that finite-horizon task.
+Do not invent next states and rewards for infrastructure failures and insert them into replay.
 
-单 learner 的 update-to-data ratio 以新增有效 transition 数计算，而不是每个并行 worker 各跑一套不受控更新。
+A single learner's update-to-data ratio is based on newly added valid transitions, rather than uncontrolled independent updates by each parallel worker.
 
-## 7. Reward 与指标有效性
+## 7. Reward and metric validity
 
-优先实现一个纯函数 evaluator，与 simulator 和训练代码解耦。
-先校验单位、方向和指标是否有效；正比例归一化尺度 `s_i > 0` 来自配置或训练统计，不直接除以可能为零/负的目标。
+Prefer a pure-function evaluator, separate from simulator and training code.
+First validate units, directions and metric validity; the positive normalization scale `s_i > 0` comes from configuration or training statistics, not direct division by a possibly zero/negative target.
 
-建议以非负 violation 起步：
+Suggested starting point: nonnegative violations:
 
 ```text
 min constraint:   v_i = max(0, (target_i - measured_i) / s_i)
@@ -179,19 +201,19 @@ V = sum(active_i * weight_i * v_i) / sum(active_i * weight_i)
 base_reward = -V
 ```
 
-公式只适用于已通过有效性检查的必需指标；没有有效必需指标时不能产生成功。
-成功要求所有必需指标有效且各自满足阈值/预定义容差，而不是平均 violation 看起来较小。
+These formulas apply only to required metrics that passed validity checks; no valid required metrics means no success.
+Success requires every required metric to be valid and meet its own threshold/predefined tolerance, not just a small-looking average violation.
 
-若加入达标奖励、功耗等次要目标，明确幅度、是否约束优先及 stop 条件，防止牺牲必需约束刷分。
-不可把未振荡的 VCO 当作“零功耗最佳”；VCO 频率前需验证振荡、幅度、稳态窗口。
-OpAmp 的相位裕量需要有效的交越/loop 定义；LDO 的 dropout、稳定性、负载条件要有独立测量契约。
-每个具体测量公式必须来自本项目测试台/测量规范和 fixture，不在模型里凭名字猜。
+When adding a success bonus or secondary objectives such as power, specify magnitudes, constraint priority and stopping conditions so required constraints cannot be sacrificed for reward.
+Do not treat a non-oscillating VCO as "best zero power"; validate oscillation, amplitude and a steady-state window before VCO frequency.
+OpAmp phase margin needs a valid crossover/loop definition; LDO dropout, stability and load conditions need independent measurement contracts.
+Every measurement formula comes from this project's testbench/measurement specification and fixtures, not guesses from names inside the model.
 
-历史讨论提过 potential-based reward；首版不强制。若沿用，明确 base reward、Phi、gamma 和终止边界，并测试真正的 `gamma * Phi(s_next) - Phi(s)`，不要把任意差分奖励都叫 potential-based。
+Past discussions mentioned potential-based reward; it is not required in the first version. If retained, specify base reward, Phi, gamma and termination boundaries and test the actual `gamma * Phi(s_next) - Phi(s)`; do not call every difference reward potential-based.
 
-## 8. 保存经验与恢复
+## 8. Saving experience and recovery
 
-完整训练恢复至少记录：
+Complete training recovery records at least:
 
 ```text
 encoder / actor / Q1 / Q2 / target Q1 / target Q2
@@ -202,13 +224,13 @@ RNG states / sampler states / replay data or replay manifest
 training counters / topology split / failure and simulation budgets
 ```
 
-新拓扑不能靠改输出层伪装成同一个可迁移 policy。
-恢复时校验 schema/词表/动作转换版本；不匹配需迁移或拒绝，不能无提示载入。
-仅推理可不带 critics/replay，但要保留 actor encoder、规格/参数归一化和动作语义。
+Do not disguise a new topology as the same transferable policy by changing its output layer.
+On recovery, validate schema/vocabulary/action-conversion versions; mismatches need migration or rejection, never silent loading.
+Inference-only use may omit critics/replay but retains the actor encoder, specification/parameter normalization and action semantics.
 
-## 9. Surrogate 的后续边界
+## 9. Later boundaries for surrogates
 
-默认关闭，也没有“encoder → surrogate → SAC”的必需串联。
-将来若研究 surrogate，先明确用途：预测指标、筛选候选、辅助表征或模型式 rollout；每一种都需要不同的验证。
-训练/校准只用允许的数据，记录不确定性与 OOD；真实测量和预测结果分表标记。
-最终设计必须通过真实 Spectre 验证；同时报告 surrogate 构建成本与带来的真实调用节省。
+Surrogates default to off; there is no required "encoder → surrogate → SAC" chain.
+For future surrogate research, first define its purpose: metric prediction, candidate screening, auxiliary representation or model-based rollouts; each needs different validation.
+Use only permitted data for training/calibration, record uncertainty and OOD, and label real measurements and predictions in separate tables.
+Final designs must pass real Spectre validation; report both surrogate-construction costs and the real calls saved.

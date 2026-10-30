@@ -18,15 +18,19 @@ from analog_optimizer.models import ModelConfig
 from analog_optimizer.training.parallel import collect_parallel_episodes
 from analog_optimizer.training.recovery import ROUND, RUN, restore_parallel
 from analog_optimizer.training.runtime import RunResources
-from analog_optimizer.training.workers import OwnedWorker, WorkerLimits, WorkerTimeout
+from analog_optimizer.training.workers import DeadlineFuture, OwnedWorker, WorkerLimits, WorkerTimeout
 from analog_optimizer.training.replay import ReplayBuffer
 from analog_optimizer.training.sac import SACLearner
+from concurrent.futures import Future, TimeoutError
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# ---- Synthetic backends and worker-failure fixtures
 class HangingBackend(SyntheticSizingBackend):
+    """A synthetic backend that hangs after its first evaluation to exercise lane recovery."""
     def run_simulation(self, request):
+        """Block the second evaluation indefinitely and otherwise use the synthetic response."""
         if self.calls == 1:
             while True:
                 time.sleep(.05)
@@ -35,6 +39,7 @@ class HangingBackend(SyntheticSizingBackend):
 
 @dataclass
 class ToyFactory:
+    """A picklable factory that chooses a hanging or ordinary synthetic backend for each lane."""
     graph: object
     output: Path
     steps: int = 2
@@ -44,6 +49,7 @@ class ToyFactory:
         return self.create_recorded(lane, None)
 
     def create_recorded(self, lane, recorder):
+        """Build an isolated lane environment with the requested failure mode and optional recorder."""
         backend = HangingBackend if lane == self.hang_lane else SyntheticSizingBackend
         return CircuitSizingEnv(backend(self.graph, targets={'w': .4, 'c': -.3}), self.graph,
             (MetricSpec('score', 'fixture', 'min', 1, lower=.95),), self.output / str(lane),
@@ -51,6 +57,7 @@ class ToyFactory:
 
 
 def toy_learner():
+    """Build a deterministically seeded small learner for synthetic recovery tests."""
     torch.set_num_threads(1)
     torch.manual_seed(12)
     return SACLearner(experiment=dict(origin='synthetic', split='offline-recovery', designs=['toy']),
@@ -71,6 +78,7 @@ def crash():
     os._exit(7)
 
 
+# ---- Worker deadlines and peer progress
 @pytest.mark.parametrize('operation', [hang, crash])
 def test_owned_worker_deadline_and_exit_do_not_block_shutdown(operation):
     worker = OwnedWorker(0, WorkerLimits(30, .15, 2))
@@ -89,8 +97,9 @@ def test_owned_worker_deadline_and_exit_do_not_block_shutdown(operation):
 def test_hung_lane_keeps_peer_transition_and_reports_unknown_job(opamp, tmp_path, monkeypatch):
     original = OwnedWorker.submit
     def submit(self, function, *args, **kwargs):
-        if function.__name__ == '_step':
-            kwargs['timeout'] = .6
+        """Shorten only the hung lane step deadline while preserving the peer lane deadline."""
+        if function.__name__ == '_step' and self.lane == 0:     # only the hung lane: its peer's step had the same 0.6 s and
+            kwargs['timeout'] = .6                              # missed it under a loaded suite (review of 2026-10-01)
         return original(self, function, *args, **kwargs)
     monkeypatch.setattr(OwnedWorker, 'submit', submit)
     learner, replay, report = toy_learner(), ReplayBuffer(origin='synthetic'), {}
@@ -106,6 +115,7 @@ def test_hung_lane_keeps_peer_transition_and_reports_unknown_job(opamp, tmp_path
     assert not report['passed']
 
 
+# ---- Cleanup during initialization and reporting failures
 @pytest.mark.parametrize('fail_at', ['create_run', 'load_checkpoint', 'write_report'])
 def test_cleanup_covers_initialization_and_report_errors(tmp_path, monkeypatch, fail_at):
     from analog_optimizer import recording
@@ -113,16 +123,19 @@ def test_cleanup_covers_initialization_and_report_errors(tmp_path, monkeypatch, 
     from analog_optimizer.envs import sizing
     events = []
     class Store:
+        """A recording-store fake that records call and close order for cleanup assertions."""
         def call(self, *args):
             events.append(args[0])
             return [] if args[0] == 'read' else 'asset'
         def close(self):
             events.append('close')
     class Manager:
+        """A process-manager fake that records whether cleanup requests shutdown."""
         def shutdown(self):
             events.append('shutdown')
     monkeypatch.setattr(recording, 'start_service', lambda *a: (Manager(), Store()))
     def create(*a, **kw):
+        """Return a fake run ID or inject the requested setup failure."""
         if fail_at == 'create_run':
             raise ValueError('setup failed')
         return 'run'
@@ -144,6 +157,7 @@ def test_cleanup_errors_preserve_original_exception(tmp_path, monkeypatch):
     from analog_optimizer.envs import sizing
     events = []
     class BrokenStore:
+        """A recording-store fake that records cleanup calls and raises on each one."""
         def call(self, *args):
             events.append('end')
             raise OSError('database failure')
@@ -151,6 +165,7 @@ def test_cleanup_errors_preserve_original_exception(tmp_path, monkeypatch):
             events.append('close')
             raise OSError('close failure')
     class Manager:
+        """A process-manager fake that records shutdown after other cleanup failures."""
         def shutdown(self):
             events.append('shutdown')
     def broken_report(*args):
@@ -167,6 +182,7 @@ def test_cleanup_errors_preserve_original_exception(tmp_path, monkeypatch):
     assert len(report['cleanup_errors']) == 3
 
 
+# ---- Checkpoint recovery and cumulative run counts
 def test_parallel_cli_resumes_periodic_checkpoint_twice_with_cumulative_counts(opamp, tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / 'examples'))
     entry = importlib.import_module('train_opamp_sac_parallel')
@@ -176,12 +192,14 @@ def test_parallel_cli_resumes_periodic_checkpoint_twice_with_cumulative_counts(o
     config.write_text(json.dumps(dict(min_free=0, temporary_reserve=0, checkpoint_interval=1)))
     records = tmp_path / 'records'
     def prepare(args, directory):
+        """Supply the parallel CLI with a toy factory and seeded synthetic learner metadata."""
         learner = toy_learner()
         return ToyFactory(opamp, directory), learner.experiment, learner.model_config, {}, {}
     monkeypatch.setattr(entry, 'prepare_training', prepare)
     original_write = sizing.write_record
     interrupt = [True]
     def write(path, data):
+        """Write progress before injecting the interrupt requested by the resume test."""
         original_write(path, data)
         if Path(path).name == 'progress.json' and interrupt[0]:
             raise KeyboardInterrupt('injected after durable periodic checkpoint')
@@ -228,6 +246,7 @@ def test_recovery_rejects_unknown_boundary():
         restore_parallel({'boundary': 'in_flight'}, random.Random(1))
 
 
+# ---- Deadline watching and environment failure cleanup
 def test_later_lane_deadline_is_watched_while_first_lane_is_active():
     from concurrent.futures import Future
     from analog_optimizer.training.workers import DeadlineFuture, wait_workers
@@ -244,10 +263,11 @@ def test_environment_report_failure_still_restores_and_closes(opamp, tmp_path, m
     from analog_optimizer.envs import sizing
     env = ToyFactory(opamp, tmp_path)(0)
     original = sizing.write_record
-    def write(path, data):
+    def write(path, data, **options):         # the toy (synthetic) environment's journals pass durable=False
+        """Inject a restoration-report write failure while allowing the other journals to be written."""
         if Path(path).name == 'restoration.json':
             raise OSError('restoration report failure')
-        return original(path, data)
+        return original(path, data, **options)
     monkeypatch.setattr(sizing, 'write_record', write)
     with pytest.raises(ValueError if training_error else OSError):
         with env:
@@ -259,13 +279,14 @@ def test_environment_report_failure_still_restores_and_closes(opamp, tmp_path, m
     assert env.backend.parameters == env.backend.initial
 
 
+# ---- Synthetic CLI checkpoint continuation
 def test_synthetic_cli_resumes_periodic_counters(tmp_path):
     import subprocess
     from analog_optimizer.recording.reader import RunReader
     config = tmp_path/'recording.json'
     config.write_text(json.dumps(dict(min_free=0, temporary_reserve=0, checkpoint_interval=3)))
     command = [sys.executable, str(ROOT/'examples/train_synthetic_sac.py'), '--episodes', '1', '--steps', '2',
-        '--batch-size', '2', '--encoder', 'mlp', '--output', str(tmp_path/'output'),
+        '--batch-size', '2', '--encoder', 'gatv2', '--output', str(tmp_path/'output'),
         '--recording-root', str(tmp_path/'records'), '--recording-config', str(config), '--history-limit', '1']
     first = subprocess.run(command, capture_output=True, text=True, timeout=60)
     assert first.returncode == 0, first.stdout + first.stderr
@@ -281,3 +302,31 @@ def test_synthetic_cli_resumes_periodic_counters(tmp_path):
     final = next(row for row in reports if row['total_synthetic_calls'] == 11)
     assert final['passed'] and final['exact_resume'] and final['replay_size'] == 7
     assert final['stages_count'] == 2 and len(final['stages']) == 1
+
+
+# ---- Results arriving at the timeout boundary
+class LateFuture:
+    """A job that finishes just after the deadline's wait gave up."""
+    def __init__(self, value):
+        self.value, self.waits = value, 0
+
+    def result(self, timeout=None):
+        """Raise once on a timed result request, then return the stored value."""
+        if timeout is not None and self.waits == 0:
+            self.waits += 1
+            raise TimeoutError()
+        return self.value
+
+    def done(self):
+        return self.waits > 0
+
+
+def test_a_result_that_arrives_right_after_the_wait_gives_up_is_returned():
+    assert DeadlineFuture(LateFuture('ready'), 60, 'late').result() == 'ready'      # re-raised the timeout before
+
+
+def test_a_job_that_itself_timed_out_still_raises_its_own_error():
+    future = Future()
+    future.set_exception(TimeoutError('the job timed out'))
+    with pytest.raises(TimeoutError, match='the job timed out'):
+        DeadlineFuture(future, 60, 'own').result()

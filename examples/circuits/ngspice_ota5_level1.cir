@@ -1,0 +1,36 @@
+* Five-transistor OTA on generic level-1 MOS models (ngspice example deck for the GATOR workbench)
+* Not a PDK: a textbook circuit with textbook models, so that an ngspice task can be tried without any model files.
+* Results a run reads: the values the .control block prints (vout_v, supply_power_w, gain_db, ugf_hz, phase_margin_deg).
+* Sizes a run can vary: every W and L of the six transistors (the subcircuit ota5 is used once), cl, the sources.
+.model nch nmos level=1 vto=0.5 kp=200u gamma=0.4 lambda=0.04 phi=0.7 tox=4n
+.model pch pmos level=1 vto=-0.5 kp=80u gamma=0.4 lambda=0.05 phi=0.7 tox=4n
+.param wn=4u wp=8u lg=0.5u
+vdd vdd 0 dc 1.8
+vinp inp 0 dc 0.9 ac 0.5
+vinn inn 0 dc 0.9 ac -0.5
+ibias vdd nb dc 20u
+xota inp inn out vdd 0 nb ota5
+cl out 0 1p
+.subckt ota5 inp inn out vdd vss nb
+m1 n1 inp tail vss nch W={wn} L={lg}
+m2 out inn tail vss nch W={wn} L={lg}
+m3 n1 n1 vdd vdd pch W={wp} L={lg}
+m4 out n1 vdd vdd pch W={wp} L={lg}
+m5 tail nb vss vss nch W=2u L=0.5u
+m6 nb nb vss vss nch W=2u L=0.5u
+.ends
+.control
+set units=degrees
+op
+let vout_v = v(out)
+let supply_power_w = -1.8 * i(vdd)
+print vout_v supply_power_w
+ac dec 20 1 1G
+meas ac gain_db max vdb(out)
+meas ac ugf_hz when vdb(out)=0
+meas ac phase_at_ugf_deg find vp(out) when vdb(out)=0
+let phase_margin_deg = 180 + phase_at_ugf_deg
+print phase_margin_deg
+quit
+.endc
+.end

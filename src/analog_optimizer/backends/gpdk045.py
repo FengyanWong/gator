@@ -31,6 +31,14 @@ class Gpdk045OtaProfile:
 
     writable_keys = INPUT_KEYS
     mos_names = tuple(f'M{i}' for i in range(1, 6))
+    training_corners_supported = False
+    # The words of the checks; each profile keeps its own ({name}, {key} and {device} are filled in where they appear).
+    messages = dict(readback='CDF width readback differs from requested values',
+                    stale_geometry='Stale derived geometry {name}.{key}',
+                    topology='Exported topology differs from the verified reference',
+                    parameter_set='Exported parameter set changed on {device}',
+                    mismatch='Exported parameter mismatch: {device}.{key}')
+    reads_snapshot_first = True     # validate_export reads a writable value from the snapshot before the exported one
 
     def __init__(self, *, design_file: Path, mapping_file: Path,
                  reference_structure: Path, reference_readback: Path,
@@ -65,6 +73,8 @@ class Gpdk045OtaProfile:
             raise ValueError('Explicit typed simulation condition required')
         if condition.monte_carlo is not None:
             raise UnsupportedCapability('GPDK045 MC interface reserved; statistical execution and sample parsing are not validated')
+        if condition.purpose == 'pvt_training' and not self.training_corners_supported:
+            raise UnsupportedCapability('Training corners are enabled only for the explicit OTA7 profile')
         policy, corner = self.condition_config['model_policy'], condition.corner
         if corner.model_section not in policy['deterministic_sections']:
             raise ValueError('Model section is not a verified GPDK045 deterministic corner')
@@ -164,14 +174,15 @@ class Gpdk045OtaProfile:
     def verify_transition(self, before, after, expected):
         actual = self.validate_readback(after)
         if any(not equal(actual[k], v) for k, v in expected.items()):
-            raise ValueError("CDF width readback differs from requested values")
+            raise ValueError(self.messages['readback'])
         old, new = self.instances(before), self.instances(after)
-        for name in ('M1', 'M2'):
+        for device, _ in self.writable_keys:
+            name = device.split('/')[1]
             a, b = old[name]['params'], new[name]['params']
             if not equal(number(a['w']), number(b['w'])):
                 for key in ('ad', 'as', 'pd', 'ps', 'nrd', 'nrs'):
                     if equal(number(a[key]), number(b[key])):
-                        raise ValueError(f"Stale derived geometry {name}.{key}")
+                        raise ValueError(self.messages['stale_geometry'].format(name=name, key=key))
 
     def validate_export(self, structure, snapshot):
         graph = self.parser.parse_file(structure)
@@ -180,23 +191,69 @@ class Gpdk045OtaProfile:
             return (sorted((d.id, d.model_ref, d.terminals) for d in g.devices),
                     sorted((c.device_id, c.terminal, c.net_id) for c in g.connections))
         if topology(graph) != topology(self.graph):
-            raise ValueError("Exported topology differs from the verified reference")
-        snapshot_instances = self.instances(snapshot)
+            raise ValueError(self.messages['topology'])
+        snapshot_instances, writable = self.instances(snapshot), {device for device, _ in self.writable_keys}
         for device, params in graph.parameters.items():
             ref = self.graph.parameters[device]
             if params.keys() != ref.keys():
-                raise ValueError(f"Exported parameter set changed on {device}")
+                raise ValueError(self.messages['parameter_set'].format(device=device))
             for key, param in params.items():
-                if device in ('XU1/M1', 'XU1/M2') and key in ('w',) + GEOMETRY:
-                    expected = number(snapshot_instances[device.split('/')[1]]['params'][key])
-                    same = param.valid and equal(param.value, expected)
+                if device in writable and key in ('w',) + GEOMETRY:
+                    if self.reads_snapshot_first:
+                        expected = number(snapshot_instances[device.split('/')[1]]['params'][key])
+                        same = param.valid and equal(param.value, expected)
+                    else:                       # only for a valid exported value
+                        same = param.valid and equal(param.value, number(snapshot_instances[device.split('/')[1]]['params'][key]))
                 elif param.valid and ref[key].valid:
                     same = equal(param.value, ref[key].value)
                 else:
                     same = param.raw == ref[key].raw
                 if not same:
-                    raise ValueError(f"Exported parameter mismatch: {device}.{key}")
+                    raise ValueError(self.messages['mismatch'].format(device=device, key=key))
         return self.validate_readback(snapshot)
+
+
+class Gpdk045MappedProfile(Gpdk045OtaProfile):
+    """A profile whose action groups come from its mapping file as they are (the OTA7, the LDO, the VCO). Its readback
+    check covers every MOS against the reference and each fixed passive by its one value (`passives`: {instance:
+    parameter}), in the profile's own words (`messages`: instance_set, master, passive, fixed, stale_fw, geometry)."""
+
+    passives = {}
+
+    def optimization_graph(self, structure=None):
+        graph = self.parser.parse_file(structure) if structure is not None else deepcopy(self.graph)
+        graph.validate()
+        self.validate_assignment(graph.assignments({g.id: g.value for g in graph.parameter_groups if g.mutable}))
+        return graph
+
+    def validate_readback(self, snapshot):
+        words = self.messages
+        actual, reference = self.instances(snapshot), self.instances(self.reference)
+        if set(actual) != set(reference) or set(actual) != set(self.mos_names) | set(self.passives):
+            raise ValueError(words['instance_set'])
+        writable = {device.split('/')[1] for device, _ in self.writable_keys}
+        for name, inst in actual.items():
+            ref = reference[name]
+            for key in ('lib', 'cell', 'view', 'terms'):
+                if inst[key] != ref[key]:
+                    raise ValueError(words['master'].format(name=name, key=key))
+            if name in self.passives:
+                value = self.passives[name]
+                if not equal(number(inst['params'][value]), number(ref['params'][value])):
+                    raise ValueError(words['passive'])
+                continue
+            params = inst['params']
+            for key in ('l', 'm', 'fingers') + (() if name in writable else ('w', 'fw') + GEOMETRY):
+                if not equal(number(params[key]), number(ref['params'][key])):
+                    raise ValueError(words['fixed'].format(name=name, key=key))
+            if not equal(number(params['w']), number(params['fw'])):
+                raise ValueError(words['stale_fw'].format(name=name))
+            for key in GEOMETRY:
+                if number(params[key]) <= 0:
+                    raise ValueError(words['geometry'].format(name=name, key=key))
+        result = {(device, key): number(actual[device.split('/')[1]]['params'][key]) for device, key in self.writable_keys}
+        self.validate_assignment(result)
+        return result
 
 def set_gpdk_mos(client, library, cell, name, width, length):
     """GPDK045 needs PasCdfFormInit before its callbacks and doneProc.

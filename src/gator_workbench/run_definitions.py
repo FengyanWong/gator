@@ -1,0 +1,98 @@
+"""Definitions of the run engine that other modules use without the engine itself: the lane statuses that count as
+infrastructure failures, the decoding of a normalized action, the learner contract's experiment identity.
+
+Moved from engine.py by the refactoring (docs/plan-refactoring.md).
+"""
+from __future__ import annotations
+
+import math
+
+from .schema import WorkbenchConfig
+
+
+INFRASTRUCTURE_FAILURES = ('timeout', 'transport_error', 'license_error', 'backend_error')
+
+
+# Optimizers that propose the designs instead of the network (record 7.304; the archive comparison's two,
+# docs/plan-bo-mobo-rl-archive-comparison.md): none of them trains an RL model. The comparison's two save their search
+# state with the run's save points and can be resumed; production's Bayesian optimization cannot.
+NON_RL_OPTIMIZERS = ('bayes', 'turbo_archive', 'mobo')
+RESUMABLE_SEARCH_OPTIMIZERS = ('turbo_archive', 'mobo')
+
+
+def optimizer_of(manifest):
+    """The recorded optimizer; manifests from before the choice are SAC runs."""
+    return (manifest.get('architecture') or {}).get('optimizer', 'sac')
+
+
+def saves_rl_model(config: WorkbenchConfig) -> bool:
+    """Bayesian search never trains the learner, even when checkpoints are enabled."""
+    return config.run.optimizer == 'sac' and bool(config.output.save_checkpoints)
+
+
+def saves_search_state(config: WorkbenchConfig) -> bool:
+    """The archive comparison's searches save their state (data, region, counters, random generators) with the run's
+    save points, so a stopped run goes on where it was - never with a fresh budget."""
+    return config.run.optimizer in RESUMABLE_SEARCH_OPTIMIZERS and bool(config.output.save_checkpoints)
+
+
+def saves_state(config: WorkbenchConfig) -> bool:
+    """Whether the run writes save points at all: an RL model's, or a resumable search's."""
+    return saves_rl_model(config) or saves_search_state(config)
+
+
+def require_rl_model(manifest):
+    """Reject historical Bayesian save points as well as runs that now save none."""
+    optimizer = optimizer_of(manifest)
+    if optimizer == 'bayes':
+        raise RunRejected('Bayesian optimization runs do not train an RL model. Their search cannot be resumed '
+                          'and their saved weights cannot be loaded for fine-tuning or evaluation.', code='no_rl_model')
+    if optimizer in NON_RL_OPTIMIZERS:
+        raise RunRejected(
+            f'A {optimizer} run (the archive comparison) does not train an RL model: its save points hold '
+                          'its search, which only that run itself can continue; they cannot be loaded for fine-tuning '
+                          'or evaluation.', code='no_rl_model')
+
+
+def require_resumable(manifest):
+    """Continue (an exact resume) and "Save now": an RL run, or one of the archive comparison's searches, whose save
+    points hold their search. Production's Bayesian optimization saves nothing to go on from."""
+    if optimizer_of(manifest) not in RESUMABLE_SEARCH_OPTIMIZERS:
+        require_rl_model(manifest)
+
+
+def decode_action(z, lower, upper, scale):
+    """Physical value a normalized action decodes to BEFORE projection (mirrors ActionMapper;
+    a test pins the two together)."""
+    if z in (-1, 1):
+        return lower if z == -1 else upper
+    fraction = (z + 1) / 2
+    if scale == 'log':
+        return math.exp((1 - fraction) * math.log(lower) + fraction * math.log(upper))
+    return (1 - fraction) * lower + fraction * upper
+
+
+def learner_experiment(config: WorkbenchConfig, task, task_hash):
+    """The learner contract identity. Budgets, concurrency and output settings are deliberately
+    excluded so that extending a budget does not turn a resume into a different experiment."""
+    adv = config.run.advanced
+    result = dict(origin=task.origin, split=config.research.split, run_kind='gator-workbench-v1',
+                designs=[dict(task_key=task.task_key, task_definition_hash=task_hash,
+                              netlist_sha256=task.circuit.get('netlist_sha256'),
+                              parser_config_sha256=task.circuit.get('parser_config_sha256'))],
+                seed=config.run.seed,
+                collector=dict(episode_length=adv.episode_length, batch_size=adv.batch_size,
+                               warmup_transitions=adv.warmup_transitions, update_every=adv.update_every,
+                               updates_per_transition=adv.updates_per_transition,
+                               episode_terminates_on_success=adv.episode_terminates_on_success,
+                               replay_capacity=adv.replay_capacity))
+    if config.run.rehearsal is not None:
+        result['rehearsal'] = config.run.rehearsal.model_dump(mode='json')
+    return result
+
+
+class RunRejected(ValueError):
+    """A rejected run request carrying a machine-readable code and optional validation report."""
+    def __init__(self, message, *, report=None, code='rejected'):
+        super().__init__(message)
+        self.report, self.code = report, code

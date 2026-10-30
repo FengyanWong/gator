@@ -1,0 +1,759 @@
+{
+  "version": "m6-real-categories-v1",
+  "origin": "real",
+  "purpose": "Engineering pilot on previously characterized nominal circuits; not blind category generalization or a convergence study.",
+  "prior_data_policy": "OTA goals reuse the observed M5 pilot; LDO/VCO goals use disclosed qualification ranges. No prior transitions, checkpoints or fitted statistics enter learning. No fold tunes another fold.",
+  "schema": {
+    "version": "m6-physical-spec-input-v1",
+    "metrics": [
+      [
+        "gain_db_at_start",
+        "dB",
+        20.0
+      ],
+      [
+        "unity_gain_hz",
+        "Hz",
+        1000000.0
+      ],
+      [
+        "phase_margin_estimate_deg",
+        "deg",
+        90.0
+      ],
+      [
+        "supply_power_w",
+        "W",
+        1e-05
+      ],
+      [
+        "output_dc_v",
+        "V",
+        1.0
+      ],
+      [
+        "unity_downward_crossings",
+        "count",
+        1.0
+      ],
+      [
+        "ldo_output_error_v",
+        "V",
+        0.01
+      ],
+      [
+        "ldo_quiescent_current_a",
+        "A",
+        1e-06
+      ],
+      [
+        "ldo_line_regulation_v_per_v",
+        "V/V",
+        0.01
+      ],
+      [
+        "ldo_load_regulation_v_per_a",
+        "V/A",
+        100.0
+      ],
+      [
+        "ldo_psrr_1khz_db",
+        "dB",
+        20.0
+      ],
+      [
+        "ldo_step_deviation_v",
+        "V",
+        0.01
+      ],
+      [
+        "ldo_step_tail_ripple_v",
+        "V",
+        0.001
+      ],
+      [
+        "vco_frequency_hz",
+        "Hz",
+        100000000.0
+      ],
+      [
+        "vco_frequency_low_hz",
+        "Hz",
+        100000000.0
+      ],
+      [
+        "vco_frequency_high_hz",
+        "Hz",
+        100000000.0
+      ],
+      [
+        "vco_tuning_gain_hz_per_v",
+        "Hz/V",
+        1000000000.0
+      ],
+      [
+        "vco_tuning_fraction",
+        "1",
+        1.0
+      ],
+      [
+        "vco_minimum_swing_v",
+        "V",
+        1.0
+      ],
+      [
+        "vco_max_period_spread",
+        "1",
+        0.02
+      ],
+      [
+        "vco_max_window_drift",
+        "1",
+        0.01
+      ],
+      [
+        "vco_startup_detection_s",
+        "s",
+        1e-07
+      ],
+      [
+        "vco_duty_cycle",
+        "1",
+        1.0
+      ]
+    ]
+  },
+  "heldout": [
+    "opamp",
+    "ldo",
+    "vco"
+  ],
+  "settings": {
+    "encoders": [
+      "graph_transformer",
+      "rgcn",
+      "gatv2"
+    ],
+    "seeds": [
+      17,
+      29,
+      43
+    ],
+    "pretrain_steps": 8,
+    "test_steps": 8,
+    "batch_size": 2,
+    "hidden_dim": 32,
+    "heads": 4,
+    "layers": 2,
+    "max_workers": 1,
+    "max_calls": 1488
+  },
+  "classes": {
+    "opamp": {
+      "family": "gpdk045_ota5",
+      "design": "configs/gpdk045_opamp_design.json",
+      "mapping": "configs/gpdk045_opamp.json",
+      "netlist": "examples/circuits/gpdk045_ota5.scs",
+      "readback": "examples/circuits/gpdk045_ota5.cdf.json",
+      "analysis_mode": "qualified",
+      "specs": {
+        "train": [
+          {
+            "metric_id": "phase_margin_estimate_deg",
+            "unit": "deg",
+            "comparator": "min",
+            "lower": 90.0,
+            "scale": 10.0
+          },
+          {
+            "metric_id": "supply_power_w",
+            "unit": "W",
+            "comparator": "range",
+            "lower": 0.0,
+            "upper": 2.1e-06,
+            "scale": 1e-06
+          },
+          {
+            "metric_id": "output_dc_v",
+            "unit": "V",
+            "comparator": "range",
+            "lower": 0.2,
+            "upper": 0.8,
+            "scale": 1.0
+          },
+          {
+            "metric_id": "unity_downward_crossings",
+            "unit": "count",
+            "comparator": "range",
+            "lower": 1.0,
+            "upper": 1.0,
+            "scale": 1.0
+          },
+          {
+            "metric_id": "gain_db_at_start",
+            "unit": "dB",
+            "comparator": "min",
+            "lower": 25.01,
+            "scale": 1.0
+          },
+          {
+            "metric_id": "unity_gain_hz",
+            "unit": "Hz",
+            "comparator": "min",
+            "lower": 3540000.0,
+            "scale": 1000000.0
+          }
+        ],
+        "validation": [
+          {
+            "metric_id": "phase_margin_estimate_deg",
+            "unit": "deg",
+            "comparator": "min",
+            "lower": 90.0,
+            "scale": 10.0
+          },
+          {
+            "metric_id": "supply_power_w",
+            "unit": "W",
+            "comparator": "range",
+            "lower": 0.0,
+            "upper": 2.1e-06,
+            "scale": 1e-06
+          },
+          {
+            "metric_id": "output_dc_v",
+            "unit": "V",
+            "comparator": "range",
+            "lower": 0.2,
+            "upper": 0.8,
+            "scale": 1.0
+          },
+          {
+            "metric_id": "unity_downward_crossings",
+            "unit": "count",
+            "comparator": "range",
+            "lower": 1.0,
+            "upper": 1.0,
+            "scale": 1.0
+          },
+          {
+            "metric_id": "gain_db_at_start",
+            "unit": "dB",
+            "comparator": "min",
+            "lower": 25.015,
+            "scale": 1.0
+          },
+          {
+            "metric_id": "unity_gain_hz",
+            "unit": "Hz",
+            "comparator": "min",
+            "lower": 3550000.0,
+            "scale": 1000000.0
+          }
+        ],
+        "test": [
+          {
+            "metric_id": "phase_margin_estimate_deg",
+            "unit": "deg",
+            "comparator": "min",
+            "lower": 90.0,
+            "scale": 10.0
+          },
+          {
+            "metric_id": "supply_power_w",
+            "unit": "W",
+            "comparator": "range",
+            "lower": 0.0,
+            "upper": 2.1e-06,
+            "scale": 1e-06
+          },
+          {
+            "metric_id": "output_dc_v",
+            "unit": "V",
+            "comparator": "range",
+            "lower": 0.2,
+            "upper": 0.8,
+            "scale": 1.0
+          },
+          {
+            "metric_id": "unity_downward_crossings",
+            "unit": "count",
+            "comparator": "range",
+            "lower": 1.0,
+            "upper": 1.0,
+            "scale": 1.0
+          },
+          {
+            "metric_id": "gain_db_at_start",
+            "unit": "dB",
+            "comparator": "min",
+            "lower": 25.02,
+            "scale": 1.0
+          },
+          {
+            "metric_id": "unity_gain_hz",
+            "unit": "Hz",
+            "comparator": "min",
+            "lower": 3560000.0,
+            "scale": 1000000.0
+          }
+        ]
+      }
+    },
+    "ldo": {
+      "family": "gpdk045_ldo6",
+      "design": "configs/gpdk045_ldo_design.json",
+      "mapping": "configs/gpdk045_ldo.json",
+      "netlist": "examples/circuits/gpdk045_ldo.scs",
+      "readback": "examples/circuits/gpdk045_ldo.cdf.json",
+      "analysis_mode": "qualified",
+      "specs": {
+        "train": [
+          {
+            "metric_id": "supply_power_w",
+            "unit": "W",
+            "comparator": "range",
+            "scale": 1e-05,
+            "lower": 0,
+            "upper": 1.6e-05
+          },
+          {
+            "metric_id": "ldo_quiescent_current_a",
+            "unit": "A",
+            "comparator": "range",
+            "scale": 1e-06,
+            "lower": 0,
+            "upper": 3.5e-06
+          },
+          {
+            "metric_id": "ldo_line_regulation_v_per_v",
+            "unit": "V/V",
+            "comparator": "max",
+            "scale": 0.01,
+            "upper": 0.015
+          },
+          {
+            "metric_id": "ldo_load_regulation_v_per_a",
+            "unit": "V/A",
+            "comparator": "max",
+            "scale": 100,
+            "upper": 300
+          },
+          {
+            "metric_id": "ldo_psrr_1khz_db",
+            "unit": "dB",
+            "comparator": "min",
+            "scale": 20,
+            "lower": 35
+          },
+          {
+            "metric_id": "ldo_step_deviation_v",
+            "unit": "V",
+            "comparator": "max",
+            "scale": 0.001,
+            "upper": 0.003
+          },
+          {
+            "metric_id": "ldo_step_tail_ripple_v",
+            "unit": "V",
+            "comparator": "max",
+            "scale": 0.001,
+            "upper": 0.001
+          },
+          {
+            "metric_id": "ldo_output_error_v",
+            "unit": "V",
+            "comparator": "max",
+            "scale": 0.001,
+            "upper": 0.0075
+          }
+        ],
+        "validation": [
+          {
+            "metric_id": "supply_power_w",
+            "unit": "W",
+            "comparator": "range",
+            "scale": 1e-05,
+            "lower": 0,
+            "upper": 1.6e-05
+          },
+          {
+            "metric_id": "ldo_quiescent_current_a",
+            "unit": "A",
+            "comparator": "range",
+            "scale": 1e-06,
+            "lower": 0,
+            "upper": 3.5e-06
+          },
+          {
+            "metric_id": "ldo_line_regulation_v_per_v",
+            "unit": "V/V",
+            "comparator": "max",
+            "scale": 0.01,
+            "upper": 0.015
+          },
+          {
+            "metric_id": "ldo_load_regulation_v_per_a",
+            "unit": "V/A",
+            "comparator": "max",
+            "scale": 100,
+            "upper": 300
+          },
+          {
+            "metric_id": "ldo_psrr_1khz_db",
+            "unit": "dB",
+            "comparator": "min",
+            "scale": 20,
+            "lower": 35
+          },
+          {
+            "metric_id": "ldo_step_deviation_v",
+            "unit": "V",
+            "comparator": "max",
+            "scale": 0.001,
+            "upper": 0.003
+          },
+          {
+            "metric_id": "ldo_step_tail_ripple_v",
+            "unit": "V",
+            "comparator": "max",
+            "scale": 0.001,
+            "upper": 0.001
+          },
+          {
+            "metric_id": "ldo_output_error_v",
+            "unit": "V",
+            "comparator": "max",
+            "scale": 0.001,
+            "upper": 0.0074
+          }
+        ],
+        "test": [
+          {
+            "metric_id": "supply_power_w",
+            "unit": "W",
+            "comparator": "range",
+            "scale": 1e-05,
+            "lower": 0,
+            "upper": 1.6e-05
+          },
+          {
+            "metric_id": "ldo_quiescent_current_a",
+            "unit": "A",
+            "comparator": "range",
+            "scale": 1e-06,
+            "lower": 0,
+            "upper": 3.5e-06
+          },
+          {
+            "metric_id": "ldo_line_regulation_v_per_v",
+            "unit": "V/V",
+            "comparator": "max",
+            "scale": 0.01,
+            "upper": 0.015
+          },
+          {
+            "metric_id": "ldo_load_regulation_v_per_a",
+            "unit": "V/A",
+            "comparator": "max",
+            "scale": 100,
+            "upper": 300
+          },
+          {
+            "metric_id": "ldo_psrr_1khz_db",
+            "unit": "dB",
+            "comparator": "min",
+            "scale": 20,
+            "lower": 35
+          },
+          {
+            "metric_id": "ldo_step_deviation_v",
+            "unit": "V",
+            "comparator": "max",
+            "scale": 0.001,
+            "upper": 0.003
+          },
+          {
+            "metric_id": "ldo_step_tail_ripple_v",
+            "unit": "V",
+            "comparator": "max",
+            "scale": 0.001,
+            "upper": 0.001
+          },
+          {
+            "metric_id": "ldo_output_error_v",
+            "unit": "V",
+            "comparator": "max",
+            "scale": 0.001,
+            "upper": 0.0073
+          }
+        ]
+      }
+    },
+    "vco": {
+      "family": "gpdk045_current_limited_ring3",
+      "design": "configs/gpdk045_vco_design.json",
+      "mapping": "configs/gpdk045_vco.json",
+      "netlist": "examples/circuits/gpdk045_vco.scs",
+      "readback": "examples/circuits/gpdk045_vco.cdf.json",
+      "analysis_mode": "fast",
+      "specs": {
+        "train": [
+          {
+            "metric_id": "vco_frequency_low_hz",
+            "unit": "Hz",
+            "comparator": "range",
+            "scale": 100000000.0,
+            "lower": 70000000.0,
+            "upper": 95000000.0
+          },
+          {
+            "metric_id": "vco_frequency_high_hz",
+            "unit": "Hz",
+            "comparator": "range",
+            "scale": 100000000.0,
+            "lower": 250000000.0,
+            "upper": 310000000.0
+          },
+          {
+            "metric_id": "vco_tuning_gain_hz_per_v",
+            "unit": "Hz/V",
+            "comparator": "range",
+            "scale": 1000000000.0,
+            "lower": 800000000.0,
+            "upper": 1100000000.0
+          },
+          {
+            "metric_id": "vco_tuning_fraction",
+            "unit": "1",
+            "comparator": "min",
+            "scale": 1,
+            "lower": 1
+          },
+          {
+            "metric_id": "vco_minimum_swing_v",
+            "unit": "V",
+            "comparator": "min",
+            "scale": 1,
+            "lower": 0.8
+          },
+          {
+            "metric_id": "vco_max_period_spread",
+            "unit": "1",
+            "comparator": "max",
+            "scale": 0.02,
+            "upper": 0.02
+          },
+          {
+            "metric_id": "vco_max_window_drift",
+            "unit": "1",
+            "comparator": "max",
+            "scale": 0.01,
+            "upper": 0.01
+          },
+          {
+            "metric_id": "vco_startup_detection_s",
+            "unit": "s",
+            "comparator": "max",
+            "scale": 1e-07,
+            "upper": 2e-07
+          },
+          {
+            "metric_id": "vco_duty_cycle",
+            "unit": "1",
+            "comparator": "range",
+            "scale": 1,
+            "lower": 0.05,
+            "upper": 0.95
+          },
+          {
+            "metric_id": "vco_frequency_hz",
+            "unit": "Hz",
+            "comparator": "range",
+            "scale": 5000000.0,
+            "lower": 165000000.0,
+            "upper": 170000000.0
+          },
+          {
+            "metric_id": "supply_power_w",
+            "unit": "W",
+            "comparator": "range",
+            "scale": 1e-05,
+            "lower": 0,
+            "upper": 2.7e-05
+          }
+        ],
+        "validation": [
+          {
+            "metric_id": "vco_frequency_low_hz",
+            "unit": "Hz",
+            "comparator": "range",
+            "scale": 100000000.0,
+            "lower": 70000000.0,
+            "upper": 95000000.0
+          },
+          {
+            "metric_id": "vco_frequency_high_hz",
+            "unit": "Hz",
+            "comparator": "range",
+            "scale": 100000000.0,
+            "lower": 250000000.0,
+            "upper": 310000000.0
+          },
+          {
+            "metric_id": "vco_tuning_gain_hz_per_v",
+            "unit": "Hz/V",
+            "comparator": "range",
+            "scale": 1000000000.0,
+            "lower": 800000000.0,
+            "upper": 1100000000.0
+          },
+          {
+            "metric_id": "vco_tuning_fraction",
+            "unit": "1",
+            "comparator": "min",
+            "scale": 1,
+            "lower": 1
+          },
+          {
+            "metric_id": "vco_minimum_swing_v",
+            "unit": "V",
+            "comparator": "min",
+            "scale": 1,
+            "lower": 0.8
+          },
+          {
+            "metric_id": "vco_max_period_spread",
+            "unit": "1",
+            "comparator": "max",
+            "scale": 0.02,
+            "upper": 0.02
+          },
+          {
+            "metric_id": "vco_max_window_drift",
+            "unit": "1",
+            "comparator": "max",
+            "scale": 0.01,
+            "upper": 0.01
+          },
+          {
+            "metric_id": "vco_startup_detection_s",
+            "unit": "s",
+            "comparator": "max",
+            "scale": 1e-07,
+            "upper": 2e-07
+          },
+          {
+            "metric_id": "vco_duty_cycle",
+            "unit": "1",
+            "comparator": "range",
+            "scale": 1,
+            "lower": 0.05,
+            "upper": 0.95
+          },
+          {
+            "metric_id": "vco_frequency_hz",
+            "unit": "Hz",
+            "comparator": "range",
+            "scale": 5000000.0,
+            "lower": 170000000.0,
+            "upper": 175000000.0
+          },
+          {
+            "metric_id": "supply_power_w",
+            "unit": "W",
+            "comparator": "range",
+            "scale": 1e-05,
+            "lower": 0,
+            "upper": 2.75e-05
+          }
+        ],
+        "test": [
+          {
+            "metric_id": "vco_frequency_low_hz",
+            "unit": "Hz",
+            "comparator": "range",
+            "scale": 100000000.0,
+            "lower": 70000000.0,
+            "upper": 95000000.0
+          },
+          {
+            "metric_id": "vco_frequency_high_hz",
+            "unit": "Hz",
+            "comparator": "range",
+            "scale": 100000000.0,
+            "lower": 250000000.0,
+            "upper": 310000000.0
+          },
+          {
+            "metric_id": "vco_tuning_gain_hz_per_v",
+            "unit": "Hz/V",
+            "comparator": "range",
+            "scale": 1000000000.0,
+            "lower": 800000000.0,
+            "upper": 1100000000.0
+          },
+          {
+            "metric_id": "vco_tuning_fraction",
+            "unit": "1",
+            "comparator": "min",
+            "scale": 1,
+            "lower": 1
+          },
+          {
+            "metric_id": "vco_minimum_swing_v",
+            "unit": "V",
+            "comparator": "min",
+            "scale": 1,
+            "lower": 0.8
+          },
+          {
+            "metric_id": "vco_max_period_spread",
+            "unit": "1",
+            "comparator": "max",
+            "scale": 0.02,
+            "upper": 0.02
+          },
+          {
+            "metric_id": "vco_max_window_drift",
+            "unit": "1",
+            "comparator": "max",
+            "scale": 0.01,
+            "upper": 0.01
+          },
+          {
+            "metric_id": "vco_startup_detection_s",
+            "unit": "s",
+            "comparator": "max",
+            "scale": 1e-07,
+            "upper": 2e-07
+          },
+          {
+            "metric_id": "vco_duty_cycle",
+            "unit": "1",
+            "comparator": "range",
+            "scale": 1,
+            "lower": 0.05,
+            "upper": 0.95
+          },
+          {
+            "metric_id": "vco_frequency_hz",
+            "unit": "Hz",
+            "comparator": "range",
+            "scale": 5000000.0,
+            "lower": 175000000.0,
+            "upper": 180000000.0
+          },
+          {
+            "metric_id": "supply_power_w",
+            "unit": "W",
+            "comparator": "range",
+            "scale": 1e-05,
+            "lower": 0,
+            "upper": 2.8e-05
+          }
+        ]
+      }
+    }
+  }
+}

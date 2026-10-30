@@ -1,88 +1,25 @@
 """Explicit synthetic contract fixtures; these functions do not model a circuit."""
 from copy import deepcopy
 from dataclasses import replace
-import hashlib
 import json
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 
-from analog_optimizer.backends.backend import (VirtuosoBackend, NetlistArtifact, SimulationResult,
-                                               SimulationStatus)
+from analog_optimizer.backends.backend import NetlistArtifact, SimulationStatus
 from analog_optimizer.envs import CircuitSizingEnv
 from analog_optimizer.measurements.specs import MetricSpec
-
-
-class SyntheticSizingFixture(VirtuosoBackend):
-    def __init__(self, graph):
-        self.graph = deepcopy(graph)
-        self.initial = graph.assignments({g.id: g.value for g in graph.parameter_groups if g.mutable})
-        self.parameters = dict(self.initial)
-        self.status, self.evaluated, self.unit = SimulationStatus.OK, True, 'fixture'
-        self.valid, self.value_override = True, None
-        self.connected, self.calls, self.writes = False, 0, 0
-        self.exports = {}
-
-    def connect(self):
-        self.connected = True
-
-    def close(self):
-        self.connected = False
-
-    def restore(self):
-        self.parameters = dict(self.initial)
-
-    def read_parameters(self):
-        return dict(self.parameters)
-
-    def set_parameters(self, parameters):
-        self.writes += 1
-        self.parameters = dict(parameters)
-
-    def generate_netlist(self, work_root):
-        job_id = uuid4().hex
-        directory = work_root / job_id
-        directory.mkdir(parents=True)
-        path = directory / 'fixture.json'
-        path.write_text(json.dumps(sorted(self.parameters.items())))
-        self.exports[job_id] = dict(self.parameters)
-        return NetlistArtifact(path, job_id, hashlib.sha256(path.read_bytes()).hexdigest(), 'synthetic')
-
-    def get_circuit_graph(self, artifact):
-        graph, values = deepcopy(self.graph), self.exports[artifact.job_id]
-        for group_index, group in enumerate(graph.parameter_groups):
-            if not group.mutable:
-                continue
-            for member in group.members:
-                old = graph.parameters[member.device_id][member.parameter]
-                key = (member.device_id, old.source_name or member.parameter)
-                graph.parameters[member.device_id][member.parameter] = replace(old, value=values[key], raw=str(values[key]))
-            graph.parameter_groups[group_index] = replace(group, value=values[key] / member.ratio)
-        return graph
-
-    def run_simulation(self, request):
-        self.calls += 1
-        directory = request.work_root / uuid4().hex
-        directory.mkdir(parents=True)
-        value = next(iter(self.parameters.values())) / 1e-6
-        if self.value_override is not None:
-            value = self.value_override
-        return SimulationResult(directory.name, 'synthetic-sizing-fixture', 'synthetic', self.status,
-                                'injected_fixture', False, self.evaluated, {'score': value},
-                                {'score': self.unit}, {'score': self.valid}, dict(self.parameters), directory, 0.01)
+from research_support import SyntheticSizingFixture, environment
+from analog_optimizer.backends.backend import UnsupportedCapability
+from analog_optimizer.backends.conditions import PVTCorner, SimulationCondition
 
 
 @pytest.fixture
 def fixture_backend(opamp):
+    """Provide a synthetic backend whose first action group varies while the second remains fixed."""
     opamp.parameter_groups[0] = replace(opamp.parameter_groups[0], scale='linear')
     opamp.parameter_groups[1] = replace(opamp.parameter_groups[1], mutable=False)
     return SyntheticSizingFixture(opamp)
-
-
-def environment(backend, tmp_path, **kwargs):
-    return CircuitSizingEnv(backend, backend.graph, [MetricSpec('score', 'fixture', 'min', 1, lower=3)],
-                            tmp_path, expected_origin='synthetic', **kwargs)
 
 
 def test_reset_step_success_actual_graph_and_restoration(fixture_backend, tmp_path):
@@ -160,19 +97,45 @@ def test_bad_measurement_cannot_become_success(fixture_backend, tmp_path, mode):
         else:
             fixture_backend.status = SimulationStatus.MEASUREMENT_ERROR
         obs, reward, terminated, truncated, info = env.step({'input_pair_width': 1})
-        assert reward is None and not terminated and truncated and not info['success']
-        assert not info['replay_eligible']
+        assert not terminated and not info['success']
+        if mode in ('validity', 'nan'):
+            # A completed simulation without a usable value for the required spec: a FAILED row since 2026-10-10 (the
+            # default of MetricSpec.missing_is_failure) - the full penalty, replayed, and the episode goes on.
+            assert reward == -1 and not truncated and info['replay_eligible'] and info['bootstrap'] and info['evaluation_valid']
+            assert info['missing_counted_as_failure'] == {'nominal': ('score',)} and info['status'] == 'ok'
+            assert obs.metrics['score'] is None and not obs.metric_validity['score']
+        else:
+            # A wrong unit, a simulation that never judged the candidate, and a measurement error that lacks no required
+            # value (nothing explains it) stay errors: no reward, never replayed, the episode cut.
+            assert reward is None and truncated and not info['replay_eligible'] and not info['evaluation_valid']
+            assert info['missing_counted_as_failure'] == {}
+            if mode != 'measurement_error':
+                assert obs.metrics['score'] is None and not obs.metric_validity['score']
+
+
+@pytest.mark.parametrize('mode', ['validity', 'nan'])
+def test_a_spec_that_opts_out_keeps_a_missing_value_an_error(fixture_backend, tmp_path, mode):
+    """missing_is_failure=False: the rule of every spec before 2026-10-10."""
+    spec = MetricSpec('score', 'fixture', 'min', 1, lower=3, missing_is_failure=False)
+    with CircuitSizingEnv(fixture_backend, fixture_backend.graph, [spec], tmp_path, expected_origin='synthetic') as env:
+        env.reset()
+        if mode == 'validity':
+            fixture_backend.valid = False
+        else:
+            fixture_backend.value_override = float('nan')
+        obs, reward, terminated, truncated, info = env.step({'input_pair_width': 1})
+        assert reward is None and not terminated and truncated and not info['success'] and not info['replay_eligible']
         assert obs.metrics['score'] is None and not obs.metric_validity['score']
 
 
 @pytest.mark.parametrize('status', [SimulationStatus.INVALID_DESIGN, SimulationStatus.NONCONVERGED])
-def test_attributed_circuit_failure_has_finite_terminal_penalty(fixture_backend, tmp_path, status):
+def test_attributed_circuit_failure_has_finite_continuing_penalty(fixture_backend, tmp_path, status):
     with environment(fixture_backend, tmp_path) as env:
         env.reset()
         fixture_backend.status = status
         obs, reward, terminated, truncated, info = env.step({'input_pair_width': 1})
-        assert reward == -1 and terminated and not truncated and info['replay_eligible']
-        assert obs.metrics['score'] is None and not info['success'] and not info['bootstrap']
+        assert reward == -1 and not terminated and not truncated and info['replay_eligible']
+        assert obs.metrics['score'] is None and not info['success'] and info['bootstrap']
 
 
 @pytest.mark.parametrize('stage', ['write', 'graph', 'simulation'])
@@ -260,3 +223,84 @@ def test_pvt_result_cannot_become_nominal_replay(fixture_backend, tmp_path, monk
         assert record['replay_eligible'] is False
         with pytest.raises(ValueError):
             NominalDesign.from_record(record)
+
+
+def test_a_journal_can_skip_the_fsync_and_stays_atomic(tmp_path, monkeypatch):
+    from analog_optimizer.envs import sizing
+    calls = []
+    monkeypatch.setattr(sizing.os, 'fsync', lambda fd: calls.append(fd))
+    sizing.write_record(tmp_path / 'a.json', {'x': 1})
+    sizing.write_record(tmp_path / 'b.json', {'x': 2}, durable=False)
+    assert len(calls) == 1 and (tmp_path / 'b.json').read_text() == '{\n  "x": 2\n}\n'
+    assert not list(tmp_path.glob('*.tmp'))
+
+
+def test_a_synthetic_environment_skips_the_fsync_and_a_real_one_does_not(monkeypatch):
+    from analog_optimizer.envs import sizing
+    seen = []
+    monkeypatch.setattr(sizing, 'write_record', lambda path, value, **options: seen.append(options))
+    for origin in ('synthetic', 'real'):
+        env = object.__new__(sizing.CircuitSizingEnv)
+        env.expected_origin = origin
+        env._record('journal.json', {})
+    assert seen == [dict(durable=False), {}]
+
+
+NOMINAL = SimulationCondition(PVTCorner('nominal', 'tt', 27.0, 1.0))
+
+
+def prepared(opamp):
+    """Prepare a graph with a linear first action group and an immutable second group."""
+    opamp.parameter_groups[0] = replace(opamp.parameter_groups[0], scale='linear')
+    opamp.parameter_groups[1] = replace(opamp.parameter_groups[1], mutable=False)
+    return opamp
+
+
+class RelabelledFixture(SyntheticSizingFixture):
+    """The synthetic fixture with a scripted origin and invocation count; nothing else changes."""
+    origin, invocations = 'real', None
+
+    def nominal_condition(self):
+        return NOMINAL
+
+    def validate_condition(self, condition):
+        if condition not in (None, NOMINAL):
+            raise UnsupportedCapability('fixture: nominal only')
+
+    def generate_netlist(self, work_root, *, condition=None):
+        """Relabel a synthetic netlist artifact with the supplied condition and scripted origin for accounting tests."""
+        artifact = super().generate_netlist(work_root)
+        return NetlistArtifact(artifact.path, artifact.job_id, artifact.sha256, self.origin, condition)
+
+    def run_simulation(self, request):
+        """Relabel a synthetic result and omit its invocation count to exercise legacy accounting."""
+        result = super().run_simulation(request)
+        return replace(result, origin=self.origin, condition=request.condition, simulator_invocations=self.invocations)
+
+
+def test_a_synthetic_result_without_an_invocation_count_is_a_complete_call(opamp, tmp_path):
+    """F1: the synthetic and MOCK backends never report simulator invocations; their call is never 'uncertain'."""
+    backend = SyntheticSizingFixture(prepared(opamp))
+    with environment(backend, tmp_path) as env:
+        first, info = env.reset()
+        assert not info['truncated'] and info['evaluation_valid'] and env.simulation_calls == 1
+        assert env.uncertain_calls == 0 and env.confirmed_calls == 0            # no simulator was launched
+        record = json.loads(Path(info['record_path']).read_text())
+        assert record['jobs'][0]['uncertain_calls'] == 0 and record['jobs'][0]['confirmed_calls'] == 0
+        obs, reward, terminated, truncated, info = env.step({'input_pair_width': 0})
+        assert reward == 0 and not truncated and info['replay_eligible'] and env.simulation_calls == 2
+
+
+@pytest.mark.parametrize('invocations, uncertain', [(None, 1), (1, 0), (0, 0)])
+def test_a_real_result_reports_its_invocation_or_stays_uncertain(opamp, tmp_path, invocations, uncertain):
+    backend = RelabelledFixture(prepared(opamp))
+    backend.invocations = invocations
+    specs = [MetricSpec('score', 'fixture', 'min', 1, lower=3)]
+    with CircuitSizingEnv(backend, backend.graph, specs, tmp_path, expected_origin='real') as env:
+        first, info = env.reset()
+        assert info['truncated'] == (invocations is None) and env.uncertain_calls == uncertain
+        assert env.confirmed_calls == (invocations or 0) and env.simulation_calls == (1 if invocations != 0 else 0)
+        record = json.loads(Path(info['record_path']).read_text())
+        assert record['jobs'][0]['uncertain_calls'] == uncertain
+        if invocations is None:
+            assert record['conditions_stop_reason'] == 'unavailable_or_uncertain_condition'

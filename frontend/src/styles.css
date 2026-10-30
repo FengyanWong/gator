@@ -1,0 +1,597 @@
+/* The page's stylesheet; roadster.css adds the page's look (record 7.360). In order: the colour names, the plain elements,
+   the page's frame and header, then the parts of the page and the pop-up windows, mostly in the order they were built. A rule
+   stands where the cascade needs it: moved past another rule that sets the same property with the same specificity, it can
+   change which of the two wins. The regroup of 2026-10-09 (plan-refactoring C11) moved only rules that
+   frontend/scripts/css_order_proof.mjs proves free to move, and merged a selector written twice only where it proves the
+   same; a later move is checked the same way (the script's header says how). No value stands here that roadster.css always
+   overrides - the same selector and property there, at top level or in the same @media: edited here, it changed nothing
+   (branch record SIF-129 took 127 away; looks_check.mjs keeps it so). */
+:root {
+  /* The page's colours by name (record 7.158): every rule below uses these. Since record 7.360 (the user's choice of
+     2026-10-17: "dark mode only, delete the day mode", Draft A of the Roadster look) there is one look and these are its
+     values: black, white type, one red. White is what is chosen, on or ready (Start, a ticked box, the chosen tab); red marks
+     where the eye goes (the bar under the chosen tab, focus, a chart's line), fills Abort, and colours an error, which always
+     comes with its words. Amber is kept for rows not saved in the task and for warnings. Each text colour reads at least
+     4.5 : 1 on the surfaces it sits on (frontend/scripts/looks_check.mjs measures them). */
+  --bg: #000000; --panel: #0e0e10; --line: #2c2c31; --text: #f4f4f5; --muted: #a9a9b0; --accent: #f5434f; --bad: #ff4f61; --warn: #f2b53f; --ok: #f4f4f5;
+  --on-accent: #0a0a0b; --on-warn: #1a1406; --accent-fill: #f4f4f5; --bad-fill: #d0102c; --warn-fill: #f2b53f; --on-bad: #fff;
+  --field: #18181b; --field-disabled: #121214; --button: #18181b; --card: #18181b; --canvas: #0e0e10; --sunk: #0a0a0b; --surface-2: #141416;
+  --head: #141416; --code-bg: #18181b; --selected: #26262b; --selected-hover: #2e2e34; --selected-soft: #1d1d21; --hover: #232327;
+  --info-bg: #141416; --info-line: #2c2c31; --real-bg: #141416;
+  --bad-bg: #2a0d12; --bad-line: #7a2430; --bad-row: #1e0b0f; --bad-strong: #ff4f61; --close-hover: #d0102c;
+  --warn-bg: #241c0b; --warn-line: #6e5418; --mock-line: #7a5c16; --busy-bg: #241c0b;
+  --ok-bg: #18181b; --ok-line: #2c2c31; --added-bg: #1a1a1f;
+  /* an editor row not saved in the task (record 7.222): a changed row, its changed cells, the bar of a changed / new row */
+  --unsaved-row: #241c0b; --unsaved-cell: #3a2c0e; --unsaved-mark: #f2b53f; --added-mark: #f4f4f5;
+  --neutral-bg: #18181b; --neutral-text: #a9a9b0; --na-bg: #121214; --unresolved: #f2b53f;
+  --log-line: #1c1c20; --backdrop: rgba(0, 0, 0, .65);
+  /* the stronger rule of headers and table heads, alternate rows, faint grid lines */
+  --rule: #3a3a3f; --zebra: #121215; --grid-line: #1c1c20;
+  /* the three editors are told apart by their tabs (record 7.360): one ink for their ids and heads */
+  --param: #f4f4f5; --probe: #f4f4f5; --spec: #f4f4f5; --param-head: #141416; --probe-head: #141416; --spec-head: #141416;
+  --probe-chip: #18181b; --probe-chip-line: #2c2c31;
+  /* lines of a chart, in this order (record 7.360): the shown run in red, then white, blue and violet for compared runs */
+  --series-1: #f5434f; --series-2: #e8e8ec; --series-3: #4fb3ff; --series-4: #c08cff;
+  /* the circuit picture (CircuitPicture.tsx) and the graph view's lines */
+  --cp-link: #3a3a3f; --cp-nmos: #18181b; --cp-pmos: #232327; --cp-passive: #1d1d21; --cp-source: #1d1d21; --cp-net: #0e0e10; --cp-net-line: #5a5a61;
+  --cp-supply: #2a0d12; --cp-ground: #18181b; --graph-edge: #3a3a3f;
+  /* Windows' own fonts (the user's choice: nothing is downloaded): labels, text, numbers */
+  --f-label: Bahnschrift, 'DIN Alternate', 'Arial Narrow', 'Segoe UI', sans-serif;
+  --f-body: 'Segoe UI', system-ui, sans-serif;
+  --f-mono: Consolas, 'Cascadia Mono', ui-monospace, monospace;
+  color-scheme: dark;                          /* the browser's own parts (scroll bars, the open list of a drop-down) dark too */
+  accent-color: var(--text);                   /* a ticked box is white */
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { font: 12.5px/1.4 var(--f-body); color: var(--text); background: var(--bg); }
+h3:first-child { margin-top: 0; } h4 { margin: 8px 0 4px; }
+label { display: flex; flex-direction: column; margin: 4px 0; color: var(--muted); flex: 1; min-width: 0; }
+label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
+input, select, textarea, button { font: inherit; color: var(--text); }
+table { font: inherit; }  /* a pop-up window starts as about:blank = quirks mode, where a table does not inherit the font and falls back to 16px */
+input, select, textarea { border: 1px solid var(--line); background: var(--field); min-width: 0; width: 100%; }
+/* A drop-down's open list in the look's own colours (record 7.173, user: "fix the color issue of the drag down menu in night
+   mode, it is hard to read"): the browser draws the list from its options. A select in an editor cell is transparent, and its
+   list came out light under the night look's light text. */
+select option { background-color: var(--field); color: var(--text); } select option:disabled { color: var(--muted); }
+/* A tick box keeps its size beside words of two lines (branch record SIF-143): a flex item of label.check with the min-width 0
+   above, it shrank, and its words began left of the others' ("Replay snapshots ..." in Output settings). */
+label.check input, td input[type=checkbox] { width: auto; flex: none; }
+input.numeric { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--f-mono); }
+/* record 7.171: the 0-to-1 reward boxes (Num bounded) keep type=number and its 0..1 range, without the up/down arrows */
+input.bounded { appearance: textfield; -moz-appearance: textfield; }
+input.bounded::-webkit-inner-spin-button, input.bounded::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+button { border: 1px solid var(--line); background: var(--button); cursor: pointer; white-space: nowrap; }
+/* The header's Issues button (its list is with the header, below): it keeps its place before the button states. */
+button.issues-button { color: var(--bad); border-color: var(--bad); font-weight: 600; } button.issues-button.active { background: var(--bad-bg); border-color: var(--bad); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary { background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill); } button.active { background: var(--selected); }
+.layout { display: grid; height: 100%; grid-template: 'head head head' auto 'msg msg msg' auto 'left main right' minmax(0, 1fr) 'foot foot foot' min(var(--foot, 34vh), calc(100vh - 280px)) / 300px minmax(0, 1fr) 340px; }
+header { grid-area: head; display: flex; flex-wrap: wrap; align-items: center; background: var(--panel); border-width: 1.5px; }   /* the size of record 7.162 (with the tabs' below) */
+/* The list of blocking issues is a second, full-width line of the header: it pushes the page down instead of covering the editors it is used with. */
+.issue-list { order: 1; flex: 0 0 100%; min-width: 0; border-top: 1px solid var(--line); padding-top: 6px; } .issue-list-head { display: flex; gap: 8px; margin-bottom: 4px; }
+.issue-list-body { max-height: 30vh; overflow: auto; } .issue-list code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
+/* settings.json unreadable (backend runs.load_settings): a full-width line of the header too, in the notice colours below. */
+.settings-problem { order: 1; flex: 0 0 100%; margin: 0; }
+.banner { grid-area: msg; cursor: pointer; }
+.banner.error { border-color: var(--bad); } .mock, .settings-problem { background: var(--warn-bg); border-left: 3px solid var(--mock-line); padding: 4px 10px; font-weight: 600; } .banner.mock { border: 1px solid var(--mock-line); padding: 4px 8px; }
+.left { grid-area: left; overflow: auto; } main { grid-area: main; min-width: 0; overflow: hidden; display: flex; } .right { grid-area: right; overflow: auto; }
+footer { grid-area: foot; background: var(--panel); display: flex; flex-direction: column; min-height: 0; position: relative; }   /* relative: for the splitter (below) */
+.bottom-body { flex: 1; overflow: auto; min-height: 0; }
+.panel { background: var(--panel); }
+.rl-networks-open { margin: 2px 0 6px; }
+/* The network in use, in short, then the button (user, 2026-10-03): the words on the left, the short button at the right end. */
+.rl-networks-row { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; } .rl-networks-row .rl-networks-open { margin: 0; flex: none; }
+.rl-networks-row .net-short { flex: 1; min-width: 0; text-overflow: ellipsis; cursor: default; } .rl-networks-row .net-code { font-family: var(--f-mono); }
+/* The switches that are on, under that line and close to it, whole (review of branch record SIF-103) */
+.model-switches { margin: 0 0 6px; }
+.rl-networks-window { margin: 0 auto; padding: 14px 18px 24px; }
+.rl-networks-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rl-networks-heading h2 { margin: 0; font-size: 17px; }
+.rl-networks-undo { display: inline-flex; gap: 4px; }   /* the window's Undo and Redo, at the heading's right (branch record SIF-97) */
+.rl-networks-panel { min-width: 0; }
+/* The RL model window (record 7.265): the Mode as three joined buttons at the top, New model's templates, the saved models. */
+.rl-modes { display: flex; margin: 4px 0 2px; } .rl-modes .rl-mode { border-radius: 0; margin: 0 0 0 -1px; }
+.rl-modes .rl-mode:first-child { border-radius: 4px 0 0 4px; margin-left: 0; } .rl-modes .rl-mode:last-child { border-radius: 0 4px 4px 0; }
+.rl-modes .rl-mode.active { background: var(--selected); font-weight: 600; position: relative; z-index: 1; }
+table.template-table { width: auto; } table.template-table tr.current > td { background: var(--selected); } table.template-table tbody tr { cursor: default; }
+.in-use-tag { margin-left: 6px; } .model-details { max-width: 1000px; } .model-details h4 { margin: 10px 0 3px; }
+table.grid.model-table th { white-space: normal; }   /* two-word headings wrap: the table fits the RL model window with its Details column */
+table.model-points { width: auto; } table.model-points tr.current > td { background: var(--selected); } table.model-points tbody tr { cursor: pointer; }
+.model-suggested, .model-newer { margin: 4px 0; } details.look-models { margin-top: 14px; }
+.row { display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; margin: 4px 0; } .spacer { flex: 1; }
+.row.circuit-labels { align-items: flex-start; } .circuit-class { flex: 1; min-width: 0; }
+.tabs { display: flex; align-items: center; } .tabs button { border-bottom: none; }
+.tabs > button { font-family: var(--f-label); letter-spacing: .02em; }
+/* record 7.182 (user: "move the conection button to the header"): the Connection button as a cell of the header's title block -
+   its name over the connection and its state, like the cells beside it; a message of the button floats under it. */
+header .connection-launcher { position: relative; display: flex; margin: 0; padding: 0; border: none; border-radius: 0; background: none; box-shadow: none; }
+header button.connection-button { width: auto; grid-template-columns: auto auto;
+  border-left: 1px solid var(--rule); text-align: left; }
+header button.connection-button:hover { background: var(--hover); }
+header .connection-button-name { grid-column: 1 / -1; font: 600 8.5px/1 var(--f-label); letter-spacing: .17em; text-transform: uppercase; color: var(--muted); }
+header .connection-button-what { order: 0; color: var(--text); white-space: nowrap; }
+header .connection-button .badge { order: 0; font-size: 9.5px; }
+header .connection-launcher > p { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: max-content; max-width: 440px; margin: 0;
+  padding: 4px 8px; background: var(--bad-bg); border: 1px solid var(--bad-line); }
+.panel.editors { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0; }
+.toolbar { display: flex; align-items: center; flex-wrap: wrap; }
+.scroll { overflow: auto; flex: 1; min-height: 0; max-width: 100%; }
+table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { border: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
+table.grid th { position: sticky; top: 0; cursor: help; font-weight: 400; font-family: var(--f-label); } table.grid.small td { white-space: normal; word-break: break-word; }
+/* Alternate rows of the tables that list many rows; any row colour of meaning (an error, the current run) wins over it. */
+:where(table.grid.small, table.editor) :where(tbody tr:nth-child(even)) > td { background: var(--zebra); }
+table.editor td input, table.editor td select { border: none; min-width: 84px; background: transparent; }
+/* record 7.182 (design advice: keep the ID column in view): the tick box and the row's ID stay at the left while a table scrolls
+   sideways - the ID at the tick-box column's own width (--sel-w, measured by the page); behind them the panel's colour, which a
+   zebra or an error row paints over. */
+/* Lines drawn by each cell (right and bottom; the first column and the head row also left and top) instead of collapsed ones:
+   a collapsed line stays with the columns passing under a sticky cell, and their text showed through the cell's edges. */
+table.editor { border-collapse: separate; border-spacing: 0; }
+table.editor th, table.editor td { border-width: 0 1px 1px 0; }
+table.editor tr > :first-child { border-left-width: 1px; } table.editor thead th { border-top-width: 1px; }
+table.editor th.sel, table.editor td.sel { position: sticky; left: 0; z-index: 2; width: 1%; padding: 0 3px; text-align: center; vertical-align: middle; }   /* the row-selection tick box: as narrow as the box itself */
+table.editor :is(th, td):is([data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"]) { position: sticky; left: var(--sel-w, 0px); z-index: 2; }
+table.editor thead th:is(.sel, [data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"]) { z-index: 4; }
+:where(table.editor) :where(td.sel, td[data-field="variable_id"], td[data-field="measurement_id"], td[data-field="metric_id"], td.issues) { background: var(--panel); }
+/* While columns pass under the ID, a line and a soft shadow mark its edge: the border it shared went with the column that passed. */
+.scroll.scrolled-x > table.editor :is(th, td):is([data-field="variable_id"], [data-field="measurement_id"], [data-field="metric_id"])::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 100%; width: 5px; border-left: 1px solid var(--rule); pointer-events: none;
+  background: linear-gradient(to right, rgb(0 0 0 / .1), transparent); }
+/* branch record SIF-135: the Issues column stays at the right edge as the ID stays at the left - in a box wide enough for both
+   (pin-issues: Editors.tsx PIN_ISSUES_PX) -, behind it the panel's colour as behind the ID (above), and a line and a soft shadow
+   mark its edge while columns pass under it (more-x). Its width (--issues-w, measured by the page) is the box's scroll padding,
+   so that a cell entered by Tab or a Where comes into view beside it, not under it. */
+.scroll.pin-issues { scroll-padding-right: var(--issues-w, 0px); }
+.scroll.pin-issues > table.editor :is(th, td).issues { position: sticky; right: 0; z-index: 2; }
+.scroll.pin-issues > table.editor thead th.issues { z-index: 4; }
+.scroll.pin-issues.more-x > table.editor :is(th, td).issues::before {
+  content: ''; position: absolute; top: 0; bottom: 0; right: 100%; width: 5px; border-right: 1px solid var(--rule); pointer-events: none;
+  background: linear-gradient(to left, rgb(0 0 0 / .1), transparent); }
+/* record 7.180 (design advice: content-sized columns): an ID wide enough to read - a Parameters ID about its 12 characters
+   and a leader's name too (roadster.css, branch records SIF-119 and SIF-131) -, a unit narrow; the other columns keep the
+   84 px every editor box has. */
+table.editor td[data-field="measurement_id"] input, table.editor td[data-field="metric_id"] input { min-width: 140px; }
+table.editor td[data-field="unit"] input { min-width: 52px; }
+table.editor td input[type="checkbox"] { min-width: 0; }
+table.editor td.sel input { min-width: 0; margin: 0; }   /* the tick box: it inherited the 84 px minimum of the editor inputs */
+table.editor th.sel input { width: auto; margin: 0; }   /* the header's "tick every row in view" (branch record SIF-96): a box as the rows' */
+/* the Issues column as wide as its reports need: narrow while no row has one */
+table.editor:not(:has(td.issues > .issue)) td.issues { min-width: 0; }
+/* record 7.180 (design advice 4): a tied row folds under its leader - the leader's first cell counts them and opens them; an
+   open tied row is marked and its ID indented. The note of the last block paste under the formula bar. */
+table.editor td.sel { white-space: nowrap; }
+table.editor .tie-toggle { border: none; background: none; margin-left: 2px; font: 11px/1 var(--f-mono); color: var(--param); cursor: pointer; }
+table.editor .tie-mark { margin-left: 5px; color: var(--muted); cursor: default; }
+table.editor tr.tied > td[data-field="variable_id"] input { padding-left: 16px; }
+.paste-note { margin: 0 0 4px; }
+/* record 7.179 (design advice 2): Run configuration and Output settings as a property sheet - a number's label and its box on
+   one line, the box at the right - and the run limits in one fold whose line names the limits that are set. */
+.right .module-body > label.num, .right .module-body > details > label.num { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; }
+.right .module-body > label.num > input, .right .module-body > details > label.num > input { width: 92px; }
+.right .module-body > label.num > .with-unit, .right .module-body > details > label.num > .with-unit { width: 176px; }
+/* The sheet keeps a column's width when the narrow layout gives this column the page's (branch record SIF-82: at 1100 px
+   "Concurrent Spectre jobs" sat at the left and its box about 930 px away, the model line and "RL model..." as far apart). */
+@media (max-width: 1100px) { .right .module-body { max-width: 560px; } }
+.right details.limits { margin: 4px 0; } .right details.limits > summary { cursor: pointer; } .right details.limits > :not(summary) { margin-left: 13px; }
+.output-facts > summary { font-size: 11.5px; color: var(--muted); }
+/* A size never splits from its unit (branch record SIF-143: "used here 3.00" over "GiB" in the Free space cell). */
+.output-facts .bytes { white-space: nowrap; }
+.right input[aria-invalid="true"] { border-color: var(--bad); }
+/* record 7.175: the editors' formula bar - the chosen cell's whole value in a box as wide as the table; the chosen cell is marked */
+.formula { margin: 4px 0; } .formula-bar { display: flex; align-items: flex-start; gap: 6px; }
+.formula-bar .formula-where { flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+.formula-bar textarea { flex: 1; min-height: 26px; max-height: 7.5em; resize: none; field-sizing: content; font-family: var(--f-mono); overflow: auto; }
+.formula-bar textarea[readonly]:not(:disabled) { background: var(--field-disabled); color: var(--muted); }
+.formula-problem { margin: 3px 0 0 216px; }
+table.editor td.active-cell { box-shadow: inset 0 0 0 2px var(--accent); }
+tr.has-error td { background: var(--bad-row); }
+/* record 7.222: rows not saved in the task - a changed row tinted and its changed cells more, a new row in the colour of an
+   added row, a bar at the start of both; an error row keeps its own colour, its changed cells still marked. A tab holding
+   such rows carries a dot; a tie toggle whose folded rows are not saved takes the colour. */
+table.editor tr.unsaved-changed:not(.has-error) > td { background: var(--unsaved-row); }
+table.editor tr.unsaved-new:not(.has-error) > td { background: var(--added-bg); }
+table.editor tr.unsaved-changed > td.unsaved-cell { background: var(--unsaved-cell); }
+table.editor tr.unsaved-changed > td.sel { box-shadow: inset 3px 0 0 var(--unsaved-mark); }
+table.editor tr.unsaved-new > td.sel { box-shadow: inset 3px 0 0 var(--added-mark); }
+table.editor .tie-toggle.unsaved { color: var(--unsaved-mark); }
+.editors > .tabs > button.has-unsaved::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%;
+  background: var(--unsaved-mark); vertical-align: 1px; }
+table.editor td input.readonly { color: var(--muted); }
+table.editor select[aria-label="Judged at"] { min-width: 180px; }
+table.editor select[aria-label="Constraint"] { min-width: 200px; }
+/* record 7.188: the crash panel - what failed, and the ways out - in place of a blank page */
+.crash-panel { max-width: 720px; margin: 64px auto; padding: 18px 22px; background: var(--panel); color: var(--text); border: 1px solid var(--bad-line); border-left: 4px solid var(--bad-strong); }
+.crash-panel h2 { margin: 0 0 8px; font: 600 15px/1.3 var(--f-label); letter-spacing: .02em; }
+.crash-panel code { display: block; margin: 8px 0; padding: 6px 8px; background: var(--bad-bg); font: 12px/1.4 var(--f-mono); white-space: pre-wrap; word-break: break-word; }
+.crash-panel .row { gap: 8px; margin: 12px 0 6px; } .crash-panel pre { max-height: 260px; overflow: auto; font: 11px/1.35 var(--f-mono); white-space: pre-wrap; }
+/* record 7.184: the editors' find box, and how many rows it leaves in view */
+/* record 7.185: the box shrinks with the window (80 to 170 px) and its count sits inside its right end, where the browser's own
+   clear button was (Esc clears), so the toolbar stays on one line at 1366 px, a find too */
+.toolbar .find-box { position: relative; display: flex; flex: 1 1 80px; max-width: 170px; margin-left: 6px; }
+.toolbar input.find-rows { width: 100%; min-width: 0; } .toolbar .find-box.finding input.find-rows { padding-right: 44px; }
+.toolbar input.find-rows::-webkit-search-cancel-button { display: none; }
+.toolbar .find-count { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; pointer-events: none; }
+.hint { color: var(--muted); } .fact { margin: 2px 0 6px; } .error { color: var(--bad); } .warn { color: var(--warn); } .ok { color: var(--ok); }
+.guidance { border-left: 3px solid var(--info-line); padding: 3px 10px; margin: 6px 0 0; cursor: pointer; }   /* a callout: record 7.218 */
+.issue.error, .issue.blocker { color: var(--bad); } .issue.warning { color: var(--warn); } .issue.unresolved { color: var(--unresolved); } .issue.info { color: var(--muted); }
+td.issues { min-width: 170px; white-space: normal !important; }
+.blocker { border-left: 3px solid var(--bad); background: var(--bad-bg); padding: 6px 10px; margin: 6px 0; }   /* a status callout: record 7.218 */ .issue.blocker { border: 0; background: none; padding: 0; margin: 0; }
+/* A limit explained, not a fault: neutral, unlike .blocker. */
+/* record 7.218 (user: "work on fewer boxes inside boxes"): inside a panel, the header or a window, a callout has no frame of
+   its own. A rule at its left sets it off - the accent for a note, a confirmation and a group, the status colour for a
+   status - and only a status that must not be missed keeps its faint fill (a blocker, a warning, MOCK / REAL, a test
+   result). Fields, buttons, tables, chat bubbles, charts and the panels themselves keep theirs. */
+.note { border-left: 3px solid var(--accent); padding: 2px 10px; margin: 8px 0; }
+/* ...and a callout inside another one has no rule of its own: its heading sets it off (two rules side by side read as a frame) */
+:is(.note, .confirm, .matched-devices, .connection-add) :is(.note, .confirm) { border-left: none; padding-left: 0; } .note p { margin: 4px 0; } .note ul { margin: 2px 0 4px; padding-left: 18px; } .note code { overflow-wrap: anywhere; }
+pre { white-space: pre-wrap; word-break: break-word; margin: 4px 0; font-size: 11px; } pre.small { max-height: 180px; overflow: auto; }
+.badge { display: inline-block; padding: 1px 7px; border: 1px solid var(--line); font: 600 10.5px/1.5 var(--f-label); }
+.state-ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-line); } .state-failed { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-line); }
+.state-not_ready, .state-busy { background: var(--busy-bg); color: var(--warn); border-color: var(--warn-line); } .state-unknown, .state-not_checked { background: var(--neutral-bg); color: var(--neutral-text); } .state-not_applicable { background: var(--na-bg); color: var(--muted); }
+ul.tree { list-style: none; margin: 2px 0; padding-left: 12px; border-left: 1px dotted var(--line); } ul.tree li span { cursor: default; }
+.path { font-family: var(--f-mono); word-break: break-all; white-space: normal !important; }
+.confirm { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 8px 0; }   /* a callout: record 7.218 */ .diff-added td { background: var(--added-bg); } .diff-removed td { background: var(--bad-bg); }
+button.notes-link { border: none; background: none; white-space: normal; }
+/* A link between the windows (record 7.264): a run, a task or a count that opens a window AT it - in the cell's own type. */
+button.item-link { border: none; background: none; padding: 0; font: inherit; text-align: left; cursor: pointer; white-space: normal; }
+.step { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 5px; } .step-head { font-weight: 600; font-size: 12px; }
+.step-no { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 50%; background: var(--accent-fill); color: var(--on-accent); font-size: 10.5px; margin-right: 3px; }
+.command { display: flex; gap: 6px; align-items: flex-start; margin: 3px 0; } .command code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-all; background: var(--code-bg); border: 1px solid var(--line); padding: 4px 6px; font-size: 11.5px; user-select: all; }
+.steps-list { margin: 3px 0; padding-left: 16px; font-size: 11.5px; }
+.status-line { margin: 4px 0; padding: 5px 10px; border-left: 4px solid var(--line); font-size: 12px; }   /* a status callout: record 7.218 */
+.status-line.level-ok { border-color: var(--ok-line); background: var(--ok-bg); color: var(--ok); } .status-line.level-error { border-color: var(--bad-line); background: var(--bad-bg); color: var(--bad); }
+.status-line.level-warn, .status-line.level-partial { border-color: var(--warn-line); background: var(--busy-bg); color: var(--warn); } .status-line.level-unknown { background: var(--neutral-bg); color: var(--neutral-text); }
+/* The connection block of the left column is ONE button; pressing it opens the connection window (drawn through a portal). */
+.connection-launcher { padding: 6px; } button.connection-button { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 1px 7px; padding: 5px 9px; text-align: left; }
+/* Two lines: the name and the state of the last test, and under them which connection is in use and what kind it is. */
+.connection-button-name { font-weight: 600; flex: 1; } .connection-button .badge { order: 1; }
+.connection-button-what { order: 2; flex: 0 0 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11.5px; }
+.connection-launcher .error { margin: 5px 2px 0; }
+#connection-root, #virtuoso-root, #pdk-root, #ngspice-root, #task-file-root { min-height: 100vh; background: var(--panel); }
+/* The task file is edited in a monospace box of the window's height (it was the browser's two-line default). */
+.task-file { padding: 14px 18px; } .task-file textarea { display: block; width: 100%; height: 70vh; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.35; }
+.connection-window, .virtuoso-window, .pdk-window { max-width: 760px; margin: 0 auto; padding: 14px 18px 24px; font-size: 13.5px; } .pdk-window { max-width: 1060px; }
+.connection-window h2, .virtuoso-window h2, .pdk-window h2 { margin: 0 0 8px; font-size: 17px; } .connection-window p, .virtuoso-window p, .pdk-window p { margin: 5px 0; }
+.connection-window .hint, .connection-window label, .connection-window .steps-list, .virtuoso-window .hint, .virtuoso-window label, .virtuoso-window .steps-list, .pdk-window .hint, .pdk-window label { font-size: 12.5px; }
+.connection-window .step { margin-top: 10px; padding-top: 8px; } .connection-window .step-head { font-size: 13.5px; }
+.connection-window .step-no { width: 18px; height: 18px; line-height: 18px; font-size: 11.5px; } .connection-window .command code { font-size: 12.5px; } .connection-window .status-line { font-size: 13px; }
+/* branch record SIF-79: a CIW line breaks after a "/" (its <wbr>s) or between words, inside a word only when nothing else fits -
+   break-all split a setup path "virtuoso_bri" | "dge_s2", which read like the box's real line break. A kind the connection
+   file does not name is explained on hover. */
+.connection-window .command code { word-break: normal; overflow-wrap: anywhere; } .connection-kind b[title] { cursor: help; }
+/* record 7.170: the Folders section's sign in the steps' number circle. The pop-up windows are about:blank documents, in quirks
+   mode, where a line holding only a picture ignores the line height: an invisible zero-width character keeps the circle where
+   the numbered ones sit. */
+.connection-window .step-no.step-sign::before { content: '\200b'; }
+.connection-window .step-no.step-sign svg.icon { width: 11px; height: 11px; vertical-align: -1px; }
+.connection-window.connection-multi { max-width: 1120px; }
+.connection-sessions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.connection-sessions-grid > .connection-session { min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.connection-session h3 { margin: 10px 0 6px; font-size: 15px; }
+.connection-session h3 .hint { text-transform: none; letter-spacing: normal; }   /* the session's own name, as written: lab2 */
+.connection-window .row > label { flex: 1; } .connection-window .row > button, .virtuoso-window .row > button { flex: none; } .connection-window .connection-add { padding: 2px 12px; border-left: 3px solid var(--accent); }
+details.labels > summary { color: var(--muted); } details.labels > summary b { font-weight: 600; color: var(--text); }
+/* The Virtuoso cellview import of the left column is ONE button (user request 2026-09-23); pressing it opens the Virtuoso window,
+   a pop-up like the connection window (about:blank = quirks mode, so its tables are told to inherit the font). */
+.virtuoso-window details > summary { cursor: pointer; }
+.virtuoso-window .copy-warning { border-left: 3px solid var(--warn); background: var(--warn-bg); padding: 5px 10px; }
+/* The ngspice window: the deck itself is the main thing, in a monospace box that fills the width. */
+.ngspice-window .ngspice-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.35; white-space: pre; overflow: auto; }
+.ngspice-window .row.ngspice-file { align-items: flex-end; } .ngspice-window .row.ngspice-file > button { flex: none; }
+.ngspice-window .ngspice-check table td { vertical-align: top; } .ngspice-window .ngspice-check li.warn { color: var(--warn); }
+.real { background: var(--real-bg); border-left: 3px solid var(--accent); padding: 4px 10px; font-weight: 600; }
+label.disabled { opacity: .6; } input:disabled { background: var(--field-disabled); color: var(--muted); cursor: not-allowed; }
+td.numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap !important; font-family: var(--f-mono); }
+.row.pair > button { flex: 1 1 0; min-width: 0; } p.in-use { margin: 6px 0 0; }
+/* A field whose caption line carries an action at its right end, shown as text (Output root ... Copy path); a number box with a unit list. */
+.field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 4px 0 2px; } .field-head label { flex: none; margin: 0; }
+/* The action's "copied" stands just before it, the action keeping its place at the line's end (branch record SIF-94). */
+.field-head .copy-word { margin-left: auto; }
+button.text-link { border: none; background: none; padding: 0; } button.text-link:hover:not(:disabled) { text-decoration: underline; } button.text-link:active { color: var(--text); }
+/* The suggested Mode in the run panel is the clickable word itself (user request 2026-09-26), at the size of its sentence. */
+button.text-link.mode-suggestion { font-size: inherit; font-weight: 600; }
+/* "RL model..." in Run configuration's notice is a word of its sentence too (branch record SIF-46). */
+p.network-review button.text-link { font-size: inherit; }
+.with-unit { display: flex; gap: 4px; } .with-unit input { flex: 1; } .with-unit select { flex: none; width: auto; }
+/* The tags of a saved model, a run or a task (in use, MOCK), and the saved models table's filter. */
+.model-tag { font-weight: 600; padding: 0 5px; color: var(--muted); } .model-tag.mock-tag { background: var(--warn-bg); border-color: var(--mock-line); color: var(--text); }
+input.model-filter { width: 100%; margin: 2px 0; }
+.row.model-rename-row { flex-wrap: nowrap; } .row.model-rename-row label { flex: 1; min-width: 0; } .row.model-rename-row input.model-rename { width: 100%; } .row.model-rename-row button { flex: none; }
+table.grid.small.model-facts td:first-child, table.grid.small.run-facts td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
+/* Network structure of the chosen saved model: a short summary in the narrow run panel, the full layer table in a wide dialog. Tables only. */
+details.structure { margin: 6px 0; } details.structure > summary { cursor: pointer; } .structure-part { margin: 6px 0; } table.structure-sections th { position: static; cursor: default; }
+dialog.structure-dialog, dialog.graph-dialog { padding: 12px 14px; border: 1px solid var(--line); color: var(--text); font: inherit; } dialog.structure-dialog { width: min(1180px, 94vw); max-height: 88vh; }
+dialog.structure-dialog::backdrop, dialog.graph-dialog::backdrop { background: var(--backdrop); } dialog.structure-dialog h3, dialog.graph-dialog h3 { margin: 0; } .structure-scroll { overflow: auto; max-height: 74vh; }
+table.structure-layers td { white-space: normal; word-break: normal; } table.structure-layers td.path, table.structure-layers td.numeric, table.structure-layers td.keep { white-space: nowrap !important; cursor: default; }
+table.structure-layers tr.unused td { background: var(--warn-bg); } table.structure-layers tr.total td { font-weight: 600; background: var(--head); } table.structure-layers th { cursor: default; }
+/* Circuit graph view (user decision 2026-09-21: one on-screen diagnostic picture): a large dialog, the drawing left, tables right. */
+dialog.graph-dialog { width: 96vw; height: 92vh; max-width: none; max-height: none; } .graph-tools .graph-step input { width: 74px; }
+/* One line: a labelled box carries a 4 px margin that a bare button does not, which left Show, the arrows and the layout buttons 4 px low. Here every control is 26 px high and stands on the same bottom edge. */
+.graph-tools { align-items: flex-end; } .graph-tools label { flex: 0 0 auto; margin: 0; } .graph-tools input, .graph-tools select, .graph-tools button { height: 26px; }
+.graph-tools label.check { min-height: 26px; } .graph-tools label.check input { height: auto; }
+/* The close cross of a dialog, as a browser window has it: top right, no frame, red when pointed at. */
+button.dialog-close { border: none; background: none; width: 36px; height: 26px; padding: 0; font-size: 20px; line-height: 1; color: var(--muted); border-radius: 3px; }
+button.dialog-close:hover:not(:disabled) { background: var(--close-hover); border: none; }
+.graph-body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 10px; height: calc(92vh - 118px); } .graph-canvas { border: 1px solid var(--line); background: var(--canvas); min-height: 0; }
+.graph-side { overflow: auto; min-height: 0; } .graph-side h4 { margin: 10px 0 4px; } .graph-side table.grid th { position: static; cursor: default; } .graph-side td.numeric { white-space: nowrap !important; }
+/* Header run buttons: one main button (Start -> Pause -> Resume) and Abort. Icon-only, so the header does not shift when the label changes. */
+button.run-main { font-weight: 600; }
+/* Icon-only buttons (user request 2026-09-24): the icon in the button's own colour, the label kept off screen for screen readers
+   and the page checks (`.sr-only`), the label at the start of the tooltip. */
+button:has(> svg.icon) { display: inline-flex; align-items: center; justify-content: center; line-height: 1; } svg.icon { flex: none; }
+/* An icon button in a table row (the per-file download of Output files) keeps the row as low as its text. */
+table.grid td > button:has(> svg.icon) { padding: 1px 6px; vertical-align: middle; }
+/* "Add to Parameters" after a size of a cell read (branch record SIF-104): a small + that stays with its size when the line
+   wraps and keeps the row as low as its text; its words are its label and tooltip. Off (faded) for a size that is a row. A
+   size without one (a task's, an expression) still wraps as before. */
+table.grid .size:has(> button.add-size) { white-space: nowrap; }
+table.grid td button.add-size { margin-left: 4px; padding: 1px 3px; border-radius: 5px; vertical-align: -1px; } button.add-size svg.icon { width: 11px; height: 11px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* Abort is RED (user request 2026-09-21): solid, like the main button is solid blue; faded while there is nothing to abort. */
+button.run-abort { background: var(--bad-fill); color: var(--on-bad); border-color: var(--bad-fill); font-weight: 600; } button.run-abort:hover:not(:disabled) { background: var(--bad-strong); border-color: var(--bad-strong); }
+header span.next-run { overflow: hidden; text-overflow: ellipsis; }   /* record 7.269: what Start would start */
+button.run-chip { background: none; font-family: var(--f-mono); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+button.run-chip.pausing, button.run-chip.paused, button.run-chip.aborting { color: var(--warn); }
+/* Which run the bottom tabs show: ONE button at the right end of the tab strip (a full button, not a tab). It only reads "Runs..." and opens the run window;
+   the run that is shown is named as plain text to its LEFT (user request 2026-09-21), cut with "..." when the strip is too narrow for all of it. */
+.tabs button.run-list-button { flex: none; font-weight: 600; border-bottom: 1px solid var(--line); } .tabs button.run-list-button.open { background: var(--selected); border-color: var(--accent); }  /* `open`, not `active`: that class marks the chosen TAB of this strip */
+.tabs .run-list-current { min-width: 0; max-width: 62%; margin: 0 8px 3px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; } .run-list-blocked { margin-right: 8px; }
+/* The run window (drawn through a portal): every run as one table row. The table scrolls under its sticky titles; a run's details open as a row of their own. */
+#runs-root { height: 100vh; background: var(--panel); } .run-window { height: 100%; display: flex; flex-direction: column; padding: 12px 16px 10px; font-size: 13px; }
+.run-window h2 { margin: 0 0 4px; font-size: 17px; } .run-window p { margin: 4px 0; } .run-window .hint { font-size: 12.5px; } .run-window details > summary { cursor: pointer; }
+.run-window .row { align-items: center; } input.run-filter { width: 330px; } .run-count { flex: 1; }
+table.run-table td { vertical-align: middle; font-variant-numeric: tabular-nums; } table.run-table th.sortable { cursor: pointer; user-select: none; } table.run-table th.plain { cursor: default; }
+table.run-table tr.current > td { background: var(--selected); } table.run-table tbody tr:not(.run-details-row):hover > td { background: var(--hover); } table.run-table tr.current:hover > td { background: var(--selected-hover); }
+/* A double click on a row shows that run (there is no "Show" column): the row of the run that is shown carries a bar at its left edge besides its colour. */
+table.run-table tbody tr:not(.run-details-row) { cursor: default; } table.run-table tr.current > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+tr.run-details-row > td { background: var(--button); padding: 6px 10px 10px 34px; white-space: normal; }
+.run-details { max-width: 1100px; } .run-details h4 { margin: 10px 0 3px; } .run-details table.grid th { position: static; cursor: default; } table.run-segments { width: auto; }
+/* Names that may take two lines (record 7.264: the Started from column made the table wider than the run window). */
+table.run-table td.wrap { white-space: normal; overflow-wrap: anywhere; min-width: 6em; } tr.run-details-row > td > * { contain: inline-size; }
+table.run-table button.notes-link { text-align: left; }   /* "Details" and "Hide details" take the same room (roadster.css): a toggle moves no column */ table.run-table td.wrap-words { white-space: normal; min-width: 6.5em; }
+/* Project panel: explanations are closed until asked for (details.more), so the narrow column shows the fields and buttons first. */
+.left details > summary { cursor: pointer; } details.more { margin: 4px 0; } details.more > :not(summary) { margin: 3px 0 3px 13px; }
+/* A whole block of the panel folded under its own heading (Hierarchy): the h3 is the fold line and keeps the look of the other headings. */
+details.section { margin-top: 10px; } details.section > summary > h3 { display: inline; margin: 0; }
+/* A whole module of the right column (Run configuration, Output settings) folds the same way. Folded, its line carries the
+   main values on a second row, and a mark when an error or a warning waits inside. */
+details.section.module { margin-top: 0; } details.module > summary { cursor: pointer; } details.module[open] > summary { margin-bottom: 4px; }
+/* Research experiments' heading: the modules' heading (record 7.166), its note in the name's tooltip; the hand over the name, as
+   over the rest of the line - a press opens or closes the fold (record 7.169, user: "make the mouse icon as click not with the questionmar[k]") */
+.research-module > summary { cursor: pointer; } .research-module[open] > summary { margin-bottom: 4px; } .research-module > summary > h3 { display: inline; margin: 0; cursor: pointer; }
+.module-summary { display: block; margin: 2px 0 0 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.module-attention { margin-left: 8px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; font-weight: 600; color: var(--on-warn); background: var(--warn-fill); } .module-attention.error { color: var(--on-bad); background: var(--bad-fill); }
+/* Load PDK (Pdk.tsx): the "Components" line of the RL model window, and the PDK window (a pop-up like the connection
+   window; about:blank = quirks mode, so its tables are told to inherit the font). */
+/* a labelled list beside a bare button: bottom-aligned (a centred row would put the button between the caption and the list);
+   their height: roadster.css (branch record SIF-31) */
+.component-row { align-items: flex-end; } .component-row > label { flex: 1; margin: 0; } .component-row > label select { width: 100%; }
+.component-row > button { flex: none; } .component-list .component-what { margin: 2px 0 4px; }
+.pdk-window h3 { margin: 14px 0 6px; font-size: 14.5px; }
+.pdk-window .pdk-form { align-items: flex-end; } .pdk-window .pdk-form > label { flex: 1 1 240px; }
+.pdk-window .pdk-form > button { flex: none; } .pdk-list tr { cursor: default; } .pdk-list tr.active td { background: var(--selected-soft); }
+.pdk-devices td { vertical-align: top; } .pdk-devices td:first-child, .pdk-devices td:nth-child(2) { white-space: nowrap; } .pdk-window .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+/* The calibration of a baseline run (record 7.197): its proposals above the run's facts, with Apply. */
+.calibration { margin: 0 0 8px; } .calibration h4 { margin: 2px 0 4px; } .calibration h4 .hint { font-weight: normal; }
+.calibration table.grid { width: auto; max-width: 100%; } .calibration table.grid th { position: static; cursor: help; }
+.calibration-alpha { margin: 5px 0; } .calibration .row { align-items: center; }
+/* "Calibration ready" (record 7.204): a line of its own under the header when a Baseline simulation has ended, with its two buttons. */
+.calibration-ready { order: 1; flex: 0 0 100%; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border-left: 3px solid var(--accent); padding: 2px 10px; }
+.calibration-ready > span { flex: 1 1 300px; } .calibration-ready .hint { font-weight: normal; }
+/* The launcher (record 7.261). A refused launch: the backend's words stay on a line of their own - under the header for Start,
+   Calibration and Resume, under Continue... in Run status - until what they depend on changes, or the line is closed. */
+.launch-refusal { display: flex; gap: 6px; align-items: flex-start; border-left: 3px solid var(--bad); background: var(--bad-bg); padding: 2px 4px 2px 10px; margin: 4px 0; }
+header .launch-refusal { order: 1; flex: 0 0 100%; margin: 0; }
+.launch-refusal-text { flex: 1 1 auto; } .launch-refusal details pre { white-space: pre-wrap; max-height: 12em; overflow: auto; }
+button.launch-refusal-close { border: none; background: none; padding: 0 2px; }
+/* The budget form of Continue..., under its button: Used · New total · Allows n more; what is wrong is said under it. */
+.continue-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 4px 0; }
+.continue-form input { font-variant-numeric: tabular-nums; } .continue-form input[aria-invalid="true"] { border-color: var(--bad); }
+.continue-allows { color: var(--muted); font-variant-numeric: tabular-nums; } .continue-error { flex: 0 0 100%; margin: 0; }
+.continue-why { flex: 1 1 260px; }
+/* A failed run's next step (branch record SIF-137) follows the reason Continue... cannot go on and takes the row's room in
+   its place, so its Show button and Export status stand at the row's end. */
+.continue-why:has(+ .failed-next) { flex: 0 1 auto; } .failed-next { flex: 1 1 260px; }
+/* Corner check tab (CornerCheck.tsx): the plan line, the designs, then one row per design and one column per corner with a
+   verdict at the end; pass / FAIL / unknown in the result colours. */
+.corner-check .row { align-items: center; } .corner-check .row > label { flex: none; flex-direction: row; align-items: center; gap: 4px; margin: 0; }
+.corner-check h4 { margin: 10px 0 3px; } .corner-check h4 .hint { font-weight: normal; }
+.corner-check table.grid { width: auto; } .corner-check table.grid th { position: static; cursor: default; } table.corner-grid th .hint { display: block; font-weight: normal; }
+table.corner-grid td.corner-pass { color: var(--ok); } table.corner-grid td.corner-fail { color: var(--bad); font-weight: 600; }
+table.corner-grid td.corner-fail span { font-weight: normal; } table.corner-grid td.corner-unknown { color: var(--warn); }
+table.corner-grid td.corner-pending { color: var(--muted); font-style: italic; }
+table.corner-checks tr { cursor: default; } table.corner-checks tr.current > td { background: var(--selected); }
+/* The Logs tab's entries. */
+.log div { font-family: ui-monospace, Consolas, monospace; font-size: 11px; border-bottom: 1px solid var(--log-line); padding: 1px 0; word-break: break-all; }
+/* Data tables: one line per row - an id ends in "...", the whole value on hover and copied by a click; a time keeps its width. */
+table.grid.small.data-table td { word-break: normal; }
+table.grid.small td.id-cell { white-space: nowrap; word-break: normal; max-width: 15ch; overflow: hidden; text-overflow: ellipsis; font: 11.5px/1.4 var(--f-mono); cursor: copy; }
+table.grid.small td.time-cell { white-space: nowrap; word-break: normal; font: 11.5px/1.4 var(--f-mono); }
+table.grid.small.data-table td.json-cell { min-width: 24ch; font: 11px/1.4 var(--f-mono); }
+/* Save task at the right end of the editors' tab line, its messages and questions under their toolbar (TaskSave.tsx portals,
+   user request 2026-09-22). Buttons inside `.tabs` are tab-shaped (no bottom border); these are plain buttons again. */
+.editors > .tabs { flex-wrap: wrap; } .tabs .tab-actions { margin-left: auto; display: inline-flex; } .tabs .tab-actions:empty { display: none; }
+.task-save { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding-bottom: 3px; } .task-save > .hint { white-space: nowrap; }
+.task-save > label { flex: none; flex-direction: row; align-items: center; gap: 4px; margin: 0; white-space: nowrap; } .task-save > label input { width: 11em; }
+.tabs .task-save button { border-bottom: 1px solid var(--line); }
+.task-notes:empty { display: none; } .task-save-notes { margin: 0 0 4px; } .task-save-notes p { margin: 2px 0; } .task-save-notes .row > label { flex: 0 1 16em; }
+/* A running save's steps (record 7.198): a short bar and one line under the toolbar. */
+.task-save-progress { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+.task-save-progress progress { flex: none; width: 7em; height: 6px; accent-color: var(--accent); }
+/* Matched devices... (Parameters tab, status record 7.103) */
+.matched-devices { border-left: 3px solid var(--accent); padding: 2px 10px 4px; margin: 8px 0; }
+.matched-devices .row { align-items: center; } .matched-devices h4 { margin: 2px 8px 2px 0; }
+.matched-devices .structures { margin: 4px 0 6px 18px; padding: 0; } .matched-devices tr.muted td { color: var(--muted); }
+/* An import confirmation or the Matched devices box scrolls by itself (its Apply / Cancel first): a long diff grew past the
+   clipped panel, the table shrank to nothing and Apply could not be reached (audit 2026-09-30). */
+.editors > .confirm, .editors > .matched-devices { flex: none; overflow: auto; }
+.persistence-problem { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.persistence-problem > span { flex: 1 1 300px; }
+/* ---- record 7.158: the header's title block, the splitter, each editor's colour, the circuit picture (its one-line ids
+   and alternate rows stand with the Data tables tab and the tables). roadster.css adds the look's sizes and drawings (record
+   7.360). ------------------------------------------------------------------------------------------------------------------- */
+header .title-block { display: flex; }
+@media (max-width: 1100px) { header .title-block { flex-wrap: wrap; } }
+.tb-brand { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding-right: 10px; cursor: default; }
+.tb-facts { display: flex; }
+.tb-cell { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 12px; border-left: 1px solid var(--rule); min-width: 0; }
+.tb-k { font: 600 8.5px/1 var(--f-label); letter-spacing: .17em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.tb-v { font: 12.5px/1.15 var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 28ch; }
+/* The splitter: the top edge of the bottom panel. Drag it, double-click it (fold to the tab line), or use the arrow keys. */
+.splitter { position: absolute; left: 0; right: 0; top: -7px; height: 9px; cursor: row-resize; z-index: 2; touch-action: none; }
+.splitter::after { content: ''; position: absolute; left: 50%; top: 2px; width: 46px; height: 5px; margin-left: -23px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); opacity: 0; }
+.splitter:hover::after, .splitter:focus-visible::after, .layout.bottom-folded .splitter::after { opacity: 1; }
+.splitter:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+/* Folded to its tab line: the rows above take the room (the narrow layouts below keep their own heights). */
+@media (min-width: 1101px) {
+  .layout.bottom-folded { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  .layout.bottom-folded .bottom-body { display: none; }
+}
+/* Each editor's colour: its table's header row (and its tab until record 7.360: roadster.css draws the three tabs as one
+   control); the Probe ids the Specs line offers are Probe-coloured chips. */
+.editors[data-editor="parameters"], .editors > .tabs > button[data-editor="parameters"] { --editor: var(--param); --editor-head: var(--param-head); }
+.editors[data-editor="measurements"], .editors > .tabs > button[data-editor="measurements"] { --editor: var(--probe); --editor-head: var(--probe-head); }
+.editors[data-editor="targets"], .editors > .tabs > button[data-editor="targets"] { --editor: var(--spec); --editor-head: var(--spec-head); }
+.editors[data-editor] table.editor th { background: var(--editor-head); box-shadow: inset 0 -2px 0 var(--editor); }
+.fact.spec-probes { line-height: 1.75; }
+.spec-probes code.probe-id { font: 11px/1.4 var(--f-mono); color: var(--probe); background: var(--probe-chip); border: 1px solid var(--probe-chip-line); white-space: nowrap; }
+/* The circuit picture (CircuitPicture.tsx): the graph view's manner, small. */
+.circuit-picture svg { display: block; width: 100%; height: auto; margin: 6px 0 2px; }
+.circuit-picture > summary .hint { font-weight: 400; }
+.circuit-picture .picture-hint { margin: 2px 0 0; }
+.cp-link { stroke: var(--cp-link); stroke-width: 1.1; }
+.cp-link.gate { stroke-dasharray: 3 2.5; }
+.cp-link.on { stroke: var(--accent); stroke-width: 2; }
+.cp-gate-dot { fill: var(--cp-link); } .cp-gate-dot.on { fill: var(--accent); }
+.cp-net circle { fill: var(--cp-net); stroke: var(--cp-net-line); stroke-width: 1; }
+.cp-net.supply circle { fill: var(--cp-supply); } .cp-net.ground circle { fill: var(--cp-ground); }
+.cp-net text { fill: var(--muted); font: 8.5px var(--f-mono); dominant-baseline: central; }
+.cp-dev .body { fill: var(--cp-nmos); stroke: var(--cp-net-line); stroke-width: 1; }
+.cp-dev.pmos .body { fill: var(--cp-pmos); } .cp-dev.passive .body { fill: var(--cp-passive); } .cp-dev.source .body { fill: var(--cp-source); } .cp-dev.other .body { fill: var(--head); }
+.cp-dev text { fill: var(--text); font: 600 8.5px var(--f-body); text-anchor: middle; dominant-baseline: central; }
+.cp-dev .halo { fill: var(--accent); opacity: .18; }
+.cp-dev.on .body { fill: var(--accent-fill); stroke: var(--accent); stroke-width: 1.6; }
+.cp-dev.on text { fill: var(--on-accent); }
+/* The tab borders and each editor tab's mark (record 7.162, when two looks had to share every size; roadster.css draws the
+   editor tabs as one segmented control and hides the mark, record 7.360). */
+.tabs { border-bottom-width: 1.5px; }
+.tabs > button:not(.run-list-button) { border-width: 1.5px; }
+.tabs > button.active:not(.run-list-button) { border-bottom: 1.5px solid transparent; }
+.editors > .tabs > button[data-editor]::before { display: inline-block; box-sizing: border-box; width: 15px; height: 15px;
+  margin-right: 6px; vertical-align: middle; border: 1px solid var(--editor); background: repeating-linear-gradient(45deg, var(--editor) 0 1.4px, transparent 1.4px 3.6px); }
+/* One tab style (record 7.164, user: "day and night tab style different, change the day style to night one"):
+   the editors' layer swatches above, and every tab strip drawn alike - the chosen tab raised with an underline (the
+   editor's colour on an editor tab), the others plain. :root:root keeps these at the weight the look rules had: over
+   a plain button, under an editor's colour and an error row. */
+:root:root :where(.tabs > button:not(.run-list-button)) { background: transparent; border-color: transparent; color: var(--muted); border-radius: 3px 3px 0 0; }
+:root:root :where(.tabs > button.active:not(.run-list-button)) { background: var(--button); color: var(--text); border-color: var(--line); box-shadow: inset 0 -2px 0 var(--accent); }
+/* The Training tab (record 7.193): one or two charts side by side filling the bottom panel; uPlot's own box is pinned inside
+   the measured plot box, so the chart never makes its box grow (and the box never grows the chart). */
+.training { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 2px; }
+/* The head wraps rather than cuts (branch record SIF-77: at 1366 px it read "tx1-vco-gatv2 · seed 0..." and "last metri..."):
+   the run's name, state and counts wrap onto a second line beside the controls; with less than 360 px left for them the
+   controls go below them. */
+.training-head { align-items: center; margin: 0 0 2px; }
+.training-what { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; flex: 1 1 360px; min-width: 0; }
+.training-controls { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
+.training-head label.inline { flex: none; flex-direction: row; align-items: center; gap: 4px; margin: 0; }
+.training-head select { width: auto; max-width: 260px; }
+.training-head button[aria-pressed="true"] { background: var(--selected); }
+.training-run { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.training-counts { min-width: 0; }
+.training-what .badge { flex: none; }
+.training-note { margin: 0 0 2px; } .training-note ul { margin: 2px 0 4px; padding-left: 18px; }
+.training-charts { flex: 1; min-height: 150px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; overflow-y: auto; }
+.training-chart { margin: 0; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--canvas); padding: 3px 6px 2px; }
+.training-chart figcaption { display: flex; align-items: center; gap: 4px; font: 600 11.5px/1.4 var(--f-label); letter-spacing: .02em; }
+/* a chart's title is its choice (record 7.205): a list that reads as a heading until it is pointed at */
+.training-chart select.training-chart-choice { width: auto; max-width: calc(100% - 24px); padding: 0 2px; border-color: transparent; background: transparent; font: inherit; letter-spacing: inherit; cursor: pointer; }
+.training-chart select.training-chart-choice:hover, .training-chart select.training-chart-choice:focus { border-color: var(--line); background: var(--field); }
+button.training-chart-remove { border: none; background: none; padding: 0 1px; line-height: 1; color: var(--muted); } button.training-chart-remove svg.icon { width: 11px; height: 11px; }
+.training-empty { margin: 10px 2px; }
+.training-plot-area { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.training-legend { display: flex; flex-wrap: wrap; gap: 2px 10px; min-height: 18px; }
+button.training-key { border: none; background: none; padding: 0 2px; display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
+button.training-key.off { opacity: .45; text-decoration: line-through; }
+.training-key .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--muted); }
+/* a key in its line's colour, the chart's tokens (TrainingChart.tsx palette), as the runs' keys below (branch record SIF-134:
+   since record 7.360 --probe and --spec are white, so the gradient norms' Policy, drawn blue, had a white key) */
+.key-training .swatch, .key-other0 .swatch { background: var(--series-1); } .key-evaluation .swatch { background: var(--series-2); }
+.key-other1 .swatch { background: var(--series-3); } .key-limit .swatch { background: var(--warn); }
+.key-superseded .swatch, .key-start .swatch { background: var(--muted); }
+.training-compared { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin: 0 0 2px; }
+.training-chip { display: inline-flex; align-items: center; gap: 4px; } .training-chip .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--muted); }
+button.training-chip-remove { border: none; background: none; padding: 0 1px; line-height: 1; color: var(--muted); } button.training-chip-remove svg.icon { width: 11px; height: 11px; }
+.training-head select.training-compare { max-width: 150px; } .training-missing { margin: 0; font-size: 11px; }
+/* a run's chip, legend key, Key numbers row and swatches in the line over a chart in its lines' colour (SIF-134: the second
+   compared run, drawn blue, was keyed white like the first, and a third, drawn violet, amber) */
+.key-run0 .swatch { background: var(--series-1); } .key-run1 .swatch { background: var(--series-2); } .key-run2 .swatch { background: var(--series-3); } .key-run3 .swatch { background: var(--series-4); }
+/* the key numbers of the runs on the charts (record 7.215): a small table that folds to its one line */
+.training-keys { margin: 0 0 2px; font-size: 11.5px; } .training-keys summary { cursor: pointer; }
+.training-keys table.grid { width: auto; max-width: 100%; margin: 2px 0 0; } .training-keys table.grid th { position: static; }
+.training-keys table.grid td, .training-keys table.grid th { padding: 1px 6px; }
+.training-readout { flex: 1 1 280px; min-width: 0; text-align: right; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.training-plot { flex: 1; position: relative; }
+.training-plot > .uplot { position: absolute; inset: 0; font-family: var(--f-label); }
+.training .u-select { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.training .u-hz .u-cursor-x { border-right: 1px dashed var(--muted); }
+@media (max-width: 1100px) { .splitter { display: none; } }
+/* Keep the editors usable when the two fixed side columns would consume the viewport. */
+@media (max-width: 1100px) {
+  .layout { height: auto; min-height: 100%; grid-template: 'head head' auto 'msg msg' auto 'left right' minmax(240px, 45vh) 'main main' minmax(360px, 60vh) 'foot foot' minmax(420px, 65vh) / minmax(0, 1fr) minmax(0, 1fr); }
+  .left, .right, footer, header { min-width: 0; }
+  footer > .tabs { flex-wrap: wrap; }
+}
+@media (max-width: 700px) {
+  .layout { grid-template: 'head' auto 'msg' auto 'left' minmax(240px, 45vh) 'main' minmax(360px, 60vh) 'right' minmax(240px, 45vh) 'foot' minmax(420px, 65vh) / minmax(0, 1fr); }
+}
+/* The circuit column folds away (record 7.362, the user's Option D, "go with D"): the task's card - main - takes its place too,
+   at every width, until "Show circuit" (.circuit-shown) puts it back beside the rows. */
+.layout:not(.circuit-shown) > aside.left { display: none; }
+@media (min-width: 1101px) { .layout:not(.circuit-shown) { grid-template-areas: 'head head head' 'msg msg msg' 'main main right' 'foot foot foot'; } }
+@media (max-width: 1100px) {
+  .layout:not(.circuit-shown) { grid-template: 'head head' auto 'msg msg' auto 'main main' minmax(360px, 60vh) 'right right' minmax(240px, 45vh) 'foot foot' minmax(420px, 65vh) / minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .layout:not(.circuit-shown) { grid-template: 'head' auto 'msg' auto 'main' minmax(360px, 60vh) 'right' minmax(240px, 45vh) 'foot' minmax(420px, 65vh) / minmax(0, 1fr); }
+}
+.task-status:empty { display: none; } .task-status > * { margin: 4px 0; }
+
+/* ---- the task window (record 7.227): the Project column's Task row = text + "Tasks..." button, the window reuses the run window's rules ---- */
+.row.task-row { align-items: center; gap: 8px; margin: 4px 0 2px; flex-wrap: nowrap; } .task-caption { flex: none; color: var(--muted); font-size: 11.5px; }
+.task-list-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.task-list-current code.task-list-key { font-size: 12px; }
+.row.task-row button.task-list-button { display: flex; flex: 1; min-width: 0; text-align: left; font-weight: 600; } .row.task-row button.task-list-button.open { background: var(--selected); }
+.task-window-actions { align-items: center; } .task-window-actions button { flex: none; }
+.task-list-blocked { flex-basis: 100%; }
+#tasks-root { height: 100vh; background: var(--panel); } .task-window .task-filter { width: 330px; }
+table.task-table td code { font-size: 12px; } table.task-table td .hint.warn { color: var(--warn); }
+.task-browser { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 14px; align-items: start; }
+.task-folder-content { min-width: 0; } .task-folder-content .scroll { overflow-x: auto; }
+.task-folders { display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--line); padding-right: 12px; }
+.task-folder-heading { justify-content: space-between; margin-bottom: 6px; }
+.task-folder { display: flex; justify-content: space-between; gap: 8px; text-align: left; width: 100%; }
+.task-folder > span:first-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.task-folder > .hint { flex-shrink: 0; }
+.task-folder.active { background: var(--selected); }
+.task-folder-actions { flex-wrap: wrap; margin-top: 8px; }
+.task-move-bar { min-height: 30px; margin-bottom: 6px; } .task-move-bar select { width: 180px; margin-left: auto; }
+table.task-table .task-select, table.run-table .task-select { width: 28px; text-align: center; }
+table.task-table .task-select input, table.run-table .task-select input { margin: 0; }
+/* A task's row takes Enter (branch record SIF-100): its focus ring inside the row, where the table's scroll box cannot cut it. */
+table.task-table tbody > tr[data-task-key]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* A run's row takes Enter too, and a sortable column title Enter and Space (branch record SIF-109): their focus rings inside
+   them, as a task row's, where the table's scroll box cannot cut them. So do a loaded PDK's row, a template's in the RL model
+   window and an earlier corner check's (branch record SIF-121; a saved model's row is a run-table's): the same ring. */
+table.run-table tbody > tr:focus-visible, table.grid th.sortable:focus-visible, table.pdk-list tbody > tr:focus-visible,
+table.template-table tbody > tr:focus-visible, table.corner-checks tbody > tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.task-details h4 { margin: 10px 0 3px; } table.task-rows-table { width: auto; } table.task-rows-table td, table.task-rows-table th { padding: 2px 8px; }
+table.run-relations td:first-child { white-space: nowrap; width: 1%; } .run-relations details.more { display: inline-block; margin: 0; } .run-only-task { margin: 0 0 6px; }
+/* The run brief (record 7.264): a small window, one card per run - the header's first. */
+.run-brief { padding: 10px 14px; } .run-brief .brief-head { align-items: baseline; } .run-brief h2 { margin: 0 8px 6px 0; }
+.brief-card { border-left: 3px solid var(--accent); padding: 4px 0 6px 10px; margin: 10px 0; display: flex; flex-direction: column; gap: 3px; }
+.brief-progress { display: flex; align-items: center; gap: 8px; } .brief-count { font-variant-numeric: tabular-nums; }
+.brief-bar { flex: 1 1 auto; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; } .brief-bar > span { display: block; height: 100%; background: var(--ok); }
+@media (max-width: 760px) { .task-browser { grid-template-columns: 145px minmax(0, 1fr); gap: 8px; } .task-folder-heading { flex-wrap: wrap; } }

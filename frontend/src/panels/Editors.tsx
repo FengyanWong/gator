@@ -1,0 +1,1242 @@
+// The editors (the workbench's first build; the task's card since record 7.362): the Parameters, Probes and Specs
+// tables with their tab line, toolbar, formula bar, find box, issue marks and the marks of rows not saved in the task.
+import { Icon } from './Icons';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { pointAt } from './CircuitPicture';
+import { api, Json, saveJson } from '../api';
+import { migrateConfig } from '../store';
+import { convert, kindUnit, NUMBER_FORMS, quantity, readQuantity, sameQuantity } from '../units';
+import { MatchedDevices } from './MatchedDevices';
+import { Cell, LimitSelect } from './cells';
+import { DiffView } from './DiffView';
+import { columnOf, drawsColumn, exact, FOLLOWER_IGNORES, LABELS, limitLabel, limitUses, newRow, probeRename, QUANTITY, readNumber, renameProbe,
+  type Section, SECTION_TITLES as TITLES, unitIn, usesProbe, withFollowers, withSaved } from './editorRules';
+import { type BarCell, FormulaBar } from './FormulaBar';
+import { keep, readKept } from '../kept';
+import { RELOAD_SAVED_REQUEST } from './taskChoice';
+import { requestSaveAs } from './TaskSave';
+import { plural } from '../format';
+import { GO_TO_ISSUE, rowOf } from './Issues';
+import { BLOCKING_LEVELS } from '../contract';
+import type { HistoryStep } from '../history';
+import { undoKey } from '../windows';
+
+const ROW_TABS = Object.keys(TITLES);
+/** The sections a whole-configuration import replaces beside the three tables, as the confirmation names them. */
+const IMPORTED_SECTIONS: Record<string, string> = { project: 'project labels', circuit: 'circuit source', run: 'run settings',
+  output: 'output settings', research: 'research labels' };
+
+/** What an Undo or Redo changed, in words for the line under the formula bar (branch record SIF-97): Undo is page-wide - rows of
+ *  any tab, a folded tied row, run and output settings, an applied proposal - and took a change back out of view without a
+ *  word, so the next press could go one step further than meant. Per table the rows by ID - row by row while the table keeps
+ *  its length, so a renamed ID is one changed row, with the fields by their headers' words when one row changed in up to
+ *  three; otherwise the rows added and removed - then the other sections by the import confirmation's words. `tables`: the
+ *  tables it changed, in tab order. */
+function stepWords({ kind, from, to }: HistoryStep, keys: Record<string, string>): { text: string; tables: Section[] } {
+  const same = (first: Json, second: Json) => JSON.stringify(first ?? null) === JSON.stringify(second ?? null);
+  const some = (ids: string[]) => ids.length > 4 ? plural(ids.length, 'row') : ids.join(', ');
+  const tables = (ROW_TABS as Section[]).filter(section => !same(from?.[section] ?? [], to?.[section] ?? []));
+  const parts = tables.map(section => {
+    const was: Json[] = from?.[section] ?? [], now: Json[] = to?.[section] ?? [], id = (row: Json) => String(row?.[keys[section]] ?? '');
+    if (was.length === now.length) {
+      const changed = now.map((row, index) => [row, was[index]]).filter(([row, wasRow]) => !same(row, wasRow));
+      const [row, wasRow] = changed.length === 1 ? changed[0] : [{}, {}];
+      const fields = [...new Set(Object.keys({ ...row, ...wasRow }).filter(field => exact(row[field]) !== exact(wasRow[field]))
+        .map(field => LABELS[section]?.[columnOf(section, field)] ?? field))];
+      return `${TITLES[section]} ${some(changed.map(([row]) => id(row)))}${fields.length && fields.length <= 3 ? ` (${fields.join(', ')})` : ''}`;
+    }
+    const before = new Set(was.map(id)), after = new Set(now.map(id));
+    const changed = now.filter(row => before.has(id(row)) && !same(row, was.find(wasRow => id(wasRow) === id(row)))).map(id);
+    const added = now.map(id).filter(rowId => !before.has(rowId)), removed = was.map(id).filter(rowId => !after.has(rowId));
+    return `${TITLES[section]} ${[changed.length ? some(changed) : '', added.length ? `${some(added)} added` : '',
+      removed.length ? `${some(removed)} removed` : ''].filter(Boolean).join(', ')}`;
+  });
+  const others = Object.keys(IMPORTED_SECTIONS).filter(section => !same(from?.[section], to?.[section])).map(section => IMPORTED_SECTIONS[section]);
+  if (others.length) parts.push(others.join(', '));
+  return { text: parts.length ? `${kind}: ${parts.join('; ')}.` : `${kind} done.`, tables };
+}
+
+const MORE_KEY = 'gator-workbench-editor-more-columns';
+
+/** An issue in a row by the first clause of its message (branch record SIF-5): "The unit of a formula is not checked", where the
+ *  row said "equation_unit_unchecked"; the whole message and the code stay in its tooltip. */
+const issueHead = (message?: string | null) => String(message ?? '').split(/(?<=[.:;])\s/)[0].replace(/[.:;]$/, '');
+/** An issue whose first clause the column's 40 characters cut, in words of its own that fit (branch record SIF-74): every spec
+ *  of a task the network had not seen read "'inl1' is new to the result registry the netw...", cut before its point, which is
+ *  the message's second sentence; a spec with no basis "The source of this requirement is not recor...". The whole message
+ *  and the code stay in the tooltip. */
+const ISSUE_HEAD: Record<string, string> = { spec_adds_registry_entry: 'New spec: models without it do not load',
+  basis_not_stated: 'The source of this spec is not recorded' };
+/** A Spec's bound its Limit needs, or one it does not use (validation.py `_check_limits`), by the box's header and the Limit's
+ *  words (branch record SIF-135): "constraint >= needs lower" stood beside a Lower box that read "no limit". The bound is the
+ *  path's last part (targets[2].lower), the limit the message's; a message in other words keeps its first clause. */
+const boundWords = (issue: Json): string | null => {
+  const bound = /^targets\[\d+\]\.(lower|upper)$/.exec(String(issue.path ?? ''))?.[1];
+  if (!bound) return null;
+  if (issue.code === 'unexpected_threshold') return `${LABELS.targets[bound]} not used by this Limit: clear it`;
+  const limit = issue.code === 'missing_threshold' ? /^constraint (\S+) needs /.exec(String(issue.message ?? ''))?.[1] : undefined;
+  return limit ? `${LABELS.targets[bound]} needed: the Limit ${limitLabel(limit, 'none')} uses it` : null;
+};
+/** An issue's words in the Issues column: its own (ISSUE_HEAD, a bound's), else its message's first clause. */
+const issueWords = (issue: Json): string => ISSUE_HEAD[issue.code] ?? boundWords(issue) ?? issueHead(issue.message);
+/** A note - an info or a warning - in the same words on this many rows of a table or more is said once, in a line above the
+ *  table, and those rows keep its level word (branch record SIF-118): on the VCO's Specs six rows read "warning The unit of a
+ *  formula is not checked" and seven "info New spec: models without it do not load", 13 lines of the same words in the
+ *  column, among which a row's own note would go unseen. */
+const SHARED_NOTE_ROWS = 3;
+
+/** The table's room under which entering a cell (record 7.372) or Matched devices' answer (branch record SIF-73) folds the
+ *  bottom panel: about four rows and the heading. */
+const CRAMPED_PX = 200;
+/** The table box's width from which the Issues column stays at its right edge while the table scrolls sideways (branch record
+ *  SIF-135): room for the tick box and a Spec ID (about 210 px), an Issues column holding a row's words (SIF-5's 240 px and
+ *  its padding, about 270 px) and, passing between them, an Equation (about 310 px), the widest column. In a narrower box - at
+ *  1366 px with the circuit shown it is about 640 px - the column stays in the table's flow: pinned, it and the ID would leave
+ *  the other columns about 150 px. */
+const PIN_ISSUES_PX = 800;
+
+/** `taskSlot` / `taskNotes`: where the circuit panel puts "Save task" (right end of the tab line) and its messages (under
+ *  the toolbar) - the save sits with the rows it stores (user request 2026-09-22). No "Save" button of its own any more:
+ *  the configuration is kept in this browser by itself (store.ts, 0.8 s after each change), and a second "Save" next to
+ *  "Save task" only confused.
+ *  Record 7.362 (the user's Option D, "go with D"): the editors are the task's card. `taskHead` = the tab line's start, where
+ *  the circuit panel names the task (its name opens the Tasks window) and its revision; `taskTools` = the tab line's end, before
+ *  Save task (Check now); `taskStatus` = under the toolbar, the task's own lines (loading, blocked, MOCK, the check's result).
+ *  "Show circuit" brings the circuit column back beside the rows (`circuitShown`, `onCircuit`: App.tsx). */
+function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, lastStep, validation, addsSizes, taskSlot, taskNotes, taskHead, taskTools,
+  taskStatus, circuitShown, onCircuit, onCramped }:
+  { schema: Json; config: Json; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean;
+    /** history.ts useConfig's: `record` false changes the configuration without an Undo step of its own, so the change joins
+     *  the last one - the Specs that follow a typed Probe ID join its typing (branch record SIF-106). */
+    setConfig: (c: Json | ((c: Json) => Json), record?: boolean) => void;
+    /** The last Undo or Redo, from any panel or window, until the next change (history.ts): the line under the formula bar
+     *  names what it changed (branch record SIF-97). */
+    lastStep: HistoryStep | null;
+    validation: Json;
+    /** Whether the cell's sizes have the + "Add to Parameters" in the Virtuoso window, or will once it is read (CircuitBrowser.tsx
+     *  sizesAddable): the empty Parameters line names the + only then (review of branch record SIF-104). */
+    addsSizes: boolean;
+    taskSlot: (element: HTMLElement | null) => void; taskNotes: (element: HTMLElement | null) => void;
+    taskHead: (element: HTMLElement | null) => void; taskTools: (element: HTMLElement | null) => void; taskStatus: (element: HTMLElement | null) => void;
+    circuitShown: boolean; onCircuit: () => void;
+    /** Called when a cell is entered, or Matched devices has drawn its answer (branch record SIF-73), while the table has room
+     *  for under about four rows (record 7.372): App folds the bottom panel. */
+    onCramped?: () => void }) {
+  const [tab, setTab] = useState<Section>('parameters');
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [help, setHelp] = useState<Json>(null);
+  // "More columns" shows the columns most rows leave at their default (Specs: soft_weight, active, basis; the Probes' two,
+  // conditions and aggregation, were retired in record 7.105). They exist whether shown or not: Add fills them, an
+  // import may set them, a task file keeps them.
+  const [more, setMore] = useState<boolean>(() => readKept(storage => storage.getItem(MORE_KEY) === 'shown', () => false));
+  const showMore = (now: boolean) => {
+    setMore(now);
+    keep(storage => storage.setItem(MORE_KEY, now ? 'shown' : 'hidden'));   // no storage: the choice lasts for this page
+  };
+  // `rows`: an import of one table's rows - Apply writes that table alone; null = a whole configuration, which replaces all.
+  const [pending, setPending] = useState<{ next: Json; diff: Json[]; others: string[]; rows: { section: Section; value: Json[] } | null } | null>(null);
+  const [matched, setMatched] = useState(0);               // each toolbar press opens a fresh read; zero closes the box
+  const [error, setError] = useState<string | null>(null);
+  const file = useRef<HTMLInputElement>(null);
+  // Import JSON..., its confirmation and the confirmation's Apply: the box opens with Apply in focus and gives the focus back
+  // to Import JSON... when it goes (branch record SIF-107).
+  const importButton = useRef<HTMLButtonElement>(null), importBox = useRef<HTMLDivElement>(null), applyButton = useRef<HTMLButtonElement>(null);
+  // The chosen cell of the formula bar (record 7.175): its row by position, checked by the row's ID (a Delete or an Undo moves
+  // rows; while the ID itself is being typed, the position holds).
+  const [active, setActive] = useState<{ index: number; name: string; key: string } | null>(null);
+  // Tied rows opened under their leader, by the leader's ID (record 7.180), and what the last block paste, fill or copy did.
+  const [openTies, setOpenTies] = useState<Record<string, boolean>>({});
+  // `show`: a tab the line offers to show, where an Undo changed rows of a tab not in view (branch record SIF-97). `step`: the
+  // line names an Undo or Redo, `refusal`: a cell's refusal, with its cell - the row's place and field, the row and the unit it
+  // was read in then - each goes once a later change makes it untrue (branch record SIF-132).
+  const [note, setNote] = useState<{ text: string; warn: boolean; show?: Section; step?: boolean;
+    refusal?: { index: number; field: string; row: Json; unit: string | null } } | null>(null);
+  // The find box's text, kept per table (record 7.184).
+  const [find, setFind] = useState<Record<string, string>>({});
+  const table = useRef<HTMLTableElement>(null);
+  // Where the focus goes on the render after Add (the new row, by its ID) or Delete selected (the place of the first row
+  // deleted), and the row whose tick box was clicked last, which Shift+click ticks from (branch record SIF-96).
+  const focusNext = useRef<{ key: string } | { index: number } | null>(null);
+  const lastTicked = useRef<string | null>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
+  // The ID a Probe's ID cell held when it was entered (branch record SIF-106), and the one its Specs name (`from`): left with
+  // another ID, they follow it (followProbeId). `refusedId`: a new ID they could not follow - empty, no plain name, another
+  // Probe's - so they still name the one before it, which the next ID typed in that row takes along; the row by its place,
+  // which Delete selected, Undo and Redo move it from (remove, the lastStep effect; review of SIF-106).
+  const idEntered = useRef<{ index: number; held: string; from: string } | null>(null);
+  const refusedId = useRef<{ index: number; from: string; to: string } | null>(null);
+  const namedBefore = (index: number, id: string) => refusedId.current?.index === index && refusedId.current.to === id ? refusedId.current.from : id;
+  // The row's ID stays in view beside the tick box while the table scrolls sideways (record 7.182): it sticks at the tick-box
+  // column's own width - which a tie toggle widens on Parameters, and a narrower window can change without a new render - and a
+  // line marks its edge while columns pass under it. The Issues column stays at the right edge of a box PIN_ISSUES_PX wide or
+  // more, a line marking its edge while columns pass under it (branch record SIF-135: at 1680 px with More columns the box cut
+  // the words that explain a red row, "error The equa").
+  const markScrolled = (box: HTMLElement | null | undefined) => {
+    if (!box) return;
+    box.classList.toggle('scrolled-x', box.scrollLeft > 0);
+    box.classList.toggle('pin-issues', box.clientWidth >= PIN_ISSUES_PX);
+    box.classList.toggle('more-x', box.scrollWidth - box.clientWidth - box.scrollLeft > 1);
+  };
+  // Measured and observed again only when the tick-box header cell is another one (another tab, a new table): it ran at
+  // every render - every keystroke - with a layout read and a new ResizeObserver (record 7.275). The observer catches
+  // the width changes, and scrolling marks itself (onScroll below).
+  const watched = useRef<{ sel: Element | null; watch: ResizeObserver | null }>({ sel: null, watch: null });
+  useLayoutEffect(() => {
+    const sel = table.current?.querySelector('thead th.sel') ?? null;
+    if (watched.current.sel === sel) return;
+    watched.current.watch?.disconnect();
+    watched.current = { sel, watch: null };
+    markScrolled(table.current?.parentElement);
+    if (!sel) return;
+    const measure = () => table.current?.style.setProperty('--sel-w', `${sel.getBoundingClientRect().width}px`);
+    measure();
+    watched.current.watch = new ResizeObserver(measure);
+    watched.current.watch.observe(sel);
+  });
+  useEffect(() => () => watched.current.watch?.disconnect(), []);
+  // The Issues column's width is the box's scroll padding (styles.css), so that a cell entered by Tab or a Where comes into
+  // view beside the pinned column, not under it (branch record SIF-135); measured with its pin and edge line (markScrolled).
+  const fitIssues = (box: HTMLElement | null | undefined) => {
+    const issues = box?.querySelector<HTMLElement>('thead th.issues');
+    if (!box || !issues) return;
+    box.style.setProperty('--issues-w', `${issues.getBoundingClientRect().width}px`);
+    markScrolled(box);
+  };
+  // The box and its table change size without a scroll - a window resized, More columns, a row's issue that widens its column -
+  // and the column's padding, pin and edge line follow. A Where measures it again before it scrolls (the goTo effect below).
+  useEffect(() => {
+    const grid = table.current, box = grid?.parentElement, issues = grid?.querySelector<HTMLElement>('thead th.issues');
+    if (!grid || !box || !issues) return;
+    const watch = new ResizeObserver(() => fitIssues(box));
+    for (const part of [box, grid, issues]) watch.observe(part);
+    return () => watch.disconnect();
+  }, []);
+  // The headers' words are editorRules.ts LABELS, which the import and Matched devices confirmations name the fields by too
+  // (branch record SIF-51).
+  // Units in words (record 7.208): only Probes have a Unit column; the values of Parameters and Specs carry theirs. A plain
+  // number is in the row's own unit, not in the prefix its cell shows ("2" in a row stored in m showing "1 um" is 2 m): each
+  // cell's tooltip names that unit (branch record SIF-49; "the unit the row shows" was left from the Unit column).
+  const VALUE_HELP = ' Written with its unit (450 nm, 400 uA). Type 450n, 0.45 um or 0.4mA; a plain number is in the row\'s own unit, '
+    + 'not in the prefix the cell shows (each cell\'s tooltip names that unit). '
+    + 'A Parameters row is in the unit of its parameter (w, l: a length), a Spec in its Probe\'s: a value of another quantity is refused.';
+  const columns: Json[] = schema.editors[tab].map((column: Json) => ({ ...column, label: column.label ?? LABELS[tab]?.[column.name] }))
+    .map((column: Json) => column.name === 'unit'
+      ? { ...column, guidance: 'The unit of what this Probe measures, chosen from the list (V, A, Hz, dB, deg...). ' + 'A Spec on this Probe takes it.' }
+      : QUANTITY[tab]?.includes(column.name) ? { ...column, guidance: (column.guidance ?? '') + VALUE_HELP } : column)
+    .map((column: Json) => tab !== 'targets' ? column
+    : column.name === 'constraint' ? { ...column, guidance: column.guidance + ' "then lower / higher is better" is the objective: among the designs that pass '
+      + 'every hard spec, the best one is the lowest / highest here (one spec at most); with an Objective bonus weight above 0 (Reward and '
+      + 'conditions) the reward also pushes it past the limit.' }
+    : column.name === 'normalization_scale' ? { ...column, guidance: 'How far outside its limit a value counts as a miss of 1. Empty: as far as the limit itself. dB rows: 6 (a factor of 2), so with a limit of 30 dB, 24 dB is a miss of 1. Smaller = stricter. Pass or fail depends on the limits only.' } : column);
+  // Specs shows the objective inside the constraint list (LimitSelect), and "Judged at" only while the run plans training
+  // corners; a hidden column (schema.HIDDEN_COLUMNS) is kept in the rows and never shown (editorRules.ts drawsColumn).
+  const shown = columns.filter(column => drawsColumn(tab, column, config));
+  const hidden = shown.filter(column => column.advanced);
+  const visible = shown.filter(column => more || !column.advanced);
+  const keyField: string = schema.section_keys[tab];
+  const rows: Json[] = config[tab] ?? [];
+  const issues = useMemo(() => (validation?.issues ?? []).filter((issue: Json) => issue.path.startsWith(tab)), [validation, tab]);
+  const issuesByRow = useMemo(() => {
+    const grouped = new Map<number, Json[]>();
+    for (const issue of issues) {
+      const match = /^\[(\d+)\]/.exec(issue.path.slice(tab.length));
+      if (match) { const index = Number(match[1]), row = grouped.get(index) ?? []; row.push(issue); grouped.set(index, row); }
+    }
+    return grouped;
+  }, [issues, tab]);
+  // The report's row paths (targets[3]) name rows of the configuration it was made for (`sent`, App.tsx). After Delete,
+  // Undo or an import moved the rows, an issue is drawn only on the row it was found for, until the new report comes.
+  const reported: Json[] | null = validation?.sent?.[tab] ?? null;
+  const rowIssues = (index: number) => reported && reported[index]?.[keyField] !== rows[index]?.[keyField] ? []
+    : issuesByRow.get(index) ?? [];
+  // A note many rows share, said once (branch record SIF-118): an info or a warning in the same words - its level, its code and
+  // what the column shows of it - on SHARED_NOTE_ROWS rows of the table or more, folded or out of Find's view too, is named in
+  // a line above the table with how many rows have it, warnings first; those rows keep its level word, the message and the
+  // code in its tooltip. By the words, not the code alone: a note whose first clause names its row ("The network reads inl1
+  // as") stays whole. An error or a blocker stays whole on every row, and so does a note on fewer rows. `same`: every row has
+  // the same message, which the line's tooltip then gives whole as it is.
+  const noteKey = (issue: Json) => `${issue.level}|${issue.code}|${issueWords(issue)}`;
+  const shared = new Map<string, { note: Json; at: number[]; same: boolean }>();
+  rows.forEach((_, index) => {
+    for (const issue of rowIssues(index)) {
+      if (issue.level !== 'info' && issue.level !== 'warning') continue;
+      const group = shared.get(noteKey(issue));
+      if (!group) shared.set(noteKey(issue), { note: issue, at: [index], same: true });
+      else { if (!group.at.includes(index)) group.at.push(index); group.same = group.same && issue.message === group.note.message; }
+    }
+  });
+  for (const [key, group] of shared) if (group.at.length < SHARED_NOTE_ROWS) shared.delete(key);
+  const sharedNotes = [...shared.values()].sort((first, second) => Number(first.note.level !== 'warning') - Number(second.note.level !== 'warning'));
+  // Ticks of rows that are gone (Delete, Undo, an import) go with them: a new row given a freed ID came already ticked.
+  useEffect(() => setSelected(ticks => {
+    const ids = new Set(rows.map(row => row[keyField]));
+    const kept = Object.fromEntries(Object.entries(ticks).filter(([id, on]) => on && ids.has(id)));
+    return Object.keys(kept).length === Object.keys(ticks).length ? ticks : kept;
+  }), [rows, keyField]);
+
+  // The unit a row's values are read in (record 7.208: no Unit column in Parameters and Specs): its own, unless what the row
+  // is says another quantity - a parameter of a known kind (w, l: m), a Spec on one Probe (the Probe's unit) - or it has none.
+  const expectedUnit = (row: Json): string | null => tab === 'parameters' ? kindUnit(row.parameter_name)
+    : tab === 'targets' ? (config.measurements ?? []).find((probe: Json) => probe.measurement_id === String(row.equation ?? '').trim())?.unit || null
+    : null;
+  const effectiveUnit = (row: Json): string | null => { const expected = expectedUnit(row);
+    return expected && !sameQuantity(row.unit, expected) ? expected : row.unit ?? null; };
+  // One change of one row, several fields at once (the constraint list sets the limit and the objective): one Undo step.
+  const patch = (index: number, fields: Json) => setConfig((c: Json) => withFollowers(tab, c, new Map([[index, fields]])));
+  // A unit changed to another of the same quantity (um -> nm, record 7.208): the row's numbers move with it, exactly, so every
+  // value stays the same; to another quantity they stay as they are.
+  const update = (index: number, name: string, value: Json) => {
+    const row = rows[index], moved: Json = { [name]: value };
+    if (name === 'unit' && row) for (const field of QUANTITY[tab] ?? []) {
+      const converted = convert(row[field], row.unit, value);
+      if (converted !== null && converted !== row[field]) moved[field] = converted;
+    }
+    patch(index, moved);
+  };
+  const add = () => {
+    // Its defaults, its free ID, a Probe's way of measuring and a Spec's first equation: editorRules.ts newRow, which the
+    // Virtuoso window's "Add to Parameters" makes its rows with too (branch record SIF-104).
+    const row = newRow(tab, config, schema);
+    // The new row comes into view with its ID chosen, so its name is typed at once (branch record SIF-96): it went in at the
+    // end, out of view, the focus left on Add, and a Find text it did not hold hid it - Add seemed to do nothing.
+    if (findWords.length && !matchesFind(row)) {
+      setFind(texts => ({ ...texts, [tab]: '' }));
+      setNote({ text: `Find rows cleared to show the new row, ${row[keyField]}.`, warn: false });
+    }
+    focusNext.current = { key: row[keyField] };
+    setConfig((c: Json) => ({ ...c, [tab]: [...(c[tab] ?? []), row] }));
+  };
+  // Delete selected says what went (branch record SIF-96): it said nothing, while a deleted leader left its tied rows following
+  // nothing (a blocking error), a deleted Probe broke the Specs using it on a tab not in view, and a ticked row folded away
+  // since went unseen. Which rows go is as before (record 7.184): the ticked ones, only those in view while Find holds text.
+  const remove = () => {
+    const gone = new Set(selection.map(entry => entry.key)),
+      going = rows.map((row, index) => ({ row, index })).filter(({ row }) => gone.has(row[keyField]));
+    const names = [...gone].map(String), folded = going.filter(({ row, index }) => leaderOf(row) && !rowsInView.includes(index)).length;
+    const orphans = rows.filter(row => !gone.has(row[keyField]) && gone.has(leaderOf(row))).map(row => String(row[keyField]));
+    const users: string[] = tab !== 'measurements' ? [] : (config.targets ?? [])
+      .filter((spec: Json) => typeof spec.equation === 'string' && names.some(id => usesProbe(spec.equation, id)))
+      .map((spec: Json) => String(spec.metric_id ?? ''));
+    focusNext.current = { index: going[0]?.index ?? 0 };
+    setConfig((c: Json) => ({ ...c, [tab]: c[tab].filter((row: Json) => !gone.has(row[keyField])) }));
+    // A refused rename's memory moves up with its row past the rows deleted above it, and goes when the row itself is deleted
+    // (review of SIF-106: kept at the old place, the next ID typed in the row took no Spec along, and said nothing).
+    const refused = refusedId.current;
+    if (tab === 'measurements' && refused) refusedId.current = going.some(({ index }) => index === refused.index) ? null
+      : { ...refused, index: refused.index - going.filter(({ index }) => index < refused.index).length };
+    const one = going.length === 1;
+    setNote({ warn: orphans.length + users.length > 0, text: [`Deleted ${plural(going.length, 'row')} (${idList(names)})${!folded ? ''
+        : one ? ', folded under its leader' : `, ${folded} of them folded under a leader`}. Undo takes ${one ? 'it' : 'them'} back.`,
+      !orphans.length ? '' : `${orphans.length === 1 ? `${orphans[0]} was` : `${orphans.length} rows (${idList(orphans)}) were`} tied to a deleted row and now `
+        + `follow${orphans.length === 1 ? 's' : ''} nothing.`,
+      !users.length ? '' : `${users.length === 1 ? `Spec ${users[0]} uses` : `${users.length} Specs (${idList(users)}) use`} a deleted Probe.`]
+      .filter(Boolean).join(' ') });
+  };
+  // A Probe ID typed anew takes the Specs naming the old one along (branch record SIF-106; editorRules.ts probeRename says when):
+  // as Delete selected does for a deleted Probe, the line under the formula bar names them - they are on a tab not in view -
+  // with Show Specs, in amber when they cannot follow, and why.
+  const sayRename = (index: number, from: string, to: string, { specs, refused }: { specs: string[]; refused: string | null }) => {
+    if (refused) refusedId.current = { index, from, to };
+    else if (refusedId.current?.index === index) refusedId.current = null;
+    if (!specs.length) return;
+    const one = specs.length === 1, named = one ? `Spec ${specs[0]}` : `${specs.length} Specs (${idList(specs)})`;
+    setNote({ warn: !!refused, show: 'targets', text: refused
+      ? `${named} still use${one ? 's' : ''} ${from}: ${refused}. Another ID typed there takes ${one ? 'it' : 'them'} along; Undo takes this one back.`
+      : `${named} now use${one ? 's' : ''} ${to}, the Probe's new ID. Undo takes ${one ? 'it' : 'them'} back with the ID.` });
+  };
+  // Leaving a Probe's ID cell with an ID typed in it. The cell wrote each key, as an Undo step of its typing; the Specs join
+  // that step (record false), so one Undo takes them back with the typed ID.
+  const followProbeId = (index: number) => {
+    const entered = idEntered.current, to = String(rows[index]?.[keyField] ?? '');
+    idEntered.current = null;
+    if (entered?.index !== index || to === entered.held) return;              // nothing typed: a refusal still stands
+    const rename = probeRename(config, index, entered.from, to);
+    if (rename.specs.length && !rename.refused) setConfig((c: Json) => renameProbe(c, entered.from, to), false);
+    sayRename(index, entered.from, to, rename);
+  };
+
+  // JSON import goes through a DIFF CONFIRMATION before it replaces anything. The backend's diff covers the three tables;
+  // a whole configuration also replaces the other sections, and the confirmation names each one that changes (it used to
+  // show "0 changed rows" while it replaced the run settings - review of 2026-09-29). Rows for one table write only that
+  // table on Apply: the rest of the configuration as it is THEN, so an edit made while the box was open stays (it used to
+  // be put back to the configuration of the moment of the import).
+  function jsonImport() {
+    const importJson = async (chosen: File) => {
+      setError(null);
+      try {
+        const incoming = JSON.parse(await chosen.text());
+        // A whole configuration is one this workbench wrote (Export JSON): a file that merely has a schema_version - such as
+        // configs/gpdk045_conditions.json - was taken for one, and Apply left a blank page (audit 2026-09-30).
+        const whole = incoming?.schema_version === 'gator-workbench-config-v1';
+        const rowsIn = Array.isArray(incoming?.[tab]) ? incoming[tab] : Array.isArray(incoming) ? incoming : null;
+        if (whole && !(['project', 'circuit', 'run', 'output'].every(section => incoming[section] && typeof incoming[section] === 'object')
+            && ROW_TABS.every(section => incoming[section] == null || Array.isArray(incoming[section]))))
+          throw new Error(
+            'the file says it is a workbench configuration, but its sections (project, circuit, run, output and the three tables) are not all there');
+        if (!whole && !rowsIn)
+          throw new Error(`the file is neither a workbench configuration (from Export JSON) nor ${TITLES[tab]} rows (a list, or an object with "${tab}")`);
+        if (!whole && rowsIn!.some((row: Json) => !row || typeof row !== 'object' || !row[keyField]))
+          throw new Error(`every ${TITLES[tab]} row needs its ${LABELS[tab][keyField]} ("${keyField}" in the file)`);
+        const next = migrateConfig(whole ? incoming : { ...config, [tab]: rowsIn });
+        const { diff } = await api.diff(config, next);
+        const others = Object.keys(IMPORTED_SECTIONS)
+          .filter(section => JSON.stringify(config[section] ?? null) !== JSON.stringify(next[section] ?? null));
+        setPending({ next, diff, others, rows: whole ? null : { section: tab, value: next[tab] } });
+      } catch (e) {
+        // A file that is not JSON is said so, with what to choose, where the browser's parser text stood ("Unexpected token 'a',
+        // "abc" is not valid JSON"); a missing ID names its header, Spec ID, beside the file's key (branch record SIF-50).
+        // Whatever the try throws is an Error: the parser's SyntaxError, the three refusals above, the DOMException of a file
+        // that cannot be read, api.diff's ApiError, a TypeError (a failed fetch among them).
+        setError(e instanceof SyntaxError ? 'Import failed: the file is not JSON. Choose a file written by Export JSON, or a list of rows.'
+          : `Import failed: ${(e as Error).message}`);
+      }
+    };
+    // The box goes with the focus back on Import JSON... when it was in the box or nowhere (branch record SIF-107): the button
+    // pressed went with the box and let it fall to the page. A focus put elsewhere while the box was open stays there.
+    const closeImport = () => {
+      const now = document.activeElement;
+      if (!now || now === document.body || importBox.current?.contains(now)) importButton.current?.focus();
+      setPending(null);
+    };
+    const applyImport = (confirmed: NonNullable<typeof pending>) => {
+      const { rows } = confirmed;
+      setConfig(rows ? (c: Json) => ({ ...c, [rows.section]: rows.value }) : confirmed.next);
+      // Apply says what it did, as Matched devices' Apply and the task file's do (branch record SIF-107): the box went without
+      // a word, also when a whole configuration replaced the run and output settings out of view. Rows write their table
+      // alone, and when applied after a tab press offer it. Whether it changed anything is decided now, as history.ts decides
+      // whether it is an Undo step: by what Apply writes against what is there (review of SIF-107). The box's diff matched
+      // rows by ID when the file was read, so the same rows in another order, or an edit made in that table while the box
+      // was open, counted no row while Apply rewrote the table: the line said "nothing changed", without its Undo.
+      const changed = JSON.stringify(rows ? { ...config, [rows.section]: rows.value } : confirmed.next) !== JSON.stringify(config);
+      const what = [confirmed.diff.length ? plural(confirmed.diff.length, 'changed row') : '',
+        !rows && confirmed.others.length ? `replaced the ${confirmed.others.map(section => IMPORTED_SECTIONS[section]).join(', ')}` : '']
+        .filter(Boolean).join('; ');
+      setNote({ warn: false, text: changed ? `Imported${what ? `: ${what}` : ''}. Undo takes it back.` : 'Imported: nothing changed.',
+        show: rows && rows.section !== tab ? rows.section : undefined });
+      closeImport();
+    };
+    return { importJson, applyImport, closeImport };
+  }
+  const { importJson, applyImport, closeImport } = jsonImport();
+  // The confirmation opens with Apply in focus, so Enter applies and Esc cancels at once (branch record SIF-107) - only where the
+  // file chooser left the focus, on Import JSON... or the page: a cell entered while the diff was on its way keeps it, and a
+  // key meant for the cell never presses Apply.
+  useEffect(() => {
+    const now = document.activeElement;
+    if (pending && (!now || now === document.body || now === importButton.current)) applyButton.current?.focus();
+  }, [pending]);
+  // A Parameters row under the pointer (or the keyboard) lights the devices it sizes in the circuit picture of the Project
+  // column: its own and those of the rows tied to it (binding_group), so w_pair lights M1 and its follower's M2 (record 7.158).
+  const devicesOf = (row: Json): string[] => {
+    const leader = row.binding_group || row.variable_id;
+    const tied = rows.filter(member => member.variable_id === leader || (member.binding_group && member.binding_group === leader));
+    return [...new Set([row, ...tied].map(member => member.instance_path).filter(Boolean))] as string[];
+  };
+  useEffect(() => () => pointAt([]), [tab]);
+  // A failed import's line goes too (branch record SIF-107): it named the tab it was tried on, and stayed on every tab until
+  // the next import.
+  useEffect(() => { setActive(null); setOpenTies({}); setNote(null); setError(null); lastTicked.current = null; }, [tab]);
+  // A cell's refusal goes once a later change makes it untrue (branch record SIF-132): '"4 um" is a length; this row holds a
+  // count.' stood under the row made a length again and 3 nm taken, and a press on the tab already shown changes no tab. It
+  // goes when its cell takes a value, when its row is read in another unit (its parameter, its Probe), and when another row
+  // stands at its place (a task choice; an Undo, Delete selected and an import write lines of their own). Typing in another
+  // cell or row, and Add, leave it (review of SIF-132): it went with every change of the table - the next row's first key
+  // after Enter, the next cell's after Tab - and the text was dropped with no word, as before SIF-49. A refusal is told on
+  // leaving its cell with nothing written, so it never goes in its own render.
+  useEffect(() => {
+    const refused = note?.refusal, now = refused && rows[refused.index];
+    if (refused && !(now && now[keyField] === refused.row[keyField] && now[refused.field] === refused.row[refused.field]
+      && effectiveUnit(now) === refused.unit)) setNote(null);
+  }, [config[tab]]);
+  // Another tab, as its button shows it: a Matched devices box closes, the ticks go.
+  const showTab = (section: Section) => { if (section !== tab) setMatched(0); setTab(section); setSelected({}); };
+  // An Undo or Redo - the toolbar's, the keys', the RL model window's - says what it changed (branch record SIF-97), and offers
+  // the tab of the rows it changed when another is in view: it does not switch by itself, which would let the chosen cell go.
+  // Its line goes with the next recorded change, which ends the step (history.ts) - typing, Add, a task choice, an import
+  // (branch record SIF-132): it stood under them, naming rows the page no longer showed. A line written with that change
+  // (Deleted, Imported, Filled ...) is no step's, and stays.
+  useEffect(() => {
+    if (!lastStep) { if (note?.step) setNote(null); return; }
+    const { text, tables } = stepWords(lastStep, schema.section_keys ?? {});
+    setNote({ text, warn: false, step: true, show: tables.length && !tables.includes(tab) ? tables[0] : undefined });
+  }, [lastStep]);
+  // An Undo or Redo moves rows and brings IDs back (review of SIF-106). A refused rename's memory follows its row, found by the
+  // row itself in the rows the step brought back (an Undo of a Delete selected puts rows back above it). A Probe's ID cell the
+  // step was pressed in (Ctrl+Z, Ctrl+Y: onTableKey) holds the ID it brought back, as if entered anew: the ID before the step
+  // counted as typed, and leaving the cell rewrote the Specs the step had brought back, with no Undo step of their own.
+  useEffect(() => {
+    if (!lastStep) return;
+    const refused = refusedId.current, before: Json[] = lastStep.from?.measurements ?? [], after: Json[] = lastStep.to?.measurements ?? [];
+    const moved = refused ? after.indexOf(before[refused.index]) : -1;
+    if (refused && moved >= 0) refusedId.current = { ...refused, index: moved };
+    const entered = idEntered.current;
+    if (!entered || tab !== 'measurements') return;
+    const held = String(rows[entered.index]?.[keyField] ?? '');
+    idEntered.current = { index: entered.index, held, from: namedBefore(entered.index, held) };
+  }, [lastStep]);
+  // Ctrl+Z and Ctrl+Y (Ctrl+Shift+Z) anywhere in the main window (branch record SIF-97): after an Import's or Matched devices'
+  // Apply, a tab press, or a Delete that left no row in view - moments Undo is wanted - the focus was outside the table, whose
+  // cells alone took the keys. A cell handles them first, as before (onTableKey; its preventDefault leaves them be here); a box
+  // that takes typing keeps its own undo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { const step = undoKey(e); if (step) { e.preventDefault(); (step === 'undo' ? undo : redo)(); } };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
+
+  // Why a cell is shown and not typed: it follows another field, or its row's leader decides it (record 7.158 review).
+  const fixedOf = (row: Json, column: Json): string | null =>
+    tab === 'measurements' && column.name === 'measurement_id' && row.result_source === 'ade_output'
+      ? `A Maestro output's Probe ID is m_ + its output name (saving the task names it so): it follows the name, and so do the spec equations that use it.`
+      : null;
+  const offOf = (row: Json, column: Json): string | null => tab === 'parameters' && row.binding_group && FOLLOWER_IGNORES.includes(column.name)
+    ? `Follows ${row.binding_group}: its leader's value times the ratio is written, so this field does nothing on this row.` : null;
+  // What an empty number box means, in a word (branch record SIF-49): a bare "-" said neither "no limit" (a one-sided spec's
+  // other side) nor "as far as the limit itself" (an empty Scale). A follower's greyed field keeps "-": its tooltip says why.
+  // A bound the row's Limit uses reads "needed" (branch record SIF-135): it read "no limit" beside the error asking for it.
+  const emptyOf = (row: Json, column: Json): string | undefined => offOf(row, column) ? undefined
+    : tab === 'targets' && (column.name === 'lower' || column.name === 'upper') ? (limitUses(row.constraint, column.name) ? 'needed' : 'no limit')
+    : column.name === 'normalization_scale' ? 'auto' : undefined;
+  const at = !active ? -1 : rows[active.index] && (active.name === keyField || String(rows[active.index][keyField] ?? '') === active.key)
+    ? active.index : rows.findIndex(row => String(row[keyField] ?? '') === active.key);
+  const activeRow = at >= 0 ? rows[at] : null;
+  const activeColumn: Json = activeRow ? columns.find(column => column.name === active!.name) ?? null : null;
+  const barCell: BarCell | null = activeRow && activeColumn ? (() => {
+    const column = activeColumn, value = activeRow[column.name] === undefined ? column.default : activeRow[column.name];
+    const choice = tab === 'targets' && column.name === 'constraint' ? 'A list: choose it in the cell.'
+      : column.name === 'nominal_only' || column.options ? `A list: choose it in the cell${column.options ? ` (${column.options.join(' | ')})` : ''}.`
+      : column.type === 'boolean' ? 'A tick box: tick it in the cell.' : null;
+    const why = fixedOf(activeRow, column) ?? offOf(activeRow, column) ?? choice;
+    const text = tab === 'targets' && column.name === 'constraint' ? limitLabel(activeRow.constraint, activeRow.direction_after_feasible ?? 'none')
+      : column.name === 'nominal_only' ? (value ? 'Nominal only' : 'All planned conditions') : column.type === 'boolean' ? (value ? 'on' : 'off')
+      : value == null ? '' : typeof value === 'object' ? JSON.stringify(value)
+      : typeof value === 'number' && QUANTITY[tab]?.includes(column.name) ? quantity(value, activeRow.unit) : String(value);
+    return { id: `${tab}|${at}|${column.name}`, where: `${column.label ?? column.name} · ${activeRow[keyField] ?? `row ${at + 1}`}`, text,
+      editable: why === null, why: why ?? '',
+      format: `${column.name} (${column.type}${column.options ? ': ' + column.options.join(' | ') : ''}${column.required ? ', required' : ''}) - ${
+        column.guidance ?? ''}` };
+  })() : null;
+  // The bar's text as the cell would take it: a number as the number cell reads it, a list as JSON; one change, one Undo step.
+  const commitBar = (text: string): string | null => {
+    if (!activeRow || !activeColumn) return null;
+    const column = activeColumn;
+    let value: Json;
+    if ((column.type === 'number' || column.type === 'integer') && QUANTITY[tab]?.includes(column.name)) {
+      const unit = effectiveUnit(activeRow), read = readQuantity(text, unit);
+      if ('problem' in read) return read.problem;
+      value = read.value ?? (column.nullable ? null : 0);
+      const takes = read.unit ?? (unit && unit !== activeRow.unit ? unit : null);
+      if (takes) { patch(at, { [column.name]: value, unit: takes }); return null; }
+    } else if (column.type === 'number' || column.type === 'integer') {
+      const trimmed = text.trim(), parsed = readNumber(trimmed);
+      // a unitless number (Ratio, Soft weight): no Unit column to point at (branch record SIF-49)
+      if (trimmed !== '' && parsed === undefined) return `"${trimmed}" is not a number: ${NUMBER_FORMS}.`;
+      value = trimmed === '' ? (column.nullable ? null : 0) : parsed;
+    } else if (column.type === 'array' || column.type === 'object') {
+      if (text.trim() === '') value = null;
+      else { try { value = JSON.parse(text); } catch { return 'Not JSON: a list is written as ["a", "b"].'; } }
+    } else value = text === '' && column.nullable ? null : text;
+    const before = activeRow[column.name] === undefined ? column.default : activeRow[column.name];
+    if (JSON.stringify(value) === JSON.stringify(before)) return null;
+    // A Probe ID written here takes the Specs naming the old one along in the same Undo step (branch record SIF-106).
+    const probeId = tab === 'measurements' && column.name === keyField, from = probeId ? namedBefore(at, String(before ?? '')) : '',
+      to = String(value ?? '');
+    const rename = probeId ? probeRename(config, at, from, to) : null;
+    if (rename?.specs.length && !rename.refused)
+      setConfig((cfg: Json) => renameProbe(withFollowers(tab, cfg, new Map([[at, { [column.name]: value }]])), from, to));
+    else update(at, column.name, value);
+    if (rename) sayRename(at, from, to, rename);
+    return null;
+  };
+  // Tied rows (record 7.180, design advice 4): a Parameters row whose binding_group names a row of the table follows that leader -
+  // the leader decides its size - and is folded under it; the leader's first cell counts them and opens them. A tied row with an
+  // issue, or with the chosen cell, is never folded away. The rows keep their order.
+  const ids = new Set(rows.map(row => row[keyField]));
+  const leaderOf = (row: Json): string | null => tab === 'parameters' && row.binding_group && ids.has(row.binding_group) ? row.binding_group : null;
+  const tiedCount = new Map<string, number>();
+  for (const row of rows) { const leader = leaderOf(row); if (leader) tiedCount.set(leader, (tiedCount.get(leader) ?? 0) + 1); }
+  const foldedAway = (row: Json, index: number) => { const leader = leaderOf(row); return !!leader && !openTies[leader] && at !== index
+    && !rowIssues(index).some((issue: Json) => issue.level === 'error' || issue.level === 'blocker'); };
+  // The find box (record 7.184, design advice 4): while it holds text, the rows in view are those whose text cells in view hold
+  // every word of it (not case-sensitive), folded or not; the keys, a pasted block, Ctrl+D, Ctrl+C, Copy and Delete selected
+  // then work on the rows in view, and a chosen cell whose row went out of view is let go.
+  const findWords = (find[tab] ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  const textColumns = visible.filter(column => column.type === 'string' && !column.options);
+  const matchesFind = (row: Json) => { const text = textColumns.map(column => String(row[column.name] ?? '')).join('\n').toLowerCase();
+    return findWords.every(word => text.includes(word)); };
+  const inView = (row: Json, index: number) => findWords.length ? matchesFind(row) : !foldedAway(row, index);
+  const rowsInView = rows.map((_, index) => index).filter(index => inView(rows[index], index));
+  const selection = rows.filter(row => selected[row[keyField]] && (!findWords.length || matchesFind(row)))
+    .map(row => ({ section: tab, key: row[keyField], fields: [] as string[] }));
+  const firstInView = () => (table.current?.querySelector('tbody > tr:not([hidden]) > td[data-field] :is(input, select)') as HTMLElement | null)?.focus();
+  // A tick box ticks its row; with Shift, every row in view from the box clicked last to this one takes its state, and the
+  // header's box ticks or unticks every row in view (branch record SIF-96: deleting 20 rows took 20 ticks). A row that a fold
+  // or Find hides keeps its tick.
+  const tickRow = (key: string, on: boolean, span: boolean) => {
+    const keys = rowsInView.map(index => rows[index][keyField]), from = span && lastTicked.current !== null ? keys.indexOf(lastTicked.current) : -1,
+      to = keys.indexOf(key);
+    const range = from >= 0 && to >= 0 ? keys.slice(Math.min(from, to), Math.max(from, to) + 1) : [key];
+    lastTicked.current = key;
+    setSelected(ticks => ({ ...ticks, ...Object.fromEntries(range.map(id => [id, on])) }));
+  };
+  const tickedInView = rowsInView.filter(index => selected[rows[index][keyField]]).length;
+  const tickAll = (on: boolean) => {
+    lastTicked.current = null;
+    setSelected(ticks => ({ ...ticks, ...Object.fromEntries(rowsInView.map(index => [rows[index][keyField], on])) }));
+  };
+  // The focus on the render after Add or Delete selected (branch record SIF-96): into the new row's first box that takes typing -
+  // its ID, or a Maestro output's Output name, which its ID follows - with the text chosen; after a Delete, which disabled the
+  // button pressed and let the focus fall to the page, to the tick box of the row now at that place, or to Add when no row is
+  // left in view.
+  useEffect(() => {
+    const next = focusNext.current;
+    focusNext.current = null;
+    if (!next || !table.current) return;
+    if ('key' in next) {
+      const index = rows.findIndex(row => row[keyField] === next.key), idColumn = columns.find(column => column.name === keyField);
+      if (index < 0) return;
+      const tr = table.current.querySelector(`tbody > tr[data-index="${index}"]`);
+      const box = tr?.querySelector<HTMLInputElement>(
+        `td[data-field="${idColumn && fixedOf(rows[index], idColumn) ? 'source_name' : keyField}"] input:not(:disabled)`)
+        ?? tr?.querySelector<HTMLInputElement>(`td[data-field="${keyField}"] input`);
+      if (box) { box.scrollIntoView({ block: 'nearest', inline: 'nearest' }); box.focus(); box.select(); }
+      return;
+    }
+    const shown = [...table.current.querySelectorAll<HTMLElement>('tbody > tr:not([hidden])')];
+    const box = (shown.find(tr => Number(tr.dataset.index) >= next.index) ?? shown[shown.length - 1])?.querySelector<HTMLInputElement>('td.sel input');
+    if (box) { box.scrollIntoView({ block: 'nearest' }); box.focus(); } else addButton.current?.focus();
+  });
+
+  // An issue's Where pressed in the header's list (branch record SIF-95): its tab opens, as a tab press opens it, and its row
+  // comes into view with the issue's field chosen, which fills the formula bar. A Find text that hides the row is cleared, a
+  // fold that hides it opened (a row with an error is never folded away; a report older than the rows may say otherwise), and
+  // More columns for a field behind it - for this page, the kept choice stays (review of SIF-95: the row's ID was chosen while
+  // the Where's tooltip named the Scale). It moves and fills nothing else.
+  const [goTo, setGoTo] = useState<{ section: Section; index: number; key: string; field: string | null } | null>(null);
+  useEffect(() => {
+    const go = (e: Event) => {
+      const { section, index, key, field } = (e as CustomEvent).detail ?? {};
+      if (!ROW_TABS.includes(section)) return;
+      if (section !== tab) { setMatched(0); setSelected({}); setTab(section); }
+      setGoTo({ section, index: Number(index ?? -1), key: String(key ?? ''), field: field ?? null });
+    };
+    window.addEventListener(GO_TO_ISSUE, go);
+    return () => window.removeEventListener(GO_TO_ISSUE, go);
+  }, [tab]);
+  // Declared after the [tab] reset above, which lets the chosen cell go: the cell is chosen after it.
+  useEffect(() => {
+    if (!goTo) return;
+    if (goTo.section !== tab) return setGoTo(null);
+    // The report's row while it holds the report's ID, as rowIssues tests it: a duplicate ID is reported on its later row, and
+    // the first row with that ID was chosen instead (review of SIF-95). Else the row with that ID, which Delete or Undo moved.
+    const index = String(rows[goTo.index]?.[keyField] ?? '') === goTo.key ? goTo.index
+      : rows.findIndex(candidate => String(candidate[keyField] ?? '') === goTo.key), row = rows[index];
+    if (row && findWords.length && !matchesFind(row)) return setFind(texts => ({ ...texts, [tab]: '' }));   // the next render goes on
+    const leader = row ? leaderOf(row) : null;
+    if (row && leader && !findWords.length && foldedAway(row, index)) return setOpenTies(ties => ({ ...ties, [leader]: true }));
+    const name = columnOf(tab, goTo.field ?? keyField);
+    if (row && !more && hidden.some(column => column.name === name)) return setMore(true);
+    setGoTo(null);
+    if (!row) return;                                      // gone since the report (Delete, Undo): the tab is shown
+    requestAnimationFrame(() => {
+      const tr = table.current?.querySelector<HTMLElement>(`tbody > tr[data-index="${index}"]`);
+      // a field no column shows (a Unit of Parameters or Specs, Judged at without corners): the row's ID, as the Where says
+      const cell = tr?.querySelector<HTMLElement>(`td[data-field="${CSS.escape(name)}"]`)
+        ?? tr?.querySelector<HTMLElement>(`td[data-field="${CSS.escape(keyField)}"]`);
+      if (!cell) return;
+      // The Issues column as this table draws it, measured before the scroll (review of SIF-135): the observer above is called
+      // after the frame's animation callbacks, so a Where pressed on another tab scrolled by that tab's column - on Parameters
+      // with no row issue of its own 59 px, against the Specs' 255 - and left the Scale under the pinned one.
+      fitIssues(table.current?.parentElement);
+      cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const box = cell.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)');
+      // a follower's greyed field takes no focus: the formula bar still names it and says why
+      if (box) box.focus(); else setActive({ index, name: cell.dataset.field ?? name, key: goTo.key });
+    });
+  }, [goTo, tab, rows, find, openTies, more]);
+
+  // Keys as in a spreadsheet (record 7.180, design advice 6): Up and Down go to the same column of the row above or below (folded
+  // rows are passed over), Enter to the row below and Shift+Enter above. A list keeps its own keys; the tick box column is left be.
+  const moveFrom = (box: HTMLElement, step: 1 | -1) => {
+    const field = box.closest<HTMLElement>('td[data-field]')?.dataset.field;
+    let tr = box.closest('tr') as HTMLTableRowElement | null;
+    if (!field || !tr) return false;
+    do { tr = (step > 0 ? tr.nextElementSibling : tr.previousElementSibling) as HTMLTableRowElement | null; } while (tr && tr.hidden);
+    const next = tr?.querySelector(`td[data-field="${CSS.escape(field)}"]`)?.querySelector('input, select') as HTMLElement | null;
+    if (!next) return false;
+    next.focus();
+    if (next instanceof HTMLInputElement && next.type !== 'checkbox') next.select();
+    return true;
+  };
+  const onTableKey = (e: React.KeyboardEvent) => {
+    const box = e.target as HTMLElement, cell = box.closest<HTMLElement>('td[data-field]');
+    // Ctrl+Z and Ctrl+Y (or Ctrl+Shift+Z) are the toolbar's Undo and Redo here, as in a spreadsheet (record 7.188): a cell's typing
+    // is one Undo step, so the whole entry goes back at once; the formula bar keeps the browser's own undo of its text.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zy]$/i.test(e.key)) {
+      e.preventDefault();
+      // In a Probe's ID cell an ID typed there takes its Specs along first, as leaving the cell does - the toolbar's Undo, whose
+      // press leaves the cell, did so already - so the step takes them back with the ID and a Redo brings them back with it;
+      // the cell then holds the ID the step brought back (the lastStep effect; review of SIF-106).
+      const entered = idEntered.current;
+      if (tab === 'measurements' && entered && cell?.dataset.field === keyField && box.closest('tr')?.dataset.index === String(entered.index)) {
+        followProbeId(entered.index);
+        const held = String(rows[entered.index]?.[keyField] ?? '');
+        idEntered.current = { index: entered.index, held, from: namedBefore(entered.index, held) };
+      }
+      (e.key.toLowerCase() === 'y' || e.shiftKey ? redo : undo)();
+      return;
+    }
+    // Ctrl+D fills down and Ctrl+C copies out (record 7.184); with text chosen inside the box Ctrl+C copies that text, as ever.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && cell && /^[dc]$/i.test(e.key)) {
+      const chosenText = box instanceof HTMLInputElement && box.type !== 'checkbox' && box.selectionStart !== box.selectionEnd;
+      if (e.key.toLowerCase() === 'd') { e.preventDefault(); fillDown(cell); }
+      else if (!chosenText) { e.preventDefault(); copyOut(cell); }
+      return;
+    }
+    if (!(box instanceof HTMLInputElement) || box.closest('td.sel') || e.altKey || e.ctrlKey || e.metaKey) return;
+    const step = e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey) ? -1 : 0;
+    if (step && moveFrom(box, step)) e.preventDefault();
+  };
+  function sheetEdits() {
+    // Ctrl+D fills down, as in a spreadsheet (record 7.184): in a ticked row, with more rows ticked, the column takes the value of
+    // the topmost ticked row in view in every ticked row in view; otherwise the cell takes the value of the row above in view. One
+    // Undo step. A cell that follows another field, or that its leader decides, is kept; an ID is not filled (each row needs its own).
+    const shortText = (value: Json) => { const text = exact(value); return !text ? '(empty)' : text.length > 40 ? `${text.slice(0, 40)}...` : text; };
+    const fillDown = (cell: HTMLElement) => {
+      const column = visible.find(candidate => candidate.name === cell.dataset.field), index = Number(cell.closest('tr')?.dataset.index);
+      if (!column || !rows[index]) return;
+      if (column.name === keyField) return setNote({ text: `An ID is not filled down: each row needs its own ${column.label ?? column.name}.`, warn: true });
+      const ticked = rowsInView.filter(rowIndex => selected[rows[rowIndex][keyField]]);
+      const [from, targets] = ticked.length > 1 && ticked.includes(index) ? [ticked[0], ticked.slice(1)]
+        : [rowsInView[rowsInView.indexOf(index) - 1], [index]];
+      if (from === undefined) return setNote({ text: 'No row above in view to fill from.', warn: true });
+      const value = rows[from][column.name] === undefined ? column.default : rows[from][column.name];
+      const changes = new Map<number, Json>();
+      let kept = 0, other = 0;
+      for (const target of targets) {
+        if (fixedOf(rows[target], column) || offOf(rows[target], column)) { kept += 1; continue; }
+        // a quantity goes in the unit the target row stores (record 7.208: 600 nm into a row in m is 6e-7); another quantity is kept
+        let filled = value;
+        if (typeof value === 'number' && QUANTITY[tab]?.includes(column.name) && (rows[target].unit ?? '') !== (rows[from].unit ?? '')) {
+          filled = convert(value, rows[from].unit, rows[target].unit);
+          if (filled === null) { other += 1; continue; }
+        }
+        if (exact(rows[target][column.name] === undefined ? column.default : rows[target][column.name]) !== exact(filled))
+          changes.set(target, { [column.name]: filled != null && typeof filled === 'object' ? JSON.parse(JSON.stringify(filled)) : filled });
+      }
+      if (changes.size) setConfig((cfg: Json) => withFollowers(tab, cfg, changes));
+      const what = `${column.label ?? column.name} = ${typeof value === 'number' && QUANTITY[tab]?.includes(column.name)
+        ? quantity(value, rows[from].unit) : shortText(value)} of ${rows[from][keyField]}`;
+      setNote({ text: [changes.size ? `Filled ${changes.size} cell${changes.size === 1 ? '' : 's'} with ${what} (one Undo step).`
+        : targets.length > kept ? `Nothing to fill: the cell${targets.length - kept === 1 ? ' holds' : 's hold'} ${what} already.` : 'Nothing filled.',
+        kept ? `${kept} cell${kept === 1 ? ' that follows' : 's that follow'} another field kept.` : '',
+        other ? `${other} cell${other === 1 ? '' : 's'} of another quantity kept.` : ''].filter(Boolean).join(' '), warn: other > 0 });
+    };
+    // Ctrl+C copies out, as in a spreadsheet (record 7.184): in a ticked row, the ticked rows in view - every column in view, a
+    // header line first - as tab-separated lines for Excel; otherwise the cell alone. A value with its unit, as the cell writes
+    // it (record 7.208: there is no Unit column to say it; a paste reads it back exactly); other numbers as stored, a limit as
+    // its sign. The Copy button takes the ticked rows in view, or every row in view.
+    const cellText = (row: Json, column: Json) => {
+      const value = row[column.name] === undefined ? column.default : row[column.name];
+      return (column.name === 'nominal_only' ? (value ? 'Nominal only' : 'All planned conditions')
+        : typeof value === 'number' && QUANTITY[tab]?.includes(column.name) ? quantity(value, row.unit) : exact(value)).replace(/[\t\r\n]+/g, ' ');
+    };
+    const toClipboard = (text: string) => {
+      const put = (e: ClipboardEvent) => { e.clipboardData?.setData('text/plain', text); e.preventDefault(); };
+      document.addEventListener('copy', put, true);
+      try { return document.execCommand('copy'); } finally { document.removeEventListener('copy', put, true); }
+    };
+    const copyOut = (cell: HTMLElement | null) => {
+      const index = cell ? Number(cell.closest('tr')?.dataset.index) : -1, ticked = rowsInView.filter(rowIndex => selected[rows[rowIndex][keyField]]);
+      const block = cell ? (ticked.includes(index) ? ticked : null) : ticked.length ? ticked : rowsInView;
+      const cellColumn = cell ? visible.find(column => column.name === cell.dataset.field) : null;
+      if (!block && (!cellColumn || !rows[index])) return;
+      const text = block ? [visible.map(column => column.label ?? column.name),
+        ...block.map(rowIndex => visible.map(column => cellText(rows[rowIndex], column)))].map(line => line.join('\t')).join('\r\n')
+        : cellText(rows[index], cellColumn);
+      if (!toClipboard(text))
+        return setNote({ text: 'The browser did not let the page copy: choose the text and copy it, or try the Copy button.', warn: true });
+      setNote({ text: block
+        ? `Copied ${block.length} row${block.length === 1
+          ? '' : 's'} x ${visible.length} columns with a header line, for Excel; a paste back here skips that line.`
+        : `Copied ${cellColumn.label ?? cellColumn.name} of ${rows[index][keyField]}: ${shortText(text)}.`, warn: false });
+    };
+    // A block copied from Excel (tab-separated lines) pasted into a cell fills the rows in view from that one down and the columns
+    // in view from that one right, as one Undo step (record 7.180). Each text is read as its column takes it; a cell that follows
+    // another field, or that its leader decides, is left as it is; what cannot be read is named and left as it was. One value
+    // pastes into the box as before.
+    const readAs = (column: Json, raw: string, row: Json): { value?: Json; problem?: string; unit?: string } => {
+      const text = raw.trim();
+      if (column.name === 'nominal_only') return /^nominal/i.test(text) ? { value: true } : /^all/i.test(text) ? { value: false }
+        : { problem: `"${text}" in ${column.label ?? column.name}` };
+      if (column.type === 'boolean') return /^(true|yes|on|1|x|✓)$/i.test(text) ? { value: true } : /^(false|no|off|0|)$/i.test(text) ? { value: false }
+        : { problem: `"${text}" in ${column.label ?? column.name}` };
+      if (column.name === 'constraint' && tab === 'targets') {
+        const limit = ({ '>=': '>=', '≥': '>=', '<=': '<=', '≤': '<=', interval: 'interval' } as Record<string, string>)[text.toLowerCase()];
+        return limit ? { value: limit } : { problem: `"${text}" in ${column.label ?? column.name}` };
+      }
+      if (column.options) {
+        const option = column.options.find((choice: string) => choice.toLowerCase() === text.toLowerCase());
+        return option !== undefined ? { value: option } : text === '' && column.nullable ? { value: null }
+          : { problem: `"${text}" in ${column.label ?? column.name}` };
+      }
+      if ((column.type === 'number' || column.type === 'integer') && QUANTITY[tab]?.includes(column.name)) {
+        if (text === '') return column.nullable ? { value: null } : {};
+        const unit = effectiveUnit(row), read = readQuantity(text, unit);
+        return 'problem' in read ? { problem: `"${text}" in ${column.label ?? column.name}` }
+          : { value: read.value, unit: read.unit ?? (unit && unit !== row.unit ? unit : undefined) };
+      }
+      if (column.type === 'number' || column.type === 'integer') {
+        if (text === '') return column.nullable ? { value: null } : {};
+        const parsed = readNumber(text);
+        return parsed !== undefined ? { value: parsed } : { problem: `"${text}" in ${column.label ?? column.name}` };
+      }
+      if (column.type === 'array' || column.type === 'object') {
+        if (text === '') return { value: null };
+        try { return { value: JSON.parse(text) }; } catch { return { problem: `"${text}" in ${column.label ?? column.name}` }; }
+      }
+      return { value: raw === '' && column.nullable ? null : raw };
+    };
+    const onTablePaste = (e: React.ClipboardEvent) => {
+      const cell = (e.target as HTMLElement).closest<HTMLElement>('td[data-field]');
+      const text = e.clipboardData.getData('text/plain').replace(/\r?\n$/, '');
+      if (!cell || !/[\t\n]/.test(text)) return;
+      e.preventDefault();
+      const shown = [...(table.current?.querySelectorAll<HTMLTableRowElement>('tbody > tr') ?? [])].filter(tr => !tr.hidden);
+      const first = shown.indexOf(cell.closest('tr') as HTMLTableRowElement), firstColumn = visible.findIndex(column => column.name === cell.dataset.field);
+      const changes = new Map<number, Json>(), problems: string[] = [];
+      let cells = 0, kept = 0, beyond = 0, lines = text.split(/\r?\n/).map(line => line.split('\t'));
+      // A first line that names the columns it lands on - the header of a copied block (record 7.184) - is skipped.
+      const names = (column: Json | undefined, value: string) => !!column
+        && [column.name, column.label].some(name => name && name.toLowerCase() === value.trim().replace(/\s*\*$/, '').toLowerCase());
+      const header = lines.length > 1 && lines[0].every((value, across) => names(visible[firstColumn + across], value));
+      if (header) lines = lines.slice(1);
+      lines.forEach((values, down) => {
+        const tr = shown[first + down];
+        if (!tr) { beyond += 1; return; }
+        const index = Number(tr.dataset.index), row = rows[index];
+        values.forEach((raw, across) => {
+          const column = visible[firstColumn + across];
+          if (!column) return;
+          if (fixedOf(row, column) || offOf(row, column)) { kept += 1; return; }
+          const read = readAs(column, raw, row);
+          if (read.problem) problems.push(read.problem);
+          else if ('value' in read) {
+            changes.set(index, { ...(changes.get(index) ?? {}), [column.name]: read.value, ...(read.unit ? { unit: read.unit } : {}) });
+            cells += 1;
+          }
+        });
+      });
+      if (changes.size) setConfig((cfg: Json) => withFollowers(tab, cfg, changes));
+      // A block pasted over Probe IDs is no typed rename: leaving the cell it was pasted in does not take that one row's Specs
+      // along, as if only it had changed (branch record SIF-106).
+      const entered = idEntered.current, pastedId = entered ? changes.get(entered.index)?.[keyField] : undefined;
+      if (entered && pastedId !== undefined) idEntered.current = { index: entered.index, held: String(pastedId ?? ''), from: String(pastedId ?? '') };
+      const said = [cells ? `Pasted ${cells} cell${cells === 1 ? '' : 's'} into ${changes.size} row${changes.size === 1 ? '' : 's'} (one Undo step).`
+        : 'Nothing pasted.',
+        header ? 'The header line was skipped.' : '',
+        problems.length ? `Not read, left as they were: ${problems.slice(0, 4).join(', ')}${problems.length > 4 ? ` and ${problems.length - 4} more` : ''}.`
+          : '',
+        kept ? `${kept} cell${kept === 1 ? ' that follows' : 's that follow'} another field kept.` : '',   // as fill down says it (branch record SIF-50)
+        beyond ? `${beyond} line${beyond === 1 ? '' : 's'} below the last row left out: Add rows first.` : ''].filter(Boolean).join(' ');
+      setNote({ text: said, warn: problems.length + beyond > 0 });
+    };
+    return { shortText, fillDown, copyOut, onTablePaste, toClipboard };
+  }
+  const { shortText, fillDown, copyOut, onTablePaste, toClipboard } = sheetEdits();
+
+  // Rows not saved in the task (record 7.222, user: "In the parameter probe and spec windows, highlight the rows that are
+  // unsaved"): validation compares the rows with the saved task's file, as the check before a run does, and names per table
+  // the rows new here, the rows changed - with the saved values - and the saved rows deleted here. Marked by row ID, half a
+  // second after a change like every validation mark; nothing for a task that is not saved (a cell read, an ngspice task).
+  function unsavedMarks() {
+    const unsavedIn = (section: Section): Json => validation?.unsaved_rows?.sections?.[section] ?? null;
+    const unsaved = unsavedIn(tab);
+    const isNew = (row: Json) => !!unsaved?.added?.includes(String(row[keyField] ?? ''));
+    const changeOf = (row: Json): Json => unsaved?.changed?.[String(row[keyField] ?? '')] ?? null;
+    // Specs show the objective inside the Limit list: a saved objective is that cell's.
+    const cellOf = (field: string) => tab === 'targets' && field === 'direction_after_feasible' ? 'constraint' : field;
+    // A saved value as its cell writes it: a quantity in the saved row's unit, a limit in words, a tick as on or off.
+    const savedText = (row: Json, change: Json, field: string): string => {
+      const fields = change.fields, value = fields[field];
+      if (tab === 'targets' && cellOf(field) === 'constraint')
+        return limitLabel('constraint' in fields ? fields.constraint : row.constraint,
+          ('direction_after_feasible' in fields ? fields.direction_after_feasible : row.direction_after_feasible) ?? 'none');
+      if (value == null) return '(empty)';
+      if (field === 'nominal_only') return value ? 'Nominal only' : 'All planned conditions';
+      if (typeof value === 'boolean') return value ? 'on' : 'off';
+      return typeof value === 'number' && QUANTITY[tab]?.includes(field) ? quantity(value, change.unit ?? row.unit) : shortText(value);
+    };
+    const savedIn = (row: Json, name: string): string | null => {
+      const change = changeOf(row), field = change && Object.keys(change.fields).find(candidate => cellOf(candidate) === name);
+      return field ? savedText(row, change, field) : null;
+    };
+    // What a marked row says on its tick-box cell: new, or which fields changed and what the task holds - also of the columns
+    // not in view (a Probe's unit followed by a Spec, a column behind More columns).
+    const rowNote = (row: Json): string | null => {
+      if (isNew(row)) return 'New row, not in the saved task: Save as stores it in a new task.';
+      const change = changeOf(row);
+      if (!change) return null;
+      const cells = [...new Set(Object.keys(change.fields).map(cellOf))];
+      const label = (name: string) => columns.find(column => column.name === name)?.label ?? name;
+      return `Changed since the task was saved: ${cells.map(name => `${label(name)} (saved: ${savedIn(row, name)})`).join(', ')}.`;
+    };
+    // A tab's mark: how many of its rows are not saved, and the saved rows deleted here - which no row can show.
+    const unsavedTitle = (section: Section): string | null => {
+      const unsavedRows = unsavedIn(section);
+      if (!unsavedRows) return null;
+      const changed = Object.keys(unsavedRows.changed ?? {}).length, added = (unsavedRows.added ?? []).length,
+        removed: string[] = unsavedRows.removed ?? [];
+      const parts = [changed ? `${changed} changed` : '', added ? `${added} new` : '',
+        removed.length
+          ? `${removed.length} saved row${removed.length === 1 ? '' : 's'} deleted here (${removed.slice(0, 3).join(', ')}${removed.length > 3 ? ', ...' : ''})`
+          : '',
+        unsavedRows.reordered ? 'rows in another order' : ''].filter(Boolean);
+      return parts.length
+        ? `Not saved in the task: ${parts.join(', ')}. Save as stores the rows in a new task; Reload saved values brings back the saved ones.` : null;
+    };
+    return { isNew, changeOf, savedIn, rowNote, unsavedTitle };
+  }
+  const { isNew, changeOf, savedIn, rowNote, unsavedTitle } = unsavedMarks();
+  // Beside the task's name (record 7.362): whether the rows are the saved task's - only for a saved task, which validation
+  // compares with its file (record 7.222); the tabs' dots say where they differ.
+  const savedState = !validation?.unsaved_rows?.sections ? null
+    : (Object.keys(TITLES) as Section[]).some(section => unsavedTitle(section)) ? 'not saved' : 'saved';
+  // Each tab counts its blocking issues in a red mark (branch record SIF-95): the rows show theirs on the tab in view only, so a
+  // Spec that a renamed Probe broke was told on Parameters by the header's count alone, which names no tab. The count is drawn
+  // from an attribute, so the tab's words stay its name and row count; its tooltip gives the first issue after the not-saved line.
+  const blockingIn = (section: Section): Json[] => (validation?.issues ?? []).filter((issue: Json) => { const path = String(issue.path ?? '');
+    return BLOCKING_LEVELS.includes(issue.level)
+      && (path === section || path.startsWith(`${section}[`) || path.startsWith(`${section}.`)); });   // never another table's key
+  // Only an issue in a row has a Where that goes there (review of SIF-95): one of the table itself (nothing_to_optimize,
+  // binding_graph, no_hard_constraint, task_not_saved: path "parameters") or of a row without an ID is listed as text. The first
+  // issue in the Issues column's words (branch record SIF-135).
+  const blockingTitle = (found: Json[]): string | null => {
+    if (!found.length) return null;
+    const going = found.filter((issue: Json) => rowOf(String(issue.path ?? ''), validation?.sent ?? config, schema)).length;
+    return `${plural(found.length, 'blocking issue')}${found.length > 1 ? ', the first' : ''}: ${issueWords(found[0])}. The red button in the header lists `
+      + (found.length === 1 ? `it${going ? ': its Where goes to the row' : ''}.`
+        : `them${going === found.length ? ": each one's Where goes to its row" : going ? ': a Where that names a row goes to it' : ''}.`);
+  };
+  // "not saved" opens what differs, table by table, with Reload saved values and Save as (record 7.372): the tabs' dots said
+  // it in their tooltips only.
+  const [changesOpen, setChangesOpen] = useState(false);
+  const [saveAsWhy, setSaveAsWhy] = useState<string | null>(null);        // why its Save as could not start (record 7.376)
+  useEffect(() => { if (savedState !== 'not saved') setChangesOpen(false); }, [savedState]);
+  useEffect(() => { if (!changesOpen) setSaveAsWhy(null); }, [changesOpen]);
+  const idList = (list: string[]) => `${list.slice(0, 4).join(', ')}${list.length > 4 ? ', ...' : ''}`;
+  const changesIn = (section: Section): string | null => {
+    const unsavedRows: Json = validation?.unsaved_rows?.sections?.[section];
+    if (!unsavedRows) return null;
+    const changed = Object.keys(unsavedRows.changed ?? {}), added: string[] = unsavedRows.added ?? [], removed: string[] = unsavedRows.removed ?? [];
+    const parts = [changed.length ? `${changed.length} changed (${idList(changed)})` : '', added.length ? `${added.length} new (${idList(added)})` : '',
+      removed.length ? `${removed.length} saved row${removed.length === 1 ? '' : 's'} deleted here (${idList(removed)})` : '',
+      unsavedRows.reordered ? 'rows in another order' : ''].filter(Boolean);
+    return parts.length ? parts.join(', ') : null;
+  };
+  // The rows an import changes, by what Apply does to them (branch record SIF-132): "Confirm import: 22 changed rows" counted
+  // the 20 rows a file of Specs adds and the 2 it deletes alike, and the box listed those 2 last, under the 20, with Apply in
+  // focus. Said after the count when the rows are of more than one kind or any is deleted - the deleted ones by ID, in amber.
+  const importKinds = (diff: Json[]) => {
+    const keys = (change: string) => diff.filter(entry => entry.change === change).map(entry => String(entry.key));
+    const added = keys('added'), changed = keys('modified'), deleted = keys('removed');
+    if (!deleted.length && !(added.length && changed.length)) return null;
+    return <>{' - '}{[added.length ? `${added.length} new` : '', changed.length ? `${changed.length} changed` : ''].filter(Boolean).join(', ')}
+      {deleted.length > 0 && <>{added.length + changed.length ? ', ' : ''}
+        <span className="warn import-deletes">{deleted.length} deleted ({idList(deleted)})</span></>}</>;
+  };
+
+  // The table (`room`, its scroll box) left under about four rows on a wide page whose bottom panel is open: App folds the
+  // panel (record 7.372) - when a cell is entered, and when Matched devices has drawn its answer above the table (branch record
+  // SIF-73: at 1366 x 768 with a message line, its box left the table its heading alone and no cell to enter).
+  const foldIfCramped = (room?: HTMLElement | null) => {
+    if (onCramped && room && window.innerWidth > 1100 && room.clientHeight < CRAMPED_PX && !room.closest('.layout.bottom-folded')) onCramped();
+  };
+
+  // Back to the cell after Enter or Esc, as a spreadsheet does - once the page shows what the bar wrote (flushSync): the focus
+  // went back inside the bar's key press, before React drew the write, so a Probe's ID cell entered there held the ID the bar
+  // had replaced, and a slip written in the bar, fixed in the cell, took no Spec along (review of SIF-106).
+  const backToCell = () => {
+    if (!active || at < 0) return;
+    flushSync(() => {});
+    const cell = table.current?.querySelector(`tbody > tr:nth-child(${at + 1}) > td[data-field="${CSS.escape(active.name)}"]`);
+    (cell?.querySelector('input, select') as HTMLElement | null)?.focus();
+  };
+  const probeIds: string[] = (config.measurements ?? []).map((probe: Json) => probe.measurement_id).filter(Boolean);
+  // The formula bar's cell: none while Find hides the chosen cell's row.
+  const shownCell = activeRow && !inView(activeRow, at) ? null : barCell;
+  // The Specs line's Probe chips put their ID into the chosen Equation cell (branch record SIF-106): each ID (m_supply_power_w,
+  // m_f1_hz ...) was typed by hand, letter by letter, under the line that lists them, and a slip showed as an unknown probe
+  // only after validation. A press keeps the focus where it is (its mousedown), so the cell or the formula bar keeps its
+  // cursor: the ID takes the place of the text chosen there - at the end with neither in focus - with a space where it would
+  // touch the text beside it, and is written as the bar writes, one Undo step. The bar's own text takes it too, so leaving
+  // the bar writes nothing more. With no Equation cell chosen the press copies the ID.
+  const equationCell = tab === 'targets' && shownCell?.editable && activeColumn?.name === 'equation' ? activeRow : null;
+  const pressProbe = (id: string) => {
+    if (!equationCell) {
+      const copied = toClipboard(id);
+      return setNote(copied ? { text: `Copied ${id}. With an Equation cell chosen, a press puts the ID in at the cursor.`, warn: false }
+        : { text: `The browser did not let the page copy ${id}: choose an Equation cell, and a press puts the ID in at the cursor.`, warn: true });
+    }
+    const focused = document.activeElement;
+    const box = focused instanceof HTMLTextAreaElement && focused.closest('.formula-bar') ? focused
+      : focused instanceof HTMLInputElement && focused.closest('td[data-field="equation"]') && focused.closest('tr')?.dataset.index === String(at)
+        ? focused : null;
+    const text = box ? box.value : String(equationCell.equation ?? ''), start = box?.selectionStart ?? text.length, end = box?.selectionEnd ?? text.length;
+    const put = `${/[^\s(]$/.test(text.slice(0, start)) ? ' ' : ''}${id}${/^[^\s)]/.test(text.slice(end)) ? ' ' : ''}`;
+    if (box instanceof HTMLTextAreaElement) {
+      box.setRangeText(put, start, end, 'end');                  // the cursor after the ID, where typing goes on
+      box.dispatchEvent(new Event('input', { bubbles: true }));   // the bar's own text
+    } else if (box) {
+      // The cell's text through its value, which React's change tracking sees (review of SIF-106): setRangeText passed it by,
+      // so a key that brought the text back to what it was before the press - the ID deleted again as a word - changed
+      // nothing, and the Spec kept the ID the cell no longer showed.
+      box.value = text.slice(0, start) + put + text.slice(end);
+      box.setSelectionRange(start + put.length, start + put.length);   // the cursor after the ID, where typing goes on
+    }
+    commitBar(box ? box.value : text + put);
+  };
+  // An interval from 0 whose margin also measures the distance to 0 (reward v2.1 B3): the zero-floor hint names it, and its
+  // button sets Margin sides to upper on every such row, as one Undo step (branch record SIF-107) - the column is behind More
+  // columns, so each named row was shown, scrolled to and changed by hand. Whether 0 is only a physical floor is the user's
+  // call: only a press sets it.
+  const zeroFloor = (row: Json) => row.constraint === 'interval' && row.lower === 0 && row.margin_sides !== 'upper';
+  const upperOnZero = (zero: string[]) => {
+    setConfig((c: Json) => withFollowers('targets', c, new Map((c.targets ?? []).flatMap((row: Json, index: number): [number, Json][] =>
+      zeroFloor(row) ? [[index, { margin_sides: 'upper' }]] : []))));
+    setNote({ warn: false, text: `Margin sides set to upper on ${zero.join(', ')}. Undo takes it back.` });
+  };
+
+  return (
+    <section className="panel editors" data-editor={tab}>
+      {/* Another tab closes the Matched devices box: kept "open", coming back to Parameters mounted it again, and mounting
+          is its press - it asked the backend with nobody pressing anything, and a reviewed diff was gone.
+          Each editor has a colour of its own (record 7.158): its tab, its table's header row, and its ids where another editor shows them.
+          A tab holding rows not saved in the task carries a dot, its tooltip says how many (record 7.222); a tab holding blocking
+          issues, a red count (branch record SIF-95). */}
+      <div className="tabs"><span className="task-head" ref={taskHead} />
+        {savedState && <span className="task-saved-slot">{savedState === 'saved'
+          ? <span className="task-saved" title="The rows of Parameters, Probes and Specs are the saved task's.">saved</span>
+          : <button className={`task-saved unsaved${changesOpen ? ' open' : ''}`} aria-expanded={changesOpen} onClick={() => setChangesOpen(open => !open)}
+              title="Not saved: press to see what differs from the saved task, with Reload saved values and Save as.">not saved</button>}</span>}
+        {(Object.keys(TITLES) as Section[]).map(section => { const notSaved = unsavedTitle(section), blocking = blockingIn(section);
+        return <button key={section} data-editor={section}
+          className={[section === tab ? 'active' : '', notSaved ? 'has-unsaved' : '', blocking.length ? 'has-errors' : ''].filter(Boolean).join(' ')}
+          title={[notSaved, blockingTitle(blocking)].filter(Boolean).join('\n') || undefined} onClick={() => showTab(section)}>
+          {TITLES[section]} ({(config[section] ?? []).length}){blocking.length > 0
+            && <span className="tab-errors" data-errors={blocking.length} aria-hidden="true" />}</button>; })}
+        <span className="tab-actions">
+          <button className={`circuit-toggle${circuitShown ? ' active' : ''}`} aria-pressed={circuitShown} onClick={onCircuit}
+            title={circuitShown ? 'Hide circuit: The circuit column folds away and the rows take the width again.'
+              : "Show circuit: The circuit's labels, picture, notes and hierarchy beside the rows - a Parameters row pointed at lights its devices in the picture."}>
+            {circuitShown ? 'Hide circuit' : 'Show circuit'}</button>
+          <span className="task-tools" ref={taskTools} /><span className="task-save-slot" ref={taskSlot} /></span></div>
+      <div className="toolbar">
+        <button ref={addButton} onClick={add} title="Add: A new row at the end, with a free ID, chosen in view so its name can be typed at once.">
+          <Icon name="add" label="Add" /></button>
+        <button disabled={!selection.length} onClick={remove}
+          title={'Delete selected: The rows whose box is ticked. Undo takes them back. The line under the formula bar names them, '
+          + 'and the rows tied to them or the Specs using them.'}><Icon name="delete" label="Delete selected" /></button>
+        <button disabled={!canUndo} onClick={undo}
+          title={'Undo: The last change to the configuration, from any panel - rows, run and output settings, an applied proposal. '
+          + 'The line under the formula bar names what it took back. Ctrl+Z anywhere on the page, but in a text box.'}>
+          <Icon name="undo" label="Undo" /></button>
+        <button disabled={!canRedo} onClick={redo} title="Redo: The change Undo took back. Ctrl+Y or Ctrl+Shift+Z, but in a text box.">
+          <Icon name="redo" label="Redo" /></button>
+        <button onClick={() => saveJson(`${config.project.task_name}.config.json`, config)}
+          title="Export JSON: The whole configuration - the three tables, the circuit, run and output settings, research labels - as one JSON file, downloaded.">
+          <Icon name="export" label="Export JSON" /></button>
+        <button ref={importButton} onClick={() => file.current?.click()}
+          title="Import JSON...: Read a JSON file - a whole configuration, or rows for this tab. You see everything it changes before anything is replaced.">
+          <Icon name="import" label="Import JSON..." /></button>
+        <input ref={file} type="file" accept="application/json" hidden
+          onChange={e => { const chosen = e.target.files?.[0]; e.target.value = ''; if (chosen) importJson(chosen); }} />
+        <button onClick={() => copyOut(null)}
+          title={'Copy for Excel: the ticked rows in view - or every row in view when none is ticked - every column in view, '
+          + 'a header line first, as tab-separated lines. In a cell, Ctrl+C copies the ticked rows the same way, or the cell alone; Ctrl+D fills down.'}>
+          <Icon name="copy" label="Copy for Excel" /></button>
+        {/* The box shrinks with the window and its count sits inside it (record 7.185): the toolbar stays on one line at 1366 px. */}
+        <span className={`find-box${findWords.length ? ' finding' : ''}`}>
+          <input type="search" className="find-rows" placeholder="Find rows" aria-label="Find rows" value={find[tab] ?? ''}
+            title={'Find rows: only the rows whose text cells in view (ID, instance path, expression, equation, notes ...) hold every word typed stay in view, '
+              + 'folded or not; not case-sensitive. Enter goes to the first of them, Esc clears the box.'}
+            onChange={e => setFind(texts => ({ ...texts, [tab]: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Escape') setFind(texts => ({ ...texts, [tab]: '' }));
+              else if (e.key === 'Enter') { e.preventDefault(); firstInView(); } }} />
+          {findWords.length > 0
+            && <span className="find-count" title={`${rowsInView.length} of ${rows.length} rows in view`}>{rowsInView.length}/{rows.length}</span>}</span>
+        <span className="spacer" />
+        {hidden.length > 0 && <button className="text" onClick={() => showMore(!more)}
+          title={(more ? 'Fewer columns: hide ' : 'More columns: also show ') + hidden.map(column => column.label ?? column.name).join(', ')
+            + '. They keep their values either way.'}>{more ? 'Fewer columns' : `More columns (${hidden.length})`}</button>}
+        {tab === 'parameters' && <button className="text" onClick={() => setMatched(count => count + 1)}
+          title="Matched devices...: Reads the circuit for differential pairs, current-mirror loads, matched loads and cascodes and suggests tying their sizes. Press again to refresh the results. You review a diff; nothing is applied automatically.">
+          Matched devices...</button>}
+      </div>
+      <div className="task-status" ref={taskStatus} />
+      {changesOpen && savedState === 'not saved' && <div className="unsaved-summary" role="region" aria-label="Rows not saved in the task">
+        <p><b>Not saved in the task:</b></p>
+        <ul>{(Object.keys(TITLES) as Section[]).map(section => { const said = changesIn(section); return said && <li key={section}>
+          <button className="item-link" onClick={() => showTab(section)} title={`Show ${TITLES[section]}`}>{TITLES[section]}</button>: {said}</li>; })}</ul>
+        <div className="row">
+          <button onClick={() => window.dispatchEvent(new CustomEvent(RELOAD_SAVED_REQUEST))}
+            title="Reload saved values: The saved rows of the task come back into the editors. Asks first; Undo takes it back.">Reload saved values</button>
+          <button className="primary" onClick={() => { const asked = requestSaveAs(); setSaveAsWhy(asked.taken ? null : asked.why); }}
+            title="Save as: The rows here become a new task; it asks for the name.">Save as...</button>
+          <button onClick={() => setChangesOpen(false)} title="Close: The rows stay as they are.">Close</button>
+        </div>
+        {saveAsWhy && <p className="warn">Save as cannot start now: {saveAsWhy}.</p>}
+      </div>}
+      <div className="task-notes" ref={taskNotes} />
+      {tab === 'parameters' && matched > 0 && <MatchedDevices key={matched} config={config} setConfig={setConfig} onClose={() => setMatched(0)}
+        onShown={() => foldIfCramped(table.current?.parentElement)} />}
+      {/* The lines above the tables give their fact; what explains it is the line's tooltip (record 7.176, user: "reduce or
+          delete these texts"). The rows the optimizer changes are "searched", as the task's Details call them (branch record
+          SIF-40), where this line said "Independent action variables" (branch record SIF-50). A sentence with the optimizer in
+          it (branch record SIF-73): "Searched rows: 7 of 66." under the empty Find rows box, beside the 7 rows a fold leaves
+          in view, read as the result of a search. "..." only before the first validation answer: App keeps the last answer
+          while the next one is on its way, so a missing count after that means validation could not count (a tie to a row
+          that does not exist, a cycle, a refused configuration) and reads "?". A table of one row reads "of 1 row" (review of
+          SIF-73). */}
+      {tab === 'parameters' && <p className="fact" title={'The rows the optimizer changes itself; the others follow a tied row or stay fixed. '
+        + 'The initial value is the one read from the circuit. Equal initial values do not imply a binding. '
+        + "The policy's proposed action and the executed (projected/quantized) value are both recorded."}>The optimizer searches <b>{validation == null ? '...'
+          : (validation.facts?.independent_action_variables ?? '?')}</b> of {plural(rows.length, 'row')}.</p>}
+      {/* An empty Parameters table says how to fill it (branch record SIF-88): a cell read from Virtuoso brings Probes only, and
+          its sizes are in the Virtuoso window, where the + after each one adds it as a row (branch record SIF-104) - named only
+          where there is one: a cell that has a task already shows its sizes without (addsSizes, review of SIF-104). Not while
+          no task or cell is chosen: the task's lines say to choose one. */}
+      {tab === 'parameters' && !rows.length
+        && (config.circuit?.source === 'virtuoso' || (config.circuit?.source === 'registered_task' && !!config.circuit?.task_id))
+        && <p className="hint parameters-empty">No rows yet: add one row per size the optimizer may change
+          (Add, the + above).{config.circuit.source === 'virtuoso'
+          ? ` Once the cell is read, its present sizes are under Hierarchy, Instances and parameters, in the Virtuoso window${addsSizes
+            ? ': the + after a size adds it as a row' : ''}.` : ''}</p>}
+      {tab === 'targets' && <p className="fact spec-probes" title={'Each spec judges its equation, written with Probe IDs, numbers, + - * / ** and brackets '
+        + '(e.g. m_supply_power_w / m_osc_frequency_hz). A miss is measured against the size of the limit, unless a Scale is typed (More columns). '
+        + 'A Probe pressed goes into the chosen Equation cell at the cursor; with none chosen, it is copied.'}>Probes: {probeIds.length
+          ? probeIds.map((id, index) => <Fragment key={id}>{index > 0 && ', '}<button type="button" className="chip-insert"
+              onMouseDown={e => e.preventDefault()} onClick={() => pressProbe(id)}
+              title={equationCell
+                ? `${id}: Puts this Probe ID into the Equation of ${equationCell[keyField]} - at the cursor, or at its end - as one Undo step.`
+                : `${id}: Copies this Probe ID. With an Equation cell chosen, a press puts it in at the cursor instead.`}>
+              <code className="probe-id">{id}</code></button></Fragment>)
+          : 'none yet - fill in the Probes tab first'}</p>}
+      {/* The zero-floor hint (reward v2.1 B3) names its rows and goes once their Margin sides is upper: it stayed after the
+          user followed it, named no row, and its column hides behind More columns (branch record SIF-50). Its button sets
+          them with one press (branch record SIF-107), beside the hint's words, not inside them; the hint then goes by itself. */}
+      {tab === 'targets' && (() => {
+        const zero: string[] = rows.filter(zeroFloor).map(row => row[keyField]);
+        return zero.length > 0 && <div className="line-act zero-floor">
+          <p className="hint zero-floor-hint">{zero.join(', ')}: the margin also measures the distance to 0. If 0 is only a physical floor, set Margin sides
+            to upper (More columns).</p>
+          <button type="button" className="text-link zero-floor-set" onClick={() => upperOnZero(zero)}
+            title={`Set Margin sides to upper: ${zero.join(', ')} then count${zero.length === 1
+              ? 's' : ''} only the upper limit in the tightest-margin bonus and the Corner check ranking; `
+              + 'feasibility still checks both limits. One Undo step.'}>
+            {zero.length === 1 ? 'Set Margin sides to upper' : `Set Margin sides to upper on all ${zero.length}`}</button></div>;
+      })()}
+      {/* A note many rows share, once (branch record SIF-118): on how many rows, and the level and words its rows' marks stand
+          for; its tooltip gives the whole message - the first row's, named, where each row has words of its own -, the code and
+          the rows. Text only, as the row lines are: it changes nothing. */}
+      {sharedNotes.length > 0 && <div className="issues-shared">{sharedNotes.map(({ note, at, same }) => {
+        const ids = at.map(index => String(rows[index]?.[keyField] || `row ${index + 1}`));
+        return <p key={noteKey(note)} className={`issue ${note.level}`} data-code={note.code}
+          title={`${same ? '' : `For ${ids[0]}: `}${note.message}\n(${note.level}: ${note.code})\nRows: ${idList(ids)}\n`
+            + `Each of them shows "${note.level}" in its Issues cell${same ? '' : ', with its own words on hover'}.`}>
+          <span className="issues-shared-rows">On {plural(at.length, 'row')}:</span> <b>{note.level}</b> {issueWords(note)}</p>; })}</div>}
+      {/* A failed import's line has a close mark, and a tab press takes it away too (branch record SIF-107); its words stand
+          alone in their paragraph. */}
+      {error && <div className="line-act import-error"><p className="error">{error}</p>
+        <button className="line-close" onClick={() => setError(null)} title="Close: This message goes; nothing else changes.">
+          <Icon name="close" label="Close" /></button></div>}
+      {/* Esc in the box is Cancel (branch record SIF-107); a click on its words gives the box the focus, which fell to the page,
+          so Esc works after one too. */}
+      {pending && <div className="confirm" ref={importBox} tabIndex={-1} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); closeImport(); } }}>
+        <h4>Confirm import: {pending.diff.length} changed row{pending.diff.length === 1 ? '' : 's'}{importKinds(pending.diff)}{pending.others.length
+        ? `, and it replaces the ${pending.others.map(section => IMPORTED_SECTIONS[section]).join(', ')}` : ''}</h4>
+        <div className="row"><button ref={applyButton} onClick={() => applyImport(pending)}
+          title="Apply: The changes listed here are made, as one Undo step.">Apply</button>
+          <button onClick={closeImport} title="Cancel: Nothing is imported. Esc does the same.">Cancel</button></div>
+        {(pending.diff.length > 0 || !pending.others.length) && <DiffView diff={pending.diff} unitOf={unitIn(config, schema.section_keys ?? {})} />}</div>}
+      <FormulaBar cell={shownCell} commit={commitBar} back={backToCell} />
+      {note && <p className={`${note.warn ? 'warn' : 'hint'} paste-note`}>{note.text}{note.show && <> <button className="item-link note-show"
+        onClick={() => showTab(note.show!)} title={`Show ${TITLES[note.show]}: the tab of the rows this changed.`}>Show {TITLES[note.show]}</button></>}</p>}
+      <div className="scroll" onScroll={e => markScrolled(e.currentTarget)}
+        onFocusCapture={e => {      // a cell entered while the table has room for under about four rows (record 7.372)
+          foldIfCramped(e.currentTarget); }}>
+        <table className="grid editor" ref={table}>
+          <thead><tr><th className="sel"><input type="checkbox" aria-label="Tick every row in view" disabled={!rowsInView.length}
+            checked={tickedInView > 0 && tickedInView === rowsInView.length} onChange={e => tickAll(e.target.checked)}
+            ref={box => { if (box) box.indeterminate = tickedInView > 0 && tickedInView < rowsInView.length; }}
+            title={'Tick every row in view, or untick them: a row that a fold or Find rows hides keeps its tick. '
+              + "Shift+click a row's box to tick or untick every row in view from the box clicked last."} /></th>
+            {visible.map(column => <th key={column.name} data-field={column.name} title={column.guidance ? `${column.name}: ${column.guidance}` : column.name}
+              onClick={() => setHelp(column)}>{column.label ?? column.name}{column.required ? ' *' : ''}</th>)}<th className="issues">Issues</th></tr></thead>
+          <tbody onKeyDown={onTableKey} onPaste={onTablePaste}>{rows.map((row, index) => {
+            const found = rowIssues(index);
+            // the row's own issues - every error and blocker -, and the notes it shares, in the order of the line above (SIF-118)
+            const own = found.filter((issue: Json) => !shared.has(noteKey(issue)));
+            const marks = found.filter((issue: Json) => shared.has(noteKey(issue))).map((issue: Json) => ({ issue, group: shared.get(noteKey(issue))! }))
+              .sort((first, second) => sharedNotes.indexOf(first.group) - sharedNotes.indexOf(second.group));
+            const point = tab === 'parameters' ? { onMouseEnter: () => pointAt(devicesOf(row)), onMouseLeave: () => pointAt([]),
+              onFocus: () => pointAt(devicesOf(row)), onBlur: () => pointAt([]) } : {};
+            const tied = tiedCount.get(row[keyField]) ?? 0, leader = leaderOf(row), open = !!openTies[row[keyField]];
+            // Not saved in the task (record 7.222): the row is tinted, a changed cell more; folded tied rows that are not saved
+            // colour their leader's count.
+            const change = changeOf(row), note = rowNote(row);
+            const tiedNotSaved = tied > 0 ? rows.filter(follower => leaderOf(follower) === row[keyField] && (isNew(follower) || changeOf(follower))).length : 0;
+            return <tr key={index} data-index={index} hidden={!inView(row, index)} {...point}
+              className={[found.some((issue: Json) => issue.level === 'error' || issue.level === 'blocker') ? 'has-error' : '', leader ? 'tied' : '',
+                isNew(row) ? 'unsaved-new' : change ? 'unsaved-changed' : ''].filter(Boolean).join(' ') || undefined}>
+              <td className="sel" title={note ?? undefined}><input type="checkbox" checked={!!selected[row[keyField]]}
+                onMouseDown={e => { if (e.shiftKey) e.preventDefault(); /* a Shift+click chooses no page text */ }}
+                onChange={e => tickRow(row[keyField], e.target.checked, (e.nativeEvent as MouseEvent).shiftKey === true)} />
+                {tied > 0 ? <button className={`tie-toggle${tiedNotSaved ? ' unsaved' : ''}`} aria-expanded={open}
+                  onClick={() => setOpenTies(ties => ({ ...ties, [row[keyField]]: !open }))}
+                  title={`${tied} tied row${tied === 1 ? '' : 's'} follow${tied === 1 ? 's' : ''} this one: ${open ? 'fold' : 'show'} ${tied === 1
+                    ? 'it' : 'them'}.`
+                    + (tiedNotSaved ? ` ${tiedNotSaved} of them ${tiedNotSaved === 1 ? 'is' : 'are'} not saved in the task.` : '')}>
+                  {open ? '▾' : '▸'}{tied}</button>
+                  : leader ? <span className="tie-mark" title={`Follows ${leader}: its leader's value times the ratio is written.`}>↳</span> : null}</td>
+              {/* A field the row does not STATE is shown with the value the backend uses for it (hard = on, active = on ...): a
+                  starter row's absent `hard` used to look unchecked although the target is hard. A box the user cleared is null,
+                  not absent, and stays empty. */}
+              {visible.map(column => { const saved = change ? savedIn(row, column.name) : null;
+                // a Probe ID typed in its cell (a Maestro output's follows its Output name): the Specs follow it on leaving (SIF-106)
+                const typedId = tab === 'measurements' && column.name === keyField && !fixedOf(row, column);
+                return <td key={column.name} data-field={column.name}
+                className={[at === index && active?.name === column.name ? 'active-cell' : '', saved !== null ? 'unsaved-cell' : '']
+                  .filter(Boolean).join(' ') || undefined}
+                onFocus={() => { const held = String(row[keyField] ?? ''); setActive({ index, name: column.name, key: held });
+                  if (typedId) idEntered.current = { index, held, from: namedBefore(index, held) }; }}
+                onBlur={typedId ? () => followProbeId(index) : undefined}>{tab === 'targets' && column.name === 'constraint'
+                ? <LimitSelect row={row} title={withSaved(saved, column.guidance)} onChange={fields => patch(index, fields)} />
+                : <Cell column={column} value={row[column.name] === undefined ? column.default : row[column.name]}
+                    onChange={value => update(index, column.name, value)}
+                    fixed={fixedOf(row, column)} off={offOf(row, column)} unit={QUANTITY[tab]?.includes(column.name) ? effectiveUnit(row) : undefined}
+                    stored={row.unit ?? null} onPatch={fields => patch(index, fields)}
+                    tell={text => setNote({ text, warn: true, refusal: { index, field: column.name, row, unit: effectiveUnit(row) } })} saved={saved}
+                    placeholder={emptyOf(row, column)} />}</td>; })}
+              {/* The row's own issues whole, first, then a note it shares with SHARED_NOTE_ROWS rows or more as its level word, all
+                  of them on one line: the line above the table names it once (branch record SIF-118). */}
+              <td className="issues">{own.map((issue: Json, place: number) => <div key={place} className={`issue ${issue.level}`} data-code={issue.code}
+                title={`${issue.message}\n(${issue.level}: ${issue.code})`}><b>{issue.level}</b> {issueWords(issue)}</div>)}
+                {marks.length > 0 && <div className="issue-marks">{marks.map(({ issue, group }, place) => <Fragment key={place}>{place > 0 && ' '}
+                  <span className={`issue ${issue.level}`} data-code={issue.code}
+                    title={`${issue.message}\n(${issue.level}: ${issue.code})\nSaid once above the table, for the ${group.at.length} rows that have it.`}>
+                    {issue.level}</span></Fragment>)}</div>}</td>
+            </tr>; })}</tbody>
+        </table>
+      </div>
+      {help && <p className="guidance" onClick={() => setHelp(null)}><b>{help.label ?? help.name}</b> ({help.label ? `${help.name}, ` : ''}{help.type}{
+        help.options ? ': ' + help.options.join(' | ') : ''}) - {help.guidance}</p>}
+      {issues.filter((issue: Json) => !/\[\d+\]/.test(issue.path))
+        .map((issue: Json, place: number) => <p key={place} className={`issue ${issue.level}`}>{issue.level}: {issue.message}</p>)}
+    </section>
+  );
+}
+
+// Run-status ticks and bottom-tab switches do not change the editor's inputs.
+export const Editors = memo(EditorsView);

@@ -131,6 +131,11 @@ class VirtuosoBackend(ABC):
         """None is reserved for legacy synthetic fixtures, not an implicit PVT default."""
         return None
 
+    def derive_condition_artifact(self, base: NetlistArtifact, work_root: Path,
+                                  *, condition: SimulationCondition) -> NetlistArtifact:
+        """Create an immutable deck from the verified original export, without sizing writes."""
+        raise UnsupportedCapability('Derived training-condition artifacts are not implemented by this backend')
+
     def validate_condition(self, condition: SimulationCondition | None) -> None:
         """Preflight BEFORE writing parameters or exporting; fail explicitly if unsupported."""
         if condition is not None:
@@ -168,3 +173,41 @@ class VirtuosoBackend(ABC):
 
     def __exit__(self, exc_type, exc, traceback) -> None:
         self.close()
+
+
+class LocalConnection:
+    """connect() and close() of a backend with nothing to connect to (the MOCK and synthetic backends here, the
+    workbench's ngspice backend): they only set `connected`, and _check() refuses with the backend's own
+    `not_connected` message while it is False. Before 2026-10-09 each backend wrote these out (plan-refactoring E8)."""
+    not_connected = 'Backend is not connected'
+
+    def connect(self):
+        self.connected = True
+
+    def close(self):
+        self.connected = False
+
+    def _check(self):
+        if not self.connected:
+            raise BackendNotConnected(self.not_connected)
+
+
+class HeldParameters(LocalConnection):
+    """A local backend's parameter assignment, held in memory: restore() returns to `initial`, read_parameters() copies
+    `parameters`, set_parameters() takes a complete finite assignment of the same keys or refuses with the backend's
+    own `unexpected_assignment` message."""
+    unexpected_assignment = 'Unexpected parameter assignment'
+
+    def restore(self):
+        self._check()
+        self.parameters = dict(self.initial)
+
+    def read_parameters(self):
+        self._check()
+        return dict(self.parameters)
+
+    def set_parameters(self, parameters):
+        self._check()
+        if parameters.keys() != self.initial.keys() or not all(math.isfinite(v) for v in parameters.values()):
+            raise ValueError(self.unexpected_assignment)
+        self.parameters = dict(parameters)

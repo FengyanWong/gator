@@ -1,24 +1,24 @@
-# 分阶段实现与验收
+# Implementation stages and acceptance
 
-不要预设整个项目已经开始，也不要一次性生成所有目录和空类。
-先检查当前 repo；已完成的步骤用测试确认后跳过。每次交付一个明确阶段或阶段内的小任务。
+Do not assume the whole project has already started, and do not generate all directories and empty classes at once.
+Inspect the current repository first; verify completed steps with tests and skip them. Deliver one defined stage or a small task within a stage at a time.
 
-当前项目已完成 M1–M4、M5 首轮与真实同类新拓扑补验，以及下述 M6 前编码器接口；M6 尚未开始。具体已验证能力与限制见 [项目决策](project-decisions.md)，不要将历史阶段范围当成当前暂停指令。
+The current project has completed M1–M5 (including the additional real same-category new-topology validation) and the encoder interface before M6 described below; M6 closed at pilot scale on 2026-09-20 (see the M6 section). See [Project decisions](project-decisions.md) for verified capabilities and limits; do not treat historical stage boundaries as a current instruction to pause.
 
-## M0：代码与运行环境清点
+## M0: Inventory the code and runtime environment
 
-输入：用户现有仓库、依赖声明、已配置的 bridge（若有）。
-输出：已有模块与可复用路径、执行环境、当前缺口、首个验收目标。
+Inputs: the user's existing repository, dependency declarations and configured bridge, if any.
+Outputs: existing modules and reusable paths, execution environment, current gaps and the first acceptance target.
 
-- 明确 Python 位于 WSL 还是 VM；Virtuoso/Spectre 在哪里；不写死任何个人主机值。
-- 核对 bridge 上游模块/版本/签名；不自动升级、重装或修改 daemon。
-- 查是否有可分享的 sample netlist；没有就用 synthetic fixture。
-- 记录无法获得的真实环境信息，但不因此停止离线开发。
-- 为后续工况接口读取实际 model sections、统计入口、温度范围与所用器件电压限制；保存文件版本/摘要，区分来源事实和工程筛选点。
+- Establish whether Python runs in WSL or the VM, and where Virtuoso/Spectre run; do not hard-code personal host values.
+- Check upstream bridge modules/versions/signatures; do not automatically upgrade, reinstall or modify the daemon.
+- Check for a shareable sample netlist; use a synthetic fixture if none is available.
+- Record unavailable real-environment information without stopping offline development because of it.
+- For later condition interfaces, read the actual model sections, statistical entry points, temperature range and voltage limits of the devices used. Retain file versions/digests and distinguish source facts from engineering screening points.
 
-## M1：第一轮编码，仅基础链路
+## M1: First coding round, basic flow only
 
-默认首次任务就是这一阶段：
+This stage is the default first task:
 
 ```text
 Backend Protocol + explicit MockBackend
@@ -28,68 +28,70 @@ Backend Protocol + explicit MockBackend
   → synthetic fixtures + tests + small offline demo
 ```
 
-目标输出：
+Target outputs:
 
-- 独立于 bridge 的图和结果类型，明确 schema 和诊断。
-- 真正可用的 parser 子集，不声称支持完整 Spectre。
-- 可验证端口关系、层次与参数映射的 fixtures。
-- PyG adapter 及两个不同大小图的 batch/unbatch 测试。
-- 显式 synthetic mock；真实 adapter 接口可检查，但未接通能力必须如实标记。
-- Backend 的 request/result/artifact 预留一致的 PVT/MC context；不支持的 MC 执行显式报错。图中保存实际工况 metadata，不能把统计模型随机变量变成 sizing action。
-- README 说明依赖、支持范围、运行 demo/测试方式。
+- Graph and result types independent of the bridge, with explicit schemas and diagnostics.
+- A usable parser subset, without claiming full Spectre support.
+- Fixtures that verify terminal relations, hierarchy and parameter mappings.
+- A PyG adapter and batch/unbatch tests with two differently sized graphs.
+- An explicitly synthetic mock; the real adapter interface can be inspected, but unconnected capabilities must be reported honestly.
+- Consistent PVT/MC context reserved in Backend request/result/artifact; explicitly reject unsupported MC execution. Store actual condition metadata in the graph; do not turn statistical model random variables into sizing actions.
+- A README describing dependencies, supported scope and how to run the demo/tests.
 
-验收：在无 Cadence/PDK/SSH 的环境运行离线测试；demo 输出图结构摘要和参数映射；错误输入有可定位诊断。
-**本阶段不实现 actor/critic、SAC 更新、surrogate 或并行调度。**
+Acceptance: offline tests run without Cadence/PDK/SSH; the demo outputs a graph-structure summary and parameter mapping; invalid inputs have diagnostics that locate the problem.
+**This stage does not implement actor/critic, SAC updates, a surrogate or parallel scheduling.**
 
-## M2：一条真实仿真基线
+## M2: One real simulation baseline
 
-在用户允许且真实环境可用时，连接一个现成可仿真的电路。
-导出或读取原网表 → 运行 baseline → 提取指标 → 对一个获准参数小幅修改 → 读回/重新 netlist 验证 → 复跑 → 恢复。
+When authorized by the user and the real environment is available, connect one existing circuit that can be simulated.
+Export or read the original netlist → run the baseline → extract metrics → slightly change one authorized parameter → verify by readback/new netlisting → rerun → restore.
 
-验收：真实结果包含来源、执行参数、版本、状态和耗时；与已有手动/脚本基线按明确容差一致。
-若新网表运行路径与 ADE 不同，先验证模型、分析、corner 和测量等价，不直接比较耗时。
-此阶段仍先验收一个明确 nominal。扩展 PVT 时使用参数一致的 job 副本，保持原尺寸/CDF 的检查与恢复，不并发改同一原理图；模型/电压/温度标签必须与执行网表和测量一致。
+Acceptance: real results include provenance, executed parameters, versions, status and timing; they match the existing manual/script baseline within explicit tolerances.
+If the new netlist execution path differs from ADE, first verify equivalence of models, analyses, corners and measurements instead of directly comparing timing.
+This stage still first accepts one explicit nominal condition. PVT extensions use job copies with identical parameters, retain checks/restoration of original sizes/CDF, and do not modify the same schematic concurrently; model/voltage/temperature labels must match the executed netlist and measurements.
 
-## M3：环境与非学习闭环
+## M3: Environment and non-learning loop
 
-实现参数合法化、measurement evaluator、reward、reset/step、failure policy、candidate logging。
-先用随机候选驱动整个真实流程，检查边界、失败、重复候选和停止条件。
+Implement parameter legalization, the measurement evaluator, reward, reset/step, failure policy and candidate logging.
+Drive the full real flow with random candidates first, checking boundaries, failures, repeated candidates and stopping conditions.
 
-M3 的工况接口范围：增加 typed PVT/Monte Carlo 请求、逐样本身份、来源与预算接口；`reset/step` 强制 nominal-only。另提供纯函数按 nominal reward 去重选 top 3、汇总固定 5 corners 的 worst-case/pass rate/robust score，并记录淘汰或未完成原因。没有模型输出时，不把随机候选称为 SAC 优化结果。top-k 后验证调度和 MC 执行不属于该接口交付，当前仍未实现。
+M3 condition-interface scope: add typed PVT/Monte Carlo requests, per-sample identity, provenance and budget interfaces; `reset/step` enforces nominal-only operation. Also provide pure functions that deduplicate and select the top 3 by nominal reward, summarize worst-case/pass rate/robust score for a fixed 5 corners, and record rejection or incomplete reasons. Without model outputs, do not call random candidates SAC optimization results. Top-k post-validation scheduling and MC execution are outside this interface delivery and remain unimplemented.
 
-验收还包括：非 nominal 结果无法进入 replay；错误工况/尺寸的结果被拒绝；任何失败 corner 都排除通过资格；缺失/基础设施故障不虚构通过率；MC 未实现明确拒绝；原 nominal 网表及动作语义保持兼容。未来可选复杂度见 [工况与统计验证](pvt-monte-carlo.md)，不因接口存在而自动启用。
+Acceptance also requires that non-nominal results cannot enter replay; results with incorrect conditions/sizes are rejected; any failed corner disqualifies a pass; missing results/infrastructure failures do not produce invented pass rates; unimplemented MC is explicitly rejected; and original nominal netlists and action semantics stay compatible. Future optional complexity is described in [Conditions and statistical validation](pvt-monte-carlo.md); an interface's existence does not enable it automatically. (2026-09-30 note: the M3 nominal-only training constraint was later relaxed by the user-authorized reward v2 / v2.1: `real:gpdk045_ota7` can explicitly select training conditions whose results enter replay; nominal remains the default and MC remains unimplemented.)
 
-验收：有限预算的小实验能完整恢复/复盘，成功不会漏过必需约束，失败成本有记录。
-之后才引入神经网络；不要用训练曲线调试测量公式。
+Acceptance: a small experiment within a limited budget can be fully recovered/reviewed; success cannot bypass required constraints, and failure costs are recorded.
+Only then introduce neural networks; do not debug measurement formulas through training curves.
 
-## M4：Graph Transformer 与 SAC
+## M4: Graph Transformer and SAC
 
-先在小型 synthetic environment 验证网络 shape、mask、梯度、target 更新和 checkpoint 恢复，再运行少量真实采样。
-明确 attention_mode、参数组 actor、action-conditioned twin critics、温度和有效维度熵规则。
+First verify network shapes, masks, gradients, target updates and checkpoint recovery in a small synthetic environment, then run a small amount of real sampling.
+Specify attention_mode, the parameter-group actor, action-conditioned twin critics, temperature and entropy rules for valid dimensions.
 
-验收：两种不同 graph/action 大小可同 batch 更新；padding 不影响有效输出/loss；更新可重复、无 NaN；checkpoint 恢复保留 schema 和动作语义。
-mock 学会某个 synthetic 函数不构成电路优化效果证据。
+Acceptance: two different graph/action sizes can update in the same batch; padding does not affect valid outputs/loss; updates are reproducible and have no NaN; checkpoint recovery preserves schema and action semantics.
+A mock learning a synthetic function is not evidence of effective circuit optimization.
 
-## M5：同类拓扑与规格迁移
+## M5: Same-category topology and specification transfer
 
-冻结划分，比较从零训练、冻结 policy 和固定预算 adaptation；加入随机/非 RL 对照及端口感知 GNN 对照。
+Freeze splits and compare training from scratch, a frozen policy and adaptation with a fixed budget; include random/non-RL controls and a port-aware GNN control.
 
-验收：报告达标率、真实调用、wall-clock、预训练成本、失败/删失和多种子；没有泄漏。
+Acceptance: report pass rates, real calls, wall-clock time, pretraining costs, failures/censoring and multiple seeds, without leakage.
 
-当前已补齐真实七管两级 OTA 的结构留出及 1→2 维动作对照：本轮 585 次 Spectre、3 seeds × 6 methods、24 个 checkpoint 审计及两电路恢复；440 项离线测试通过。GT 微调/随机各 1/3、坐标 3/3、port-GNN 微调 2/3，新拓扑的 GT 迁移优势仍未证实。只有一个结构留出拓扑，先做基线验收再冻结目标，不声称广泛或盲测泛化；见项目 `docs/m5-real-topology.md`。
+The real seven-transistor two-stage OTA structural holdout and 1→2 action-dimension comparison are now complete: this round used 585 Spectre calls, 3 seeds × 6 methods, audits of 24 checkpoints and restoration of both circuits; 440 offline tests passed. GT adaptation/random each achieved 1/3, coordinate search 3/3 and port-GNN adaptation 2/3; a GT transfer advantage on the new topology remains unproven. There is only one structurally held-out topology, and targets were frozen after baseline acceptance; do not claim broad or blind-test generalization. See the project's `docs/m5-real-topology.md`.
 
-## M6：跨类别、可选加速与扩展
+## M6: Cross-category transfer, optional acceleration and extensions
 
-进入 M6 前，用户要求的 GT/MLP/GCN/RGCN/GAT 可替换接口已实现：统一模型契约、每架构 scratch/frozen/adapt、配置/checkpoint 隔离与动态预算。保留 M5 port-GNN 和默认六方法。验收包括混合图/动作、端口消融、精确恢复及四架构合成迁移流程；该接口验收本身不构成 M6 或真实新拓扑证据；后续真实新拓扑补验见上面的 M5 记录。
+Before M6, the user-requested interchangeable GT/MLP/GCN/RGCN/GAT interface was implemented: a common model contract, scratch/frozen/adapt per architecture, isolated configurations/checkpoints and dynamic budgets. M5 port-GNN and the default six methods were retained then (2026-09-30 note: port-GNN was removed on 2026-09-24 and the default six-method set was dropped with it; the default now runs GT only. MLP and GCN were removed on 2026-09-26, GAT was replaced by GATv2 that day, and the encoders are now GT/RGCN/GATv2). Acceptance covered mixed graphs/actions, terminal ablations, exact recovery and synthetic transfer for four architectures; interface acceptance alone is not evidence for M6 or real new topologies. See the M5 record above for the later additional real new-topology validation.
 
-基础有效后，再研究 LDO/VCO/OpAmp 跨类别迁移与单策略多环境采样。
-之后才按明确假设引入 surrogate、结构全局 attention、更多参数域或其他优化器。
+After establishing that the basics work, study cross-category LDO/VCO/OpAmp transfer and multi-environment sampling with one policy.
+Only then introduce surrogates, structural global attention, more parameter domains or other optimizers under explicit hypotheses.
 
-验收：每项扩展独立消融、最终真实验证、完整成本比较；没有因新功能破坏前面阶段的契约。
+Acceptance: separate ablations for every extension, final real validation and complete cost comparisons; new features must not break earlier stages' contracts.
 
-## 项目目录示意
+M6 closed at pilot scale (2026-09-20, user decision): the synthetic cross-category protocol, real LDO/VCO baselines and VCO fast numerical-policy qualification, a frozen real protocol with 23 metrics, a real pilot with three folds × six encoders × three seeds (2,811 Spectre calls, 1,566 SAC updates, independent audit passed), and strict-mode VCO requalification (28 calls, 36/36 confirmed). M6 totaled 2,877 real calls. GT adaptation achieved OTA 2/3, LDO 3/3 and VCO 3/3; coordinate search achieved 3/3 in each category, and frozen policies 0/3. There is no evidence of a GT or transfer advantage, nor of a disadvantage. Each category has only one characterized topology, 3 seeds, 8-step episodes and nominal conditions only; this is not a blind test and does not support generalization, ranking or convergence conclusions. Single-policy multi-environment sampling, surrogates, global attention, additional parameter domains, other optimizers and PVT/MC have not started and are outside this closure; larger prospective experiments capable of answering the M6 questions need a separate user decision and budget. This plan defines no new stage after M6; the Web workbench is developed under a separate specification outside the M series. See the project's `docs/decisions.md`, `docs/m6-real-results.md` and `docs/m6-vco-requalification.md`.
 
-仅在新仓库缺少对应结构时使用；不是要求一次性生成所有文件：
+## Example project structure
+
+Use only when a new repository lacks the corresponding structure; this is not a request to generate every file at once:
 
 ```text
 src/analog_optimizer/
@@ -98,25 +100,25 @@ src/analog_optimizer/
   graph/
   parameters/
   measurements/
-  envs/             # M3 起
-  models/           # M4 起
-  training/         # M4 起
-  evaluation/       # M3 起的纯汇总接口；后续才增加实验执行
+  envs/             # from M3
+  models/           # from M4
+  training/         # from M4
+  evaluation/       # pure summary interfaces from M3; experiment execution added later
 tests/
   unit/
   fixtures/synthetic/
-  integration/      # 明确 opt-in
+  integration/      # explicit opt-in
 configs/
 examples/
 ```
 
-## 每次完成时的报告格式
+## Report format at completion
 
 ```text
-本次完成：明确的行为变化和文件范围。
-验收：实际运行的命令、通过/失败/跳过情况。
-边界：哪些仅静态检查，哪些没有真实 Cadence 环境验证。
-下一步：一个具体可执行任务，不承诺后台执行。
+Completed: concrete behavior changes and affected files.
+Acceptance: commands actually run and passed/failed/skipped results.
+Boundaries: static checks only, and work not validated in a real Cadence environment.
+Next step: one concrete executable task, without promising background execution.
 ```
 
-不能用大量“稍后实现”的空文件冒充阶段完成。
+A collection of empty "implement later" files does not constitute a completed stage.

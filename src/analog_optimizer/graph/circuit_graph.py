@@ -88,7 +88,10 @@ class ParameterGroup:
     def validate(self) -> None:
         if not self.members or not all(math.isfinite(v) for v in (self.value, self.lower, self.upper)):
             raise ValueError(f"{self.id}: empty members or non-finite domain")
-        if not self.lower <= self.value <= self.upper or self.lower >= self.upper:
+        # A value read from a netlist can sit one float step past the bound it equals: "180n" is 180 * 1e-9 =
+        # 1.8000000000000002e-07 against an upper bound of 1.8e-07 (record 7.140; the form writer allows the same span).
+        slack = 1e-12 * max(abs(self.lower), abs(self.upper))
+        if not self.lower - slack <= self.value <= self.upper + slack or self.lower >= self.upper:
             raise ValueError(f"{self.id}: invalid bounds/current value")
         if self.domain not in ("continuous", "integer") or self.scale not in ("linear", "log"):
             raise ValueError(f"{self.id}: unsupported domain/scale")
@@ -125,7 +128,9 @@ class ParameterGroup:
         if step:
             index = min(math.floor((self.upper - self.lower) / step + 1e-12),
                         max(0, math.floor((value - self.lower) / step + 0.5)))
-            value = self.lower + index * step
+            # lower + index*step can land one float step above `upper` for bounds typed in decimals (1.84 .. 42.38 um in
+            # 0.02 um steps: 4.2380000000000004e-05), and the group then refused its own top value. In range: unchanged.
+            value = min(self.upper, max(self.lower, self.lower + index * step))
         return value
 
 

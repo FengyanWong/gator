@@ -1,0 +1,602 @@
+{
+ "instances": [
+  {
+   "name": "MP3",
+   "lib": "gpdk045",
+   "cell": "pmos1v",
+   "xy": [
+    6.0,
+    1.25
+   ],
+   "orient": "R0",
+   "bBox": [
+    [
+     5.575,
+     0.8875
+    ],
+    [
+     6.8,
+     1.53125
+    ]
+   ],
+   "numInst": 1,
+   "view": "symbol",
+   "params": {
+    "model": "g45p1svt",
+    "m": "1",
+    "simM": "iPar(\\\\\"m\\\\\")",
+    "l": "45n",
+    "fw": "2u",
+    "w": "2u",
+    "simW": "iPar(\\\\\"w\\\\\")",
+    "fingers": "1",
+    "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+    "threshold": "10u",
+    "diffCont": "t",
+    "connectGates": "None",
+    "dfm": "Minimum",
+    "sdMtlWidth": "60n",
+    "connectSD": "None",
+    "leftAbut": "0",
+    "rightAbut": "0",
+    "tap": "None",
+    "leftTap": "t",
+    "tapCntRows": "1",
+    "ad": "280f",
+    "as": "280f",
+    "pd": "4.28u",
+    "ps": "4.28u",
+    "nrd": "70m",
+    "nrs": "70m",
+    "sa": "140n",
+    "sb": "140n",
+    "sd": "160n",
+    "sca": "56.99756",
+    "scb": "0.05691",
+    "scc": "0.00695",
+    "region": " ",
+    "pasUpdateParamList": "fw, l"
+   },
+   "terms": {
+    "D": "OUT",
+    "B": "VDD",
+    "G": "N2",
+    "S": "VDD"
+   }
+  },
+  {
+   "name": "MP2",
+   "lib": "gpdk045",
+   "cell": "pmos1v",
+   "xy": [
+    3.0,
+    1.25
+   ],
+   "orient": "R0",
+   "bBox": [
+    [
+     2.575,
+     0.8875
+    ],
+    [
+     3.8,
+     1.53125
+    ]
+   ],
+   "numInst": 1,
+   "view": "symbol",
+   "params": {
+    "model": "g45p1svt",
+    "m": "1",
+    "simM": "iPar(\\\\\"m\\\\\")",
+    "l": "45n",
+    "fw": "2u",
+    "w": "2u",
+    "simW": "iPar(\\\\\"w\\\\\")",
+    "fingers": "1",
+    "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+    "threshold": "10u",
+    "diffCont": "t",
+    "connectGates": "None",
+    "dfm": "Minimum",
+    "sdMtlWidth": "60n",
+    "connectSD": "None",
+    "leftAbut": "0",
+    "rightAbut": "0",
+    "tap": "None",
+    "leftTap": "t",
+    "tapCntRows": "1",
+    "ad": "280f",
+    "as": "280f",
+    "pd": "4.28u",
+    "ps": "4.28u",
+    "nrd": "70m",
+    "nrs": "70m",
+    "sa": "140n",
+    "sb": "140n",
+    "sd": "160n",
+    "sca": "56.99756",
+    "scb": "0.05691",
+    "scc": "0.00695",
+    "region": " ",
+    "pasUpdateParamList": "fw, l"
+   },
+   "terms": {
+    "D": "N2",
+    "B": "VDD",
+    "G": "N1",
+    "S": "VDD"
+   }
+  },
+  {
+   "name": "MP1",
+   "lib": "gpdk045",
+   "cell": "pmos1v",
+   "xy": [
+    0.0,
+    1.25
+   ],
+   "orient": "R0",
+   "bBox": [
+    [
+     -0.425,
+     0.8875
+    ],
+    [
+     0.8,
+     1.53125
+    ]
+   ],
+   "numInst": 1,
+   "view": "symbol",
+   "params": {
+    "model": "g45p1svt",
+    "m": "1",
+    "simM": "iPar(\\\\\"m\\\\\")",
+    "l": "45n",
+    "fw": "2u",
+    "w": "2u",
+    "simW": "iPar(\\\\\"w\\\\\")",
+    "fingers": "1",
+    "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+    "threshold": "10u",
+    "diffCont": "t",
+    "connectGates": "None",
+    "dfm": "Minimum",
+    "sdMtlWidth": "60n",
+    "connectSD": "None",
+    "leftAbut": "0",
+    "rightAbut": "0",
+    "tap": "None",
+    "leftTap": "t",
+    "tapCntRows": "1",
+    "ad": "280f",
+    "as": "280f",
+    "pd": "4.28u",
+    "ps": "4.28u",
+    "nrd": "70m",
+    "nrs": "70m",
+    "sa": "140n",
+    "sb": "140n",
+    "sd": "160n",
+    "sca": "56.99756",
+    "scb": "0.05691",
+    "scc": "0.00695",
+    "region": " ",
+    "pasUpdateParamList": "fw, l"
+   },
+   "terms": {
+    "D": "N1",
+    "B": "VDD",
+    "G": "OUT",
+    "S": "VDD"
+   }
+  },
+  {
+   "name": "MN3",
+   "lib": "gpdk045",
+   "cell": "nmos1v",
+   "xy": [
+    6.0,
+    0.0
+   ],
+   "orient": "R0",
+   "bBox": [
+    [
+     5.575,
+     -0.3625
+    ],
+    [
+     6.8,
+     0.28125
+    ]
+   ],
+   "numInst": 1,
+   "view": "symbol",
+   "params": {
+    "model": "g45n1svt",
+    "m": "1",
+    "simM": "iPar(\\\\\"m\\\\\")",
+    "l": "45n",
+    "fw": "1u",
+    "w": "1u",
+    "simW": "iPar(\\\\\"w\\\\\")",
+    "fingers": "1",
+    "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+    "threshold": "10u",
+    "diffCont": "t",
+    "connectGates": "None",
+    "dfm": "Minimum",
+    "sdMtlWidth": "60n",
+    "connectSD": "None",
+    "leftAbut": "0",
+    "rightAbut": "0",
+    "tap": "None",
+    "leftTap": "t",
+    "tapCntRows": "1",
+    "ad": "140f",
+    "as": "140f",
+    "pd": "2.28u",
+    "ps": "2.28u",
+    "nrd": "140m",
+    "nrs": "140m",
+    "sa": "140n",
+    "sb": "140n",
+    "sd": "160n",
+    "sca": "72.26287",
+    "scb": "0.06569",
+    "scc": "0.00861",
+    "region": " ",
+    "pasUpdateParamList": "fw, l"
+   },
+   "terms": {
+    "D": "OUT",
+    "B": "VSS",
+    "G": "N2",
+    "S": "VSS"
+   }
+  },
+  {
+   "name": "MN2",
+   "lib": "gpdk045",
+   "cell": "nmos1v",
+   "xy": [
+    3.0,
+    0.0
+   ],
+   "orient": "R0",
+   "bBox": [
+    [
+     2.575,
+     -0.3625
+    ],
+    [
+     3.8,
+     0.28125
+    ]
+   ],
+   "numInst": 1,
+   "view": "symbol",
+   "params": {
+    "model": "g45n1svt",
+    "m": "1",
+    "simM": "iPar(\\\\\"m\\\\\")",
+    "l": "45n",
+    "fw": "1u",
+    "w": "1u",
+    "simW": "iPar(\\\\\"w\\\\\")",
+    "fingers": "1",
+    "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+    "threshold": "10u",
+    "diffCont": "t",
+    "connectGates": "None",
+    "dfm": "Minimum",
+    "sdMtlWidth": "60n",
+    "connectSD": "None",
+    "leftAbut": "0",
+    "rightAbut": "0",
+    "tap": "None",
+    "leftTap": "t",
+    "tapCntRows": "1",
+    "ad": "140f",
+    "as": "140f",
+    "pd": "2.28u",
+    "ps": "2.28u",
+    "nrd": "140m",
+    "nrs": "140m",
+    "sa": "140n",
+    "sb": "140n",
+    "sd": "160n",
+    "sca": "72.26287",
+    "scb": "0.06569",
+    "scc": "0.00861",
+    "region": " ",
+    "pasUpdateParamList": "fw, l"
+   },
+   "terms": {
+    "D": "N2",
+    "B": "VSS",
+    "G": "N1",
+    "S": "VSS"
+   }
+  },
+  {
+   "name": "MN1",
+   "lib": "gpdk045",
+   "cell": "nmos1v",
+   "xy": [
+    0.0,
+    0.0
+   ],
+   "orient": "R0",
+   "bBox": [
+    [
+     -0.425,
+     -0.3625
+    ],
+    [
+     0.8,
+     0.28125
+    ]
+   ],
+   "numInst": 1,
+   "view": "symbol",
+   "params": {
+    "model": "g45n1svt",
+    "m": "1",
+    "simM": "iPar(\\\\\"m\\\\\")",
+    "l": "45n",
+    "fw": "1u",
+    "w": "1u",
+    "simW": "iPar(\\\\\"w\\\\\")",
+    "fingers": "1",
+    "AreaFormula": "((iPar(\\\\\"fingers\\\\\")+1)*0.5u+iPar(\\\\\"fingers\\\\\")*iPar(\\\\\"l\\\\\"))*(iPar(\\\\\"fw\\\\\")+0.5u)*iPar(\\\\\"m\\\\\")",
+    "threshold": "10u",
+    "diffCont": "t",
+    "connectGates": "None",
+    "dfm": "Minimum",
+    "sdMtlWidth": "60n",
+    "connectSD": "None",
+    "leftAbut": "0",
+    "rightAbut": "0",
+    "tap": "None",
+    "leftTap": "t",
+    "tapCntRows": "1",
+    "ad": "140f",
+    "as": "140f",
+    "pd": "2.28u",
+    "ps": "2.28u",
+    "nrd": "140m",
+    "nrs": "140m",
+    "sa": "140n",
+    "sb": "140n",
+    "sd": "160n",
+    "sca": "72.26287",
+    "scb": "0.06569",
+    "scc": "0.00861",
+    "region": " ",
+    "pasUpdateParamList": "fw, l"
+   },
+   "terms": {
+    "D": "N1",
+    "B": "VSS",
+    "G": "OUT",
+    "S": "VSS"
+   }
+  },
+  {
+   "name": "C3",
+   "lib": "gpdk045",
+   "cell": "mimcap",
+   "xy": [
+    7.75,
+    0.25
+   ],
+   "orient": "R0",
+   "bBox": [
+    [
+     6.9875,
+     -0.3
+    ],
+    [
+     8.425,
+     0.34375
+    ]
+   ],
+   "numInst": 1,
+   "view": "symbol",
+   "params": {
+    "model": "g45cmim",
+    "calcParam": "capacitance",
+    "c": "25.0194f",
+    "w": "4.49u",
+    "l": "4.49u",
+    "m": "2",
+    "ca": "0.001025",
+    "cf": "2.425e-10",
+    "area": "iPar(\\\\\"w\\\\\")*iPar(\\\\\"l\\\\\")",
+    "perim": "2*iPar(\\\\\"w\\\\\")+2*iPar(\\\\\"l\\\\\")",
+    "AreaFormula": "(0.5u+iPar(\\\\\"w\\\\\")*(0.5u+iPar(\\\\\"l\\\\\"))*iPar(\\\\\"m\\\\\")",
+    "polyCoef": "0",
+    "qmode": "ideal",
+    "pasUpdateParamList": "c w l"
+   },
+   "terms": {
+    "MINUS": "VSS",
+    "B": "VSS",
+    "PLUS": "OUT"
+   }
+  },
+  {
+   "name": "C2",
+   "lib": "gpdk045",
+   "cell": "mimcap",
+   "xy": [
+    4.75,
+    0.25
+   ],
+   "orient": "R0",
+   "bBox": [
+    [
+     3.9875,
+     -0.3
+    ],
+    [
+     5.425,
+     0.34375
+    ]
+   ],
+   "numInst": 1,
+   "view": "symbol",
+   "params": {
+    "model": "g45cmim",
+    "calcParam": "capacitance",
+    "c": "25.0194f",
+    "w": "4.49u",
+    "l": "4.49u",
+    "m": "2",
+    "ca": "0.001025",
+    "cf": "2.425e-10",
+    "area": "iPar(\\\\\"w\\\\\")*iPar(\\\\\"l\\\\\")",
+    "perim": "2*iPar(\\\\\"w\\\\\")+2*iPar(\\\\\"l\\\\\")",
+    "AreaFormula": "(0.5u+iPar(\\\\\"w\\\\\")*(0.5u+iPar(\\\\\"l\\\\\"))*iPar(\\\\\"m\\\\\")",
+    "polyCoef": "0",
+    "qmode": "ideal",
+    "pasUpdateParamList": "c w l"
+   },
+   "terms": {
+    "MINUS": "VSS",
+    "B": "VSS",
+    "PLUS": "N2"
+   }
+  },
+  {
+   "name": "C1",
+   "lib": "gpdk045",
+   "cell": "mimcap",
+   "xy": [
+    1.75,
+    0.25
+   ],
+   "orient": "R0",
+   "bBox": [
+    [
+     0.9875,
+     -0.3
+    ],
+    [
+     2.425,
+     0.34375
+    ]
+   ],
+   "numInst": 1,
+   "view": "symbol",
+   "params": {
+    "model": "g45cmim",
+    "calcParam": "capacitance",
+    "c": "25.0194f",
+    "w": "4.49u",
+    "l": "4.49u",
+    "m": "2",
+    "ca": "0.001025",
+    "cf": "2.425e-10",
+    "area": "iPar(\\\\\"w\\\\\")*iPar(\\\\\"l\\\\\")",
+    "perim": "2*iPar(\\\\\"w\\\\\")+2*iPar(\\\\\"l\\\\\")",
+    "AreaFormula": "(0.5u+iPar(\\\\\"w\\\\\")*(0.5u+iPar(\\\\\"l\\\\\"))*iPar(\\\\\"m\\\\\")",
+    "polyCoef": "0",
+    "qmode": "ideal",
+    "pasUpdateParamList": "c w l"
+   },
+   "terms": {
+    "MINUS": "VSS",
+    "B": "VSS",
+    "PLUS": "N1"
+   }
+  }
+ ],
+ "nets": {
+  "VDD": {
+   "connections": [
+    "MP3.B",
+    "MP3.S",
+    "MP2.B",
+    "MP2.S",
+    "MP1.B",
+    "MP1.S"
+   ],
+   "numBits": 1,
+   "sigType": "signal",
+   "isGlobal": false
+  },
+  "VSS": {
+   "connections": [
+    "C3.B",
+    "C3.MINUS",
+    "C2.B",
+    "C2.MINUS",
+    "C1.B",
+    "C1.MINUS",
+    "MN3.B",
+    "MN3.S",
+    "MN2.B",
+    "MN2.S",
+    "MN1.B",
+    "MN1.S"
+   ],
+   "numBits": 1,
+   "sigType": "signal",
+   "isGlobal": false
+  },
+  "OUT": {
+   "connections": [
+    "C3.PLUS",
+    "MN3.D",
+    "MP3.D",
+    "MN1.G",
+    "MP1.G"
+   ],
+   "numBits": 1,
+   "sigType": "signal",
+   "isGlobal": false
+  },
+  "N1": {
+   "connections": [
+    "C1.PLUS",
+    "MN2.G",
+    "MP2.G",
+    "MN1.D",
+    "MP1.D"
+   ],
+   "numBits": 1,
+   "sigType": "signal",
+   "isGlobal": false
+  },
+  "N2": {
+   "connections": [
+    "C2.PLUS",
+    "MN3.G",
+    "MP3.G",
+    "MN2.D",
+    "MP2.D"
+   ],
+   "numBits": 1,
+   "sigType": "signal",
+   "isGlobal": false
+  }
+ },
+ "pins": {
+  "VDD": {
+   "direction": "inputOutput",
+   "numBits": 1
+  },
+  "VSS": {
+   "direction": "inputOutput",
+   "numBits": 1
+  },
+  "OUT": {
+   "direction": "output",
+   "numBits": 1
+  }
+ },
+ "notes": []
+}

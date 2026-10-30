@@ -1,94 +1,92 @@
-# 实验、泛化与技术审查
+# Experiments, generalization and technical review
 
-本文件规定如何得到可解释的证据，不宣称某种架构一定优于另一种。
+This file defines how to obtain interpretable evidence; it does not claim that one architecture must outperform another.
 
-## 1. 四种问题分开问
+## 1. Ask four different questions separately
 
-| 实验 | 训练与测试差异 | 能支持的结论 |
+| Experiment | Difference between training and testing | Supported conclusion |
 |---|---|---|
-| 同拓扑新规格 | 电路连接相同，目标或运行条件改变 | 规格条件化泛化 |
-| 同类新拓扑 | 如新的 LDO 连接/参数规模 | 同类结构迁移 |
-| 跨电路类别 | LDO、VCO、OpAmp 间变化 | 仅在覆盖的类别与协议范围内的迁移 |
-| 跨 PDK | 器件模型与合法域变化 | 另行定义的工艺迁移，非首版默认范围 |
+| New specifications on the same topology | The same circuit connections, different targets or operating conditions | Generalization through specification conditioning |
+| New topology within a category | For example, new LDO connections/parameter scale | Structural transfer within a category |
+| Across circuit categories | Changes between LDO, VCO and OpAmp | Transfer only within the categories and protocol covered |
+| Across PDKs | Different device models and legal domains | Separately defined process transfer, outside the first version's default scope |
 
-同一电路重命名、实例重新排序、参数随机初始化，不算新拓扑。
-统一图支持可变大小不等于优化策略有有效泛化。
+Renaming the same circuit, reordering instances or randomly initializing parameters does not create a new topology.
+A common graph's support for variable sizes does not establish effective generalization of the optimization policy.
 
-## 2. 防泄漏协议
+## 2. Leakage-prevention protocol
 
-- 训练前冻结拓扑 lineage、规格分布、测试台与 train/validation/test manifest。
-- 用显式拓扑族标记与结构去重检查；不把文件名或 raw netlist hash 当作唯一防泄漏保障。
-- normalizer、词表选择、surrogate、离线 replay 和超参数选择都遵守划分。
-- 从同一基电路轻微修改得到的电路是否算 unseen，在实验前定义并报告。
-- validation 可以选超参数；test 不反复用于调参后还称为无偏测试。
-- 对基线给相同测试台、参数合法域、起点规则、规格、corner、精度与停止条件。
-- 并行数、CPU 线程、GPU、许可证和预训练数据不能藏在“算法差异”里。
+- Freeze topology lineage, specification distributions, testbenches and train/validation/test manifests before training.
+- Use explicit topology-family labels and structural deduplication checks; filenames or raw netlist hashes alone do not prevent leakage.
+- Normalizers, vocabulary selection, surrogates, offline replay and hyperparameter selection all follow the split.
+- Define and report before the experiment whether a slight modification of the same base circuit counts as unseen.
+- Validation may select hyperparameters; do not repeatedly tune on test data and still call it unbiased testing.
+- Give baselines the same testbenches, legal parameter domains, starting-point rules, specifications, corners, accuracy and stopping conditions.
+- Do not hide parallelism, CPU threads, GPUs, licenses or pretraining data within "algorithm differences".
 
-## 3. Zero-shot 与 adaptation
+## 3. Zero-shot and adaptation
 
-**Zero-shot policy**：不以测试电路的数据更新权重或测试集统计。若需要当前电路的初始测量或在线多步查询，仍要计入这些真实仿真。
-必须进一步区分“直接生成一次参数”与“冻结 policy 的多步优化”，不能混称无仿真 zero-shot。
+**Zero-shot policy**: no weight updates or test-set statistics fitted from test-circuit data. If initial measurements or multiple online queries on the current circuit are needed, those real simulations still count.
+Further distinguish "generate parameters once" from "multiple optimization steps with a frozen policy"; do not call both simulation-free zero-shot.
 
-**Few-shot / online adaptation**：允许固定预算内的测试电路仿真和学习，必须报告预算、更新对象、初始化和是否保存后续经验。
+**Few-shot / online adaptation**: test-circuit simulation and learning are allowed within a fixed budget; report the budget, what is updated, initialization and whether subsequent experience is retained.
 
-**From scratch**：同样的在线预算从随机模型/无预训练启动。
-跨任务积累经验的顺序依赖要记录，不能让后测任务无声明地获得额外知识。
+**From scratch**: start from a random model/no pretraining with the same online budget.
+Record order dependence when experience accumulates across tasks; later-tested tasks must not receive undeclared extra knowledge.
 
-## 4. 基线与消融
+## 4. Baselines and ablations
 
-先有可复现随机搜索，再按代码可用性选一个合适的非 RL 优化器（如 CMA-ES、CEM 或 BO）。
-选择依据是参数域、预算与可维护性，不要求首版一次实现所有算法。
+First establish reproducible random search, then choose a suitable non-RL optimizer (such as CMA-ES, CEM or BO) according to available code.
+Choose based on parameter domains, budget and maintainability; the first version need not implement every algorithm at once.
 
-当前项目已实现随机搜索与坐标模式搜索。用户要求的编码器对照通过统一 SAC 接口比较：
+The project currently implements random search and coordinate pattern search. The user-requested encoder controls are compared through a common SAC interface (synchronized 2026-09-30: only the three encoders below remain;
+node-wise MLP, topology-only GCN, GATv1 and M5's port-aware message-passing GNN were removed; historical results retain their own records):
 
 ```text
-port-aware Graph Transformer + SAC       # 主方案
-node-wise MLP + SAC                      # 忽略电路连接的消融，保留组绑定
-topology-only GCN + SAC                  # 使用连接，忽略关系标签
-port-relational RGCN + SAC               # role × direction 关系
-port-aware GAT + SAC                     # 加性邻域注意力
-port-aware message-passing GNN + SAC     # 保留 M5 对照
-scratch / frozen / adapt                 # 每种显式选择的编码器均运行三种模式
+port-aware Graph Transformer + SAC       # main approach
+port-relational RGCN + SAC               # role × direction relations
+port-aware GATv2 + SAC                   # GATv2Conv dynamic attention with terminal edge features
+scratch / frozen / adapt                 # all three modes for every explicitly selected encoder
 ```
 
-显式使用 `--encoders` 时，每种架构独立预训练并做冻结 validation 诊断；不传时保留 M5 六方法。固定划分、规格、动作合法域、seed、预训练/在线预算和更新规则；各策略采集的候选可能不同，同样的预算不等于同一数据集。
+When `--encoders` is explicit, pretrain each architecture independently and perform frozen validation diagnostics. Without it, run only the three `graph_transformer` modes plus random search and coordinate pattern search (the default in `examples/benchmark_transfer.py`; the M5 six-method set includes the removed port-GNN and runs only at source commit bbdfe36). Fix splits, specifications, legal action domains, seeds, pretraining/online budgets and update rules; policies may collect different candidates, so equal budgets do not imply identical datasets.
 
-`scratch` 随机初始化；`frozen` 复制同架构权重并冻结，以均值策略做多步评价；`adapt` 复制同架构网络/alpha，但重新创建优化器与空 replay。每个测试任务独立，数据不回流源模型。当前 validation 仅作诊断，不做模型或超参数选择。
+`scratch` uses random initialization; `frozen` copies and freezes same-architecture weights and performs multiple evaluation steps with the mean policy; `adapt` copies same-architecture networks/alpha but creates new optimizers and empty replay. Each test task is independent and its data does not feed back into the source model. Current validation is diagnostic only and does not select models or hyperparameters.
 
-分别比较每种架构的 frozen/adapt 与其自己的 scratch，再跨架构比较；保留随机与非 RL 对照。报告实际 actor+Q1+Q2 参数数、预训练和在线成本，同宽度/深度不宣称参数量匹配。预算按选择矩阵计算，超出上限在创建后端前拒绝；切换编码器不自动增加真实仿真预算。
+Compare each architecture's frozen/adapt modes against its own scratch mode first, then compare architectures; retain random and non-RL controls. Report actual actor+Q1+Q2 parameter counts, pretraining and online costs; equal width/depth is not matched parameter count. Calculate the budget from the selection matrix and reject an over-budget request before creating a backend; switching encoders does not automatically increase the real simulation budget.
 
-固定拓扑展平 MLP 或用户旧 DDPG/RGCN 是另外的参考，不能与当前共享逐节点 MLP/RGCN-SAC 混称；须说明动作维度与优化器差异。端口语义/规格条件化的额外消融仍需单独实现和验收。
-TD3、surrogate、global attention、gated residual、额外 OP 特征和并行采样均是后续单独消融。
-一次改变多个因素后，不把提升全部归因于一个新模块。
+A flattened fixed-topology MLP or the user's old DDPG/RGCN is a separate reference and must not be confused with the current shared RGCN-SAC (or the removed node-wise MLP-SAC); explain action-dimension and optimizer differences. Further ablations of terminal semantics/specification conditioning still need separate implementation and acceptance.
+TD3, surrogates, global attention, gated residuals, extra OP features and parallel sampling are separate later ablations.
+After changing several factors at once, do not attribute every improvement to one new module.
 
-2023 Li 与 DEGT 仅作为需核对的相关工作。复现前确认具体文章、开源版本、真实训练/测试协议和授权；不要凭先前聊天补造论文细节。
-未阅读原文/代码前不声称“首次”“超越”“完全复现”。
+The 2023 Li work and DEGT are related work requiring verification. Before reproduction, confirm the specific paper, open-source version, actual training/testing protocol and authorization; do not invent paper details from earlier chats.
+Do not claim "first", "outperforms" or "fully reproduced" before reading the original text/code.
 
-## 5. 最少报告什么
+## 5. Minimum reporting requirements
 
-| 类别 | 指标 |
+| Category | Metrics |
 |---|---|
-| 达标 | 必需规格全部达标率、失败类别、有效设计比例 |
-| 样本效率 | 首次达标前真实仿真调用数、固定预算下 best-so-far 质量 |
-| 时间效率 | time-to-first-feasible、总 wall-clock、吞吐、分阶段耗时 |
-| 质量 | 每项原始物理指标、最坏 violation、次要目标、Pareto 结果（适用时） |
-| 成本 | 预训练、调参、warm-up、失败、重试、corner/analysis 次数和并行资源 |
-| 稳定性 | 多个独立随机种子、跨测试电路分布、区间与个例 |
+| Meeting specifications | Fraction meeting every required spec, failure categories, valid-design fraction |
+| Sample efficiency | Real simulation calls before the first pass, best-so-far quality under a fixed budget |
+| Time efficiency | time-to-first-feasible, total wall-clock time, throughput, time per stage |
+| Quality | Every raw physical metric, worst violation, secondary objectives, Pareto results where applicable |
+| Cost | Pretraining, tuning, warm-up, failures, retries, corner/analysis counts and parallel resources |
+| Stability | Multiple independent random seeds, distribution across test circuits, intervals and individual cases |
 
-仿真预算需定义“一次调用”是单 analysis、单 corner 还是完整候选测试包；同时保存底层调用和候选评价计数。
-cache hit 不当作新仿真，warm-start 数据和实际失败调用不能从成本里消失。
+Define whether "one call" in the simulation budget means one analysis, one corner or a complete candidate test package; retain both underlying call counts and candidate-evaluation counts.
+Do not count cache hits as new simulations, or omit warm-start data and actual failed calls from costs.
 
-当前只预留 nominal top 3 的固定 5-corner 后验证接口，不跑全组合。必须先按 nominal reward 对实际执行参数去重、固定 top-k，再做后验证；不得用 PVT 结果反选 nominal top-k 或混入训练。`pass_rate` 的分母是全部配置 corners；有未知结果时不给完整通过率。对 min/max/range 按约束方向报告最差指标与对应 corner。robust_score 只在结果完整时计算，任何已知失败 corner 都排除通过资格。
+The optimizer package only reserves a fixed 5-corner post-validation interface for the nominal top 3 (workbench Corner check resimulates the 1-3 best designs under 5 conditions); it does not run all combinations. First deduplicate actual executed parameters by nominal reward and freeze top-k, then perform post-validation. Do not use later PVT results to reselect nominal top-k or mix them into training (OTA7's explicitly selected training conditions under reward v2 / v2.1 are separate; see [Conditions and statistical validation](pvt-monte-carlo.md)). The denominator of `pass_rate` is all configured corners; unknown results mean no complete pass rate. For min/max/range, report the worst metric and corresponding corner in the constraint's direction. Calculate robust_score only with complete results; any known failed corner disqualifies a pass.
 
-这五个 corners 用于选择候选，属于 validation，不是独立 test。未来重复依据它们调参时仍需独立留出验证条件/统计种子再报告泛化或良率。MC 样本通过率、corner pass rate 和真实制造良率不是同一个指标。更多预算规则见 [工况与统计验证](pvt-monte-carlo.md)。
+These five corners select candidates and are validation, not independent test data. Future repeated tuning against them still needs independently held-out validation conditions/statistical seeds before reporting generalization or yield. MC sample pass rates, corner pass rates and real manufacturing yield are different metrics. More budget rules are in [Conditions and statistical validation](pvt-monte-carlo.md).
 
-未在预算内达标的 run 是未达标/右删失，不从 time-to-feasible 均值里删除，也不假装预算终点就是成功时间。
-报告条件于成功的时间时必须同时给出成功率和删失规则。
-正式实验的 seed 数由预算决定；只有一次运行时明确标成 pilot，不给稳定优越结论。
+A run that does not pass within budget is unsuccessful/right-censored; do not remove it from time-to-feasible means or pretend the budget endpoint is its success time.
+When reporting time conditional on success, also report success rates and censoring rules.
+The seed count for formal experiments depends on budget; explicitly label a single run as a pilot and do not conclude stable superiority.
 
-## 6. 迁移是否值得
+## 6. Is transfer worthwhile?
 
-分别展示：
+Show separately:
 
 ```text
 online savings per task
@@ -96,20 +94,20 @@ upfront training + hyperparameter-search cost
 number of tasks needed to recover upfront cost (when measurable)
 ```
 
-不要只报微调后每个测试任务更快，却不说明为此用了多少预训练 Spectre 数据。
-可以同时给“已训练模型重复使用”的边际成本和“从零建立该系统”的总成本。
-若跨类别失败，分析是规格/测量不统一、数据分布、表示、动作域或算法限制，不能仅用换更大模型替代诊断。
+Do not report only that each test task is faster after fine-tuning without stating how much pretraining Spectre data it required.
+Report both the marginal cost of reusing a trained model and the total cost of building the system from scratch if useful.
+If cross-category transfer fails, diagnose inconsistent specifications/measurements, data distributions, representations, action domains or algorithm limits; a larger replacement model is not a substitute for diagnosis.
 
-## 7. Review / grill 清单
+## 7. Review / grill checklist
 
-给每个问题附代码位置、数据或缺少的证据，并提供具体测试：
+Attach code locations, data or missing evidence to each question and provide a concrete test:
 
-1. **端口与拓扑**：改变 D/G/S/B 连接是否改变真实传给模型的特征？重排 ID 是否保持输出等变？
-2. **动作与 Q**：组数不同能否 batch？动作绑到正确器件吗？actor 梯度能通过 Q 回来吗？
-3. **奖励**：未振荡、测量缺失、非收敛、许可证失败是否分开？成功判定会不会绕过必需规格？
-4. **仿真真实性**：回写是否生效？重复候选是否命中正确缓存？测试台与 corner 是否意外变化？
-5. **泛化**：测试拓扑是否只是重命名？测试数据是否进入 replay、normalizer、surrogate 或调参？
-6. **公平性**：模型提升是否来自更多数据/资源、更宽边界、不同停止条件或排除失败？
-7. **工程收益**：瓶颈在哪里？训练计算开销是否吞掉仿真节省？恢复是否保留完整学习状态？
+1. **Terminals and topology**: does changing D/G/S/B connections change the features actually passed to the model? Does reordering IDs preserve output equivariance?
+2. **Actions and Q**: can different group counts be batched? Are actions bound to the correct devices? Can actor gradients flow back through Q?
+3. **Reward**: are failure to oscillate, missing measurements, non-convergence and license failure distinguished? Can success bypass required specifications?
+4. **Simulation authenticity**: do writes take effect? Do repeated candidates use the correct cache entry? Did the testbench or corner change unexpectedly?
+5. **Generalization**: are test topologies merely renamed? Did test data enter replay, the normalizer, a surrogate or tuning?
+6. **Fairness**: does model improvement come from more data/resources, wider bounds, different stopping conditions or excluded failures?
+7. **Engineering benefit**: where is the bottleneck? Does training overhead consume the simulation savings? Does recovery preserve the complete learning state?
 
-审查不要求额外安装 `brainstorming` 或 `grillme`，也不等于照搬这些第三方 skill 的内容。
+Review does not require installing `brainstorming` or `grillme`, and it does not mean copying those third-party skills' content.

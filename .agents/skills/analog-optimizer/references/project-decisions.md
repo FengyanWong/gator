@@ -1,119 +1,119 @@
-# 项目决策与上下文
+# Project decisions and context
 
-同步日期：2026-09-19。依据用户后续授权及项目 `docs/decisions.md`、`docs/encoder-ablation.md` 更新。
-这是项目状态快照；最新用户请求、真实代码和对应验收记录优先。历史 M3 范围不再限制已经获准并完成的 M4/M5。
+Synchronized: 2026-09-19. Updated from later user authorization and the project's `docs/decisions.md` and `docs/encoder-ablation.md`. Encoder, training-condition, PVT/MC and LLM rules were synchronized on 2026-09-30 (sections 1, 4, 8, 9 and 10); see the start of the project's `docs/decisions.md` for the current state.
+This is a snapshot of project status; the latest user request, actual code and corresponding acceptance records take precedence. The historical M3 scope no longer limits M4/M5 work that has been authorized and completed.
 
-## 1. 当前工作方向
+## 1. Current direction
 
-| 项目 | 当前约定 | 边界 |
+| Item | Current agreement | Boundary |
 |---|---|---|
-| 优化任务 | 模拟/混合信号电路 sizing 与明确允许的偏置参数 | 首版不做拓扑生成和版图优化 |
-| 电路平台 | Cadence Virtuoso + Spectre | 真实 PDK/测试台以本地为准 |
-| 接口选择 | 用户指定 Virtuoso bridge；讨论的仓库是 `Arcadia-1/virtuoso-bridge-lite` | 不自动迁回 SkillBridge，不引入 LLM agent 内环 |
-| 电路表示 | 统一、端口感知的 device-net 图 | 保存端口信息并传到模型；不是简单 adjacency |
-| Encoder | 默认局部端口 Graph Transformer，可选 MLP/GCN/RGCN/GAT/port-GNN | 统一节点/参数组接口；可运行不等于迁移效果已证实 |
-| 优化器 | Goal-conditioned SAC | 可以做其他算法基线，但不默认替换 |
-| 初版 surrogate | 不使用 | 以后只能作为单独实验加入 |
-| 当前训练工况 | 已验证 nominal only | PVT/MC 结果不进入 reward、replay 或 normalizer |
-| PVT 筛选 | nominal top 3 独立设计 × 5 个代表性工况 | 已有配置、数据契约和汇总纯函数；执行调度尚未实现 |
-| Monte Carlo | 保留类型、样本身份和显式不支持接口 | 未来先后验证，再考虑有限预算的训练扩展 |
-| 可迁移目标 | 参数组级动作、统一 schema、规格条件化 | 不承诺任意电路 zero-shot |
-| 当前阶段 | M1–M4、M5 首轮及真实同类新拓扑补验、M6 前编码器接口已完成 | M6 与跨类别未开始；GT 迁移优势仍未证实 |
+| Optimization task | Analog/mixed-signal circuit sizing and explicitly allowed bias parameters | The first version does not generate topologies or optimize layouts |
+| Circuit platform | Cadence Virtuoso + Spectre | The local installation determines the real PDK/testbench |
+| Interface choice | The user specified Virtuoso bridge; the repository discussed is `Arcadia-1/virtuoso-bridge-lite` | Do not automatically migrate back to SkillBridge; an LLM inner loop follows only `docs/brief-llm-sizing-for-astra.md` (the user's 2026-09-29 decision, replacing the earlier prohibition on an LLM agent inner loop for that work) |
+| Circuit representation | A common, port-aware device-net graph | Preserve terminal information and pass it to the model; more than simple adjacency |
+| Encoder | Local terminal Graph Transformer by default; RGCN and GATv2 optional (port-GNN removed 2026-09-24; MLP/GCN removed 2026-09-26, GATv1 replaced by GATv2 that day) | Common node/parameter-group interface; runnable does not mean transfer effectiveness has been demonstrated |
+| Optimizer | Goal-conditioned SAC | Other algorithms may be baselines, but do not replace it by default |
+| Surrogate in the first version | None | May be added later only as a separate experiment |
+| Current training conditions | Nominal only by default; since reward v2 / v2.1, `real:gpdk045_ota7` can explicitly select `always` or `after_nominal`, with each condition's results entering reward and replay (real acceptance results in `docs/reward-v2.md`) | Post-validation (Corner check) results do not enter reward, replay or normalizer; MC is unimplemented |
+| PVT screening | Nominal top 3 independent designs × 5 representative conditions | Configuration, data contract and pure summary functions exist; workbench Corner check (2026-09-22) resimulates a run's 1-3 best designs under 5 conditions; general top-k scheduling in the package is not yet implemented |
+| Monte Carlo | Types, sample identity and an explicitly unsupported interface retained | Post-validation first in future, then consider a limited-budget training extension; only `docs/plan-finalist-monte-carlo.md` exists now |
+| Transfer goal | Parameter-group actions, common schema, specification conditioning | No promise of zero-shot operation on arbitrary circuits |
+| Current stage | M1–M5 and the encoder interface before M6 completed; M6 closed at pilot scale on 2026-09-20 | Cross-category transfer has pilot evidence only; a GT/transfer advantage remains unproven; larger prospective experiments and optional extensions have not started |
 
-## 2. 历史经验：用于兼容，不直接搬成默认值
+## 2. Historical experience: retain compatibility without turning it into defaults
 
-用户有 Python、DDPG/RGCN、SkillBridge、Virtuoso ADE Assembler/OCEAN/Spectre 经验，做过 VCO/环振与 LDO 相关 sizing。
-过去讨论过共享经验池与多仿真实例，并关心如何保留 policy 与 representation、减少 Spectre 调用和总运行时间。
+The user has experience with Python, DDPG/RGCN, SkillBridge, Virtuoso ADE Assembler/OCEAN/Spectre, and sizing VCO/ring-oscillator and LDO circuits.
+Past discussions included shared experience pools and multiple simulation instances, retaining policy and representation, and reducing Spectre calls and total runtime.
 
-因此：
+Therefore:
 
-- 优先复用用户已有的电路配置、测量脚本与经过测试的仿真流程。
-- 接口层支持替换，但不要把老项目中某组 W/L、VDD、reward、episode 长度或噪声设置写成跨电路常量。
-- 老 DDPG 的探索噪声并不是 SAC 的默认探索机制。
-- 旧项目或其他机器的耗时/并行加速比只是历史测量，不是这台机器的新性能承诺。
-- 不依据历史机器配置假定存在可用 CUDA GPU；先核对当前硬件与环境。
+- Prefer reusing the user's existing circuit configurations, measurement scripts and tested simulation flows.
+- Support replacing the interface layer, but do not turn one old project's W/L, VDD, reward, episode length or noise settings into constants across circuits.
+- Old DDPG exploration noise is not SAC's default exploration mechanism.
+- Timings/parallel speedups from an old project or another machine are historical measurements, not new performance promises for this machine.
+- Do not assume an available CUDA GPU from historical machine specifications; verify the current hardware and environment first.
 
-## 3. 部署上下文
+## 3. Deployment context
 
-用户近期讨论的两条路径：
+Two paths recently discussed by the user:
 
 ```text
-A. Python / Codex 位于 WSL 或 Linux
+A. Python / Codex in WSL or Linux
    → SSH / bridge
-   → Linux VM 内的 Virtuoso / Spectre
+   → Virtuoso / Spectre in a Linux VM
 
-B. Python 与 Virtuoso / Spectre 同在 Linux VM
+B. Python and Virtuoso / Spectre in the same Linux VM
    → local bridge / local runner
 ```
 
-两者都应该通过配置接入相同的项目 Backend。
-路径 A/B 谁更快要测量，不根据网络往返或“本地”标签直接下结论。
-用户机器、SSH 账号和路径可能变化，不在 Skill 中写死。
+Both should connect to the same project Backend through configuration.
+Measure which of paths A/B is faster; do not conclude from network round trips or the label "local" alone.
+The user's machine, SSH account and paths can change; do not hard-code them in the skill.
 
-## 4. 首版不默认做的事情
+## 4. What the first version does not do by default
 
-- 不加入 surrogate、diffusion、Mamba、LLM 搜索、多智能体竞赛、分布式训练集群。
-- 不把所有器件尺寸、偏置、整数参数一次性全部放开。
-- 不强行把不同电路补成同一种固定拓扑，或为每种电路维护独立模型输出层。
-- 不把 Graph Transformer 换成“更省事”的 GNN 后仍称原方案已完成。
-- 不在基础仿真尚不可靠时讨论数千步训练的收敛优劣。
-- 不把其他 skill 的流程当作必须安装的依赖。本 Skill 自带任务拆分和技术审查要求。
+- Do not add a surrogate, diffusion, Mamba, multi-agent competition or a distributed training cluster. LLM search follows only `docs/brief-llm-sizing-for-astra.md` (the user's 2026-09-29 decision; for that work, the brief replaces this rule's earlier prohibition on LLM search).
+- Do not make all device sizes, biases and integer parameters adjustable at once.
+- Do not force different circuits into one padded fixed topology or maintain a separate model output layer for each circuit.
+- Do not replace Graph Transformer with an "easier" GNN and still claim the original design is complete.
+- Do not discuss convergence over thousands of training steps before basic simulation is reliable.
+- Do not treat another skill's workflow as a required installation dependency. This skill includes its own task-breakdown and technical-review requirements.
 
-## 5. 已实现的工程选择与待验证项
+## 5. Implemented engineering choices and items to validate
 
-当前代码采用 PyG `HeteroData`/packed batch、固定规格注册表与 mask、固定物理 reference 归一化、绝对 normalized proposal 与合法化投影，以及各自独立的 actor/Q1/Q2 编码器。真实基线为 GPDK045 五管 OTA；不得将其参数权限推广到其他电路。
+The current code uses PyG `HeteroData`/packed batches, a fixed specification registry and masks, fixed physical reference normalization, absolute normalized proposals with legalization projection, and separate actor/Q1/Q2 encoders. The real baseline is a GPDK045 five-transistor OTA; do not extend its parameter permissions to other circuits.
 
-GT 使用局部 `TransformerConv`；基准入口默认 32 hidden、2 layers、4 heads，用户可以显式配置。全局 attention、结构距离、surrogate、更多动作域及多 worker 尚属后续选项。网络规模、正式预算与各架构迁移优劣需要独立实验，不是已确认性能结论。
+GT uses local `TransformerConv`; the benchmark entry point defaults to 32 hidden, 2 layers and 4 heads, explicitly configurable by the user. Global attention, structural distances, surrogates, additional action domains and multiple workers remain later options. Network size, formal budgets and comparative transfer performance across architectures require separate experiments and are not confirmed performance findings.
 
-若没有真实 PDK/网表，先生成**明确标注 synthetic 的结构测试**，而不是补造“商用电路结果”。
+Without a real PDK/netlist, first produce **structural tests explicitly labelled synthetic**, rather than inventing "commercial-circuit results".
 
-## 6. 泛化的工作假设
+## 6. Working hypothesis for generalization
 
-研究目标是让统一表示和共享 policy 在新规格或新拓扑上减少所需真实仿真。
-优先按如下顺序检验：单电路闭环 → 同类规格迁移 → 同类新拓扑 → LDO/VCO/OpAmp 跨类别。
-统一图能够容纳不同电路，不自动证明模型已经学会可迁移优化；是否加速以独立测试集为准。
+The research goal is for a common representation and shared policy to reduce real simulations needed for new specifications or topologies.
+Test in this order: a single-circuit loop → specification transfer within a category → new topology within a category → cross-category LDO/VCO/OpAmp transfer.
+A common graph can represent different circuits; that alone does not demonstrate learned transferable optimization. Judge acceleration on an independent test set.
 
-## 7. 变更记录要求
+## 7. Change-record requirements
 
-重要变更写入项目自己的决策文件，记录日期、原因、影响模块、测试及可撤销方式。
-不要修改全局 Skill 来偷偷改变其他项目；项目专属决定优先保存于项目仓库。
+Record significant changes in the project's own decision file, including date, reason, affected modules, tests and a way to undo them.
+Do not silently change other projects by modifying a global skill; save project-specific decisions in the project repository first.
 
-## 8. M3 工况接口决策（2026-09-19 用户修订）
+## 8. M3 condition-interface decision (user revision, 2026-09-19)
 
-历史上用户将该次工况接口修改限定在 M3 及之前；后来已明确授权并完成 M4/M5。仍然有效的工况约束是：新增工况接口不改变动作维度，不启用 PVT/MC training，主优化器继续使用 goal-conditioned SAC。
+Historically, the user limited that condition-interface change to M3 and earlier; M4/M5 were later explicitly authorized and completed. The still-applicable condition constraints are: adding a condition interface does not change action dimensions, does not enable PVT/MC training, and retains goal-conditioned SAC as the main optimizer. (2026-09-30 note: the user later authorized reward v2 / v2.1, allowing `real:gpdk045_ota7` to explicitly enable PVT training conditions; see section 1. MC training remains disabled.)
 
-实际项目已用 `SimulationCondition/PVTCorner/MonteCarloConfig` 表达工况，并为统计批次保留逐样本结果接口。当前默认仍为 TT/27°C/1.0 V；这是已验证的 OTA 基线，不能因为器件名或文档表格而自动更换 nominal。
+The project already represents conditions with `SimulationCondition/PVTCorner/MonteCarloConfig` and retains an interface for per-sample results of statistical batches. The current default remains TT/27°C/1.0 V: this is the validated OTA baseline, and device names or documentation tables do not authorize changing nominal automatically.
 
-读取已安装 GPDK045 v6.0 后选取：TT/27°C/1.0 V、SS/125°C/0.9 V、FF/−40°C/1.1 V、FS/27°C/1.0 V、SF/27°C/1.0 V。模型入口提供五种 process sections；模型报告给出 −40..125°C；SOA 文件的 `max_vdd_1v=1.1` 明确限值。0.9 V 是项目以原基线下降 10% 的筛选选择，不是 PDK 明文最低工作电压。这五个组合不等于全组合或已证明的 worst-case 集合。
+After reading the installed GPDK045 v6.0, the selected conditions were TT/27°C/1.0 V, SS/125°C/0.9 V, FF/−40°C/1.1 V, FS/27°C/1.0 V and SF/27°C/1.0 V. The model entry provides five process sections; the model report gives −40..125°C; the SOA file explicitly limits `max_vdd_1v=1.1`. The project chose 0.9 V for screening, 10% below the original baseline; it is not a PDK-specified minimum operating voltage. These five combinations are neither a full combination set nor a proven worst-case set.
 
-权威项目配置及来源摘要位于 `configs/gpdk045_conditions.json`。本段是上下文快照，未来修改先看实际配置与用户授权，不把当前电路的数值复制到别的 PDK。详细规则与未来算力建议见 [工况与统计验证](pvt-monte-carlo.md)。
+The authoritative project configuration and source summary are in `configs/gpdk045_conditions.json`. This paragraph is a context snapshot: consult the actual configuration and user authorization before future changes, and do not copy this circuit's values to another PDK. Detailed rules and future compute suggestions are in [Conditions and statistical validation](pvt-monte-carlo.md).
 
-## 9. M4/M5 与 M6 前编码器接口（当前状态）
+## 9. M4/M5 and the encoder interface before M6 (current state)
 
-- M4 已实现 nominal SAC、参数组 actor、动作条件化独立 twin critics、replay 及完整 checkpoint。M5 已实现冻结任务划分、防泄漏、独立任务微调和成本报告；真实规格 pilot 没有证明迁移优势，真实新拓扑与跨类别迁移尚未验证。
-- 用户要求在 M6 之前支持 GT/MLP/RGCN/GAT 对照。`ModelConfig.encoder_type` 与 `CircuitEncoder/build_encoder` 已接好；`port_gnn` 保留兼容。定义与共同契约见 [学习与动作](learning-and-actions.md)，公平比较见 [实验与审查](evaluation.md)。
-- `examples/benchmark_transfer.py --encoders ...` 对每种显式选择的架构运行 scratch/frozen/adapt，并给每种架构冻结 validation 诊断；不传该参数保留 M5 六方法。`examples/train_synthetic_sac.py --encoder ...` 选择单 learner 编码器。
-- 各架构分别预训练；迁移复制同架构网络与 alpha，优化器/replay 重新创建。checkpoint 保存编码器与配置并严格匹配代码/schema/依赖；改码前的 M4/M5 checkpoint 不会自动迁移，跨架构权重加载拒绝。
-- 此次代码验收为 296 项离线测试通过、零失败、零跳过；四架构 smoke 完成 116 次 synthetic 评价，覆盖同拓扑规格和 2→3 维动作的新拓扑，新增真实调用为 0。记录和复现命令在项目 `docs/encoder-ablation.md`；这些是接口证据，不是电路知识迁移优势。
-- 该次文档和 skill 同步没有启动 M6 或新的训练/仿真。后续阶段依用户新请求及实际验收情况推进。
+- M4 implemented nominal SAC, a parameter-group actor, independent action-conditioned twin critics, replay and complete checkpoints. M5 implemented frozen task splits, leakage prevention, independent per-task fine-tuning and cost reports; the real specification pilot did not demonstrate a transfer advantage, and real new-topology and cross-category transfer had not yet been validated.
+- The user requested GT/MLP/RGCN/GAT comparisons before M6. `ModelConfig.encoder_type` and `CircuitEncoder/build_encoder` are connected; at that time `port_gnn` remained for compatibility. Synchronized 2026-09-30: only `graph_transformer`, `rgcn` and `gatv2` remain now; `port_gnn` (2026-09-24), `mlp` and `gcn` (2026-09-26) were removed, and `gat` was replaced by `gatv2` that day; all those old names are explicitly rejected. Definitions and shared contracts are in [Learning and actions](learning-and-actions.md); fair comparison is in [Experiments and review](evaluation.md).
+- `examples/benchmark_transfer.py --encoders ...` runs scratch/frozen/adapt for every explicitly selected architecture and freezes validation diagnostics for each. Without that argument, it runs only `graph_transformer` scratch/frozen/adapt plus random search and coordinate pattern search (the M5 six-method comparison included the removed port-GNN and runs only at source commit bbdfe36; synchronized 2026-09-30). `examples/train_synthetic_sac.py --encoder ...` selects the encoder of a single learner.
+- Pretrain architectures separately; transfer copies same-architecture networks and alpha, while recreating optimizers/replay. Checkpoints save the encoder and configuration and strictly match code/schema/dependencies; M4/M5 checkpoints made before the code change are not automatically migrated, and loading weights across architectures is rejected.
+- Acceptance for that code change: 296 offline tests passed, zero failed, zero skipped; the four-architecture smoke test completed 116 synthetic evaluations, covering specifications on the same topology and a new topology with 2→3 action dimensions; new real calls: 0. Records and reproduction commands are in the project's `docs/encoder-ablation.md`; this is interface evidence, not evidence of an advantage in circuit-knowledge transfer.
+- That documentation and skill synchronization did not start M6 or new training/simulation. Later stages follow new user requests and actual acceptance results.
 
-## 10. M1 神经网络输入复核（最新补充）
+## 10. M1 neural-input review (latest addition)
 
-用户随后要求检查 M1 是否支持 GCN/GAT 等网络。原图信息足够，补齐了普通算子的固定语义同构视图 `circuit-neural-v1`（默认节点 49 列、边特征 15 列）、带 mask 的 dense 节点输入与正确组 batch 偏移；不重写 parser。SAC 与新导出复用端口打包逻辑，细节见 [图契约](graph-contract.md)。
+The user later requested a check of M1 support for networks such as GCN/GAT. The original graph information was sufficient; the work added the fixed-semantics homogeneous view `circuit-neural-v1` (49 node columns and 15 edge-feature columns by default), masked dense node inputs and correct group batch offsets for ordinary operators, without rewriting the parser. SAC and the new export share terminal-packing logic; see the [Graph contract](graph-contract.md).
 
-新增普通 `gcn`，作为只读连接、不读端口标签的对照，区别于 `rgcn`。最新验收为 319 项离线测试通过、零失败、零跳过；六编码器 smoke 共 168 次 synthetic 评价，全部恢复，新增真实调用 0。直接输入测试覆盖 opamp/LDO/VCO、两级 opamp 和现有真实 OTA 导出快照。记录在项目 `docs/m1-neural-inputs.md`，不代表 M6 或真实迁移效果验证完成。
+An ordinary `gcn` was added as a control that reads connectivity but not terminal labels, distinct from `rgcn` (`gcn` was removed on 2026-09-26). The latest acceptance result was 319 offline tests passed, zero failed, zero skipped; the six-encoder smoke test made 168 synthetic evaluations, all recovered, with 0 new real calls. Direct-input tests cover opamp/LDO/VCO, a two-stage opamp and an existing real OTA export snapshot. The record is in the project's `docs/m1-neural-inputs.md`; it does not signify completion of M6 or validation of real transfer effectiveness.
 
-## 11. 训练输入缓存（最新补充）
+## 11. Training-input cache (latest addition)
 
-用户随后要求优化每次更新中的重复图转换。learner 已默认启用两层有界 LRU（2048 条完整观测原始输入、64 个静态拓扑模板），六编码器共用；replay 深拷贝按内容命中，尺寸/规格/测量/schema 改变刷新输入，网络表示始终按当前权重重算。真实回读与网表核验保留，未启动 M6。
+The user later requested optimization of repeated graph conversions within each update. The learner now enables two bounded LRU levels by default (2048 complete-observation raw inputs, 64 static topology templates), shared by six encoders; deep-copied replay entries hit by content, changes to sizes/specifications/measurements/schema refresh inputs, and network representations are always recomputed with current weights. Real readback and netlist verification remain; M6 was not started.
 
-完整 354 项离线测试通过、零失败、零跳过；六编码器缓存开/关损失和参数一致，冷 checkpoint 精确恢复。CPU 合成 batch=32 输入阶段约 35.66→10.86 ms，GT 完整更新约 112.22→62.31 ms；这些时间不含 replay 深拷贝或后端，不是 Spectre 提速。计时生成 18 次 synthetic 解析评价，新增真实调用 0。接口与证据见项目 `docs/input-tensor-cache.md`，长期约定见 [图契约](graph-contract.md)。
+All 354 offline tests passed, zero failed, zero skipped; losses and parameters agree with caching on/off for six encoders, and cold checkpoints restore exactly. On a CPU synthetic batch=32, the input stage was about 35.66→10.86 ms and the complete GT update about 112.22→62.31 ms; these timings exclude replay deep copies and the backend and are not Spectre speedups. Timing generated 18 synthetic analytical evaluations and 0 new real calls. Interfaces and evidence are in the project's `docs/input-tensor-cache.md`; lasting conventions are in the [Graph contract](graph-contract.md).
 
 
-## 12. M5 真实同类新拓扑补验（最新状态）
+## 12. M5 additional real same-category new-topology validation (latest state)
 
-用户要求补齐 M5。已新增 GPDK045 七管 Miller 两级 OTA 的独立核心/测试台、严格 CDF 宽度组 profile 和多电路串行实验入口。原五管动作权限不变；新拓扑有输入匹配宽度和 M6/M7=4:1 输出宽度两个动作组。两电路的每次回写、导出、测量和最终恢复均验证。
+The user requested completion of M5. The work added an independent core/testbench for a GPDK045 seven-transistor Miller two-stage OTA, a strict CDF width-group profile and a serial multi-circuit experiment entry point. Permissions on the original five-transistor circuit's actions are unchanged; the new topology has two action groups: matched input widths and output widths with M6/M7=4:1. Every write, export, measurement and final restoration was verified for both circuits.
 
-完整回归 440 passed、零失败/跳过。本轮 7 次电路验收 + 576 次冻结实验 + 2 次最终复验，共 585 次真实 Spectre、288 次 SAC 更新；3 seeds × 6 methods，同时覆盖源拓扑新规格与新拓扑。24 个 checkpoint 的来源/隔离、冻结权重及下一次更新精确恢复审计通过。最终 CDF 全快照、基线网表、指标与 PDK 入口/MOS 摘要均一致。
+Full regression: 440 passed, zero failed/skipped. This round used 7 circuit-acceptance calls + 576 frozen-experiment calls + 2 final requalification calls, totaling 585 real Spectre calls and 288 SAC updates; 3 seeds × 6 methods covered new specifications on the source topology and the new topology. Audits passed for the provenance/isolation of 24 checkpoints, frozen weights and exact recovery of the next update. Final full CDF snapshots, baseline netlists, metrics and PDK entry/MOS digests all matched.
 
-新拓扑 GT 从零/冻结 0/3，GT 微调 1/3，随机 1/3，坐标 3/3，port-GNN 微调 2/3。尚无 GT 迁移优势证据；仅一个留出拓扑且先完成基线/参数域验收后再冻结目标，不称为广泛或盲测泛化。M6、PVT/MC、surrogate 未在本轮启动。以项目 `docs/m5-real-topology.md` 和 `artifacts/local/m5-topology-acceptance-summary.json` 为本轮证据，前面首轮记录中的真实拓扑缺口已由此补齐。
+On the new topology, GT scratch/frozen achieved 0/3, GT adaptation 1/3, random 1/3, coordinate 3/3 and port-GNN adaptation 2/3. There is still no evidence of a GT transfer advantage; with only one held-out topology and targets frozen after baseline/parameter-domain acceptance, this is not broad or blind-test generalization. M6, PVT/MC and surrogates were not started in this round. The evidence for this round is the project's `docs/m5-real-topology.md` and `artifacts/local/m5-topology-acceptance-summary.json`; this fills the real-topology gap noted in the earlier first-round record.

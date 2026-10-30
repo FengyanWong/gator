@@ -1,0 +1,50 @@
+simulator lang=spectre
+library demo045
+
+section mos
+//  an inline transistor whose gate is reached through a gate resistor, with a binned model card
+inline subckt dm_nch ( d g s b )
+parameters
++l=1e-6 w=1e-6 multi=1 nf=1
++xw=0
+dm_nch ( d n1 s b ) nch_core w=w l=l m=multi nf=nf
+xrg ( g n1 ) dm_rg ll=l ww=w
+model nch_core bsim4 {
+1: type=n vth0=0.40 lmin=1e-8 lmax=1e-6
+//*** a comment inside the card ***
++ u0 = 0.03 k1 = 0.5
+2: type=n vth0=0.41 lmin=1e-6 lmax=1e-4
+}
+ends dm_nch
+
+inline subckt dm_pch ( d g s b )
+parameters l=1e-6 w=1e-6 multi=1 nf=1
+dm_pch ( d g s b ) pch_core w=w l=l m=multi nf=nf
+model pch_core bsim4 type=p vth0=-0.4
+ends dm_pch
+
+//  a MOS capacitor: a plain subcircuit around a top-level model
+subckt dm_ncap (d g s b)
+parameters l=0.1u w=10u
+mcore (d g s b) ncap_core w=w l=l
+ends dm_ncap
+model ncap_core bsim4 {
+1: type=n vth0=0.3
+}
+
+subckt dm_rg ( n1 n2 )
+parameters ll=1u ww=1u
+r1 ( n1 n2 ) bsource r=10*ll/ww
+ends dm_rg
+
+model dm_npn bjt type=npn is=1e-18 bf=100
+model dm_dio diode is=1e-15 area=4e-14
+endsection mos
+
+statistics {
+    process {
+        vary vth_shift dist=gauss std=1
+    }
+}
+
+endlibrary demo045

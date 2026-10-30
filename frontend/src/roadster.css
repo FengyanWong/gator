@@ -1,0 +1,654 @@
+/* The page's look (record 7.360, the user's choice of 2026-10-17: "go with draft A, build it into the workbench"; the drafts:
+   private artifact "GATOR Roadster look"). Dark only - the day look and its switch are gone ("dark mode only delete the day
+   mode") - in red, white and black, with readability first: 14 px text, sentence-case headings, roomier rows and fields,
+   cards told apart by their tone instead of boxes inside boxes. The colours are the names in styles.css's :root; this file
+   holds what the look adds: shapes, sizes, the banner, the tabs. It is loaded after styles.css and wins where both say
+   something about the same element; nothing here moves an element, so the page's parts stand where they always stood. A
+   value styles.css held for the same selector and property, here at top level or in the same @media, never applied: it
+   goes from styles.css (branch record SIF-129; looks_check.mjs fails on one). */
+
+/* Where each block goes (branch record SIF-162): under its opening comment, each block below has a line "Styles:" naming
+   the panel or window it styles and the file that draws it (App.tsx beside this file, the others in panels/), so
+   `grep -n "Styles:" roadster.css` lists them all. A pop-up window takes the page's stylesheets (popupWindow.ts): its
+   rules stand here too. The first nine blocks go by part of the page, from its text to "red stays for attention"; from
+   "branch record SIF-3" on, the blocks follow the branch records, mostly in their order - a later record's rules often
+   stand in the block of the same part -, so one window's rules can stand in several blocks. Nothing is regrouped: where
+   two rules tie on specificity the later one wins, so a rule moved beside its panel's others can change the page (record
+   7.360's traps). */
+
+/* ---- the page and its text ---------------------------------------------------------------------------------------------- */
+/* Styles: the page and every window: text sizes, headings, links, the focus ring; .layout is the page's grid (App.tsx) */
+body { font-size: 14px; line-height: 1.45; }
+.layout { gap: 12px; padding: 12px 16px; }   /* the columns keep their widths and their narrow layouts (styles.css) */
+@media (max-width: 1100px) { .layout { padding: 8px; } }   /* one column of editors: as wide as the window lets them (reliability_check) */
+h3 { margin: 12px 0 6px; font: 600 15px/1.3 var(--f-label); text-transform: none; letter-spacing: 0; color: var(--text); }
+h4 { font-family: var(--f-label); font-weight: 600; }
+label { font-size: 13px; gap: 4px; }
+button.text-link, .field-head .copy-word { font-size: 13px; }   /* an action on a caption line, and its "copied", at the caption's size (Output root ... Copy path) */
+.hint { font-size: 13px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+a { color: var(--text); } a:hover { color: #ffffff; }
+details > summary::marker { color: var(--muted); }
+
+/* ---- fields and buttons ------------------------------------------------------------------------------------------------- */
+/* Styles: every field and button of the page and its windows; icon buttons (Icons.tsx); the dialogs' close mark
+   (CircuitGraphView.tsx, ModelStructure.tsx) */
+input, select, textarea { border-radius: 8px; padding: 6px 9px; }
+button { border-radius: 9px; padding: 6px 12px; }
+button:hover:not(:disabled) { border-color: #5a5a61; background: var(--hover); }
+button.primary:hover:not(:disabled) { background: #ffffff; border-color: #ffffff; }
+button:has(> svg.icon) { padding: 7px 9px; }
+button.dialog-close:hover:not(:disabled) { color: var(--on-bad); }
+
+/* ---- cards: tone instead of outlines ------------------------------------------------------------------------------------ */
+/* Styles: the cards - each .panel (the editors, the Circuit panel, the right column's modules, the RL model window), the
+   bottom panel (footer: BottomPanel.tsx) and the message line under the header (.banner: App.tsx) - and the side bar of a
+   note, a question or a card, Calibration ready's among them (a line under the header, App.tsx) */
+.panel { border: none; border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
+footer { border: none; border-radius: 16px; }   /* no overflow clip: the splitter stands above its top edge */
+.bottom-body { padding: 12px 16px; }
+.banner { border: none; border-radius: 12px; padding: 8px 14px; background: var(--surface-2); }
+.banner.error { background: var(--bad-bg); color: var(--text); box-shadow: inset 0 0 0 1px var(--bad-line); }
+/* a note's bar is neutral: red stays for what needs attention; Calibration ready is an offer, in white */
+.note, .confirm, .real, .matched-devices, .brief-card, .connection-window .connection-add { border-left-color: #5a5a61; }
+.calibration-ready { border-left-color: var(--text); }
+
+/* ---- the banner (header) ----------------------------------------------------------------------------------------------- */
+/* Styles: the header (App.tsx) and what other files put in it: the task's facts (Left.tsx), the Connection pill
+   (Connection.tsx), the run state strip, the run chip and the run buttons (RunControl.tsx), the Windows menu
+   (WindowsMenu.tsx), "configuration valid" (Issues.tsx); and the lines under it: Issues.tsx's blocking issues,
+   LaunchRefusal.tsx's refusal, App.tsx's settings problem and Calibration ready */
+header { border: none; border-radius: 16px; padding: 7px 10px; gap: 8px 14px; }
+/* One line while no full-width line (blocking issues, a refusal, a settings problem, Calibration ready) is open: the task's
+   facts and the connection's name give way with "..." before anything wraps. From 1201 px: the banner's fixed parts take
+   about 1,100 px with a run in the header; a narrower window wraps it as before (reliability_check, 960 and 640 px). */
+@media (min-width: 1201px) {
+  header:not(:has(> .issue-list, > .settings-problem, > .calibration-ready, > .launch-refusal)) { flex-wrap: nowrap; }
+  /* While one is open the banner wraps, and the title block at its full width broke the first row: the Next line, Start or
+     Abort went to a second one (branch record SIF-136: with Calibration ready, Abort stood alone under the GATOR chip). It
+     and the run buttons' group now grow from no width, each up to its own, the title block by four shares to the group's
+     one: it has the room first, and the group gives way down to its narrowest, as on one line; the facts give way with
+     "...". The room left goes to the spacer's auto margin, which pushes the buttons to the end (growing, it took half). */
+  header:has(> .issue-list, > .settings-problem, > .calibration-ready, > .launch-refusal) .title-block { flex: 4 1 0; max-width: max-content; }
+  header:has(> .issue-list, > .settings-problem, > .calibration-ready, > .launch-refusal) .run-buttons { flex: 1 1 0; max-width: max-content; }
+  header:has(> .issue-list, > .settings-problem, > .calibration-ready, > .launch-refusal) > .spacer { flex: none; margin-left: auto; }
+}
+header > button, header .run-buttons > button, header > .run-state, header > span.ok, header > span.validating { flex-shrink: 0; }
+/* Save now, the Next line, Start and Abort (RunControl.tsx) as one group that wraps whole (branch record SIF-136); in it only
+   the Next line gives way, as it did beside them */
+header .run-buttons { display: flex; flex: 0 1 auto; align-items: center; gap: 14px; }
+header .title-block { flex: 0 1 auto; min-width: 0; }
+header .connection-launcher { flex: 0 1 auto; min-width: 0; }
+header button.connection-button { max-width: 100%; min-width: 0; }
+header .title-block { align-items: center; align-self: center; gap: 16px; }
+.tb-brand { padding: 0; }
+.gator-chip { display: block; }
+.gator-chip-pins { fill: none; stroke: #5a5a61; stroke-width: 2; stroke-linecap: round; }
+.gator-chip-body { fill: var(--field); stroke: var(--line); }
+.gator-chip-pin1 { fill: var(--accent); }
+.gator-chip-name { font: 600 16px var(--f-label); letter-spacing: 2px; fill: var(--text); }
+/* the task, then its facts on one grey line: class and PDK, revision, the RL model's label */
+.tb-facts { flex: 0 1 auto; align-items: baseline; gap: 10px; min-width: 0; overflow: hidden; }
+.tb-task { font: 600 18px/1.2 var(--f-label); white-space: nowrap; }
+.tb-details { display: block; flex: 0 1 auto; min-width: 0; max-width: 40ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 13px; }
+.tb-details .tb-cell { display: inline; padding: 0; border: none; }
+.tb-details .tb-cell + .tb-cell::before { content: ' · '; white-space: pre; }
+.tb-details .tb-k { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.tb-details .tb-v { display: inline; font: 13px var(--f-body); color: var(--muted); max-width: none; }
+/* the connection as a pill: its name for screen readers, what it is, and its state in the state's colour */
+header button.connection-button { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border: none; border-radius: 999px; background: var(--field); white-space: nowrap; }
+header button.connection-button:hover:not(:disabled) { background: var(--hover); }
+header .connection-button-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* a long name gives way with "..."; the state word never (record 7.361: "lab - Virtuoso over SSH (2 sessions)" ran past the
+   pill and cut its state to "unknow" - styles.css kept the description at flex: none) */
+header .connection-button-what { flex: 0 1 auto; font: 13.5px var(--f-body); min-width: 0; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; }
+header .connection-button .badge { flex: none; border: none; background: none; padding: 0; font: 12.5px var(--f-body); letter-spacing: 0; text-transform: lowercase; }
+header .connection-button .badge.state-unknown, header .connection-button .badge.state-not_checked { color: var(--muted); }
+/* No connection (Connection.tsx, branch record SIF-136): the word "Connection" and the state, "not set up" or "none chosen",
+   which never gives way (it read "none s..."). On the one-line banner the task's facts and the pill share the room beside
+   the chip equally, each from no width up to its own: the grey facts give way first, then the task's name and the word
+   together, with "...". The pill keeps the room of its longer state word (14 + 8 + 70.5 + 14 px for "none chosen"), so that
+   word never spills over the run's state. */
+@media (min-width: 1201px) {
+  header .title-block:has(.connection-button-what.bare) > :is(.tb-facts, .connection-launcher) { flex: 1 1 0; max-width: max-content; }
+  header .title-block > .connection-launcher:has(.connection-button-what.bare) { min-width: 108px; }
+}
+/* the button's note floats under it (record 7.182) and a click closes it (branch record SIF-55); only that note: the
+   pop-up-blocked note floats there too and has no click */
+header .connection-launcher > p.connection-note { cursor: pointer; }
+/* the run's state as a gear selector shows its gear, then the header's run chip */
+header .run-state { display: flex; align-items: center; gap: 10px; flex: none; }
+/* under 1400 px only the state that holds is shown (record 7.372): the four words took ~300 px of a crowded banner */
+@media (max-width: 1400px) { .run-state-strip > span:not(.on) { display: none; } }
+/* a run the header took over when the page opened (record 7.372): a badge, its sentence in the tooltip */
+header .run-taken { flex: none; padding: 2px 8px; border-radius: 999px; background: var(--field); color: var(--warn); font-size: 12px; white-space: nowrap; cursor: help; }
+/* the open windows (record 7.372): a button with their count, its list under it */
+header .windows-menu { position: relative; flex: none; }
+header button.windows-button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; }
+header .windows-count { font: 600 12px var(--f-label); }
+header .windows-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; display: flex; flex-direction: column; gap: 4px; min-width: 180px;
+  padding: 8px; border-radius: 12px; background: var(--card); box-shadow: 0 8px 24px rgba(0, 0, 0, .6); }
+header .windows-list button { text-align: left; white-space: nowrap; } header .windows-list .windows-close-all { color: var(--muted); }
+.run-state-strip { display: flex; gap: 3px; padding: 3px; border-radius: 11px; background: var(--field); }
+.run-state-strip > span { position: relative; padding: 5px 10px 7px; border-radius: 8px; color: #8e8e96; font: 13.5px/1.2 var(--f-label); }
+.run-state-strip > span.on { background: #2a2a2f; color: var(--text); }
+.run-state-strip > span.on::after { content: ''; position: absolute; left: 50%; bottom: 2px; width: 18px; height: 2px; margin-left: -9px; border-radius: 1px; background: var(--accent); }
+/* the chip in words, outlined as the button it is - its press opens the run brief (branch record SIF-72: borderless 13 px mono,
+   "running 270 / 800" read as status text) */
+button.run-chip { font: 13px var(--f-body); font-variant-numeric: tabular-nums; color: var(--text); border: 1px solid var(--line); padding: 5px 10px; }
+button.run-chip.running, button.run-chip.starting, button.run-chip.resuming { color: var(--text); }
+button.run-chip b { font-weight: 600; }
+/* "configuration valid" with a tick, capitalised by the look (the words stay as the checks read them); "validating..." in the
+   hint's grey and with no tick, until the first answer (branch record SIF-141: it was a span.ok, the done tick before the
+   busy word on every page open) */
+header span.ok { display: inline-block; padding-left: 19px; font-size: 13px; color: var(--text);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='%23f4f4f5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat left center / 13px; }
+header span.validating { display: inline-block; }
+header span.ok::first-letter, header span.validating::first-letter { text-transform: uppercase; }
+/* at most its basis: the run buttons' group is as wide as its parts can be, and 220 px left 20 px empty at its end (SIF-136) */
+header span.next-run { flex: 0 1 200px; min-width: 120px; max-width: 200px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  font: 12.5px/1.3 var(--f-body); color: var(--muted); }
+header button.run-save { width: 36px; height: 36px; padding: 0; }
+/* Start (Pause, Resume) white, Abort red (the user's request of 2026-09-21): round, as a car's start button */
+header button.run-main, header button.run-abort { width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; }
+header button.run-main { background: var(--accent-fill); color: var(--on-accent); }
+header button.run-abort { background: var(--bad-fill); color: var(--on-bad); }
+header button.run-abort:hover:not(:disabled) { background: #e8213c; border: none; }
+header button.run-main svg.icon, header button.run-abort svg.icon { width: 17px; height: 17px; }
+
+/* ---- tabs ------------------------------------------------------------------------------------------------------------- */
+/* Styles: the two tab lines - the bottom panel's (BottomPanel.tsx; on it the Runs... button and the link to the header's
+   run, RunList.tsx) and the editors' (Editors.tsx), whose Parameters, Probes and Specs tabs make one segmented control */
+/* every tab strip: the chosen tab white with a short red bar under its name, the others grey */
+.tabs { border-bottom: 1px solid var(--grid-line); padding: 6px 10px 0; gap: 2px; }
+.tabs > button:not(.run-list-button) { position: relative; border: none; background: transparent; color: var(--muted); padding: 9px 14px 11px; border-radius: 10px 10px 0 0; font: 14px var(--f-label); letter-spacing: 0; }
+.tabs > button:not(.run-list-button):hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.tabs > button.active:not(.run-list-button) { margin-bottom: 0; border: none; background: transparent; color: var(--text); box-shadow: none; }
+.tabs > button.active:not(.run-list-button):not([data-editor])::after { content: ''; position: absolute; left: 50%; bottom: 3px; width: 28px; height: 3px; margin-left: -14px; border-radius: 2px; background: var(--accent); }
+.tabs button.run-list-button { margin-bottom: 6px; border: 1px solid var(--line); }
+/* "Show the header's run" beside the run shown, while that is another (branch record SIF-72): a link on the line's baseline */
+.tabs .run-list-header { flex: none; margin: 0 10px 3px 0; white-space: nowrap; } .tabs .run-list-header button.item-link { white-space: nowrap; }
+/* the editors' three tabs as one segmented control (the editor is told by its tab, not by a colour) */
+.editors > .tabs { border-bottom: none; padding: 0 0 8px; gap: 0; }
+.editors > .tabs > button[data-editor] { background: var(--field); border-radius: 0; padding: 9px 18px 11px; color: var(--muted); box-shadow: inset 0 0 0 3px var(--field); }
+.editors > .tabs > button[data-editor="parameters"] { border-radius: 12px 0 0 12px; } .editors > .tabs > button[data-editor="targets"] { border-radius: 0 12px 12px 0; }
+.editors > .tabs > button[data-editor].active { background: #2a2a2f; color: var(--text); box-shadow: inset 0 0 0 3px var(--field); border-radius: 12px; }
+.editors > .tabs > button[data-editor]::before { content: none; }
+.editors > .tabs > button[data-editor].active::before { content: ''; position: absolute; left: 50%; bottom: 5px; width: 26px; height: 3px; margin: 0 0 0 -13px;
+  border: none; border-radius: 2px; background: var(--accent); }
+/* a tab's blocking issues counted in a small red pill before its not-saved dot (branch record SIF-95): drawn from the attribute,
+   so the tab's words stay its name and row count */
+.editors > .tabs > button[data-editor] > .tab-errors::before { content: attr(data-errors); display: inline-block; box-sizing: border-box; min-width: 17px;
+  margin-left: 6px; padding: 0 5px; border-radius: 9px; background: var(--bad-fill); color: var(--on-bad); font: 600 11px/17px var(--f-label);
+  text-align: center; vertical-align: 1px; }
+
+/* ---- the task on the editors' tab line (record 7.362, the user's Option D): its name as a chip (it opens the Tasks window),
+   its revision and whether the rows are saved; Show circuit, Check now, Save as and Task file at the line's end -------------- */
+/* Styles: the editors' tab line (Editors.tsx) and what others put on it: the task's chip (TaskList.tsx) with its caption,
+   revision and tools (Left.tsx), Save as and Task file (TaskSave.tsx); under it the rows not saved (Editors.tsx) and
+   "No task yet" (Left.tsx); last, the Tasks window's New task line (TaskList.tsx) */
+.editors > .tabs { align-items: center; row-gap: 6px; }
+.editors > .tabs .task-head:empty { display: none; }
+.editors > .tabs .row.task-row { margin: 0 8px 0 0; gap: 8px; flex: 0 1 auto; min-width: 0; }
+.editors > .tabs .task-caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.editors > .tabs .row.task-row button.task-list-button { flex: 0 1 auto; max-width: 420px; min-height: 36px; padding: 6px 12px; border: none; border-radius: 9px; background: var(--field); }
+.editors > .tabs .row.task-row button.task-list-button:hover:not(:disabled) { background: var(--hover); }
+.editors > .tabs .task-rev, .editors > .tabs .task-saved { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.editors > .tabs .task-saved-slot { display: inline-flex; align-items: center; margin-right: 14px; color: var(--muted); font-size: 12.5px; }
+.editors > .tabs .task-saved-slot::before { content: '·'; margin-right: 4px; }
+/* "not saved" is a button since record 7.372: it opens what differs (Editors.tsx) */
+.editors > .tabs button.task-saved { min-height: 0; padding: 2px 4px; border: none; border-radius: 6px; background: none; color: var(--unsaved-mark);
+  font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.editors > .tabs button.task-saved:hover:not(:disabled), .editors > .tabs button.task-saved.open { background: var(--hover); }
+.unsaved-summary { margin: 4px 0 8px; padding: 6px 12px; border-left: 3px solid var(--unsaved-mark); border-radius: 0 8px 8px 0; background: var(--unsaved-row); }
+.unsaved-summary p { margin: 2px 0; } .unsaved-summary ul { margin: 2px 0 6px; padding-left: 18px; } .unsaved-summary .row { gap: 6px; }
+/* no task yet (record 7.372): the ways to one */
+.task-start { margin: 4px 0 8px; padding: 6px 12px; border-left: 3px solid #5a5a61; } .task-start p { margin: 0 0 6px; } .task-start .row { gap: 6px; flex-wrap: wrap; }
+.editors > .tabs .tab-actions { align-items: center; gap: 6px; }
+.editors > .tabs .task-tools, .editors > .tabs .task-save-slot { display: inline-flex; align-items: center; gap: 6px; }
+.editors > .tabs .task-tools:empty, .editors > .tabs .task-save-slot:empty { display: none; }
+.editors > .tabs .task-save { padding-bottom: 0; }
+.editors > .tabs .circuit-toggle.active { background: var(--selected); border-color: #5a5a61; }   /* on, not a warning: no red */
+.task-window-new { align-items: center; gap: 8px; margin: 6px 0 10px; }
+
+/* ---- tables ------------------------------------------------------------------------------------------------------------ */
+/* Styles: every grid table; .run-table, the list tables of the Runs, Tasks and RL model windows (RunList.tsx,
+   TaskList.tsx, ModelChooser.tsx; .run-window: the Runs and Tasks windows); the editors' table, toolbar and formula bar
+   (Editors.tsx, cells.tsx, FormulaBar.tsx) */
+table.grid { font-size: 13.5px; line-height: 1.4; }
+table.grid th, table.grid td { border-color: var(--grid-line); padding: 6px 10px; }
+table.grid th { background: var(--head); font: 500 13px/1.4 var(--f-label); color: var(--muted); letter-spacing: 0; }
+table.grid td:has(> button > svg.icon) { padding-top: 2px; padding-bottom: 2px; }   /* an icon button keeps its row as low as text (files_tab_check) */
+table.editor td { padding: 0; }
+/* The list tables of the Runs and RL model windows stay a step tighter: each fits its window with no sideways scroll
+   (run_list_check, model_chooser_check); the saved models' table shares its window with the folder list. */
+table.grid.run-table { font-size: 13px; }
+table.grid.run-table th, table.grid.run-table td { padding: 5px 5px; }
+table.grid.model-table, table.grid.model-table th { font-size: 12.5px; }
+table.grid.model-table td .model-size { display: block; }   /* the size under the design's name (branch record SIF-1) */
+/* The Runs window keeps room for its scroll bar: a run's details opening under a short list would add one, narrow the
+   columns and move the row's Details button from under a double click (run_list_check). */
+.run-window .scroll { scrollbar-gutter: stable; }
+table.editor td input:not([type="checkbox"]), table.editor td select { min-height: 36px; padding: 6px 10px; border-radius: 0; font-size: 14px; }
+table.editor :is(td, th).sel { padding: 0 8px; }
+table.editor td:has(> input[type="checkbox"]) { vertical-align: middle; }   /* a tick box (Optimized) level with the row's text */
+.toolbar { gap: 6px; padding: 8px 0; }
+.toolbar button:has(> svg.icon) { padding: 6px 8px; }   /* the editors' toolbar keeps one line at 1366 x 768 (find_fill_copy_check) */
+.formula-bar .formula-where { border: none; border-radius: 8px; background: var(--field); font-size: 13px; line-height: 20px; padding: 6px 10px; }
+.formula-bar textarea { font-size: 13px; line-height: 20px; }
+
+/* ---- the run's numbers at a glance: Run status's head and the Training tab's key numbers --------------------------------- */
+/* Styles: Run status in the bottom panel (RunTabs.tsx), with Continue...'s form and refusal (ContinueForm.tsx,
+   LaunchRefusal.tsx); the key numbers' tiles there and in the Training tab (fields.tsx's KeyTile, TrainingTab.tsx) */
+.status-hero { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: stretch; margin: 2px 0 14px; }
+.status-hero-count { flex: 0 1 260px; display: flex; flex-direction: column; gap: 4px; }
+.status-hero-state { font-size: 14px; }
+.status-hero-number { font: 300 46px/1 var(--f-label); } .status-hero-number .of { color: #8e8e96; }
+.status-hero-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.status-hero-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+/* how the run stands (branch record SIF-3): red while it runs - the current run - white once completed, grey paused or stopped,
+   the error red when it failed; a completed run's red bar read as an error */
+.status-hero-bar.done > span { background: var(--text); } .status-hero-bar.rest > span { background: #8e8e96; } .status-hero-bar.bad > span { background: var(--bad-fill); }
+/* the working time and the time left under the bar, in the hint's grey and size (branch record SIF-98); the best design's
+   sizes copy by a click, as the Run folder does */
+.status-hero-time { color: var(--muted); font-size: 13px; }
+.status-grid td.copy-cell { cursor: copy; }
+/* what went wrong, then Continue... and Export status - with its form or refusal - between the head and the facts (branch
+   record SIF-89): the reason close under the bar, the buttons a little apart from the table they used to follow */
+.status-grid > .status-error { margin: -4px 0 8px; overflow-wrap: anywhere; }
+.status-grid > :is(.row, .continue-form, .launch-refusal) { margin-top: 0; margin-bottom: 10px; }
+.key-tiles { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+.key-tile { display: flex; flex-direction: column; padding: 7px 12px; border-radius: 10px; background: var(--field); }
+.key-tile-label { font-size: 12px; line-height: 1.35; color: var(--muted); }
+.key-tile-value { font: 600 17px/1.3 var(--f-label); white-space: nowrap; } .key-tile-value .unit { font: 400 13px var(--f-body); color: #8e8e96; }
+details.training-keys .key-tiles { margin: 6px 0 2px; }
+/* a line under a key number, in the label's grey (branch record SIF-116: an episode start that passed before Training's first
+   passing design); in the key-numbers table under the cell's value, at the table's size */
+.key-tile-note { font-size: 12px; line-height: 1.35; color: var(--muted); white-space: nowrap; }
+details.training-keys td .key-tile-note { display: block; font-size: inherit; }
+
+/* ---- red stays for attention (record 7.372): text links are white and underlined, a chosen or pressed button is outlined in
+   white, and Save as and the sort marks lose their red - red is left for Abort, errors, the tab bars, focus, the active cell
+   and the current run ---------------------------------------------------------------------------------------------------- */
+/* Styles: text links and chosen buttons everywhere; by name the RL model window's Modes (RlModelWindow.tsx), the windows'
+   folder lists (Folders.tsx), the Training tab's head (TrainingTab.tsx), the task's chip (TaskList.tsx), Save as
+   (TaskSave.tsx), the Runs... button (RunList.tsx) and the sort marks (TableView.tsx, RunTabs.tsx) */
+button.notes-link, button.item-link, button.text-link, details a { color: var(--text); text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: #8e8e96; }
+button.notes-link:hover:not(:disabled), button.item-link:hover:not(:disabled), button.text-link:hover:not(:disabled), details a:hover { color: #ffffff;
+  text-decoration-color: currentColor; }
+button.active, .rl-modes .rl-mode.active, .task-folder.active, .training-head button[aria-pressed="true"], .row.task-row button.task-list-button.open { border-color: var(--text); }
+.editors > .tabs .row.task-row button.task-list-button.open { box-shadow: inset 0 0 0 1px var(--text); }
+.tabs .task-save button.primary { border-color: var(--accent-fill); }
+.tabs button.run-list-button:hover { border-color: #5a5a61; }
+.sort-mark { color: var(--text); }
+
+/* ---- branch record SIF-3 ----------------------------------------------------------------------------------------------------
+   Run configuration's model line in the body font, two lines at most ("New model · Graph Transformer template · GT 48/4/4" was
+   cut to "New model · Graph Transform..." in a monospace font); its tooltip keeps the whole. */
+/* Styles: the right column's Run configuration, its model line (RunConfiguration.tsx); then the bottom panel's body and
+   the right column as scroll areas (BottomPanel.tsx, App.tsx) */
+.rl-networks-row .net-short, .rl-networks-row .net-short.net-code { font-family: var(--f-body); white-space: normal; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+/* The scroll areas hold what is placed in them: an icon button's screen-reader label (.sr-only, absolute) at the end of a long
+   Run status was placed by the footer, 500 px below the window, and the whole page scrolled. */
+.bottom-body, aside.right { position: relative; }
+
+/* ---- branch record SIF-4: the Data tables keep one line per row - a JSON value too (best_so_far_metrics wrapped into a block
+   200 px tall); the whole value on hover, a click copies it */
+/* Styles: the bottom panel's Data tables tab (RunTabs.tsx) */
+table.grid.small.data-table td.json-cell { white-space: nowrap; word-break: normal; overflow: hidden; text-overflow: ellipsis; max-width: 48ch; cursor: copy; }
+
+/* ---- branch record SIF-5: an issue in a row says what it is - its level and the first clause of its message, one line, the
+   whole message and its code on hover; it showed the code ("warning: equation_unit_unchecked") */
+/* Styles: the editors' Issues column (Editors.tsx) */
+table.editor td.issues .issue { max-width: 40ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+table.editor:has(td.issues > .issue) td.issues { min-width: 240px; }   /* room for the first words while a row has an issue */
+table.editor td.issues .issue b { font-weight: 600; margin-right: 3px; }
+
+/* ---- branch record SIF-9: a cell that holds more than it shows says so - "main-inverter NMOS..." - while it is not being edited
+   (the formula bar and the cell itself show all of it once entered) */
+/* Styles: the editors' cells (cells.tsx) */
+table.editor td input:not([type="checkbox"]):not(:focus) { text-overflow: ellipsis; }
+
+/* ---- branch record SIF-11: the Runs window's Mode cell names what the run was, its design under it */
+/* Styles: the Runs window's table (RunList.tsx) */
+table.run-table td .run-design { display: block; }
+/* the Runs window's fifteen columns fit a 1500 px window with real names: its wrapping cells may be narrower (they were 85 px at
+   least, and the table 1302 px in its 1234 px) */
+.run-window table.run-table td.wrap, .run-window table.run-table td.wrap-words { min-width: 5em; }
+
+/* ---- branch record SIF-22: Matched devices and the confirm questions take 40 % of the editors' card at most (45 % of the window
+   could be the whole card at 1366 x 768 with a run below, the table pushed out of view). Branch record SIF-73: and they leave the
+   table its heading and about three rows (340 px: the card's tab line, toolbar, fact line and formula bar take about 190) - 40 % of
+   the 353 px card a message line leaves showed the table's heading cut in half - but keep 72 px, their heading and a line. */
+/* Styles: the editors' card (Editors.tsx): the Parameters tab's Matched devices box (MatchedDevices.tsx) and the confirm
+   questions over the table */
+.editors > .confirm, .editors > .matched-devices { max-height: min(45vh, 40%, max(72px, calc(100% - 340px))); }
+
+/* ---- branch record SIF-23: the saved models' Design list sits beside Refresh list at its own width (the window's selects take
+   the whole line) */
+/* Styles: the RL model window's saved models (ModelChooser.tsx) */
+.saved-models > .row { flex-wrap: wrap; gap: 6px; } .saved-models select.model-design-filter { width: auto; flex: none; max-width: 22em; }
+
+/* SIF-24: the Tasks list shares its width. A task's folder line, its cell (after the library's "/") and the column titles
+   may take two lines, so the Newest run column is not squeezed into four or five lines at the window's 1500 px. */
+/* Styles: the Tasks window's table (TaskList.tsx) */
+table.task-table th, table.task-table td.task-cell, table.task-table :is(.task-folder-label, .task-internal-name, .task-mark) { white-space: normal; }
+@media (max-width: 1250px) { table.task-table td.task-when { white-space: normal; } }   /* a narrow window: date over time */
+table.task-table .task-date { white-space: nowrap; } table.task-table .name-part { display: inline-block; }
+/* SIF-139: a mark of what keeps a task from running - a blocked task's says why, "[blocked: <reason>]" - in two lines at
+   most, the whole reason in its tooltip, and no wider than 32 characters, so a long reason (a connection file's path) does
+   not take the Newest run column's room */
+table.task-table .task-mark .warn { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 32ch; }
+
+/* SIF-25: the Training charts' readout line - its numbers in the text colour, the words around them muted. */
+/* Styles: the Training tab's charts, the readout line over each (TrainingChart.tsx) */
+.training-readout b { color: var(--text); font-weight: 600; }
+
+/* SIF-26: the task file's text fills its window; the buttons, and the problems a refused file has, stay in view under it. */
+/* Styles: the Task file window (TaskFile.tsx; TaskSave.tsx opens it, its root #task-file-root) */
+#task-file-root { height: 100vh; }
+.task-file { height: 100%; display: flex; flex-direction: column; }
+.task-file > * { flex: none; }
+.task-file > textarea { flex: 1 1 0; height: auto; min-height: 160px; resize: none; }
+.task-file > .blocker { max-height: 35vh; overflow: auto; }
+
+/* SIF-27: in the Runs window a date stays whole (SIF-11's narrower cells broke "2026-10-" over "20"); a task name breaks after "_" or "-". */
+/* Styles: the Runs window's table (RunList.tsx) */
+table.run-table .run-date { white-space: nowrap; }
+
+/* SIF-29: the Logs and Data tables lists sit at their own width at the start of their tool line (they took a line of the
+   bottom panel to themselves, the window's whole width for "events"). */
+/* Styles: the bottom panel's Logs and Data tables tabs (RunTabs.tsx) */
+.row > select.tab-choice { width: auto; flex: none; min-width: 10em; }
+
+/* SIF-30: the RL model window uses a wider window (its saved models' table wrapped names over two lines beside empty
+   margins); its sentences keep a readable length. */
+/* Styles: the RL model window (RlModelWindow.tsx; useRlModel.ts opens it, its root .rl-networks-window) */
+.rl-networks-window { max-width: 1440px; } .rl-networks-window p { max-width: 120ch; }
+.rl-networks-window :is(.row.template-sizes, label > select, label > input:not([type="checkbox"])) { max-width: 640px; }   /* "48", "4" need no 450 px box */
+
+/* SIF-31: no text cut by its box. The Components list kept the old look's 26 px height - 12 px of room for a 16 px line
+   under the Roadster padding. A number in the editors keeps its 11 characters when the table is narrow (with the circuit
+   shown it read "3.25 ko...": SIF-28 gave numbers their natural width, no minimum); text columns give way first. */
+/* Styles: the RL model window's Components list (ComponentList, Pdk.tsx); then the editors' table (Editors.tsx,
+   cells.tsx): a number's least width, and the Parameters' Instance, Notes, Tied to and ID columns */
+.component-row > label select, .component-row > button { height: auto; }
+table.editor td input.numeric { min-width: calc(11ch + 20px); }
+/* SIF-119: an instance path stays whole at 1366 px. The user's VCO read "DUT/M..." in every Instance (DUT/MNA1): there the
+   table stands at its columns' minimum widths, and Instance had the 84 px of every text box. It keeps about 12 characters
+   now - 14 widths of "0", since a path's capitals are wider ("DUT/XBUF/MP4" is 98 px) - and the room comes from Notes,
+   which gives way first, down to its heading (the formula bar shows a note whole), and 10 px from Tied to (record 7.180's
+   120 px), empty on a leader's row: with a scroll bar beside the rows the table was 5 px too wide. It still holds a
+   leader's ID of about 12 characters. */
+table.editor td[data-field="instance_path"] input { min-width: calc(14ch + 20px); }
+table.editor td[data-field="notes"] input { min-width: 0; }
+table.editor td[data-field="binding_group"] input { min-width: 110px; }
+/* SIF-131: and the table does not scroll sideways there. The VCO's leaders count up to "▸31" in their first cell - the tick
+   box's column grows to hold it, 62 px - and the table was 2 px too wide again, while its ID column kept the 140 px of
+   record 7.180 (styles.css, as Probes and Specs still do) for IDs of 7 characters. A Parameters ID keeps 12 widths of "0",
+   about 12 characters as Tied to holds them, and the 16 px a tied row's ID is indented by (styles.css): 117 px. Its natural
+   size is 12 too (cells.tsx), so the room it gave goes to Notes, at 1366 px and in a wider window. */
+table.editor td[data-field="variable_id"] input { min-width: calc(12ch + 26px); }
+
+/* SIF-32: Data tables - a column of numbers is right-aligned in figures of one width, its title too. */
+/* Styles: the bottom panel's Data tables tab (RunTabs.tsx) */
+table.grid.small.data-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* SIF-33: Output files - the sizes right-aligned in figures of one width, as Data tables' numbers (SIF-32). */
+/* Styles: the bottom panel's Output files tab (RunTabs.tsx) */
+table.grid.small.files-table :is(td, th).num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* SIF-99: Data tables' rows and order lists at their own width beside the table list; Output files' filter box wide enough
+   for a folder's name and a file's, and its column titles sort, with the hand, as the Runs window's do. */
+/* Styles: the bottom panel's Data tables and Output files tabs (RunTabs.tsx) */
+.row > select:is(.table-limit, .table-order) { width: auto; flex: none; }
+.row > input.files-filter { width: 260px; flex: none; }
+table.grid.small.files-table th.sortable { cursor: pointer; user-select: none; }
+
+/* SIF-34: a numeric cell is right-aligned, as td.numeric always meant (styles.css) - "table.grid td { text-align: left }"
+   outranked it in every grid table: Runs (seed, evaluations), Tasks (revision, sizes), saved models, model facts. */
+/* Styles: every grid table: a numeric column and its title (the Runs, Tasks and RL model windows' tables among them) */
+table.grid td.numeric, table.grid th.numeric { text-align: right; }   /* and the title over such a column */
+
+/* SIF-35: the output folder's facts read as the run's and the model's facts do: each name on one line, muted; the value
+   takes the rest ("Allowed / writable" took three lines in the right column). */
+/* Styles: the right column's Output settings, the output folder's facts (OutputPanel.tsx) */
+.output-facts table.grid.small td:first-child { white-space: nowrap; word-break: normal; width: 1%; color: var(--muted); }
+
+/* SIF-36: a saved model's compatibility - the problems first; a "saved {...} != current {...}" pair as the keys that differ,
+   in the text colour under the red head; the checks that pass folded under one line. */
+/* Styles: a saved model's compatibility in the RL model window (CompatibilityList.tsx) */
+ul.compat-problems, details.compat-passed > ul { margin: 4px 0; padding-left: 1.2em; }
+ul.compat-diff { margin: 3px 0 3px 0.4em; padding: 0; list-style: none; color: var(--text); font-size: 12px; }
+ul.compat-diff > li { margin: 1px 0; overflow-wrap: anywhere; } ul.compat-diff code { color: var(--muted); }
+details.compat-raw > summary, details.compat-passed > summary { color: var(--muted); }
+details.compat-raw > pre { max-height: 12em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.4 var(--f-mono); color: var(--muted); }
+
+/* SIF-37: the circuit graph view's tools keep their compact 26 px (styles.css) without the Roadster padding above and below:
+   12 px of room cut the lists' words ("Local port edges", "block 1") through the middle. */
+/* Styles: the circuit graph view's tool line (CircuitGraphView.tsx: the dialog a saved model's Details open) */
+.graph-tools :is(input, select, button) { padding-top: 0; padding-bottom: 0; }
+
+/* SIF-43: the Windows menu's "Close all" is an action, not a window: a line sets it apart from the windows listed above it. */
+/* Styles: the header's Windows menu (WindowsMenu.tsx) */
+header .windows-list .windows-close-all { position: relative; margin-top: 6px; }
+header .windows-list .windows-close-all::before { content: ''; position: absolute; left: 2px; right: 2px; top: -6px; border-top: 1px solid var(--line); }
+
+/* SIF-56: the message line under the header closes on a click (its tooltip says so, and that selecting its text keeps it):
+   a muted "x" at the end of its first line shows it. Drawn here, not as an element, so the line's text stays the message
+   alone (the checks read it whole); room is kept for it, under the MOCK line's own padding too. The second `content` keeps
+   the mark out of what a screen reader says, where the browser knows that form. */
+/* Styles: the message line under the header (.banner, App.tsx) */
+.banner, .banner.mock { position: relative; padding-right: 34px; }
+.banner::after { content: '\00d7'; content: '\00d7' / ''; position: absolute; top: 0; right: 12px; padding-top: inherit;
+  font-size: 16px; line-height: 20px; color: var(--muted); }
+
+/* SIF-63: the old look's small sizes that outranked the 14 px page. What is wrong with a row - the Issues column, the lines
+   under the table, Matched devices, the blocking list's level, a saved model's problems - was 11 px, the smallest text on
+   the page, beside 13 px hints; 12.5 px rather than 13 keeps the Issues column's growth small (SIF-5's 40ch cap grows with
+   the font). "More columns" and "Matched devices..." are everyday actions at the labels' 13 px (they were 11.5 px fine
+   print); the toolbar keeps one line at 1366 x 768 (find_fill_copy_check). */
+/* Styles: an issue's words wherever they stand (Editors.tsx, MatchedDevices.tsx, Issues.tsx, CompatibilityList.tsx); the
+   editors' toolbar and a leader row's count (Editors.tsx); the task's chip (TaskList.tsx); every grid table's headings */
+.issue { font-size: 12.5px; }
+.toolbar button.text { font-size: 13px; }
+/* the leader row's count that opens its tied rows - the only way to - read and hit more easily: it was 11 px text in about
+   17 x 11 px; the mono font and its line height stay */
+table.editor .tie-toggle { font-size: 12.5px; padding: 4px; }
+/* the task chip names the task in its button's words and size, not a 12 px code font (the key stays in data-task-key); its
+   mark at the revision's 12.5 px beside it (it was 11 px) */
+.task-list-current code.task-list-key { font: inherit; } .task-list-current .task-list-mark { font-size: 12.5px; }
+/* a heading with no tooltip shows no help cursor: there is no help to give (Details, diffs, Matched devices, save points,
+   the editors' Issues); a sortable heading always has its tooltip and keeps the hand */
+table.grid th:not([title]) { cursor: default; }
+
+/* SIF-64: the list tables' second lines, their Details links, the state words and the paths at sizes that read. The old
+   look's 11 px outranked the Runs, Tasks and saved-models tables' 13 px: the design under the Mode, the stop reason under
+   the state, the folder under the date, a run's Details facts. "Details" / "Hide details", the way into every row, was
+   11 px in a hit box about 16 px tall (the old padding outranked Roadster's); a run's state ("completed"), a connection
+   layer's and the "MOCK" / "in use" tags were 10 to 10.5 px. The tables still fit their windows: the Runs window's 1500 px
+   (run_list_check), the saved models' 1100 px (model_chooser_check). */
+/* Styles: the list tables of the Runs, Tasks and RL model windows (RunList.tsx, TaskList.tsx, ModelChooser.tsx); every
+   .badge, .model-tag and .path, on the page and in its windows */
+table.run-table td .hint { font-size: 12px; }
+button.notes-link { font-size: inherit; padding: 3px 4px; }
+/* "Details" and "Hide details" take the same room, so a toggle moves no column: 6em at the table's 13 px holds "Hide details"
+   and its padding (the old look's 6.5em was for 11 px) */
+table.run-table button.notes-link { min-width: 6em; }
+/* a state and a tag lose the old look's letter spacing, as the header's connection pill (above, which keeps its 12.5 px), the
+   headings and the tabs did in record 7.360: with it, the bigger "interrupted" made the Runs window's State column 9 px
+   wider and the table, with the user's 603 runs at rest, 4 px wider than its 1500 px window */
+.badge { font-size: 12px; letter-spacing: 0; } .model-tag { font-size: 11.5px; }
+/* a working run's Duration may put "so far" under its time: "16 min 33 s so far" on one line was the Runs table's widest cell,
+   and with a run live the table was 21 px wider than its 1500 px window before the sizes above (33 px with them) */
+table.run-table td .run-so-far { white-space: normal; }
+/* a path shows the copy cursor only where a click copies it, and says so in its tooltip: Output settings' "Resolved" and
+   "Mock data root" showed it and copied nothing */
+.path { font-size: 12px; cursor: text; } .path[title="Click to copy"] { cursor: copy; }
+
+/* SIF-65: the Training charts' text at the page's sizes. The tab watched through a whole run kept the old look's sizes on the
+   14 px page: each chart's title 11.5 px, its series keys and the readout line over the plot 11 px (the values SIF-25 set in
+   the text colour among them), the compared runs' chips 11.5 px. The readout kept its mono font, so its numbers did not
+   jump about under a moving cursor, and was cut at the chart's width, its values first (SIF-7); SIF-120 (at the end) puts
+   its words in the body font, its figures of one width, and wraps it. The "Key numbers" line keeps its 11.5 px
+   (styles.css); the numbers under it already read at this look's sizes: one run's tiles at 12 px labels and 17 px values
+   (record 7.360, user: "make it more compact but keeping the style"), several runs' table at 13.5 px (table.grid). The
+   axis numbers: TrainingChart.tsx. */
+/* Styles: the Training tab's charts (TrainingTab.tsx, TrainingChart.tsx) */
+.training-legend, .training-compared { font-size: 12.5px; }
+.training-chart figcaption { font-size: 13px; }
+.training-readout { font-size: 12px; }
+
+/* SIF-66: no text cut through a letter, and no dialog that scrolls to show its own parts. The header's task name could not
+   shrink (min-width: auto): between about 1201 and 1300 px with a run in the header, the facts' box (overflow: hidden) cut it
+   through a letter ("OTA 7T wid") while the grey facts and the connection ended in "...". Now it ends in "..." too, its
+   tooltip holding the task, and only once the grey facts are gone: it never shrinks (SIF-66 review: weighted 1000 to 1
+   against the facts, it gave up a fraction of a pixel while they showed, and the browser draws the "..." for that too -
+   "OTA 7T wi..." at 1250 to 1366 px); its box's width clamps it when the box is narrower than the name. */
+/* Styles: four places - the header's task name (Left.tsx), Continue...'s form under Run status (ContinueForm.tsx), the
+   formula bar's name box (FormulaBar.tsx) and the circuit graph view's dialog (CircuitGraphView.tsx) */
+.tb-task { flex: none; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Continue...'s "New total": 9ch less the look's padding left about six characters - the empty field's "more than 1200" read
+   "more th". It holds "more than 12000" and "1,000,000" whole (run_control_check). */
+.continue-form input { width: calc(15ch + 20px); }
+/* The formula bar's name box takes its text's width, 210 px at least and 40 % of the bar at most: at 210 px a column's label
+   and a long Probe or Spec ID were cut after about 30 characters. A longer one keeps its "...", and its tooltip ends with the
+   whole (FormulaBar.tsx). */
+.formula-bar .formula-where { width: auto; min-width: 210px; max-width: 40%; }
+/* The circuit graph view: the drawing and its tables take the height the title and the tool line leave. A fixed 92vh - 118 px
+   left about 1 px under this look's 49 px tools, so a tool line that wraps (the RL model window is 1180 px wide) scrolled the
+   dialog and cut the bottom of the drawing. cytoscape follows its box's size by itself (it watches it with a ResizeObserver):
+   the drawing follows when a line above it comes or goes - a refusal's line, a tool line that wraps again (graph_view_check). */
+dialog.graph-dialog[open] { display: flex; flex-direction: column; }
+dialog.graph-dialog[open] > * { flex: none; }
+dialog.graph-dialog[open] > .graph-body { flex: 1 1 0; min-height: 0; height: auto; }
+
+/* SIF-74: the editors' small parts at the table's measure. The Issues column took the editor cells' zero padding (their boxes
+   pad themselves) and the old look's top alignment: its lines touched the cell's left line, left of the "Issues" heading's
+   text, and a row's one line sat at the top of the row. Now it is padded as the heading is at the sides and centred in the
+   row; nothing above or below, so a row with two lines stays as high as the others. */
+/* Styles: the editors (Editors.tsx): the Issues column, the notes several rows share over the table, the Specs tab's
+   Probe chips and the tick boxes' column */
+table.editor td.issues { padding: 0 10px; vertical-align: middle; }
+/* SIF-118: a note three rows of the table or more share is said once in a line over it - "On 7 rows: info New spec: models
+   without it do not load", the notes side by side while they fit, at the column's 12.5 px and in their level's colour, the
+   count in the hint's grey - and its rows keep its level word, on one line after their own issues. The marks are no line of
+   their own (`td.issues > .issue`), so the column takes SIF-5's 240 px only for a row's own words, and is as narrow as the
+   marks while the rows have none. */
+.editors > .issues-shared { display: flex; flex-wrap: wrap; gap: 2px 20px; margin: 0 0 6px; }
+.editors > .issues-shared > .issue { margin: 0; cursor: help; } .editors > .issues-shared > .issue b { font-weight: 600; }
+.editors > .issues-shared .issues-shared-rows { color: var(--muted); }
+table.editor td.issues .issue-marks { display: flex; gap: 8px; white-space: nowrap; }
+table.editor td.issues .issue-marks > .issue { font-weight: 600; cursor: help; }
+/* the Specs tab's Probe chips - the names an Equation is typed with - were the old look's 11 px beside the 14 px "Probes:" and
+   the Equation cells (SIF-63 raised the other 11 px text); the line keeps its 1.75 height, so wrapped chips do not touch */
+.spec-probes code.probe-id { font-size: 13px; padding: 1px 6px; }
+/* SIF-106: each chip is a button now (a press puts its ID into the chosen Equation cell, or copies it), drawn as the chip it
+   was - none of a button's frame, fill or padding, the line's font - so the line reads and measures as before; a hover rings
+   the chip in the Probe colour, the keyboard's focus with the page's ring */
+.spec-probes button.chip-insert, .spec-probes button.chip-insert:hover:not(:disabled) { border: none; border-radius: 0; background: none; padding: 0;
+  font: inherit; color: inherit; cursor: pointer; }
+.spec-probes button.chip-insert:hover code.probe-id { border-color: var(--probe); }
+/* the tick boxes in one column: centred with a leader's count beside it ("▸7", "▸31") or without one, each box stood at another
+   place (x 47, 50 and 62 px on the VCO's Parameters); at the cell's start the count follows the box - and the header's box
+   (branch record SIF-96) stands over them */
+table.editor :is(td, th).sel { text-align: left; }
+
+/* SIF-75: the Runs window's "Started from" link takes three lines at most, its tooltip the whole name: an offline model's name
+   ("Round 3 full archive — CircuitGPS v3 from scratch (offline)") took six lines, its row 120 px, and about six rows were in
+   view. Three lines are the height a row's State (the stop reason under it) and Mode (the design under it) take already, and
+   they keep the word that tells two archives apart ("GraphGPS", "CircuitGPS"). */
+/* Styles: the Runs window's table (RunList.tsx) */
+table.run-table td.run-from .run-from-name { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* SIF-81: the task file's _help part as a list over its text, each part's name in bold and its wrapped lines hanging in
+   under it: inside the box they ran back under the opening "{". The list scrolls by itself at about a third of the
+   window, so the text keeps the rest of it (SIF-26). */
+/* Styles: the Task file window's help list (TaskFile.tsx) */
+.task-file-help { margin: 0 0 8px; } .task-file-help > summary { cursor: pointer; font-size: 13px; }
+.task-file-help dl { max-height: 30vh; overflow: auto; margin: 4px 0 0; font-size: 13px; }
+.task-file-help dl > div { margin: 0 0 4px; padding-left: 1.5em; text-indent: -1.5em; }
+.task-file-help dt { display: inline; font-weight: 600; } .task-file-help dd { display: inline; margin: 0 0 0 0.5em; }
+
+/* SIF-86: the RL model window's saved models scroll in a box of their own, their titles staying at its top: 411 models made
+   the table about 20,000 px long, and the model in use, the Mode's own settings and Advanced came after all of it. The box
+   keeps room for its scroll bar, so its columns keep their width (model_chooser_check: no sideways scroll at 1100 px). A
+   model's Details scroll with its row: their own tables' titles do not stick over the box's. Not the Full layer table's: it
+   scrolls in its dialog's own box, its titles at that box's top (branch record SIF-86, review follow-up). */
+/* Styles: the RL model window's saved models and their Details (ModelChooser.tsx; the layer tables, ModelStructure.tsx) */
+.rl-networks-window .saved-models .task-folder-content .scroll { max-height: min(60vh, 720px); overflow: auto; scrollbar-gutter: stable; }
+.rl-networks-window .saved-models .task-folder-content .scroll > table > thead th { z-index: 1; }
+.rl-networks-window .saved-models .model-details table.grid:not(.structure-layers) th { position: static; }
+
+/* SIF-107: a line over the editor table with its action at the end - the zero-floor hint's "Set Margin sides to upper", a
+   failed import's close mark - keeps the action beside its words, which wrap in their own width. The action is not inside
+   their paragraph, whose words the checks read whole. The close mark is drawn as the launch refusal's: no frame or fill
+   of its own, the hover's fill. SIF-108: so does a line of the Virtuoso window that sends the user to the Connection
+   window (no connection chosen, the gate's refusal), with Connection... at its end. SIF-139: and the ngspice task's line
+   under the editors' toolbar that names the connection it lacks: the task's lines stand in .task-status (Editors.tsx), not
+   straight under .editors, and its words keep the 4 px above and below that the task's other lines have. */
+/* Styles: a line of words with its action at the end - over the editors' table (Editors.tsx), in the Virtuoso window
+   (VirtuosoWindow.tsx), among the task's lines on the editors' card (Left.tsx) - and a close mark at a line's end
+   (.line-close: Editors.tsx; the header's Calibration line, App.tsx) */
+.editors > .line-act, .virtuoso-window > .line-act, .task-status > .line-act { display: flex; align-items: baseline; gap: 4px 10px; }
+.editors > .line-act > p, .virtuoso-window > .line-act > p, .task-status > .line-act > p { flex: 0 1 auto; min-width: 0; }
+.editors > .line-act > button, .virtuoso-window > .line-act > button, .task-status > .line-act > button { flex: none; } .editors > .line-act > button.line-close { align-self: center; }
+.task-status > .line-act > p { margin: 0; }
+button.line-close { border: none; background: none; }
+
+/* SIF-112, the icon audit: a button whose meaning is plain shows its icon, its words in .sr-only and at the start of its
+   tooltip (Icons.tsx). What such a button needs on a line laid out for words stands in this one block for every batch of
+   the audit; a later batch adds its lines here. A close mark at the end of a line of words is a button.line-close (above):
+   the calibration line's Close. Measured in headless Edge, the icon's middle against the words' middle: */
+/* Styles: the header's blocking-issues list (Issues.tsx) and Running now's Refresh (RunBrief.tsx) */
+/* the blocking issues' Hide, an X at the head's end: the head centres its parts. On their shared baseline the X stood 2 px
+   over the words; centred alone, 6 px under them, as the words keep to the top of a line the button makes taller. The count
+   and the hint, centred, stand within 0.3 px of one baseline, and a narrow window's two-line hint keeps all three centred. */
+.issue-list-head { align-items: center; }
+/* Running now's Refresh as an icon (the audit's second batch): centred, with the h2's own 6 px bottom margin, so the icon's
+   middle meets the heading's (0.5 px; 1.5 px on the baseline) and the "read at" hint keeps the heading's baseline */
+.run-brief .brief-head > button:has(> svg.icon) { align-self: center; margin-bottom: 6px; }
+
+/* SIF-120: the line over each Training chart reads as the page does, and nothing of it is cut. Its words were in the
+   numbers' mono font, slow to read, and it was cut at the chart's width: on the user's VCO at 1680 px "Newest: Evaluation
+   800 · Training (recorded) 0.06274 · Training: mean of last 20 0.05706 · search · episo...". Now its words are in the
+   body font and every figure has one width (tabular), so a value under a moving pointer does not jump about - what the
+   mono font did (SIF-65) -, and the line wraps instead: between its parts - the x, a series with its value, a fact of the
+   row - each a box kept whole while it fits a line (TrainingChart.tsx makes them, and keeps the line's height under a
+   moving pointer). A part longer than the line wraps inside its box. Colours, the values' weight and order as before. The
+   series keys stand level with the line's first line: centred, they sat between its two. The keys and the line keep all
+   their lines and the plot gives way, down to the 60 px in which it is still drawn (TrainingChart.tsx): the legend gave
+   way to the plot's 110 px, down to its own 18 px (styles.css), so a wrapped line ran over the plot's top - by 7 px with
+   two charts at 1366 px, by 43 px with eight -, as the cut line already did where it stood under the keys (9 px, eight
+   charts at 1600 px). */
+/* Styles: the Training tab's charts (TrainingChart.tsx; their grid, TrainingTab.tsx) */
+.training-readout { font: 12px/1.4 var(--f-body); font-variant-numeric: tabular-nums; white-space: normal; overflow-wrap: anywhere; }
+.training-readout .readout-part { display: inline-block; max-width: 100%; }
+.training-legend { align-items: baseline; flex: none; }
+.training-plot { min-height: 60px; }
+/* SIF-120 review: where a chart's keys and line need more than its row's 170 px leaves above the plot's 60 px, the row
+   grows to hold them. A row's least height was a fixed 170 px (styles.css), the charts' content did not count, so the plot
+   ran out of its card - 29 px at 1366 px with eight charts and a compared run - onto the chart below, whose title and ×
+   its canvas covered and whose clicks it took (the plot and its canvas are positioned, the title is not). A row is now as
+   tall as its tallest chart needs, 170 px at least, and the rows share any room left as before. */
+.training-charts { grid-auto-rows: minmax(min-content, 1fr); }
+.training-chart { min-height: 170px; }
+/* SIF-134: on a comparison the line names each value's run by its swatch, the square of the run's keys and chips (its
+   colour: styles.css .key-run*), not by its whole name again: "fixture_task (tx1-fixture) · seed 1 · 10-05 11:00 · live
+   (recorded) -0.04543 · ..." took four lines over a chart at the bottom panel's height. The keys' 10 px square, set in the
+   line's text. */
+.training-readout .readout-run .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+/* SIF-130: a field's placeholder reads at 4.5 : 1 or more on the ground it is drawn on. The page set none, and the browser's
+   own #757575 read at 3.85 : 1 in a field (#18181b) and 4.06 on a zebra row (#121215): "Find rows", the windows' Filter
+   boxes, the formula bar's "Click a cell to see and edit its whole value here" and an empty Specs bound's "no limit", which
+   is information. Now the look's dim grey (the run state's unlit words, a key number's unit): 5.45 : 1 in a field, 5.75 on
+   a zebra row, 5.18 in a row not saved - still dimmer than a hint (--muted) and than the typed text, so it reads as a
+   placeholder; at full opacity (Firefox's own 0.54 would take it under the bar again). A changed cell's amber (--unsaved-cell,
+   record 7.222), where a bound cleared in a saved task says "no limit", is lighter: there the grey read 4.18 : 1, so it
+   takes the hint's grey, 5.81 : 1 (looks_check, unsaved_rows_check). */
+/* Styles: every field's placeholder; in the editors, a changed cell's (Editors.tsx) */
+::placeholder { color: #8e8e96; opacity: 1; }
+table.editor tr.unsaved-changed > td.unsaved-cell input::placeholder { color: var(--muted); }

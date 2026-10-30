@@ -109,3 +109,10 @@ checkpoint 包含 actor/Q1/Q2/target 网络、三个优化器、log_alpha、feat
 synthetic CLI 的 `--resume CHECKPOINT` 在完整 episode 边界继续，使用新 UUID 日志目录，恢复模型、replay 和 collector RNG 后重新 reset 环境。真实 smoke 保存的 learner/replay 同样可恢复更新，但没有实现断线后接管半完成仿真或真实采样 CLI 自动续跑；必须先处理恢复记录，再从新环境的基线开始。
 
 下一步是固定真实任务的规格集合、采样预算与种子，开展 nominal SAC 对随机搜索的有限预算比较，报告达标率、首次达标调用数、全部真实调用/失败和训练耗时。当前证据没有覆盖跨拓扑泛化或 PVT/MC 鲁棒性。
+
+## 2026-10-06 记录 7.221：学习步提速，结果逐位不变
+
+- `ReplayBuffer.update_learner(learner, n)`：与 `sample(n)` 用同一生成器、同样的条目与顺序，但把已入库的 transition 借给 `learner.update`（只读），不再深拷贝；真实 `mscr_ota7t` replay 每批 8 条的深拷贝约 28 ms。公共 `sample()` 仍深拷贝；测试在更新前后对整个 replay 做指纹比对。工作台引擎的两处学习调用改用它。
+- gamma 恰为 0 时，`SACLearner.update` 不再构造下一状态 batch，也不运行下一状态 actor 和两个 target critic：目标就是奖励。下一状态 actor 本应抽取的噪声仍以同形状、dtype、device 抽取（`Normal.rsample` 即一次 `normal_()`；transition 契约保证下一状态的可调组数与当前状态相同），所以 torch 随机数状态与之后的所有动作逐位不变。任何非零 gamma（再小也一样）保持原计算。`SACLearner.zero_gamma_shortcut` 只供测试关闭以作对照；它从不改变配置的 gamma。代价：未用分支里偶然的非有限值检查随之消失；transition 校验、损失与梯度检查不变。
+- 输入缓存键改为 schema 摘要 + 观测内容摘要；replay 借出的观测摘要每条只算一次。learner 默认缓存 8192 条（原 2048），另有 256 MiB 字节上限，见 `docs/input-tensor-cache.md`。
+- 不变：SAC 算法、奖励、动作语义、checkpoint 格式与字段及其写入节奏。源码摘要改变：此前的 checkpoint 只能在其原源码下完整续跑（fine-tune/frozen 仍可加载，只有警告），见 `docs/decisions.md`。

@@ -1,57 +1,57 @@
-# 来源与核实边界
+# Sources and verification boundaries
 
-整理与公开文档核对日期：2026-09-19。
-用户决策来自近期聊天；本包中的图 schema、Backend Protocol、动作组接口、奖励示例、测试与阶段是针对项目编写的约定，**不是原论文或上游 API 的逐字规范**。
-引用这些约定时应称“本项目设计”，不要称“官方规定”。
+Compiled and checked against public documentation on 2026-09-19.
+User decisions come from recent chats; the graph schema, Backend Protocol, action-group interface, reward examples, tests and milestones in this package are project-specific conventions, **not verbatim specifications from original papers or upstream APIs**.
+Call them "this project's design" when citing them, not "official requirements".
 
 ## S1 — OpenAI / Codex Skills
 
 `https://developers.openai.com/codex/skills/`
 
-核对时跳转至官方 `https://learn.chatgpt.com/docs/build-skills`。
-支持 `SKILL.md` 的 name/description、可选 references 和 `agents/openai.yaml`；文档列出的本地项目目录为 `.agents/skills`，用户级为 `~/.agents/skills`。
-文档说明可显式用 `$` 选择，description 用于自动匹配；更新未出现时重启 Codex。
-本包的目录/安装说明依据该来源，不保证旧版本客户端行为完全相同。
+At the time of checking, this redirected to the official `https://learn.chatgpt.com/docs/build-skills`.
+It supports name/description in `SKILL.md`, optional references and `agents/openai.yaml`; the documented local project directory is `.agents/skills` and the user-level directory is `~/.agents/skills`.
+The documentation says `$` can select a skill explicitly and description is used for automatic matching; restart Codex if an update does not appear.
+This package's directory/installation instructions use that source and do not guarantee identical behavior in older client versions.
 
-## S2 — Virtuoso bridge 上游
+## S2 — Virtuoso bridge upstream
 
 `https://github.com/Arcadia-1/virtuoso-bridge-lite`
 
-用于核对仓库来源、SKILL/standalone Spectre 分离、配置与官方文档位置。
-本包没有复制上游实现或接入用户机器；真正调用前以本地安装版本、上游源码签名和 `--help` 为准。
-不要把上游 README 的性能或平台表述直接当作本用户环境的测试结果。
+Used to check the repository source, the separation of SKILL and standalone Spectre, configuration and official documentation locations.
+This package has not copied the upstream implementation or connected to the user's machine; before making real calls, consult the locally installed version, upstream source signatures and `--help`.
+Do not treat performance or platform claims in the upstream README as test results from this user's environment.
 
-## S3 — Bridge 包元数据
+## S3 — Bridge package metadata
 
 `https://raw.githubusercontent.com/Arcadia-1/virtuoso-bridge-lite/main/pyproject.toml`
 
-核对的项目名为 `virtuoso-bridge`，console script 指向 `virtuoso_bridge.cli`。
-本包不固定依赖版本，也不基于同名 PyPI 项目猜安装来源。
-上游 main 会变化；具体运行记录应该保存安装版本或 commit。
+The project name checked was `virtuoso-bridge`, with the console script pointing to `virtuoso_bridge.cli`.
+This package does not pin a dependency version or infer an installation source from a same-named PyPI project.
+Upstream main can change; actual run records should retain the installed version or commit.
 
 ## S4 — PyTorch Geometric HeteroData
 
 `https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.data.HeteroData.html`
 
-用于核对多类型节点/边存储能力。参数组绑定、端口 multigraph 和 batch 额外索引是本项目需要自行实现与测试的部分。
+Used to verify support for storing multiple node/edge types. Parameter-group bindings, terminal multigraphs and extra batch indices must be implemented and tested by this project.
 
 ## S5 — OpenAI Spinning Up: Soft Actor-Critic
 
 `https://spinningup.openai.com/en/latest/algorithms/sac.html`
 
-用于核对连续 SAC 的 stochastic actor、双 Q、target Q、tanh/reparameterization、熵目标和 replay 更新基础。
-本包提出的可变参数组、per-graph mask、自动温度方案、跨电路训练和离散投影不是该示例实现已提供的能力。
-不要直接把其固定动作维度代码粘贴后声称支持可变拓扑。
+Used to check the foundations of continuous SAC: stochastic actor, twin Q, target Q, tanh/reparameterization, entropy targets and replay updates.
+The variable parameter groups, per-graph masks, automatic temperature scheme, cross-circuit training and discrete projection proposed in this package are not capabilities already supplied by that example implementation.
+Do not paste its fixed-action-dimension code and claim support for variable topologies.
 
 ## S6 — PyG TransformerConv
 
 `https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.TransformerConv.html`
 
-用于核对邻域注意力与 edge features 的支持范围。
-它属于 message-passing 图算子；仅使用此层不能声称实现了任意全局 graph transformer 或某篇特定论文。
+Used to check the scope of neighborhood attention and edge-feature support.
+This is a message-passing graph operator; using this layer alone does not justify claiming implementation of an arbitrary global graph transformer or a particular paper.
 
-## 未在本包中核实的材料
+## Material not verified in this package
 
-聊天里提到的 2023 Li 模拟电路优化工作和 DEGT 论文没有在本次制作中完成全文/代码核对。
-本包不写入它们的精确实验数字、未确认的 RL 算法、surrogate 使用情况或“首次”结论。
-要写论文对比/复现，另行阅读原论文与对应代码，并记录版本和引用。
+The full texts/code of the 2023 Li analog circuit optimization work and DEGT paper mentioned in chat were not checked during preparation of this package.
+This package does not include their exact experimental numbers, unconfirmed RL algorithms, surrogate use or claims of being "first".
+For paper comparisons/reproduction, separately read the original papers and corresponding code, and record versions and citations.

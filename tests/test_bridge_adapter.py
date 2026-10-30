@@ -8,61 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from analog_optimizer.backends.backend import SimulationRequest, SimulationStatus, UnsupportedCapability
-from analog_optimizer.backends.gpdk045 import Gpdk045OtaProfile, GEOMETRY, number
-from analog_optimizer.backends.virtuoso_bridge import BridgeConfig, VirtuosoBridgeBackend, build_deck
+from analog_optimizer.backends.virtuoso_bridge import VirtuosoBridgeBackend, build_deck
 import analog_optimizer.backends.virtuoso_bridge as module
-
-ROOT = Path(__file__).resolve().parents[1]
-
-
-@pytest.fixture
-def profile():
-    return Gpdk045OtaProfile(design_file=ROOT / 'configs/gpdk045_opamp_design.json',
-                            mapping_file=ROOT / 'configs/gpdk045_opamp.json',
-                            reference_structure=ROOT / 'examples/circuits/gpdk045_ota5.scs',
-                            reference_readback=ROOT / 'examples/circuits/gpdk045_ota5.cdf.json')
-
-
-@pytest.fixture
-def adapter(tmp_path, monkeypatch, profile):
-    env = tmp_path / 'bridge.env'
-    env.write_text('# offline test configuration\n')
-    receipt = tmp_path / 'receipt.json'
-    receipt.write_text(json.dumps({'library': 'TEST', 'core_cell': profile.design['core_cell'],
-                                  'testbench_cell': profile.design['testbench_cell'], 'config': profile.design}))
-    state = deepcopy(profile.reference)
-    client = SimpleNamespace(closed=False, list_windows=lambda: [])
-    client.close = lambda: setattr(client, 'closed', True)
-    def export(lib, cell, output, timeout):
-        output.mkdir()
-        (output / 'netlist').write_bytes((ROOT / 'examples/circuits/gpdk045_ota5.scs').read_bytes())
-        return {'input_file': str(output / 'input.scs')}
-    client.schematic = SimpleNamespace(read=lambda *a, **kw: deepcopy(state), export_netlist=export)
-    def attach(self):
-        self.bridge_version = 'offline-fault-injection'
-        return client
-    monkeypatch.setattr(VirtuosoBridgeBackend, '_attach', attach)
-    backend = VirtuosoBridgeBackend(BridgeConfig(env, 'TEST', receipt, tmp_path / 'state', '/models/gpdk.scs'), profile)
-    backend.test_state = state
-    backend.test_client = client
-    yield backend
-    backend.close()
-
-
-def changing_writer(backend, *, fail_second=False, stale=False):
-    calls = []
-    def write(client, lib, cell, name, width, length):
-        calls.append(name)
-        if fail_second and len(calls) == 2:
-            raise RuntimeError('injected callback failure')
-        params = backend.circuit.instances(backend.test_state)[name]['params']
-        ratio = number(width) / number(params['w'])
-        params['w'] = params['fw'] = width
-        if not stale:
-            # Deliberate test-only values; this is not a PDK/physics model.
-            for key in GEOMETRY:
-                params[key] = str(number(params[key]) * ratio)
-    return write, calls
+from research_support import ROOT, adapter, changing_writer, profile
 
 
 def test_profile_rejects_unmatched_partial_and_out_of_range(profile):
@@ -163,12 +111,14 @@ def test_immutable_artifacts_and_parameter_binding(adapter, tmp_path):
 @pytest.mark.parametrize('mode', ['failure', 'timeout', 'missing', 'missing_psf', 'valid'])
 def test_result_status_measurements_and_no_stale_op(adapter, tmp_path, monkeypatch, mode):
     def run(deck):
+        """Return an injected bridge outcome or timeout without launching a simulator."""
         if mode == 'timeout':
             raise TimeoutError('injected timeout')
         return SimpleNamespace(ok=mode != 'failure', status=SimpleNamespace(value='success' if mode != 'failure' else 'error'),
                                errors=['injected failure'] if mode == 'failure' else [], metadata={})
     monkeypatch.setattr(adapter, '_new_simulator', lambda *a: SimpleNamespace(run_simulation=run))
     def measure(*a, **kw):
+        """Supply test measurements and operating points, or simulate a missing PSF result."""
         if mode == 'missing_psf':
             raise FileNotFoundError('injected missing PSF')
         return {'metrics': {'gain': 25}, 'metric_units': {'gain': 'dB'}, 'metric_validity': {'gain': True},

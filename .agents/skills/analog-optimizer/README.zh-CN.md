@@ -1,8 +1,8 @@
 # analog-optimizer — Codex 项目 Skill
 
-版本：0.2；同步日期：2026-09-19。
+版本：0.4；同步日期：2026-09-30。
 按照近期模拟电路优化讨论编写，保留当前方向：**端口感知 Graph Transformer + goal-conditioned SAC + Virtuoso bridge / Spectre**。
-默认**不加 surrogate、LLM、Mamba**。项目现已完成 M4/M5 首轮及 M6 前编码器接口：支持 MLP/GCN/RGCN/GAT 与默认 GT 的统一 SAC 迁移对照，保留 port-GNN；M6 尚未开始。最新状态见 [项目决策](references/project-decisions.md)。
+默认**不加 surrogate、Mamba**；LLM 驱动的尺寸优化只按仓库的 `docs/brief-llm-sizing-for-astra.md` 进行（2026-09-29 用户决定，截至 2026-09-30 尚未开始；对这项工作它取代原先“不加 LLM”的规则）。项目已完成 M1–M5 与编码器接口（统一 SAC 迁移对照；当前编码器只有默认 GT、RGCN 与 GATv2：port-GNN 于 2026-09-24 删除，MLP/GCN 于 2026-09-26 删除，GATv1 同日由 GATv2 取代）；M6 已于 2026-09-20 以试点规模收尾（流程跑通并经独立审计，迁移或 GT 优势未得出结论）。此后的工作是 Web 工作台（`src/gator_workbench/`、`frontend/`），以及按用户授权修改优化器的 reward v2 / v2.1（2026-09-26 / 09-29，见 `docs/reward-v2.md`）。最新状态以仓库的 `docs/decisions.md`、`CLAUDE.md` 与 `docs/workbench.md` 为准；[项目决策](references/project-decisions.md) 记录研究侧的约定。
 
 本包是给 Codex 的指令和参考材料，**不是优化器代码、已训练模型或已接通的 Virtuoso 插件**。
 安装不会安装 Python 依赖、连接 VM、修改原理图或运行 Spectre。
@@ -23,8 +23,7 @@ analog-optimizer/
 │   ├── milestones.md
 │   └── sources.md
 ├── assets/
-│   ├── project-contract.example.yaml
-│   └── first-task.md
+│   └── icon.svg
 └── README.zh-CN.md
 ```
 
@@ -90,8 +89,7 @@ WSL 用户目录、Windows 用户目录和 VM 用户目录不同。按实际使�
 在 Codex 中输入 `$analog-optimizer`，再写具体任务。
 CLI/IDE 的 skill 选择方式及自动匹配由当前客户端支持情况决定；新文件未出现时重启 Codex。[S1](references/sources.md)
 
-仅在仓库尚未完成 M1 时使用 [首个任务提示词](assets/first-task.md)；已有项目从当前阶段继续。
-也可以直接要求审查，例如：
+已有项目从当前阶段继续。也可以直接要求审查，例如：
 
 ```text
 $analog-optimizer
@@ -103,7 +101,7 @@ $analog-optimizer
 本包不填造 PDK 器件名、W/L 范围、SSH 账号、IP、仿真路径、规格目标、温度、corner 或训练预算。
 示例配置中的 null 和空列表是需从仓库/环境补齐的契约，不是声称可直接启动的配置。
 
-当前项目已采用局部端口注意力、可配置网络规模、绝对 normalized proposal 与合法化投影；它们是已落地的工程选择，不表示优于其他方案。编码器接口、MLP 消融定义及 checkpoint 边界见 [学习契约](references/learning-and-actions.md)，对照公平性见 [实验规范](references/evaluation.md)。
+当前项目已采用局部端口注意力、可配置网络规模、绝对 normalized proposal 与合法化投影；它们是已落地的工程选择，不表示优于其他方案。编码器接口（GT/RGCN/GATv2）及 checkpoint 边界见 [学习契约](references/learning-and-actions.md)，对照公平性见 [实验规范](references/evaluation.md)。
 
 ## 修改与版本
 

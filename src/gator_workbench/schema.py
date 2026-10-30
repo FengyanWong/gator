@@ -1,0 +1,1152 @@
+"""The one versioned configuration schema shared by manual forms, agent output,
+JSON import/export and backend execution.
+
+Field descriptions double as field-level guidance in the editors and as the JSON
+Schema handed to an agent CLI, so there is exactly one definition of every field.
+Structural validity lives here; cross-field and circuit-aware checks live in
+``validation.py``; translation to optimizer objects lives in ``compile.py``.
+Passing this schema never authorizes an action.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import re
+from typing import Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
+
+from . import CONFIG_SCHEMA_VERSION
+from .names import PROFILE_ID
+
+_MAX_UNIT_CHARS = 32
+_MAX_CELLVIEW_NAME_CHARS = 200
+_MAX_PATH_CHARS = 1000
+_MAX_NOTE_CHARS = 1000
+_MAX_IDENTIFIER_CHARS = 120
+_MAX_DISPLAY_NAME_CHARS = 80
+_NUMERIC_REL_TOL = 1e-09
+
+
+ENCODER_TYPES = ('graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention', 'circuit_gps')
+GLOBAL_ENCODERS = ('graph_gps', 'group_cross_attention', 'circuit_gps')
+REMOVED_ENCODERS = {'port_gnn': ('2026-09-24', 'bbdfe36'),
+                    'mlp': ('2026-09-26', '9bc488f'), 'gcn': ('2026-09-26', '9bc488f')}
+RUN_MODES = ('scratch', 'resume', 'fine_tune', 'frozen')
+UNSPECIFIED = 'unspecified'
+
+
+class _Model(BaseModel):
+    # forbid: an agent (or an imported file) cannot add keys such as "skip_validation".
+    # allow_inf_nan=False: NaN/inf never enter a configuration as if they were numbers.
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False, validate_assignment=True)
+
+
+# --------------------------------------------------------------------------- parameters
+# Row fields retired on 2026-09-26 (record 7.92), and the Probes' conditions and aggregation on 2026-09-29 (record
+# 7.105), each with the default it had. A row written with them still loads:
+# the before-validators below take them out - what they meant is kept in the fields that remain, what never ran is
+# dropped, what a run refused is refused there, in plain words. Both hashes still see them at these defaults
+# (`_hashed`), so every run, checkpoint, task file and approval made before keeps its identity.
+RETIRED_PARAMETER_FIELDS = {'name': '', 'target_kind': 'instance_parameter', 'candidates': None, 'relation': 'ratio',
+                            'expression': None}
+RETIRED_MEASUREMENT_FIELDS = {'function': None, 'window': None, 'at_frequency_hz': None, 'integration_band_hz': None,
+                              'branch_direction': None, 'loop_definition': None, 'crossover': None,
+                              'on_failure': 'invalid', 'validity': [{'kind': 'finite', 'value': None, 'note': ''}],
+                              'conditions': ['nominal'], 'aggregation': 'nominal_only', 'expression': None}
+# The Specs' target and tolerance, retired on 2026-10-03 (review of the editor columns): "target +/- tolerance" was an
+# interval, and a tolerance only loosened a limit. Hashed at these defaults like the fields above.
+RETIRED_TARGET_FIELDS = {'target': None, 'tolerance': 0.0}
+
+
+def _without_retired(data, retired):
+    """The body of a plain retired-field before-validator (Probes rows, run settings): a dict loses the keys of
+    `retired`; anything else - and a dict without them - is passed on as it came."""
+    if isinstance(data, dict) and retired.keys() & data.keys():
+        data = {key: value for key, value in data.items() if key not in retired}
+    return data
+
+
+def uniform_grid(candidates) -> tuple | None:
+    """Return (lower, upper, step) when sorted unique candidates form a uniform grid, else None."""
+    values = sorted(set(candidates))
+    if len(values) < 2 or len(values) != len(candidates):
+        return None
+    step = values[1] - values[0]
+    if step <= 0 or any(not math.isclose(b - a, step, rel_tol=_NUMERIC_REL_TOL, abs_tol=1e-18)
+                        for a, b in zip(values, values[1:])):
+        return None
+    return values[0], values[-1], step
+
+
+def linear_ratio(expression):
+    """ratio r when `expression` in the symbol `leader` equals r*leader with r > 0, else None.
+
+    Uses the optimizer's whitelist AST evaluator; nothing is ever eval()'d.
+    """
+    from analog_optimizer.netlist.expressions import evaluate, UnresolvedExpression
+
+    def at(x):
+        def lookup(name):
+            if name != 'leader':
+                raise UnresolvedExpression(f'Unknown symbol {name!r}; only `leader` is allowed')
+            return x
+        return evaluate(expression, lookup)
+    try:
+        f0, f1, f2, f3 = at(0.0), at(1.0), at(2.0), at(3.5)
+    except (UnresolvedExpression, ZeroDivisionError):
+        return None
+    if (abs(f0) > 1e-15 or f1 <= 0 or not math.isclose(f2, 2 * f1, rel_tol=_NUMERIC_REL_TOL)
+            or not math.isclose(f3, 3.5 * f1, rel_tol=_NUMERIC_REL_TOL)):
+        return None
+    return f1
+
+
+# One Parameters row defining a circuit variable, its legal action range and any explicit leader binding.
+class OptimizationParameter(_Model):
+    variable_id: str = Field(min_length=1, max_length=_MAX_IDENTIFIER_CHARS, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
+        description='Stable ID of this variable. Used in data tables; it is an identifier, never a learned feature.')
+    instance_path: Optional[str] = Field(None, max_length=400,
+        description='Full hierarchical instance path exactly as read from the circuit (e.g. XU1/M1). Never inferred '
+                    'from a name prefix.')
+    parameter_name: str = Field(min_length=1, max_length=120,
+        description='Canonical parameter name as reported by the circuit reader (e.g. w, l, c, r).')
+    initial_value: Optional[float] = Field(None,
+        description='The value read from the circuit, in `unit`. The editors show it and take no typed value; empty '
+                    'means the value the circuit has. A stated value is checked against the circuit at validation; a '
+                    'mismatch is an error, not silently overwritten.')
+    unit: str = Field(min_length=0, max_length=_MAX_UNIT_CHARS,
+        description='Unit of initial value, bounds and step (e.g. um, nm, pF, kohm, count).')
+    optimized: bool = Field(True, description='Whether the optimizer may change this variable.')
+    value_type: Literal['continuous', 'integer'] = Field('continuous',
+        description='continuous; integer (multiplicity, fingers). The policy always proposes a continuous action that '
+                    'is projected onto lower + k*step; this is not a discrete-action SAC.')
+    lower: Optional[float] = Field(None, description='Lower bound in `unit`. Required for optimized leaders.')
+    upper: Optional[float] = Field(None, description='Upper bound in `unit`. Required for optimized leaders.')
+    step: Optional[float] = Field(None, gt=0,
+        description='Quantization step in `unit` (manufacturing grid). Values are projected to lower + k*step.')
+    scale: Literal['linear', 'log'] = Field('linear',
+        description='How the normalized action maps to the physical range. log requires lower > 0.')
+    binding_group: Optional[str] = Field(None, max_length=120,
+        description='variable_id of the leader this variable is tied to. Empty = independent action variable. '
+                    'Equal initial values never imply a binding; bindings must be declared here.')
+    ratio: float = Field(1.0, gt=0, description='follower = ratio * leader. Must be positive.')
+    notes: str = Field('', max_length=_MAX_NOTE_CHARS, description='Free text; not used by the optimizer.')
+
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        """A row written before 2026-09-26 may carry name, target_kind, candidates, relation and expression, and its
+        value_type may be discrete (RETIRED_PARAMETER_FIELDS). A display name is dropped; an expression that is a
+        constant times the leader becomes the ratio; a discrete row whose candidates form a uniform grid becomes
+        lower/upper/step. A design-variable target, a non-uniform candidate list and any other expression never ran
+        (each was a blocker) and are refused in plain words."""
+        if not isinstance(data, dict) or not (RETIRED_PARAMETER_FIELDS.keys() & data.keys()
+                                              or data.get('value_type') == 'discrete'):
+            return data
+        row, who = dict(data), data.get('variable_id') or 'this row'
+        if row.pop('target_kind', None) not in (None, 'instance_parameter'):
+            raise ValueError(f'{who}: target_kind design_variable is no longer offered; the optimizer writes instance '
+                             'parameters only. Give the row the instance path and parameter name of one instance.')
+        row.pop('name', None)
+        expression, relation = row.pop('expression', None), row.pop('relation', None)
+        if relation == 'expression':
+            ratio = linear_ratio(expression or '')
+            if ratio is None:
+                raise ValueError(
+                    f'{who}: relation expression is no longer offered, and {expression!r} is not a constant '
+                                 'times the leader. Give the ratio instead.')
+            row['ratio'] = ratio
+        candidates = row.pop('candidates', None)
+        if row.get('value_type') == 'discrete':
+            grid = uniform_grid(candidates or [])
+            if grid is None:
+                raise ValueError(
+                    f'{who}: value_type discrete is no longer offered, and its candidates are not a uniform '
+                                 'grid. Give lower, upper and step instead.')
+            row['lower'], row['upper'], row['step'] = grid
+            row['value_type'] = 'continuous'
+        return row
+
+
+# --------------------------------------------------------------------------- targets
+# One Spec row defining an equation, feasibility limits and reward preferences.
+class PerformanceTarget(_Model):
+    metric_id: str = Field(min_length=1, max_length=_MAX_IDENTIFIER_CHARS, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
+        description='Name of this spec: the value its equation gives is recorded, scored and shown under this name. It '
+                    'may be the name of a result the simulation returns only when the equation is exactly the Probe of '
+                    'that result. A name the RL specification registry does not know adds an entry to it.')
+    equation: str = Field(min_length=1, max_length=512,
+        description=
+            'What this spec judges, as an equation over Probe IDs (the measurement_id of rows in the Probes '
+            'tab): Probe IDs, numbers, + - * / ** and parentheses, e.g. m_supply_power_w / m_osc_frequency_hz. '
+            'The simplest equation is one Probe ID. Probe values are in canonical units (W, Hz, V...), so W / Hz '
+            'gives J. A missing or invalid probe, or a failed operation such as a division by zero, makes the '
+            'spec invalid - never a number. Evaluated by a whitelist, never eval().')
+    unit: str = Field(max_length=_MAX_UNIT_CHARS, description='Unit of the thresholds and the normalization scale.')
+    constraint: Literal['>=', '<=', 'interval'] = Field(
+        description='>= lower; <= upper; interval [lower, upper].')
+    lower: Optional[float] = Field(None, description='Lower threshold (>=, interval).')
+    upper: Optional[float] = Field(None, description='Upper threshold (<=, interval).')
+    hard: bool = Field(True,
+        description='Hard constraint: must be satisfied for feasibility. Feasibility is decided from raw metric '
+                    'values and thresholds, independently of the reward.')
+    direction_after_feasible: Literal['none', 'minimize', 'maximize'] = Field('none',
+        description='Preference among feasible designs. At most one target may set it; it selects the best design '
+                    'and defines the optional objective bonus when its reward weight is nonzero.')
+    nominal_only: bool = Field(False,
+        description='Judge this spec at nominal only; otherwise use every planned condition.')
+    missing_is_failure: bool = Field(False,
+        description=
+            'No longer read (2026-10-10): the optimizer counts a missing value of EVERY hard spec as failed - a '
+            'completed simulation with the value missing scores that row a failure and the design is learned '
+            'from. A row keeps what it stored. Wrong units and infrastructure errors remain errors.')
+    margin_sides: Literal['both', 'lower', 'upper'] = Field('both',
+        description=
+            'Margin sides: which limits contribute to the clearance bonus and Corner check ranking. Feasibility '
+            'still checks every limit.')
+    soft_weight: float = Field(1.0, gt=0, description='Relative weight of this target in the reward.')
+    normalization_scale: Optional[float] = Field(None, gt=0,
+        description=
+            'Violation is (threshold distance)/scale, capped at 1. Empty = the size of the threshold: the larger '
+            'of |lower| and |upper|, or 1 when both are zero. Give a physically meaningful scale to use another.')
+    active: bool = Field(True, description='Inactive targets affect neither reward nor feasibility.')
+    basis: str = Field('', max_length=_MAX_NOTE_CHARS,
+        description='Where this requirement comes from (datasheet, user statement...). Agent suggestions must '
+                    'state their basis; requirements are never inferred from the circuit alone.')
+
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        """A spec written before 2026-10-03 may carry `target` and `tolerance` (RETIRED_TARGET_FIELDS). What they meant is
+        kept in the limits, as the compiler applied them: "target +/- tolerance" was the interval [target - tolerance,
+        target + tolerance], and a tolerance on any other spec loosened each limit by that much. An empty scale gets the
+        size it had, taken from the limits as typed (and |target|). A target without a positive tolerance, or one with
+        limits as well, never ran (both were errors) and is refused in plain words."""
+        if not isinstance(data,
+            dict) or not (RETIRED_TARGET_FIELDS.keys() & data.keys() or data.get('constraint') == 'target'):
+            return data
+        row, who = dict(data), data.get('metric_id') or 'this spec'
+        number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+        target, tolerance = row.pop('target', None), row.pop('tolerance', None)
+        tolerance = 0.0 if tolerance is None else tolerance
+        if not number(tolerance) or tolerance < 0:
+            raise ValueError(f'{who}: tolerance {tolerance!r} is not a number of at least 0. The tolerance column was '
+                             'retired; give the limits it was meant to loosen instead.')
+        lower, upper = row.get('lower'), row.get('upper')
+        size = max([abs(v) for v in (lower, upper, target) if number(v)] or [0.0]) or 1.0
+        if row.get('constraint') == 'target':
+            if not number(target) or tolerance <= 0 or lower is not None or upper is not None:
+                raise ValueError(
+                    f'{who}: "target +/- tolerance" is no longer offered, and this spec is not a target with a '
+                                 'positive tolerance and no limits (the run refused it). Give an interval instead.')
+            row.update(constraint='interval', lower=target - tolerance, upper=target + tolerance)
+        elif tolerance:
+            row.update({k: v + d for k, v, d in (('lower', lower, -tolerance), ('upper', upper,
+                tolerance)) if number(v)})
+        else:
+            return row
+        if row.get('normalization_scale') is None:
+            row['normalization_scale'] = size
+        return row
+
+    @model_validator(mode='before')
+    @classmethod
+    def _one_probe_before_equations(cls, data):
+        """A configuration written before specs had equations named ONE probe in `measurement_id`: that probe is the
+        equation (the simplest one). An `equation` given as well wins."""
+        if isinstance(data, dict) and 'measurement_id' in data:
+            data = {('equation' if key == 'measurement_id' else key): value for key, value in data.items()
+                    if not (key == 'measurement_id' and 'equation' in data)}
+        return data
+
+
+# --------------------------------------------------------------------------- measurements
+# One Probe row describing a backend result, Maestro output or size estimate available to spec equations.
+class MeasurementDefinition(_Model):
+    measurement_id: str = Field(min_length=1, max_length=_MAX_IDENTIFIER_CHARS, pattern=r'^[A-Za-z_][A-Za-z0-9_.\-]*$',
+        description='Stable ID. Spec equations refer to it. A Maestro output\'s ID is m_ + its output name.')
+    analysis: Literal['dc', 'ac', 'tran', 'noise', 'stb', 'pss', 'pnoise', 'other'] = Field(
+        description='Analysis that produces the raw data.')
+    result_source: Literal['backend_profile', 'ade_output', 'size_estimate'] = Field('backend_profile',
+        description='backend_profile: a metric computed by the circuit-profile analyzer. ade_output: a Maestro output '
+                    '(needs the bridge). A task measures one way; a new row takes the way of the rows there. '
+                    'size_estimate: not simulated - worked out from the sizes the task varies by the formula in '
+                    '`signal`, e.g. fingers("mn*", 400n); it may stand beside either way (record 7.308).')
+    source_name: Optional[str] = Field(None, max_length=200,
+        description='Metric name in the backend profile, or the ADE output name.')
+    signal: Optional[str] = Field(None, max_length=300,
+        description='For a Maestro output: its expression, e.g. ymax(VT("/OUT")) or getData("loopGain" ?result "stb"). '
+                    'For a profile metric: a label of what is measured, e.g. VOUT.')
+    unit: str = Field(max_length=_MAX_UNIT_CHARS,
+        description='Unit of the measured value. A target using this measurement must have a compatible unit.')
+    notes: str = Field('', max_length=_MAX_NOTE_CHARS, description='Free text; not used by the optimizer.')
+
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        """A row written before 2026-09-26 may carry function, window, at_frequency_hz, integration_band_hz,
+        branch_direction, loop_definition, crossover, on_failure and validity, and one written before 2026-09-29
+        conditions and aggregation (RETIRED_MEASUREMENT_FIELDS). No backend ever read them - a set `function`, like
+        conditions other than [nominal] or an aggregation other than nominal_only, even blocked the run - so they are
+        dropped, whatever they say. The test conditions are the run's (`run.conditions`) and each spec's
+        (`PerformanceTarget.nominal_only`), since reward v2. A probe computed from other probes (`result_source`
+        expression, retired on 2026-10-03) is a spec equation's job since record 7.52: in a whole configuration its
+        arithmetic is written into the equations of the specs that use it (`WorkbenchConfig._expression_probes`); a row
+        on its own is refused in plain words."""
+        if isinstance(data, dict) and data.get('result_source') == 'expression':
+            raise ValueError(
+                f"{data.get('measurement_id') or 'this probe'}: a probe computed from other probes (result "
+                f'source "expression") is no longer offered. Write its arithmetic in the equation of the '
+                f'spec that uses it.')
+        return _without_retired(data, RETIRED_MEASUREMENT_FIELDS)
+
+
+# --------------------------------------------------------------------------- circuit
+# Circuit or task selection and the source identity retained in the configuration.
+class CircuitReference(_Model):
+    source: Literal['registered_task', 'netlist', 'virtuoso'] = Field(
+        description='registered_task: a task provider known to the backend. virtuoso: a native library/cell/view read '
+                    'through the bridge. netlist: the REMOVED Spectre netlist import - still read, so configurations '
+                    'and runs saved before stay readable (and keep their hashes), but no circuit is loaded from it.')
+    task_id: Optional[str] = Field(None, max_length=200)
+    netlist_path: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
+        description='Removed netlist source only (kept for configurations saved before). Backend-side path.')
+    parser_config_path: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
+        description='Removed netlist source only (kept for configurations saved before). Device/port mapping.')
+    library: Optional[str] = Field(None, max_length=_MAX_CELLVIEW_NAME_CHARS)
+    cell: Optional[str] = Field(None, max_length=_MAX_CELLVIEW_NAME_CHARS)
+    view: Optional[str] = Field(None, max_length=_MAX_CELLVIEW_NAME_CHARS)
+    testbench_cell: Optional[str] = Field(None, max_length=_MAX_CELLVIEW_NAME_CHARS,
+        description='Existing testbench cell. A DUT may instead be identified inside one testbench.')
+    dut_hierarchy: Optional[str] = Field(None, max_length=400,
+        description='Instance path or subcircuit name of the DUT inside the testbench/netlist.')
+    circuit_class: str = Field(UNSPECIFIED, max_length=120)
+    pdk_id: str = Field(UNSPECIFIED, max_length=200,
+        description='PDK name/version identifier. PDK files themselves are never copied.')
+    content_sha256: Optional[str] = Field(None, pattern=r'^[0-9a-f]{64}$',
+        description='Hash of the circuit content the configuration was validated against.')
+
+
+# --------------------------------------------------------------------------- run
+STANDARD_VOCABULARY = 'standard'
+
+
+# Neural architecture and input-feature choices that form the saved model network contract.
+class NetworkConfig(_Model):
+    encoder_type: Literal['graph_transformer', 'rgcn', 'gatv2', 'graph_gps', 'group_cross_attention',
+        'circuit_gps'] = 'graph_transformer'
+    hidden_dim: int = Field(32, ge=4, le=1024)
+    heads: int = Field(4, ge=1, le=32)
+    layers: int = Field(2, ge=1, le=16)
+    structural_encoding: Literal['none', 'rwse'] | None = Field(None,
+        description=
+            'Topology-only random-walk return probabilities at 2, 4, 8, 16 steps. GraphGPS and CircuitGPS '
+            'default to rwse; parameter-group cross-attention defaults to none. Supported by these three '
+            'encoders.')
+    architecture_version: int | None = Field(None, description=(
+        "The encoder's version. None: its default (CircuitGPS 2, every other encoder 1). CircuitGPS also builds 1 (its "
+        'models saved before 2026-10-13) and 3 (record 7.356: version 2 averaging where it summed - program bindings, '
+        "spec-to-node messages, group members and the readout - so the network's numbers keep their size on a large "
+        'circuit). A saved model loads only with its own version.'))
+    operating_points: bool = Field(False,
+        description='Include measured nominal device operating points and missing-value masks.')
+    # The transferable inputs of record 7.298 (the page sets the three together: "Network inputs: Transferable").
+    spec_input: Literal['slots', 'set', 'structured'] = Field('slots', description=(
+        'How the network reads the specs. slots: one fixed place per spec name in the result registry, as every model '
+        'saved before 2026-10-10 was trained; a model loads only with the same registry. set: every active spec is one '
+        'item described by what it measures (unit, analysis, how its probe reads it) and how far it is from its limits '
+        'in its own scale, read by one shared network; a model then reads any spec list and loads on any task built '
+        'with the same inputs. structured: ordered measurement programs, circuit bindings, explicit scales and '
+        'separate margins, for CircuitGPS joint attention.'))
+    size_features: Literal['absolute', 'pdk_relative'] = Field('absolute', description=(
+        'Transistor widths and lengths as the network sees them. absolute: in micrometres. pdk_relative: '
+        "divided by the PDK's minimum width and length of that device (the lower end of its CDF range, read "
+        "with the PDK), so a minimum-length device reads the same in every PDK. Needs the task's PDK loaded."))
+    device_model_features: bool = Field(False, description=(
+        'Add four technology numbers to every MOS device the network sees: threshold voltage, mobility, '
+        "saturation velocity and oxide thickness of its model in the PDK's nominal section, at the smallest "
+        "size the model covers. Needs the task's PDK loaded; the numbers stay in the local PDK folder and "
+        'are never shown.'))
+    # The second build of the network inputs (record 7.317; the page sets these three with the three above: "Network
+    # inputs: Transferable 2"). Each is off by default and left out of a saved configuration while it is.
+    bench_features: Literal['absolute', 'relative'] = Field('absolute', description=(
+        "What the network reads of the testbench's sources. absolute: every DC value in one column, divided by 1 - a "
+        'voltage in volts, and a current as if it were volts (50 uA reads as 0.00005). relative: a current source in '
+        "microamperes in a column of its own; a voltage source also as a share of the supply (the supply reads 1); a "
+        "source's AC magnitude and the two levels of a step as columns; a DC value the test gives as a design variable "
+        'read from the test. The supply is found by one rule on the circuit.'))
+    net_roles: Literal['task', 'rule'] = Field('task', description=(
+        'Which nets the network sees tagged. task: the tags the task was saved with (ground everywhere, the supply on '
+        'some tasks). rule: one rule for every task - ground, supply, input (a source carrying a signal drives it), '
+        "output (an active spec's probe reads it), bias (another DC source drives it)."))
+    operating_point_ratios: bool = Field(False, description=(
+        'Add four numbers of each transistor at the simulated operating point: gm/Id, gm/gds, |Vgs| - |Vth| '
+        "and |Vds|/|Vdsat|, with the simulator's region. They mean the same in every PDK. The run then reads "
+        "every design's operating point (a Maestro task: one short DC solve more per design when its test "
+        'saves none).'))
+    vocabulary: str = Field(STANDARD_VOCABULARY, max_length=80,
+        pattern=r'^(standard|families|pdk:[A-Za-z_][A-Za-z0-9_.\-]{0,63})$',
+        description=
+            'Which components the network knows. families: the device families every PDK maps into (nMOS, pMOS, '
+            'npn, pnp, diode, varactor, resistor, capacitor, inductor, sources), the list of a new model since '
+            '2026-10-10 (record 7.298); a model trained with it loads with any PDK. standard: the 8 generic '
+            'kinds (MOS, R, C, L, sources) every model saved before then was trained with, kept to continue '
+            'those models; other parts are "unknown". pdk:<technology library>: every component of that PDK, '
+            'read with a cell or with "PDK window..." (gator_workbench.pdk). A model trained with one list loads '
+            'only with the same list.')
+
+    @model_validator(mode='before')
+    @classmethod
+    def _circuit_gps_inputs(cls, values):
+        if isinstance(values, dict) and values.get('encoder_type') == 'circuit_gps' and 'spec_input' not in values:
+            return dict(values, spec_input='structured')
+        return values
+
+    @model_validator(mode='after')
+    def _structural_encoding(self):
+        if self.structural_encoding is None:
+            object.__setattr__(self, 'structural_encoding', 'rwse' if self.encoder_type in ('graph_gps',
+                'circuit_gps') else 'none')
+        if self.structural_encoding != 'none' and self.encoder_type not in GLOBAL_ENCODERS:
+            raise ValueError('rwse requires graph_gps, group_cross_attention or circuit_gps')
+        return self
+
+    @model_validator(mode='after')
+    def _architecture_version(self):
+        built = (1, 2, 3) if self.encoder_type == 'circuit_gps' else (1,)
+        if self.architecture_version is not None and self.architecture_version not in built:
+            raise ValueError(f"{self.encoder_type} has architecture_version {' or '.join(map(str, built))}, "
+                             f'not {self.architecture_version}')
+        return self
+
+    @model_serializer(mode='wrap')
+    def _unset_version_left_out(self, handler):
+        """An unset architecture_version is not written (record 7.356), so a configuration saved now still loads where the
+        field is not known: a frozen runtime, a server that was not restarted."""
+        data = handler(self)
+        if isinstance(data, dict) and data.get('architecture_version') is None:
+            data.pop('architecture_version', None)
+        return data
+
+    @field_validator('encoder_type', mode='before')
+    @classmethod
+    def _refuse_removed_encoder(cls, value):
+        if value == 'gat':
+            raise ValueError('gat (GATv1) was replaced by gatv2 on 2026-09-26. Select gatv2 for new training; '
+                             'GATv1 weights cannot be loaded into GATv2. Use the historical source matching '
+                             'the checkpoint for GATv1 runs.')
+        if isinstance(value, str) and value in REMOVED_ENCODERS:
+            date, commit = REMOVED_ENCODERS[value]
+            raise ValueError(
+                f'{value} was removed from the optimizer on {date}. Choose graph_transformer, rgcn or gatv2. '
+                             f'Use the historical source matching the checkpoint; the last version with this encoder '
+                             f'is commit {commit}.')
+        return value
+
+
+# One metric identity, canonical unit and physical input-normalization reference.
+class SpecRegistryEntry(_Model):
+    metric_id: str
+    unit: str = Field(description='Canonical unit of the registered metric.')
+    reference: float = Field(gt=0, description='Fixed physical reference used for input normalization.')
+
+
+class AdvancedRL(_Model):
+    """Defaults mirror the existing entry points. Changing them changes the checkpoint contract."""
+    learning_rate: float = Field(3e-4, gt=0)
+    gamma: float = Field(0.99, ge=0, le=1)
+    tau: float = Field(0.005, gt=0, le=1)
+    alpha_learning_rate: Optional[float] = Field(None, gt=0,
+        description=
+            'Alpha learning rate. Empty uses the learning rate above; a positive value gives the entropy '
+            'temperature its own Adam rate.')
+    initial_alpha: float = Field(0.2, gt=0)
+    target_entropy_per_action: float = Field(1.0, gt=0)
+    max_grad_norm: float = Field(10.0, gt=0)
+    batch_size: int = Field(8, ge=1, le=4096)
+    warmup_transitions: int = Field(8, ge=0, description='Random exploration until this many replay insertions.')
+    update_every: int = Field(1, ge=1, description='Run learner updates every N admitted transitions.')
+    updates_per_transition: int = Field(1, ge=1, le=64, description='Update-to-data ratio (UTD).')
+    update_after_dispatch: bool = Field(True,
+        description=
+            'Send a lane its next design before the learner updates of the result it brought (record 7.281): the '
+            'lane simulates while the learner learns. The number of updates stays the same; each design comes '
+            'from a policy a few updates older. On by default since record 7.294: in the check on real tasks (2 '
+            'tasks x 2 seeds, 400 evaluations) learning was not worse and the runs were 18 % shorter.')
+    replay_capacity: int = Field(10000, ge=1)
+    episode_length: int = Field(4, ge=1, le=1000, description='Environment steps per episode (finite horizon).')
+    episode_terminates_on_success: bool = Field(False,
+        description='MDP-level: end the episode at a feasible design. Distinct from stopping the whole run.')
+    freeze_encoder: bool = Field(False, description='fine_tune only: keep loaded encoder weights fixed.')
+    encoder_only_transfer: bool = Field(False,
+        description='fine_tune only: load encoder weights; actor/critic heads start random.')
+    reset_critic: bool = Field(False, description='fine_tune only: load the actor but start critics/targets fresh.')
+    reset_temperature: bool = Field(False, description='fine_tune only: start alpha from initial_alpha.')
+    spec_registry: Optional[list[SpecRegistryEntry]] = Field(None,
+        description='Custom metric registry for the goal encoder. Empty = optimizer default. Changing it changes '
+                    'the network input width and therefore checkpoint compatibility.')
+    simulation_timeout_seconds: float = Field(120.0, gt=0)
+
+
+# Source run, save point and optional external pretraining cost for loading a saved RL model.
+class ModelSource(_Model):
+    run_dir: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
+        description='Run directory whose checkpoint is loaded (resume / fine_tune / frozen).')
+    checkpoint_id: str = Field('latest', max_length=120,
+        description='`latest` = most recently safely saved state (default, not automatically `best`), '
+                    '`best_policy`, or an explicit checkpoint ID.')
+    source_pretraining_cost_evaluations: Optional[int] = Field(None, ge=0,
+        description='Only for external models whose cost cannot be read from a source run. Empty = unknown '
+                    '(recorded as unknown, never as 0).')
+
+
+# Reward-shaping parameters for nominal gating, violations, objective improvement and margin bonuses.
+class RewardConfig(_Model):
+    nominal_gate_band: float = Field(0.5, gt=0, lt=1,
+        description=
+            'Nominal gate band: strictly between 0 and 1. Every scored design that passes nominal ranks above '
+            'one that fails nominal under after_nominal.')
+    objective_shape: Literal['clipped', 'compressed'] = Field('clipped',
+        description='Clipped stops the objective bonus at one scale; compressed keeps rewarding improvement below 1.')
+    violation_shape: Literal['capped', 'compressed'] = 'capped'
+    worst_spec_share: float = Field(0.0, ge=0, le=1)
+    objective_weight: float = Field(0.0, ge=0, le=1)
+    margin_weight: float = Field(0.0, ge=0, le=1)
+
+
+# Corner-evaluation policy and the ordered corner IDs planned for a run.
+class ConditionsConfig(_Model):
+    policy: Literal['off', 'always', 'after_nominal'] = 'off'
+    corners: list[Literal['ss_hot_low', 'ff_cold_high', 'fs_nominal', 'sf_nominal']] = Field(default_factory=list)
+
+    @model_validator(mode='after')
+    def _plan(self):
+        if len(set(self.corners)) != len(self.corners):
+            raise ValueError('Corner IDs must be unique')
+        if (self.policy != 'off') != bool(self.corners):
+            raise ValueError(
+                'Every planned corner and Corners after nominal passes need a nonempty corner plan; Nominal '
+                'only must have no corners')
+        return self
+
+
+# Run settings retired on 2026-09-29, each with the default it had. `threads_per_job` never reached a simulator: no task
+# ever applied it (`supports_threads` was false for every one), so the box looked like a control that was none. A
+# configuration written with it still loads (the before-validator drops it), and both hashes still see it at this
+# default (`_hashed`), so every run, checkpoint, task file and approval made before keeps its identity - every stored
+# configuration had 1.
+RETIRED_RUN_FIELDS = {'threads_per_job': 1}
+
+
+# The LLM search methods, removed on 2026-10-06 (record 7.226; the user: "SAC is the only default and other methods
+# should be launched through agent tab opened agent cli"), with the names the page gave them. SAC is the only search
+# method since. A configuration that still carries `run.search` loads: the before-validator drops the block, and both
+# hashes never saw it at its default (`_hashed`), so every SAC configuration keeps its hashes. Starting one that asks
+# for a removed method is refused (api/run_routes.py), and so is continuing a run that used one (runs.py): its records
+# stay readable.
+REMOVED_SEARCH_METHODS = {'llm_warmstart': 'LLM warm start -> SAC', 'llm': 'LLM only',
+    'sac_llm_rescue': 'SAC with LLM rescue'}
+
+
+def removed_search_method(config) -> str | None:
+    """The removed search method a raw configuration (a dict, as sent or as saved) asks for, or None."""
+    run = config.get('run') if isinstance(config, dict) else None
+    search = run.get('search') if isinstance(run, dict) else None
+    method = search.get('method') if isinstance(search, dict) else None
+    return method if method in REMOVED_SEARCH_METHODS else None
+
+
+# Pinned offline source pool and the batch fraction mixed with target-task transitions.
+class RehearsalSettings(_Model):
+    pool_manifest: str = Field(min_length=1, max_length=_MAX_PATH_CHARS)
+    pool_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    fraction: float = Field(0.5, gt=0, lt=1)
+
+
+# One Pareto objective's metric, direction and base-view limit.
+class ComparisonObjective(_Model):
+    metric: str = Field(min_length=1, max_length=120)
+    orientation: Literal['minimize', 'maximize']
+    base_limit: float
+
+
+class ArchiveComparison(_Model):
+    """The matched archive comparison's settings of one run (docs/plan-bo-mobo-rl-archive-comparison.md): the common first
+    designs every method evaluates after its start design, the archived designs a transfer arm may use, and for the
+    Pareto arm its two objectives. Each file is pinned by its sha256 and checked against the compiled task at the start."""
+    initial_designs: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
+        description='JSON file of the common first designs (archive_compare.initial): proposals in [-1, 1] per group.')
+    initial_designs_sha256: Optional[str] = Field(None, pattern=r'^[0-9a-f]{64}$')
+    archive: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
+        description=
+            'JSON file of the archived designs a transfer arm imports (unit-cube points with their rewards under '
+            "this run's goal view, or with every output for the Pareto arm). None: no archive (T0).")
+    archive_sha256: Optional[str] = Field(None, pattern=r'^[0-9a-f]{64}$')
+    objectives: list[ComparisonObjective] = Field(default_factory=list, max_length=2,
+        description='mobo only: the two objectives of the Pareto search, each a row of the goal view.')
+    energy_rule: bool = Field(False, description='mobo only: decision D6 (the flip-flop energy is missing unless all '
+                                                 'six delays are present).')
+    settings: dict = Field(default_factory=dict,
+        description='Search settings that differ from the named version\'s own '
+                                                             '(recorded; for tests and the resource check).')
+
+    # Require every optional comparison file to be paired with its expected checksum.
+    @model_validator(mode='after')
+    def pinned(self):
+        for name in ('initial_designs', 'archive'):
+            if (getattr(self, name) is None) != (getattr(self, f'{name}_sha256') is None):
+                raise ValueError(f'{name} and {name}_sha256 are given together or not at all')
+        return self
+
+
+# Execution mode, shared budgets, lane concurrency, learner settings and source-model choices for one run.
+class RunSettings(_Model):
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        return _without_retired(data, dict(RETIRED_RUN_FIELDS, search=None))
+
+    mode: Literal['scratch', 'resume', 'fine_tune', 'frozen'] = 'scratch'
+    model_label: Optional[str] = Field(None, max_length=_MAX_DISPLAY_NAME_CHARS,
+        description=
+            'The name the RL model of this run is filed under (record 7.159, independent of any project name). '
+            "resume, fine_tune and frozen start from the newest model saved under it. Empty: the task's run "
+            'label.')
+    concurrency: int = Field(1, ge=1, le=64,
+        description='Number of independent simulation jobs running at once. Not the thread count of one job.')
+    max_evaluations: int = Field(ge=1,
+        description='Primary budget: new real candidate evaluations that may START in the whole run, shared by '
+                    'all workers. Baselines, warm-up, failures all count. Episode resets do not reset it.')
+    max_spectre_launches: Optional[int] = Field(None, ge=1,
+        description='Optional hard cap on actual simulator launches, including retries and failures.')
+    max_wall_seconds: Optional[float] = Field(None, gt=0, description='Optional active wall-clock limit.')
+    max_retries: int = Field(0, ge=0, le=10,
+        description='Retries per evaluation for retryable infrastructure failures. A retry keeps the '
+                    'evaluation_id and adds a job attempt; it costs a launch, not a new evaluation.')
+    max_consecutive_failures: int = Field(5, ge=1, le=1000,
+        description='Safe stop (flush + checkpoint) after this many consecutive failed evaluations, so a dead '
+                    'backend cannot consume the budget unattended.')
+    max_consecutive_infrastructure_failures: int = Field(3, ge=1, le=1000,
+        description='After this many consecutive INFRASTRUCTURE failures (lost bridge, silent daemon, no license), '
+                    'counted in completion order across workers: stop dispatching, record a connection check and '
+                    'pause safely instead of spending the budget against a dead link. Continuing needs the '
+                    'connection gate to pass again.')
+    connection_profile_id: Optional[str] = Field(None, max_length=64, pattern=PROFILE_ID,
+        description='Identifier of a configured bridge connection profile (real tasks only). Only an identifier: '
+                    'hosts, ports, paths and commands are never taken from a configuration or a request.')
+    seed: int = Field(0, ge=0, lt=2**32, description='Target-task seed (collector, replay sampling, torch).')
+    stop_at_first_feasible: bool = Field(False,
+        description='Stop dispatching once the scheduler confirms a design meeting all hard constraints.')
+    frozen_action: Literal['deterministic', 'sampled'] = Field('deterministic',
+        description='frozen mode only: mean action or a sample from the fixed policy.')
+    optimizer: Literal['sac', 'bayes', 'turbo_archive', 'mobo'] = Field('sac',
+        description=
+            "Who proposes the designs after the random warm-up (record 7.304). sac: the network's policy, "
+            'trained as the run goes. bayes: Bayesian optimization (a trust-region Gaussian process, '
+            'gator_workbench.bayes) on the same task, reward, lanes and budget - a comparison method: from '
+            'scratch only, the network is neither asked nor trained, and the run saves no model worth loading. '
+            "turbo_archive and mobo: the archive comparison's TuRBO with archived data and Pareto MOBO "
+            "(gator_workbench.archive_compare, run.comparison), which save their search with the run's save "
+            'points and can be resumed.')
+    comparison: Optional[ArchiveComparison] = Field(None,
+        description='The archive comparison\'s settings of this run (docs/plan-bo-mobo-rl-archive-comparison.md); None '
+                    'for every other run.')
+    network: NetworkConfig = Field(default_factory=NetworkConfig)
+    reward: RewardConfig = Field(default_factory=RewardConfig)
+    conditions: ConditionsConfig = Field(default_factory=ConditionsConfig)
+    model_source: ModelSource = Field(default_factory=ModelSource)
+    advanced: AdvancedRL = Field(default_factory=AdvancedRL)
+    rehearsal: Optional[RehearsalSettings] = Field(None,
+        description='Optional pinned offline training pool for fine_tune; each batch mixes source and target data.')
+    cache_policy: Literal['disabled'] = Field('disabled',
+        description='The existing environment has no result cache; duplicates are simulated and counted.')
+    continual_learning: bool = Field(False,
+        description='Explicit opt-in to inherit weights fine-tuned on a previous test task. Default starts every '
+                    'test task from the fixed source checkpoint.')
+
+    # Require common designs for archive searches and exactly two objectives for MOBO.
+    @model_validator(mode='after')
+    def valid_comparison(self):
+        if self.optimizer in ('turbo_archive', 'mobo'):
+            if self.comparison is None or self.comparison.initial_designs is None:
+                raise ValueError(
+                    f'run.optimizer "{self.optimizer}" (the archive comparison) needs run.comparison with its '
+                                 'common first designs')
+            if self.optimizer == 'mobo' and len(self.comparison.objectives) != 2:
+                raise ValueError('run.optimizer "mobo" needs exactly two run.comparison.objectives')
+        elif self.comparison is not None and (self.comparison.archive is not None or self.comparison.objectives):
+            raise ValueError('An archive or objectives in run.comparison are read only by the comparison\'s searches '
+                             '(turbo_archive, mobo)')
+        return self
+
+    # Require rehearsal to use fine-tuning or resume and to leave source and target items in each batch.
+    @model_validator(mode='after')
+    def valid_rehearsal(self):
+        if self.rehearsal is not None:
+            if self.mode not in ('fine_tune', 'resume'):
+                raise ValueError('Rehearsal is supported only for fine_tune or its resume')
+            size = round(self.advanced.batch_size * self.rehearsal.fraction)
+            if not 0 < size < self.advanced.batch_size:
+                raise ValueError('Rehearsal batch must contain source and target transitions')
+        return self
+
+
+# --------------------------------------------------------------------------- output
+# Run output location, persistence cadence, retention rules and storage limits.
+class OutputSettings(_Model):
+    output_root: Optional[str] = Field(None, max_length=_MAX_PATH_CHARS,
+        description='Backend directory. Empty = <repo_root>/outputs. Must be inside an allowed root and writable.')
+    experiment_name: str = Field('experiment', min_length=1, max_length=_MAX_DISPLAY_NAME_CHARS,
+        pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]*$')
+    experiment_id: Optional[str] = Field(None, max_length=64,
+        description='Set to append runs to an existing experiment; empty creates a new unique ID.')
+    save_learner_updates: bool = True
+    save_checkpoints: bool = True
+    save_replay_snapshots: bool = Field(True,
+        description='Needed for a full training-state resume. When off, checkpoints are weights_only.')
+    save_transition_archive: bool = Field(True,
+        description='Complete experience archive (every transition + states). Independent of replay snapshots.')
+    export_summary_csv: bool = True
+    checkpoint_every_evaluations: Optional[int] = Field(200, ge=1,
+        description=
+            'A periodic save point every N evaluations. 200 since record 7.280 (50 before): a save stops every '
+            'lane until all are idle, which cost 8-10 % of a 4-lane run at 50. A crash loses at most the '
+            'learning since the last save point; the recorded data is kept in any case.')
+    checkpoint_every_seconds: Optional[float] = Field(None, gt=0)
+    keep_last_checkpoints: Optional[int] = Field(10, ge=1,
+        description=
+            'How many PERIODIC save points to keep, the newest ones. A save point holds the replay buffer, so it '
+            'grows with the run: keeping every one of a long run filled the run folder with copies (measured '
+            '2026-09-23: 40 MB of save points against 1.2 MB of data after 250 evaluations). Save now, pause, '
+            'stop and final save points, the latest one and a selected best policy are never removed. Empty = '
+            'keep every one.')
+    learner_update_log_every: int = Field(1, ge=1,
+        description='Write every Nth learner update. cumulative_updates stays exact regardless.')
+    flush_every_evaluations: int = Field(64, ge=1, le=100000,
+        description='Parquet part size in evaluations. Acknowledged results are journaled before this. 64 since record '
+                    '7.280 (16 before): each part is written inline, 0.35-0.94 s on the D: drive.')
+    waveform_retention: Literal['none', 'best_and_failures', 'all'] = 'best_and_failures'
+    keep_simulator_host_folders: bool = Field(False,
+        description=
+            'Keep every Spectre job folder on the simulator host. Off (record 7.282): the folders of designs '
+            'whose raw output this run does not keep are removed at each save point and at the end - the host '
+            "kept 58,000 of them over one night. The run folder's own records and the kept designs' raw output "
+            'are not touched.')
+    waveform_storage_limit_bytes: Optional[int] = Field(2 * 1024**3, ge=0,
+        description='Cap on retained raw simulator output. Oldest retained failures are removed first, then '
+                    'nothing else: models and primary data are never deleted automatically.')
+    min_free_bytes: int = Field(1 * 1024**3, ge=0,
+        description='Dispatch pauses safely when free space on the output filesystem falls below this.')
+
+
+# --------------------------------------------------------------------------- research
+# Research labels retired on 2026-10-03 (record 7.163; user, on "which should be kept": "Remove both"), each with the
+# default it had. Nothing read `experiment_group` (Output settings' experiment name groups a run's folder) or
+# `test_tasks`. A configuration written with them still loads (the before-validator drops them), and the configuration
+# hash still sees them at these defaults (`_hashed`), so every approval and run made before keeps its identity; the task
+# hash never saw research labels.
+RETIRED_RESEARCH_FIELDS = {'experiment_group': UNSPECIFIED, 'test_tasks': []}
+
+
+# Explicit research provenance and comparison labels recorded with a run.
+class ResearchLabels(_Model):
+    @model_validator(mode='before')
+    @classmethod
+    def _retired_fields(cls, data):
+        return _without_retired(data, RETIRED_RESEARCH_FIELDS)
+
+    split: Literal['train', 'validation', 'test', 'unspecified'] = 'unspecified'
+    generalization_level: Literal['same_task', 'unseen_spec', 'unseen_topology', 'unseen_circuit_class',
+                                  'unspecified'] = 'unspecified'
+    training_sources: list[str] = Field(default_factory=list,
+        description='Task IDs/classes the source model was trained on.')
+    comparison_pair_id: str = UNSPECIFIED
+    task_order: Optional[int] = Field(None, ge=0, description='Position K in a fixed task order.')
+    pretrain_seed: Optional[int] = Field(None, ge=0, description='Seed of the SOURCE pretraining run.')
+    budget_checkpoints: list[int] = Field(default_factory=list,
+        description='Evaluation budgets at which success is tabulated.')
+    ablation_labels: list[str] = Field(default_factory=list)
+    method_label: str = Field(UNSPECIFIED,
+        description='e.g. Scratch, Pretrained-Frozen, Pretrained-Fine-tuned, encoder-only transfer.')
+
+
+# Project and task display labels with optional descriptive notes.
+class ProjectInfo(_Model):
+    name: str = Field('gator-project', min_length=1, max_length=120)
+    task_name: str = Field('task', min_length=1, max_length=_MAX_DISPLAY_NAME_CHARS,
+        pattern=r'^[A-Za-z0-9][A-Za-z0-9_.\-]*$')
+    notes: str = Field('', max_length=2000)
+
+
+# Versioned task configuration joining circuit selection, editor rows, run settings, outputs and research labels.
+class WorkbenchConfig(_Model):
+    schema_version: Literal['gator-workbench-config-v1'] = CONFIG_SCHEMA_VERSION
+    project: ProjectInfo = Field(default_factory=ProjectInfo)
+    circuit: CircuitReference
+    parameters: list[OptimizationParameter] = Field(default_factory=list, max_length=2000)
+    targets: list[PerformanceTarget] = Field(default_factory=list, max_length=500)
+    measurements: list[MeasurementDefinition] = Field(default_factory=list, max_length=500)
+    run: RunSettings
+    output: OutputSettings = Field(default_factory=OutputSettings)
+    research: ResearchLabels = Field(default_factory=ResearchLabels)
+
+    @model_validator(mode='before')
+    @classmethod
+    def _expression_probes(cls, data):
+        """A configuration written before 2026-10-03 may hold Probes computed from other probes (`result_source`
+        expression, with `expression`, RETIRED_MEASUREMENT_FIELDS). Their arithmetic goes, in parentheses, into the
+        equations of the specs that use them (and of such probes first), and the probes go: the specs compute the same
+        numbers with the same evaluator, which the probes used too. A cycle of such probes never ran and is refused."""
+        rows = data.get('measurements') if isinstance(data, dict) else None
+        computed = {m.get('measurement_id'): m.get('expression') or '' for m in rows or []
+                    if isinstance(m, dict) and m.get('result_source') == 'expression'} if isinstance(rows, list) else {}
+        if not computed:
+            return data
+
+        def written(text, seen=()):
+            """Inline legacy computed probes recursively and reject expression cycles."""
+            for name in [n for n in computed if isinstance(n, str) and _equation_uses(text, n)]:
+                if name in seen:
+                    raise ValueError(f'Probe {name} is computed from itself; a cycle of expression probes never ran.')
+                text = _replace_name(text, name, f'({written(computed[name], seen + (name,))})')
+            return text
+        # This parent validator runs before PerformanceTarget's legacy-ID migration.
+        # Convert those references first, otherwise their computed probe is deleted
+        # while the target still points to its old name. An explicit equation wins.
+        targets = [PerformanceTarget._one_probe_before_equations(t) for t in data.get('targets') or []]
+        targets = [dict(t, equation=written(t['equation'])) if isinstance(t, dict) and isinstance(t.get('equation'),
+            str)
+                   else t for t in targets]
+        return dict(data, targets=targets, measurements=[m for m in rows if not (isinstance(m, dict)
+                                                                                     and m.get(
+                                                                                         'result_source') ==
+                                                                                             'expression')])
+
+    @model_validator(mode='after')
+    def _reward_contract(self):
+        # The objective rows (one at most, with the limit its direction needs) are checked by validation.py as
+        # plain-language errors of the checklist, not here: a half-edited table must still load and be shown.
+        if self.run.conditions.policy != 'off':
+            # The removed OTA7 task stays accepted HERE, so its saved runs and configurations still parse; the task
+            # itself is refused where it would load (tasks.REMOVED_REAL_TASKS, record 7.128).
+            if self.circuit.source != 'registered_task' or self.circuit.task_id != 'real:gpdk045_ota7':
+                raise ValueError(
+                    'No task trains at corners: the only one, the real OTA7 task, was removed on 2026-09-30')
+            if self.run.max_spectre_launches is None or self.run.max_retries:
+                raise ValueError('Robust training needs a finite launch cap and zero automatic retries')
+        return self
+
+
+# --------------------------------------------------------------------------- helpers
+SECTIONS = {'parameters': OptimizationParameter, 'targets': PerformanceTarget,
+            'measurements': MeasurementDefinition}
+SECTION_KEYS = {'parameters': 'variable_id', 'targets': 'metric_id', 'measurements': 'measurement_id'}
+
+
+def canonical_json(value) -> str:
+    """Return `value` as compact key-sorted JSON, non-ASCII kept as is; NaN or infinity raises ValueError."""
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
+
+
+_ONE_PROBE = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]*$')
+
+
+def _name_pattern(name):
+    """A Probe ID as a whole name in a spec equation: its names are plain identifiers (spec_equations.parse reads them
+    with Python's ast), so neither a longer name nor a number's SI suffix (2m) holds it."""
+    return re.compile(rf'(?<![A-Za-z0-9_.]){re.escape(name)}(?![A-Za-z0-9_])')
+
+
+def _equation_uses(text, name) -> bool:
+    return isinstance(text, str) and bool(_name_pattern(name).search(text))
+
+
+def _replace_name(text, name, replacement):
+    return _name_pattern(name).sub(lambda _: replacement, text)
+
+
+def _hashed(data):
+    """What both hashes see. A spec whose equation is one Probe ID is hashed in the form every configuration had before
+    specs were equations (`measurement_id`), so a configuration written earlier keeps its hashes: its runs still
+    resume, its checkpoints still load, and approvals and proposals made for it still bind. The network's component list
+    (`run.network.vocabulary`, added later) is hashed as absent while it is the standard one, for the same reason. So is
+    `run.network.architecture_version` (record 7.356) while it is unset or the encoder's default. The Parameters and
+    Probes fields retired on 2026-09-26 (record 7.92) and 2026-09-29 (record 7.105, the Probes' conditions
+    and aggregation) are hashed as present at their old defaults, for the
+    same reason again; a row that stated another value for one of them (it never ran, or the run refused it) hashes
+    differently since. So is the retired `run.threads_per_job` (2026-09-29, RETIRED_RUN_FIELDS). The search block retired
+    on 2026-10-06 (record 7.226) is hashed as absent, as it was at its default. The RL model's label
+    (`run.model_label`, record 7.159) is hashed as absent while it is not set, and so is the switch
+    `run.advanced.update_after_dispatch` (record 7.281) while it is off - the default until record 7.294: a configuration
+    recorded since 7.281 states it off and keeps its hash, one with the switch on hashes as the different run it is, and
+    one written before 7.281 never stated it, so it reads as on since and keeps its hash only by stating it off (as the
+    pinned tests do) -, and
+    `output.keep_simulator_host_folders`
+    (record 7.282) while it is off. The research labels retired on 2026-10-03
+    (record 7.163, RETIRED_RESEARCH_FIELDS) are hashed as present at their old defaults, and so are the Specs' target and
+    tolerance and the Probes' expression retired the same day (RETIRED_TARGET_FIELDS, RETIRED_MEASUREMENT_FIELDS): a spec
+    that used them, or a probe computed from others, was rewritten when it loaded and hashes differently since."""
+    data = dict(data)
+    _hash_output_and_research(data)
+    run = _hash_run_defaults(data)
+    network = run.get('network') if isinstance(run, dict) else None
+    if isinstance(network, dict):
+        network = dict(network)
+        if network.get('vocabulary') == STANDARD_VOCABULARY:
+            network.pop('vocabulary')
+        if network.get('operating_points') is False:
+            network.pop('operating_points')
+        for key, default in (('spec_input', 'slots'), ('size_features', 'absolute'), ('device_model_features', False),
+                             ('bench_features', 'absolute'), ('net_roles', 'task'), ('operating_point_ratios', False)):
+            if network.get(key) == default and type(network.get(key)) is type(default):      # records 7.298, 7.317
+                network.pop(key)
+        if network.get('structural_encoding') in (None, 'none') and network.get('encoder_type') not in GLOBAL_ENCODERS:
+            network.pop('structural_encoding', None)
+        version = network.get('architecture_version')
+        if version is None or type(version) is int and version == (2 if network.get(
+            'encoder_type') == 'circuit_gps' else 1):
+            network.pop('architecture_version', None)                                   # record 7.356
+        data['run'] = dict(run, network=network)
+    data = _hash_retired_row_fields(data)
+    targets = data.get('targets') if isinstance(data, dict) else None
+    if not isinstance(targets, list):
+        return data
+    targets = [{k: v for k, v in dict(RETIRED_TARGET_FIELDS, **row).items()
+                if not (k in ('nominal_only',
+                    'missing_is_failure') and v is False or k == 'margin_sides' and v == 'both')}
+               if isinstance(row, dict) else row for row in targets]
+    return dict(data, targets=[
+        {('measurement_id' if key == 'equation' else key): value for key, value in row.items()}
+        if isinstance(row, dict) and 'measurement_id' not in row and isinstance(row.get('equation'), str)
+        and _ONE_PROBE.match(row['equation']) else row for row in targets])
+
+
+def _hash_output_and_research(data) -> None:
+    """Preserve the historical identity defaults for output retention and research labels."""
+    output = data.get('output') if isinstance(data, dict) else None
+    if isinstance(output, dict) and output.get('keep_simulator_host_folders') is False:          # record 7.282
+        data['output'] = {k: v for k, v in output.items() if k != 'keep_simulator_host_folders'}
+    research = data.get('research') if isinstance(data, dict) else None
+    if isinstance(research, dict):
+        data['research'] = dict(research, **{key: research.get(key, default) for key,
+            default in RETIRED_RESEARCH_FIELDS.items()})
+
+
+def _hash_run_defaults(data):
+    """Normalize run settings to the form used by existing configuration identities."""
+    run = data.get('run') if isinstance(data, dict) else None
+    if isinstance(run, dict):
+        run = dict(run, **{key: run.get(key, default) for key, default in RETIRED_RUN_FIELDS.items()})
+        if run.get('model_label') is None:
+            run.pop('model_label', None)
+        if run.get('rehearsal') is None:
+            run.pop('rehearsal', None)
+        if run.get('comparison') is None:        # the archive comparison's block: hashed as absent while unset
+            run.pop('comparison', None)
+        reward = run.get('reward')
+        # retired on 2026-10-06 (REMOVED_SEARCH_METHODS); at its default it was absent
+        run.pop('search', None)
+        # record 7.304: every configuration before it was a SAC run and never said so
+        if run.get('optimizer') == 'sac':
+            run.pop('optimizer')
+        if isinstance(reward, dict):
+            reward = {k: v for k, v in reward.items() if not
+                      (k == 'nominal_gate_band' and v == 0.5 or k == 'objective_shape' and v == 'clipped')}
+            legacy_default = {k: v for k, v in RewardConfig().model_dump(mode='json').items()
+                              if k not in ('nominal_gate_band', 'objective_shape')}
+            if reward == legacy_default:
+                run.pop('reward')
+            else:
+                run['reward'] = reward
+        advanced = run.get('advanced')
+        if isinstance(advanced, dict) and advanced.get('alpha_learning_rate') is None:
+            run['advanced'] = advanced = {k: v for k, v in advanced.items() if k != 'alpha_learning_rate'}
+        if isinstance(advanced, dict) and advanced.get('update_after_dispatch') is False:          # record 7.281
+            run['advanced'] = {k: v for k, v in advanced.items() if k != 'update_after_dispatch'}
+        if run.get('conditions') == ConditionsConfig().model_dump(mode='json'):
+            run.pop('conditions')
+        data['run'] = run
+    return run
+
+
+def _hash_retired_row_fields(data):
+    """Restore retired row defaults used by existing configuration identities."""
+    for section, retired in (('parameters', RETIRED_PARAMETER_FIELDS), ('measurements', RETIRED_MEASUREMENT_FIELDS)):
+        rows = data.get(section) if isinstance(data, dict) else None
+        if isinstance(rows, list):
+            data = dict(data, **{section: [dict(retired, **row) if isinstance(row, dict) else row for row in rows]})
+    return data
+
+
+def config_hash(config: WorkbenchConfig | dict) -> str:
+    """Hash used to bind approvals to an exact configuration version."""
+    data = config.model_dump(mode='json') if isinstance(config, WorkbenchConfig) else config
+    return hashlib.sha256(canonical_json(_hashed(data)).encode('utf8')).hexdigest()
+
+
+def task_definition_hash(config: WorkbenchConfig) -> str:
+    """Identity of the optimization *task* (circuit, variables, targets, measurements).
+
+    Run/output/research settings are deliberately excluded: changing a budget or an
+    output directory does not make it a different task; changing a threshold does.
+    """
+    data = _hashed(config.model_dump(mode='json'))
+    return hashlib.sha256(canonical_json({k: data[k] for k in (
+        'circuit', 'parameters', 'targets', 'measurements')}).encode('utf8')).hexdigest()
+
+
+def json_schema(section: str | None = None) -> dict:
+    if section is None:
+        return WorkbenchConfig.model_json_schema()
+    return SECTIONS[section].model_json_schema()
+
+
+# Columns the editors show only after "More columns": they exist, an agent may set them, a task file keeps them. The
+# Parameters' four were always the same in the saved tasks (review of 2026-10-03): Save task takes value_type and the
+# step from the PDK, ratio must equal what the circuit shows, and nobody chose a log scale. Specs' `hard` and
+# `normalization_scale` joined on 2026-10-05 (record 7.183): none of the 51 saved Specs rows has a soft row or a typed
+# scale, and an empty scale - the size of the limit - was the best single rule on the recorded designs.
+ADVANCED_COLUMNS = {'targets': ('soft_weight', 'active', 'basis', 'margin_sides', 'hard', 'normalization_scale'),
+                    'parameters': ('value_type', 'step', 'scale', 'ratio')}
+# Columns the editors do not show at all: the value follows from elsewhere, and the rows keep it (task files, both
+# hashes, the agent, the parked AnalogGym import). initial_value was never filled in a saved task - Save task empties it
+# - and result_source is the task's one way of measuring: a new Probes row takes it from the rows there (review of
+# 2026-10-03). Since record 7.208 also the Unit of Parameters and Specs (user: "can you delete the unit column but keep
+# the rules for value"): every value there is written with its unit, a Parameters row's quantity follows its parameter
+# (w, l: a length) and a Spec's its Probe; the rows keep their unit, and Probes keep the column (they have no values).
+# Since 2026-10-10 also Specs' missing_is_failure ("Missing value = failed"): the optimizer does it for every hard spec
+# of every task (user: "change in the optimizer"), so the row switch chooses nothing. The rows keep the value they
+# stored - 48 rows of the oscillator tasks say true, 267 say false - so no saved task changes its hash; nothing reads
+# it.
+HIDDEN_COLUMNS = {'parameters': ('initial_value', 'unit'), 'measurements': ('result_source',), 'targets': ('unit',
+    'missing_is_failure')}
+
+
+def editor_columns(section: str) -> list[dict]:
+    """Column descriptors derived from the schema so the UI has no second field list."""
+    model = SECTIONS[section]
+    schema = model.model_json_schema()
+    required = set(schema.get('required', []))
+    columns = []
+    for name, info in model.model_fields.items():
+        prop = schema['properties'][name]
+        options = prop.get('enum')
+        kind = prop.get('type')
+        for branch in prop.get('anyOf', []):
+            options = options or branch.get('enum')
+            if branch.get('type') not in (None, 'null'):
+                kind = kind or branch['type']
+            if '$ref' in branch:
+                kind = kind or 'object'
+        if '$ref' in prop:
+            kind = 'object'
+        columns.append(dict(name=name, type=kind or 'string', options=options, required=name in required,
+                            nullable=any(b.get('type') == 'null' for b in prop.get('anyOf', [])),
+                            guidance=info.description or '', default=prop.get('default'),
+                            advanced=name in ADVANCED_COLUMNS.get(section, ()),
+                            hidden=name in HIDDEN_COLUMNS.get(section, ())))
+    return columns
+
+
+# --------------------------------------------------------------------------- schema errors in plain words
+# The row IDs, and what else names them: an ID that is renamed has to be renamed there too.
+ID_FIELDS = {'variable_id': 'rows that follow it (binding_group)', 'metric_id': None,
+             'measurement_id': 'Specs equations that use it'}
+_NOT_IN_AN_ID = re.compile(r'[^A-Za-z0-9_.\-]')
+_BOUNDS = dict(greater_than=('gt', 'greater than'), greater_than_equal=('ge', 'at least'),
+               less_than=('lt', 'less than'), less_than_equal=('le', 'at most'))
+
+
+def describe_errors(exc, limit: int = 50) -> list[dict]:
+    """What the schema rejects in a configuration, one entry per field, in plain words (user report 2026-09-21: the page
+    showed pydantic's list as JSON, "String should match pattern ..."). `path` is written like the validation report's
+    (parameters[1].variable_id), so the page names the row and the editor marks it; `code` is invalid_id for an ID the
+    schema cannot take, otherwise schema; `technical` keeps the schema's own words."""
+    out = []
+    for error in exc.errors()[:limit]:
+        code, message = _plain_error(error)
+        out.append(dict(path=_error_path(error['loc']), code=code, message=message,
+                        technical=f"{error['msg']} [{error['type']}]"))
+    return out
+
+
+def _error_path(loc) -> str:
+    path = ''
+    for part in loc:
+        path += f'[{part}]' if isinstance(part, int) else f'.{part}' if path else str(part)
+    return path
+
+
+def _quoted(value) -> str:
+    text = str(value)
+    return f'"{text[:60]}..."' if len(text) > 60 else f'"{text}"'
+
+
+def _number(value) -> str:
+    return str(value).lower() if isinstance(value, bool) else format(value, 'g') if isinstance(value, (int,
+        float)) else str(value)
+
+
+def _given(value) -> str:
+    """What the field holds, when that is short enough to say: ' (it is "abc")', ' (it is 1.5)'."""
+    if isinstance(value, str):
+        return f' (it is {_quoted(value)})' if value else ''
+    return f' (it is {_number(value)})' if isinstance(value, (int, float)) else ''
+
+
+def _plain_error(error) -> tuple[str, str]:
+    kind, value, context = error['type'], error.get('input'), error.get('ctx') or {}
+    names = [part for part in error['loc'] if isinstance(part, str)]
+    field = names[-1] if names else 'The configuration'
+    given = _given(value)
+    if kind == 'string_pattern_mismatch' and field in ID_FIELDS and isinstance(value, str):
+        return 'invalid_id', _id_advice(value, ID_FIELDS[field])
+    if kind == 'string_pattern_mismatch':
+        return 'schema', f'{field} is not written in the form this field takes{given}.'
+    if kind == 'missing':
+        return 'schema', f'{field} is missing: this field needs a value.'
+    if kind == 'string_too_short':
+        return 'schema', f'{field} is empty: it needs a value.'
+    if kind == 'string_too_long':
+        return 'schema', f'{field} is too long: at most {context.get("max_length")} characters.'
+    if kind == 'too_long':
+        return 'schema', f'{field} has too many entries: at most {context.get("max_length")}.'
+    if kind == 'extra_forbidden':
+        return 'schema', f'{field} is not a field of this part of the configuration: remove it.'
+    if kind in ('float_parsing', 'float_type'):
+        return 'schema', f'{field} needs a number{given}.'
+    if kind in ('int_parsing', 'int_type', 'int_from_float'):
+        return 'schema', f'{field} needs a whole number{given}.'
+    if kind in ('bool_parsing', 'bool_type'):
+        return 'schema', f'{field} needs true or false{given}.'
+    if kind == 'finite_number':
+        return 'schema', f'{field} needs a finite number, not NaN or infinity.'
+    if kind == 'literal_error':
+        return 'schema', f'{field} must be one of {context.get("expected")}{given}.'
+    if kind in _BOUNDS and _BOUNDS[kind][0] in context:
+        key, words = _BOUNDS[kind]
+        return 'schema', f'{field} must be {words} {_number(context[key])}{given}.'
+    if kind == 'value_error':
+        return 'schema', str(error['msg']).removeprefix('Value error, ')
+    return 'schema', f'{field}: {error["msg"]}.'
+
+
+def _shown(char: str) -> str:
+    return 'a space' if char == ' ' else f'"{char}"'
+
+
+def _id_advice(value: str, also: str | None) -> str:
+    """Why `value` cannot be an ID, and one that can: every character an ID may not hold becomes _ (the swap the task
+    starters make, tasks._member_variable_id)."""
+    bad = sorted(set(_NOT_IN_AN_ID.findall(value)), key=value.index)
+    reasons = ['it contains ' + ', '.join(map(_shown, bad))] if bad else []
+    if value[:1] in tuple('0123456789.-'):
+        reasons.append(f'it starts with "{value[0]}"')
+    suggestion = _NOT_IN_AN_ID.sub('_', value)
+    suggestion = suggestion if re.match(r'[A-Za-z_]', suggestion) else f'_{suggestion}'
+    return (
+        f'{_quoted(value)} cannot be an ID: {" and ".join(reasons) or "it is not written like one"}. An ID holds only '
+            f'letters, digits and _ . - and starts with a letter or _, for example {suggestion}'
+            + (f' - {also} need the new ID too.' if also else '.'))

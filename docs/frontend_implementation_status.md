@@ -512,3 +512,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.442 | 74B-latest profile: verify and register the existing Bolt 74B assets on first Agent visit, explicit deployment, remembered deletion and truthful missing-resource errors; same tested Agent implementation as latest |
 | 7.443 | Codex's local Agent tab (`74B-latest`) merged into workbench; its 7.395/7.396 renumbered 7.441/7.442; all proofs pass |
 | 7.444 | The local Agent tab live: workbench at 7.443's merge, page built, 8765 restarted, pushed, merged Codex branches deleted |
+| 7.445 | Thesis sources and all revisions preserved in private gator-thesis; both thesis directories purged from GATOR history by explicit user request; non-thesis files, optimizer and main unchanged |

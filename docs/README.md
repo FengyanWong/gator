@@ -8,6 +8,10 @@ This index covers the documents directly in this folder and every file in workbe
 **Kept current** marks a maintained reference or active protocol. **Frozen** marks dated scope, evidence or history;
 later evidence does not rewrite an earlier result. A file may have a current contract and frozen result sections.
 
+The MScR and PhD manuscripts and their revision histories are maintained in the
+[private thesis repository](https://github.com/FengyanWong/gator-thesis). They were removed from this repository's
+tracked history on 30 October 2026 (record 7.445). Historical thesis paths in dated records refer to that repository.
+
 Plan status extracts below retain the document's date and first words. They describe that snapshot, not a live queue.
 Some openings precede later execution sections: follow the plan's later records and the development index for those updates.
 

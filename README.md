@@ -40,8 +40,7 @@ sessions may be busy; on a quiet machine use twelve. Tests needing absent local 
 | [docs/](docs/README.md) | The document index, current references, plans and frozen evidence. |
 | [artifacts/](artifacts/) | Research evidence and local reviews; local scratch evidence is ignored by Git. |
 | outputs/ | Generated run data, logs and saved models, ignored by Git. |
-| [thesis/](thesis/) | Thesis sources and revision material. |
-| [thesis-phd/](thesis-phd/) | Doctoral thesis material. |
+| [Private thesis repository](https://github.com/FengyanWong/gator-thesis) | MScR and PhD manuscripts, PDFs, figures, audit data and complete revision histories. |
 | [.agents/](.agents/) | Repository skills and their research contracts. |
 | [CLAUDE.md](CLAUDE.md) | Instructions for working beside other sessions and protecting experiments. |
 | [pyproject.toml](pyproject.toml), [constraints.txt](constraints.txt) | Package dependencies, commands and exact model-compatible versions. |

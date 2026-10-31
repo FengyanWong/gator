@@ -257,6 +257,85 @@ def test_an_output_with_fewer_than_two_values_is_a_breakdown_the_fallback_answer
                 s.ask()
 
 
+def pair(seed):
+    """An M0 search allowed to fall back and the frozen (M+) search with the same seed, both past their first designs."""
+    allowed, frozen = amended(seed=seed, numerical_fallback=True), search(seed=seed)
+    for s in (allowed, frozen):
+        first_designs(s)
+    return allowed, frozen
+
+
+def test_a_matrix_that_is_not_positive_definite_falls_back_and_m_plus_still_raises(monkeypatch):
+    """M0's most frequent breakdown (18 fallbacks on the amplifier, revision 2): NotPSDError, a RuntimeError (7.451)."""
+    import botorch.fit
+    from linear_operator.utils.errors import NotPSDError
+    allowed, frozen = pair(11)
+
+    def not_psd(*args, **kwargs):
+        raise NotPSDError('Matrix not positive definite after repeatedly adding jitter up to 1.0e-06.')
+    monkeypatch.setattr(botorch.fit, 'fit_gpytorch_mll', not_psd)
+    x, info = allowed.ask()
+    assert info['source'] == 'sobol_fallback' and info['reason'].startswith('NotPSDError')
+    assert all(0.0 <= v <= 1.0 for v in x)
+    with pytest.raises(NotPSDError):
+        frozen.ask()
+
+
+def test_a_plain_runtime_error_of_the_model_step_falls_back_and_m_plus_still_raises(monkeypatch):
+    import botorch.optim
+    allowed, frozen = pair(12)
+
+    def cholesky(*args, **kwargs):
+        raise RuntimeError('linalg.cholesky: The factorization could not be completed because the input is not '
+                           'positive-definite (the leading minor of order 3 is not positive-definite).')
+    monkeypatch.setattr(botorch.optim, 'optimize_acqf', cholesky)
+    assert allowed.ask()[1]['reason'].startswith('RuntimeError: linalg.cholesky')
+    with pytest.raises(RuntimeError, match='cholesky'):
+        frozen.ask()
+
+
+def test_a_non_finite_design_falls_back_and_m_plus_returns_it_as_before(monkeypatch):
+    import botorch.optim
+    allowed, frozen = pair(13)
+
+    def nan_candidate(*args, **kwargs):
+        return torch.tensor([[float('nan'), 0.5]], dtype=torch.float64), torch.tensor([0.0], dtype=torch.float64)
+    monkeypatch.setattr(botorch.optim, 'optimize_acqf', nan_candidate)
+    x, info = allowed.ask()
+    assert info['source'] == 'sobol_fallback' and info['reason'] == 'the acquisition gave a non-finite design'
+    assert all(0.0 <= v <= 1.0 for v in x)
+    y, yinfo = frozen.ask()                           # M+'s settings: the design comes back unchanged, as before A1
+    assert yinfo['source'] == 'acquisition' and y[0] != y[0]
+
+
+def test_a_programming_error_is_not_turned_into_a_fallback(monkeypatch):
+    import botorch.optim
+    allowed, _ = pair(14)
+
+    def bug(*args, **kwargs):
+        raise TypeError("optimize_acqf() got an unexpected keyword argument 'options'")
+    monkeypatch.setattr(botorch.optim, 'optimize_acqf', bug)
+    with pytest.raises(TypeError):
+        allowed.ask()
+
+
+@pytest.mark.parametrize('extra, moves', [
+    (dict(), False),
+    (dict(numerical_fallback=False), False),
+    (dict(cold_start_designs=12), True),
+    (dict(numerical_fallback=True), True),
+    (dict(cold_start_designs=12, numerical_fallback=True), True),
+])
+def test_only_a_search_with_an_amendment_setting_moves_its_count_after_a_crash(extra, moves):
+    s = amended(seed=4, **extra)
+    assert s.uses_amendment_settings() is moves
+    s.proposals = 2
+    assert s.continue_after_crash(2) is None and s.proposals == 2        # the same number: no move
+    assert s.continue_after_crash(1) is None and s.proposals == 2        # a lower one: no move
+    assert s.continue_after_crash(5) == (5 if moves else None)
+    assert s.proposals == (5 if moves else 2)
+
+
 def test_a_proposal_does_not_depend_on_what_used_the_global_random_generator_before():
     """BoTorch prunes the baseline with posterior samples seeded from torch's global generator: a proposal built outside
     its own seeded block depended on whatever drew numbers before it (a resumed search then proposed otherwise)."""

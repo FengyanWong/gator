@@ -164,13 +164,19 @@ class MoboSearch:
         self._add(x, y)
         self.since_refit += 1
 
+    def uses_amendment_settings(self):
+        """Does this search carry a setting of plan amendment A1 (M0: `cold_start_designs`, `numerical_fallback`)? Only
+        such a search moves its proposal count after a crash, and only for it does `after_crash` read the run's event log
+        (record 7.451)."""
+        return self.settings.get('cold_start_designs') is not None or bool(self.settings.get('numerical_fallback'))
+
     def continue_after_crash(self, handed_out):
         """Plan amendment A1 revision 3 (2026-10-28). A resume after a crash restores the search from its save point, so the
         proposal numbers handed out after that point would be handed out again, and each Sobol design among them (cold
         start, fallback) proposed twice: the amplifier's M0 run stopped at design 146 with its save point at 112, after
         18 fallback designs. With either A1 setting the count goes on after `handed_out`, the numbers the run's records
         show as used; M+ (neither setting) keeps its restored count, as before. Returns the new count when it moved."""
-        if self.settings.get('cold_start_designs') is None and not self.settings.get('numerical_fallback'):
+        if not self.uses_amendment_settings():
             return None
         if int(handed_out) <= self.proposals:
             return None

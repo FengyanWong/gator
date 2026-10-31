@@ -710,3 +710,4 @@ One row per commit, newest last.
 | `ebbe3a8` | 10-30 21:35 | 7.446, 7.447 | Shared graph/search primitives and typed editor operations (Codex's work, committed on codex/reduce-duplication) |
 | `7444c04` | 10-30 21:39 | 7.446, 7.447 | Merge codex/reduce-duplication into workbench |
 | `e571e6b` | 10-30 21:39 | 7.448 | Record 7.448: Codex's reduce-duplication work merged into workbench |
+| `89e2106` | 10-30 23:01 | 7.449 | Amendment A1's M0 code on workbench, as it ran (record 7.449) |

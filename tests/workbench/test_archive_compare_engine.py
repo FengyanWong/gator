@@ -326,6 +326,149 @@ def test_after_a_crash_an_m0_run_never_uses_a_proposal_number_twice_and_an_m_plu
         assert 'proposals' not in report and numbers[16:] == list(range(4, 10))    # numbers 4-9 again, as before
 
 
+def m0_run(root, *, cold, evaluations=32, lanes=1, every=8, fallback=True):
+    """A run of the Pareto search on the test bench with M0's settings (plan amendment A1); cold=None and fallback=False
+    make it an M+ run."""
+    block, _, _ = first_designs(root, mutate=two_objectives)
+    settings = dict(FAST_MOBO, **({} if cold is None else dict(cold_start_designs=cold)),
+                    **(dict(numerical_fallback=True) if fallback else {}))
+    config = search_config(root, dict(block, objectives=MOBO_OBJECTIVES, settings=settings), optimizer='mobo',
+                           mutate=two_objectives, evaluations=evaluations, lanes=lanes,
+                           output=dict(checkpoint_every_evaluations=every, keep_last_checkpoints=None))
+    return execute(config, root)
+
+
+def rewind(layout, commit_seq):
+    """Point the run's latest save point back at the one taken at `commit_seq`, as a crash after it leaves a run."""
+    older = next(d.name for d in layout.checkpoints.glob('ckpt-*')
+                 if read_json(d / 'metadata.json')['data_cursor']['commit_seq'] == commit_seq)
+    latest = read_json(layout.checkpoints / 'latest.json')
+    write_json(layout.checkpoints / 'latest.json', dict(latest, checkpoint_id=older, path=f'checkpoints/{older}',
+                                                        commit_seq=commit_seq, kind='periodic'))
+
+
+def test_after_a_crash_the_event_log_alone_moves_an_m0_count(tmp_path):
+    """Proposals made but never committed (a crash between proposal and commit) are known only to the event log (7.451)."""
+    pytest.importorskip('botorch')
+    layout, state = m0_run(tmp_path, cold=40)
+    assert state == 'completed'
+    rewind(layout, 16)
+    with (layout.logs / 'events.jsonl').open('a') as stream:
+        for n in (16, 17, 18):
+            stream.write(json.dumps(dict(time_utc='2026-10-30T00:00:00Z', event='search_proposal', run_id='x',
+                                         evaluation_id=f'lost-{n}', seconds=0.0, observations=24,
+                                         source='sobol_cold_start', proposal=n)) + '\n')
+    assert resume(layout, tmp_path, 40) == 'completed'
+    assert events(layout, 'resumed')[-1]['comparison']['proposals'] == 19          # the floor alone would say 16
+    assert [p['proposal'] for p in events(layout, 'search_proposal')][19:] == list(range(19, 25))
+
+
+def test_after_a_crash_the_floor_alone_moves_an_m0_count(tmp_path):
+    """An event log without the proposals: the designs of the search's own committed after the save point (7.451)."""
+    pytest.importorskip('botorch')
+    layout, state = m0_run(tmp_path, cold=40)
+    assert state == 'completed'
+    rewind(layout, 16)
+    path = layout.logs / 'events.jsonl'
+    path.write_text(''.join(line for line in path.read_text().splitlines(keepends=True)
+                            if '"event":"search_proposal"' not in line))
+    assert resume(layout, tmp_path, 40) == 'completed'
+    assert events(layout, 'resumed')[-1]['comparison']['proposals'] == 16          # 4 at the save point + 12 after it
+    assert [p['proposal'] for p in events(layout, 'search_proposal')] == list(range(16, 22))
+
+
+def test_an_m0_run_with_four_lanes_resumed_after_a_crash_proposes_no_design_twice(tmp_path):
+    """The real M0 runs used 4 lanes: designs in flight at the save point (7.451)."""
+    pytest.importorskip('botorch')
+    layout, state = m0_run(tmp_path, cold=60, evaluations=40, lanes=4)
+    assert state == 'completed'
+    seqs = sorted(read_json(d / 'metadata.json')['data_cursor']['commit_seq'] for d in layout.checkpoints.glob('ckpt-*'))
+    rewind(layout, seqs[1])
+    assert resume(layout, tmp_path, 56) == 'completed'
+    numbers = [p['proposal'] for p in events(layout, 'search_proposal')]
+    designs = [tuple(sorted(v.items())) for s, _, v, _ in executed(layout) if s == 'bayes_opt' and v]
+    assert len(set(numbers)) == len(numbers) and len(designs) == len(set(designs))
+
+
+@pytest.mark.parametrize('arm', ['M0', 'M+'])
+def test_a_damaged_event_log_stops_an_m0_resume_but_not_an_m_plus_resume(tmp_path, arm):
+    """Record 7.451: one corrupt complete record in logs/events.jsonl. M+ never reads the log after a crash, so it
+    continues, as it did before amendment A1; an M0 resume refuses, as it ran (the floor alone could reuse numbers)."""
+    pytest.importorskip('botorch')
+    layout, state = m0_run(tmp_path, cold=40 if arm == 'M0' else None, fallback=arm == 'M0')
+    assert state == 'completed'
+    rewind(layout, 16)
+    path = layout.logs / 'events.jsonl'
+    lines = path.read_text().splitlines(keepends=True)
+    lines.insert(len(lines) // 2, '{"event":"search_proposal","proposal":3,  <a corrupt record>\n')
+    path.write_text(''.join(lines))
+    outcome = resume(layout, tmp_path, 40)
+    resumed = []
+    for line in path.read_text().splitlines():        # read_jsonl itself refuses the corrupt record
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if record.get('event') == 'resumed':
+            resumed.append(record)
+    if arm == 'M+':
+        assert outcome == 'completed' and 'proposals' not in resumed[-1]['comparison']
+    else:
+        assert outcome == 'failed'
+
+
+def test_an_m0_run_falls_back_when_the_acquisition_breaks_and_records_the_reason(tmp_path, monkeypatch):
+    pytest.importorskip('botorch')
+    import botorch.optim
+    from botorch.exceptions.errors import OptimizationGradientError
+    real, calls = botorch.optim.optimize_acqf, []
+
+    def every_other(*args, **kwargs):
+        calls.append(1)
+        if len(calls) % 2:
+            raise OptimizationGradientError('NaN gradients (injected)', current_x=None)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(botorch.optim, 'optimize_acqf', every_other)
+    layout, state = m0_run(tmp_path, cold=12, evaluations=28)
+    assert state == 'completed'
+    proposals = events(layout, 'search_proposal')
+    sources = [p['source'] for p in proposals]
+    assert sources.count('sobol_cold_start') == 4 and 'sobol_fallback' in sources and 'acquisition' in sources
+    assert all(p['reason'].startswith('OptimizationGradientError: NaN gradients')
+               for p in proposals if p['source'] == 'sobol_fallback')
+    assert [p['proposal'] for p in proposals] == list(range(len(proposals)))
+    designs = [tuple(sorted(v.items())) for s, _, v, _ in executed(layout) if s == 'bayes_opt']
+    assert len(designs) == len(set(designs))
+
+
+def test_an_m_plus_run_still_stops_when_the_acquisition_breaks(tmp_path, monkeypatch):
+    pytest.importorskip('botorch')
+    import botorch.optim
+    from botorch.exceptions.errors import OptimizationGradientError
+
+    def broken(*args, **kwargs):
+        raise OptimizationGradientError('NaN gradients (injected)', current_x=None)
+    monkeypatch.setattr(botorch.optim, 'optimize_acqf', broken)
+    try:
+        _, outcome = m0_run(tmp_path, cold=None, fallback=False, evaluations=20)
+    except Exception as exc:                           # noqa: BLE001 - stopping, either way, is the point
+        outcome = f'raised {type(exc).__name__}'
+    assert outcome != 'completed'
+
+
+def test_an_m0_run_stopped_and_continued_proposes_exactly_the_designs_of_one_run_through(tmp_path):
+    pytest.importorskip('botorch')
+    straight, state = m0_run(tmp_path / 'straight', cold=12, evaluations=40, every=None)
+    assert state == 'completed'
+    halves, state = m0_run(tmp_path / 'halves', cold=12, evaluations=20, every=None)
+    assert state == 'completed'
+    assert resume(halves, tmp_path / 'halves', 40) == 'completed'
+    assert executed(halves) == executed(straight)
+    assert saved_search(halves)['collector']['comparison'] == saved_search(straight)['collector']['comparison']
+    sources = [p['source'] for p in events(straight, 'search_proposal')]
+    assert sources.count('sobol_cold_start') == 4 and sources.count('acquisition') >= 1
+
+
 # --------------------------------------------------------------------------------------------- goal views of a saved task
 def test_a_comparison_run_may_differ_from_its_saved_task_only_in_a_goal_views_four_fields(tmp_path, bridge_is_importable):
     """A saved task runs exactly as it was saved - except that a comparison run (run.comparison) scores the saved task's

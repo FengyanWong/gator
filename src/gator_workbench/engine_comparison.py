@@ -189,10 +189,13 @@ def after_crash(engine, checkpoint_seq):
                     status=e['status'], reward=e['reward'], parameter_rows=rows,
                     metric_rows=metrics.get(e['evaluation_id'], []), asked=False)
     report.update(retold=len(later), observations=engine.proposer.observations)
-    if engine.config.run.optimizer == 'mobo':
+    if engine.config.run.optimizer == 'mobo' and engine.proposer.search.uses_amendment_settings():
         # Plan amendment A1 revision 3: the proposal numbers used before the crash stay used - every number the event log
         # shows (each record is synced as it is written) and, as a floor, one per design of the search's own committed
-        # after the save point - so a resumed M0 search never proposes a Sobol design twice. M+ keeps its count.
+        # after the save point - so a resumed M0 search never proposes a Sobol design twice. M+ keeps its count and does
+        # not read the event log here (record 7.451): its resume never depended on that file, so one damaged record in it
+        # must not stop an M+ run. An M0 resume still refuses a damaged log, as it ran: the floor alone could reuse the
+        # numbers of designs in flight at the crash.
         logged = [int(e['proposal']) + 1 for e in read_jsonl(engine.layout.logs / 'events.jsonl')
                   if e.get('event') == 'search_proposal' and e.get('proposal') is not None]
         own = sum(1 for e in evaluations if e['commit_seq'] > checkpoint_seq and e['action_source'] == engine.proposer.SOURCE)

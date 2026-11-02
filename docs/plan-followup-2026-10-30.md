@@ -9,10 +9,10 @@ number is a planning figure; the ledgers of the runs decide the final counts.
 | Part | What | Simulator cost | Other cost | State |
 |---|---|---:|---|---|
 | A | Matched-archive comparison, seeds 1 and 2, methods unchanged, no M0 | 38,500 evaluations, 4.3 to 6.0 days | none (source models exist) | done 2026-11-02: 38,400 + 144 confirmations, three-seed report (record 7.453) |
-| B | Anytime metrics of the archive comparison | 0 | half a day of analysis | script and outputs in the thesis repository, three seeds (uncommitted) |
-| C | The reverse port, second PDK to GPDK045 | 8,100 evaluations, 0.9 to 1.3 days | 9 offline trainings, 3 to 4 h CPU | running since 2026-11-02 03:22 (user: "Yes, run Part C") |
-| D | Seed-by-seed differences instead of pass-or-fail rules | 0 | half a day of analysis | script and table in the thesis repository (uncommitted); reverse-port row after C |
-| E | Best-so-far curves with bands, RQ2 and RQ3, appendix figures | 0 | half a day of analysis | scripts and figures in the thesis repository (uncommitted) |
+| B | Anytime metrics of the archive comparison | 0 | half a day of analysis | done 2026-11-02: three seeds, Table D.18 and Figure D.3 in thesis revision 26 (gator-thesis 54ac5e4) |
+| C | The reverse port, second PDK to GPDK045 | 8,100 evaluations, 0.9 to 1.3 days | 9 offline trainings, 3 to 4 h CPU | done 2026-11-02 08:41: 12 runs, 8,100 evaluations, independent check passed (record 7.454) |
+| D | Seed-by-seed differences instead of pass-or-fail rules | 0 | half a day of analysis | done 2026-11-02: Table D.19 with the reverse port, thesis revision 26 |
+| E | Best-so-far curves with bands, RQ2 and RQ3, appendix figures | 0 | half a day of analysis | done 2026-11-02: Figures D.1 and D.2, thesis revision 26 |
 | F | Word budget | 0 | done in revision 25 | done |
 | G | Options explained, not scheduled | | | reference only |
 | H | Where the files live since the repository separation | | | note |
@@ -216,6 +216,7 @@ The thesis was separated into the private repository `FengyanWong/gator-thesis`,
 3. Part C (3 to 4 h of offline training first, then 8,100 evaluations) after Part A, or before it if the simulator
    is free, since it needs no archive-comparison result.
 4. Thesis revision 26 after the runs: Parts A, B and C results in Chapter 6 and the discussion, the D and E tables
-   and figures in Appendix D, the RQ4 answer extended to the reverse direction.
+   and figures in Appendix D, the RQ4 answer extended to the reverse direction. Done 2026-11-02 (gator-thesis 54ac5e4,
+   record 7.454).
 
 Both runs wait for the user's "run".

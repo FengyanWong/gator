@@ -712,3 +712,5 @@ One row per commit, newest last.
 | `e571e6b` | 10-30 21:39 | 7.448 | Record 7.448: Codex's reduce-duplication work merged into workbench |
 | `89e2106` | 10-30 23:01 | 7.449 | Amendment A1's M0 code on workbench, as it ran (record 7.449) |
 | `3a9380f` | 10-31 00:52 | 7.450, 7.451 | After a crash only an M0 search reads the event log (record 7.451); record 7.450 (seeds 1-2 launch) |
+| `2903f0a` | 11-02 03:36 | 7.452 | The M+ search gives each proposal's memory back to the system (record 7.452) |
+| `4a2af53` | 11-02 04:46 | 7.453 | Archive comparison seeds 1-2 complete: 102 searches, 144 confirmations, three-seed decision (record 7.453) |

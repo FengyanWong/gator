@@ -791,3 +791,29 @@ seed would add 7,200 more). Confirmations follow the Section 8 rule: at most thr
 and the experiment name changed (checked by a diff; `step7/build_rehearsal.py`, `step7/jobs-rehearsal.json`). A
 separate queue, `step7/queue-rehearsal`, is prepared by `prepare_launch.py` with the A3 runtime record and run by the
 keeper under the seed-0 memory rules. The run and its results are recorded in the workbench log.
+
+### Revision 2 (2026-11-02, before any RA+R evaluation)
+
+The first queue (`step7/queue-rehearsal`, started at 18:08) ran no evaluation. Its three seed-0 jobs stopped before
+their first design, at no cost:
+
+1. The queue passed `--confirm-transfer` only for the arms named RA+ and RF+, so the command-line runner refused
+   RA+R's model, which was trained offline on the archive (exit 2, no run folder). The queue's own copy of
+   `queue_bmr.py` now names RA+R as well; the master copy is unchanged.
+
+2. The refused attempts' run logs blocked the next attempts, because a worker creates its run log only when none
+   exists. The two logs were moved aside under new names.
+
+3. The A3 runtime's rehearsal loader checked every archived transition with the slot-only `context_features`, but
+   these models use the spec set input, so all three jobs failed in preparation (`'SpecSetSchema' object has no
+   attribute 'metrics'`; no evaluation charged; run folders moved to `outputs/_moved-aside-20261102/`). Revision 2's
+   runtime `gator-runtime-bmr-429e3df7` (`step6/runtime-A3-r2.json`, `step6/freeze_runtime_a3r2.py`) checks them as
+   the learner batches observations: `spec_set_features` of the observation as the run's view shows it. Nothing else
+   changed: 80 tests pass and the optimizer digest is unchanged.
+
+Before the new queue ran, an offline test (`dry_test_a3r2.py` in
+`artifacts/local/reviews/simulation-rehearsal-a3-2026-11-02/`, zero cost) repeated a run's preparation up to the
+simulator for the amplifier, seed 0. The pool loaded (1,392 transitions), the view gate passed, and one mixed update
+(4 target transitions and 4 archived ones, one from each goal view) gave finite losses. The jobs, names,
+configurations, snapshots and scoring are unchanged; they run in `step7/queue-rehearsal-r2`
+(`step7/jobs-rehearsal-r2.json`), whose copy of `queue_bmr.py` has the same RA+R line.

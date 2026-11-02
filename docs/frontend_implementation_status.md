@@ -519,3 +519,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.449 | M0 code of Amendment A1 (revisions 2-3) on workbench exactly as it ran (merge-file, syntax-tree proof); full suite 2,837 passed/21 skipped with BoTorch; five-lens adversarial review: no blocker or major, M+ edge case left for 7.451 (record number moved: 7.450 = the seeds 1-2 launch) |
 | 7.450 | Archive comparison seeds 1-2 (102 jobs) launched 23:09 under the self-recovering keeper; WSL admission 8 GiB and auto tunnel restarts by user decision; first simulations 23:26 after VM freezes |
 | 7.451 | After a crash only an M0 search reads the event log (M+ resume independent of it again); 17 M0 crash and fallback tests; suite 2,854 passed/21 skipped with BoTorch, 6 mutants caught; not pushed |
+| 7.452 | M+ memory growth fixed: models collected and freed memory trimmed after each proposal; offline 356 MB instead of 2,450 MB at 100 proposals, same proposals; not pushed |

@@ -22,8 +22,10 @@ Fixed before any target run (WORKPLAN-steps2-7.md, item 6), in `SETTINGS`:
 """
 from __future__ import annotations
 
+import gc
 import math
 
+from ..bayes import release_freed_memory
 from .coords import to_proposal
 
 VERSION = 'mobo_qlognehvi_v1'
@@ -338,8 +340,14 @@ class MoboProposer:
         return [(to_proposal(g, executed[g['id']]) + 1.0) / 2.0 for g in self.groups]
 
     def propose(self, pending_executed=()) -> dict:
-        """Return one proposal per parameter group while accounting for designs still in flight."""
+        """Return one proposal per parameter group while accounting for designs still in flight. Then the memory the
+        proposal used goes back to the system (record 7.452, as TuRBO's 7.382). Its models (one per output) are freed at
+        once: each GPyTorch module keeps a hook bound to itself, so dropped models waited for Python's occasional full
+        collection.
+        Then glibc's freed blocks are trimmed: it kept them, and an 800-design M+ run's process grew to 8-14 GB."""
         point, self.last = self.search.ask([self.executed_point(p) for p in pending_executed])
+        gc.collect()
+        release_freed_memory()
         return {group: float(2.0 * point[index] - 1.0) for index, group in enumerate(self.group_ids)}
 
     def observe(self, executed: dict, metrics: dict, validity: dict, status: str, *, asked) -> None:

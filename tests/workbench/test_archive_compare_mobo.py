@@ -158,6 +158,52 @@ def test_the_proposer_speaks_the_engines_proposals_and_tells_executed_points():
     assert restored.search.state_dict() == p.search.state_dict()
 
 
+def test_each_proposal_gives_its_freed_memory_back_and_changes_no_number(monkeypatch):
+    """Record 7.452, as TuRBO's 7.382: an M+ proposal drops its fitted models (one per output), kept by reference cycles
+    until Python's occasional full collection, and glibc kept the memory they freed: an 800-design run's process grew to
+    8-14 GB.
+    `MoboProposer.propose` now collects and trims after every proposal. Memory work only: with the real collection and
+    glibc's real `malloc_trim` after each proposal, the proposals are the same as with neither."""
+    import types
+
+    from gator_workbench import bayes
+    from gator_workbench.archive_compare import mobo
+    real_trim, real_collect = bayes._TRIM, mobo.gc.collect
+    groups = [dict(id=k, scale='linear', lower=0.0, upper=1.0, step=None, domain='continuous') for k in ('a', 'b')]
+
+    def proposals(give_back):
+        """Five proposals with two lanes (the previous design still running), each followed by both steps or neither."""
+        calls = []
+
+        def trim(pad):                                # glibc's real trim, counted
+            calls.append(('trim', pad))
+            return real_trim(pad) if real_trim is not None else 1
+
+        def collect():                                # Python's real full collection, counted
+            calls.append(('collect',))
+            return real_collect()
+        monkeypatch.setattr(bayes, '_TRIM', trim if give_back else None)
+        monkeypatch.setattr(mobo, 'gc', types.SimpleNamespace(collect=collect if give_back else lambda: 0))
+        p = MoboProposer(groups, Problem(ROWS, OBJECTIVES), seed=3, settings=FAST)
+        for x in torch.quasirandom.SobolEngine(2, scramble=True, seed=101).draw(6, dtype=torch.float64).tolist():
+            m = circuit(x)
+            p.observe(dict(a=x[0], b=x[1]), m, {k: True for k in m}, 'ok', asked=False)
+        made, flying = [], []
+        for _ in range(5):
+            z = p.propose(pending_executed=flying)
+            made.append((z, p.last))
+            flying.append({k: (v + 1.0) / 2.0 for k, v in z.items()})
+            if len(flying) == 2:
+                done = flying.pop(0)
+                m = circuit([done['a'], done['b']])
+                p.observe(done, m, {k: True for k in m}, 'ok', asked=True)
+        return made, calls
+    given_back, calls = proposals(True)
+    plain, none = proposals(False)
+    assert given_back == plain and calls == [('collect',), ('trim', 0)] * 5 and none == []
+    assert all(info['source'] == 'acquisition' for _, info in given_back)
+
+
 def amended(seed=0, archive=None, **extra):
     """M0's settings (plan amendment A1): the frozen search with a cold start and/or the numerical fallback."""
     return MoboSearch(2, Problem(ROWS, OBJECTIVES), seed=seed, settings=dict(FAST, **extra), archive=archive)

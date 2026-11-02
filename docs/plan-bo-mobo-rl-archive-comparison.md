@@ -724,3 +724,70 @@ stays as run, by the same decision.
 **Not in this amendment.** Larger archives, a restarting or multi-region TuRBO reference, a rehearsal arm, offline-RL
 pretraining, a failure penalty for the Pareto optimiser and MORBO were considered and are not scheduled; each would be
 a separately pre-registered arm (`docs/plan-followup-2026-10-30.md`, Part G).
+
+## 14. Amendment A3 (2026-11-02): RA+R, the fine-tuned SAC arm with source rehearsal
+
+Written before any RA+R run, on the user's word: "write the preregistration and do the rehearsal arm and note all
+experiments as finished" (2026-11-02). The original sections and Amendments A1 and A2 stay as they were; this section
+only adds an arm. It is the rehearsal arm of the follow-up plan (`docs/plan-followup-2026-10-30.md`, Part G).
+
+**Why.** Over replicates 0-2, T+ improved the archive's best design in all nine Panel A runs, reached the LDO target in
+every seed and the amplifier target in two; RA+ improved the archive's best in four of nine runs, each time by less than
+T+, and reached no target. T+ keeps every archived design in its fitting data for the whole search (Section 5). RA+
+learned the archive offline, but its target replay starts empty, so once fine-tuning starts it trains on its own new
+designs only. RA+R asks whether keeping the archive in SAC's training batches changes that.
+
+**Arm.** RA+R is RA+ with exactly one difference: source rehearsal on (`run.rehearsal`: the pinned snapshot of the
+matching source model's training partition, fraction 0.5). Each update batch of 8 then holds 4 transitions from the
+target replay and 4 from the archive, balanced over the four goal views as in pretraining. Everything else is RA+'s,
+unchanged: the source checkpoint of the case and pretraining seed, fresh optimizers, alpha reset to 0.01, empty target
+replay, eight updates per new transition, replay capacity 10,000, batch 8, the start design, the case's 8 common first
+designs of the rollout seed, the 800-evaluation and 800-launch caps, lanes, the reset contract and the Panel A goal
+view. The fraction is the workbench's default, not tuned (Section 5: no hyperparameter optimization on target runs).
+
+**Snapshots.** One per source model, drawn by the runtime's `rehearsal.build_snapshot` from the model's own training
+partition with capacity 2,048. That holds every training row (1,376 to 1,400 per model: 344 to 350 archived transitions,
+each under the four goal views), so nothing is sampled out. They sit under `outputs/rehearsal-snapshots-2026-11-02/`,
+inside the runs' allowed output root (a resumed run reads them too), and each configuration pins its manifest by sha256
+(`step7/rehearsal-snapshots.json`).
+
+**Runtime: new code, stated.** Part G of the follow-up plan called this arm a configuration change with no new code.
+That was wrong. The frozen runtime `gator-runtime-bmr-f143d691` refuses rehearsal with the transferable inputs
+(validation blocker `rehearsal_with_transfer_inputs`: recorded transitions "would need the view of their own task"), and
+its snapshot builder fails on pools balanced by goal view (`KeyError: 'target_set:1'`). The A3 runtime
+`gator-runtime-bmr-a3f8d92c` is that runtime with three rehearsal-only changes and one test file (`step6/runtime-A3.json`,
+`step6/freeze_runtime_a3.py`):
+
+1. the snapshot builder reads the target sets under the row's source task, as pretraining's own relabelling does;
+2. validation keeps the blocker unless every source of the pool was shown to the network with one pinned view;
+3. at its start the run compares that view with its own view key and refuses before any lane opens when they differ.
+
+For the nine pools the views are equal: every source of the amplifier pools was shown with view 27fb94ea..., of the
+flip-flop pools 936f4950..., of the LDO pools 5cadbc26..., and every RA+ run recorded the same key at its start. So
+rehearsal shows the network each archived transition exactly as pretraining showed it. The optimizer digest is unchanged
+(6ebf5ba5), a run without `run.rehearsal` takes the base code path unchanged, and 80 tests pass in the comparison's
+environment.
+
+**Scope.** Panel A only, replicates 0, 1 and 2 (rollout seeds 101, 102 and 103), three cases: nine runs, at most 7,200
+charged evaluations and launches. The Panel B portfolios are not run (four target-conditioned clones of 200 per case and
+seed would add 7,200 more). Confirmations follow the Section 8 rule: at most three finalists per search, 27 in all.
+
+**Scoring, fixed now.**
+
+- As the three-seed report scores RA+ in Panel A: the best fresh base-feasible preferred objective and its change
+  against the archive's best; first reach of the frozen `q_goal` (right-censored at the cap); reach probability by
+  100/200/400/800; best-so-far at 100/200/400/800 as a percentage of the archive's best; the failed-measurement share.
+  A run with no fresh base-feasible design ranks below every run with one.
+- Rehearsal effect, against RA+ (paired by case, source model and rollout seed): rehearsal *helps* RA+ when, on at least
+  two of the three cases, RA+R's median final best is better than RA+'s and it reaches `q_goal` in no fewer seeds, with
+  no case more than 5 % worse in median final best. The number of runs that improve the archive's best (RA+: four of
+  nine) and every seed's difference are reported beside it.
+- Against T+, Section 7's rule: RA+R is reported separately, like RA+ and RF+, and would replace T+ only by cutting the
+  median cost to `q_goal` by at least 20 % on at least two of the three cases, without fewer successful seeds or more
+  than 5 % loss in final feasible quality on any case.
+- Three seeds support a development choice, not a statistically established claim. No rule changes after a result.
+
+**Running it.** Configurations are the RA+ Panel A configurations of replicates 0-2 with exactly `run.rehearsal` added
+and the experiment name changed (checked by a diff; `step7/build_rehearsal.py`, `step7/jobs-rehearsal.json`). A
+separate queue, `step7/queue-rehearsal`, is prepared by `prepare_launch.py` with the A3 runtime record and run by the
+keeper under the seed-0 memory rules. The run and its results are recorded in the workbench log.

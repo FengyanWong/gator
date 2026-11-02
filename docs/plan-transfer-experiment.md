@@ -2008,3 +2008,43 @@ the opposite direction with the same rules.
   and the RQ4 answer. The thesis names both processes from its revision 25 on (the user's decision of 2026-10-30);
   this repository keeps the aliases.
 - **Not in this amendment.** Seeds 1-2 of Step 4; new ports; limit changes; any tuning on target results.
+
+## 18. Pre-registration (2026-11-02): the next held-out circuit for RQ5, written before any run on it
+
+Written on 2026-11-02 on the user's word ("write the preregistration"), before the general model or any limit-setting
+design has been run on this circuit. It is planned work: the MScR's experiments closed on 2026-11-02, so nothing here is
+run for the MScR. A change before the first run is written here as a dated amendment; nothing changes after one.
+
+- **Why.** Step 5's held-out circuit, the telescopic cascode, was chosen after the pilot had shown the old general models
+  meeting the early-gain threshold on it, and the folded cascode, on which none did, was pooled (6.5). RQ5 therefore
+  rests on a case picked after a favourable result. This section names the next held-out circuit and its pass rules
+  before anything is known about the general model on it.
+- **Circuit (fixed now).** `mscr_ldo_basic`, the MScR library's basic regulator in GPDK045 (Razavi, SSC-M 2019, with
+  the ADB regulator specs; its cells restore cleanly, record 7.133, and its baseline is recorded, record 7.211). It is in
+  none of the ten archives of the Step 5 general model (record 7.330: one 800-design from-scratch run each of OTA5t,
+  OTA7t width, RING3, VCO, LDO1 and LDO2, the folded cascode, and the three ports in the second PDK), and no run of that
+  model has seen it. Relation, stated: it is a regulator like LDO1 and LDO2, and its error amplifier is the
+  five-transistor core also found in LDO1 and OTA5t, so it tests a new arrangement of familiar parts, as the telescopic
+  cascode did. An earlier general network (`docs/plan-general-network.md`) pooled one of its runs; that network is not
+  the one tested here. It needs no new build.
+- **Limits (set before any learning run).** Its start design meets every saved limit, so a feasibility test needs new
+  limits. They come from the rank rule as the ports used it (6.4, record 7.262's form): from the start design and 64
+  random designs (seed 0), the highest common rank up to 32 that at least three random designs reach in every ranked
+  row; a phase-margin row held at 60 degrees; rows that say what a valid result is rather than how good it is are not
+  ranked. The 65 designs are simulated once, before any learning run, and the limits are saved as a new revision of the
+  task. If no rank qualifies, the task is reviewed and no run starts.
+- **Arms and runs.** GraphGPS SAC from scratch, and GraphGPS SAC fine-tuned from the Step 5 general model
+  (`tx5-offline-general`, record 7.330, final checkpoint, unchanged), each at seeds 0, 1 and 2 with 800 evaluations:
+  2 x 3 x 800 = 4,800 evaluations, about 0.5 to 0.75 day of simulator time at the Step 5 pace, plus the 65 limit-setting
+  designs. Step 5's online settings, inputs (Transferable 2 without the operating-point ratios) and runtime, unchanged.
+  Names `tx7-ldobasic-<scratch|general>-s<seed>`. No frozen probe.
+- **Rules (Section 5's three, as Steps 4 and 5 and the reverse port used them, read on medians over the three seeds).**
+  Early share = passes among evaluations 9-108 in commit order; late share = passes in the last third (266 designs).
+  The general model *helps* when its median early share is at least 30 points above the median scratch early share; it
+  *ends as well* when its median late share is at most 5 points below the median scratch late share; it *does not
+  deteriorate* when its median late share is at least its median early share minus 10 points. Every seed is reported
+  beside the medians, with first passes and feasible-design counts. When the median scratch seed has no pass, no bar is
+  set and the result is reported as measured. RQ5's answer counts as repeated on a pre-registered circuit only if the
+  general model helps, ends as well and does not deteriorate.
+- **Not in this section.** Other circuits; other general models; limit changes after any result; tuning on its results.
+- **Status.** Not run. The thesis names this test as remaining work.

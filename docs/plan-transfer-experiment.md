@@ -1966,3 +1966,45 @@ These extensions require frozen recipes and their own elected budget; the primar
 
 This development study leaves the active Round 3 queue and sections 14-15's prospective journal protocol intact.
 It can guide optimizer choice for compatible archive reuse; it cannot establish unseen-topology/PDK transfer.
+
+## 17. Amendment (2026-10-30): the reverse port, from the second PDK back to GPDK045 (9 source trainings, 9 runs, 3 probes)
+
+Written on 2026-10-30 on the user's decision, before any run. The user chose this instead of adding seeds 1 and 2
+to Step 4 ("dont add new seeds but try to reverse from pdk-b to pdk a"). Step 4 stays as it is; this section adds
+the opposite direction with the same rules.
+
+- **Question.** Does a model trained on a circuit in the second PDK help on the same circuit in GPDK045? Step 4
+  answered the forward direction with one seed per arm (6.4); the reverse direction says whether the gain depends on
+  which process the model learned first.
+- **Source archives (fixed now).** The Step 4 scratch run of each port, and only that run: `tx4-ota5t-scratch`,
+  `tx4-ring3-scratch`, `tx4-ldo1-scratch` (800 designs each, second input build with operating points; run identities
+  in `thesis/figures/data/round1-transfer-results.json` of the thesis repository). The fine-tuned Step 4 runs are
+  excluded as sources: their proposals came from GPDK045-trained policies and would blur the direction. The forward
+  source had 2,400 designs (three Step 3b runs); the reverse has 800. This asymmetry is stated, not repaired. If a
+  matched size is wanted later, two more scratch seeds per port (3 x 2 x 800 = 4,800 evaluations) come first, as a
+  separate decision.
+- **Source models.** Three per circuit, as in Step 4: relative (full second build), absolute (sizes in micrometres,
+  no device descriptors), first build. The offline recipe of the Step 4 models (20,000 updates, batch 8, learning rate
+  0.001, gamma 0, initial alpha 0.01), final checkpoint, no selection by target results. Nine trainings, about 20-25
+  minutes each on one CPU: 3-4 hours, no simulation.
+- **Targets.** The GPDK045 tasks of Step 3b with their saved limits: `mscr_ota5t`, `mscr_ring3`, `graphgps_ldo1_t2`.
+  Their scratch references already exist and cost nothing: Step 3b's `full` arm, seeds 0-2 (649 / 572 / 601 feasible
+  designs on OTA5t, 235 / 86 / 182 on RING3, 9 / 0 / 0 on the eased LDO1), plus the first-build seeds. So the reverse
+  comparison has three scratch seeds per circuit where Step 4 had one. Second asymmetry, stated: Step 4's port limits
+  came from the rank rule on each port's own random designs; the reverse targets are the GPDK045 tasks' existing
+  limits.
+- **Runs.** Per circuit: three fine-tuned runs (relative, absolute, first build) of 800 evaluations and one frozen
+  probe of the relative model, 300 evaluations; rollout seed 0 as in Step 4. Total 9 x 800 + 3 x 300 = 8,100
+  evaluations, about 0.9-1.3 days of simulator time. Minimal variant, if time is short: relative fine-tune and probe
+  only, 3 x 1,100 = 3,300 evaluations, about 0.4-0.5 day.
+- **Rules.** The three rules of Section 5 as Step 4 used them, read against the scratch seeds: a model *helps* when its
+  early share is at least 30 points above the median scratch early share (the comparison against each seed is also
+  reported), *ends as well* when its late share is at most 5 points below the median scratch late share, and *does not
+  deteriorate* when its late share is at least its early share minus 10 points. No rule is changed after a result.
+- **Runtime and settings.** `gator-runtime-7317` (Step 4's), the Step 4 online settings unchanged, the same input
+  builds; the GPDK045 tasks passed their nine-design operating-point checks in Step 3b.
+- **Reporting.** A table beside Step 4's (every arm, early and late share, first pass, feasible designs), the
+  reverse-direction paragraph in the results chapter's process-transfer section, one sentence each in the discussion
+  and the RQ4 answer. The thesis names both processes from its revision 25 on (the user's decision of 2026-10-30);
+  this repository keeps the aliases.
+- **Not in this amendment.** Seeds 1-2 of Step 4; new ports; limit changes; any tuning on target results.

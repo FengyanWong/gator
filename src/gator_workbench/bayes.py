@@ -134,6 +134,36 @@ class GaussianProcess:
             return mean + torch.sqrt(torch.diagonal(covariance).clamp_min(0.0)) * noise
 
 
+def trust_region_candidate(search, center):
+    """Draw and score candidates using the search's existing Sobol and random streams."""
+    length = search.process.parameters()[0].detach()
+    weights = length / length.mean()
+    weights = weights / torch.exp(torch.log(weights).mean())          # geometric mean 1: the box keeps its volume
+    low = (center - weights * search.length / 2.0).clamp(0.0, 1.0)
+    high = (center + weights * search.length / 2.0).clamp(0.0, 1.0)
+    moved = low + (high - low) * search.inside.draw(search.n_candidates).to(DTYPE)
+    change = torch.rand(search.n_candidates, search.dim, generator=search.generator, dtype=DTYPE) <= min(20.0 / search.dim,
+        1.0)
+    none = ~change.any(1)                       # every candidate differs from the centre in at least one variable
+    if none.any():
+        change[none, torch.randint(0, search.dim, (int(none.sum()),), generator=search.generator)] = True
+    candidates = center.expand(search.n_candidates, search.dim).clone()
+    candidates[change] = moved[change]
+    return candidates[int(search.process.sample(candidates, search.generator).argmax())]
+
+
+def update_trust_region(search, value):
+    """Update shared success/failure counters and length; the caller owns restart policy."""
+    if value > search.best + 1e-3 * abs(search.best):
+        search.successes, search.failures, search.best = search.successes + 1, 0, value
+    else:
+        search.successes, search.failures = 0, search.failures + 1
+    if search.successes >= search.success_tolerance:
+        search.length, search.successes = min(2.0 * search.length, search.length_max), 0
+    elif search.failures >= search.failure_tolerance:
+        search.length, search.failures = search.length / 2.0, 0
+
+
 class TrustRegionBO:
     """TuRBO-1, asked for one design at a time (ask) and told results in any order (tell). Maximizes. Designs are
     points of the unit cube. A design told without a value (its simulation failed) counts as the worst seen so far."""
@@ -181,20 +211,7 @@ class TrustRegionBO:
         z = (y - y.mean()) / (spread if spread > 1e-12 else 1.0)
         self.process.fit(X, z, steps=self.fit_steps)
         center = X[int(z.argmax())]
-        length = self.process.parameters()[0].detach()
-        weights = length / length.mean()
-        weights = weights / torch.exp(torch.log(weights).mean())          # geometric mean 1: the box keeps its volume
-        low = (center - weights * self.length / 2.0).clamp(0.0, 1.0)
-        high = (center + weights * self.length / 2.0).clamp(0.0, 1.0)
-        moved = low + (high - low) * self.inside.draw(self.n_candidates).to(DTYPE)
-        change = torch.rand(self.n_candidates, self.dim, generator=self.generator, dtype=DTYPE) <= min(20.0 / self.dim,
-            1.0)
-        none = ~change.any(1)                       # every candidate differs from the centre in at least one variable
-        if none.any():
-            change[none, torch.randint(0, self.dim, (int(none.sum()),), generator=self.generator)] = True
-        candidates = center.expand(self.n_candidates, self.dim).clone()
-        candidates[change] = moved[change]
-        return candidates[int(self.process.sample(candidates, self.generator).argmax())]
+        return trust_region_candidate(self, center)
 
     # -------------------------------------------------------------------------------------------------- tell
     def tell(self, x, value, *, asked=True):
@@ -211,14 +228,7 @@ class TrustRegionBO:
         if initial or self.best is None:
             self.best = max(self.y[self.start:])
             return
-        if value > self.best + 1e-3 * abs(self.best):
-            self.successes, self.failures, self.best = self.successes + 1, 0, value
-        else:
-            self.successes, self.failures = 0, self.failures + 1
-        if self.successes >= self.success_tolerance:
-            self.length, self.successes = min(2.0 * self.length, self.length_max), 0
-        elif self.failures >= self.failure_tolerance:
-            self.length, self.failures = self.length / 2.0, 0
+        update_trust_region(self, value)
         if self.length < self.length_min:           # the region shrank to nothing: a new one from fresh random designs
             self.restarts += 1
             self.start = len(self.X)

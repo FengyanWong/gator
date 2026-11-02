@@ -24,6 +24,7 @@ import hashlib
 import json
 
 from . import pdk_record
+from .graph_parameters import remap_parameters
 
 NAME = 'families'
 FORMAT = 'gator-family-list-v1'
@@ -98,22 +99,7 @@ class FamilyList:
                 devices.append(device if device.kind in KINDS else replace(device, kind='unknown'))
         connections = [replace(c, role=roles[c.device_id][c.ordinal]) if c.device_id in roles
                        else c if c.role in ROLES else replace(c, role='unknown') for c in graph.connections]
-        parameters = {}
-        for device_id, values in graph.parameters.items():
-            columns = renames.get(device_id)
-            if not columns:
-                parameters[device_id] = values
-                continue
-            moved = {}
-            for key, value in values.items():
-                target = columns.get(key, key)
-                moved[target if target not in moved else key] = value
-            parameters[device_id] = moved
-        groups = []
-        for group in graph.parameter_groups:
-            members = tuple(replace(m, parameter=renames[m.device_id].get(m.parameter, m.parameter))
-                            if m.device_id in renames else m for m in group.members)
-            groups.append(replace(group, members=members) if members != group.members else group)
+        parameters, groups = remap_parameters(graph, renames)
         return CircuitGraph(graph.circuit_id, devices, list(graph.nets), connections, parameters, groups,
                             list(graph.diagnostics), graph.metadata, graph.schema_version)
 

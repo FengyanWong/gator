@@ -158,6 +158,230 @@ def test_the_proposer_speaks_the_engines_proposals_and_tells_executed_points():
     assert restored.search.state_dict() == p.search.state_dict()
 
 
+def test_each_proposal_gives_its_freed_memory_back_and_changes_no_number(monkeypatch):
+    """Record 7.452, as TuRBO's 7.382: an M+ proposal drops its fitted models (one per output), kept by reference cycles
+    until Python's occasional full collection, and glibc kept the memory they freed: an 800-design run's process grew to
+    8-14 GB.
+    `MoboProposer.propose` now collects and trims after every proposal. Memory work only: with the real collection and
+    glibc's real `malloc_trim` after each proposal, the proposals are the same as with neither."""
+    import types
+
+    from gator_workbench import bayes
+    from gator_workbench.archive_compare import mobo
+    real_trim, real_collect = bayes._TRIM, mobo.gc.collect
+    groups = [dict(id=k, scale='linear', lower=0.0, upper=1.0, step=None, domain='continuous') for k in ('a', 'b')]
+
+    def proposals(give_back):
+        """Five proposals with two lanes (the previous design still running), each followed by both steps or neither."""
+        calls = []
+
+        def trim(pad):                                # glibc's real trim, counted
+            calls.append(('trim', pad))
+            return real_trim(pad) if real_trim is not None else 1
+
+        def collect():                                # Python's real full collection, counted
+            calls.append(('collect',))
+            return real_collect()
+        monkeypatch.setattr(bayes, '_TRIM', trim if give_back else None)
+        monkeypatch.setattr(mobo, 'gc', types.SimpleNamespace(collect=collect if give_back else lambda: 0))
+        p = MoboProposer(groups, Problem(ROWS, OBJECTIVES), seed=3, settings=FAST)
+        for x in torch.quasirandom.SobolEngine(2, scramble=True, seed=101).draw(6, dtype=torch.float64).tolist():
+            m = circuit(x)
+            p.observe(dict(a=x[0], b=x[1]), m, {k: True for k in m}, 'ok', asked=False)
+        made, flying = [], []
+        for _ in range(5):
+            z = p.propose(pending_executed=flying)
+            made.append((z, p.last))
+            flying.append({k: (v + 1.0) / 2.0 for k, v in z.items()})
+            if len(flying) == 2:
+                done = flying.pop(0)
+                m = circuit([done['a'], done['b']])
+                p.observe(done, m, {k: True for k in m}, 'ok', asked=True)
+        return made, calls
+    given_back, calls = proposals(True)
+    plain, none = proposals(False)
+    assert given_back == plain and calls == [('collect',), ('trim', 0)] * 5 and none == []
+    assert all(info['source'] == 'acquisition' for _, info in given_back)
+
+
+def amended(seed=0, archive=None, **extra):
+    """M0's settings (plan amendment A1): the frozen search with a cold start and/or the numerical fallback."""
+    return MoboSearch(2, Problem(ROWS, OBJECTIVES), seed=seed, settings=dict(FAST, **extra), archive=archive)
+
+
+def test_a_cold_start_proposes_sobol_designs_until_the_search_knows_enough_designs():
+    s = amended(seed=3, cold_start_designs=6)
+    first_designs(s, n=2)
+    sources = []
+    while len(s.X) < 6:
+        x, info = s.ask()
+        sources.append(info['source'])
+        s.tell(x, told(s.problem, x)[0])
+    assert sources == ['sobol_cold_start'] * 4
+    assert s.ask()[1]['source'] == 'acquisition'
+    # a search that starts with more archived designs than the cold start (M+: 600) never meets it
+    points = torch.quasirandom.SobolEngine(2, scramble=True, seed=9).draw(6, dtype=torch.float64).tolist()
+    archive = dict(u=points, y=[told(Problem(ROWS, OBJECTIVES), x)[0] for x in points])
+    assert amended(seed=3, archive=archive, cold_start_designs=6).ask()[1]['source'] == 'acquisition'
+
+
+def test_a_numerical_breakdown_falls_back_to_a_sobol_design_only_where_allowed(monkeypatch):
+    import botorch.optim
+    from botorch.exceptions.errors import OptimizationGradientError
+
+    def broken(*args, **kwargs):                      # what stopped M0 on the amplifier and the flip-flop (seed 0)
+        raise OptimizationGradientError('19 elements of the 38 element gradient array `gradf` are NaN.', current_x=None)
+    allowed, frozen = amended(seed=5, numerical_fallback=True), search(seed=5)
+    for s in (allowed, frozen):
+        first_designs(s)
+    monkeypatch.setattr(botorch.optim, 'optimize_acqf', broken)
+    x, info = allowed.ask()
+    assert info['source'] == 'sobol_fallback' and info['reason'].startswith('OptimizationGradientError')
+    assert all(0.0 <= v <= 1.0 for v in x) and allowed.proposals == 1
+    with pytest.raises(OptimizationGradientError):    # M+'s settings: the breakdown stops the run, exactly as before
+        frozen.ask()
+    allowed.tell(x, told(allowed.problem, x)[0])
+    monkeypatch.undo()                                # the model works again: the search goes on with it
+    assert allowed.ask()[1]['source'] == 'acquisition'
+
+
+def test_a_model_fit_that_fails_every_attempt_falls_back_too(monkeypatch):
+    import botorch.fit
+    from botorch.exceptions.errors import ModelFittingError
+
+    def failing(*args, **kwargs):                     # what stopped the amplifier's M0 run at design 146 (revision 2)
+        raise ModelFittingError('All attempts to fit the model have failed.')
+    allowed, frozen = amended(seed=7, numerical_fallback=True), search(seed=7)
+    for s in (allowed, frozen):
+        first_designs(s)
+    monkeypatch.setattr(botorch.fit, 'fit_gpytorch_mll', failing)
+    x, info = allowed.ask()
+    assert info['source'] == 'sobol_fallback' and info['reason'].startswith('ModelFittingError')
+    with pytest.raises(ModelFittingError):            # M+'s settings: unchanged, the error still stops the run
+        frozen.ask()
+
+
+def test_after_a_crash_an_m0_search_goes_on_after_every_used_number_and_m_plus_keeps_its_count():
+    """Revision 3: restored from a save point 3 proposals before the crash, the search would hand out those 3 numbers -
+    and so their Sobol designs - again. With an A1 setting it goes on after the numbers used; M+ keeps its count."""
+    unbroken = amended(seed=4, cold_start_designs=12)
+    first_designs(unbroken, n=2)
+    for _ in range(2):
+        x, _ = unbroken.ask()
+        unbroken.tell(x, told(unbroken.problem, x)[0])
+    saved = unbroken.state_dict()                     # the save point
+    used = []
+    for _ in range(3):                                # the proposals the crash loses
+        x, info = unbroken.ask()
+        used.append(x)
+        unbroken.tell(x, told(unbroken.problem, x)[0])
+    restored = MoboSearch.from_state(saved, unbroken.problem)
+    for x in used:                                    # the engine tells the committed designs again (after_crash)
+        restored.tell(x, told(restored.problem, x)[0], asked=False)
+    assert restored.proposals == 2
+    assert restored.continue_after_crash(5) == 5 and restored.continue_after_crash(4) is None
+    x, info = restored.ask()
+    assert info == dict(source='sobol_cold_start', proposal=5) and x not in used
+    assert (x, info) == unbroken.ask()                # the design an unbroken search proposes next
+    frozen = search(seed=4)                           # M+'s settings: the restored count stays, as before
+    frozen.proposals = 2
+    assert frozen.continue_after_crash(5) is None and frozen.proposals == 2
+
+
+def test_an_output_with_fewer_than_two_values_is_a_breakdown_the_fallback_answers():
+    def partial(problem, x):                          # vout missing everywhere: its model has nothing to fit
+        m = {k: v for k, v in circuit(x).items() if k != 'vout_v'}
+        return problem.outcome(m, {k: True for k in m}, 'measurement_error')[0]
+    for allowed in (True, False):
+        s = amended(seed=6, **({'numerical_fallback': True} if allowed else {}))
+        for x in torch.quasirandom.SobolEngine(2, scramble=True, seed=101).draw(4, dtype=torch.float64).tolist():
+            s.tell(x, partial(s.problem, x), asked=False)
+        if allowed:
+            assert s.ask()[1]['source'] == 'sobol_fallback'
+        else:
+            with pytest.raises(ValueError, match='fewer than 2 values'):
+                s.ask()
+
+
+def pair(seed):
+    """An M0 search allowed to fall back and the frozen (M+) search with the same seed, both past their first designs."""
+    allowed, frozen = amended(seed=seed, numerical_fallback=True), search(seed=seed)
+    for s in (allowed, frozen):
+        first_designs(s)
+    return allowed, frozen
+
+
+def test_a_matrix_that_is_not_positive_definite_falls_back_and_m_plus_still_raises(monkeypatch):
+    """M0's most frequent breakdown (18 fallbacks on the amplifier, revision 2): NotPSDError, a RuntimeError (7.451)."""
+    import botorch.fit
+    from linear_operator.utils.errors import NotPSDError
+    allowed, frozen = pair(11)
+
+    def not_psd(*args, **kwargs):
+        raise NotPSDError('Matrix not positive definite after repeatedly adding jitter up to 1.0e-06.')
+    monkeypatch.setattr(botorch.fit, 'fit_gpytorch_mll', not_psd)
+    x, info = allowed.ask()
+    assert info['source'] == 'sobol_fallback' and info['reason'].startswith('NotPSDError')
+    assert all(0.0 <= v <= 1.0 for v in x)
+    with pytest.raises(NotPSDError):
+        frozen.ask()
+
+
+def test_a_plain_runtime_error_of_the_model_step_falls_back_and_m_plus_still_raises(monkeypatch):
+    import botorch.optim
+    allowed, frozen = pair(12)
+
+    def cholesky(*args, **kwargs):
+        raise RuntimeError('linalg.cholesky: The factorization could not be completed because the input is not '
+                           'positive-definite (the leading minor of order 3 is not positive-definite).')
+    monkeypatch.setattr(botorch.optim, 'optimize_acqf', cholesky)
+    assert allowed.ask()[1]['reason'].startswith('RuntimeError: linalg.cholesky')
+    with pytest.raises(RuntimeError, match='cholesky'):
+        frozen.ask()
+
+
+def test_a_non_finite_design_falls_back_and_m_plus_returns_it_as_before(monkeypatch):
+    import botorch.optim
+    allowed, frozen = pair(13)
+
+    def nan_candidate(*args, **kwargs):
+        return torch.tensor([[float('nan'), 0.5]], dtype=torch.float64), torch.tensor([0.0], dtype=torch.float64)
+    monkeypatch.setattr(botorch.optim, 'optimize_acqf', nan_candidate)
+    x, info = allowed.ask()
+    assert info['source'] == 'sobol_fallback' and info['reason'] == 'the acquisition gave a non-finite design'
+    assert all(0.0 <= v <= 1.0 for v in x)
+    y, yinfo = frozen.ask()                           # M+'s settings: the design comes back unchanged, as before A1
+    assert yinfo['source'] == 'acquisition' and y[0] != y[0]
+
+
+def test_a_programming_error_is_not_turned_into_a_fallback(monkeypatch):
+    import botorch.optim
+    allowed, _ = pair(14)
+
+    def bug(*args, **kwargs):
+        raise TypeError("optimize_acqf() got an unexpected keyword argument 'options'")
+    monkeypatch.setattr(botorch.optim, 'optimize_acqf', bug)
+    with pytest.raises(TypeError):
+        allowed.ask()
+
+
+@pytest.mark.parametrize('extra, moves', [
+    (dict(), False),
+    (dict(numerical_fallback=False), False),
+    (dict(cold_start_designs=12), True),
+    (dict(numerical_fallback=True), True),
+    (dict(cold_start_designs=12, numerical_fallback=True), True),
+])
+def test_only_a_search_with_an_amendment_setting_moves_its_count_after_a_crash(extra, moves):
+    s = amended(seed=4, **extra)
+    assert s.uses_amendment_settings() is moves
+    s.proposals = 2
+    assert s.continue_after_crash(2) is None and s.proposals == 2        # the same number: no move
+    assert s.continue_after_crash(1) is None and s.proposals == 2        # a lower one: no move
+    assert s.continue_after_crash(5) == (5 if moves else None)
+    assert s.proposals == (5 if moves else 2)
+
+
 def test_a_proposal_does_not_depend_on_what_used_the_global_random_generator_before():
     """BoTorch prunes the baseline with posterior samples seeded from torch's global generator: a proposal built outside
     its own seeded block depended on whatever drew numbers before it (a resumed search then proposed otherwise)."""

@@ -4473,6 +4473,22 @@ prefixes in `units.ts` (both import-free, so checks load them too); the shared c
 held outside React in `signal.ts`; the guarded browser storage in `kept.ts`; the newest-answer guard in `newest.ts`; a
 pop-up's "blocked" line and its portal in `panels/popupParts.tsx`.
 
+The follow-up cleanup (7.446) shares parameter-value and group remapping between the PDK and family views in
+`graph_parameters.py`. Their policies for unknown kinds and terminal roles stay separate. The two Bayesian searches
+share `bayes.trust_region_candidate` and `update_trust_region`; each still owns its archive, fitting, failure and
+restart policies, and saved state retains its original layout and random streams.
+
+The editors' pure fill/paste transformations live in `panels/editorSheet.ts`; `editorImport.ts` checks and prepares
+imports, and `useEditorTable.ts` owns row selection and post-edit focus. Editors applies each patch map through the
+existing follower rules and Undo setter. `npm run test:editor` runs the pure transformations under Node without a backend.
+`contracts.ts` also types parameter, probe and spec rows, column descriptors, validation replies and diffs; the editor
+uses those types, and `scripts/fixtures/contracts.ts` makes type-checking verify rejected payload shapes. Legacy dynamic
+payloads elsewhere still use `Json`; this cleanup does not replace it globally or add client-side runtime validation.
+
+The follow-up (7.447) carries the types through editor row operations, `ConfigSetter`, saved-row changes, Undo snapshots
+and the public `editorRules.ts` edit functions. `Editors.tsx` no longer uses `Json` or `any` types. `editorChanges.ts`
+formats both unsaved-row summaries: the tooltip keeps its three-ID deletion preview, the dialog its four-ID lists.
+
 `contracts.ts` types task/run configurations and saved-model metadata at the page's transfer boundaries (record 7.324).
 It is separate from `contract.ts`, which owns shared UI names. `newest.ts` also provides `inScope` and `sameScope` for
 entity/revision checks; task reads, task checks and network preset replies keep their existing invalidation rules,
@@ -4515,6 +4531,11 @@ nothing is measured in the browser's unstyled layout - measured: about one RL ne
 when it was found, for about 100 ms (record 7.178).
 
 ## Tests
+
+The native preparation scheduling fixture uses `OfflineSizingEnv` for its temporary journals (7.447): atomic JSON
+writes without disk sync, including in spawned lanes. It still exercises the real-backend protocol with fake devices
+and checks every lane restored and exited without forced termination. Production journal durability and deadlines
+are unchanged; the fixture does not certify disk durability or a real simulator.
 
 ```bash
 ~/analog-optimizer-venv/bin/python -m pytest tests/workbench -q

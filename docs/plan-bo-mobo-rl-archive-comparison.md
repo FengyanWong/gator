@@ -695,3 +695,32 @@ ledger no longer counts these three launches, so the report adds them to its lau
 
 **Reporting additions.** The runtime of each run segment, the fallback reasons by kind, any design proposed twice
 (expected: none) and the three reconciled launches.
+
+
+## 13. Amendment A2 (2026-10-30): seeds 1 and 2, unchanged methods, plus anytime reporting
+
+Written on 2026-10-30 on the user's decision, after the seed-0 report (records 7.391-7.433) and before any seed-1 or
+seed-2 run. It adds no arm and changes no method.
+
+**Scope.** Replicate pairs (1, 102) and (2, 103) for every seed-0 cell: Panel A (T0, T+, M+, RA+, RF+; 3 cases;
+24,000 evaluations) and Panel B portfolios (T+, RA+, RF+; 3 cases; 14,400), with at most 144 confirmations under the
+Section 8 rule. M0 (Amendment A1) is not run at seeds 1 and 2: the user decided so on 2026-10-30, before any seed-1 or
+seed-2 run, for cost; M0 is a diagnostic outside the Section 7 rules and its seed-0 result stands as reported. About
+38,500 charged evaluations in all; 4.3 to 6.0 days of simulator time at the seed-0 and Round-1 paces.
+
+**Fixed.** The nine prepared source models (pretraining seeds 0-2) are used as frozen before seed 0; every
+configuration is the seed-0 one with only the seed pair changed; every arm reruns, winners and losers alike; the
+memory rules of seed 0 stay (one M+ at a time, the 12 GiB swap, the host-memory guard); order counterbalanced by case
+and seed; timing observational. The Section 7 rules are then read on medians over replicates 0, 1 and 2.
+
+**Reporting added, no simulation.** For every arm, case and seed: target-reach probability by 100/200/400/800
+evaluations and the restricted mean evaluations to the target (both already in Section 7 but absent from the seed-0
+report); best-so-far preferred objective at 100/200/400/800 as a percentage of the archive's best; hypervolume at
+200/400/600/800 and the area under the hypervolume gain curve; the failed-measurement share. The frozen `q_goal`
+stays the only target (it demands 15.2 %, 20.2 % and 7.5 % on the amplifier, the LDO and the flip-flop; the user
+accepted this on 2026-10-30, so no secondary thresholds are added). The Pareto optimiser's failure handling also
+stays as run, by the same decision.
+
+**Not in this amendment.** Larger archives, a restarting or multi-region TuRBO reference, a rehearsal arm, offline-RL
+pretraining, a failure penalty for the Pareto optimiser and MORBO were considered and are not scheduled; each would be
+a separately pre-registered arm (`docs/plan-followup-2026-10-30.md`, Part G).

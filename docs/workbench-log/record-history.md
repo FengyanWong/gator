@@ -715,3 +715,6 @@ One row per commit, newest last.
 | `2903f0a` | 11-02 03:36 | 7.452 | The M+ search gives each proposal's memory back to the system (record 7.452) |
 | `4a2af53` | 11-02 04:46 | 7.453 | Archive comparison seeds 1-2 complete: 102 searches, 144 confirmations, three-seed decision (record 7.453) |
 | `22744f6` | 11-02 09:00 | 7.454 | Reverse port complete: 12 runs, independent check, thesis revision 26 (record 7.454) |
+| `adcff22` | 11-02 15:45 | 7.455 | GitHub tidy-up: main level with workbench, merged Codex branch deleted on GitHub (record 7.455) |
+| `d563e24` | 11-02 16:53 | 7.456 | Pre-registrations of 2026-11-02, written before any run: the next held-out circuit for RQ5 (not run) and Amendment A3, the rehearsal arm |
+| `14ddd1b` | 11-02 18:23 | 7.456 | Amendment A3 revision 2, before any RA+R evaluation: the first queue's three zero-cost stops and runtime gator-runtime-bmr-429e3df7 |

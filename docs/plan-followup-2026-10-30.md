@@ -14,7 +14,7 @@ number is a planning figure; the ledgers of the runs decide the final counts.
 | D | Seed-by-seed differences instead of pass-or-fail rules | 0 | half a day of analysis | done 2026-11-02: Table D.19 with the reverse port, thesis revision 26 |
 | E | Best-so-far curves with bands, RQ2 and RQ3, appendix figures | 0 | half a day of analysis | done 2026-11-02: Figures D.1 and D.2, thesis revision 26 |
 | F | Word budget | 0 | done in revision 25 | done |
-| G | Options explained, not scheduled | | | reference only |
+| G | Options explained, not scheduled | | | rehearsal arm = archive plan A3, done 2026-11-03 03:39: 9 runs, 7,200 evaluations, audited, 27 finalists exact (record 7.456); held-out circuit pre-registered (transfer plan Section 18), not run; offline RL not run |
 | H | Where the files live since the repository separation | | | note |
 
 Simulator total if everything runs: about 46,600 evaluations, 5.2 to 7.3 days. Throughput used: the seed-0
@@ -40,10 +40,10 @@ campaign charged 19,200 evaluations in about three days with interruptions (abou
 | Seed-by-seed differences instead of bootstrap intervals | Do (Part D) |
 | Best-so-far curves with bands, RQ2 and RQ3, in an appendix | Do (Part E) |
 | RQ2 source-model retraining | Dropped |
-| Pre-registered next held-out circuit | Naming costs nothing; running it is optional (Part G) |
+| Pre-registered next held-out circuit | Written 2026-11-02 (`docs/plan-transfer-experiment.md` Section 18); not run for the MScR |
 | Step 4 targets changed with the process | Keep as is: PDK-A limits may be unreachable in PDK-B |
 | Beyond nominal simulation | Not done |
-| Rehearsal arm, offline-RL pretraining | Explained, not scheduled (Part G) |
+| Rehearsal arm, offline-RL pretraining | Rehearsal arm pre-registered as Amendment A3 of the archive plan and run (2026-11-02); offline-RL pretraining not run |
 
 ## Part A. Matched-archive comparison, seeds 1 and 2
 
@@ -193,6 +193,12 @@ and Section 4.1's implementation steps to Appendix C (about 270).
 
 Any of these is a new, separately pre-registered arm or study. None changes the seed-0 arms or joins Part A.
 
+**2026-11-02** (the user: "write the preregistration and do the rehearsal arm and note all experiments as
+finished"): the rehearsal arm became Amendment A3 of the archive plan (its Section 14) and runs. It needed three
+rehearsal-only code changes, not a configuration change only as the table says; A3 states them. The next held-out
+circuit is pre-registered in Section 18 of the transfer plan and is not run for the MScR. Offline-RL pretraining and
+the two extra RQ5 probes are not run.
+
 ## Part H. Where the files live (since 2026-10-30)
 
 The thesis was separated into the private repository `FengyanWong/gator-thesis`, checked out at `D:\gator-thesis`
@@ -220,3 +226,18 @@ The thesis was separated into the private repository `FengyanWong/gator-thesis`,
    record 7.454).
 
 Both runs wait for the user's "run".
+
+## Closing (2026-11-03): the MScR experiments are finished
+
+The user asked on 2026-11-02 to "note all experiments as finished". State at the close:
+
+- Parts A to E are done (records 7.453 and 7.454, thesis revision 26). Part F was done in revision 25.
+- Part G's rehearsal arm ran as Amendment A3 of the archive plan: nine runs and 7,200 evaluations, audited, checked
+  independently, with 27 finalists confirmed exactly (record 7.456). By its rule rehearsal helps RA+, but RA+R reached
+  no target and does not replace T+.
+- The next held-out circuit is pre-registered in Section 18 of the transfer plan and is not run for the MScR.
+  Offline-RL pretraining and the two extra RQ5 probes are not run.
+- Thesis revision 30 (gator-thesis `6b99f8b`, `605a06b`, `29370e5`) reports the rehearsal arm and says the experiments are
+  finished.
+
+No further simulator run is planned for the MScR. A run after this would be new work under its own written plan.

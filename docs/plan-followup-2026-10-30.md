@@ -237,7 +237,7 @@ The user asked on 2026-11-02 to "note all experiments as finished". State at the
   no target and does not replace T+.
 - The next held-out circuit is pre-registered in Section 18 of the transfer plan and is not run for the MScR.
   Offline-RL pretraining and the two extra RQ5 probes are not run.
-- Thesis revision 30 (gator-thesis `6b99f8b`, `605a06b`) reports the rehearsal arm and says the experiments are
+- Thesis revision 30 (gator-thesis `6b99f8b`, `605a06b`, `29370e5`) reports the rehearsal arm and says the experiments are
   finished.
 
 No further simulator run is planned for the MScR. A run after this would be new work under its own written plan.

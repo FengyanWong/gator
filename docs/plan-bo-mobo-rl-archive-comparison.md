@@ -817,3 +817,11 @@ simulator for the amplifier, seed 0. The pool loaded (1,392 transitions), the vi
 (4 target transitions and 4 archived ones, one from each goal view) gave finite losses. The jobs, names,
 configurations, snapshots and scoring are unchanged; they run in `step7/queue-rehearsal-r2`
 (`step7/jobs-rehearsal-r2.json`), whose copy of `queue_bmr.py` has the same RA+R line.
+
+### Outcome (2026-11-03, after the runs)
+
+The nine runs completed on 2026-11-03 at 03:39 (record 7.456): 7,200 charged evaluations and 7,169 launches, audited,
+with an independent check of 117 checks and no problem. The 27 finalists reproduced every base measurement exactly. By
+the rule fixed above, rehearsal helps RA+: RA+R's median final best is 9.0 % lower on the flip-flop and 2.8 % lower on
+the LDO, and 1.3 % higher on the amplifier; neither arm reached `q_goal`. RA+R beat the archive's best in three of nine
+runs (RA+ four). By Section 7's rule RA+R does not replace T+. No rule was changed.

@@ -539,3 +539,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.466 | Keep the newest PDK list after overlapping reads or popup closure; reproduced stale success/error cases now pass |
 | 7.467 | Guard run-brief replies and loading state; skip superseded status reads and reuse its run lookup only while open |
 | 7.468 | Reuse bounded SHA-256 reads for comparison validation; unchanged pinning and missing-file blockers |
+| 7.469 | Bound ngspice candidate-deck hashing to 1 MiB reads; preserve identity and tamper checks |

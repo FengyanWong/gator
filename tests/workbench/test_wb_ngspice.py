@@ -4,6 +4,7 @@ and its starter rows (ngspice_tasks), the evaluation backend (ngspice_backend), 
 Fake runners and a fake probe process everywhere, except the tests marked REAL: they run the ngspice installed on this
 machine on the example deck (skipped when there is none). No Virtuoso, no network, no agent CLI."""
 from pathlib import Path
+import hashlib
 import subprocess
 import tempfile
 
@@ -268,6 +269,54 @@ def test_the_backend_writes_the_deck_reads_it_back_and_reports_each_outcome(tmp_
     with pytest.raises(ValueError):
         backend.set_parameters({('r1', 'r'): 1.0, ('x1/c1', 'c'): 1e-12})
     backend.close()
+
+
+def test_large_synthetic_deck_hashes_in_bounded_reads_and_tampering_is_refused(tmp_path, monkeypatch):
+    deck = '* synthetic padding ' + 'x' * (2 << 20) + '\n' + DECK
+    runner = FakeRunner([])
+    backend = NgspiceBackend(deck, sized_graph(deck, {'r1': ('r', 500.0, 4000.0)}),
+                             NgspiceLink('ngspice_local'), runner=runner)
+    original_open, reads = Path.open, []
+
+    class BoundedRead:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def read(self, size=-1):
+            assert 0 < size <= 1 << 20, 'Deck hashing must not allocate the whole file'
+            value = self.stream.read(size)
+            reads.append(len(value))
+            return value
+
+    def open_bounded(path, mode='r', *args, **kwargs):
+        stream = original_open(path, mode, *args, **kwargs)
+        return BoundedRead(stream) if path.name == 'deck.cir' and mode == 'rb' else stream
+
+    monkeypatch.setattr(Path, 'open', open_bounded)
+    backend.connect()
+    try:
+        artifact = backend.generate_netlist(tmp_path / 'mock' / 'exports')
+        with original_open(artifact.path, 'rb') as stream:
+            expected = hashlib.sha256(stream.read()).hexdigest()
+        size = artifact.path.stat().st_size
+        assert artifact.sha256 == expected and size > 2 << 20
+        assert sum(reads) == size and len(reads) >= 4 and reads[-1] == 0
+        reads.clear()
+        assert backend.get_circuit_graph(artifact).parameters['r1']['r'].value == 1000
+        assert sum(reads) == size and len(reads) >= 4
+        with artifact.path.open('a') as stream:
+            stream.write('* synthetic changed bytes\n')
+        with pytest.raises(ValueError, match='ngspice deck identity changed'):
+            backend.get_circuit_graph(artifact)
+        assert not runner.decks, 'Hash verification must never launch the simulator'
+    finally:
+        backend.close()
 
 
 def test_the_link_validates_the_connection_settings_and_the_remote_command_is_fixed():

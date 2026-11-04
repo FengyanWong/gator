@@ -1168,6 +1168,10 @@ and, in plain words, what would stop a run. **Delete task** (in the Tasks window
 for the task the page follows) takes
 it out of the list; its folder is kept aside on the backend machine. Nothing in the window runs a simulation.
 
+Candidate-deck identity checks use the shared SHA-256 reader in 1 MiB chunks (7.469), avoiding whole-file byte
+allocations when recording and checking the export. The written deck is still parsed again to verify its values,
+and changed bytes are still refused before that read-back.
+
 **Which way to a new task the Tasks window offers follows the connection in use** (user request 2026-09-23): with a
 Virtuoso connection chosen (the "Connection" button) **From a Virtuoso cell...** only, with an ngspice connection
 **From an ngspice netlist...** only; with no connection chosen, or one of a kind the page does not know, both. The family is

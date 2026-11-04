@@ -736,3 +736,4 @@ One row per commit, newest last.
 | `840766d` | 11-04 21:34 | 7.471 | Before landing the lightened workbench: panel errors say what failed, Copy path is text again (record 7.471) |
 | `0e16d17` | 11-04 22:08 | 7.471 | Browser checks close their windows without racing their own DevTools session (record 7.471) |
 | `7670617` | 11-04 22:30 | 7.471 | Record 7.471: Codex's lightened workbench made ready to land, with the review's fixes and the full proofs |
+| `ed669ce` | 11-04 23:22 | 7.472 | README for a public reader, with the name explained; the Agent tab easier to read (record 7.472) |

@@ -721,3 +721,5 @@ One row per commit, newest last.
 | `e778bda` | 11-04 04:18 | 7.457 | Load optional workbench panels on demand |
 | `262db32` | 11-04 04:20 | 7.458 | Compact frontend controls and release temporary Agent output |
 | `b0a780f` | 11-04 04:21 | 7.459 | Allow durable mock saves to finish in browser checks |
+| `4bd4f57` | 11-04 04:22 | 7.457–7.459 | Record lighter workbench commit history |
+| `f24423d` | 11-04 05:06 | 7.460–7.462 | Reduce startup payload and repeated frontend scans; 1,068 browser/data/unit checks pass |

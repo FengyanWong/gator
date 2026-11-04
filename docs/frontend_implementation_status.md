@@ -533,3 +533,5 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.460 | Keep small panel styles with the page so a failed deferred stylesheet cannot break Retry; archive 7.439–7.459 |
 | 7.461 | Defer Virtuoso/PDK rendering, shorten PDK guidance; startup JavaScript 5.8% smaller again, 24.2% across both reviews |
 | 7.462 | Share Task run summaries and bound sparse Training joins; 50,000-row tail fixture needs one sequence read |
+| 7.463 | Share table selection and unsaved-follower lookups; preserve a newly saved connection list after an older read fails |
+| 7.464 | Stream reachability evidence; filter/project before Python conversion while retaining required-column checks |

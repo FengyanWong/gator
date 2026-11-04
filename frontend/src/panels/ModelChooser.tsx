@@ -329,7 +329,7 @@ export function SavedModels({ source, usable, runs, outputRoot, config, netField
           {/* ModelRow draws a saved model's row; its Details stay here, outside the memo, drawn with the window as before - they
               read the page's configuration (branch record SIF-123) */}
           <tbody>{shown.map(m => <Fragment key={m.run_dir}>
-            <ModelRow m={m} used={m.run_dir === source.run_dir} checked={selected.includes(m.run_dir)} isOpen={open === m.run_dir}
+            <ModelRow m={m} used={m.run_dir === source.run_dir} checked={table.selectedIds.has(m.run_dir)} isOpen={open === m.run_dir}
               folderLabel={folders.folder === 'all' ? (folders.data.folders[folders.of(m.run_dir)] ?? '') : ''} disabled={folders.busy || !folders.ready} byDir={byDir} act={rowAct} />
             {open === m.run_dir && <tr className="run-details-row"><td colSpan={COLUMNS.length + 2}>
               <ModelDetails model={m} models={list} runs={runs} byDir={byDir} source={source} usable={usable} config={config} netFields={netFields} from={popup}

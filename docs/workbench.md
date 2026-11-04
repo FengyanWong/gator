@@ -667,8 +667,9 @@ empty lists and older servers without task keys keep their existing display.
   The shared Tasks, Runs and saved-model table code derives each row's search text and sort value at most once per
   arrangement (7.373), including the Tasks columns that count or find the newest run. Values are read again on the
   next arrangement; filtering, stable ties and missing values last keep the same behavior.
-  The shared Tasks/Runs/Models header builds selected-ID membership once per render (7.379). Its all/partial
-  checkbox state and selection/sort actions retain their behavior; row-body selection checks are unchanged.
+  Tasks/Runs/Models share one selected-ID index between the header and row checkboxes (7.463; header-only since
+  7.379), rebuilt when selection changes. The ordered selected array still drives counts and folder moves;
+  all/partial checkbox state, duplicate/offscreen selection and sorting retain their behavior.
 * **Nothing in the window updates by itself.** The task list is read when the button is pressed - also while the window
   is open: the press brings it to the front and reads the list again (branch record SIF-100) - and by **Refresh list**
   (which reads the run list again too; otherwise the run columns show the page's own run list - read when the page
@@ -944,6 +945,8 @@ The editor tables behave more like a spreadsheet (design advice 4 and 6, the use
   task** - or a save from elsewhere that the page followed to its end - the rows are compared again even when they did not
   change, so the marks go (or come, when the other save left the rows here behind). A cell read from Virtuoso without a
   task, an ngspice task and a test task have no saved rows to compare with: nothing is marked.
+  Added IDs and unsaved tied-follower counts are indexed once per editor draw (7.463). Each leader reads its count
+  directly instead of scanning all rows; duplicate follower rows still count separately and mark wording is unchanged.
 - **The ID in view** (record 7.182, design advice). While a table scrolls sideways the tick box and the row's ID stay at
   the left and the other columns pass under them, a line marking the ID's edge while they do. The ID sits right beside the
   tick-box column, whose width the page measures, also when a narrower window changes it: a tie toggle widens it on
@@ -2348,6 +2351,12 @@ same warning (code `corner_reachability`). It rejudges recorded
 designs against the current hard specs: those of earlier runs of the same task with unchanged probes under the output
 root (the configured one, else the remembered one), their Corner check results, and for `real:gpdk045_ota7` the
 reference and designs of reward v2's qualification (folders named in the code, never a scan of `artifacts/`).
+
+Recorded reachability reads use bounded batches (7.464). Evaluation statuses are indexed incrementally;
+metrics request consumed fields plus all schema-required fields, filter condition rows in Arrow, then convert
+only their six consumed fields to Python. Published order, last duplicate wins, missing statuses, nullable
+historical values, required-column errors and Corner check additions remain unchanged. Only temporary read
+work is reduced: the complete evidence returned to the assessor is retained, with no new simulation or cache.
 
 **Failure limits.** Run configuration's **Limits** fold (record 7.179; until then "Failure limits", which held only these two rules) has a field **Stop after N consecutive failed evaluations**
 (`run.max_consecutive_failures`, default 5). A design the simulator reports as invalid or not converging is still
@@ -4531,6 +4540,8 @@ including edits made by Undo. These types add no runtime validation, serializati
 
 Reads managed by `useRequest` and direct JSON GETs have a 30-second deadline. Changing a selection, disabling a read
 or leaving its view cancels the hook's owned transport; shared cached reads keep their own bounded lifetime.
+An older failed connection-list read clears only its own cached promise (7.463), preserving a newer list published
+after a connection was saved. The failed caller still receives its error, and concurrent readers still share a read.
 Refresh replaces an outstanding hook read. Polling still allows one read at a
 time and interval changes retain the current result and outstanding request. Late replies from callbacks that ignore
 cancellation are discarded too. Writes keep their own lifecycle and are not retried by

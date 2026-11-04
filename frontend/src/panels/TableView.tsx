@@ -1,5 +1,5 @@
 // What the Tasks, Runs and saved models tables share (record 7.276): filter, sort, ticked rows and the header row.
-import { type KeyboardEvent, useState } from 'react';
+import { type KeyboardEvent, useMemo, useState } from 'react';
 import type { FolderView } from './Folders';
 
 /** A column title of the Tasks, Runs and saved models tables: its key, its words and its tooltip. */
@@ -35,9 +35,11 @@ export function useTableView(key: string, down: boolean) {
   const [filter, setFilter] = useState('');
   const [sort, setSort] = useState({ key, down });
   const [selected, setSelected] = useState<string[]>([]);
+  // The header and every row share membership; selection order still comes from the original array.
+  const selectedIds = useMemo<ReadonlySet<string>>(() => new Set(selected), [selected]);
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   return {
-    filter, setFilter, sort, selected, setSelected,
+    filter, setFilter, sort, selected, selectedIds, setSelected,
     sortBy: (column: string) => setSort(s => ({ key: column, down: s.key === column ? !s.down : down })),
     select: (id: string, checked: boolean) => setSelected(ids => checked ? [...ids.filter(k => k !== id), id] : ids.filter(k => k !== id)),
     /** Moves the ticked rows into folder `id`; the ticks go once they are moved. */
@@ -63,8 +65,7 @@ export const sortKeys = (view: TableView, key: string) => ({
  *  and the empty title over the Details buttons. `what`: the rows' name in the box's label ("runs"). */
 export function TableHead<T>({ view, columns, shown, id, what, disabled }: {
   view: TableView; columns: Head[]; shown: T[]; id: (row: T) => string; what: string; disabled: boolean }) {
-  const selected = new Set(view.selected);
-  const every = shown.every(r => selected.has(id(r)));
+  const every = shown.every(r => view.selectedIds.has(id(r)));
   return (<thead><tr>
     <th className="task-select"><input type="checkbox" aria-label={`Select all shown ${what}`} disabled={disabled || !shown.length}
       checked={shown.length > 0 && every} ref={input => { if (input) input.indeterminate = view.selected.length > 0 && !every; }}

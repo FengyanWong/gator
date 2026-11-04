@@ -1,6 +1,7 @@
 """Non-blocking, read-only corner reachability evidence. No simulator or bridge calls."""
 from __future__ import annotations
 from collections import defaultdict
+from contextlib import closing
 from functools import lru_cache
 import json
 import math
@@ -13,6 +14,7 @@ from .reward_diagnostics import file_identity, kept, tables_version
 from .schema import WorkbenchConfig
 from .spec_equations import SpecPlan
 from .storage.atomic import read_dict, read_jsonl
+from .storage.tables import TABLES
 from .units import canonical_unit
 
 
@@ -74,22 +76,30 @@ def assess(config, designs):
 
 
 def _recorded_designs(run_dir):
+    import pyarrow.compute as pc
     from .storage.dataset import DatasetReader  # lazy: tests patch storage.dataset.DatasetReader
     reader = DatasetReader(Path(run_dir) / 'data')
     grouped = defaultdict(lambda: defaultdict(lambda: dict(status='ok', candidate_evaluated=True,
         metrics={}, metric_units={}, metric_validity={})))
-    status_by_id = {r['evaluation_id']: r.get('status') for r in reader.rows('evaluations', ['evaluation_id',
-        'status'])}
-    for row in reader.rows('metrics'):
-        if row.get('aggregation_level') != 'condition':
-            continue
-        condition = grouped[row['evaluation_id']][row['condition']]
-        condition['status'] = status_by_id.get(row['evaluation_id']) or 'unavailable'
-        condition['candidate_evaluated'] = condition['status'] in ('ok', 'measurement_error')
-        name = row['metric_name']
-        condition['metrics'][name] = row['raw_value']
-        condition['metric_units'][name] = row['unit']
-        condition['metric_validity'][name] = row['valid']
+    status_by_id = {}
+    with closing(reader.iter_batches('evaluations', ['evaluation_id', 'status'])) as batches:
+        for batch in batches:
+            status_by_id.update((r['evaluation_id'], r.get('status')) for r in batch.to_pylist())
+    fields = ['evaluation_id', 'condition', 'metric_name', 'raw_value', 'unit', 'valid']
+    # Retain the whole-table reader's required-column checks, including run_id, without decoding unused nullable
+    # metadata. Only condition rows and their consumed fields become Python objects, one bounded batch at a time.
+    columns = [c.name for c in TABLES['metrics']['columns']
+               if c.null is None or c.name in fields or c.name == 'aggregation_level']
+    with closing(reader.iter_batches('metrics', columns)) as batches:
+        for batch in batches:
+            for row in batch.filter(pc.equal(batch['aggregation_level'], 'condition')).select(fields).to_pylist():
+                condition = grouped[row['evaluation_id']][row['condition']]
+                condition['status'] = status_by_id.get(row['evaluation_id']) or 'unavailable'
+                condition['candidate_evaluated'] = condition['status'] in ('ok', 'measurement_error')
+                name = row['metric_name']
+                condition['metrics'][name] = row['raw_value']
+                condition['metric_units'][name] = row['unit']
+                condition['metric_validity'][name] = row['valid']
     designs = [dict(id=key, conditions=dict(value)) for key, value in grouped.items()]
     for path in sorted((Path(run_dir) / 'corner_checks').glob('*/results.jsonl')):
         grouped_check = defaultdict(dict)

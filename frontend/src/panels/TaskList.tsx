@@ -269,7 +269,7 @@ export function TaskListButton({ tasks, runs, current, currentText, currentMark,
       <FolderMoveBar state={folders} shown={shown.length} selected={selected.length} onMove={id => void table.move(folders, id)} />
       {tasks.length > 0 && <div className="scroll"><table className="grid run-table task-table">
         <TableHead view={table} columns={COLUMNS} shown={shown} id={task => task.task_key} what="tasks" disabled={folders.busy || !folders.ready} />
-        <tbody>{shown.map(task => taskRow({ task, current, ngspiceOffered, of: runInfo.of(task.task_key), loading, known: known || runs.length === 0, folders, selected, table, popup, open, rows,
+        <tbody>{shown.map(task => taskRow({ task, current, ngspiceOffered, of: runInfo.of(task.task_key), loading, known: known || runs.length === 0, folders, table, popup, open, rows,
           deleting, chooseRow, follow, toggle, renamedTask }))}</tbody></table></div>}
       {/* Only while there are tasks, as in the Runs window (branch record SIF-68): with none, All tasks told the user to
           select tasks in All tasks, under the line that says why the list is empty. */}
@@ -385,10 +385,10 @@ function currentTaskLine({ current, nameOf, deleteDisabled, onDelete, popup, del
 
 /** A task's row - its tick box, name and mark, class, cell, revision, times, sizes, newest run, runs and Details - and under
  *  it, while they are open, its Details (TaskDetails). A double click or Enter on the row makes the page follow the task. */
-function taskRow({ task, current, ngspiceOffered, of, loading, known, folders, selected, table, popup, open, rows, deleting, chooseRow, follow, toggle,
+function taskRow({ task, current, ngspiceOffered, of, loading, known, folders, table, popup, open, rows, deleting, chooseRow, follow, toggle,
   renamedTask }: {
   task: Json; current: string | null; ngspiceOffered: boolean; of: TaskRuns; loading: string | null; known: boolean; folders: FolderView;
-  selected: string[]; table: TableView; popup: Window; open: string | null; rows: RowsRead | null; deleting?: boolean;
+  table: TableView; popup: Window; open: string | null; rows: RowsRead | null; deleting?: boolean;
   chooseRow: (e: MouseEvent<HTMLTableRowElement>, key: string) => void; follow: (key: string) => void; toggle: (key: string) => void;
   renamedTask: (key: string, name: string) => Promise<void | undefined> }) {
   const active = task.task_key === current, mark = taskMark(task, ngspiceOffered, true);
@@ -397,7 +397,7 @@ function taskRow({ task, current, ngspiceOffered, of, loading, known, folders, s
       title={renamed(task) ? `${shownName(task)} (internal name ${taskName(task.task_key)})` : taskName(task.task_key)}
       onDoubleClick={e => chooseRow(e, task.task_key)}
       tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) follow(task.task_key); }}>
-      <td className="task-select"><input type="checkbox" aria-label={`Select ${shownName(task)}`} checked={selected.includes(task.task_key)}
+      <td className="task-select"><input type="checkbox" aria-label={`Select ${shownName(task)}`} checked={table.selectedIds.has(task.task_key)}
         disabled={folders.busy || !folders.ready} onChange={e => table.select(task.task_key, e.target.checked)} /></td>
       <td><code>{shownName(task)}</code>{loading === task.task_key && <span className="hint"> loading...</span>}
         {renamed(task) && <div className="hint task-internal-name">internal name {taskName(task.task_key)}</div>}

@@ -10,7 +10,10 @@ export const pdkChanges = signal(null);
  *  column's launchers each read it when the page opened. A connection created in the window hands its new list on. */
 let profilesRead: Promise<Json> | null = null;
 export function connectionProfilesShared(): Promise<Json> {
-  if (!profilesRead) profilesRead = api.connectionProfiles().catch(e => { profilesRead = null; throw e; });
+  if (!profilesRead) {
+    const promise = api.connectionProfiles().catch(e => { if (profilesRead === promise) profilesRead = null; throw e; });
+    profilesRead = promise;
+  }
   return profilesRead;
 }
 export function connectionProfilesChanged(list: Json) { profilesRead = Promise.resolve(list); }

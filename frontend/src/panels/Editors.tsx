@@ -8,7 +8,7 @@ import { flushSync } from 'react-dom';
 import { pointAt } from './CircuitPicture';
 import { api, saveJson } from '../api';
 import { IMPORTED_SECTIONS, prepareImport, ROW_TABS } from './editorImport';
-import { idList, unsavedSummary } from './editorChanges';
+import { idList, indexUnsavedRows, unsavedSummary } from './editorChanges';
 import type { ConfigRow, ConfigSetter, EditorColumn, EditorRow, EditorSchema, RowDiff, SavedRowChange, ValidationIssue, ValidationReply, WorkbenchConfig } from '../contracts';
 import { convert, kindUnit, NUMBER_FORMS, quantity, readQuantity, sameQuantity } from '../units';
 import { MatchedDevices } from './MatchedDevices';
@@ -703,8 +703,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
   function unsavedMarks() {
     const unsavedIn = (section: Section) => validation?.unsaved_rows?.sections?.[section] ?? null;
     const unsaved = unsavedIn(tab);
-    const isNew = (row: EditorRow) => !!unsaved?.added?.includes(String(row[keyField] ?? ''));
-    const changeOf = (row: EditorRow): SavedRowChange | null => unsaved?.changed?.[String(row[keyField] ?? '')] ?? null;
+    const { isNew, changeOf, unsavedTies } = indexUnsavedRows(rows, keyField, unsaved, leaderOf);
     // Specs show the objective inside the Limit list: a saved objective is that cell's.
     const cellOf = (field: string) => tab === 'targets' && field === 'direction_after_feasible' ? 'constraint' : field;
     // A saved value as its cell writes it: a quantity in the saved row's unit, a limit in words, a tick as on or off.
@@ -737,9 +736,9 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
       const summary = unsavedSummary(unsavedIn(section));
       return summary ? `Not saved in the task: ${summary}. Save as stores the rows in a new task; Reload saved values brings back the saved ones.` : null;
     };
-    return { isNew, changeOf, savedIn, rowNote, unsavedTitle };
+    return { isNew, changeOf, unsavedTies, savedIn, rowNote, unsavedTitle };
   }
-  const { isNew, changeOf, savedIn, rowNote, unsavedTitle } = unsavedMarks();
+  const { isNew, changeOf, unsavedTies, savedIn, rowNote, unsavedTitle } = unsavedMarks();
   // Beside the task's name (record 7.362): whether the rows are the saved task's - only for a saved task, which validation
   // compares with its file (record 7.222); the tabs' dots say where they differ.
   const savedState = !validation?.unsaved_rows?.sections ? null
@@ -1015,7 +1014,7 @@ function EditorsView({ schema, config, setConfig, undo, redo, canUndo, canRedo, 
             // Not saved in the task (record 7.222): the row is tinted, a changed cell more; folded tied rows that are not saved
             // colour their leader's count.
             const change = changeOf(row), note = rowNote(row);
-            const tiedNotSaved = tied > 0 ? rows.filter(follower => leaderOf(follower) === row[keyField] && (isNew(follower) || changeOf(follower))).length : 0;
+            const tiedNotSaved = unsavedTies.get(row[keyField]) ?? 0;
             return <tr key={index} data-index={index} hidden={!inView(row, index)} {...point}
               className={[found.some((issue: ValidationIssue) => issue.level === 'error' || issue.level === 'blocker') ? 'has-error' : '', leader ? 'tied' : '',
                 isNew(row) ? 'unsaved-new' : change ? 'unsaved-changed' : ''].filter(Boolean).join(' ') || undefined}>

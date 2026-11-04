@@ -4390,6 +4390,14 @@ ended run's log is read once more after its worker ended. Overlapping tests of t
 
 The [glossary](glossary.md) maps the page's words to code and record names.
 
+Optional frontend panels load on demand (7.457). Training and Agent download and mount on their first visible
+visit, then stay mounted across tab switches to preserve charts, drafts and active jobs. The RL model window
+downloads when opened; `modelView.ts` keeps its labels and persistent table state outside the window's rendering
+module. `deferredPanel.tsx` supplies a loading message and a panel-local Retry after a failed import; other panels
+remain usable. The wrapper adds no layout box, so Training still follows the bottom panel's height. No dependency
+was added. The measured initial JavaScript decreased from 772.99 to 621.82 kB (253.12 to 204.17 kB gzip); deferred
+code still downloads when used, so this is a startup reduction, not removal of functionality or all downloaded bytes.
+
 `src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and
 connections, circuits and tasks, runs and exports, and agents. `api/models.py` owns HTTP request schemas;
 `api/context.py` shares input/output authorization, configuration loading and the start checklist; `api/support.py`

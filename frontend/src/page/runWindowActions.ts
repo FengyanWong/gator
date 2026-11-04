@@ -8,7 +8,7 @@ import { pointText } from '../lineage';
 import type { Newest } from '../newest';
 import type { BottomTab } from '../panels/BottomPanel';
 import type { TaskLoad, TaskLoaded } from '../panels/Left';
-import { modelNameAt } from '../panels/ModelChooser';
+import { modelNameAt } from '../panels/modelView';
 import { MODE_NAME } from '../panels/rlModelText';
 import type { RunChoice } from '../panels/RunList';
 import { LOADS, readSavePoint, SavePoint, withSavePoint } from '../savePoint';

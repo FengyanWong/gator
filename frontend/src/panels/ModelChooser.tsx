@@ -8,9 +8,10 @@ import { count, folderName, plural, stamp } from '../format';
 import { childrenOf, designName, ENCODER_SHORT, historyOf, pointText, startedFrom } from '../lineage';
 import { openRunsAt } from '../openAt';
 import { CircuitGraphView } from './CircuitGraphView';
-import { FolderMoveBar, Folders, useFolders } from './Folders';
+import { FolderMoveBar, Folders } from './Folders';
 import { Icon } from './Icons';
-import { TableHead, useTableView } from './TableView';
+import { TableHead } from './TableView';
+import { modelName, type SavedModelsView } from './modelView';
 import { ModelStructure } from './ModelStructure';
 import { CompatibilityList, compatibilityMode } from './CompatibilityList';
 import { runMode } from './rlModelText';
@@ -42,10 +43,6 @@ const netShort = (n: Json) => netLabel(n, true);
 const sizeLabel = (n: Json) => n?.encoder_type ? `${n.hidden_dim}/${n.heads}/${n.layers}${n.structural_encoding && n.structural_encoding !== 'none' ? ` · ${String(n.structural_encoding).toUpperCase()}` : ''}` : '?';
 // A name or task key may break after ':' and '_' ("synthetic:" / "gpdk045_" / "ota5"), never inside a word.
 const breakable = (text: string) => text.split(/(?<=[:_])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
-/** The name a model is listed under. */
-export const modelName = (m: Json): string => m?.model_label ?? m?.task_name ?? m?.task_id ?? folderName(m?.run_dir ?? '');
-/** The name of the model a run folder saved: as the run list names it, or the folder's own name when it is not listed. */
-export const modelNameAt = (runs: Json[], dir: string): string => { const row = runs.find(r => r.run_dir === dir); return row ? modelName(row) : folderName(dir); };
 /** The task by the name the page gives it - without "real:", as since record 7.249 (branch record SIF-13); the key on hover. */
 const trainedKey = (m: Json) => m.circuit_task ?? m.task_key ?? m.circuit_class ?? 'unknown task';
 const trainedOn = (m: Json) => m.run_kind === 'offline_pretraining' ? 'multi-task (offline)' : String(trainedKey(m)).replace(/^real:/, '');
@@ -72,21 +69,6 @@ const COLUMNS: Column[] = [
 
 /** A save point a Use could not read, and why (useRlModel's netMessage). */
 type UseError = { point: string; text: string };
-
-/** What the saved models table shows - its filter and sort, the Design, the folder, the model whose Details are open - and
- *  the models it read last, with the output folder they are under (branch record SIF-102). useRlModel holds it, and stays
- *  mounted: the RL model window closes after every choice (record 7.291), and each reopen started again at All designs, no
- *  filter, Last saved, every folder and no Details, with no row until the whole list was read again. The Runs and Tasks
- *  windows keep theirs at their buttons. */
-export function useSavedModelsView() {
-  const table = useTableView('saved', true);
-  const folders = useFolders('models');
-  const [design, setDesign] = useState('');                           // one design only, chosen beside Refresh list (SIF-10)
-  const [open, setOpen] = useState<string | null>(null);              // the model whose Details are open
-  const last = useRef<{ root: string | null; models: Json[] } | null>(null);
-  return { table, folders, design, setDesign, open, setOpen, last };
-}
-export type SavedModelsView = ReturnType<typeof useSavedModelsView>;
 
 /** One model's Details: what can be done with it, and what it is. `usingPoint`: the save point a Use is reading (pointKey). */
 function ModelDetails({ model, models, runs, byDir, source, usable, config, netFields, from, usingPoint, useError, onUse, onRenamed, onSelect }: {

@@ -42,11 +42,17 @@ const listProblem = (e: Error & Partial<ApiError>) => e.status === 404 ? 'This w
 function usePdkList(watch: unknown) {
   const [list, setList] = useState<Json>(null);
   const [error, setError] = useState<string | null>(null);
-  const refresh = () => api.pdks().then(l => { setList(l); setError(null); }).catch(e => setError(listProblem(e)));
+  const asked = useNewest();
+  const refresh = () => {
+    const mine = asked.next();
+    return api.pdks().then(l => { if (mine()) { setList(l); setError(null); } })
+      .catch(e => { if (mine()) setError(listProblem(e)); });
+  };
   useEffect(() => {
     if (!watch) return undefined;
     refresh();
-    return pdkChanges.subscribe(refresh);
+    const unsubscribe = pdkChanges.subscribe(refresh);
+    return () => { unsubscribe(); asked.drop(); };
   }, [watch]);
   return { list, error };
 }

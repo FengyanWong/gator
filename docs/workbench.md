@@ -2441,6 +2441,10 @@ New ngspice tasks run their saved deck too. Before optimization specs exist, the
 with `probe - probe >= 0`, using an explicit Scale of 1; these run-only checks never become task specs or performance
 claims. Current-source rows unsupported by SAC stay fixed in the saved deck, outside the baseline's action groups.
 
+Recording a Virtuoso reference streams the existing projected evaluation and metric fields in bounded batches
+(7.465). Only the first real simulation baseline and its raw condition metrics become Python objects. Later parts
+are still checked for errors; duplicate metrics retain the last value, and an existing reference is never replaced.
+
 **Calibration** in the header simulates **64 random designs only**, uniform draws over the Parameters ranges, and
 works out two settings from their measurements. There is no starting-design simulation, no per-lane reset simulation,
 no replay insertion and no learner update. The ordinary training path retains its existing reset checks. Older
@@ -3366,6 +3370,9 @@ network does ("Use this save point"), and the model's facts gain a "Components" 
 `standard` (written as no field at all, so every existing configuration keeps its hashes) or `pdk:<technology
 library>`. Backend: `bridge_read.pdk_with_import` (states `read` / `not_read` / `skipped`, in the import's answer as
 `pdk`); the same reader op as the window's Load, so a PDK read again unchanged makes no new version.
+
+Each open PDK list accepts only its newest read (7.466). A slower earlier reply or failure cannot overwrite a list
+refreshed after Load. Closing a window invalidates its pending list read; reopening reads the current list again.
 
 **What is read - with the cell, or on the window's "Load"; read-only, no simulation** (`POST /api/virtuoso/import` and
 `POST /api/pdks/load`, connection gate `read_cellview`, reader op `pdk`; about 3 s for GPDK045):

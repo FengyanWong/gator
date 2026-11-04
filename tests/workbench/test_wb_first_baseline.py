@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 import pytest
+import pyarrow as pa
 from fastapi.testclient import TestClient
 
 from gator_workbench import profiles, recipes, schema, tasks
@@ -85,8 +86,8 @@ def test_a_finished_real_baseline_becomes_the_reference_once(tmp_path, monkeypat
         def __init__(self, data_dir):
             assert Path(data_dir) == run_dir / 'data'
 
-        def rows(self, table, columns=None):
-            return [{c: row[c] for c in columns} for row in tables[table]]
+        def iter_batches(self, table, columns=None):
+            yield pa.RecordBatch.from_pylist([{c: row[c] for c in columns} for row in tables[table]])
     monkeypatch.setattr('gator_workbench.storage.dataset.DatasetReader', FakeReader)
     assert profiles.latest_baseline_run('ring_osc_3stage', [str(tmp_path / 'other'), str(run_dir)]) == str(run_dir)
     reference = profiles.record_reference('ring_osc_3stage', run_dir)

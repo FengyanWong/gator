@@ -85,10 +85,15 @@ await runChecks(browser, async () => {
   const page = await browser.open({ consoleApi: false });
   const { send, fulfil, consoleErrors } = page;
   const refused = [];
-  let loaded = false, listReads = 0, loadBodies = [], holdLoad = null;
+  let loaded = false, listReads = 0, loadBodies = [], holdLoad = null, heldLists = null, extraPdks = [];
   const answer = async ({ requestId, request }) => {
     const name = new URL(request.url).pathname;
-    if (name === '/api/pdks') { listReads++; return fulfil(requestId, 200, { pdks: loaded ? [FIXPDK, FIXLOAD] : [FIXPDK], standard: STANDARD }); }
+    if (name === '/api/pdks') {
+      listReads++;
+      const value = { pdks: [...(loaded ? [FIXPDK, FIXLOAD] : [FIXPDK]), ...extraPdks], standard: STANDARD };
+      if (heldLists) { heldLists.push({ requestId, value }); return; }
+      return fulfil(requestId, 200, value);
+    }
     if (name === '/api/pdks/fixpdk') return fulfil(requestId, 200, details(FIXPDK, DEVICES));
     if (name === '/api/pdks/load') {
       loadBodies.push(JSON.parse(request.postData ?? 'null'));
@@ -204,7 +209,7 @@ await runChecks(browser, async () => {
   };
   const target = await openPdkWindow();
   check('"PDK window..." in the Virtuoso window opens the PDK window (a pop-up from a pop-up)', !!target);
-  const popup = await browser.attach(target, { errors: consoleErrors, prefix: 'PDK window: ' });
+  let popup = await browser.attach(target, { errors: consoleErrors, prefix: 'PDK window: ' });
   const pev = expression => popup.evaluate(expression, true);
   await popup.viewport(1100, 900);
   await popup.until(`!!document.querySelector('.pdk-window')`);
@@ -322,6 +327,62 @@ await runChecks(browser, async () => {
     await networkPage.shot(path.join(out, 'pdk-2-list.png'), clip);
     await networkPage.viewport(1100, 900);
   }
+
+  // A load refreshes both open lists. Older list replies and errors must not replace the result of a newer load.
+  const finishLoad = async () => {
+    holdLoad = null;
+    await pev(`document.querySelector('button.pdk-load').click()`);
+    for (let i = 0; i < 50 && !holdLoad; i++) await sleep(100);
+    if (!holdLoad) throw new Error('Synthetic PDK load never arrived');
+    holdLoad();
+    if (!await popup.until(`document.querySelector('button.pdk-load')?.textContent === 'Load'`, 60)) throw new Error('Synthetic PDK load did not finish');
+  };
+  for (const kind of ['list', 'error']) {
+    heldLists = [];
+    await finishLoad();
+    for (let i = 0; i < 50 && heldLists.length < 2; i++) await sleep(100);
+    if (heldLists.length !== 2) throw new Error(`Expected one held read for each PDK list, got ${heldLists.length}`);
+    const stale = heldLists;
+    heldLists = null;
+    const fresh = entry(`fixnew_${kind}`, 1, { resistor: 1 }, 'd'.repeat(64));
+    extraPdks = [fresh];
+    await finishLoad();
+    const offeredNow = `[...${SELECT}.options].some(o => o.value === ${JSON.stringify(fresh.vocabulary)})`;
+    const listedNow = `[...document.querySelectorAll('.pdk-list tbody tr')].some(r => r.cells[0].textContent === ${JSON.stringify(fresh.pdk_id)})`;
+    check(`a newer load refreshes both lists while an old ${kind} is pending`, await until(offeredNow) && await popup.until(listedNow));
+    for (const old of stale) await fulfil(old.requestId, kind === 'error' ? 500 : 200,
+      kind === 'error' ? { detail: 'FIXTURE superseded list failure' } : old.value);
+    await sleep(300);
+    check(`a superseded PDK ${kind} cannot replace the newer lists`, await evaluate(offeredNow) && await pev(listedNow)
+      && !await evaluate(`${LIST}.textContent.includes('FIXTURE superseded list failure')`)
+      && !await pev(`document.querySelector('.pdk-window').textContent.includes('FIXTURE superseded list failure')`));
+  }
+  extraPdks = [];
+
+  // Closing the PDK window stops its subscription and invalidates the request already in flight.
+  const closePdk = async () => {
+    await pev('window.close()');
+    await browser.window(PDK_WINDOW, { present: false });
+  };
+  const reopenHeld = async () => {
+    heldLists = [];
+    popup = await browser.attach(await openPdkWindow(), { errors: consoleErrors, prefix: 'PDK reopened: ' });
+    await popup.until(`!!document.querySelector('.pdk-window')`);
+    for (let i = 0; i < 50 && !heldLists.length; i++) await sleep(100);
+    if (heldLists.length !== 1) throw new Error(`Expected one reopened PDK-list read, got ${heldLists.length}`);
+    const held = heldLists[0];
+    heldLists = null;
+    return held;
+  };
+  await closePdk();
+  const closedRead = await reopenHeld();
+  await closePdk();
+  await fulfil(closedRead.requestId, 500, { detail: 'FIXTURE closed-window list failure' });
+  await sleep(300);
+  const reopenedRead = await reopenHeld();
+  check('a list failure arriving after close does not reappear on reopen', !await pev(`document.querySelector('.pdk-window').textContent.includes('FIXTURE closed-window list failure')`));
+  await fulfil(reopenedRead.requestId, 200, { pdks: [FIXPDK], standard: STANDARD });
+  check('reopening reads the current PDK list again', await popup.until(`document.querySelectorAll('.pdk-list tbody tr').length === 1 && document.querySelector('.pdk-list tbody tr').cells[0].textContent === 'fixpdk'`));
 
   // ---- no connection; a list that is not loaded --------------------------------------------------------------------------------
   await evaluate(`localStorage.setItem('gator-workbench-config-v1', JSON.stringify({ ...JSON.parse(localStorage.getItem('gator-workbench-config-v1')),

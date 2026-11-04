@@ -723,3 +723,5 @@ One row per commit, newest last.
 | `b0a780f` | 11-04 04:21 | 7.459 | Allow durable mock saves to finish in browser checks |
 | `4bd4f57` | 11-04 04:22 | 7.457–7.459 | Record lighter workbench commit history |
 | `f24423d` | 11-04 05:06 | 7.460–7.462 | Reduce startup payload and repeated frontend scans; 1,068 browser/data/unit checks pass |
+| `084cc37` | 11-04 05:06 | 7.460–7.462 | Record second frontend lightening review |
+| `97984ce` | 11-04 05:16 | 7.463–7.464 | Index frontend lookups and stream reachability evidence; 789 checks/tests pass |

@@ -728,3 +728,4 @@ One row per commit, newest last.
 | `09eb22c` | 11-04 05:22 | 7.465–7.466 | Stream baseline evidence and guard PDK list refreshes; 91 tests/checks pass |
 | `deb264c` | 11-04 05:29 | 7.467–7.468 | Guard run brief replies and bound validation hashing; 247 tests/checks pass, 12 optional tests skip |
 | `30f766b` | 11-04 05:30 | 7.467–7.468 | Record autonomous review validation |
+| `af0f9e0` | 11-04 05:33 | 7.469 | Bound ngspice deck identity hashing; six focused fake-runner tests pass |

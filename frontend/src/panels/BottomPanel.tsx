@@ -9,6 +9,9 @@ import { CornerCheckTab } from './CornerCheck';
 import { type RunChoice, RunListButton } from './RunList';
 import { DATA_CHOICE, type DataChoice, DataTab, FilesTab, LogsTab, StatusTab } from './RunTabs';
 import { deferredPanel, VisitedPanel } from './deferredPanel';
+// Keep these small styles in the main sheet: Vite caches failed lazy CSS preloads, so a panel retry cannot recover them.
+import './AgentTab.css';
+import 'uplot/dist/uPlot.min.css';
 
 const TrainingTab = deferredPanel(() => import('./TrainingTab').then(m => m.TrainingTab), 'Training');
 const AgentTab = deferredPanel(() => import('./AgentTab').then(m => m.AgentTab), 'Agent');

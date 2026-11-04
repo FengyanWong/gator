@@ -632,6 +632,10 @@ to the workbench (allow pop-ups for the page if the browser blocks it). It lists
 | Newest run | The task's newest run under the output folder: started, state, evaluations, first feasible - the run the bottom tabs show when the task is chosen (record 7.212). A link (record 7.264): it opens the Runs window at that run, with this task's runs only. |
 | Runs | How many runs the task has, Baseline simulations included. A link (record 7.264): it opens the Runs window with this task's runs only ("Only the runs of ..."; **Show every run** takes that back). Neither link chooses the task. |
 
+The run counts and newest runs are summarized in one pass when the list changes while the window is open (7.462).
+Sorting, rows and Details share that summary. Equal timestamps retain the first run in the original list;
+empty lists and older servers without task keys keep their existing display.
+
 * **A double click on a row** makes the page follow that task - so do **Enter** on the row and **Follow this task** at
   the start of the Details of a task the page does not follow (branch record SIF-100: a keyboard could not follow a task,
   and the Runs window's Details have Load run): exactly what choosing it in the old list did - its
@@ -2017,6 +2021,12 @@ For spec charts, the reader keeps aggregate metric rows whose `hard` flag is rec
 (`hard=false`). It filters Parquet columns before converting them into Python lists and skips unused journal rows
 before copying their fields (record 7.368). Condition rows and probes with `hard=null` remain outside these charts;
 recorded values, gaps, ordering, spec definitions and page cursors are unchanged.
+
+Small spec pages join only the evaluations they name (7.462). The browser searches held rows from the end,
+stopping when all requested sequences are found; a dense page keeps the full linear index. Late and unordered
+sequences, gaps and last-duplicate selection remain supported, with the same chart invalidation. No index is
+retained across pages or thinning. Two spec values for the newest of 50,000 held evaluations need one sequence
+read in the deterministic regression, rather than rebuilding a 50,000-entry map.
 
 When no objective is configured, the Arrow formatter creates the same null objective column without decoding
 unused best-design metric maps or a second feasibility list (7.378). The feasibility column remains required;
@@ -4403,13 +4413,17 @@ ended run's log is read once more after its worker ended. Overlapping tests of t
 The [glossary](glossary.md) maps the page's words to code and record names.
 
 Optional frontend panels load on demand (7.457). Training and Agent download and mount on their first visible
-visit, then stay mounted across tab switches to preserve charts, drafts and active jobs. The RL model window
-downloads when opened; `modelView.ts` keeps its labels and persistent table state outside the window's rendering
-module. `deferredPanel.tsx` supplies a loading message and a panel-local Retry after a failed import; other panels
-remain usable. The wrapper adds no layout box, so Training still follows the bottom panel's height. No dependency
-was added. After the compact-control follow-up (7.458), initial JavaScript is 622.18 kB versus 772.99 kB before
-(204.16 versus 253.12 kB gzip); deferred
-code still downloads when used, so this is a startup reduction, not removal of functionality or all downloaded bytes.
+visit, then stay mounted across tab switches to preserve charts, drafts and active jobs. The RL model and Virtuoso
+windows download when opened; their launchers still open popups directly from the click. `modelView.ts` keeps the
+model labels and persistent table state outside its rendering module. PDK change notifications live in `shared.ts`,
+so the page can notify an open component list without importing PDK rendering (7.461).
+`deferredPanel.tsx` supplies a loading message and a panel-local Retry after a failed import; other panels remain
+usable. The wrapper adds no layout box, so Training still follows the bottom panel's height. The small Agent and
+chart styles load with the page (7.460), so a temporary panel download failure cannot leave Retry with an unstyled
+panel. No dependency was added. After the second review (7.460–7.462), initial JavaScript is 585.86 kB versus
+622.18 kB after the first review and 772.99 kB before either review (193.77, 204.16 and 253.12 kB gzip respectively).
+Deferred code still downloads when used: all JavaScript totals 1,272.28 kB versus 1,269.17 kB before either review.
+This reduces startup work without removing functionality.
 
 `src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and
 connections, circuits and tasks, runs and exports, and agents. `api/models.py` owns HTTP request schemas;

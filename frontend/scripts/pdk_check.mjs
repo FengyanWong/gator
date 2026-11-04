@@ -140,8 +140,8 @@ await runChecks(browser, async () => {
     && line.options.at(-1)[0] === 'standard' && line.options.length === 3, JSON.stringify(line.options));
   check('no load button in the block any more: the PDK comes with the cell, from the Virtuoso window', !line.button, String(line.button));
   check('the plain line says what the standard list knows, what it does not, what a new model uses and where a PDK list comes from',
-    /MOS, R, C, L and sources/.test(line.what) && /"unknown"/.test(line.what) && /a new model uses the device families/.test(line.what)
-    && /reading a cell in the Virtuoso window reads its PDK too/.test(line.what), line.what);
+    /MOS, R, C, L and sources/.test(line.what) && /"unknown"/.test(line.what) && /New models use device families/.test(line.what)
+    && /Reading a cell loads its PDK and adds that component list here/.test(line.what), line.what);
   check('the longer explanation is folded (closed <details>)', line.helpFolded);
   check('page load read the list of loaded PDKs (local files) and started no load', listReads >= 1 && loadBodies.length === 0);
   const fits = await evaluate(`(() => { const right = ${NETWORK_DOCUMENT}.documentElement, panel = ${RUN}.getBoundingClientRect(),
@@ -174,12 +174,12 @@ await runChecks(browser, async () => {
   network = await storedWhen(n => n?.vocabulary === 'families');
   const families = await evaluate(`${LIST}.querySelector('.component-what').textContent`);
   check('choosing the device families writes them by name, and the line says they fit any PDK', network?.vocabulary === 'families'
-    && /device families of any PDK/.test(families) && /loads with any PDK/.test(families), JSON.stringify(network) + ' / ' + families);
+    && /device families across PDKs/.test(families) && /can load with any PDK/.test(families), JSON.stringify(network) + ' / ' + families);
   // Branch record SIF-52: the line said "The list of a new model since record 7.298.", and the folded help promised more
   // "on the MOCK backend", which the workbench no longer has.
   const help = await evaluate(`${LIST}.querySelector('details.component-help').textContent`);
   check('... it says "A new model uses this list." (no record number), and the help says a Parameters row varies them and each instance\'s property form decides a real run\'s writes',
-    /A new model uses this list\./.test(families) && !/record \d/.test(families) && !/MOCK/.test(help)
+    /Default for new models:/.test(families) && !/record \d/.test(families) && !/MOCK/.test(help)
     && /voltages\) by a Parameters row; what a real run may write in Virtuoso is decided\s+by each instance's property form\./.test(help), families + ' / ' + help);
 
   // ---- the window ---------------------------------------------------------------------------------------------------------

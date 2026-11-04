@@ -1,6 +1,10 @@
 // Reads the page shares between its panels, cached (plan-refactoring C10, out of api.ts).
 import { api, Json } from './api';
 import type { TaskSummary } from './contracts';
+import { signal } from './signal';
+
+/** A cell read or explicit PDK load changed the local component lists. No panel import is needed to notify them. */
+export const pdkChanges = signal(null);
 
 /** The connection list (the workbench's own file, no probe), read once and shared: the connection window and the Project
  *  column's launchers each read it when the page opened. A connection created in the window hands its new list on. */

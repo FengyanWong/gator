@@ -1,15 +1,14 @@
-import { CircuitDetails, NativeSchematic, type SizeAdding, sizesAddable, useVirtuosoBrowser } from './CircuitBrowser';
+import { CircuitDetails, NativeSchematic, NO_TESTBENCH, type SizeAdding, sizesAddable, useVirtuosoBrowser } from './CircuitBrowser';
 import { memo, MutableRefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, Json } from '../api';
 import { plural } from '../format';
 import { kindUnit } from '../units';
 import { newRow } from './editorRules';
-import { tasksShared } from '../shared';
+import { pdkChanges, tasksShared } from '../shared';
 import { usePopupWindow } from './popupWindow';
 import { Blocked, PopupPortal } from './popupParts';
 import { VIRTUOSO_WINDOW } from '../contract';
-import { pdksChanged } from './Pdk';
 import { NgspiceButton } from './Ngspice';
 import { TaskBaseline } from './TaskBaseline';
 import { TaskSave, baselineText } from './TaskSave';
@@ -23,7 +22,9 @@ import { useTaskActions } from './taskActions';
 import { useTestbenchProbes } from './testbenchProbes';
 import { RELOAD_SAVED_REQUEST, type TaskLoad, useTaskChoice } from './taskChoice';
 import { openConnection, openTasksAt } from '../openAt';
-import { NO_TESTBENCH, VirtuosoWindow } from './VirtuosoWindow';
+import { deferredPanel } from './deferredPanel';
+
+const VirtuosoWindow = deferredPanel(() => import('./VirtuosoWindow').then(m => m.VirtuosoWindow), 'Virtuoso');
 
 /** The connection block lives in Connection.tsx: one button in this column that opens the connection window. */
 
@@ -223,7 +224,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
     setImporting(true); setNativeError(null);
     try {
       const answer = await api.nativeImport(profileId!, ref.library, ref.cell, ref.testbench_cell ?? null, declare);
-      if (answer?.pdk?.state === 'read') pdksChanged();  // the Components list in the RL model window shows it at once
+      if (answer?.pdk?.state === 'read') pdkChanges.notify();  // the Components list in the RL model window shows it at once
       // The selects are locked while a cell is read; should the page follow another cell anyway, its own load shows it. A
       // registered task chosen meanwhile keeps the last cell's fields: the draft's load outbid the task's, and could
       // exchange its Probes (review of 2026-10-01).
@@ -402,7 +403,7 @@ function CircuitPanelBody({ config, setConfig, circuit, setCircuit, profileId, s
       <details className="more hint labels"><summary>Labels: class <b>{ref.circuit_class ?? 'unspecified'}</b>, PDK <b>{ref.pdk_id ?? 'unspecified'}</b></summary>
         <div className="row circuit-labels">
           <CircuitClass value={ref.circuit_class} onChange={v => patch({ circuit_class: v })} />
-          <label title="Which process design kit (technology) the circuit is built in, e.g. gpdk045. Written into the run records so a result can be traced to its technology. PDK files are never copied.">PDK id
+          <label title="The circuit's process design kit, e.g. gpdk045. Kept in run records to identify its technology.">PDK id
             <Typed value={ref.pdk_id} format={v => v ?? ''} parse={t => ({ value: t || 'unspecified' })} onChange={v => patch({ pdk_id: v })} /></label>
         </div>
         <p>Circuit class and PDK id are labels saved with every run. They do not change the simulation or the optimization;

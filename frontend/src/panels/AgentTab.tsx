@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { call, type Json } from '../api';
 import { Icon } from './Icons';
-import './AgentTab.css';
 
 type Model = { id: string; name: string; provider: string; source: string; description: string; size: number;
   installed: boolean; deployed: boolean; storage: string | null; error: string | null; runtime: string; vram_gib: number; ram_gib: number };

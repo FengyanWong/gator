@@ -644,7 +644,11 @@ await runChecks(browser, async () => {
   check('exactly two charts exist', (await evaluate(`document.querySelectorAll('.training .uplot').length`)) === 2);
 
   // ---- other runs: kept apart; failed, waiting, not recorded --------------------------------------------------------------------------
-  const showRun = async run => { await evaluate(`localStorage.setItem('gator-workbench-current-run-v1', ${JSON.stringify(run.dir)})`); await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training'); };
+  const showRun = async run => {
+    await evaluate(`localStorage.setItem('gator-workbench-current-run-v1', ${JSON.stringify(run.dir)})`);
+    await send('Page.reload'); await until(`!!document.querySelector('footer .tabs')`, 150); await press('Training');
+    if (!await until(visible, 80)) throw new Error('Training did not mount after the run reload');
+  };
   await showRun(RUNS.failed);
   check('the chosen charts are kept after a reload', await until(`(${TITLES})[1] === 'Critic loss'`, 60));
   check('a failed run says so, with its error, and shows its own rows only', await until(`/failed/.test((${TRAINING}).querySelector('.badge').textContent) && /The run failed: FIXTURE/.test((${TRAINING}).innerText) && /32 evaluations/.test((${TRAINING}).querySelector('.training-counts').textContent)`, 60), await head());

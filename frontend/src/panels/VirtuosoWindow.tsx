@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Json } from '../api';
 import { openConnection } from '../openAt';
-import { namedTestbench } from './CircuitBrowser';
+import { namedTestbench, NO_TESTBENCH } from './CircuitBrowser';
 import { Icon } from './Icons';
 import { PdkWindowButton } from './Pdk';
 import { WorkingCopy } from './WorkingCopy';
@@ -9,11 +9,6 @@ import { WorkingCopy } from './WorkingCopy';
 // The Virtuoso window (plan-refactoring C9, out of Left.tsx): library / cell / testbench, the read, the setup and what comes
 // before the first save of a cell. The Project column's panel holds what it shows and does; CircuitPanelBody portals it into
 // its pop-up window.
-
-/** Why a first read cannot go without a testbench (branch record SIF-88): the backend refuses it before any export. Read
- *  is off until one is chosen, and importCell (Left.tsx) says it, before the copy question, should "Read the cell again"
- *  try a first read without one. */
-export const NO_TESTBENCH = "Choose the cell's Testbench cell first: a task simulates the testbench and keeps its Maestro test there.";
 
 /** A dropdown must be able to show the configured value even when the list does not (yet) contain it. */
 const withCurrent = (names: string[], current?: string | null) => (current && !names.includes(current) ? [current, ...names] : names);

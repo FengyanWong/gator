@@ -36,7 +36,8 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 | [`7.401-7.416.md`](workbench-log/7.401-7.416.md) | entries 7.401–7.416 |
 | [`7.417-7.427.md`](workbench-log/7.417-7.427.md) | entries 7.417–7.427 |
 | [`7.428-7.438.md`](workbench-log/7.428-7.438.md) | entries 7.428–7.438 |
-| [`7.439-and-later.md`](workbench-log/7.439-and-later.md) | entries 7.439 onwards: the OPEN file |
+| [`7.439-7.459.md`](workbench-log/7.439-7.459.md) | entries 7.439–7.459 |
+| [`7.460-and-later.md`](workbench-log/7.460-and-later.md) | entries 7.460 onwards: the OPEN file |
 | [`self-improving-frontend.md`](workbench-log/self-improving-frontend.md) | the branch self-improving-frontend: its own records SIF-1 onwards (not 7.N), merged into workbench 2026-10-22 and 2026-10-24 |
 | [`record-history.md`](workbench-log/record-history.md) | the record's history and the commit table |
 
@@ -48,13 +49,15 @@ each entry added, known slips) and the commit table are in [`record-history.md`]
 
 `7.428-and-later.md` is also a pointer: entries 7.428–7.438 were archived unchanged at 59.4 kB before the model-scan fix (7.439).
 
+`7.439-and-later.md` is also a pointer: entries 7.439–7.459 were archived unchanged before the next lightening review (7.460).
+
 **Adding an entry:** append `### 7.N <title> (<date>, <session>, <request>)` at the end of the open file, with the next
 free number (look at the table below AND at that file: sessions work in parallel), and add a one-line row at the end of
 the table below: `| 7.N | <short title, at most about 110 characters> |`. A commit gets its row at the end of the commit
 table in `record-history.md`.
 
-**Rolling the open file over:** when the open file passes entry 7.458 or 60 kB, whichever comes first, move its entries
-unchanged into `docs/workbench-log/7.439-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
+**Rolling the open file over:** when the open file passes entry 7.479 or 60 kB, whichever comes first, move its entries
+unchanged into `docs/workbench-log/7.460-7.<last>.md`, start `7.<last + 1>-and-later.md` as the new open file, leave
 the old name as a pointer (like the earlier pointers), change the file table above, and then update `CLAUDE.md` and
 `functionality-reference.md`, which name the open file. (`7.119-and-later.md` was rolled over at entry 7.265 and 669 kB,
 2026-10-07, record 7.268 - eleven times the mark; do it in time. `7.266-and-later.md` was rolled over at entry 7.278
@@ -527,3 +530,6 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.457 | Training, Agent and the RL model window load on demand; initial JavaScript 772.99 -> 621.82 kB, retained tab state and panel-local retry; no added dependency |
 | 7.458 | Compact labelled icons, shorter editor/output/Agent guidance and lighter hidden Agent output; 60 frontend scripts / 3,069 checks pass across the full sweep and final focused verification |
 | 7.459 | Live MOCK browser check allows durable stop saves 60 seconds and has a 240-second minimum script watchdog; full saved-state/worker-exit assertions retained, 23 checks passed |
+| 7.460 | Keep small panel styles with the page so a failed deferred stylesheet cannot break Retry; archive 7.439–7.459 |
+| 7.461 | Defer Virtuoso/PDK rendering, shorten PDK guidance; startup JavaScript 5.8% smaller again, 24.2% across both reviews |
+| 7.462 | Share Task run summaries and bound sparse Training joins; 50,000-row tail fixture needs one sequence read |

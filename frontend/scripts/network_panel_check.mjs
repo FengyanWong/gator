@@ -172,7 +172,7 @@ await runChecks(browser, async () => {
   await evaluate(`(() => { const i = ${box('hidden')}.querySelector('input'); i.focus(); i.select(); })()`);
   await networkPage.send('Input.insertText', { text: '64' });
   // Close before the debounced write returns: closing the view must not abandon a valid edit or its preference save.
-  await networkPage.evaluate('window.close()');                                  // the window's own close (it has no button of its own)
+  await networkPage.evaluate('setTimeout(() => window.close(), 0)');                                  // the window's own close (it has no button of its own)
   await browser.window(RL_MODEL_WINDOW, { present: false });
   const write = await nextWrite();
   check('an edit is sent to the backend for the chosen encoder', !!write && write.method === 'PUT' && write.url.endsWith('/api/network-settings/rgcn'), write ? `${write.method} ${write.url}` : 'no request');
@@ -243,7 +243,7 @@ await runChecks(browser, async () => {
   await page.setValue(alpha, '', { event: 'input' });
 
   check('the network controls and their values are there (SAC is the only search method)', await page.until(`!document.querySelector('.rl-networks-open').disabled && !!${NETWORK_PANEL}.querySelector('.component-list')`) && (await numbers())[0] === String(rgcn.hidden_dim));
-  await networkPage.evaluate('window.close()');
+  await networkPage.evaluate('setTimeout(() => window.close(), 0)');
   await browser.window(RL_MODEL_WINDOW, { present: false });
   networkPage = await openNetworks(page, browser);
   check('the browser close button also permits reopening', await networkPage.evaluate(`!!document.querySelector('.component-list')`));

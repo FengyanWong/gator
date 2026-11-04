@@ -361,7 +361,7 @@ await runChecks(browser, async () => {
 
   // Closing the PDK window stops its subscription and invalidates the request already in flight.
   const closePdk = async () => {
-    await pev('window.close()');
+    await pev('setTimeout(() => window.close(), 0)');
     await browser.window(PDK_WINDOW, { present: false });
   };
   const reopenHeld = async () => {

@@ -123,7 +123,7 @@ await runChecks(browser, async () => {
   const advanced = (await page.stored())?.run?.advanced ?? {};
   check('the configuration now runs the saved setting\'s 8 updates per evaluation and temperature 0.01, and nothing was written', advanced.updates_per_transition === 8
     && advanced.initial_alpha === 0.01 && advanced.gamma === held.gamma && paused.length === 0, JSON.stringify(advanced));
-  await networkPage.evaluate('window.close()');
+  await networkPage.evaluate('setTimeout(() => window.close(), 0)');
   await browser.window(RL_MODEL_WINDOW, { present: false });
 
   // ---- Specs: the scale behind "More columns", headed "Scale", suggested as the size of the limit --------------------------

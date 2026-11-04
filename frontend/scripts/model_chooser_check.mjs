@@ -479,7 +479,7 @@ await runChecks(browser, async () => {
   // Branch record SIF-86: the model in use - A, the last row - is brought into the box's view when the list arrives: the box
   // only, never the window. Seen in a short window, whose box shows a few rows; the list waits until the window is that short.
   holdList = true;
-  await networkPage.evaluate('window.close()'); await browser.window(RL_MODEL_WINDOW, { present: false });
+  await networkPage.evaluate('setTimeout(() => window.close(), 0)'); await browser.window(RL_MODEL_WINDOW, { present: false });
   networkPage = await openNetworks(page, browser); await networkPage.viewport(1180, 480);
   for (let i = 0; i < 50 && !heldList.length; i++) await sleep(100);
   holdList = false;
@@ -729,7 +729,7 @@ await runChecks(browser, async () => {
   check('(set-up) a view: the folder GT models, Graph Transformer, the filter "opamp", sorted by Evaluations, A\'s Details open and its row ticked',
     sameView(viewSet) && viewSet.ticked, JSON.stringify(viewSet));
   holdList = true; const listsBeforeReopen = lists;
-  await networkPage.evaluate('window.close()'); await browser.window(RL_MODEL_WINDOW, { present: false });
+  await networkPage.evaluate('setTimeout(() => window.close(), 0)'); await browser.window(RL_MODEL_WINDOW, { present: false });
   networkPage = await openNetworks(page, browser); await networkPage.viewport(1180, 920);
   for (let i = 0; i < 50 && !heldList.length; i++) await sleep(100);
   await until(`(${VIEW}).rows.length > 0`, 40);
@@ -820,7 +820,7 @@ await runChecks(browser, async () => {
     return { open: !!(${COMPAT})?.open, window: Math.round(w.scrollY), top: r ? Math.round(r.top) : null, bottom: r ? Math.round(r.bottom) : null, height: w.innerHeight }; })()`;
   check('the notice\'s "RL model..." opens the window at the compatibility: open, in view, under the saved models (SIF-86)',
     await until(`(() => { const at = ${placeOf}; return at.open && at.window > 0 && at.top !== null && at.top >= 0 && at.bottom <= at.height; })()`, 40), JSON.stringify(await evaluate(placeOf)));
-  await networkPage.evaluate('window.close()'); await browser.window(RL_MODEL_WINDOW, { present: false });
+  await networkPage.evaluate('setTimeout(() => window.close(), 0)'); await browser.window(RL_MODEL_WINDOW, { present: false });
   await reopen();
   check('... and the model line\'s "RL model..." opens it at its top, as before', await until(`!!(${COMPAT})`, 40) && (await evaluate(placeOf)).window === 0, JSON.stringify(await evaluate(placeOf)));
   // Branch record SIF-117: for one model this row read "6,024 learner updates" and the Training tab and Run status "6024":

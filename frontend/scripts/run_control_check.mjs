@@ -500,7 +500,7 @@ await runChecks(browser, async () => {
   await fulfil(currentBrief.requestId, 200, currentBrief.value);
   check('the current brief read still shows its card and finishes loading', await brief.until(`!!${REAL_CARD} && !(${BRIEF_BUSY})`));
   const closedBrief = await holdBrief();
-  await brief.evaluate('window.close()');
+  await brief.evaluate('setTimeout(() => window.close(), 0)');
   await browser.window(RUNNING_WINDOW, { present: false });
   elsewhereListed = false;
   await evaluate(`${CHIP}.click()`, true);

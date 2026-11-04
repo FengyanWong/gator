@@ -73,11 +73,12 @@ await runChecks(browser, async () => {
   failModel = false;
   await popup.evaluate(`document.querySelector('[role="alert"] button').click()`);
   check('model window recovers on Retry', await popup.until(`!!document.querySelector('.rl-networks-panel')`, 80));
-  await popup.evaluate(`window.close()`);
+  await popup.evaluate(`setTimeout(() => window.close(), 0)`);
   await until(`!document.querySelector('.windows-button')`, 50);
+  await browser.window(RL_MODEL_WINDOW, { present: false });   // the old window gone before the same title is attached again
   popup = await openModel();
   check('reopening a recovered window does not reuse the failed load', await popup.until(`!!document.querySelector('.rl-networks-panel')`, 80));
-  await popup.evaluate(`window.close()`);
+  await popup.evaluate(`setTimeout(() => window.close(), 0)`);
   await browser.window(RL_MODEL_WINDOW, { present: false });
   const openVirtuoso = async () => {
     const { pressed } = await newTaskFrom(page, browser, 'virtuoso');
@@ -90,7 +91,7 @@ await runChecks(browser, async () => {
   failVirtuoso = false;
   await popup.evaluate(`document.querySelector('[role="alert"] button').click()`);
   check('Virtuoso window recovers on Retry', await popup.until(`!!document.querySelector('.virtuoso-window')`, 80));
-  await popup.evaluate(`window.close()`);
+  await popup.evaluate(`setTimeout(() => window.close(), 0)`);
   await browser.window(VIRTUOSO_WINDOW, { present: false });
   popup = await openVirtuoso();
   check('Virtuoso window reopens after a recovered load', await popup.until(`!!document.querySelector('.virtuoso-window')`, 80));

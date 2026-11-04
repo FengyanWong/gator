@@ -4288,6 +4288,8 @@ resume requires the same pool. Absent rehearsal preserves old configuration and 
 
 ## Local Agent (7.441)
 
+Since 7.472 the tab reads at the page's 14 px with a measured line: the two columns are titled Models and Conversation; each model shows its state as a pill, its download size, needs, runtime and source as a small table, and its controls with their words beside their icons (the tooltips stay); a compatibility result is a list; the notes say in plain words what the Agent does and does not do, and before a model is deployed the conversation column lists the three steps.
+
 Since 7.458, the composer uses Send and New conversation icons and **Apply changes** names the proposal action.
 Live model output enters the DOM only while its details are expanded. Once a job finishes, the temporary stream
 is released; the answer remains in the conversation. New conversation also releases old proposal snapshots,

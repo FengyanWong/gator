@@ -733,3 +733,5 @@ One row per commit, newest last.
 | `af0f9e0` | 11-04 05:33 | 7.469 | Bound ngspice deck identity hashing; six focused fake-runner tests pass |
 | `037d0b0` | 11-04 05:34 | 7.469 | Record bounded deck hashing review |
 | `e49da39` | 11-04 07:06 | 7.470 | Bound local runtime error-tail reads; 76 local-agent tests pass |
+| `840766d` | 11-04 21:34 | 7.471 | Before landing the lightened workbench: panel errors say what failed, Copy path is text again (record 7.471) |
+| `0e16d17` | 11-04 22:08 | 7.471 | Browser checks close their windows without racing their own DevTools session (record 7.471) |

@@ -541,3 +541,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.468 | Reuse bounded SHA-256 reads for comparison validation; unchanged pinning and missing-file blockers |
 | 7.469 | Bound ngspice candidate-deck hashing to 1 MiB reads; preserve identity and tamper checks |
 | 7.470 | Read only the local runtime's stderr tail while preserving its existing error detail |
+| 7.471 | Codex's lightened workbench landed after the review's fixes (panel errors with Reload, Copy path text again, unit-test script, owed rows); full suites pass; only workbench and main remain |

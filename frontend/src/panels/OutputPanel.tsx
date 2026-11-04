@@ -8,6 +8,7 @@ import { OUTPUT_ROOT_ID } from '../contract';
 import { ByteSize, Check, Module, Num } from './fields';
 import { type Newest, useNewest } from '../newest';
 import type { RunSummary } from '../contracts';
+import { Icon } from './Icons';
 
 type Every = 'evaluations' | 'seconds';
 
@@ -97,21 +98,21 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
       {/* "Copy path" is a sibling of the label, not inside it: a button inside would become what the label's text clicks. Its
           word stands before it, so the button keeps its text and its place at the line's end (branch record SIF-94). */}
       <div className="field-head"><label htmlFor={OUTPUT_ROOT_ID} title="A backend directory inside an allowed root. Not a browser upload folder.">Output root</label>
-        {copying.word('root')}<button className="text-link" title="Copy the output root to the clipboard" onClick={() => void copying.copyText(root, 'root')}>Copy path</button></div>
+        {copying.word('root')}<button className="text-link" title="Copy path: Copy the output root." onClick={() => void copying.copyText(root, 'root')}><Icon name="copy" label="Copy path" /></button></div>
       <input id={OUTPUT_ROOT_ID} value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} />
-      <div className="row"><button disabled={locked} onClick={() => openFolder()}>Browse allowed roots...</button>
+      <div className="row"><button disabled={locked} title="Browse allowed roots...: Choose an output folder." onClick={() => openFolder()}><Icon name="folder" label="Browse allowed roots..." /></button>
         <button disabled={busy.test} onClick={() => { const at = root; if (at) ask('test', () => api.checkOutput(at, true), value => setTested({ root: at, value, at: clock() })); }}>
           {busy.test ? 'Testing...' : 'Test writability'}</button></div>
       {problem && <p className="error">{problem}</p>}
       {!testedHere && lookError && <p className="error">{lookError} <button onClick={retryLook}>Retry read</button></p>}
       {/* Continue... is where a run goes on since record 7.261; it said "A resumed run" (branch record SIF-60) */}
-      {locked && <p className="hint">The run directory is locked while a run is active. A run that is continued writes back to its own folder.</p>}
+      {locked && <p className="hint">Output root is locked during a run. Continue writes to the run's existing folder.</p>}
       {/* The list says which folder it shows and can be closed; a folder's name is a link that opens it (it was a span
           drawn as plain text), ".." reads "Up one folder", "select" "Use this folder" (branch record SIF-60). The backend's
           path is null at the top, where the entries are the allowed roots. */}
       {busy.list && <p className="hint">Reading the folder...</p>}
-      {browse && <><p className="hint">{browse.path ? `In ${browse.path}` : 'The allowed roots'} <button className="text-link" onClick={closeList}>Close</button></p>
-        <ul className="tree">{browse.parent && <li><button className="text-link" title={`Open ${browse.parent}`} onClick={() => openFolder(browse.parent)}>Up one folder</button></li>}
+      {browse && <><p className="hint">{browse.path ? `In ${browse.path}` : 'The allowed roots'} <button className="text-link" title="Close: Hide folders." onClick={closeList}><Icon name="close" label="Close" /></button></p>
+        <ul className="tree">{browse.parent && <li><button className="text-link" title={`Up one folder: ${browse.parent}`} onClick={() => openFolder(browse.parent)}><Icon name="up" label="Up one folder" /></button></li>}
         {/* "Use this folder" closes on the listing line too: the same root again changes nothing that would drop a folder on its way.
             It locks with the root (branch record SIF-91 review: a list opened before a Start still set the root under the run). */}
         {browse.entries.map((e: Json) => <li key={e.path}><button className="text-link" title="Open this folder" onClick={() => openFolder(e.path)}>{e.name}</button> <button disabled={locked} onClick={() => { set({ output_root: e.path }); closeList(); }}>Use this folder</button></li>)}</ul></>}
@@ -155,9 +156,9 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
       <Check label="Model checkpoints" value={out.save_checkpoints ?? true} onChange={v => set({ save_checkpoints: v })} />
       {/* Continue... and the Modes by their buttons' names, "weights only" in words (branch record SIF-60: "needed for a FULL
           resume", "checkpoints are weights_only: a full training-state resume of this run will NOT be possible") */}
-      <Check label="Replay snapshots (needed to Continue a run exactly)" value={out.save_replay_snapshots ?? true} onChange={v => set({ save_replay_snapshots: v })} />
+      <Check label="Replay snapshots" title="Needed to Continue a run exactly." value={out.save_replay_snapshots ?? true} onChange={v => set({ save_replay_snapshots: v })} />
       {out.save_replay_snapshots === false && <p className="warn">Without replay snapshots this run's checkpoints are weights only: Continue... cannot pick it up exactly; Fine-tune and Evaluate only can still load its model.</p>}
-      <Check label="Complete transition archive (independent of replay snapshots)" value={out.save_transition_archive ?? true} onChange={v => set({ save_transition_archive: v })} />
+      <Check label="Complete transition archive" title="Full transition history, separate from replay snapshots." value={out.save_transition_archive ?? true} onChange={v => set({ save_transition_archive: v })} />
       <Check label="Experiment summary CSVs" value={out.export_summary_csv ?? true} onChange={v => set({ export_summary_csv: v })} />
       <Num label="Checkpoint every" nullable value={interval} placeholder="only at pause, stop, end" onChange={v => setEvery(by, v)}
         title="The model and its training state are saved every N evaluations or every S seconds - one of the two. Empty = only when the run pauses, stops or ends."

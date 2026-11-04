@@ -165,7 +165,7 @@ await runChecks(browser, async () => {
   // Branch record SIF-91: the output root's lock in Output settings (folded, its controls are on the page all the same).
   const ROOT_LOCK = `({ root: document.querySelector('#output-root')?.disabled ?? null,
     browse: [...document.querySelectorAll('aside.right button')].find(b => b.textContent === 'Browse allowed roots...')?.disabled ?? null,
-    hint: [...document.querySelectorAll('aside.right p.hint')].some(p => p.textContent.startsWith('The run directory is locked while a run is active.')) })`;
+    hint: [...document.querySelectorAll('aside.right p.hint')].some(p => p.textContent.startsWith('Output root is locked during a run.')) })`;
   const mainReads = (label, tries) => until(`${MAIN}?.textContent === ${JSON.stringify(label)}`, tries);
   const press = expression => evaluate(`${expression}.click()`);
   const commands = () => log.filter(l => l.name === '/api/runs/command').map(l => l.body.command);

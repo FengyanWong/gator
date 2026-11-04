@@ -284,6 +284,13 @@ is never replaced), or it was started with "Model checkpoints" switched off. Bro
 
 ## The page's look and layout (record 7.158; one look since record 7.360)
 
+Compact controls (7.458): Show/Hide circuit and More/Fewer columns use labelled SVG icons, with their pressed or
+expanded state exposed to assistive tools. Copy path, Browse allowed roots, Up one folder and Close use the same
+icon vocabulary in Output settings; Agent uses Send and New conversation icons. Each retains a hidden accessible
+label and a tooltip. Matched devices, applying changes and selecting a folder keep visible action words.
+Toolbar tooltips, empty-table guidance and Agent instructions are shorter. Output settings show **Replay snapshots**
+and **Complete transition archive** with explanations in their tooltips; disabling replay still shows its warning.
+
 On 2026-10-03 the user chose two looks for the page and five layout changes from a set of pictured ideas (answers "1 A+B,
 2 yes, 3 yes, 4 yes, 5 yes, 6 Windows"): *Whiteprint*, ink on drawing paper, and *Silicon Night*, dark like Virtuoso's
 canvas, with a switch in the header. On 2026-10-17 the user asked for new drafts - "dark mode only delete the day mode",
@@ -4248,6 +4255,11 @@ resume requires the same pool. Absent rehearsal preserves old configuration and 
 
 ## Local Agent (7.441)
 
+Since 7.458, the composer uses Send and New conversation icons and **Apply changes** names the proposal action.
+Live model output enters the DOM only while its details are expanded. Once a job finishes, the temporary stream
+is released; the answer remains in the conversation. New conversation also releases old proposal snapshots,
+application flags and the previous job result. Answers retain their existing uncapped generation behavior.
+
 The bottom **Agent** tab offers local NVIDIA models for parameter setup and optimization-setting advice.
 `codex/latest` starts with no LLM installed. `74B-latest` uses the same implementation with a profile that
 verifies and registers the already-present Nemotron 3.5 Bolt 74B-A9B 24GB weights on its first Agent visit.
@@ -4395,7 +4407,8 @@ visit, then stay mounted across tab switches to preserve charts, drafts and acti
 downloads when opened; `modelView.ts` keeps its labels and persistent table state outside the window's rendering
 module. `deferredPanel.tsx` supplies a loading message and a panel-local Retry after a failed import; other panels
 remain usable. The wrapper adds no layout box, so Training still follows the bottom panel's height. No dependency
-was added. The measured initial JavaScript decreased from 772.99 to 621.82 kB (253.12 to 204.17 kB gzip); deferred
+was added. After the compact-control follow-up (7.458), initial JavaScript is 622.18 kB versus 772.99 kB before
+(204.16 versus 253.12 kB gzip); deferred
 code still downloads when used, so this is a startup reduction, not removal of functionality or all downloaded bytes.
 
 `src/gator_workbench/api/app.py` initializes the app and registers four feature modules: settings and

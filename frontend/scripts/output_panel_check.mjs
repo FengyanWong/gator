@@ -5,7 +5,7 @@
 // so this check can start, save or probe nothing on the backend it runs against. The browser profile is new and
 // temporary (the user's saved configuration is not touched), and the clipboard is replaced by a recorder in the page.
 // What it pins (user requests 2026-09-21 and 2026-09-22):
-//   - "Copy path" sits at the right end of the "Output root" caption line, as text (no button chrome), and still copies;
+//   - "Copy path" sits at the right end of the "Output root" caption line as a labelled icon and still copies;
 //     it says "copied" for 1.5 s just before it, or "could not copy" when the browser refuses the clipboard (branch record SIF-94);
 //   - "Waveform storage limit" is a number box plus a unit list; the configuration keeps the typed size in whole bytes;
 //     choosing another unit CONVERTS the shown number and saves nothing (1.5 GiB -> 1536 MiB); an empty box is "no limit"
@@ -143,7 +143,8 @@ await runChecks(browser, async () => {
   check('it ends where the path box ends (right edge), above the box', line.atRightEnd && line.aboveBox, JSON.stringify(line));
   const look = await evaluate(`(() => { const s = getComputedStyle(${COPY}), cap = getComputedStyle(${HEAD}.querySelector('label'));
     return { border: s.borderTopWidth + ' ' + s.borderTopStyle, background: s.backgroundColor, padding: s.padding, size: s.fontSize, captionSize: cap.fontSize, cursor: s.cursor }; })()`);
-  check('it has no button chrome: no border, no background, no padding', look.border === '0px none' && look.background === 'rgba(0, 0, 0, 0)' && look.padding === '0px', JSON.stringify(look));
+  check('the copy icon has no border or background', look.border === '0px none' && look.background === 'rgba(0, 0, 0, 0)'
+    && await evaluate(`!!${COPY}.querySelector('svg.icon') && ${COPY}.querySelector('.sr-only')?.textContent === 'Copy path'`), JSON.stringify(look));
   check('it is text of the caption\'s size, and still shows the hand pointer', look.size === look.captionSize && look.cursor === 'pointer', JSON.stringify(look));
   await evaluate(`${COPY}.click()`);
   check('pressing it copies the output root', (await until(`window.__copied === ${JSON.stringify(ROOT)}`, 20)), String(await evaluate(`window.__copied`)));
@@ -227,8 +228,8 @@ await runChecks(browser, async () => {
   const ticks = await evaluate(`[...${PANEL}.querySelectorAll('label.check')].filter(l => l.checkVisibility()).map(l => { const b = l.querySelector('input').getBoundingClientRect(), words = document.createRange();
     words.selectNodeContents(l.lastChild); const r = n => Math.round(n * 10) / 10;
     return { label: l.textContent, left: r(b.left), width: r(b.width), height: r(b.height), words: r(words.getClientRects()[0].left), lines: words.getClientRects().length }; })`);
-  const two = ticks.filter(t => /^(Replay snapshots|Complete transition archive) \(/.test(t.label));
-  check('every tick box of Output settings has the same size and place, and its words start at the same x - also beside words of two lines, "Replay snapshots (...)" and "Complete transition archive (...)" (SIF-143)',
+  const two = ticks.filter(t => /^(Replay snapshots|Complete transition archive)$/.test(t.label));
+  check('every tick box of Output settings has the same size, place and text alignment (SIF-143)',
     ticks.length === 5 && two.length === 2 && ticks.every(t => ['left', 'width', 'height', 'words'].every(k => Math.abs(t[k] - ticks[0][k]) < 0.5)), JSON.stringify(ticks));
   const whole = await evaluate(`(() => { const td = [...${PANEL}.querySelectorAll('details.output-facts td')].find(td => td.textContent.includes('used here')), line = ${PANEL}.querySelector('details.output-facts > summary .bytes');
     return td && { text: td.textContent, sizes: [...td.querySelectorAll('.bytes')].map(s => [s.textContent, s.getClientRects().length]), line: line && [line.textContent, getComputedStyle(line).whiteSpace] }; })()`);
@@ -339,8 +340,8 @@ await runChecks(browser, async () => {
 
   // ---- "Replay snapshots": Continue... and the Modes by their names (branch record SIF-60) -----------------------------------
   const REPLAY = `[...${PANEL}.querySelectorAll('label.check')].find(l => l.textContent.startsWith('Replay snapshots'))`;
-  check('"Replay snapshots" says what it is needed for: "Replay snapshots (needed to Continue a run exactly)" (it said "a FULL resume")',
-    (await evaluate(`${REPLAY}?.textContent`)) === 'Replay snapshots (needed to Continue a run exactly)', await evaluate(`${REPLAY}?.textContent ?? 'no such box'`));
+  check('Replay snapshots keeps its short label and explains exact Continue in its tooltip',
+    await evaluate(`${REPLAY}?.textContent === 'Replay snapshots' && ${REPLAY}?.title === 'Needed to Continue a run exactly.'`));
   await evaluate(`${REPLAY}.querySelector('input').click()`);
   const replayWarn = await until(`[...${PANEL}.querySelectorAll('p.warn')].some(p => p.textContent.startsWith('Without replay snapshots'))`, 30)
     ? await evaluate(`[...${PANEL}.querySelectorAll('p.warn')].find(p => p.textContent.startsWith('Without replay snapshots')).textContent`) : null;

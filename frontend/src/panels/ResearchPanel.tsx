@@ -30,7 +30,7 @@ export function ResearchPanel({ config, setConfig }: { config: Json; setConfig: 
       <label title="Associates runs with the same target, initial dimensions, budget, test setup and target seed.">Comparison pair ID<input value={unlabelled(r.comparison_pair_id)} onChange={e => set({ comparison_pair_id: labelled(e.target.value) })} placeholder="unspecified" /></label>
       <label title="Evaluation budgets at which success is counted (success per budget). Empty: the run's own budget.">Budget checkpoints{listBox('budget_checkpoints', true)}</label>
       <details className="more transfer-study"><summary>Transfer study</summary>
-        <p className="hint">Labels for a study that trains on some circuits and tests on others; a single run needs none of them.</p>
+        <p className="hint">Optional labels for training and testing on different circuits.</p>
         <label>Split<select value={r.split ?? 'unspecified'} onChange={e => set({ split: e.target.value })}>{['unspecified', 'train', 'validation', 'test'].map(s => <option key={s} value={s}>{words(s)}</option>)}</select></label>
         <label>Generalization level<select value={r.generalization_level ?? 'unspecified'} onChange={e => set({ generalization_level: e.target.value })}>
           {['unspecified', 'same_task', 'unseen_spec', 'unseen_topology', 'unseen_circuit_class'].map(s => <option key={s} value={s}>{words(s)}</option>)}</select></label>

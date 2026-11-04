@@ -12,7 +12,8 @@
  *  icon-only button's title starts with its label. */
 
 export type IconName = 'save' | 'play' | 'pause' | 'wait' | 'stop' | 'force-stop' | 'task' | 'add' | 'delete' | 'undo' | 'redo' | 'export' | 'import' | 'task-file'
-  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'windows' | 'folder' | 'new-folder' | 'rename' | 'follow' | 'zoom-reset';
+  | 'refresh' | 'download' | 'csv' | 'zip' | 'copy' | 'check' | 'close' | 'windows' | 'folder' | 'new-folder' | 'rename' | 'follow' | 'zoom-reset'
+  | 'circuit' | 'columns' | 'up' | 'send' | 'chat';
 
 const DRAWINGS: Record<IconName, JSX.Element> = {
   // A floppy disk: the model is written to disk while the run goes on.
@@ -71,6 +72,11 @@ const DRAWINGS: Record<IconName, JSX.Element> = {
   follow: <><path d="M2 8h9" /><path d="M8 5l3 3-3 3" /><path d="M14 3v10" /></>,
   // Reset zoom (Training): four corners opening out, the whole run again.
   'zoom-reset': <><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" /><path d="M5.5 8h5" /></>,
+  circuit: <><rect x="1.5" y="6" width="4" height="4" rx=".5" /><rect x="10.5" y="2" width="4" height="4" rx=".5" /><rect x="10.5" y="10" width="4" height="4" rx=".5" /><path d="M5.5 8H8M8 4v8M8 4h2.5M8 12h2.5" /></>,
+  columns: <><rect x="2" y="2.5" width="12" height="11" rx="1" /><path d="M6 2.5v11M10 2.5v11" /></>,
+  up: <path d="M8 13V3M4 7l4-4 4 4" />,
+  send: <path d="M2 2l12 6-12 6 2-6zM4 8h10" />,
+  chat: <><path d="M2 2.5h12v9H6l-4 3z" /><path d="M8 4.5v5M5.5 7h5" /></>,
 };
 
 /** `label`: the button's words, kept for screen readers and for the page checks but not drawn (`.sr-only`). */

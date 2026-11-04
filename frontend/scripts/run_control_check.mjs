@@ -113,11 +113,12 @@ await runChecks(browser, async () => {
   const page = await browser.open();
   const { send, evaluate, until, fulfil, consoleErrors } = page;
   const refused = []; const log = []; const dialogs = []; const answers = [];
-  let held = null, holdNext = null, refuseNext = null, statusRequests = 0;
+  let held = null, holdNext = null, refuseNext = null, statusRequests = 0, briefStatuses = null;
   const answer = ({ requestId, request }) => {
     const url = new URL(request.url), name = url.pathname, body = request.postData ? JSON.parse(request.postData) : null;
     if (name === '/api/config/validate') return fulfil(requestId, 200, validReport);
     if (name === '/api/runs/status') { statusRequests++; const asked = url.searchParams.get('run_dir'); if (asked === GONE) goneAsked++;
+      if (asked === ELSEWHERE && briefStatuses) { briefStatuses.push({ requestId, value: elsewhereStatus() }); return; }
       return asked === sim.dir ? fulfil(requestId, 200, statusOf()) : asked === OTHER && otherListed ? fulfil(requestId, 200, otherStatus())
         : asked === ELSEWHERE && elsewhereListed ? fulfil(requestId, 200, elsewhereStatus()) : fulfil(requestId, 404, { detail: 'Not a run directory' }); }
     if (name === '/api/runs') return fulfil(requestId, 200, { runs: [...listed(), ...(otherListed ? [otherRow()] : []), ...(elsewhereListed ? [elsewhereRow()] : [])] });
@@ -438,7 +439,7 @@ await runChecks(browser, async () => {
   const briefTarget = await browser.window(RUNNING_WINDOW).catch(() => null);
   check('pressing the run in the header opens the run brief, a window of its own', !!briefTarget);
   if (!briefTarget) throw new Error('the run brief did not open');
-  const brief = await browser.attach(briefTarget);
+  let brief = await browser.attach(briefTarget);
   await brief.until(`!!document.querySelector('.brief-card')`, 50);
   const card = await brief.evaluate(`(() => { const c = document.querySelector('.brief-card'); return c && { dir: c.dataset.runDir, text: c.innerText.replace(/\\s+/g, ' '),
     buttons: [...c.querySelectorAll('button')].map(b => b.textContent), others: document.querySelectorAll('.brief-card').length,
@@ -475,6 +476,38 @@ await runChecks(browser, async () => {
   check('Refresh adds a real run working elsewhere, its title ending " · real data" (no MOCK badge), its time "Duration 2 min 05 s so far" (SIF-78)',
     real?.title === 'fixture_task · New model · no model saved · real data' && !real.badge && real.time === 'Duration 2 min 05 s so far · about 4 min 10 s left', JSON.stringify(real));
   await brief.shot(path.join(out, 'run-4c-brief-real.png'), `document.querySelector('.run-brief')`);
+
+  // The header chip can focus this window and read again while its previous read is still pending.
+  const BRIEF_BUSY = `document.querySelector('.brief-head button').disabled`;
+  const NO_OTHERS = `!${REAL_CARD} && !!document.querySelector('.brief-none') && !(${BRIEF_BUSY})`;
+  const holdBrief = async () => {
+    elsewhereListed = true; briefStatuses = [];
+    await evaluate(`${CHIP}.click()`, true);
+    for (let i = 0; i < 50 && !briefStatuses.length; i++) await sleep(100);
+    if (briefStatuses.length !== 1) throw new Error(`Expected one held brief status, got ${briefStatuses.length}`);
+    const held = briefStatuses[0]; briefStatuses = null;
+    return held;
+  };
+  const oldBrief = await holdBrief();
+  elsewhereListed = false;
+  await evaluate(`${CHIP}.click()`, true);
+  check('a newer chip press can finish while an older brief read is pending', await brief.until(NO_OTHERS));
+  await fulfil(oldBrief.requestId, 200, oldBrief.value); await sleep(300);
+  check('a superseded brief read cannot restore an outdated live-run card', await brief.evaluate(NO_OTHERS));
+  const oldFailure = await holdBrief(), currentBrief = await holdBrief();
+  await fulfil(oldFailure.requestId, 500, { detail: 'FIXTURE superseded brief status failure' }); await sleep(300);
+  check('an older failed status cannot finish the newer brief loading indicator', await brief.evaluate(BRIEF_BUSY));
+  await fulfil(currentBrief.requestId, 200, currentBrief.value);
+  check('the current brief read still shows its card and finishes loading', await brief.until(`!!${REAL_CARD} && !(${BRIEF_BUSY})`));
+  const closedBrief = await holdBrief();
+  await brief.evaluate('window.close()');
+  await browser.window(RUNNING_WINDOW, { present: false });
+  elsewhereListed = false;
+  await evaluate(`${CHIP}.click()`, true);
+  brief = await browser.attach(await browser.window(RUNNING_WINDOW));
+  await brief.until(NO_OTHERS);
+  await fulfil(closedBrief.requestId, 200, closedBrief.value); await sleep(300);
+  check('a closed brief read cannot replace the reopened window results', await brief.evaluate(NO_OTHERS));
   elsewhereListed = false;
   const SHOW = `[...document.querySelector('.brief-card').querySelectorAll('button')].find(b => b.textContent === 'Show results')`;
   const showTitle = await brief.evaluate(`${SHOW}.title`);

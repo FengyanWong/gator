@@ -208,6 +208,9 @@ started with." - branch record SIF-72). Run configuration's model line and this 
     are read when the window opens and by **Refresh**, with the time they were read. Refresh is the refresh icon (an
     arrow around) beside the heading, as in the bottom tabs and the list windows - its word for screen readers and at the
     start of its tooltip (branch record SIF-113).
+  - Only the newest brief read updates its cards, loading indicator and read time (7.467); closing drops pending
+    replies. A superseded list read does not start more status requests. The run lookup is memoized while open and
+    remains empty while closed, avoiding rebuilding it on every header status update.
 * **One launcher** (record 7.261, `frontend/src/launch.ts`; plan [frontend run workflow](plan-frontend-run-workflow.md),
   build step 1). Start, Calibration, Resume and Continue... go one way:
   - **Each says why it cannot go**, in its tooltip, before any press: the header's run is live or still being looked
@@ -4556,6 +4559,8 @@ this mechanism. Log, output-folder and model-structure read errors offer a retry
 
 The configuration validation key is serialized only when the configuration changes. The editors skip renders when
 their inputs are unchanged, and validation issues are grouped once by row rather than filtered for every row (7.130).
+Comparison-file validation hashes pinned initial-design and archive files in 1 MiB reads using the shared file-hash
+helper (7.468). Every validation still checks current bytes; missing-file and digest-mismatch blockers are unchanged.
 
 Tests share isolated HTTP servers and the MOCK helpers in `tests/workbench/helpers.py`, plus controlled
 browser input, passing validation replies, and optional connection fixtures in `frontend/scripts/lib/harness.mjs`.

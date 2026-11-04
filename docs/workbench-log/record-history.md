@@ -725,3 +725,4 @@ One row per commit, newest last.
 | `f24423d` | 11-04 05:06 | 7.460–7.462 | Reduce startup payload and repeated frontend scans; 1,068 browser/data/unit checks pass |
 | `084cc37` | 11-04 05:06 | 7.460–7.462 | Record second frontend lightening review |
 | `97984ce` | 11-04 05:16 | 7.463–7.464 | Index frontend lookups and stream reachability evidence; 789 checks/tests pass |
+| `09eb22c` | 11-04 05:22 | 7.465–7.466 | Stream baseline evidence and guard PDK list refreshes; 91 tests/checks pass |

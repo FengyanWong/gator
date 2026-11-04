@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test:editor": "node --test scripts/editor_data.test.mjs"
+    "test:editor": "node --test scripts/editor_data.test.mjs",
+    "test:unit": "node --test scripts/editor_data.test.mjs scripts/task_runs.test.mjs"
   },
   "dependencies": {
     "cytoscape": "3.34.3",

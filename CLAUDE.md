@@ -62,6 +62,7 @@ OMP_NUM_THREADS=1 ~/analog-optimizer-venv/bin/python -m pytest -q -n 12 --dist l
 PYTHONPATH=src ~/analog-optimizer-venv/bin/python -m gator_workbench.cli serve
 cd frontend && npx tsc --noEmit     # type-check only (Windows npx through WSL interop)
 cd frontend && npm run build        # = tsc --noEmit && vite build (a bare `npx vite build` does NOT type-check)
+cd frontend && npm run test:unit    # the node unit tests (editor data, task runs): no browser, no backend
 "/mnt/c/Program Files/nodejs/node.exe" "$(wslpath -w frontend/scripts/<name>.mjs)"   # a browser check (no `node` in WSL)
 OMP_NUM_THREADS=1 PYTHONPATH=src ~/analog-optimizer-venv/bin/python tests/perf/learner_update_profile.py --wait-load 6   # learner step timing
 ```

@@ -41,6 +41,9 @@ await runChecks(browser, async () => {
   await tab('Agent');
   check('chunk failure stays inside its panel', await until(`document.querySelector('.bottom-body [role="alert"]')?.textContent.includes('Could not open Agent')`, 80));
   check('editors remain available after a chunk failure', await evaluate(`!!document.querySelector('.editors') && !document.querySelector('.crash-panel')`));
+  // A failed download says so and offers Reload beside Retry: after a rebuild the old file is gone and only a Reload helps (record 7.471).
+  check('a failed download says so, with Retry first and Reload the page', await evaluate(`(() => { const a = document.querySelector('.bottom-body [role="alert"]');
+    return a.textContent.includes('could not be downloaded') && [...a.querySelectorAll('button')].map(b => b.textContent).join('|') === 'Retry|Reload the page' && !a.querySelector('details'); })()`));
   await tab('Training');
   check('Training opens independently of a failed Agent download', await until(`!!document.querySelector('.training')`, 80));
   check('inactive panel errors are hidden', await evaluate(`document.querySelector('.bottom-body [role="alert"]').closest('[hidden]') !== null`));

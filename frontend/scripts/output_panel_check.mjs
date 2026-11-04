@@ -5,7 +5,7 @@
 // so this check can start, save or probe nothing on the backend it runs against. The browser profile is new and
 // temporary (the user's saved configuration is not touched), and the clipboard is replaced by a recorder in the page.
 // What it pins (user requests 2026-09-21 and 2026-09-22):
-//   - "Copy path" sits at the right end of the "Output root" caption line as a labelled icon and still copies;
+//   - "Copy path" sits at the right end of the "Output root" caption line, as text (no button chrome), and still copies;
 //     it says "copied" for 1.5 s just before it, or "could not copy" when the browser refuses the clipboard (branch record SIF-94);
 //   - "Waveform storage limit" is a number box plus a unit list; the configuration keeps the typed size in whole bytes;
 //     choosing another unit CONVERTS the shown number and saves nothing (1.5 GiB -> 1536 MiB); an empty box is "no limit"
@@ -143,8 +143,7 @@ await runChecks(browser, async () => {
   check('it ends where the path box ends (right edge), above the box', line.atRightEnd && line.aboveBox, JSON.stringify(line));
   const look = await evaluate(`(() => { const s = getComputedStyle(${COPY}), cap = getComputedStyle(${HEAD}.querySelector('label'));
     return { border: s.borderTopWidth + ' ' + s.borderTopStyle, background: s.backgroundColor, padding: s.padding, size: s.fontSize, captionSize: cap.fontSize, cursor: s.cursor }; })()`);
-  check('the copy icon has no border or background', look.border === '0px none' && look.background === 'rgba(0, 0, 0, 0)'
-    && await evaluate(`!!${COPY}.querySelector('svg.icon') && ${COPY}.querySelector('.sr-only')?.textContent === 'Copy path'`), JSON.stringify(look));
+  check('it has no button chrome: no border, no background, no padding', look.border === '0px none' && look.background === 'rgba(0, 0, 0, 0)' && look.padding === '0px', JSON.stringify(look));
   check('it is text of the caption\'s size, and still shows the hand pointer', look.size === look.captionSize && look.cursor === 'pointer', JSON.stringify(look));
   await evaluate(`${COPY}.click()`);
   check('pressing it copies the output root', (await until(`window.__copied === ${JSON.stringify(ROOT)}`, 20)), String(await evaluate(`window.__copied`)));

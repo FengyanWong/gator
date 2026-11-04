@@ -718,6 +718,8 @@ One row per commit, newest last.
 | `adcff22` | 11-02 15:45 | 7.455 | GitHub tidy-up: main level with workbench, merged Codex branch deleted on GitHub (record 7.455) |
 | `d563e24` | 11-02 16:53 | 7.456 | Pre-registrations of 2026-11-02, written before any run: the next held-out circuit for RQ5 (not run) and Amendment A3, the rehearsal arm |
 | `14ddd1b` | 11-02 18:23 | 7.456 | Amendment A3 revision 2, before any RA+R evaluation: the first queue's three zero-cost stops and runtime gator-runtime-bmr-429e3df7 |
+| `6b4a4ad` | 11-03 04:20 | 7.456 | Rehearsal arm complete, MScR experiments finished, thesis revision 30 (record 7.456) |
+| `aae3edf` | 11-03 04:26 | 7.456 | Record 7.456: thesis revision 30's second follow-up (trims, 29,911 conservative) |
 | `e778bda` | 11-04 04:18 | 7.457 | Load optional workbench panels on demand |
 | `262db32` | 11-04 04:20 | 7.458 | Compact frontend controls and release temporary Agent output |
 | `b0a780f` | 11-04 04:21 | 7.459 | Allow durable mock saves to finish in browser checks |

@@ -98,7 +98,7 @@ export function OutputPanel({ config, setConfig, meta, activeRun, headerWorks, r
       {/* "Copy path" is a sibling of the label, not inside it: a button inside would become what the label's text clicks. Its
           word stands before it, so the button keeps its text and its place at the line's end (branch record SIF-94). */}
       <div className="field-head"><label htmlFor={OUTPUT_ROOT_ID} title="A backend directory inside an allowed root. Not a browser upload folder.">Output root</label>
-        {copying.word('root')}<button className="text-link" title="Copy path: Copy the output root." onClick={() => void copying.copyText(root, 'root')}><Icon name="copy" label="Copy path" /></button></div>
+        {copying.word('root')}<button className="text-link" title="Copy the output root to the clipboard" onClick={() => void copying.copyText(root, 'root')}>Copy path</button></div>
       <input id={OUTPUT_ROOT_ID} value={root} disabled={locked} onChange={e => set({ output_root: e.target.value })} />
       <div className="row"><button disabled={locked} title="Browse allowed roots...: Choose an output folder." onClick={() => openFolder()}><Icon name="folder" label="Browse allowed roots..." /></button>
         <button disabled={busy.test} onClick={() => { const at = root; if (at) ask('test', () => api.checkOutput(at, true), value => setTested({ root: at, value, at: clock() })); }}>

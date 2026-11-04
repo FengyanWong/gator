@@ -730,3 +730,4 @@ One row per commit, newest last.
 | `30f766b` | 11-04 05:30 | 7.467–7.468 | Record autonomous review validation |
 | `af0f9e0` | 11-04 05:33 | 7.469 | Bound ngspice deck identity hashing; six focused fake-runner tests pass |
 | `037d0b0` | 11-04 05:34 | 7.469 | Record bounded deck hashing review |
+| `e49da39` | 11-04 07:06 | 7.470 | Bound local runtime error-tail reads; 76 local-agent tests pass |

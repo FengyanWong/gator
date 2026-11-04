@@ -720,3 +720,4 @@ One row per commit, newest last.
 | `14ddd1b` | 11-02 18:23 | 7.456 | Amendment A3 revision 2, before any RA+R evaluation: the first queue's three zero-cost stops and runtime gator-runtime-bmr-429e3df7 |
 | `e778bda` | 11-04 04:18 | 7.457 | Load optional workbench panels on demand |
 | `262db32` | 11-04 04:20 | 7.458 | Compact frontend controls and release temporary Agent output |
+| `b0a780f` | 11-04 04:21 | 7.459 | Allow durable mock saves to finish in browser checks |

@@ -719,3 +719,4 @@ One row per commit, newest last.
 | `d563e24` | 11-02 16:53 | 7.456 | Pre-registrations of 2026-11-02, written before any run: the next held-out circuit for RQ5 (not run) and Amendment A3, the rehearsal arm |
 | `14ddd1b` | 11-02 18:23 | 7.456 | Amendment A3 revision 2, before any RA+R evaluation: the first queue's three zero-cost stops and runtime gator-runtime-bmr-429e3df7 |
 | `e778bda` | 11-04 04:18 | 7.457 | Load optional workbench panels on demand |
+| `262db32` | 11-04 04:20 | 7.458 | Compact frontend controls and release temporary Agent output |

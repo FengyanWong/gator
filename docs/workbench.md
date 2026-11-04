@@ -4553,6 +4553,10 @@ when it was found, for about 100 ms (record 7.178).
 
 ## Tests
 
+The live MOCK browser lifecycle check allows 60 seconds for each Abort to publish its durable saved state, and the
+batch runner gives it a minimum 240-second watchdog (7.459). Its state-order, resume, saved-state and worker-exit
+checks remain unchanged. Other browser checks keep their existing adaptive time limits.
+
 The native preparation scheduling fixture uses `OfflineSizingEnv` for its temporary journals (7.447): atomic JSON
 writes without disk sync, including in spawned lanes. It still exercises the real-backend protocol with fake devices
 and checks every lane restored and exited without forced termination. Production journal durability and deadlines

@@ -188,7 +188,8 @@ function runOne(name, url, env = {}) {
   return new Promise(resolve => {
     const dir = path.join(out, name);
     mkdirSync(dir, { recursive: true });
-    const limit = Math.max(120, 3 * (EXPECTED[name] ?? 40));
+    // The live MOCK check saves four times (pause/stop on two runs); disk contention can outlast its quiet-host timing.
+    const limit = Math.max(name === 'run_control_live_check' ? 240 : 120, 3 * (EXPECTED[name] ?? 40));
     const started = Date.now();
     const child = spawn(process.execPath, [path.join(scripts, `${name}.mjs`), dir], { windowsHide: true,
       env: { ...process.env, GATOR_WORKBENCH_URL: url, GATOR_CHECK_LIMIT_S: String(limit), ...env } });

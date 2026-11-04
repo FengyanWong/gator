@@ -87,7 +87,8 @@ await runChecks(browser, async () => {
   // ---- Abort ---------------------------------------------------------------------------------------------------------
   await press(ABORT);
   check('Abort asked first', /^Abort this run\?/.test(dialogs[dialogs.length - 1] ?? ''), dialogs[dialogs.length - 1]);
-  check('Abort: the run ends and the button reads "Start" again', await mainReads('Start'));
+  // Durable stop saves can take over 30 s on the shared host. Keep checking the full saved state and worker exit below.
+  check('Abort: the run ends and the button reads "Start" again', await mainReads('Start', 600));
   status = await get('runs/status', { run_dir: dir });
   check('the backend says: stopped by the user, saved, no worker', status.state === 'stopped' && status.stop_reason === 'user_stop' && status.worker_alive === false
     && status.summary?.totals?.candidate_evaluations_charged === status.budget.charged, JSON.stringify({ state: status.state, reason: status.stop_reason, charged: status.budget?.charged }));

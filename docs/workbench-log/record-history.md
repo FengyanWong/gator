@@ -729,3 +729,4 @@ One row per commit, newest last.
 | `deb264c` | 11-04 05:29 | 7.467–7.468 | Guard run brief replies and bound validation hashing; 247 tests/checks pass, 12 optional tests skip |
 | `30f766b` | 11-04 05:30 | 7.467–7.468 | Record autonomous review validation |
 | `af0f9e0` | 11-04 05:33 | 7.469 | Bound ngspice deck identity hashing; six focused fake-runner tests pass |
+| `037d0b0` | 11-04 05:34 | 7.469 | Record bounded deck hashing review |

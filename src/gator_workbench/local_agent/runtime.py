@@ -17,6 +17,15 @@ class Cancelled(Exception):
     pass
 
 
+def _error_tail(path):
+    """Last 1,500 text characters, as read_text would decode them, without loading an uncapped stderr file."""
+    with path.open('rb') as stream:
+        end = stream.seek(0, os.SEEK_END)
+        stream.seek(max(0, end - 6000))    # UTF-8 needs at most four bytes per character; CRLF needs two.
+        text = stream.read(6000).decode('utf-8', errors='replace')
+    return text.replace('\r\n', '\n').replace('\r', '\n')[-1500:]
+
+
 def local_path(value):
     """Accept operator paths on Windows or their mounted equivalent on WSL."""
     value = str(value)
@@ -160,7 +169,7 @@ class Runtime:
         if cancel.is_set():
             raise Cancelled()
         if process.returncode:
-            detail = err.read_text(encoding='utf-8', errors='replace')[-1500:] if err.exists() else wrapper_error[-1500:]
+            detail = _error_tail(err) if err.exists() else wrapper_error[-1500:]
             raise ValueError(f'Local runtime exited with code {process.returncode}: {detail}')
         return out.read_text(encoding='utf-8', errors='replace')
 

@@ -4293,6 +4293,9 @@ Live model output enters the DOM only while its details are expanded. Once a job
 is released; the answer remains in the conversation. New conversation also releases old proposal snapshots,
 application flags and the previous job result. Answers retain their existing uncapped generation behavior.
 
+Runtime failures read a bounded stderr tail for the existing 1,500-character error detail (7.470), preserving
+UTF-8 replacement decoding and universal newlines without loading the complete error file.
+
 The bottom **Agent** tab offers local NVIDIA models for parameter setup and optimization-setting advice.
 `codex/latest` starts with no LLM installed. `74B-latest` uses the same implementation with a profile that
 verifies and registers the already-present Nemotron 3.5 Bolt 74B-A9B 24GB weights on its first Agent visit.

@@ -23,6 +23,64 @@ def raw(tmp_path):
     return make_config(tmp_path).model_dump(mode='json')
 
 
+@pytest.mark.parametrize('tail', [b'diagnostic\n' * 200, ('\U0001d11e' * 1500).encode(),
+                                 ('\U0001d11e' * 1600 + 'x').encode(),
+                                 ('é\U00010400\r\n' * 800).encode(), b'\xff\xe2\x82bad\r\n' * 900 + b'\xf0\x9f',
+                                 b'\r\n' * 4000, b'text\r' * 2000, b'\r\n\xe2x\xffend\r', b'', None],
+                         ids=['ascii', 'four-byte', 'partial-utf8-start', 'mixed-crlf', 'malformed',
+                              'crlf', 'cr', 'short', 'empty', 'missing'])
+def test_failed_runtime_reads_only_exact_stderr_tail(tmp_path, monkeypatch, tail):
+    folder = tmp_path / 'mock' / 'runtime'
+    folder.mkdir(parents=True)
+    stderr = folder / 'stderr.txt'
+    wrapper = b'synthetic wrapper\r\n' * 100
+    if tail is not None:
+        data = (b'synthetic prefix\n' * 70000 if len(tail) > 100 else b'') + tail
+        stderr.write_bytes(data)
+        with io.TextIOWrapper(io.BytesIO(data), encoding='utf-8', errors='replace') as source:
+            expected = source.read()[-1500:]
+    else:
+        expected = wrapper.decode('utf-8', errors='replace')[-1500:]
+    original_open, reads = Path.open, []
+
+    class BoundedRead:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def seek(self, *args):
+            return self.stream.seek(*args)
+
+        def read(self, size=-1):
+            assert 0 < size <= 6000
+            value = self.stream.read(size)
+            reads.append(len(value))
+            return value
+
+    def open_bounded(path, mode='r', *args, **kwargs):
+        stream = original_open(path, mode, *args, **kwargs)
+        if path == stderr:
+            assert mode == 'rb', 'Error display must read only a bounded byte tail'
+            return BoundedRead(stream)
+        return stream
+
+    monkeypatch.setattr(Path, 'open', open_bounded)
+    monkeypatch.setattr(runtime, 'windows_path', str)
+    monkeypatch.setattr(runtime, 'powershell', lambda: 'synthetic-supervisor')
+    process = SimpleNamespace(returncode=7, poll=lambda: 7, communicate=lambda: (b'', wrapper))
+    monkeypatch.setattr(runtime.subprocess, 'Popen', lambda *a, **k: process)
+    engine = runtime.Runtime(tmp_path / 'unused-llama-completion.exe')
+    with pytest.raises(ValueError) as error:
+        engine.execute([], folder, threading.Event())
+    assert str(error.value) == f'Local runtime exited with code 7: {expected}'
+    assert reads == ([] if tail is None else [min(6000, len(data))])
+
+
 @pytest.fixture
 def context():
     def load(raw):

@@ -16,7 +16,10 @@ dependencies = []
 graph = ["torch>=2.2,<3", "torch-geometric>=2.5,<3", "numpy>=1.24,<3", "networkx>=3,<4"]
 # pytest-xdist: the whole suite in about 50 s with `-n 12 --dist loadgroup` (OMP_NUM_THREADS=1), 65-95 s with -n 6 on a
 # busy machine, about 5 min serially (measured 2026-09-30, 24 cores). loadgroup: see the xdist_group marker below.
-test = ["pytest>=8,<10", "pytest-xdist>=3.8,<4"]
+# pytest below 9.2: 9.2.0 no longer has the attribute through which pytest-xdist 3.8.0 (the newest) adds a test's
+# xdist_group to its name, so `--dist loadgroup` spreads a group over the workers without a word and
+# tests/workbench/test_wb_maestro_helpers.py fails (record 7.475). Lift the limit when a pytest-xdist release fits.
+test = ["pytest>=8,<9.2", "pytest-xdist>=3.8,<4"]
 export = ["pyarrow>=14,<24"]
 # Local engineering workbench (src/gator_workbench): FastAPI backend + Parquet raw tables.
 # No plotting libraries by design; the workbench produces data only.

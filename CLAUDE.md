@@ -11,7 +11,7 @@ its top). There is no `AGENTS.md`.
    `grep -n '^##' docs/workbench.md` (its heading map) and read ONLY the section(s) of the feature you touch, with
    Read offset/limit: the whole file is ~145 kB, more than one Read returns. Then read only the log entries of that
    area (`grep -n '<feature words>' docs/workbench-log/*.md`). Also `git status` / `git diff`, and the spec of the
-   area: for the workbench the untracked `gator_claude_code_fable51_frontend_data_outputs_en.md` at the repository
+   area: for the workbench `gator_claude_code_fable51_frontend_data_outputs_en.md` at the repository
    root, otherwise the plan or brief of the area in `docs/`. Do not redo finished modules from memory. Where a function
    lives (button, code, route, entries, tests, checks): `docs/functionality-reference.md`; when you add, change or
    remove a function, change its row there as well. The page, code and records use the words defined in

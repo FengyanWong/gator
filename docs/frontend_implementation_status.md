@@ -1,7 +1,7 @@
 # Frontend / run-control / data-output implementation status
 
 The INDEX of the workbench's development record (specification: `gator_claude_code_fable51_frontend_data_outputs_en.md`,
-untracked at the repository root). This is a development record, not a research output or analysis report.
+at the repository root). This is a development record, not a research output or analysis report.
 
 **How to use it.** `docs/workbench.md` says what every feature does NOW and is maintained in place: look at its heading
 map (`grep -n '^##' docs/workbench.md`) and read only the section of the feature you touch. The record says how each
@@ -545,3 +545,4 @@ Newest last. Each entry's heading in the log also gives its date, its session an
 | 7.472 | README for a public reader with the name GATOR explained; the Agent tab readable: page-size text, Models and Conversation columns, state pills, a needs table, controls with words, plain notes; not live |
 | 7.473 | The MIT licence: LICENSE, the SPDX field in pyproject.toml (setuptools 77), a Licence section in the README |
 | 7.474 | The second foundry's name scrubbed from two October commits by a history rewrite (902 commits, 522 new ids, trees otherwise identical); every id in the records remapped; a fresh public GitHub repository, the old one renamed and kept private |
+| 7.475 | The README revised against a fresh clone: the findings narrowed to what the records show, what works without a simulator, what is not in the repository; pytest kept below 9.2 so that grouped tests stay on one worker; the document index complete; the live page closed, three scratch folders deleted, the old GitHub repository archived |

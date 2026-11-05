@@ -736,6 +736,11 @@ One row per commit, newest last.
 | `2d79ae1` | 11-04 21:34 | 7.471 | Before landing the lightened workbench: panel errors say what failed, Copy path is text again (record 7.471) |
 | `f903250` | 11-04 22:08 | 7.471 | Browser checks close their windows without racing their own DevTools session (record 7.471) |
 | `8f92004` | 11-04 22:30 | 7.471 | Record 7.471: Codex's lightened workbench made ready to land, with the review's fixes and the full proofs |
+| `1d52098` | 11-04 22:30 | 7.471 | Record 7.471, part 2: the lightened workbench landed and pushed; only workbench and main remain |
 | `189a6e6` | 11-04 23:22 | 7.472 | README for a public reader, with the name explained; the Agent tab easier to read (record 7.472) |
+| `126e44a` | 11-04 23:23 | 7.472 | Record 7.472: the README for a public reader and the readable Agent tab |
 | `b3e7ca7` | 11-05 02:59 | 7.473 | MIT licence (record 7.473) |
+| `1b8f6b8` | 11-05 02:59 | 7.473 | Record 7.473: the MIT licence |
 | `d9188f5` | 11-05 04:59 | 7.474 | Docs: commit ids follow the scrubbed history; the thesis repository named, not linked (record 7.474) |
+| `8538f6b` | 11-05 05:01 | 7.474 | Record 7.474: the history scrubbed, the ids remapped, a fresh public repository |
+| `869c9d4` | 11-05 07:49 | 7.475 | README revised against a fresh clone; pytest kept below 9.2; the document index complete (record 7.475) |
